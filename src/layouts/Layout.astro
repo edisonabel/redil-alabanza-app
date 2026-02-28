@@ -1,5 +1,7 @@
 ---
 import '../styles/global.css';
+
+const currentPath = Astro.url.pathname;
 ---
 <!DOCTYPE html>
 <html lang="es">
@@ -19,8 +21,8 @@ import '../styles/global.css';
     <main class="max-w-6xl mx-auto p-6 md:p-8">
         <header class="flex items-center justify-between mb-6 pb-4 border-b border-neutral-800/50">
             <nav class="flex items-center gap-6 md:gap-8">
-                <a href="/" class="text-sm md:text-base font-semibold text-neutral-400 hover:text-white transition-colors">Repertorio</a>
-                <a href="/herramientas" class="text-sm md:text-base font-semibold text-neutral-400 hover:text-white transition-colors">Herramientas</a>
+                <a href="/" class={`px-1 py-2 text-sm md:text-base font-semibold transition-colors border-b-2 ${currentPath === '/' ? 'text-white border-blue-500' : 'text-neutral-400 border-transparent hover:text-white hover:border-neutral-600'}`}>Repertorio</a>
+                <a href="/herramientas" class={`px-1 py-2 text-sm md:text-base font-semibold transition-colors border-b-2 ${currentPath.includes('/herramientas') ? 'text-white border-blue-500' : 'text-neutral-400 border-transparent hover:text-white hover:border-neutral-600'}`}>Herramientas</a>
             </nav>
             <div class="flex items-center gap-2 relative">
                 <a href="/herramientas" class="p-2 rounded-full hover:bg-neutral-800 text-neutral-400 hover:text-white transition-colors flex items-center justify-center" title="Herramientas">
@@ -74,5 +76,8 @@ import '../styles/global.css';
             }
         });
     </script>
+    <style is:global>
+        body.tema-claro a.border-transparent:hover { border-color: #9ca3af !important; }
+    </style>
 </body>
 </html>
