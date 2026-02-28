@@ -12,14 +12,15 @@ interface Props {
 	voz: string;
 	tema: string;
 	estado?: string;
+	oculta?: boolean;
 }
 
-const { titulo = "", cantante = "", tonalidad = "", bpm = 0, linkLetra = "#", linkAcordes = "#", linkVoces = "#", linkYoutube = "#", categoria = "", voz = "", tema = "", estado = "" } = Astro.props;
+const { titulo = "", cantante = "", tonalidad = "", bpm = 0, linkLetra = "#", linkAcordes = "#", linkVoces = "#", linkYoutube = "#", categoria = "", voz = "", tema = "", estado = "", oculta = false } = Astro.props;
 
 const colorEstado = estado?.toLowerCase() === 'nueva' ? 'bg-red-500 text-white animate-pulse' : estado?.toLowerCase() === 'ensayo' ? 'bg-yellow-500 text-black' : 'bg-blue-500 text-white';
 ---
 
-<article class="relative bg-neutral-900 border border-neutral-800 rounded-2xl hover:border-neutral-700 transition-all duration-300 shadow-xl hover:shadow-2xl overflow-visible card-container"
+<article class:list={["relative bg-neutral-900 border border-neutral-800 rounded-2xl hover:border-neutral-700 transition-all duration-300 shadow-xl hover:shadow-2xl overflow-visible card-container card-cancion", { "cancion-oculta": oculta }]}
          data-titulo={(titulo || '').toLowerCase()}
          data-cancion={titulo || ''}
          data-artista={(cantante || '').toLowerCase()}

@@ -142,7 +142,7 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
 
     <!-- Grid de Canciones -->
     <div id="gridCanciones" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto">
-        {cancionesConDataFicticia.map((cancion: any) => (
+        {cancionesConDataFicticia.map((cancion: any, index: number) => (
             <CardCancion 
                 titulo={cancion['Canción'] || ''}
                 cantante={cancion['Grupo/Cantante'] || ''}
@@ -156,9 +156,13 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
                 voz={cancion['Voz Principal'] || ''}
                 tema={cancion['Tema Principal Canción'] || ''}
                 estado={cancion['Estado'] || ''}
+                oculta={index >= 15}
             />
         ))}
     </div>
+
+    <!-- Centinela para Infinite Scroll -->
+    <div id="scroll-sentinel" class="h-10 w-full mt-8"></div>
 
     <!-- Panel Flotante Setlist -->
     <div id="setlistPanel" class="fixed bottom-6 right-6 bg-neutral-800 border border-neutral-700 text-white p-4 rounded-2xl shadow-2xl z-50 flex items-center gap-4 hidden transition-opacity">
@@ -345,11 +349,34 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
             // ----- Modo Normal (Búsqueda y Filtros) -----
             updateSetlistUI(); // Initialize setlist panel visibility
 
+            // ----- Infinite Scroll Logic -----
+            const sentinel = document.getElementById('scroll-sentinel');
+            
+            function cargarMasCanciones() {
+                const ocultas = document.querySelectorAll('.cancion-oculta');
+                if (ocultas.length === 0) {
+                    if (sentinel) sentinel.style.display = 'none';
+                    return;
+                }
+                
+                // Mostrar las siguientes 15 tarjetas
+                Array.from(ocultas).slice(0, 15).forEach(card => card.classList.remove('cancion-oculta'));
+            }
+            
+            const observer = new IntersectionObserver((entries) => {
+                if (entries[0].isIntersecting) {
+                    cargarMasCanciones();
+                }
+            }, { rootMargin: '200px' });
+            
+            if (sentinel) observer.observe(sentinel);
+
+            // ----- Filter Application Logic -----
             function filterCards() {
                 const searchTerm = searchInput.value.toLowerCase().trim();
                 const vozTerm = filterVoz.value;
                 const categoriaTerm = filterCategoria.value;
-                const temaTerm = filterTema ? filterTema.value : 'Todas';
+                const temaTerm = filterTema.value;
 
                 cards.forEach(card => {
                     const titulo = card.getAttribute('data-titulo') || '';
@@ -365,6 +392,10 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
 
                     if (matchesSearch && matchesVoz && matchesCategoria && matchesTema) {
                         card.style.display = 'block';
+                        // IMPORTANT: Bypass infinite scroll occlusion lock if user is performing dynamic text queries
+                        if(searchTerm !== '' || vozTerm !== 'Todas' || categoriaTerm !== 'Todas' || temaTerm !== 'Todas') {
+                            card.classList.remove('cancion-oculta');
+                        }
                     } else {
                         card.style.display = 'none';
                     }
@@ -530,6 +561,10 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
 </script>
 
 <style is:global>
+    /* Content visibility optimizations for long list scroll performance */
+    article.card-cancion { content-visibility: auto; contain-intrinsic-size: 150px; }
+    .cancion-oculta { display: none !important; }
+
     /* Estilos Tema Claro */
     body.tema-claro { background-color: #f3f4f6; color: #111827; }
     body.tema-claro article { background-color: #ffffff; border-color: #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
