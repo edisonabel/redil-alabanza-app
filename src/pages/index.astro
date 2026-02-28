@@ -225,6 +225,7 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
             };
             
             updateBtns(btnViewGrid, btnViewList);
+            void document.body.offsetHeight; // Fuerza un reflow para corregir glitches de repintado en iOS
         }
 
         function setListView() {
@@ -247,6 +248,7 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
             };
             
             updateBtns(btnViewGrid, btnViewList);
+            void document.body.offsetHeight; // Fuerza un reflow para corregir glitches de repintado en iOS
         }
 
         if(btnViewGrid) btnViewGrid.addEventListener('click', setGridView);
@@ -591,8 +593,8 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
 
 <style is:global>
     /* Content visibility optimizations for long list scroll performance */
-    article.card-cancion { content-visibility: auto; contain-intrinsic-size: 150px; }
     .cancion-oculta { display: none !important; }
+    .btn-add-setlist { transform: translateZ(0); -webkit-backface-visibility: hidden; backface-visibility: hidden; }
 
     /* Estilos Tema Claro */
     body.tema-claro { background-color: #f3f4f6; color: #111827; }
