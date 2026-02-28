@@ -349,18 +349,26 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
             // ----- Modo Normal (Búsqueda y Filtros) -----
             updateSetlistUI(); // Initialize setlist panel visibility
 
-            // ----- Infinite Scroll Logic -----
+            // ----- Infinite Scroll & Search Logic -----
             const sentinel = document.getElementById('scroll-sentinel');
+            const todasLasCanciones = Array.from(cards);
+            let cancionesFiltradas = [...todasLasCanciones];
+            let indiceActual = 0;
+            const limite = 15;
             
             function cargarMasCanciones() {
-                const ocultas = document.querySelectorAll('.cancion-oculta');
-                if (ocultas.length === 0) {
+                const fragmento = cancionesFiltradas.slice(indiceActual, indiceActual + limite);
+                if (fragmento.length === 0) {
                     if (sentinel) sentinel.style.display = 'none';
                     return;
                 }
                 
-                // Mostrar las siguientes 15 tarjetas
-                Array.from(ocultas).slice(0, 15).forEach(card => card.classList.remove('cancion-oculta'));
+                fragmento.forEach(card => card.classList.remove('cancion-oculta'));
+                indiceActual += limite;
+                
+                if (sentinel) {
+                    sentinel.style.display = (indiceActual >= cancionesFiltradas.length) ? 'none' : 'block';
+                }
             }
             
             const observer = new IntersectionObserver((entries) => {
@@ -378,7 +386,14 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
                 const categoriaTerm = filterCategoria.value;
                 const temaTerm = filterTema.value;
 
-                cards.forEach(card => {
+                // Paso 1: Ocultar todas las tarjetas de golpe
+                todasLasCanciones.forEach(card => card.classList.add('cancion-oculta'));
+
+                // Paso 2: Reiniciar el contador del scroll
+                indiceActual = 0;
+
+                // Paso 3: Filtrar el array en memoria
+                cancionesFiltradas = todasLasCanciones.filter(card => {
                     const titulo = card.getAttribute('data-titulo') || '';
                     const artista = card.getAttribute('data-artista') || '';
                     const voz = card.getAttribute('data-voz') || '';
@@ -390,16 +405,14 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
                     const matchesCategoria = categoriaTerm === 'Todas' || categoria.includes(categoriaTerm);
                     const matchesTema = temaTerm === 'Todas' || tema.includes(temaTerm);
 
-                    if (matchesSearch && matchesVoz && matchesCategoria && matchesTema) {
-                        card.style.display = 'block';
-                        // IMPORTANT: Bypass infinite scroll occlusion lock if user is performing dynamic text queries
-                        if(searchTerm !== '' || vozTerm !== 'Todas' || categoriaTerm !== 'Todas' || temaTerm !== 'Todas') {
-                            card.classList.remove('cancion-oculta');
-                        }
-                    } else {
-                        card.style.display = 'none';
-                    }
+                    return matchesSearch && matchesVoz && matchesCategoria && matchesTema;
                 });
+
+                // Limpiar explícitamente el display style heredado para que dependa únicamente de cancion-oculta
+                cancionesFiltradas.forEach(card => card.style.display = '');
+
+                // Paso 4: Pintar el primer bloque de los resultados encontrados
+                cargarMasCanciones();
             }
 
             if(searchInput) searchInput.addEventListener('input', filterCards);
