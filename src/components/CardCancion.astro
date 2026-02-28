@@ -27,7 +27,7 @@ const { titulo, cantante, tonalidad, bpm, linkLetra, linkAcordes, linkVoces, lin
         <button class="btn-add-setlist absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white transition-colors" title="Añadir a Setlist" data-cancion={titulo}>
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
         </button>
-        <h3 class="text-2xl font-bold tracking-tight mb-0.5 pr-12 transition-all card-title">{titulo}</h3>
+        <h3 class="text-xl md:text-2xl font-bold tracking-tight mb-0.5 pr-12 transition-all card-title">{titulo}</h3>
         {cantante && <p class="text-sm font-medium text-neutral-500 mb-3 line-clamp-1 pr-12">{cantante}</p>}
         {!cantante && <div class="mb-3"></div>}
         <div class="flex flex-wrap gap-2 text-xs card-badges transition-all">
