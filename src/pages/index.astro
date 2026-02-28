@@ -2,9 +2,8 @@
 import Layout from '../layouts/Layout.astro';
 import CardCancion from '../components/CardCancion.astro';
 import Papa from 'papaparse';
-import Papa from 'papaparse';
-
-const urlDelCSV = 'https://docs.google.com/spreadsheets/d/1WfaJwL2sdOh3P14l7FAy345mhJcrh9Tt/export?format=csv';
+// URL del CSV publicado (La base de datos principal)
+const urlDelCSV = 'https://docs.google.com/spreadsheets/d/1Fk4DgxWzizonrG_xB_DZN8wSqLSZY9myj7ROM7JLu-c/export?format=csv';
 
 async function fetchCanciones() {
     try {
