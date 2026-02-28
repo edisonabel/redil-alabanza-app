@@ -130,7 +130,7 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
     <!-- Encabezado de Resultados y Vista -->
     <div class="max-w-7xl mx-auto mb-4 flex justify-between items-center px-2 md:px-0">
         <h2 class="text-neutral-400 font-medium text-sm tracking-wide">Resultados de Canciones</h2>
-        <div class="flex bg-neutral-950 rounded-lg p-1 border border-neutral-800">
+        <div id="viewToggleContainer" class="flex bg-neutral-950 rounded-lg p-1 border border-neutral-800">
             <button id="btnViewGrid" class="p-1.5 rounded-md bg-neutral-800 text-white shadow-sm transition-all" title="Vista de Cuadrícula">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
             </button>
@@ -542,6 +542,10 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
     body.tema-claro .bg-neutral-900 { background-color: #ffffff; border-color: #e5e7eb; }
     body.tema-claro #btn-theme-toggle { background-color: #ffffff; color: #111827; border-color: #d1d5db; }
     body.tema-claro #btn-theme-toggle:hover { background-color: #f3f4f6; }
+    body.tema-claro #viewToggleContainer { background-color: #e5e7eb; border-color: #d1d5db; }
+    body.tema-claro #btnViewGrid.bg-neutral-800, body.tema-claro #btnViewList.bg-neutral-800 { background-color: #ffffff; color: #111827; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); }
+    body.tema-claro #btnViewGrid.text-neutral-400, body.tema-claro #btnViewList.text-neutral-400 { color: #6b7280; }
+    body.tema-claro #btnViewGrid.text-neutral-400:hover, body.tema-claro #btnViewList.text-neutral-400:hover { color: #111827; }
     
     @keyframes pulse-beat { 
         0% { transform: scale(1); background-color: #10b981; } 
