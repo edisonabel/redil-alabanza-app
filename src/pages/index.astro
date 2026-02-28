@@ -375,6 +375,31 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
 
         // ----- Metrónomo Interactivo Logic -----
         let metronomoActivoDot = null;
+        let metronomoInterval = null;
+        
+        // Inicializar AudioContext
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        const audioCtx = new AudioContextClass();
+        
+        function playClick() {
+            if (!audioCtx) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(800, audioCtx.currentTime); // Tono agudo percusivo (800Hz)
+            
+            gainNode.gain.setValueAtTime(1, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1); // Caída rápida
+            
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.1);
+        }
         
         document.addEventListener('click', (e) => {
             const badge = (e.target as Element).closest('.badge-bpm');
@@ -393,12 +418,14 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
                 if (metronomoActivoDot && metronomoActivoDot !== dot) {
                     metronomoActivoDot.classList.remove('beat-active');
                     metronomoActivoDot.style.removeProperty('--bpm-duration');
+                    if (metronomoInterval) clearInterval(metronomoInterval);
                 }
                 
                 // Si el metrónomo clickeado es el mismo que estaba activo, lo apagamos y ya (toggle)
                 if (dot.classList.contains('beat-active')) {
                     dot.classList.remove('beat-active');
                     dot.style.removeProperty('--bpm-duration');
+                    if (metronomoInterval) clearInterval(metronomoInterval);
                     metronomoActivoDot = null;
                     return;
                 }
@@ -408,6 +435,10 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
                 dot.style.setProperty('--bpm-duration', `${duracionSegundos}s`);
                 dot.classList.add('beat-active');
                 metronomoActivoDot = dot;
+                
+                // Activar Sonido
+                playClick(); // Primer golpe inmediato
+                metronomoInterval = setInterval(playClick, duracionSegundos * 1000); // Loop sincronizado
             }
         });
     });
