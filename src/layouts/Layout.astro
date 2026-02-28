@@ -16,13 +16,23 @@ const currentPath = Astro.url.pathname;
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Questrial&display=swap" rel="stylesheet">
+    <script is:inline>
+        const theme = (() => {
+            if (typeof localStorage !== 'undefined' && localStorage.getItem('tema')) {
+                return localStorage.getItem('tema');
+            }
+            return window.matchMedia('(prefers-color-scheme: light)').matches ? 'claro' : 'oscuro';
+        })();
+        if (theme === 'claro') document.documentElement.classList.add('tema-claro');
+        typeof window !== 'undefined' && window.localStorage.setItem('tema', theme);
+    </script>
 </head>
 <body class="bg-neutral-950 text-neutral-100 min-h-screen" style="font-family: 'Questrial', sans-serif;">
     <main class="max-w-6xl mx-auto p-6 md:p-8">
         <header class="flex items-center justify-between mb-6 pb-4 border-b border-neutral-800/50">
             <nav class="flex items-center gap-6 md:gap-8">
-                <a href="/" class={`px-1 py-2 text-sm md:text-base font-semibold transition-colors border-b-2 ${currentPath === '/' ? 'text-white border-blue-500' : 'text-neutral-400 border-transparent hover:text-white hover:border-neutral-600'}`}>Repertorio</a>
-                <a href="/herramientas" class={`px-1 py-2 text-sm md:text-base font-semibold transition-colors border-b-2 ${currentPath.includes('/herramientas') ? 'text-white border-blue-500' : 'text-neutral-400 border-transparent hover:text-white hover:border-neutral-600'}`}>Herramientas</a>
+                <a href="/" class={`px-1 py-2 text-sm md:text-base font-semibold transition-colors ${currentPath === '/' ? 'nav-link-active' : 'nav-link-inactive'}`}>Repertorio</a>
+                <a href="/herramientas" class={`px-1 py-2 text-sm md:text-base font-semibold transition-colors ${currentPath.includes('/herramientas') ? 'nav-link-active' : 'nav-link-inactive'}`}>Herramientas</a>
             </nav>
             <div class="flex items-center gap-2 relative">
                 <a href="/herramientas" class="p-2 rounded-full hover:bg-neutral-800 text-neutral-400 hover:text-white transition-colors flex items-center justify-center" title="Herramientas">
@@ -41,43 +51,51 @@ const currentPath = Astro.url.pathname;
             const btnThemeToggle = document.getElementById('btn-theme-toggle');
             const logoImg = document.getElementById('logo-img') as HTMLImageElement;
             
-            function aplicarTema(tema: string) {
-                if (!btnThemeToggle) return;
-                const iconSvg = btnThemeToggle.querySelector('svg');
-                
-                if (tema === 'claro') {
-                    document.body.classList.add('tema-claro');
-                    if (logoImg) logoImg.src = '/LOGO REDIL LIGHT.png';
-                    if (iconSvg) {
-                        iconSvg.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>';
-                    }
-                } else {
-                    document.body.classList.remove('tema-claro');
-                    if (logoImg) logoImg.src = '/LOGO REDIL.png';
-                    if (iconSvg) {
-                        iconSvg.innerHTML = '<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path>';
-                    }
-                }
-            }
-
-            if (localStorage.getItem('tema') === 'claro') {
-                aplicarTema('claro');
-            } else {
-                aplicarTema('oscuro');
-            }
+            // Sync current state
+            const isClaro = document.documentElement.classList.contains('tema-claro');
+            const svgSol = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>';
+            const svgLuna = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>';
             
             if (btnThemeToggle) {
+                btnThemeToggle.innerHTML = isClaro ? svgLuna : svgSol;
+                
                 btnThemeToggle.addEventListener('click', () => {
-                    const esClaro = document.body.classList.contains('tema-claro');
-                    const nuevoTema = esClaro ? 'oscuro' : 'claro';
-                    localStorage.setItem('tema', nuevoTema);
-                    aplicarTema(nuevoTema);
+                    const isClaroAhora = document.documentElement.classList.toggle('tema-claro');
+                    localStorage.setItem('tema', isClaroAhora ? 'claro' : 'oscuro');
+                    
+                    btnThemeToggle.innerHTML = isClaroAhora ? svgLuna : svgSol;
+                    if (logoImg) {
+                        logoImg.src = isClaroAhora ? '/LOGO REDIL LIGHT.png' : '/LOGO REDIL.png';
+                    }
                 });
             }
         });
     </script>
     <style is:global>
-        body.tema-claro a.border-transparent:hover { border-color: #9ca3af !important; }
+        .nav-link-active { color: #ffffff !important; border-bottom-width: 2px !important; border-color: #3b82f6 !important; }
+        html.tema-claro .nav-link-active { color: #111827 !important; border-color: #2563eb !important; }
+        
+        .nav-link-inactive { color: #9ca3af !important; border-color: transparent !important; }
+        html.tema-claro .nav-link-inactive { color: #6b7280 !important; }
+
+        html.tema-claro body { background-color: #f3f4f6 !important; color: #111827 !important; }
+        
+        html.tema-claro .bg-neutral-900,
+        html.tema-claro .bg-neutral-900\/50,
+        html.tema-claro .bg-neutral-800,
+        html.tema-claro .bg-neutral-800\/50,
+        html.tema-claro .bg-neutral-950\/50 { background-color: #ffffff !important; }
+        
+        html.tema-claro .border-neutral-800,
+        html.tema-claro .border-neutral-700 { border-color: #e5e7eb !important; }
+        
+        html.tema-claro .text-white,
+        html.tema-claro .text-neutral-200 { color: #111827 !important; }
+        html.tema-claro .text-neutral-400 { color: #4b5563 !important; }
+        
+        html.tema-claro input, 
+        html.tema-claro select { background-color: #ffffff !important; color: #111827 !important; border-color: #d1d5db !important; }
+        html.tema-claro a.border-transparent:hover { border-color: #9ca3af !important; }
     </style>
 </body>
 </html>
