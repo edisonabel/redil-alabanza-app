@@ -72,6 +72,14 @@ const currentPath = Astro.url.pathname;
         });
     </script>
     <style is:global>
+        @media print {
+            body, html { background-color: white !important; color: black !important; }
+            .no-print, nav, header { display: none !important; }
+            .print-only { display: block !important; }
+            @page { margin: 2cm; }
+        }
+        .print-only { display: none; }
+        
         .nav-link-active { color: #ffffff !important; border-bottom-width: 2px !important; border-color: #3b82f6 !important; }
         html.tema-claro .nav-link-active { color: #111827 !important; border-color: #2563eb !important; }
         

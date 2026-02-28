@@ -35,6 +35,13 @@ import Layout from '../../layouts/Layout.astro';
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
             <!-- Entrada -->
             <div>
+                <!-- Metadatos para Impresión -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4 no-print">
+                    <input type="text" id="print-titulo" placeholder="Título de la Canción" class="p-2 bg-neutral-900 border border-neutral-700 rounded-lg text-white focus:outline-none focus:border-blue-500">
+                    <input type="text" id="print-tono" placeholder="Tonalidad (Ej: G)" class="p-2 bg-neutral-900 border border-neutral-700 rounded-lg text-white focus:outline-none focus:border-blue-500">
+                    <input type="text" id="print-bpm" placeholder="Tiempo/BPM (Ej: 4/4 - 72)" class="p-2 bg-neutral-900 border border-neutral-700 rounded-lg text-white focus:outline-none focus:border-blue-500">
+                </div>
+                
                 <div class="flex items-center justify-between mb-2">
                     <label for="input-chordpro" class="font-medium text-neutral-300">1. Pega tu letra original aquí:</label>
                     <button id="btn-autoconvertir" class="text-xs px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-lg transition-colors flex items-center gap-1">
@@ -62,7 +69,25 @@ import Layout from '../../layouts/Layout.astro';
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg> 
                 Copiar
             </button>
+            <button id="btn-imprimir" class="no-print w-full sm:w-auto px-6 py-3 bg-neutral-100 hover:bg-white text-black font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 whitespace-nowrap">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg> 
+                Imprimir PDF
+            </button>
         </div>
+    </div>
+    
+    <!-- Contenedor Oculto para Impresión (Solo visible en papel) -->
+    <div id="print-area" class="print-only text-black font-sans">
+        <div class="flex justify-between items-start mb-8 border-b border-gray-300 pb-4">
+            <div>
+                <h1 id="render-titulo" class="text-3xl font-bold uppercase tracking-wide"></h1>
+            </div>
+            <div class="text-right text-gray-700 font-medium">
+                <p id="render-tono"></p>
+                <p id="render-bpm"></p>
+            </div>
+        </div>
+        <div id="render-letra" class="text-[15px] leading-relaxed"></div>
     </div>
 </Layout>
 
@@ -236,5 +261,60 @@ import Layout from '../../layouts/Layout.astro';
                 }
             });
         }
+
+        // --- MOTOR DE IMPRESIÓN CHORDPRO A LETRA-SOBRE-ACORDES ---
+        function renderizarParaImpresion(textoChordPro: string) {
+            const lineas = textoChordPro.split('\n');
+            let html = '';
+
+            lineas.forEach(linea => {
+                const esSeccion = /^(VERSO|CORO|PUENTE|INTRO|FINAL|PRE-CORO|OUTRO)/i.test(linea.trim());
+                if (esSeccion) {
+                    html += `<div class="font-bold mt-6 mb-2 text-lg text-gray-900">${linea}</div>`;
+                } else if (linea.includes('[')) {
+                    let lineaHtml = `<div class="flex flex-wrap items-end mb-3" style="line-height: 1.2;">`;
+                    const partes = linea.split(/\[(.*?)\]/);
+
+                    if (partes[0]) {
+                        lineaHtml += `<div class="inline-flex flex-col"><span class="h-5"></span><span class="whitespace-pre">${partes[0]}</span></div>`;
+                    }
+
+                    for (let i = 1; i < partes.length; i += 2) {
+                        const acorde = partes[i];
+                        const letra = partes[i+1] || '';
+                        // El flex-col invierte el orden si es necesario, pero aquí ponemos el acorde explícitamente arriba
+                        lineaHtml += `<div class="inline-flex flex-col mr-1"><span class="font-bold text-black text-sm h-5">${acorde}</span><span class="whitespace-pre">${letra}</span></div>`;
+                    }
+                    lineaHtml += `</div>`;
+                    html += lineaHtml;
+                } else {
+                    html += `<div class="mb-1 min-h-[1.5rem] whitespace-pre-wrap">${linea}</div>`;
+                }
+            });
+            return html;
+        }
+
+        document.getElementById('btn-imprimir')?.addEventListener('click', () => {
+            // Llenar metadatos visuales
+            const printTitulo = document.getElementById('print-titulo') as HTMLInputElement;
+            const printTono = document.getElementById('print-tono') as HTMLInputElement;
+            const printBpm = document.getElementById('print-bpm') as HTMLInputElement;
+            const renderTitulo = document.getElementById('render-titulo');
+            const renderTono = document.getElementById('render-tono');
+            const renderBpm = document.getElementById('render-bpm');
+            const renderLetra = document.getElementById('render-letra');
+
+            if (renderTitulo && printTitulo) renderTitulo.textContent = printTitulo.value || 'Sin Título';
+            if (renderTono && printTono) renderTono.textContent = printTono.value ? 'Tonalidad: ' + printTono.value : '';
+            if (renderBpm && printBpm) renderBpm.textContent = printBpm.value || '';
+            
+            // Renderizar acordes iterando chordpro
+            const textoAImprimir = output.value || input.value;
+            if (renderLetra) renderLetra.innerHTML = renderizarParaImpresion(textoAImprimir);
+            
+            // Llamar a la ventana de impresión del navegador
+            window.print();
+        });
+
     });
 </script>
