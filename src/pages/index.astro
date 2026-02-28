@@ -141,6 +141,7 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
         {cancionesConDataFicticia.map((cancion: any) => (
             <CardCancion 
                 titulo={cancion['Canción'] || ''}
+                cantante={cancion['Grupo/Cantante'] || ''}
                 tonalidad={cancion['Tonalidad Redil Estadio'] || ''}
                 bpm={Number(cancion['Beat Batería']) || 0}
                 linkLetra={cancion['Link Letras'] || '#'}
