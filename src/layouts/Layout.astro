@@ -17,11 +17,62 @@ import '../styles/global.css';
 </head>
 <body class="bg-neutral-950 text-neutral-100 min-h-screen" style="font-family: 'Questrial', sans-serif;">
     <main class="max-w-6xl mx-auto p-6 md:p-8">
-        <nav class="flex items-center justify-center gap-6 md:gap-8 mb-6 pb-4 border-b border-neutral-800/50">
-            <a href="/" class="text-sm md:text-base font-semibold text-neutral-400 hover:text-white transition-colors">Repertorio</a>
-            <a href="/herramientas" class="text-sm md:text-base font-semibold text-neutral-400 hover:text-white transition-colors">Herramientas</a>
-        </nav>
+        <header class="flex items-center justify-between mb-6 pb-4 border-b border-neutral-800/50">
+            <nav class="flex items-center gap-6 md:gap-8">
+                <a href="/" class="text-sm md:text-base font-semibold text-neutral-400 hover:text-white transition-colors">Repertorio</a>
+                <a href="/herramientas" class="text-sm md:text-base font-semibold text-neutral-400 hover:text-white transition-colors">Herramientas</a>
+            </nav>
+            <div class="flex items-center gap-2 relative">
+                <a href="/herramientas" class="p-2 rounded-full hover:bg-neutral-800 text-neutral-400 hover:text-white transition-colors flex items-center justify-center" title="Herramientas">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                </a>
+                <button id="btn-theme-toggle" class="p-2 rounded-full bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-300 transition-colors" title="Alternar Tema">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>
+                </button>
+            </div>
+        </header>
         <slot />
     </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const btnThemeToggle = document.getElementById('btn-theme-toggle');
+            const logoImg = document.getElementById('logo-img') as HTMLImageElement;
+            
+            function aplicarTema(tema: string) {
+                if (!btnThemeToggle) return;
+                const iconSvg = btnThemeToggle.querySelector('svg');
+                
+                if (tema === 'claro') {
+                    document.body.classList.add('tema-claro');
+                    if (logoImg) logoImg.src = '/LOGO REDIL LIGHT.png';
+                    if (iconSvg) {
+                        iconSvg.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>';
+                    }
+                } else {
+                    document.body.classList.remove('tema-claro');
+                    if (logoImg) logoImg.src = '/LOGO REDIL.png';
+                    if (iconSvg) {
+                        iconSvg.innerHTML = '<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path>';
+                    }
+                }
+            }
+
+            if (localStorage.getItem('tema') === 'claro') {
+                aplicarTema('claro');
+            } else {
+                aplicarTema('oscuro');
+            }
+            
+            if (btnThemeToggle) {
+                btnThemeToggle.addEventListener('click', () => {
+                    const esClaro = document.body.classList.contains('tema-claro');
+                    const nuevoTema = esClaro ? 'oscuro' : 'claro';
+                    localStorage.setItem('tema', nuevoTema);
+                    aplicarTema(nuevoTema);
+                });
+            }
+        });
+    </script>
 </body>
 </html>
