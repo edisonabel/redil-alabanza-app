@@ -84,8 +84,9 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
                 </div>
                 <div class="w-full">
                     <label for="searchInput" class="hidden md:block text-sm font-medium text-neutral-400 mb-2">Buscar</label>
-                    <input type="text" id="searchInput" placeholder="Buscar canción..." 
-                           class="w-full bg-neutral-950 border border-neutral-800 text-white rounded-xl px-4 py-2.5 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors">
+                    <input type="text" id="searchInput" 
+                       placeholder="Buscar canción o artista..." 
+                       class="w-full bg-neutral-950 border border-neutral-800 text-white rounded-xl pl-10 md:pl-12 pr-4 py-2.5 md:py-3 md:text-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors placeholder:text-neutral-600">
                 </div>
             </div>
             
@@ -348,11 +349,12 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
 
                 cards.forEach(card => {
                     const titulo = card.getAttribute('data-titulo') || '';
+                    const artista = card.getAttribute('data-artista') || '';
                     const voz = card.getAttribute('data-voz') || '';
                     const categoria = card.getAttribute('data-categoria') || '';
                     const tema = card.getAttribute('data-tema') || '';
 
-                    const matchesSearch = titulo.includes(searchTerm);
+                    const matchesSearch = titulo.includes(searchTerm) || artista.includes(searchTerm);
                     const matchesVoz = vozTerm === 'Todas' || voz.includes(vozTerm);
                     const matchesCategoria = categoriaTerm === 'Todas' || categoria.includes(categoriaTerm);
                     const matchesTema = temaTerm === 'Todas' || tema.includes(temaTerm);

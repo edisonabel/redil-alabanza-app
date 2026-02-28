@@ -19,6 +19,7 @@ const { titulo, cantante, tonalidad, bpm, linkLetra, linkAcordes, linkVoces, lin
 <article class="relative bg-neutral-900 border border-neutral-800 rounded-2xl hover:border-neutral-700 transition-all duration-300 shadow-xl hover:shadow-2xl overflow-hidden card-container"
          data-titulo={(titulo || '').toLowerCase()}
          data-cancion={titulo || ''}
+         data-artista={(cantante || '').toLowerCase()}
          data-categoria={categoria || ''}
          data-tonalidad={tonalidad || ''}
          data-voz={voz || ''}
