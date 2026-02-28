@@ -13,7 +13,7 @@ interface Props {
 	tema: string;
 }
 
-const { titulo, cantante, tonalidad, bpm, linkLetra, linkAcordes, linkVoces, linkYoutube, categoria, voz, tema } = Astro.props;
+const { titulo = "", cantante = "", tonalidad = "", bpm = 0, linkLetra = "#", linkAcordes = "#", linkVoces = "#", linkYoutube = "#", categoria = "", voz = "", tema = "" } = Astro.props;
 ---
 
 <article class="relative bg-neutral-900 border border-neutral-800 rounded-2xl hover:border-neutral-700 transition-all duration-300 shadow-xl hover:shadow-2xl overflow-hidden card-container"
