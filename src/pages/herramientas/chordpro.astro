@@ -35,7 +35,13 @@ import Layout from '../../layouts/Layout.astro';
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
             <!-- Entrada -->
             <div>
-                <label for="input-chordpro" class="block mb-2 font-medium text-neutral-300">1. Pega tu letra original aquí:</label>
+                <div class="flex items-center justify-between mb-2">
+                    <label for="input-chordpro" class="font-medium text-neutral-300">1. Pega tu letra original aquí:</label>
+                    <button id="btn-autoconvertir" class="text-xs px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-lg transition-colors flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg> 
+                        Auto-Formatear a ChordPro
+                    </button>
+                </div>
                 <textarea id="input-chordpro" class="w-full h-80 p-4 bg-neutral-900 border border-neutral-700 rounded-xl text-neutral-200 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none" placeholder="Ejemplo:&#10;[G]Oh, líbranos del [C]mal..."></textarea>
             </div>
 
@@ -71,8 +77,69 @@ import Layout from '../../layouts/Layout.astro';
         const btnBajar = document.getElementById('btn-bajar');
         const btnReset = document.getElementById('btn-reset');
         const btnCopiar = document.getElementById('btn-copiar');
+        const btnAuto = document.getElementById('btn-autoconvertir');
         
         let pasosActuales = 0;
+
+        // Regex avanzado: Soporta C2, D/F#, Gsus4, Cmaj7, etc.
+        function esLineaDeAcordes(linea: string) {
+            if (linea.trim().length === 0) return false;
+            const regexAcordes = /^[A-G][#b]?(m|maj|min|sus|dim|aug|[0-9])*(?:\/[A-G][#b]?)?$/i;
+            const tokens = linea.trim().split(/\s+/);
+            const tokensValidos = tokens.filter(t => regexAcordes.test(t));
+            return tokens.length > 0 && (tokensValidos.length / tokens.length) >= 0.6;
+        }
+
+        function autoConvertirAChordPro(textoOriginal: string) {
+            const lineas = textoOriginal.split('\n');
+            let resultado = [];
+            let i = 0;
+            
+            while (i < lineas.length) {
+                const lineaActual = lineas[i];
+                const lineaSiguiente = i + 1 < lineas.length ? lineas[i + 1] : null;
+                
+                if (esLineaDeAcordes(lineaActual)) {
+                    // 1. Extraer acordes y sus posiciones exactas
+                    const regexCaptura = /([A-G][^\s]*)/g;
+                    let match;
+                    const acordes = [];
+                    while ((match = regexCaptura.exec(lineaActual)) !== null) {
+                        acordes.push({ acorde: match[1], index: match.index });
+                    }
+                    
+                    // 2. Escenario A: Hay letra debajo
+                    if (lineaSiguiente !== null && !esLineaDeAcordes(lineaSiguiente) && lineaSiguiente.trim().length > 0) {
+                        let letra = lineaSiguiente.trimEnd();
+                        
+                        // Inserción Inversa (de derecha a izquierda) para no romper los índices
+                        for (let j = acordes.length - 1; j >= 0; j--) {
+                            const { acorde, index } = acordes[j];
+                            // Si el acorde va después de que termina la letra, rellenar con espacios
+                            if (index > letra.length) letra = letra.padEnd(index, ' ');
+                            letra = letra.slice(0, index) + `[${acorde}]` + letra.slice(index);
+                        }
+                        resultado.push(letra);
+                        i += 2; // Procesamos 2 líneas de un golpe
+                    } 
+                    // 3. Escenario B: Intros o acordes huérfanos (sin letra abajo)
+                    else {
+                        let lineaSoloAcordes = lineaActual;
+                        for (let j = acordes.length - 1; j >= 0; j--) {
+                            const { acorde, index } = acordes[j];
+                            lineaSoloAcordes = lineaSoloAcordes.slice(0, index) + `[${acorde}]` + lineaSoloAcordes.slice(index + acorde.length);
+                        }
+                        resultado.push(lineaSoloAcordes);
+                        i++;
+                    }
+                } else {
+                    // Es una línea normal de texto (o en blanco)
+                    resultado.push(lineaActual);
+                    i++;
+                }
+            }
+            return resultado.join('\n');
+        }
 
         function transponerAcorde(acorde: string, pasos: number) {
             // Regex atrapa raiz y modificador. Ej: (C#)(m7)
@@ -135,6 +202,15 @@ import Layout from '../../layouts/Layout.astro';
             input.addEventListener('input', () => {
                 pasosActuales = 0; // Resetear tonos si el usuario cambia el input
                 procesarTexto();
+            });
+        }
+
+        if (btnAuto && input) {
+            btnAuto.addEventListener('click', () => {
+                if (input.value.trim() === '') return;
+                input.value = autoConvertirAChordPro(input.value);
+                pasosActuales = 0; // Reiniciar transposición
+                procesarTexto(); // Forzar procesamiento en el panel derecho
             });
         }
 
