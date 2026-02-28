@@ -550,23 +550,34 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
                 if (frecuencia && audioCtx) {
                     if (audioCtx.state === 'suspended') audioCtx.resume();
                     
-                    const osc = audioCtx.createOscillator();
+                    // Oscilador 1: Cuerpo del sonido (Triangle)
+                    const oscPrincipal = audioCtx.createOscillator();
+                    oscPrincipal.type = 'triangle';
+                    oscPrincipal.frequency.value = frecuencia; // Frecuencia extraída
+                    
+                    // Oscilador 2: Armónico para darle el "brillo" del piano (Sine, una octava arriba)
+                    const oscBrillo = audioCtx.createOscillator();
+                    oscBrillo.type = 'sine';
+                    oscBrillo.frequency.value = frecuencia * 2; 
+                    
                     const gainNode = audioCtx.createGain();
                     
-                    osc.connect(gainNode);
+                    oscPrincipal.connect(gainNode);
+                    oscBrillo.connect(gainNode);
                     gainNode.connect(audioCtx.destination);
                     
-                    osc.type = 'sine';
-                    osc.frequency.setValueAtTime(frecuencia, audioCtx.currentTime);
+                    const now = audioCtx.currentTime;
+                    // Envolvente ADSR para emular el golpe de un piano
+                    gainNode.gain.setValueAtTime(0, now);
+                    gainNode.gain.linearRampToValueAtTime(0.8, now + 0.02); // Ataque rápido (martillo)
+                    gainNode.gain.exponentialRampToValueAtTime(0.1, now + 0.5); // Decaimiento
+                    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 3); // Resonancia larga
                     
-                    // Fade in/out envelope para suavigar el sonido (2.5 segundos)
-                    gainNode.gain.setValueAtTime(0.001, audioCtx.currentTime);
-                    gainNode.gain.exponentialRampToValueAtTime(1, audioCtx.currentTime + 0.1); // Attack
-                    gainNode.gain.setValueAtTime(1, audioCtx.currentTime + 1.5); // Sustain
-                    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 2.5); // Decay
-                    
-                    osc.start(audioCtx.currentTime);
-                    osc.stop(audioCtx.currentTime + 2.5);
+                    // Reproducir y detener
+                    oscPrincipal.start(now);
+                    oscBrillo.start(now);
+                    oscPrincipal.stop(now + 3);
+                    oscBrillo.stop(now + 3);
                 }
             }
         });
