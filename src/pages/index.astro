@@ -63,6 +63,10 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
             </h1>
             <p class="text-neutral-400 text-[11px] sm:text-xs md:text-lg">Administración de canciones, tonos y recursos.</p>
         </div>
+        
+        <button id="btn-theme-toggle" class="absolute top-4 right-4 md:top-6 md:right-6 p-2 rounded-full bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-300 transition-colors" title="Alternar Tema">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>
+        </button>
     </header>
 
     <!-- UI Controles -->
@@ -373,6 +377,23 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
             if(filterTema) filterTema.addEventListener('change', filterCards);
         }
 
+        // ----- Theme Toggle Logic -----
+        const btnThemeToggle = document.getElementById('btn-theme-toggle');
+        if (localStorage.getItem('tema') === 'claro') {
+            document.body.classList.add('tema-claro');
+        }
+        
+        if (btnThemeToggle) {
+            btnThemeToggle.addEventListener('click', () => {
+                document.body.classList.toggle('tema-claro');
+                if (document.body.classList.contains('tema-claro')) {
+                    localStorage.setItem('tema', 'claro');
+                } else {
+                    localStorage.setItem('tema', 'oscuro');
+                }
+            });
+        }
+
         // ----- Metrónomo Interactivo Logic -----
         let metronomoActivoDot = null;
         let metronomoInterval = null;
@@ -441,10 +462,65 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
                 metronomoInterval = setInterval(playClick, duracionSegundos * 1000); // Loop sincronizado
             }
         });
+
+        // ----- Reference Tone (Pitch Pipe) Logic -----
+        const frecuencias: { [key: string]: number } = {
+            'C': 261.63, 'C#': 277.18, 'D': 293.66, 'Eb': 311.13, 'E': 329.63, 
+            'F': 349.23, 'F#': 369.99, 'G': 392.00, 'G#': 415.30, 'A': 440.00, 
+            'Bb': 466.16, 'B': 493.88
+        };
+        
+        document.addEventListener('click', (e) => {
+            const badgeTono = (e.target as Element).closest('.badge-tono');
+            if (badgeTono) {
+                let tono = badgeTono.getAttribute('data-tono');
+                if (!tono || tono.trim() === '-' || tono.trim() === '') return;
+                
+                // Extraer la nota raíz (ignorar si es menor "m")
+                tono = tono.replace(/m/g, '').trim();
+                const frecuencia = frecuencias[tono];
+                
+                if (frecuencia && audioCtx) {
+                    if (audioCtx.state === 'suspended') audioCtx.resume();
+                    
+                    const osc = audioCtx.createOscillator();
+                    const gainNode = audioCtx.createGain();
+                    
+                    osc.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+                    
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(frecuencia, audioCtx.currentTime);
+                    
+                    // Fade in/out envelope para suavigar el sonido (2.5 segundos)
+                    gainNode.gain.setValueAtTime(0.001, audioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(1, audioCtx.currentTime + 0.1); // Attack
+                    gainNode.gain.setValueAtTime(1, audioCtx.currentTime + 1.5); // Sustain
+                    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 2.5); // Decay
+                    
+                    osc.start(audioCtx.currentTime);
+                    osc.stop(audioCtx.currentTime + 2.5);
+                }
+            }
+        });
     });
 </script>
 
 <style is:global>
+    /* Estilos Tema Claro */
+    body.tema-claro { background-color: #f3f4f6; color: #111827; }
+    body.tema-claro article { background-color: #ffffff; border-color: #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+    body.tema-claro .card-header h3, 
+    body.tema-claro #mainTitle,
+    body.tema-claro h2 { color: #111827; }
+    body.tema-claro input, body.tema-claro select { background-color: #ffffff; color: #111827; border-color: #d1d5db; }
+    body.tema-claro .badge-tono, body.tema-claro .badge-bpm, body.tema-claro .badge-voz, body.tema-claro .badge-categoria { background-color: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+    body.tema-claro .text-neutral-400 { color: #6b7280; }
+    body.tema-claro .text-neutral-500 { color: #4b5563; }
+    body.tema-claro .bg-neutral-900 { background-color: #ffffff; border-color: #e5e7eb; }
+    body.tema-claro #btn-theme-toggle { background-color: #ffffff; color: #111827; border-color: #d1d5db; }
+    body.tema-claro #btn-theme-toggle:hover { background-color: #f3f4f6; }
+    
     @keyframes pulse-beat { 
         0% { transform: scale(1); background-color: #10b981; } 
         50% { transform: scale(1.5); background-color: #34d399; box-shadow: 0 0 8px #34d399; } 
