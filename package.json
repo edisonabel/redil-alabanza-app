@@ -9,6 +9,12 @@
     "astro": "astro"
   },
   "dependencies": {
-    "astro": "^5.17.1"
+    "@tailwindcss/vite": "^4.2.1",
+    "astro": "^5.17.1",
+    "papaparse": "^5.5.3",
+    "tailwindcss": "^4.2.1"
+  },
+  "devDependencies": {
+    "@types/papaparse": "^5.5.2"
   }
 }

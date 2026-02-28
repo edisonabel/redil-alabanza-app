@@ -1,17 +1,394 @@
 ---
+import Layout from '../layouts/Layout.astro';
+import CardCancion from '../components/CardCancion.astro';
+import Papa from 'papaparse';
+import { Image } from 'astro:assets';
+import logoIglesia from '../assets/LOGO REDIL.png';
 
+const urlDelCSV = 'https://docs.google.com/spreadsheets/d/1WfaJwL2sdOh3P14l7FAy345mhJcrh9Tt/export?format=csv';
+
+async function fetchCanciones() {
+    try {
+        const response = await fetch(urlDelCSV);
+        if (!response.ok) {
+            console.error("No se pudo obtener el CSV");
+            return [];
+        }
+        const text = await response.text();
+        const cleanText = text.substring(text.indexOf('\n') + 1);
+        
+        const { data, errors } = Papa.parse(cleanText, {
+            header: true,
+            skipEmptyLines: true,
+        });
+        
+        if (errors.length) {
+          console.error("Errores parseando el CSV:", errors);
+        }
+        
+        return data.filter((row: any) => row['Canción']?.trim() !== '');
+    } catch (e) {
+        console.error("Error al obtener canciones", e);
+        return [];
+    }
+}
+
+const canciones = await fetchCanciones();
+
+const cancionesConDataFicticia = canciones.length > 0 ? canciones : [
+  {
+      'Canción': "Cuan Grande Es Dios",
+      'Tonalidad Redil Estadio': "C",
+      'Beat Batería': "72",
+      'Link Letras': "#",
+      'Link Acordes': "#",
+      'Link Voces': "#",
+      'Link Youtube': "#",
+      'Link Youtube': "#",
+      'Categoría Canción': "Lenta",
+      'Voz Principal': "Hombre",
+      'Tema Principal Canción': "Exaltación"
+  }
+];
+
+const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema Principal Canción']).filter(Boolean))].sort() as string[];
 ---
 
-<html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="icon" href="/favicon.ico" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
-	</head>
-	<body>
-		<h1>Astro</h1>
-	</body>
-</html>
+<Layout>
+    <header class="mb-12 mt-8 text-center flex flex-col items-center justify-center">
+        <Image src={logoIglesia} alt="Logo Iglesia Redil" class="h-24 w-auto mb-6 drop-shadow-lg" />
+        <h1 id="mainTitle" class="text-5xl font-extrabold tracking-tight mb-4 text-white">
+            Repertorio <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400">Alabanza</span>
+        </h1>
+        <p class="text-neutral-400 text-lg">Administración de canciones, tonos y recursos.</p>
+    </header>
+
+    <!-- UI Controles -->
+    <section id="searchControls" class="max-w-7xl mx-auto mb-8 bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-lg">
+        <div class="mb-4 md:hidden">
+            <h2 class="text-white font-bold text-xl">Filtros</h2>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+                <label for="searchInput" class="block text-sm font-medium text-neutral-400 mb-2">Buscar</label>
+                <input type="text" id="searchInput" placeholder="Buscar canción..." 
+                       class="w-full bg-neutral-950 border border-neutral-800 text-white rounded-xl px-4 py-2.5 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors">
+            </div>
+            
+            <div>
+                <label for="filterVoz" class="block text-sm font-medium text-neutral-400 mb-2">Voz Principal</label>
+                <select id="filterVoz" 
+                        class="w-full bg-neutral-950 border border-neutral-800 text-white rounded-xl px-4 py-2.5 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors appearance-none">
+                    <option value="Todas">Todas</option>
+                    <option value="Hombre">Hombre</option>
+                    <option value="Mujer">Mujer</option>
+                </select>
+            </div>
+
+            <div>
+                <label for="filterCategoria" class="block text-sm font-medium text-neutral-400 mb-2">Categoría</label>
+                <select id="filterCategoria" 
+                        class="w-full bg-neutral-950 border border-neutral-800 text-white rounded-xl px-4 py-2.5 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors appearance-none">
+                    <option value="Todas">Todas</option>
+                    <option value="Lenta">Lenta</option>
+                    <option value="Rápida">Rápida</option>
+                    <option value="Transición">Transición</option>
+                </select>
+            </div>
+
+            <div>
+                <label for="filterTema" class="block text-sm font-medium text-neutral-400 mb-2">Tema</label>
+                <select id="filterTema" 
+                        class="w-full bg-neutral-950 border border-neutral-800 text-white rounded-xl px-4 py-2.5 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors appearance-none">
+                    <option value="Todas">Todas</option>
+                    {temasUnicos.map(tema => (
+                        <option value={tema}>{tema}</option>
+                    ))}
+                </select>
+            </div>
+        </div>
+    </section>
+
+    <!-- Encabezado de Resultados y Vista -->
+    <div class="max-w-7xl mx-auto mb-4 flex justify-between items-center px-2 md:px-0">
+        <h2 class="text-neutral-400 font-medium text-sm tracking-wide">Resultados de Canciones</h2>
+        <div class="flex bg-neutral-950 rounded-lg p-1 border border-neutral-800">
+            <button id="btnViewGrid" class="p-1.5 rounded-md bg-neutral-800 text-white shadow-sm transition-all" title="Vista de Cuadrícula">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+            </button>
+            <button id="btnViewList" class="p-1.5 rounded-md text-neutral-400 hover:text-white transition-all" title="Vista de Lista">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Grid de Canciones -->
+    <div id="gridCanciones" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto">
+        {cancionesConDataFicticia.map((cancion: any) => (
+            <CardCancion 
+                titulo={cancion['Canción'] || ''}
+                tonalidad={cancion['Tonalidad Redil Estadio'] || ''}
+                bpm={Number(cancion['Beat Batería']) || 0}
+                linkLetra={cancion['Link Letras'] || '#'}
+                linkAcordes={cancion['Link Acordes'] || '#'}
+                linkVoces={cancion['Link Voces'] || '#'}
+                linkYoutube={cancion['Link Youtube'] || '#'}
+                categoria={cancion['Categoría Canción'] || ''}
+                voz={cancion['Voz Principal'] || ''}
+                tema={cancion['Tema Principal Canción'] || ''}
+            />
+        ))}
+    </div>
+
+    <!-- Panel Flotante Setlist -->
+    <div id="setlistPanel" class="fixed bottom-6 right-6 bg-neutral-800 border border-neutral-700 text-white p-4 rounded-2xl shadow-2xl z-50 flex items-center gap-4 hidden transition-opacity">
+        <div class="font-semibold">
+            Setlist: <span id="setlistCount" class="text-blue-400">0</span>
+        </div>
+        <div class="flex gap-2">
+            <button id="btnCopySetlist" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-bold transition-colors">Copiar Enlace</button>
+            <button id="btnClearSetlist" class="px-3 py-1.5 bg-neutral-700 hover:bg-neutral-600 rounded-lg text-sm font-bold transition-colors">Limpiar</button>
+        </div>
+    </div>
+</Layout>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const searchInput = document.getElementById('searchInput') as HTMLInputElement;
+        const filterVoz = document.getElementById('filterVoz') as HTMLSelectElement;
+        const filterCategoria = document.getElementById('filterCategoria') as HTMLSelectElement;
+        const filterTema = document.getElementById('filterTema') as HTMLSelectElement;
+        
+        const mainTitle = document.getElementById('mainTitle');
+        const searchControls = document.getElementById('searchControls');
+        const setlistPanel = document.getElementById('setlistPanel');
+        const setlistCount = document.getElementById('setlistCount');
+        const btnCopySetlist = document.getElementById('btnCopySetlist');
+        const btnClearSetlist = document.getElementById('btnClearSetlist');
+        
+        const btnViewGrid = document.getElementById('btnViewGrid');
+        const btnViewList = document.getElementById('btnViewList');
+        const gridCanciones = document.getElementById('gridCanciones');
+        
+        // Obtenemos todos los <article> dentro del grid
+        const cards = document.querySelectorAll('#gridCanciones article') as NodeListOf<HTMLElement>;
+
+        // ----- View Toggle Logic -----
+        let isListView = false;
+
+        function setGridView() {
+            if (!gridCanciones) return;
+            isListView = false;
+            
+            // Switch classes on container
+            gridCanciones.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto';
+            
+            // Remove list mode from all cards
+            cards.forEach(card => card.classList.remove('modo-lista', 'expandido'));
+            
+            // Update button styles
+            const updateBtns = (gridBtn: HTMLElement | null, listBtn: HTMLElement | null) => {
+                if(!gridBtn || !listBtn) return;
+                gridBtn.classList.add('bg-neutral-800', 'text-white', 'shadow-sm');
+                gridBtn.classList.remove('text-neutral-400', 'hover:text-white');
+                listBtn.classList.remove('bg-neutral-800', 'text-white', 'shadow-sm');
+                listBtn.classList.add('text-neutral-400', 'hover:text-white');
+            };
+            
+            updateBtns(btnViewGrid, btnViewList);
+        }
+
+        function setListView() {
+            if (!gridCanciones) return;
+            isListView = true;
+            
+            // Switch classes on container to vertical flow
+            gridCanciones.className = 'flex flex-col gap-3 max-w-4xl mx-auto';
+            
+            // Add list mode to all cards
+            cards.forEach(card => card.classList.add('modo-lista'));
+            
+            // Update button styles
+            const updateBtns = (gridBtn: HTMLElement | null, listBtn: HTMLElement | null) => {
+                if(!gridBtn || !listBtn) return;
+                listBtn.classList.add('bg-neutral-800', 'text-white', 'shadow-sm');
+                listBtn.classList.remove('text-neutral-400', 'hover:text-white');
+                gridBtn.classList.remove('bg-neutral-800', 'text-white', 'shadow-sm');
+                gridBtn.classList.add('text-neutral-400', 'hover:text-white');
+            };
+            
+            updateBtns(btnViewGrid, btnViewList);
+        }
+
+        if(btnViewGrid) btnViewGrid.addEventListener('click', setGridView);
+        if(btnViewList) btnViewList.addEventListener('click', setListView);
+
+        // Accordion logic for list view
+        cards.forEach(card => {
+            const header = card.querySelector('.card-header');
+            if (header) {
+                header.addEventListener('click', (e) => {
+                    // Prevent toggling if user clicked the Add to Setlist button
+                    if ((e.target as Element).closest('.btn-add-setlist')) return;
+                    
+                    if (isListView) {
+                        card.classList.toggle('expandido');
+                    }
+                });
+            }
+        });
+
+        // ----- Setlist Builder Logic -----
+        let setlist = JSON.parse(localStorage.getItem('setlist') || '[]');
+
+        function updateSetlistUI() {
+            if (setlistCount) setlistCount.textContent = setlist.length.toString();
+            if (setlistPanel) {
+                if (setlist.length > 0) {
+                    setlistPanel.classList.remove('hidden');
+                } else {
+                    setlistPanel.classList.add('hidden');
+                }
+            }
+        }
+
+        document.addEventListener('click', (e) => {
+            const btn = (e.target as Element).closest('.btn-add-setlist');
+            if (btn) {
+                const cancion = btn.getAttribute('data-cancion');
+                if (cancion && !setlist.includes(cancion)) {
+                    setlist.push(cancion);
+                    localStorage.setItem('setlist', JSON.stringify(setlist));
+                    updateSetlistUI();
+                    
+                    const svg = btn.querySelector('svg');
+                    if(svg) {
+                        svg.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
+                        btn.classList.replace('text-blue-400', 'text-green-400');
+                        btn.classList.replace('bg-blue-500/10', 'bg-green-500/10');
+                    }
+                }
+            }
+        });
+
+        if (btnCopySetlist) {
+            btnCopySetlist.addEventListener('click', () => {
+                const base64Str = btoa(encodeURIComponent(JSON.stringify(setlist)));
+                const safeUrlParam = encodeURIComponent(base64Str);
+                const originalUrl = window.location.origin + window.location.pathname;
+                const url = originalUrl + '?setlist=' + safeUrlParam;
+                navigator.clipboard.writeText(url).then(() => {
+                    alert('¡Setlist copiado y abierto en una nueva pestaña!');
+                    window.open(url, '_blank');
+                });
+            });
+        }
+
+        if (btnClearSetlist) {
+            btnClearSetlist.addEventListener('click', () => {
+                setlist = [];
+                localStorage.removeItem('setlist');
+                updateSetlistUI();
+                window.location.href = window.location.pathname;
+            });
+        }
+
+        // ----- Modo Setlist de la Semana -----
+        const urlParams = new URLSearchParams(window.location.search);
+        const setlistParam = urlParams.get('setlist');
+
+        if (setlistParam) {
+            try {
+                const decodedData = decodeURIComponent(atob(setlistParam));
+                const setlistArray = JSON.parse(decodedData);
+                
+                if (searchControls) searchControls.style.display = 'none';
+                if (setlistPanel) setlistPanel.style.display = 'none';
+                if (mainTitle) mainTitle.innerHTML = 'Setlist de la <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400">Semana</span>';
+
+                cards.forEach(card => {
+                    const cancionTitulo = card.getAttribute('data-cancion') || '';
+                    
+                    if (setlistArray.includes(cancionTitulo)) {
+                        card.style.display = 'block';
+                        const addBtn = card.querySelector('.btn-add-setlist');
+                        if(addBtn) (addBtn as HTMLElement).style.display = 'none';
+                    } else {
+                        card.style.display = 'none';
+                    }
+                });
+            } catch (e) {
+                console.error("Error validando el link del setlist:", e);
+                window.location.href = window.location.pathname;
+            }
+        } else {
+            // ----- Modo Normal (Búsqueda y Filtros) -----
+            updateSetlistUI(); // Initialize setlist panel visibility
+
+            function filterCards() {
+                const searchTerm = searchInput.value.toLowerCase().trim();
+                const vozTerm = filterVoz.value;
+                const categoriaTerm = filterCategoria.value;
+                const temaTerm = filterTema ? filterTema.value : 'Todas';
+
+                cards.forEach(card => {
+                    const titulo = card.getAttribute('data-titulo') || '';
+                    const voz = card.getAttribute('data-voz') || '';
+                    const categoria = card.getAttribute('data-categoria') || '';
+                    const tema = card.getAttribute('data-tema') || '';
+
+                    const matchesSearch = titulo.includes(searchTerm);
+                    const matchesVoz = vozTerm === 'Todas' || voz.includes(vozTerm);
+                    const matchesCategoria = categoriaTerm === 'Todas' || categoria.includes(categoriaTerm);
+                    const matchesTema = temaTerm === 'Todas' || tema.includes(temaTerm);
+
+                    if (matchesSearch && matchesVoz && matchesCategoria && matchesTema) {
+                        card.style.display = 'block';
+                    } else {
+                        card.style.display = 'none';
+                    }
+                });
+            }
+
+            if(searchInput) searchInput.addEventListener('input', filterCards);
+            if(filterVoz) filterVoz.addEventListener('change', filterCards);
+            if(filterCategoria) filterCategoria.addEventListener('change', filterCards);
+            if(filterTema) filterTema.addEventListener('change', filterCards);
+        }
+    });
+</script>
+
+<style is:global>
+    /* Estilos para el Modo Lista */
+    .modo-lista .card-header {
+        padding: 0.75rem 1.25rem;
+    }
+    
+    .modo-lista .card-title {
+        font-size: 1.125rem;
+        margin-bottom: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    .modo-lista .card-badges {
+        display: none !important;
+    }
+    
+    .modo-lista .btn-add-setlist {
+        top: 50%;
+        transform: translateY(-50%);
+        right: 1.25rem;
+    }
+    
+    .modo-lista .card-content {
+        display: none;
+    }
+    
+    .modo-lista.expandido .card-content {
+        display: block;
+        padding-top: 0;
+        border-top: 1px solid rgba(255,255,255,0.05);
+    }
+</style>
