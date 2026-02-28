@@ -372,10 +372,58 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
             if(filterCategoria) filterCategoria.addEventListener('change', filterCards);
             if(filterTema) filterTema.addEventListener('change', filterCards);
         }
+
+        // ----- Metrónomo Interactivo Logic -----
+        let metronomoActivoDot = null;
+        
+        document.addEventListener('click', (e) => {
+            const badge = (e.target as Element).closest('.badge-bpm');
+            if (badge) {
+                const bpmStr = badge.getAttribute('data-bpm');
+                if (!bpmStr) return;
+                
+                // Limpiar texto ex. '131 BPM' a '131'
+                const bpmVal = parseInt(bpmStr.replace(/[^0-9]/g, ''), 10);
+                if (!bpmVal || bpmVal <= 0) return;
+                
+                const dot = badge.querySelector('.metronomo-dot') as HTMLElement;
+                if (!dot) return;
+                
+                // Si ya hay un metrónomo activo, lo detenemos
+                if (metronomoActivoDot && metronomoActivoDot !== dot) {
+                    metronomoActivoDot.classList.remove('beat-active');
+                    metronomoActivoDot.style.removeProperty('--bpm-duration');
+                }
+                
+                // Si el metrónomo clickeado es el mismo que estaba activo, lo apagamos y ya (toggle)
+                if (dot.classList.contains('beat-active')) {
+                    dot.classList.remove('beat-active');
+                    dot.style.removeProperty('--bpm-duration');
+                    metronomoActivoDot = null;
+                    return;
+                }
+                
+                // Activar nuevo metrónomo
+                const duracionSegundos = 60 / bpmVal;
+                dot.style.setProperty('--bpm-duration', `${duracionSegundos}s`);
+                dot.classList.add('beat-active');
+                metronomoActivoDot = dot;
+            }
+        });
     });
 </script>
 
 <style is:global>
+    @keyframes pulse-beat { 
+        0% { transform: scale(1); background-color: #10b981; } 
+        50% { transform: scale(1.5); background-color: #34d399; box-shadow: 0 0 8px #34d399; } 
+        100% { transform: scale(1); background-color: #10b981; } 
+    }
+    
+    .beat-active { 
+        animation: pulse-beat var(--bpm-duration) infinite; 
+        background-color: #10b981 !important; 
+    }
     /* Estilos para el Modo Lista */
     .modo-lista .card-header {
         padding: 0.75rem 1.25rem;

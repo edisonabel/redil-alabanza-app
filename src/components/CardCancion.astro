@@ -36,9 +36,10 @@ const { titulo = "", cantante = "", tonalidad = "", bpm = 0, linkLetra = "#", li
                 <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5 text-neutral-400"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
                 Key: {tonalidad || "-"}
             </span>
-            <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-neutral-800 border border-neutral-700 text-neutral-300 tracking-wide">
+            <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-neutral-800 border border-neutral-700 text-neutral-300 tracking-wide badge-bpm cursor-pointer hover:bg-neutral-700 transition-colors" data-bpm={bpm || 0}>
                 <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5 text-neutral-400"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
                 {bpm || 0} BPM
+                <span class="w-2 h-2 rounded-full bg-neutral-500 inline-block ml-2 metronomo-dot transition-colors"></span>
             </span>
             {voz && (
                 <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-neutral-800 border border-neutral-700 text-neutral-300 tracking-wide badge-voz">
