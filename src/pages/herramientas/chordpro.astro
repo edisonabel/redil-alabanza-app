@@ -77,11 +77,11 @@ import Layout from '../../layouts/Layout.astro';
     
     <!-- Contenedor Oculto para Impresión (Solo visible en papel) -->
     <div id="print-document" class="hidden print:block w-full text-black bg-white">
-        <header class="border-b-[3px] border-black pb-4 mb-6 flex justify-between items-end">
-            <div class="flex-1">
-                <h1 id="out-titulo" class="text-3xl font-black uppercase tracking-widest text-black m-0 leading-none"></h1>
+        <header class="border-b-2 border-black pb-4 mb-6 flex justify-between items-start">
+            <div class="flex-1 pr-4">
+                <h1 id="out-titulo" class="m-0 leading-tight"></h1>
             </div>
-            <div class="text-right text-[15px] font-bold text-gray-800 flex flex-col gap-1">
+            <div class="text-right text-black flex flex-col gap-1 meta-text whitespace-nowrap">
                 <div id="out-tono"></div>
                 <div id="out-bpm"></div>
             </div>
@@ -94,15 +94,22 @@ import Layout from '../../layouts/Layout.astro';
 @media print {
   @page { margin: 15mm 20mm; size: letter; }
   body, html { background: white !important; }
-  .no-print, header, nav, footer { display: none !important; }
-  .print-only { display: block !important; width: 100%; }
+  .print\:hidden { display: none !important; }
 
-  /* Magia Flexbox para alinear acordes sobre letras */
-  .chord-line { display: flex; flex-wrap: wrap; align-items: flex-end; margin-bottom: 0.5rem; line-height: 1.1; }
+  /* Tipografía y Layout idéntico a PDFs profesionales */
+  #print-document { font-family: Arial, Helvetica, sans-serif !important; display: block !important; width: 100%; color: black !important; }
+  #out-titulo { font-size: 24px !important; font-weight: bold !important; text-transform: uppercase; }
+  .meta-text { font-size: 14px !important; font-weight: normal !important; }
+
+  .song-section { display: flex; flex-direction: row; margin-bottom: 1.25rem; page-break-inside: avoid; width: 100%; }
+  .section-label { width: 130px; font-weight: bold; font-size: 13px; text-transform: uppercase; flex-shrink: 0; padding-right: 15px; }
+  .section-content { flex-grow: 1; display: flex; flex-direction: column; }
+
+  .chord-line { display: flex; flex-wrap: wrap; align-items: flex-end; margin-bottom: 0.25rem; line-height: 1.1; }
   .chord-pair { display: inline-flex; flex-direction: column; justify-content: flex-end; align-items: flex-start; }
-  .chord { font-weight: 800; font-size: 0.9em; margin-bottom: 2px; color: #000; min-height: 1.2em; display: inline-block; }
-  .lyric { font-size: 1.05em; white-space: pre; min-height: 1.2em; display: inline-block; }
-  .section-tag { font-weight: 900; font-size: 1.1em; margin-top: 1.5rem; margin-bottom: 0.5rem; letter-spacing: 0.05em; text-transform: uppercase; }
+  .chord { font-weight: bold; font-size: 13px; min-height: 14px; color: black; margin-bottom: 1px; }
+  .lyric { font-size: 15px; white-space: pre; min-height: 16px; }
+  .lyric-line { font-size: 15px; margin-bottom: 0.25rem; min-height: 16px; white-space: pre-wrap; }
 }
 .print-only { display: none; }
 </style>
@@ -284,67 +291,95 @@ import Layout from '../../layouts/Layout.astro';
         function construirHTMLImpresion(texto: string) {
             const lineas = texto.split('\n');
             let html = '';
+            let inSection = false;
 
             lineas.forEach(linea => {
-                const esSeccion = /^(VERSO|CORO|PUENTE|INTRO|OUTRO|FINAL|PRE-CORO)/i.test(linea.trim());
-
-                if (esSeccion) {
-                    html += `<div class="section-tag">${linea.trim()}</div>`;
+                // Manejar líneas en blanco
+                if (linea.trim() === '') {
+                    if (inSection) html += `<div style="height: 0.75rem;"></div>`;
                     return;
                 }
 
-                if (linea.includes('[')) {
-                    html += `<div class="chord-line">`;
-                    // Romper la línea por los corchetes
-                    const partes = linea.split(/\[(.*?)\]/);
-
-                    // Si hay letra antes del primer acorde
-                    if (partes[0]) {
-                        html += `<span class="chord-pair"><span class="chord"></span><span class="lyric">${partes[0]}</span></span>`;
-                    }
-
-                    // Procesar los pares [acorde] letra
-                    for (let i = 1; i < partes.length; i += 2) {
-                        const acorde = partes[i];
-                        const letra = partes[i+1] || ''; // Letra después del acorde o string vacío
-
-                        html += `<span class="chord-pair">
-                                   <span class="chord">${acorde}</span>
-                                   <span class="lyric">${letra}</span>
-                                 </span>`;
-                    }
-                    html += `</div>`;
+                // Detectar si es un inicio de sección (VERSO, CORO, INTRO, etc.)
+                const esSeccion = /^(VERSO|CORO|PUENTE|INTRO|OUTRO|FINAL|PRE-CORO|ESTR)/i.test(linea.trim());
+                if (esSeccion) {
+                    if (inSection) html += `</div></div>`; // Cierra la sección anterior
+                    
+                    // Abre nueva fila (Sección Izquierda | Contenido Derecha)
+                    html += `<div class="song-section">`;
+                    html += `<div class="section-label">${linea.trim()}</div>`;
+                    html += `<div class="section-content">`;
+                    inSection = true;
                 } else {
-                    // Líneas de texto normal sin acordes o vacías
-                    html += `<div class="lyric" style="display:block; margin-bottom:0.5rem; min-height:1.2em;">${linea}</div>`;
+                    // Si hay texto antes de que se declare una sección, crea una sección sin título
+                    if (!inSection) {
+                        html += `<div class="song-section">`;
+                        html += `<div class="section-label"></div>`;
+                        html += `<div class="section-content">`;
+                        inSection = true;
+                    }
+
+                    // Procesar acordes vs Letra normal
+                    if (linea.includes('[')) {
+                        html += `<div class="chord-line">`;
+                        const partes = linea.split(/\[(.*?)\]/);
+                        if (partes[0]) {
+                            html += `<span class="chord-pair"><span class="chord"></span><span class="lyric">${partes[0]}</span></span>`;
+                        }
+                        for (let i = 1; i < partes.length; i += 2) {
+                            const acorde = partes[i];
+                            const letra = partes[i+1] || '';
+                            html += `<span class="chord-pair">
+                                       <span class="chord">${acorde}</span>
+                                       <span class="lyric">${letra}</span>
+                                     </span>`;
+                        }
+                        html += `</div>`;
+                    } else {
+                        html += `<div class="lyric-line">${linea}</div>`;
+                    }
                 }
             });
+
+            if (inSection) html += `</div></div>`; // Cierra la última sección
             return html;
         }
 
-        document.getElementById('btn-imprimir')?.addEventListener('click', () => {
-            const printTitulo = document.getElementById('print-titulo') as HTMLInputElement;
-            const printTono = document.getElementById('print-tono') as HTMLInputElement;
-            const printBpm = document.getElementById('print-bpm') as HTMLInputElement;
-            
-            const titulo = printTitulo ? printTitulo.value.trim() || 'SIN TÍTULO' : 'SIN TÍTULO';
-            const tono = printTono ? printTono.value.trim() : '';
-            const bpm = printBpm ? printBpm.value.trim() : '';
-            
-            const outTitulo = document.getElementById('out-titulo');
-            const outTono = document.getElementById('out-tono');
-            const outBpm = document.getElementById('out-bpm');
-            const outLetra = document.getElementById('out-letra');
+        const btnImprimir = document.getElementById('btn-imprimir');
+        if (btnImprimir) {
+            btnImprimir.addEventListener('click', () => {
+                // 1. Capturar los valores de los inputs (O poner valores por defecto si están vacíos)
+                const inputTitulo = document.getElementById('print-titulo') as HTMLInputElement;
+                const inputTono = document.getElementById('print-tono') as HTMLInputElement;
+                const inputBpm = document.getElementById('print-bpm') as HTMLInputElement;
 
-            if (outTitulo) outTitulo.textContent = titulo;
-            if (outTono) outTono.textContent = tono ? `Tonalidad: ${tono}` : '';
-            if (outBpm) outBpm.textContent = bpm;
-            
-            const contenido = (document.getElementById('output-chordpro') as HTMLTextAreaElement).value || (document.getElementById('input-chordpro') as HTMLTextAreaElement).value;
-            if (outLetra) outLetra.innerHTML = construirHTMLImpresion(contenido);
-            
-            window.print();
-        });
+                const titulo = inputTitulo && inputTitulo.value.trim() !== '' ? inputTitulo.value.trim() : 'SIN TÍTULO';
+                const tono = inputTono && inputTono.value.trim() !== '' ? 'Tonalidad: ' + inputTono.value.trim() : '';
+                const bpm = inputBpm && inputBpm.value.trim() !== '' ? inputBpm.value.trim() : '';
+
+                // 2. Inyectar en la cabecera de impresión
+                const outTitulo = document.getElementById('out-titulo');
+                const outTono = document.getElementById('out-tono');
+                const outBpm = document.getElementById('out-bpm');
+                
+                if (outTitulo) outTitulo.textContent = titulo;
+                if (outTono) outTono.textContent = tono;
+                if (outBpm) outBpm.textContent = bpm;
+
+                // 3. Renderizar la letra y acordes en columnas
+                const outputArea = document.getElementById('output-chordpro') as HTMLTextAreaElement;
+                const inputArea = document.getElementById('input-chordpro') as HTMLTextAreaElement;
+                const contenido = (outputArea && outputArea.value) ? outputArea.value : (inputArea ? inputArea.value : '');
+
+                const outLetra = document.getElementById('out-letra');
+                if (outLetra) outLetra.innerHTML = construirHTMLImpresion(contenido);
+
+                // 4. Disparar la ventana de impresión
+                setTimeout(() => {
+                    window.print();
+                }, 100); // Pequeño retraso para asegurar que el DOM se actualizó
+            });
+        }
 
     });
 </script>
