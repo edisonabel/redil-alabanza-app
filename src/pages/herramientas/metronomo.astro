@@ -37,18 +37,29 @@ import Layout from '../../layouts/Layout.astro';
             </div>
 
             <!-- El "Knob" -->
-            <div class="relative w-64 h-64 rounded-full bg-neutral-800 shadow-[0_0_30px_rgba(0,0,0,0.5)] flex items-center justify-center cursor-pointer border-4 border-neutral-700" id="bpm-knob" style="touch-action: none;">
-                <div id="knob-indicator" class="absolute w-4 h-4 bg-teal-500 rounded-full top-2 shadow-[0_0_10px_#14b8a6] transition-transform duration-75"></div>
-                <div class="w-40 h-40 bg-neutral-900 rounded-full flex flex-col items-center justify-center shadow-inner z-10 pointer-events-none border border-neutral-800">
+            <div class="relative w-64 h-64 rounded-full bg-neutral-900 shadow-[0_0_30px_rgba(0,0,0,0.5)] flex items-center justify-center cursor-pointer select-none" id="bpm-knob" style="touch-action: none;">
+                <svg class="absolute inset-0 w-full h-full transform -rotate-90 pointer-events-none" viewBox="0 0 256 256">
+                    <defs>
+                        <linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#06b6d4" />
+                            <stop offset="50%" stop-color="#a855f7" />
+                            <stop offset="100%" stop-color="#ec4899" />
+                        </linearGradient>
+                    </defs>
+                    <circle cx="128" cy="128" r="120" stroke="#262626" stroke-width="8" fill="none" />
+                    <circle id="bpm-ring" cx="128" cy="128" r="120" stroke="url(#ringGradient)" stroke-width="8" fill="none" stroke-linecap="round"
+                        style="stroke-dasharray: 753.98; stroke-dashoffset: 753.98; transition: stroke-dashoffset 0.1s ease-out;" />
+                </svg>
+                <div class="w-40 h-40 bg-neutral-950 rounded-full flex flex-col items-center justify-center shadow-[inset_0_4px_20px_rgba(0,0,0,0.8)] z-10 pointer-events-none">
                     <span id="bpm-display" class="text-6xl font-black text-white tracking-tighter">120</span>
-                    <span class="text-neutral-400 font-bold text-sm tracking-widest mt-1">BPM</span>
+                    <span class="text-neutral-500 font-bold text-sm tracking-widest mt-1">BPM</span>
                 </div>
             </div>
 
             <!-- Botones de Acción -->
             <div class="flex gap-4 w-full justify-center mt-4">
-                <button id="btn-tap" class="px-6 py-4 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-white font-bold rounded-2xl active:scale-95 transition-all w-32 shadow-lg">TAP</button>
-                <button id="btn-play" class="px-6 py-4 bg-teal-500 hover:bg-teal-400 text-black font-black rounded-2xl active:scale-95 transition-all w-32 shadow-[0_0_20px_rgba(20,184,166,0.3)]">PLAY</button>
+                <button id="btn-tap" class="px-6 py-4 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-white font-bold rounded-2xl active:scale-95 transition-all w-32 shadow-lg" style="touch-action: manipulation;">TAP</button>
+                <button id="btn-play" class="px-6 py-4 bg-teal-500 hover:bg-teal-400 text-black font-black rounded-2xl active:scale-95 transition-all w-32 shadow-[0_0_20px_rgba(20,184,166,0.3)]" style="touch-action: manipulation;">PLAY</button>
             </div>
         </div>
 
@@ -174,10 +185,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ---------------- TRIGONOMETRÍA DEL KNOB ---------------- //
     const knob = document.getElementById('bpm-knob');
-    const indicator = document.getElementById('knob-indicator');
     let isDragging = false;
     let previousAngle = 0;
-    let currentRotation = 0;
+
+    function actualizarAnilloLED() {
+        const ring = document.getElementById('bpm-ring');
+        if (!ring || !bpmDisplay) return;
+
+        const minBpm = 30;
+        const maxBpm = 300;
+        const circunferencia = 2 * Math.PI * 120; // Aprox 753.98
+
+        let porcentaje = (currentBPM - minBpm) / (maxBpm - minBpm);
+        if (porcentaje < 0) porcentaje = 0;
+        if (porcentaje > 1) porcentaje = 1;
+
+        const offset = circunferencia - (porcentaje * circunferencia);
+        ring.style.strokeDashoffset = offset.toString();
+        bpmDisplay.textContent = currentBPM.toString();
+    }
 
     function getAngle(e: MouseEvent | TouchEvent) {
         if (!knob) return 0;
@@ -226,11 +252,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (currentBPM < 30) currentBPM = 30;
             if (currentBPM > 300) currentBPM = 300;
             
-            bpmDisplay.textContent = currentBPM.toString();
-            currentRotation += delta;
-            
-            // Animación del dot
-            indicator.style.transform = `rotate(${currentRotation}deg) translateY(-115px)`;
+            actualizarAnilloLED();
             previousAngle = newAngle;
         }
     }
@@ -250,15 +272,21 @@ document.addEventListener('DOMContentLoaded', () => {
         window.addEventListener('touchend', stopDrag);
     }
 
-    // Estado 0 grados inicial del visualizador
-    if (indicator) indicator.style.transform = `rotate(0deg) translateY(-115px)`;
+    // Estado inicial del visualizador SVG
+    actualizarAnilloLED();
 
     // ---------------- TAP TEMPO ENGINE ---------------- //
     const btnTap = document.getElementById('btn-tap');
     let tapTimes: number[] = [];
     let tapResetTimer: NodeJS.Timeout | null = null;
 
-    btnTap?.addEventListener('click', () => {
+    // Prevenir ghost-clicks de iOS Safari interceptando toques temprano
+    btnTap?.addEventListener('touchstart', (e) => {
+        if (e.cancelable) e.preventDefault();
+        btnTap.click();
+    }, { passive: false });
+
+    btnTap?.addEventListener('click', (e) => {
         // Bloqueo de inercia si el audio está activo no cortarlo, 
         // pero sí permitir registrar y mutar el bpm al vuelo 
         const now = performance.now();
@@ -277,7 +305,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (newBpm >= 30 && newBpm <= 300) {
                 currentBPM = newBpm;
-                if (bpmDisplay) bpmDisplay.textContent = currentBPM.toString();
+                actualizarAnilloLED();
             }
         }
         
