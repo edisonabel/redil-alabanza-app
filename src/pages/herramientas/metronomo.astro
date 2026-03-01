@@ -1,0 +1,295 @@
+---
+import Layout from '../../layouts/Layout.astro';
+---
+
+<Layout>
+    <div class="max-w-6xl mx-auto px-4 mt-4 md:mt-8 print:hidden w-full">
+        <!-- Navegación Atrás -->
+        <a href="/herramientas" class="inline-flex items-center text-neutral-400 hover:text-white transition-colors mb-6 pb-2 border-b border-transparent hover:border-neutral-600">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 mr-2"><path d="m15 18-6-6 6-6"/></svg>
+            Volver a Herramientas
+        </a>
+
+        <!-- Encabezado -->
+        <header class="mb-6">
+            <h1 class="text-3xl md:text-5xl font-extrabold tracking-tight text-white mb-3 flex items-center gap-3">
+                <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" class="text-teal-400" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 11 5-5"/><path d="m11 15 5-5"/><path d="M22 12A10 10 0 1 1 12 2a10 10 0 0 1 10 10Z"/><path d="M12 22v-3"/><path d="M12 5V2"/><path d="M22 12h-3"/><path d="M5 12H2"/></svg>
+                Metrónomo <span class="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-emerald-400">PRO</span>
+            </h1>
+            <p class="text-neutral-400 font-medium">Motor de Audio de Alta Precisión & Tap Tempo.</p>
+        </header>
+
+        <!-- UI del Metrónomo -->
+        <div class="max-w-sm mx-auto flex flex-col items-center gap-8 py-10 select-none">
+            
+            <!-- Visualizador de Beats -->
+            <div id="beat-visualizer" class="flex gap-3 h-4"></div>
+
+            <!-- Controles Superiores -->
+            <div class="flex items-center gap-4 bg-neutral-800 p-2 rounded-2xl border border-neutral-700">
+                <select id="time-signature" class="bg-transparent text-white text-xl font-bold outline-none cursor-pointer px-4">
+                    <option value="2">2/4</option>
+                    <option value="3">3/4</option>
+                    <option value="4" selected>4/4</option>
+                    <option value="5">5/4</option>
+                    <option value="6">6/8</option>
+                </select>
+            </div>
+
+            <!-- El "Knob" -->
+            <div class="relative w-64 h-64 rounded-full bg-neutral-800 shadow-[0_0_30px_rgba(0,0,0,0.5)] flex items-center justify-center cursor-pointer border-4 border-neutral-700" id="bpm-knob" style="touch-action: none;">
+                <div id="knob-indicator" class="absolute w-4 h-4 bg-teal-500 rounded-full top-2 shadow-[0_0_10px_#14b8a6] transition-transform duration-75"></div>
+                <div class="w-40 h-40 bg-neutral-900 rounded-full flex flex-col items-center justify-center shadow-inner z-10 pointer-events-none border border-neutral-800">
+                    <span id="bpm-display" class="text-6xl font-black text-white tracking-tighter">120</span>
+                    <span class="text-neutral-400 font-bold text-sm tracking-widest mt-1">BPM</span>
+                </div>
+            </div>
+
+            <!-- Botones de Acción -->
+            <div class="flex gap-4 w-full justify-center mt-4">
+                <button id="btn-tap" class="px-6 py-4 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-white font-bold rounded-2xl active:scale-95 transition-all w-32 shadow-lg">TAP</button>
+                <button id="btn-play" class="px-6 py-4 bg-teal-500 hover:bg-teal-400 text-black font-black rounded-2xl active:scale-95 transition-all w-32 shadow-[0_0_20px_rgba(20,184,166,0.3)]">PLAY</button>
+            </div>
+        </div>
+
+    </div>
+</Layout>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // ---------------- ENGINE AUDIO & SCHEDULER ---------------- //
+    let audioCtx: AudioContext | null = null;
+    let isPlaying = false;
+    let currentBPM = 120;
+    let beatsPerBar = 4;
+    let currentBeatInBar = 0;
+    let nextNoteTime = 0.0;
+    let timerID: NodeJS.Timeout | null = null;
+
+    const bpmDisplay = document.getElementById('bpm-display');
+    const btnPlay = document.getElementById('btn-play');
+    const visualizer = document.getElementById('beat-visualizer');
+    const timeSignatureSelect = document.getElementById('time-signature') as HTMLSelectElement;
+
+    function initVisualizer() {
+        if (!visualizer) return;
+        visualizer.innerHTML = '';
+        for(let i=0; i<beatsPerBar; i++) {
+            const dot = document.createElement('div');
+            dot.className = `w-4 h-4 rounded-full bg-neutral-700 transition-colors duration-100 ${i===0 ? 'scale-125' : ''}`;
+            visualizer.appendChild(dot);
+        }
+    }
+
+    function nextNote() {
+        // Cálculo del intervalo real según el Signature
+        // Para 6/8, el beat es la corchea. Para X/4, el beat es la negra.
+        // Simplificación: Mantenemos el metrónomo constante independiente del denominador.
+        const secondsPerBeat = 60.0 / currentBPM;
+        nextNoteTime += secondsPerBeat;
+        currentBeatInBar = (currentBeatInBar + 1) % beatsPerBar;
+    }
+
+    function scheduleNote(beatNumber: number, time: number) {
+        // --- Interfaz Gráfica ---
+        requestAnimationFrame(() => {
+            if (!visualizer) return;
+            const dots = visualizer.children;
+            for(let i=0; i<dots.length; i++) {
+                dots[i].classList.replace(i===0 ? 'bg-teal-400' : 'bg-white', 'bg-neutral-700');
+            }
+            if(dots[beatNumber] && isPlaying) {
+                dots[beatNumber].classList.replace('bg-neutral-700', beatNumber === 0 ? 'bg-teal-400' : 'bg-white');
+            }
+        });
+
+        // --- Sintesis de Audio ---
+        if (!audioCtx) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        
+        // Acento en el primer tiempo (tono agudo penetrante)
+        osc.frequency.value = (beatNumber === 0) ? 1000 : 800; 
+        
+        gain.gain.setValueAtTime(1, time);
+        // Desvanecimiento exponencial brusco estilo T-Bone / Click de madera
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
+        
+        osc.start(time);
+        osc.stop(time + 0.05);
+    }
+
+    function scheduler() {
+        // Mientras existan notas en los próximos 100ms, empaquetarlas 
+        // Esta ventana previene que JS congele los clicks si haces scroll
+        if (!audioCtx) return;
+        while (nextNoteTime < audioCtx.currentTime + 0.1) {
+            scheduleNote(currentBeatInBar, nextNoteTime);
+            nextNote();
+        }
+        timerID = setTimeout(scheduler, 25.0);
+    }
+
+    btnPlay?.addEventListener('click', () => {
+        if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        
+        isPlaying = !isPlaying;
+        if (isPlaying) {
+            currentBeatInBar = 0;
+            // Retardo micro-ajustado inicial
+            nextNoteTime = audioCtx.currentTime + 0.05;
+            scheduler();
+            btnPlay.textContent = 'STOP';
+            btnPlay.classList.replace('bg-teal-500', 'bg-red-500');
+            btnPlay.classList.replace('text-black', 'text-white');
+            btnPlay.classList.replace('hover:bg-teal-400', 'hover:bg-red-400');
+            btnPlay.classList.replace('shadow-[0_0_20px_rgba(20,184,166,0.3)]', 'shadow-[0_0_20px_rgba(239,68,68,0.3)]');
+        } else {
+            if (timerID) clearTimeout(timerID);
+            btnPlay.textContent = 'PLAY';
+            btnPlay.classList.replace('bg-red-500', 'bg-teal-500');
+            btnPlay.classList.replace('text-white', 'text-black');
+            btnPlay.classList.replace('hover:bg-red-400', 'hover:bg-teal-400');
+            btnPlay.classList.replace('shadow-[0_0_20px_rgba(239,68,68,0.3)]', 'shadow-[0_0_20px_rgba(20,184,166,0.3)]');
+            
+            // Apagar luces residuales
+            if (visualizer) {
+                const dots = visualizer.children;
+                for(let i=0; i<dots.length; i++) {
+                    dots[i].classList.replace('bg-teal-400', 'bg-neutral-700');
+                    dots[i].classList.replace('bg-white', 'bg-neutral-700');
+                }
+            }
+        }
+    });
+
+    timeSignatureSelect?.addEventListener('change', (e) => {
+        beatsPerBar = parseInt((e.target as HTMLSelectElement).value);
+        currentBeatInBar = 0; // Resetear compás al cambiar para evitar offset visual
+        initVisualizer();
+    });
+
+    // ---------------- TRIGONOMETRÍA DEL KNOB ---------------- //
+    const knob = document.getElementById('bpm-knob');
+    const indicator = document.getElementById('knob-indicator');
+    let isDragging = false;
+    let previousAngle = 0;
+    let currentRotation = 0;
+
+    function getAngle(e: MouseEvent | TouchEvent) {
+        if (!knob) return 0;
+        const rect = knob.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        
+        let clientX, clientY;
+        if (window.TouchEvent && e instanceof TouchEvent) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        } else {
+            clientX = (e as MouseEvent).clientX;
+            clientY = (e as MouseEvent).clientY;
+        }
+        
+        return Math.atan2(clientY - centerY, clientX - centerX) * 180 / Math.PI;
+    }
+
+    function startDrag(e: MouseEvent | TouchEvent) {
+        isDragging = true;
+        previousAngle = getAngle(e);
+        if (knob) knob.classList.add('cursor-grabbing');
+    }
+
+    function doDrag(e: MouseEvent | TouchEvent) {
+        if (!isDragging || !indicator || !bpmDisplay) return;
+        
+        // Evitar el scroll de la página mientras el DJ mueve la rueda en móviles
+        if (window.TouchEvent && e instanceof TouchEvent) {
+            if (e.cancelable) e.preventDefault(); 
+        }
+
+        const newAngle = getAngle(e);
+        let delta = newAngle - previousAngle;
+        
+        // El salto matemático entre el semiplano inferior y superior (180 a -180)
+        if (delta > 180) delta -= 360;
+        if (delta < -180) delta += 360;
+        
+        // Sensibilidad Gearing Ratio (Atenuador para que no sea incontrolable)
+        if (Math.abs(delta) > 1.5) { 
+            currentBPM += (delta > 0) ? 1 : -1;
+            
+            // Limitador estricto Hard-Clipping
+            if (currentBPM < 30) currentBPM = 30;
+            if (currentBPM > 300) currentBPM = 300;
+            
+            bpmDisplay.textContent = currentBPM.toString();
+            currentRotation += delta;
+            
+            // Animación del dot
+            indicator.style.transform = `rotate(${currentRotation}deg) translateY(-115px)`;
+            previousAngle = newAngle;
+        }
+    }
+
+    function stopDrag() { 
+        isDragging = false; 
+        if (knob) knob.classList.remove('cursor-grabbing');
+    }
+
+    if (knob) {
+        knob.addEventListener('mousedown', startDrag);
+        window.addEventListener('mousemove', doDrag, { passive: false });
+        window.addEventListener('mouseup', stopDrag);
+        
+        knob.addEventListener('touchstart', startDrag, { passive: true }); // El touchstart no necesita prevent
+        window.addEventListener('touchmove', doDrag, { passive: false }); // El movimiento SÍ bloquea el body
+        window.addEventListener('touchend', stopDrag);
+    }
+
+    // Estado 0 grados inicial del visualizador
+    if (indicator) indicator.style.transform = `rotate(0deg) translateY(-115px)`;
+
+    // ---------------- TAP TEMPO ENGINE ---------------- //
+    const btnTap = document.getElementById('btn-tap');
+    let tapTimes: number[] = [];
+    let tapResetTimer: NodeJS.Timeout | null = null;
+
+    btnTap?.addEventListener('click', () => {
+        // Bloqueo de inercia si el audio está activo no cortarlo, 
+        // pero sí permitir registrar y mutar el bpm al vuelo 
+        const now = performance.now();
+        tapTimes.push(now);
+        
+        if (tapTimes.length > 5) tapTimes.shift(); // Estabilizador de 5 promedios
+        
+        if (tapTimes.length >= 2) {
+            let intervals = [];
+            for (let i = 1; i < tapTimes.length; i++) {
+                intervals.push(tapTimes[i] - tapTimes[i-1]);
+            }
+            // Math promedio
+            const averageInterval = intervals.reduce((a, b) => a + b) / intervals.length;
+            let newBpm = Math.round(60000 / averageInterval);
+            
+            if (newBpm >= 30 && newBpm <= 300) {
+                currentBPM = newBpm;
+                if (bpmDisplay) bpmDisplay.textContent = currentBPM.toString();
+            }
+        }
+        
+        if (tapResetTimer) clearTimeout(tapResetTimer);
+        tapResetTimer = setTimeout(() => { tapTimes = []; }, 2000); // 2 segundos de inactividad rompen la banda
+        
+        // Feedback Visual estilo Hardware Button
+        btnTap.classList.add('bg-neutral-600', 'scale-95');
+        setTimeout(() => btnTap.classList.remove('bg-neutral-600', 'scale-95'), 100);
+    });
+
+    // Encendido inicial
+    initVisualizer();
+});
+</script>
