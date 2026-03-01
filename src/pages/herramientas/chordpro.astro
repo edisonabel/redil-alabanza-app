@@ -267,29 +267,28 @@ import Layout from '../../layouts/Layout.astro';
             const tono = inputTono?.value.trim() || '';
             const bpm = inputBpm?.value.trim() || '';
             
-            const rawInput = (document.getElementById('input-chordpro') as HTMLTextAreaElement)?.value || '';
-            let contenido = (document.getElementById('output-chordpro') as HTMLTextAreaElement)?.value || rawInput;
-
-            // 1. DEFENSA ABSOLUTA: Si no hay corchetes, auto-convertir en memoria antes de imprimir
-            if (!contenido.includes('[')) {
-                // Check if the autoConvertirAChordPro function exists in global scope (it should from the earlier script blocks)
-                if (typeof (window as any).autoConvertirAChordPro === 'function') {
-                    contenido = (window as any).autoConvertirAChordPro(contenido);
-                }
+            const outputBox = (document.getElementById('output-chordpro') as HTMLTextAreaElement)?.value;
+            const inputBox = (document.getElementById('input-chordpro') as HTMLTextAreaElement)?.value;
+            
+            // Tomar el texto del output (procesado). Si está vacío, tomar el input.
+            let contenido = (outputBox && outputBox.trim() !== '') ? outputBox : (inputBox || '');
+            
+            // Defensa: Si el texto no tiene corchetes, forzar auto-formateo en memoria para que no salga plano
+            if (!contenido.includes('[') && typeof (window as any).autoConvertirAChordPro === 'function') {
+                contenido = (window as any).autoConvertirAChordPro(contenido);
             }
 
             const lineas = contenido.split('\n');
-            
-            // 2. ROOT SCALING DINÁMICO (Garantiza 1 sola hoja Carta)
             const totalLines = lineas.length;
+
+            // MOTOR DE ESCALA Y MÁRGENES ANTI-NAVEGADOR
             let rootFontSize = '16px';
-            let pageMargin = '15mm 20mm';
+            let bodyPadding = '15mm 20mm'; // El padding reemplaza el margin de @page
 
-            if (totalLines > 35) { rootFontSize = '14px'; pageMargin = '12mm 15mm'; }
-            if (totalLines > 55) { rootFontSize = '11.5px'; pageMargin = '10mm 12mm'; }
-            if (totalLines > 75) { rootFontSize = '9.5px'; pageMargin = '8mm 10mm'; } // Súper agresivo para canciones inmensas
+            if (totalLines > 35) { rootFontSize = '14px'; bodyPadding = '12mm 15mm'; }
+            if (totalLines > 55) { rootFontSize = '11.5px'; bodyPadding = '10mm 12mm'; }
+            if (totalLines > 75) { rootFontSize = '9.5px'; bodyPadding = '8mm 10mm'; }
 
-            // 3. PARSER QUIRÚRGICO
             let bodyHtml = '';
             let inSection = false;
 
@@ -314,8 +313,8 @@ import Layout from '../../layouts/Layout.astro';
 
                     let content = '';
                     let inBracket = false;
-                    let charsToDrop = cleanText.length - textoDespues.length;
                     let dropped = 0;
+                    let charsToDrop = cleanText.length - textoDespues.length;
                     for (let i = 0; i < linea.length; i++) {
                         let char = linea[i];
                         if (char === '[') inBracket = true;
@@ -329,13 +328,27 @@ import Layout from '../../layouts/Layout.astro';
                         }
                     }
                     lineaRestante = content.trim();
+                    
+                    // FIX CRÍTICO: Si no quedó texto (ej. la línea solo decía "INTRO"), 
+                    // NO retornamos (return), simplemente saltamos el renderizado de acordes para esta línea.
                     if (lineaRestante === '') return; 
+                    
+                    // FIX: Si solo quedaron acordes huérfanos sin texto (ej: [G] [C])
+                    if (/^(\s*\[.*?\]\s*)+$/.test(lineaRestante)) {
+                        bodyHtml += `<div class="chord-line">`;
+                        const partes = lineaRestante.split(/\[(.*?)\]/);
+                        for (let j = 1; j < partes.length; j += 2) {
+                            bodyHtml += `<div class="chord-pair"><div class="chord">${partes[j]}</div><div class="lyric"> </div></div>`;
+                        }
+                        bodyHtml += `</div>`;
+                        return;
+                    }
                 } else if (!inSection) {
                     bodyHtml += `<div class="song-section"><div class="section-label"></div><div class="section-content">`;
                     inSection = true;
                 }
 
-                // Renderizar Línea de Acordes
+                // Renderizar Acordes y Letra
                 if (lineaRestante.includes('[')) {
                     bodyHtml += `<div class="chord-line">`;
                     const partes = lineaRestante.split(/\[(.*?)\]/);
@@ -354,7 +367,7 @@ import Layout from '../../layouts/Layout.astro';
 
             if (inSection) bodyHtml += `</div></div>`;
 
-            // 4. VENTANA DE IMPRESIÓN (Con Montserrat y medidas en REM)
+            // GENERAR VENTANA Y APLICAR CSS
             const printWindow = window.open('', '_blank');
             if (!printWindow) {
                 alert("Por favor, permite las ventanas emergentes (pop-ups) para imprimir.");
@@ -370,12 +383,12 @@ import Layout from '../../layouts/Layout.astro';
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,500;0,700;0,800;1,500&display=swap" rel="stylesheet">
     <style>
       html { font-size: ${rootFontSize}; }
-      @page { margin: ${pageMargin}; size: letter; }
-      body { font-family: 'Montserrat', Arial, sans-serif; color: black; background: white; margin: 0; padding: 0; }
+      @page { margin: 0; size: letter; }
+      body { font-family: 'Montserrat', Arial, sans-serif; color: black; background: white; margin: 0; padding: ${bodyPadding}; box-sizing: border-box; }
       
       header { border-bottom: 0.2rem solid black; display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem; padding-bottom: 0.5rem; }
       .header-left h1 { font-weight: 800; font-size: 2.2rem; text-transform: uppercase; margin: 0; letter-spacing: -0.02rem; }
-      .header-left h2 { font-weight: 500; font-size: 1.1rem; font-style: italic; color: #444; margin: 0.3rem 0 0 0; }
+      .header-left h2 { font-weight: 500; font-style: italic; color: #444; margin: 0.3rem 0 0 0; }
       .header-right { text-align: right; font-weight: 800; font-size: 1rem; }
       .header-right div { margin-bottom: 0.2rem; }
       
@@ -410,7 +423,7 @@ import Layout from '../../layouts/Layout.astro';
 
             printWindow.document.close();
             printWindow.focus();
-            setTimeout(() => { printWindow.print(); printWindow.close(); }, 1200); // 1.2s para descargar fuente pesada
+            setTimeout(() => { printWindow.print(); printWindow.close(); }, 1200);
         });
 
     });
