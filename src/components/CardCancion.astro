@@ -8,6 +8,8 @@ interface Props {
 	linkAcordes: string;
 	linkVoces: string;
 	linkYoutube: string;
+	linkSecuencias: string;
+	chordpro: string;
 	categoria: string;
 	voz: string;
 	tema: string;
@@ -15,7 +17,7 @@ interface Props {
 	oculta?: boolean;
 }
 
-const { titulo = "", cantante = "", tonalidad = "", bpm = 0, linkLetra = "#", linkAcordes = "#", linkVoces = "#", linkYoutube = "#", categoria = "", voz = "", tema = "", estado = "", oculta = false } = Astro.props;
+const { titulo = "", cantante = "", tonalidad = "", bpm = 0, linkLetra = "", linkAcordes = "", linkVoces = "", linkYoutube = "", linkSecuencias = "", chordpro = "", categoria = "", voz = "", tema = "", estado = "", oculta = false } = Astro.props;
 
 const colorEstado = estado?.toLowerCase() === 'nueva' ? 'bg-red-500 text-white animate-pulse' : estado?.toLowerCase() === 'ensayo' ? 'bg-yellow-500 text-black' : 'bg-blue-500 text-white';
 ---
@@ -68,27 +70,60 @@ const colorEstado = estado?.toLowerCase() === 'nueva' ? 'bg-red-500 text-white a
     
     <div class="card-content transition-all duration-300 overflow-hidden px-5 pb-5">
         <div class="grid grid-cols-2 gap-3 mt-2">
+            
+            {chordpro.trim() !== '' && (
+            <a href="#" 
+               data-chordpro={chordpro}
+               data-titulo={titulo}
+               data-bpm={bpm}
+               data-key={tonalidad}
+               class="btn-editor col-span-2 flex items-center justify-center py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md hover:from-blue-500 hover:to-purple-500 transition-colors font-bold text-sm tracking-wide">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+                Transponer / PDF
+            </a>
+            )}
+
+            {linkYoutube.trim() !== '' && (
             <a href={linkYoutube} 
                target="_blank" rel="noopener noreferrer"
                class="flex items-center justify-center py-2.5 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 hover:text-red-400 transition-colors font-bold text-sm tracking-wide">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" class="mr-2"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path><polygon fill="white" stroke="none" points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon></svg>
                 YouTube
             </a>
+            )}
+
+            {linkLetra.trim() !== '' && (
             <a href={linkLetra} 
                target="_blank" rel="noopener noreferrer"
                class="flex items-center justify-center py-2.5 rounded-xl bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 hover:text-blue-300 transition-colors font-bold text-sm tracking-wide">
                 Letra
             </a>
+            )}
+
+            {linkAcordes.trim() !== '' && (
             <a href={linkAcordes} 
                target="_blank" rel="noopener noreferrer"
                class="flex items-center justify-center py-2.5 rounded-xl bg-green-500/10 text-green-400 hover:bg-green-500/20 hover:text-green-300 transition-colors font-bold text-sm tracking-wide">
                 Acordes
             </a>
+            )}
+
+            {linkVoces.trim() !== '' && (
             <a href={linkVoces} 
                target="_blank" rel="noopener noreferrer"
-               class="flex items-center justify-center py-2.5 rounded-xl bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 hover:text-purple-300 transition-colors font-bold text-sm tracking-wide">
+               class="flex items-center justify-center py-2.5 rounded-xl bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 hover:text-orange-300 transition-colors font-bold text-sm tracking-wide">
                 Voces
             </a>
+            )}
+
+            {linkSecuencias.trim() !== '' && (
+            <a href={linkSecuencias} 
+               target="_blank" rel="noopener noreferrer"
+               class="flex items-center justify-center py-2.5 rounded-xl bg-pink-500/10 text-pink-400 hover:bg-pink-500/20 hover:text-pink-300 transition-colors font-bold text-sm tracking-wide">
+                Secuencia
+            </a>
+            )}
+
         </div>
     </div>
 </article>

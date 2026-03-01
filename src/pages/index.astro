@@ -24,7 +24,11 @@ async function fetchCanciones() {
           console.error("Errores parseando el CSV:", errors);
         }
         
-        return data.filter((row: any) => row['Canción']?.trim() !== '');
+        return data.filter((row: any) => {
+            const hasName = row['Canción']?.trim() !== '';
+            const isActive = row['Estado']?.trim() !== 'Archivada';
+            return hasName && isActive;
+        });
     } catch (e) {
         console.error("Error al obtener canciones", e);
         return [];
@@ -143,10 +147,12 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
                 cantante={cancion['Grupo/Cantante'] || ''}
                 tonalidad={cancion['Tonalidad Redil Estadio'] || ''}
                 bpm={Number(cancion['Beat Batería']) || 0}
-                linkLetra={cancion['Link Letras'] || '#'}
-                linkAcordes={cancion['Link Acordes'] || '#'}
-                linkVoces={cancion['Link Voces'] || '#'}
-                linkYoutube={cancion['Link Youtube'] || '#'}
+                linkLetra={cancion['Link Letras'] || ''}
+                linkAcordes={cancion['Link Acordes'] || ''}
+                linkVoces={cancion['Link Voces'] || ''}
+                linkYoutube={cancion['Link Youtube'] || ''}
+                linkSecuencias={cancion['Link Secuencias'] || ''}
+                chordpro={cancion['Acordes ChordPro'] || ''}
                 categoria={cancion['Categoría Canción'] || ''}
                 voz={cancion['Voz Principal'] || ''}
                 tema={cancion['Tema Principal Canción'] || ''}
@@ -275,6 +281,27 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
 
         document.addEventListener('click', (e) => {
             const btn = (e.target as Element).closest('.btn-add-setlist');
+            const btnEditor = (e.target as Element).closest('.btn-editor');
+
+            // Lógica para enviar al Editor/Transpositor
+            if (btnEditor) {
+                e.preventDefault(); // Evitar navegación estándar por seguridad si usamos storage
+                const btnEl = btnEditor as HTMLElement;
+                const rawChordpro = btnEl.getAttribute('data-chordpro') || '';
+                const title = btnEl.getAttribute('data-titulo') || '';
+                const bpm = btnEl.getAttribute('data-bpm') || '';
+                const key = btnEl.getAttribute('data-key') || '';
+
+                if (rawChordpro.trim()) {
+                    // Pasar datos pesados por sessionStorage es más seguro para grandes multilineas
+                    const payload = { chordpro: rawChordpro, title, bpm, key };
+                    sessionStorage.setItem('chordpro_bridge', JSON.stringify(payload));
+                    window.location.href = '/herramientas/chordpro';
+                }
+                return;
+            }
+
+            // Lógica original Setlist
             if (btn) {
                 const cancion = btn.getAttribute('data-cancion');
                 if (cancion && !setlist.includes(cancion)) {
