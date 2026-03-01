@@ -14,26 +14,38 @@ async function generateIcons() {
 
         const buffer = fs.readFileSync(svgPath);
 
-        // 192x192
-        await sharp(buffer)
-            .resize(192, 192)
-            .png()
-            .toFile(path.join(publicDir, 'icon-192.png'));
-        console.log('Generado icon-192.png');
+        const generateIcon = async (size, padding, filename) => {
+            const innerSize = size - (padding * 2);
+            const outputPath = path.join(publicDir, filename);
 
-        // 512x512
-        await sharp(buffer)
-            .resize(512, 512)
-            .png()
-            .toFile(path.join(publicDir, 'icon-512.png'));
-        console.log('Generado icon-512.png');
+            await sharp({
+                create: {
+                    width: size,
+                    height: size,
+                    channels: 4,
+                    background: { r: 255, g: 255, b: 255, alpha: 1 } // Fondo Blanco
+                }
+            })
+                .composite([
+                    {
+                        input: await sharp(buffer).resize(innerSize, innerSize, { fit: 'contain' }).toBuffer(),
+                        gravity: 'center'
+                    }
+                ])
+                .png()
+                .toFile(outputPath);
 
-        // Apple Touch Icon (180x180 standard)
-        await sharp(buffer)
-            .resize(180, 180)
-            .png()
-            .toFile(path.join(publicDir, 'apple-touch-icon.png'));
-        console.log('Generado apple-touch-icon.png');
+            console.log(`Generado ${filename} con fondo blanco y padding.`);
+        };
+
+        // 192x192 (Android) - aprox 12% padding (24px por lado)
+        await generateIcon(192, 24, 'icon-192.png');
+
+        // 512x512 (Android High Res) - aprox 12% padding (64px por lado)
+        await generateIcon(512, 64, 'icon-512.png');
+
+        // Apple Touch Icon (180x180) - aprox 12% padding (22px por lado)
+        await generateIcon(180, 22, 'apple-touch-icon.png');
 
     } catch (error) {
         console.error('Error generando iconos:', error);
