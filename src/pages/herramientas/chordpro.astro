@@ -267,47 +267,29 @@ import Layout from '../../layouts/Layout.astro';
             const tono = inputTono?.value.trim() || '';
             const bpm = inputBpm?.value.trim() || '';
             
-            const outputArea = document.getElementById('output-chordpro') as HTMLTextAreaElement;
-            const inputArea = document.getElementById('input-chordpro') as HTMLTextAreaElement;
-            const contenido = (outputArea && outputArea.value.trim() !== '') ? outputArea.value : (inputArea ? inputArea.value : '');
-            
-            const lineas = contenido.split('\n');
-            
-            // 1. MOTOR DE ESCALA DINÁMICA (Garantiza 1 sola hoja)
-            const totalLines = lineas.length;
-            let scaleCss = '';
-            if (totalLines <= 35) {
-                scaleCss = `
-                  .chord { font-size: 15px; }
-                  .lyric, .lyric-line { font-size: 17px; min-height: 18px; }
-                  .section-label { font-size: 14px; width: 130px; }
-                  .song-section { margin-bottom: 24px; }
-                  @page { margin: 15mm 20mm; }
-                `;
-            } else if (totalLines <= 50) {
-                scaleCss = `
-                  .chord { font-size: 13px; }
-                  .lyric, .lyric-line { font-size: 14px; min-height: 15px; }
-                  .section-label { font-size: 13px; width: 110px; }
-                  .song-section { margin-bottom: 14px; }
-                  header { margin-bottom: 20px; padding-bottom: 10px; }
-                  .header-left h1 { font-size: 26px; }
-                  @page { margin: 12mm 15mm; }
-                `;
-            } else {
-                scaleCss = `
-                  .chord { font-size: 11px; margin-bottom: 0px; }
-                  .lyric, .lyric-line { font-size: 12px; min-height: 13px; }
-                  .section-label { font-size: 11px; width: 85px; }
-                  .song-section { margin-bottom: 8px; }
-                  header { margin-bottom: 15px; padding-bottom: 5px; }
-                  .header-left h1 { font-size: 20px; }
-                  .header-left h2 { font-size: 14px; }
-                  @page { margin: 8mm 12mm; }
-                `;
+            const rawInput = (document.getElementById('input-chordpro') as HTMLTextAreaElement)?.value || '';
+            let contenido = (document.getElementById('output-chordpro') as HTMLTextAreaElement)?.value || rawInput;
+
+            // 1. DEFENSA ABSOLUTA: Si no hay corchetes, auto-convertir en memoria antes de imprimir
+            if (!contenido.includes('[')) {
+                // Check if the autoConvertirAChordPro function exists in global scope (it should from the earlier script blocks)
+                if (typeof (window as any).autoConvertirAChordPro === 'function') {
+                    contenido = (window as any).autoConvertirAChordPro(contenido);
+                }
             }
 
-            // 2. PARSER AVANZADO (Lógica a prueba de corchetes rotos)
+            const lineas = contenido.split('\n');
+            
+            // 2. ROOT SCALING DINÁMICO (Garantiza 1 sola hoja Carta)
+            const totalLines = lineas.length;
+            let rootFontSize = '16px';
+            let pageMargin = '15mm 20mm';
+
+            if (totalLines > 35) { rootFontSize = '14px'; pageMargin = '12mm 15mm'; }
+            if (totalLines > 55) { rootFontSize = '11.5px'; pageMargin = '10mm 12mm'; }
+            if (totalLines > 75) { rootFontSize = '9.5px'; pageMargin = '8mm 10mm'; } // Súper agresivo para canciones inmensas
+
+            // 3. PARSER QUIRÚRGICO
             let bodyHtml = '';
             let inSection = false;
 
@@ -317,7 +299,6 @@ import Layout from '../../layouts/Layout.astro';
                     return;
                 }
 
-                // Limpiar texto de corchetes solo para identificar si es sección
                 const cleanText = linea.replace(/\[.*?\]/g, '').trim();
                 const regexSeccion = /^(VERSO\s*\d*|CORO\s*\d*|PUENTE\s*\d*|INTRO\s*\d*|OUTRO|FINAL|PRE-CORO|PRECORO|ESTR|INSTRUMENTAL|TAG)[\s\:\-]*(.*)$/i;
                 const matchSeccion = cleanText.match(regexSeccion);
@@ -331,7 +312,6 @@ import Layout from '../../layouts/Layout.astro';
                     bodyHtml += `<div class="song-section"><div class="section-label">${nombreSeccion}</div><div class="section-content">`;
                     inSection = true;
 
-                    // Extraer el nombre de sección pero CONSERVAR los corchetes
                     let content = '';
                     let inBracket = false;
                     let charsToDrop = cleanText.length - textoDespues.length;
@@ -355,7 +335,7 @@ import Layout from '../../layouts/Layout.astro';
                     inSection = true;
                 }
 
-                // Renderizar Acordes y Letra
+                // Renderizar Línea de Acordes
                 if (lineaRestante.includes('[')) {
                     bodyHtml += `<div class="chord-line">`;
                     const partes = lineaRestante.split(/\[(.*?)\]/);
@@ -374,7 +354,7 @@ import Layout from '../../layouts/Layout.astro';
 
             if (inSection) bodyHtml += `</div></div>`;
 
-            // 3. GENERAR VENTANA Y APLICAR MONTSERRAT
+            // 4. VENTANA DE IMPRESIÓN (Con Montserrat y medidas en REM)
             const printWindow = window.open('', '_blank');
             if (!printWindow) {
                 alert("Por favor, permite las ventanas emergentes (pop-ups) para imprimir.");
@@ -389,28 +369,27 @@ import Layout from '../../layouts/Layout.astro';
     <title>${titulo} - Acordes</title>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,500;0,700;0,800;1,500&display=swap" rel="stylesheet">
     <style>
+      html { font-size: ${rootFontSize}; }
+      @page { margin: ${pageMargin}; size: letter; }
       body { font-family: 'Montserrat', Arial, sans-serif; color: black; background: white; margin: 0; padding: 0; }
       
-      header { border-bottom: 3px solid black; display: flex; justify-content: space-between; align-items: flex-start; }
-      .header-left h1 { font-weight: 800; text-transform: uppercase; margin: 0; letter-spacing: -0.5px; }
-      .header-left h2 { font-weight: 500; font-style: italic; color: #444; margin: 4px 0 0 0; }
-      .header-right { text-align: right; font-weight: 800; }
-      .header-right div { margin-bottom: 4px; }
+      header { border-bottom: 0.2rem solid black; display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem; padding-bottom: 0.5rem; }
+      .header-left h1 { font-weight: 800; font-size: 2.2rem; text-transform: uppercase; margin: 0; letter-spacing: -0.02rem; }
+      .header-left h2 { font-weight: 500; font-size: 1.1rem; font-style: italic; color: #444; margin: 0.3rem 0 0 0; }
+      .header-right { text-align: right; font-weight: 800; font-size: 1rem; }
+      .header-right div { margin-bottom: 0.2rem; }
       
-      .song-section { display: flex; width: 100%; page-break-inside: avoid; }
-      .section-label { font-weight: 800; flex-shrink: 0; padding-right: 15px; letter-spacing: 0.5px; }
+      .song-section { display: flex; width: 100%; page-break-inside: avoid; margin-bottom: 1.5rem; }
+      .section-label { font-weight: 800; font-size: 0.95rem; width: 8.5rem; flex-shrink: 0; padding-right: 1rem; }
       .section-content { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
       
-      .chord-line { display: flex; flex-wrap: wrap; align-items: flex-end; margin-bottom: 4px; }
-      .chord-pair { display: inline-flex; flex-direction: column; justify-content: flex-end; margin-right: 2px; }
+      .chord-line { display: flex; flex-wrap: wrap; align-items: flex-end; margin-bottom: 0.3rem; }
+      .chord-pair { display: inline-flex; flex-direction: column; justify-content: flex-end; margin-right: 0.15rem; }
       
-      .chord { font-weight: 800; min-height: 14px; margin-bottom: 1px; color: #000; }
-      .lyric { font-weight: 500; white-space: pre; color: #111; }
-      .lyric-line { font-weight: 500; margin-bottom: 4px; white-space: pre-wrap; color: #111; }
-      .spacer { height: 14px; }
-      
-      /* CSS Dinámico Inyectado por JS */
-      ${scaleCss}
+      .chord { font-weight: 800; font-size: 0.9rem; min-height: 1rem; margin-bottom: 0.1rem; color: #000; }
+      .lyric { font-weight: 500; font-size: 1.1rem; white-space: pre; color: #111; }
+      .lyric-line { font-weight: 500; font-size: 1.1rem; margin-bottom: 0.3rem; white-space: pre-wrap; color: #111; }
+      .spacer { height: 1rem; }
     </style>
   </head>
   <body>
@@ -431,8 +410,7 @@ import Layout from '../../layouts/Layout.astro';
 
             printWindow.document.close();
             printWindow.focus();
-            // Retraso clave de 1 segundo para que descargue Montserrat antes de imprimir
-            setTimeout(() => { printWindow.print(); printWindow.close(); }, 1000);
+            setTimeout(() => { printWindow.print(); printWindow.close(); }, 1200); // 1.2s para descargar fuente pesada
         });
 
     });
