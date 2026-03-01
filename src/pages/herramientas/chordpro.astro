@@ -257,7 +257,6 @@ import Layout from '../../layouts/Layout.astro';
         }
 
         document.getElementById('btn-imprimir')?.addEventListener('click', () => {
-            // 1. Recolectar Metadatos
             const inputTitulo = document.getElementById('print-titulo') as HTMLInputElement;
             const inputArtista = document.getElementById('print-artista') as HTMLInputElement;
             const inputTono = document.getElementById('print-tono') as HTMLInputElement;
@@ -270,99 +269,113 @@ import Layout from '../../layouts/Layout.astro';
             
             const outputArea = document.getElementById('output-chordpro') as HTMLTextAreaElement;
             const inputArea = document.getElementById('input-chordpro') as HTMLTextAreaElement;
-            // Usar outputArea si tiene texto (es decir, fue formateado), si no usar inputArea
             const contenido = (outputArea && outputArea.value.trim() !== '') ? outputArea.value : (inputArea ? inputArea.value : '');
-
-            // 2. Parser Quirúrgico (Separa Sección y Letra)
+            
             const lineas = contenido.split('\n');
+            
+            // 1. MOTOR DE ESCALA DINÁMICA (Garantiza 1 sola hoja)
+            const totalLines = lineas.length;
+            let scaleCss = '';
+            if (totalLines <= 35) {
+                scaleCss = `
+                  .chord { font-size: 15px; }
+                  .lyric, .lyric-line { font-size: 17px; min-height: 18px; }
+                  .section-label { font-size: 14px; width: 130px; }
+                  .song-section { margin-bottom: 24px; }
+                  @page { margin: 15mm 20mm; }
+                `;
+            } else if (totalLines <= 50) {
+                scaleCss = `
+                  .chord { font-size: 13px; }
+                  .lyric, .lyric-line { font-size: 14px; min-height: 15px; }
+                  .section-label { font-size: 13px; width: 110px; }
+                  .song-section { margin-bottom: 14px; }
+                  header { margin-bottom: 20px; padding-bottom: 10px; }
+                  .header-left h1 { font-size: 26px; }
+                  @page { margin: 12mm 15mm; }
+                `;
+            } else {
+                scaleCss = `
+                  .chord { font-size: 11px; margin-bottom: 0px; }
+                  .lyric, .lyric-line { font-size: 12px; min-height: 13px; }
+                  .section-label { font-size: 11px; width: 85px; }
+                  .song-section { margin-bottom: 8px; }
+                  header { margin-bottom: 15px; padding-bottom: 5px; }
+                  .header-left h1 { font-size: 20px; }
+                  .header-left h2 { font-size: 14px; }
+                  @page { margin: 8mm 12mm; }
+                `;
+            }
+
+            // 2. PARSER AVANZADO (Lógica a prueba de corchetes rotos)
             let bodyHtml = '';
             let inSection = false;
 
             lineas.forEach(linea => {
                 if (linea.trim() === '') {
-                   if (inSection) bodyHtml += `<div class="spacer"></div>`;
-                   return;
+                    if (inSection) bodyHtml += `<div class="spacer"></div>`;
+                    return;
                 }
-                
-                // 1. Limpiar la línea de corchetes SOLO para analizar qué dice
+
+                // Limpiar texto de corchetes solo para identificar si es sección
                 const cleanText = linea.replace(/\[.*?\]/g, '').trim();
                 const regexSeccion = /^(VERSO\s*\d*|CORO\s*\d*|PUENTE\s*\d*|INTRO\s*\d*|OUTRO|FINAL|PRE-CORO|PRECORO|ESTR|INSTRUMENTAL|TAG)[\s\:\-]*(.*)$/i;
                 const matchSeccion = cleanText.match(regexSeccion);
-                
                 let lineaRestante = linea;
+
                 if (matchSeccion) {
-                  if (inSection) bodyHtml += `</div></div>`; // Cerrar sección anterior
-                  
-                  const nombreSeccion = matchSeccion[1].toUpperCase();
-                  const textoDespuesDeSeccion = matchSeccion[2];
-                  
-                  bodyHtml += `<div class="song-section">`;
-                  bodyHtml += `<div class="section-label">${nombreSeccion}</div>`;
-                  bodyHtml += `<div class="section-content">`;
-                  inSection = true;
-                  
-                  // 2. Extracción Quirúrgica: Quitar el nombre de la sección de la cadena original, PERO CONSERVAR LOS ACORDES
-                  let content = '';
-                  let inBracket = false;
-                  let charsToDrop = cleanText.length - textoDespuesDeSeccion.length;
-                  let dropped = 0;
-                  
-                  for (let i = 0; i < linea.length; i++) {
-                    let char = linea[i];
-                    if (char === '[') inBracket = true;
+                    if (inSection) bodyHtml += `</div></div>`;
+                    const nombreSeccion = matchSeccion[1].toUpperCase();
+                    const textoDespues = matchSeccion[2];
                     
-                    if (inBracket) {
-                      content += char;
-                      if (char === ']') inBracket = false;
-                    } else {
-                      if (dropped >= charsToDrop) {
-                        content += char; // Mantener el resto del texto
-                      } else {
-                        dropped++; // Ignorar los caracteres que forman "VERSO 1 :"
-                      }
+                    bodyHtml += `<div class="song-section"><div class="section-label">${nombreSeccion}</div><div class="section-content">`;
+                    inSection = true;
+
+                    // Extraer el nombre de sección pero CONSERVAR los corchetes
+                    let content = '';
+                    let inBracket = false;
+                    let charsToDrop = cleanText.length - textoDespues.length;
+                    let dropped = 0;
+                    for (let i = 0; i < linea.length; i++) {
+                        let char = linea[i];
+                        if (char === '[') inBracket = true;
+
+                        if (inBracket) {
+                            content += char;
+                            if (char === ']') inBracket = false;
+                        } else {
+                            if (dropped < charsToDrop) dropped++;
+                            else content += char;
+                        }
                     }
-                  }
-                  
-                  lineaRestante = content.trim();
-                  if (lineaRestante === '' || /^(\[.*?\])+$/.test(lineaRestante)) {
-                      // Si solo quedaron acordes sin letra, los procesamos de una vez
-                      if (lineaRestante !== '') {
-                          bodyHtml += `<div class="chord-line">`;
-                          const p = lineaRestante.split(/\[(.*?)\]/);
-                          for (let j = 1; j < p.length; j += 2) {
-                              bodyHtml += `<div class="chord-pair"><div class="chord">${p[j]}</div><div class="lyric"> </div></div>`;
-                          }
-                          bodyHtml += `</div>`;
-                      }
-                      return; 
-                  }
+                    lineaRestante = content.trim();
+                    if (lineaRestante === '') return; 
                 } else if (!inSection) {
-                  bodyHtml += `<div class="song-section"><div class="section-label"></div><div class="section-content">`;
-                  inSection = true;
+                    bodyHtml += `<div class="song-section"><div class="section-label"></div><div class="section-content">`;
+                    inSection = true;
                 }
-                
-                // 3. Renderizar Línea (Acordes + Letra)
+
+                // Renderizar Acordes y Letra
                 if (lineaRestante.includes('[')) {
-                  bodyHtml += `<div class="chord-line">`;
-                  const partes = lineaRestante.split(/\[(.*?)\]/);
-                  
-                  if (partes[0]) {
-                    bodyHtml += `<div class="chord-pair"><div class="chord"></div><div class="lyric">${partes[0]}</div></div>`;
-                  }
-                  for (let i = 1; i < partes.length; i += 2) {
-                    const acorde = partes[i];
-                    const letra = partes[i+1] || '';
-                    bodyHtml += `<div class="chord-pair"><div class="chord">${acorde}</div><div class="lyric">${letra}</div></div>`;
-                  }
-                  bodyHtml += `</div>`;
+                    bodyHtml += `<div class="chord-line">`;
+                    const partes = lineaRestante.split(/\[(.*?)\]/);
+                    if (partes[0]) bodyHtml += `<div class="chord-pair"><div class="chord"></div><div class="lyric">${partes[0]}</div></div>`;
+                    
+                    for (let i = 1; i < partes.length; i += 2) {
+                        const acorde = partes[i];
+                        const letra = partes[i+1] || '';
+                        bodyHtml += `<div class="chord-pair"><div class="chord">${acorde}</div><div class="lyric">${letra}</div></div>`;
+                    }
+                    bodyHtml += `</div>`;
                 } else {
-                  bodyHtml += `<div class="lyric-line">${lineaRestante}</div>`;
+                    bodyHtml += `<div class="lyric-line">${lineaRestante}</div>`;
                 }
             });
+
             if (inSection) bodyHtml += `</div></div>`;
 
-            // 4. La Opción Nuclear: Generar Ventana de Impresión Aislada
-            const printWindow = window.open('', '_blank', 'height=800,width=800');
+            // 3. GENERAR VENTANA Y APLICAR MONTSERRAT
+            const printWindow = window.open('', '_blank');
             if (!printWindow) {
                 alert("Por favor, permite las ventanas emergentes (pop-ups) para imprimir.");
                 return;
@@ -376,27 +389,28 @@ import Layout from '../../layouts/Layout.astro';
     <title>${titulo} - Acordes</title>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,500;0,700;0,800;1,500&display=swap" rel="stylesheet">
     <style>
-      @page { margin: 15mm 20mm; size: letter; }
       body { font-family: 'Montserrat', Arial, sans-serif; color: black; background: white; margin: 0; padding: 0; }
       
-      header { border-bottom: 3px solid black; padding-bottom: 15px; margin-bottom: 35px; display: flex; justify-content: space-between; align-items: flex-start; }
-      .header-left h1 { font-size: 32px; font-weight: 800; text-transform: uppercase; margin: 0; letter-spacing: -0.5px; }
-      .header-left h2 { font-size: 18px; font-weight: 500; font-style: italic; color: #444; margin: 6px 0 0 0; }
-      .header-right { text-align: right; font-size: 16px; font-weight: 700; }
-      .header-right div { margin-bottom: 5px; }
+      header { border-bottom: 3px solid black; display: flex; justify-content: space-between; align-items: flex-start; }
+      .header-left h1 { font-weight: 800; text-transform: uppercase; margin: 0; letter-spacing: -0.5px; }
+      .header-left h2 { font-weight: 500; font-style: italic; color: #444; margin: 4px 0 0 0; }
+      .header-right { text-align: right; font-weight: 800; }
+      .header-right div { margin-bottom: 4px; }
       
-      .song-section { display: flex; width: 100%; margin-bottom: 28px; page-break-inside: avoid; }
-      .section-label { width: 140px; font-weight: 800; font-size: 15px; flex-shrink: 0; padding-right: 15px; letter-spacing: 0.5px; text-transform: uppercase; }
-      .section-content { flex-grow: 1; display: flex; flex-direction: column; }
+      .song-section { display: flex; width: 100%; page-break-inside: avoid; }
+      .section-label { font-weight: 800; flex-shrink: 0; padding-right: 15px; letter-spacing: 0.5px; }
+      .section-content { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
       
-      .chord-line { display: flex; flex-wrap: wrap; align-items: flex-end; margin-bottom: 6px; }
-      .chord-pair { display: inline-flex; flex-direction: column; justify-content: flex-end; }
+      .chord-line { display: flex; flex-wrap: wrap; align-items: flex-end; margin-bottom: 4px; }
+      .chord-pair { display: inline-flex; flex-direction: column; justify-content: flex-end; margin-right: 2px; }
       
-      /* Jerarquía Visual Fuerte */
-      .chord { font-weight: 800; font-size: 15px; min-height: 16px; margin-bottom: 2px; color: #000; }
-      .lyric { font-weight: 500; font-size: 17px; white-space: pre; min-height: 18px; color: #111; }
-      .lyric-line { font-weight: 500; font-size: 17px; margin-bottom: 6px; min-height: 18px; white-space: pre-wrap; color: #111; }
-      .spacer { height: 18px; }
+      .chord { font-weight: 800; min-height: 14px; margin-bottom: 1px; color: #000; }
+      .lyric { font-weight: 500; white-space: pre; color: #111; }
+      .lyric-line { font-weight: 500; margin-bottom: 4px; white-space: pre-wrap; color: #111; }
+      .spacer { height: 14px; }
+      
+      /* CSS Dinámico Inyectado por JS */
+      ${scaleCss}
     </style>
   </head>
   <body>
@@ -406,25 +420,19 @@ import Layout from '../../layouts/Layout.astro';
         ${artista ? `<h2>${artista}</h2>` : ''}
       </div>
       <div class="header-right">
-        ${tono ? `<div>Tonalidad: ${tono}</div>` : ''}
+        ${tono ? `<div>Tonalidad de ${tono}</div>` : ''}
         ${bpm ? `<div>${bpm}</div>` : ''}
       </div>
     </header>
-    <main>
-      ${bodyHtml}
-    </main>
+    <main>${bodyHtml}</main>
   </body>
 </html>
             `);
 
             printWindow.document.close();
             printWindow.focus();
-            
-            // Retraso para que el navegador renderice el DOM emergente y descargue Montserrat antes de disparar el PDF
-            setTimeout(() => {
-                printWindow.print();
-                printWindow.close(); // Cierra la pestaña emergente al terminar
-            }, 1000);
+            // Retraso clave de 1 segundo para que descargue Montserrat antes de imprimir
+            setTimeout(() => { printWindow.print(); printWindow.close(); }, 1000);
         });
 
     });
