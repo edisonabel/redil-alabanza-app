@@ -280,63 +280,83 @@ import Layout from '../../layouts/Layout.astro';
 
             lineas.forEach(linea => {
                 if (linea.trim() === '') {
-                    if (inSection) bodyHtml += `<div class="spacer"></div>`;
-                    return;
+                   if (inSection) bodyHtml += `<div class="spacer"></div>`;
+                   return;
                 }
-
-                // Extraer acordes al inicio de la línea (Ej: "[G]VERSO 1")
-                const matchAcordesIniciales = linea.match(/^(\[.*?\]\s*)*/);
-                const leadingChords = matchAcordesIniciales ? matchAcordesIniciales[0] : '';
-                const textoSinAcordesIniciales = linea.substring(leadingChords.length);
                 
-                // Detectar si lo que sigue es una sección
-                const regexSeccion = /^(VERSO\s*\d*|CORO\s*\d*|PUENTE\s*\d*|INTRO\s*\d*|OUTRO|FINAL|PRE-CORO|PRECORO|ESTR|INSTRUMENTAL|TAG)[\s:-]*(.*)$/i;
-                const matchSeccion = textoSinAcordesIniciales.match(regexSeccion);
-
+                // 1. Limpiar la línea de corchetes SOLO para analizar qué dice
+                const cleanText = linea.replace(/\[.*?\]/g, '').trim();
+                const regexSeccion = /^(VERSO\s*\d*|CORO\s*\d*|PUENTE\s*\d*|INTRO\s*\d*|OUTRO|FINAL|PRE-CORO|PRECORO|ESTR|INSTRUMENTAL|TAG)[\s\:\-]*(.*)$/i;
+                const matchSeccion = cleanText.match(regexSeccion);
+                
                 let lineaRestante = linea;
                 if (matchSeccion) {
-                    if (inSection) bodyHtml += `</div></div>`; // Cerrar caja anterior
+                  if (inSection) bodyHtml += `</div></div>`; // Cerrar sección anterior
+                  
+                  const nombreSeccion = matchSeccion[1].toUpperCase();
+                  const textoDespuesDeSeccion = matchSeccion[2];
+                  
+                  bodyHtml += `<div class="song-section">`;
+                  bodyHtml += `<div class="section-label">${nombreSeccion}</div>`;
+                  bodyHtml += `<div class="section-content">`;
+                  inSection = true;
+                  
+                  // 2. Extracción Quirúrgica: Quitar el nombre de la sección de la cadena original, PERO CONSERVAR LOS ACORDES
+                  let content = '';
+                  let inBracket = false;
+                  let charsToDrop = cleanText.length - textoDespuesDeSeccion.length;
+                  let dropped = 0;
+                  
+                  for (let i = 0; i < linea.length; i++) {
+                    let char = linea[i];
+                    if (char === '[') inBracket = true;
                     
-                    const nombreSeccion = matchSeccion[1].toUpperCase();
-                    bodyHtml += `<div class="song-section">`;
-                    bodyHtml += `<div class="section-label">${nombreSeccion}</div>`;
-                    bodyHtml += `<div class="section-content">`;
-                    inSection = true;
-                    // Reconstruir la línea para la columna derecha (Acordes iniciales + resto del texto)
-                    lineaRestante = leadingChords + matchSeccion[2].trim();
-                    
-                    // Si la línea solo decía "VERSO 1" y no quedó nada, saltamos
-                    if (lineaRestante.trim() === '' || lineaRestante.trim() === leadingChords.trim()) {
-                        return; 
+                    if (inBracket) {
+                      content += char;
+                      if (char === ']') inBracket = false;
+                    } else {
+                      if (dropped >= charsToDrop) {
+                        content += char; // Mantener el resto del texto
+                      } else {
+                        dropped++; // Ignorar los caracteres que forman "VERSO 1 :"
+                      }
                     }
+                  }
+                  
+                  lineaRestante = content.trim();
+                  if (lineaRestante === '' || /^(\[.*?\])+$/.test(lineaRestante)) {
+                      // Si solo quedaron acordes sin letra, los procesamos de una vez
+                      if (lineaRestante !== '') {
+                          bodyHtml += `<div class="chord-line">`;
+                          const p = lineaRestante.split(/\[(.*?)\]/);
+                          for (let j = 1; j < p.length; j += 2) {
+                              bodyHtml += `<div class="chord-pair"><div class="chord">${p[j]}</div><div class="lyric"> </div></div>`;
+                          }
+                          bodyHtml += `</div>`;
+                      }
+                      return; 
+                  }
                 } else if (!inSection) {
-                    // Si el usuario escribe letra sin definir una sección antes
-                    bodyHtml += `<div class="song-section">`;
-                    bodyHtml += `<div class="section-label"></div>`;
-                    bodyHtml += `<div class="section-content">`;
-                    inSection = true;
+                  bodyHtml += `<div class="song-section"><div class="section-label"></div><div class="section-content">`;
+                  inSection = true;
                 }
-
-                // 3. Renderizar Acordes y Letra (Motor Flexbox)
+                
+                // 3. Renderizar Línea (Acordes + Letra)
                 if (lineaRestante.includes('[')) {
-                    bodyHtml += `<div class="chord-line">`;
-                    const partes = lineaRestante.split(/\[(.*?)\]/);
-                    
-                    if (partes[0]) {
-                        bodyHtml += `<div class="chord-pair"><div class="chord"></div><div class="lyric">${partes[0]}</div></div>`;
-                    }
-                    
-                    for (let i = 1; i < partes.length; i += 2) {
-                        const acorde = partes[i];
-                        const letra = partes[i+1] || '';
-                        bodyHtml += `<div class="chord-pair">
-                                       <div class="chord">${acorde}</div>
-                                       <div class="lyric">${letra}</div>
-                                     </div>`;
-                    }
-                    bodyHtml += `</div>`;
+                  bodyHtml += `<div class="chord-line">`;
+                  const partes = lineaRestante.split(/\[(.*?)\]/);
+                  
+                  if (partes[0]) {
+                    bodyHtml += `<div class="chord-pair"><div class="chord"></div><div class="lyric">${partes[0]}</div></div>`;
+                  }
+                  for (let i = 1; i < partes.length; i += 2) {
+                    const acorde = partes[i];
+                    const letra = partes[i+1] || '';
+                    bodyHtml += `<div class="chord-pair"><div class="chord">${acorde}</div><div class="lyric">${letra}</div></div>`;
+                  }
+                  bodyHtml += `</div>`;
                 } else {
-                    bodyHtml += `<div class="lyric-line">${lineaRestante}</div>`;
+                  bodyHtml += `<div class="lyric-line">${lineaRestante}</div>`;
                 }
             });
             if (inSection) bodyHtml += `</div></div>`;
@@ -350,44 +370,36 @@ import Layout from '../../layouts/Layout.astro';
 
             printWindow.document.write(`
 <!DOCTYPE html>
-<html lang="es">
-<head>
+<html>
+  <head>
     <meta charset="UTF-8">
-    <title>${titulo}</title>
+    <title>${titulo} - Acordes</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,500;0,700;0,800;1,500&display=swap" rel="stylesheet">
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-      
       @page { margin: 15mm 20mm; size: letter; }
-      body { 
-          font-family: Arial, Helvetica, sans-serif; 
-          color: black; 
-          background: white; 
-          margin: 0; 
-          padding: 20px; 
-      }
+      body { font-family: 'Montserrat', Arial, sans-serif; color: black; background: white; margin: 0; padding: 0; }
       
-      /* Cabecera Sovereign Grace */
-      header { border-bottom: 2px solid black; padding-bottom: 12px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: flex-start; }
-      .header-left h1 { font-size: 26px; font-weight: 900; text-transform: uppercase; margin: 0; letter-spacing: 0.5px; }
-      .header-left h2 { font-size: 15px; font-weight: normal; font-style: italic; color: #333; margin: 4px 0 0 0; }
-      .header-right { text-align: right; font-size: 14px; font-weight: bold; }
-      .header-right div { margin-bottom: 4px; }
+      header { border-bottom: 3px solid black; padding-bottom: 15px; margin-bottom: 35px; display: flex; justify-content: space-between; align-items: flex-start; }
+      .header-left h1 { font-size: 32px; font-weight: 800; text-transform: uppercase; margin: 0; letter-spacing: -0.5px; }
+      .header-left h2 { font-size: 18px; font-weight: 500; font-style: italic; color: #444; margin: 6px 0 0 0; }
+      .header-right { text-align: right; font-size: 16px; font-weight: 700; }
+      .header-right div { margin-bottom: 5px; }
       
-      /* Columnas */
-      .song-section { display: flex; width: 100%; margin-bottom: 20px; page-break-inside: avoid; }
-      .section-label { width: 130px; font-weight: bold; font-size: 13px; flex-shrink: 0; padding-right: 15px; text-transform: uppercase; }
+      .song-section { display: flex; width: 100%; margin-bottom: 28px; page-break-inside: avoid; }
+      .section-label { width: 140px; font-weight: 800; font-size: 15px; flex-shrink: 0; padding-right: 15px; letter-spacing: 0.5px; text-transform: uppercase; }
       .section-content { flex-grow: 1; display: flex; flex-direction: column; }
       
-      /* Acordes sobre Letra */
-      .chord-line { display: flex; flex-wrap: wrap; align-items: flex-end; margin-bottom: 4px; }
-      .chord-pair { display: inline-flex; flex-direction: column; justify-content: flex-end; align-items: flex-start; }
-      .chord { font-weight: bold; font-size: 13px; min-height: 14px; margin-bottom: 1px; color: black; }
-      .lyric { font-size: 15px; white-space: pre; min-height: 16px; color: black; }
-      .lyric-line { font-size: 15px; margin-bottom: 4px; min-height: 16px; white-space: pre-wrap; color: black; }
-      .spacer { height: 12px; }
+      .chord-line { display: flex; flex-wrap: wrap; align-items: flex-end; margin-bottom: 6px; }
+      .chord-pair { display: inline-flex; flex-direction: column; justify-content: flex-end; }
+      
+      /* Jerarquía Visual Fuerte */
+      .chord { font-weight: 800; font-size: 15px; min-height: 16px; margin-bottom: 2px; color: #000; }
+      .lyric { font-weight: 500; font-size: 17px; white-space: pre; min-height: 18px; color: #111; }
+      .lyric-line { font-weight: 500; font-size: 17px; margin-bottom: 6px; min-height: 18px; white-space: pre-wrap; color: #111; }
+      .spacer { height: 18px; }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <header>
       <div class="header-left">
         <h1>${titulo}</h1>
@@ -401,18 +413,18 @@ import Layout from '../../layouts/Layout.astro';
     <main>
       ${bodyHtml}
     </main>
-</body>
+  </body>
 </html>
             `);
 
             printWindow.document.close();
             printWindow.focus();
             
-            // Retraso para que el navegador renderice el DOM emergente y fuentes antes de disparar el PDF
+            // Retraso para que el navegador renderice el DOM emergente y descargue Montserrat antes de disparar el PDF
             setTimeout(() => {
                 printWindow.print();
-                // printWindow.close(); // Opcional: Cerrar ventana despues de imprimir
-            }, 500);
+                printWindow.close(); // Cierra la pestaña emergente al terminar
+            }, 1000);
         });
 
     });
