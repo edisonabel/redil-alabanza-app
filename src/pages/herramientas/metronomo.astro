@@ -37,7 +37,7 @@ import Layout from '../../layouts/Layout.astro';
             </div>
 
             <!-- El "Knob" -->
-            <div class="relative w-64 h-64 rounded-full bg-neutral-900 shadow-[0_0_30px_rgba(0,0,0,0.5)] flex items-center justify-center cursor-pointer select-none" id="bpm-knob" style="touch-action: none;">
+            <div class="relative w-64 h-64 rounded-full bg-neutral-100 dark:bg-neutral-900 shadow-[0_0_20px_rgba(0,0,0,0.1)] dark:shadow-[0_0_30px_rgba(0,0,0,0.5)] flex items-center justify-center cursor-pointer select-none" id="bpm-knob" style="touch-action: none;">
                 <svg class="absolute inset-0 w-full h-full transform -rotate-90 pointer-events-none" viewBox="0 0 256 256">
                     <defs>
                         <linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -46,20 +46,20 @@ import Layout from '../../layouts/Layout.astro';
                             <stop offset="100%" stop-color="#ec4899" />
                         </linearGradient>
                     </defs>
-                    <circle cx="128" cy="128" r="120" stroke="#262626" stroke-width="8" fill="none" />
+                    <circle cx="128" cy="128" r="120" class="stroke-neutral-300 dark:stroke-neutral-800" stroke-width="8" fill="none" />
                     <circle id="bpm-ring" cx="128" cy="128" r="120" stroke="url(#ringGradient)" stroke-width="8" fill="none" stroke-linecap="round"
                         style="stroke-dasharray: 753.98; stroke-dashoffset: 753.98; transition: stroke-dashoffset 0.1s ease-out;" />
                 </svg>
-                <div class="w-40 h-40 bg-neutral-950 rounded-full flex flex-col items-center justify-center shadow-[inset_0_4px_20px_rgba(0,0,0,0.8)] z-10 pointer-events-none">
-                    <span id="bpm-display" class="text-6xl font-black text-white tracking-tighter">120</span>
+                <div class="w-40 h-40 bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-transparent rounded-full flex flex-col items-center justify-center shadow-[inset_0_4px_20px_rgba(0,0,0,0.1)] dark:shadow-[inset_0_4px_20px_rgba(0,0,0,0.8)] z-10 pointer-events-none">
+                    <span id="bpm-display" class="text-6xl font-black text-neutral-900 dark:text-white tracking-tighter">120</span>
                     <span class="text-neutral-500 font-bold text-sm tracking-widest mt-1">BPM</span>
                 </div>
             </div>
 
             <!-- Botones de Acción -->
             <div class="flex gap-4 w-full justify-center mt-4">
-                <button id="btn-tap" class="px-6 py-4 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-white font-bold rounded-2xl active:scale-95 transition-all w-32 shadow-lg" style="touch-action: manipulation;">TAP</button>
-                <button id="btn-play" class="px-6 py-4 bg-teal-500 hover:bg-teal-400 text-black font-black rounded-2xl active:scale-95 transition-all w-32 shadow-[0_0_20px_rgba(20,184,166,0.3)]" style="touch-action: manipulation;">PLAY</button>
+                <button id="btn-tap" class="px-6 py-4 bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 border border-neutral-300 dark:border-neutral-700 text-neutral-900 dark:text-white font-bold rounded-2xl active:scale-95 transition-all w-32 shadow-md dark:shadow-lg" style="touch-action: manipulation;">TAP</button>
+                <button id="btn-play" class="px-6 py-4 bg-teal-500 hover:bg-teal-400 text-white dark:text-black font-black rounded-2xl active:scale-95 transition-all w-32 shadow-[0_0_15px_rgba(20,184,166,0.3)] dark:shadow-[0_0_20px_rgba(20,184,166,0.3)]" style="touch-action: manipulation;">PLAY</button>
             </div>
         </div>
 
@@ -205,11 +205,17 @@ document.addEventListener('DOMContentLoaded', () => {
         bpmDisplay.textContent = currentBPM.toString();
     }
 
-    function getAngle(e: MouseEvent | TouchEvent) {
+    // Matemática para calcular el ángulo del dedo respecto al centro
+    function getAngle(clientX: number, clientY: number) {
         if (!knob) return 0;
         const rect = knob.getBoundingClientRect();
         const centerX = rect.left + rect.width / 2;
         const centerY = rect.top + rect.height / 2;
+        return Math.atan2(clientY - centerY, clientX - centerX) * 180 / Math.PI;
+    }
+
+    function startDrag(e: MouseEvent | TouchEvent) {
+        isDragging = true;
         
         let clientX, clientY;
         if (window.TouchEvent && e instanceof TouchEvent) {
@@ -220,35 +226,38 @@ document.addEventListener('DOMContentLoaded', () => {
             clientY = (e as MouseEvent).clientY;
         }
         
-        return Math.atan2(clientY - centerY, clientX - centerX) * 180 / Math.PI;
-    }
-
-    function startDrag(e: MouseEvent | TouchEvent) {
-        isDragging = true;
-        previousAngle = getAngle(e);
-        if (knob) knob.classList.add('cursor-grabbing');
+        previousAngle = getAngle(clientX, clientY);
     }
 
     function doDrag(e: MouseEvent | TouchEvent) {
-        if (!isDragging || !indicator || !bpmDisplay) return;
+        if (!isDragging) return;
         
-        // Evitar el scroll de la página mientras el DJ mueve la rueda en móviles
+        // Evitar scroll en móviles
         if (window.TouchEvent && e instanceof TouchEvent) {
             if (e.cancelable) e.preventDefault(); 
         }
 
-        const newAngle = getAngle(e);
+        let clientX, clientY;
+        if (window.TouchEvent && e instanceof TouchEvent) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        } else {
+            clientX = (e as MouseEvent).clientX;
+            clientY = (e as MouseEvent).clientY;
+        }
+
+        const newAngle = getAngle(clientX, clientY);
         let delta = newAngle - previousAngle;
         
-        // El salto matemático entre el semiplano inferior y superior (180 a -180)
+        // Corregir el salto matemático al cruzar de -180 a 180 grados
         if (delta > 180) delta -= 360;
         if (delta < -180) delta += 360;
         
-        // Sensibilidad Gearing Ratio (Atenuador para que no sea incontrolable)
-        if (Math.abs(delta) > 1.5) { 
+        // Sensibilidad del giro
+        if (Math.abs(delta) > 2) { 
             currentBPM += (delta > 0) ? 1 : -1;
             
-            // Limitador estricto Hard-Clipping
+            // Limitador estricto
             if (currentBPM < 30) currentBPM = 30;
             if (currentBPM > 300) currentBPM = 300;
             
@@ -259,7 +268,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function stopDrag() { 
         isDragging = false; 
-        if (knob) knob.classList.remove('cursor-grabbing');
     }
 
     if (knob) {
