@@ -39,7 +39,12 @@ import Layout from '../../layouts/Layout.astro';
                     <input type="text" id="print-titulo" placeholder="Título" class="p-3 bg-neutral-900 border border-neutral-700 rounded-xl text-white font-bold w-full focus:outline-none focus:border-blue-500">
                     <input type="text" id="print-artista" placeholder="Artista (Opcional)" class="p-3 bg-neutral-900 border border-neutral-700 rounded-xl text-white w-full focus:outline-none focus:border-blue-500">
                     <input type="text" id="print-tono" placeholder="Tono (Ej: G)" class="p-3 bg-neutral-900 border border-neutral-700 rounded-xl text-white w-full focus:outline-none focus:border-blue-500">
-                    <input type="text" id="print-bpm" placeholder="BPM" class="p-3 bg-neutral-900 border border-neutral-700 rounded-xl text-white w-full focus:outline-none focus:border-blue-500">
+                    <div class="relative w-full">
+                        <input type="text" id="print-bpm" placeholder="BPM (Ej: 162)" class="p-3 bg-neutral-900 border border-neutral-700 rounded-xl text-white w-full pr-12 focus:outline-none focus:border-blue-500">
+                        <button id="btn-metronomo" class="absolute right-2 top-2 p-1.5 bg-neutral-700 hover:bg-green-600 rounded-lg transition-colors text-white" title="Activar Metrónomo">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                        </button>
+                    </div>
                     <button id="btn-autoconvertir" class="w-full px-4 py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2 shadow-lg shadow-purple-500/20">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg> Auto-Formato
                     </button>
@@ -69,10 +74,25 @@ import Layout from '../../layouts/Layout.astro';
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg> 
                 Copiar
             </button>
+            <button id="btn-atril" class="print:hidden px-6 py-3 bg-neutral-800 hover:bg-neutral-700 text-white font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h20"/><path d="M12 2v20"/><path d="m20 16-4 4-4-4"/><path d="m4 8 4-4 4 4"/></svg> 
+                Modo Atril
+            </button>
             <button id="btn-imprimir" class="no-print w-full sm:w-auto px-6 py-3 bg-neutral-100 hover:bg-white text-black font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 whitespace-nowrap">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg> 
                 Imprimir PDF
             </button>
+        </div>
+    </div>
+
+    <!-- Contenedor Modo Atril -->
+    <div id="stage-mode-container" class="hidden fixed inset-0 bg-black text-white z-[9999] overflow-y-auto px-4 py-8 sm:p-12 font-sans">
+        <button id="btn-cerrar-atril" class="fixed top-4 right-4 bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white p-2 rounded-full transition-all backdrop-blur-md">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+        <div class="max-w-4xl mx-auto">
+            <h1 id="stage-titulo" class="text-4xl sm:text-6xl font-black uppercase text-neutral-200 mb-8 border-b border-neutral-800 pb-4 tracking-tight"></h1>
+            <div id="stage-letra" class="text-xl sm:text-2xl leading-relaxed font-medium"></div>
         </div>
     </div>
 </Layout>
@@ -424,6 +444,143 @@ import Layout from '../../layouts/Layout.astro';
             printWindow.document.close();
             printWindow.focus();
             setTimeout(() => { printWindow.print(); printWindow.close(); }, 1200);
+        });
+
+        // ---------------- METRÓNOMO AUDIO API ---------------- //
+        let audioCtx: AudioContext | null = null;
+        let metronomeInterval: NodeJS.Timeout | null = null;
+        let isPlaying = false;
+        const btnMetronomo = document.getElementById('btn-metronomo');
+        const inputBpm = document.getElementById('print-bpm') as HTMLInputElement;
+
+        function playClick() {
+            if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            osc.frequency.value = 800; // Tono del click
+            osc.type = 'sine';
+            gain.gain.setValueAtTime(1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+            
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.1);
+        }
+
+        btnMetronomo?.addEventListener('click', () => {
+            if (isPlaying) {
+                if (metronomeInterval) clearInterval(metronomeInterval);
+                btnMetronomo.classList.replace('bg-green-600', 'bg-neutral-700');
+                btnMetronomo.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`;
+                isPlaying = false;
+            } else {
+                // Extraer el número del BPM usando Regex
+                const bpmTexto = inputBpm.value;
+                const match = bpmTexto.match(/\b([3-9]\d|[1-2]\d{2})\b/);
+                const bpm = match ? parseInt(match[0]) : 120; // Default 120 si no encuentra
+                const msPerBeat = 60000 / bpm;
+
+                // Reanudar contexto de audio (requerido por navegadores)
+                if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                
+                playClick(); // Primer click inmediato
+                metronomeInterval = setInterval(playClick, msPerBeat);
+                
+                btnMetronomo.classList.replace('bg-neutral-700', 'bg-green-600');
+                btnMetronomo.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; 
+                isPlaying = true;
+            }
+        });
+
+        // ---------------- MODO ATRIL (STAGE DISPLAY) ---------------- //
+        let wakeLock: any = null;
+        const stageContainer = document.getElementById('stage-mode-container');
+        const btnCerrarAtril = document.getElementById('btn-cerrar-atril');
+
+        async function activarWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await (navigator as any).wakeLock.request('screen');
+                }
+            } catch (err) { console.log('WakeLock no soportado', err); }
+        }
+
+        function liberarWakeLock() {
+            if (wakeLock !== null) { 
+                wakeLock.release(); 
+                wakeLock = null; 
+            }
+        }
+
+        document.getElementById('btn-atril')?.addEventListener('click', async () => {
+            const titulo = (document.getElementById('print-titulo') as HTMLInputElement)?.value.trim() || 'SIN TÍTULO';
+            const stageTitulo = document.getElementById('stage-titulo');
+            if(stageTitulo) stageTitulo.textContent = titulo;
+            
+            const outputBox = (document.getElementById('output-chordpro') as HTMLTextAreaElement)?.value;
+            const inputBox = (document.getElementById('input-chordpro') as HTMLTextAreaElement)?.value;
+            
+            let contenido = (outputBox && outputBox.trim() !== '') ? outputBox : (inputBox || '');
+            
+            if (!contenido.includes('[') && typeof (window as any).autoConvertirAChordPro === 'function') {
+                contenido = (window as any).autoConvertirAChordPro(contenido);
+            }
+
+            // Renderizador simplificado para Atril (Alto Contraste Amarillo/Blanco)
+            const lineas = contenido.split('\n');
+            let html = '';
+            
+            lineas.forEach(linea => {
+                if (linea.trim() === '') { 
+                    html += `<div class="h-6"></div>`; 
+                    return; 
+                }
+                const cleanText = linea.replace(/\[.*?\]/g, '').trim();
+                const isSection = /^(VERSO|CORO|PUENTE|INTRO|OUTRO|FINAL|PRE-CORO|ESTR|TAG)/i.test(cleanText);
+
+                if (isSection) {
+                    html += `<div class="text-blue-400 font-bold mt-8 mb-2 text-lg sm:text-xl uppercase tracking-wider">${linea.trim()}</div>`;
+                } else if (linea.includes('[')) {
+                    html += `<div class="flex flex-wrap items-end mb-2">`;
+                    const partes = linea.split(/\[(.*?)\]/);
+                    
+                    if (partes[0]) {
+                        html += `<div class="inline-flex flex-col"><div class="text-yellow-400 font-bold text-lg sm:text-xl h-6"></div><div class="text-white whitespace-pre">${partes[0]}</div></div>`;
+                    }
+                    
+                    for (let i = 1; i < partes.length; i += 2) {
+                        html += `<div class="inline-flex flex-col mr-1.5"><div class="text-yellow-400 font-bold text-lg sm:text-xl h-6 -mb-1">${partes[i]}</div><div class="text-white whitespace-pre">${partes[i+1] || ''}</div></div>`;
+                    }
+                    html += `</div>`;
+                } else {
+                    html += `<div class="text-white mb-2">${linea}</div>`;
+                }
+            });
+
+            const stageLetra = document.getElementById('stage-letra');
+            if(stageLetra) stageLetra.innerHTML = html;
+            
+            stageContainer?.classList.remove('hidden');
+            document.body.style.overflow = 'hidden'; // Evitar scroll de fondo
+            
+            await activarWakeLock();
+
+            // Intentar Fullscreen nativo
+            if (stageContainer && stageContainer.requestFullscreen) {
+                stageContainer.requestFullscreen().catch(err => console.log('Fullscreen error:', err));
+            }
+        });
+
+        btnCerrarAtril?.addEventListener('click', () => {
+            stageContainer?.classList.add('hidden');
+            document.body.style.overflow = '';
+            liberarWakeLock();
+            if (document.fullscreenElement) {
+                document.exitFullscreen().catch(err => console.log(err));
+            }
         });
 
     });
