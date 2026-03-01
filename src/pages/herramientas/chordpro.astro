@@ -35,12 +35,13 @@ import Layout from '../../layouts/Layout.astro';
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
             <!-- Metadatos para Impresión y Auto-Formatear -->
             <div class="col-span-1 lg:col-span-2">
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-2">
-                    <input type="text" id="print-titulo" placeholder="Título de la Canción" class="p-3 bg-neutral-900 border border-neutral-700 rounded-xl text-white font-bold w-full focus:outline-none focus:border-blue-500">
-                    <input type="text" id="print-tono" placeholder="Tonalidad (Ej: G, Am)" class="p-3 bg-neutral-900 border border-neutral-700 rounded-xl text-white w-full focus:outline-none focus:border-blue-500">
-                    <input type="text" id="print-bpm" placeholder="Tiempo y BPM (Ej: 6/8 BPM = 162)" class="p-3 bg-neutral-900 border border-neutral-700 rounded-xl text-white w-full focus:outline-none focus:border-blue-500">
+                <div class="grid grid-cols-1 lg:grid-cols-5 gap-3 mb-2">
+                    <input type="text" id="print-titulo" placeholder="Título" class="p-3 bg-neutral-900 border border-neutral-700 rounded-xl text-white font-bold w-full focus:outline-none focus:border-blue-500">
+                    <input type="text" id="print-artista" placeholder="Artista (Opcional)" class="p-3 bg-neutral-900 border border-neutral-700 rounded-xl text-white w-full focus:outline-none focus:border-blue-500">
+                    <input type="text" id="print-tono" placeholder="Tono (Ej: G)" class="p-3 bg-neutral-900 border border-neutral-700 rounded-xl text-white w-full focus:outline-none focus:border-blue-500">
+                    <input type="text" id="print-bpm" placeholder="BPM" class="p-3 bg-neutral-900 border border-neutral-700 rounded-xl text-white w-full focus:outline-none focus:border-blue-500">
                     <button id="btn-autoconvertir" class="w-full px-4 py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2 shadow-lg shadow-purple-500/20">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg> Auto-Formatear
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg> Auto-Formato
                     </button>
                 </div>
             </div>
@@ -74,44 +75,12 @@ import Layout from '../../layouts/Layout.astro';
             </button>
         </div>
     </div>
-    
-    <!-- Contenedor Oculto para Impresión (Solo visible en papel) -->
-    <div id="print-document" class="hidden print:block w-full text-black bg-white">
-        <header class="border-b-2 border-black pb-4 mb-6 flex justify-between items-start">
-            <div class="flex-1 pr-4">
-                <h1 id="out-titulo" class="m-0 leading-tight"></h1>
-            </div>
-            <div class="text-right text-black flex flex-col gap-1 meta-text whitespace-nowrap">
-                <div id="out-tono"></div>
-                <div id="out-bpm"></div>
-            </div>
-        </header>
-        <main id="out-letra" class="text-[15px] font-sans text-black leading-relaxed"></main>
-    </div>
 </Layout>
 
 <style is:global>
 @media print {
-  @page { margin: 15mm 20mm; size: letter; }
-  body, html { background: white !important; }
   .print\:hidden { display: none !important; }
-
-  /* Tipografía y Layout idéntico a PDFs profesionales */
-  #print-document { font-family: Arial, Helvetica, sans-serif !important; display: block !important; width: 100%; color: black !important; }
-  #out-titulo { font-size: 24px !important; font-weight: bold !important; text-transform: uppercase; }
-  .meta-text { font-size: 14px !important; font-weight: normal !important; }
-
-  .song-section { display: flex; flex-direction: row; margin-bottom: 1.25rem; page-break-inside: avoid; width: 100%; }
-  .section-label { width: 130px; font-weight: bold; font-size: 13px; text-transform: uppercase; flex-shrink: 0; padding-right: 15px; }
-  .section-content { flex-grow: 1; display: flex; flex-direction: column; }
-
-  .chord-line { display: flex; flex-wrap: wrap; align-items: flex-end; margin-bottom: 0.25rem; line-height: 1.1; }
-  .chord-pair { display: inline-flex; flex-direction: column; justify-content: flex-end; align-items: flex-start; }
-  .chord { font-weight: bold; font-size: 13px; min-height: 14px; color: black; margin-bottom: 1px; }
-  .lyric { font-size: 15px; white-space: pre; min-height: 16px; }
-  .lyric-line { font-size: 15px; margin-bottom: 0.25rem; min-height: 16px; white-space: pre-wrap; }
 }
-.print-only { display: none; }
 </style>
 
 <script>
@@ -287,99 +256,164 @@ import Layout from '../../layouts/Layout.astro';
             });
         }
 
-        // --- MOTOR DE IMPRESIÓN CHORDPRO A LETRA-SOBRE-ACORDES AVANZADO ---
-        function construirHTMLImpresion(texto: string) {
-            const lineas = texto.split('\n');
-            let html = '';
+        document.getElementById('btn-imprimir')?.addEventListener('click', () => {
+            // 1. Recolectar Metadatos
+            const inputTitulo = document.getElementById('print-titulo') as HTMLInputElement;
+            const inputArtista = document.getElementById('print-artista') as HTMLInputElement;
+            const inputTono = document.getElementById('print-tono') as HTMLInputElement;
+            const inputBpm = document.getElementById('print-bpm') as HTMLInputElement;
+            
+            const titulo = inputTitulo?.value.trim() || 'SIN TÍTULO';
+            const artista = inputArtista?.value.trim() || '';
+            const tono = inputTono?.value.trim() || '';
+            const bpm = inputBpm?.value.trim() || '';
+            
+            const outputArea = document.getElementById('output-chordpro') as HTMLTextAreaElement;
+            const inputArea = document.getElementById('input-chordpro') as HTMLTextAreaElement;
+            // Usar outputArea si tiene texto (es decir, fue formateado), si no usar inputArea
+            const contenido = (outputArea && outputArea.value.trim() !== '') ? outputArea.value : (inputArea ? inputArea.value : '');
+
+            // 2. Parser Quirúrgico (Separa Sección y Letra)
+            const lineas = contenido.split('\n');
+            let bodyHtml = '';
             let inSection = false;
 
             lineas.forEach(linea => {
-                // Manejar líneas en blanco
                 if (linea.trim() === '') {
-                    if (inSection) html += `<div style="height: 0.75rem;"></div>`;
+                    if (inSection) bodyHtml += `<div class="spacer"></div>`;
                     return;
                 }
 
-                // Detectar si es un inicio de sección (VERSO, CORO, INTRO, etc.)
-                const esSeccion = /^(VERSO|CORO|PUENTE|INTRO|OUTRO|FINAL|PRE-CORO|ESTR)/i.test(linea.trim());
-                if (esSeccion) {
-                    if (inSection) html += `</div></div>`; // Cierra la sección anterior
-                    
-                    // Abre nueva fila (Sección Izquierda | Contenido Derecha)
-                    html += `<div class="song-section">`;
-                    html += `<div class="section-label">${linea.trim()}</div>`;
-                    html += `<div class="section-content">`;
-                    inSection = true;
-                } else {
-                    // Si hay texto antes de que se declare una sección, crea una sección sin título
-                    if (!inSection) {
-                        html += `<div class="song-section">`;
-                        html += `<div class="section-label"></div>`;
-                        html += `<div class="section-content">`;
-                        inSection = true;
-                    }
+                // Extraer acordes al inicio de la línea (Ej: "[G]VERSO 1")
+                const matchAcordesIniciales = linea.match(/^(\[.*?\]\s*)*/);
+                const leadingChords = matchAcordesIniciales ? matchAcordesIniciales[0] : '';
+                const textoSinAcordesIniciales = linea.substring(leadingChords.length);
+                
+                // Detectar si lo que sigue es una sección
+                const regexSeccion = /^(VERSO\s*\d*|CORO\s*\d*|PUENTE\s*\d*|INTRO\s*\d*|OUTRO|FINAL|PRE-CORO|PRECORO|ESTR|INSTRUMENTAL|TAG)[\s:-]*(.*)$/i;
+                const matchSeccion = textoSinAcordesIniciales.match(regexSeccion);
 
-                    // Procesar acordes vs Letra normal
-                    if (linea.includes('[')) {
-                        html += `<div class="chord-line">`;
-                        const partes = linea.split(/\[(.*?)\]/);
-                        if (partes[0]) {
-                            html += `<span class="chord-pair"><span class="chord"></span><span class="lyric">${partes[0]}</span></span>`;
-                        }
-                        for (let i = 1; i < partes.length; i += 2) {
-                            const acorde = partes[i];
-                            const letra = partes[i+1] || '';
-                            html += `<span class="chord-pair">
-                                       <span class="chord">${acorde}</span>
-                                       <span class="lyric">${letra}</span>
-                                     </span>`;
-                        }
-                        html += `</div>`;
-                    } else {
-                        html += `<div class="lyric-line">${linea}</div>`;
+                let lineaRestante = linea;
+                if (matchSeccion) {
+                    if (inSection) bodyHtml += `</div></div>`; // Cerrar caja anterior
+                    
+                    const nombreSeccion = matchSeccion[1].toUpperCase();
+                    bodyHtml += `<div class="song-section">`;
+                    bodyHtml += `<div class="section-label">${nombreSeccion}</div>`;
+                    bodyHtml += `<div class="section-content">`;
+                    inSection = true;
+                    // Reconstruir la línea para la columna derecha (Acordes iniciales + resto del texto)
+                    lineaRestante = leadingChords + matchSeccion[2].trim();
+                    
+                    // Si la línea solo decía "VERSO 1" y no quedó nada, saltamos
+                    if (lineaRestante.trim() === '' || lineaRestante.trim() === leadingChords.trim()) {
+                        return; 
                     }
+                } else if (!inSection) {
+                    // Si el usuario escribe letra sin definir una sección antes
+                    bodyHtml += `<div class="song-section">`;
+                    bodyHtml += `<div class="section-label"></div>`;
+                    bodyHtml += `<div class="section-content">`;
+                    inSection = true;
+                }
+
+                // 3. Renderizar Acordes y Letra (Motor Flexbox)
+                if (lineaRestante.includes('[')) {
+                    bodyHtml += `<div class="chord-line">`;
+                    const partes = lineaRestante.split(/\[(.*?)\]/);
+                    
+                    if (partes[0]) {
+                        bodyHtml += `<div class="chord-pair"><div class="chord"></div><div class="lyric">${partes[0]}</div></div>`;
+                    }
+                    
+                    for (let i = 1; i < partes.length; i += 2) {
+                        const acorde = partes[i];
+                        const letra = partes[i+1] || '';
+                        bodyHtml += `<div class="chord-pair">
+                                       <div class="chord">${acorde}</div>
+                                       <div class="lyric">${letra}</div>
+                                     </div>`;
+                    }
+                    bodyHtml += `</div>`;
+                } else {
+                    bodyHtml += `<div class="lyric-line">${lineaRestante}</div>`;
                 }
             });
+            if (inSection) bodyHtml += `</div></div>`;
 
-            if (inSection) html += `</div></div>`; // Cierra la última sección
-            return html;
-        }
+            // 4. La Opción Nuclear: Generar Ventana de Impresión Aislada
+            const printWindow = window.open('', '_blank', 'height=800,width=800');
+            if (!printWindow) {
+                alert("Por favor, permite las ventanas emergentes (pop-ups) para imprimir.");
+                return;
+            }
 
-        const btnImprimir = document.getElementById('btn-imprimir');
-        if (btnImprimir) {
-            btnImprimir.addEventListener('click', () => {
-                // 1. Capturar los valores de los inputs (O poner valores por defecto si están vacíos)
-                const inputTitulo = document.getElementById('print-titulo') as HTMLInputElement;
-                const inputTono = document.getElementById('print-tono') as HTMLInputElement;
-                const inputBpm = document.getElementById('print-bpm') as HTMLInputElement;
+            printWindow.document.write(`
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>${titulo}</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+      
+      @page { margin: 15mm 20mm; size: letter; }
+      body { 
+          font-family: Arial, Helvetica, sans-serif; 
+          color: black; 
+          background: white; 
+          margin: 0; 
+          padding: 20px; 
+      }
+      
+      /* Cabecera Sovereign Grace */
+      header { border-bottom: 2px solid black; padding-bottom: 12px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: flex-start; }
+      .header-left h1 { font-size: 26px; font-weight: 900; text-transform: uppercase; margin: 0; letter-spacing: 0.5px; }
+      .header-left h2 { font-size: 15px; font-weight: normal; font-style: italic; color: #333; margin: 4px 0 0 0; }
+      .header-right { text-align: right; font-size: 14px; font-weight: bold; }
+      .header-right div { margin-bottom: 4px; }
+      
+      /* Columnas */
+      .song-section { display: flex; width: 100%; margin-bottom: 20px; page-break-inside: avoid; }
+      .section-label { width: 130px; font-weight: bold; font-size: 13px; flex-shrink: 0; padding-right: 15px; text-transform: uppercase; }
+      .section-content { flex-grow: 1; display: flex; flex-direction: column; }
+      
+      /* Acordes sobre Letra */
+      .chord-line { display: flex; flex-wrap: wrap; align-items: flex-end; margin-bottom: 4px; }
+      .chord-pair { display: inline-flex; flex-direction: column; justify-content: flex-end; align-items: flex-start; }
+      .chord { font-weight: bold; font-size: 13px; min-height: 14px; margin-bottom: 1px; color: black; }
+      .lyric { font-size: 15px; white-space: pre; min-height: 16px; color: black; }
+      .lyric-line { font-size: 15px; margin-bottom: 4px; min-height: 16px; white-space: pre-wrap; color: black; }
+      .spacer { height: 12px; }
+    </style>
+</head>
+<body>
+    <header>
+      <div class="header-left">
+        <h1>${titulo}</h1>
+        ${artista ? `<h2>${artista}</h2>` : ''}
+      </div>
+      <div class="header-right">
+        ${tono ? `<div>Tonalidad: ${tono}</div>` : ''}
+        ${bpm ? `<div>${bpm}</div>` : ''}
+      </div>
+    </header>
+    <main>
+      ${bodyHtml}
+    </main>
+</body>
+</html>
+            `);
 
-                const titulo = inputTitulo && inputTitulo.value.trim() !== '' ? inputTitulo.value.trim() : 'SIN TÍTULO';
-                const tono = inputTono && inputTono.value.trim() !== '' ? 'Tonalidad: ' + inputTono.value.trim() : '';
-                const bpm = inputBpm && inputBpm.value.trim() !== '' ? inputBpm.value.trim() : '';
-
-                // 2. Inyectar en la cabecera de impresión
-                const outTitulo = document.getElementById('out-titulo');
-                const outTono = document.getElementById('out-tono');
-                const outBpm = document.getElementById('out-bpm');
-                
-                if (outTitulo) outTitulo.textContent = titulo;
-                if (outTono) outTono.textContent = tono;
-                if (outBpm) outBpm.textContent = bpm;
-
-                // 3. Renderizar la letra y acordes en columnas
-                const outputArea = document.getElementById('output-chordpro') as HTMLTextAreaElement;
-                const inputArea = document.getElementById('input-chordpro') as HTMLTextAreaElement;
-                const contenido = (outputArea && outputArea.value) ? outputArea.value : (inputArea ? inputArea.value : '');
-
-                const outLetra = document.getElementById('out-letra');
-                if (outLetra) outLetra.innerHTML = construirHTMLImpresion(contenido);
-
-                // 4. Disparar la ventana de impresión
-                setTimeout(() => {
-                    window.print();
-                }, 100); // Pequeño retraso para asegurar que el DOM se actualizó
-            });
-        }
+            printWindow.document.close();
+            printWindow.focus();
+            
+            // Retraso para que el navegador renderice el DOM emergente y fuentes antes de disparar el PDF
+            setTimeout(() => {
+                printWindow.print();
+                // printWindow.close(); // Opcional: Cerrar ventana despues de imprimir
+            }, 500);
+        });
 
     });
 </script>
