@@ -35,7 +35,7 @@ async function fetchCanciones() {
  }
 }
 
-const canciones = await fetchCanciones();
+const canciones = (await fetchCanciones()).reverse();
 
 const cancionesConDataFicticia = canciones.length > 0 ? canciones : [
  {
