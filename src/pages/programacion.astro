@@ -78,12 +78,12 @@ import Layout from '../layouts/Layout.astro';
  <form id="form-event" class="flex flex-col gap-5">
  <input type="hidden" id="ev-id" value="">
  
- <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+ <div class="grid grid-cols-1 gap-5 w-full">
  <div class="md:col-span-2">
  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Título del Evento <span class="text-red-500">*</span></label>
  <input type="text" id="ev-titulo" required class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-teal-500 transition-colors" placeholder="Ej: Culto de Adoración">
  </div>
- <div class="md:col-span-2 grid grid-cols-1 gap-4">
+ <div class="w-full grid grid-cols-1 sm:grid-cols-2 gap-4">
  <div>
  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Fecha y Hora <span class="text-red-500">*</span></label>
  <input type="datetime-local" id="ev-fecha" required class="w-full min-w-0 max-w-full bg-neutral-100 border border-neutral-300 rounded-xl px-3 py-3 text-sm text-neutral-900 focus:outline-none focus:border-teal-500 transition-colors" style="box-sizing:border-box;">
