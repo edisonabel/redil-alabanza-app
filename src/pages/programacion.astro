@@ -80,14 +80,14 @@ import Layout from '../layouts/Layout.astro';
  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Título del Evento <span class="text-red-500">*</span></label>
  <input type="text" id="ev-titulo" required class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-teal-500 transition-colors" placeholder="Ej: Culto de Adoración">
  </div>
- <div class="w-full flex flex-col sm:flex-row gap-4 overflow-hidden">
- <div class="flex-1 min-w-0 w-full overflow-hidden">
+ <div class="w-full flex flex-col sm:flex-row gap-4">
+ <div class="flex-1 min-w-0 w-full">
  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2 truncate">Fecha y Hora <span class="text-red-500">*</span></label>
- <input type="datetime-local" id="ev-fecha" required class="w-full block min-w-0 max-w-full appearance-none bg-neutral-100 border border-neutral-300 rounded-xl px-3 py-3 text-sm text-neutral-900 focus:outline-none focus:border-teal-500 transition-colors box-border">
+ <input type="datetime-local" id="ev-fecha" required class="w-full block min-w-0 max-w-full min-h-[48px] bg-neutral-100 border border-neutral-300 rounded-xl px-3 py-3 text-sm text-neutral-900 focus:outline-none focus:border-teal-500 transition-colors">
  </div>
- <div class="flex-[0.7] min-w-0 w-full overflow-hidden">
+ <div class="flex-[0.7] min-w-0 w-full">
  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2 truncate">Hora Fin <span class="text-neutral-500 font-normal lowercase">(opcional)</span></label>
- <input type="time" id="ev-hora-fin" class="w-full block min-w-0 max-w-full appearance-none bg-neutral-100 border border-neutral-300 rounded-xl px-3 py-3 text-sm text-neutral-900 focus:outline-none focus:border-teal-500 transition-colors box-border">
+ <input type="time" id="ev-hora-fin" class="w-full block min-w-0 max-w-full min-h-[48px] bg-neutral-100 border border-neutral-300 rounded-xl px-3 py-3 text-sm text-neutral-900 focus:outline-none focus:border-teal-500 transition-colors">
  </div>
  </div>
   <!-- Checkbox Actualización en Serie -->
