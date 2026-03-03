@@ -450,12 +450,21 @@ import Layout from '../layouts/Layout.astro';
  `;
  }
 
- // Generar Células Decorativas Previas para el Calendario Mensual (Placeholder de Alineación)
- const firstDayOfMonth = new Date(proyeccionActual.getFullYear(), proyeccionActual.getMonth(), 1).getDay();
- let calendarHtml = '';
- for(let i = 0; i < firstDayOfMonth; i++) {
- calendarHtml += `<div class="aspect-square bg-transparent rounded-xl"></div>`;
- }
+  // Calendario: rastrear posición en el grid de 7 columnas
+  let calendarCellIndex = 0;
+  let calendarHtml = '';
+  const firstEventMonth = proyeccionActual.getMonth();
+  const firstEventYear = proyeccionActual.getFullYear();
+  const firstDayOfMonth = new Date(firstEventYear, firstEventMonth, 1).getDay();
+  const firstEventDay = proyeccionActual.getDate();
+  for (let i = 0; i < firstDayOfMonth; i++) {
+  calendarHtml += `<div class="aspect-square bg-transparent rounded-xl"></div>`;
+  calendarCellIndex++;
+  }
+  for (let d = 1; d < firstEventDay; d++) {
+  calendarHtml += `<div class="aspect-square bg-neutral-50/30 rounded-xl border border-transparent"><span class="text-[10px] text-neutral-300 font-medium p-1">${d}</span></div>`;
+  calendarCellIndex++;
+  }
 
  // Aplicar Scroll Observer a las tarjetas renderizadas dinámicamente
  const gridObserver = new IntersectionObserver((entries, obs) => {
@@ -722,10 +731,16 @@ import Layout from '../layouts/Layout.astro';
  // Sumar 7 días exactos al Tracker visual
  proyeccionActual.setDate(proyeccionActual.getDate() + 7); 
  
- // Rellenar días del calendario vacíos intermedios
- for(let x=0; x<6; x++){
- calendarHtml += `<div class="aspect-square bg-neutral-50/50 rounded-xl border border-transparent"></div>`;
- }
+  // Rellenar celdas vacías entre este domingo y el siguiente
+  const nextTarget = new Date(proyeccionActual);
+  const dayAfterEvent = new Date(targetDate);
+  dayAfterEvent.setDate(dayAfterEvent.getDate() + 1);
+  while (dayAfterEvent < nextTarget) {
+  calendarHtml += `<div class="aspect-square bg-neutral-50/30 rounded-xl border border-transparent"><span class="text-[10px] text-neutral-300 font-medium p-1">${dayAfterEvent.getDate()}</span></div>`;
+  calendarCellIndex++;
+  dayAfterEvent.setDate(dayAfterEvent.getDate() + 1);
+  }
+  calendarCellIndex++;
  }
  
  agendaGrid.insertAdjacentHTML('beforeend', htmlCardString);
