@@ -1,5 +1,6 @@
 ---
 import '../styles/global.css';
+import BottomNav from '../components/BottomNav.astro';
 
 const currentPath = Astro.url.pathname;
 ---
@@ -7,15 +8,17 @@ const currentPath = Astro.url.pathname;
 <html lang="es">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="generator" content={Astro.generator} />
     <title>Alabanza</title>
     <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="App Alabanza">
-    <meta name="theme-color" content="#0a0a0a" />
+    <meta name="theme-color" content="#neutral-950" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
@@ -35,24 +38,14 @@ const currentPath = Astro.url.pathname;
         typeof window !== 'undefined' && window.localStorage.setItem('tema', theme);
     </script>
 </head>
-<body class="bg-neutral-950 text-neutral-100 min-h-screen" style="font-family: 'Questrial', sans-serif;">
-    <main class="max-w-6xl mx-auto p-6 md:p-8">
-        <header class="flex items-center justify-between mb-6 pb-4 border-b border-neutral-800/50">
-            <nav class="flex items-center gap-6 md:gap-8">
-                <a href="/" class={`px-1 py-2 text-sm md:text-base font-semibold transition-colors ${currentPath === '/' ? 'nav-link-active' : 'nav-link-inactive'}`}>Repertorio</a>
-                <a href="/herramientas" class={`px-1 py-2 text-sm md:text-base font-semibold transition-colors ${currentPath.includes('/herramientas') ? 'nav-link-active' : 'nav-link-inactive'}`}>Herramientas</a>
-            </nav>
-            <div class="flex items-center gap-2 relative">
-                <a href="/herramientas" class="p-2 rounded-full hover:bg-neutral-800 text-neutral-400 hover:text-white transition-colors flex items-center justify-center" title="Herramientas">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-                </a>
-                <button id="btn-theme-toggle" class="p-2 rounded-full bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-300 transition-colors" title="Alternar Tema">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>
-                </button>
-            </div>
-        </header>
+<body class="bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 min-h-screen" style="font-family: 'Questrial', sans-serif;">
+    <main class="w-full max-w-6xl mx-auto pb-24">
+        <!-- Contenedor Principal (pb-24 evita choque visual con la barra flotante) -->
         <slot />
     </main>
+
+    <!-- Barra de Navegación Fija Mobile-First -->
+    <BottomNav />
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {

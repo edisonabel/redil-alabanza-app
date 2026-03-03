@@ -46,7 +46,7 @@ const cancionesConDataFicticia = canciones.length > 0 ? canciones : [
       'Link Acordes': "#",
       'Link Voces': "#",
       'Link Youtube': "#",
-      'Link Youtube': "#",
+      'Link Secuencias': "#",
       'Categoría Canción': "Lenta",
       'Voz Principal': "Hombre",
       'Tema Principal Canción': "Exaltación"
@@ -165,7 +165,7 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
     <!-- Centinela para Infinite Scroll -->
     <div id="scroll-sentinel" class="h-4 w-full mt-8"></div>
 
-    <!-- Panel Flotante Setlist -->
+    <!-- Panel Flotante Setlist (modo normal) -->
     <div id="setlistPanel" class="fixed bottom-20 right-6 bg-neutral-800 border border-neutral-700 text-white p-4 rounded-2xl shadow-2xl z-50 flex items-center gap-4 hidden transition-opacity">
         <div class="font-semibold">
             Setlist: <span id="setlistCount" class="text-blue-400">0</span>
@@ -175,9 +175,38 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
             <button id="btnClearSetlist" class="px-3 py-1.5 bg-neutral-700 hover:bg-neutral-600 rounded-lg text-sm font-bold transition-colors">Limpiar</button>
         </div>
     </div>
+
+    <!-- Barra Flotante Playlist (modo selección) - Inyección modular -->
+    <div id="playlistBar" class="fixed bottom-16 left-0 right-0 z-50 bg-neutral-900 border-t border-neutral-800 shadow-[0_-8px_30px_rgba(0,0,0,0.3)] px-4 py-4 hidden">
+        <div class="max-w-6xl mx-auto flex items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-teal-500/20 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-teal-400"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                </div>
+                <div>
+                    <p class="text-white font-bold text-sm"><span id="playlistCount">0</span> Canciones Seleccionadas</p>
+                    <p class="text-neutral-400 text-xs">Toca el + de cada canción para agregar o quitar</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="btn-cancel-playlist" class="px-4 py-2.5 rounded-xl border border-neutral-700 text-neutral-400 text-sm font-bold hover:bg-neutral-800 transition-colors">
+                    Cancelar
+                </button>
+                <button id="btn-save-playlist" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white text-sm font-bold hover:opacity-90 transition-all shadow-lg flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                    Guardar Playlist
+                </button>
+            </div>
+        </div>
+    </div>
 </Layout>
 
+<!-- Data bridge para sync: pasar canciones CSV a client-side JS -->
+<script is:inline id="canciones-sync-data" type="application/json" set:html={JSON.stringify(cancionesConDataFicticia)}></script>
+
 <script>
+    import { supabase } from '../lib/supabase';
+
     document.addEventListener('DOMContentLoaded', () => {
         const searchInput = document.getElementById('searchInput') as HTMLInputElement;
         const filterVoz = document.getElementById('filterVoz') as HTMLSelectElement;
@@ -265,213 +294,349 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
             }
         });
 
-        // ----- Setlist Builder Logic -----
-        let setlist = JSON.parse(localStorage.getItem('setlist') || '[]');
-
-        function updateSetlistUI() {
-            if (setlistCount) setlistCount.textContent = setlist.length.toString();
-            if (setlistPanel) {
-                if (setlist.length > 0) {
-                    setlistPanel.classList.remove('hidden');
-                } else {
-                    setlistPanel.classList.add('hidden');
-                }
-            }
-        }
-
-        document.addEventListener('click', (e) => {
-            const btn = (e.target as Element).closest('.btn-add-setlist');
-            const btnEditor = (e.target as Element).closest('.btn-editor');
-
-            // Lógica para enviar al Editor/Transpositor
-            if (btnEditor) {
-                e.preventDefault(); // Evitar navegación estándar por seguridad si usamos storage
-                const btnEl = btnEditor as HTMLElement;
-                const rawChordpro = btnEl.getAttribute('data-chordpro') || '';
-                const title = btnEl.getAttribute('data-titulo') || '';
-                const bpm = btnEl.getAttribute('data-bpm') || '';
-                const key = btnEl.getAttribute('data-key') || '';
-
-                if (rawChordpro.trim()) {
-                    // Pasar datos pesados por sessionStorage es más seguro para grandes multilineas
-                    const payload = { chordpro: rawChordpro, title, bpm, key };
-                    sessionStorage.setItem('chordpro_bridge', JSON.stringify(payload));
-                    window.location.href = '/herramientas/chordpro';
-                }
-                return;
-            }
-
-            // Lógica original Setlist
-            if (btn) {
-                const cancion = btn.getAttribute('data-cancion');
-                if (cancion && !setlist.includes(cancion)) {
-                    setlist.push(cancion);
-                    localStorage.setItem('setlist', JSON.stringify(setlist));
-                    updateSetlistUI();
-                    
-                    const svg = btn.querySelector('svg');
-                    if(svg) {
-                        svg.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
-                        btn.classList.replace('text-blue-400', 'text-green-400');
-                        btn.classList.replace('bg-blue-500/10', 'bg-green-500/10');
-                    }
-                }
-            }
-        });
-
-        if (btnCopySetlist) {
-            btnCopySetlist.addEventListener('click', () => {
-                const base64Str = btoa(encodeURIComponent(JSON.stringify(setlist)));
-                const safeUrlParam = encodeURIComponent(base64Str);
-                const originalUrl = window.location.origin + window.location.pathname;
-                const url = originalUrl + '?setlist=' + safeUrlParam;
-                navigator.clipboard.writeText(url).then(() => {
-                    alert('¡Setlist copiado y abierto en una nueva pestaña!');
-                    window.open(url, '_blank');
-                });
-            });
-        }
-
-        if (btnClearSetlist) {
-            btnClearSetlist.addEventListener('click', () => {
-                setlist = [];
-                localStorage.removeItem('setlist');
-                updateSetlistUI();
-                window.location.href = window.location.pathname;
-            });
-        }
-
-        // ----- Modo Setlist de la Semana -----
+        // =============================================
+        // MÓDULO PLAYLIST (Inyección modular)
+        // Detecta ?seleccionar_para=UUID y activa modo selección
+        // =============================================
         const urlParams = new URLSearchParams(window.location.search);
-        const setlistParam = urlParams.get('setlist');
+        const seleccionarPara = urlParams.get('seleccionar_para');
+        const isSelectionMode = !!seleccionarPara;
 
-        if (setlistParam) {
-            try {
-                const decodedData = decodeURIComponent(atob(setlistParam));
-                const setlistArray = JSON.parse(decodedData);
-                
-                if (searchControls) searchControls.style.display = 'none';
-                if (setlistPanel) setlistPanel.style.display = 'none';
-                if (mainTitle) mainTitle.innerHTML = 'Setlist de la <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400">Semana</span>';
+        // Array de títulos seleccionados
+        let selectedSongs: string[] = [];
+        const playlistBar = document.getElementById('playlistBar');
+        const playlistCountEl = document.getElementById('playlistCount');
 
-                cards.forEach(card => {
-                    const cancionTitulo = card.getAttribute('data-cancion') || '';
-                    
-                    if (setlistArray.includes(cancionTitulo)) {
-                        card.style.display = 'block';
-                        const addBtn = card.querySelector('.btn-add-setlist');
-                        if(addBtn) (addBtn as HTMLElement).style.display = 'none';
-                    } else {
-                        card.style.display = 'none';
-                    }
-                });
-            } catch (e) {
-                console.error("Error validando el link del setlist:", e);
-                window.location.href = window.location.pathname;
-            }
-        } else {
-            // ----- Modo Normal (Búsqueda y Filtros) -----
-            updateSetlistUI(); // Initialize setlist panel visibility
-
-            // ----- Infinite Scroll & Search Logic -----
-            const sentinel = document.getElementById('scroll-sentinel');
-            const todasLasCanciones = Array.from(cards);
-            let cancionesFiltradas = [...todasLasCanciones];
-            let indiceActual = 0;
-            const limite = 15;
-            let isLoading = false;
+        if (isSelectionMode) {
+            // Cambiar título
+            if (mainTitle) mainTitle.innerHTML = 'Seleccionar <span class="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-emerald-400">Playlist</span>';
             
-            function cargarMasCanciones() {
-                if (isLoading) return;
-                isLoading = true;
+            // Ocultar setlist panel normal y mostrar barra playlist
+            if (setlistPanel) setlistPanel.style.display = 'none';
+            if (playlistBar) playlistBar.classList.remove('hidden');
 
-                const fragmento = cancionesFiltradas.slice(indiceActual, indiceActual + limite);
-                if (fragmento.length === 0) {
-                    if (sentinel) sentinel.style.display = 'none';
-                    isLoading = false;
-                    return;
-                }
-                
-                fragmento.forEach(card => card.classList.remove('cancion-oculta'));
-                indiceActual += limite;
-                
-                if (sentinel) {
-                    sentinel.style.display = (indiceActual >= cancionesFiltradas.length) ? 'none' : 'block';
-                }
+            // Pre-cargar canciones existentes en la playlist de este evento
+            (async () => {
+                const { data: pl } = await supabase
+                    .from('playlists')
+                    .select('id')
+                    .eq('evento_id', seleccionarPara)
+                    .single();
 
-                requestAnimationFrame(() => {
-                    isLoading = false;
-                    // Verificación Recursiva: Si tras inyectar DOM el centinela aún flota dentro del área visible 
-                    // (pantallas grandes o scroll veloz), volvemos a disparar para evitar congelamientos Edge-Triggered
-                    if (sentinel && sentinel.style.display !== 'none') {
-                        const rect = sentinel.getBoundingClientRect();
-                        if (rect.top <= window.innerHeight + 150) {
-                            cargarMasCanciones();
+                if (pl) {
+                    const { data: items } = await supabase
+                        .from('playlist_canciones')
+                        .select('canciones(titulo)')
+                        .eq('playlist_id', pl.id);
+
+                    if (items) {
+                        items.forEach((item: any) => {
+                            if (item.canciones?.titulo) {
+                                selectedSongs.push(item.canciones.titulo);
+                            }
+                        });
+                        // Marcar visualmente las pre-seleccionadas
+                        cards.forEach(card => {
+                            const cancion = card.getAttribute('data-cancion') || '';
+                            if (selectedSongs.includes(cancion)) {
+                                const btn = card.querySelector('.btn-add-setlist');
+                                if (btn) {
+                                    const svg = btn.querySelector('svg');
+                                    if (svg) svg.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
+                                    btn.classList.replace('text-blue-400', 'text-green-400');
+                                    btn.classList.replace('bg-blue-500/10', 'bg-green-500/10');
+                                }
+                            }
+                        });
+                        updatePlaylistCount();
+                    }
+                }
+            })();
+
+            // Interceptar clicks en .btn-add-setlist para modo playlist
+            document.addEventListener('click', (e) => {
+                const btn = (e.target as Element).closest('.btn-add-setlist');
+                if (!btn) return;
+                e.preventDefault();
+                e.stopPropagation();
+
+                const cancion = btn.getAttribute('data-cancion') || '';
+                if (!cancion) return;
+
+                const idx = selectedSongs.indexOf(cancion);
+                const svg = btn.querySelector('svg');
+
+                if (idx > -1) {
+                    // Deseleccionar
+                    selectedSongs.splice(idx, 1);
+                    if (svg) svg.innerHTML = '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>';
+                    btn.classList.replace('text-green-400', 'text-blue-400');
+                    btn.classList.replace('bg-green-500/10', 'bg-blue-500/10');
+                } else {
+                    // Seleccionar
+                    selectedSongs.push(cancion);
+                    if (svg) svg.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
+                    btn.classList.replace('text-blue-400', 'text-green-400');
+                    btn.classList.replace('bg-blue-500/10', 'bg-green-500/10');
+                }
+                updatePlaylistCount();
+            }, true); // useCapture=true para interceptar antes del handler normal
+
+            // Cancelar
+            document.getElementById('btn-cancel-playlist')?.addEventListener('click', () => {
+                window.location.href = '/programacion';
+            });
+
+            // Guardar Playlist
+            document.getElementById('btn-save-playlist')?.addEventListener('click', async () => {
+                const btn = document.getElementById('btn-save-playlist') as HTMLButtonElement;
+                btn.disabled = true;
+                btn.innerHTML = '<svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Guardando...';
+
+                try {
+                    // UPSERT playlist
+                    const { data: playlist, error: plErr } = await supabase
+                        .from('playlists')
+                        .upsert({ evento_id: seleccionarPara }, { onConflict: 'evento_id' })
+                        .select('id')
+                        .single();
+
+                    if (plErr) throw plErr;
+
+                    // DELETE old
+                    await supabase.from('playlist_canciones').delete().eq('playlist_id', playlist.id);
+
+                    // Get cancion IDs from Supabase by titulo
+                    if (selectedSongs.length > 0) {
+                        const { data: cancionesDB } = await supabase
+                            .from('canciones')
+                            .select('id, titulo')
+                            .in('titulo', selectedSongs);
+
+                        if (cancionesDB && cancionesDB.length > 0) {
+                            const insertPayload = cancionesDB.map((c: any, i: number) => ({
+                                playlist_id: playlist.id,
+                                cancion_id: c.id,
+                                orden: i
+                            }));
+
+                            const { error: insErr } = await supabase
+                                .from('playlist_canciones')
+                                .insert(insertPayload);
+
+                            if (insErr) throw insErr;
                         }
                     }
+
+                    window.location.href = '/programacion';
+
+                } catch (err: any) {
+                    console.error('Error guardando playlist:', err);
+                    alert('Error al guardar: ' + (err.message || 'Error desconocido'));
+                    btn.disabled = false;
+                    btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Guardar Playlist';
+                }
+            });
+
+        } else {
+            // =============================================
+            // MODO NORMAL (Setlist Builder original idéntico a index.astro)
+            // =============================================
+            let setlist = JSON.parse(localStorage.getItem('setlist') || '[]');
+
+            function updateSetlistUI() {
+                if (setlistCount) setlistCount.textContent = setlist.length.toString();
+                if (setlistPanel) {
+                    if (setlist.length > 0) {
+                        setlistPanel.classList.remove('hidden');
+                    } else {
+                        setlistPanel.classList.add('hidden');
+                    }
+                }
+            }
+
+            document.addEventListener('click', (e) => {
+                const btn = (e.target as Element).closest('.btn-add-setlist');
+                const btnEditor = (e.target as Element).closest('.btn-editor');
+
+                // Lógica para enviar al Editor/Transpositor
+                if (btnEditor) {
+                    e.preventDefault();
+                    const btnEl = btnEditor as HTMLElement;
+                    const rawChordpro = btnEl.getAttribute('data-chordpro') || '';
+                    const title = btnEl.getAttribute('data-titulo') || '';
+                    const bpm = btnEl.getAttribute('data-bpm') || '';
+                    const key = btnEl.getAttribute('data-key') || '';
+
+                    if (rawChordpro.trim()) {
+                        const payload = { chordpro: rawChordpro, title, bpm, key };
+                        sessionStorage.setItem('chordpro_bridge', JSON.stringify(payload));
+                        window.location.href = '/herramientas/chordpro';
+                    }
+                    return;
+                }
+
+                // Lógica original Setlist
+                if (btn) {
+                    const cancion = btn.getAttribute('data-cancion');
+                    if (cancion && !setlist.includes(cancion)) {
+                        setlist.push(cancion);
+                        localStorage.setItem('setlist', JSON.stringify(setlist));
+                        updateSetlistUI();
+                        
+                        const svg = btn.querySelector('svg');
+                        if(svg) {
+                            svg.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
+                            btn.classList.replace('text-blue-400', 'text-green-400');
+                            btn.classList.replace('bg-blue-500/10', 'bg-green-500/10');
+                        }
+                    }
+                }
+            });
+
+            if (btnCopySetlist) {
+                btnCopySetlist.addEventListener('click', () => {
+                    const base64Str = btoa(encodeURIComponent(JSON.stringify(setlist)));
+                    const safeUrlParam = encodeURIComponent(base64Str);
+                    const originalUrl = window.location.origin + window.location.pathname;
+                    const url = originalUrl + '?setlist=' + safeUrlParam;
+                    navigator.clipboard.writeText(url).then(() => {
+                        alert('¡Setlist copiado y abierto en una nueva pestaña!');
+                        window.open(url, '_blank');
+                    });
                 });
             }
-            
-            const observer = new IntersectionObserver((entries) => {
-                const entry = entries[0];
-                if (entry.isIntersecting) {
+
+            if (btnClearSetlist) {
+                btnClearSetlist.addEventListener('click', () => {
+                    setlist = [];
+                    localStorage.removeItem('setlist');
+                    updateSetlistUI();
+                    window.location.href = window.location.pathname;
+                });
+            }
+
+            // ----- Modo Setlist de la Semana -----
+            const setlistParam = urlParams.get('setlist');
+
+            if (setlistParam) {
+                try {
+                    const decodedData = decodeURIComponent(atob(setlistParam));
+                    const setlistArray = JSON.parse(decodedData);
+                    
+                    if (searchControls) searchControls.style.display = 'none';
+                    if (setlistPanel) setlistPanel.style.display = 'none';
+                    if (mainTitle) mainTitle.innerHTML = 'Setlist de la <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400">Semana</span>';
+
+                    cards.forEach(card => {
+                        const cancionTitulo = card.getAttribute('data-cancion') || '';
+                        
+                        if (setlistArray.includes(cancionTitulo)) {
+                            card.style.display = 'block';
+                            const addBtn = card.querySelector('.btn-add-setlist');
+                            if(addBtn) (addBtn as HTMLElement).style.display = 'none';
+                        } else {
+                            card.style.display = 'none';
+                        }
+                    });
+                } catch (e) {
+                    console.error("Error validando el link del setlist:", e);
+                    window.location.href = window.location.pathname;
+                }
+            } else {
+                // ----- Modo Normal (Búsqueda y Filtros) -----
+                updateSetlistUI();
+
+                // ----- Infinite Scroll & Search Logic -----
+                const sentinel = document.getElementById('scroll-sentinel');
+                const todasLasCanciones = Array.from(cards);
+                let cancionesFiltradas = [...todasLasCanciones];
+                let indiceActual = 0;
+                const limite = 15;
+                let isLoading = false;
+                
+                function cargarMasCanciones() {
+                    if (isLoading) return;
+                    isLoading = true;
+
+                    const fragmento = cancionesFiltradas.slice(indiceActual, indiceActual + limite);
+                    if (fragmento.length === 0) {
+                        if (sentinel) sentinel.style.display = 'none';
+                        isLoading = false;
+                        return;
+                    }
+                    
+                    fragmento.forEach(card => card.classList.remove('cancion-oculta'));
+                    indiceActual += limite;
+                    
+                    if (sentinel) {
+                        sentinel.style.display = (indiceActual >= cancionesFiltradas.length) ? 'none' : 'block';
+                    }
+
+                    requestAnimationFrame(() => {
+                        isLoading = false;
+                        if (sentinel && sentinel.style.display !== 'none') {
+                            const rect = sentinel.getBoundingClientRect();
+                            if (rect.top <= window.innerHeight + 150) {
+                                cargarMasCanciones();
+                            }
+                        }
+                    });
+                }
+                
+                const observer = new IntersectionObserver((entries) => {
+                    const entry = entries[0];
+                    if (entry.isIntersecting) {
+                        cargarMasCanciones();
+                    }
+                }, { 
+                    root: null, 
+                    rootMargin: '150px',
+                    threshold: 0 
+                });
+                
+                if (sentinel) observer.observe(sentinel);
+
+                // ----- Filter Application Logic -----
+                function filterCards() {
+                    const searchTerm = searchInput.value.toLowerCase().trim();
+                    const vozTerm = filterVoz.value;
+                    const categoriaTerm = filterCategoria.value;
+                    const temaTerm = filterTema.value;
+
+                    todasLasCanciones.forEach(card => card.classList.add('cancion-oculta'));
+                    indiceActual = 0;
+
+                    cancionesFiltradas = todasLasCanciones.filter(card => {
+                        const titulo = card.getAttribute('data-titulo') || '';
+                        const artista = card.getAttribute('data-artista') || '';
+                        const voz = card.getAttribute('data-voz') || '';
+                        const categoria = card.getAttribute('data-categoria') || '';
+                        const tema = card.getAttribute('data-tema') || '';
+
+                        const matchesSearch = titulo.includes(searchTerm) || artista.includes(searchTerm);
+                        const matchesVoz = vozTerm === 'Todas' || voz.includes(vozTerm);
+                        const matchesCategoria = categoriaTerm === 'Todas' || categoria.includes(categoriaTerm);
+                        const matchesTema = temaTerm === 'Todas' || tema.includes(temaTerm);
+
+                        return matchesSearch && matchesVoz && matchesCategoria && matchesTema;
+                    });
+
+                    cancionesFiltradas.forEach(card => card.style.display = '');
                     cargarMasCanciones();
                 }
-            }, { 
-                root: null, 
-                rootMargin: '150px',
-                threshold: 0 
-            });
-            
-            if (sentinel) observer.observe(sentinel);
 
-            // ----- Filter Application Logic -----
-            function filterCards() {
-                const searchTerm = searchInput.value.toLowerCase().trim();
-                const vozTerm = filterVoz.value;
-                const categoriaTerm = filterCategoria.value;
-                const temaTerm = filterTema.value;
-
-                // Paso 1: Ocultar todas las tarjetas de golpe
-                todasLasCanciones.forEach(card => card.classList.add('cancion-oculta'));
-
-                // Paso 2: Reiniciar el contador del scroll
-                indiceActual = 0;
-
-                // Paso 3: Filtrar el array en memoria
-                cancionesFiltradas = todasLasCanciones.filter(card => {
-                    const titulo = card.getAttribute('data-titulo') || '';
-                    const artista = card.getAttribute('data-artista') || '';
-                    const voz = card.getAttribute('data-voz') || '';
-                    const categoria = card.getAttribute('data-categoria') || '';
-                    const tema = card.getAttribute('data-tema') || '';
-
-                    const matchesSearch = titulo.includes(searchTerm) || artista.includes(searchTerm);
-                    const matchesVoz = vozTerm === 'Todas' || voz.includes(vozTerm);
-                    const matchesCategoria = categoriaTerm === 'Todas' || categoria.includes(categoriaTerm);
-                    const matchesTema = temaTerm === 'Todas' || tema.includes(temaTerm);
-
-                    return matchesSearch && matchesVoz && matchesCategoria && matchesTema;
-                });
-
-                // Limpiar explícitamente el display style heredado para que dependa únicamente de cancion-oculta
-                cancionesFiltradas.forEach(card => card.style.display = '');
-
-                // Paso 4: Pintar el primer bloque de los resultados encontrados
-                cargarMasCanciones();
+                if(searchInput) searchInput.addEventListener('input', filterCards);
+                if(filterVoz) filterVoz.addEventListener('change', filterCards);
+                if(filterCategoria) filterCategoria.addEventListener('change', filterCards);
+                if(filterTema) filterTema.addEventListener('change', filterCards);
             }
-
-            if(searchInput) searchInput.addEventListener('input', filterCards);
-            if(filterVoz) filterVoz.addEventListener('change', filterCards);
-            if(filterCategoria) filterCategoria.addEventListener('change', filterCards);
-            if(filterTema) filterTema.addEventListener('change', filterCards);
         }
 
         // ----- Metrónomo Interactivo Logic -----
-        let metronomoActivoDot = null;
-        let metronomoInterval = null;
+        let metronomoActivoDot: HTMLElement | null = null;
+        let metronomoInterval: any = null;
         
-        // Inicializar AudioContext
         const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
         const audioCtx = new AudioContextClass();
         
@@ -486,10 +651,10 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
             gainNode.connect(audioCtx.destination);
             
             osc.type = 'sine';
-            osc.frequency.setValueAtTime(800, audioCtx.currentTime); // Tono agudo percusivo (800Hz)
+            osc.frequency.setValueAtTime(800, audioCtx.currentTime);
             
             gainNode.gain.setValueAtTime(1, audioCtx.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1); // Caída rápida
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
             
             osc.start(audioCtx.currentTime);
             osc.stop(audioCtx.currentTime + 0.1);
@@ -501,21 +666,18 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
                 const bpmStr = badge.getAttribute('data-bpm');
                 if (!bpmStr) return;
                 
-                // Limpiar texto ex. '131 BPM' a '131'
                 const bpmVal = parseInt(bpmStr.replace(/[^0-9]/g, ''), 10);
                 if (!bpmVal || bpmVal <= 0) return;
                 
                 const dot = badge.querySelector('.metronomo-dot') as HTMLElement;
                 if (!dot) return;
                 
-                // Si ya hay un metrónomo activo, lo detenemos
                 if (metronomoActivoDot && metronomoActivoDot !== dot) {
                     metronomoActivoDot.classList.remove('beat-active');
                     metronomoActivoDot.style.removeProperty('--bpm-duration');
                     if (metronomoInterval) clearInterval(metronomoInterval);
                 }
                 
-                // Si el metrónomo clickeado es el mismo que estaba activo, lo apagamos y ya (toggle)
                 if (dot.classList.contains('beat-active')) {
                     dot.classList.remove('beat-active');
                     dot.style.removeProperty('--bpm-duration');
@@ -524,15 +686,13 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
                     return;
                 }
                 
-                // Activar nuevo metrónomo
                 const duracionSegundos = 60 / bpmVal;
                 dot.style.setProperty('--bpm-duration', `${duracionSegundos}s`);
                 dot.classList.add('beat-active');
                 metronomoActivoDot = dot;
                 
-                // Activar Sonido
-                playClick(); // Primer golpe inmediato
-                metronomoInterval = setInterval(playClick, duracionSegundos * 1000); // Loop sincronizado
+                playClick();
+                metronomoInterval = setInterval(playClick, duracionSegundos * 1000);
             }
         });
 
@@ -549,19 +709,16 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
                 let tono = badgeTono.getAttribute('data-tono');
                 if (!tono || tono.trim() === '-' || tono.trim() === '') return;
                 
-                // Extraer la nota raíz (ignorar si es menor "m")
                 tono = tono.replace(/m/g, '').trim();
                 const frecuencia = frecuencias[tono];
                 
                 if (frecuencia && audioCtx) {
                     if (audioCtx.state === 'suspended') audioCtx.resume();
                     
-                    // Oscilador 1: Cuerpo del sonido (Triangle)
                     const oscPrincipal = audioCtx.createOscillator();
                     oscPrincipal.type = 'triangle';
-                    oscPrincipal.frequency.value = frecuencia; // Frecuencia extraída
+                    oscPrincipal.frequency.value = frecuencia;
                     
-                    // Oscilador 2: Armónico para darle el "brillo" del piano (Sine, una octava arriba)
                     const oscBrillo = audioCtx.createOscillator();
                     oscBrillo.type = 'sine';
                     oscBrillo.frequency.value = frecuencia * 2; 
@@ -573,13 +730,11 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
                     gainNode.connect(audioCtx.destination);
                     
                     const now = audioCtx.currentTime;
-                    // Envolvente ADSR para emular el golpe de un piano
                     gainNode.gain.setValueAtTime(0, now);
-                    gainNode.gain.linearRampToValueAtTime(0.8, now + 0.02); // Ataque rápido (martillo)
-                    gainNode.gain.exponentialRampToValueAtTime(0.1, now + 0.5); // Decaimiento
-                    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 3); // Resonancia larga
+                    gainNode.gain.linearRampToValueAtTime(0.8, now + 0.02);
+                    gainNode.gain.exponentialRampToValueAtTime(0.1, now + 0.5);
+                    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 3);
                     
-                    // Reproducir y detener
                     oscPrincipal.start(now);
                     oscBrillo.start(now);
                     oscPrincipal.stop(now + 3);
@@ -587,6 +742,45 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
                 }
             }
         });
+
+        // Sync CSV → Supabase (silencioso en background)
+        function updatePlaylistCount() {
+            if (playlistCountEl) playlistCountEl.textContent = selectedSongs.length.toString();
+        }
+
+        (async () => {
+            const syncData = document.getElementById('canciones-sync-data');
+            if (!syncData) return;
+            try {
+                const canciones = JSON.parse(syncData.textContent || '[]');
+                if (canciones.length === 0) return;
+
+                const upsertPayload = canciones.map((c: any) => ({
+                    titulo: c['Canción'] || '',
+                    cantante: c['Grupo/Cantante'] || null,
+                    tonalidad: c['Tonalidad Redil Estadio'] || null,
+                    bpm: parseInt(c['Beat Batería']) || null,
+                    categoria: c['Categoría Canción'] || null,
+                    voz: c['Voz Principal'] || null,
+                    tema: c['Tema Principal Canción'] || null,
+                    link_youtube: c['Link Youtube'] || null,
+                    link_acordes: c['Link Acordes'] || null,
+                    link_letras: c['Link Letras'] || null,
+                    link_voces: c['Link Voces'] || null,
+                    link_secuencias: c['Link Secuencias'] || null,
+                    chordpro: c['Acordes ChordPro'] || null,
+                    estado: c['Estado'] || 'Activa'
+                })).filter((c: any) => c.titulo.trim() !== '');
+
+                for (let i = 0; i < upsertPayload.length; i += 50) {
+                    const batch = upsertPayload.slice(i, i + 50);
+                    await supabase.from('canciones').upsert(batch, { onConflict: 'titulo' });
+                }
+                console.log(`📦 Sync silencioso: ${upsertPayload.length} canciones CSV → Supabase`);
+            } catch (e) {
+                console.error('Error en sync CSV → Supabase:', e);
+            }
+        })();
     });
 </script>
 

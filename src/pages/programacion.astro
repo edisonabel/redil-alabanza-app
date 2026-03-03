@@ -1,0 +1,1803 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout>
+    <div class="max-w-6xl mx-auto px-4 mt-4 md:mt-8 w-full">
+        <!-- Encabezado -->
+        <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10 pb-6 border-b border-neutral-300 dark:border-neutral-800">
+            <div>
+                <h1 class="text-3xl md:text-5xl font-extrabold tracking-tight text-neutral-900 dark:text-white mb-2 flex items-center gap-3">
+                    Programación <span class="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-emerald-400">Mensual</span>
+                </h1>
+                <p class="text-neutral-500 dark:text-neutral-400 font-medium">Dashboard seguro de coordinación de equipos.</p>
+            </div>
+            <button id="btn-logout" class="px-5 py-2.5 bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-sm font-bold text-neutral-900 dark:text-white rounded-xl transition-all border border-neutral-300 dark:border-neutral-700 w-fit">
+                Cerrar Sesión
+            </button>
+        </header>
+
+        <!-- Selector de Vistas -->
+        <div class="flex items-center justify-center gap-2 mb-8 mt-2">
+            <button id="btn-view-card" class="px-5 py-2.5 bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 text-sm font-bold rounded-xl shadow-sm transition-colors border border-transparent">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" class="inline-block mr-1.5" stroke="currentColor" stroke-width="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>Tarjeta
+            </button>
+            <button id="btn-view-list" class="px-5 py-2.5 bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 text-sm font-bold rounded-xl border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" class="inline-block mr-1.5" stroke="currentColor" stroke-width="2"><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></svg>Lista
+            </button>
+            <button id="btn-view-calendar" class="px-5 py-2.5 bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 text-sm font-bold rounded-xl border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" class="inline-block mr-1.5" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>Mes
+            </button>
+        </div>
+
+        <!-- Estado de Carga (Skeleton Loader) -->
+        <div id="loading-state" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 py-10 w-full mb-10">
+            <div class="animate-pulse bg-neutral-200 dark:bg-neutral-800 rounded-2xl h-52 w-full border border-neutral-300 dark:border-neutral-700"></div>
+            <div class="animate-pulse bg-neutral-200 dark:bg-neutral-800 rounded-2xl h-52 w-full border border-neutral-300 dark:border-neutral-700 hidden md:block"></div>
+            <div class="animate-pulse bg-neutral-200 dark:bg-neutral-800 rounded-2xl h-52 w-full border border-neutral-300 dark:border-neutral-700 hidden lg:block"></div>
+        </div>
+
+        <!-- Grilla de Datos Supabase (Vista Tarjeta) -->
+        <div id="agenda-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 hidden">
+            <!-- Las tarjetas se inyectarán aquí dinámicamente -->
+        </div>
+
+        <!-- Vista Lista (Modo Drive) -->
+        <div id="agenda-list" class="hidden flex flex-col gap-3">
+             <!-- Filas horizontales inyectadas aquí -->
+        </div>
+
+        <!-- Vista Mes (Calendario) -->
+        <div id="agenda-calendar" class="hidden">
+             <!-- Grid del Mes inyectado aquí -->
+        </div>
+
+        <!-- Estado Vacío -->
+        <div id="empty-state" class="hidden flex-col items-center justify-center py-20 bg-neutral-100 dark:bg-neutral-900/50 border border-neutral-300 dark:border-neutral-800 rounded-3xl">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" class="text-neutral-400 dark:text-neutral-600 mb-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M10 16h4"/><path d="M12 14v4"/></svg>
+            <h3 class="text-2xl font-bold text-neutral-900 dark:text-white mb-2">No hay programaciones</h3>
+            <p class="text-neutral-500 text-center max-w-sm">No se encontraron registros maestros activos.</p>
+        </div>
+
+        <!-- Intersection Observer Target para Scroll Infinito Frontend -->
+        <div id="scroll-sentinel" class="w-full h-20 flex items-center justify-center mt-6">
+            <div id="sentinel-spinner" class="hidden w-8 h-8 border-4 border-teal-500/30 border-t-teal-500 rounded-full animate-spin"></div>
+        </div>
+    </div>
+
+    <!-- Modal Nuevo / Editar Evento -->
+    <div id="event-modal" class="hidden fixed inset-0 z-[80] bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity">
+        <div class="bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-800 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col transform">
+            <div class="p-6 border-b border-neutral-200 dark:border-neutral-800 flex justify-between items-center bg-neutral-50 dark:bg-neutral-900/50 sticky top-0 z-10">
+                <h2 id="modal-title" class="text-xl font-bold text-neutral-900 dark:text-white">Nuevo Evento</h2>
+                <button id="btn-close-modal" class="text-neutral-400 hover:text-neutral-800 dark:hover:text-white transition-colors p-2 -mr-2 bg-neutral-100 dark:bg-neutral-800 rounded-full">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+            </div>
+            <div class="p-6 bg-white dark:bg-neutral-900 flex-1">
+                <form id="form-event" class="flex flex-col gap-5">
+                    <input type="hidden" id="ev-id" value="">
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-bold text-neutral-700 dark:text-neutral-400 uppercase tracking-wider mb-2">Título del Evento <span class="text-red-500">*</span></label>
+                            <input type="text" id="ev-titulo" required class="w-full bg-neutral-100 dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-800 rounded-xl px-4 py-3 text-sm text-neutral-900 dark:text-white focus:outline-none focus:border-teal-500 transition-colors" placeholder="Ej: Culto de Adoración">
+                        </div>
+                        <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div>
+                                <label class="block text-xs font-bold text-neutral-700 dark:text-neutral-400 uppercase tracking-wider mb-2">Fecha y Hora <span class="text-red-500">*</span></label>
+                                <input type="datetime-local" id="ev-fecha" required class="w-full bg-neutral-100 dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-800 rounded-xl px-4 py-3 text-sm text-neutral-900 dark:text-white focus:outline-none focus:border-teal-500 transition-colors">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-neutral-700 dark:text-neutral-400 uppercase tracking-wider mb-2">Hora Fin <span class="text-neutral-500 font-normal lowercase">(opc)</span></label>
+                                <input type="time" id="ev-hora-fin" class="w-full bg-neutral-100 dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-800 rounded-xl px-4 py-3 text-sm text-neutral-900 dark:text-white focus:outline-none focus:border-teal-500 transition-colors">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-neutral-700 dark:text-neutral-400 uppercase tracking-wider mb-2">Estado</label>
+                            <select id="ev-estado" class="w-full bg-neutral-100 dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-800 rounded-xl px-4 py-3 text-sm text-neutral-900 dark:text-white focus:outline-none focus:border-teal-500 transition-colors appearance-none">
+                                <option value="Borrador">Borrador</option>
+                                <option value="Publicado" selected>Publicado</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-bold text-neutral-700 dark:text-neutral-400 uppercase tracking-wider mb-2">Tema de Predicación <span class="text-neutral-500 font-normal lowercase">(opcional)</span></label>
+                            <input type="text" id="ev-tema" class="w-full bg-neutral-100 dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-800 rounded-xl px-4 py-3 text-sm text-neutral-900 dark:text-white focus:outline-none focus:border-teal-500 transition-colors" placeholder="Ej: La Gracia de Dios">
+                        </div>
+                    </div>
+
+                    <!-- ROSTER EDITOR DE MODAL -->
+                    <div id="modal-roster-section" class="hidden mt-4 pt-6 border-t border-neutral-200 dark:border-neutral-800">
+                        <h3 class="text-sm font-bold text-neutral-900 dark:text-white uppercase tracking-wider mb-4 flex items-center justify-between">
+                            Asignaciones de Equipo
+                            <div class="flex items-center gap-2">
+                                <button type="button" id="btn-cargar-equipo" class="px-3 py-1.5 bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 rounded-lg text-xs font-bold hover:bg-blue-200 dark:hover:bg-blue-900/60 transition-colors flex items-center gap-1.5">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m19 11-4-4v8"/><path d="m11 15 4 4"/></svg> Cargar Equipo
+                                </button>
+
+                                <button type="button" id="btn-armar-playlist" class="relative overflow-hidden group items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-br from-purple-500 via-fuchsia-500 to-pink-500 text-white font-bold text-sm shadow-md shadow-fuchsia-500/30 hover:shadow-fuchsia-500/50 hover:-translate-y-0.5 transition-all duration-300 hidden">
+                                    <div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
+                                    <span class="relative z-10 flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>Armar Playlist</span>
+                                </button>
+                                <span class="text-[10px] font-normal text-neutral-500 bg-neutral-100 dark:bg-neutral-800 px-2 py-1 rounded hidden sm:inline-block">Clic editar</span>
+                            </div>
+                        </h3>
+                        <div id="modal-roster-container" class="bg-neutral-50 dark:bg-neutral-900/50 rounded-2xl p-4 md:p-5 border border-neutral-200 dark:border-neutral-800 flex flex-col gap-5">
+                             <!-- Contenido se inyecta dinámicamente -->
+                        </div>
+                    </div>
+
+                    <div class="mt-6 flex gap-3 pt-4 border-t border-neutral-200 dark:border-neutral-800 sticky bottom-0 bg-white dark:bg-neutral-900 pb-2">
+                        <button type="button" id="btn-cancel-modal" class="flex-1 py-3.5 px-4 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 border border-neutral-300 dark:border-neutral-700 text-sm text-neutral-900 dark:text-white rounded-xl font-bold transition-colors">Cancelar</button>
+                        <button type="submit" id="btn-submit-modal" class="flex-1 py-3.5 px-4 bg-teal-500 hover:bg-teal-400 text-white text-sm rounded-xl font-bold transition-colors flex justify-center items-center gap-2">
+                            <span>Guardar Evento</span>
+                            <div id="btn-spinner" class="hidden w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- FAB Nuevo Evento (oculto hasta validar Rol Admin) -->
+    <button id="btn-new-event" class="hidden fixed bottom-24 right-4 md:bottom-28 md:right-8 bg-teal-500 hover:bg-teal-400 text-white w-14 h-14 md:w-auto md:px-6 rounded-full shadow-2xl flex items-center justify-center gap-2 transition-transform hover:scale-105 z-40 group">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="group-hover:rotate-90 transition-transform duration-300"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+        <span class="hidden md:block font-bold text-base">Añadir Evento</span>
+    </button>
+
+
+    <!-- Modal Picker (Selección Inteligente de Músico) -->
+    <div id="picker-modal" class="hidden fixed inset-0 z-[90] bg-neutral-950/90 flex flex-col items-center justify-end md:justify-center p-0 md:p-4 transition-transform translate-y-full md:translate-y-0 duration-300">
+        <div class="bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-t-3xl md:rounded-3xl w-full max-w-md h-[70vh] md:h-auto shadow-[0_-20px_40px_-15px_rgba(0,0,0,0.3)] flex flex-col overflow-hidden">
+            <div class="p-5 border-b border-neutral-200 dark:border-neutral-800 flex justify-between items-center">
+                <div>
+                     <h3 class="text-lg font-bold text-neutral-900 dark:text-white" id="picker-role-name">Seleccionar...</h3>
+                     <p class="text-xs text-neutral-500">Músicos habilitados para este rol</p>
+                </div>
+                <button id="btn-close-picker" class="text-neutral-400 hover:text-neutral-800 dark:hover:text-white transition-colors p-2 bg-neutral-100 dark:bg-neutral-900 rounded-full">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+            </div>
+            <div class="p-4 overflow-y-auto flex-1 bg-neutral-50 dark:bg-neutral-900/50">
+                 <div id="picker-spinner" class="flex justify-center py-10 hidden">
+                     <div class="w-6 h-6 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
+                 </div>
+                 <div id="picker-list" class="flex flex-col gap-2">
+                     <!-- Músicos se inyectan acá -->
+                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Equipo Picker (Selección de Equipo/Plantilla guardada) -->
+    <div id="equipo-picker-modal" class="hidden fixed inset-0 z-[100] bg-neutral-950/90 flex items-center justify-center p-4 transition-opacity duration-300">
+        <div class="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-2xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden scale-95 transition-transform duration-300" id="equipo-picker-content">
+            <div class="p-6 border-b border-neutral-200 dark:border-neutral-800 flex justify-between items-center bg-neutral-50 dark:bg-neutral-900/50 sticky top-0 z-10">
+                <div>
+                    <h2 class="text-2xl font-bold text-neutral-900 dark:text-white">Cargar Equipo</h2>
+                    <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-1">Selecciona un equipo guardado para autocompletar este evento.</p>
+                </div>
+                <button id="btn-close-equipo-picker" class="text-neutral-400 hover:text-neutral-800 dark:hover:text-white transition-colors p-2 -mr-2 bg-white dark:bg-neutral-800 shadow-sm border border-neutral-200 dark:border-neutral-700 rounded-full">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+            </div>
+            
+            <div class="p-6 bg-white dark:bg-neutral-900 overflow-y-auto flex-1 auto-rows-max">
+                <div id="equipo-picker-spinner" class="flex justify-center py-12 hidden">
+                    <div class="w-8 h-8 border-4 border-teal-500/30 border-t-teal-500 rounded-full animate-spin"></div>
+                </div>
+                <div id="equipo-picker-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Equipos se inyectan acá como Cards -->
+                </div>
+                <div id="equipo-picker-empty" class="hidden flex-col items-center justify-center py-12 text-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" class="text-neutral-300 dark:text-neutral-700 mb-4" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
+                    <h3 class="text-xl font-bold text-neutral-900 dark:text-white mb-2">No hay equipos creados</h3>
+                    <p class="text-neutral-500 text-sm max-w-sm">Ve a la pestaña "Equipo" y usa el Constructor para guardar alineaciones.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Vista Detalle Completa -->
+    <div id="detalle-modal" class="hidden opacity-0 fixed inset-0 z-[70] bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity duration-300">
+        <div class="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-3xl w-full max-w-2xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden scale-95 transition-transform duration-300" id="detalle-modal-content">
+            <div class="p-6 border-b border-neutral-100 dark:border-neutral-800 flex justify-between items-start bg-neutral-50 dark:bg-neutral-900/50">
+                 <div>
+                     <span class="inline-block px-3 py-1 bg-blue-100 text-blue-700 dark:bg-teal-500/20 dark:text-teal-400 rounded-full text-xs font-bold tracking-widest uppercase mb-3" id="detalle-estado">Confirmado</span>
+                     <h2 class="text-3xl font-black text-neutral-900 dark:text-white" id="detalle-fecha">Domingo</h2>
+                     <p class="text-neutral-500 font-medium text-lg mt-1" id="detalle-tema">Tema...</p>
+                 </div>
+                 <button id="btn-close-detalle" class="text-neutral-400 hover:text-neutral-800 dark:hover:text-white transition-colors p-2 bg-white dark:bg-neutral-800 rounded-full shadow-sm border border-neutral-200 dark:border-neutral-700">
+                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                 </button>
+            </div>
+            <div class="p-6 overflow-y-auto flex-1 bg-white dark:bg-neutral-900">
+                 <div class="mb-8">
+                     <h4 class="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-4 flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg> Personal Asignado</h4>
+                     <div id="detalle-roster-list">
+                         <div class="flex justify-center py-10"><div class="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>
+                     </div>
+                 </div>
+                 
+                 <!-- Contenido de Playlist / Canciones del Evento -->
+                 <div>
+                     <h4 class="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-4 flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg> Repertorio / Playlist</h4>
+                     <div id="detalle-canciones-list" class="bg-neutral-50 dark:bg-neutral-900/50 border border-neutral-100 dark:border-neutral-800/80 rounded-2xl p-5 shadow-inner">
+                          <div class="flex justify-center py-6"><div class="w-6 h-6 border-4 border-teal-500/30 border-t-teal-500 rounded-full animate-spin"></div></div>
+                     </div>
+                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reglas Globales CSS de Ámbito -->
+    <style is:global>
+        /* La tarjeta externa principal NO debe renderizar los empty slots (Batería +, Guitarra +) ni la X de borrar */
+        .agenda-card .empty-slot {
+            display: none !important;
+        }
+        .agenda-card .btn-remove-roster {
+            display: none !important;
+        }
+        
+        /* En el modal interno, SÍ debe verse el empty slot y la X */
+        #event-modal .empty-slot {
+            display: flex !important;
+        }
+        #event-modal .btn-remove-roster {
+            display: flex !important;
+        }
+    </style>
+</Layout>
+
+<script>
+    import { supabase } from '../lib/supabase';
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        const loadingState = document.getElementById('loading-state');
+        const agendaGrid = document.getElementById('agenda-grid');
+        const emptyState = document.getElementById('empty-state');
+        const btnLogout = document.getElementById('btn-logout');
+
+        // Puerta Guardiana de Seguridad RLS: Verificar Sesión Activa
+        const { data: { user }, error: sessionError } = await supabase.auth.getUser();
+
+        if (sessionError || !user) {
+            // Expulsar solicitudes anónimas inmediatamente re-direccionando hacia el túnel de autenticación
+            window.location.replace('/login');
+            return;
+        }
+
+        // --- FETCH A LA VISTA MI_AGENDA ---
+        const fetchAgenda = async () => {
+            console.log('📡 [Supabase] Obteniendo Rol del Perfil de Usuario...');
+            
+            const instrumentIcons = {
+                 'lider_alabanza': '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>',
+                 'talkback': '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></svg>',
+                 'encargado_letras': '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>',
+                 'voz_soprano': '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 8-9.04 9.06a2.82 2.82 0 1 0 3.98 3.98L16 12"/><circle cx="17" cy="7" r="5"/></svg>',
+                 'voz_tenor': '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 8-9.04 9.06a2.82 2.82 0 1 0 3.98 3.98L16 12"/><circle cx="17" cy="7" r="5"/></svg>',
+                 'bateria': '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 2 8 8"/><path d="m22 2-8 8"/><ellipse cx="12" cy="9" rx="10" ry="5"/><path d="M2 9v6c0 2.8 4.5 5 10 5s10-2.2 10-5V9"/></svg>',
+                 'piano': '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><path d="M6 5v4"/><path d="M10 5v4"/><path d="M14 5v4"/><path d="M18 5v4"/></svg>',
+                 'guitarra_electrica': '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a2 2 0 0 1-2 2v0a2 2 0 0 1-2-2v-4"/><path d="M14 15v4a2 2 0 0 0 2 2v0a2 2 0 0 0 2-2v-4"/><path d="M8 15V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v10"/><path d="M4 15h16"/><path d="M8 11h8"/></svg>',
+                 'guitarra_acustica': '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a2 2 0 0 1-2 2v0a2 2 0 0 1-2-2v-4"/><path d="M14 15v4a2 2 0 0 0 2 2v0a2 2 0 0 0 2-2v-4"/><path d="M8 15V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v10"/><path d="M4 15h16"/><path d="M8 11h8"/></svg>',
+                 'bajo': '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
+                 'violin': '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>'
+            };
+            window.__instrumentIcons = instrumentIcons; // Export locally for modals
+            
+            console.log('👤 ID de Usuario:', user.id);
+            
+            // 1. Verificación de Rol (is_admin) atado al ID explícito para superar RLS
+            const { data: perfil, error: errorPerfil } = await supabase
+                .from('perfiles')
+                .select('is_admin')
+                .eq('id', user.id)
+                .single();
+
+            console.log('📄 Respuesta Perfil:', perfil);
+            if (errorPerfil) {
+                 console.log('⚠️ Error de Supabase (perfiles):', errorPerfil);
+            }
+
+            // 3. Flujo normal (Es Admin o Miembro Regular)
+            
+            // Si es Admin Real (no bypass) activamos el botón flotante (FAB)
+            if (perfil?.is_admin) {
+                const fab = document.getElementById('btn-new-event');
+                if (fab) fab.classList.remove('hidden');
+            }
+
+            // RBAC global: Función para mostrar/ocultar botón "Armar Playlist"
+            const btnArmarPlaylist = document.getElementById('btn-armar-playlist');
+            window._showPlaylistBtn = async (evId) => {
+                 if (!btnArmarPlaylist || !evId) { btnArmarPlaylist?.classList.add('hidden'); return; }
+                 btnArmarPlaylist.classList.add('hidden');
+                 if (perfil?.is_admin) {
+                      btnArmarPlaylist.classList.remove('hidden');
+                 } else {
+                      const { data: rolesEvento } = await supabase
+                           .from('asignaciones')
+                           .select('roles(codigo)')
+                           .eq('evento_id', evId)
+                           .eq('perfil_id', user.id);
+                      if (rolesEvento) {
+                           const codigos = rolesEvento.map(r => r.roles?.codigo).filter(Boolean);
+                           if (codigos.includes('lider_alabanza') || codigos.includes('talkback')) {
+                                btnArmarPlaylist.classList.remove('hidden');
+                           }
+                      }
+                 }
+            };
+
+            btnArmarPlaylist?.addEventListener('click', () => {
+                 const evId = (document.getElementById('ev-id') as HTMLInputElement)?.value;
+                 if (evId) window.location.href = '/repertorio?seleccionar_para=' + evId;
+            });
+
+
+            console.log('📡 [Supabase] Iniciando fetch global de Roles y vista mi_agenda...');
+            
+            // Cargar Diccionario de Roles Globalmente
+            if (!window.appStateRoles) {
+                 const { data: globalRoles } = await supabase.from('roles').select('*').order('nombre');
+                 window.appStateRoles = globalRoles || [];
+            }
+            
+            const startTime = performance.now();
+            
+            // Mostrar Skeleton Loader al iniciar nuevo fetch
+            if (loadingState) loadingState.classList.remove('hidden');
+            if (agendaGrid) agendaGrid.classList.add('hidden');
+            if (emptyState) emptyState.classList.add('hidden');
+
+            let fetchPromise;
+            if (perfil?.is_admin) {
+                 // Admins obtienen la capa superior de Publicaciones y Borradores desde 'eventos' puro y cargamos TODO el Roster (asignaciones -> perfiles)
+                 fetchPromise = supabase
+                    .from('eventos')
+                    .select('*, asignaciones(rol_id, perfiles(id, nombre, email, avatar_url))')
+                    .gte('fecha_hora', new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString())
+                    .order('fecha_hora', { ascending: true });
+            } else {
+                 // Mortales obtienen la vista 'mi_agenda' con JOIN de su rol
+                 fetchPromise = supabase
+                    .from('mi_agenda')
+                    .select('*');
+            }
+
+            const { data, error } = await fetchPromise;
+
+            const endTime = performance.now();
+            console.log(`⏱️ Fetch completado en ${(endTime - startTime).toFixed(2)}ms`);
+            console.log('📦 [Supabase] Datos recibidos:', data, '| Error:', error);
+
+            if (loadingState) loadingState.classList.add('hidden');
+
+            if (error) {
+                console.error('❌ Error crítico fetching Supabase data:', error);
+                
+                if (error.code === 'PGRST301' || error.message.includes('JWT')) {
+                     await supabase.auth.signOut();
+                     window.location.replace('/login');
+                } else {
+                     if (emptyState) {
+                          emptyState.innerHTML = `
+                              <h3 class="text-2xl font-bold text-red-500 mb-2">Error de Conexión</h3>
+                              <p class="text-neutral-500 text-center">${error.message}</p>
+                          `;
+                          emptyState.classList.remove('hidden');
+                          emptyState.classList.add('flex');
+                     }
+                }
+                return;
+            }
+
+            if (!data || data.length === 0) {
+                console.warn('⚠️ [Supabase] Fetch exitoso pero array vacío. La agenda no tiene programaciones agendas.');
+                if (emptyState) {
+                    emptyState.classList.remove('hidden');
+                    emptyState.classList.add('flex');
+                }
+                return;
+            }
+
+            // --- LÓGICA DE PROYECCIÓN INFINITA DOMINGUERA ---
+            // 1. Encontrar el Evento Maestro (generalmente el más antiguo o marcado explícitamente)
+            const masterEvent = data.find(it => (it.estado === 'Publicado' || it.evento_estado === 'Publicado') || (it.notas_especiales && it.notas_especiales.includes('FREQ=WEEKLY'))); // Preferir maestros
+            const baseItem = masterEvent || data[0]; // Fallback al primero
+
+            // 2. Extraer Excepciones Físicas y Resoluciones (Instancias) desde Supabase
+            // Crear un Mapa donde la Clave es la Fecha 'YYYY-MM-DD' y el valor es su objecto de evento completo
+            const instancias = new Map();
+            data.forEach(item => {
+                 if (item.id !== masterEvent?.id && item.fecha_hora) {
+                      const fechaDate = new Date(item.fecha_hora);
+                      const key = `${fechaDate.getFullYear()}-${fechaDate.getMonth()+1}-${fechaDate.getDate()}`;
+                      instancias.set(key, item);
+                 }
+            });
+
+            // 3. Variables de Tracker de Proyección
+            let proyeccionActual = new Date(); // Inicia hoy
+            
+            // Forzar proyeccionActual al Pŕoximo Domingo para empezar
+            let dayOfWeek = proyeccionActual.getDay(); // 0 = Sunday
+            if (dayOfWeek !== 0) {
+                 proyeccionActual.setDate(proyeccionActual.getDate() + (7 - dayOfWeek));
+            }
+            // Sets exact time from master record if exists
+            if (baseItem.fecha_hora) {
+                 const baseTime = new Date(baseItem.fecha_hora);
+                 proyeccionActual.setHours(baseTime.getHours(), baseTime.getMinutes(), 0, 0);
+            }
+
+            if (agendaGrid) {
+                agendaGrid.classList.remove('hidden');
+                agendaGrid.innerHTML = ''; // Limpiar grilla original
+                
+                const agendaList = document.getElementById('agenda-list');
+                const agendaCalendar = document.getElementById('agenda-calendar');
+                
+                if (agendaList) agendaList.innerHTML = '';
+                if (agendaCalendar) {
+                     agendaCalendar.innerHTML = `
+                          <div class="grid grid-cols-7 gap-2 mb-2 text-center text-xs font-bold text-neutral-400 uppercase tracking-widest">
+                               <div>Dom</div><div>Lun</div><div>Mar</div><div>Mié</div><div>Jue</div><div>Vie</div><div>Sáb</div>
+                          </div>
+                          <div class="grid grid-cols-7 gap-2" id="calendar-grid-cells"></div>
+                     `;
+                }
+
+                // Generar Células Decorativas Previas para el Calendario Mensual (Placeholder de Alineación)
+                const firstDayOfMonth = new Date(proyeccionActual.getFullYear(), proyeccionActual.getMonth(), 1).getDay();
+                let calendarHtml = '';
+                for(let i = 0; i < firstDayOfMonth; i++) {
+                     calendarHtml += `<div class="aspect-square bg-transparent rounded-xl"></div>`;
+                }
+
+                // Aplicar Scroll Observer a las tarjetas renderizadas dinámicamente
+                const gridObserver = new IntersectionObserver((entries, obs) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) {
+                            entry.target.classList.remove('opacity-0', 'translate-y-8');
+                            obs.unobserve(entry.target);
+                        }
+                    });
+                }, { rootMargin: '50px', threshold: 0.1 });
+
+                const generarTarjetas = (cantidad = 4): boolean => {
+                    let htmlCardString = '';
+                    let htmlListString = '';
+                    const MAX_YEAR = 2026;
+                    
+                    for (let i = 0; i < cantidad; i++) {
+                         // Crear clon de la Fecha objetivo
+                         const targetDate = new Date(proyeccionActual);
+                         const dateKey = `${targetDate.getFullYear()}-${targetDate.getMonth()+1}-${targetDate.getDate()}`;
+                         
+                         // ===== LÍMITE AÑO 2026 =====
+                         if (targetDate.getFullYear() > MAX_YEAR) {
+                              const agendaGrid = document.getElementById('agenda-grid');
+                              const agendaList = document.getElementById('agenda-list-view');
+                              // Solo mostrar la tarjeta si no existe ya
+                              if (!document.getElementById('end-of-year-card')) {
+                                   const endCard = `
+                                   <div id="end-of-year-card" class="agenda-card col-span-full flex flex-col items-center justify-center text-center gap-6 bg-gradient-to-br from-teal-50 to-emerald-50 dark:from-teal-950/40 dark:to-emerald-950/40 border border-teal-200 dark:border-teal-800/60 rounded-[28px] p-10 shadow-sm">
+                                        <div class="text-5xl">🙏</div>
+                                        <div>
+                                             <h3 class="text-2xl font-extrabold text-teal-700 dark:text-teal-300 mb-2 tracking-tight">¡Has llegado al final del año!</h3>
+                                             <p class="text-teal-600 dark:text-teal-400 font-semibold text-base max-w-sm mx-auto leading-relaxed">Esperamos verte en el 2027, recordando: <em>'Nuevas son cada mañana; grande es tu fidelidad'</em> (Lamentaciones 3:23). Que sea un año lleno del Espíritu Santo.</p>
+                                        </div>
+                                   </div>`;
+                                   const endListCard = `<div class="flex items-center justify-center gap-3 py-5 px-6 bg-teal-50 dark:bg-teal-950/30 border border-teal-200 dark:border-teal-800/40 rounded-2xl text-teal-700 dark:text-teal-300 font-bold text-sm">🙏 ¡Hasta el 2027! Que sea un año lleno del Espíritu Santo.</div>`;
+                                   agendaGrid?.insertAdjacentHTML('beforeend', endCard);
+                                   agendaList?.insertAdjacentHTML('beforeend', endListCard);
+                              }
+                              return false; // Señal para detener IntersectionObserver
+                         }
+                         
+                         // Extraer Instancia Pura si existe
+                         const instancia = instancias.get(dateKey);
+                         const isSuspended = instancia && instancia.notas_especiales && instancia.notas_especiales.includes('SUSPENDIDO');
+
+                         const currentTitle = instancia?.titulo || baseItem.titulo || 'Actividad Redil';
+                         const currentTema = instancia?.tema_predicacion || baseItem.tema_predicacion || '';
+                         const currentEstado = instancia?.estado || baseItem.estado || 'ACTIVO';
+                         const currentDirige = instancia?.director || baseItem.director || 'Por Asignar';
+                         const currentPredicador = instancia?.predicador || baseItem.predicador || 'Pastor/Líder';
+
+                         const isVirtual = !instancia;
+                         const domEventoId = isVirtual ? `virtual|${targetDate.toISOString()}` : instancia.id;
+
+                         const esAdminStr = perfil?.is_admin ? 
+                              `<button class="btn-suspender absolute -top-3 -right-3 bg-red-500 hover:bg-red-600 text-white rounded-full p-2 shadow-lg z-10 opacity-0 group-hover:opacity-100 transition-opacity" title="Suspender Evento" data-fecha="${targetDate.toISOString()}">
+                                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                              </button>` : '';
+
+                         if (isSuspended) {
+                              htmlCardString += `
+                              <div class="agenda-card group relative opacity-0 translate-y-8 transition-all duration-700 bg-neutral-100 dark:bg-neutral-950 border border-red-500/30 rounded-[24px] p-6 shadow-none opacity-70">
+                                   <div class="flex items-start justify-between mb-4">
+                                        <span class="px-3 py-1 bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-bold rounded-full border border-red-500/20">
+                                             ${targetDate.toLocaleString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute:'2-digit' })}
+                                        </span>
+                                        <span class="px-2 py-1 bg-red-500 text-white text-xs font-bold rounded-md uppercase tracking-widest flex items-center gap-1">
+                                             SUSPENDIDO
+                                        </span>
+                                   </div>
+                                   <h3 class="text-xl font-bold text-neutral-500 dark:text-neutral-500 mb-4 strike-through line-through">${currentTema || currentTitle}</h3>
+                                   ${perfil?.is_admin ? `
+                                   <div class="flex gap-2 mt-2">
+                                        <button class="btn-reactivar-evento flex-1 py-2 bg-teal-500 hover:bg-teal-600 text-white text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5" data-evento-id="${instancia?.id || ''}" data-fecha="${targetDate.toISOString()}">
+                                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+                                             Reactivar
+                                        </button>
+                                        <button class="btn-eliminar-evento flex-1 py-2 bg-neutral-200 dark:bg-neutral-800 hover:bg-red-100 dark:hover:bg-red-900/30 text-neutral-600 dark:text-neutral-400 hover:text-red-600 dark:hover:text-red-400 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5" data-evento-id="${instancia?.id || ''}" data-fecha="${targetDate.toISOString()}">
+                                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6 18.1 20a2 2 0 0 1-2 1.9H7.9a2 2 0 0 1-2-1.9L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                                             Eliminar
+                                        </button>
+                                   </div>` : ''}
+                              </div>`;
+                         } else {
+                              const horaFinDisplay = instancia?.hora_fin ? ` - ${instancia.hora_fin.substring(0,5)}` : '';
+                              
+                              const btnRosterStr = perfil?.is_admin ? 
+                                   `<button class="btn-roster w-full mt-3 py-2 bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-800 dark:text-white dark:border dark:border-neutral-700 text-sm font-bold rounded-xl transition-colors flex justify-center items-center gap-2" data-evento="${domEventoId}" data-fecha="${targetDate.toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}" data-iso="${targetDate.toISOString()}">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                                        Gestionar Equipo
+                                   </button>` : '';
+
+                              // --- START HIERARCHICAL ROSTER PROCESSING ---
+                              // Extraemos el roster de la data original de Supabase. Si es un virtual dom (baseItem clon), intentamos heredar el roster base o lo dejamos vacío (el admin debe instanciarlo primero).
+                              const rosterDb = instancia?.asignaciones || [];
+                              const dictRoles = window.appStateRoles || []; // Requerirá inyección global previa
+
+                              // Estructura contenedores inline (Dirección, Producción, Banda)
+                              // NOTA: Se construirán en el siguiente bloque de edición de HTML.
+                              
+                              htmlCardString += `
+                              <div class="agenda-card group relative opacity-0 translate-y-8 transition-all duration-700 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-[24px] p-5 hover:border-neutral-300 dark:hover:border-neutral-700 shadow-sm">
+                                   ${esAdminStr}
+                                   
+                                   <!-- 1. FECHA Y ESTADO -->
+                                   <div class="flex items-start justify-between mb-2">
+                                         <div class="flex flex-col">
+                                              <span class="text-[40px] font-bold text-neutral-900 dark:text-white tracking-tight leading-none mb-1 flex items-baseline gap-1">
+                                                   ${targetDate.toLocaleString('es-ES', { day: 'numeric' })} <span class="font-medium">${targetDate.toLocaleString('es-ES', { month: 'short' })}</span>
+                                                   <span class="text-sm opacity-60 font-semibold tracking-wider ml-1">${targetDate.getFullYear()}</span>
+                                              </span>
+                                              <span class="text-sm text-neutral-500 font-medium pl-1 mt-1 flex items-center gap-1">
+                                                   ${targetDate.toLocaleString('es-ES', { hour: '2-digit', minute:'2-digit' })}${horaFinDisplay}
+                                              </span>
+                                         </div>
+                                         <span class="px-3 py-1.5 bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 text-xs font-bold rounded-lg border border-neutral-200 dark:border-neutral-700 uppercase tracking-widest">${currentEstado}</span>
+                                    </div>
+                                   
+                                   <!-- 2. TEMA DE PREDICACIÓN -->
+                                   <div class="mb-3 mt-3 group/tema flex items-center justify-between" data-evento-id="${domEventoId}">
+                                        <div class="flex-1 relative pr-4">
+                                             <div class="tema-display-wrapper">
+                                                  <h3 class="tema-display text-[22px] font-bold text-neutral-900 dark:text-white leading-tight">${currentTema || currentTitle}</h3>
+                                             </div>
+                                             ${perfil?.is_admin ? `<input type="text" class="tema-input hidden absolute inset-0 w-full h-[120%] bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white text-[22px] font-bold rounded px-2 -ml-2 outline-none ring-2 ring-blue-500/50" value="${currentTema || ''}" placeholder="Escribe el tema..." data-evento-db-id="${instancia?.id || ''}">` : ''}
+                                        </div>
+                                   </div>
+                                   
+                                   <!-- 3. EQUIPO (INNER BOX) -->
+                                   <div id="roster-box-${domEventoId}" class="bg-neutral-50 dark:bg-neutral-900/50 rounded-2xl p-4 border border-neutral-100 dark:border-neutral-800/80 mt-4 flex flex-col gap-5">
+                                        
+                                        <!-- Niveles 1 & 2: DIRECCIÓN Y LETRAS UNIFICADOS -->
+                                        <div class="grid grid-cols-2 gap-3">
+                                             <div class="flex flex-col">
+                                                  <div class="flex items-center justify-between mb-2">
+                                                      <span class="text-[10px] font-bold text-violet-600 dark:text-violet-400 uppercase tracking-widest">Dirección</span>
+                                                      <div class="h-px flex-1 bg-violet-200 dark:bg-violet-900/50 ml-2"></div>
+                                                  </div>
+                                                  <div class="flex flex-wrap gap-2" id="roster-n1-${domEventoId}">
+                                                      <div class="w-full text-[10px] text-neutral-400 py-1 font-mono animate-pulse">Cargando...</div>
+                                                  </div>
+                                             </div>
+                                             <div class="flex flex-col">
+                                                  <div class="flex items-center justify-between mb-2 w-full">
+                                                      <span class="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest">Letras</span>
+                                                      <div class="h-px flex-1 bg-amber-200 dark:bg-amber-900/50 ml-2"></div>
+                                                  </div>
+                                                  <div class="flex flex-wrap gap-2" id="roster-n2-${domEventoId}">
+                                                      <div class="w-full text-[10px] text-neutral-400 py-1 font-mono animate-pulse">Cargando...</div>
+                                                  </div>
+                                             </div>
+                                        </div>
+
+                                        <!-- Nivel 3a: BANDA -->
+                                        <div>
+                                             <div class="flex items-center justify-between mb-3">
+                                                 <span class="text-[10px] font-bold text-teal-600 dark:text-teal-400 uppercase tracking-widest">Banda</span>
+                                                 <div class="h-px flex-1 bg-teal-200 dark:bg-teal-900/50 ml-3"></div>
+                                             </div>
+                                             <div class="flex flex-wrap gap-2" id="roster-n3b-${domEventoId}">
+                                                 <div class="w-full text-[10px] text-neutral-400 py-1 font-mono animate-pulse">Cargando...</div>
+                                              </div>
+                                         </div>
+                                         
+                                         <!-- Nivel 3b: VOCES -->
+                                         <div>
+                                              <div class="flex items-center justify-between mb-3">
+                                                  <span class="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest">Voces</span>
+                                                  <div class="h-px flex-1 bg-purple-200 dark:bg-purple-900/50 ml-3"></div>
+                                              </div>
+                                              <div class="flex flex-wrap gap-2" id="roster-n3v-${domEventoId}">
+                                                  <div class="w-full text-[10px] text-neutral-400 py-1 font-mono animate-pulse">Cargando...</div>
+                                               </div>
+                                          </div>
+                                    </div>
+                                    
+                                    <!-- 4. BOTONES INFERIORES -->
+                                    <div class="grid grid-cols-2 gap-3 border-t border-neutral-200 dark:border-neutral-800 mt-5 pt-5 -mx-5 px-5 pb-5 -mb-5">
+                                         ${perfil?.is_admin ? `
+                                         <button class="btn-gestionar-modal flex items-center justify-center gap-2 py-2.5 bg-neutral-200/80 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 hover:bg-neutral-300 dark:hover:bg-neutral-700 rounded-lg transition-colors font-bold text-xs tracking-wide border border-transparent" data-evento="${domEventoId}" data-fecha="${targetDate.toISOString()}" data-titulo="${currentTitle}" data-tema="${currentTema}" data-estado="${currentEstado}" data-hora-fin="${instancia?.hora_fin || ''}">
+                                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opacity-60"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                                              GESTIONAR
+                                         </button>` : ''}
+                                         <button class="btn-expandir-detalle flex items-center justify-center gap-2 py-2.5 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 text-neutral-800 dark:text-white hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-lg transition-colors font-bold text-xs tracking-wide shadow-sm ${!perfil?.is_admin ? 'col-span-2' : ''}" data-evento="${domEventoId}">
+                                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opacity-60"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                              VER MÁS
+                                         </button>
+                                    </div>
+                                    
+                                    <!-- Data cruda oculta para renderizado orgánico posterior -->
+                                    <script type="application/json" id="raw-roster-${domEventoId}">
+                                         ${JSON.stringify(rosterDb || [])}
+                                    <\/script>
+                              </div>`;
+                              
+                              // --- GENERACIÓN VISTA LISTA ---
+                              const miAsignacion = rosterDb.find((asig:any) => asig.perfiles?.id === user?.id || asig.perfiles?.email === user?.email);
+                              const isUsuarioAsignado = !!miAsignacion;
+                              const listHighlightClass = isUsuarioAsignado ? 'border-teal-500/50 bg-teal-500/5 dark:bg-teal-900/10' : 'border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800/50';
+                              const dotIndicator = isUsuarioAsignado ? `<div class="w-3 h-3 rounded-full bg-teal-500 shadow-[0_0_8px_rgba(20,184,166,0.6)] absolute -left-1.5 top-1/2 -translate-y-1/2"></div>` : '';
+                              
+                              let miRolBadge = '';
+                              if (miAsignacion) {
+                                   const rolText = window.appStateRoles?.find((r:any) => r.id === miAsignacion.rol_id)?.nombre || 'Banda';
+                                   miRolBadge = `<span class="bg-teal-500 text-white text-[9px] font-bold px-2 py-0.5 rounded ml-2 uppercase tracking-wide">Tú: ${rolText}</span>`;
+                              }
+
+                              let dirListStr = `<span class="text-neutral-400 text-xs italic">Dirección vacía</span>`;
+                              const asignadoLider = rosterDb.find((r:any) => window.appStateRoles?.find((ro:any) => ro.id === r.rol_id && ro.codigo === 'lider_alabanza'));
+                              if(asignadoLider && asignadoLider.perfiles) {
+                                  const shortName = asignadoLider.perfiles.nombre.split(' ')[0];
+                                  dirListStr = `<span class="text-violet-600 dark:text-violet-400 font-bold text-sm bg-violet-50/50 dark:bg-violet-900/20 px-2.5 py-1 rounded-md border border-violet-100 dark:border-violet-800/50">Dirige: ${shortName}</span>`;
+                              }
+                              
+                              htmlListString += `
+                                 <div class="relative flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-2xl border ${listHighlightClass} transition-colors group cursor-pointer btn-expandir-detalle" data-evento="${domEventoId}">
+                                      ${dotIndicator}
+                                      <div class="flex items-center gap-5 min-w-0">
+                                          <div class="flex flex-col items-center justify-center shrink-0 w-16 px-3 py-2 bg-neutral-100 dark:bg-neutral-950 rounded-xl border border-neutral-200/50 dark:border-neutral-800/80">
+                                              <span class="text-2xl font-black text-neutral-900 dark:text-white leading-none">${targetDate.getDate()}</span>
+                                              <span class="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mt-0.5">${targetDate.toLocaleString('es-ES', { month: 'short' })}</span>
+                                          </div>
+                                          <div class="min-w-0">
+                                              <h4 class="font-bold text-neutral-900 dark:text-white text-lg flex items-center flex-wrap">${currentTema || currentTitle}${miRolBadge}</h4>
+                                              <p class="text-xs text-neutral-500 flex items-center gap-2 mt-1">
+                                                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" class="opacity-70" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                                  ${targetDate.toLocaleString('es-ES', { hour: '2-digit', minute:'2-digit' })}${horaFinDisplay}
+                                              </p>
+                                          </div>
+                                      </div>
+                                      
+                                      <div class="flex items-center gap-4 border-t md:border-t-0 md:border-l border-neutral-200 dark:border-neutral-800 pt-3 md:pt-0 md:pl-5">
+                                          ${dirListStr}
+                                          ${perfil?.is_admin ? `
+                                            <button class="btn-gestionar-modal ml-auto md:ml-2 p-2.5 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-300 rounded-lg transition-colors border border-transparent shadow-sm" data-evento="${domEventoId}" data-fecha="${targetDate.toISOString()}" data-titulo="${currentTitle}" data-tema="${currentTema}" data-estado="${currentEstado}" data-hora-fin="${instancia?.hora_fin || ''}" title="Gestionar Evento">
+                                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                                            </button>` : ''}
+                                      </div>
+                                 </div>
+                              `;
+                              
+                              // --- GENERACIÓN VISTA CALENDARIO ---
+                              calendarHtml += `
+                                   <div class="aspect-square relative p-2 md:p-3 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl hover:border-blue-300 dark:hover:border-teal-700 transition-colors cursor-pointer group btn-expandir-detalle shadow-sm ${isUsuarioAsignado ? 'ring-2 ring-teal-500 ring-inset bg-teal-50/10 dark:bg-teal-900/10' : ''}" data-evento="${domEventoId}">
+                                        <span class="absolute top-2 left-2.5 text-xs md:text-sm font-bold ${isUsuarioAsignado ? 'text-teal-600 dark:text-teal-400' : 'text-neutral-700 dark:text-neutral-300'}">${targetDate.getDate()}</span>
+                                        ${isUsuarioAsignado ? '<div class="absolute top-2 right-2.5 w-2 h-2 rounded-full bg-teal-500 shadow-[0_0_8px_rgba(20,184,166,0.6)] animate-pulse"></div>' : ''}
+                                        
+                                        <div class="absolute bottom-2 left-2 right-2 flex flex-col gap-0.5">
+                                             <div class="bg-blue-100 dark:bg-teal-900/50 text-blue-700 dark:text-teal-300 text-[9px] md:text-[10px] font-bold truncate rounded px-1.5 py-0.5 border border-blue-200 dark:border-teal-800/80">
+                                                  ${targetDate.toLocaleString('es-ES', { hour: '2-digit', minute:'2-digit' })}
+                                             </div>
+                                             ${miAsignacion ? `<div class="bg-teal-500 text-white text-[9px] font-bold truncate rounded px-1.5 py-0.5 shadow-sm">Tú: ${window.appStateRoles?.find((r:any) => r.id === miAsignacion.rol_id)?.nombre || ''}</div>` : ''}
+                                             ${asignadoLider && asignadoLider.perfiles ? `<div class="bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 text-[9px] font-bold truncate rounded px-1.5 py-0.5 border border-violet-200 dark:border-violet-800/50 hidden md:block">Dir: ${asignadoLider.perfiles.nombre.split(' ')[0]}</div>` : ''}
+                                        </div>
+                                   </div>
+                              `;
+                         }
+
+                         // Sumar 7 días exactos al Tracker visual
+                         proyeccionActual.setDate(proyeccionActual.getDate() + 7); 
+                         
+                         // Rellenar días del calendario vacíos intermedios
+                         for(let x=0; x<6; x++){
+                             calendarHtml += `<div class="aspect-square bg-neutral-50/50 dark:bg-neutral-900/30 rounded-xl border border-transparent"></div>`;
+                         }
+                    }
+                    
+                    agendaGrid.insertAdjacentHTML('beforeend', htmlCardString);
+                    if (agendaList) agendaList.insertAdjacentHTML('beforeend', htmlListString);
+                    document.getElementById('calendar-grid-cells')?.insertAdjacentHTML('beforeend', calendarHtml);
+                    calendarHtml = ''; // Reset for next batch if needed
+                    
+                    document.querySelectorAll('.agenda-card:not(.observed)').forEach(card => {
+                         gridObserver.observe(card);
+                         card.classList.add('observed');
+                    });
+
+                    // Enganchar listeners exclusivos de Suspensión generados en esta iteración
+                    document.querySelectorAll('.btn-suspender:not(.bound)').forEach(btn => {
+                         btn.classList.add('bound');
+                         btn.addEventListener('click', async (e) => {
+                              const targetDateStr = (e.currentTarget as HTMLButtonElement).getAttribute('data-fecha');
+                              if (confirm('¿Estás seguro de suspender el culto de este domingo exacto? Esto desvinculará a los músicos.')) {
+                                   try {
+                                        const { error: excError } = await supabase.from('eventos').insert([{
+                                             fecha_hora: targetDateStr, // Columna correcta
+                                             estado: 'Borrador', // En la db el enum es solo 'Borrador' / 'Publicado'.
+                                             notas_especiales: 'SUSPENDIDO', // Columna virtual o campo JSON si la DB no tiene 'status'
+                                             titulo: 'SUSPENDIDO',
+                                             created_by: user.id
+                                        }]);
+                                        if (excError) throw excError;
+                                        await fetchAgenda(); // Recalcular UI Completa Orgánicamente
+                                   } catch (err) { alert('Error suspendiendo: ' + err.message); }
+                              }
+                         });
+                    });
+
+                    // Enganchar listeners exclusivos del Roster Modal (DEPRACHED)
+                    // Nueva Lógica: Renderizado Inline de Rosters
+                    const renderizarRostersInline = () => {
+                         document.querySelectorAll('.agenda-card:not(.roster-rendered)').forEach(card => {
+                              const domEventoId = card.querySelector('.btn-suspender')?.getAttribute('data-fecha') ? '' : 'virtual'; 
+                              // Rescatamos el eventoId directamente desde el script anidado (data cruda) o derivado.
+                              // Vamos a inyectar el evento_id en el script del roster como ID crudo durante el render.
+                              
+                         });
+                    };
+
+                    setTimeout(() => {
+                         // Procesar Scripts Data Anidados (JSON Raw Roster)
+                         const roleCategories = {
+                              n1: ['lider_alabanza', 'talkback'],
+                              n2: ['encargado_letras'], // Sonido no implementado en DB pero podría serlo
+                         };
+                         
+                         const instrumentIcons = window.__instrumentIcons;
+
+                         document.querySelectorAll('script[id^="raw-roster-"]').forEach(script => {
+                              if (script.classList.contains('processed')) return;
+                              script.classList.add('processed');
+
+                              const eventoId = script.id.replace('raw-roster-', '');
+                              let roster = [];
+                              try { roster = JSON.parse(script.textContent); } catch (e) {}
+
+                              const dictRoles = window.appStateRoles || [];
+
+                              const containerN1 = document.getElementById(`roster-n1-${eventoId}`);
+                               const containerN2 = document.getElementById(`roster-n2-${eventoId}`);
+                               const containerN3b = document.getElementById(`roster-n3b-${eventoId}`);
+                               const containerN3v = document.getElementById(`roster-n3v-${eventoId}`);
+
+                               if(containerN1) containerN1.innerHTML = '';
+                               if(containerN2) containerN2.innerHTML = '';
+                               if(containerN3b) containerN3b.innerHTML = '';
+                               if(containerN3v) containerN3v.innerHTML = '';
+
+                              // Iterar diccionarios sobre las asignaciones
+                              dictRoles.forEach(rolMap => {
+                                   const isN1 = roleCategories.n1.includes(rolMap.codigo);
+                                   const isN2 = roleCategories.n2.includes(rolMap.codigo);
+                                   
+                                   // Los roles de voz (soprano/tenor) se manejan como pool de 4 al final
+                                   if (['voz_soprano', 'voz_tenor'].includes(rolMap.codigo)) return;
+                                   
+                                   const asignado = roster.find(a => a.rol_id === rolMap.id);
+
+                                   let innerItem = '';
+                                   
+                                   if (asignado && asignado.perfiles) {
+                                        const p = asignado.perfiles;
+                                        const cleanName = p.nombre.replace(/\s*\(.*?\)\s*/g, '').trim();
+                                        const names = cleanName.split(' ');
+                                        const initials = names.map(n=>n[0]).join('').substring(0,2).toUpperCase();
+                                        
+                                        const bgColor = isN1 ? 'bg-violet-500' : (isN2 ? 'bg-amber-500' : 'bg-teal-500');
+                                        
+                                        const avatarBlock = p.avatar_url 
+                                             ? `<img src="${p.avatar_url}" alt="${p.nombre}" class="w-10 h-10 sm:w-11 sm:h-11 shrink-0 rounded-full object-cover shadow-sm border border-neutral-200 dark:border-neutral-700">`
+                                             : `<div class="w-10 h-10 sm:w-11 sm:h-11 shrink-0 rounded-full ${bgColor} text-white flex items-center justify-center font-bold text-sm shadow-sm">${initials}</div>`;
+
+                                        const firstName = names[0];
+                                        const lastInitial = names.length > 1 ? names[names.length - 1][0] + '.' : '';
+                                        const displayName = `${firstName} ${lastInitial}`.trim();
+
+                                        const iconSvg = instrumentIcons[rolMap.codigo] || '';
+                                         const badgeHtml = iconSvg ? `<div class="absolute -top-1 -right-1 w-[20px] h-[20px] bg-white dark:bg-neutral-800 rounded-full flex items-center justify-center shadow-md border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 z-10">${iconSvg}</div>` : '';
+
+                                         innerItem = `
+                                              <div class="flex flex-col items-center gap-2 group relative cursor-pointer hover:bg-neutral-200/50 dark:hover:bg-neutral-800/50 rounded-xl p-2 -m-2 transition-colors ${perfil?.is_admin ? 'btn-roster-inline' : ''}" title="${p.nombre} (${rolMap.nombre})" data-evento="${eventoId}" data-rol-id="${rolMap.id}" data-rol-name="${rolMap.nombre}">
+                                                   <div class="relative">
+                                                      ${avatarBlock}
+                                                      ${badgeHtml}
+                                                      ${perfil?.is_admin ? `<button class="btn-remove-roster absolute -top-1.5 -left-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full p-1.5 shadow-md z-20 opacity-0 group-hover:opacity-100 transition-opacity" title="Remover" data-evento="${eventoId}" data-rol-id="${rolMap.id}" data-rol-name="${rolMap.nombre}">
+                                                          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                                                      </button>` : ''}
+                                                  </div>
+                                                  <span class="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 capitalize max-w-[60px] truncate text-center leading-none">${displayName}</span>
+                                             </div>
+                                        `;
+                                   } else if (perfil?.is_admin) {
+                                         // Empty Slot Actionable solo para Admins (oculto en tarjeta)
+                                         const ringHover = isN1 ? 'hover:border-violet-500 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-950/30' : (isN2 ? 'hover:border-amber-500 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/30' : 'hover:border-teal-500 hover:text-teal-500 hover:bg-teal-50 dark:hover:bg-teal-950/30');
+                                         innerItem = `
+                                              <button class="btn-roster-inline empty-slot px-4 h-9 flex items-center justify-center gap-1.5 rounded-full border border-dashed border-neutral-300 dark:border-neutral-700 text-[11px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest ${ringHover} transition-all" data-evento="${eventoId}" data-rol-id="${rolMap.id}" data-rol-name="${rolMap.nombre}">
+                                                   ${rolMap.nombre.split(' ')[0]} <span class="font-normal opacity-60 text-lg leading-none mt-[-2px]">+</span>
+                                              </button>
+                                         `;
+                                   }
+
+                                   if (innerItem) {
+                                        if (isN1) containerN1?.insertAdjacentHTML('beforeend', innerItem);
+                                        else if (isN2) containerN2?.insertAdjacentHTML('beforeend', innerItem);
+                                        else containerN3b?.insertAdjacentHTML('beforeend', innerItem);
+                                   }
+                              });
+                              
+                              // ===== POOL DE VOCES: máx 4 slots genéricos (soprano + tenor mezclados) =====
+                              const vozRolesInDict = dictRoles.filter(r => ['voz_soprano', 'voz_tenor'].includes(r.codigo));
+                              const allVozAsignadas = roster.filter(a => vozRolesInDict.some(r => r.id === a.rol_id) && a.perfiles);
+                              const MAX_VOZ_SLOTS = 4;
+                              
+                              // Renderizar voces asignadas
+                              allVozAsignadas.forEach(asig => {
+                                   const p = asig.perfiles;
+                                   const rolMap = vozRolesInDict.find(r => r.id === asig.rol_id);
+                                   const cleanName = p.nombre.replace(/\s*\(.*?\)\s*/g, '').trim();
+                                   const names = cleanName.split(' ');
+                                   const initials = names.map(n=>n[0]).join('').substring(0,2).toUpperCase();
+                                   const firstName = names[0];
+                                   const lastInitial = names.length > 1 ? names[names.length - 1][0] + '.' : '';
+                                   const displayName = `${firstName} ${lastInitial}`.trim();
+                                   
+                                   const avatarBlock = p.avatar_url 
+                                        ? `<img src="${p.avatar_url}" alt="${p.nombre}" class="w-10 h-10 sm:w-11 sm:h-11 shrink-0 rounded-full object-cover shadow-sm border border-neutral-200 dark:border-neutral-700">`
+                                        : `<div class="w-10 h-10 sm:w-11 sm:h-11 shrink-0 rounded-full bg-teal-500 text-white flex items-center justify-center font-bold text-sm shadow-sm">${initials}</div>`;
+                                   
+                                   const vozItem = `
+                                        <div class="flex flex-col items-center gap-2 group relative cursor-pointer hover:bg-neutral-200/50 dark:hover:bg-neutral-800/50 rounded-xl p-2 -m-2 transition-colors ${perfil?.is_admin ? 'btn-roster-inline' : ''}" title="${p.nombre} (${rolMap?.nombre || 'Voz'})" data-evento="${eventoId}" data-rol-id="${asig.rol_id}" data-rol-name="${rolMap?.nombre || 'Voz'}">
+                                             <div class="relative">
+                                                ${avatarBlock}
+                                                ${perfil?.is_admin ? `<button class="btn-remove-roster absolute -top-1.5 -left-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full p-1.5 shadow-md z-20 opacity-0 group-hover:opacity-100 transition-opacity" title="Remover" data-evento="${eventoId}" data-rol-id="${asig.rol_id}" data-rol-name="${rolMap?.nombre || 'Voz'}">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                                                </button>` : ''}
+                                            </div>
+                                            <span class="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 capitalize max-w-[60px] truncate text-center leading-none">${displayName}</span>
+                                        </div>
+                                   `;
+                                   containerN3v?.insertAdjacentHTML('beforeend', vozItem);
+                              });
+                              
+                              // Renderizar slots de voz vacíos disponibles (para admins)
+                              if (perfil?.is_admin && allVozAsignadas.length < MAX_VOZ_SLOTS) {
+                                   const targetVozRol = vozRolesInDict[0];
+                                   if (targetVozRol) {
+                                        const emptyVozSlot = `
+                                             <button class="btn-roster-inline empty-slot px-4 h-9 flex items-center justify-center gap-1.5 rounded-full border border-dashed border-neutral-300 dark:border-neutral-700 text-[11px] font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest hover:border-purple-500 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-950/30 transition-all" data-evento="${eventoId}" data-rol-id="${targetVozRol.id}" data-rol-name="Voz">
+                                                  Voz <span class="font-normal opacity-60 text-lg leading-none mt-[-2px]">+</span>
+                                             </button>
+                                        `;
+                                        containerN3v?.insertAdjacentHTML('beforeend', emptyVozSlot);
+                                   }
+                              }
+                         });
+
+                          // Bind Global Listeners para los Add Pills (excepto en Modal que tiene su propio re-binder)
+                          document.querySelectorAll('.btn-roster-inline:not(.bound)').forEach(btn => {
+                               // Esto corre sobre slots principales en el grid si el CSS estuviera visible pero no en el card
+                               btn.classList.add('bound');
+                               btn.addEventListener('click', (e) => {
+                                    if ((e.target as HTMLElement).closest('.btn-remove-roster')) return; // Ignore if clicking remove
+                                    const tgt = e.currentTarget as HTMLButtonElement;
+                                    const eventoId = tgt.getAttribute('data-evento');
+                                    const rolId = tgt.getAttribute('data-rol-id');
+                                    const rolName = tgt.getAttribute('data-rol-name');
+                                    
+                                    if (eventoId.startsWith('virtual|')) {
+                                         alert('Guarda/crea primero este domingo para asignarle equipo.');
+                                         return;
+                                    }
+                                    
+                                    if(typeof window.openPickerGlobal === 'function') {
+                                         window.openPickerGlobal(eventoId, rolId, rolName);
+                                     }
+                               });
+                          });
+
+                          // Bind Gestionar Modal Modal
+                          document.querySelectorAll('.btn-gestionar-modal:not(.bound)').forEach(btn => {
+                               btn.classList.add('bound');
+                               btn.addEventListener('click', (e) => {
+                                    const tgt = e.currentTarget as HTMLButtonElement;
+                                    const card = tgt.closest('.agenda-card');
+                                    const rosterBoxes = card.querySelector('.bg-neutral-50') || card.querySelector('.dark\\:bg-neutral-900\\/50');
+                                    
+                                    if(typeof window.toggleModalGlobal === 'function') {
+                                         window.toggleModalGlobal(true, 'edit', {
+                                             id: tgt.getAttribute('data-evento'),
+                                             fecha: tgt.getAttribute('data-fecha'),
+                                             titulo: tgt.getAttribute('data-titulo'),
+                                             tema: tgt.getAttribute('data-tema'),
+                                             estado: tgt.getAttribute('data-estado'),
+                                             hora_fin: tgt.getAttribute('data-hora-fin'),
+                                             rosterHtml: rosterBoxes ? rosterBoxes.innerHTML : ''
+                                         });
+                                    }
+                               });
+                          });
+
+                          // Bloque de eventos Inline Eliminado para respetar la centralización en Modal.
+
+                         // Bind Reactivar/Eliminar en tarjetas suspendidas
+                          document.querySelectorAll('.btn-reactivar-evento:not(.bound)').forEach(btn => {
+                               btn.classList.add('bound');
+                               btn.addEventListener('click', async (e) => {
+                                    const target = e.currentTarget as HTMLElement;
+                                    const eventoId = target.getAttribute('data-evento-id');
+                                    if (!eventoId) { alert('No se encontró el ID del evento suspendido.'); return; }
+                                    if (!confirm('¿Reactivar este evento? Volverá a aparecer como domingo normal.')) return;
+                                    const { error } = await supabase.from('eventos').delete().eq('id', eventoId);
+                                    if (error) { alert('Error al reactivar: ' + error.message); return; }
+                                    target.closest('.agenda-card')?.remove();
+                                    await fetchAgenda();
+                               });
+                          });
+                          
+                          document.querySelectorAll('.btn-eliminar-evento:not(.bound)').forEach(btn => {
+                               btn.classList.add('bound');
+                               btn.addEventListener('click', async (e) => {
+                                    const target = e.currentTarget as HTMLElement;
+                                    const eventoId = target.getAttribute('data-evento-id');
+                                    if (!eventoId) { alert('No se puede eliminar un evento virtual (no existe en DB).'); return; }
+                                    if (!confirm('¿Eliminar definitivamente este evento? Esta acción no se puede deshacer.')) return;
+                                    const { error } = await supabase.from('eventos').delete().eq('id', eventoId);
+                                    if (error) { alert('Error al eliminar: ' + error.message); return; }
+                                    target.closest('.agenda-card')?.remove();
+                               });
+                          });
+
+                         // Bind Expand Detail Listener
+                         document.querySelectorAll('.btn-expandir-detalle:not(.bound)').forEach(btn => {
+                              btn.classList.add('bound');
+                              btn.addEventListener('click', (e) => {
+                                   const eventoId = e.currentTarget.getAttribute('data-evento');
+                                   if(typeof window.openDetalleGlobal === 'function') {
+                                        window.openDetalleGlobal(eventoId);
+                                   }
+                              });
+                         });
+
+                     }, 50); // Small DOM buffer
+                     return true; // Hay más tarjetas disponibles
+                };
+
+                // Semilla Inicial (4 domingos frontales)
+                generarTarjetas(4);
+
+                // Setup Infinite Observer
+                const sentinel = document.getElementById('scroll-sentinel');
+                const sentinelSpinner = document.getElementById('sentinel-spinner');
+                let isLoadingInfinite = false;
+
+                const infiniteObserver = new IntersectionObserver(async (entries) => {
+                     const entry = entries[0];
+                     if (entry.isIntersecting && !isLoadingInfinite) {
+                          isLoadingInfinite = true;
+                          sentinelSpinner?.classList.remove('hidden');
+                          
+                          // Simular latencia de renderizado (Sensación nativa)
+                          await new Promise(r => setTimeout(r, 600)); 
+                          
+                           const moreCardsAvailable = generarTarjetas(4); // Renderizar 4 Domingos extra al fondo
+                           
+                           if (!moreCardsAvailable) {
+                                infiniteObserver.unobserve(sentinel); // Stop observing
+                                // The instruction implies generarTarjetas handles displaying the final card.
+                           }
+
+                           sentinelSpinner?.classList.add('hidden');
+                           isLoadingInfinite = false;
+                      }
+                }, { rootMargin: '200px 0px', threshold: 0.1 });
+
+                if (sentinel) { infiniteObserver.disconnect(); infiniteObserver.observe(sentinel); }
+            }
+        };
+
+        // Refresco global expuesto (usado para in-place reloads)
+        window.triggerGlobalRefetch = async () => {
+            await fetchAgenda();
+        };
+
+        window.refreshModalRoster = async (eventoId) => {
+             // Micro-delay para evitar condición de carrera con el renderizado del grid de Astro
+             await new Promise(r => setTimeout(r, 150));
+             
+             const updatedRosterBox = document.getElementById(`roster-box-${eventoId}`);
+             const modalRosterContainer = document.getElementById('modal-roster-container');
+             if (updatedRosterBox && modalRosterContainer) {
+                  modalRosterContainer.innerHTML = updatedRosterBox.innerHTML;
+                  if (typeof window.bindModalRosterEvents === 'function') {
+                       window.bindModalRosterEvents(); // Reactivation
+                  }
+             }
+        };
+
+        // Solicitar el volcado Inicial
+        await fetchAgenda();
+
+        // Control Logout Limpiador
+        btnLogout?.addEventListener('click', async () => {
+             // Notificar cierre a la Base de Datos para purgar token
+            await supabase.auth.signOut();
+            window.location.replace('/login');
+        });
+
+        // ==========================================
+        // LÓGICA DEL MODAL Y CREACIÓN DE EVENTOS
+        // ==========================================
+        const modal = document.getElementById('event-modal');
+        const fab = document.getElementById('btn-new-event');
+        const btnClose = document.getElementById('btn-close-modal');
+        const btnCancel = document.getElementById('btn-cancel-modal');
+        const formEvent = document.getElementById('form-event') as HTMLFormElement;
+        const btnSpinner = document.getElementById('btn-spinner');
+        const btnSubmitText = document.querySelector('#btn-submit-modal span');
+        const modalTitle = document.getElementById('modal-title');
+        const modalRosterSection = document.getElementById('modal-roster-section');
+        const modalRosterContainer = document.getElementById('modal-roster-container');
+
+        window.toggleModalGlobal = (show: boolean, mode: 'new' | 'edit' = 'new', data = null) => {
+            if (show) {
+                if (mode === 'new') {
+                     modalTitle!.textContent = 'Nuevo Evento';
+                     formEvent.reset();
+                     (document.getElementById('ev-id') as HTMLInputElement).value = '';
+                     document.getElementById('btn-armar-playlist')?.classList.add('hidden');
+                     modalRosterSection?.classList.add('hidden');
+                } else if (mode === 'edit' && data) {
+                     modalTitle!.textContent = 'Gestionar Evento';
+                     (document.getElementById('ev-id') as HTMLInputElement).value = data.id;
+                      window._showPlaylistBtn(data.id);
+                     (document.getElementById('ev-titulo') as HTMLInputElement).value = data.titulo || '';
+                     
+                     // Ajustar Fecha local ISO
+                     const d = new Date(data.fecha);
+                     const offset = d.getTimezoneOffset() * 60000;
+                     const localISOTime = (new Date(d.getTime() - offset)).toISOString().slice(0, 16);
+                     
+                     (document.getElementById('ev-fecha') as HTMLInputElement).value = localISOTime;
+                     (document.getElementById('ev-hora-fin') as HTMLInputElement).value = data.hora_fin || '';
+                     (document.getElementById('ev-tema') as HTMLInputElement).value = data.tema && data.tema !== 'undefined' && data.tema !== 'null' ? data.tema : '';
+                     (document.getElementById('ev-estado') as HTMLSelectElement).value = data.estado || 'Publicado';
+
+                     // Renderizar Equipo dinámicamente
+                     if (data.rosterHtml) {
+                          modalRosterContainer!.innerHTML = data.rosterHtml;
+                          // Enganchar listeners para edición interna de equipo en el modal (Local Binder)
+                          window.bindModalRosterEvents = () => {
+                              modalRosterContainer?.querySelectorAll('.btn-roster-inline').forEach(btn => {
+                                   btn.addEventListener('click', (e) => {
+                                        if ((e.target as HTMLElement).closest('.btn-remove-roster')) return; // ignorar click en remover
+                                        e.preventDefault();
+                                        const tgt = e.currentTarget as HTMLElement;
+                                        const eventoId = tgt.getAttribute('data-evento');
+                                        const rolId = tgt.getAttribute('data-rol-id');
+                                        const rolName = tgt.getAttribute('data-rol-name');
+                                        
+                                        if (eventoId && eventoId.startsWith('virtual|')) {
+                                             alert('Guarda este evento primero para asignar integrantes.');
+                                             return;
+                                        }
+                                        if(typeof window.openPickerGlobal === 'function') window.openPickerGlobal(eventoId, rolId, rolName);
+                                   });
+                              });
+                              
+                              // Lógica del botón Remover
+                              modalRosterContainer?.querySelectorAll('.btn-remove-roster').forEach(btn => {
+                                   btn.addEventListener('click', async (e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        const tgt = e.currentTarget as HTMLElement;
+                                        const eventoId = tgt.getAttribute('data-evento');
+                                        const rolId = tgt.getAttribute('data-rol-id');
+                                        
+                                        tgt.innerHTML = `<div class="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>`;
+                                        
+                                        const { error } = await supabase.from('asignaciones').delete()
+                                            .eq('evento_id', eventoId)
+                                            .eq('rol_id', rolId);
+                                            
+                                        if (error) { alert('Error: ' + error.message); return; }
+                                        
+                                        // Refresco visual in-place usando la grilla (background refetch)
+                                        tgt.closest('.group')?.classList.add('opacity-50', 'pointer-events-none');
+                                        // Llamar global callback the update-reload (está amarrada a un custom event o re-fetch directo)
+                                        if (typeof window.triggerGlobalRefetch === 'function') {
+                                             await window.triggerGlobalRefetch();
+                                             // Una vez re-fetcheado, inyectar DOM fresco en el modal
+                                             if (typeof window.refreshModalRoster === 'function') {
+                                                  await window.refreshModalRoster(eventoId);
+                                             }
+                                        }
+                                   });
+                              });
+                          };
+                          window.bindModalRosterEvents();
+                          modalRosterSection?.classList.remove('hidden');
+                     } else {
+                          modalRosterSection?.classList.add('hidden');
+                     }
+                }
+                modal?.classList.remove('hidden');
+                document.body.style.overflow = 'hidden';
+            } else {
+                modal?.classList.add('hidden');
+                document.body.style.overflow = '';
+                formEvent?.reset();
+            }
+        };
+
+        fab?.addEventListener('click', () => window.toggleModalGlobal(true, 'new'));
+        btnClose?.addEventListener('click', () => window.toggleModalGlobal(false));
+        btnCancel?.addEventListener('click', () => window.toggleModalGlobal(false));
+        
+        // Cerrar al clickear fuera
+        modal?.addEventListener('click', (e) => {
+            if (e.target === modal) window.toggleModalGlobal(false);
+        });
+
+        // Submit Form update/insert a Supabase
+        formEvent?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (btnSpinner) btnSpinner.classList.remove('hidden');
+            if (btnSubmitText) btnSubmitText.textContent = 'Guardando...';
+            (formEvent.elements as any)['btn-submit-modal'].disabled = true;
+
+            const evId = (document.getElementById('ev-id') as HTMLInputElement).value;
+            const titulo = (document.getElementById('ev-titulo') as HTMLInputElement).value;
+            const fecha = (document.getElementById('ev-fecha') as HTMLInputElement).value;
+            const hora_fin = (document.getElementById('ev-hora-fin') as HTMLInputElement).value;
+            const tema = (document.getElementById('ev-tema') as HTMLInputElement).value;
+            const estado = (document.getElementById('ev-estado') as HTMLSelectElement).value;
+
+            let transacError = null;
+
+            if (evId && !evId.startsWith('virtual|')) {
+                 const { error } = await supabase
+                     .from('eventos')
+                     .update({ 
+                         titulo, 
+                         fecha_hora: new Date(fecha).toISOString(),
+                         hora_fin: hora_fin || null,
+                         tema_predicacion: tema || null,
+                         estado 
+                     })
+                     .eq('id', evId);
+                 transacError = error;
+            } else {
+                 const newEv: any = { 
+                     titulo, 
+                     fecha_hora: new Date(fecha).toISOString(),
+                     hora_fin: hora_fin || null,
+                     tema_predicacion: tema || null,
+                     estado, 
+                     created_by: user.id 
+                 };
+                 // Virtual persist o nuevo evento desde FAB (añadimos cronograma)
+                 if (!evId) newEv.notas_especiales = 'FREQ=WEEKLY;BYDAY=SU';
+                 
+                 const { error } = await supabase.from('eventos').insert([newEv]);
+                 transacError = error;
+            }
+
+            if (transacError) {
+                console.error('❌ Error gestionando evento:', transacError);
+                alert('No se pudo guardar: ' + transacError.message);
+            } else {
+                window.toggleModalGlobal(false);
+                if(typeof alert !== 'undefined' && evId.startsWith('virtual|')) alert('Evento dominguero publicado. Ahora haz clic en GESTIONAR de nuevo para añadir el equipo.');
+                await fetchAgenda(); 
+            }
+
+            if (btnSpinner) btnSpinner.classList.add('hidden');
+            if (btnSubmitText) btnSubmitText.textContent = 'Guardar Evento';
+            (formEvent.elements as any)['btn-submit-modal'].disabled = false;
+        });
+
+        // ==========================================
+        // LÓGICA DE CARGA DE EQUIPOS (TEMPLATE BUILDER)
+        // ==========================================
+        const modalEquipoPicker = document.getElementById('equipo-picker-modal');
+        const modalEquipoContent = document.getElementById('equipo-picker-content');
+        const btnCargarEquipo = document.getElementById('btn-cargar-equipo');
+        const listEquipo = document.getElementById('equipo-picker-list');
+        const spinnerEquipo = document.getElementById('equipo-picker-spinner');
+        const emptyEquipo = document.getElementById('equipo-picker-empty');
+
+        const openEquipoPicker = async () => {
+             let evIdStr = (document.getElementById('ev-id') as HTMLInputElement).value;
+             const evFechaStr = (document.getElementById('ev-fecha') as HTMLInputElement).value;
+             const evTituloStr = (document.getElementById('ev-titulo') as HTMLInputElement).value;
+             const evTemaStr = (document.getElementById('ev-tema') as HTMLInputElement).value;
+             const evEstadoStr = (document.getElementById('ev-estado') as HTMLSelectElement)?.value || 'Publicado';
+             
+             // Si es evento virtual → crear instancia automáticamente (silencioso)
+             if (!evIdStr || evIdStr.startsWith('virtual|')) {
+                  
+                  try {
+                       // Extraer la fecha ISO del ID virtual o del campo fecha del modal
+                       let fechaISO: string;
+                       if (evIdStr && evIdStr.startsWith('virtual|')) {
+                            fechaISO = new Date(evIdStr.replace('virtual|', '')).toISOString();
+                       } else if (evFechaStr) {
+                            fechaISO = new Date(evFechaStr).toISOString();
+                       } else {
+                            alert('No se pudo detectar la fecha del evento. Abre GESTIONAR primero.');
+                            return;
+                       }
+                       
+                       const { data: newEv, error: createErr } = await supabase
+                            .from('eventos')
+                            .insert([{
+                                 titulo: evTituloStr || 'Actividad Redil',
+                                 fecha_hora: fechaISO,
+                                 estado: evEstadoStr,
+                                 tema_predicacion: evTemaStr || null,
+                                 created_by: user.id
+                            }])
+                            .select('id')
+                            .single();
+                       
+                       if (createErr) throw createErr;
+                       
+                       // Actualizar el ID en el modal para que sincronice
+                       evIdStr = newEv.id;
+                       const evIdInput = document.getElementById('ev-id') as HTMLInputElement;
+                       if (evIdInput) evIdInput.value = newEv.id;
+                       
+                  } catch (err: any) {
+                       alert('Error al crear el evento: ' + err.message);
+                       return;
+                  }
+             }
+
+
+             // Mostrar Modal con Animación
+             modalEquipoPicker?.classList.remove('hidden');
+             setTimeout(() => {
+                  modalEquipoPicker?.classList.remove('opacity-0');
+                  modalEquipoContent?.classList.remove('scale-95');
+                  modalEquipoContent?.classList.add('scale-100');
+             }, 10);
+
+             listEquipo!.innerHTML = '';
+             emptyEquipo?.classList.add('hidden');
+             spinnerEquipo?.classList.remove('hidden');
+
+             // Fetch Equipos Maestros
+             const { data: equiposMaster, error } = await supabase
+                  .from('equipos')
+                  .select('id, nombre, letra')
+                  .order('created_at', { ascending: false });
+
+             spinnerEquipo?.classList.add('hidden');
+
+             if (error) {
+                 listEquipo!.innerHTML = `<p class="text-red-500 font-bold">${error.message}</p>`;
+                 return;
+             }
+
+             if (!equiposMaster || equiposMaster.length === 0) {
+                 emptyEquipo?.classList.remove('hidden');
+                 emptyEquipo?.classList.add('flex');
+                 return;
+             }
+
+             // Renderizar Tarjetas de Equipo (Miniaturas de /equipo)
+             equiposMaster.forEach(eq => {
+                  const safeLetra = eq.letra || 'A';
+                  
+                  // Mapeo Estático de Colores (Reusando lógica de /equipo)
+                  const colorMap = {
+                      'A': 'bg-red-100 text-red-600 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800',
+                      'B': 'bg-blue-100 text-blue-600 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800',
+                      'C': 'bg-emerald-100 text-emerald-600 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800',
+                      'D': 'bg-amber-100 text-amber-600 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800',
+                      'E': 'bg-fuchsia-100 text-fuchsia-600 border-fuchsia-200 dark:bg-fuchsia-900/30 dark:text-fuchsia-400 dark:border-fuchsia-800',
+                      'F': 'bg-cyan-100 text-cyan-600 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400 dark:border-cyan-800',
+                      'G': 'bg-rose-100 text-rose-600 border-rose-200 dark:bg-rose-900/30 dark:text-rose-400 dark:border-rose-800',
+                      'H': 'bg-indigo-100 text-indigo-600 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-800',
+                      'I': 'bg-lime-100 text-lime-600 border-lime-200 dark:bg-lime-900/30 dark:text-lime-400 dark:border-lime-800',
+                      'J': 'bg-orange-100 text-orange-600 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800'
+                  };
+                  const colorClasses = colorMap[safeLetra] || colorMap['A'];
+
+                  const btn = document.createElement('button');
+                  btn.className = `text-left bg-neutral-50 dark:bg-neutral-900/50 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-4 flex items-center justify-between hover:border-teal-500 transition-colors group`;
+                  btn.innerHTML = `
+                       <div class="flex flex-col gap-1">
+                            <span class="text-xs font-bold text-neutral-400 uppercase tracking-widest leading-none">Equipo Base</span>
+                            <span class="font-bold text-lg text-neutral-900 dark:text-white leading-tight group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">${eq.nombre}</span>
+                       </div>
+                       <div class="w-10 h-10 rounded-full flex items-center justify-center text-lg font-black shrink-0 border shadow-sm ${colorClasses}">
+                            ${safeLetra}
+                       </div>
+                  `;
+
+                  // Al Hacer Clic en el Equipo -> Modal de Confirmación Premium
+                  btn.onclick = async () => {
+                       // Crear overlay de confirmación personalizado
+                       const overlay = document.createElement('div');
+                       overlay.className = 'fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm';
+                       overlay.style.animation = 'fadeIn 0.2s ease-out';
+                       overlay.innerHTML = `
+                            <style>
+                                 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+                                 @keyframes scaleIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+                            </style>
+                            <div class="bg-white dark:bg-neutral-900 rounded-3xl shadow-2xl max-w-sm w-[90%] overflow-hidden border border-neutral-200 dark:border-neutral-800" style="animation: scaleIn 0.25s ease-out">
+                                 <div class="p-6 text-center">
+                                      <div class="w-14 h-14 rounded-full flex items-center justify-center text-2xl font-black shrink-0 border shadow-sm mx-auto mb-4 ${colorClasses}">
+                                           ${safeLetra}
+                                      </div>
+                                      <h3 class="text-lg font-extrabold text-neutral-900 dark:text-white mb-1">Cargar "${eq.nombre}"</h3>
+                                      <p class="text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed">Se sobrescribirá el equipo actual de este domingo con la plantilla seleccionada.</p>
+                                 </div>
+                                 <div class="flex border-t border-neutral-200 dark:border-neutral-800">
+                                      <button id="confirm-cancel" class="flex-1 py-3.5 text-sm font-bold text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">Cancelar</button>
+                                      <button id="confirm-accept" class="flex-1 py-3.5 text-sm font-bold text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-950/30 transition-colors border-l border-neutral-200 dark:border-neutral-800">Confirmar</button>
+                                 </div>
+                            </div>
+                       `;
+                       document.body.appendChild(overlay);
+
+                       // Esperar decisión del usuario
+                       const result = await new Promise<boolean>((resolve) => {
+                            overlay.querySelector('#confirm-cancel')!.addEventListener('click', () => resolve(false));
+                            overlay.querySelector('#confirm-accept')!.addEventListener('click', () => resolve(true));
+                            overlay.addEventListener('click', (e) => { if (e.target === overlay) resolve(false); });
+                       });
+
+                       overlay.remove();
+                       if (result) {
+                            await applyEquipoToEvento(eq.id, evIdStr, btn);
+                       }
+                  };
+
+                  listEquipo?.appendChild(btn);
+             });
+        };
+
+        const closeEquipoPicker = () => {
+             modalEquipoContent?.classList.remove('scale-100');
+             modalEquipoContent?.classList.add('scale-95');
+             modalEquipoPicker?.classList.add('opacity-0');
+             setTimeout(() => modalEquipoPicker?.classList.add('hidden'), 300);
+        };
+
+
+
+        btnCargarEquipo?.addEventListener('click', openEquipoPicker);
+        document.getElementById('btn-close-equipo-picker')?.addEventListener('click', closeEquipoPicker);
+        modalEquipoPicker?.addEventListener('click', (e) => { if (e.target === modalEquipoPicker) closeEquipoPicker(); });
+
+        // Función Maestra: Bulk Insert / Update de Equipo Integrantes a Asignaciones (Eventos)
+        const applyEquipoToEvento = async (equipoIdStr, eventoIdStr, btnElement) => {
+             const originalHtml = btnElement.innerHTML;
+             btnElement.disabled = true;
+             btnElement.innerHTML = `<div class="w-6 h-6 border-4 border-teal-500/30 border-t-teal-500 rounded-full animate-spin mx-auto"></div>`;
+
+             console.log('🔧 [applyEquipo] START', { equipoIdStr, eventoIdStr });
+
+             try {
+                  // 1. Obtener la configuración (blueprint) de Integrantes del Equipo
+                  const { data: blueprint, error: bpError } = await supabase
+                      .from('equipo_integrantes')
+                      .select('perfil_id, rol_maestro')
+                      .eq('equipo_id', equipoIdStr);
+
+                  console.log('🔧 [applyEquipo] Blueprint:', { blueprint, bpError });
+
+                  if (bpError) throw bpError;
+                  if (!blueprint || blueprint.length === 0) {
+                      alert('Este equipo está vacío, no hay integrantes que copiar.');
+                      btnElement.disabled = false;
+                      btnElement.innerHTML = originalHtml;
+                      return;
+                  }
+
+                  // 2. Limpiar las asignaciones actuales del Evento
+                  const { error: delError } = await supabase
+                      .from('asignaciones')
+                      .delete()
+                      .eq('evento_id', eventoIdStr);
+                  
+                  console.log('🔧 [applyEquipo] Delete existing:', { delError });
+                  if (delError) throw delError;
+
+                  // 3. Mapear y Preparar el Bulk Insert para la Tabla 'asignaciones'
+                  const bulkPayload = blueprint.map(item => ({
+                       evento_id: eventoIdStr,
+                       perfil_id: item.perfil_id,
+                       rol_id: item.rol_maestro
+                  }));
+
+                  console.log('🔧 [applyEquipo] Bulk Payload:', JSON.stringify(bulkPayload, null, 2));
+
+                  // 4. Inyectar (Bulk Insert) masivo
+                  const { data: insertResult, error: insError } = await supabase
+                      .from('asignaciones')
+                      .insert(bulkPayload)
+                      .select();
+
+                  console.log('🔧 [applyEquipo] Insert result:', { insertResult, insError });
+                  if (insError) throw insError;
+
+                  // 5. Cerrar todo y refrescar limpiamente
+                  closeEquipoPicker();
+                  if (typeof window.toggleModalGlobal === 'function') {
+                       window.toggleModalGlobal(false);
+                  }
+                  console.log('🔧 [applyEquipo] DONE ✅ → Recargando página...');
+                  window.location.reload(); // Refresh limpio para renderizar todos los rosters
+
+             } catch (err) {
+                  console.error('❌ [applyEquipo] Error:', err);
+                  alert('Error Crítico aplicando Plantilla Mágica: ' + err.message);
+                  btnElement.disabled = false;
+                  btnElement.innerHTML = originalHtml;
+             }
+        };
+
+        // ==========================================
+        // LÓGICA DEL PICKER INTELIGENTE GLOBAL (ATOMIC SAVES)
+        // ==========================================
+        const modalPicker = document.getElementById('picker-modal');
+
+        window.openPickerGlobal = async (eventoId, rolId, rolName) => {
+             document.getElementById('picker-role-name').textContent = rolName;
+             
+             // Animación submodal (iOS style bottom sheet env)
+             modalPicker?.classList.remove('hidden');
+             void modalPicker?.offsetWidth; // trigger reflow
+             modalPicker?.classList.remove('translate-y-full');
+             
+             const list = document.getElementById('picker-list');
+             const spinner = document.getElementById('picker-spinner');
+             list.innerHTML = '';
+             spinner?.classList.remove('hidden');
+
+             // CORE INTELLIGENT FILTER: Fetch SOLO perfiles_roles == rolId
+             const { data: perfilesRol, error } = await supabase
+                 .from('perfil_roles')
+                 .select('perfiles!inner ( * )')
+                 .eq('rol_id', rolId);
+
+             spinner?.classList.add('hidden');
+             
+             if (error) { list.innerHTML = `<p class="text-red-500 p-4 font-mono text-sm">${error.message}</p>`; return; }
+
+             if (!perfilesRol || perfilesRol.length === 0) {
+                  list.innerHTML = `
+                       <div class="flex flex-col items-center justify-center py-10 text-center opacity-70">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" class="mb-4 text-neutral-400 dark:text-neutral-600" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
+                            <p class="text-neutral-500 dark:text-neutral-400 font-bold">Nadie tiene este rol</p>
+                            <p class="text-xs text-neutral-400 dark:text-neutral-500 max-w-[200px] mx-auto mt-1">Asigna el rol maestro en la pestaña 'Equipo'.</p>
+                       </div>
+                  `;
+                  return;
+             }
+
+             perfilesRol.forEach(pr => {
+                  const p = pr.perfiles;
+                  
+                  // Renderizado de Opciones del Picker (Soporta Auténtico Avatar)
+                  const initials = p.nombre.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase();
+                  const avatarUI = p.avatar_url 
+                       ? `<img src="${p.avatar_url}" alt="${p.nombre}" class="w-10 h-10 shrink-0 rounded-full object-cover">`
+                       : `<div class="w-10 h-10 shrink-0 rounded-full bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 flex items-center justify-center font-bold text-xs">${initials}</div>`;
+
+                  const btn = document.createElement('button');
+                  btn.className = 'w-full text-left bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-3 flex items-center gap-3 hover:border-blue-500 dark:hover:border-teal-500 hover:shadow-md transition-all group';
+                  btn.innerHTML = `
+                       ${avatarUI}
+                       <div class="flex-1 min-w-0">
+                            <p class="font-bold text-neutral-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-teal-400 transition-colors truncate">${p.nombre}</p>
+                            <p class="text-xs text-neutral-500 dark:text-neutral-400 truncate">${p.email}</p>
+                       </div>
+                       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-neutral-200 dark:text-neutral-800 group-hover:text-blue-500 dark:group-hover:text-teal-500 transition-colors shrink-0"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                  `;
+                  
+                  btn.onclick = async () => {
+                       btn.disabled = true;
+                       btn.innerHTML = `<div class="flex-1 text-center font-bold text-neutral-400 animate-pulse">Guardando...</div>`;
+                       
+                       // 1. Limpiar Rol Específico preexistente
+                       await supabase.from('asignaciones').delete()
+                           .eq('evento_id', eventoId)
+                           .eq('rol_id', rolId);
+                           
+                       // 2. Insertar Nuevo
+                       const { error: insErr } = await supabase.from('asignaciones').insert([{
+                            evento_id: eventoId,
+                            perfil_id: p.id,
+                            rol_id: rolId
+                       }]);
+                       
+                       if (insErr) {
+                            alert('Error: ' + insErr.message);
+                            btn.disabled = false;
+                            btn.innerHTML = `Reintentar`; // fallback
+                       } else {
+                            closePicker();
+                            
+                            // Reactividad Inmediata en el DOM de la Lista interna
+                            if (typeof window.triggerGlobalRefetch === 'function') {
+                                 await window.triggerGlobalRefetch();
+                                 if (typeof window.refreshModalRoster === 'function') {
+                                      await window.refreshModalRoster(eventoId);
+                                 }
+                            }
+                       }
+                  };
+                  list.appendChild(btn);
+             });
+        };
+
+        const closePicker = () => {
+             modalPicker?.classList.add('translate-y-full');
+             setTimeout(() => modalPicker?.classList.add('hidden'), 300);
+        };
+
+        document.getElementById('btn-close-picker')?.addEventListener('click', closePicker);
+
+        document.getElementById('btn-close-picker')?.addEventListener('click', closePicker);
+
+        // Click out to close
+        modalPicker?.addEventListener('click', (e) => { if (e.target === modalPicker) closePicker(); });
+        
+        // ==========================================
+        // LÓGICA DE VISTA DETALLE
+        // ==========================================
+        const modalDetalle = document.getElementById('detalle-modal');
+        const modalDetalleContent = document.getElementById('detalle-modal-content');
+        
+        window.openDetalleGlobal = (eventoId) => {
+             const scriptTag = document.getElementById(`raw-roster-${eventoId}`);
+             if(!scriptTag) return;
+             
+             let rawDb = [];
+             try { rawDb = JSON.parse(scriptTag.textContent); } catch(e){}
+             if(rawDb.length === 0) return alert('El sistema no pudo procesar los datos del roster.');
+             
+             const cardTitle = document.querySelector(`[data-evento-db-id="${eventoId}"]`)?.value || document.querySelector(`[data-evento-id="${eventoId}"] .tema-display`)?.textContent || 'Sin Tema de Predicación';
+             const cardDateParent = document.querySelector(`[data-evento-id="${eventoId}"]`)?.closest('.agenda-card');
+             
+             let cardDateStr = 'Esta Programación';
+             let cardEstado = 'Activo';
+             
+             if(cardDateParent) {
+                 const dateEl = cardDateParent.querySelector('.text-3xl.font-extrabold');
+                 const timeEl = cardDateParent.querySelector('.text-xs.font-bold.text-neutral-500.uppercase');
+                 if(dateEl) cardDateStr = dateEl.textContent.trim() + (timeEl ? ' ' + timeEl.textContent.trim() : '');
+                 
+                 const estadoEl = cardDateParent.querySelector('.px-2.py-1.bg-neutral-200');
+                 if(estadoEl) cardEstado = estadoEl.textContent.trim();
+             }
+
+             document.getElementById('detalle-fecha').textContent = cardDateStr;
+             document.getElementById('detalle-tema').textContent = cardTitle;
+             document.getElementById('detalle-estado').textContent = cardEstado;
+
+             const listContainer = document.getElementById('detalle-roster-list');
+             listContainer.innerHTML = '';
+             
+             let htmlList = '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+             
+             rawDb.forEach(asignacion => {
+                  if(!asignacion.perfiles) return;
+                  const p = asignacion.perfiles;
+                  const rolNombre = asignacion.roles?.nombre || 'Músico';
+                  const rolCodigo = asignacion.roles?.codigo || '';
+                  
+                  // Modificamos el svg width/height localmente en la copia cruda:
+                  let iconSvg = window.__instrumentIcons[rolCodigo] || '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" class="text-neutral-400" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
+                  iconSvg = iconSvg.replace('width="10"', 'width="14"').replace('height="10"', 'height="14"');
+                  
+                  const cleanName = p.nombre.replace(/\\s*\\(.*?\\)\\s*/g, '').trim();
+                  const initials = cleanName.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase();
+                  const avatarUI = p.avatar_url 
+                       ? `<img src="${p.avatar_url}" alt="${p.nombre}" class="w-14 h-14 shrink-0 rounded-full object-cover shadow-sm">`
+                       : `<div class="w-14 h-14 shrink-0 rounded-full bg-blue-100 dark:bg-teal-900/50 text-blue-700 dark:text-teal-400 border border-blue-200 dark:border-teal-800 flex items-center justify-center font-black text-lg shadow-sm">${initials}</div>`;
+
+                  htmlList += `
+                       <div class="flex items-center gap-4 p-3 rounded-2xl border border-neutral-100 dark:border-neutral-800/50 bg-neutral-50 dark:bg-neutral-900/50 hover:bg-white dark:hover:bg-neutral-800 transition-colors group">
+                           <div class="relative">
+                                ${avatarUI}
+                                <div class="absolute -bottom-1 -right-1 w-7 h-7 bg-white dark:bg-neutral-900 rounded-full flex items-center justify-center shadow-md border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400">
+                                     ${iconSvg}
+                                </div>
+                           </div>
+                           <div class="flex-1 min-w-0">
+                                <p class="font-bold text-neutral-900 dark:text-white text-base truncate">${p.nombre}</p>
+                                <p class="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">${rolNombre}</p>
+                           </div>
+                       </div>
+                  `;
+             });
+             htmlList += '</div>';
+             
+             if(rawDb.length === 0 || !rawDb.some(a=>a.perfiles)) {
+                  htmlList = `
+                       <div class="flex flex-col items-center justify-center py-12 opacity-50">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mb-4 text-neutral-400"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m19 8 3 3-3 3"/></svg>
+                            <p class="font-bold text-lg text-neutral-600 dark:text-neutral-400">Nadie asignado aún al roster</p>
+                       </div>
+                  `;
+             }
+             
+             listContainer.innerHTML = htmlList;
+
+              // Fetch playlist del evento para la sección de canciones
+              const cancionesListEl = document.getElementById('detalle-canciones-list');
+              if (cancionesListEl) {
+                   (async () => {
+                        try {
+                             const { data: pl } = await supabase
+                                  .from('playlists')
+                                  .select('id, created_at, updated_at')
+                                  .eq('evento_id', eventoId)
+                                  .single();
+
+                             if (!pl) {
+                                  cancionesListEl.innerHTML = '<div class="flex flex-col items-center justify-center py-8 opacity-50"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" class="mx-auto mb-3 text-neutral-300 dark:text-neutral-700" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><p class="text-sm font-bold text-neutral-400 dark:text-neutral-500">Sin playlist asignada</p><p class="text-[11px] text-neutral-400 mt-1">El líder de alabanza puede crear una desde el módulo Repertorio.</p></div>';
+                                  return;
+                             }
+
+                             const { data: items } = await supabase
+                                   .from('playlist_canciones')
+                                   .select('orden, canciones(titulo, tonalidad, bpm, link_youtube, link_acordes, link_letras, link_voces, link_secuencias)')
+                                   .eq('playlist_id', pl.id)
+                                   .order('orden');
+
+                             const createdAt = new Date(pl.created_at).toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' });
+                             const updatedAt = new Date(pl.updated_at).toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+                             const setlistArray = (items || []).map(item => item.canciones?.titulo).filter(Boolean);
+                             let setlistBtnHTML = '';
+                             if (setlistArray.length > 0) {
+                                  const base64Str = btoa(encodeURIComponent(JSON.stringify(setlistArray)));
+                                  const safeUrlParam = encodeURIComponent(base64Str);
+                                  setlistBtnHTML = `
+                                  <div class="mt-4 mb-6 flex flex-col items-center justify-center w-full gap-2.5">
+                                      <a href="/repertorio?setlist=${safeUrlParam}" target="_blank" rel="noopener noreferrer" class="group relative inline-flex items-center justify-center gap-3 px-8 py-3 w-full sm:w-auto overflow-hidden rounded-2xl bg-gradient-to-br from-teal-500 via-emerald-500 to-green-500 text-white font-bold text-sm sm:text-base tracking-wide shadow-lg shadow-teal-500/30 hover:shadow-teal-500/50 hover:-translate-y-0.5 transition-all duration-300">
+                                          <div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
+                                          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" class="shrink-0 relative z-10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                                          <span class="relative z-10">Entrar a Modo Ensayo</span>
+                                      </a>
+                                      <p class="text-[11px] sm:text-xs text-neutral-400 dark:text-neutral-500 text-center max-w-sm balance">
+                                          Abre una vista optimizada con <strong>tarjetas grandes, BPMs y Tonalidades</strong>, perfecta para practicar durante el ensayo.
+                                      </p>
+                                  </div>`;
+                             }
+
+                             let html = '<div class="flex flex-col"><p class="text-[10px] sm:text-xs text-neutral-400">Creada: ' + createdAt + '<span class="hidden sm:inline"> | Modificación: ' + updatedAt + '</span></p>' + setlistBtnHTML + '</div>';
+                             html += '<div class="flex flex-col gap-3">';
+
+                              if (items && items.length > 0) {
+                                   items.forEach((item, idx) => {
+                                        const c = item.canciones || {};
+                                        html += '<div class="flex items-center gap-4 p-4 rounded-xl bg-white dark:bg-neutral-800 border border-neutral-200/60 dark:border-neutral-700/60 hover:border-neutral-300 dark:hover:border-neutral-600 transition-colors">';
+                                        html += '  <span class="w-8 h-8 rounded-full bg-teal-100 dark:bg-teal-900/40 text-teal-600 dark:text-teal-400 flex items-center justify-center font-bold shrink-0">' + (idx + 1) + '</span>';
+                                        html += '  <div class="flex-1 min-w-0 flex flex-wrap items-center gap-x-4 gap-y-2">';
+                                        html += '    <p class="font-bold text-base md:text-lg tracking-tight text-neutral-900 dark:text-white truncate min-w-[150px]">' + (c.titulo || 'Sin título') + '</p>';
+                                        html += '    <div class="flex flex-wrap items-center gap-2">';
+                                        if (c.tonalidad) html += '<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 text-[11px] font-bold tracking-wide"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>Key: ' + c.tonalidad + '</span>';
+                                        if (c.bpm) html += '<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 text-[11px] font-bold tracking-wide"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>' + c.bpm + ' BPM</span>';
+                                        html += '    </div>';
+                                        html += '  </div>';
+                                        html += '  <div class="flex items-center gap-2 shrink-0 flex-wrap justify-end">';
+                                        if (c.link_youtube) html += '<a href="' + c.link_youtube + '" target="_blank" rel="noopener noreferrer" class="flex items-center justify-center px-3 py-1.5 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors font-bold text-[11px] tracking-wide" title="YouTube"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none" class="mr-1.5"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path><polygon fill="white" stroke="none" points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon></svg>YouTube</a>';
+                                        if (c.link_acordes) html += '<a href="' + c.link_acordes + '" target="_blank" rel="noopener noreferrer" class="flex items-center justify-center px-3 py-1.5 rounded-lg bg-green-500/10 text-green-500 hover:bg-green-500/20 transition-colors font-bold text-[11px] tracking-wide" title="Acordes">Acordes</a>';
+                                        if (c.link_letras) html += '<a href="' + c.link_letras + '" target="_blank" rel="noopener noreferrer" class="flex items-center justify-center px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 transition-colors font-bold text-[11px] tracking-wide" title="Letras">Letras</a>';
+                                        if (c.link_voces) html += '<a href="' + c.link_voces + '" target="_blank" rel="noopener noreferrer" class="flex items-center justify-center px-3 py-1.5 rounded-lg bg-orange-500/10 text-orange-500 hover:bg-orange-500/20 transition-colors font-bold text-[11px] tracking-wide" title="Voces">Voces</a>';
+                                        if (c.link_secuencias) html += '<a href="' + c.link_secuencias + '" target="_blank" rel="noopener noreferrer" class="flex items-center justify-center px-3 py-1.5 rounded-lg bg-pink-500/10 text-pink-500 hover:bg-pink-500/20 transition-colors font-bold text-[11px] tracking-wide" title="Secuencias">Secuencias</a>';
+                                        html += '  </div>';
+                                        html += '</div>';
+                                   });
+                              } else {
+                                   html += '<p class="text-sm text-neutral-400 text-center py-4">Playlist vacía</p>';
+                              }
+
+                              html += '</div>';
+                              cancionesListEl.innerHTML = html;
+
+                        } catch (err) {
+                             console.error('Error cargando playlist:', err);
+                             cancionesListEl.innerHTML = '<p class="text-sm text-neutral-400 text-center py-4">Error al cargar playlist</p>';
+                        }
+                   })();
+              }
+
+             modalDetalle?.classList.remove('hidden');
+             // Timeout for animation
+             setTimeout(() => {
+                 modalDetalle?.classList.remove('opacity-0');
+                 modalDetalleContent?.classList.remove('scale-95');
+                 modalDetalleContent?.classList.add('scale-100');
+             }, 10);
+        };
+
+        const closeDetalle = () => {
+             modalDetalleContent?.classList.remove('scale-100');
+             modalDetalleContent?.classList.add('scale-95');
+             modalDetalle?.classList.add('opacity-0');
+             setTimeout(() => modalDetalle?.classList.add('hidden'), 300);
+        };
+
+        document.getElementById('btn-close-detalle')?.addEventListener('click', closeDetalle);
+        modalDetalle?.addEventListener('click', (e) => { if (e.target === modalDetalle) closeDetalle(); });        
+
+        // ==========================================
+        // LÓGICA DE SELECTORES DE VISTA (TABS)
+        // ==========================================
+        const btnViewCard = document.getElementById('btn-view-card');
+        const btnViewList = document.getElementById('btn-view-list');
+        const btnViewCalendar = document.getElementById('btn-view-calendar');
+        
+        const gridView = document.getElementById('agenda-grid');
+        const listView = document.getElementById('agenda-list');
+        const calendarView = document.getElementById('agenda-calendar');
+
+        const activeClassBg = ['bg-neutral-900', 'dark:bg-white', 'text-white', 'dark:text-neutral-900', 'shadow-sm'];
+        const inactiveClassBg = ['bg-white', 'dark:bg-neutral-900', 'text-neutral-600', 'dark:text-neutral-400', 'hover:bg-neutral-50', 'dark:hover:bg-neutral-800'];
+
+        const switchView = (targetBtn, targetView) => {
+             // Esconder todos
+             [gridView, listView, calendarView].forEach(el => el?.classList.add('hidden'));
+             // Mostrar target
+             targetView?.classList.remove('hidden');
+             
+             // Resetear clases de todos los botones
+             [btnViewCard, btnViewList, btnViewCalendar].forEach(btn => {
+                 if(!btn) return;
+                 btn.classList.add(...inactiveClassBg);
+                 btn.classList.remove(...activeClassBg);
+             });
+             
+             // Activar boton target
+             if(targetBtn) {
+                 targetBtn.classList.remove(...inactiveClassBg);
+                 targetBtn.classList.add(...activeClassBg);
+             }
+        };
+
+        btnViewCard?.addEventListener('click', () => switchView(btnViewCard, gridView));
+        btnViewList?.addEventListener('click', () => switchView(btnViewList, listView));
+        btnViewCalendar?.addEventListener('click', () => switchView(btnViewCalendar, calendarView));
+
+    });
+</script>
