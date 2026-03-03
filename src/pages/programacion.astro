@@ -540,34 +540,120 @@ import Layout from '../layouts/Layout.astro';
  agendaGrid.classList.remove('hidden');
  agendaGrid.innerHTML = ''; // Limpiar grilla original
  
- const agendaList = document.getElementById('agenda-list');
- const agendaCalendar = document.getElementById('agenda-calendar');
- 
- if (agendaList) agendaList.innerHTML = '';
- if (agendaCalendar) {
- agendaCalendar.innerHTML = `
- <div class="grid grid-cols-7 gap-2 mb-2 text-center text-xs font-bold text-neutral-500 uppercase tracking-widest">
- <div>Dom</div><div>Lun</div><div>Mar</div><div>Mié</div><div>Jue</div><div>Vie</div><div>Sáb</div>
- </div>
- <div class="grid grid-cols-7 gap-2" id="calendar-grid-cells"></div>
- `;
- }
+  const agendaList = document.getElementById('agenda-list');
+  const agendaCalendar = document.getElementById('agenda-calendar');
+  if (agendaList) agendaList.innerHTML = '';
 
-  // Calendario: rastrear posición en el grid de 7 columnas
-  let calendarCellIndex = 0;
-  let calendarHtml = '';
-  const firstEventMonth = proyeccionActual.getMonth();
-  const firstEventYear = proyeccionActual.getFullYear();
-  const firstDayOfMonth = new Date(firstEventYear, firstEventMonth, 1).getDay();
-  const firstEventDay = proyeccionActual.getDate();
-  for (let i = 0; i < firstDayOfMonth; i++) {
-  calendarHtml += `<div class="aspect-square bg-transparent rounded-xl"></div>`;
-  calendarCellIndex++;
-  }
-  for (let d = 1; d < firstEventDay; d++) {
-  calendarHtml += `<div class="aspect-square bg-neutral-50/30 rounded-xl border border-transparent"><span class="text-[10px] text-neutral-300 font-medium p-1">${d}</span></div>`;
-  calendarCellIndex++;
-  }
+  // --- RENDERING CALENDAR VIEW INDEPENDENTLY ---
+  const renderizarCalendarioApple = () => {
+      if (!agendaCalendar) return;
+      agendaCalendar.innerHTML = '';
+      agendaCalendar.className = "flex flex-col gap-6 w-full";
+
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      const MAX_YEAR = 2026;
+
+      let yearHtml = '';
+      const startMonth = today.getMonth();
+
+      for (let m = startMonth; m < 12; m++) {
+          const monthDate = new Date(MAX_YEAR, m, 1);
+          const monthName = monthDate.toLocaleString('es-ES', { month: 'long' });
+          const daysInMonth = new Date(MAX_YEAR, m + 1, 0).getDate();
+          const firstDayIndex = monthDate.getDay();
+
+          let mHtml = `
+          <div class="w-full animate-fade-in flex flex-col pt-2 mb-4 bg-white rounded-[24px] p-2 md:p-6 border border-neutral-200/60 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
+            <h3 class="text-2xl md:text-3xl font-extrabold text-neutral-900 mb-5 mt-2 capitalize px-3 flex items-baseline gap-2 tracking-tight">
+              ${monthName} <span class="text-neutral-400 font-semibold text-lg">${MAX_YEAR}</span>
+            </h3>
+            <div class="grid grid-cols-7 gap-1 md:gap-2 mb-2 text-center text-[10px] md:text-xs font-bold text-neutral-400 uppercase tracking-widest px-1">
+              <div>D</div><div>L</div><div>M</div><div>M</div><div>J</div><div>V</div><div>S</div>
+            </div>
+            <div class="grid grid-cols-7 gap-1 md:gap-2 px-1 pb-2">
+          `;
+
+          for (let i = 0; i < firstDayIndex; i++) {
+              mHtml += `<div class="aspect-square bg-transparent"></div>`;
+          }
+
+          for (let d = 1; d <= daysInMonth; d++) {
+              const dDate = new Date(MAX_YEAR, m, d);
+              const dateKey = `${MAX_YEAR}-${m+1}-${d}`;
+              const isPast = dDate < today;
+              const isToday = dDate.getTime() === today.getTime();
+              
+              const classDateNum = isToday 
+                  ? 'w-6 h-6 md:w-7 md:h-7 rounded-full bg-teal-500 text-white shadow-sm flex items-center justify-center font-bold text-[11px] md:text-xs shrink-0 mx-auto' 
+                  : 'w-6 h-6 md:w-7 md:h-7 flex items-center justify-center font-bold text-[11px] md:text-xs shrink-0 mx-auto ' + (isPast ? 'text-neutral-300' : 'text-neutral-700');
+
+              let cellContent = `<div class="${classDateNum}">${d}</div>`;
+              let cellBgClass = "bg-neutral-50/50 border border-neutral-100 hover:bg-neutral-100/80";
+              let cardRefHtml = '';
+
+              let extEvent = instancias.get(dateKey);
+              let isVirtual = false;
+              
+              if (!extEvent && dDate.getDay() === 0 && !isPast) {
+                  extEvent = { ...baseItem }; 
+                  isVirtual = true;
+              }
+
+              if (extEvent) {
+                  const isSuspended = extEvent.titulo === 'SUSPENDIDO' || extEvent.notas_especiales === 'SUSPENDIDO' || extEvent.estado === 'Cancelado';
+                  if (!isSuspended) {
+                      const rosterDb = isVirtual ? [] : (extEvent.asignaciones || []);
+                      const miAsignacion = rosterDb.find((asig) => asig.perfiles?.id === user?.id || asig.perfiles?.email === user?.email);
+                      const isAssigned = !!miAsignacion;
+                      const lider = rosterDb.find((r) => window.appStateRoles?.find((ro) => ro.id === r.rol_id && ro.codigo === 'lider_alabanza'));
+                      
+                      const domEventoId = isVirtual ? `virtual|${dDate.toISOString()}` : extEvent.id;
+
+                      if (isAssigned) {
+                          cellBgClass = "bg-teal-50 border border-teal-300 ring-1 ring-teal-500 ring-inset";
+                      } else {
+                          cellBgClass = "bg-white border border-neutral-200 hover:border-blue-300";
+                      }
+
+                      const theTime = isVirtual && baseItem.fecha_hora ? new Date(baseItem.fecha_hora) : new Date(extEvent.fecha_hora || dDate);
+                      const timeStr = theTime.toLocaleString('es-ES', { hour: '2-digit', minute:'2-digit' });
+
+                      let badgesHtml = `<div class="mt-1 flex flex-col gap-0.5 w-full items-start overflow-hidden">`;
+                      badgesHtml += `<div class="bg-blue-50 text-blue-700 text-[8.5px] font-bold px-1.5 py-0.5 rounded truncate border border-blue-100 max-w-full leading-tight">${timeStr}</div>`;
+                      
+                      if (isAssigned) {
+                          const rolName = window.appStateRoles?.find((r) => r.id === miAsignacion.rol_id)?.nombre || '';
+                          badgesHtml += `<div class="bg-teal-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow-sm outline outline-1 outline-teal-600 truncate max-w-full leading-tight mt-1">Tú: ${rolName}</div>`;
+                      }
+                      if (lider && lider.perfiles) {
+                          const shortName = lider.perfiles.nombre.split(' ')[0];
+                          badgesHtml += `<div class="bg-violet-50 text-violet-700 border border-violet-200 text-[8px] font-bold px-1.5 py-0.5 rounded truncate hidden md:block max-w-full leading-tight">Dir: ${shortName}</div>`;
+                      }
+                      badgesHtml += `</div>`;
+
+                      cardRefHtml = `
+                      <div class="aspect-square relative flex flex-col items-center justify-start ${cellBgClass} rounded-2xl transition-all cursor-pointer group btn-expandir-detalle shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] hover:shadow-[0_4px_12px_-4px_rgba(0,0,0,0.1)] overflow-hidden pt-1 px-1 md:pt-1.5 md:px-1.5 pb-0.5" data-evento="${domEventoId}">
+                        ${cellContent}
+                        ${isAssigned ? '<div class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-teal-500 shadow-[0_0_8px_rgba(20,184,166,0.8)] animate-pulse"></div>' : ''}
+                        ${badgesHtml}
+                      </div>`;
+                  }
+              }
+
+              if (!cardRefHtml) {
+                  mHtml += `<div class="aspect-square relative ${cellBgClass} ${isPast ? 'opacity-40' : 'opacity-80'} rounded-2xl flex flex-col items-center justify-start overflow-hidden pt-1 md:pt-1.5 px-1 md:px-1.5 pb-0.5">${cellContent}</div>`;
+              } else {
+                  mHtml += cardRefHtml;
+              }
+          }
+          mHtml += `</div></div>`;
+          yearHtml += mHtml;
+      }
+      agendaCalendar.innerHTML = yearHtml;
+  };
+  renderizarCalendarioApple();
+
 
  // Aplicar Scroll Observer a las tarjetas renderizadas dinámicamente
  const gridObserver = new IntersectionObserver((entries, obs) => {
@@ -821,23 +907,8 @@ import Layout from '../layouts/Layout.astro';
  </div>
  `;
  
- // --- GENERACIÓN VISTA CALENDARIO ---
- calendarHtml += `
- <div class="aspect-square relative p-2 md:p-3 bg-white border border-neutral-200 rounded-xl hover:border-blue-300 :border-teal-700 transition-colors cursor-pointer group btn-expandir-detalle shadow-sm ${isUsuarioAsignado ? 'ring-2 ring-teal-500 ring-inset bg-teal-50/10 ' : ''}" data-evento="${domEventoId}">
- <span class="absolute top-2 left-2.5 text-xs md:text-sm font-bold ${isUsuarioAsignado ? 'text-teal-600 ' : 'text-neutral-700 '}">${targetDate.getDate()}</span>
- ${isUsuarioAsignado ? '<div class="absolute top-2 right-2.5 w-2 h-2 rounded-full bg-teal-500 shadow-[0_0_8px_rgba(20,184,166,0.6)] animate-pulse"></div>' : ''}
- 
- <div class="absolute bottom-2 left-2 right-2 flex flex-col gap-0.5">
- <div class="bg-blue-100 text-blue-700 text-[9px] md:text-[10px] font-bold truncate rounded px-1.5 py-0.5 border border-blue-200 ">
- ${targetDate.toLocaleString('es-ES', { hour: '2-digit', minute:'2-digit' })}
- </div>
- ${miAsignacion ? `<div class="bg-teal-500 text-white text-[9px] font-bold truncate rounded px-1.5 py-0.5 shadow-sm">Tú: ${window.appStateRoles?.find((r:any) => r.id === miAsignacion.rol_id)?.nombre || ''}</div>` : ''}
- ${asignadoLider && asignadoLider.perfiles ? `<div class="bg-violet-100 text-violet-700 text-[9px] font-bold truncate rounded px-1.5 py-0.5 border border-violet-200 hidden md:block">Dir: ${asignadoLider.perfiles.nombre.split(' ')[0]}</div>` : ''}
- </div>
- </div>
- `;
  }
-
+ 
  // --- INYECCIÓN MES Y TARJETA ---
  const agendaGridEl = document.getElementById('agenda-grid');
  if (agendaGridEl && currentCardHtml) {
@@ -865,17 +936,6 @@ import Layout from '../layouts/Layout.astro';
 
  // Sumar 7 días exactos al Tracker visual
  proyeccionActual.setDate(proyeccionActual.getDate() + 7); 
- 
-  // Rellenar celdas vacías entre este domingo y el siguiente
-  const nextTarget = new Date(proyeccionActual);
-  const dayAfterEvent = new Date(targetDate);
-  dayAfterEvent.setDate(dayAfterEvent.getDate() + 1);
-  while (dayAfterEvent < nextTarget) {
-  calendarHtml += `<div class="aspect-square bg-neutral-50/30 rounded-xl border border-transparent"><span class="text-[10px] text-neutral-300 font-medium p-1">${dayAfterEvent.getDate()}</span></div>`;
-  calendarCellIndex++;
-  dayAfterEvent.setDate(dayAfterEvent.getDate() + 1);
-  }
-  calendarCellIndex++;
  }
  
  if (agendaList) agendaList.insertAdjacentHTML('beforeend', htmlListString);
