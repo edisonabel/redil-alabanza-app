@@ -2089,7 +2089,7 @@ import Layout from '../layouts/Layout.astro';
   for (let i = 0; i < eventos.length; i += 50) {
   const batch = eventos.slice(i, i + 50);
   const { error } = await supabase.from('eventos').insert(batch);
-  if (error) throw error;
+  if (error && !error.message?.includes('No rows returned') && error.code !== '201') throw error;
   }
 
   toggleSerieModal(false);
