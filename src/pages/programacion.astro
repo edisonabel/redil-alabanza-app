@@ -93,6 +93,17 @@ import Layout from '../layouts/Layout.astro';
  <input type="time" id="ev-hora-fin" class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-teal-500 transition-colors">
  </div>
  </div>
+  <!-- Checkbox Actualización en Serie -->
+  <div id="serie-update-section" class="hidden">
+  <label class="flex items-center gap-3 bg-violet-50 border border-violet-200 rounded-xl p-3 cursor-pointer hover:bg-violet-100 transition-colors">
+  <input type="checkbox" id="ev-serie-check" class="w-5 h-5 accent-violet-500 rounded">
+  <div>
+  <span class="text-sm font-bold text-violet-700">Aplicar a toda la serie</span>
+  <p class="text-[11px] text-violet-500 mt-0.5">Actualiza título y hora en todos los eventos futuros de esta serie</p>
+  </div>
+  </label>
+  <input type="hidden" id="ev-serie-id" value="">
+  </div>
  <div>
  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Estado</label>
  <select id="ev-estado" class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-teal-500 transition-colors appearance-none">
@@ -144,6 +155,83 @@ import Layout from '../layouts/Layout.astro';
  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="group-hover:rotate-90 transition-transform duration-300"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
  <span class="hidden md:block font-bold text-base">Añadir Evento</span>
  </button>
+
+  <!-- FAB Secundario: Generar Serie (solo admin) -->
+  <button id="btn-serie-fab" class="hidden fixed bottom-40 right-4 md:bottom-44 md:right-8 bg-violet-500 hover:bg-violet-400 text-white w-14 h-14 md:w-auto md:px-5 rounded-full shadow-2xl flex items-center justify-center gap-2 transition-transform hover:scale-105 z-40 group" title="Generar Serie de Eventos">
+  <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="group-hover:rotate-180 transition-transform duration-500"><path d="M17 2.1l4 4-4 4"/><path d="M3 12.2v-2a4 4 0 0 1 4-4h12.8M7 21.9l-4-4 4-4"/><path d="M21 11.8v2a4 4 0 0 1-4 4H4.2"/></svg>
+  <span class="hidden md:block font-bold text-sm">Generar Serie</span>
+  </button>
+
+  <!-- Modal Generador de Series -->
+  <div id="serie-modal" class="hidden fixed inset-0 z-[85] bg-white/80 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity">
+  <div class="bg-white border border-neutral-300 rounded-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
+  <div class="p-6 border-b border-neutral-200 flex justify-between items-center bg-violet-50 sticky top-0 z-10">
+  <h2 class="text-xl font-bold text-neutral-900 flex items-center gap-2">
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-violet-500"><path d="M17 2.1l4 4-4 4"/><path d="M3 12.2v-2a4 4 0 0 1 4-4h12.8M7 21.9l-4-4 4-4"/><path d="M21 11.8v2a4 4 0 0 1-4 4H4.2"/></svg>
+  Generador de Series
+  </h2>
+  <button id="btn-close-serie" class="text-neutral-500 hover:text-neutral-800 transition-colors p-2 -mr-2 bg-neutral-100 rounded-full">
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+  </button>
+  </div>
+  <div class="p-6 flex flex-col gap-5">
+  <div>
+  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Título Base <span class="text-red-500">*</span></label>
+  <input type="text" id="serie-titulo" required class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-violet-500 transition-colors" placeholder="Ej: Culto de Adoración">
+  </div>
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  <div>
+  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Día de la Semana <span class="text-red-500">*</span></label>
+  <select id="serie-dia" class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-violet-500 transition-colors appearance-none">
+  <option value="0">Domingo</option>
+  <option value="1">Lunes</option>
+  <option value="2">Martes</option>
+  <option value="3">Miércoles</option>
+  <option value="4">Jueves</option>
+  <option value="5">Viernes</option>
+  <option value="6">Sábado</option>
+  </select>
+  </div>
+  <div>
+  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Hora Inicio <span class="text-red-500">*</span></label>
+  <input type="time" id="serie-hora-inicio" required class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-violet-500 transition-colors">
+  </div>
+  </div>
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  <div>
+  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Hora Fin <span class="text-neutral-500 font-normal lowercase">(opc)</span></label>
+  <input type="time" id="serie-hora-fin" class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-violet-500 transition-colors">
+  </div>
+  <div>
+  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Estado</label>
+  <select id="serie-estado" class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-violet-500 transition-colors appearance-none">
+  <option value="Publicado" selected>Publicado</option>
+  <option value="Borrador">Borrador</option>
+  </select>
+  </div>
+  </div>
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  <div>
+  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Fecha Inicio <span class="text-red-500">*</span></label>
+  <input type="date" id="serie-fecha-inicio" required class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-violet-500 transition-colors">
+  </div>
+  <div>
+  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Fecha Límite <span class="text-red-500">*</span></label>
+  <input type="date" id="serie-fecha-limite" required class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-violet-500 transition-colors">
+  <p class="text-[10px] text-neutral-400 mt-1">Máximo: 31 de Diciembre del año en curso</p>
+  </div>
+  </div>
+  <div id="serie-preview" class="hidden bg-violet-50 border border-violet-200 rounded-xl p-4 text-sm text-violet-700 font-medium"></div>
+  <div class="flex gap-3 pt-4 border-t border-neutral-200">
+  <button type="button" id="btn-cancel-serie" class="flex-1 py-3.5 px-4 bg-neutral-100 hover:bg-neutral-200 border border-neutral-300 text-sm text-neutral-900 rounded-xl font-bold transition-colors">Cancelar</button>
+  <button type="button" id="btn-submit-serie" class="flex-1 py-3.5 px-4 bg-violet-500 hover:bg-violet-400 text-white text-sm rounded-xl font-bold transition-colors flex justify-center items-center gap-2">
+  <span>Generar Serie</span>
+  <div id="serie-spinner" class="hidden w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+  </button>
+  </div>
+  </div>
+  </div>
+  </div>
 
 
  <!-- Modal Picker (Selección Inteligente de Músico) -->
@@ -307,6 +395,8 @@ import Layout from '../layouts/Layout.astro';
  if (perfil?.is_admin) {
  const fab = document.getElementById('btn-new-event');
  if (fab) fab.classList.remove('hidden');
+  const serieFabInner = document.getElementById('btn-serie-fab');
+  if (serieFabInner) serieFabInner.classList.remove('hidden');
  }
 
  // RBAC global: Función para mostrar/ocultar botón "Armar Playlist"
@@ -645,7 +735,7 @@ import Layout from '../layouts/Layout.astro';
  <!-- 4. BOTONES INFERIORES -->
  <div class="grid grid-cols-2 gap-3 border-t border-neutral-200 mt-5 pt-5 -mx-5 px-5 pb-5 -mb-5">
  ${perfil?.is_admin ? `
- <button class="btn-gestionar-modal flex items-center justify-center gap-2 py-2.5 bg-neutral-200/80 text-neutral-800 hover:bg-neutral-300 :bg-neutral-700 rounded-lg transition-colors font-bold text-xs tracking-wide border border-transparent" data-evento="${domEventoId}" data-fecha="${targetDate.toISOString()}" data-titulo="${currentTitle}" data-tema="${currentTema}" data-estado="${currentEstado}" data-hora-fin="${instancia?.hora_fin || ''}">
+ <button class="btn-gestionar-modal flex items-center justify-center gap-2 py-2.5 bg-neutral-200/80 text-neutral-800 hover:bg-neutral-300 :bg-neutral-700 rounded-lg transition-colors font-bold text-xs tracking-wide border border-transparent" data-evento="${domEventoId}" data-fecha="${targetDate.toISOString()}" data-titulo="${currentTitle}" data-tema="${currentTema}" data-estado="${currentEstado}" data-hora-fin="${instancia?.hora_fin || ''}" data-serie-id="${instancia?.serie_id || baseItem.serie_id || ''}">
  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opacity-60"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
  GESTIONAR
  </button>` : ''}
@@ -691,7 +781,7 @@ import Layout from '../layouts/Layout.astro';
  <div class="min-w-0">
   <div class="flex items-start justify-between gap-2">
    <h4 class="font-bold text-neutral-900 text-lg leading-tight flex-1">${currentTema || currentTitle}</h4>
-  ${perfil?.is_admin ? `<button class="btn-gestionar-modal ml-auto shrink-0 p-1.5 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded-lg transition-colors" data-evento="${domEventoId}" data-fecha="${targetDate.toISOString()}" data-titulo="${currentTitle}" data-tema="${currentTema}" data-estado="${currentEstado}" data-hora-fin="${instancia?.hora_fin || ''}" title="Gestionar Evento"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button>` : ''}
+  ${perfil?.is_admin ? `<button class="btn-gestionar-modal ml-auto shrink-0 p-1.5 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded-lg transition-colors" data-evento="${domEventoId}" data-fecha="${targetDate.toISOString()}" data-titulo="${currentTitle}" data-tema="${currentTema}" data-estado="${currentEstado}" data-hora-fin="${instancia?.hora_fin || ''}" data-serie-id="${instancia?.serie_id || baseItem.serie_id || ''}" title="Gestionar Evento"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button>` : ''}
   </div>
  <p class="text-xs text-neutral-500 flex items-center gap-2 mt-1">
  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" class="opacity-70" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -960,6 +1050,7 @@ import Layout from '../layouts/Layout.astro';
  tema: tgt.getAttribute('data-tema'),
  estado: tgt.getAttribute('data-estado'),
  hora_fin: tgt.getAttribute('data-hora-fin'),
+  serie_id: tgt.getAttribute('data-serie-id'),
  rosterHtml: rosterBoxes ? rosterBoxes.innerHTML : ''
  });
  }
@@ -1108,6 +1199,19 @@ import Layout from '../layouts/Layout.astro';
  
  (document.getElementById('ev-fecha') as HTMLInputElement).value = localISOTime;
  (document.getElementById('ev-hora-fin') as HTMLInputElement).value = data.hora_fin || '';
+
+  // FASE 3: Mostrar checkbox de serie si el evento tiene serie_id
+  const serieSection = document.getElementById('serie-update-section');
+  const serieIdInput = document.getElementById('ev-serie-id') as HTMLInputElement;
+  const serieCheck = document.getElementById('ev-serie-check') as HTMLInputElement;
+  if (data.serie_id) {
+  if (serieSection) serieSection.classList.remove('hidden');
+  if (serieIdInput) serieIdInput.value = data.serie_id;
+  if (serieCheck) serieCheck.checked = false;
+  } else {
+  if (serieSection) serieSection.classList.add('hidden');
+  if (serieIdInput) serieIdInput.value = '';
+  }
  (document.getElementById('ev-tema') as HTMLInputElement).value = data.tema && data.tema !== 'undefined' && data.tema !== 'null' ? data.tema : '';
  (document.getElementById('ev-estado') as HTMLSelectElement).value = data.estado || 'Publicado';
 
@@ -1206,16 +1310,36 @@ import Layout from '../layouts/Layout.astro';
 
  if (evId && !evId.startsWith('virtual|')) {
  const { error } = await supabase
- .from('eventos')
- .update({ 
- titulo, 
- fecha_hora: new Date(fecha).toISOString(),
- hora_fin: hora_fin || null,
- tema_predicacion: tema || null,
- estado 
- })
- .eq('id', evId);
- transacError = error;
+  // FASE 3: Verificar si actualizar en serie
+  const serieCheckbox = document.getElementById('ev-serie-check') as HTMLInputElement;
+  const currentSerieId = (document.getElementById('ev-serie-id') as HTMLInputElement)?.value;
+  const currentEventDate = new Date(fecha).toISOString();
+
+  if (serieCheckbox?.checked && currentSerieId) {
+  // Actualización MASIVA: todos los eventos futuros de la serie
+  const { error } = await supabase
+  .from('eventos')
+  .update({
+  titulo,
+  hora_fin: hora_fin || null,
+  })
+  .eq('serie_id', currentSerieId)
+  .gte('fecha_hora', currentEventDate);
+  transacError = error;
+  } else {
+  // Actualización INDIVIDUAL (lógica original)
+  const { error } = await supabase
+  .from('eventos')
+  .update({
+  titulo,
+  fecha_hora: new Date(fecha).toISOString(),
+  hora_fin: hora_fin || null,
+  tema_predicacion: tema || null,
+  estado
+  })
+  .eq('id', evId);
+  transacError = error;
+  }
  } else {
  const newEv: any = { 
  titulo, 
@@ -1823,5 +1947,163 @@ import Layout from '../layouts/Layout.astro';
  btnViewList?.addEventListener('click', () => switchView(btnViewList, listView));
  btnViewCalendar?.addEventListener('click', () => switchView(btnViewCalendar, calendarView));
 
+
+  // ==========================================
+  // FASE 2: GENERADOR DE SERIES
+  // ==========================================
+  const serieModal = document.getElementById('serie-modal');
+  const serieFab = document.getElementById('btn-serie-fab');
+  const btnCloseSerie = document.getElementById('btn-close-serie');
+  const btnCancelSerie = document.getElementById('btn-cancel-serie');
+  const btnSubmitSerie = document.getElementById('btn-submit-serie');
+  const seriePreview = document.getElementById('serie-preview');
+  const serieFechaLimite = document.getElementById('serie-fecha-limite') as HTMLInputElement;
+
+
+  // Regla del Año en Curso: max = 31 de diciembre del año actual
+  if (serieFechaLimite) {
+  const maxDate = new Date().getFullYear() + '-12-31';
+  serieFechaLimite.setAttribute('max', maxDate);
+  serieFechaLimite.addEventListener('change', () => {
+  const val = serieFechaLimite.value;
+  const currentYear = new Date().getFullYear();
+  if (val && new Date(val).getFullYear() > currentYear) {
+  alert('La fecha límite no puede pasar del año en curso (' + currentYear + ').');
+  serieFechaLimite.value = maxDate;
+  }
+  });
+  }
+
+  // Toggle modal serie
+  const toggleSerieModal = (show: boolean) => {
+  if (serieModal) {
+  if (show) {
+  serieModal.classList.remove('hidden');
+  // Set defaults
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+  (document.getElementById('serie-fecha-inicio') as HTMLInputElement).value = todayStr;
+  if (serieFechaLimite) serieFechaLimite.value = today.getFullYear() + '-12-31';
+  } else {
+  serieModal.classList.add('hidden');
+  }
+  }
+  };
+
+  serieFab?.addEventListener('click', () => toggleSerieModal(true));
+  btnCloseSerie?.addEventListener('click', () => toggleSerieModal(false));
+  btnCancelSerie?.addEventListener('click', () => toggleSerieModal(false));
+  serieModal?.addEventListener('click', (e) => { if (e.target === serieModal) toggleSerieModal(false); });
+
+  // Preview: mostrar cuántos eventos se generarían
+  const updateSeriePreview = () => {
+  const diaStr = (document.getElementById('serie-dia') as HTMLSelectElement)?.value;
+  const fechaIni = (document.getElementById('serie-fecha-inicio') as HTMLInputElement)?.value;
+  const fechaLim = serieFechaLimite?.value;
+  if (!diaStr || !fechaIni || !fechaLim || !seriePreview) return;
+
+  const dia = parseInt(diaStr);
+  const start = new Date(fechaIni + 'T00:00:00');
+  const end = new Date(fechaLim + 'T23:59:59');
+  let count = 0;
+  const cursor = new Date(start);
+  while (cursor <= end) {
+  if (cursor.getDay() === dia) count++;
+  cursor.setDate(cursor.getDate() + 1);
+  }
+  if (count > 0) {
+  seriePreview.classList.remove('hidden');
+  const dias = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+  seriePreview.textContent = 'Se generarán ' + count + ' eventos cada ' + dias[dia] + ' desde ' + fechaIni + ' hasta ' + fechaLim;
+  } else {
+  seriePreview.classList.add('hidden');
+  }
+  };
+
+  ['serie-dia', 'serie-fecha-inicio', 'serie-fecha-limite'].forEach(id => {
+  document.getElementById(id)?.addEventListener('change', updateSeriePreview);
+  });
+
+  // Generar Serie
+  btnSubmitSerie?.addEventListener('click', async () => {
+  const titulo = (document.getElementById('serie-titulo') as HTMLInputElement)?.value?.trim();
+  const diaStr = (document.getElementById('serie-dia') as HTMLSelectElement)?.value;
+  const horaInicio = (document.getElementById('serie-hora-inicio') as HTMLInputElement)?.value;
+  const horaFin = (document.getElementById('serie-hora-fin') as HTMLInputElement)?.value;
+  const fechaIni = (document.getElementById('serie-fecha-inicio') as HTMLInputElement)?.value;
+  const fechaLim = serieFechaLimite?.value;
+  const estado = (document.getElementById('serie-estado') as HTMLSelectElement)?.value || 'Publicado';
+
+  if (!titulo || !diaStr || !horaInicio || !fechaIni || !fechaLim) {
+  alert('Completa todos los campos obligatorios.');
+  return;
+  }
+
+  // Validar año en curso
+  const currentYear = new Date().getFullYear();
+  if (new Date(fechaLim).getFullYear() > currentYear) {
+  alert('La fecha límite no puede pasar del año en curso (' + currentYear + ').');
+  return;
+  }
+
+  const dia = parseInt(diaStr);
+  const uuidSerie = crypto.randomUUID();
+  const eventos: any[] = [];
+
+  const start = new Date(fechaIni + 'T00:00:00');
+  const end = new Date(fechaLim + 'T23:59:59');
+  const cursor = new Date(start);
+
+  while (cursor <= end) {
+  if (cursor.getDay() === dia) {
+  const fechaHora = new Date(cursor);
+  const [h, m] = horaInicio.split(':').map(Number);
+  fechaHora.setHours(h, m, 0, 0);
+
+  eventos.push({
+  titulo,
+  fecha_hora: fechaHora.toISOString(),
+  hora_fin: horaFin || null,
+  estado,
+  created_by: user.id,
+  serie_id: uuidSerie
+  });
+  }
+  cursor.setDate(cursor.getDate() + 1);
+  }
+
+  if (eventos.length === 0) {
+  alert('No se encontraron fechas con el día seleccionado en ese rango.');
+  return;
+  }
+
+  // Spinner
+  const serieSpinner = document.getElementById('serie-spinner');
+  const serieSubmitText = btnSubmitSerie.querySelector('span');
+  if (serieSpinner) serieSpinner.classList.remove('hidden');
+  if (serieSubmitText) serieSubmitText.textContent = 'Generando...';
+  (btnSubmitSerie as HTMLButtonElement).disabled = true;
+
+  try {
+  // Bulk Insert: insertar en lotes de 50
+  for (let i = 0; i < eventos.length; i += 50) {
+  const batch = eventos.slice(i, i + 50);
+  const { error } = await supabase.from('eventos').insert(batch);
+  if (error) throw error;
+  }
+
+  toggleSerieModal(false);
+  alert('¡Serie creada! Se generaron ' + eventos.length + ' eventos.');
+  await fetchAgenda();
+  } catch (err: any) {
+  console.error('Error generando serie:', err);
+  alert('Error al generar serie: ' + (err.message || 'Error desconocido'));
+  } finally {
+  if (serieSpinner) serieSpinner.classList.add('hidden');
+  if (serieSubmitText) serieSubmitText.textContent = 'Generar Serie';
+  (btnSubmitSerie as HTMLButtonElement).disabled = false;
+  }
+  });
  });
+
 </script>
