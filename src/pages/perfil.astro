@@ -494,12 +494,12 @@ import Layout from '../layouts/Layout.astro';
  if (inputNombre) inputNombre.value = perfilData.nombre;
  
  if (uiUserName) {
- uiUserName.classList.remove('bg-neutral-200', '', 'animate-pulse', 'h-7', 'min-w-[120px]', 'flex', 'items-center', 'justify-center');
+ uiUserName.classList.remove('bg-neutral-200', 'animate-pulse', 'h-7', 'min-w-[120px]', 'flex', 'items-center', 'justify-center');
  uiUserName.innerHTML = perfilData.nombre;
  }
  
  if (uiUserEmail) {
- uiUserEmail.classList.remove('bg-neutral-200', '', 'animate-pulse', 'h-5', 'min-w-[160px]', 'flex', 'items-center', 'justify-center');
+ uiUserEmail.classList.remove('bg-neutral-200', 'animate-pulse', 'h-5', 'min-w-[160px]', 'flex', 'items-center', 'justify-center');
  uiUserEmail.innerHTML = email || '';
  }
 
