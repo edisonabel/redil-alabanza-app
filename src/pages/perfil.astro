@@ -187,6 +187,11 @@ import Layout from '../layouts/Layout.astro';
  const inputNombre = document.getElementById('input-nombre') as HTMLInputElement;
  const inputCorreo = document.getElementById('input-correo') as HTMLInputElement;
  
+ const formDatosPersonales = document.getElementById('form-datos-personales') as HTMLFormElement;
+ const selectTonalidad = document.getElementById('tonalidad-select') as HTMLSelectElement;
+ const inputCumpleanos = document.getElementById('input-cumpleanos') as HTMLInputElement;
+ const btnSaveDatos = document.getElementById('btn-save-datos') as HTMLButtonElement;
+ 
  
 
  // ==========================================
@@ -597,10 +602,6 @@ import Layout from '../layouts/Layout.astro';
  // -------------------------------------------------------------------------
  // Manejar envío de Formulario de Datos Personales
  // -------------------------------------------------------------------------
- const formDatosPersonales = document.getElementById('form-datos-personales') as HTMLFormElement;
- const selectTonalidad = document.getElementById('tonalidad-select') as HTMLSelectElement;
- const inputCumpleanos = document.getElementById('input-cumpleanos') as HTMLInputElement;
- const btnSaveDatos = document.getElementById('btn-save-datos') as HTMLButtonElement;
 
  if (selectTonalidad && inputCumpleanos && btnSaveDatos) {
  const checkChanges = () => {
