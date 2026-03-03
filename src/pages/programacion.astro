@@ -12,9 +12,6 @@ import Layout from '../layouts/Layout.astro';
  </h1>
  <p class="text-neutral-500 font-medium">Dashboard seguro de coordinación de equipos.</p>
  </div>
- <button id="btn-logout" class="px-5 py-2.5 bg-neutral-200 hover:bg-neutral-300 :bg-neutral-700 text-sm font-bold text-neutral-900 rounded-xl transition-all border border-neutral-300 w-fit">
- Cerrar Sesión
- </button>
  </header>
 
  <!-- Selector de Vistas -->
@@ -1198,13 +1195,6 @@ import Layout from '../layouts/Layout.astro';
 
  // Solicitar el volcado Inicial
  await fetchAgenda();
-
- // Control Logout Limpiador
- btnLogout?.addEventListener('click', async () => {
- // Notificar cierre a la Base de Datos para purgar token
- await supabase.auth.signOut();
- window.location.replace('/login');
- });
 
  // ==========================================
  // LÓGICA DEL MODAL Y CREACIÓN DE EVENTOS
