@@ -85,6 +85,13 @@ const isActive = (href) => {
 
  const userId = session.user.id;
 
+ // Check if user is admin, if not, hide the Equipo tab
+ const { data: profile } = await supabase.from('perfiles').select('is_admin').eq('id', userId).single();
+ if (!profile?.is_admin) {
+ const equipoNav = document.getElementById('nav-item-equipo');
+ if (equipoNav) equipoNav.style.display = 'none';
+ }
+
  // 2. Fetch initial unread notifications count
  const { count, error } = await supabase
  .from('notificaciones')

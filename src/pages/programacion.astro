@@ -466,10 +466,13 @@ import Layout from '../layouts/Layout.astro';
  .gte('fecha_hora', new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString())
  .order('fecha_hora', { ascending: true });
  } else {
- // Mortales obtienen la vista 'mi_agenda' con JOIN de su rol
+ // Mortales obtienen todos los Eventos Publicados (Observadores)
  fetchPromise = supabase
- .from('mi_agenda')
- .select('*');
+ .from('eventos')
+ .select('*, asignaciones(rol_id, perfiles(id, nombre, email, avatar_url))')
+ .gte('fecha_hora', new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString())
+ .eq('estado', 'Publicado')
+ .order('fecha_hora', { ascending: true });
  }
 
  const { data, error } = await fetchPromise;
