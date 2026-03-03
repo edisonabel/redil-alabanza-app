@@ -361,13 +361,15 @@ import Layout from '../layouts/Layout.astro';
  const btnLogout = document.getElementById('btn-logout');
 
  // Puerta Guardiana de Seguridad RLS: Verificar Sesión Activa
- const { data: { user }, error: sessionError } = await supabase.auth.getUser();
+ const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
- if (sessionError || !user) {
+ if (sessionError || !session) {
  // Expulsar solicitudes anónimas inmediatamente re-direccionando hacia el túnel de autenticación
  window.location.replace('/login');
  return;
  }
+ 
+ const user = session.user;
 
  // --- FETCH A LA VISTA MI_AGENDA ---
  const fetchAgenda = async () => {

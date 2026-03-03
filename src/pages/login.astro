@@ -25,6 +25,11 @@ import Layout from '../layouts/Layout.astro';
  <label for="telefono" class="block text-sm font-semibold text-neutral-700 mb-2">Teléfono / WhatsApp <span class="text-red-500">*</span></label>
  <input type="tel" id="telefono" class="w-full px-4 py-3 bg-white border border-neutral-300 rounded-xl text-neutral-900 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all placeholder-neutral-400" placeholder="Ej: +123456789">
  </div>
+ <div>
+ <label for="accesscode" class="block text-sm font-semibold text-neutral-700 mb-2">Código de Acceso del Equipo <span class="text-red-500">*</span></label>
+ <input type="text" id="accesscode" class="w-full px-4 py-3 bg-white border border-neutral-300 rounded-xl text-neutral-900 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all placeholder-neutral-400 font-mono tracking-widest uppercase" placeholder="Ej: CLAVE123">
+ <p class="text-[11px] text-neutral-500 mt-1.5 ml-1">Requerido para unirse a la plataforma.</p>
+ </div>
  </div>
 
  <!-- Campos Comunes -->
@@ -38,9 +43,14 @@ import Layout from '../layouts/Layout.astro';
  <input type="password" id="password" required class="w-full px-4 py-3 bg-white border border-neutral-300 rounded-xl text-neutral-900 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all placeholder-neutral-400 " placeholder="••••••••">
  <p class="text-[11px] text-neutral-500 mt-1.5 ml-1" id="password-hint" class="hidden">Mínimo 6 caracteres.</p>
  </div>
+ 
+ <div class="flex items-center gap-2 mt-1">
+ <input type="checkbox" id="remember-me" class="w-4 h-4 text-teal-500 bg-white border-neutral-300 rounded focus:ring-teal-500 focus:ring-2 transition-colors cursor-pointer" checked>
+ <label for="remember-me" class="text-sm text-neutral-600 cursor-pointer select-none">Mantener sesión iniciada</label>
+ </div>
 
- <div id="error-message" class="hidden text-red-600 text-sm font-medium bg-red-100 border border-red-300 p-3 rounded-xl text-center"></div>
- <div id="success-message" class="hidden text-teal-600 text-sm font-medium bg-teal-100 border border-teal-300 p-3 rounded-xl text-center"></div>
+ <div id="error-message" class="hidden text-red-600 text-sm font-medium bg-red-100 border border-red-300 p-3 rounded-xl text-center mt-2"></div>
+ <div id="success-message" class="hidden text-teal-600 text-sm font-medium bg-teal-100 border border-teal-300 p-3 rounded-xl text-center mt-2"></div>
 
  <div class="flex flex-col gap-3 mt-2">
  <button type="submit" id="btn-submit" class="w-full py-4 bg-teal-500 hover:bg-teal-400 text-white font-black rounded-xl active:scale-95 transition-all shadow-[0_0_15px_rgba(20,184,166,0.3)]">
@@ -61,6 +71,8 @@ import Layout from '../layouts/Layout.astro';
  const passwordInput = document.getElementById('password') as HTMLInputElement;
  const fullnameInput = document.getElementById('fullname') as HTMLInputElement;
  const telefonoInput = document.getElementById('telefono') as HTMLInputElement;
+ const accessCodeInput = document.getElementById('accesscode') as HTMLInputElement;
+ const rememberMeCheckbox = document.getElementById('remember-me') as HTMLInputElement;
  
  const errorMessage = document.getElementById('error-message');
  const successMessage = document.getElementById('success-message');
@@ -88,6 +100,8 @@ import Layout from '../layouts/Layout.astro';
  
  fullnameInput.required = false;
  telefonoInput.required = false;
+ accessCodeInput.required = false;
+ accessCodeInput.value = ''; // limpiar por si acaso
  
  if (btnSubmit) btnSubmit.textContent = 'Iniciar Sesión';
  hideMessages();
@@ -107,6 +121,7 @@ import Layout from '../layouts/Layout.astro';
 
  fullnameInput.required = true;
  telefonoInput.required = true;
+ accessCodeInput.required = true;
 
  if (btnSubmit) btnSubmit.textContent = 'Crear Cuenta';
  hideMessages();
@@ -167,6 +182,13 @@ import Layout from '../layouts/Layout.astro';
  // Logic for Registration
  const fullName = fullnameInput.value;
  const telefono = telefonoInput.value;
+ const accessCode = accessCodeInput.value?.trim().toUpperCase();
+
+ // SECRET CODE VALIDATION
+ const SECRET_CODE = 'REDIL2026';
+ if (accessCode !== SECRET_CODE) {
+ throw new Error("El Código de Acceso es incorrecto. Contacta a tu líder si no lo tienes.");
+ }
 
  if (!fullName || !telefono) throw new Error("Nombre y Teléfono son obligatorios para el registro.");
 
