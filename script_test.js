@@ -1,357 +1,4 @@
----
-import Layout from '../layouts/Layout.astro';
----
 
-<Layout>
- <div class="max-w-6xl mx-auto px-4 mt-4 md:mt-8 w-full">
- <!-- Encabezado -->
- <header class="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4 mb-2 md:mb-6">
- <div>
- <h1 class="text-3xl md:text-5xl font-extrabold tracking-tight text-neutral-900 flex items-center gap-3">
- Programación <span class="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-emerald-400">Mensual</span>
- </h1>
- </div>
- </header>
-
- <!-- Selector de Vistas -->
- <div class="flex items-center justify-center gap-2 mb-4 md:mb-8 mt-1 md:mt-2">
- <button id="btn-view-card" class="px-5 py-2.5 bg-white text-orange-500 text-sm font-bold rounded-xl shadow-sm transition-colors border border-orange-400">
- <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" class="inline-block mr-1.5" stroke="currentColor" stroke-width="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>Tarjeta
- </button>
- <button id="btn-view-list" class="px-5 py-2.5 bg-white text-neutral-600 text-sm font-bold rounded-xl border border-neutral-300 hover:bg-neutral-50 :bg-neutral-100 transition-colors">
- <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" class="inline-block mr-1.5" stroke="currentColor" stroke-width="2"><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></svg>Lista
- </button>
- <button id="btn-view-calendar" class="hidden px-5 py-2.5 bg-white text-neutral-600 text-sm font-bold rounded-xl border border-neutral-300 hover:bg-neutral-50 :bg-neutral-100 transition-colors">
- <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" class="inline-block mr-1.5" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>Mes
- </button>
- </div>
-
- <!-- Estado de Carga (Skeleton Loader) -->
- <div id="loading-state" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 py-10 w-full mb-10">
- <div class="animate-pulse bg-neutral-200 rounded-2xl h-52 w-full border border-neutral-300 "></div>
- <div class="animate-pulse bg-neutral-200 rounded-2xl h-52 w-full border border-neutral-300 hidden md:block"></div>
- <div class="animate-pulse bg-neutral-200 rounded-2xl h-52 w-full border border-neutral-300 hidden lg:block"></div>
- </div>
-
- <!-- Grilla de Datos Supabase (Vista Tarjeta) -->
- <div id="agenda-grid" class="flex flex-col gap-8 w-full hidden">
- <!-- Las tarjetas se inyectarán aquí dinámicamente -->
- </div>
-
- <!-- Vista Lista (Modo Drive) -->
- <div id="agenda-list" class="hidden flex flex-col gap-3">
- <!-- Filas horizontales inyectadas aquí -->
- </div>
-
- <!-- Vista Mes (Calendario) -->
- <div id="agenda-calendar" class="hidden">
- <!-- Grid del Mes inyectado aquí -->
- </div>
-
- <!-- Estado Vacío -->
- <div id="empty-state" class="hidden flex-col items-center justify-center py-20 bg-neutral-100 border border-neutral-300 rounded-3xl">
- <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" class="text-neutral-500 mb-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M10 16h4"/><path d="M12 14v4"/></svg>
- <h3 class="text-2xl font-bold text-neutral-900 mb-2">No hay programaciones</h3>
- <p class="text-neutral-500 text-center max-w-sm">No se encontraron registros maestros activos.</p>
- </div>
-
- <!-- Intersection Observer Target para Scroll Infinito Frontend -->
- <div id="scroll-sentinel" class="w-full h-20 flex items-center justify-center mt-6">
- <div id="sentinel-spinner" class="hidden w-8 h-8 border-4 border-teal-500/30 border-t-teal-500 rounded-full animate-spin"></div>
- </div>
- </div>
-
- <!-- Modal Nuevo / Editar Evento -->
- <div id="event-modal" class="hidden fixed inset-0 z-[80] bg-white/80 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity">
- <div class="bg-white border border-neutral-300 rounded-3xl w-full max-w-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden shadow-2xl flex flex-col transform">
- <div class="p-6 border-b border-neutral-200 flex justify-between items-center bg-neutral-50 sticky top-0 z-10">
- <h2 id="modal-title" class="text-xl font-bold text-neutral-900 ">Nuevo Evento</h2>
- <button id="btn-close-modal" class="text-neutral-500 hover:text-neutral-800 :text-white transition-colors p-2 -mr-2 bg-neutral-100 rounded-full">
- <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
- </button>
- </div>
- <div class="p-6 bg-white flex-1 overflow-x-hidden">
- <form id="form-event" class="flex flex-col gap-5">
- <input type="hidden" id="ev-id" value="">
- 
- <div class="grid grid-cols-1 gap-5 w-full">
- <div class="w-full">
- <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Título del Evento <span class="text-red-500">*</span></label>
- <input type="text" id="ev-titulo" required class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-teal-500 transition-colors" placeholder="Ej: Culto de Adoración">
- </div>
- <div class="w-full flex flex-col sm:flex-row gap-4">
- <div class="flex-1 min-w-0 w-full">
- <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2 truncate">Fecha y Hora <span class="text-red-500">*</span></label>
- <input type="datetime-local" id="ev-fecha" required class="w-full block min-w-0 max-w-full min-h-[48px] bg-neutral-100 border border-neutral-300 rounded-xl px-3 py-3 text-sm text-neutral-900 focus:outline-none focus:border-teal-500 transition-colors">
- </div>
- <div class="flex-[0.7] min-w-0 w-full">
- <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2 truncate">Hora Fin <span class="text-neutral-500 font-normal lowercase">(opcional)</span></label>
- <input type="time" id="ev-hora-fin" class="w-full block min-w-0 max-w-full min-h-[48px] bg-neutral-100 border border-neutral-300 rounded-xl px-3 py-3 text-sm text-neutral-900 focus:outline-none focus:border-teal-500 transition-colors">
- </div>
- </div>
-  <!-- Checkbox Actualización en Serie -->
-  <div id="serie-update-section" class="hidden flex flex-col gap-2">
-  <label class="flex items-center gap-3 bg-violet-50 border border-violet-200 rounded-xl p-3 cursor-pointer hover:bg-violet-100 transition-colors">
-  <input type="checkbox" id="ev-serie-check" class="w-5 h-5 accent-violet-500 rounded">
-  <div>
-  <span class="text-sm font-bold text-violet-700">Aplicar a toda la serie</span>
-  <p class="text-[11px] text-violet-500 mt-0.5">Actualiza título y hora en todos los eventos futuros de esta serie</p>
-  </div>
-  </label>
-  <button type="button" id="btn-eliminar-serie" class="w-full flex items-center justify-center gap-2 py-2.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded-xl transition-colors font-bold text-sm">
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-    Eliminar toda la serie permanentemente
-  </button>
-  <input type="hidden" id="ev-serie-id" value="">
-  </div>
- <div>
- <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Estado</label>
- <select id="ev-estado" class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-teal-500 transition-colors appearance-none">
- <option value="Borrador">Borrador</option>
- <option value="Publicado" selected>Publicado</option>
- </select>
- </div>
- <div class="w-full">
- <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Tema de Predicación <span class="text-neutral-500 font-normal lowercase">(opcional)</span></label>
- <input type="text" id="ev-tema" class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-teal-500 transition-colors" placeholder="Ej: La Gracia de Dios">
- </div>
- </div>
-
- <!-- ROSTER EDITOR DE MODAL -->
- <div id="modal-roster-section" class="hidden mt-4 pt-6 border-t border-neutral-200 flex flex-col gap-4">
- <div class="flex items-center justify-between">
- <h3 class="text-sm font-bold text-neutral-900 uppercase tracking-wider flex items-center gap-2">Asignaciones de Equipo <span class="text-[10px] font-normal text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded hidden sm:inline-block">Clic editar</span></h3>
- </div>
-
- <!-- BOTON ARMAR PLAYLIST MAS VISIBLE ARRIBA -->
- <button type="button" id="btn-armar-playlist" class="w-full relative overflow-hidden group flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-gradient-to-br from-purple-500 via-fuchsia-500 to-pink-500 text-white font-bold text-[15px] shadow-md shadow-fuchsia-500/30 hover:shadow-fuchsia-500/50 hover:-translate-y-0.5 transition-all duration-300 hidden">
- <div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
- <span class="relative z-10 flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>Armar Repertorio (Playlist)</span>
- </button>
-
- <div id="modal-roster-container" class="bg-neutral-50 rounded-2xl p-4 md:p-5 border border-neutral-200 flex flex-col gap-5">
- <!-- Contenido se inyecta dinámicamente -->
- </div>
-
- <!-- BOTON CARGAR EQUIPO ABAJO -->
- <button type="button" id="btn-cargar-equipo" class="w-full py-3.5 bg-blue-50/50 text-blue-600 border border-blue-200 border-dashed rounded-xl text-sm font-bold hover:bg-blue-100/50 hover:text-blue-700 transition-colors flex items-center justify-center gap-2">
- <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m19 11-4-4v8"/><path d="m11 15 4 4"/></svg> Autocompletar Equipo Base
- </button>
- </div>
- </div>
-
- <div class="mt-8 flex gap-3 pt-5 border-t border-neutral-200 sticky bottom-0 bg-white pb-6 z-20">
- <button type="button" id="btn-cancel-modal" class="flex-1 py-3.5 px-4 bg-neutral-100 hover:bg-neutral-200 :bg-neutral-700 border border-neutral-300 text-sm text-neutral-900 rounded-xl font-bold transition-colors">Cancelar</button>
- <button type="submit" id="btn-submit-modal" class="flex-1 py-3.5 px-4 bg-teal-500 hover:bg-teal-400 text-white text-sm rounded-xl font-bold transition-colors flex justify-center items-center gap-2">
- <span>Guardar Evento</span>
- <div id="btn-spinner" class="hidden w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
- </button>
- </div>
- </form>
- </div>
- </div>
- </div>
-
- <!-- FAB Nuevo Evento (oculto hasta validar Rol Admin) -->
- <button id="btn-new-event" class="hidden fixed bottom-24 right-4 md:bottom-28 md:right-8 bg-teal-500 hover:bg-teal-400 text-white w-14 h-14 md:w-auto md:px-6 rounded-full shadow-2xl flex items-center justify-center gap-2 transition-transform hover:scale-105 z-40 group">
- <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="group-hover:rotate-90 transition-transform duration-300"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
- <span class="hidden md:block font-bold text-base">Añadir Evento</span>
- </button>
-
-  <!-- FAB Secundario: Generar Serie (solo admin) -->
-  <button id="btn-serie-fab" class="hidden fixed bottom-40 right-4 md:bottom-44 md:right-8 bg-violet-500 hover:bg-violet-400 text-white w-14 h-14 md:w-auto md:px-5 rounded-full shadow-2xl flex items-center justify-center gap-2 transition-transform hover:scale-105 z-40 group" title="Generar Serie de Eventos">
-  <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="group-hover:rotate-180 transition-transform duration-500"><path d="M17 2.1l4 4-4 4"/><path d="M3 12.2v-2a4 4 0 0 1 4-4h12.8M7 21.9l-4-4 4-4"/><path d="M21 11.8v2a4 4 0 0 1-4 4H4.2"/></svg>
-  <span class="hidden md:block font-bold text-sm">Generar Serie</span>
-  </button>
-
-  <!-- Modal Generador de Series -->
-  <div id="serie-modal" class="hidden fixed inset-0 z-[85] bg-white/80 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity">
-  <div class="bg-white border border-neutral-300 rounded-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
-  <div class="p-6 border-b border-neutral-200 flex justify-between items-center bg-violet-50 sticky top-0 z-10">
-  <h2 class="text-xl font-bold text-neutral-900 flex items-center gap-2">
-  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-violet-500"><path d="M17 2.1l4 4-4 4"/><path d="M3 12.2v-2a4 4 0 0 1 4-4h12.8M7 21.9l-4-4 4-4"/><path d="M21 11.8v2a4 4 0 0 1-4 4H4.2"/></svg>
-  Generador de Series
-  </h2>
-  <button id="btn-close-serie" class="text-neutral-500 hover:text-neutral-800 transition-colors p-2 -mr-2 bg-neutral-100 rounded-full">
-  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-  </button>
-  </div>
-  <div class="p-6 flex flex-col gap-5">
-  <div>
-  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Título Base <span class="text-red-500">*</span></label>
-  <input type="text" id="serie-titulo" required class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-violet-500 transition-colors" placeholder="Ej: Culto de Adoración">
-  </div>
-  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-  <div>
-  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Día de la Semana <span class="text-red-500">*</span></label>
-  <select id="serie-dia" class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-violet-500 transition-colors appearance-none">
-  <option value="0">Domingo</option>
-  <option value="1">Lunes</option>
-  <option value="2">Martes</option>
-  <option value="3">Miércoles</option>
-  <option value="4">Jueves</option>
-  <option value="5">Viernes</option>
-  <option value="6">Sábado</option>
-  </select>
-  </div>
-  <div>
-  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Hora Inicio <span class="text-red-500">*</span></label>
-  <input type="time" id="serie-hora-inicio" required class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-violet-500 transition-colors">
-  </div>
-  </div>
-  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-  <div>
-  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Hora Fin <span class="text-neutral-500 font-normal lowercase">(opc)</span></label>
-  <input type="time" id="serie-hora-fin" class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-violet-500 transition-colors">
-  </div>
-  <div>
-  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Estado</label>
-  <select id="serie-estado" class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-violet-500 transition-colors appearance-none">
-  <option value="Publicado" selected>Publicado</option>
-  <option value="Borrador">Borrador</option>
-  </select>
-  </div>
-  </div>
-  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-  <div>
-  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Fecha Inicio <span class="text-red-500">*</span></label>
-  <input type="date" id="serie-fecha-inicio" required class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-violet-500 transition-colors">
-  </div>
-  <div>
-  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Fecha Límite <span class="text-red-500">*</span></label>
-  <input type="date" id="serie-fecha-limite" required class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-violet-500 transition-colors">
-  <p class="text-[10px] text-neutral-400 mt-1">Máximo: 31 de Diciembre del año en curso</p>
-  </div>
-  </div>
-  <div id="serie-preview" class="hidden bg-violet-50 border border-violet-200 rounded-xl p-4 text-sm text-violet-700 font-medium"></div>
-  <div class="flex gap-3 pt-4 border-t border-neutral-200">
-  <button type="button" id="btn-cancel-serie" class="flex-1 py-3.5 px-4 bg-neutral-100 hover:bg-neutral-200 border border-neutral-300 text-sm text-neutral-900 rounded-xl font-bold transition-colors">Cancelar</button>
-  <button type="button" id="btn-submit-serie" class="flex-1 py-3.5 px-4 bg-violet-500 hover:bg-violet-400 text-white text-sm rounded-xl font-bold transition-colors flex justify-center items-center gap-2">
-  <span>Generar Serie</span>
-  <div id="serie-spinner" class="hidden w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-  </button>
-  </div>
-  </div>
-  </div>
-  </div>
-
-
- <!-- Modal Picker (Selección Inteligente de Músico) -->
- <div id="picker-modal" class="hidden fixed inset-0 z-[90] bg-white/90 flex flex-col items-center justify-end md:justify-center p-0 md:p-4 transition-transform translate-y-full md:translate-y-0 duration-300">
- <div class="bg-white border border-neutral-200 rounded-t-3xl md:rounded-3xl w-full max-w-md h-[70vh] md:h-auto shadow-[0_-20px_40px_-15px_rgba(0,0,0,0.3)] flex flex-col overflow-hidden">
- <div class="p-5 border-b border-neutral-200 flex justify-between items-center">
- <div>
- <h3 class="text-lg font-bold text-neutral-900 " id="picker-role-name">Seleccionar...</h3>
- <p class="text-xs text-neutral-500">Músicos habilitados para este rol</p>
- </div>
- <button id="btn-close-picker" class="text-neutral-500 hover:text-neutral-800 :text-white transition-colors p-2 bg-neutral-100 rounded-full">
- <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
- </button>
- </div>
- <div class="p-4 overflow-y-auto flex-1 bg-neutral-50 ">
- <div id="picker-spinner" class="flex justify-center py-10 hidden">
- <div class="w-6 h-6 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
- </div>
- <div id="picker-list" class="flex flex-col gap-2">
- <!-- Músicos se inyectan acá -->
- </div>
- </div>
- </div>
- </div>
-
- <!-- Modal Equipo Picker (Selección de Equipo/Plantilla guardada) -->
- <div id="equipo-picker-modal" class="hidden fixed inset-0 z-[100] bg-white/90 flex items-center justify-center p-4 transition-opacity duration-300">
- <div class="bg-white border border-neutral-200 rounded-3xl w-full max-w-2xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden scale-95 transition-transform duration-300" id="equipo-picker-content">
- <div class="p-6 border-b border-neutral-200 flex justify-between items-center bg-neutral-50 sticky top-0 z-10">
- <div>
- <h2 class="text-2xl font-bold text-neutral-900 ">Cargar Equipo</h2>
- <p class="text-sm text-neutral-500 mt-1">Selecciona un equipo guardado para autocompletar este evento.</p>
- </div>
- <button id="btn-close-equipo-picker" class="text-neutral-500 hover:text-neutral-800 :text-white transition-colors p-2 -mr-2 bg-white shadow-sm border border-neutral-200 rounded-full">
- <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
- </button>
- </div>
- 
- <div class="p-6 bg-white overflow-y-auto flex-1 auto-rows-max">
- <div id="equipo-picker-spinner" class="flex justify-center py-12 hidden">
- <div class="w-8 h-8 border-4 border-teal-500/30 border-t-teal-500 rounded-full animate-spin"></div>
- </div>
- <div id="equipo-picker-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
- <!-- Equipos se inyectan acá como Cards -->
- </div>
- <div id="equipo-picker-empty" class="hidden flex-col items-center justify-center py-12 text-center">
- <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" class="text-neutral-700 mb-4" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
- <h3 class="text-xl font-bold text-neutral-900 mb-2">No hay equipos creados</h3>
- <p class="text-neutral-500 text-sm max-w-sm">Ve a la pestaña "Equipo" y usa el Constructor para guardar alineaciones.</p>
- </div>
- </div>
- </div>
- </div>
-
- <!-- Modal Vista Detalle Completa -->
- <div id="detalle-modal" class="hidden opacity-0 fixed inset-0 z-[70] bg-white/80 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity duration-300">
- <div class="bg-white border border-neutral-200 rounded-3xl w-full max-w-2xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden scale-95 transition-transform duration-300" id="detalle-modal-content">
- <div class="p-6 border-b border-neutral-100 flex justify-between items-start bg-neutral-50 ">
- <div>
- <span class="inline-block px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold tracking-widest uppercase mb-3" id="detalle-estado">Confirmado</span>
- <h2 class="text-3xl font-black text-neutral-900 " id="detalle-fecha">Domingo</h2>
- <p class="text-neutral-500 font-medium text-lg mt-1" id="detalle-tema">Tema...</p>
- </div>
- <button id="btn-close-detalle" class="text-neutral-500 hover:text-neutral-800 :text-white transition-colors p-2 bg-white rounded-full shadow-sm border border-neutral-200 ">
- <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
- </button>
- </div>
- <div class="p-6 overflow-y-auto flex-1 bg-white ">
- <div class="mb-8">
- <h4 class="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-4 flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg> Personal Asignado</h4>
- <div id="detalle-roster-list">
- <div class="flex justify-center py-10"><div class="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>
- </div>
- </div>
- 
- <!-- Contenido de Playlist / Canciones del Evento -->
- <div>
- <h4 class="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-4 flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg> Repertorio / Playlist</h4>
- <div id="detalle-canciones-list" class="bg-neutral-50 border border-neutral-100 rounded-2xl p-5 shadow-inner">
- <div class="flex justify-center py-6"><div class="w-6 h-6 border-4 border-teal-500/30 border-t-teal-500 rounded-full animate-spin"></div></div>
- </div>
- </div>
- </div>
- </div>
- </div>
-
- <!-- Reglas Globales CSS de Ámbito -->
- <style is:global>
- /* La tarjeta externa principal NO debe renderizar los empty slots (Batería +, Guitarra +) ni la X de borrar */
- .agenda-card .empty-slot {
- display: none !important;
- }
- .agenda-card .btn-remove-roster {
- display: none !important;
- }
- 
- /* En el modal interno, SÍ debe verse el empty slot y la X */
- #event-modal .empty-slot {
- display: flex !important;
- }
- #event-modal .btn-remove-roster {
- display: flex !important;
- }
- 
- /* Ocultar scrollbar horizontal en móvil (mantiene swipe fluído) */
- @media (max-width: 768px) {
- .hide-scrollbar-on-mobile::-webkit-scrollbar {
- display: none;
- }
- .hide-scrollbar-on-mobile {
- -ms-overflow-style: none; /* IE and Edge */
- scrollbar-width: none; /* Firefox */
- }
- }
- </style>
-</Layout>
-
-<script>
  import { supabase } from '../lib/supabase';
 
  document.addEventListener('DOMContentLoaded', async () => {
@@ -536,38 +183,13 @@ import Layout from '../layouts/Layout.astro';
  proyeccionActual.setHours(baseTime.getHours(), baseTime.getMinutes(), 0, 0);
  }
 
- if (agendaGrid) {
- agendaGrid.classList.remove('hidden');
- agendaGrid.innerHTML = ''; // Limpiar grilla original
- 
- const agendaList = document.getElementById('agenda-list');
- const agendaCalendar = document.getElementById('agenda-calendar');
- 
- if (agendaList) agendaList.innerHTML = '';
- if (agendaCalendar) {
- agendaCalendar.innerHTML = `
- <div class="grid grid-cols-7 gap-2 mb-2 text-center text-xs font-bold text-neutral-500 uppercase tracking-widest">
- <div>Dom</div><div>Lun</div><div>Mar</div><div>Mié</div><div>Jue</div><div>Vie</div><div>Sáb</div>
- </div>
- <div class="grid grid-cols-7 gap-2" id="calendar-grid-cells"></div>
- `;
- }
-
-  // Calendario: rastrear posición en el grid de 7 columnas
-  let calendarCellIndex = 0;
-  let calendarHtml = '';
-  const firstEventMonth = proyeccionActual.getMonth();
-  const firstEventYear = proyeccionActual.getFullYear();
-  const firstDayOfMonth = new Date(firstEventYear, firstEventMonth, 1).getDay();
-  const firstEventDay = proyeccionActual.getDate();
-  for (let i = 0; i < firstDayOfMonth; i++) {
-  calendarHtml += `<div class="aspect-square bg-transparent rounded-xl"></div>`;
-  calendarCellIndex++;
-  }
-  for (let d = 1; d < firstEventDay; d++) {
-  calendarHtml += `<div class="aspect-square bg-neutral-50/30 rounded-xl border border-transparent"><span class="text-[10px] text-neutral-300 font-medium p-1">${d}</span></div>`;
-  calendarCellIndex++;
-  }
+  if (agendaGrid) {
+  agendaGrid.classList.remove('hidden');
+  agendaGrid.innerHTML = ''; // Limpiar grilla original
+  
+  const agendaList = document.getElementById('agenda-list');
+  
+  if (agendaList) agendaList.innerHTML = '';
 
  // Aplicar Scroll Observer a las tarjetas renderizadas dinámicamente
  const gridObserver = new IntersectionObserver((entries, obs) => {
@@ -681,12 +303,9 @@ import Layout from '../layouts/Layout.astro';
  ${targetDate.toLocaleString('es-ES', { day: 'numeric' })} <span class="font-medium">${targetDate.toLocaleString('es-ES', { month: 'short' })}</span>
  <span class="text-sm opacity-60 font-semibold tracking-wider ml-1">${targetDate.getFullYear()}</span>
  </span>
- <div class="flex items-center gap-2 mt-1 pl-1">
- <span class="px-2.5 py-0.5 bg-blue-50 text-blue-600 text-[11px] font-bold rounded-md uppercase tracking-wide border border-blue-200">${targetDate.toLocaleString('es-ES', { weekday: 'long' })}</span>
- <span class="text-sm text-neutral-500 font-medium flex items-center gap-1">
+ <span class="text-sm text-neutral-500 font-medium pl-1 mt-1 flex items-center gap-1">
  ${targetDate.toLocaleString('es-ES', { hour: '2-digit', minute:'2-digit' })}${horaFinDisplay}
  </span>
- </div>
  </div>
  <span class="px-3 py-1.5 bg-neutral-100 text-neutral-600 text-xs font-bold rounded-lg border border-neutral-200 uppercase tracking-widest">${currentEstado}</span>
  </div>
@@ -824,23 +443,6 @@ import Layout from '../layouts/Layout.astro';
  </div>
  `;
  
- // --- GENERACIÓN VISTA CALENDARIO ---
- calendarHtml += `
- <div class="aspect-square relative p-2 md:p-3 bg-white border border-neutral-200 rounded-xl hover:border-blue-300 :border-teal-700 transition-colors cursor-pointer group btn-expandir-detalle shadow-sm ${isUsuarioAsignado ? 'ring-2 ring-teal-500 ring-inset bg-teal-50/10 ' : ''}" data-evento="${domEventoId}">
- <span class="absolute top-2 left-2.5 text-xs md:text-sm font-bold ${isUsuarioAsignado ? 'text-teal-600 ' : 'text-neutral-700 '}">${targetDate.getDate()}</span>
- ${isUsuarioAsignado ? '<div class="absolute top-2 right-2.5 w-2 h-2 rounded-full bg-teal-500 shadow-[0_0_8px_rgba(20,184,166,0.6)] animate-pulse"></div>' : ''}
- 
- <div class="absolute bottom-2 left-2 right-2 flex flex-col gap-0.5">
- <div class="bg-blue-100 text-blue-700 text-[9px] md:text-[10px] font-bold truncate rounded px-1.5 py-0.5 border border-blue-200 ">
- ${targetDate.toLocaleString('es-ES', { hour: '2-digit', minute:'2-digit' })}
- </div>
- ${miAsignacion ? `<div class="bg-teal-500 text-white text-[9px] font-bold truncate rounded px-1.5 py-0.5 shadow-sm">Tú: ${window.appStateRoles?.find((r:any) => r.id === miAsignacion.rol_id)?.nombre || ''}</div>` : ''}
- ${asignadoLider && asignadoLider.perfiles ? `<div class="bg-violet-100 text-violet-700 text-[9px] font-bold truncate rounded px-1.5 py-0.5 border border-violet-200 hidden md:block">Dir: ${asignadoLider.perfiles.nombre.split(' ')[0]}</div>` : ''}
- </div>
- </div>
- `;
- }
-
  // --- INYECCIÓN MES Y TARJETA ---
  const agendaGridEl = document.getElementById('agenda-grid');
  if (agendaGridEl && currentCardHtml) {
@@ -869,21 +471,9 @@ import Layout from '../layouts/Layout.astro';
  // Sumar 7 días exactos al Tracker visual
  proyeccionActual.setDate(proyeccionActual.getDate() + 7); 
  
-  // Rellenar celdas vacías entre este domingo y el siguiente
-  const nextTarget = new Date(proyeccionActual);
-  const dayAfterEvent = new Date(targetDate);
-  dayAfterEvent.setDate(dayAfterEvent.getDate() + 1);
-  while (dayAfterEvent < nextTarget) {
-  calendarHtml += `<div class="aspect-square bg-neutral-50/30 rounded-xl border border-transparent"><span class="text-[10px] text-neutral-300 font-medium p-1">${dayAfterEvent.getDate()}</span></div>`;
-  calendarCellIndex++;
-  dayAfterEvent.setDate(dayAfterEvent.getDate() + 1);
-  }
-  calendarCellIndex++;
  }
  
  if (agendaList) agendaList.insertAdjacentHTML('beforeend', htmlListString);
- document.getElementById('calendar-grid-cells')?.insertAdjacentHTML('beforeend', calendarHtml);
- calendarHtml = ''; // Reset for next batch if needed
  
  document.querySelectorAll('.agenda-card:not(.observed)').forEach(card => {
  gridObserver.observe(card);
@@ -1989,23 +1579,21 @@ import Layout from '../layouts/Layout.astro';
  // ==========================================
  const btnViewCard = document.getElementById('btn-view-card');
  const btnViewList = document.getElementById('btn-view-list');
- const btnViewCalendar = document.getElementById('btn-view-calendar');
  
  const gridView = document.getElementById('agenda-grid');
  const listView = document.getElementById('agenda-list');
- const calendarView = document.getElementById('agenda-calendar');
 
  const activeClassBg = ['bg-white', 'text-orange-500', 'border-orange-400', 'shadow-sm'];
  const inactiveClassBg = ['bg-white', 'text-neutral-600', 'border-neutral-300', 'hover:bg-neutral-50'];
 
  const switchView = (targetBtn, targetView) => {
  // Esconder todos
- [gridView, listView, calendarView].forEach(el => el?.classList.add('hidden'));
+ [gridView, listView].forEach(el => el?.classList.add('hidden'));
  // Mostrar target
  targetView?.classList.remove('hidden');
  
  // Resetear clases de todos los botones
- [btnViewCard, btnViewList, btnViewCalendar].forEach(btn => {
+ [btnViewCard, btnViewList].forEach(btn => {
  if(!btn) return;
  btn.classList.add(...inactiveClassBg);
  btn.classList.remove(...activeClassBg);
@@ -2020,7 +1608,6 @@ import Layout from '../layouts/Layout.astro';
 
  btnViewCard?.addEventListener('click', () => switchView(btnViewCard, gridView));
  btnViewList?.addEventListener('click', () => switchView(btnViewList, listView));
- btnViewCalendar?.addEventListener('click', () => switchView(btnViewCalendar, calendarView));
 
 
   // ==========================================
@@ -2181,4 +1768,3 @@ import Layout from '../layouts/Layout.astro';
   });
  });
 
-</script>

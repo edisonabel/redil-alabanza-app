@@ -9,25 +9,42 @@ import Layout from '../layouts/Layout.astro';
  <p class="text-neutral-500 text-center mb-8">Ingresa tus credenciales para ver la agenda</p>
 
  <form id="login-form" class="flex flex-col gap-5">
+ <!-- Pestañas (Tabs) -->
+ <div class="flex p-1 bg-neutral-200/50 rounded-xl mb-2">
+ <button type="button" id="tab-login" class="flex-1 py-2 text-sm font-bold rounded-lg bg-white text-neutral-900 shadow-sm transition-all">Iniciar Sesión</button>
+ <button type="button" id="tab-register" class="flex-1 py-2 text-sm font-bold rounded-lg text-neutral-500 hover:text-neutral-700 transition-all">Registrarse</button>
+ </div>
+ 
+ <!-- Campos Exclusivos de Registro (Ocultos por defecto) -->
+ <div id="register-fields" class="hidden flex-col gap-5">
  <div>
- <label for="email" class="block text-sm font-semibold text-neutral-700 mb-2">Correo Electrónico</label>
+ <label for="fullname" class="block text-sm font-semibold text-neutral-700 mb-2">Nombre Completo <span class="text-red-500">*</span></label>
+ <input type="text" id="fullname" class="w-full px-4 py-3 bg-white border border-neutral-300 rounded-xl text-neutral-900 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all placeholder-neutral-400" placeholder="Ej: Juan Pérez">
+ </div>
+ <div>
+ <label for="telefono" class="block text-sm font-semibold text-neutral-700 mb-2">Teléfono / WhatsApp <span class="text-red-500">*</span></label>
+ <input type="tel" id="telefono" class="w-full px-4 py-3 bg-white border border-neutral-300 rounded-xl text-neutral-900 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all placeholder-neutral-400" placeholder="Ej: +123456789">
+ </div>
+ </div>
+
+ <!-- Campos Comunes -->
+ <div>
+ <label for="email" class="block text-sm font-semibold text-neutral-700 mb-2">Correo Electrónico <span class="text-red-500">*</span></label>
  <input type="email" id="email" required class="w-full px-4 py-3 bg-white border border-neutral-300 rounded-xl text-neutral-900 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all placeholder-neutral-400 " placeholder="tu@correo.com">
  </div>
  
  <div>
- <label for="password" class="block text-sm font-semibold text-neutral-700 mb-2">Contraseña</label>
+ <label for="password" class="block text-sm font-semibold text-neutral-700 mb-2">Contraseña <span class="text-red-500">*</span></label>
  <input type="password" id="password" required class="w-full px-4 py-3 bg-white border border-neutral-300 rounded-xl text-neutral-900 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all placeholder-neutral-400 " placeholder="••••••••">
+ <p class="text-[11px] text-neutral-500 mt-1.5 ml-1" id="password-hint" class="hidden">Mínimo 6 caracteres.</p>
  </div>
 
  <div id="error-message" class="hidden text-red-600 text-sm font-medium bg-red-100 border border-red-300 p-3 rounded-xl text-center"></div>
  <div id="success-message" class="hidden text-teal-600 text-sm font-medium bg-teal-100 border border-teal-300 p-3 rounded-xl text-center"></div>
 
  <div class="flex flex-col gap-3 mt-2">
- <button type="submit" id="btn-login" class="w-full py-4 bg-teal-500 hover:bg-teal-400 text-white font-black rounded-xl active:scale-95 transition-all shadow-[0_0_15px_rgba(20,184,166,0.3)]">
+ <button type="submit" id="btn-submit" class="w-full py-4 bg-teal-500 hover:bg-teal-400 text-white font-black rounded-xl active:scale-95 transition-all shadow-[0_0_15px_rgba(20,184,166,0.3)]">
  Iniciar Sesión
- </button>
- <button type="button" id="btn-register" class="w-full py-4 bg-neutral-200 hover:bg-neutral-300 :bg-neutral-700 text-neutral-900 font-bold rounded-xl active:scale-95 border border-neutral-300 transition-all">
- Registrarse
  </button>
  </div>
  </form>
@@ -35,17 +52,70 @@ import Layout from '../layouts/Layout.astro';
  </div>
 </Layout>
 
-<script>
+ <script>
  import { supabase } from '../lib/supabase';
 
  document.addEventListener('DOMContentLoaded', () => {
  const form = document.getElementById('login-form');
  const emailInput = document.getElementById('email') as HTMLInputElement;
  const passwordInput = document.getElementById('password') as HTMLInputElement;
+ const fullnameInput = document.getElementById('fullname') as HTMLInputElement;
+ const telefonoInput = document.getElementById('telefono') as HTMLInputElement;
+ 
  const errorMessage = document.getElementById('error-message');
  const successMessage = document.getElementById('success-message');
- const btnRegister = document.getElementById('btn-register');
+ const btnSubmit = document.getElementById('btn-submit');
+ 
+ const tabLogin = document.getElementById('tab-login');
+ const tabRegister = document.getElementById('tab-register');
+ const registerFields = document.getElementById('register-fields');
+ const passwordHint = document.getElementById('password-hint');
 
+ let isLoginMode = true;
+
+ // --- Tab Switching Logic ---
+ const setLoginMode = () => {
+ isLoginMode = true;
+ tabLogin?.classList.add('bg-white', 'text-neutral-900', 'shadow-sm');
+ tabLogin?.classList.remove('text-neutral-500', 'hover:text-neutral-700');
+ 
+ tabRegister?.classList.remove('bg-white', 'text-neutral-900', 'shadow-sm');
+ tabRegister?.classList.add('text-neutral-500', 'hover:text-neutral-700');
+
+ registerFields?.classList.add('hidden');
+ registerFields?.classList.remove('flex');
+ passwordHint?.classList.add('hidden');
+ 
+ fullnameInput.required = false;
+ telefonoInput.required = false;
+ 
+ if (btnSubmit) btnSubmit.textContent = 'Iniciar Sesión';
+ hideMessages();
+ };
+
+ const setRegisterMode = () => {
+ isLoginMode = false;
+ tabRegister?.classList.add('bg-white', 'text-neutral-900', 'shadow-sm');
+ tabRegister?.classList.remove('text-neutral-500', 'hover:text-neutral-700');
+ 
+ tabLogin?.classList.remove('bg-white', 'text-neutral-900', 'shadow-sm');
+ tabLogin?.classList.add('text-neutral-500', 'hover:text-neutral-700');
+
+ registerFields?.classList.remove('hidden');
+ registerFields?.classList.add('flex');
+ passwordHint?.classList.remove('hidden');
+
+ fullnameInput.required = true;
+ telefonoInput.required = true;
+
+ if (btnSubmit) btnSubmit.textContent = 'Crear Cuenta';
+ hideMessages();
+ };
+
+ tabLogin?.addEventListener('click', setLoginMode);
+ tabRegister?.addEventListener('click', setRegisterMode);
+
+ // --- UI Helpers ---
  const showError = (msg: string) => {
  if (errorMessage) {
  errorMessage.textContent = msg;
@@ -67,6 +137,7 @@ import Layout from '../layouts/Layout.astro';
  if (successMessage) successMessage.classList.add('hidden');
  };
 
+ // --- Submit Logic ---
  form?.addEventListener('submit', async (e) => {
  e.preventDefault();
  hideMessages();
@@ -76,39 +147,55 @@ import Layout from '../layouts/Layout.astro';
 
  if (!email || !password) return;
 
+ if(btnSubmit) {
+ btnSubmit.innerHTML = '<span class="flex items-center justify-center gap-2"><div class="w-4 h-4 rounded-full border-2 border-white/20 border-t-white animate-spin"></div> Procesando...</span>';
+ (btnSubmit as HTMLButtonElement).disabled = true;
+ }
+
+ try {
+ if (isLoginMode) {
+ // Logic for Login
  const { data, error } = await supabase.auth.signInWithPassword({
  email,
  password,
  });
 
- if (error) {
- showError(error.message);
- } else {
+ if (error) throw error;
  window.location.href = '/programacion';
- }
- });
-
- btnRegister?.addEventListener('click', async () => {
- hideMessages();
  
- const email = emailInput.value;
- const password = passwordInput.value;
+ } else {
+ // Logic for Registration
+ const fullName = fullnameInput.value;
+ const telefono = telefonoInput.value;
 
- if (!email || !password) {
- showError('Ingresa correo y contraseña para registrarte');
- return;
- }
+ if (!fullName || !telefono) throw new Error("Nombre y Teléfono son obligatorios para el registro.");
 
  const { data, error } = await supabase.auth.signUp({
  email,
  password,
- });
-
- if (error) {
- showError(error.message);
- } else {
- showSuccess('Registro exitoso. Revisa tu bandeja para confirmar, o presiona Iniciar Sesión si la confirmación está desactivada en Supabase.');
+ options: {
+ data: {
+ full_name: fullName,
+ telefono: telefono
+ }
  }
  });
+
+ if (error) throw error;
+ showSuccess('Registro exitoso. Si el sistema te lo permite, ya puedes iniciar sesión.');
+ setLoginMode();
+ // clear password & full name just for security
+ passwordInput.value = '';
+ }
+ } catch(err: any) {
+ showError(err.message || 'Ocurrió un error inesperado');
+ } finally {
+ if(btnSubmit) {
+ btnSubmit.textContent = isLoginMode ? 'Iniciar Sesión' : 'Crear Cuenta';
+ (btnSubmit as HTMLButtonElement).disabled = false;
+ }
+ }
+ });
+
  });
 </script>

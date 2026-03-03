@@ -71,6 +71,10 @@ import Layout from '../layouts/Layout.astro';
  <label class="text-xs font-bold text-neutral-500 uppercase tracking-wide">Cumpleaños</label>
  <input type="date" id="input-cumpleanos" disabled class="w-full bg-white border border-neutral-200 text-neutral-900 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-shadow" />
  </div>
+ <div class="space-y-1.5">
+ <label class="text-xs font-bold text-neutral-500 uppercase tracking-wide">Teléfono / WhatsApp</label>
+ <input type="tel" id="input-telefono" disabled class="w-full bg-white border border-neutral-200 text-neutral-900 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-shadow" placeholder="Ej: +123456789" />
+ </div>
  <div class="md:col-span-2 flex justify-end mt-2">
  <button type="submit" id="btn-save-datos" class="hidden px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl transition-colors shadow-sm flex items-center gap-2">
  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -190,6 +194,7 @@ import Layout from '../layouts/Layout.astro';
  const formDatosPersonales = document.getElementById('form-datos-personales') as HTMLFormElement;
  const selectTonalidad = document.getElementById('tonalidad-select') as HTMLSelectElement;
  const inputCumpleanos = document.getElementById('input-cumpleanos') as HTMLInputElement;
+ const inputTelefono = document.getElementById('input-telefono') as HTMLInputElement;
  const btnSaveDatos = document.getElementById('btn-save-datos') as HTMLButtonElement;
  
  
@@ -486,7 +491,7 @@ import Layout from '../layouts/Layout.astro';
  // 1. Fetch Perfil
  const { data: perfilData, error: perfilError } = await supabase
  .from('perfiles')
- .select('id, nombre, avatar_url, tonalidad_voz')
+ .select('id, nombre, avatar_url, tonalidad_voz, fecha_nacimiento, telefono')
  .eq('id', currentUserId)
  .single();
 
@@ -508,12 +513,21 @@ import Layout from '../layouts/Layout.astro';
  selectTonalidad.disabled = false;
  if (perfilData.tonalidad_voz) {
  selectTonalidad.value = perfilData.tonalidad_voz;
+ (window as any)._initialTonalidad = perfilData.tonalidad_voz;
  }
  }
  if (inputCumpleanos) {
  inputCumpleanos.disabled = false;
  if (perfilData.fecha_nacimiento) {
  inputCumpleanos.value = perfilData.fecha_nacimiento;
+ (window as any)._initialCumpleanos = perfilData.fecha_nacimiento;
+ }
+ }
+ if (inputTelefono) {
+ inputTelefono.disabled = false;
+ if (perfilData.telefono) {
+ inputTelefono.value = perfilData.telefono;
+ (window as any)._initialTelefono = perfilData.telefono;
  }
  }
  if(avatarContainer) {
@@ -603,24 +617,27 @@ import Layout from '../layouts/Layout.astro';
  // Manejar envío de Formulario de Datos Personales
  // -------------------------------------------------------------------------
 
- if (selectTonalidad && inputCumpleanos && btnSaveDatos) {
+ if (selectTonalidad && inputCumpleanos && inputTelefono && btnSaveDatos) {
  const checkChanges = () => {
  const btnHtml = btnSaveDatos.innerHTML;
  if(btnHtml.includes('Guardando')) return; // ignore during save
 
  const tVal = selectTonalidad.value || '';
  const cVal = inputCumpleanos.value || '';
+ const phoneVal = inputTelefono.value || '';
  const initT = (window as any)._initialTonalidad || '';
  const initC = (window as any)._initialCumpleanos || '';
+ const initPhone = (window as any)._initialTelefono || '';
  
- if (tVal !== initT || cVal !== initC) {
+ if (tVal !== initT || cVal !== initC || phoneVal !== initPhone) {
  btnSaveDatos.classList.remove('hidden');
  } else {
  btnSaveDatos.classList.add('hidden');
  }
  };
- selectTonalidad.addEventListener('change', checkChanges);
- inputCumpleanos.addEventListener('change', checkChanges);
+ selectTonalidad.addEventListener('input', checkChanges);
+ inputCumpleanos.addEventListener('input', checkChanges);
+ inputTelefono.addEventListener('input', checkChanges);
  }
 
  if (formDatosPersonales && btnSaveDatos) {
@@ -628,6 +645,7 @@ import Layout from '../layouts/Layout.astro';
  e.preventDefault();
  const vocalVal = selectTonalidad.value;
  const cumpleanosVal = inputCumpleanos.value;
+ const telefonoVal = inputTelefono.value;
 
  const originalBtnHtml = btnSaveDatos.innerHTML;
  btnSaveDatos.innerHTML = '<span class="flex items-center gap-2"><div class="w-4 h-4 rounded-full border-2 border-white/20 border-t-white animate-spin"></div> Guardando...</span>';
@@ -640,6 +658,7 @@ import Layout from '../layouts/Layout.astro';
  const updates = {
  tonalidad_voz: vocalVal || null,
  fecha_nacimiento: cumpleanosVal || null,
+ telefono: telefonoVal || null,
  updated_at: new Date().toISOString()
  };
 
@@ -652,6 +671,7 @@ import Layout from '../layouts/Layout.astro';
 
  (window as any)._initialTonalidad = vocalVal;
  (window as any)._initialCumpleanos = cumpleanosVal;
+ (window as any)._initialTelefono = telefonoVal;
  btnSaveDatos.classList.add('hidden');
  
  // Alerta nativa simple
