@@ -774,14 +774,14 @@ import Layout from '../layouts/Layout.astro';
  let miRolBadge = '';
  if (miAsignacion) {
  const rolText = window.appStateRoles?.find((r:any) => r.id === miAsignacion.rol_id)?.nombre || 'Banda';
- miRolBadge = `<span class="bg-teal-500 text-white text-[9px] font-bold px-2 py-0.5 rounded ml-2 uppercase tracking-wide">Tú: ${rolText}</span>`;
+ miRolBadge = `<span class="inline-flex items-center bg-teal-50 text-teal-700 border border-teal-200 text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider truncate max-w-[140px] sm:max-w-[160px]" title="Tú: ${rolText}">Tú: ${rolText}</span>`;
  }
 
- let dirListStr = `<span class="text-neutral-500 text-xs italic">Dirección vacía</span>`;
+ let dirListStr = `<span class="inline-flex items-center text-neutral-500 text-[10px] font-bold px-2.5 py-1 rounded-md border border-neutral-200 bg-neutral-50 uppercase tracking-wider italic">Dirección vacía</span>`;
  const asignadoLider = rosterDb.find((r:any) => window.appStateRoles?.find((ro:any) => ro.id === r.rol_id && ro.codigo === 'lider_alabanza'));
  if(asignadoLider && asignadoLider.perfiles) {
  const shortName = asignadoLider.perfiles.nombre.split(' ')[0];
- dirListStr = `<span class="text-violet-600 font-bold text-sm bg-violet-50/50 px-2.5 py-1 rounded-md border border-violet-100 ">Dirige: ${shortName}</span>`;
+ dirListStr = `<span class="inline-flex items-center bg-violet-50 text-violet-700 border border-violet-200 text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider truncate max-w-[140px] sm:max-w-[160px]" title="Dirige: ${shortName}">Dirige: ${shortName}</span>`;
  }
  
  htmlListString += `
