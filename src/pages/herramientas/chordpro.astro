@@ -3,585 +3,585 @@ import Layout from '../../layouts/Layout.astro';
 ---
 
 <Layout>
-    <div class="max-w-6xl mx-auto px-4 mt-4 md:mt-8 print:hidden w-full">
-        <!-- Navegación Atrás -->
-        <a href="/herramientas" class="inline-flex items-center text-neutral-400 hover:text-white transition-colors mb-6 pb-2 border-b border-transparent hover:border-neutral-600">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 mr-2"><path d="m15 18-6-6 6-6"/></svg>
-            Volver a Herramientas
-        </a>
+ <div class="max-w-6xl mx-auto px-4 mt-4 md:mt-8 print:hidden w-full">
+ <!-- Navegación Atrás -->
+ <a href="/herramientas" class="inline-flex items-center text-neutral-600 hover:text-neutral-900 transition-colors mb-6 pb-2 border-b border-transparent hover:border-neutral-600">
+ <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 mr-2"><path d="m15 18-6-6 6-6"/></svg>
+ Volver a Herramientas
+ </a>
 
-        <!-- Encabezado -->
-        <header class="mb-6">
-            <h1 class="text-3xl md:text-5xl font-extrabold tracking-tight text-white mb-3">
-                Editor & Transpositor <span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400">ChordPro</span>
-            </h1>
-            
-            <!-- Instrucciones para Dummies -->
-            <div class="mt-4 p-4 bg-neutral-800 border-l-4 border-blue-500 rounded-r-xl text-neutral-200 text-sm">
-                <h3 class="font-bold flex items-center gap-2 mb-2 text-white">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg> 
-                    ¿Cómo usar esta herramienta?
-                </h3>
-                <ol class="list-decimal pl-5 space-y-1">
-                    <li>Escribe o pega la letra de tu canción en la caja izquierda.</li>
-                    <li>Escribe el acorde encerrado en corchetes <strong>[ ]</strong> justo antes de la sílaba donde se debe tocar. Ejemplo: <code>[G]Dios es [C]bueno</code>.</li>
-                    <li>Usa los botones centrales para subir o bajar el tono automáticamente.</li>
-                    <li>Copia el resultado de la caja derecha y pégalo en ProPresenter. ¡Listo!</li>
-                </ol>
-            </div>
-        </header>
+ <!-- Encabezado -->
+ <header class="mb-6">
+ <h1 class="text-3xl md:text-5xl font-extrabold tracking-tight text-neutral-900 mb-3">
+ Editor & Transpositor <span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400">ChordPro</span>
+ </h1>
+ 
+ <!-- Instrucciones para Dummies -->
+ <div class="mt-4 p-4 bg-neutral-50 border-l-4 border-blue-500 rounded-r-xl text-neutral-800 text-sm">
+ <h3 class="font-bold flex items-center gap-2 mb-2 text-neutral-900">
+ <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg> 
+ ¿Cómo usar esta herramienta?
+ </h3>
+ <ol class="list-decimal pl-5 space-y-1">
+ <li>Escribe o pega la letra de tu canción en la caja izquierda.</li>
+ <li>Escribe el acorde encerrado en corchetes <strong>[ ]</strong> justo antes de la sílaba donde se debe tocar. Ejemplo: <code>[G]Dios es [C]bueno</code>.</li>
+ <li>Usa los botones centrales para subir o bajar el tono automáticamente.</li>
+ <li>Copia el resultado de la caja derecha y pégalo en ProPresenter. ¡Listo!</li>
+ </ol>
+ </div>
+ </header>
 
-        <!-- Interfaz Grid -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-            <!-- Metadatos para Impresión y Auto-Formatear -->
-            <div class="col-span-1 lg:col-span-2">
-                <div class="grid grid-cols-1 lg:grid-cols-5 gap-3 mb-2">
-                    <input type="text" id="print-titulo" placeholder="Título" class="p-3 bg-neutral-900 border border-neutral-700 rounded-xl text-white font-bold w-full focus:outline-none focus:border-blue-500">
-                    <input type="text" id="print-artista" placeholder="Artista (Opcional)" class="p-3 bg-neutral-900 border border-neutral-700 rounded-xl text-white w-full focus:outline-none focus:border-blue-500">
-                    <input type="text" id="print-tono" placeholder="Tono (Ej: G)" class="p-3 bg-neutral-900 border border-neutral-700 rounded-xl text-white w-full focus:outline-none focus:border-blue-500">
-                    <div class="relative w-full">
-                        <input type="text" id="print-bpm" placeholder="BPM (Ej: 162)" class="p-3 bg-neutral-900 border border-neutral-700 rounded-xl text-white w-full pr-12 focus:outline-none focus:border-blue-500">
-                        <button id="btn-metronomo" class="absolute right-2 top-2 p-1.5 bg-neutral-700 hover:bg-green-600 rounded-lg transition-colors text-white" title="Activar Metrónomo">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-                        </button>
-                    </div>
-                    <button id="btn-autoconvertir" class="w-full px-4 py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2 shadow-lg shadow-purple-500/20">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg> Auto-Formato
-                    </button>
-                </div>
-            </div>
-        </div>
+ <!-- Interfaz Grid -->
+ <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+ <!-- Metadatos para Impresión y Auto-Formatear -->
+ <div class="col-span-1 lg:col-span-2">
+ <div class="grid grid-cols-1 lg:grid-cols-5 gap-3 mb-2">
+ <input type="text" id="print-titulo" placeholder="Título" class="p-3 bg- border border-neutral-200 rounded-xl $2text-white font-bold w-full focus:outline-none focus:border-blue-500">
+ <input type="text" id="print-artista" placeholder="Artista (Opcional)" class="p-3 bg- border border-neutral-200 rounded-xl $2text-white w-full focus:outline-none focus:border-blue-500">
+ <input type="text" id="print-tono" placeholder="Tono (Ej: G)" class="p-3 bg- border border-neutral-200 rounded-xl $2text-white w-full focus:outline-none focus:border-blue-500">
+ <div class="relative w-full">
+ <input type="text" id="print-bpm" placeholder="BPM (Ej: 162)" class="p-3 bg- border border-neutral-200 rounded-xl $2text-white w-full pr-12 focus:outline-none focus:border-blue-500">
+ <button id="btn-metronomo" class="absolute right-2 top-2 p-1.5 bg- hover:bg-green-600 rounded-lg transition-colors $2text-white" title="Activar Metrónomo">
+ <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+ </button>
+ </div>
+ <button id="btn-autoconvertir" class="w-full px-4 py-3 bg- hover:bg-purple-500 $2text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2 shadow-lg shadow-purple-500/20">
+ <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg> Auto-Formato
+ </button>
+ </div>
+ </div>
+ </div>
 
-        <!-- Entrada y Salida Simétricas -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            <div class="flex flex-col h-full">
-                <label class="mb-2 font-medium text-neutral-300 flex-shrink-0">1. Pega tu letra original aquí:</label>
-                <textarea id="input-chordpro" class="w-full h-[500px] p-4 bg-neutral-900 border border-neutral-700 rounded-xl text-neutral-200 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none" placeholder="Ejemplo:&#10;G&#10;Dios es bueno..."></textarea>
-            </div>
-            <div class="flex flex-col h-full">
-                <label class="mb-2 font-medium text-neutral-300 flex-shrink-0">2. Resultado transpuesto (Listo para copiar):</label>
-                <textarea id="output-chordpro" class="w-full h-[500px] p-4 bg-neutral-900 border border-neutral-700 rounded-xl text-neutral-200 font-mono text-sm focus:outline-none resize-none" readonly></textarea>
-            </div>
-        </div>
+ <!-- Entrada y Salida Simétricas -->
+ <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+ <div class="flex flex-col h-full">
+ <label class="mb-2 font-medium text-neutral-700 flex-shrink-0">1. Pega tu letra original aquí:</label>
+ <textarea id="input-chordpro" class="w-full h-[500px] p-4 bg-neutral-50 border border-neutral-300 rounded-xl text-neutral-900 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none" placeholder="Ejemplo:&#10;G&#10;Dios es bueno..."></textarea>
+ </div>
+ <div class="flex flex-col h-full">
+ <label class="mb-2 font-medium text-neutral-700 flex-shrink-0">2. Resultado transpuesto (Listo para copiar):</label>
+ <textarea id="output-chordpro" class="w-full h-[500px] p-4 bg-neutral-50 border border-neutral-300 rounded-xl text-neutral-900 font-mono text-sm focus:outline-none resize-none" readonly></textarea>
+ </div>
+ </div>
 
-        <!-- Barra de Controles -->
-        <div class="flex flex-wrap items-center justify-center gap-3 mt-6 pb-12">
-            <button id="btn-bajar" class="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-white rounded-lg transition font-medium">-1 Semitono</button>
-            <button id="btn-reset" class="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-white rounded-lg transition font-medium">Original</button>
-            <button id="btn-subir" class="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-white rounded-lg transition font-medium">+1 Semitono</button>
-            <div class="w-2 hidden sm:block"></div> <!-- Separador visual -->
-            <button id="btn-copiar" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg transition flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg> 
-                Copiar
-            </button>
-            <button id="btn-atril" class="print:hidden px-6 py-3 bg-neutral-800 hover:bg-neutral-700 text-white font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h20"/><path d="M12 2v20"/><path d="m20 16-4 4-4-4"/><path d="m4 8 4-4 4 4"/></svg> 
-                Modo Atril
-            </button>
-            <button id="btn-imprimir" class="no-print w-full sm:w-auto px-6 py-3 bg-neutral-100 hover:bg-white text-black font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 whitespace-nowrap">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg> 
-                Imprimir PDF
-            </button>
-        </div>
-    </div>
+ <!-- Barra de Controles -->
+ <div class="flex flex-wrap items-center justify-center gap-3 mt-6 pb-12">
+ <button id="btn-bajar" class="px-4 py-2 bg- hover:bg-neutral-100 border border-neutral-200 $2text-white rounded-lg transition font-medium">-1 Semitono</button>
+ <button id="btn-reset" class="px-4 py-2 bg- hover:bg-neutral-100 border border-neutral-200 $2text-white rounded-lg transition font-medium">Original</button>
+ <button id="btn-subir" class="px-4 py-2 bg- hover:bg-neutral-100 border border-neutral-200 $2text-white rounded-lg transition font-medium">+1 Semitono</button>
+ <div class="w-2 hidden sm:block"></div> <!-- Separador visual -->
+ <button id="btn-copiar" class="px-6 py-2 bg- hover:bg-blue-500 $2text-white font-bold rounded-lg transition flex items-center gap-2">
+ <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg> 
+ Copiar
+ </button>
+ <button id="btn-atril" class="print:hidden px-6 py-3 bg- hover:bg-neutral-100 $2text-white font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2">
+ <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h20"/><path d="M12 2v20"/><path d="m20 16-4 4-4-4"/><path d="m4 8 4-4 4 4"/></svg> 
+ Modo Atril
+ </button>
+ <button id="btn-imprimir" class="no-print w-full sm:w-auto px-6 py-3 bg-neutral-100 hover:bg-white text-black font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 whitespace-nowrap">
+ <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg> 
+ Imprimir PDF
+ </button>
+ </div>
+ </div>
 
-    <!-- Contenedor Modo Atril -->
-    <div id="stage-mode-container" class="hidden fixed inset-0 bg-black text-white z-[9999] overflow-y-auto px-4 py-8 sm:p-12 font-sans">
-        <button id="btn-cerrar-atril" class="fixed top-4 right-4 bg-red-600/20 hover:bg-red-600 text-red-500 hover:text-white p-2 rounded-full transition-all backdrop-blur-md">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-        </button>
-        <div class="max-w-4xl mx-auto">
-            <h1 id="stage-titulo" class="text-4xl sm:text-6xl font-black uppercase text-neutral-200 mb-8 border-b border-neutral-800 pb-4 tracking-tight"></h1>
-            <div id="stage-letra" class="text-xl sm:text-2xl leading-relaxed font-medium"></div>
-        </div>
-    </div>
+ <!-- Contenedor Modo Atril -->
+ <div id="stage-mode-container" class="hidden fixed inset-0 bg-black text-white z-[9999] overflow-y-auto px-4 py-8 sm:p-12 font-sans">
+ <button id="btn-cerrar-atril" class="fixed top-4 right-4 bg-/20 hover:bg-red-600 text-red-500 hover:$2text-white p-2 rounded-full transition-all backdrop-blur-md">
+ <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+ </button>
+ <div class="max-w-4xl mx-auto">
+ <h1 id="stage-titulo" class="text-4xl sm:text-6xl font-black uppercase text-neutral-800 mb-8 border-b border-neutral-200 pb-4 tracking-tight"></h1>
+ <div id="stage-letra" class="text-xl sm:text-2xl leading-relaxed font-medium"></div>
+ </div>
+ </div>
 </Layout>
 
 <style is:global>
 @media print {
-  .print\:hidden { display: none !important; }
+ .print\:hidden { display: none !important; }
 }
 </style>
 
 <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const notas = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-        const bemoles: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
-        
-        const input = document.getElementById('input-chordpro') as HTMLTextAreaElement;
-        const output = document.getElementById('output-chordpro') as HTMLTextAreaElement;
-        const btnSubir = document.getElementById('btn-subir');
-        const btnBajar = document.getElementById('btn-bajar');
-        const btnReset = document.getElementById('btn-reset');
-        const btnCopiar = document.getElementById('btn-copiar');
-        const btnAuto = document.getElementById('btn-autoconvertir');
-        
-        let pasosActuales = 0;
-        let textoEnMemoria = '';
+ document.addEventListener('DOMContentLoaded', () => {
+ const notas = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+ const bemoles: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
+ 
+ const input = document.getElementById('input-chordpro') as HTMLTextAreaElement;
+ const output = document.getElementById('output-chordpro') as HTMLTextAreaElement;
+ const btnSubir = document.getElementById('btn-subir');
+ const btnBajar = document.getElementById('btn-bajar');
+ const btnReset = document.getElementById('btn-reset');
+ const btnCopiar = document.getElementById('btn-copiar');
+ const btnAuto = document.getElementById('btn-autoconvertir');
+ 
+ let pasosActuales = 0;
+ let textoEnMemoria = '';
 
-        // Regex avanzado: Soporta C2, D/F#, Gsus4, Cmaj7, etc.
-        function esLineaDeAcordes(linea: string) {
-            if (linea.trim().length === 0) return false;
-            const regexAcordes = /^[A-G][#b]?(m|maj|min|sus|dim|aug|[0-9])*(?:\/[A-G][#b]?)?$/i;
-            const tokens = linea.trim().split(/\s+/);
-            const tokensValidos = tokens.filter(t => regexAcordes.test(t));
-            return tokens.length > 0 && (tokensValidos.length / tokens.length) >= 0.6;
-        }
+ // Regex avanzado: Soporta C2, D/F#, Gsus4, Cmaj7, etc.
+ function esLineaDeAcordes(linea: string) {
+ if (linea.trim().length === 0) return false;
+ const regexAcordes = /^[A-G][#b]?(m|maj|min|sus|dim|aug|[0-9])*(?:\/[A-G][#b]?)?$/i;
+ const tokens = linea.trim().split(/\s+/);
+ const tokensValidos = tokens.filter(t => regexAcordes.test(t));
+ return tokens.length > 0 && (tokensValidos.length / tokens.length) >= 0.6;
+ }
 
-        function autoConvertirAChordPro(textoOriginal: string) {
-            const lineas = textoOriginal.split('\n');
-            let resultado = [];
-            let i = 0;
-            
-            while (i < lineas.length) {
-                const lineaActual = lineas[i];
-                const lineaSiguiente = i + 1 < lineas.length ? lineas[i + 1] : null;
-                
-                if (esLineaDeAcordes(lineaActual)) {
-                    // 1. Extraer acordes y sus posiciones exactas
-                    const regexCaptura = /([A-G][^\s]*)/g;
-                    let match;
-                    const acordes = [];
-                    while ((match = regexCaptura.exec(lineaActual)) !== null) {
-                        acordes.push({ acorde: match[1], index: match.index });
-                    }
-                    
-                    // 2. Escenario A: Hay letra debajo
-                    if (lineaSiguiente !== null && !esLineaDeAcordes(lineaSiguiente) && lineaSiguiente.trim().length > 0) {
-                        let letra = lineaSiguiente.trimEnd();
-                        
-                        // Inserción Inversa (de derecha a izquierda) para no romper los índices
-                        for (let j = acordes.length - 1; j >= 0; j--) {
-                            const { acorde, index } = acordes[j];
-                            // Si el acorde va después de que termina la letra, rellenar con espacios
-                            if (index > letra.length) letra = letra.padEnd(index, ' ');
-                            letra = letra.slice(0, index) + `[${acorde}]` + letra.slice(index);
-                        }
-                        resultado.push(letra);
-                        i += 2; // Procesamos 2 líneas de un golpe
-                    } 
-                    // 3. Escenario B: Intros o acordes huérfanos (sin letra abajo)
-                    else {
-                        let lineaSoloAcordes = lineaActual;
-                        for (let j = acordes.length - 1; j >= 0; j--) {
-                            const { acorde, index } = acordes[j];
-                            lineaSoloAcordes = lineaSoloAcordes.slice(0, index) + `[${acorde}]` + lineaSoloAcordes.slice(index + acorde.length);
-                        }
-                        resultado.push(lineaSoloAcordes);
-                        i++;
-                    }
-                } else {
-                    // Es una línea normal de texto (o en blanco)
-                    resultado.push(lineaActual);
-                    i++;
-                }
-            }
-            return resultado.join('\n');
-        }
+ function autoConvertirAChordPro(textoOriginal: string) {
+ const lineas = textoOriginal.split('\n');
+ let resultado = [];
+ let i = 0;
+ 
+ while (i < lineas.length) {
+ const lineaActual = lineas[i];
+ const lineaSiguiente = i + 1 < lineas.length ? lineas[i + 1] : null;
+ 
+ if (esLineaDeAcordes(lineaActual)) {
+ // 1. Extraer acordes y sus posiciones exactas
+ const regexCaptura = /([A-G][^\s]*)/g;
+ let match;
+ const acordes = [];
+ while ((match = regexCaptura.exec(lineaActual)) !== null) {
+ acordes.push({ acorde: match[1], index: match.index });
+ }
+ 
+ // 2. Escenario A: Hay letra debajo
+ if (lineaSiguiente !== null && !esLineaDeAcordes(lineaSiguiente) && lineaSiguiente.trim().length > 0) {
+ let letra = lineaSiguiente.trimEnd();
+ 
+ // Inserción Inversa (de derecha a izquierda) para no romper los índices
+ for (let j = acordes.length - 1; j >= 0; j--) {
+ const { acorde, index } = acordes[j];
+ // Si el acorde va después de que termina la letra, rellenar con espacios
+ if (index > letra.length) letra = letra.padEnd(index, ' ');
+ letra = letra.slice(0, index) + `[${acorde}]` + letra.slice(index);
+ }
+ resultado.push(letra);
+ i += 2; // Procesamos 2 líneas de un golpe
+ } 
+ // 3. Escenario B: Intros o acordes huérfanos (sin letra abajo)
+ else {
+ let lineaSoloAcordes = lineaActual;
+ for (let j = acordes.length - 1; j >= 0; j--) {
+ const { acorde, index } = acordes[j];
+ lineaSoloAcordes = lineaSoloAcordes.slice(0, index) + `[${acorde}]` + lineaSoloAcordes.slice(index + acorde.length);
+ }
+ resultado.push(lineaSoloAcordes);
+ i++;
+ }
+ } else {
+ // Es una línea normal de texto (o en blanco)
+ resultado.push(lineaActual);
+ i++;
+ }
+ }
+ return resultado.join('\n');
+ }
 
-        function transponerAcorde(acorde: string, pasos: number) {
-            // Regex atrapa raiz y modificador. Ej: (C#)(m7)
-            const match = acorde.match(/^([A-G][#b]?)(.*)$/);
-            if (!match) return acorde; // Falla segura si no es acorde
-            
-            let raiz = match[1];
-            const mod = match[2];
-            
-            if (bemoles[raiz]) raiz = bemoles[raiz]; // Normalizar bemoles
-            
-            const index = notas.indexOf(raiz);
-            if (index === -1) return acorde; // Si es un acorde ilegible, devolverlo intacto
-            
-            // Fórmula mágica para mover en el array circular (protegida contra negativos grandes)
-            let nuevoIndex = (index + pasos) % 12;
-            if (nuevoIndex < 0) nuevoIndex += 12;
-            
-            return notas[nuevoIndex] + mod;
-        }
+ function transponerAcorde(acorde: string, pasos: number) {
+ // Regex atrapa raiz y modificador. Ej: (C#)(m7)
+ const match = acorde.match(/^([A-G][#b]?)(.*)$/);
+ if (!match) return acorde; // Falla segura si no es acorde
+ 
+ let raiz = match[1];
+ const mod = match[2];
+ 
+ if (bemoles[raiz]) raiz = bemoles[raiz]; // Normalizar bemoles
+ 
+ const index = notas.indexOf(raiz);
+ if (index === -1) return acorde; // Si es un acorde ilegible, devolverlo intacto
+ 
+ // Fórmula mágica para mover en el array circular (protegida contra negativos grandes)
+ let nuevoIndex = (index + pasos) % 12;
+ if (nuevoIndex < 0) nuevoIndex += 12;
+ 
+ return notas[nuevoIndex] + mod;
+ }
 
-        function procesarTexto() {
-            if (!input || !output) return;
-            const texto = textoEnMemoria || input.value;
-            
-            if (pasosActuales === 0) {
-                output.value = texto;
-                return;
-            }
-            
-            // Buscar todo lo que esté entre corchetes [Acorde]
-            const regex = /\[(.*?)\]/g;
-            output.value = texto.replace(regex, (match, p1) => {
-                return '[' + transponerAcorde(p1, pasosActuales) + ']';
-            });
-        }
+ function procesarTexto() {
+ if (!input || !output) return;
+ const texto = textoEnMemoria || input.value;
+ 
+ if (pasosActuales === 0) {
+ output.value = texto;
+ return;
+ }
+ 
+ // Buscar todo lo que esté entre corchetes [Acorde]
+ const regex = /\[(.*?)\]/g;
+ output.value = texto.replace(regex, (match, p1) => {
+ return '[' + transponerAcorde(p1, pasosActuales) + ']';
+ });
+ }
 
-        if (btnSubir) {
-            btnSubir.addEventListener('click', () => {
-                pasosActuales++;
-                procesarTexto();
-            });
-        }
+ if (btnSubir) {
+ btnSubir.addEventListener('click', () => {
+ pasosActuales++;
+ procesarTexto();
+ });
+ }
 
-        if (btnBajar) {
-            btnBajar.addEventListener('click', () => {
-                pasosActuales--;
-                procesarTexto();
-            });
-        }
+ if (btnBajar) {
+ btnBajar.addEventListener('click', () => {
+ pasosActuales--;
+ procesarTexto();
+ });
+ }
 
-        if (btnReset) {
-            btnReset.addEventListener('click', () => {
-                pasosActuales = 0;
-                procesarTexto();
-            });
-        }
+ if (btnReset) {
+ btnReset.addEventListener('click', () => {
+ pasosActuales = 0;
+ procesarTexto();
+ });
+ }
 
-        if (input) {
-            input.addEventListener('input', () => {
-                textoEnMemoria = ''; // Resetea la memoria al editar a mano
-                pasosActuales = 0; // Resetear tonos si el usuario cambia el input
-                procesarTexto();
-            });
-        }
+ if (input) {
+ input.addEventListener('input', () => {
+ textoEnMemoria = ''; // Resetea la memoria al editar a mano
+ pasosActuales = 0; // Resetear tonos si el usuario cambia el input
+ procesarTexto();
+ });
+ }
 
-        if (btnAuto && input) {
-            btnAuto.addEventListener('click', () => {
-                if (input.value.trim() === '') return;
-                textoEnMemoria = autoConvertirAChordPro(input.value); // Guarda el formato en memoria
-                pasosActuales = 0; // Reiniciar transposición
-                procesarTexto(); // Forzar procesamiento en el panel derecho
-            });
-        }
+ if (btnAuto && input) {
+ btnAuto.addEventListener('click', () => {
+ if (input.value.trim() === '') return;
+ textoEnMemoria = autoConvertirAChordPro(input.value); // Guarda el formato en memoria
+ pasosActuales = 0; // Reiniciar transposición
+ procesarTexto(); // Forzar procesamiento en el panel derecho
+ });
+ }
 
-        // Lógica de copiado
-        if (btnCopiar && output) {
-            btnCopiar.addEventListener('click', async (e) => {
-                try {
-                    await navigator.clipboard.writeText(output.value);
-                    const btn = e.currentTarget as HTMLButtonElement;
-                    const originalText = btn.innerHTML;
-                    
-                    btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> ¡Copiado!';
-                    btn.classList.replace('bg-blue-600', 'bg-emerald-600');
-                    btn.classList.replace('hover:bg-blue-500', 'hover:bg-emerald-500');
-                    
-                    setTimeout(() => {
-                        btn.innerHTML = originalText;
-                        btn.classList.replace('bg-emerald-600', 'bg-blue-600');
-                        btn.classList.replace('hover:bg-emerald-500', 'hover:bg-blue-500');
-                    }, 2000);
-                } catch (err) {
-                    alert('Error al copiar al portapapeles');
-                }
-            });
-        }
+ // Lógica de copiado
+ if (btnCopiar && output) {
+ btnCopiar.addEventListener('click', async (e) => {
+ try {
+ await navigator.clipboard.writeText(output.value);
+ const btn = e.currentTarget as HTMLButtonElement;
+ const originalText = btn.innerHTML;
+ 
+ btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> ¡Copiado!';
+ btn.classList.replace('bg-blue-600', 'bg-emerald-600');
+ btn.classList.replace('hover:bg-blue-500', 'hover:bg-emerald-500');
+ 
+ setTimeout(() => {
+ btn.innerHTML = originalText;
+ btn.classList.replace('bg-emerald-600', 'bg-blue-600');
+ btn.classList.replace('hover:bg-emerald-500', 'hover:bg-blue-500');
+ }, 2000);
+ } catch (err) {
+ alert('Error al copiar al portapapeles');
+ }
+ });
+ }
 
-        document.getElementById('btn-imprimir')?.addEventListener('click', () => {
-            const inputTitulo = document.getElementById('print-titulo') as HTMLInputElement;
-            const inputArtista = document.getElementById('print-artista') as HTMLInputElement;
-            const inputTono = document.getElementById('print-tono') as HTMLInputElement;
-            const inputBpm = document.getElementById('print-bpm') as HTMLInputElement;
-            
-            const titulo = inputTitulo?.value.trim() || 'SIN TÍTULO';
-            const artista = inputArtista?.value.trim() || '';
-            const tono = inputTono?.value.trim() || '';
-            const bpm = inputBpm?.value.trim() || '';
-            
-            const outputBox = (document.getElementById('output-chordpro') as HTMLTextAreaElement)?.value;
-            const inputBox = (document.getElementById('input-chordpro') as HTMLTextAreaElement)?.value;
-            
-            // Tomar el texto del output (procesado). Si está vacío, tomar el input.
-            let contenido = (outputBox && outputBox.trim() !== '') ? outputBox : (inputBox || '');
-            
-            // Defensa: Si el texto no tiene corchetes, forzar auto-formateo en memoria para que no salga plano
-            if (!contenido.includes('[') && typeof (window as any).autoConvertirAChordPro === 'function') {
-                contenido = (window as any).autoConvertirAChordPro(contenido);
-            }
+ document.getElementById('btn-imprimir')?.addEventListener('click', () => {
+ const inputTitulo = document.getElementById('print-titulo') as HTMLInputElement;
+ const inputArtista = document.getElementById('print-artista') as HTMLInputElement;
+ const inputTono = document.getElementById('print-tono') as HTMLInputElement;
+ const inputBpm = document.getElementById('print-bpm') as HTMLInputElement;
+ 
+ const titulo = inputTitulo?.value.trim() || 'SIN TÍTULO';
+ const artista = inputArtista?.value.trim() || '';
+ const tono = inputTono?.value.trim() || '';
+ const bpm = inputBpm?.value.trim() || '';
+ 
+ const outputBox = (document.getElementById('output-chordpro') as HTMLTextAreaElement)?.value;
+ const inputBox = (document.getElementById('input-chordpro') as HTMLTextAreaElement)?.value;
+ 
+ // Tomar el texto del output (procesado). Si está vacío, tomar el input.
+ let contenido = (outputBox && outputBox.trim() !== '') ? outputBox : (inputBox || '');
+ 
+ // Defensa: Si el texto no tiene corchetes, forzar auto-formateo en memoria para que no salga plano
+ if (!contenido.includes('[') && typeof (window as any).autoConvertirAChordPro === 'function') {
+ contenido = (window as any).autoConvertirAChordPro(contenido);
+ }
 
-            const lineas = contenido.split('\n');
-            const totalLines = lineas.length;
+ const lineas = contenido.split('\n');
+ const totalLines = lineas.length;
 
-            // MOTOR DE ESCALA Y MÁRGENES ANTI-NAVEGADOR
-            let rootFontSize = '16px';
-            let bodyPadding = '15mm 20mm'; // El padding reemplaza el margin de @page
+ // MOTOR DE ESCALA Y MÁRGENES ANTI-NAVEGADOR
+ let rootFontSize = '16px';
+ let bodyPadding = '15mm 20mm'; // El padding reemplaza el margin de @page
 
-            if (totalLines > 35) { rootFontSize = '14px'; bodyPadding = '12mm 15mm'; }
-            if (totalLines > 55) { rootFontSize = '11.5px'; bodyPadding = '10mm 12mm'; }
-            if (totalLines > 75) { rootFontSize = '9.5px'; bodyPadding = '8mm 10mm'; }
+ if (totalLines > 35) { rootFontSize = '14px'; bodyPadding = '12mm 15mm'; }
+ if (totalLines > 55) { rootFontSize = '11.5px'; bodyPadding = '10mm 12mm'; }
+ if (totalLines > 75) { rootFontSize = '9.5px'; bodyPadding = '8mm 10mm'; }
 
-            let bodyHtml = '';
-            let inSection = false;
+ let bodyHtml = '';
+ let inSection = false;
 
-            lineas.forEach(linea => {
-                if (linea.trim() === '') {
-                    if (inSection) bodyHtml += `<div class="spacer"></div>`;
-                    return;
-                }
+ lineas.forEach(linea => {
+ if (linea.trim() === '') {
+ if (inSection) bodyHtml += `<div class="spacer"></div>`;
+ return;
+ }
 
-                const cleanText = linea.replace(/\[.*?\]/g, '').trim();
-                const regexSeccion = /^(VERSO\s*\d*|CORO\s*\d*|PUENTE\s*\d*|INTRO\s*\d*|OUTRO|FINAL|PRE-CORO|PRECORO|ESTR|INSTRUMENTAL|TAG)[\s\:\-]*(.*)$/i;
-                const matchSeccion = cleanText.match(regexSeccion);
-                let lineaRestante = linea;
+ const cleanText = linea.replace(/\[.*?\]/g, '').trim();
+ const regexSeccion = /^(VERSO\s*\d*|CORO\s*\d*|PUENTE\s*\d*|INTRO\s*\d*|OUTRO|FINAL|PRE-CORO|PRECORO|ESTR|INSTRUMENTAL|TAG)[\s\:\-]*(.*)$/i;
+ const matchSeccion = cleanText.match(regexSeccion);
+ let lineaRestante = linea;
 
-                if (matchSeccion) {
-                    if (inSection) bodyHtml += `</div></div>`;
-                    const nombreSeccion = matchSeccion[1].toUpperCase();
-                    const textoDespues = matchSeccion[2];
-                    
-                    bodyHtml += `<div class="song-section"><div class="section-label">${nombreSeccion}</div><div class="section-content">`;
-                    inSection = true;
+ if (matchSeccion) {
+ if (inSection) bodyHtml += `</div></div>`;
+ const nombreSeccion = matchSeccion[1].toUpperCase();
+ const textoDespues = matchSeccion[2];
+ 
+ bodyHtml += `<div class="song-section"><div class="section-label">${nombreSeccion}</div><div class="section-content">`;
+ inSection = true;
 
-                    let content = '';
-                    let inBracket = false;
-                    let dropped = 0;
-                    let charsToDrop = cleanText.length - textoDespues.length;
-                    for (let i = 0; i < linea.length; i++) {
-                        let char = linea[i];
-                        if (char === '[') inBracket = true;
+ let content = '';
+ let inBracket = false;
+ let dropped = 0;
+ let charsToDrop = cleanText.length - textoDespues.length;
+ for (let i = 0; i < linea.length; i++) {
+ let char = linea[i];
+ if (char === '[') inBracket = true;
 
-                        if (inBracket) {
-                            content += char;
-                            if (char === ']') inBracket = false;
-                        } else {
-                            if (dropped < charsToDrop) dropped++;
-                            else content += char;
-                        }
-                    }
-                    lineaRestante = content.trim();
-                    
-                    // FIX CRÍTICO: Si no quedó texto (ej. la línea solo decía "INTRO"), 
-                    // NO retornamos (return), simplemente saltamos el renderizado de acordes para esta línea.
-                    if (lineaRestante === '') return; 
-                    
-                    // FIX: Si solo quedaron acordes huérfanos sin texto (ej: [G] [C])
-                    if (/^(\s*\[.*?\]\s*)+$/.test(lineaRestante)) {
-                        bodyHtml += `<div class="chord-line">`;
-                        const partes = lineaRestante.split(/\[(.*?)\]/);
-                        for (let j = 1; j < partes.length; j += 2) {
-                            bodyHtml += `<div class="chord-pair"><div class="chord">${partes[j]}</div><div class="lyric"> </div></div>`;
-                        }
-                        bodyHtml += `</div>`;
-                        return;
-                    }
-                } else if (!inSection) {
-                    bodyHtml += `<div class="song-section"><div class="section-label"></div><div class="section-content">`;
-                    inSection = true;
-                }
+ if (inBracket) {
+ content += char;
+ if (char === ']') inBracket = false;
+ } else {
+ if (dropped < charsToDrop) dropped++;
+ else content += char;
+ }
+ }
+ lineaRestante = content.trim();
+ 
+ // FIX CRÍTICO: Si no quedó texto (ej. la línea solo decía "INTRO"), 
+ // NO retornamos (return), simplemente saltamos el renderizado de acordes para esta línea.
+ if (lineaRestante === '') return; 
+ 
+ // FIX: Si solo quedaron acordes huérfanos sin texto (ej: [G] [C])
+ if (/^(\s*\[.*?\]\s*)+$/.test(lineaRestante)) {
+ bodyHtml += `<div class="chord-line">`;
+ const partes = lineaRestante.split(/\[(.*?)\]/);
+ for (let j = 1; j < partes.length; j += 2) {
+ bodyHtml += `<div class="chord-pair"><div class="chord">${partes[j]}</div><div class="lyric"> </div></div>`;
+ }
+ bodyHtml += `</div>`;
+ return;
+ }
+ } else if (!inSection) {
+ bodyHtml += `<div class="song-section"><div class="section-label"></div><div class="section-content">`;
+ inSection = true;
+ }
 
-                // Renderizar Acordes y Letra
-                if (lineaRestante.includes('[')) {
-                    bodyHtml += `<div class="chord-line">`;
-                    const partes = lineaRestante.split(/\[(.*?)\]/);
-                    if (partes[0]) bodyHtml += `<div class="chord-pair"><div class="chord"></div><div class="lyric">${partes[0]}</div></div>`;
-                    
-                    for (let i = 1; i < partes.length; i += 2) {
-                        const acorde = partes[i];
-                        const letra = partes[i+1] || '';
-                        bodyHtml += `<div class="chord-pair"><div class="chord">${acorde}</div><div class="lyric">${letra}</div></div>`;
-                    }
-                    bodyHtml += `</div>`;
-                } else {
-                    bodyHtml += `<div class="lyric-line">${lineaRestante}</div>`;
-                }
-            });
+ // Renderizar Acordes y Letra
+ if (lineaRestante.includes('[')) {
+ bodyHtml += `<div class="chord-line">`;
+ const partes = lineaRestante.split(/\[(.*?)\]/);
+ if (partes[0]) bodyHtml += `<div class="chord-pair"><div class="chord"></div><div class="lyric">${partes[0]}</div></div>`;
+ 
+ for (let i = 1; i < partes.length; i += 2) {
+ const acorde = partes[i];
+ const letra = partes[i+1] || '';
+ bodyHtml += `<div class="chord-pair"><div class="chord">${acorde}</div><div class="lyric">${letra}</div></div>`;
+ }
+ bodyHtml += `</div>`;
+ } else {
+ bodyHtml += `<div class="lyric-line">${lineaRestante}</div>`;
+ }
+ });
 
-            if (inSection) bodyHtml += `</div></div>`;
+ if (inSection) bodyHtml += `</div></div>`;
 
-            // GENERAR VENTANA Y APLICAR CSS
-            const printWindow = window.open('', '_blank');
-            if (!printWindow) {
-                alert("Por favor, permite las ventanas emergentes (pop-ups) para imprimir.");
-                return;
-            }
+ // GENERAR VENTANA Y APLICAR CSS
+ const printWindow = window.open('', '_blank');
+ if (!printWindow) {
+ alert("Por favor, permite las ventanas emergentes (pop-ups) para imprimir.");
+ return;
+ }
 
-            printWindow.document.write(`
+ printWindow.document.write(`
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="UTF-8">
-    <title>${titulo} - Acordes</title>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,500;0,700;0,800;1,500&display=swap" rel="stylesheet">
-    <style>
-      html { font-size: ${rootFontSize}; }
-      @page { margin: 0; size: letter; }
-      body { font-family: 'Montserrat', Arial, sans-serif; color: black; background: white; margin: 0; padding: ${bodyPadding}; box-sizing: border-box; }
-      
-      header { border-bottom: 0.2rem solid black; display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem; padding-bottom: 0.5rem; }
-      .header-left h1 { font-weight: 800; font-size: 2.2rem; text-transform: uppercase; margin: 0; letter-spacing: -0.02rem; }
-      .header-left h2 { font-weight: 500; font-style: italic; color: #444; margin: 0.3rem 0 0 0; }
-      .header-right { text-align: right; font-weight: 800; font-size: 1rem; }
-      .header-right div { margin-bottom: 0.2rem; }
-      
-      .song-section { display: flex; width: 100%; page-break-inside: avoid; margin-bottom: 1.5rem; }
-      .section-label { font-weight: 800; font-size: 0.95rem; width: 8.5rem; flex-shrink: 0; padding-right: 1rem; }
-      .section-content { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
-      
-      .chord-line { display: flex; flex-wrap: wrap; align-items: flex-end; margin-bottom: 0.3rem; }
-      .chord-pair { display: inline-flex; flex-direction: column; justify-content: flex-end; margin-right: 0.15rem; }
-      
-      .chord { font-weight: 800; font-size: 0.9rem; min-height: 1rem; margin-bottom: 0.1rem; color: #000; }
-      .lyric { font-weight: 500; font-size: 1.1rem; white-space: pre; color: #111; }
-      .lyric-line { font-weight: 500; font-size: 1.1rem; margin-bottom: 0.3rem; white-space: pre-wrap; color: #111; }
-      .spacer { height: 1rem; }
-    </style>
-  </head>
-  <body>
-    <header>
-      <div class="header-left">
-        <h1>${titulo}</h1>
-        ${artista ? `<h2>${artista}</h2>` : ''}
-      </div>
-      <div class="header-right">
-        ${tono ? `<div>Tonalidad de ${tono}</div>` : ''}
-        ${bpm ? `<div>${bpm}</div>` : ''}
-      </div>
-    </header>
-    <main>${bodyHtml}</main>
-  </body>
+ <head>
+ <meta charset="UTF-8">
+ <title>${titulo} - Acordes</title>
+ <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,500;0,700;0,800;1,500&display=swap" rel="stylesheet">
+ <style>
+ html { font-size: ${rootFontSize}; }
+ @page { margin: 0; size: letter; }
+ body { font-family: 'Montserrat', Arial, sans-serif; color: black; background: white; margin: 0; padding: ${bodyPadding}; box-sizing: border-box; }
+ 
+ header { border-bottom: 0.2rem solid black; display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem; padding-bottom: 0.5rem; }
+ .header-left h1 { font-weight: 800; font-size: 2.2rem; text-transform: uppercase; margin: 0; letter-spacing: -0.02rem; }
+ .header-left h2 { font-weight: 500; font-style: italic; color: #444; margin: 0.3rem 0 0 0; }
+ .header-right { text-align: right; font-weight: 800; font-size: 1rem; }
+ .header-right div { margin-bottom: 0.2rem; }
+ 
+ .song-section { display: flex; width: 100%; page-break-inside: avoid; margin-bottom: 1.5rem; }
+ .section-label { font-weight: 800; font-size: 0.95rem; width: 8.5rem; flex-shrink: 0; padding-right: 1rem; }
+ .section-content { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
+ 
+ .chord-line { display: flex; flex-wrap: wrap; align-items: flex-end; margin-bottom: 0.3rem; }
+ .chord-pair { display: inline-flex; flex-direction: column; justify-content: flex-end; margin-right: 0.15rem; }
+ 
+ .chord { font-weight: 800; font-size: 0.9rem; min-height: 1rem; margin-bottom: 0.1rem; color: #000; }
+ .lyric { font-weight: 500; font-size: 1.1rem; white-space: pre; color: #111; }
+ .lyric-line { font-weight: 500; font-size: 1.1rem; margin-bottom: 0.3rem; white-space: pre-wrap; color: #111; }
+ .spacer { height: 1rem; }
+ </style>
+ </head>
+ <body>
+ <header>
+ <div class="header-left">
+ <h1>${titulo}</h1>
+ ${artista ? `<h2>${artista}</h2>` : ''}
+ </div>
+ <div class="header-right">
+ ${tono ? `<div>Tonalidad de ${tono}</div>` : ''}
+ ${bpm ? `<div>${bpm}</div>` : ''}
+ </div>
+ </header>
+ <main>${bodyHtml}</main>
+ </body>
 </html>
-            `);
+ `);
 
-            printWindow.document.close();
-            printWindow.focus();
-            setTimeout(() => { printWindow.print(); printWindow.close(); }, 1200);
-        });
+ printWindow.document.close();
+ printWindow.focus();
+ setTimeout(() => { printWindow.print(); printWindow.close(); }, 1200);
+ });
 
-        // ---------------- METRÓNOMO AUDIO API ---------------- //
-        let audioCtx: AudioContext | null = null;
-        let metronomeInterval: NodeJS.Timeout | null = null;
-        let isPlaying = false;
-        const btnMetronomo = document.getElementById('btn-metronomo');
-        const inputBpm = document.getElementById('print-bpm') as HTMLInputElement;
+ // ---------------- METRÓNOMO AUDIO API ---------------- //
+ let audioCtx: AudioContext | null = null;
+ let metronomeInterval: NodeJS.Timeout | null = null;
+ let isPlaying = false;
+ const btnMetronomo = document.getElementById('btn-metronomo');
+ const inputBpm = document.getElementById('print-bpm') as HTMLInputElement;
 
-        function playClick() {
-            if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            
-            osc.frequency.value = 800; // Tono del click
-            osc.type = 'sine';
-            gain.gain.setValueAtTime(1, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
-            
-            osc.start(audioCtx.currentTime);
-            osc.stop(audioCtx.currentTime + 0.1);
-        }
+ function playClick() {
+ if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+ const osc = audioCtx.createOscillator();
+ const gain = audioCtx.createGain();
+ osc.connect(gain);
+ gain.connect(audioCtx.destination);
+ 
+ osc.frequency.value = 800; // Tono del click
+ osc.type = 'sine';
+ gain.gain.setValueAtTime(1, audioCtx.currentTime);
+ gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+ 
+ osc.start(audioCtx.currentTime);
+ osc.stop(audioCtx.currentTime + 0.1);
+ }
 
-        btnMetronomo?.addEventListener('click', () => {
-            if (isPlaying) {
-                if (metronomeInterval) clearInterval(metronomeInterval);
-                btnMetronomo.classList.replace('bg-green-600', 'bg-neutral-700');
-                btnMetronomo.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`;
-                isPlaying = false;
-            } else {
-                // Extraer el número del BPM usando Regex
-                const bpmTexto = inputBpm.value;
-                const match = bpmTexto.match(/\b([3-9]\d|[1-2]\d{2})\b/);
-                const bpm = match ? parseInt(match[0]) : 120; // Default 120 si no encuentra
-                const msPerBeat = 60000 / bpm;
+ btnMetronomo?.addEventListener('click', () => {
+ if (isPlaying) {
+ if (metronomeInterval) clearInterval(metronomeInterval);
+ btnMetronomo.classList.replace('bg-green-600', 'bg-neutral-100');
+ btnMetronomo.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`;
+ isPlaying = false;
+ } else {
+ // Extraer el número del BPM usando Regex
+ const bpmTexto = inputBpm.value;
+ const match = bpmTexto.match(/\b([3-9]\d|[1-2]\d{2})\b/);
+ const bpm = match ? parseInt(match[0]) : 120; // Default 120 si no encuentra
+ const msPerBeat = 60000 / bpm;
 
-                // Reanudar contexto de audio (requerido por navegadores)
-                if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-                if (audioCtx.state === 'suspended') audioCtx.resume();
-                
-                playClick(); // Primer click inmediato
-                metronomeInterval = setInterval(playClick, msPerBeat);
-                
-                btnMetronomo.classList.replace('bg-neutral-700', 'bg-green-600');
-                btnMetronomo.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; 
-                isPlaying = true;
-            }
-        });
+ // Reanudar contexto de audio (requerido por navegadores)
+ if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+ if (audioCtx.state === 'suspended') audioCtx.resume();
+ 
+ playClick(); // Primer click inmediato
+ metronomeInterval = setInterval(playClick, msPerBeat);
+ 
+ btnMetronomo.classList.replace('bg-neutral-100', 'bg-green-600');
+ btnMetronomo.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; 
+ isPlaying = true;
+ }
+ });
 
-        // ---------------- MODO ATRIL (STAGE DISPLAY) ---------------- //
-        let wakeLock: any = null;
-        const stageContainer = document.getElementById('stage-mode-container');
-        const btnCerrarAtril = document.getElementById('btn-cerrar-atril');
+ // ---------------- MODO ATRIL (STAGE DISPLAY) ---------------- //
+ let wakeLock: any = null;
+ const stageContainer = document.getElementById('stage-mode-container');
+ const btnCerrarAtril = document.getElementById('btn-cerrar-atril');
 
-        async function activarWakeLock() {
-            try {
-                if ('wakeLock' in navigator) {
-                    wakeLock = await (navigator as any).wakeLock.request('screen');
-                }
-            } catch (err) { console.log('WakeLock no soportado', err); }
-        }
+ async function activarWakeLock() {
+ try {
+ if ('wakeLock' in navigator) {
+ wakeLock = await (navigator as any).wakeLock.request('screen');
+ }
+ } catch (err) { console.log('WakeLock no soportado', err); }
+ }
 
-        function liberarWakeLock() {
-            if (wakeLock !== null) { 
-                wakeLock.release(); 
-                wakeLock = null; 
-            }
-        }
+ function liberarWakeLock() {
+ if (wakeLock !== null) { 
+ wakeLock.release(); 
+ wakeLock = null; 
+ }
+ }
 
-        document.getElementById('btn-atril')?.addEventListener('click', async () => {
-            const titulo = (document.getElementById('print-titulo') as HTMLInputElement)?.value.trim() || 'SIN TÍTULO';
-            const stageTitulo = document.getElementById('stage-titulo');
-            if(stageTitulo) stageTitulo.textContent = titulo;
-            
-            const outputBox = (document.getElementById('output-chordpro') as HTMLTextAreaElement)?.value;
-            const inputBox = (document.getElementById('input-chordpro') as HTMLTextAreaElement)?.value;
-            
-            let contenido = (outputBox && outputBox.trim() !== '') ? outputBox : (inputBox || '');
-            
-            if (!contenido.includes('[') && typeof (window as any).autoConvertirAChordPro === 'function') {
-                contenido = (window as any).autoConvertirAChordPro(contenido);
-            }
+ document.getElementById('btn-atril')?.addEventListener('click', async () => {
+ const titulo = (document.getElementById('print-titulo') as HTMLInputElement)?.value.trim() || 'SIN TÍTULO';
+ const stageTitulo = document.getElementById('stage-titulo');
+ if(stageTitulo) stageTitulo.textContent = titulo;
+ 
+ const outputBox = (document.getElementById('output-chordpro') as HTMLTextAreaElement)?.value;
+ const inputBox = (document.getElementById('input-chordpro') as HTMLTextAreaElement)?.value;
+ 
+ let contenido = (outputBox && outputBox.trim() !== '') ? outputBox : (inputBox || '');
+ 
+ if (!contenido.includes('[') && typeof (window as any).autoConvertirAChordPro === 'function') {
+ contenido = (window as any).autoConvertirAChordPro(contenido);
+ }
 
-            // Renderizador simplificado para Atril (Alto Contraste Amarillo/Blanco)
-            const lineas = contenido.split('\n');
-            let html = '';
-            
-            lineas.forEach(linea => {
-                if (linea.trim() === '') { 
-                    html += `<div class="h-6"></div>`; 
-                    return; 
-                }
-                const cleanText = linea.replace(/\[.*?\]/g, '').trim();
-                const isSection = /^(VERSO|CORO|PUENTE|INTRO|OUTRO|FINAL|PRE-CORO|ESTR|TAG)/i.test(cleanText);
+ // Renderizador simplificado para Atril (Alto Contraste Amarillo/Blanco)
+ const lineas = contenido.split('\n');
+ let html = '';
+ 
+ lineas.forEach(linea => {
+ if (linea.trim() === '') { 
+ html += `<div class="h-6"></div>`; 
+ return; 
+ }
+ const cleanText = linea.replace(/\[.*?\]/g, '').trim();
+ const isSection = /^(VERSO|CORO|PUENTE|INTRO|OUTRO|FINAL|PRE-CORO|ESTR|TAG)/i.test(cleanText);
 
-                if (isSection) {
-                    html += `<div class="text-blue-400 font-bold mt-8 mb-2 text-lg sm:text-xl uppercase tracking-wider">${linea.trim()}</div>`;
-                } else if (linea.includes('[')) {
-                    html += `<div class="flex flex-wrap items-end mb-2">`;
-                    const partes = linea.split(/\[(.*?)\]/);
-                    
-                    if (partes[0]) {
-                        html += `<div class="inline-flex flex-col"><div class="text-yellow-400 font-bold text-lg sm:text-xl h-6"></div><div class="text-white whitespace-pre">${partes[0]}</div></div>`;
-                    }
-                    
-                    for (let i = 1; i < partes.length; i += 2) {
-                        html += `<div class="inline-flex flex-col mr-1.5"><div class="text-yellow-400 font-bold text-lg sm:text-xl h-6 -mb-1">${partes[i]}</div><div class="text-white whitespace-pre">${partes[i+1] || ''}</div></div>`;
-                    }
-                    html += `</div>`;
-                } else {
-                    html += `<div class="text-white mb-2">${linea}</div>`;
-                }
-            });
+ if (isSection) {
+ html += `<div class="text-blue-400 font-bold mt-8 mb-2 text-lg sm:text-xl uppercase tracking-wider">${linea.trim()}</div>`;
+ } else if (linea.includes('[')) {
+ html += `<div class="flex flex-wrap items-end mb-2">`;
+ const partes = linea.split(/\[(.*?)\]/);
+ 
+ if (partes[0]) {
+ html += `<div class="inline-flex flex-col"><div class="text-yellow-400 font-bold text-lg sm:text-xl h-6"></div><div class="text-white whitespace-pre">${partes[0]}</div></div>`;
+ }
+ 
+ for (let i = 1; i < partes.length; i += 2) {
+ html += `<div class="inline-flex flex-col mr-1.5"><div class="text-yellow-400 font-bold text-lg sm:text-xl h-6 -mb-1">${partes[i]}</div><div class="text-white whitespace-pre">${partes[i+1] || ''}</div></div>`;
+ }
+ html += `</div>`;
+ } else {
+ html += `<div class="text-white mb-2">${linea}</div>`;
+ }
+ });
 
-            const stageLetra = document.getElementById('stage-letra');
-            if(stageLetra) stageLetra.innerHTML = html;
-            
-            stageContainer?.classList.remove('hidden');
-            document.body.style.overflow = 'hidden'; // Evitar scroll de fondo
-            
-            await activarWakeLock();
+ const stageLetra = document.getElementById('stage-letra');
+ if(stageLetra) stageLetra.innerHTML = html;
+ 
+ stageContainer?.classList.remove('hidden');
+ document.body.style.overflow = 'hidden'; // Evitar scroll de fondo
+ 
+ await activarWakeLock();
 
-            // Intentar Fullscreen nativo
-            if (stageContainer && stageContainer.requestFullscreen) {
-                stageContainer.requestFullscreen().catch(err => console.log('Fullscreen error:', err));
-            }
-        });
+ // Intentar Fullscreen nativo
+ if (stageContainer && stageContainer.requestFullscreen) {
+ stageContainer.requestFullscreen().catch(err => console.log('Fullscreen error:', err));
+ }
+ });
 
-        btnCerrarAtril?.addEventListener('click', () => {
-            stageContainer?.classList.add('hidden');
-            document.body.style.overflow = '';
-            liberarWakeLock();
-            if (document.fullscreenElement) {
-                document.exitFullscreen().catch(err => console.log(err));
-            }
-        });
+ btnCerrarAtril?.addEventListener('click', () => {
+ stageContainer?.classList.add('hidden');
+ document.body.style.overflow = '';
+ liberarWakeLock();
+ if (document.fullscreenElement) {
+ document.exitFullscreen().catch(err => console.log(err));
+ }
+ });
 
-    });
+ });
 </script>

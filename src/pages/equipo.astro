@@ -3,1352 +3,1352 @@ import Layout from '../layouts/Layout.astro';
 ---
 
 <Layout title="Gestión de Equipo - Redil">
-    <!-- Navbar base similar to other tools for consistency -->
-    <header class="w-full flex items-center justify-between py-6 px-4 md:px-8 mb-4 border-b border-neutral-200 dark:border-neutral-800">
-         <div class="flex items-center gap-4">
-              <a href="/programacion" class="text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition-colors">
-                   <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="m15 18-6-6 6-6"/>
-                   </svg>
-              </a>
-               <div>
-                   <h1 class="text-2xl font-bold text-neutral-900 dark:text-white tracking-tight">Gestión de Equipo</h1>
-                   <p class="text-sm text-neutral-500 dark:text-neutral-400">Administra los músicos y sus roles maestros.</p>
-              </div>
-         </div>
-         </div>
-         <div class="flex items-center gap-3">
-             <span id="equipos-counter-top" class="hidden text-xs font-bold text-neutral-500 bg-neutral-100 dark:bg-neutral-800 px-2 py-1 rounded-full">0/10 Equipos</span>
-             <button id="btn-open-team-builder" class="hidden md:flex items-center gap-2 bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 px-4 py-2.5 rounded-xl font-bold hover:bg-neutral-800 dark:hover:bg-neutral-100 transition-colors shadow-sm text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-neutral-900 disabled:dark:hover:bg-white">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" class="opacity-80" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
-                  Crear Equipo
-             </button>
-         </div>
-    </header>
-    
-    <!-- Botón Flotante Mobile para Plantillas -->
-    <button id="fab-team-builder" class="md:hidden fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-neutral-900 to-neutral-800 dark:from-white dark:to-neutral-200 text-white dark:text-neutral-900 rounded-full flex items-center justify-center shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all z-40">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
-    </button>
+ <!-- Navbar base similar to other tools for consistency -->
+ <header class="w-full flex items-center justify-between py-6 px-4 md:px-8 mb-4 border-b border-neutral-200 ">
+ <div class="flex items-center gap-4">
+ <a href="/programacion" class="text-neutral-500 hover:text-neutral-900 :text-white transition-colors">
+ <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+ <path d="m15 18-6-6 6-6"/>
+ </svg>
+ </a>
+ <div>
+ <h1 class="text-2xl font-bold text-neutral-900 tracking-tight">Gestión de Equipo</h1>
+ <p class="text-sm text-neutral-500 ">Administra los músicos y sus roles maestros.</p>
+ </div>
+ </div>
+ </div>
+ <div class="flex items-center gap-3">
+ <span id="equipos-counter-top" class="hidden text-xs font-bold text-neutral-500 bg-neutral-100 px-2 py-1 rounded-full">0/10 Equipos</span>
+ <button id="btn-open-team-builder" class="hidden md:flex items-center gap-2 bg-neutral-900 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-neutral-800 :bg-neutral-100 transition-colors shadow-sm text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-neutral-900 disabled::bg-white">
+ <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" class="opacity-80" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
+ Crear Equipo
+ </button>
+ </div>
+ </header>
+ 
+ <!-- Botón Flotante Mobile para Plantillas -->
+ <button id="fab-team-builder" class="md:hidden fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-neutral-900 to-neutral-800 text-white rounded-full flex items-center justify-center shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all z-40">
+ <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
+ </button>
 
-    <!-- Botón Flotante para Añadir Músico -->
-    <button id="fab-add-musico" class="fixed bottom-32 right-4 md:bottom-32 md:right-8 bg-blue-500 hover:bg-blue-400 text-white w-14 h-14 md:w-auto md:px-6 rounded-full shadow-2xl flex items-center justify-center gap-2 transition-transform hover:scale-105 z-40 group">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="group-hover:rotate-90 transition-transform duration-300"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
-        <span class="hidden md:block font-bold text-base">Añadir Músico</span>
-    </button>
+ <!-- Botón Flotante para Añadir Músico -->
+ <button id="fab-add-musico" class="fixed bottom-32 right-4 md:bottom-32 md:right-8 bg-blue-500 hover:bg-blue-400 text-white w-14 h-14 md:w-auto md:px-6 rounded-full shadow-2xl flex items-center justify-center gap-2 transition-transform hover:scale-105 z-40 group">
+ <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="group-hover:rotate-90 transition-transform duration-300"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
+ <span class="hidden md:block font-bold text-base">Añadir Músico</span>
+ </button>
 
-    <main class="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-32">
-        <!-- SECCIÓN MIS EQUIPOS -->
-        <div class="mb-8 hidden" id="seccion-plantillas">
-             <div class="flex items-center justify-between mb-4">
-                 <h2 class="text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest flex items-center gap-2">
-                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" class="text-blue-500" stroke="currentColor" stroke-width="2.5"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
-                     Mis Equipos
-                 </h2>
-             </div>
-             <div class="relative w-full">
-                  <!-- Pista visual scroll derecho -->
-                  <div class="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-neutral-50 dark:from-[#0a0a0a] to-transparent pointer-events-none z-10 hidden md:block" id="scroll-hint-right"></div>
-                  
-                  <div id="plantillas-grid" class="flex gap-4 overflow-x-auto pb-4 custom-scrollbar snap-x relative z-0">
-                       <!-- Se inyectan cards -->
-                  </div>
-             </div>
-        </div>
+ <main class="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-32">
+ <!-- SECCIÓN MIS EQUIPOS -->
+ <div class="mb-8 hidden" id="seccion-plantillas">
+ <div class="flex items-center justify-between mb-4">
+ <h2 class="text-xs font-bold text-neutral-500 uppercase tracking-widest flex items-center gap-2">
+ <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" class="text-blue-500" stroke="currentColor" stroke-width="2.5"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+ Mis Equipos
+ </h2>
+ </div>
+ <div class="relative w-full">
+ <!-- Pista visual scroll derecho -->
+ <div class="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-neutral-50 [#0a0a0a] to-transparent pointer-events-none z-10 hidden md:block" id="scroll-hint-right"></div>
+ 
+ <div id="plantillas-grid" class="flex gap-4 overflow-x-auto pb-4 custom-scrollbar snap-x relative z-0">
+ <!-- Se inyectan cards -->
+ </div>
+ </div>
+ </div>
 
-        <div id="loading-state" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-pulse mt-4">
-            <!-- Skeleton Cards -->
-             {Array(6).fill('').map(() => (
-                 <div class="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm">
-                      <div class="flex items-center gap-4 mb-4">
-                          <div class="w-12 h-12 bg-neutral-200 dark:bg-neutral-800 rounded-full"></div>
-                          <div class="space-y-2 flex-1">
-                              <div class="h-4 bg-neutral-200 dark:bg-neutral-800 rounded w-3/4"></div>
-                              <div class="h-3 bg-neutral-200 dark:bg-neutral-800 rounded w-1/2"></div>
-                          </div>
-                      </div>
-                      <div class="h-10 bg-neutral-200 dark:bg-neutral-800 rounded w-full mb-2"></div>
-                      <div class="h-10 bg-neutral-200 dark:bg-neutral-800 rounded w-full"></div>
-                 </div>
-             ))}
-        </div>
+ <div id="loading-state" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-pulse mt-4">
+ <!-- Skeleton Cards -->
+ {Array(6).fill('').map(() => (
+ <div class="bg-white border border-neutral-200 rounded-2xl p-6 shadow-sm">
+ <div class="flex items-center gap-4 mb-4">
+ <div class="w-12 h-12 bg-neutral-200 rounded-full"></div>
+ <div class="space-y-2 flex-1">
+ <div class="h-4 bg-neutral-200 rounded w-3/4"></div>
+ <div class="h-3 bg-neutral-200 rounded w-1/2"></div>
+ </div>
+ </div>
+ <div class="h-10 bg-neutral-200 rounded w-full mb-2"></div>
+ <div class="h-10 bg-neutral-200 rounded w-full"></div>
+ </div>
+ ))}
+ </div>
 
-        <div id="equipo-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 hidden">
-             <!-- Los perfiles se inyectarán aquí -->
-        </div>
+ <div id="equipo-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 hidden">
+ <!-- Los perfiles se inyectarán aquí -->
+ </div>
 
-        <div id="empty-state" class="hidden flex flex-col items-center justify-center py-20 text-center">
-             <div class="w-20 h-20 bg-neutral-100 dark:bg-neutral-800 rounded-full flex items-center justify-center mb-6">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 text-neutral-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                       <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
-                       <circle cx="9" cy="7" r="4"/>
-                       <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
-                       <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                  </svg>
-             </div>
-             <h3 class="text-xl font-bold text-neutral-900 dark:text-white mb-2">No hay músicos registrados</h3>
-             <p class="text-neutral-500 max-w-md">Ejecuta el script SQL de inicialización en Supabase para registrar a los músicos y sus roles.</p>
-        </div>
-        
-        <!-- Observer Sentinel -->
-        <div id="scroll-sentinel" class="w-full h-10 mt-8 flex justify-center items-center opacity-0 transition-opacity">
-            <svg class="animate-spin h-6 w-6 text-neutral-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-        </div>
+ <div id="empty-state" class="hidden flex flex-col items-center justify-center py-20 text-center">
+ <div class="w-20 h-20 bg-neutral-100 rounded-full flex items-center justify-center mb-6">
+ <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 text-neutral-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+ <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+ <circle cx="9" cy="7" r="4"/>
+ <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+ <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+ </svg>
+ </div>
+ <h3 class="text-xl font-bold text-neutral-900 mb-2">No hay músicos registrados</h3>
+ <p class="text-neutral-500 max-w-md">Ejecuta el script SQL de inicialización en Supabase para registrar a los músicos y sus roles.</p>
+ </div>
+ 
+ <!-- Observer Sentinel -->
+ <div id="scroll-sentinel" class="w-full h-10 mt-8 flex justify-center items-center opacity-0 transition-opacity">
+ <svg class="animate-spin h-6 w-6 text-neutral-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+ <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+ <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+ </svg>
+ </div>
 
-        <!-- MODAL GLOBAL DE EDICIÓN DE ROLES (In-Place) -->
-        <div id="modal-roles-global" class="fixed inset-0 z-[100] hidden items-end sm:items-center justify-center">
-             <!-- Backdrop -->
-             <div class="absolute inset-0 bg-neutral-900/40 dark:bg-black/60 backdrop-blur-sm transition-opacity opacity-0" id="modal-roles-backdrop"></div>
-             
-             <!-- Panel -->
-             <div class="relative bg-white dark:bg-neutral-900 w-full md:w-full md:max-w-md rounded-t-3xl md:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transition-transform translate-y-full sm:translate-y-4 sm:scale-95 sm:opacity-0" id="modal-roles-panel">
-                  <!-- Header -->
-                  <div class="px-6 py-5 border-b border-neutral-100 dark:border-neutral-800 flex justify-between items-center bg-white/50 dark:bg-neutral-900/50 backdrop-blur-md sticky top-0 z-10">
-                       <h3 class="text-xl font-bold text-neutral-900 dark:text-white" id="modal-roles-title">Editar Roles</h3>
-                       <button type="button" id="btn-close-modal-roles" class="p-2 -mr-2 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-full transition-colors">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                       </button>
-                  </div>
-                  
-                  <!-- Body -->
-                  <div class="p-6 overflow-y-auto flex-1 custom-scrollbar">
-                       <p class="text-xs font-bold uppercase tracking-widest text-neutral-400 dark:text-neutral-500 mb-4">Múltiples Asignaciones Permitidas</p>
-                       <div class="grid grid-cols-1 sm:grid-cols-2 gap-2" id="modal-roles-container">
-                            <!-- Inyección dinámica de Toggles -->
-                       </div>
-                  </div>
-             </div>
-        </div>
+ <!-- MODAL GLOBAL DE EDICIÓN DE ROLES (In-Place) -->
+ <div id="modal-roles-global" class="fixed inset-0 z-[100] hidden items-end sm:items-center justify-center">
+ <!-- Backdrop -->
+ <div class="absolute inset-0 bg-neutral-900/40 backdrop-blur-sm transition-opacity opacity-0" id="modal-roles-backdrop"></div>
+ 
+ <!-- Panel -->
+ <div class="relative bg-white w-full md:w-full md:max-w-md rounded-t-3xl md:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transition-transform translate-y-full sm:translate-y-4 sm:scale-95 sm:opacity-0" id="modal-roles-panel">
+ <!-- Header -->
+ <div class="px-6 py-5 border-b border-neutral-100 flex justify-between items-center bg-white/50 backdrop-blur-md sticky top-0 z-10">
+ <h3 class="text-xl font-bold text-neutral-900 " id="modal-roles-title">Editar Roles</h3>
+ <button type="button" id="btn-close-modal-roles" class="p-2 -mr-2 text-neutral-400 hover:text-neutral-700 :text-neutral-200 hover:bg-neutral-100 :bg-neutral-800 rounded-full transition-colors">
+ <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+ </button>
+ </div>
+ 
+ <!-- Body -->
+ <div class="p-6 overflow-y-auto flex-1 custom-scrollbar">
+ <p class="text-xs font-bold uppercase tracking-widest text-neutral-400 mb-4">Múltiples Asignaciones Permitidas</p>
+ <div class="grid grid-cols-1 sm:grid-cols-2 gap-2" id="modal-roles-container">
+ <!-- Inyección dinámica de Toggles -->
+ </div>
+ </div>
+ </div>
+ </div>
 
-        <!-- MODAL CONSTRUCTOR DE PLANTILLAS (Team Builder) -->
-        <div id="modal-team-builder" class="fixed inset-0 z-[80] hidden items-end sm:items-center justify-center">
-             <!-- Backdrop -->
-             <div class="absolute inset-0 bg-neutral-900/40 dark:bg-black/60 backdrop-blur-sm transition-opacity opacity-0" id="tb-backdrop"></div>
-             
-             <!-- Panel -->
-             <div class="relative bg-white dark:bg-neutral-900 w-full sm:w-[90vw] md:w-[600px] shrink-0 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transition-transform translate-y-full sm:translate-y-4 sm:scale-95 sm:opacity-0" id="tb-panel">
-                  <!-- Header -->
-                  <div class="px-5 sm:px-6 py-4 sm:py-5 border-b border-neutral-100 dark:border-neutral-800 flex justify-between items-center bg-white/50 dark:bg-neutral-900/50 backdrop-blur-md sticky top-0 z-10">
-                       <div>
-                            <h3 class="text-xl sm:text-2xl font-bold text-neutral-900 dark:text-white tracking-tight">Constructor de Equipo</h3>
-                            <p class="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Crea moldes de equipo para cargarlos rápidamente.</p>
-                       </div>
-                       <div class="flex gap-2">
-                           <button type="button" id="btn-tb-cancelar" class="p-2 sm:px-4 sm:py-2 text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors font-bold text-sm hidden sm:block">Cancelar</button>
-                           <button type="button" id="btn-tb-close" class="p-2 -mr-2 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-full transition-colors sm:hidden">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                           </button>
-                       </div>
-                  </div>
-                  
-                  <!-- Body Formulario -->
-                  <form id="form-team-builder" class="overflow-y-auto flex-1 custom-scrollbar">
-                       <div class="p-5 sm:p-6 space-y-6">
-                            <!-- Letra y Nombre de Equipo -->
-                            <div class="flex flex-col sm:flex-row gap-4">
-                                <div class="w-full sm:w-28 space-y-2 shrink-0">
-                                    <label for="tb-letra" class="block text-xs uppercase tracking-wider font-bold text-neutral-500 dark:text-neutral-400">Letra</label>
-                                    <div class="relative">
-                                         <select id="tb-letra" required class="appearance-none w-full bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-200 dark:border-neutral-700 text-neutral-900 dark:text-white text-lg rounded-xl focus:ring-2 focus:ring-blue-500 dark:focus:ring-teal-500 focus:border-transparent outline-none transition-all px-4 py-3 cursor-pointer font-bold font-mono text-center">
-                                             <option value="A" selected>A</option>
-                                             <option value="B">B</option>
-                                             <option value="C">C</option>
-                                             <option value="D">D</option>
-                                             <option value="E">E</option>
-                                             <option value="F">F</option>
-                                             <option value="G">G</option>
-                                             <option value="H">H</option>
-                                             <option value="I">I</option>
-                                             <option value="J">J</option>
-                                         </select>
-                                         <svg class="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-                                    </div>
-                                </div>
-                                <div class="space-y-2 flex-1 min-w-0">
-                                    <label for="tb-nombre" class="block text-xs uppercase tracking-wider font-bold text-neutral-500 dark:text-neutral-400">Nombre del Equipo</label>
-                                    <input type="text" id="tb-nombre" required class="w-full bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-200 dark:border-neutral-700 text-neutral-900 dark:text-white text-lg rounded-xl focus:ring-2 focus:ring-blue-500 dark:focus:ring-teal-500 focus:border-transparent outline-none transition-all px-4 py-3 placeholder:text-neutral-400" placeholder="Ej: Banda Dominical" autocomplete="off">
-                                </div>
-                            </div>
+ <!-- MODAL CONSTRUCTOR DE PLANTILLAS (Team Builder) -->
+ <div id="modal-team-builder" class="fixed inset-0 z-[80] hidden items-end sm:items-center justify-center">
+ <!-- Backdrop -->
+ <div class="absolute inset-0 bg-neutral-900/40 backdrop-blur-sm transition-opacity opacity-0" id="tb-backdrop"></div>
+ 
+ <!-- Panel -->
+ <div class="relative bg-white w-full sm:w-[90vw] md:w-[600px] shrink-0 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transition-transform translate-y-full sm:translate-y-4 sm:scale-95 sm:opacity-0" id="tb-panel">
+ <!-- Header -->
+ <div class="px-5 sm:px-6 py-4 sm:py-5 border-b border-neutral-100 flex justify-between items-center bg-white/50 backdrop-blur-md sticky top-0 z-10">
+ <div>
+ <h3 class="text-xl sm:text-2xl font-bold text-neutral-900 tracking-tight">Constructor de Equipo</h3>
+ <p class="text-xs text-neutral-500 mt-1">Crea moldes de equipo para cargarlos rápidamente.</p>
+ </div>
+ <div class="flex gap-2">
+ <button type="button" id="btn-tb-cancelar" class="p-2 sm:px-4 sm:py-2 text-neutral-500 hover:text-neutral-800 :text-neutral-200 hover:bg-neutral-100 :bg-neutral-800 rounded-xl transition-colors font-bold text-sm hidden sm:block">Cancelar</button>
+ <button type="button" id="btn-tb-close" class="p-2 -mr-2 text-neutral-400 hover:text-neutral-700 :text-neutral-200 hover:bg-neutral-100 :bg-neutral-800 rounded-full transition-colors sm:hidden">
+ <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+ </button>
+ </div>
+ </div>
+ 
+ <!-- Body Formulario -->
+ <form id="form-team-builder" class="overflow-y-auto flex-1 custom-scrollbar">
+ <div class="p-5 sm:p-6 space-y-6">
+ <!-- Letra y Nombre de Equipo -->
+ <div class="flex flex-col sm:flex-row gap-4">
+ <div class="w-full sm:w-28 space-y-2 shrink-0">
+ <label for="tb-letra" class="block text-xs uppercase tracking-wider font-bold text-neutral-500 ">Letra</label>
+ <div class="relative">
+ <select id="tb-letra" required class="appearance-none w-full bg-neutral-50 border border-neutral-200 text-neutral-900 text-lg rounded-xl focus:ring-2 focus:ring-blue-500 :ring-teal-500 focus:border-transparent outline-none transition-all px-4 py-3 cursor-pointer font-bold font-mono text-center">
+ <option value="A" selected>A</option>
+ <option value="B">B</option>
+ <option value="C">C</option>
+ <option value="D">D</option>
+ <option value="E">E</option>
+ <option value="F">F</option>
+ <option value="G">G</option>
+ <option value="H">H</option>
+ <option value="I">I</option>
+ <option value="J">J</option>
+ </select>
+ <svg class="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+ </div>
+ </div>
+ <div class="space-y-2 flex-1 min-w-0">
+ <label for="tb-nombre" class="block text-xs uppercase tracking-wider font-bold text-neutral-500 ">Nombre del Equipo</label>
+ <input type="text" id="tb-nombre" required class="w-full bg-neutral-50 border border-neutral-200 text-neutral-900 text-lg rounded-xl focus:ring-2 focus:ring-blue-500 :ring-teal-500 focus:border-transparent outline-none transition-all px-4 py-3 placeholder:text-neutral-400" placeholder="Ej: Banda Dominical" autocomplete="off">
+ </div>
+ </div>
 
-                            <hr class="border-neutral-100 dark:border-neutral-800">
+ <hr class="border-neutral-100 ">
 
-                            <!-- Grilla Similar a Programacion.astro -->
-                            <div class="space-y-4">
-                                <h4 class="text-sm font-bold text-neutral-900 dark:text-white flex justify-between items-center">
-                                    Definición de Integrantes
-                                    <span class="text-xs font-normal text-neutral-500 bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full" id="tb-counter-label">0 Asignados</span>
-                                </h4>
-                                
-                                <div class="bg-neutral-50 dark:bg-neutral-900/50 rounded-2xl p-4 sm:p-5 border border-neutral-100 dark:border-neutral-800/80">
-                                     <!-- L1 L2 -->
-                                     <div class="grid grid-cols-2 gap-4 mb-5">
-                                          <div class="flex flex-col">
-                                               <div class="flex items-center justify-between mb-3"><span class="text-[10px] font-bold text-violet-600 dark:text-violet-400 uppercase tracking-widest">Dirección</span><div class="h-px flex-1 bg-violet-200 dark:bg-violet-900/50 ml-2"></div></div>
-                                               <div class="grid grid-cols-1 gap-2" id="tb-n1-slots"></div>
-                                          </div>
-                                          <div class="flex flex-col">
-                                               <div class="flex items-center justify-between mb-3 w-full"><span class="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest">Letras</span><div class="h-px flex-1 bg-amber-200 dark:bg-amber-900/50 ml-2"></div></div>
-                                               <div class="grid grid-cols-1 gap-2" id="tb-n2-slots"></div>
-                                          </div>
-                                     </div>
-                                     <!-- L3 -->
-                                     <div>
-                                          <div class="flex items-center justify-between mb-3"><span class="text-[10px] font-bold text-teal-600 dark:text-teal-400 uppercase tracking-widest">Banda y Voces</span><div class="h-px flex-1 bg-teal-200 dark:bg-teal-900/50 ml-3"></div></div>
-                                          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2" id="tb-n3-slots"></div>
-                                     </div>
-                                </div>
-                            </div>
-                       </div>
-                       
-                       <!-- Footer Form -->
-                       <div class="px-5 sm:px-6 py-4 bg-neutral-50 dark:bg-neutral-900/80 border-t border-neutral-100 dark:border-neutral-800 sticky bottom-0 z-10 flex gap-3 pb-8 sm:pb-4">
-                           <button type="submit" id="btn-tb-submit" class="flex-1 bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 py-3 rounded-xl font-bold hover:bg-neutral-800 dark:hover:bg-neutral-100 transition-colors shadow-sm relative overflow-hidden flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-                               <svg id="tb-spinner" class="animate-spin -ml-1 mr-2 h-4 w-4 hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                               <span id="tb-submit-text">Guardar Equipo</span>
-                           </button>
-                       </div>
-                  </form>
-             </div>
-        </div>
-        
-        <!-- MODAL DETALLES DEL EQUIPO -->
-        <div id="modal-detalles-equipo" class="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm hidden">
-            <div class="absolute inset-0" id="backdrop-detalles-equipo"></div>
-            <div class="relative w-full max-w-2xl bg-neutral-50 dark:bg-neutral-950 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden transition-transform translate-y-full flex flex-col max-h-[90vh] m-auto" id="panel-detalles-equipo">
-                <!-- Header -->
-                <div class="px-6 py-5 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex justify-between items-center z-10 sticky top-0">
-                    <div class="flex items-center gap-3">
-                        <div id="detalle-letra-circle" class="w-10 h-10 rounded-full bg-neutral-200 text-neutral-600 flex items-center justify-center font-bold text-lg shadow-sm shrink-0">
-                            -
-                        </div>
-                        <div>
-                            <h3 class="text-xl font-black text-neutral-900 dark:text-white leading-none tracking-tight" id="detalle-nombre">Nombre Equipo</h3>
-                            <p class="text-xs text-neutral-500 font-bold uppercase tracking-widest mt-1">Configuración Base</p>
-                        </div>
-                    </div>
-                    <button type="button" id="btn-close-detalles" class="p-2 -mr-2 bg-neutral-100 dark:bg-neutral-800 text-neutral-500 hover:text-neutral-900 dark:hover:text-white rounded-full transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                    </button>
-                </div>
-                
-                <!-- Body estructurado -->
-                <div class="p-6 overflow-y-auto custom-scrollbar flex-1 flex flex-col gap-6">
-                     <!-- Dirección -->
-                     <div>
-                         <div class="flex items-center justify-between mb-3">
-                              <span class="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase tracking-widest flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"/><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M12 2v2"/><path d="M12 22v-2"/><path d="m17 20.66-1-1.73"/><path d="M11 10.27 7 3.34"/><path d="m20.66 17-1.73-1"/><path d="m3.34 7 1.73 1"/><path d="M14 12h8"/><path d="M2 12h2"/><path d="m20.66 7-1.73 1"/><path d="m3.34 17 1.73-1"/><path d="m17 3.34-1 1.73"/><path d="m11 13.73-4 6.93"/></svg> Dirección</span>
-                              <div class="h-px flex-1 bg-violet-200 dark:bg-violet-900/50 ml-3"></div>
-                         </div>
-                         <div class="grid grid-cols-2 gap-2" id="detalle-direccion">
-                              <!-- Slots Inyectados -->
-                         </div>
-                     </div>
-                     
-                     <!-- Letras -->
-                     <div class="bg-amber-50/50 dark:bg-amber-900/10 p-4 rounded-2xl border border-amber-100 dark:border-amber-900/30">
-                         <div class="flex items-center justify-between mb-3">
-                              <span class="text-xs font-bold text-amber-600 dark:text-amber-500 uppercase tracking-widest flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg> Letras</span>
-                              <div class="h-px flex-1 bg-amber-200 dark:bg-amber-900/50 ml-3"></div>
-                         </div>
-                         <div class="flex flex-col gap-2" id="detalle-letras">
-                              <!-- Slots Inyectados -->
-                         </div>
-                     </div>
-                     
-                     <!-- Banda y Voces -->
-                     <div>
-                         <div class="flex items-center justify-between mb-3">
-                              <span class="text-xs font-bold text-teal-600 dark:text-teal-400 uppercase tracking-widest flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg> Banda y Voces</span>
-                              <div class="h-px flex-1 bg-teal-200 dark:bg-teal-900/50 ml-3"></div>
-                         </div>
-                         <div class="grid grid-cols-2 gap-2" id="detalle-banda">
-                              <!-- Slots Inyectados -->
-                         </div>
-                     </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- MODAL CONFIRMACIÓN BORRAR EQUIPO -->
-        <div id="modal-confirm-delete" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm hidden">
-            <div class="relative bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl max-w-sm w-full mx-4 p-6 flex flex-col gap-4">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/40 flex items-center justify-center shrink-0">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                    </div>
-                    <div>
-                        <h3 class="font-bold text-neutral-900 dark:text-white text-base">Eliminar Equipo</h3>
-                        <p class="text-xs text-neutral-500" id="confirm-delete-msg">¿Seguro que deseas eliminar este equipo?</p>
-                    </div>
-                </div>
-                <p class="text-xs text-neutral-400 bg-neutral-50 dark:bg-neutral-800 rounded-lg p-3 border border-neutral-200 dark:border-neutral-700">Los integrantes del equipo se perderán. Los eventos de domingos anteriores NO se afectan.</p>
-                <div class="flex gap-3">
-                    <button id="confirm-delete-cancel" type="button" class="flex-1 py-2.5 px-4 rounded-xl border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 font-semibold text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">Cancelar</button>
-                    <button id="confirm-delete-ok" type="button" class="flex-1 py-2.5 px-4 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-colors flex items-center justify-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                        Eliminar
-                    </button>
-                </div>
-            </div>
-        </div>
+ <!-- Grilla Similar a Programacion.astro -->
+ <div class="space-y-4">
+ <h4 class="text-sm font-bold text-neutral-900 flex justify-between items-center">
+ Definición de Integrantes
+ <span class="text-xs font-normal text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded-full" id="tb-counter-label">0 Asignados</span>
+ </h4>
+ 
+ <div class="bg-neutral-50 rounded-2xl p-4 sm:p-5 border border-neutral-100 ">
+ <!-- L1 L2 -->
+ <div class="grid grid-cols-2 gap-4 mb-5">
+ <div class="flex flex-col">
+ <div class="flex items-center justify-between mb-3"><span class="text-[10px] font-bold text-violet-600 uppercase tracking-widest">Dirección</span><div class="h-px flex-1 bg-violet-200 ml-2"></div></div>
+ <div class="grid grid-cols-1 gap-2" id="tb-n1-slots"></div>
+ </div>
+ <div class="flex flex-col">
+ <div class="flex items-center justify-between mb-3 w-full"><span class="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Letras</span><div class="h-px flex-1 bg-amber-200 ml-2"></div></div>
+ <div class="grid grid-cols-1 gap-2" id="tb-n2-slots"></div>
+ </div>
+ </div>
+ <!-- L3 -->
+ <div>
+ <div class="flex items-center justify-between mb-3"><span class="text-[10px] font-bold text-teal-600 uppercase tracking-widest">Banda y Voces</span><div class="h-px flex-1 bg-teal-200 ml-3"></div></div>
+ <div class="grid grid-cols-2 sm:grid-cols-3 gap-2" id="tb-n3-slots"></div>
+ </div>
+ </div>
+ </div>
+ </div>
+ 
+ <!-- Footer Form -->
+ <div class="px-5 sm:px-6 py-4 bg-neutral-50 border-t border-neutral-100 sticky bottom-0 z-10 flex gap-3 pb-8 sm:pb-4">
+ <button type="submit" id="btn-tb-submit" class="flex-1 bg-neutral-900 text-white py-3 rounded-xl font-bold hover:bg-neutral-800 :bg-neutral-100 transition-colors shadow-sm relative overflow-hidden flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+ <svg id="tb-spinner" class="animate-spin -ml-1 mr-2 h-4 w-4 hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+ <span id="tb-submit-text">Guardar Equipo</span>
+ </button>
+ </div>
+ </form>
+ </div>
+ </div>
+ 
+ <!-- MODAL DETALLES DEL EQUIPO -->
+ <div id="modal-detalles-equipo" class="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm hidden">
+ <div class="absolute inset-0" id="backdrop-detalles-equipo"></div>
+ <div class="relative w-full max-w-2xl bg-neutral-50 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden transition-transform translate-y-full flex flex-col max-h-[90vh] m-auto" id="panel-detalles-equipo">
+ <!-- Header -->
+ <div class="px-6 py-5 border-b border-neutral-200 bg-white flex justify-between items-center z-10 sticky top-0">
+ <div class="flex items-center gap-3">
+ <div id="detalle-letra-circle" class="w-10 h-10 rounded-full bg-neutral-200 text-neutral-600 flex items-center justify-center font-bold text-lg shadow-sm shrink-0">
+ -
+ </div>
+ <div>
+ <h3 class="text-xl font-black text-neutral-900 leading-none tracking-tight" id="detalle-nombre">Nombre Equipo</h3>
+ <p class="text-xs text-neutral-500 font-bold uppercase tracking-widest mt-1">Configuración Base</p>
+ </div>
+ </div>
+ <button type="button" id="btn-close-detalles" class="p-2 -mr-2 bg-neutral-100 text-neutral-500 hover:text-neutral-900 :text-white rounded-full transition-colors">
+ <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+ </button>
+ </div>
+ 
+ <!-- Body estructurado -->
+ <div class="p-6 overflow-y-auto custom-scrollbar flex-1 flex flex-col gap-6">
+ <!-- Dirección -->
+ <div>
+ <div class="flex items-center justify-between mb-3">
+ <span class="text-xs font-bold text-violet-600 uppercase tracking-widest flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"/><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M12 2v2"/><path d="M12 22v-2"/><path d="m17 20.66-1-1.73"/><path d="M11 10.27 7 3.34"/><path d="m20.66 17-1.73-1"/><path d="m3.34 7 1.73 1"/><path d="M14 12h8"/><path d="M2 12h2"/><path d="m20.66 7-1.73 1"/><path d="m3.34 17 1.73-1"/><path d="m17 3.34-1 1.73"/><path d="m11 13.73-4 6.93"/></svg> Dirección</span>
+ <div class="h-px flex-1 bg-violet-200 ml-3"></div>
+ </div>
+ <div class="grid grid-cols-2 gap-2" id="detalle-direccion">
+ <!-- Slots Inyectados -->
+ </div>
+ </div>
+ 
+ <!-- Letras -->
+ <div class="bg-amber-50/50 p-4 rounded-2xl border border-amber-100 ">
+ <div class="flex items-center justify-between mb-3">
+ <span class="text-xs font-bold text-amber-600 uppercase tracking-widest flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg> Letras</span>
+ <div class="h-px flex-1 bg-amber-200 ml-3"></div>
+ </div>
+ <div class="flex flex-col gap-2" id="detalle-letras">
+ <!-- Slots Inyectados -->
+ </div>
+ </div>
+ 
+ <!-- Banda y Voces -->
+ <div>
+ <div class="flex items-center justify-between mb-3">
+ <span class="text-xs font-bold text-teal-600 uppercase tracking-widest flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg> Banda y Voces</span>
+ <div class="h-px flex-1 bg-teal-200 ml-3"></div>
+ </div>
+ <div class="grid grid-cols-2 gap-2" id="detalle-banda">
+ <!-- Slots Inyectados -->
+ </div>
+ </div>
+ </div>
+ </div>
+ </div>
+ 
+ <!-- MODAL CONFIRMACIÓN BORRAR EQUIPO -->
+ <div id="modal-confirm-delete" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm hidden">
+ <div class="relative bg-white rounded-2xl shadow-2xl max-w-sm w-full mx-4 p-6 flex flex-col gap-4">
+ <div class="flex items-center gap-3">
+ <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+ <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+ </div>
+ <div>
+ <h3 class="font-bold text-neutral-900 text-base">Eliminar Equipo</h3>
+ <p class="text-xs text-neutral-500" id="confirm-delete-msg">¿Seguro que deseas eliminar este equipo?</p>
+ </div>
+ </div>
+ <p class="text-xs text-neutral-400 bg-neutral-50 rounded-lg p-3 border border-neutral-200 ">Los integrantes del equipo se perderán. Los eventos de domingos anteriores NO se afectan.</p>
+ <div class="flex gap-3">
+ <button id="confirm-delete-cancel" type="button" class="flex-1 py-2.5 px-4 rounded-xl border border-neutral-300 text-neutral-700 font-semibold text-sm hover:bg-neutral-100 :bg-neutral-800 transition-colors">Cancelar</button>
+ <button id="confirm-delete-ok" type="button" class="flex-1 py-2.5 px-4 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-colors flex items-center justify-center gap-2">
+ <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+ Eliminar
+ </button>
+ </div>
+ </div>
+ </div>
 
-        <!-- MODAL PICKER REUTILIZADO PARA EVENTOS Y BUILDER -->
-        <div id="picker-modal" class="fixed inset-0 z-[110] flex items-center justify-center bg-neutral-900/40 dark:bg-black/60 backdrop-blur-sm" style="display:none">
-             <div class="absolute inset-0" id="picker-backdrop"></div>
-             <!-- Picker Panel -->
-             <div class="relative bg-neutral-50 dark:bg-neutral-950 w-full sm:max-w-md rounded-3xl shadow-2xl flex flex-col max-h-[85vh] mx-4" id="picker-panel">
-                  <div class="px-5 py-4 border-b border-neutral-200 dark:border-neutral-800 flex justify-between items-center bg-white dark:bg-neutral-900 rounded-t-3xl sm:rounded-t-3xl shadow-sm z-10">
-                       <div>
-                           <h3 class="text-lg font-bold text-neutral-900 dark:text-white">Seleccionar Músico</h3>
-                           <p class="text-[10px] font-bold uppercase tracking-widest text-blue-600 dark:text-teal-500 mt-1 flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span id="picker-role-name">Buscando...</span></p>
-                       </div>
-                       <button type="button" id="picker-close" class="p-2 -mr-2 bg-neutral-100 dark:bg-neutral-800 text-neutral-500 hover:text-neutral-900 dark:hover:text-white rounded-full transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
-                  </div>
-                  <div class="p-4 overflow-y-auto flex-1 custom-scrollbar">
-                       <div id="picker-spinner" class="flex justify-center items-center py-10 hidden">
-                            <svg class="animate-spin h-8 w-8 text-blue-500 dark:text-teal-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                       </div>
-                       <div class="flex flex-col gap-2" id="picker-list">
-                            <!-- Opciones cargadas por DB -->
-                       </div>
-                  </div>
-             </div>
-        </div>
+ <!-- MODAL PICKER REUTILIZADO PARA EVENTOS Y BUILDER -->
+ <div id="picker-modal" class="fixed inset-0 z-[110] flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm" style="display:none">
+ <div class="absolute inset-0" id="picker-backdrop"></div>
+ <!-- Picker Panel -->
+ <div class="relative bg-neutral-50 w-full sm:max-w-md rounded-3xl shadow-2xl flex flex-col max-h-[85vh] mx-4" id="picker-panel">
+ <div class="px-5 py-4 border-b border-neutral-200 flex justify-between items-center bg-white rounded-t-3xl sm:rounded-t-3xl shadow-sm z-10">
+ <div>
+ <h3 class="text-lg font-bold text-neutral-900 ">Seleccionar Músico</h3>
+ <p class="text-[10px] font-bold uppercase tracking-widest text-blue-600 mt-1 flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span id="picker-role-name">Buscando...</span></p>
+ </div>
+ <button type="button" id="picker-close" class="p-2 -mr-2 bg-neutral-100 text-neutral-500 hover:text-neutral-900 :text-white rounded-full transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+ </div>
+ <div class="p-4 overflow-y-auto flex-1 custom-scrollbar">
+ <div id="picker-spinner" class="flex justify-center items-center py-10 hidden">
+ <svg class="animate-spin h-8 w-8 text-blue-500 " xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+ </div>
+ <div class="flex flex-col gap-2" id="picker-list">
+ <!-- Opciones cargadas por DB -->
+ </div>
+ </div>
+ </div>
+ </div>
 
-    
-        <!-- MODAL AÑADIR MÚSICO -->
-        <div id="modal-add-musico" class="fixed inset-0 z-[100] hidden items-center justify-center">
-             <div class="absolute inset-0 bg-neutral-900/40 dark:bg-black/60 backdrop-blur-sm transition-opacity opacity-0" id="add-musico-backdrop"></div>
-             <div class="relative bg-white dark:bg-neutral-900 w-full md:max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] mx-4 transition-all scale-95 opacity-0" id="add-musico-panel">
-                  <div class="px-6 py-5 border-b border-neutral-100 dark:border-neutral-800 flex justify-between items-center">
-                       <div>
-                            <h3 class="text-lg font-bold text-neutral-900 dark:text-white">Añadir Músico</h3>
-                            <p class="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">Registra un nuevo integrante del equipo.</p>
-                       </div>
-                       <button type="button" id="btn-close-add-musico" class="p-2 -mr-2 bg-neutral-100 dark:bg-neutral-800 text-neutral-500 hover:text-neutral-900 dark:hover:text-white rounded-full transition-colors">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                       </button>
-                  </div>
-                  <div class="p-6 flex flex-col gap-4 overflow-y-auto">
-                       <div>
-                            <label class="text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest mb-1.5 block">Nombre completo</label>
-                            <input type="text" id="add-musico-nombre" class="w-full px-4 py-3 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none transition-all" placeholder="Ej: Carlos (Pianista)">
-                       </div>
-                       <div>
-                            <label class="text-xs font-bold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest mb-1.5 block">Correo electrónico</label>
-                            <input type="email" id="add-musico-email" class="w-full px-4 py-3 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none transition-all" placeholder="correo@ejemplo.com">
-                       </div>
-                  </div>
-                  <div class="p-6 pt-0 flex gap-3">
-                       <button type="button" id="btn-cancel-add-musico" class="flex-1 py-3 rounded-xl border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 font-bold text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">Cancelar</button>
-                       <button type="button" id="btn-submit-add-musico" class="flex-1 py-3 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-bold text-sm hover:opacity-90 transition-all shadow-md">
-                            <span id="add-musico-text">Registrar</span>
-                            <svg id="add-musico-spinner" class="animate-spin h-5 w-5 text-white mx-auto hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                       </button>
-                  </div>
-             </div>
-        </div>
+ 
+ <!-- MODAL AÑADIR MÚSICO -->
+ <div id="modal-add-musico" class="fixed inset-0 z-[100] hidden items-center justify-center">
+ <div class="absolute inset-0 bg-neutral-900/40 backdrop-blur-sm transition-opacity opacity-0" id="add-musico-backdrop"></div>
+ <div class="relative bg-white w-full md:max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] mx-4 transition-all scale-95 opacity-0" id="add-musico-panel">
+ <div class="px-6 py-5 border-b border-neutral-100 flex justify-between items-center">
+ <div>
+ <h3 class="text-lg font-bold text-neutral-900 ">Añadir Músico</h3>
+ <p class="text-xs text-neutral-500 mt-0.5">Registra un nuevo integrante del equipo.</p>
+ </div>
+ <button type="button" id="btn-close-add-musico" class="p-2 -mr-2 bg-neutral-100 text-neutral-500 hover:text-neutral-900 :text-white rounded-full transition-colors">
+ <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+ </button>
+ </div>
+ <div class="p-6 flex flex-col gap-4 overflow-y-auto">
+ <div>
+ <label class="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-1.5 block">Nombre completo</label>
+ <input type="text" id="add-musico-nombre" class="w-full px-4 py-3 rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 text-sm font-medium focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none transition-all" placeholder="Ej: Carlos (Pianista)">
+ </div>
+ <div>
+ <label class="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-1.5 block">Correo electrónico</label>
+ <input type="email" id="add-musico-email" class="w-full px-4 py-3 rounded-xl border border-neutral-200 bg-neutral-50 text-neutral-900 text-sm font-medium focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none transition-all" placeholder="correo@ejemplo.com">
+ </div>
+ </div>
+ <div class="p-6 pt-0 flex gap-3">
+ <button type="button" id="btn-cancel-add-musico" class="flex-1 py-3 rounded-xl border border-neutral-200 text-neutral-600 font-bold text-sm hover:bg-neutral-100 :bg-neutral-800 transition-colors">Cancelar</button>
+ <button type="button" id="btn-submit-add-musico" class="flex-1 py-3 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-bold text-sm hover:opacity-90 transition-all shadow-md">
+ <span id="add-musico-text">Registrar</span>
+ <svg id="add-musico-spinner" class="animate-spin h-5 w-5 text-white mx-auto hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+ </button>
+ </div>
+ </div>
+ </div>
 
 </main>
 </Layout>
 
 <script>
-    import { supabase } from '../lib/supabase';
-
-    // Estado reactivo temporal de la Plantilla de Equipo
-    window.tbState = {
-         assignments: [] // { rol_id, rol_codigo, perfil_id, perfil_nombre, avatar_url }
-    };
-    window.appStateRoles = []; // Cache rápido para Picker
-
-    document.addEventListener('DOMContentLoaded', async () => {
-         const loadingState = document.getElementById('loading-state');
-         const equipoGrid = document.getElementById('equipo-grid');
-         const emptyState = document.getElementById('empty-state');
-
-         // 1. Verificación de Seguridad y Sesión
-         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-         
-         if (sessionError || !session) {
-             window.location.replace('/login');
-             return;
-         }
-
-         const user = session.user;
-         
-         // Validar si es Admin directamente en la tabla perfiles
-         const { data: perfil, error: perfilError } = await supabase
-             .from('perfiles')
-             .select('is_admin')
-             .eq('id', user.id)
-             .single();
-
-         if (perfilError || !perfil?.is_admin) {
-             alert('Acceso Restringido. Esta página es exclusiva para Administradores.');
-             window.location.replace('/programacion');
-             return;
-         }
-
-         // 2. Fetch Data (Roles, Perfiles, Perfil_Roles)
-         try {
-             // Roles
-             const { data: roles, error: rolesErr } = await supabase.from('roles').select('*').order('nombre');
-             if (rolesErr) throw rolesErr;
-             window.appStateRoles = roles; // Exponer a global para Picker
-
-             // Perfiles (Músicos)
-             const { data: perfiles, error: perfilesErr } = await supabase.from('perfiles').select('*').order('nombre');
-             if (perfilesErr) throw perfilesErr;
-
-             // Asignaciones Maestras 
-             const { data: pivot, error: pivotErr } = await supabase.from('perfil_roles').select('*');
-             if (pivotErr) throw pivotErr;
-
-             // Equipos y sus Miembros en Bulk
-             const { data: equiposMaster, error: equiposErr } = await supabase.from('equipos').select('*').order('created_at', { ascending: false });
-             if (equiposErr) throw equiposErr;
-             
-             const { data: teamMembers, error: tzErr } = await supabase.from('equipo_integrantes').select('*');
-             if (tzErr) throw tzErr;
-             window.appStateTeamMembers = teamMembers;
-
-             if (!perfiles || perfiles.length === 0) {
-                 loadingState?.classList.add('hidden');
-                 emptyState?.classList.remove('hidden');
-                 return;
-             }
-
-             // Renderizar Plantillas
-             const secPlantillas = document.getElementById('seccion-plantillas');
-             const plantillasGrid = document.getElementById('plantillas-grid');
-             const headCounter = document.getElementById('equipos-counter-top');
-             const btnBuilderBig = document.getElementById('btn-open-team-builder');
-             const btnBuilderFab = document.getElementById('fab-team-builder');
-
-             window.renderPlantillasGlobally = () => {
-                  const currentCount = equiposMaster ? equiposMaster.length : 0;
-                  
-                  if(headCounter) {
-                       headCounter.textContent = `${currentCount}/10 Equipos`;
-                       headCounter.classList.remove('hidden');
-                  }
-                  
-                  // Enforcement Limit
-                  if(currentCount >= 10) {
-                       btnBuilderBig.disabled = true;
-                       btnBuilderBig.title = "Límite Máximo de Equipos alcanzado";
-                       btnBuilderFab.classList.add('hidden');
-                  } else {
-                       btnBuilderBig.disabled = false;
-                       btnBuilderBig.title = "";
-                       btnBuilderFab.classList.remove('hidden');
-                  }
-
-                  if(currentCount === 0) {
-                       secPlantillas?.classList.add('hidden');
-                       return;
-                  }
-                  
-                  // Scroll hint visual detection 
-                  const scrollHint = document.getElementById('scroll-hint-right');
-                  const checkScroll = () => {
-                       if (plantillasGrid.scrollWidth > plantillasGrid.clientWidth && 
-                           plantillasGrid.scrollLeft < plantillasGrid.scrollWidth - plantillasGrid.clientWidth - 10) {
-                           scrollHint.classList.remove('opacity-0');
-                       } else {
-                           scrollHint.classList.add('opacity-0');
-                       }
-                  };
-                  plantillasGrid.addEventListener('scroll', checkScroll);
-                  window.addEventListener('resize', checkScroll);
-
-                  secPlantillas?.classList.remove('hidden');
-                  plantillasGrid.innerHTML = '';
-                  equiposMaster.forEach(eq => {
-                       // UX Color Map por Letra
-                       const colorMap = {
-                           A:'bg-red-500', B:'bg-blue-500', C:'bg-emerald-500', D:'bg-purple-500', E:'bg-amber-500',
-                           F:'bg-teal-500', G:'bg-rose-500', H:'bg-indigo-500', I:'bg-orange-500', J:'bg-cyan-500'
-                       };
-                       const baseColor = colorMap[eq.letra || 'A'] || 'bg-neutral-500';
-
-                       // Extraer Líderes con Safe Checks
-                       const myTeam = window.appStateTeamMembers.filter((m:any) => m.equipo_id === eq.id);
-                       const lid = myTeam.find((m:any) => {
-                           const r = window.appStateRoles.find((rol:any) => rol.id === m.rol_maestro);
-                           return r && ['lider_alabanza', 'director_musical'].includes(r.codigo);
-                       });
-                       const tlk = myTeam.find((m:any) => {
-                           const r = window.appStateRoles.find((rol:any) => rol.id === m.rol_maestro);
-                           return r && r.codigo === 'talkback';
-                       });
-                       const vName = (id) => { const p = perfiles.find(x=>x.id===id); return p ? p.nombre.split(' ')[0] : 'Nadie'; };
-                       const dText = `Dirige: ${vName(lid?.perfil_id)} | Talkback: ${vName(tlk?.perfil_id)}`;
-
-                       const card = document.createElement('div');
-                       card.className = 'team-card-dashboard bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-4 flex flex-col justify-between shadow-sm min-w-[240px] shrink-0 snap-start group relative transition-shadow hover:shadow-md cursor-pointer';
-                       card.setAttribute('data-equipo-id', eq.id);
-                       card.innerHTML = `
-                            <div class="flex items-center gap-3 mb-3">
-                                <div class="w-10 h-10 rounded-full ${baseColor} text-white flex items-center justify-center shrink-0 font-bold font-mono text-lg shadow-sm">
-                                    ${eq.letra || 'T'}
-                                </div>
-                                <div class="flex-1 min-w-0 pr-6">
-                                    <h3 class="font-bold text-neutral-900 dark:text-white text-base truncate leading-tight">${eq.nombre}</h3>
-                                    <p class="text-[10px] text-neutral-400 uppercase tracking-wider mt-0.5">Equipo Guardado</p>
-                                </div>
-                            </div>
-                            <div class="bg-neutral-50 dark:bg-neutral-800/50 rounded-lg p-2 border border-neutral-100 dark:border-neutral-800/80">
-                                 <p class="text-[10px] text-neutral-600 dark:text-neutral-300 font-medium truncate flex items-center gap-1.5 opacity-90">
-                                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm0 5c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3Zm0 12c-2.67 0-8-1.34-8-4v-1c0-2.21 4.79-3 8-3s8 .79 8 3v1c0 2.66-5.33 4-8 4Z"/></svg>
-                                      ${dText}
-                                 </p>
-                            </div>
-                            <button class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity p-2 text-neutral-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/40 rounded-lg btn-del-plantilla" data-id="${eq.id}" data-letra="${eq.letra || 'T'}" data-nombre="${eq.nombre}" title="Eliminar Equipo">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="pointer-events-none"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                            </button>
-                       `;
-                       
-                       plantillasGrid.appendChild(card);
-                  });
-                  checkScroll(); // trigger immediately
-             };
-             window.renderPlantillasGlobally();
-
-              // Delegación de Eventos para botones Delete y Click en Tarjeta
-             plantillasGrid.addEventListener('click', async (e) => {
-                  const targetBtn = (e.target as Element).closest('.btn-del-plantilla') as HTMLButtonElement;
-                  if (targetBtn) {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      console.log('CLICK EN BORRAR DETECTADO');
-                      
-                      const idEq = targetBtn.getAttribute('data-id');
-                      const letEq = targetBtn.getAttribute('data-letra');
-                      const nomEq = targetBtn.getAttribute('data-nombre');
-                      console.log('ID a borrar:', idEq, '| Nombre:', nomEq);
-
-                      // === Abrir Modal de Confirm Personalizado ===
-                      const modalConfirm = document.getElementById('modal-confirm-delete');
-                      const msgEl = document.getElementById('confirm-delete-msg');
-                      const btnOk = document.getElementById('confirm-delete-ok');
-                      const btnCancel = document.getElementById('confirm-delete-cancel');
-                      
-                      if (!modalConfirm) {
-                          console.error('Modal confirm no encontrado en el DOM!');
-                          return;
-                      }
-                      
-                      if (msgEl) msgEl.textContent = `¿Eliminar "${letEq} - ${nomEq}"?`;
-                      modalConfirm.style.display = 'flex'; // Usar style directo, no classList (evita conflicto flex/hidden)
-                      
-                      // Limpiar listeners previos para evitar duplicados
-                      const newBtnOk = btnOk!.cloneNode(true) as HTMLButtonElement;
-                      const newBtnCancel = btnCancel!.cloneNode(true) as HTMLButtonElement;
-                      btnOk!.parentNode!.replaceChild(newBtnOk, btnOk!);
-                      btnCancel!.parentNode!.replaceChild(newBtnCancel, btnCancel!);
-                      
-                      // Evento Cancelar
-                      newBtnCancel.addEventListener('click', () => {
-                          modalConfirm.style.display = 'none';
-                      });
-                      
-                      // Evento Confirmar Borrado
-                      newBtnOk.addEventListener('click', async () => {
-                          // Cerrar modal inmediatamente (style.display v/s classList para evitar conflicto flex/hidden)
-                          modalConfirm.style.display = 'none';
-                          console.log('Usuario confirmó borrado. Llamando a Supabase...');
-                          
-                          newBtnOk.disabled = true;
-                          targetBtn.disabled = true;
-                          targetBtn.innerHTML = `<svg class="animate-spin h-4 w-4 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>`;
-                          
-                          try {
-                              const { error } = await supabase.from('equipos').delete().eq('id', idEq);
-                              if (error) throw error;
-                              
-                              console.log('Borrado exitoso en Supabase ✅');
-                              
-                              // Remover del array maestro in-memory
-                              const idx = equiposMaster.findIndex((x:any) => x.id === idEq);
-                              if (idx !== -1) equiposMaster.splice(idx, 1);
-                              
-                              // Re-renderizar todo el grid (garantiza consistencia visual)
-                              window.renderPlantillasGlobally();
-                              
-                              // Mostrar Toast de éxito
-                              const toast = document.createElement('div');
-                              toast.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 z-[300] bg-neutral-900 text-white text-sm font-semibold px-5 py-3 rounded-full shadow-2xl flex items-center gap-2 animate-bounce';
-                              toast.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg> Equipo "${nomEq}" eliminado`;
-                              document.body.appendChild(toast);
-                              setTimeout(() => toast.remove(), 3000);
-                              
-                          } catch (err:any) {
-                              console.error('❌ ERROR SUPABASE DELETE:', err);
-                              alert('Error al borrar de Supabase: ' + (err.message || JSON.stringify(err)));
-                              targetBtn.disabled = false;
-                              targetBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" class="pointer-events-none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`;
-                          }
-                      });
-
-                      return;
-                  }
-
-                  // Click en la Tarjeta para Detalles
-                  const targetCard = (e.target as Element).closest('.team-card-dashboard');
-                  if (targetCard) {
-                      const equipoId = targetCard.getAttribute('data-equipo-id');
-                      if (equipoId && typeof window.openModalEquipoDetalles === 'function') {
-                          window.openModalEquipoDetalles(equipoId);
-                      }
-                  }
-             });
-
-             // Lógica del Visor de Detalles de Equipo
-             const modalDetalles = document.getElementById('modal-detalles-equipo');
-             const panelDetalles = document.getElementById('panel-detalles-equipo');
-             const btnCloseDetalles = document.getElementById('btn-close-detalles');
-
-             window.openModalEquipoDetalles = (equipoId) => {
-                  const eq = equiposMaster.find((x:any) => x.id === equipoId);
-                  if (!eq) return;
-
-                  // 1. Configurar Header
-                  document.getElementById('detalle-nombre')!.textContent = eq.nombre;
-                  
-                  const colorMap = {
-                      A:'bg-red-500', B:'bg-blue-500', C:'bg-emerald-500', D:'bg-purple-500', E:'bg-amber-500',
-                      F:'bg-teal-500', G:'bg-rose-500', H:'bg-indigo-500', I:'bg-orange-500', J:'bg-cyan-500'
-                  };
-                  const baseColor = colorMap[eq.letra || 'A'] || 'bg-neutral-500';
-                  
-                  const circle = document.getElementById('detalle-letra-circle');
-                  circle!.className = `w-10 h-10 rounded-full ${baseColor} text-white flex items-center justify-center font-bold text-lg shadow-sm shrink-0`;
-                  circle!.textContent = eq.letra || 'T';
-
-                  // 2. Extraer Integrantes de este equipo
-                  const myTeam = window.appStateTeamMembers.filter((m:any) => m.equipo_id === equipoId);
-
-                  // 3. Helper para generar tarjeta de perfil
-                  const buildProfileSlot = (rolName, perfilId) => {
-                       const p = perfiles.find(x => x.id === perfilId);
-                       if (!p) return '';
-                       
-                       const initials = p.nombre.split(' ').map((n:string)=>n[0]).join('').substring(0,2).toUpperCase();
-                       const avatar = p.avatar_url 
-                            ? `<img src="${p.avatar_url}" class="w-8 h-8 rounded-full border border-neutral-200 dark:border-neutral-700 object-cover shrink-0">`
-                            : `<div class="w-8 h-8 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 flex items-center justify-center font-bold text-[10px] shrink-0">${initials}</div>`;
-                       
-                       return `
-                       <div class="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-2.5 flex items-center gap-3 w-full shadow-sm hover:border-blue-500/50 transition-colors">
-                           ${avatar}
-                           <div class="flex-1 min-w-0">
-                               <p class="font-bold text-neutral-900 dark:text-white text-sm truncate">${p.nombre}</p>
-                               <p class="text-[10px] text-neutral-500 uppercase tracking-wider font-semibold truncate">${rolName}</p>
-                           </div>
-                       </div>
-                       `;
-                  };
-
-                  // 4. Limpiar Contenedores
-                  const n1 = document.getElementById('detalle-direccion');
-                  const n2 = document.getElementById('detalle-letras');
-                  const n3 = document.getElementById('detalle-banda');
-                  [n1, n2, n3].forEach(el => el!.innerHTML = '');
-
-                  // 5. Poblar categorizado
-                  myTeam.forEach((member:any) => {
-                       const rolObj = window.appStateRoles.find((r:any) => r.id === member.rol_maestro);
-                       if (!rolObj) return;
-
-                       const markup = buildProfileSlot(rolObj.nombre, member.perfil_id);
-                       
-                       if (['lider_alabanza', 'director_musical', 'talkback'].includes(rolObj.codigo)) {
-                            n1!.insertAdjacentHTML('beforeend', markup);
-                       } else if (['encargado_letras', 'letra_y_notas', 'produccion_visual', 'letras'].includes(rolObj.codigo)) {
-                            n2!.insertAdjacentHTML('beforeend', markup);
-                       } else {
-                            n3!.insertAdjacentHTML('beforeend', markup);
-                       }
-                  });
-
-                  // Add empty states if categorical lists are empty
-                  if (n1!.children.length === 0) n1!.innerHTML = `<p class="text-xs text-neutral-400 font-medium italic p-2 col-span-2">Sin asignar</p>`;
-                  if (n2!.children.length === 0) n2!.innerHTML = `<p class="text-xs text-neutral-400 font-medium italic p-2">Sin asignar</p>`;
-                  if (n3!.children.length === 0) n3!.innerHTML = `<p class="text-xs text-neutral-400 font-medium italic p-2 col-span-2">Sin asignar</p>`;
-
-                  // 6. Animar Entrada Modal
-                  modalDetalles?.classList.remove('hidden');
-                  void modalDetalles?.offsetWidth;
-                  panelDetalles?.classList.remove('translate-y-full');
-             };
-
-             const closeDetallesModal = () => {
-                  panelDetalles?.classList.add('translate-y-full');
-                  setTimeout(() => modalDetalles?.classList.add('hidden'), 350);
-             };
-
-             btnCloseDetalles?.addEventListener('click', closeDetallesModal);
-             document.getElementById('backdrop-detalles-equipo')?.addEventListener('click', closeDetallesModal);
-
-
-             // Mapeo Rápido: Qué perfiles tienen qué roles
-             const rolesPorPerfil = new Map();
-             pivot.forEach(p => {
-                 if (!rolesPorPerfil.has(p.perfil_id)) rolesPorPerfil.set(p.perfil_id, new Set());
-                 rolesPorPerfil.get(p.perfil_id).add(p.rol_id);
-             });
-
-             // 3. Render Cards
-             equipoGrid.innerHTML = '';
-             perfiles.forEach((p, index) => {
-                 const currentRoles = rolesPorPerfil.get(p.id) || new Set();
-                 
-                 const article = document.createElement('article');
-                 article.className = 'equipo-card bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm opacity-0 translate-y-4 transition-all duration-500 ease-out flex flex-col justify-between';
-                 
-                 // Generar Toggles HTML para cada Rol
-                 const togglesHTML = roles.map(r => {
-                      const isActive = currentRoles.has(r.id);
-                      return `
-                          <label class="flex items-center justify-between p-2 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors cursor-pointer border border-transparent ${isActive ? 'border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800' : ''}">
-                               <span class="text-sm font-medium ${isActive ? 'text-neutral-900 dark:text-white' : 'text-neutral-500 dark:text-neutral-400'}">
-                                    ${r.nombre}
-                               </span>
-                               <input type="checkbox" class="role-toggle form-checkbox h-4 w-4 text-blue-600 rounded border-neutral-300 dark:border-neutral-600 bg-transparent transition duration-150 ease-in-out" 
-                                    data-perfil="${p.id}" 
-                                    data-rol="${r.id}" 
-                                    ${isActive ? 'checked' : ''}>
-                          </label>
-                      `;
-                 }).join('');
-
-                 const cleanName = p.nombre.replace(/\s*\(.*?\)\s*/g, '').trim();
-                 const iniciales = cleanName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-
-                 const badgesHTML = Array.from(currentRoles).map(rolId => {
-                      const rolData = roles.find((r:any) => r.id === rolId);
-                      if(!rolData) return '';
-                      return `<span class="px-2 py-0.5 bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 text-[10px] font-bold uppercase tracking-wider rounded-md">${rolData.nombre}</span>`;
-                 }).join('');
-
-                 article.innerHTML = `
-                      <div>
-                          <div class="flex items-center gap-4 mb-4">
-                              <div class="w-12 h-12 flex-shrink-0 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-inner z-10 relative">
-                                  ${p.avatar_url ? `<img src="${p.avatar_url}" alt="${p.nombre}" class="w-full h-full rounded-full object-cover">` : iniciales}
-                              </div>
-                              <div class="min-w-0">
-                                  <h3 class="text-lg font-bold text-neutral-900 dark:text-white truncate">${p.nombre}</h3>
-                                  <p class="text-sm text-neutral-500 dark:text-neutral-400 truncate">${p.email}</p>
-                              </div>
-                          </div>
-
-                          <div class="mb-4">
-                              <h4 class="text-[10px] uppercase tracking-wider font-bold text-neutral-400 dark:text-neutral-500 mb-2">Roles Maestros</h4>
-                              <div class="flex flex-wrap gap-1.5 min-h-[24px]">
-                                  ${badgesHTML || '<span class="text-xs text-neutral-400 italic">Sin asignar</span>'}
-                              </div>
-                          </div>
-                      </div>
-                      
-                       <div class="flex items-center gap-2">
-                           <button type="button" class="btn-editar-roles flex-1 py-2 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 transition-colors rounded-xl text-xs font-bold flex items-center justify-center gap-2 border border-transparent dark:border-neutral-700 shadow-sm" data-perfil="${p.id}" data-nombre="${p.nombre}">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                                Editar Roles
-                           </button>
-                           <button type="button" class="btn-eliminar-perfil w-9 h-9 flex items-center justify-center bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-900/40 text-red-400 hover:text-red-600 dark:hover:text-red-400 transition-all rounded-xl border border-red-200/60 dark:border-red-800/40 shrink-0" data-perfil="${p.id}" data-nombre="${p.nombre}" title="Eliminar músico">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                           </button>
-                       </div>
-                      
-                      <!-- Virtual Hidden DOM para Modal Builder -->
-                      <div class="hidden raw-toggles-data" id="raw-toggles-${p.id}">
-                           ${togglesHTML}
-                      </div>
-                 `;
-                 
-                 equipoGrid.appendChild(article);
-             });
-
-             loadingState?.classList.add('hidden');
-             equipoGrid?.classList.remove('hidden');
-
-             // Lógica de Modal Global de Roles
-             const modalRoles = document.getElementById('modal-roles-global');
-             const modalRolesBackdrop = document.getElementById('modal-roles-backdrop');
-             const modalRolesPanel = document.getElementById('modal-roles-panel');
-             const modalRolesTitle = document.getElementById('modal-roles-title');
-             const modalRolesContainer = document.getElementById('modal-roles-container');
-             const btnCloseModalRoles = document.getElementById('btn-close-modal-roles');
-
-             const toggleModalRoles = (show) => {
-                  if (show) {
-                       modalRoles?.classList.remove('hidden');
-                       modalRoles?.classList.add('flex');
-                       document.body.style.overflow = 'hidden';
-                       // Animations in
-                       void modalRoles?.offsetWidth; // trigger reflow
-                       modalRolesBackdrop?.classList.replace('opacity-0', 'opacity-100');
-                       modalRolesPanel?.classList.remove('translate-y-full', 'sm:translate-y-4', 'sm:scale-95', 'sm:opacity-0');
-                  } else {
-                       modalRolesBackdrop?.classList.replace('opacity-100', 'opacity-0');
-                       modalRolesPanel?.classList.add('translate-y-full', 'sm:translate-y-4', 'sm:scale-95', 'sm:opacity-0');
-                       setTimeout(() => {
-                            modalRoles?.classList.add('hidden');
-                            modalRoles?.classList.remove('flex');
-                            document.body.style.overflow = '';
-                       }, 300); // match transition duration
-                  }
-             };
-
-             btnCloseModalRoles?.addEventListener('click', () => toggleModalRoles(false));
-             modalRolesBackdrop?.addEventListener('click', () => toggleModalRoles(false));
-
-             // Event Listeners a los botones de Tarjetas
-             document.querySelectorAll('.btn-editar-roles').forEach(btn => {
-                  btn.addEventListener('click', (e) => {
-                       const btnTarget = e.currentTarget as HTMLButtonElement;
-                       const perfilId = btnTarget.getAttribute('data-perfil');
-                       const perfilNombre = btnTarget.getAttribute('data-nombre');
-
-                       modalRolesTitle.textContent = `Roles: ${perfilNombre.split(' ')[0]}`;
-                       
-                       // Volcar la data virtual al modal
-                       const togglesRawData = document.getElementById(`raw-toggles-${perfilId}`)?.innerHTML || '';
-                       modalRolesContainer.innerHTML = togglesRawData;
-
-                       // Enganchar listeners AL VUELO a estos toggles inyectados
-                       modalRolesContainer.querySelectorAll('.role-toggle').forEach(box => {
-                           box.addEventListener('change', async (ev) => {
-                               const el = ev.target as HTMLInputElement;
-                               const rId = el.getAttribute('data-rol');
-                               const isChecked = el.checked;
-
-                               // UI Optimística Modal
-                               const labelParent = el.closest('label');
-                               const spanText = labelParent.querySelector('span');
-                               if (isChecked) {
-                                   labelParent.classList.add('border-neutral-200', 'bg-neutral-50', 'dark:border-neutral-700', 'dark:bg-neutral-800');
-                                   labelParent.classList.remove('border-transparent');
-                                   spanText.classList.replace('text-neutral-500', 'text-neutral-900');
-                                   spanText.classList.replace('dark:text-neutral-400', 'dark:text-white');
-                               } else {
-                                   labelParent.classList.remove('border-neutral-200', 'bg-neutral-50', 'dark:border-neutral-700', 'dark:bg-neutral-800');
-                                   labelParent.classList.add('border-transparent');
-                                   spanText.classList.replace('text-neutral-900', 'text-neutral-500');
-                                   spanText.classList.replace('dark:text-white', 'dark:text-neutral-400');
-                               }
-
-                               // API Call Supabase en vivo
-                               try {
-                                   if (isChecked) {
-                                       const { error: insErr } = await supabase.from('perfil_roles').insert({ perfil_id: perfilId, rol_id: rId });
-                                       if (insErr) throw insErr;
-                                   } else {
-                                       const { error: delErr } = await supabase.from('perfil_roles').delete().match({ perfil_id: perfilId, rol_id: rId });
-                                       if (delErr) throw delErr;
-                                   }
-                                   // Opcional para re-renderizado total inmediato en background:
-                                   // window.location.reload() -> Evitable si dejamos que el usuario refresque cuando termine de administrar todo un lote, que es mejor UX.
-                               } catch(err) {
-                                   console.error('Error DB:', err);
-                                   el.checked = !isChecked; // Revert
-                                   el.dispatchEvent(new Event('change'));
-                                   alert('Fallo de red al interactuar con el servidor.');
-                               }
-                           });
-                       });
-
-                       toggleModalRoles(true);
-                  });
-             });
-
-
-              // Event Listeners para Eliminar Perfil (papelera)
-              document.querySelectorAll('.btn-eliminar-perfil').forEach(btn => {
-                   btn.addEventListener('click', async (e) => {
-                        const btnTarget = e.currentTarget;
-                        const perfilId = btnTarget.getAttribute('data-perfil');
-                        const perfilNombre = btnTarget.getAttribute('data-nombre');
-
-                        // Modal de confirmación premium inline
-                        const overlay = document.createElement('div');
-                        overlay.className = 'fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm';
-                        overlay.style.animation = 'fadeIn 0.2s ease-out';
-                        overlay.innerHTML = `
-                             <style>
-                                  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-                                  @keyframes scaleIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-                             </style>
-                             <div class="bg-white dark:bg-neutral-900 rounded-3xl shadow-2xl max-w-sm w-[90%] overflow-hidden border border-neutral-200 dark:border-neutral-800" style="animation: scaleIn 0.25s ease-out">
-                                  <div class="p-6 text-center">
-                                       <div class="w-14 h-14 rounded-full flex items-center justify-center text-2xl mx-auto mb-4 bg-red-100 dark:bg-red-950/40 text-red-500">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                                       </div>
-                                       <h3 class="text-lg font-extrabold text-neutral-900 dark:text-white mb-1">Eliminar "${perfilNombre}"</h3>
-                                       <p class="text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed">Se eliminará este músico y todas sus asignaciones. Esta acción no se puede deshacer.</p>
-                                  </div>
-                                  <div class="flex border-t border-neutral-200 dark:border-neutral-800">
-                                       <button id="del-cancel" class="flex-1 py-3.5 text-sm font-bold text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">Cancelar</button>
-                                       <button id="del-accept" class="flex-1 py-3.5 text-sm font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors border-l border-neutral-200 dark:border-neutral-800">Eliminar</button>
-                                  </div>
-                             </div>
-                        `;
-                        document.body.appendChild(overlay);
-
-                        const result = await new Promise((resolve) => {
-                             overlay.querySelector('#del-cancel').addEventListener('click', () => resolve(false));
-                             overlay.querySelector('#del-accept').addEventListener('click', () => resolve(true));
-                             overlay.addEventListener('click', (ev) => { if (ev.target === overlay) resolve(false); });
-                        });
-
-                        overlay.remove();
-                        if (!result) return;
-
-                        try {
-                             await supabase.from('asignaciones').delete().eq('perfil_id', perfilId);
-                             await supabase.from('perfil_roles').delete().eq('perfil_id', perfilId);
-                             await supabase.from('equipo_integrantes').delete().eq('perfil_id', perfilId);
-                             const { error } = await supabase.from('perfiles').delete().eq('id', perfilId);
-                             if (error) throw error;
-
-                             const card = btnTarget.closest('.equipo-card');
-                             if (card) {
-                                  card.style.transition = 'all 0.3s ease-out';
-                                  card.style.opacity = '0';
-                                  card.style.transform = 'scale(0.9)';
-                                  setTimeout(() => card.remove(), 350);
-                             }
-
-                             const toast = document.createElement('div');
-                             toast.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 z-[300] bg-neutral-900 text-white text-sm font-semibold px-5 py-3 rounded-full shadow-2xl flex items-center gap-2';
-                             toast.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg> Músico eliminado';
-                             document.body.appendChild(toast);
-                             setTimeout(() => toast.remove(), 3000);
-                        } catch(err) {
-                             alert('Error al eliminar: ' + (err.message || 'Error desconocido'));
-                        }
-                   });
-              });
-
-
-             
-              // Lógica del Modal Añadir Músico
-              const modalAddMusico = document.getElementById('modal-add-musico');
-              const addMusicoBackdrop = document.getElementById('add-musico-backdrop');
-              const addMusicoPanel = document.getElementById('add-musico-panel');
-              const fabAddMusico = document.getElementById('fab-add-musico');
-
-              const toggleAddMusico = (show) => {
-                   if (show) {
-                        modalAddMusico?.classList.remove('hidden');
-                        modalAddMusico?.classList.add('flex');
-                        document.body.style.overflow = 'hidden';
-                        void modalAddMusico?.offsetWidth;
-                        addMusicoBackdrop?.classList.replace('opacity-0', 'opacity-100');
-                        addMusicoPanel?.classList.remove('scale-95', 'opacity-0');
-                   } else {
-                        addMusicoBackdrop?.classList.replace('opacity-100', 'opacity-0');
-                        addMusicoPanel?.classList.add('scale-95', 'opacity-0');
-                        setTimeout(() => {
-                             modalAddMusico?.classList.add('hidden');
-                             modalAddMusico?.classList.remove('flex');
-                             document.body.style.overflow = '';
-                        }, 300);
-                   }
-              };
-
-              fabAddMusico?.addEventListener('click', () => toggleAddMusico(true));
-              document.getElementById('btn-close-add-musico')?.addEventListener('click', () => toggleAddMusico(false));
-              document.getElementById('btn-cancel-add-musico')?.addEventListener('click', () => toggleAddMusico(false));
-              addMusicoBackdrop?.addEventListener('click', () => toggleAddMusico(false));
-
-              document.getElementById('btn-submit-add-musico')?.addEventListener('click', async () => {
-                   const nombre = (document.getElementById('add-musico-nombre')).value.trim();
-                   const email = (document.getElementById('add-musico-email')).value.trim();
-
-                   if (!nombre) { document.getElementById('add-musico-nombre')?.focus(); return; }
-                   if (!email || !email.includes('@')) { document.getElementById('add-musico-email')?.focus(); return; }
-
-                   const submitBtn = document.getElementById('btn-submit-add-musico');
-                   const submitText = document.getElementById('add-musico-text');
-                   const submitSpinner = document.getElementById('add-musico-spinner');
-                   submitBtn.disabled = true;
-                   submitText?.classList.add('hidden');
-                   submitSpinner?.classList.remove('hidden');
-
-                   try {
-                        const { data: newPerfil, error } = await supabase
-                             .from('perfiles')
-                             .insert([{ nombre, email, is_admin: false }])
-                             .select()
-                             .single();
-
-                        if (error) throw error;
-
-                        toggleAddMusico(false);
-                        
-                        // Toast de éxito
-                        const toast = document.createElement('div');
-                        toast.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 z-[300] bg-neutral-900 text-white text-sm font-semibold px-5 py-3 rounded-full shadow-2xl flex items-center gap-2';
-                        toast.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg> Músico registrado';
-                        document.body.appendChild(toast);
-                        setTimeout(() => toast.remove(), 3000);
-
-                        // Refresh para ver el nuevo músico
-                        setTimeout(() => window.location.reload(), 1500);
-
-                   } catch(err) {
-                        alert('Error al registrar: ' + (err.message || 'Error desconocido'));
-                        submitBtn.disabled = false;
-                        submitText?.classList.remove('hidden');
-                        submitSpinner?.classList.add('hidden');
-                   }
-              });
-
-
-              // Intersection Observer Fade-In
-             const cards = document.querySelectorAll('.equipo-card');
-             if ('IntersectionObserver' in window) {
-                  const observer = new IntersectionObserver((entries) => {
-                       entries.forEach(entry => {
-                            if (entry.isIntersecting) {
-                                 entry.target.classList.remove('opacity-0', 'translate-y-4');
-                                 observer.unobserve(entry.target);
-                            }
-                       });
-                  }, { rootMargin: '0px 0px 50px 0px', threshold: 0.1 });
-                  cards.forEach(card => observer.observe(card));
-             } else {
-                  cards.forEach(card => card.classList.remove('opacity-0', 'translate-y-4'));
-             }
-
-             // ==========================================
-             // LÓGICA CONSTRUCTOR DE PLANTILLAS (TEAM BUILDER)
-             // ==========================================
-             const tbModal = document.getElementById('modal-team-builder');
-             const tbBackdrop = document.getElementById('tb-backdrop');
-             const tbPanel = document.getElementById('tb-panel');
-             const btnOpenTb = document.getElementById('btn-open-team-builder');
-             const fabOpenTb = document.getElementById('fab-team-builder');
-             const btnTbClose = document.getElementById('btn-tb-close');
-             const btnTbCancel = document.getElementById('btn-tb-cancelar');
-             const formTb = document.getElementById('form-team-builder');
-             const tbCounterLabel = document.getElementById('tb-counter-label');
-
-             const toggleTbModal = (show) => {
-                  if (show) {
-                       tbModal?.classList.remove('hidden');
-                       tbModal?.classList.add('flex');
-                       document.body.style.overflow = 'hidden';
-                       void tbModal?.offsetWidth;
-                       tbBackdrop?.classList.replace('opacity-0', 'opacity-100');
-                       tbPanel?.classList.remove('translate-y-full', 'sm:translate-y-4', 'sm:scale-95', 'sm:opacity-0');
-                       window.tbState.assignments = [];
-                       (document.getElementById('tb-nombre') as HTMLInputElement).value = '';
-                       renderTbSlots();
-                  } else {
-                       tbBackdrop?.classList.replace('opacity-100', 'opacity-0');
-                       tbPanel?.classList.add('translate-y-full', 'sm:translate-y-4', 'sm:scale-95', 'sm:opacity-0');
-                       setTimeout(() => {
-                            tbModal?.classList.add('hidden');
-                            tbModal?.classList.remove('flex');
-                            document.body.style.overflow = '';
-                       }, 300);
-                  }
-             };
-
-             btnOpenTb?.addEventListener('click', () => toggleTbModal(true));
-             fabOpenTb?.addEventListener('click', () => toggleTbModal(true));
-             btnTbClose?.addEventListener('click', () => toggleTbModal(false));
-             btnTbCancel?.addEventListener('click', () => toggleTbModal(false));
-
-             // Render Motor Interno TB
-             const renderTbSlots = () => {
-                  const asigCounts = window.tbState.assignments.length;
-                  tbCounterLabel.textContent = `${asigCounts} Asignado${asigCounts !== 1 ? 's' : ''}`;
-                  
-                  const n1 = document.getElementById('tb-n1-slots');
-                  const n2 = document.getElementById('tb-n2-slots');
-                  const n3 = document.getElementById('tb-n3-slots');
-                  if(!n1 || !n2 || !n3) return;
-                  n1.innerHTML = ''; n2.innerHTML = ''; n3.innerHTML = '';
-
-                  const buildSlotHtml = (rolId, rolNombre, codigo) => {
-                       const assigned = window.tbState.assignments.filter((a:any) => a.rol_id === rolId);
-                       let html = '';
-                       assigned.forEach((asig, idx) => {
-                            const avatarUI = asig.avatar_url 
-                                ? `<img src="${asig.avatar_url}" alt="${asig.perfil_nombre}" class="w-8 h-8 rounded-full object-cover shadow-sm bg-neutral-200 dark:bg-neutral-800 shrink-0">`
-                                : `<div class="w-8 h-8 rounded-full bg-neutral-200 dark:bg-neutral-800 flex items-center justify-center font-bold text-[10px] text-neutral-600 dark:text-neutral-400 shadow-sm shrink-0">${asig.perfil_nombre.substring(0,2).toUpperCase()}</div>`;
-                            html += `
-                            <div class="flex items-center gap-2 px-2 h-[42px] bg-white dark:bg-neutral-900 border border-neutral-200/60 dark:border-neutral-800 shadow-sm rounded-xl hover:shadow-md transition-shadow group shrink-0 w-full relative">
-                                 ${avatarUI}
-                                 <span class="text-[11px] font-bold text-neutral-800 dark:text-neutral-200 truncate pr-6 flex-1">${asig.perfil_nombre.split(' ')[0]}</span>
-                                 <button type="button" class="btn-tb-remove text-neutral-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/40 p-1.5 rounded-lg transition-colors absolute right-1" data-rol="${rolId}" data-perfil="${asig.perfil_id}">
-                                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" class="pointer-events-none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                                 </button>
-                            </div>`;
-                       });
-                       
-                       // '+' Button para el slot
-                       const canAdd = !(['lider_alabanza', 'director_musical', 'bateria', 'bajo', 'piano', 'guitarra_acustica', 'guitarra_electrica'].includes(codigo) && assigned.length >= 1);
-                       if (canAdd) {
-                           html += `<button type="button" class="btn-tb-add w-full h-[42px] px-2 flex items-center justify-center bg-transparent hover:bg-blue-50 dark:hover:bg-teal-900/20 border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-500 hover:text-blue-600 dark:hover:text-teal-500 hover:border-blue-400 dark:hover:border-teal-600 rounded-xl transition-all cursor-pointer text-[11px] font-bold gap-1 truncate" data-rol="${rolId}" data-rolname="${rolNombre}">
-                               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" class="shrink-0 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                               <span class="truncate pointer-events-none">${rolNombre.replace('Guitarra ', 'G. ')}</span>
-                           </button>`;
-                       }
-                       return html;
-                  };
-
-                  // ===== POOL DE VOCES: 4 slots genéricos (soprano + tenor sin distinción) =====
-                  const buildVoicePoolHtml = () => {
-                       // Obtener IDs reales de soprano y tenor
-                       const vozRoles = window.appStateRoles.filter((r:any) => ['voz_soprano', 'voz_tenor'].includes(r.codigo));
-                       const vozRoleIds = vozRoles.map((r:any) => r.id);
-                       
-                       // Todas las voces asignadas en tbState (de cualquier rol de voz)
-                       const allVoices = window.tbState.assignments.filter((a:any) => vozRoleIds.includes(a.rol_id));
-                       const MAX_VOCES = 4;
-                       
-                       let html = '';
-                       
-                       // Slots ocupados
-                       allVoices.forEach((asig:any) => {
-                            const rolNombreVoz = vozRoles.find((r:any) => r.id === asig.rol_id)?.nombre || 'Voz';
-                            const avatarUI = asig.avatar_url 
-                                ? `<img src="${asig.avatar_url}" alt="${asig.perfil_nombre}" class="w-8 h-8 rounded-full object-cover shadow-sm bg-neutral-200 dark:bg-neutral-800 shrink-0">`
-                                : `<div class="w-8 h-8 rounded-full bg-neutral-200 dark:bg-neutral-800 flex items-center justify-center font-bold text-[10px] text-neutral-600 dark:text-neutral-400 shadow-sm shrink-0">${asig.perfil_nombre.substring(0,2).toUpperCase()}</div>`;
-                            html += `
-                            <div class="flex items-center gap-2 px-2 h-[42px] bg-white dark:bg-neutral-900 border border-neutral-200/60 dark:border-neutral-800 shadow-sm rounded-xl hover:shadow-md transition-shadow group shrink-0 w-full relative">
-                                 ${avatarUI}
-                                 <span class="text-[11px] font-bold text-neutral-800 dark:text-neutral-200 truncate pr-6 flex-1">${asig.perfil_nombre.split(' ')[0]}</span>
-                                 <button type="button" class="btn-tb-remove text-neutral-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/40 p-1.5 rounded-lg transition-colors absolute right-1" data-rol="${asig.rol_id}" data-perfil="${asig.perfil_id}">
-                                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" class="pointer-events-none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                                 </button>
-                            </div>`;
-                       });
-                       
-                       // Botón de agregar si quedan slots disponibles (máx 4)
-                       if (allVoices.length < MAX_VOCES) {
-                           html += `<button type="button" class="btn-tb-add w-full h-[42px] px-2 flex items-center justify-center bg-transparent hover:bg-blue-50 dark:hover:bg-teal-900/20 border border-dashed border-neutral-300 dark:border-neutral-700 text-neutral-500 hover:text-blue-600 dark:hover:text-teal-500 hover:border-blue-400 dark:hover:border-teal-600 rounded-xl transition-all cursor-pointer text-[11px] font-bold gap-1 truncate" data-rol="_voz_pool" data-rolname="Voz">
-                               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" class="shrink-0 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                               <span class="truncate pointer-events-none">Voz (${allVoices.length}/${MAX_VOCES})</span>
-                           </button>`;
-                       }
-                       return html;
-                  };
-
-                  window.appStateRoles.forEach((rol:any) => {
-                       // Saltar soprano y tenor individualmente — se manejan via pool unificado
-                       if (['voz_soprano', 'voz_tenor'].includes(rol.codigo)) return;
-                       
-                       const markup = buildSlotHtml(rol.id, rol.nombre, rol.codigo);
-                       if (['lider_alabanza', 'director_musical', 'talkback'].includes(rol.codigo)) n1.insertAdjacentHTML('beforeend', markup);
-                       else if (['encargado_letras', 'letra_y_notas', 'produccion_visual', 'letras'].includes(rol.codigo)) n2.insertAdjacentHTML('beforeend', markup);
-                       else n3.insertAdjacentHTML('beforeend', markup);
-                  });
-                  
-                  // Renderizar sección de voces unificada al final de n3
-                  n3.insertAdjacentHTML('beforeend', buildVoicePoolHtml());
-
-                  // Listeners Bindings Re-Inject
-
-                  document.querySelectorAll('.btn-tb-add').forEach(btn => {
-                       btn.addEventListener('click', (e) => {
-                            const t = e.currentTarget as HTMLElement;
-                            window.openTbPicker(t.getAttribute('data-rol'), t.getAttribute('data-rolname'));
-                       });
-                  });
-                  document.querySelectorAll('.btn-tb-remove').forEach(btn => {
-                       btn.addEventListener('click', (e) => {
-                            const t = e.currentTarget as HTMLElement;
-                            window.tbState.assignments = window.tbState.assignments.filter((a:any) => !(a.rol_id === t.getAttribute('data-rol') && a.perfil_id === t.getAttribute('data-perfil')));
-                            renderTbSlots();
-                       });
-                   });
-              };
-
-              // Picker Inyectado
-              const modalPicker = document.getElementById('picker-modal');
-              window.openTbPicker = async (rolId, rolName) => {
-                   document.getElementById('picker-role-name').textContent = rolName;
-                   modalPicker!.style.display = 'flex';
-                   void modalPicker?.offsetWidth; 
-                   
-                   const list = document.getElementById('picker-list');
-                   const spinner = document.getElementById('picker-spinner');
-                   list.innerHTML = '';
-                   spinner?.classList.remove('hidden');
-
-                   // ===== POOL DE VOCES: buscar soprano + tenor juntos =====
-                   const isVozPool = rolId === '_voz_pool';
-                   let perfilesRol: any[] = [];
-                   let fetchError: any = null;
-                   
-                   if (isVozPool) {
-                       const vozRoles = window.appStateRoles.filter((r:any) => ['voz_soprano', 'voz_tenor'].includes(r.codigo));
-                       const vozRoleIds = vozRoles.map((r:any) => r.id);
-                       if (vozRoleIds.length > 0) {
-                           const { data, error } = await supabase
-                               .from('perfil_roles')
-                               .select('rol_id, perfiles!inner ( * )')
-                               .in('rol_id', vozRoleIds);
-                           fetchError = error;
-                           const seen = new Set();
-                           (data || []).forEach((pr:any) => {
-                               if (!seen.has(pr.perfiles.id)) {
-                                   seen.add(pr.perfiles.id);
-                                   perfilesRol.push({ ...pr, _realRolId: pr.rol_id });
-                               }
-                           });
-                       }
-                   } else {
-                       const { data, error } = await supabase.from('perfil_roles').select('perfiles!inner ( * )').eq('rol_id', rolId);
-                       fetchError = error;
-                       perfilesRol = data || [];
-                   }
-                   
-                   spinner?.classList.add('hidden');
-                   
-                   if (fetchError || perfilesRol.length === 0) {
-                       list.innerHTML = `<p class="text-neutral-500 font-bold p-4 text-center">Nadie tiene este rol. Asignalo a alguien primero en la base.</p>`;
-                       return;
-                   }
-
-                   const vozRolesIds = window.appStateRoles
-                       .filter((r:any) => ['voz_soprano', 'voz_tenor'].includes(r.codigo))
-                       .map((r:any) => r.id);
-                   const vozCount = window.tbState.assignments.filter((a:any) => vozRolesIds.includes(a.rol_id)).length;
-
-                   perfilesRol.forEach((pr:any) => {
-                        const p = pr.perfiles;
-                        const realRolId = pr._realRolId || rolId;
-                        const initials = p.nombre.split(' ').map((n:any)=>n[0]).join('').substring(0,2).toUpperCase();
-                        const avatarUI = p.avatar_url 
-                             ? `<img src="${p.avatar_url}" alt="${p.nombre}" class="w-10 h-10 shrink-0 rounded-full object-cover">`
-                             : `<div class="w-10 h-10 shrink-0 rounded-full bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 flex items-center justify-center font-bold text-xs">${initials}</div>`;
-
-                        const isSelected = isVozPool
-                            ? window.tbState.assignments.some((a:any) => a.perfil_id === p.id && vozRolesIds.includes(a.rol_id))
-                            : window.tbState.assignments.some((a:any) => a.perfil_id === p.id && a.rol_id === rolId);
-                        
-                        const isDisabled = isVozPool && !isSelected && vozCount >= 4;
-                        
-                        const btn = document.createElement('button');
-                        btn.type = 'button';
-                        btn.disabled = isDisabled;
-                        btn.className = `w-full text-left bg-white dark:bg-neutral-900 border ${isSelected ? 'border-teal-500 ring-1 ring-teal-500' : isDisabled ? 'border-neutral-200 opacity-40 cursor-not-allowed' : 'border-neutral-200 dark:border-neutral-800 hover:border-blue-500 dark:hover:border-teal-500'} rounded-xl p-3 flex items-center gap-3 transition-all group`;
-                        btn.innerHTML = `
-                             ${avatarUI}
-                             <div class="flex-1 min-w-0">
-                                  <p class="font-bold text-neutral-900 dark:text-white truncate">${p.nombre}</p>
-                                  ${isVozPool ? `<p class="text-[10px] text-neutral-400 uppercase tracking-wide font-semibold">${window.appStateRoles.find((r:any)=>r.id===realRolId)?.nombre || 'Voz'}</p>` : ''}
-                             </div>
-                             ${isSelected 
-                                 ? `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" class="text-teal-500 shrink-0" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`
-                                 : isDisabled ? `<span class="text-[10px] text-neutral-400 font-bold">LLENO</span>`
-                                 : `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" class="text-neutral-300 dark:text-neutral-700 group-hover:text-blue-500 shrink-0" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>`}
-                        `;
-                        
-                        btn.onclick = () => {
-                             if (isDisabled || isSelected) { modalPicker!.style.display = 'none'; renderTbSlots(); return; }
-                             const saveRolId = isVozPool ? realRolId : rolId;
-                             window.tbState.assignments.push({ rol_id: saveRolId, perfil_id: p.id, perfil_nombre: p.nombre, avatar_url: p.avatar_url });
-                             modalPicker!.style.display = 'none';
-                             renderTbSlots();
-                        };
-                        list.appendChild(btn);
-                   });
-              };
-              
-              document.getElementById('picker-close')?.addEventListener('click', () => {
-                  modalPicker!.style.display = 'none';
-              });
-
-              document.getElementById('picker-backdrop')?.addEventListener('click', () => {
-                  modalPicker!.style.display = 'none';
-              });
-
-             // Submit Form Team Builder Database Save
-             formTb?.addEventListener('submit', async (e) => {
-                  e.preventDefault();
-                  if (window.tbState.assignments.length === 0) {
-                      alert('Agrega al menos a 1 músico a la plantilla.');
-                      return;
-                  }
-
-                  const btnSubmit = document.getElementById('btn-tb-submit') as HTMLButtonElement;
-                  const spinner = document.getElementById('tb-spinner');
-                  const submitText = document.getElementById('tb-submit-text');
-                  const nombrePlan = (document.getElementById('tb-nombre') as HTMLInputElement).value;
-                  const latraE = (document.getElementById('tb-letra') as HTMLSelectElement).value;
-
-                  btnSubmit.disabled = true;
-                  spinner?.classList.remove('hidden');
-                  submitText.textContent = 'Guardando...';
-
-                  try {
-                       // 1. Insert Equipos
-                       const { data: equipoRes, error: equipoErr } = await supabase
-                            .from('equipos')
-                            .insert([{ nombre: nombrePlan, letra: latraE }])
-                            .select()
-                            .single();
-                            
-                       if (equipoErr) throw equipoErr;
-
-                       // 2. Insert Equipo_Integrantes list
-                       const insertPayload = window.tbState.assignments.map((a:any) => ({
-                            equipo_id: equipoRes.id,
-                            perfil_id: a.perfil_id,
-                            rol_maestro: a.rol_id
-                       }));
-
-                       const { error: intsErr } = await supabase.from('equipo_integrantes').insert(insertPayload);
-                       if (intsErr) throw intsErr;
-
-                       // Inject into memory team loop list
-                       window.appStateTeamMembers.push(...insertPayload);
-
-                       // Update in memory on current page directly without reloading!
-                       equiposMaster.unshift({ id: equipoRes.id, nombre: nombrePlan, created_at: equipoRes.created_at, letra: latraE });
-                       window.renderPlantillasGlobally();
-
-                       // Success => Cierro y Aviso
-                       toggleTbModal(false);
-                       setTimeout(() => alert('Equipo Guardado Exitósamente.'), 350);
-                       
-                  } catch (err) {
-                       console.error('Error insertando equipo:', err);
-                       alert('Error Crítico: ' + (err.message || 'No se pudo guardar el equipo'));
-                  } finally {
-                       btnSubmit.disabled = false;
-                       spinner?.classList.add('hidden');
-                       submitText.textContent = 'Guardar Equipo';
-                  }
-             });
-
-         } catch (err) {
-             console.error('❌ Error Crítico cargando equipo:', err.message || err);
-             
-             // Destruir Infinite Loader
-             loadingState?.classList.add('hidden');
-             
-             // Construir UI de Error Fatal
-             const errorDisplay = document.createElement('div');
-             errorDisplay.className = 'w-full p-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-center';
-             errorDisplay.innerHTML = `
-                <h3 class="text-lg font-bold text-red-700 dark:text-red-400 mb-2">Error de Sincronización</h3>
-                <code class="text-sm text-red-600 dark:text-red-300 block max-w-xl mx-auto break-all">${err.message || 'Error desconocido parseando Supabase'}</code>
-             `;
-             document.querySelector('main').appendChild(errorDisplay);
-         }
-
-    });
+ import { supabase } from '../lib/supabase';
+
+ // Estado reactivo temporal de la Plantilla de Equipo
+ window.tbState = {
+ assignments: [] // { rol_id, rol_codigo, perfil_id, perfil_nombre, avatar_url }
+ };
+ window.appStateRoles = []; // Cache rápido para Picker
+
+ document.addEventListener('DOMContentLoaded', async () => {
+ const loadingState = document.getElementById('loading-state');
+ const equipoGrid = document.getElementById('equipo-grid');
+ const emptyState = document.getElementById('empty-state');
+
+ // 1. Verificación de Seguridad y Sesión
+ const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+ 
+ if (sessionError || !session) {
+ window.location.replace('/login');
+ return;
+ }
+
+ const user = session.user;
+ 
+ // Validar si es Admin directamente en la tabla perfiles
+ const { data: perfil, error: perfilError } = await supabase
+ .from('perfiles')
+ .select('is_admin')
+ .eq('id', user.id)
+ .single();
+
+ if (perfilError || !perfil?.is_admin) {
+ alert('Acceso Restringido. Esta página es exclusiva para Administradores.');
+ window.location.replace('/programacion');
+ return;
+ }
+
+ // 2. Fetch Data (Roles, Perfiles, Perfil_Roles)
+ try {
+ // Roles
+ const { data: roles, error: rolesErr } = await supabase.from('roles').select('*').order('nombre');
+ if (rolesErr) throw rolesErr;
+ window.appStateRoles = roles; // Exponer a global para Picker
+
+ // Perfiles (Músicos)
+ const { data: perfiles, error: perfilesErr } = await supabase.from('perfiles').select('*').order('nombre');
+ if (perfilesErr) throw perfilesErr;
+
+ // Asignaciones Maestras 
+ const { data: pivot, error: pivotErr } = await supabase.from('perfil_roles').select('*');
+ if (pivotErr) throw pivotErr;
+
+ // Equipos y sus Miembros en Bulk
+ const { data: equiposMaster, error: equiposErr } = await supabase.from('equipos').select('*').order('created_at', { ascending: false });
+ if (equiposErr) throw equiposErr;
+ 
+ const { data: teamMembers, error: tzErr } = await supabase.from('equipo_integrantes').select('*');
+ if (tzErr) throw tzErr;
+ window.appStateTeamMembers = teamMembers;
+
+ if (!perfiles || perfiles.length === 0) {
+ loadingState?.classList.add('hidden');
+ emptyState?.classList.remove('hidden');
+ return;
+ }
+
+ // Renderizar Plantillas
+ const secPlantillas = document.getElementById('seccion-plantillas');
+ const plantillasGrid = document.getElementById('plantillas-grid');
+ const headCounter = document.getElementById('equipos-counter-top');
+ const btnBuilderBig = document.getElementById('btn-open-team-builder');
+ const btnBuilderFab = document.getElementById('fab-team-builder');
+
+ window.renderPlantillasGlobally = () => {
+ const currentCount = equiposMaster ? equiposMaster.length : 0;
+ 
+ if(headCounter) {
+ headCounter.textContent = `${currentCount}/10 Equipos`;
+ headCounter.classList.remove('hidden');
+ }
+ 
+ // Enforcement Limit
+ if(currentCount >= 10) {
+ btnBuilderBig.disabled = true;
+ btnBuilderBig.title = "Límite Máximo de Equipos alcanzado";
+ btnBuilderFab.classList.add('hidden');
+ } else {
+ btnBuilderBig.disabled = false;
+ btnBuilderBig.title = "";
+ btnBuilderFab.classList.remove('hidden');
+ }
+
+ if(currentCount === 0) {
+ secPlantillas?.classList.add('hidden');
+ return;
+ }
+ 
+ // Scroll hint visual detection 
+ const scrollHint = document.getElementById('scroll-hint-right');
+ const checkScroll = () => {
+ if (plantillasGrid.scrollWidth > plantillasGrid.clientWidth && 
+ plantillasGrid.scrollLeft < plantillasGrid.scrollWidth - plantillasGrid.clientWidth - 10) {
+ scrollHint.classList.remove('opacity-0');
+ } else {
+ scrollHint.classList.add('opacity-0');
+ }
+ };
+ plantillasGrid.addEventListener('scroll', checkScroll);
+ window.addEventListener('resize', checkScroll);
+
+ secPlantillas?.classList.remove('hidden');
+ plantillasGrid.innerHTML = '';
+ equiposMaster.forEach(eq => {
+ // UX Color Map por Letra
+ const colorMap = {
+ A:'bg-red-500', B:'bg-blue-500', C:'bg-emerald-500', D:'bg-purple-500', E:'bg-amber-500',
+ F:'bg-teal-500', G:'bg-rose-500', H:'bg-indigo-500', I:'bg-orange-500', J:'bg-cyan-500'
+ };
+ const baseColor = colorMap[eq.letra || 'A'] || 'bg-neutral-500';
+
+ // Extraer Líderes con Safe Checks
+ const myTeam = window.appStateTeamMembers.filter((m:any) => m.equipo_id === eq.id);
+ const lid = myTeam.find((m:any) => {
+ const r = window.appStateRoles.find((rol:any) => rol.id === m.rol_maestro);
+ return r && ['lider_alabanza', 'director_musical'].includes(r.codigo);
+ });
+ const tlk = myTeam.find((m:any) => {
+ const r = window.appStateRoles.find((rol:any) => rol.id === m.rol_maestro);
+ return r && r.codigo === 'talkback';
+ });
+ const vName = (id) => { const p = perfiles.find(x=>x.id===id); return p ? p.nombre.split(' ')[0] : 'Nadie'; };
+ const dText = `Dirige: ${vName(lid?.perfil_id)} | Talkback: ${vName(tlk?.perfil_id)}`;
+
+ const card = document.createElement('div');
+ card.className = 'team-card-dashboard bg-white border border-neutral-200 rounded-2xl p-4 flex flex-col justify-between shadow-sm min-w-[240px] shrink-0 snap-start group relative transition-shadow hover:shadow-md cursor-pointer';
+ card.setAttribute('data-equipo-id', eq.id);
+ card.innerHTML = `
+ <div class="flex items-center gap-3 mb-3">
+ <div class="w-10 h-10 rounded-full ${baseColor} text-white flex items-center justify-center shrink-0 font-bold font-mono text-lg shadow-sm">
+ ${eq.letra || 'T'}
+ </div>
+ <div class="flex-1 min-w-0 pr-6">
+ <h3 class="font-bold text-neutral-900 text-base truncate leading-tight">${eq.nombre}</h3>
+ <p class="text-[10px] text-neutral-400 uppercase tracking-wider mt-0.5">Equipo Guardado</p>
+ </div>
+ </div>
+ <div class="bg-neutral-50 rounded-lg p-2 border border-neutral-100 ">
+ <p class="text-[10px] text-neutral-600 font-medium truncate flex items-center gap-1.5 opacity-90">
+ <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm0 5c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3Zm0 12c-2.67 0-8-1.34-8-4v-1c0-2.21 4.79-3 8-3s8 .79 8 3v1c0 2.66-5.33 4-8 4Z"/></svg>
+ ${dText}
+ </p>
+ </div>
+ <button class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity p-2 text-neutral-400 hover:text-red-500 hover:bg-red-50 :bg-red-900/40 rounded-lg btn-del-plantilla" data-id="${eq.id}" data-letra="${eq.letra || 'T'}" data-nombre="${eq.nombre}" title="Eliminar Equipo">
+ <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="pointer-events-none"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+ </button>
+ `;
+ 
+ plantillasGrid.appendChild(card);
+ });
+ checkScroll(); // trigger immediately
+ };
+ window.renderPlantillasGlobally();
+
+ // Delegación de Eventos para botones Delete y Click en Tarjeta
+ plantillasGrid.addEventListener('click', async (e) => {
+ const targetBtn = (e.target as Element).closest('.btn-del-plantilla') as HTMLButtonElement;
+ if (targetBtn) {
+ e.stopPropagation();
+ e.preventDefault();
+ console.log('CLICK EN BORRAR DETECTADO');
+ 
+ const idEq = targetBtn.getAttribute('data-id');
+ const letEq = targetBtn.getAttribute('data-letra');
+ const nomEq = targetBtn.getAttribute('data-nombre');
+ console.log('ID a borrar:', idEq, '| Nombre:', nomEq);
+
+ // === Abrir Modal de Confirm Personalizado ===
+ const modalConfirm = document.getElementById('modal-confirm-delete');
+ const msgEl = document.getElementById('confirm-delete-msg');
+ const btnOk = document.getElementById('confirm-delete-ok');
+ const btnCancel = document.getElementById('confirm-delete-cancel');
+ 
+ if (!modalConfirm) {
+ console.error('Modal confirm no encontrado en el DOM!');
+ return;
+ }
+ 
+ if (msgEl) msgEl.textContent = `¿Eliminar "${letEq} - ${nomEq}"?`;
+ modalConfirm.style.display = 'flex'; // Usar style directo, no classList (evita conflicto flex/hidden)
+ 
+ // Limpiar listeners previos para evitar duplicados
+ const newBtnOk = btnOk!.cloneNode(true) as HTMLButtonElement;
+ const newBtnCancel = btnCancel!.cloneNode(true) as HTMLButtonElement;
+ btnOk!.parentNode!.replaceChild(newBtnOk, btnOk!);
+ btnCancel!.parentNode!.replaceChild(newBtnCancel, btnCancel!);
+ 
+ // Evento Cancelar
+ newBtnCancel.addEventListener('click', () => {
+ modalConfirm.style.display = 'none';
+ });
+ 
+ // Evento Confirmar Borrado
+ newBtnOk.addEventListener('click', async () => {
+ // Cerrar modal inmediatamente (style.display v/s classList para evitar conflicto flex/hidden)
+ modalConfirm.style.display = 'none';
+ console.log('Usuario confirmó borrado. Llamando a Supabase...');
+ 
+ newBtnOk.disabled = true;
+ targetBtn.disabled = true;
+ targetBtn.innerHTML = `<svg class="animate-spin h-4 w-4 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>`;
+ 
+ try {
+ const { error } = await supabase.from('equipos').delete().eq('id', idEq);
+ if (error) throw error;
+ 
+ console.log('Borrado exitoso en Supabase ✅');
+ 
+ // Remover del array maestro in-memory
+ const idx = equiposMaster.findIndex((x:any) => x.id === idEq);
+ if (idx !== -1) equiposMaster.splice(idx, 1);
+ 
+ // Re-renderizar todo el grid (garantiza consistencia visual)
+ window.renderPlantillasGlobally();
+ 
+ // Mostrar Toast de éxito
+ const toast = document.createElement('div');
+ toast.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 z-[300] bg-neutral-900 text-white text-sm font-semibold px-5 py-3 rounded-full shadow-2xl flex items-center gap-2 animate-bounce';
+ toast.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg> Equipo "${nomEq}" eliminado`;
+ document.body.appendChild(toast);
+ setTimeout(() => toast.remove(), 3000);
+ 
+ } catch (err:any) {
+ console.error('❌ ERROR SUPABASE DELETE:', err);
+ alert('Error al borrar de Supabase: ' + (err.message || JSON.stringify(err)));
+ targetBtn.disabled = false;
+ targetBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" class="pointer-events-none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`;
+ }
+ });
+
+ return;
+ }
+
+ // Click en la Tarjeta para Detalles
+ const targetCard = (e.target as Element).closest('.team-card-dashboard');
+ if (targetCard) {
+ const equipoId = targetCard.getAttribute('data-equipo-id');
+ if (equipoId && typeof window.openModalEquipoDetalles === 'function') {
+ window.openModalEquipoDetalles(equipoId);
+ }
+ }
+ });
+
+ // Lógica del Visor de Detalles de Equipo
+ const modalDetalles = document.getElementById('modal-detalles-equipo');
+ const panelDetalles = document.getElementById('panel-detalles-equipo');
+ const btnCloseDetalles = document.getElementById('btn-close-detalles');
+
+ window.openModalEquipoDetalles = (equipoId) => {
+ const eq = equiposMaster.find((x:any) => x.id === equipoId);
+ if (!eq) return;
+
+ // 1. Configurar Header
+ document.getElementById('detalle-nombre')!.textContent = eq.nombre;
+ 
+ const colorMap = {
+ A:'bg-red-500', B:'bg-blue-500', C:'bg-emerald-500', D:'bg-purple-500', E:'bg-amber-500',
+ F:'bg-teal-500', G:'bg-rose-500', H:'bg-indigo-500', I:'bg-orange-500', J:'bg-cyan-500'
+ };
+ const baseColor = colorMap[eq.letra || 'A'] || 'bg-neutral-500';
+ 
+ const circle = document.getElementById('detalle-letra-circle');
+ circle!.className = `w-10 h-10 rounded-full ${baseColor} text-white flex items-center justify-center font-bold text-lg shadow-sm shrink-0`;
+ circle!.textContent = eq.letra || 'T';
+
+ // 2. Extraer Integrantes de este equipo
+ const myTeam = window.appStateTeamMembers.filter((m:any) => m.equipo_id === equipoId);
+
+ // 3. Helper para generar tarjeta de perfil
+ const buildProfileSlot = (rolName, perfilId) => {
+ const p = perfiles.find(x => x.id === perfilId);
+ if (!p) return '';
+ 
+ const initials = p.nombre.split(' ').map((n:string)=>n[0]).join('').substring(0,2).toUpperCase();
+ const avatar = p.avatar_url 
+ ? `<img src="${p.avatar_url}" class="w-8 h-8 rounded-full border border-neutral-200 object-cover shrink-0">`
+ : `<div class="w-8 h-8 rounded-full bg-neutral-100 text-neutral-500 flex items-center justify-center font-bold text-[10px] shrink-0">${initials}</div>`;
+ 
+ return `
+ <div class="bg-white border border-neutral-200 rounded-xl p-2.5 flex items-center gap-3 w-full shadow-sm hover:border-blue-500/50 transition-colors">
+ ${avatar}
+ <div class="flex-1 min-w-0">
+ <p class="font-bold text-neutral-900 text-sm truncate">${p.nombre}</p>
+ <p class="text-[10px] text-neutral-500 uppercase tracking-wider font-semibold truncate">${rolName}</p>
+ </div>
+ </div>
+ `;
+ };
+
+ // 4. Limpiar Contenedores
+ const n1 = document.getElementById('detalle-direccion');
+ const n2 = document.getElementById('detalle-letras');
+ const n3 = document.getElementById('detalle-banda');
+ [n1, n2, n3].forEach(el => el!.innerHTML = '');
+
+ // 5. Poblar categorizado
+ myTeam.forEach((member:any) => {
+ const rolObj = window.appStateRoles.find((r:any) => r.id === member.rol_maestro);
+ if (!rolObj) return;
+
+ const markup = buildProfileSlot(rolObj.nombre, member.perfil_id);
+ 
+ if (['lider_alabanza', 'director_musical', 'talkback'].includes(rolObj.codigo)) {
+ n1!.insertAdjacentHTML('beforeend', markup);
+ } else if (['encargado_letras', 'letra_y_notas', 'produccion_visual', 'letras'].includes(rolObj.codigo)) {
+ n2!.insertAdjacentHTML('beforeend', markup);
+ } else {
+ n3!.insertAdjacentHTML('beforeend', markup);
+ }
+ });
+
+ // Add empty states if categorical lists are empty
+ if (n1!.children.length === 0) n1!.innerHTML = `<p class="text-xs text-neutral-400 font-medium italic p-2 col-span-2">Sin asignar</p>`;
+ if (n2!.children.length === 0) n2!.innerHTML = `<p class="text-xs text-neutral-400 font-medium italic p-2">Sin asignar</p>`;
+ if (n3!.children.length === 0) n3!.innerHTML = `<p class="text-xs text-neutral-400 font-medium italic p-2 col-span-2">Sin asignar</p>`;
+
+ // 6. Animar Entrada Modal
+ modalDetalles?.classList.remove('hidden');
+ void modalDetalles?.offsetWidth;
+ panelDetalles?.classList.remove('translate-y-full');
+ };
+
+ const closeDetallesModal = () => {
+ panelDetalles?.classList.add('translate-y-full');
+ setTimeout(() => modalDetalles?.classList.add('hidden'), 350);
+ };
+
+ btnCloseDetalles?.addEventListener('click', closeDetallesModal);
+ document.getElementById('backdrop-detalles-equipo')?.addEventListener('click', closeDetallesModal);
+
+
+ // Mapeo Rápido: Qué perfiles tienen qué roles
+ const rolesPorPerfil = new Map();
+ pivot.forEach(p => {
+ if (!rolesPorPerfil.has(p.perfil_id)) rolesPorPerfil.set(p.perfil_id, new Set());
+ rolesPorPerfil.get(p.perfil_id).add(p.rol_id);
+ });
+
+ // 3. Render Cards
+ equipoGrid.innerHTML = '';
+ perfiles.forEach((p, index) => {
+ const currentRoles = rolesPorPerfil.get(p.id) || new Set();
+ 
+ const article = document.createElement('article');
+ article.className = 'equipo-card bg-white border border-neutral-200 rounded-2xl p-6 shadow-sm opacity-0 translate-y-4 transition-all duration-500 ease-out flex flex-col justify-between';
+ 
+ // Generar Toggles HTML para cada Rol
+ const togglesHTML = roles.map(r => {
+ const isActive = currentRoles.has(r.id);
+ return `
+ <label class="flex items-center justify-between p-2 rounded-lg hover:bg-neutral-50 :bg-neutral-800 transition-colors cursor-pointer border border-transparent ${isActive ? 'border-neutral-200 bg-neutral-50 ' : ''}">
+ <span class="text-sm font-medium ${isActive ? 'text-neutral-900 ' : 'text-neutral-500 '}">
+ ${r.nombre}
+ </span>
+ <input type="checkbox" class="role-toggle form-checkbox h-4 w-4 text-blue-600 rounded border-neutral-300 bg-transparent transition duration-150 ease-in-out" 
+ data-perfil="${p.id}" 
+ data-rol="${r.id}" 
+ ${isActive ? 'checked' : ''}>
+ </label>
+ `;
+ }).join('');
+
+ const cleanName = p.nombre.replace(/\s*\(.*?\)\s*/g, '').trim();
+ const iniciales = cleanName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+
+ const badgesHTML = Array.from(currentRoles).map(rolId => {
+ const rolData = roles.find((r:any) => r.id === rolId);
+ if(!rolData) return '';
+ return `<span class="px-2 py-0.5 bg-neutral-100 border border-neutral-200 text-neutral-600 text-[10px] font-bold uppercase tracking-wider rounded-md">${rolData.nombre}</span>`;
+ }).join('');
+
+ article.innerHTML = `
+ <div>
+ <div class="flex items-center gap-4 mb-4">
+ <div class="w-12 h-12 flex-shrink-0 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-inner z-10 relative">
+ ${p.avatar_url ? `<img src="${p.avatar_url}" alt="${p.nombre}" class="w-full h-full rounded-full object-cover">` : iniciales}
+ </div>
+ <div class="min-w-0">
+ <h3 class="text-lg font-bold text-neutral-900 truncate">${p.nombre}</h3>
+ <p class="text-sm text-neutral-500 truncate">${p.email}</p>
+ </div>
+ </div>
+
+ <div class="mb-4">
+ <h4 class="text-[10px] uppercase tracking-wider font-bold text-neutral-400 mb-2">Roles Maestros</h4>
+ <div class="flex flex-wrap gap-1.5 min-h-[24px]">
+ ${badgesHTML || '<span class="text-xs text-neutral-400 italic">Sin asignar</span>'}
+ </div>
+ </div>
+ </div>
+ 
+ <div class="flex items-center gap-2">
+ <button type="button" class="btn-editar-roles flex-1 py-2 bg-neutral-100 hover:bg-neutral-200 :bg-neutral-700 text-neutral-700 transition-colors rounded-xl text-xs font-bold flex items-center justify-center gap-2 border border-transparent shadow-sm" data-perfil="${p.id}" data-nombre="${p.nombre}">
+ <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+ Editar Roles
+ </button>
+ <button type="button" class="btn-eliminar-perfil w-9 h-9 flex items-center justify-center bg-red-50 hover:bg-red-100 :bg-red-900/40 text-red-400 hover:text-red-600 :text-red-400 transition-all rounded-xl border border-red-200/60 shrink-0" data-perfil="${p.id}" data-nombre="${p.nombre}" title="Eliminar músico">
+ <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+ </button>
+ </div>
+ 
+ <!-- Virtual Hidden DOM para Modal Builder -->
+ <div class="hidden raw-toggles-data" id="raw-toggles-${p.id}">
+ ${togglesHTML}
+ </div>
+ `;
+ 
+ equipoGrid.appendChild(article);
+ });
+
+ loadingState?.classList.add('hidden');
+ equipoGrid?.classList.remove('hidden');
+
+ // Lógica de Modal Global de Roles
+ const modalRoles = document.getElementById('modal-roles-global');
+ const modalRolesBackdrop = document.getElementById('modal-roles-backdrop');
+ const modalRolesPanel = document.getElementById('modal-roles-panel');
+ const modalRolesTitle = document.getElementById('modal-roles-title');
+ const modalRolesContainer = document.getElementById('modal-roles-container');
+ const btnCloseModalRoles = document.getElementById('btn-close-modal-roles');
+
+ const toggleModalRoles = (show) => {
+ if (show) {
+ modalRoles?.classList.remove('hidden');
+ modalRoles?.classList.add('flex');
+ document.body.style.overflow = 'hidden';
+ // Animations in
+ void modalRoles?.offsetWidth; // trigger reflow
+ modalRolesBackdrop?.classList.replace('opacity-0', 'opacity-100');
+ modalRolesPanel?.classList.remove('translate-y-full', 'sm:translate-y-4', 'sm:scale-95', 'sm:opacity-0');
+ } else {
+ modalRolesBackdrop?.classList.replace('opacity-100', 'opacity-0');
+ modalRolesPanel?.classList.add('translate-y-full', 'sm:translate-y-4', 'sm:scale-95', 'sm:opacity-0');
+ setTimeout(() => {
+ modalRoles?.classList.add('hidden');
+ modalRoles?.classList.remove('flex');
+ document.body.style.overflow = '';
+ }, 300); // match transition duration
+ }
+ };
+
+ btnCloseModalRoles?.addEventListener('click', () => toggleModalRoles(false));
+ modalRolesBackdrop?.addEventListener('click', () => toggleModalRoles(false));
+
+ // Event Listeners a los botones de Tarjetas
+ document.querySelectorAll('.btn-editar-roles').forEach(btn => {
+ btn.addEventListener('click', (e) => {
+ const btnTarget = e.currentTarget as HTMLButtonElement;
+ const perfilId = btnTarget.getAttribute('data-perfil');
+ const perfilNombre = btnTarget.getAttribute('data-nombre');
+
+ modalRolesTitle.textContent = `Roles: ${perfilNombre.split(' ')[0]}`;
+ 
+ // Volcar la data virtual al modal
+ const togglesRawData = document.getElementById(`raw-toggles-${perfilId}`)?.innerHTML || '';
+ modalRolesContainer.innerHTML = togglesRawData;
+
+ // Enganchar listeners AL VUELO a estos toggles inyectados
+ modalRolesContainer.querySelectorAll('.role-toggle').forEach(box => {
+ box.addEventListener('change', async (ev) => {
+ const el = ev.target as HTMLInputElement;
+ const rId = el.getAttribute('data-rol');
+ const isChecked = el.checked;
+
+ // UI Optimística Modal
+ const labelParent = el.closest('label');
+ const spanText = labelParent.querySelector('span');
+ if (isChecked) {
+ labelParent.classList.add('border-neutral-200', 'bg-neutral-50', '', '');
+ labelParent.classList.remove('border-transparent');
+ spanText.classList.replace('text-neutral-500', 'text-neutral-900');
+ spanText.classList.replace('', '');
+ } else {
+ labelParent.classList.remove('border-neutral-200', 'bg-neutral-50', '', '');
+ labelParent.classList.add('border-transparent');
+ spanText.classList.replace('text-neutral-900', 'text-neutral-500');
+ spanText.classList.replace('', '');
+ }
+
+ // API Call Supabase en vivo
+ try {
+ if (isChecked) {
+ const { error: insErr } = await supabase.from('perfil_roles').insert({ perfil_id: perfilId, rol_id: rId });
+ if (insErr) throw insErr;
+ } else {
+ const { error: delErr } = await supabase.from('perfil_roles').delete().match({ perfil_id: perfilId, rol_id: rId });
+ if (delErr) throw delErr;
+ }
+ // Opcional para re-renderizado total inmediato en background:
+ // window.location.reload() -> Evitable si dejamos que el usuario refresque cuando termine de administrar todo un lote, que es mejor UX.
+ } catch(err) {
+ console.error('Error DB:', err);
+ el.checked = !isChecked; // Revert
+ el.dispatchEvent(new Event('change'));
+ alert('Fallo de red al interactuar con el servidor.');
+ }
+ });
+ });
+
+ toggleModalRoles(true);
+ });
+ });
+
+
+ // Event Listeners para Eliminar Perfil (papelera)
+ document.querySelectorAll('.btn-eliminar-perfil').forEach(btn => {
+ btn.addEventListener('click', async (e) => {
+ const btnTarget = e.currentTarget;
+ const perfilId = btnTarget.getAttribute('data-perfil');
+ const perfilNombre = btnTarget.getAttribute('data-nombre');
+
+ // Modal de confirmación premium inline
+ const overlay = document.createElement('div');
+ overlay.className = 'fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm';
+ overlay.style.animation = 'fadeIn 0.2s ease-out';
+ overlay.innerHTML = `
+ <style>
+ @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+ @keyframes scaleIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+ </style>
+ <div class="bg-white rounded-3xl shadow-2xl max-w-sm w-[90%] overflow-hidden border border-neutral-200 " style="animation: scaleIn 0.25s ease-out">
+ <div class="p-6 text-center">
+ <div class="w-14 h-14 rounded-full flex items-center justify-center text-2xl mx-auto mb-4 bg-red-100 text-red-500">
+ <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+ </div>
+ <h3 class="text-lg font-extrabold text-neutral-900 mb-1">Eliminar "${perfilNombre}"</h3>
+ <p class="text-sm text-neutral-500 leading-relaxed">Se eliminará este músico y todas sus asignaciones. Esta acción no se puede deshacer.</p>
+ </div>
+ <div class="flex border-t border-neutral-200 ">
+ <button id="del-cancel" class="flex-1 py-3.5 text-sm font-bold text-neutral-500 hover:bg-neutral-100 :bg-neutral-800 transition-colors">Cancelar</button>
+ <button id="del-accept" class="flex-1 py-3.5 text-sm font-bold text-red-600 hover:bg-red-50 :bg-red-950/30 transition-colors border-l border-neutral-200 ">Eliminar</button>
+ </div>
+ </div>
+ `;
+ document.body.appendChild(overlay);
+
+ const result = await new Promise((resolve) => {
+ overlay.querySelector('#del-cancel').addEventListener('click', () => resolve(false));
+ overlay.querySelector('#del-accept').addEventListener('click', () => resolve(true));
+ overlay.addEventListener('click', (ev) => { if (ev.target === overlay) resolve(false); });
+ });
+
+ overlay.remove();
+ if (!result) return;
+
+ try {
+ await supabase.from('asignaciones').delete().eq('perfil_id', perfilId);
+ await supabase.from('perfil_roles').delete().eq('perfil_id', perfilId);
+ await supabase.from('equipo_integrantes').delete().eq('perfil_id', perfilId);
+ const { error } = await supabase.from('perfiles').delete().eq('id', perfilId);
+ if (error) throw error;
+
+ const card = btnTarget.closest('.equipo-card');
+ if (card) {
+ card.style.transition = 'all 0.3s ease-out';
+ card.style.opacity = '0';
+ card.style.transform = 'scale(0.9)';
+ setTimeout(() => card.remove(), 350);
+ }
+
+ const toast = document.createElement('div');
+ toast.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 z-[300] bg-neutral-900 text-white text-sm font-semibold px-5 py-3 rounded-full shadow-2xl flex items-center gap-2';
+ toast.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg> Músico eliminado';
+ document.body.appendChild(toast);
+ setTimeout(() => toast.remove(), 3000);
+ } catch(err) {
+ alert('Error al eliminar: ' + (err.message || 'Error desconocido'));
+ }
+ });
+ });
+
+
+ 
+ // Lógica del Modal Añadir Músico
+ const modalAddMusico = document.getElementById('modal-add-musico');
+ const addMusicoBackdrop = document.getElementById('add-musico-backdrop');
+ const addMusicoPanel = document.getElementById('add-musico-panel');
+ const fabAddMusico = document.getElementById('fab-add-musico');
+
+ const toggleAddMusico = (show) => {
+ if (show) {
+ modalAddMusico?.classList.remove('hidden');
+ modalAddMusico?.classList.add('flex');
+ document.body.style.overflow = 'hidden';
+ void modalAddMusico?.offsetWidth;
+ addMusicoBackdrop?.classList.replace('opacity-0', 'opacity-100');
+ addMusicoPanel?.classList.remove('scale-95', 'opacity-0');
+ } else {
+ addMusicoBackdrop?.classList.replace('opacity-100', 'opacity-0');
+ addMusicoPanel?.classList.add('scale-95', 'opacity-0');
+ setTimeout(() => {
+ modalAddMusico?.classList.add('hidden');
+ modalAddMusico?.classList.remove('flex');
+ document.body.style.overflow = '';
+ }, 300);
+ }
+ };
+
+ fabAddMusico?.addEventListener('click', () => toggleAddMusico(true));
+ document.getElementById('btn-close-add-musico')?.addEventListener('click', () => toggleAddMusico(false));
+ document.getElementById('btn-cancel-add-musico')?.addEventListener('click', () => toggleAddMusico(false));
+ addMusicoBackdrop?.addEventListener('click', () => toggleAddMusico(false));
+
+ document.getElementById('btn-submit-add-musico')?.addEventListener('click', async () => {
+ const nombre = (document.getElementById('add-musico-nombre')).value.trim();
+ const email = (document.getElementById('add-musico-email')).value.trim();
+
+ if (!nombre) { document.getElementById('add-musico-nombre')?.focus(); return; }
+ if (!email || !email.includes('@')) { document.getElementById('add-musico-email')?.focus(); return; }
+
+ const submitBtn = document.getElementById('btn-submit-add-musico');
+ const submitText = document.getElementById('add-musico-text');
+ const submitSpinner = document.getElementById('add-musico-spinner');
+ submitBtn.disabled = true;
+ submitText?.classList.add('hidden');
+ submitSpinner?.classList.remove('hidden');
+
+ try {
+ const { data: newPerfil, error } = await supabase
+ .from('perfiles')
+ .insert([{ nombre, email, is_admin: false }])
+ .select()
+ .single();
+
+ if (error) throw error;
+
+ toggleAddMusico(false);
+ 
+ // Toast de éxito
+ const toast = document.createElement('div');
+ toast.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 z-[300] bg-neutral-900 text-white text-sm font-semibold px-5 py-3 rounded-full shadow-2xl flex items-center gap-2';
+ toast.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg> Músico registrado';
+ document.body.appendChild(toast);
+ setTimeout(() => toast.remove(), 3000);
+
+ // Refresh para ver el nuevo músico
+ setTimeout(() => window.location.reload(), 1500);
+
+ } catch(err) {
+ alert('Error al registrar: ' + (err.message || 'Error desconocido'));
+ submitBtn.disabled = false;
+ submitText?.classList.remove('hidden');
+ submitSpinner?.classList.add('hidden');
+ }
+ });
+
+
+ // Intersection Observer Fade-In
+ const cards = document.querySelectorAll('.equipo-card');
+ if ('IntersectionObserver' in window) {
+ const observer = new IntersectionObserver((entries) => {
+ entries.forEach(entry => {
+ if (entry.isIntersecting) {
+ entry.target.classList.remove('opacity-0', 'translate-y-4');
+ observer.unobserve(entry.target);
+ }
+ });
+ }, { rootMargin: '0px 0px 50px 0px', threshold: 0.1 });
+ cards.forEach(card => observer.observe(card));
+ } else {
+ cards.forEach(card => card.classList.remove('opacity-0', 'translate-y-4'));
+ }
+
+ // ==========================================
+ // LÓGICA CONSTRUCTOR DE PLANTILLAS (TEAM BUILDER)
+ // ==========================================
+ const tbModal = document.getElementById('modal-team-builder');
+ const tbBackdrop = document.getElementById('tb-backdrop');
+ const tbPanel = document.getElementById('tb-panel');
+ const btnOpenTb = document.getElementById('btn-open-team-builder');
+ const fabOpenTb = document.getElementById('fab-team-builder');
+ const btnTbClose = document.getElementById('btn-tb-close');
+ const btnTbCancel = document.getElementById('btn-tb-cancelar');
+ const formTb = document.getElementById('form-team-builder');
+ const tbCounterLabel = document.getElementById('tb-counter-label');
+
+ const toggleTbModal = (show) => {
+ if (show) {
+ tbModal?.classList.remove('hidden');
+ tbModal?.classList.add('flex');
+ document.body.style.overflow = 'hidden';
+ void tbModal?.offsetWidth;
+ tbBackdrop?.classList.replace('opacity-0', 'opacity-100');
+ tbPanel?.classList.remove('translate-y-full', 'sm:translate-y-4', 'sm:scale-95', 'sm:opacity-0');
+ window.tbState.assignments = [];
+ (document.getElementById('tb-nombre') as HTMLInputElement).value = '';
+ renderTbSlots();
+ } else {
+ tbBackdrop?.classList.replace('opacity-100', 'opacity-0');
+ tbPanel?.classList.add('translate-y-full', 'sm:translate-y-4', 'sm:scale-95', 'sm:opacity-0');
+ setTimeout(() => {
+ tbModal?.classList.add('hidden');
+ tbModal?.classList.remove('flex');
+ document.body.style.overflow = '';
+ }, 300);
+ }
+ };
+
+ btnOpenTb?.addEventListener('click', () => toggleTbModal(true));
+ fabOpenTb?.addEventListener('click', () => toggleTbModal(true));
+ btnTbClose?.addEventListener('click', () => toggleTbModal(false));
+ btnTbCancel?.addEventListener('click', () => toggleTbModal(false));
+
+ // Render Motor Interno TB
+ const renderTbSlots = () => {
+ const asigCounts = window.tbState.assignments.length;
+ tbCounterLabel.textContent = `${asigCounts} Asignado${asigCounts !== 1 ? 's' : ''}`;
+ 
+ const n1 = document.getElementById('tb-n1-slots');
+ const n2 = document.getElementById('tb-n2-slots');
+ const n3 = document.getElementById('tb-n3-slots');
+ if(!n1 || !n2 || !n3) return;
+ n1.innerHTML = ''; n2.innerHTML = ''; n3.innerHTML = '';
+
+ const buildSlotHtml = (rolId, rolNombre, codigo) => {
+ const assigned = window.tbState.assignments.filter((a:any) => a.rol_id === rolId);
+ let html = '';
+ assigned.forEach((asig, idx) => {
+ const avatarUI = asig.avatar_url 
+ ? `<img src="${asig.avatar_url}" alt="${asig.perfil_nombre}" class="w-8 h-8 rounded-full object-cover shadow-sm bg-neutral-200 shrink-0">`
+ : `<div class="w-8 h-8 rounded-full bg-neutral-200 flex items-center justify-center font-bold text-[10px] text-neutral-600 shadow-sm shrink-0">${asig.perfil_nombre.substring(0,2).toUpperCase()}</div>`;
+ html += `
+ <div class="flex items-center gap-2 px-2 h-[42px] bg-white border border-neutral-200/60 shadow-sm rounded-xl hover:shadow-md transition-shadow group shrink-0 w-full relative">
+ ${avatarUI}
+ <span class="text-[11px] font-bold text-neutral-800 truncate pr-6 flex-1">${asig.perfil_nombre.split(' ')[0]}</span>
+ <button type="button" class="btn-tb-remove text-neutral-400 hover:text-red-500 hover:bg-red-50 :bg-red-900/40 p-1.5 rounded-lg transition-colors absolute right-1" data-rol="${rolId}" data-perfil="${asig.perfil_id}">
+ <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" class="pointer-events-none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+ </button>
+ </div>`;
+ });
+ 
+ // '+' Button para el slot
+ const canAdd = !(['lider_alabanza', 'director_musical', 'bateria', 'bajo', 'piano', 'guitarra_acustica', 'guitarra_electrica'].includes(codigo) && assigned.length >= 1);
+ if (canAdd) {
+ html += `<button type="button" class="btn-tb-add w-full h-[42px] px-2 flex items-center justify-center bg-transparent hover:bg-blue-50 :bg-teal-900/20 border border-dashed border-neutral-300 text-neutral-500 hover:text-blue-600 :text-teal-500 hover:border-blue-400 :border-teal-600 rounded-xl transition-all cursor-pointer text-[11px] font-bold gap-1 truncate" data-rol="${rolId}" data-rolname="${rolNombre}">
+ <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" class="shrink-0 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+ <span class="truncate pointer-events-none">${rolNombre.replace('Guitarra ', 'G. ')}</span>
+ </button>`;
+ }
+ return html;
+ };
+
+ // ===== POOL DE VOCES: 4 slots genéricos (soprano + tenor sin distinción) =====
+ const buildVoicePoolHtml = () => {
+ // Obtener IDs reales de soprano y tenor
+ const vozRoles = window.appStateRoles.filter((r:any) => ['voz_soprano', 'voz_tenor'].includes(r.codigo));
+ const vozRoleIds = vozRoles.map((r:any) => r.id);
+ 
+ // Todas las voces asignadas en tbState (de cualquier rol de voz)
+ const allVoices = window.tbState.assignments.filter((a:any) => vozRoleIds.includes(a.rol_id));
+ const MAX_VOCES = 4;
+ 
+ let html = '';
+ 
+ // Slots ocupados
+ allVoices.forEach((asig:any) => {
+ const rolNombreVoz = vozRoles.find((r:any) => r.id === asig.rol_id)?.nombre || 'Voz';
+ const avatarUI = asig.avatar_url 
+ ? `<img src="${asig.avatar_url}" alt="${asig.perfil_nombre}" class="w-8 h-8 rounded-full object-cover shadow-sm bg-neutral-200 shrink-0">`
+ : `<div class="w-8 h-8 rounded-full bg-neutral-200 flex items-center justify-center font-bold text-[10px] text-neutral-600 shadow-sm shrink-0">${asig.perfil_nombre.substring(0,2).toUpperCase()}</div>`;
+ html += `
+ <div class="flex items-center gap-2 px-2 h-[42px] bg-white border border-neutral-200/60 shadow-sm rounded-xl hover:shadow-md transition-shadow group shrink-0 w-full relative">
+ ${avatarUI}
+ <span class="text-[11px] font-bold text-neutral-800 truncate pr-6 flex-1">${asig.perfil_nombre.split(' ')[0]}</span>
+ <button type="button" class="btn-tb-remove text-neutral-400 hover:text-red-500 hover:bg-red-50 :bg-red-900/40 p-1.5 rounded-lg transition-colors absolute right-1" data-rol="${asig.rol_id}" data-perfil="${asig.perfil_id}">
+ <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" class="pointer-events-none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+ </button>
+ </div>`;
+ });
+ 
+ // Botón de agregar si quedan slots disponibles (máx 4)
+ if (allVoices.length < MAX_VOCES) {
+ html += `<button type="button" class="btn-tb-add w-full h-[42px] px-2 flex items-center justify-center bg-transparent hover:bg-blue-50 :bg-teal-900/20 border border-dashed border-neutral-300 text-neutral-500 hover:text-blue-600 :text-teal-500 hover:border-blue-400 :border-teal-600 rounded-xl transition-all cursor-pointer text-[11px] font-bold gap-1 truncate" data-rol="_voz_pool" data-rolname="Voz">
+ <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" class="shrink-0 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+ <span class="truncate pointer-events-none">Voz (${allVoices.length}/${MAX_VOCES})</span>
+ </button>`;
+ }
+ return html;
+ };
+
+ window.appStateRoles.forEach((rol:any) => {
+ // Saltar soprano y tenor individualmente — se manejan via pool unificado
+ if (['voz_soprano', 'voz_tenor'].includes(rol.codigo)) return;
+ 
+ const markup = buildSlotHtml(rol.id, rol.nombre, rol.codigo);
+ if (['lider_alabanza', 'director_musical', 'talkback'].includes(rol.codigo)) n1.insertAdjacentHTML('beforeend', markup);
+ else if (['encargado_letras', 'letra_y_notas', 'produccion_visual', 'letras'].includes(rol.codigo)) n2.insertAdjacentHTML('beforeend', markup);
+ else n3.insertAdjacentHTML('beforeend', markup);
+ });
+ 
+ // Renderizar sección de voces unificada al final de n3
+ n3.insertAdjacentHTML('beforeend', buildVoicePoolHtml());
+
+ // Listeners Bindings Re-Inject
+
+ document.querySelectorAll('.btn-tb-add').forEach(btn => {
+ btn.addEventListener('click', (e) => {
+ const t = e.currentTarget as HTMLElement;
+ window.openTbPicker(t.getAttribute('data-rol'), t.getAttribute('data-rolname'));
+ });
+ });
+ document.querySelectorAll('.btn-tb-remove').forEach(btn => {
+ btn.addEventListener('click', (e) => {
+ const t = e.currentTarget as HTMLElement;
+ window.tbState.assignments = window.tbState.assignments.filter((a:any) => !(a.rol_id === t.getAttribute('data-rol') && a.perfil_id === t.getAttribute('data-perfil')));
+ renderTbSlots();
+ });
+ });
+ };
+
+ // Picker Inyectado
+ const modalPicker = document.getElementById('picker-modal');
+ window.openTbPicker = async (rolId, rolName) => {
+ document.getElementById('picker-role-name').textContent = rolName;
+ modalPicker!.style.display = 'flex';
+ void modalPicker?.offsetWidth; 
+ 
+ const list = document.getElementById('picker-list');
+ const spinner = document.getElementById('picker-spinner');
+ list.innerHTML = '';
+ spinner?.classList.remove('hidden');
+
+ // ===== POOL DE VOCES: buscar soprano + tenor juntos =====
+ const isVozPool = rolId === '_voz_pool';
+ let perfilesRol: any[] = [];
+ let fetchError: any = null;
+ 
+ if (isVozPool) {
+ const vozRoles = window.appStateRoles.filter((r:any) => ['voz_soprano', 'voz_tenor'].includes(r.codigo));
+ const vozRoleIds = vozRoles.map((r:any) => r.id);
+ if (vozRoleIds.length > 0) {
+ const { data, error } = await supabase
+ .from('perfil_roles')
+ .select('rol_id, perfiles!inner ( * )')
+ .in('rol_id', vozRoleIds);
+ fetchError = error;
+ const seen = new Set();
+ (data || []).forEach((pr:any) => {
+ if (!seen.has(pr.perfiles.id)) {
+ seen.add(pr.perfiles.id);
+ perfilesRol.push({ ...pr, _realRolId: pr.rol_id });
+ }
+ });
+ }
+ } else {
+ const { data, error } = await supabase.from('perfil_roles').select('perfiles!inner ( * )').eq('rol_id', rolId);
+ fetchError = error;
+ perfilesRol = data || [];
+ }
+ 
+ spinner?.classList.add('hidden');
+ 
+ if (fetchError || perfilesRol.length === 0) {
+ list.innerHTML = `<p class="text-neutral-500 font-bold p-4 text-center">Nadie tiene este rol. Asignalo a alguien primero en la base.</p>`;
+ return;
+ }
+
+ const vozRolesIds = window.appStateRoles
+ .filter((r:any) => ['voz_soprano', 'voz_tenor'].includes(r.codigo))
+ .map((r:any) => r.id);
+ const vozCount = window.tbState.assignments.filter((a:any) => vozRolesIds.includes(a.rol_id)).length;
+
+ perfilesRol.forEach((pr:any) => {
+ const p = pr.perfiles;
+ const realRolId = pr._realRolId || rolId;
+ const initials = p.nombre.split(' ').map((n:any)=>n[0]).join('').substring(0,2).toUpperCase();
+ const avatarUI = p.avatar_url 
+ ? `<img src="${p.avatar_url}" alt="${p.nombre}" class="w-10 h-10 shrink-0 rounded-full object-cover">`
+ : `<div class="w-10 h-10 shrink-0 rounded-full bg-neutral-200 text-neutral-600 flex items-center justify-center font-bold text-xs">${initials}</div>`;
+
+ const isSelected = isVozPool
+ ? window.tbState.assignments.some((a:any) => a.perfil_id === p.id && vozRolesIds.includes(a.rol_id))
+ : window.tbState.assignments.some((a:any) => a.perfil_id === p.id && a.rol_id === rolId);
+ 
+ const isDisabled = isVozPool && !isSelected && vozCount >= 4;
+ 
+ const btn = document.createElement('button');
+ btn.type = 'button';
+ btn.disabled = isDisabled;
+ btn.className = `w-full text-left bg-white border ${isSelected ? 'border-teal-500 ring-1 ring-teal-500' : isDisabled ? 'border-neutral-200 opacity-40 cursor-not-allowed' : 'border-neutral-200 hover:border-blue-500 :border-teal-500'} rounded-xl p-3 flex items-center gap-3 transition-all group`;
+ btn.innerHTML = `
+ ${avatarUI}
+ <div class="flex-1 min-w-0">
+ <p class="font-bold text-neutral-900 truncate">${p.nombre}</p>
+ ${isVozPool ? `<p class="text-[10px] text-neutral-400 uppercase tracking-wide font-semibold">${window.appStateRoles.find((r:any)=>r.id===realRolId)?.nombre || 'Voz'}</p>` : ''}
+ </div>
+ ${isSelected 
+ ? `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" class="text-teal-500 shrink-0" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`
+ : isDisabled ? `<span class="text-[10px] text-neutral-400 font-bold">LLENO</span>`
+ : `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" class="text-neutral-300 group-hover:text-blue-500 shrink-0" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>`}
+ `;
+ 
+ btn.onclick = () => {
+ if (isDisabled || isSelected) { modalPicker!.style.display = 'none'; renderTbSlots(); return; }
+ const saveRolId = isVozPool ? realRolId : rolId;
+ window.tbState.assignments.push({ rol_id: saveRolId, perfil_id: p.id, perfil_nombre: p.nombre, avatar_url: p.avatar_url });
+ modalPicker!.style.display = 'none';
+ renderTbSlots();
+ };
+ list.appendChild(btn);
+ });
+ };
+ 
+ document.getElementById('picker-close')?.addEventListener('click', () => {
+ modalPicker!.style.display = 'none';
+ });
+
+ document.getElementById('picker-backdrop')?.addEventListener('click', () => {
+ modalPicker!.style.display = 'none';
+ });
+
+ // Submit Form Team Builder Database Save
+ formTb?.addEventListener('submit', async (e) => {
+ e.preventDefault();
+ if (window.tbState.assignments.length === 0) {
+ alert('Agrega al menos a 1 músico a la plantilla.');
+ return;
+ }
+
+ const btnSubmit = document.getElementById('btn-tb-submit') as HTMLButtonElement;
+ const spinner = document.getElementById('tb-spinner');
+ const submitText = document.getElementById('tb-submit-text');
+ const nombrePlan = (document.getElementById('tb-nombre') as HTMLInputElement).value;
+ const latraE = (document.getElementById('tb-letra') as HTMLSelectElement).value;
+
+ btnSubmit.disabled = true;
+ spinner?.classList.remove('hidden');
+ submitText.textContent = 'Guardando...';
+
+ try {
+ // 1. Insert Equipos
+ const { data: equipoRes, error: equipoErr } = await supabase
+ .from('equipos')
+ .insert([{ nombre: nombrePlan, letra: latraE }])
+ .select()
+ .single();
+ 
+ if (equipoErr) throw equipoErr;
+
+ // 2. Insert Equipo_Integrantes list
+ const insertPayload = window.tbState.assignments.map((a:any) => ({
+ equipo_id: equipoRes.id,
+ perfil_id: a.perfil_id,
+ rol_maestro: a.rol_id
+ }));
+
+ const { error: intsErr } = await supabase.from('equipo_integrantes').insert(insertPayload);
+ if (intsErr) throw intsErr;
+
+ // Inject into memory team loop list
+ window.appStateTeamMembers.push(...insertPayload);
+
+ // Update in memory on current page directly without reloading!
+ equiposMaster.unshift({ id: equipoRes.id, nombre: nombrePlan, created_at: equipoRes.created_at, letra: latraE });
+ window.renderPlantillasGlobally();
+
+ // Success => Cierro y Aviso
+ toggleTbModal(false);
+ setTimeout(() => alert('Equipo Guardado Exitósamente.'), 350);
+ 
+ } catch (err) {
+ console.error('Error insertando equipo:', err);
+ alert('Error Crítico: ' + (err.message || 'No se pudo guardar el equipo'));
+ } finally {
+ btnSubmit.disabled = false;
+ spinner?.classList.add('hidden');
+ submitText.textContent = 'Guardar Equipo';
+ }
+ });
+
+ } catch (err) {
+ console.error('❌ Error Crítico cargando equipo:', err.message || err);
+ 
+ // Destruir Infinite Loader
+ loadingState?.classList.add('hidden');
+ 
+ // Construir UI de Error Fatal
+ const errorDisplay = document.createElement('div');
+ errorDisplay.className = 'w-full p-6 bg-red-50 border border-red-200 rounded-xl text-center';
+ errorDisplay.innerHTML = `
+ <h3 class="text-lg font-bold text-red-700 mb-2">Error de Sincronización</h3>
+ <code class="text-sm text-red-600 block max-w-xl mx-auto break-all">${err.message || 'Error desconocido parseando Supabase'}</code>
+ `;
+ document.querySelector('main').appendChild(errorDisplay);
+ }
+
+ });
 </script>

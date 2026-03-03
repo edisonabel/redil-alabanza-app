@@ -6,847 +6,847 @@ import Papa from 'papaparse';
 const urlDelCSV = 'https://docs.google.com/spreadsheets/d/1Fk4DgxWzizonrG_xB_DZN8wSqLSZY9myj7ROM7JLu-c/export?format=csv';
 
 async function fetchCanciones() {
-    try {
-        const response = await fetch(urlDelCSV);
-        if (!response.ok) {
-            console.error("No se pudo obtener el CSV");
-            return [];
-        }
-        const text = await response.text();
-        const cleanText = text.substring(text.indexOf('\n') + 1);
-        
-        const { data, errors } = Papa.parse(cleanText, {
-            header: true,
-            skipEmptyLines: true,
-        });
-        
-        if (errors.length) {
-          console.error("Errores parseando el CSV:", errors);
-        }
-        
-        return data.filter((row: any) => {
-            const hasName = row['Canción']?.trim() !== '';
-            const isActive = row['Estado']?.trim() !== 'Archivada';
-            return hasName && isActive;
-        });
-    } catch (e) {
-        console.error("Error al obtener canciones", e);
-        return [];
-    }
+ try {
+ const response = await fetch(urlDelCSV);
+ if (!response.ok) {
+ console.error("No se pudo obtener el CSV");
+ return [];
+ }
+ const text = await response.text();
+ const cleanText = text.substring(text.indexOf('\n') + 1);
+ 
+ const { data, errors } = Papa.parse(cleanText, {
+ header: true,
+ skipEmptyLines: true,
+ });
+ 
+ if (errors.length) {
+ console.error("Errores parseando el CSV:", errors);
+ }
+ 
+ return data.filter((row: any) => {
+ const hasName = row['Canción']?.trim() !== '';
+ const isActive = row['Estado']?.trim() !== 'Archivada';
+ return hasName && isActive;
+ });
+ } catch (e) {
+ console.error("Error al obtener canciones", e);
+ return [];
+ }
 }
 
 const canciones = await fetchCanciones();
 
 const cancionesConDataFicticia = canciones.length > 0 ? canciones : [
-  {
-      'Canción': "Cuan Grande Es Dios",
-      'Tonalidad Redil Estadio': "C",
-      'Beat Batería': "72",
-      'Link Letras': "#",
-      'Link Acordes': "#",
-      'Link Voces': "#",
-      'Link Youtube': "#",
-      'Link Secuencias': "#",
-      'Categoría Canción': "Lenta",
-      'Voz Principal': "Hombre",
-      'Tema Principal Canción': "Exaltación"
-  }
+ {
+ 'Canción': "Cuan Grande Es Dios",
+ 'Tonalidad Redil Estadio': "C",
+ 'Beat Batería': "72",
+ 'Link Letras': "#",
+ 'Link Acordes': "#",
+ 'Link Voces': "#",
+ 'Link Youtube': "#",
+ 'Link Secuencias': "#",
+ 'Categoría Canción': "Lenta",
+ 'Voz Principal': "Hombre",
+ 'Tema Principal Canción': "Exaltación"
+ }
 ];
 
 const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema Principal Canción']).filter(Boolean))].sort() as string[];
 ---
 
 <Layout>
-    <header class="mb-5 mt-3 md:mb-10 md:mt-6 flex flex-row items-center justify-center gap-3 md:gap-4 px-2 md:px-4 max-w-4xl mx-auto">
-        <img id="logo-img" src="/LOGO REDIL.png" alt="Logo Iglesia Redil" class="h-14 md:h-24 w-auto drop-shadow-xl shrink-0 transition-opacity duration-300" />
-        <div class="text-left flex flex-col justify-center">
-            <h1 id="mainTitle" class="text-2xl sm:text-3xl md:text-5xl font-extrabold tracking-tight mb-0.5 md:mb-3 text-white leading-tight">
-                Repertorio <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400">Alabanza</span>
-            </h1>
-            <p class="text-neutral-400 text-[11px] sm:text-xs md:text-lg">Administración de canciones, tonos y recursos.</p>
-        </div>
-    </header>
+ <header class="mb-5 mt-3 md:mb-10 md:mt-6 flex flex-row items-center justify-center gap-3 md:gap-4 px-2 md:px-4 max-w-4xl mx-auto">
+ <img id="logo-img" src="/LOGO REDIL LIGHT.png" alt="Logo Iglesia Redil" class="h-14 md:h-24 w-auto drop-shadow-xl shrink-0 transition-opacity duration-300" />
+ <div class="text-left flex flex-col justify-center">
+ <h1 id="mainTitle" class="text-2xl sm:text-3xl md:text-5xl font-extrabold tracking-tight mb-0.5 md:mb-3 text-neutral-900 leading-tight">
+ Repertorio <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400">Alabanza</span>
+ </h1>
+ <p class="text-neutral-500 text-[11px] sm:text-xs md:text-lg">Administración de canciones, tonos y recursos.</p>
+ </div>
+ </header>
 
-    <!-- UI Controles -->
-    <section id="searchControls" class="max-w-7xl mx-auto mb-6 bg-neutral-900 border border-neutral-800 rounded-2xl p-3 md:p-6 shadow-lg">
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-4">
-            <div class="col-span-2 md:col-span-1 lg:col-span-1 flex items-center gap-2">
-                <div class="md:hidden flex items-center justify-center shrink-0 text-neutral-400" title="Filtros">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="4" y1="21" x2="4" y2="14"></line>
-                        <line x1="4" y1="10" x2="4" y2="3"></line>
-                        <line x1="12" y1="21" x2="12" y2="12"></line>
-                        <line x1="12" y1="8" x2="12" y2="3"></line>
-                        <line x1="20" y1="21" x2="20" y2="16"></line>
-                        <line x1="20" y1="12" x2="20" y2="3"></line>
-                        <line x1="1" y1="14" x2="7" y2="14"></line>
-                        <line x1="9" y1="8" x2="15" y2="8"></line>
-                        <line x1="17" y1="16" x2="23" y2="16"></line>
-                    </svg>
-                </div>
-                <div class="w-full">
-                    <label for="searchInput" class="hidden md:block text-sm font-medium text-neutral-400 mb-2">Buscar</label>
-                    <input type="text" id="searchInput" 
-                       placeholder="Buscar canción o artista..." 
-                       class="w-full bg-neutral-950 border border-neutral-800 text-white rounded-xl pl-10 md:pl-12 pr-4 py-2.5 md:py-3 md:text-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors placeholder:text-neutral-600">
-                </div>
-            </div>
-            
-            <div class="col-span-1">
-                <label for="filterVoz" class="block text-xs md:text-sm font-medium text-neutral-400 mb-1 md:mb-2">Voz</label>
-                <select id="filterVoz" 
-                        class="w-full bg-neutral-950 border border-neutral-800 text-white rounded-xl px-2 md:px-3 py-2 md:py-2.5 text-sm md:text-base focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors appearance-none">
-                    <option value="Todas">Todas</option>
-                    <option value="Hombre">Hombre</option>
-                    <option value="Mujer">Mujer</option>
-                </select>
-            </div>
+ <!-- UI Controles -->
+ <section id="searchControls" class="max-w-7xl mx-auto mb-6 bg-white border border-neutral-200 rounded-2xl p-3 md:p-6 shadow-lg">
+ <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-4">
+ <div class="col-span-2 md:col-span-1 lg:col-span-1 flex items-center gap-2">
+ <div class="md:hidden flex items-center justify-center shrink-0 text-neutral-500" title="Filtros">
+ <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+ <line x1="4" y1="21" x2="4" y2="14"></line>
+ <line x1="4" y1="10" x2="4" y2="3"></line>
+ <line x1="12" y1="21" x2="12" y2="12"></line>
+ <line x1="12" y1="8" x2="12" y2="3"></line>
+ <line x1="20" y1="21" x2="20" y2="16"></line>
+ <line x1="20" y1="12" x2="20" y2="3"></line>
+ <line x1="1" y1="14" x2="7" y2="14"></line>
+ <line x1="9" y1="8" x2="15" y2="8"></line>
+ <line x1="17" y1="16" x2="23" y2="16"></line>
+ </svg>
+ </div>
+ <div class="w-full">
+ <label for="searchInput" class="hidden md:block text-sm font-medium text-neutral-700 mb-2">Buscar</label>
+ <input type="text" id="searchInput" 
+ placeholder="Buscar canción o artista..." 
+ class="w-full bg-white border border-neutral-200 text-neutral-900 rounded-xl pl-10 md:pl-12 pr-4 py-2.5 md:py-3 md:text-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors placeholder:text-neutral-400">
+ </div>
+ </div>
+ 
+ <div class="col-span-1">
+ <label for="filterVoz" class="block text-xs md:text-sm font-medium text-neutral-700 mb-1 md:mb-2">Voz</label>
+ <select id="filterVoz" 
+ class="w-full bg-white border border-neutral-200 text-neutral-900 rounded-xl px-2 md:px-3 py-2 md:py-2.5 text-sm md:text-base focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors appearance-none">
+ <option value="Todas">Todas</option>
+ <option value="Hombre">Hombre</option>
+ <option value="Mujer">Mujer</option>
+ </select>
+ </div>
 
-            <div class="col-span-1">
-                <label for="filterCategoria" class="block text-xs md:text-sm font-medium text-neutral-400 mb-1 md:mb-2">Categoría</label>
-                <select id="filterCategoria" 
-                        class="w-full bg-neutral-950 border border-neutral-800 text-white rounded-xl px-2 md:px-3 py-2 md:py-2.5 text-sm md:text-base focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors appearance-none">
-                    <option value="Todas">Todas</option>
-                    <option value="Lenta">Lenta</option>
-                    <option value="Rápida">Rápida</option>
-                    <option value="Transición">Transición</option>
-                </select>
-            </div>
+ <div class="col-span-1">
+ <label for="filterCategoria" class="block text-xs md:text-sm font-medium text-neutral-700 mb-1 md:mb-2">Categoría</label>
+ <select id="filterCategoria" 
+ class="w-full bg-white border border-neutral-200 text-neutral-900 rounded-xl px-2 md:px-3 py-2 md:py-2.5 text-sm md:text-base focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors appearance-none">
+ <option value="Todas">Todas</option>
+ <option value="Lenta">Lenta</option>
+ <option value="Rápida">Rápida</option>
+ <option value="Transición">Transición</option>
+ </select>
+ </div>
 
-            <div class="col-span-2 md:col-span-1 lg:col-span-1 mt-1 md:mt-0">
-                <label for="filterTema" class="block text-xs md:text-sm font-medium text-neutral-400 mb-1 md:mb-2">Tema</label>
-                <select id="filterTema" 
-                        class="w-full bg-neutral-950 border border-neutral-800 text-white rounded-xl px-3 md:px-4 py-2 md:py-2.5 text-sm md:text-base focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors appearance-none">
-                    <option value="Todas">Todas</option>
-                    {temasUnicos.map(tema => (
-                        <option value={tema}>{tema}</option>
-                    ))}
-                </select>
-            </div>
-        </div>
-    </section>
+ <div class="col-span-2 md:col-span-1 lg:col-span-1 mt-1 md:mt-0">
+ <label for="filterTema" class="block text-xs md:text-sm font-medium text-neutral-700 mb-1 md:mb-2">Tema</label>
+ <select id="filterTema" 
+ class="w-full bg-white border border-neutral-200 text-neutral-900 rounded-xl px-3 md:px-4 py-2 md:py-2.5 text-sm md:text-base focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors appearance-none">
+ <option value="Todas">Todas</option>
+ {temasUnicos.map(tema => (
+ <option value={tema}>{tema}</option>
+ ))}
+ </select>
+ </div>
+ </div>
+ </section>
 
-    <!-- Encabezado de Resultados y Vista -->
-    <div class="max-w-7xl mx-auto mb-4 flex justify-between items-center px-2 md:px-0">
-        <h2 class="text-neutral-400 font-medium text-sm tracking-wide">Resultados de Canciones</h2>
-        <div id="viewToggleContainer" class="flex bg-neutral-950 rounded-lg p-1 border border-neutral-800">
-            <button id="btnViewGrid" class="p-1.5 rounded-md bg-neutral-800 text-white shadow-sm transition-all" title="Vista de Cuadrícula">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-            </button>
-            <button id="btnViewList" class="p-1.5 rounded-md text-neutral-400 hover:text-white transition-all" title="Vista de Lista">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-            </button>
-        </div>
-    </div>
+ <!-- Encabezado de Resultados y Vista -->
+ <div class="max-w-7xl mx-auto mb-4 flex justify-between items-center px-2 md:px-0">
+ <h2 class="text-neutral-700 font-medium text-sm tracking-wide">Resultados de Canciones</h2>
+ <div id="viewToggleContainer" class="flex bg-white rounded-lg p-1 border border-neutral-200">
+ <button id="btnViewGrid" class="p-1.5 rounded-md bg-white text-neutral-900 shadow-sm border border-neutral-200 transition-all" title="Vista de Cuadrícula">
+ <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+ </button>
+ <button id="btnViewList" class="p-1.5 rounded-md text-neutral-400 hover:text-neutral-900 transition-all" title="Vista de Lista">
+ <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+ </button>
+ </div>
+ </div>
 
-    <!-- Grid de Canciones -->
-    <div id="gridCanciones" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto">
-        {cancionesConDataFicticia.map((cancion: any, index: number) => (
-            <CardCancion 
-                titulo={cancion['Canción'] || ''}
-                cantante={cancion['Grupo/Cantante'] || ''}
-                tonalidad={cancion['Tonalidad Redil Estadio'] || ''}
-                bpm={Number(cancion['Beat Batería']) || 0}
-                linkLetra={cancion['Link Letras'] || ''}
-                linkAcordes={cancion['Link Acordes'] || ''}
-                linkVoces={cancion['Link Voces'] || ''}
-                linkYoutube={cancion['Link Youtube'] || ''}
-                linkSecuencias={cancion['Link Secuencias'] || ''}
-                chordpro={cancion['Acordes ChordPro'] || ''}
-                categoria={cancion['Categoría Canción'] || ''}
-                voz={cancion['Voz Principal'] || ''}
-                tema={cancion['Tema Principal Canción'] || ''}
-                estado={cancion['Estado'] || ''}
-                oculta={index >= 15}
-            />
-        ))}
-    </div>
+ <!-- Grid de Canciones -->
+ <div id="gridCanciones" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto">
+ {cancionesConDataFicticia.map((cancion: any, index: number) => (
+ <CardCancion 
+ titulo={cancion['Canción'] || ''}
+ cantante={cancion['Grupo/Cantante'] || ''}
+ tonalidad={cancion['Tonalidad Redil Estadio'] || ''}
+ bpm={Number(cancion['Beat Batería']) || 0}
+ linkLetra={cancion['Link Letras'] || ''}
+ linkAcordes={cancion['Link Acordes'] || ''}
+ linkVoces={cancion['Link Voces'] || ''}
+ linkYoutube={cancion['Link Youtube'] || ''}
+ linkSecuencias={cancion['Link Secuencias'] || ''}
+ chordpro={cancion['Acordes ChordPro'] || ''}
+ categoria={cancion['Categoría Canción'] || ''}
+ voz={cancion['Voz Principal'] || ''}
+ tema={cancion['Tema Principal Canción'] || ''}
+ estado={cancion['Estado'] || ''}
+ oculta={index >= 15}
+ />
+ ))}
+ </div>
 
-    <!-- Centinela para Infinite Scroll -->
-    <div id="scroll-sentinel" class="h-4 w-full mt-8"></div>
+ <!-- Centinela para Infinite Scroll -->
+ <div id="scroll-sentinel" class="h-4 w-full mt-8"></div>
 
-    <!-- Panel Flotante Setlist (modo normal) -->
-    <div id="setlistPanel" class="fixed bottom-20 right-6 bg-neutral-800 border border-neutral-700 text-white p-4 rounded-2xl shadow-2xl z-50 flex items-center gap-4 hidden transition-opacity">
-        <div class="font-semibold">
-            Setlist: <span id="setlistCount" class="text-blue-400">0</span>
-        </div>
-        <div class="flex gap-2">
-            <button id="btnCopySetlist" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-bold transition-colors">Copiar Enlace</button>
-            <button id="btnClearSetlist" class="px-3 py-1.5 bg-neutral-700 hover:bg-neutral-600 rounded-lg text-sm font-bold transition-colors">Limpiar</button>
-        </div>
-    </div>
+ <!-- Panel Flotante Setlist (modo normal) -->
+ <div id="setlistPanel" class="fixed bottom-20 right-6 bg-neutral-100 border border-neutral-300 text-white p-4 rounded-2xl shadow-2xl z-50 flex items-center gap-4 hidden transition-opacity">
+ <div class="font-semibold">
+ Setlist: <span id="setlistCount" class="text-blue-400">0</span>
+ </div>
+ <div class="flex gap-2">
+ <button id="btnCopySetlist" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-bold transition-colors">Copiar Enlace</button>
+ <button id="btnClearSetlist" class="px-3 py-1.5 bg-neutral-200 text-neutral-800 hover:bg-neutral-300 rounded-lg text-sm font-bold transition-colors">Limpiar</button>
+ </div>
+ </div>
 
-    <!-- Barra Flotante Playlist (modo selección) - Inyección modular -->
-    <div id="playlistBar" class="fixed bottom-16 left-0 right-0 z-50 bg-neutral-900 border-t border-neutral-800 shadow-[0_-8px_30px_rgba(0,0,0,0.3)] px-4 py-4 hidden">
-        <div class="max-w-6xl mx-auto flex items-center justify-between gap-4">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-full bg-teal-500/20 flex items-center justify-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-teal-400"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-                </div>
-                <div>
-                    <p class="text-white font-bold text-sm"><span id="playlistCount">0</span> Canciones Seleccionadas</p>
-                    <p class="text-neutral-400 text-xs">Toca el + de cada canción para agregar o quitar</p>
-                </div>
-            </div>
-            <div class="flex items-center gap-2">
-                <button id="btn-cancel-playlist" class="px-4 py-2.5 rounded-xl border border-neutral-700 text-neutral-400 text-sm font-bold hover:bg-neutral-800 transition-colors">
-                    Cancelar
-                </button>
-                <button id="btn-save-playlist" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white text-sm font-bold hover:opacity-90 transition-all shadow-lg flex items-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-                    Guardar Playlist
-                </button>
-            </div>
-        </div>
-    </div>
+ <!-- Barra Flotante Playlist (modo selección) - Inyección modular -->
+ <div id="playlistBar" class="fixed bottom-16 left-0 right-0 z-50 bg-white border-t border-neutral-200 shadow-[0_-8px_30px_rgba(0,0,0,0.3)] px-4 py-4 hidden">
+ <div class="max-w-6xl mx-auto flex items-center justify-between gap-4">
+ <div class="flex items-center gap-3">
+ <div class="w-10 h-10 rounded-full bg-teal-500/20 flex items-center justify-center">
+ <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-teal-400"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+ </div>
+ <div>
+ <p class="text-white font-bold text-sm"><span id="playlistCount">0</span> Canciones Seleccionadas</p>
+ <p class="text-neutral-500 text-xs">Toca el + de cada canción para agregar o quitar</p>
+ </div>
+ </div>
+ <div class="flex items-center gap-2">
+ <button id="btn-cancel-playlist" class="px-4 py-2.5 rounded-xl border border-neutral-300 text-neutral-500 text-sm font-bold hover:bg-neutral-100 transition-colors">
+ Cancelar
+ </button>
+ <button id="btn-save-playlist" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white text-sm font-bold hover:opacity-90 transition-all shadow-lg flex items-center gap-2">
+ <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+ Guardar Playlist
+ </button>
+ </div>
+ </div>
+ </div>
 </Layout>
 
 <!-- Data bridge para sync: pasar canciones CSV a client-side JS -->
 <script is:inline id="canciones-sync-data" type="application/json" set:html={JSON.stringify(cancionesConDataFicticia)}></script>
 
 <script>
-    import { supabase } from '../lib/supabase';
+ import { supabase } from '../lib/supabase';
 
-    document.addEventListener('DOMContentLoaded', () => {
-        const searchInput = document.getElementById('searchInput') as HTMLInputElement;
-        const filterVoz = document.getElementById('filterVoz') as HTMLSelectElement;
-        const filterCategoria = document.getElementById('filterCategoria') as HTMLSelectElement;
-        const filterTema = document.getElementById('filterTema') as HTMLSelectElement;
-        
-        const mainTitle = document.getElementById('mainTitle');
-        const searchControls = document.getElementById('searchControls');
-        const setlistPanel = document.getElementById('setlistPanel');
-        const setlistCount = document.getElementById('setlistCount');
-        const btnCopySetlist = document.getElementById('btnCopySetlist');
-        const btnClearSetlist = document.getElementById('btnClearSetlist');
-        
-        const btnViewGrid = document.getElementById('btnViewGrid');
-        const btnViewList = document.getElementById('btnViewList');
-        const gridCanciones = document.getElementById('gridCanciones');
-        
-        // Obtenemos todos los <article> dentro del grid
-        const cards = document.querySelectorAll('#gridCanciones article') as NodeListOf<HTMLElement>;
+ document.addEventListener('DOMContentLoaded', () => {
+ const searchInput = document.getElementById('searchInput') as HTMLInputElement;
+ const filterVoz = document.getElementById('filterVoz') as HTMLSelectElement;
+ const filterCategoria = document.getElementById('filterCategoria') as HTMLSelectElement;
+ const filterTema = document.getElementById('filterTema') as HTMLSelectElement;
+ 
+ const mainTitle = document.getElementById('mainTitle');
+ const searchControls = document.getElementById('searchControls');
+ const setlistPanel = document.getElementById('setlistPanel');
+ const setlistCount = document.getElementById('setlistCount');
+ const btnCopySetlist = document.getElementById('btnCopySetlist');
+ const btnClearSetlist = document.getElementById('btnClearSetlist');
+ 
+ const btnViewGrid = document.getElementById('btnViewGrid');
+ const btnViewList = document.getElementById('btnViewList');
+ const gridCanciones = document.getElementById('gridCanciones');
+ 
+ // Obtenemos todos los <article> dentro del grid
+ const cards = document.querySelectorAll('#gridCanciones article') as NodeListOf<HTMLElement>;
 
-        // ----- View Toggle Logic -----
-        let isListView = false;
+ // ----- View Toggle Logic -----
+ let isListView = false;
 
-        function setGridView() {
-            if (!gridCanciones) return;
-            isListView = false;
-            
-            // Switch classes on container
-            gridCanciones.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto';
-            
-            // Remove list mode from all cards
-            cards.forEach(card => card.classList.remove('modo-lista', 'expandido'));
-            
-            // Update button styles
-            const updateBtns = (gridBtn: HTMLElement | null, listBtn: HTMLElement | null) => {
-                if(!gridBtn || !listBtn) return;
-                gridBtn.classList.add('bg-neutral-800', 'text-white', 'shadow-sm');
-                gridBtn.classList.remove('text-neutral-400', 'hover:text-white');
-                listBtn.classList.remove('bg-neutral-800', 'text-white', 'shadow-sm');
-                listBtn.classList.add('text-neutral-400', 'hover:text-white');
-            };
-            
-            updateBtns(btnViewGrid, btnViewList);
-            void document.body.offsetHeight; // Fuerza un reflow para corregir glitches de repintado en iOS
-        }
+ function setGridView() {
+ if (!gridCanciones) return;
+ isListView = false;
+ 
+ // Switch classes on container
+ gridCanciones.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto';
+ 
+ // Remove list mode from all cards
+ cards.forEach(card => card.classList.remove('modo-lista', 'expandido'));
+ 
+ // Update button styles
+ const updateBtns = (gridBtn: HTMLElement | null, listBtn: HTMLElement | null) => {
+ if(!gridBtn || !listBtn) return;
+ gridBtn.classList.add('bg-neutral-100', 'text-white', 'shadow-sm');
+ gridBtn.classList.remove('text-neutral-500', 'hover:text-neutral-900');
+ listBtn.classList.remove('bg-neutral-100', 'text-white', 'shadow-sm');
+ listBtn.classList.add('text-neutral-500', 'hover:text-neutral-900');
+ };
+ 
+ updateBtns(btnViewGrid, btnViewList);
+ void document.body.offsetHeight; // Fuerza un reflow para corregir glitches de repintado en iOS
+ }
 
-        function setListView() {
-            if (!gridCanciones) return;
-            isListView = true;
-            
-            // Switch classes on container to vertical flow
-            gridCanciones.className = 'flex flex-col gap-3 max-w-4xl mx-auto';
-            
-            // Add list mode to all cards
-            cards.forEach(card => card.classList.add('modo-lista'));
-            
-            // Update button styles
-            const updateBtns = (gridBtn: HTMLElement | null, listBtn: HTMLElement | null) => {
-                if(!gridBtn || !listBtn) return;
-                listBtn.classList.add('bg-neutral-800', 'text-white', 'shadow-sm');
-                listBtn.classList.remove('text-neutral-400', 'hover:text-white');
-                gridBtn.classList.remove('bg-neutral-800', 'text-white', 'shadow-sm');
-                gridBtn.classList.add('text-neutral-400', 'hover:text-white');
-            };
-            
-            updateBtns(btnViewGrid, btnViewList);
-            void document.body.offsetHeight; // Fuerza un reflow para corregir glitches de repintado en iOS
-        }
+ function setListView() {
+ if (!gridCanciones) return;
+ isListView = true;
+ 
+ // Switch classes on container to vertical flow
+ gridCanciones.className = 'flex flex-col gap-3 max-w-4xl mx-auto';
+ 
+ // Add list mode to all cards
+ cards.forEach(card => card.classList.add('modo-lista'));
+ 
+ // Update button styles
+ const updateBtns = (gridBtn: HTMLElement | null, listBtn: HTMLElement | null) => {
+ if(!gridBtn || !listBtn) return;
+ listBtn.classList.add('bg-neutral-100', 'text-white', 'shadow-sm');
+ listBtn.classList.remove('text-neutral-500', 'hover:text-neutral-900');
+ gridBtn.classList.remove('bg-neutral-100', 'text-white', 'shadow-sm');
+ gridBtn.classList.add('text-neutral-500', 'hover:text-neutral-900');
+ };
+ 
+ updateBtns(btnViewGrid, btnViewList);
+ void document.body.offsetHeight; // Fuerza un reflow para corregir glitches de repintado en iOS
+ }
 
-        if(btnViewGrid) btnViewGrid.addEventListener('click', setGridView);
-        if(btnViewList) btnViewList.addEventListener('click', setListView);
+ if(btnViewGrid) btnViewGrid.addEventListener('click', setGridView);
+ if(btnViewList) btnViewList.addEventListener('click', setListView);
 
-        // Accordion logic for list view
-        cards.forEach(card => {
-            const header = card.querySelector('.card-header');
-            if (header) {
-                header.addEventListener('click', (e) => {
-                    // Prevent toggling if user clicked the Add to Setlist button
-                    if ((e.target as Element).closest('.btn-add-setlist')) return;
-                    
-                    if (isListView) {
-                        card.classList.toggle('expandido');
-                    }
-                });
-            }
-        });
+ // Accordion logic for list view
+ cards.forEach(card => {
+ const header = card.querySelector('.card-header');
+ if (header) {
+ header.addEventListener('click', (e) => {
+ // Prevent toggling if user clicked the Add to Setlist button
+ if ((e.target as Element).closest('.btn-add-setlist')) return;
+ 
+ if (isListView) {
+ card.classList.toggle('expandido');
+ }
+ });
+ }
+ });
 
-        // =============================================
-        // MÓDULO PLAYLIST (Inyección modular)
-        // Detecta ?seleccionar_para=UUID y activa modo selección
-        // =============================================
-        const urlParams = new URLSearchParams(window.location.search);
-        const seleccionarPara = urlParams.get('seleccionar_para');
-        const isSelectionMode = !!seleccionarPara;
+ // =============================================
+ // MÓDULO PLAYLIST (Inyección modular)
+ // Detecta ?seleccionar_para=UUID y activa modo selección
+ // =============================================
+ const urlParams = new URLSearchParams(window.location.search);
+ const seleccionarPara = urlParams.get('seleccionar_para');
+ const isSelectionMode = !!seleccionarPara;
 
-        // Array de títulos seleccionados
-        let selectedSongs: string[] = [];
-        const playlistBar = document.getElementById('playlistBar');
-        const playlistCountEl = document.getElementById('playlistCount');
+ // Array de títulos seleccionados
+ let selectedSongs: string[] = [];
+ const playlistBar = document.getElementById('playlistBar');
+ const playlistCountEl = document.getElementById('playlistCount');
 
-        if (isSelectionMode) {
-            // Cambiar título
-            if (mainTitle) mainTitle.innerHTML = 'Seleccionar <span class="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-emerald-400">Playlist</span>';
-            
-            // Ocultar setlist panel normal y mostrar barra playlist
-            if (setlistPanel) setlistPanel.style.display = 'none';
-            if (playlistBar) playlistBar.classList.remove('hidden');
+ if (isSelectionMode) {
+ // Cambiar título
+ if (mainTitle) mainTitle.innerHTML = 'Seleccionar <span class="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-emerald-400">Playlist</span>';
+ 
+ // Ocultar setlist panel normal y mostrar barra playlist
+ if (setlistPanel) setlistPanel.style.display = 'none';
+ if (playlistBar) playlistBar.classList.remove('hidden');
 
-            // Pre-cargar canciones existentes en la playlist de este evento
-            (async () => {
-                const { data: pl } = await supabase
-                    .from('playlists')
-                    .select('id')
-                    .eq('evento_id', seleccionarPara)
-                    .single();
+ // Pre-cargar canciones existentes en la playlist de este evento
+ (async () => {
+ const { data: pl } = await supabase
+ .from('playlists')
+ .select('id')
+ .eq('evento_id', seleccionarPara)
+ .single();
 
-                if (pl) {
-                    const { data: items } = await supabase
-                        .from('playlist_canciones')
-                        .select('canciones(titulo)')
-                        .eq('playlist_id', pl.id);
+ if (pl) {
+ const { data: items } = await supabase
+ .from('playlist_canciones')
+ .select('canciones(titulo)')
+ .eq('playlist_id', pl.id);
 
-                    if (items) {
-                        items.forEach((item: any) => {
-                            if (item.canciones?.titulo) {
-                                selectedSongs.push(item.canciones.titulo);
-                            }
-                        });
-                        // Marcar visualmente las pre-seleccionadas
-                        cards.forEach(card => {
-                            const cancion = card.getAttribute('data-cancion') || '';
-                            if (selectedSongs.includes(cancion)) {
-                                const btn = card.querySelector('.btn-add-setlist');
-                                if (btn) {
-                                    const svg = btn.querySelector('svg');
-                                    if (svg) svg.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
-                                    btn.classList.replace('text-blue-400', 'text-green-400');
-                                    btn.classList.replace('bg-blue-500/10', 'bg-green-500/10');
-                                }
-                            }
-                        });
-                        updatePlaylistCount();
-                    }
-                }
-            })();
+ if (items) {
+ items.forEach((item: any) => {
+ if (item.canciones?.titulo) {
+ selectedSongs.push(item.canciones.titulo);
+ }
+ });
+ // Marcar visualmente las pre-seleccionadas
+ cards.forEach(card => {
+ const cancion = card.getAttribute('data-cancion') || '';
+ if (selectedSongs.includes(cancion)) {
+ const btn = card.querySelector('.btn-add-setlist');
+ if (btn) {
+ const svg = btn.querySelector('svg');
+ if (svg) svg.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
+ btn.classList.replace('text-blue-400', 'text-green-400');
+ btn.classList.replace('bg-blue-500/10', 'bg-green-500/10');
+ }
+ }
+ });
+ updatePlaylistCount();
+ }
+ }
+ })();
 
-            // Interceptar clicks en .btn-add-setlist para modo playlist
-            document.addEventListener('click', (e) => {
-                const btn = (e.target as Element).closest('.btn-add-setlist');
-                if (!btn) return;
-                e.preventDefault();
-                e.stopPropagation();
+ // Interceptar clicks en .btn-add-setlist para modo playlist
+ document.addEventListener('click', (e) => {
+ const btn = (e.target as Element).closest('.btn-add-setlist');
+ if (!btn) return;
+ e.preventDefault();
+ e.stopPropagation();
 
-                const cancion = btn.getAttribute('data-cancion') || '';
-                if (!cancion) return;
+ const cancion = btn.getAttribute('data-cancion') || '';
+ if (!cancion) return;
 
-                const idx = selectedSongs.indexOf(cancion);
-                const svg = btn.querySelector('svg');
+ const idx = selectedSongs.indexOf(cancion);
+ const svg = btn.querySelector('svg');
 
-                if (idx > -1) {
-                    // Deseleccionar
-                    selectedSongs.splice(idx, 1);
-                    if (svg) svg.innerHTML = '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>';
-                    btn.classList.replace('text-green-400', 'text-blue-400');
-                    btn.classList.replace('bg-green-500/10', 'bg-blue-500/10');
-                } else {
-                    // Seleccionar
-                    selectedSongs.push(cancion);
-                    if (svg) svg.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
-                    btn.classList.replace('text-blue-400', 'text-green-400');
-                    btn.classList.replace('bg-blue-500/10', 'bg-green-500/10');
-                }
-                updatePlaylistCount();
-            }, true); // useCapture=true para interceptar antes del handler normal
+ if (idx > -1) {
+ // Deseleccionar
+ selectedSongs.splice(idx, 1);
+ if (svg) svg.innerHTML = '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>';
+ btn.classList.replace('text-green-400', 'text-blue-400');
+ btn.classList.replace('bg-green-500/10', 'bg-blue-500/10');
+ } else {
+ // Seleccionar
+ selectedSongs.push(cancion);
+ if (svg) svg.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
+ btn.classList.replace('text-blue-400', 'text-green-400');
+ btn.classList.replace('bg-blue-500/10', 'bg-green-500/10');
+ }
+ updatePlaylistCount();
+ }, true); // useCapture=true para interceptar antes del handler normal
 
-            // Cancelar
-            document.getElementById('btn-cancel-playlist')?.addEventListener('click', () => {
-                window.location.href = '/programacion';
-            });
+ // Cancelar
+ document.getElementById('btn-cancel-playlist')?.addEventListener('click', () => {
+ window.location.href = '/programacion';
+ });
 
-            // Guardar Playlist
-            document.getElementById('btn-save-playlist')?.addEventListener('click', async () => {
-                const btn = document.getElementById('btn-save-playlist') as HTMLButtonElement;
-                btn.disabled = true;
-                btn.innerHTML = '<svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Guardando...';
+ // Guardar Playlist
+ document.getElementById('btn-save-playlist')?.addEventListener('click', async () => {
+ const btn = document.getElementById('btn-save-playlist') as HTMLButtonElement;
+ btn.disabled = true;
+ btn.innerHTML = '<svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Guardando...';
 
-                try {
-                    // UPSERT playlist
-                    const { data: playlist, error: plErr } = await supabase
-                        .from('playlists')
-                        .upsert({ evento_id: seleccionarPara }, { onConflict: 'evento_id' })
-                        .select('id')
-                        .single();
+ try {
+ // UPSERT playlist
+ const { data: playlist, error: plErr } = await supabase
+ .from('playlists')
+ .upsert({ evento_id: seleccionarPara }, { onConflict: 'evento_id' })
+ .select('id')
+ .single();
 
-                    if (plErr) throw plErr;
+ if (plErr) throw plErr;
 
-                    // DELETE old
-                    await supabase.from('playlist_canciones').delete().eq('playlist_id', playlist.id);
+ // DELETE old
+ await supabase.from('playlist_canciones').delete().eq('playlist_id', playlist.id);
 
-                    // Get cancion IDs from Supabase by titulo
-                    if (selectedSongs.length > 0) {
-                        const { data: cancionesDB } = await supabase
-                            .from('canciones')
-                            .select('id, titulo')
-                            .in('titulo', selectedSongs);
+ // Get cancion IDs from Supabase by titulo
+ if (selectedSongs.length > 0) {
+ const { data: cancionesDB } = await supabase
+ .from('canciones')
+ .select('id, titulo')
+ .in('titulo', selectedSongs);
 
-                        if (cancionesDB && cancionesDB.length > 0) {
-                            const insertPayload = cancionesDB.map((c: any, i: number) => ({
-                                playlist_id: playlist.id,
-                                cancion_id: c.id,
-                                orden: i
-                            }));
+ if (cancionesDB && cancionesDB.length > 0) {
+ const insertPayload = cancionesDB.map((c: any, i: number) => ({
+ playlist_id: playlist.id,
+ cancion_id: c.id,
+ orden: i
+ }));
 
-                            const { error: insErr } = await supabase
-                                .from('playlist_canciones')
-                                .insert(insertPayload);
+ const { error: insErr } = await supabase
+ .from('playlist_canciones')
+ .insert(insertPayload);
 
-                            if (insErr) throw insErr;
-                        }
-                    }
+ if (insErr) throw insErr;
+ }
+ }
 
-                    window.location.href = '/programacion';
+ window.location.href = '/programacion';
 
-                } catch (err: any) {
-                    console.error('Error guardando playlist:', err);
-                    alert('Error al guardar: ' + (err.message || 'Error desconocido'));
-                    btn.disabled = false;
-                    btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Guardar Playlist';
-                }
-            });
+ } catch (err: any) {
+ console.error('Error guardando playlist:', err);
+ alert('Error al guardar: ' + (err.message || 'Error desconocido'));
+ btn.disabled = false;
+ btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Guardar Playlist';
+ }
+ });
 
-        } else {
-            // =============================================
-            // MODO NORMAL (Setlist Builder original idéntico a index.astro)
-            // =============================================
-            let setlist = JSON.parse(localStorage.getItem('setlist') || '[]');
+ } else {
+ // =============================================
+ // MODO NORMAL (Setlist Builder original idéntico a index.astro)
+ // =============================================
+ let setlist = JSON.parse(localStorage.getItem('setlist') || '[]');
 
-            function updateSetlistUI() {
-                if (setlistCount) setlistCount.textContent = setlist.length.toString();
-                if (setlistPanel) {
-                    if (setlist.length > 0) {
-                        setlistPanel.classList.remove('hidden');
-                    } else {
-                        setlistPanel.classList.add('hidden');
-                    }
-                }
-            }
+ function updateSetlistUI() {
+ if (setlistCount) setlistCount.textContent = setlist.length.toString();
+ if (setlistPanel) {
+ if (setlist.length > 0) {
+ setlistPanel.classList.remove('hidden');
+ } else {
+ setlistPanel.classList.add('hidden');
+ }
+ }
+ }
 
-            document.addEventListener('click', (e) => {
-                const btn = (e.target as Element).closest('.btn-add-setlist');
-                const btnEditor = (e.target as Element).closest('.btn-editor');
+ document.addEventListener('click', (e) => {
+ const btn = (e.target as Element).closest('.btn-add-setlist');
+ const btnEditor = (e.target as Element).closest('.btn-editor');
 
-                // Lógica para enviar al Editor/Transpositor
-                if (btnEditor) {
-                    e.preventDefault();
-                    const btnEl = btnEditor as HTMLElement;
-                    const rawChordpro = btnEl.getAttribute('data-chordpro') || '';
-                    const title = btnEl.getAttribute('data-titulo') || '';
-                    const bpm = btnEl.getAttribute('data-bpm') || '';
-                    const key = btnEl.getAttribute('data-key') || '';
+ // Lógica para enviar al Editor/Transpositor
+ if (btnEditor) {
+ e.preventDefault();
+ const btnEl = btnEditor as HTMLElement;
+ const rawChordpro = btnEl.getAttribute('data-chordpro') || '';
+ const title = btnEl.getAttribute('data-titulo') || '';
+ const bpm = btnEl.getAttribute('data-bpm') || '';
+ const key = btnEl.getAttribute('data-key') || '';
 
-                    if (rawChordpro.trim()) {
-                        const payload = { chordpro: rawChordpro, title, bpm, key };
-                        sessionStorage.setItem('chordpro_bridge', JSON.stringify(payload));
-                        window.location.href = '/herramientas/chordpro';
-                    }
-                    return;
-                }
+ if (rawChordpro.trim()) {
+ const payload = { chordpro: rawChordpro, title, bpm, key };
+ sessionStorage.setItem('chordpro_bridge', JSON.stringify(payload));
+ window.location.href = '/herramientas/chordpro';
+ }
+ return;
+ }
 
-                // Lógica original Setlist
-                if (btn) {
-                    const cancion = btn.getAttribute('data-cancion');
-                    if (cancion && !setlist.includes(cancion)) {
-                        setlist.push(cancion);
-                        localStorage.setItem('setlist', JSON.stringify(setlist));
-                        updateSetlistUI();
-                        
-                        const svg = btn.querySelector('svg');
-                        if(svg) {
-                            svg.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
-                            btn.classList.replace('text-blue-400', 'text-green-400');
-                            btn.classList.replace('bg-blue-500/10', 'bg-green-500/10');
-                        }
-                    }
-                }
-            });
+ // Lógica original Setlist
+ if (btn) {
+ const cancion = btn.getAttribute('data-cancion');
+ if (cancion && !setlist.includes(cancion)) {
+ setlist.push(cancion);
+ localStorage.setItem('setlist', JSON.stringify(setlist));
+ updateSetlistUI();
+ 
+ const svg = btn.querySelector('svg');
+ if(svg) {
+ svg.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
+ btn.classList.replace('text-blue-400', 'text-green-400');
+ btn.classList.replace('bg-blue-500/10', 'bg-green-500/10');
+ }
+ }
+ }
+ });
 
-            if (btnCopySetlist) {
-                btnCopySetlist.addEventListener('click', () => {
-                    const base64Str = btoa(encodeURIComponent(JSON.stringify(setlist)));
-                    const safeUrlParam = encodeURIComponent(base64Str);
-                    const originalUrl = window.location.origin + window.location.pathname;
-                    const url = originalUrl + '?setlist=' + safeUrlParam;
-                    navigator.clipboard.writeText(url).then(() => {
-                        alert('¡Setlist copiado y abierto en una nueva pestaña!');
-                        window.open(url, '_blank');
-                    });
-                });
-            }
+ if (btnCopySetlist) {
+ btnCopySetlist.addEventListener('click', () => {
+ const base64Str = btoa(encodeURIComponent(JSON.stringify(setlist)));
+ const safeUrlParam = encodeURIComponent(base64Str);
+ const originalUrl = window.location.origin + window.location.pathname;
+ const url = originalUrl + '?setlist=' + safeUrlParam;
+ navigator.clipboard.writeText(url).then(() => {
+ alert('¡Setlist copiado y abierto en una nueva pestaña!');
+ window.open(url, '_blank');
+ });
+ });
+ }
 
-            if (btnClearSetlist) {
-                btnClearSetlist.addEventListener('click', () => {
-                    setlist = [];
-                    localStorage.removeItem('setlist');
-                    updateSetlistUI();
-                    window.location.href = window.location.pathname;
-                });
-            }
+ if (btnClearSetlist) {
+ btnClearSetlist.addEventListener('click', () => {
+ setlist = [];
+ localStorage.removeItem('setlist');
+ updateSetlistUI();
+ window.location.href = window.location.pathname;
+ });
+ }
 
-            // ----- Modo Setlist de la Semana -----
-            const setlistParam = urlParams.get('setlist');
+ // ----- Modo Setlist de la Semana -----
+ const setlistParam = urlParams.get('setlist');
 
-            if (setlistParam) {
-                try {
-                    const decodedData = decodeURIComponent(atob(setlistParam));
-                    const setlistArray = JSON.parse(decodedData);
-                    
-                    if (searchControls) searchControls.style.display = 'none';
-                    if (setlistPanel) setlistPanel.style.display = 'none';
-                    if (mainTitle) mainTitle.innerHTML = 'Setlist de la <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400">Semana</span>';
+ if (setlistParam) {
+ try {
+ const decodedData = decodeURIComponent(atob(setlistParam));
+ const setlistArray = JSON.parse(decodedData);
+ 
+ if (searchControls) searchControls.style.display = 'none';
+ if (setlistPanel) setlistPanel.style.display = 'none';
+ if (mainTitle) mainTitle.innerHTML = 'Setlist de la <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400">Semana</span>';
 
-                    cards.forEach(card => {
-                        const cancionTitulo = card.getAttribute('data-cancion') || '';
-                        
-                        if (setlistArray.includes(cancionTitulo)) {
-                            card.style.display = 'block';
-                            const addBtn = card.querySelector('.btn-add-setlist');
-                            if(addBtn) (addBtn as HTMLElement).style.display = 'none';
-                        } else {
-                            card.style.display = 'none';
-                        }
-                    });
-                } catch (e) {
-                    console.error("Error validando el link del setlist:", e);
-                    window.location.href = window.location.pathname;
-                }
-            } else {
-                // ----- Modo Normal (Búsqueda y Filtros) -----
-                updateSetlistUI();
+ cards.forEach(card => {
+ const cancionTitulo = card.getAttribute('data-cancion') || '';
+ 
+ if (setlistArray.includes(cancionTitulo)) {
+ card.style.display = 'block';
+ const addBtn = card.querySelector('.btn-add-setlist');
+ if(addBtn) (addBtn as HTMLElement).style.display = 'none';
+ } else {
+ card.style.display = 'none';
+ }
+ });
+ } catch (e) {
+ console.error("Error validando el link del setlist:", e);
+ window.location.href = window.location.pathname;
+ }
+ } else {
+ // ----- Modo Normal (Búsqueda y Filtros) -----
+ updateSetlistUI();
 
-                // ----- Infinite Scroll & Search Logic -----
-                const sentinel = document.getElementById('scroll-sentinel');
-                const todasLasCanciones = Array.from(cards);
-                let cancionesFiltradas = [...todasLasCanciones];
-                let indiceActual = 0;
-                const limite = 15;
-                let isLoading = false;
-                
-                function cargarMasCanciones() {
-                    if (isLoading) return;
-                    isLoading = true;
+ // ----- Infinite Scroll & Search Logic -----
+ const sentinel = document.getElementById('scroll-sentinel');
+ const todasLasCanciones = Array.from(cards);
+ let cancionesFiltradas = [...todasLasCanciones];
+ let indiceActual = 0;
+ const limite = 15;
+ let isLoading = false;
+ 
+ function cargarMasCanciones() {
+ if (isLoading) return;
+ isLoading = true;
 
-                    const fragmento = cancionesFiltradas.slice(indiceActual, indiceActual + limite);
-                    if (fragmento.length === 0) {
-                        if (sentinel) sentinel.style.display = 'none';
-                        isLoading = false;
-                        return;
-                    }
-                    
-                    fragmento.forEach(card => card.classList.remove('cancion-oculta'));
-                    indiceActual += limite;
-                    
-                    if (sentinel) {
-                        sentinel.style.display = (indiceActual >= cancionesFiltradas.length) ? 'none' : 'block';
-                    }
+ const fragmento = cancionesFiltradas.slice(indiceActual, indiceActual + limite);
+ if (fragmento.length === 0) {
+ if (sentinel) sentinel.style.display = 'none';
+ isLoading = false;
+ return;
+ }
+ 
+ fragmento.forEach(card => card.classList.remove('cancion-oculta'));
+ indiceActual += limite;
+ 
+ if (sentinel) {
+ sentinel.style.display = (indiceActual >= cancionesFiltradas.length) ? 'none' : 'block';
+ }
 
-                    requestAnimationFrame(() => {
-                        isLoading = false;
-                        if (sentinel && sentinel.style.display !== 'none') {
-                            const rect = sentinel.getBoundingClientRect();
-                            if (rect.top <= window.innerHeight + 150) {
-                                cargarMasCanciones();
-                            }
-                        }
-                    });
-                }
-                
-                const observer = new IntersectionObserver((entries) => {
-                    const entry = entries[0];
-                    if (entry.isIntersecting) {
-                        cargarMasCanciones();
-                    }
-                }, { 
-                    root: null, 
-                    rootMargin: '150px',
-                    threshold: 0 
-                });
-                
-                if (sentinel) observer.observe(sentinel);
+ requestAnimationFrame(() => {
+ isLoading = false;
+ if (sentinel && sentinel.style.display !== 'none') {
+ const rect = sentinel.getBoundingClientRect();
+ if (rect.top <= window.innerHeight + 150) {
+ cargarMasCanciones();
+ }
+ }
+ });
+ }
+ 
+ const observer = new IntersectionObserver((entries) => {
+ const entry = entries[0];
+ if (entry.isIntersecting) {
+ cargarMasCanciones();
+ }
+ }, { 
+ root: null, 
+ rootMargin: '150px',
+ threshold: 0 
+ });
+ 
+ if (sentinel) observer.observe(sentinel);
 
-                // ----- Filter Application Logic -----
-                function filterCards() {
-                    const searchTerm = searchInput.value.toLowerCase().trim();
-                    const vozTerm = filterVoz.value;
-                    const categoriaTerm = filterCategoria.value;
-                    const temaTerm = filterTema.value;
+ // ----- Filter Application Logic -----
+ function filterCards() {
+ const searchTerm = searchInput.value.toLowerCase().trim();
+ const vozTerm = filterVoz.value;
+ const categoriaTerm = filterCategoria.value;
+ const temaTerm = filterTema.value;
 
-                    todasLasCanciones.forEach(card => card.classList.add('cancion-oculta'));
-                    indiceActual = 0;
+ todasLasCanciones.forEach(card => card.classList.add('cancion-oculta'));
+ indiceActual = 0;
 
-                    cancionesFiltradas = todasLasCanciones.filter(card => {
-                        const titulo = card.getAttribute('data-titulo') || '';
-                        const artista = card.getAttribute('data-artista') || '';
-                        const voz = card.getAttribute('data-voz') || '';
-                        const categoria = card.getAttribute('data-categoria') || '';
-                        const tema = card.getAttribute('data-tema') || '';
+ cancionesFiltradas = todasLasCanciones.filter(card => {
+ const titulo = card.getAttribute('data-titulo') || '';
+ const artista = card.getAttribute('data-artista') || '';
+ const voz = card.getAttribute('data-voz') || '';
+ const categoria = card.getAttribute('data-categoria') || '';
+ const tema = card.getAttribute('data-tema') || '';
 
-                        const matchesSearch = titulo.includes(searchTerm) || artista.includes(searchTerm);
-                        const matchesVoz = vozTerm === 'Todas' || voz.includes(vozTerm);
-                        const matchesCategoria = categoriaTerm === 'Todas' || categoria.includes(categoriaTerm);
-                        const matchesTema = temaTerm === 'Todas' || tema.includes(temaTerm);
+ const matchesSearch = titulo.includes(searchTerm) || artista.includes(searchTerm);
+ const matchesVoz = vozTerm === 'Todas' || voz.includes(vozTerm);
+ const matchesCategoria = categoriaTerm === 'Todas' || categoria.includes(categoriaTerm);
+ const matchesTema = temaTerm === 'Todas' || tema.includes(temaTerm);
 
-                        return matchesSearch && matchesVoz && matchesCategoria && matchesTema;
-                    });
+ return matchesSearch && matchesVoz && matchesCategoria && matchesTema;
+ });
 
-                    cancionesFiltradas.forEach(card => card.style.display = '');
-                    cargarMasCanciones();
-                }
+ cancionesFiltradas.forEach(card => card.style.display = '');
+ cargarMasCanciones();
+ }
 
-                if(searchInput) searchInput.addEventListener('input', filterCards);
-                if(filterVoz) filterVoz.addEventListener('change', filterCards);
-                if(filterCategoria) filterCategoria.addEventListener('change', filterCards);
-                if(filterTema) filterTema.addEventListener('change', filterCards);
-            }
-        }
+ if(searchInput) searchInput.addEventListener('input', filterCards);
+ if(filterVoz) filterVoz.addEventListener('change', filterCards);
+ if(filterCategoria) filterCategoria.addEventListener('change', filterCards);
+ if(filterTema) filterTema.addEventListener('change', filterCards);
+ }
+ }
 
-        // ----- Metrónomo Interactivo Logic -----
-        let metronomoActivoDot: HTMLElement | null = null;
-        let metronomoInterval: any = null;
-        
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-        const audioCtx = new AudioContextClass();
-        
-        function playClick() {
-            if (!audioCtx) return;
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            
-            const osc = audioCtx.createOscillator();
-            const gainNode = audioCtx.createGain();
-            
-            osc.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
-            
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(800, audioCtx.currentTime);
-            
-            gainNode.gain.setValueAtTime(1, audioCtx.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
-            
-            osc.start(audioCtx.currentTime);
-            osc.stop(audioCtx.currentTime + 0.1);
-        }
-        
-        document.addEventListener('click', (e) => {
-            const badge = (e.target as Element).closest('.badge-bpm');
-            if (badge) {
-                const bpmStr = badge.getAttribute('data-bpm');
-                if (!bpmStr) return;
-                
-                const bpmVal = parseInt(bpmStr.replace(/[^0-9]/g, ''), 10);
-                if (!bpmVal || bpmVal <= 0) return;
-                
-                const dot = badge.querySelector('.metronomo-dot') as HTMLElement;
-                if (!dot) return;
-                
-                if (metronomoActivoDot && metronomoActivoDot !== dot) {
-                    metronomoActivoDot.classList.remove('beat-active');
-                    metronomoActivoDot.style.removeProperty('--bpm-duration');
-                    if (metronomoInterval) clearInterval(metronomoInterval);
-                }
-                
-                if (dot.classList.contains('beat-active')) {
-                    dot.classList.remove('beat-active');
-                    dot.style.removeProperty('--bpm-duration');
-                    if (metronomoInterval) clearInterval(metronomoInterval);
-                    metronomoActivoDot = null;
-                    return;
-                }
-                
-                const duracionSegundos = 60 / bpmVal;
-                dot.style.setProperty('--bpm-duration', `${duracionSegundos}s`);
-                dot.classList.add('beat-active');
-                metronomoActivoDot = dot;
-                
-                playClick();
-                metronomoInterval = setInterval(playClick, duracionSegundos * 1000);
-            }
-        });
+ // ----- Metrónomo Interactivo Logic -----
+ let metronomoActivoDot: HTMLElement | null = null;
+ let metronomoInterval: any = null;
+ 
+ const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+ const audioCtx = new AudioContextClass();
+ 
+ function playClick() {
+ if (!audioCtx) return;
+ if (audioCtx.state === 'suspended') audioCtx.resume();
+ 
+ const osc = audioCtx.createOscillator();
+ const gainNode = audioCtx.createGain();
+ 
+ osc.connect(gainNode);
+ gainNode.connect(audioCtx.destination);
+ 
+ osc.type = 'sine';
+ osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+ 
+ gainNode.gain.setValueAtTime(1, audioCtx.currentTime);
+ gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+ 
+ osc.start(audioCtx.currentTime);
+ osc.stop(audioCtx.currentTime + 0.1);
+ }
+ 
+ document.addEventListener('click', (e) => {
+ const badge = (e.target as Element).closest('.badge-bpm');
+ if (badge) {
+ const bpmStr = badge.getAttribute('data-bpm');
+ if (!bpmStr) return;
+ 
+ const bpmVal = parseInt(bpmStr.replace(/[^0-9]/g, ''), 10);
+ if (!bpmVal || bpmVal <= 0) return;
+ 
+ const dot = badge.querySelector('.metronomo-dot') as HTMLElement;
+ if (!dot) return;
+ 
+ if (metronomoActivoDot && metronomoActivoDot !== dot) {
+ metronomoActivoDot.classList.remove('beat-active');
+ metronomoActivoDot.style.removeProperty('--bpm-duration');
+ if (metronomoInterval) clearInterval(metronomoInterval);
+ }
+ 
+ if (dot.classList.contains('beat-active')) {
+ dot.classList.remove('beat-active');
+ dot.style.removeProperty('--bpm-duration');
+ if (metronomoInterval) clearInterval(metronomoInterval);
+ metronomoActivoDot = null;
+ return;
+ }
+ 
+ const duracionSegundos = 60 / bpmVal;
+ dot.style.setProperty('--bpm-duration', `${duracionSegundos}s`);
+ dot.classList.add('beat-active');
+ metronomoActivoDot = dot;
+ 
+ playClick();
+ metronomoInterval = setInterval(playClick, duracionSegundos * 1000);
+ }
+ });
 
-        // ----- Reference Tone (Pitch Pipe) Logic -----
-        const frecuencias: { [key: string]: number } = {
-            'C': 261.63, 'C#': 277.18, 'D': 293.66, 'Eb': 311.13, 'E': 329.63, 
-            'F': 349.23, 'F#': 369.99, 'G': 392.00, 'G#': 415.30, 'A': 440.00, 
-            'Bb': 466.16, 'B': 493.88
-        };
-        
-        document.addEventListener('click', (e) => {
-            const badgeTono = (e.target as Element).closest('.badge-tono');
-            if (badgeTono) {
-                let tono = badgeTono.getAttribute('data-tono');
-                if (!tono || tono.trim() === '-' || tono.trim() === '') return;
-                
-                tono = tono.replace(/m/g, '').trim();
-                const frecuencia = frecuencias[tono];
-                
-                if (frecuencia && audioCtx) {
-                    if (audioCtx.state === 'suspended') audioCtx.resume();
-                    
-                    const oscPrincipal = audioCtx.createOscillator();
-                    oscPrincipal.type = 'triangle';
-                    oscPrincipal.frequency.value = frecuencia;
-                    
-                    const oscBrillo = audioCtx.createOscillator();
-                    oscBrillo.type = 'sine';
-                    oscBrillo.frequency.value = frecuencia * 2; 
-                    
-                    const gainNode = audioCtx.createGain();
-                    
-                    oscPrincipal.connect(gainNode);
-                    oscBrillo.connect(gainNode);
-                    gainNode.connect(audioCtx.destination);
-                    
-                    const now = audioCtx.currentTime;
-                    gainNode.gain.setValueAtTime(0, now);
-                    gainNode.gain.linearRampToValueAtTime(0.8, now + 0.02);
-                    gainNode.gain.exponentialRampToValueAtTime(0.1, now + 0.5);
-                    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 3);
-                    
-                    oscPrincipal.start(now);
-                    oscBrillo.start(now);
-                    oscPrincipal.stop(now + 3);
-                    oscBrillo.stop(now + 3);
-                }
-            }
-        });
+ // ----- Reference Tone (Pitch Pipe) Logic -----
+ const frecuencias: { [key: string]: number } = {
+ 'C': 261.63, 'C#': 277.18, 'D': 293.66, 'Eb': 311.13, 'E': 329.63, 
+ 'F': 349.23, 'F#': 369.99, 'G': 392.00, 'G#': 415.30, 'A': 440.00, 
+ 'Bb': 466.16, 'B': 493.88
+ };
+ 
+ document.addEventListener('click', (e) => {
+ const badgeTono = (e.target as Element).closest('.badge-tono');
+ if (badgeTono) {
+ let tono = badgeTono.getAttribute('data-tono');
+ if (!tono || tono.trim() === '-' || tono.trim() === '') return;
+ 
+ tono = tono.replace(/m/g, '').trim();
+ const frecuencia = frecuencias[tono];
+ 
+ if (frecuencia && audioCtx) {
+ if (audioCtx.state === 'suspended') audioCtx.resume();
+ 
+ const oscPrincipal = audioCtx.createOscillator();
+ oscPrincipal.type = 'triangle';
+ oscPrincipal.frequency.value = frecuencia;
+ 
+ const oscBrillo = audioCtx.createOscillator();
+ oscBrillo.type = 'sine';
+ oscBrillo.frequency.value = frecuencia * 2; 
+ 
+ const gainNode = audioCtx.createGain();
+ 
+ oscPrincipal.connect(gainNode);
+ oscBrillo.connect(gainNode);
+ gainNode.connect(audioCtx.destination);
+ 
+ const now = audioCtx.currentTime;
+ gainNode.gain.setValueAtTime(0, now);
+ gainNode.gain.linearRampToValueAtTime(0.8, now + 0.02);
+ gainNode.gain.exponentialRampToValueAtTime(0.1, now + 0.5);
+ gainNode.gain.exponentialRampToValueAtTime(0.001, now + 3);
+ 
+ oscPrincipal.start(now);
+ oscBrillo.start(now);
+ oscPrincipal.stop(now + 3);
+ oscBrillo.stop(now + 3);
+ }
+ }
+ });
 
-        // Sync CSV → Supabase (silencioso en background)
-        function updatePlaylistCount() {
-            if (playlistCountEl) playlistCountEl.textContent = selectedSongs.length.toString();
-        }
+ // Sync CSV → Supabase (silencioso en background)
+ function updatePlaylistCount() {
+ if (playlistCountEl) playlistCountEl.textContent = selectedSongs.length.toString();
+ }
 
-        (async () => {
-            const syncData = document.getElementById('canciones-sync-data');
-            if (!syncData) return;
-            try {
-                const canciones = JSON.parse(syncData.textContent || '[]');
-                if (canciones.length === 0) return;
+ (async () => {
+ const syncData = document.getElementById('canciones-sync-data');
+ if (!syncData) return;
+ try {
+ const canciones = JSON.parse(syncData.textContent || '[]');
+ if (canciones.length === 0) return;
 
-                const upsertPayload = canciones.map((c: any) => ({
-                    titulo: c['Canción'] || '',
-                    cantante: c['Grupo/Cantante'] || null,
-                    tonalidad: c['Tonalidad Redil Estadio'] || null,
-                    bpm: parseInt(c['Beat Batería']) || null,
-                    categoria: c['Categoría Canción'] || null,
-                    voz: c['Voz Principal'] || null,
-                    tema: c['Tema Principal Canción'] || null,
-                    link_youtube: c['Link Youtube'] || null,
-                    link_acordes: c['Link Acordes'] || null,
-                    link_letras: c['Link Letras'] || null,
-                    link_voces: c['Link Voces'] || null,
-                    link_secuencias: c['Link Secuencias'] || null,
-                    chordpro: c['Acordes ChordPro'] || null,
-                    estado: c['Estado'] || 'Activa'
-                })).filter((c: any) => c.titulo.trim() !== '');
+ const upsertPayload = canciones.map((c: any) => ({
+ titulo: c['Canción'] || '',
+ cantante: c['Grupo/Cantante'] || null,
+ tonalidad: c['Tonalidad Redil Estadio'] || null,
+ bpm: parseInt(c['Beat Batería']) || null,
+ categoria: c['Categoría Canción'] || null,
+ voz: c['Voz Principal'] || null,
+ tema: c['Tema Principal Canción'] || null,
+ link_youtube: c['Link Youtube'] || null,
+ link_acordes: c['Link Acordes'] || null,
+ link_letras: c['Link Letras'] || null,
+ link_voces: c['Link Voces'] || null,
+ link_secuencias: c['Link Secuencias'] || null,
+ chordpro: c['Acordes ChordPro'] || null,
+ estado: c['Estado'] || 'Activa'
+ })).filter((c: any) => c.titulo.trim() !== '');
 
-                for (let i = 0; i < upsertPayload.length; i += 50) {
-                    const batch = upsertPayload.slice(i, i + 50);
-                    await supabase.from('canciones').upsert(batch, { onConflict: 'titulo' });
-                }
-                console.log(`📦 Sync silencioso: ${upsertPayload.length} canciones CSV → Supabase`);
-            } catch (e) {
-                console.error('Error en sync CSV → Supabase:', e);
-            }
-        })();
-    });
+ for (let i = 0; i < upsertPayload.length; i += 50) {
+ const batch = upsertPayload.slice(i, i + 50);
+ await supabase.from('canciones').upsert(batch, { onConflict: 'titulo' });
+ }
+ console.log(`📦 Sync silencioso: ${upsertPayload.length} canciones CSV → Supabase`);
+ } catch (e) {
+ console.error('Error en sync CSV → Supabase:', e);
+ }
+ })();
+ });
 </script>
 
 <style is:global>
-    /* Content visibility optimizations for long list scroll performance */
-    .cancion-oculta { display: none !important; }
-    .btn-add-setlist { transform: translateZ(0); -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+ /* Content visibility optimizations for long list scroll performance */
+ .cancion-oculta { display: none !important; }
+ .btn-add-setlist { transform: translateZ(0); -webkit-backface-visibility: hidden; backface-visibility: hidden; }
 
-    /* Estilos Tema Claro */
-    body.tema-claro { background-color: #f3f4f6; color: #111827; }
-    body.tema-claro article { background-color: #ffffff; border-color: #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-    body.tema-claro .card-header h3, 
-    body.tema-claro #mainTitle,
-    body.tema-claro h2 { color: #111827; }
-    body.tema-claro input, body.tema-claro select { background-color: #ffffff; color: #111827; border-color: #d1d5db; }
-    body.tema-claro .badge-tono, body.tema-claro .badge-bpm, body.tema-claro .badge-voz, body.tema-claro .badge-categoria { background-color: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
-    body.tema-claro .text-neutral-400 { color: #6b7280; }
-    body.tema-claro .text-neutral-500 { color: #4b5563; }
-    body.tema-claro .bg-neutral-900 { background-color: #ffffff; border-color: #e5e7eb; }
-    body.tema-claro #btn-theme-toggle { background-color: #ffffff; color: #111827; border-color: #d1d5db; }
-    body.tema-claro #btn-theme-toggle:hover { background-color: #f3f4f6; }
-    body.tema-claro #viewToggleContainer { background-color: #e5e7eb; border-color: #d1d5db; }
-    body.tema-claro #btnViewGrid.bg-neutral-800, body.tema-claro #btnViewList.bg-neutral-800 { background-color: #ffffff; color: #111827; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); }
-    body.tema-claro #btnViewGrid.text-neutral-400, body.tema-claro #btnViewList.text-neutral-400 { color: #6b7280; }
-    body.tema-claro #btnViewGrid.text-neutral-400:hover, body.tema-claro #btnViewList.text-neutral-400:hover { color: #111827; }
-    
-    @keyframes pulse-beat { 
-        0% { transform: scale(1); background-color: #10b981; } 
-        50% { transform: scale(1.5); background-color: #34d399; box-shadow: 0 0 8px #34d399; } 
-        100% { transform: scale(1); background-color: #10b981; } 
-    }
-    
-    .beat-active { 
-        animation: pulse-beat var(--bpm-duration) infinite; 
-        background-color: #10b981 !important; 
-    }
-    /* Estilos para el Modo Lista */
-    .modo-lista .card-header {
-        padding: 0.75rem 1.25rem;
-    }
-    
-    .modo-lista .card-title {
-        font-size: 1.125rem;
-        margin-bottom: 0;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-    
-    .modo-lista .card-badges {
-        display: none !important;
-    }
-    
-    .modo-lista .btn-add-setlist {
-        top: 50%;
-        transform: translateY(-50%);
-        right: 1.25rem;
-    }
-    
-    .modo-lista .card-content {
-        display: none;
-    }
-    
-    .modo-lista.expandido .card-content {
-        display: block;
-        padding-top: 0;
-        border-top: 1px solid rgba(255,255,255,0.05);
-    }
+ /* Estilos Tema Claro */
+ body.tema-claro { background-color: #f3f4f6; color: #111827; }
+ body.tema-claro article { background-color: #ffffff; border-color: #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+ body.tema-claro .card-header h3, 
+ body.tema-claro #mainTitle,
+ body.tema-claro h2 { color: #111827; }
+ body.tema-claro input, body.tema-claro select { background-color: #ffffff; color: #111827; border-color: #d1d5db; }
+ body.tema-claro .badge-tono, body.tema-claro .badge-bpm, body.tema-claro .badge-voz, body.tema-claro .badge-categoria { background-color: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+ body.tema-claro .text-neutral-500 { color: #6b7280; }
+ body.tema-claro .text-neutral-500 { color: #4b5563; }
+ body.tema-claro .bg-white { background-color: #ffffff; border-color: #e5e7eb; }
+ body.tema-claro #btn-theme-toggle { background-color: #ffffff; color: #111827; border-color: #d1d5db; }
+ body.tema-claro #btn-theme-toggle:hover { background-color: #f3f4f6; }
+ body.tema-claro #viewToggleContainer { background-color: #e5e7eb; border-color: #d1d5db; }
+ body.tema-claro #btnViewGrid.bg-neutral-100, body.tema-claro #btnViewList.bg-neutral-100 { background-color: #ffffff; color: #111827; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); }
+ body.tema-claro #btnViewGrid.text-neutral-500, body.tema-claro #btnViewList.text-neutral-500 { color: #6b7280; }
+ body.tema-claro #btnViewGrid.text-neutral-500:hover, body.tema-claro #btnViewList.text-neutral-500:hover { color: #111827; }
+ 
+ @keyframes pulse-beat { 
+ 0% { transform: scale(1); background-color: #10b981; } 
+ 50% { transform: scale(1.5); background-color: #34d399; box-shadow: 0 0 8px #34d399; } 
+ 100% { transform: scale(1); background-color: #10b981; } 
+ }
+ 
+ .beat-active { 
+ animation: pulse-beat var(--bpm-duration) infinite; 
+ background-color: #10b981 !important; 
+ }
+ /* Estilos para el Modo Lista */
+ .modo-lista .card-header {
+ padding: 0.75rem 1.25rem;
+ }
+ 
+ .modo-lista .card-title {
+ font-size: 1.125rem;
+ margin-bottom: 0;
+ white-space: nowrap;
+ overflow: hidden;
+ text-overflow: ellipsis;
+ }
+ 
+ .modo-lista .card-badges {
+ display: none !important;
+ }
+ 
+ .modo-lista .btn-add-setlist {
+ top: 50%;
+ transform: translateY(-50%);
+ right: 1.25rem;
+ }
+ 
+ .modo-lista .card-content {
+ display: none;
+ }
+ 
+ .modo-lista.expandido .card-content {
+ display: block;
+ padding-top: 0;
+ border-top: 1px solid rgba(255,255,255,0.05);
+ }
 </style>
