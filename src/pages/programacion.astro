@@ -19,7 +19,7 @@ import Layout from '../layouts/Layout.astro';
 
  <!-- Selector de Vistas -->
  <div class="flex items-center justify-center gap-2 mb-8 mt-2">
- <button id="btn-view-card" class="px-5 py-2.5 bg-white text-white text-sm font-bold rounded-xl shadow-sm transition-colors border border-transparent">
+ <button id="btn-view-card" class="px-5 py-2.5 bg-white text-orange-500 text-sm font-bold rounded-xl shadow-sm transition-colors border border-orange-400">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" class="inline-block mr-1.5" stroke="currentColor" stroke-width="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>Tarjeta
  </button>
  <button id="btn-view-list" class="px-5 py-2.5 bg-white text-neutral-600 text-sm font-bold rounded-xl border border-neutral-300 hover:bg-neutral-50 :bg-neutral-100 transition-colors">
@@ -1772,8 +1772,8 @@ import Layout from '../layouts/Layout.astro';
  const listView = document.getElementById('agenda-list');
  const calendarView = document.getElementById('agenda-calendar');
 
- const activeClassBg = ['bg-white', '', 'text-white', '', 'shadow-sm'];
- const inactiveClassBg = ['bg-white', '', 'text-neutral-600', '', 'hover:bg-neutral-50', ':bg-neutral-100'];
+ const activeClassBg = ['bg-white', 'text-orange-500', 'border-orange-400', 'shadow-sm'];
+ const inactiveClassBg = ['bg-white', 'text-neutral-600', 'border-neutral-300', 'hover:bg-neutral-50'];
 
  const switchView = (targetBtn, targetView) => {
  // Esconder todos
