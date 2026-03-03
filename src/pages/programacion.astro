@@ -774,14 +774,20 @@ import Layout from '../layouts/Layout.astro';
  let miRolBadge = '';
  if (miAsignacion) {
  const rolText = window.appStateRoles?.find((r:any) => r.id === miAsignacion.rol_id)?.nombre || 'Banda';
- miRolBadge = `<span class="inline-flex items-center bg-teal-50 text-teal-700 border border-teal-200 text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider truncate max-w-[140px] sm:max-w-[160px]" title="Tú: ${rolText}">Tú: ${rolText}</span>`;
+ miRolBadge = `<span class="inline-flex items-center gap-1 bg-teal-50 text-teal-700 border border-teal-200 text-[10px] px-2.5 py-1 rounded-md uppercase tracking-wider max-w-[50vw] sm:max-w-[200px]" title="Tú: ${rolText}">
+ <strong class="font-black">TÚ:</strong>
+ <span class="truncate font-semibold">${rolText}</span>
+ </span>`;
  }
 
  let dirListStr = `<span class="inline-flex items-center text-neutral-500 text-[10px] font-bold px-2.5 py-1 rounded-md border border-neutral-200 bg-neutral-50 uppercase tracking-wider italic">Dirección vacía</span>`;
  const asignadoLider = rosterDb.find((r:any) => window.appStateRoles?.find((ro:any) => ro.id === r.rol_id && ro.codigo === 'lider_alabanza'));
  if(asignadoLider && asignadoLider.perfiles) {
  const shortName = asignadoLider.perfiles.nombre.split(' ')[0];
- dirListStr = `<span class="inline-flex items-center bg-violet-50 text-violet-700 border border-violet-200 text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider truncate max-w-[140px] sm:max-w-[160px]" title="Dirige: ${shortName}">Dirige: ${shortName}</span>`;
+ dirListStr = `<span class="inline-flex items-center gap-1 bg-violet-50 text-violet-700 border border-violet-200 text-[10px] px-2.5 py-1 rounded-md uppercase tracking-wider max-w-[50vw] sm:max-w-[200px]" title="Dirige: ${shortName}">
+ <strong class="font-bold">DIRIGE:</strong>
+ <span class="truncate font-medium">${shortName}</span>
+ </span>`;
  }
  
  htmlListString += `
