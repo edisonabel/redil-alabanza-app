@@ -951,8 +951,8 @@ import Layout from '../layouts/Layout.astro';
 
  const dictRoles = window.appStateRoles || [];
  
- const currentUserObj = ${JSON.stringify(user || null)};
- const isGlobalAdmin = ${perfil?.is_admin ? 'true' : 'false'};
+ const currentUserObj = typeof user !== 'undefined' ? user : null;
+ const isGlobalAdmin = typeof perfil !== 'undefined' ? (perfil?.is_admin || false) : false;
  let isModerator = false;
  if (currentUserObj && roster.length > 0) {
      const miAsig = roster.find(a => a.perfiles?.id === currentUserObj.id || a.perfiles?.email === currentUserObj.email);
