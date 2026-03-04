@@ -1484,16 +1484,29 @@ import Layout from '../layouts/Layout.astro';
  if (transacError) {
  console.error('❌ Error gestionando evento:', transacError);
  alert('No se pudo guardar: ' + transacError.message);
- } else {
- alert('¡Cambios guardados correctamente!');
- window.toggleModalGlobal(false);
- if(typeof alert !== 'undefined' && evId.startsWith('virtual|')) alert('Evento dominguero publicado. Ahora haz clic en GESTIONAR de nuevo para añadir el equipo.');
- await fetchAgenda(); 
- }
-
  if (btnSpinner) btnSpinner.classList.add('hidden');
  if (btnSubmitText) btnSubmitText.textContent = 'Guardar Evento';
  (formEvent.elements as any)['btn-submit-modal'].disabled = false;
+ } else {
+ if (btnSpinner) btnSpinner.classList.add('hidden');
+ if (btnSubmitText) btnSubmitText.textContent = '¡Guardado exitosamente!';
+ 
+ const submitBtn = (formEvent.elements as any)['btn-submit-modal'];
+ submitBtn.classList.replace('bg-teal-500', 'bg-emerald-600');
+ submitBtn.classList.replace('hover:bg-teal-400', 'hover:bg-emerald-500');
+ 
+ setTimeout(async () => {
+ window.toggleModalGlobal(false);
+ if(typeof alert !== 'undefined' && evId.startsWith('virtual|')) alert('Evento dominguero publicado. Ahora haz clic en GESTIONAR de nuevo para añadir el equipo.');
+ await fetchAgenda(); 
+ 
+ // Restaurar botón
+ if (btnSubmitText) btnSubmitText.textContent = 'Guardar Evento';
+ submitBtn.classList.replace('bg-emerald-600', 'bg-teal-500');
+ submitBtn.classList.replace('hover:bg-emerald-500', 'hover:bg-teal-400');
+ submitBtn.disabled = false;
+ }, 1000);
+ }
  });
 
  // ==========================================
