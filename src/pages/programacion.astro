@@ -1435,7 +1435,6 @@ import Layout from '../layouts/Layout.astro';
  let transacError = null;
 
  if (evId && !evId.startsWith('virtual|')) {
- const { error } = await supabase
   // FASE 3: Verificar si actualizar en serie
   const serieCheckbox = document.getElementById('ev-serie-check') as HTMLInputElement;
   const currentSerieId = (document.getElementById('ev-serie-id') as HTMLInputElement)?.value;
@@ -1486,6 +1485,7 @@ import Layout from '../layouts/Layout.astro';
  console.error('❌ Error gestionando evento:', transacError);
  alert('No se pudo guardar: ' + transacError.message);
  } else {
+ alert('¡Cambios guardados correctamente!');
  window.toggleModalGlobal(false);
  if(typeof alert !== 'undefined' && evId.startsWith('virtual|')) alert('Evento dominguero publicado. Ahora haz clic en GESTIONAR de nuevo para añadir el equipo.');
  await fetchAgenda(); 
