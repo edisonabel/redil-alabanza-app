@@ -1421,9 +1421,12 @@ import Layout from '../layouts/Layout.astro';
  formEvent?.addEventListener('submit', async (e) => {
  e.preventDefault();
  
+ try {
  if (btnSpinner) btnSpinner.classList.remove('hidden');
  if (btnSubmitText) btnSubmitText.textContent = 'Guardando...';
- (formEvent.elements as any)['btn-submit-modal'].disabled = true;
+ 
+ const submitBtn = document.getElementById('btn-submit-modal') as HTMLButtonElement;
+ if (submitBtn) submitBtn.disabled = true;
 
  const evId = (document.getElementById('ev-id') as HTMLInputElement).value;
  const titulo = (document.getElementById('ev-titulo') as HTMLInputElement).value;
@@ -1486,14 +1489,15 @@ import Layout from '../layouts/Layout.astro';
  alert('No se pudo guardar: ' + transacError.message);
  if (btnSpinner) btnSpinner.classList.add('hidden');
  if (btnSubmitText) btnSubmitText.textContent = 'Guardar Evento';
- (formEvent.elements as any)['btn-submit-modal'].disabled = false;
+ if (submitBtn) submitBtn.disabled = false;
  } else {
  if (btnSpinner) btnSpinner.classList.add('hidden');
  if (btnSubmitText) btnSubmitText.textContent = '¡Guardado exitosamente!';
  
- const submitBtn = (formEvent.elements as any)['btn-submit-modal'];
+ if (submitBtn) {
  submitBtn.classList.replace('bg-teal-500', 'bg-emerald-600');
  submitBtn.classList.replace('hover:bg-teal-400', 'hover:bg-emerald-500');
+ }
  
  setTimeout(async () => {
  window.toggleModalGlobal(false);
@@ -1502,10 +1506,20 @@ import Layout from '../layouts/Layout.astro';
  
  // Restaurar botón
  if (btnSubmitText) btnSubmitText.textContent = 'Guardar Evento';
+ if (submitBtn) {
  submitBtn.classList.replace('bg-emerald-600', 'bg-teal-500');
  submitBtn.classList.replace('hover:bg-emerald-500', 'hover:bg-teal-400');
  submitBtn.disabled = false;
+ }
  }, 1000);
+ }
+ } catch (fatality: any) {
+ alert('ERROR CRÍTICO JS: ' + fatality.message);
+ console.error(fatality);
+ if (btnSpinner) btnSpinner.classList.add('hidden');
+ if (btnSubmitText) btnSubmitText.textContent = 'Guardar Evento';
+ const submitBtn = document.getElementById('btn-submit-modal') as HTMLButtonElement;
+ if (submitBtn) submitBtn.disabled = false;
  }
  });
 
