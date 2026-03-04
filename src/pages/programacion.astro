@@ -1260,6 +1260,7 @@ import Layout from '../layouts/Layout.astro';
  document.getElementById('ev-container-fechas')?.classList.remove('hidden');
  document.getElementById('ev-container-estado')?.classList.remove('hidden');
  document.getElementById('serie-update-section')?.classList.add('hidden'); // Hide serie section for new events
+ document.getElementById('btn-cargar-equipo')?.classList.remove('hidden'); // Show Cargar Equipo for new events (only admins can create new events anyway)
 
  } else if (mode === 'edit' && data) {
  modalTitle!.textContent = 'Gestionar Evento';
@@ -1308,6 +1309,16 @@ import Layout from '../layouts/Layout.astro';
    if (containerEstado) containerEstado.classList.remove('hidden');
    if (containerTitulo) containerTitulo.classList.remove('hidden');
    }
+ 
+ // Hide 'Cargar Equipo' button for strict moderators
+ const btnCargarEquipoElement = document.getElementById('btn-cargar-equipo');
+ if (btnCargarEquipoElement) {
+ if (isStrictModerator) {
+ btnCargarEquipoElement.classList.add('hidden');
+ } else {
+ btnCargarEquipoElement.classList.remove('hidden');
+ }
+ } // close btnCargarEquipoElement check
 
   if (data.serie_id) {
   if (!isStrictModerator && serieSection) serieSection.classList.remove('hidden');
