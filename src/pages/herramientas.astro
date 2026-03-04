@@ -35,3 +35,16 @@ import Layout from '../layouts/Layout.astro';
  </a>
  </div>
 </Layout>
+
+<script>
+  import { supabase } from '../lib/supabase';
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError || !session) {
+      window.location.replace('/login');
+      return;
+    }
+  });
+</script>

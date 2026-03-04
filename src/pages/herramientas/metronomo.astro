@@ -67,7 +67,16 @@ import Layout from '../../layouts/Layout.astro';
 </Layout>
 
 <script>
-document.addEventListener('DOMContentLoaded', () => {
+import { supabase } from '../../lib/supabase';
+
+document.addEventListener('DOMContentLoaded', async () => {
+ const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+ 
+ if (sessionError || !session) {
+   window.location.replace('/login');
+   return;
+ }
+
  // ---------------- ENGINE AUDIO & SCHEDULER ---------------- //
  let audioCtx: AudioContext | null = null;
  let isPlaying = false;

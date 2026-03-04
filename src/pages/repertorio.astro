@@ -85,10 +85,14 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
  </svg>
  </div>
  <div class="w-full">
- <label for="searchInput" class="hidden md:block text-sm font-medium text-neutral-700 mb-2">Buscar</label>
+ <label for="search-input" class="hidden md:block text-sm font-medium text-neutral-700 mb-2">Buscar</label>
+ <div class="relative w-full flex items-center">
+ <input type="text" id="search-suggestion" 
+ class="absolute inset-0 w-full bg-transparent text-neutral-400 pointer-events-none border border-transparent pl-10 md:pl-12 pr-4 py-2.5 md:py-3 md:text-lg" disabled />
  <input type="text" id="searchInput" 
  placeholder="Buscar canción o artista..." 
- class="w-full bg-white border border-neutral-200 text-neutral-900 rounded-xl pl-10 md:pl-12 pr-4 py-2.5 md:py-3 md:text-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors placeholder:text-neutral-400">
+ class="relative w-full bg-transparent border border-neutral-200 text-neutral-900 rounded-xl pl-10 md:pl-12 pr-4 py-2.5 md:py-3 md:text-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors placeholder:text-neutral-400 z-10" autocomplete="off" />
+ </div>
  </div>
  </div>
  
@@ -603,11 +607,48 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
  threshold: 0 
  });
  
- if (sentinel) observer.observe(sentinel);
+  if (sentinel) observer.observe(sentinel);
+
+  // Setup Autocomplete Inline (Ghost Text)
+  const suggestionInput = document.getElementById('search-suggestion') as HTMLInputElement;
+
+  if (searchInput && suggestionInput) {
+    const titulos = [...new Set(todasLasCanciones.map(c => c.getAttribute('data-titulo')).filter(Boolean))] as string[];
+
+    searchInput.addEventListener('input', () => {
+      const searchTerm = searchInput.value;
+      if (!searchTerm) {
+        suggestionInput.value = '';
+        return;
+      }
+      
+      const searchTermLower = normalizeStr(searchTerm);
+      const match = titulos.find(t => normalizeStr(t).startsWith(searchTermLower));
+      
+      if (match) {
+        // Mantener exactamente lo que el usuario escribió (mayúsculas, tildes) y añadir el resto de la sugerencia
+        suggestionInput.value = searchTerm + match.substring(searchTerm.length);
+      } else {
+        suggestionInput.value = '';
+      }
+    });
+
+    searchInput.addEventListener('keydown', (e) => {
+      if ((e.key === 'ArrowRight' || e.key === 'Tab') && suggestionInput.value && suggestionInput.value.toLowerCase().startsWith(searchInput.value.toLowerCase())) {
+        e.preventDefault();
+        searchInput.value = suggestionInput.value;
+        suggestionInput.value = '';
+        filterCards(); // Disparar filtro con la nueva palabra
+      }
+    });
+  }
+
+ // Helper para normalizar texto (quitar tildes y pasar a minusculas)
+ const normalizeStr = (str: string) => str ? str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() : '';
 
  // ----- Filter Application Logic -----
  function filterCards() {
- const searchTerm = searchInput.value.toLowerCase().trim();
+ const searchTerm = normalizeStr(searchInput.value).trim();
  const vozTerm = filterVoz.value;
  const categoriaTerm = filterCategoria.value;
  const temaTerm = filterTema.value;
@@ -616,8 +657,8 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
  indiceActual = 0;
 
  cancionesFiltradas = todasLasCanciones.filter(card => {
- const titulo = card.getAttribute('data-titulo') || '';
- const artista = card.getAttribute('data-artista') || '';
+ const titulo = normalizeStr(card.getAttribute('data-titulo') || '');
+ const artista = normalizeStr(card.getAttribute('data-artista') || '');
  const voz = card.getAttribute('data-voz') || '';
  const categoria = card.getAttribute('data-categoria') || '';
  const tema = card.getAttribute('data-tema') || '';

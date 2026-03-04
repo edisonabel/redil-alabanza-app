@@ -104,8 +104,17 @@ import Layout from '../../layouts/Layout.astro';
 </style>
 
 <script>
- document.addEventListener('DOMContentLoaded', () => {
- const notas = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  import { supabase } from '../../lib/supabase';
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError || !session) {
+      window.location.replace('/login');
+      return;
+    }
+
+    const notas = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
  const bemoles: Record<string, string> = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
  
  const input = document.getElementById('input-chordpro') as HTMLTextAreaElement;
