@@ -142,7 +142,7 @@ import Layout from '../layouts/Layout.astro';
 
  <div class="mt-8 flex gap-3 pt-5 border-t border-neutral-200 sticky bottom-0 bg-white pb-6 z-20">
  <button type="button" id="btn-cancel-modal" class="flex-1 py-3.5 px-4 bg-neutral-100 hover:bg-neutral-200 :bg-neutral-700 border border-neutral-300 text-sm text-neutral-900 rounded-xl font-bold transition-colors">Cancelar</button>
- <button type="submit" id="btn-submit-modal" class="flex-1 py-3.5 px-4 bg-teal-500 hover:bg-teal-400 text-white text-sm rounded-xl font-bold transition-colors flex justify-center items-center gap-2">
+ <button type="button" id="btn-submit-modal" class="flex-1 py-3.5 px-4 bg-teal-500 hover:bg-teal-400 text-white text-sm rounded-xl font-bold transition-colors flex justify-center items-center gap-2">
  <span>Guardar Evento</span>
  <div id="btn-spinner" class="hidden w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
  </button>
@@ -1418,7 +1418,7 @@ import Layout from '../layouts/Layout.astro';
   // ------------------------------------------
 
   // Submit Form update/insert a Supabase
- formEvent?.addEventListener('submit', async (e) => {
+ document.getElementById('btn-submit-modal')?.addEventListener('click', async (e) => {
  e.preventDefault();
  
  try {
