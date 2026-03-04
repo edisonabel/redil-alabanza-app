@@ -950,6 +950,20 @@ import Layout from '../layouts/Layout.astro';
  try { roster = JSON.parse(script.textContent); } catch (e) {}
 
  const dictRoles = window.appStateRoles || [];
+ 
+ const currentUserObj = ${JSON.stringify(user || null)};
+ const isGlobalAdmin = ${perfil?.is_admin ? 'true' : 'false'};
+ let isModerator = false;
+ if (currentUserObj && roster.length > 0) {
+     const miAsig = roster.find(a => a.perfiles?.id === currentUserObj.id || a.perfiles?.email === currentUserObj.email);
+     if (miAsig) {
+         const rolCode = dictRoles.find(r => r.id === miAsig.rol_id)?.codigo;
+         if (rolCode === 'lider_alabanza' || rolCode === 'talkback') {
+             isModerator = true;
+         }
+     }
+ }
+ const canEditRoster = isGlobalAdmin || isModerator;
 
  const containerN1 = document.getElementById(`roster-n1-${eventoId}`);
  const containerN2 = document.getElementById(`roster-n2-${eventoId}`);
@@ -993,19 +1007,19 @@ import Layout from '../layouts/Layout.astro';
  const badgeHtml = iconSvg ? `<div class="absolute -top-1 -right-1 w-[20px] h-[20px] bg-white rounded-full flex items-center justify-center shadow-md border border-neutral-200 text-neutral-600 z-10">${iconSvg}</div>` : '';
 
  innerItem = `
- <div class="flex flex-col items-center gap-2 group relative cursor-pointer hover:bg-neutral-200/50 :bg-neutral-100/50 rounded-xl p-2 -m-2 transition-colors ${perfil?.is_admin ? 'btn-roster-inline' : ''}" title="${p.nombre} (${rolMap.nombre})" data-evento="${eventoId}" data-rol-id="${rolMap.id}" data-rol-name="${rolMap.nombre}">
+ <div class="flex flex-col items-center gap-2 group relative cursor-pointer hover:bg-neutral-200/50 :bg-neutral-100/50 rounded-xl p-2 -m-2 transition-colors ${canEditRoster ? 'btn-roster-inline' : ''}" title="${p.nombre} (${rolMap.nombre})" data-evento="${eventoId}" data-rol-id="${rolMap.id}" data-rol-name="${rolMap.nombre}">
  <div class="relative">
  ${avatarBlock}
  ${badgeHtml}
- ${perfil?.is_admin ? `<button class="btn-remove-roster absolute -top-1.5 -left-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full p-1.5 shadow-md z-20 opacity-0 group-hover:opacity-100 transition-opacity" title="Remover" data-evento="${eventoId}" data-rol-id="${rolMap.id}" data-rol-name="${rolMap.nombre}">
+ ${canEditRoster ? `<button class="btn-remove-roster absolute -top-1.5 -left-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full p-1.5 shadow-md z-20 opacity-0 group-hover:opacity-100 transition-opacity" title="Remover" data-evento="${eventoId}" data-rol-id="${rolMap.id}" data-rol-name="${rolMap.nombre}">
  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
  </button>` : ''}
  </div>
  <span class="text-[11px] font-bold text-neutral-700 capitalize max-w-[60px] truncate text-center leading-none">${displayName}</span>
  </div>
  `;
- } else if (perfil?.is_admin) {
- // Empty Slot Actionable solo para Admins (oculto en tarjeta)
+ } else if (canEditRoster) {
+ // Empty Slot Actionable para Admins o Moderadores (oculto en tarjeta)
  const ringHover = isN1 ? 'hover:border-violet-500 hover:text-violet-500 hover:bg-violet-50 :bg-violet-950/30' : (isN2 ? 'hover:border-amber-500 hover:text-amber-500 hover:bg-amber-50 :bg-amber-950/30' : 'hover:border-teal-500 hover:text-teal-500 hover:bg-teal-50 :bg-teal-950/30');
  innerItem = `
  <button class="btn-roster-inline empty-slot px-4 h-9 flex items-center justify-center gap-1.5 rounded-full border border-dashed border-neutral-300 text-[11px] font-bold text-neutral-500 uppercase tracking-widest ${ringHover} transition-all" data-evento="${eventoId}" data-rol-id="${rolMap.id}" data-rol-name="${rolMap.nombre}">
@@ -1042,10 +1056,10 @@ import Layout from '../layouts/Layout.astro';
  : `<div class="w-10 h-10 sm:w-11 sm:h-11 shrink-0 rounded-full bg-teal-500 text-white flex items-center justify-center font-bold text-sm shadow-sm">${initials}</div>`;
  
  const vozItem = `
- <div class="flex flex-col items-center gap-2 group relative cursor-pointer hover:bg-neutral-200/50 :bg-neutral-100/50 rounded-xl p-2 -m-2 transition-colors ${perfil?.is_admin ? 'btn-roster-inline' : ''}" title="${p.nombre} (${rolMap?.nombre || 'Voz'})" data-evento="${eventoId}" data-rol-id="${asig.rol_id}" data-rol-name="${rolMap?.nombre || 'Voz'}">
+ <div class="flex flex-col items-center gap-2 group relative cursor-pointer hover:bg-neutral-200/50 :bg-neutral-100/50 rounded-xl p-2 -m-2 transition-colors ${canEditRoster ? 'btn-roster-inline' : ''}" title="${p.nombre} (${rolMap?.nombre || 'Voz'})" data-evento="${eventoId}" data-rol-id="${asig.rol_id}" data-rol-name="${rolMap?.nombre || 'Voz'}">
  <div class="relative">
  ${avatarBlock}
- ${perfil?.is_admin ? `<button class="btn-remove-roster absolute -top-1.5 -left-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full p-1.5 shadow-md z-20 opacity-0 group-hover:opacity-100 transition-opacity" title="Remover" data-evento="${eventoId}" data-rol-id="${asig.rol_id}" data-rol-name="${rolMap?.nombre || 'Voz'}">
+ ${canEditRoster ? `<button class="btn-remove-roster absolute -top-1.5 -left-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full p-1.5 shadow-md z-20 opacity-0 group-hover:opacity-100 transition-opacity" title="Remover" data-evento="${eventoId}" data-rol-id="${asig.rol_id}" data-rol-name="${rolMap?.nombre || 'Voz'}">
  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
  </button>` : ''}
  </div>
@@ -1055,8 +1069,8 @@ import Layout from '../layouts/Layout.astro';
  containerN3v?.insertAdjacentHTML('beforeend', vozItem);
  });
  
- // Renderizar slots de voz vacíos disponibles (para admins)
- if (perfil?.is_admin && allVozAsignadas.length < MAX_VOZ_SLOTS) {
+ // Renderizar slots de voz vacíos disponibles (para admins y moderadores)
+ if (canEditRoster && allVozAsignadas.length < MAX_VOZ_SLOTS) {
  const targetVozRol = vozRolesInDict[0];
  if (targetVozRol) {
  const emptyVozSlot = `
@@ -1709,48 +1723,14 @@ import Layout from '../layouts/Layout.astro';
  console.log('🔧 [applyEquipo] START', { equipoIdStr, eventoIdStr });
 
  try {
- // 1. Obtener la configuración (blueprint) de Integrantes del Equipo
- const { data: blueprint, error: bpError } = await supabase
- .from('equipo_integrantes')
- .select('perfil_id, rol_maestro')
- .eq('equipo_id', equipoIdStr);
+ // Usar la RPC segura que maneja la limpieza y la carga como una única transacción 
+ // autorizada, evitando que los moderadores se revoquen sus propios permisos temporalmente.
+ const { error: rpcError } = await supabase.rpc('apply_equipo_template', {
+ p_evento_id: eventoIdStr,
+ p_equipo_id: equipoIdStr
+ });
 
- console.log('🔧 [applyEquipo] Blueprint:', { blueprint, bpError });
-
- if (bpError) throw bpError;
- if (!blueprint || blueprint.length === 0) {
- alert('Este equipo está vacío, no hay integrantes que copiar.');
- btnElement.disabled = false;
- btnElement.innerHTML = originalHtml;
- return;
- }
-
- // 2. Limpiar las asignaciones actuales del Evento
- const { error: delError } = await supabase
- .from('asignaciones')
- .delete()
- .eq('evento_id', eventoIdStr);
- 
- console.log('🔧 [applyEquipo] Delete existing:', { delError });
- if (delError) throw delError;
-
- // 3. Mapear y Preparar el Bulk Insert para la Tabla 'asignaciones'
- const bulkPayload = blueprint.map(item => ({
- evento_id: eventoIdStr,
- perfil_id: item.perfil_id,
- rol_id: item.rol_maestro
- }));
-
- console.log('🔧 [applyEquipo] Bulk Payload:', JSON.stringify(bulkPayload, null, 2));
-
- // 4. Inyectar (Bulk Insert) masivo
- const { data: insertResult, error: insError } = await supabase
- .from('asignaciones')
- .insert(bulkPayload)
- .select();
-
- console.log('🔧 [applyEquipo] Insert result:', { insertResult, insError });
- if (insError) throw insError;
+ if (rpcError) throw rpcError;
 
  // 5. Cerrar todo y refrescar limpiamente
  closeEquipoPicker();
