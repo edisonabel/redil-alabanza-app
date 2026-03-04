@@ -207,7 +207,15 @@ const temasUnicos = [...new Set(cancionesConDataFicticia.map((c: any) => c['Tema
 <script>
  import { supabase } from '../lib/supabase';
 
- document.addEventListener('DOMContentLoaded', () => {
+ document.addEventListener('DOMContentLoaded', async () => {
+ // Puerta Guardiana de Seguridad RLS: Verificar Sesión Activa
+ const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+ if (sessionError || !session) {
+ // Expulsar solicitudes anónimas inmediatamente re-direccionando hacia el túnel de autenticación
+ window.location.replace('/login');
+ return;
+ }
+ 
  const searchInput = document.getElementById('searchInput') as HTMLInputElement;
  const filterVoz = document.getElementById('filterVoz') as HTMLSelectElement;
  const filterCategoria = document.getElementById('filterCategoria') as HTMLSelectElement;

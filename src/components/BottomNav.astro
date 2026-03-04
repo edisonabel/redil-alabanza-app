@@ -44,7 +44,7 @@ const isActive = (href) => {
  <a 
  href={item.href} 
  id={`nav-item-${item.name.toLowerCase()}`}
- class={`flex flex-col items-center justify-center py-3 px-1 transition-all duration-300 relative ${active ? 'text-blue-600 ' : 'text-neutral-500 hover:text-neutral-900 :text-neutral-700'}`}
+ class={`flex flex-col items-center justify-center py-3 px-1 transition-all duration-300 relative ${active ? 'text-blue-600 ' : 'text-neutral-500 hover:text-neutral-900 :text-neutral-700'} ${item.name === 'Equipo' ? 'hidden' : ''}`}
  >
  {item.name === 'Perfil' && (
  <span id="nav-badge-perfil" class="absolute top-2 right-4 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white hidden z-10 transition-opacity"></span>
@@ -85,11 +85,11 @@ const isActive = (href) => {
 
  const userId = session.user.id;
 
- // Check if user is admin, if not, hide the Equipo tab
+ // Check if user is admin, if yes, show the Equipo tab
  const { data: profile } = await supabase.from('perfiles').select('is_admin').eq('id', userId).single();
- if (!profile?.is_admin) {
+ if (profile?.is_admin) {
  const equipoNav = document.getElementById('nav-item-equipo');
- if (equipoNav) equipoNav.style.display = 'none';
+ if (equipoNav) equipoNav.classList.remove('hidden');
  }
 
  // 2. Fetch initial unread notifications count
