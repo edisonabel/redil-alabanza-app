@@ -766,7 +766,7 @@ import Layout from '../layouts/Layout.astro';
  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opacity-60"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
  GESTIONAR
  </button>` : ''}
- <button class="btn-expandir-detalle flex items-center justify-center gap-2 py-2.5 bg-white border border-neutral-200 text-neutral-800 hover:bg-neutral-50 :bg-neutral-100 rounded-lg transition-colors font-bold text-xs tracking-wide shadow-sm ${!perfil?.is_admin ? 'col-span-2' : ''}" data-evento="${domEventoId}">
+ <button class="btn-expandir-detalle flex items-center justify-center gap-2 py-2.5 bg-white border border-neutral-200 text-neutral-800 hover:bg-neutral-50 :bg-neutral-100 rounded-lg transition-colors font-bold text-xs tracking-wide shadow-sm ${!(perfil?.is_admin || isModerator) ? 'col-span-2' : ''}" data-evento="${domEventoId}">
  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opacity-60"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
  VER MÁS
  </button>
