@@ -536,7 +536,7 @@ import Layout from '../layouts/Layout.astro';
  } else {
  const initials = perfilData.nombre.split(' ').map((n: string) => n[0]).join('').substring(0,2).toUpperCase();
  avatarContainer.innerHTML = `<span id="avatar-preview-text" class="text-blue-700 ">${initials}</span>`;
- avatarContainer.classList.add('bg-blue-100', '');
+ avatarContainer.classList.add('bg-blue-100');
  }
  }
  }
