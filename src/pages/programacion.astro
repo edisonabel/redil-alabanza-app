@@ -75,11 +75,11 @@ import Layout from '../layouts/Layout.astro';
  <input type="hidden" id="ev-id" value="">
  
  <div class="grid grid-cols-1 gap-5 w-full">
- <div class="w-full">
+ <div class="w-full" id="ev-container-titulo">
  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Título del Evento <span class="text-red-500">*</span></label>
  <input type="text" id="ev-titulo" required class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-teal-500 transition-colors" placeholder="Ej: Culto de Adoración">
  </div>
- <div class="w-full flex flex-col sm:flex-row gap-4">
+ <div class="w-full flex flex-col sm:flex-row gap-4" id="ev-container-fechas">
  <div class="flex-1 min-w-0 w-full">
  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2 truncate">Fecha y Hora <span class="text-red-500">*</span></label>
  <input type="datetime-local" id="ev-fecha" required class="w-full block min-w-0 max-w-full min-h-[48px] bg-neutral-100 border border-neutral-300 rounded-xl px-3 py-3 text-sm text-neutral-900 focus:outline-none focus:border-teal-500 transition-colors">
@@ -104,7 +104,7 @@ import Layout from '../layouts/Layout.astro';
   </button>
   <input type="hidden" id="ev-serie-id" value="">
   </div>
- <div>
+ <div id="ev-container-estado">
  <label class="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-2">Estado</label>
  <select id="ev-estado" class="w-full bg-neutral-100 border border-neutral-300 rounded-xl px-4 py-3 text-sm text-neutral-900 focus:outline-none focus:border-teal-500 transition-colors appearance-none">
  <option value="Borrador">Borrador</option>
@@ -378,7 +378,7 @@ import Layout from '../layouts/Layout.astro';
  const instrumentIcons = {
  'lider_alabanza': '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>',
  'talkback': '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></svg>',
- 'encargado_letras': '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>',
+ 'encargado_letras': '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>',
  'voz_soprano': '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 8-9.04 9.06a2.82 2.82 0 1 0 3.98 3.98L16 12"/><circle cx="17" cy="7" r="5"/></svg>',
  'voz_tenor': '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 8-9.04 9.06a2.82 2.82 0 1 0 3.98 3.98L16 12"/><circle cx="17" cy="7" r="5"/></svg>',
  'bateria': '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 2 8 8"/><path d="m22 2-8 8"/><ellipse cx="12" cy="9" rx="10" ry="5"/><path d="M2 9v6c0 2.8 4.5 5 10 5s10-2.2 10-5V9"/></svg>',
@@ -1237,6 +1237,16 @@ import Layout from '../layouts/Layout.astro';
  (document.getElementById('ev-id') as HTMLInputElement).value = '';
  document.getElementById('btn-armar-playlist')?.classList.add('hidden');
  modalRosterSection?.classList.add('hidden');
+
+ // Ensure all fields are visible and enabled for new events
+ (document.getElementById('ev-titulo') as HTMLInputElement).disabled = false;
+ (document.getElementById('ev-fecha') as HTMLInputElement).disabled = false;
+ (document.getElementById('ev-hora-fin') as HTMLInputElement).disabled = false;
+ document.getElementById('ev-container-titulo')?.classList.remove('hidden');
+ document.getElementById('ev-container-fechas')?.classList.remove('hidden');
+ document.getElementById('ev-container-estado')?.classList.remove('hidden');
+ document.getElementById('serie-update-section')?.classList.add('hidden'); // Hide serie section for new events
+
  } else if (mode === 'edit' && data) {
  modalTitle!.textContent = 'Gestionar Evento';
  (document.getElementById('ev-id') as HTMLInputElement).value = data.id;
@@ -1256,23 +1266,34 @@ import Layout from '../layouts/Layout.astro';
   // FASE 3: Mostrar checkbox de serie si el evento tiene serie_id
   const serieSection = document.getElementById('serie-update-section');
   const serieIdInput = document.getElementById('ev-serie-id') as HTMLInputElement;
-  const serieCheck = document.getElementById('ev-serie-check') as HTMLInputElement;
-  
-  const isStrictModerator = data.moderator === 'true';
-  
-  if (isStrictModerator) {
-  fechaInput.disabled = true;
-  horaFinInput.disabled = true;
-  if (serieSection) {
-  serieSection.classList.add('hidden', '!hidden');
-  }
-  } else {
-  fechaInput.disabled = false;
-  horaFinInput.disabled = false;
-  if (serieSection) {
-  serieSection.classList.remove('!hidden');
-  }
-  }
+   const serieCheck = document.getElementById('ev-serie-check') as HTMLInputElement;
+   
+   const isStrictModerator = data.moderator === 'true';
+   const containerFechas = document.getElementById('ev-container-fechas');
+   const containerEstado = document.getElementById('ev-container-estado');
+   const containerTitulo = document.getElementById('ev-container-titulo');
+   
+   if (isStrictModerator) {
+   fechaInput.disabled = true;
+   horaFinInput.disabled = true;
+   (document.getElementById('ev-titulo') as HTMLInputElement).disabled = true;
+   if (serieSection) {
+   serieSection.classList.add('hidden', '!hidden');
+   }
+   if (containerFechas) containerFechas.classList.add('hidden');
+   if (containerEstado) containerEstado.classList.add('hidden');
+   if (containerTitulo) containerTitulo.classList.add('hidden');
+   } else {
+   fechaInput.disabled = false;
+   horaFinInput.disabled = false;
+   (document.getElementById('ev-titulo') as HTMLInputElement).disabled = false;
+   if (serieSection) {
+   serieSection.classList.remove('!hidden');
+   }
+   if (containerFechas) containerFechas.classList.remove('hidden');
+   if (containerEstado) containerEstado.classList.remove('hidden');
+   if (containerTitulo) containerTitulo.classList.remove('hidden');
+   }
 
   if (data.serie_id) {
   if (!isStrictModerator && serieSection) serieSection.classList.remove('hidden');
