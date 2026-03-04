@@ -30,6 +30,12 @@ import Layout from '../layouts/Layout.astro';
  <input type="text" id="accesscode" class="w-full px-4 py-3 bg-white border border-neutral-300 rounded-xl text-neutral-900 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all placeholder-neutral-400 font-mono tracking-widest uppercase" placeholder="Ej: CLAVE123">
  <p class="text-[11px] text-neutral-500 mt-1.5 ml-1">Requerido para unirse a la plataforma.</p>
  </div>
+ <div>
+ <label class="block text-sm font-semibold text-neutral-700 mb-2">Rol / Instrumento <span class="text-neutral-400 font-normal text-xs ml-1">(Puedes elegir varios)</span></label>
+ <div id="register-roles-grid" class="grid grid-cols-2 gap-2 max-h-[140px] overflow-y-auto p-3 border border-neutral-300 rounded-xl bg-neutral-50 custom-scrollbar">
+ <div class="col-span-2 text-center text-xs text-neutral-500 py-2 flex items-center justify-center gap-2"><div class="w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin"></div>Cargando roles...</div>
+ </div>
+ </div>
  </div>
 
  <!-- Campos Comunes -->
@@ -82,8 +88,28 @@ import Layout from '../layouts/Layout.astro';
  const tabRegister = document.getElementById('tab-register');
  const registerFields = document.getElementById('register-fields');
  const passwordHint = document.getElementById('password-hint');
+ const registerRolesGrid = document.getElementById('register-roles-grid');
 
  let isLoginMode = true;
+ let rolesLoaded = false;
+
+ const loadRoles = async () => {
+ try {
+ const { data, error } = await supabase.from('roles').select('id, nombre').order('nombre');
+ if (error) throw error;
+ if (data && registerRolesGrid) {
+ registerRolesGrid.innerHTML = data.map(r => `
+ <label class="flex items-center gap-2 p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-200 transition-colors cursor-pointer text-sm text-neutral-600">
+ <input type="checkbox" name="register_role" value="${r.id}" class="w-4 h-4 text-teal-500 rounded border-neutral-300 focus:ring-teal-500 cursor-pointer">
+ <span class="truncate">${r.nombre}</span>
+ </label>
+ `).join('');
+ }
+ } catch (err) {
+ console.error('Error cargando roles:', err);
+ if (registerRolesGrid) registerRolesGrid.innerHTML = '<div class="col-span-2 text-center text-xs text-red-500 py-2">Error cargando roles</div>';
+ }
+ };
 
  // --- Tab Switching Logic ---
  const setLoginMode = () => {
@@ -125,6 +151,11 @@ import Layout from '../layouts/Layout.astro';
 
  if (btnSubmit) btnSubmit.textContent = 'Crear Cuenta';
  hideMessages();
+
+ if (!rolesLoaded) {
+ rolesLoaded = true;
+ loadRoles();
+ }
  };
 
  tabLogin?.addEventListener('click', setLoginMode);
@@ -192,13 +223,16 @@ import Layout from '../layouts/Layout.astro';
 
  if (!fullName || !telefono) throw new Error("Nombre y Teléfono son obligatorios para el registro.");
 
+ const selectedRoles = Array.from(document.querySelectorAll('input[name="register_role"]:checked')).map(cb => (cb as HTMLInputElement).value);
+
  const { data, error } = await supabase.auth.signUp({
  email,
  password,
  options: {
  data: {
  full_name: fullName,
- telefono: telefono
+ telefono: telefono,
+ roles: selectedRoles
  }
  }
  });

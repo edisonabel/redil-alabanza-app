@@ -120,6 +120,12 @@ import Layout from '../layouts/Layout.astro';
  <!-- Inyección dinámica de Toggles -->
  </div>
  </div>
+ <!-- Footer -->
+ <div class="px-6 py-4 bg-neutral-50 border-t border-neutral-100 flex gap-3">
+ <button type="button" id="btn-roles-submit" class="flex-1 bg-neutral-900 text-white py-3 rounded-xl font-bold hover:bg-neutral-800 transition-colors shadow-sm">
+ Guardar Cambios
+ </button>
+ </div>
  </div>
  </div>
 
@@ -784,6 +790,39 @@ import Layout from '../layouts/Layout.astro';
  const modalRolesTitle = document.getElementById('modal-roles-title');
  const modalRolesContainer = document.getElementById('modal-roles-container');
  const btnCloseModalRoles = document.getElementById('btn-close-modal-roles');
+ const btnRolesSubmit = document.getElementById('btn-roles-submit');
+ let currentPerfilId = null;
+
+ btnRolesSubmit?.addEventListener('click', async () => {
+ if(!currentPerfilId) return;
+ const oldBtnText = btnRolesSubmit.textContent;
+ btnRolesSubmit.innerHTML = '<span class="flex items-center justify-center gap-2"><div class="w-4 h-4 rounded-full border-2 border-white/20 border-t-white animate-spin"></div> Guardando...</span>';
+ btnRolesSubmit.disabled = true;
+
+ try {
+ // Collect checked roles
+ const checkedRoles = Array.from(modalRolesContainer.querySelectorAll('input:checked')).map(el => (el as HTMLInputElement).getAttribute('data-rol'));
+ 
+ // 1. Remove all old roles mapping for this user
+ const { error: delErr } = await supabase.from('perfil_roles').delete().eq('perfil_id', currentPerfilId);
+ if (delErr) throw delErr;
+ 
+ // 2. Insert new checked roles
+ if (checkedRoles.length > 0) {
+ const inserts = checkedRoles.map(rid => ({ perfil_id: currentPerfilId, rol_id: rid }));
+ const { error: insErr } = await supabase.from('perfil_roles').insert(inserts);
+ if (insErr) throw insErr;
+ }
+ 
+ // Reload explicitly to visually update the badges
+ window.location.reload();
+ } catch(err) {
+ console.error('Error al guardar roles:', err);
+ alert('Hubo un error al guardar los roles.');
+ btnRolesSubmit.textContent = oldBtnText;
+ btnRolesSubmit.disabled = false;
+ }
+ });
 
  const toggleModalRoles = (show) => {
  if (show) {
@@ -814,6 +853,8 @@ import Layout from '../layouts/Layout.astro';
  const btnTarget = e.currentTarget as HTMLButtonElement;
  const perfilId = btnTarget.getAttribute('data-perfil');
  const perfilNombre = btnTarget.getAttribute('data-nombre');
+ btnTarget.blur();
+ currentPerfilId = perfilId;
 
  modalRolesTitle.textContent = `Roles: ${perfilNombre.split(' ')[0]}`;
  
@@ -823,42 +864,21 @@ import Layout from '../layouts/Layout.astro';
 
  // Enganchar listeners AL VUELO a estos toggles inyectados
  modalRolesContainer.querySelectorAll('.role-toggle').forEach(box => {
- box.addEventListener('change', async (ev) => {
+ box.addEventListener('change', (ev) => {
  const el = ev.target as HTMLInputElement;
- const rId = el.getAttribute('data-rol');
  const isChecked = el.checked;
 
  // UI Optimística Modal
  const labelParent = el.closest('label');
  const spanText = labelParent.querySelector('span');
  if (isChecked) {
- labelParent.classList.add('border-neutral-200', 'bg-neutral-50', '', '');
+ labelParent.classList.add('border-neutral-200', 'bg-neutral-50');
  labelParent.classList.remove('border-transparent');
  spanText.classList.replace('text-neutral-500', 'text-neutral-900');
- spanText.classList.replace('', '');
  } else {
- labelParent.classList.remove('border-neutral-200', 'bg-neutral-50', '', '');
+ labelParent.classList.remove('border-neutral-200', 'bg-neutral-50');
  labelParent.classList.add('border-transparent');
  spanText.classList.replace('text-neutral-900', 'text-neutral-500');
- spanText.classList.replace('', '');
- }
-
- // API Call Supabase en vivo
- try {
- if (isChecked) {
- const { error: insErr } = await supabase.from('perfil_roles').insert({ perfil_id: perfilId, rol_id: rId });
- if (insErr) throw insErr;
- } else {
- const { error: delErr } = await supabase.from('perfil_roles').delete().match({ perfil_id: perfilId, rol_id: rId });
- if (delErr) throw delErr;
- }
- // Opcional para re-renderizado total inmediato en background:
- // window.location.reload() -> Evitable si dejamos que el usuario refresque cuando termine de administrar todo un lote, que es mejor UX.
- } catch(err) {
- console.error('Error DB:', err);
- el.checked = !isChecked; // Revert
- el.dispatchEvent(new Event('change'));
- alert('Fallo de red al interactuar con el servidor.');
  }
  });
  });
