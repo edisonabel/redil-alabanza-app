@@ -264,12 +264,12 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
                                 return (
                                     <article
                                         key={servicio.id || `${evento.id}-${evento.fecha_hora}`}
-                                        className="w-[90vw] sm:w-[420px] lg:w-full lg:min-w-0 shrink-0 snap-center bg-overlay/95 dark:bg-border border border-border/30 dark:border-border rounded-[1.65rem] p-4 md:p-5 shadow-[0_10px_28px_rgba(2,6,23,0.28)] dark:shadow-sm hover:shadow-[0_14px_32px_rgba(2,6,23,0.34)] dark:hover:shadow-md transition-shadow flex flex-col justify-between min-h-[240px]"
+                                        className="w-[90vw] sm:w-[420px] lg:w-full lg:min-w-0 shrink-0 snap-center bg-overlay/95 dark:bg-border border border-border/30 dark:border-border rounded-[1.65rem] p-3.5 md:p-4 shadow-[0_10px_28px_rgba(2,6,23,0.28)] dark:shadow-sm hover:shadow-[0_14px_32px_rgba(2,6,23,0.34)] dark:hover:shadow-md transition-shadow flex flex-col gap-2.5 min-h-[220px]"
                                     >
-                                        <div className="flex items-start gap-4 md:gap-5 min-w-0">
-                                            <div className="shrink-0 w-14 rounded-xl bg-white/5 border border-white/20 dark:bg-surface dark:border-border flex flex-col items-center justify-center py-2">
-                                                <span className="text-2xl leading-none font-black text-white dark:text-content">{fecha.day}</span>
-                                                <span className="text-[10px] uppercase font-bold tracking-widest text-white/70 dark:text-content-muted mt-1">{fecha.month}</span>
+                                        <div className="flex items-start gap-3 md:gap-4 min-w-0">
+                                            <div className="shrink-0 w-14 h-16 rounded-xl bg-white/5 border border-white/20 dark:bg-surface dark:border-border flex flex-col items-center justify-between py-1.5">
+                                                <span className="text-[2rem] leading-none font-black text-white dark:text-content">{fecha.day}</span>
+                                                <span className="text-[10px] uppercase font-bold tracking-widest text-white/70 dark:text-content-muted mt-0.5">{fecha.month}</span>
                                             </div>
 
                                             <div className="min-w-0 flex-1">
@@ -281,11 +281,11 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
                                             </div>
                                         </div>
 
-                                        <div className="mt-4 rounded-2xl border border-white/10 dark:border-border bg-black/20 dark:bg-surface/60 p-3.5">
+                                        <div className="mt-2.5 rounded-2xl border border-white/10 dark:border-border bg-black/20 dark:bg-surface/60 p-3">
                                             <div className="flex items-center justify-between gap-2">
                                                 <p className="text-[11px] font-bold uppercase tracking-wider text-white/70 dark:text-content-muted">Repertorio / Setlist</p>
                                                 {hasSetlist ? (
-                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-action/20 text-action border border-action/30">
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-action/20 text-action border border-action/40 dark:bg-action/35 dark:border-action/70 dark:text-white">
                                                         {setlistCount} canciones
                                                     </span>
                                                 ) : (
@@ -298,7 +298,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
                                                 <button
                                                     type="button"
                                                     onClick={openDetalleRepertorio}
-                                                    className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-action/40 bg-action/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-action hover:bg-action/20 transition-colors"
+                                                    className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-action/45 bg-action/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-action hover:bg-action/20 dark:bg-action/25 dark:border-action/70 dark:text-white dark:hover:bg-action/35 transition-colors"
                                                 >
                                                     Ver canciones
                                                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -321,10 +321,9 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
                                             )}
                                         </div>
 
-                                        <div className="mt-3 h-px bg-white/20 dark:bg-border/80"></div>
-                                        <div className="mt-3 grid grid-cols-2 gap-2.5">
+                                        <div className="mt-1 grid grid-cols-2 gap-2">
                                             {dirigeTexto ? (
-                                                <span className="inline-flex w-full min-w-0 items-center justify-center gap-1.5 bg-rol-dir/10 text-rol-dir border border-rol-dir px-3 py-1.5 rounded-xl text-[11px] md:text-xs font-bold uppercase tracking-wider">
+                                                <span className="inline-flex w-full min-w-0 items-center justify-center gap-1.5 bg-rol-dir/10 text-rol-dir border border-rol-dir/60 dark:bg-rol-dir/25 dark:text-white dark:border-rol-dir/90 px-3 py-1 rounded-xl text-[11px] md:text-xs font-bold uppercase tracking-wider">
                                                     <strong>DIRIGE:</strong>
                                                     <span className="truncate">{dirigeTexto}</span>
                                                 </span>
@@ -334,7 +333,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
                                                 </span>
                                             )}
 
-                                            <span className="inline-flex w-full min-w-0 items-center justify-center gap-1.5 bg-action/10 text-action border border-action/30 px-3 py-1.5 rounded-xl text-[11px] md:text-xs font-bold uppercase tracking-wider max-w-full">
+                                            <span className="inline-flex w-full min-w-0 items-center justify-center gap-1.5 bg-action/10 text-action border border-action/40 dark:bg-action/25 dark:text-white dark:border-action/75 px-3 py-1 rounded-xl text-[11px] md:text-xs font-bold uppercase tracking-wider max-w-full">
                                                 <strong>TU:</strong>
                                                 <span className="truncate">{miRolTexto}</span>
                                             </span>
