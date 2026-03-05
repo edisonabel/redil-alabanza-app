@@ -2,52 +2,131 @@
 import Layout from '../layouts/Layout.astro';
 import DashboardInicio from '../components/react/DashboardInicio.jsx';
 import { supabase } from '../lib/supabase';
+import { createClient } from '@supabase/supabase-js';
 
-// Redirect to login if no auth token is found
 const tokenCookie = Astro.cookies.get('sb-access-token');
 if (!tokenCookie) {
   return Astro.redirect('/login');
 }
 
-// Authenticate via SSR
+const rawUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_URL || '';
+const supabaseUrl = rawUrl.replace(/\/$/, '');
+const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY || '';
+
+const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
+  global: {
+    headers: {
+      Authorization: `Bearer ${tokenCookie.value}`
+    }
+  },
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false
+  }
+});
+
 const { data: { user }, error: authError } = await supabase.auth.getUser(tokenCookie.value);
 if (authError || !user) {
   return Astro.redirect('/login');
 }
 
-// Get the user's profile details
-const { data: perfil } = await supabase
+const { data: perfil } = await supabaseSSR
   .from('perfiles')
   .select('nombre, avatar_url, is_admin')
   .eq('id', user.id)
   .single();
 
-// Format today's date (mid-day to avoid timezone offset issues)
-const hoy = new Date();
-hoy.setHours(0, 0, 0, 0);
-const hoyISO = hoy.toISOString();
+// Keep a 12h tolerance like Programacion to avoid timezone edge-cases.
+const fechaFiltroISO = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+const userEmail = user.email || null;
 
-// Fetch future assignments for this user
-const { data: asignaciones, error: asignacionesError } = await supabase
-  .from('asignaciones')
-  .select(`
-    rol_id,
-    roles (nombre, codigo),
-    eventos!inner (*)
-  `)
-  .eq('perfil_id', user.id)
-  .gte('eventos.fecha_hora', hoyISO)
-  .order('eventos.fecha_hora', { ascending: true });
+const { data: rolesCatalog, error: rolesError } = await supabaseSSR
+  .from('roles')
+  .select('id, nombre, codigo');
 
-if (asignacionesError) {
-  console.error("Error fetching asignaciones:", asignacionesError);
+if (rolesError) {
+  console.error('Inicio roles query error:', rolesError);
 }
+
+const rolesById = new Map((rolesCatalog || []).map((rol) => [rol.id, rol]));
+
+let eventosQuery = supabaseSSR
+  .from('eventos')
+  .select(`
+    id,
+    fecha_hora,
+    hora_fin,
+    titulo,
+    tema_predicacion,
+    estado,
+    asignaciones (
+      perfil_id,
+      rol_id,
+      perfiles (id, nombre, email, avatar_url)
+    )
+  `)
+  .gte('fecha_hora', fechaFiltroISO)
+  .order('fecha_hora', { ascending: true });
+
+if (!perfil?.is_admin) {
+  eventosQuery = eventosQuery.eq('estado', 'Publicado');
+}
+
+const { data: eventosData, error: eventosError } = await eventosQuery;
+
+if (eventosError) {
+  console.error('Inicio eventos query error:', eventosError);
+}
+
+const proximosServicios = (eventosData || [])
+  .map((evento) => {
+    const roster = Array.isArray(evento.asignaciones) ? evento.asignaciones : [];
+    const misAsignaciones = roster.filter((asig) => {
+      const perfilAsignado = asig?.perfiles;
+      return asig?.perfil_id === user.id
+        || perfilAsignado?.id === user.id
+        || (userEmail && perfilAsignado?.email === userEmail);
+    });
+
+    if (misAsignaciones.length === 0) return null;
+
+    const misRoles = [];
+    const miRolCodigos = [];
+
+    for (const miAsig of misAsignaciones) {
+      const rol = rolesById.get(miAsig.rol_id);
+      const rolNombre = rol?.nombre;
+      const rolCodigo = rol?.codigo;
+
+      if (rolNombre && !misRoles.includes(rolNombre)) {
+        misRoles.push(rolNombre);
+      }
+      if (rolCodigo && !miRolCodigos.includes(rolCodigo)) {
+        miRolCodigos.push(rolCodigo);
+      }
+    }
+
+    const rosterConRoles = roster.map((asig) => ({
+      ...asig,
+      roles: rolesById.get(asig.rol_id) || null
+    }));
+
+    return {
+      ...evento,
+      asignaciones: rosterConRoles,
+      mis_roles: misRoles.length > 0 ? misRoles : ['Miembro'],
+      mi_rol_codigos: miRolCodigos
+    };
+  })
+  .filter(Boolean);
+
+console.log('Inicio proximosServicios count:', proximosServicios.length, 'user:', user.id, 'email:', userEmail);
 ---
 
 <Layout title="Inicio | Redil Alabanza">
-  <div class="h-[calc(100vh-80px)] overflow-y-auto bg-base w-full pt-4 md:pt-8 pb-32">
-    <div class="max-w-[2000px] mx-auto w-full px-4 xl:px-8">
-      <DashboardInicio client:load usuario={perfil} proximosServicios={asignaciones || []} />
+  <div id="dashboard-scroll-root" class="h-[calc(100dvh-80px)] lg:h-[calc(86dvh-80px)] overflow-y-auto bg-base w-full pt-4 md:pt-8 pb-32">
+    <div class="max-w-[2000px] mx-auto w-full h-full px-4 xl:px-8">
+      <DashboardInicio client:load usuario={perfil} proximosServicios={proximosServicios} />
     </div>
   </div>
 </Layout>
