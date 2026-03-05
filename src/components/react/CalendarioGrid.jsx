@@ -339,6 +339,19 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
 
         const horaInicio = fechaObj.toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit' });
         const timeString = cardData.dbData?.hora_fin ? `${horaInicio} - ${cardData.dbData.hora_fin.substring(0, 5)}` : horaInicio;
+        const rosterDb = cardData.dbData?.asignaciones || [];
+        const dictRoles = initialRoles || [];
+        const miAsignacion = rosterDb.find((asig) => asig.perfiles?.id === sessionUser?.id || asig.perfiles?.email === sessionUser?.email);
+
+        let isModerator = false;
+        if (miAsignacion) {
+            const miRolObj = dictRoles.find(r => r.id === miAsignacion.rol_id);
+            if (miRolObj && (miRolObj.codigo === 'lider_alabanza' || miRolObj.codigo === 'talkback')) {
+                isModerator = true;
+            }
+        }
+
+        const canManage = isAdmin || isModerator;
 
         // CascarÃ³n Suspendido (JSX puro)
         if (isSuspended) {
@@ -358,7 +371,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
         }
 
         return (
-            <div key={cardData.id} className="agenda-card w-[85vw] sm:w-[340px] shrink-0 snap-center group relative bg-surface rounded-[2rem] shadow-sm hover:shadow-lg transition-shadow duration-300 border border-border p-5 flex flex-col">
+            <div key={cardData.id} className="agenda-card w-[85vw] sm:w-[340px] shrink-0 snap-center group relative bg-border/20 dark:bg-surface rounded-[2rem] shadow-md hover:shadow-xl transition-shadow duration-300 border border-border/90 p-5 flex flex-col">
 
                 {/* --- BOTON ELIMINAR --- */}
                 {isAdmin && !cardData.isVirtual && (
@@ -401,28 +414,30 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                 {renderRoster(cardData.dbData)}
 
                 {/* BOTONES INFERIORES */}
-                <div className="grid grid-cols-2 gap-3 border-t border-border mt-auto pt-4 -mx-5 px-5 pb-0 relative z-20">
-                    <button
-                        onClick={() => {
-                            if (window.toggleModalGlobal) {
-                                window.toggleModalGlobal(true, 'edit', {
-                                    id: cardData.id,
-                                    fecha: cardData.fecha,
-                                    titulo,
-                                    tema,
-                                    estado,
-                                    hora_fin: cardData.dbData?.hora_fin || '',
-                                    serie_id: cardData.dbData?.serie_id || '',
-                                    moderator: !isAdmin && isModerator ? 'true' : 'false',
-                                    dbData: cardData.dbData
-                                });
-                            }
-                        }}
-                        className="btn-gestionar-modal flex items-center justify-center gap-2 py-2.5 bg-surface text-content hover:bg-background rounded-xl transition-colors font-bold text-xs tracking-wide border border-border dark:bg-white dark:text-zinc-900 dark:border-white/90 dark:hover:bg-zinc-100"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-60"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
-                        GESTIONAR
-                    </button>
+                <div className={`grid ${canManage ? 'grid-cols-2' : 'grid-cols-1'} gap-3 border-t border-border mt-auto pt-4 -mx-5 px-5 pb-0 relative z-20`}>
+                    {canManage && (
+                        <button
+                            onClick={() => {
+                                if (window.toggleModalGlobal) {
+                                    window.toggleModalGlobal(true, 'edit', {
+                                        id: cardData.id,
+                                        fecha: cardData.fecha,
+                                        titulo,
+                                        tema,
+                                        estado,
+                                        hora_fin: cardData.dbData?.hora_fin || '',
+                                        serie_id: cardData.dbData?.serie_id || '',
+                                        moderator: !isAdmin && isModerator ? 'true' : 'false',
+                                        dbData: cardData.dbData
+                                    });
+                                }
+                            }}
+                            className="btn-gestionar-modal flex items-center justify-center gap-2 py-2.5 bg-surface text-content hover:bg-background rounded-xl transition-colors font-bold text-xs tracking-wide border border-border dark:bg-white dark:text-zinc-900 dark:border-white/90 dark:hover:bg-zinc-100"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-60"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+                            GESTIONAR
+                        </button>
+                    )}
 
                     <button
                         onClick={() => {
@@ -666,15 +681,31 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                         <div className="flex flex-col gap-10 max-w-7xl mx-auto w-full">
                             {groupedMonths.map((group, idx) => (
                                 <div key={idx} className="w-full">
-                                    <h3 className="text-[12px] font-bold text-content-muted uppercase tracking-widest mb-4 ml-1">{group.month}</h3>
-                                    <div
-                                        className="flex overflow-x-auto overflow-y-visible snap-x snap-mandatory gap-6 pb-8 pt-6 px-4 -mx-4 hide-scrollbar cursor-grab active:cursor-grabbing scroll-smooth"
-                                        onMouseDown={onMouseDown}
-                                        onMouseLeave={onMouseLeave}
-                                        onMouseUp={onMouseUp}
-                                        onMouseMove={onMouseMove}
-                                    >
-                                        {group.cards.map(card => renderCard(card))}
+                                    <div className="flex items-center justify-between gap-3 mb-4 ml-1 pr-1">
+                                        <h3 className="text-[12px] font-bold text-content-muted uppercase tracking-widest">{group.month}</h3>
+                                        <span className="md:hidden inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-surface/80 text-[10px] font-bold text-content-muted uppercase tracking-wide">
+                                            Desliza
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse">
+                                                <path d="m9 18 6-6-6-6" />
+                                            </svg>
+                                        </span>
+                                    </div>
+                                    <div className="relative">
+                                        <div
+                                            className="flex overflow-x-auto overflow-y-visible snap-x snap-mandatory gap-6 pb-8 pt-6 px-4 -mx-4 hide-scrollbar cursor-grab active:cursor-grabbing scroll-smooth"
+                                            onMouseDown={onMouseDown}
+                                            onMouseLeave={onMouseLeave}
+                                            onMouseUp={onMouseUp}
+                                            onMouseMove={onMouseMove}
+                                        >
+                                            {group.cards.map(card => renderCard(card))}
+                                        </div>
+                                        <div className="md:hidden pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-background/95 via-background/60 to-transparent dark:from-surface/90 dark:via-surface/50"></div>
+                                        <div className="md:hidden pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full border border-border bg-surface/90 text-content-muted flex items-center justify-center shadow-sm">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="m9 18 6-6-6-6" />
+                                            </svg>
+                                        </div>
                                     </div>
                                 </div>
                             ))}

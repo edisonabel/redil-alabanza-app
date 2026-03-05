@@ -64,10 +64,11 @@ const isActive = (href) => {
 };
 
 const visibleNavItems = navItems.filter((item) => !item.adminOnly || isAdmin);
+const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, minmax(0, 1fr));`;
 ---
 
 <nav class="fixed bottom-0 w-full z-50 bg-surface/85 backdrop-blur-xl border-t border-border pt-1 pb-safe shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
- <div class:list={["mx-auto grid w-full px-2", isAdmin ? "max-w-xl grid-cols-7" : "max-w-md grid-cols-6"]}>
+ <div class="mx-auto grid w-full max-w-none px-2 md:max-w-xl" style={navGridStyle}>
  {visibleNavItems.map((item) => {
  const active = isActive(item.href);
  return (
