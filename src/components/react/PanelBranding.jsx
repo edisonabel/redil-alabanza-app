@@ -19,6 +19,7 @@ const isHexColor = (value) => /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value ||
 
 const DEFAULT_COLORS = {
   brand: '#14b8a6',
+  action: '#14b8a6',
   danger: '#ef4444',
   success: '#22c55e',
   warning: '#f59e0b',
@@ -36,7 +37,8 @@ const BRANDING_TABLE_CANDIDATES = ['configuracion_app', 'configuracion', 'brandi
 const LOCAL_BRANDING_KEY = 'branding_config_cache_v1';
 
 const COLOR_FIELDS = [
-  { key: 'brand', label: 'Brand', cssVar: '--color-brand' },
+  { key: 'brand', label: 'Brand (Fondo)', cssVar: '--color-brand' },
+  { key: 'action', label: 'Acción (Botones)', cssVar: '--color-action' },
   { key: 'danger', label: 'Danger', cssVar: '--color-danger' },
   { key: 'success', label: 'Success', cssVar: '--color-success' },
   { key: 'warning', label: 'Warning', cssVar: '--color-warning' },
@@ -305,7 +307,7 @@ export default function PanelBranding() {
           type="button"
           onClick={handleSave}
           disabled={isSaving}
-          className="mt-6 w-full bg-brand text-white font-ui-strong rounded-xl px-5 py-3 hover:bg-brand/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          className="mt-6 w-full bg-action text-white font-ui-strong rounded-xl px-5 py-3 hover:bg-action/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {isSaving ? 'Guardando...' : 'Guardar Configuración'}
         </button>
@@ -323,7 +325,7 @@ export default function PanelBranding() {
             onClick={handleDarkModeToggle}
             className={`px-4 py-2 rounded-xl border font-bold text-sm transition-colors ${
               isDarkPreview
-                ? 'bg-brand text-white border-brand'
+                ? 'bg-action text-white border-action'
                 : 'bg-background text-content border-border hover:bg-background/70'
             }`}
           >
@@ -335,7 +337,7 @@ export default function PanelBranding() {
           <article className="rounded-2xl border border-border bg-background/60 p-4">
             <p className="text-xs uppercase tracking-widest font-bold text-content-muted">Botones y badges</p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <button type="button" className="bg-brand text-white px-5 py-2 rounded-xl font-bold">Principal</button>
+              <button type="button" className="bg-action text-white px-5 py-2 rounded-xl font-bold">Principal</button>
               <button type="button" className="bg-danger text-white px-5 py-2 rounded-xl font-bold">Peligro</button>
               <button type="button" className="bg-neutral/10 text-neutral px-5 py-2 rounded-xl font-bold">Cancelar</button>
             </div>

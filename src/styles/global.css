@@ -148,6 +148,7 @@ select {
   --color-content-muted: rgb(var(--text-muted));
 
   --color-brand: rgb(var(--color-brand));
+  --color-action: rgb(var(--color-action));
   --color-danger: rgb(var(--color-danger));
   --color-success: rgb(var(--color-success));
   --color-warning: rgb(var(--color-warning));

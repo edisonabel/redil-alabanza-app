@@ -107,6 +107,7 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
 
         const map = {
           brand: '--color-brand',
+          action: '--color-action',
           danger: '--color-danger',
           success: '--color-success',
           warning: '--color-warning',
@@ -128,6 +129,13 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
             document.documentElement.style.setProperty(cssVar, rgbValue);
           }
         });
+
+        if (!parsed?.action && parsed?.brand) {
+          const brandAsAction = hexToRgb(parsed.brand);
+          if (brandAsAction) {
+            document.documentElement.style.setProperty('--color-action', brandAsAction);
+          }
+        }
       }
     } catch {
       // no-op
@@ -160,6 +168,7 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
     
       /* ðŸŽ¨ TOKENS SEMÁNTICOS DE LA APP (RGB puro) */
       --color-brand: 20 184 166;
+      --color-action: 20 184 166;
       --color-danger: 239 68 68;
       --color-success: 34 197 94;
       --color-warning: 249 115 22;
@@ -201,6 +210,13 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
     <style is:global set:html={`
       :root {
         ${themeColors.brand ? `--color-brand: ${hexToRgbString(themeColors.brand)};` : ''}
+        ${
+          themeColors.action
+            ? `--color-action: ${hexToRgbString(themeColors.action)};`
+            : themeColors.brand
+              ? `--color-action: ${hexToRgbString(themeColors.brand)};`
+              : ''
+        }
         ${themeColors.danger ? `--color-danger: ${hexToRgbString(themeColors.danger)};` : ''}
         ${themeColors.success ? `--color-success: ${hexToRgbString(themeColors.success)};` : ''}
         ${themeColors.warning ? `--color-warning: ${hexToRgbString(themeColors.warning)};` : ''}

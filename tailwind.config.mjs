@@ -12,6 +12,7 @@ export default {
           muted: 'rgb(var(--text-muted) / <alpha-value>)',
         },
         brand: 'rgb(var(--color-brand) / <alpha-value>)',
+        action: 'rgb(var(--color-action) / <alpha-value>)',
         danger: 'rgb(var(--color-danger) / <alpha-value>)',
         success: 'rgb(var(--color-success) / <alpha-value>)',
         warning: 'rgb(var(--color-warning) / <alpha-value>)',
