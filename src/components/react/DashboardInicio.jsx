@@ -54,11 +54,11 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
         <>
         <a
             href="/"
-            className="fixed top-3 right-4 z-40 rounded-2xl border border-border bg-surface/90 backdrop-blur px-1.5 py-1 md:px-2.5 md:py-2 shadow-lg"
+            className="fixed top-3 right-4 z-40 rounded-2xl border border-border bg-surface/80 backdrop-blur p-1.5 shadow-lg"
             aria-label="Inicio Redil"
         >
-            <img src="/LOGO%20REDIL.png" alt="Redil" className="h-7 w-auto dark:hidden md:h-10" />
-            <img src="/LOGO%20REDIL%20LIGHT.png" alt="Redil" className="hidden h-7 w-auto dark:block md:h-10" />
+            <img src="/LOGO%20REDIL%20LIGHT.png" alt="Redil" className="w-[80px] h-auto dark:hidden md:w-[96px]" />
+            <img src="/LOGO%20REDIL.png" alt="Redil" className="hidden w-[80px] h-auto dark:block md:w-[96px]" />
         </a>
         <div className="w-full max-w-[1720px] mx-auto selection:bg-brand/20 flex flex-col lg:flex-row gap-6 lg:gap-8 2xl:gap-10 xl:grid xl:grid-cols-[minmax(0,1fr)_460px] 2xl:grid-cols-[minmax(0,1fr)_560px]">
             {/* Columna Izquierda */}
