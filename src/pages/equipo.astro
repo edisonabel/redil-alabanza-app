@@ -379,7 +379,7 @@ import Layout from '../layouts/Layout.astro';
  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
  
  if (sessionError || !session) {
- window.location.replace('/login');
+ /* window.location.replace('/login'); Movido a Middleware */
  return;
  }
 
@@ -513,7 +513,7 @@ import Layout from '../layouts/Layout.astro';
  ${dText}
  </p>
  </div>
- <button class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity p-2 text-neutral-400 hover:text-red-500 hover:bg-red-50 :bg-red-900/40 rounded-lg btn-del-plantilla" data-id="${eq.id}" data-letra="${eq.letra || 'T'}" data-nombre="${eq.nombre}" title="Eliminar Equipo">
+ <button class="absolute top-3 right-3 opacity-90 transition-opacity p-2 text-neutral-400 hover:text-red-500 hover:bg-red-50 :bg-red-900/40 rounded-lg btn-del-plantilla" data-id="${eq.id}" data-letra="${eq.letra || 'T'}" data-nombre="${eq.nombre}" title="Eliminar Equipo">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="pointer-events-none"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
  </button>
  `;

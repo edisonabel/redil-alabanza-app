@@ -71,8 +71,10 @@ import Layout from '../layouts/Layout.astro';
  <script>
  import { supabase } from '../lib/supabase';
 
- document.addEventListener('DOMContentLoaded', () => {
- const form = document.getElementById('login-form');
+ document.addEventListener('DOMContentLoaded', async () => {
+  // Removido loop infinito de auto-sincronización. El usuario debe hacer logout manual o login.
+
+  const form = document.getElementById('login-form');
  const emailInput = document.getElementById('email') as HTMLInputElement;
  const passwordInput = document.getElementById('password') as HTMLInputElement;
  const fullnameInput = document.getElementById('fullname') as HTMLInputElement;
@@ -206,8 +208,28 @@ import Layout from '../layouts/Layout.astro';
  password,
  });
 
- if (error) throw error;
- window.location.href = '/programacion';
+ if (data.session) {
+   try {
+     const maxAge = 60 * 60 * 24 * 365; // 1 año
+     
+     // Inyección robusta de cookies nativas para acceso del servidor (SSR)
+     document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax`;
+     document.cookie = `sb-refresh-token=${data.session.refresh_token}; path=/; max-age=${maxAge}; SameSite=Lax`;
+     
+     // Retraso obligatorio para que el navegador guarde la cookie físicamente
+     setTimeout(() => {
+       window.location.href = '/programacion';
+     }, 400);
+
+   } catch (cookieError) {
+     console.error("[Seguridad Login] Error crítico al inyectar cookie nativa:", cookieError);
+     showError("Hubo un problema sincronizando tu sesión de forma segura. Por favor, intenta usar otro navegador o borra el historial.");
+     if (btnSubmit) {
+       btnSubmit.innerHTML = 'Iniciar Sesión';
+       (btnSubmit as HTMLButtonElement).disabled = false;
+     }
+   }
+ }
  
  } else {
  // Logic for Registration

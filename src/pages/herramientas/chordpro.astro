@@ -110,7 +110,7 @@ import Layout from '../../layouts/Layout.astro';
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     
     if (sessionError || !session) {
-      window.location.replace('/login');
+      /* window.location.replace('/login'); Movido a Middleware */
       return;
     }
 

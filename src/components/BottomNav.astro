@@ -1,7 +1,28 @@
 ---
+import { supabase } from '../lib/supabase';
+
 const pathname = new URL(Astro.request.url).pathname;
 
+// 1. SSR Auth Check for Layout Stability
+let isAdmin = false;
+const tokenCookie = Astro.cookies.get('sb-access-token');
+
+if (tokenCookie) {
+  const { data: { user } } = await supabase.auth.getUser(tokenCookie.value);
+  if (user) {
+    const { data: profile } = await supabase.from('perfiles').select('is_admin').eq('id', user.id).single();
+    if (profile?.is_admin) {
+      isAdmin = true;
+    }
+  }
+}
+
 const navItems = [
+ {
+ name: 'Inicio',
+ href: '/',
+ icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`
+ },
  {
  name: 'Repertorio',
  href: '/repertorio',
@@ -37,14 +58,15 @@ const isActive = (href) => {
 ---
 
 <nav class="fixed bottom-0 w-full z-50 bg-white/85 backdrop-blur-xl border-t border-neutral-200 pb-safe shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
- <div class="max-w-md mx-auto grid grid-cols-5 px-2">
+ <div class="max-w-md mx-auto grid grid-cols-6 px-1">
  {navItems.map((item) => {
  const active = isActive(item.href);
  return (
  <a 
  href={item.href} 
  id={`nav-item-${item.name.toLowerCase()}`}
- class={`flex flex-col items-center justify-center py-3 px-1 transition-all duration-300 relative ${active ? 'text-blue-600 ' : 'text-neutral-500 hover:text-neutral-900 :text-neutral-700'} ${item.name === 'Equipo' ? 'hidden' : ''}`}
+ data-astro-prefetch="hover"
+ class={`flex flex-col items-center justify-center py-3 px-1 transition-all duration-300 relative ${active ? 'text-blue-600 ' : 'text-neutral-500 hover:text-neutral-900'} ${item.name === 'Equipo' && !isAdmin ? 'hidden' : ''}`}
  >
  {item.name === 'Perfil' && (
  <span id="nav-badge-perfil" class="absolute top-2 right-4 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white hidden z-10 transition-opacity"></span>
@@ -85,12 +107,7 @@ const isActive = (href) => {
 
  const userId = session.user.id;
 
- // Check if user is admin, if yes, show the Equipo tab
- const { data: profile } = await supabase.from('perfiles').select('is_admin').eq('id', userId).single();
- if (profile?.is_admin) {
- const equipoNav = document.getElementById('nav-item-equipo');
- if (equipoNav) equipoNav.classList.remove('hidden');
- }
+
 
  // 2. Fetch initial unread notifications count
  const { count, error } = await supabase

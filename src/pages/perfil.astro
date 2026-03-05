@@ -149,8 +149,20 @@ import Layout from '../layouts/Layout.astro';
  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
  </button>
  </div>
- <div class="p-6 bg-neutral-100 aspect-square flex items-center justify-center">
- <div class="w-full h-full max-h-[60vh]">
+ 
+ <!-- Guía visual inyectada -->
+ <div class="px-6 py-3 bg-blue-50/50 border-b border-blue-100 flex items-start gap-3">
+ <div class="mt-0.5 text-blue-500 shrink-0">
+ <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+ </div>
+ <div>
+ <p class="text-[13px] font-bold text-blue-900 mb-0.5">Usa una foto de cerca (Estilo Retrato)</p>
+ <p class="text-xs text-blue-700 leading-tight">Para que el equipo pueda identificarte rápido en los horarios, amplía la imagen hasta que <b>tu rostro llene el círculo</b>. Evita fotos de cuerpo entero o de lejos.</p>
+ </div>
+ </div>
+
+ <div class="p-6 bg-neutral-100 aspect-square flex items-center justify-center relative">
+ <div class="w-full h-full max-h-[60vh] relative z-10">
  <img id="cropper-image" src="" alt="Imagen a recortar" class="max-w-full hidden" />
  </div>
  </div>
@@ -457,10 +469,19 @@ import Layout from '../layouts/Layout.astro';
  if(!confirm("¿Seguro que deseas cerrar la sesión?")) return;
  
  try {
+ // 1. Le decimos a Supabase que cierre la sesión en la base de datos
  await supabase.auth.signOut();
+
+ // 2. LA MAGIA: Destruimos las cookies poniéndolas en el año 1970
+ document.cookie = "sb-access-token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=Lax";
+ document.cookie = "sb-refresh-token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=Lax";
+
+ // 3. Ahora sí, nos vamos al login
  window.location.href = '/login';
  } catch(e) {
  console.error("Logout Error:", e);
+ document.cookie = "sb-access-token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=Lax";
+ document.cookie = "sb-refresh-token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=Lax";
  window.location.href = '/login';
  }
  });
@@ -478,7 +499,7 @@ import Layout from '../layouts/Layout.astro';
  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
  
  if (!session || sessionError) {
- window.location.href = '/login';
+ /* window.location.href = '/login'; Movido a Middleware */
  return;
  }
 

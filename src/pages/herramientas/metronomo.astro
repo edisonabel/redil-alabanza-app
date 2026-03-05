@@ -2,67 +2,84 @@
 import Layout from '../../layouts/Layout.astro';
 ---
 
-<Layout>
- <div class="max-w-6xl mx-auto px-4 mt-4 md:mt-8 print:hidden w-full">
- <!-- Navegación Atrás -->
- <a href="/herramientas" class="inline-flex items-center text-neutral-600 hover:text-neutral-900 transition-colors mb-6 pb-2 border-b border-transparent hover:border-neutral-600">
- <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 mr-2"><path d="m15 18-6-6 6-6"/></svg>
- Volver a Herramientas
- </a>
+<Layout title="Metrónomo PRO | Redil Alabanza">
+  <div class="min-h-screen bg-neutral-900 w-full flex flex-col pt-4 md:pt-8 print:hidden pb-20">
+    
+    <div class="w-full max-w-6xl mx-auto px-4 flex-1 flex flex-col">
+      
+      <a href="/herramientas" class="inline-flex items-center text-neutral-400 hover:text-white transition-colors mb-6 pb-2 w-max">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 mr-2"><path d="m15 18-6-6 6-6"/></svg>
+        Volver a Herramientas
+      </a>
 
- <!-- Encabezado -->
- <header class="mb-6">
- <h1 class="text-3xl md:text-5xl font-extrabold tracking-tight text-neutral-900 mb-3 flex items-center gap-3">
- <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" class="text-teal-400" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 11 5-5"/><path d="m11 15 5-5"/><path d="M22 12A10 10 0 1 1 12 2a10 10 0 0 1 10 10Z"/><path d="M12 22v-3"/><path d="M12 5V2"/><path d="M22 12h-3"/><path d="M5 12H2"/></svg>
- Metrónomo <span class="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-emerald-400">PRO</span>
- </h1>
- <p class="text-neutral-600 font-medium">Motor de Audio de Alta Precisión & Tap Tempo.</p>
- </header>
+      <header class="mb-8 text-center md:text-left">
+        <h1 class="text-3xl md:text-5xl font-extrabold tracking-tight text-white mb-2 flex items-center justify-center md:justify-start gap-3 drop-shadow-md">
+          <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" class="text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 11 5-5"/><path d="m11 15 5-5"/><path d="M22 12A10 10 0 1 1 12 2a10 10 0 0 1 10 10Z"/><path d="M12 22v-3"/><path d="M12 5V2"/><path d="M22 12h-3"/><path d="M5 12H2"/></svg>
+          Metrónomo <span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400">PRO</span>
+        </h1>
+        <p class="text-neutral-400 font-medium text-sm md:text-base">Motor de Audio de Alta Precisión & Tap Tempo.</p>
+      </header>
 
  <!-- UI del Metrónomo -->
- <div class="max-w-sm mx-auto flex flex-col items-center gap-8 py-10 select-none">
+ <div class="max-w-sm mx-auto flex flex-col items-center gap-10 py-6 select-none bg-neutral-800/50 p-6 md:p-10 rounded-[2.5rem] border border-neutral-700/50 shadow-2xl backdrop-blur-sm w-full">
  
- <!-- Visualizador de Beats -->
- <div id="beat-visualizer" class="flex gap-3 h-4"></div>
-
  <!-- Controles Superiores -->
- <div class="flex items-center gap-4 bg-neutral-50 p-2 rounded-2xl border border-neutral-200">
- <select id="time-signature" class="bg-transparent text-neutral-900 text-xl font-bold outline-none cursor-pointer px-4">
- <option value="2">2/4</option>
- <option value="3">3/4</option>
- <option value="4" selected>4/4</option>
- <option value="5">5/4</option>
- <option value="6">6/8</option>
+ <div class="flex items-center justify-between w-full">
+ <!-- Visualizador de Compases (LEDs) -->
+ <div id="beat-visualizer" class="flex gap-3 h-4 items-center bg-neutral-950 px-4 py-3 rounded-full border border-neutral-800 shadow-inner"></div>
+
+ <div class="flex items-center bg-neutral-950 p-1.5 rounded-xl border border-neutral-800 shadow-inner">
+ <select id="time-signature" class="bg-transparent text-emerald-400 text-lg font-black outline-none cursor-pointer px-2 text-center appearance-none" style="text-align-last:center;">
+ <option value="2" class="bg-neutral-900">2/4</option>
+ <option value="3" class="bg-neutral-900">3/4</option>
+ <option value="4" selected class="bg-neutral-900">4/4</option>
+ <option value="5" class="bg-neutral-900">5/4</option>
+ <option value="6" class="bg-neutral-900">6/8</option>
  </select>
  </div>
+ </div>
 
- <!-- El "Knob" -->
- <div class="relative w-64 h-64 rounded-full bg-neutral-100 shadow-[0_0_20px_rgba(0,0,0,0.1)] [0_0_30px_rgba(0,0,0,0.5)] flex items-center justify-center cursor-pointer select-none" id="bpm-knob" style="touch-action: none;">
- <svg class="absolute inset-0 w-full h-full transform -rotate-90 pointer-events-none" viewBox="0 0 256 256">
+ <!-- El "Knob" (Hardware Dial) -->
+ <div class="relative w-64 h-64 rounded-full bg-neutral-900 shadow-[20px_20px_60px_#111111,-20px_-20px_60px_#2b2b2b,inset_0_0_0_2px_#333] flex items-center justify-center cursor-pointer select-none ring-4 ring-neutral-950/50" id="bpm-knob" style="touch-action: none;">
+ <svg class="absolute inset-0 w-full h-full transform -rotate-90 pointer-events-none drop-shadow-[0_0_12px_rgba(52,211,153,0.3)]" viewBox="0 0 256 256">
  <defs>
  <linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
- <stop offset="0%" stop-color="#06b6d4" />
- <stop offset="50%" stop-color="#a855f7" />
- <stop offset="100%" stop-color="#ec4899" />
+ <stop offset="0%" stop-color="#34d399" />
+ <stop offset="50%" stop-color="#14b8a6" />
+ <stop offset="100%" stop-color="#0ea5e9" />
  </linearGradient>
  </defs>
- <circle cx="128" cy="128" r="120" class="stroke-neutral-300 " stroke-width="8" fill="none" />
- <circle id="bpm-ring" cx="128" cy="128" r="120" stroke="url(#ringGradient)" stroke-width="8" fill="none" stroke-linecap="round"
- style="stroke-dasharray: 753.98; stroke-dashoffset: 753.98; transition: stroke-dashoffset 0.1s ease-out;" />
+ <!-- Track de fondo oscuro -->
+ <circle cx="128" cy="128" r="116" class="stroke-neutral-800" stroke-width="6" fill="none" />
+ <!-- Barra de progreso iluminada -->
+ <circle id="bpm-ring" cx="128" cy="128" r="116" stroke="url(#ringGradient)" stroke-width="10" fill="none" stroke-linecap="round"
+ style="stroke-dasharray: 728.85; stroke-dashoffset: 728.85; transition: stroke-dashoffset 0.1s ease-out;" />
  </svg>
- <div class="w-40 h-40 bg-white border border-neutral-200 rounded-full flex flex-col items-center justify-center shadow-[inset_0_4px_20px_rgba(0,0,0,0.1)] [inset_0_4px_20px_rgba(0,0,0,0.8)] z-10 pointer-events-none">
- <span id="bpm-display" class="text-6xl font-black text-neutral-900 tracking-tighter">120</span>
- <span class="text-neutral-500 font-bold text-sm tracking-widest mt-1">BPM</span>
+ 
+ <!-- Centro del Dial (Display) -->
+ <div class="w-[170px] h-[170px] bg-neutral-900 border-4 border-neutral-800 rounded-full flex flex-col items-center justify-center shadow-[inset_10px_10px_20px_#131313,inset_-10px_-10px_20px_#232323] z-10 pointer-events-none relative overflow-hidden">
+ <!-- Reflejo Cristal -->
+ <div class="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent transform -translate-x-1/2 -translate-y-1/2 rotate-45 pointer-events-none"></div>
+ 
+ <span id="bpm-display" class="text-7xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-neutral-400 tracking-tighter mix-blend-screen drop-shadow-md">120</span>
+ <span class="text-neutral-500 font-extrabold text-xs tracking-[0.3em] uppercase mt-1 drop-shadow-sm">BPM</span>
  </div>
  </div>
 
- <!-- Botones de Acción -->
- <div class="flex gap-4 w-full justify-center mt-4">
- <button id="btn-tap" class="px-6 py-4 bg- hover:bg-neutral-300 :bg-neutral-100 border border-neutral-300 $2text-white font-bold rounded-2xl active:scale-95 transition-all w-32 shadow-md " style="touch-action: manipulation;">TAP</button>
- <button id="btn-play" class="px-6 py-4 bg- hover:bg-teal-400 $2text-white font-black rounded-2xl active:scale-95 transition-all w-32 shadow-[0_0_15px_rgba(20,184,166,0.3)] [0_0_20px_rgba(20,184,166,0.3)]" style="touch-action: manipulation;">PLAY</button>
+ <!-- Botones de Acción (Pads) -->
+ <div class="flex gap-5 w-full justify-between mt-2">
+ <button id="btn-tap" class="flex-1 py-5 bg-neutral-800 hover:bg-neutral-700 active:bg-neutral-900 text-neutral-300 font-black tracking-widest rounded-2xl transition-all shadow-[6px_6px_14px_#111111,-6px_-6px_14px_#2b2b2b] active:shadow-[inset_6px_6px_14px_#111111,inset_-6px_-6px_14px_#2b2b2b] border border-neutral-700" style="touch-action: manipulation;">
+ TAP
+ </button>
+ 
+ <button id="btn-play" class="flex-1 py-5 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-neutral-950 font-black tracking-widest rounded-2xl transition-all shadow-[0_0_20px_rgba(16,185,129,0.3),6px_6px_14px_#111111,-6px_-6px_14px_#2b2b2b] active:shadow-[inset_6px_6px_14px_rgba(0,0,0,0.4)] border border-emerald-400 flex items-center justify-center gap-2" style="touch-action: manipulation;">
+ <svg id="icon-play" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+ <span id="text-play">PLAY</span>
+ </button>
+ </div>
+ 
  </div>
  </div>
-
  </div>
 </Layout>
 
@@ -73,7 +90,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
  
  if (sessionError || !session) {
-   window.location.replace('/login');
+   /* window.location.replace('/login'); Movido a Middleware */
    return;
  }
 
@@ -96,15 +113,13 @@ document.addEventListener('DOMContentLoaded', async () => {
  visualizer.innerHTML = '';
  for(let i=0; i<beatsPerBar; i++) {
  const dot = document.createElement('div');
- dot.className = `w-4 h-4 rounded-full bg-neutral-100 transition-colors duration-100 ${i===0 ? 'scale-125' : ''}`;
+ // Luces LED apagadas = neutral-800
+ dot.className = `w-3 h-3 rounded-full bg-neutral-800 border border-neutral-700/50 transition-colors duration-100 ${i===0 ? 'scale-125' : ''}`;
  visualizer.appendChild(dot);
  }
  }
 
  function nextNote() {
- // Cálculo del intervalo real según el Signature
- // Para 6/8, el beat es la corchea. Para X/4, el beat es la negra.
- // Simplificación: Mantenemos el metrónomo constante independiente del denominador.
  const secondsPerBeat = 60.0 / currentBPM;
  nextNoteTime += secondsPerBeat;
  currentBeatInBar = (currentBeatInBar + 1) % beatsPerBar;
@@ -116,10 +131,21 @@ document.addEventListener('DOMContentLoaded', async () => {
  if (!visualizer) return;
  const dots = visualizer.children;
  for(let i=0; i<dots.length; i++) {
- dots[i].classList.replace(i===0 ? 'bg-teal-400' : 'bg-white', 'bg-neutral-100');
+ // Apagar luces previas
+ dots[i].classList.replace('bg-red-500', 'bg-neutral-800');
+ dots[i].classList.replace('bg-emerald-400', 'bg-neutral-800');
+ dots[i].classList.remove('shadow-[0_0_10px_rgba(239,68,68,0.8)]', 'shadow-[0_0_10px_rgba(52,211,153,0.8)]');
  }
+ 
  if(dots[beatNumber] && isPlaying) {
- dots[beatNumber].classList.replace('bg-neutral-100', beatNumber === 0 ? 'bg-teal-400' : 'bg-white');
+ // Encender LED actual
+ if (beatNumber === 0) {
+ dots[beatNumber].classList.replace('bg-neutral-800', 'bg-red-500');
+ dots[beatNumber].classList.add('shadow-[0_0_10px_rgba(239,68,68,0.8)]');
+ } else {
+ dots[beatNumber].classList.replace('bg-neutral-800', 'bg-emerald-400');
+ dots[beatNumber].classList.add('shadow-[0_0_10px_rgba(52,211,153,0.8)]');
+ }
  }
  });
 
@@ -156,31 +182,42 @@ document.addEventListener('DOMContentLoaded', async () => {
  if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
  if (audioCtx.state === 'suspended') audioCtx.resume();
  
+ const txtPlay = document.getElementById('text-play');
+ const icnPlay = document.getElementById('icon-play');
+ 
  isPlaying = !isPlaying;
  if (isPlaying) {
  currentBeatInBar = 0;
- // Retardo micro-ajustado inicial
  nextNoteTime = audioCtx.currentTime + 0.05;
  scheduler();
- btnPlay.textContent = 'STOP';
- btnPlay.classList.replace('bg-teal-500', 'bg-red-500');
- btnPlay.classList.replace('text-black', 'text-neutral-900');
- btnPlay.classList.replace('hover:bg-teal-400', 'hover:bg-red-400');
- btnPlay.classList.replace('shadow-[0_0_20px_rgba(20,184,166,0.3)]', 'shadow-[0_0_20px_rgba(239,68,68,0.3)]');
+ if (txtPlay) txtPlay.textContent = 'STOP';
+ if (icnPlay) icnPlay.innerHTML = '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>'; // Botón Pausa SVG
+ 
+ btnPlay.classList.replace('bg-emerald-500', 'bg-red-500');
+ btnPlay.classList.replace('hover:bg-emerald-400', 'hover:bg-red-400');
+ btnPlay.classList.replace('active:bg-emerald-600', 'active:bg-red-600');
+ btnPlay.classList.replace('border-emerald-400', 'border-red-400');
+ btnPlay.classList.replace('text-neutral-950', 'text-white');
+ btnPlay.classList.replace('shadow-[0_0_20px_rgba(16,185,129,0.3),6px_6px_14px_#111111,-6px_-6px_14px_#2b2b2b]', 'shadow-[0_0_20px_rgba(239,68,68,0.5),6px_6px_14px_#111111,-6px_-6px_14px_#2b2b2b]');
  } else {
  if (timerID) clearTimeout(timerID);
- btnPlay.textContent = 'PLAY';
- btnPlay.classList.replace('bg-red-500', 'bg-teal-500');
- btnPlay.classList.replace('text-neutral-900', 'text-black');
- btnPlay.classList.replace('hover:bg-red-400', 'hover:bg-teal-400');
- btnPlay.classList.replace('shadow-[0_0_20px_rgba(239,68,68,0.3)]', 'shadow-[0_0_20px_rgba(20,184,166,0.3)]');
+ if (txtPlay) txtPlay.textContent = 'PLAY';
+ if (icnPlay) icnPlay.innerHTML = '<polygon points="6 3 20 12 6 21 6 3"/>'; // Botón Play SVG
+ 
+ btnPlay.classList.replace('bg-red-500', 'bg-emerald-500');
+ btnPlay.classList.replace('hover:bg-red-400', 'hover:bg-emerald-400');
+ btnPlay.classList.replace('active:bg-red-600', 'active:bg-emerald-600');
+ btnPlay.classList.replace('border-red-400', 'border-emerald-400');
+ btnPlay.classList.replace('text-white', 'text-neutral-950');
+ btnPlay.classList.replace('shadow-[0_0_20px_rgba(239,68,68,0.5),6px_6px_14px_#111111,-6px_-6px_14px_#2b2b2b]', 'shadow-[0_0_20px_rgba(16,185,129,0.3),6px_6px_14px_#111111,-6px_-6px_14px_#2b2b2b]');
  
  // Apagar luces residuales
  if (visualizer) {
  const dots = visualizer.children;
  for(let i=0; i<dots.length; i++) {
- dots[i].classList.replace('bg-teal-400', 'bg-neutral-100');
- dots[i].classList.replace('bg-white', 'bg-neutral-100');
+ dots[i].classList.replace('bg-red-500', 'bg-neutral-800');
+ dots[i].classList.replace('bg-emerald-400', 'bg-neutral-800');
+ dots[i].classList.remove('shadow-[0_0_10px_rgba(239,68,68,0.8)]', 'shadow-[0_0_10px_rgba(52,211,153,0.8)]');
  }
  }
  }
@@ -203,7 +240,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
  const minBpm = 30;
  const maxBpm = 300;
- const circunferencia = 2 * Math.PI * 120; // Aprox 753.98
+ const circunferencia = 2 * Math.PI * 116; // Radio=116 -> ~728.85
 
  let porcentaje = (currentBPM - minBpm) / (maxBpm - minBpm);
  if (porcentaje < 0) porcentaje = 0;

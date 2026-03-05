@@ -1,0 +1,66 @@
+---
+interface Props {
+  placeholder?: string;
+  idInput?: string;
+}
+
+const { 
+  placeholder = "Buscar...", 
+  idInput = "searchInput"
+} = Astro.props;
+
+const idSuggestion = `${idInput}-suggestion`;
+---
+
+<div class="relative w-full flex items-center">
+  <input type="text" id={idSuggestion} 
+    class="absolute inset-0 w-full bg-transparent text-neutral-400 pointer-events-none border border-transparent pl-10 md:pl-12 pr-4 py-2.5 md:py-3 md:text-lg" disabled />
+  <input type="text" id={idInput} 
+    placeholder={placeholder} 
+    class="relative w-full bg-transparent border border-neutral-200 text-neutral-900 rounded-xl pl-10 md:pl-12 pr-4 py-2.5 md:py-3 md:text-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors placeholder:text-neutral-400 z-10" autocomplete="off" />
+</div>
+
+<script define:vars={{ idInput, idSuggestion }}>
+  document.addEventListener('DOMContentLoaded', () => {
+    const searchInput = document.getElementById(idInput);
+    const suggestionInput = document.getElementById(idSuggestion);
+
+    if (searchInput && suggestionInput) {
+      // Helper para normalizar texto (quitar tildes y pasar a minusculas)
+      const normalizeStr = (str) => str ? str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() : '';
+
+      searchInput.addEventListener('input', () => {
+        // Extraer los títulos dinámicamente del DOM para que el componente funcione en cualquier página
+        const articles = Array.from(document.querySelectorAll('article[data-titulo]'));
+        const titulos = [...new Set(articles.map(c => c.getAttribute('data-titulo')).filter(Boolean))];
+
+        const searchTerm = searchInput.value;
+        if (!searchTerm) {
+          suggestionInput.value = '';
+          return;
+        }
+        
+        const searchTermLower = normalizeStr(searchTerm);
+        const match = titulos.find(t => normalizeStr(t).startsWith(searchTermLower));
+        
+        if (match) {
+          // Mantener escribiendo y añadir la sugerencia visualmente
+          suggestionInput.value = searchTerm + match.substring(searchTerm.length);
+        } else {
+          suggestionInput.value = '';
+        }
+      });
+
+      searchInput.addEventListener('keydown', (e) => {
+        if ((e.key === 'ArrowRight' || e.key === 'Tab') && suggestionInput.value && suggestionInput.value.toLowerCase().startsWith(searchInput.value.toLowerCase())) {
+          e.preventDefault();
+          searchInput.value = suggestionInput.value;
+          suggestionInput.value = '';
+          
+          // Disparar evento "input" nativo para que los scripts externos (filtros) se enteren del cambio
+          searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      });
+    }
+  });
+</script>

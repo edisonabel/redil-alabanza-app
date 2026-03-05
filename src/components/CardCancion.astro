@@ -19,7 +19,18 @@ interface Props {
 
 const { titulo = "", cantante = "", tonalidad = "", bpm = 0, linkLetra = "", linkAcordes = "", linkVoces = "", linkYoutube = "", linkSecuencias = "", chordpro = "", categoria = "", voz = "", tema = "", estado = "", oculta = false } = Astro.props;
 
-const colorEstado = estado?.toLowerCase() === 'nueva' ? 'bg-red-500 text-white animate-pulse' : estado?.toLowerCase() === 'ensayo' ? 'bg-yellow-500 text-black' : 'bg-blue-500 text-white';
+const estadoNormalized = (estado || '').toLowerCase().trim();
+
+let colorEstado = 'bg-neutral-600 text-white'; // Fallback para etiquetas personalizadas no mapeadas
+if (estadoNormalized === 'nueva') {
+  colorEstado = 'bg-emerald-500 text-white animate-pulse'; // Verde
+} else if (estadoNormalized === 'recurrente') {
+  colorEstado = 'bg-red-500 text-white'; // Rojo
+} else if (estadoNormalized === 'activa') {
+  colorEstado = 'bg-blue-500 text-white'; // Azul
+} else if (estadoNormalized === 'ensayo') {
+  colorEstado = 'bg-yellow-500 text-black'; // Amarillo (Manteniendo retrocompatibilidad)
+}
 ---
 
 <article class:list={["relative bg-white border border-neutral-200 rounded-2xl hover:border-neutral-300 transition-all duration-300 shadow-xl hover:shadow-2xl overflow-visible card-container card-cancion", { "cancion-oculta": oculta }]}
