@@ -19,7 +19,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
     };
 
     return (
-        <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 2xl:gap-12 w-full selection:bg-brand/20">
+        <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 2xl:gap-12 w-full max-w-screen-2xl mx-auto selection:bg-brand/20">
             {/* Columna Izquierda (Principal - PC) */}
             <div className="flex-1 w-full flex flex-col gap-6">
 
@@ -39,7 +39,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
                         <h2 className="text-lg font-bold text-content tracking-tight">Próximos Servicios</h2>
                     </div>
 
-                    <div className="flex overflow-x-auto lg:overflow-visible lg:grid lg:grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 xl:gap-8 snap-x snap-mandatory hide-scrollbar gap-4 px-4 lg:px-0 pb-4 w-full h-full">
+                    <div className="flex overflow-x-auto lg:overflow-visible lg:grid lg:grid-cols-1 xl:grid-cols-2 2xl:grid-cols-2 xl:gap-8 snap-x snap-mandatory hide-scrollbar gap-4 px-4 lg:px-0 pb-4 w-full h-full">
                         {proximosServicios.length === 0 ? (
                             <div className="w-full flex-1 shrink-0 snap-center bg-gradient-to-br from-[#eff6ff] to-[#e0e7ff] dark:from-blue-900/20 dark:to-indigo-900/20 rounded-[2rem] p-6 shadow-sm border border-blue-100 dark:border-blue-800/30 lg:min-h-[220px] flex items-center justify-center">
                                 <div className="flex flex-col items-center justify-center text-center gap-3 py-4">
@@ -96,12 +96,12 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
             </div>
 
             {/* Columna Derecha (Bentos y Atajos - PC) */}
-            <div className="lg:w-2/5 xl:w-1/3 2xl:w-[400px] shrink-0 flex flex-col gap-6 2xl:gap-8 lg:mt-2">
+            <div className="lg:w-2/5 xl:w-1/3 2xl:w-[480px] shrink-0 flex flex-col gap-6 2xl:gap-8 lg:mt-2">
 
                 {/* Bloques Principales (Bento Box) */}
                 <section className="px-4 lg:px-0">
                     <h2 className="text-lg font-bold text-content tracking-tight mb-3">Tu Entorno</h2>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 gap-4 2xl:grid-cols-2 2xl:gap-6">
 
                         {/* Bento: Repertorio */}
                         <a href="/repertorio" className="aspect-square lg:aspect-auto lg:h-[220px] rounded-[2rem] p-5 flex flex-col justify-between shadow-md active:scale-[0.98] transition-all relative overflow-hidden group">
