@@ -1,0 +1,51 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PanelBranding from '../components/react/PanelBranding.jsx';
+import { supabase } from '../lib/supabase';
+
+let isAdmin = false;
+const tokenCookie = Astro.cookies.get('sb-access-token');
+
+if (tokenCookie) {
+  const { data: { user } } = await supabase.auth.getUser(tokenCookie.value);
+  if (user) {
+    const { data: profile } = await supabase
+      .from('perfiles')
+      .select('is_admin')
+      .eq('id', user.id)
+      .single();
+
+    if (profile?.is_admin) {
+      isAdmin = true;
+    }
+  }
+}
+
+if (!isAdmin) {
+  return Astro.redirect('/programacion');
+}
+---
+
+<Layout>
+  <section class="w-full max-w-6xl mx-auto pt-4 md:pt-8 pb-24">
+    <header class="mb-6 flex items-center gap-3">
+      <a href="/programacion" class="inline-flex items-center justify-center w-10 h-10 rounded-xl border border-border bg-surface text-content-muted hover:text-content hover:bg-background transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="m15 18-6-6 6-6" />
+        </svg>
+      </a>
+      <div>
+        <div class="page-title-row">
+          <span class="page-title-icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 3a3 3 0 0 0-3 3v1.1a7.96 7.96 0 0 0-1.64.95l-.78-.45a3 3 0 1 0-3 5.2l.78.45a8.6 8.6 0 0 0 0 1.9l-.78.45a3 3 0 1 0 3 5.2l.78-.45a7.96 7.96 0 0 0 1.64.95V18a3 3 0 1 0 6 0v-1.1a7.96 7.96 0 0 0 1.64-.95l.78.45a3 3 0 1 0 3-5.2l-.78-.45a8.6 8.6 0 0 0 0-1.9l.78-.45a3 3 0 1 0-3-5.2l-.78.45A7.96 7.96 0 0 0 15 7.1V6a3 3 0 0 0-3-3Z"/><circle cx="12" cy="12" r="3"/></svg>
+          </span>
+          <h1 class="page-title text-[2.1rem] md:text-[3.5rem]">Configuraci&oacute;n de Branding</h1>
+        </div>
+        <p class="page-subtitle text-sm">Panel white-label para tokens sem&aacute;nticos en tiempo real.</p>
+      </div>
+    </header>
+
+    <PanelBranding client:load />
+  </section>
+</Layout>
+

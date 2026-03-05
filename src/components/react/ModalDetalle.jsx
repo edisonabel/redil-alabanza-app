@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 
 const iconSvgPaths = {
@@ -16,7 +16,7 @@ const iconSvgPaths = {
 };
 
 const DefaultIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-neutral-500" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-content-muted" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
     </svg>
 );
@@ -24,7 +24,7 @@ const DefaultIcon = () => (
 const RosterIcon = ({ codigo }) => {
     if (!codigo || !iconSvgPaths[codigo]) return <DefaultIcon />;
     return (
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-neutral-500" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" dangerouslySetInnerHTML={{ __html: iconSvgPaths[codigo] }} />
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-content-muted" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" dangerouslySetInnerHTML={{ __html: iconSvgPaths[codigo] }} />
     );
 };
 
@@ -111,28 +111,28 @@ export default function ModalDetalle({ initialRoles }) {
     }
 
     return (
-        <div className={`fixed inset-0 z-[70] bg-white/80 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
-            <div className={`bg-white border border-neutral-200 rounded-[24px] md:rounded-3xl w-full max-w-2xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden transition-transform duration-300 ${isOpen ? 'scale-100' : 'scale-95'}`}>
+        <div className={`fixed inset-0 z-[70] bg-overlay/60 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
+            <div className={`bg-surface border border-border rounded-[24px] md:rounded-3xl w-full max-w-2xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden transition-transform duration-300 ${isOpen ? 'scale-100' : 'scale-95'}`}>
                 {/* Header */}
-                <div className="p-6 border-b border-neutral-100 flex justify-between items-start bg-neutral-50 shrink-0">
+                <div className="p-6 border-b border-border flex justify-between items-start bg-background shrink-0">
                     <div>
                         <span className="inline-block px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold tracking-widest uppercase mb-3 border border-blue-200/60 shadow-sm">{estado}</span>
-                        <h2 className="text-3xl font-black text-neutral-900 tracking-tight capitalize">{fechaFormat}</h2>
+                        <h2 className="text-3xl font-black text-content tracking-tight capitalize">{fechaFormat}</h2>
                         <div className="flex items-center gap-2 mt-2">
-                            <span className="text-neutral-500 font-medium text-lg capitalize">{tema !== titulo ? tema : titulo}</span>
-                            <span className="text-sm font-bold text-neutral-400 bg-neutral-200/50 px-2 py-0.5 rounded-md ml-2">{timeString}</span>
+                            <span className="text-content-muted font-medium text-lg capitalize">{tema !== titulo ? tema : titulo}</span>
+                            <span className="text-sm font-bold text-content-muted bg-border/50 px-2 py-0.5 rounded-md ml-2">{timeString}</span>
                         </div>
                     </div>
-                    <button onClick={handleClose} className="text-neutral-500 hover:text-neutral-800 transition-colors p-2 bg-white rounded-full shadow-sm border border-neutral-200">
+                    <button onClick={handleClose} className="text-content-muted hover:text-content transition-colors p-2 bg-background hover:bg-border rounded-full shadow-sm border border-border">
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
                     </button>
                 </div>
 
                 {/* Body scrollable */}
-                <div className="p-6 overflow-y-auto flex-1 bg-white">
+                <div className="p-6 overflow-y-auto flex-1 bg-surface">
                     {/* Assigned Personnel */}
                     <div className="mb-8 relative z-10">
-                        <h4 className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                        <h4 className="text-xs font-bold text-content-muted uppercase tracking-widest mb-4 flex items-center gap-2">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg>
                             Personal Asignado
                         </h4>
@@ -148,27 +148,27 @@ export default function ModalDetalle({ initialRoles }) {
                                 const initials = cleanName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 
                                 return (
-                                    <div key={idx} className="flex items-center gap-4 p-3 rounded-2xl border border-neutral-100 bg-neutral-50 hover:bg-white transition-colors group relative overflow-hidden">
+                                    <div key={idx} className="flex items-center gap-4 p-3 rounded-2xl border border-border bg-background hover:bg-surface transition-colors group relative overflow-hidden">
                                         <div className="relative">
                                             {p.avatar_url ? (
-                                                <img src={p.avatar_url} alt={p.nombre} className="w-14 h-14 shrink-0 rounded-full object-cover shadow-sm bg-white" />
+                                                <img src={p.avatar_url} alt={p.nombre} className="w-14 h-14 shrink-0 rounded-full object-cover shadow-sm bg-surface" />
                                             ) : (
                                                 <div className="w-14 h-14 shrink-0 rounded-full bg-blue-100 text-blue-700 border border-blue-200 flex items-center justify-center font-black text-lg shadow-sm">{initials}</div>
                                             )}
-                                            <div className="absolute -bottom-1 -right-1 w-7 h-7 bg-white rounded-full flex items-center justify-center shadow-md border border-neutral-200 text-neutral-600">
+                                            <div className="absolute -bottom-1 -right-1 w-7 h-7 bg-surface rounded-full flex items-center justify-center shadow-md border border-border text-content-muted">
                                                 <RosterIcon codigo={rCodigo} />
                                             </div>
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <p className="font-bold text-neutral-900 text-base truncate">{p.nombre}</p>
-                                            <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">{rNombre}</p>
+                                            <p className="font-bold text-content text-base truncate">{p.nombre}</p>
+                                            <p className="text-xs font-semibold text-content-muted uppercase tracking-wider">{rNombre}</p>
                                         </div>
                                     </div>
                                 );
                             }) : (
-                                <div className="col-span-1 md:col-span-2 flex flex-col items-center justify-center py-8 opacity-50 bg-neutral-50 rounded-2xl border border-neutral-100 border-dashed">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mb-3 text-neutral-400"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="m19 8 3 3-3 3" /></svg>
-                                    <p className="font-bold text-base text-neutral-600">Nadie asignado aún al roster</p>
+                                <div className="col-span-1 md:col-span-2 flex flex-col items-center justify-center py-8 opacity-50 bg-background rounded-2xl border border-border border-dashed">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mb-3 text-content-muted"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="m19 8 3 3-3 3" /></svg>
+                                    <p className="font-bold text-base text-content-muted">Nadie asignado aún al roster</p>
                                 </div>
                             )}
                         </div>
@@ -176,19 +176,19 @@ export default function ModalDetalle({ initialRoles }) {
 
                     {/* Playlist */}
                     <div className="relative z-10">
-                        <h4 className="text-xs font-bold text-neutral-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                        <h4 className="text-xs font-bold text-content-muted uppercase tracking-widest mb-4 flex items-center gap-2">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
                             Repertorio / Playlist
                         </h4>
 
-                        <div className="bg-neutral-50 border border-neutral-100 rounded-[24px] p-5 shadow-inner min-h-[150px]">
+                        <div className="bg-background border border-border rounded-[24px] p-5 shadow-inner min-h-[150px]">
                             {loadingPlaylist ? (
-                                <div className="flex justify-center py-10"><div className="w-8 h-8 border-4 border-teal-500/30 border-t-teal-500 rounded-full animate-spin"></div></div>
+                                <div className="flex justify-center py-10"><div className="w-8 h-8 border-4 border-brand/30 border-t-brand rounded-full animate-spin"></div></div>
                             ) : !playlist ? (
                                 <div className="flex flex-col items-center justify-center py-6 opacity-60">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" className="mx-auto mb-3 text-neutral-500" stroke="currentColor" strokeWidth="1.5"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
-                                    <p className="text-sm font-bold text-neutral-600">Sin playlist asignada</p>
-                                    <p className="text-[11px] text-neutral-500 mt-1">El líder de alabanza puede crear una desde el módulo Repertorio.</p>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" className="mx-auto mb-3 text-content-muted" stroke="currentColor" strokeWidth="1.5"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
+                                    <p className="text-sm font-bold text-content-muted">Sin playlist asignada</p>
+                                    <p className="text-[11px] text-content-muted mt-1">El líder de alabanza puede crear una desde el módulo Repertorio.</p>
                                 </div>
                             ) : (
                                 <div className="flex flex-col">
@@ -203,22 +203,22 @@ export default function ModalDetalle({ initialRoles }) {
                                         {playlistItems.length > 0 ? playlistItems.map((item, idx) => {
                                             const c = item.canciones || {};
                                             return (
-                                                <article key={idx} className="relative bg-white border border-neutral-200 rounded-2xl shadow-sm flex flex-col mb-2 overflow-hidden hover:border-teal-200 transition-colors">
+                                                <article key={idx} className="relative bg-surface border border-border rounded-2xl shadow-sm flex flex-col mb-2 overflow-hidden hover:border-brand/30 transition-colors">
                                                     <div className="p-4 sm:p-5 flex gap-4">
-                                                        <div className="w-10 h-10 rounded-full bg-teal-50 text-teal-600 border border-teal-100 flex items-center justify-center font-black shrink-0 text-lg shadow-sm">{idx + 1}</div>
+                                                        <div className="w-10 h-10 rounded-full bg-brand/10 text-brand border border-brand/30 flex items-center justify-center font-black shrink-0 text-lg shadow-sm">{idx + 1}</div>
                                                         <div className="flex-1 min-w-0 flex flex-col pt-0.5">
-                                                            <h3 className="text-lg sm:text-xl font-bold tracking-tight text-neutral-900 mb-0.5 truncate">{c.titulo || 'Sin Título'}</h3>
-                                                            <p className="text-sm font-medium text-neutral-500 mb-3 truncate">{c.cantante || 'Redil Sur'}</p>
+                                                            <h3 className="text-lg sm:text-xl font-bold tracking-tight text-content mb-0.5 truncate">{c.titulo || 'Sin Título'}</h3>
+                                                            <p className="text-sm font-medium text-content-muted mb-3 truncate">{c.cantante || 'Redil Sur'}</p>
                                                             <div className="flex flex-wrap gap-2 text-[11px] sm:text-xs">
                                                                 {c.tonalidad && c.tonalidad !== '-' && (
-                                                                    <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-neutral-100 border border-neutral-200 text-neutral-700 font-bold tracking-wider">
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5 text-neutral-500"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
+                                                                    <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-background border border-border text-content font-bold tracking-wider dark:bg-surface/80 dark:border-white/60 dark:text-white">
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5 text-content-muted"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
                                                                         Key: {c.tonalidad}
                                                                     </span>
                                                                 )}
                                                                 {c.bpm > 0 && (
-                                                                    <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-neutral-100 border border-neutral-200 text-neutral-700 font-bold tracking-wider">
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5 text-neutral-500"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
+                                                                    <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-background border border-border text-content font-bold tracking-wider dark:bg-surface/80 dark:border-white/60 dark:text-white">
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5 text-content-muted"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
                                                                         {c.bpm} BPM
                                                                     </span>
                                                                 )}
@@ -227,17 +227,17 @@ export default function ModalDetalle({ initialRoles }) {
                                                     </div>
                                                     <div className="px-4 pb-4 sm:px-5 sm:pb-5">
                                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-1">
-                                                            {c.link_youtube && <a href={c.link_youtube} target="_blank" rel="noreferrer" className="flex items-center justify-center py-2.5 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 font-bold text-xs tracking-wide transition-colors">YouTube</a>}
-                                                            {c.link_acordes && <a href={c.link_acordes} target="_blank" rel="noreferrer" className="flex items-center justify-center py-2.5 rounded-xl bg-green-500/10 text-green-500 hover:bg-green-500/20 font-bold text-xs tracking-wide transition-colors">Acordes</a>}
-                                                            {c.link_voces && <a href={c.link_voces} target="_blank" rel="noreferrer" className="flex items-center justify-center py-2.5 rounded-xl bg-orange-500/10 text-orange-500 hover:bg-orange-500/20 font-bold text-xs tracking-wide transition-colors">Voces</a>}
-                                                            {c.link_secuencias && <a href={c.link_secuencias} target="_blank" rel="noreferrer" className="flex items-center justify-center py-2.5 rounded-xl bg-pink-500/10 text-pink-500 hover:bg-pink-500/20 font-bold text-xs tracking-wide transition-colors">E-Tracks</a>}
+                                                            {c.link_youtube && <a href={c.link_youtube} target="_blank" rel="noreferrer" className="flex items-center justify-center py-2.5 rounded-xl bg-danger/10 text-danger hover:bg-danger/20 font-bold text-xs tracking-wide transition-colors">YouTube</a>}
+                                                            {c.link_acordes && <a href={c.link_acordes} target="_blank" rel="noreferrer" className="flex items-center justify-center py-2.5 rounded-xl bg-success/10 text-success hover:bg-success/20 font-bold text-xs tracking-wide transition-colors">Acordes</a>}
+                                                            {c.link_voces && <a href={c.link_voces} target="_blank" rel="noreferrer" className="flex items-center justify-center py-2.5 rounded-xl bg-warning/10 text-warning hover:bg-warning/20 font-bold text-xs tracking-wide transition-colors">Voces</a>}
+                                                            {c.link_secuencias && <a href={c.link_secuencias} target="_blank" rel="noreferrer" className="flex items-center justify-center py-2.5 rounded-xl bg-accent/10 text-accent hover:bg-accent/20 font-bold text-xs tracking-wide transition-colors">E-Tracks</a>}
                                                         </div>
                                                     </div>
                                                 </article>
                                             )
                                         }) : null}
                                     </div>
-                                    <p className="text-[10px] sm:text-xs text-neutral-400 mt-4 text-center">
+                                    <p className="text-[10px] sm:text-xs text-content-muted mt-4 text-center">
                                         Última modificación: {new Date(playlist.updated_at).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                                     </p>
                                 </div>
@@ -249,3 +249,5 @@ export default function ModalDetalle({ initialRoles }) {
         </div>
     );
 }
+
+

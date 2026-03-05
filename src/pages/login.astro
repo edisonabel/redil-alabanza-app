@@ -1,65 +1,69 @@
----
+﻿---
 import Layout from '../layouts/Layout.astro';
 ---
 
 <Layout>
- <div class="max-w-md mx-auto mt-12 px-4 w-full">
- <div class="bg-neutral-100 border border-neutral-300 rounded-2xl p-8 shadow-xl [0_0_30px_rgba(0,0,0,0.5)]">
- <h1 class="text-3xl font-extrabold text-neutral-900 mb-2 text-center">Acceso al Sistema</h1>
- <p class="text-neutral-500 text-center mb-8">Ingresa tus credenciales para ver la agenda</p>
+ <div class="max-w-md mx-auto mt-10 px-4 w-full">
+ <div class="flex justify-center mb-5">
+  <img src="/LOGO%20REDIL.png" alt="Logo Redil" class="h-14 w-auto dark:hidden" />
+  <img src="/LOGO%20REDIL%20LIGHT.png" alt="Logo Redil" class="hidden h-14 w-auto dark:block" />
+ </div>
+ <div class="bg-surface border border-border rounded-2xl p-8 shadow-xl [0_0_30px_rgba(0,0,0,0.5)]">
+ <h1 class="text-3xl font-extrabold text-content mb-2 text-center">Acceso al Sistema</h1>
+ <p class="text-content-muted text-center mb-8">Ingresa tus credenciales para ver la agenda</p>
 
  <form id="login-form" class="flex flex-col gap-5">
  <!-- Pestañas (Tabs) -->
- <div class="flex p-1 bg-neutral-200/50 rounded-xl mb-2">
- <button type="button" id="tab-login" class="flex-1 py-2 text-sm font-bold rounded-lg bg-white text-neutral-900 shadow-sm transition-all">Iniciar Sesión</button>
- <button type="button" id="tab-register" class="flex-1 py-2 text-sm font-bold rounded-lg text-neutral-500 hover:text-neutral-700 transition-all">Registrarse</button>
+ <div class="flex p-1 bg-background rounded-xl mb-2">
+ <button type="button" id="tab-login" class="flex-1 py-2 text-sm font-ui-strong rounded-lg bg-surface text-content shadow-sm transition-all">Iniciar Sesión</button>
+ <button type="button" id="tab-register" class="flex-1 py-2 text-sm font-ui-strong rounded-lg text-content-muted hover:text-content transition-all">Registrarse</button>
  </div>
  
  <!-- Campos Exclusivos de Registro (Ocultos por defecto) -->
  <div id="register-fields" class="hidden flex-col gap-5">
  <div>
- <label for="fullname" class="block text-sm font-semibold text-neutral-700 mb-2">Nombre Completo <span class="text-red-500">*</span></label>
- <input type="text" id="fullname" class="w-full px-4 py-3 bg-white border border-neutral-300 rounded-xl text-neutral-900 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all placeholder-neutral-400" placeholder="Ej: Juan Pérez">
+ <label for="fullname" class="block text-sm font-semibold text-content mb-2">Nombre Completo <span class="text-red-500">*</span></label>
+ <input type="text" id="fullname" class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted" placeholder="Ej: Juan Pérez">
  </div>
  <div>
- <label for="telefono" class="block text-sm font-semibold text-neutral-700 mb-2">Teléfono / WhatsApp <span class="text-red-500">*</span></label>
- <input type="tel" id="telefono" class="w-full px-4 py-3 bg-white border border-neutral-300 rounded-xl text-neutral-900 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all placeholder-neutral-400" placeholder="Ej: +123456789">
+ <label for="telefono" class="block text-sm font-semibold text-content mb-2">Teléfono / WhatsApp <span class="text-red-500">*</span></label>
+ <input type="tel" id="telefono" class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted" placeholder="Ej: +123456789">
  </div>
  <div>
- <label for="accesscode" class="block text-sm font-semibold text-neutral-700 mb-2">Código de Acceso del Equipo <span class="text-red-500">*</span></label>
- <input type="text" id="accesscode" class="w-full px-4 py-3 bg-white border border-neutral-300 rounded-xl text-neutral-900 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all placeholder-neutral-400 font-mono tracking-widest uppercase" placeholder="Ej: CLAVE123">
- <p class="text-[11px] text-neutral-500 mt-1.5 ml-1">Requerido para unirse a la plataforma.</p>
+ <label for="accesscode" class="block text-sm font-semibold text-content mb-2">Código de Acceso del Equipo <span class="text-red-500">*</span></label>
+ <input type="text" id="accesscode" class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted font-mono tracking-widest uppercase" placeholder="Ej: CLAVE123">
+ <p class="text-[11px] text-content-muted mt-1.5 ml-1">Requerido para unirse a la plataforma.</p>
  </div>
  <div>
- <label class="block text-sm font-semibold text-neutral-700 mb-2">Rol / Instrumento <span class="text-neutral-400 font-normal text-xs ml-1">(Puedes elegir varios)</span></label>
- <div id="register-roles-grid" class="grid grid-cols-2 gap-2 max-h-[140px] overflow-y-auto p-3 border border-neutral-300 rounded-xl bg-neutral-50 custom-scrollbar">
- <div class="col-span-2 text-center text-xs text-neutral-500 py-2 flex items-center justify-center gap-2"><div class="w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin"></div>Cargando roles...</div>
+ <label class="block text-sm font-semibold text-content mb-2">Rol / Instrumento <span class="text-content-muted font-normal text-xs ml-1">(Puedes elegir varios)</span></label>
+ <div id="register-roles-grid" class="grid grid-cols-2 gap-2 max-h-[140px] overflow-y-auto p-3 border border-border rounded-xl bg-background custom-scrollbar">
+ <div class="col-span-2 text-center text-xs text-content-muted py-2 flex items-center justify-center gap-2"><div class="w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin"></div>Cargando roles...</div>
  </div>
  </div>
  </div>
 
  <!-- Campos Comunes -->
  <div>
- <label for="email" class="block text-sm font-semibold text-neutral-700 mb-2">Correo Electrónico <span class="text-red-500">*</span></label>
- <input type="email" id="email" required class="w-full px-4 py-3 bg-white border border-neutral-300 rounded-xl text-neutral-900 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all placeholder-neutral-400 " placeholder="tu@correo.com">
+ <label for="email" class="block text-sm font-semibold text-content mb-2">Correo Electrónico <span class="text-red-500">*</span></label>
+ <input type="email" id="email" required class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted " placeholder="tu@correo.com">
  </div>
  
  <div>
- <label for="password" class="block text-sm font-semibold text-neutral-700 mb-2">Contraseña <span class="text-red-500">*</span></label>
- <input type="password" id="password" required class="w-full px-4 py-3 bg-white border border-neutral-300 rounded-xl text-neutral-900 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-all placeholder-neutral-400 " placeholder="••••••••">
- <p class="text-[11px] text-neutral-500 mt-1.5 ml-1" id="password-hint" class="hidden">Mínimo 6 caracteres.</p>
+ <label for="password" class="block text-sm font-semibold text-content mb-2">Contraseña <span class="text-red-500">*</span></label>
+ <input type="password" id="password" required class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted " placeholder="••••••••">
+ <p class="text-[11px] text-content-muted mt-1.5 ml-1" id="password-hint">Mínimo 6 caracteres.</p>
  </div>
  
  <div class="flex items-center gap-2 mt-1">
- <input type="checkbox" id="remember-me" class="w-4 h-4 text-teal-500 bg-white border-neutral-300 rounded focus:ring-teal-500 focus:ring-2 transition-colors cursor-pointer" checked>
- <label for="remember-me" class="text-sm text-neutral-600 cursor-pointer select-none">Mantener sesión iniciada</label>
+ <input type="checkbox" id="remember-me" class="w-4 h-4 text-brand bg-background border-border rounded focus:ring-brand focus:ring-2 transition-colors cursor-pointer" checked>
+ <label for="remember-me" class="text-sm text-content-muted cursor-pointer select-none">Mantener Sesión iniciada</label>
  </div>
 
  <div id="error-message" class="hidden text-red-600 text-sm font-medium bg-red-100 border border-red-300 p-3 rounded-xl text-center mt-2"></div>
  <div id="success-message" class="hidden text-teal-600 text-sm font-medium bg-teal-100 border border-teal-300 p-3 rounded-xl text-center mt-2"></div>
 
  <div class="flex flex-col gap-3 mt-2">
- <button type="submit" id="btn-submit" class="w-full py-4 bg-teal-500 hover:bg-teal-400 text-white font-black rounded-xl active:scale-95 transition-all shadow-[0_0_15px_rgba(20,184,166,0.3)]">
+ <button type="submit" id="btn-submit" class="w-full py-4 bg-teal-500 hover:bg-teal-400 text-white font-ui-strong rounded-xl active:scale-95 transition-all shadow-[0_0_15px_rgba(20,184,166,0.3)]">
  Iniciar Sesión
  </button>
  </div>
@@ -72,7 +76,7 @@ import Layout from '../layouts/Layout.astro';
  import { supabase } from '../lib/supabase';
 
  document.addEventListener('DOMContentLoaded', async () => {
-  // Removido loop infinito de auto-sincronización. El usuario debe hacer logout manual o login.
+  // Removido loop infinito de auto-sincronizaciÃ³n. El usuario debe hacer logout manual o login.
 
   const form = document.getElementById('login-form');
  const emailInput = document.getElementById('email') as HTMLInputElement;
@@ -101,8 +105,8 @@ import Layout from '../layouts/Layout.astro';
  if (error) throw error;
  if (data && registerRolesGrid) {
  registerRolesGrid.innerHTML = data.map(r => `
- <label class="flex items-center gap-2 p-2 rounded-lg border border-transparent hover:bg-white hover:border-neutral-200 transition-colors cursor-pointer text-sm text-neutral-600">
- <input type="checkbox" name="register_role" value="${r.id}" class="w-4 h-4 text-teal-500 rounded border-neutral-300 focus:ring-teal-500 cursor-pointer">
+ <label class="flex items-center gap-2 p-2 rounded-lg border border-transparent hover:bg-surface hover:border-border transition-colors cursor-pointer text-sm text-content-muted">
+ <input type="checkbox" name="register_role" value="${r.id}" class="w-4 h-4 text-brand rounded border-border focus:ring-brand cursor-pointer">
  <span class="truncate">${r.nombre}</span>
  </label>
  `).join('');
@@ -116,11 +120,11 @@ import Layout from '../layouts/Layout.astro';
  // --- Tab Switching Logic ---
  const setLoginMode = () => {
  isLoginMode = true;
- tabLogin?.classList.add('bg-white', 'text-neutral-900', 'shadow-sm');
- tabLogin?.classList.remove('text-neutral-500', 'hover:text-neutral-700');
+ tabLogin?.classList.add('bg-surface', 'text-content', 'shadow-sm');
+ tabLogin?.classList.remove('text-content-muted', 'hover:text-content');
  
- tabRegister?.classList.remove('bg-white', 'text-neutral-900', 'shadow-sm');
- tabRegister?.classList.add('text-neutral-500', 'hover:text-neutral-700');
+ tabRegister?.classList.remove('bg-surface', 'text-content', 'shadow-sm');
+ tabRegister?.classList.add('text-content-muted', 'hover:text-content');
 
  registerFields?.classList.add('hidden');
  registerFields?.classList.remove('flex');
@@ -137,11 +141,11 @@ import Layout from '../layouts/Layout.astro';
 
  const setRegisterMode = () => {
  isLoginMode = false;
- tabRegister?.classList.add('bg-white', 'text-neutral-900', 'shadow-sm');
- tabRegister?.classList.remove('text-neutral-500', 'hover:text-neutral-700');
+ tabRegister?.classList.add('bg-surface', 'text-content', 'shadow-sm');
+ tabRegister?.classList.remove('text-content-muted', 'hover:text-content');
  
- tabLogin?.classList.remove('bg-white', 'text-neutral-900', 'shadow-sm');
- tabLogin?.classList.add('text-neutral-500', 'hover:text-neutral-700');
+ tabLogin?.classList.remove('bg-surface', 'text-content', 'shadow-sm');
+ tabLogin?.classList.add('text-content-muted', 'hover:text-content');
 
  registerFields?.classList.remove('hidden');
  registerFields?.classList.add('flex');
@@ -212,18 +216,18 @@ import Layout from '../layouts/Layout.astro';
    try {
      const maxAge = 60 * 60 * 24 * 365; // 1 año
      
-     // Inyección robusta de cookies nativas para acceso del servidor (SSR)
+     // InyecciÃ³n robusta de cookies nativas para acceso del servidor (SSR)
      document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax`;
      document.cookie = `sb-refresh-token=${data.session.refresh_token}; path=/; max-age=${maxAge}; SameSite=Lax`;
      
-     // Retraso obligatorio para que el navegador guarde la cookie físicamente
+     // Retraso obligatorio para que el navegador guarde la cookie fÃ­sicamente
      setTimeout(() => {
-       window.location.href = '/programacion';
+       window.location.href = '/';
      }, 400);
 
    } catch (cookieError) {
-     console.error("[Seguridad Login] Error crítico al inyectar cookie nativa:", cookieError);
-     showError("Hubo un problema sincronizando tu sesión de forma segura. Por favor, intenta usar otro navegador o borra el historial.");
+     console.error("[Seguridad Login] Error crÃ­tico al inyectar cookie nativa:", cookieError);
+     showError("Hubo un problema sincronizando tu Sesión de forma segura. Por favor, intenta usar otro navegador o borra el historial.");
      if (btnSubmit) {
        btnSubmit.innerHTML = 'Iniciar Sesión';
        (btnSubmit as HTMLButtonElement).disabled = false;
@@ -240,7 +244,7 @@ import Layout from '../layouts/Layout.astro';
  // SECRET CODE VALIDATION
  const SECRET_CODE = 'REDIL2026';
  if (accessCode !== SECRET_CODE) {
- throw new Error("El Código de Acceso es incorrecto. Contacta a tu líder si no lo tienes.");
+  throw new Error("El Código de Acceso es incorrecto. Contacta a tu líder si no lo tienes.");
  }
 
  if (!fullName || !telefono) throw new Error("Nombre y Teléfono son obligatorios para el registro.");
@@ -260,13 +264,13 @@ import Layout from '../layouts/Layout.astro';
  });
 
  if (error) throw error;
- showSuccess('Registro exitoso. Si el sistema te lo permite, ya puedes iniciar sesión.');
+ showSuccess('Registro exitoso. Si el sistema te lo permite, ya puedes iniciar Sesión.');
  setLoginMode();
  // clear password & full name just for security
  passwordInput.value = '';
  }
  } catch(err: any) {
- showError(err.message || 'Ocurrió un error inesperado');
+  showError(err.message || 'Ocurrió un error inesperado');
  } finally {
  if(btnSubmit) {
  btnSubmit.textContent = isLoginMode ? 'Iniciar Sesión' : 'Crear Cuenta';
@@ -277,3 +281,4 @@ import Layout from '../layouts/Layout.astro';
 
  });
 </script>
+

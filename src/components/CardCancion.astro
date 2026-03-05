@@ -1,4 +1,4 @@
----
+﻿---
 interface Props {
 	titulo: string;
 	cantante: string;
@@ -33,7 +33,7 @@ if (estadoNormalized === 'nueva') {
 }
 ---
 
-<article class:list={["relative bg-white border border-neutral-200 rounded-2xl hover:border-neutral-300 transition-all duration-300 shadow-xl hover:shadow-2xl overflow-visible card-container card-cancion", { "cancion-oculta": oculta }]}
+<article class:list={["relative bg-surface border border-border rounded-2xl hover:border-border transition-all duration-300 shadow-xl hover:shadow-2xl overflow-visible card-container card-cancion", { "cancion-oculta": oculta }]}
  data-titulo={(titulo || '').toLowerCase()}
  data-cancion={titulo || ''}
  data-artista={(cantante || '').toLowerCase()}
@@ -48,31 +48,31 @@ if (estadoNormalized === 'nueva') {
  </span>
  )}
  <div class="card-header cursor-pointer relative z-10 flex flex-col pt-5 px-5 pb-5">
- <button class="btn-add-setlist absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white transition-colors" title="Añadir a Setlist" data-cancion={titulo}>
+ <button class="btn-add-setlist absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-info/10 text-info hover:bg-info hover:text-white transition-colors" title="A&ntilde;adir a Setlist" data-cancion={titulo}>
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
  </button>
  <h3 class="text-xl md:text-2xl font-bold tracking-tight mb-0.5 pr-12 transition-all card-title">{titulo}</h3>
- {cantante && <p class="text-sm font-medium text-neutral-500 mb-3 line-clamp-1 pr-12">{cantante}</p>}
+ {cantante && <p class="text-sm font-medium text-content-muted mb-3 line-clamp-1 pr-12">{cantante}</p>}
  {!cantante && <div class="mb-3"></div>}
  <div class="flex flex-wrap gap-2 text-xs card-badges transition-all">
- <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-neutral-100 border border-neutral-300 text-neutral-700 tracking-wide badge-tono cursor-pointer hover:bg-neutral-700 transition-colors" data-tono={tonalidad || ""}>
- <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5 text-neutral-500"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+ <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-background border border-border text-content tracking-wide badge-tono cursor-pointer hover:bg-border transition-colors dark:bg-surface/80 dark:border-white/60 dark:text-white" data-tono={tonalidad || ""}>
+ <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5 text-content-muted"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
  Key: {tonalidad || "-"}
  </span>
- <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-neutral-100 border border-neutral-300 text-neutral-700 tracking-wide badge-bpm cursor-pointer hover:bg-neutral-700 transition-colors" data-bpm={bpm || 0}>
- <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5 text-neutral-500"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+ <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-background border border-border text-content tracking-wide badge-bpm cursor-pointer hover:bg-border transition-colors dark:bg-surface/80 dark:border-white/60 dark:text-white" data-bpm={bpm || 0}>
+ <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5 text-content-muted"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
  {bpm || 0} BPM
- <span class="w-2 h-2 rounded-full bg-neutral-500 inline-block ml-2 metronomo-dot transition-colors"></span>
+ <span class="w-2 h-2 rounded-full bg-content-muted inline-block ml-2 metronomo-dot transition-colors"></span>
  </span>
  {voz && (
- <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-neutral-100 border border-neutral-300 text-neutral-700 tracking-wide badge-voz">
- <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5 text-neutral-500"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg>
+ <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-background border border-border text-content tracking-wide badge-voz dark:bg-surface/80 dark:border-white/60 dark:text-white">
+ <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5 text-content-muted"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg>
  {voz}
  </span>
  )}
  {categoria && (
- <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-neutral-100 border border-neutral-300 text-neutral-700 tracking-wide badge-categoria">
- <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5 text-neutral-500"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+ <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-background border border-border text-content tracking-wide badge-categoria dark:bg-surface/80 dark:border-white/60 dark:text-white">
+ <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5 text-content-muted"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
  {categoria}
  </span>
  )}
@@ -97,7 +97,7 @@ if (estadoNormalized === 'nueva') {
  {linkYoutube.trim() !== '' && (
  <a href={linkYoutube} 
  target="_blank" rel="noopener noreferrer"
- class="flex items-center justify-center py-2.5 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 hover:text-red-400 transition-colors font-bold text-sm tracking-wide">
+ class="flex items-center justify-center py-2.5 rounded-xl bg-danger/10 text-danger hover:bg-danger/20 hover:text-danger transition-colors font-bold text-sm tracking-wide">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" class="mr-2"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path><polygon fill="white" stroke="none" points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon></svg>
  YouTube
  </a>
@@ -106,7 +106,7 @@ if (estadoNormalized === 'nueva') {
  {linkLetra.trim() !== '' && (
  <a href={linkLetra} 
  target="_blank" rel="noopener noreferrer"
- class="flex items-center justify-center py-2.5 rounded-xl bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 hover:text-blue-300 transition-colors font-bold text-sm tracking-wide">
+ class="flex items-center justify-center py-2.5 rounded-xl bg-info/10 text-info hover:bg-info/20 hover:text-info transition-colors font-bold text-sm tracking-wide">
  Letra
  </a>
  )}
@@ -114,7 +114,7 @@ if (estadoNormalized === 'nueva') {
  {linkAcordes.trim() !== '' && (
  <a href={linkAcordes} 
  target="_blank" rel="noopener noreferrer"
- class="flex items-center justify-center py-2.5 rounded-xl bg-green-500/10 text-green-400 hover:bg-green-500/20 hover:text-green-300 transition-colors font-bold text-sm tracking-wide">
+ class="flex items-center justify-center py-2.5 rounded-xl bg-success/10 text-success hover:bg-success/20 hover:text-success transition-colors font-bold text-sm tracking-wide">
  Acordes
  </a>
  )}
@@ -122,7 +122,7 @@ if (estadoNormalized === 'nueva') {
  {linkVoces.trim() !== '' && (
  <a href={linkVoces} 
  target="_blank" rel="noopener noreferrer"
- class="flex items-center justify-center py-2.5 rounded-xl bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 hover:text-orange-300 transition-colors font-bold text-sm tracking-wide">
+ class="flex items-center justify-center py-2.5 rounded-xl bg-warning/10 text-warning hover:bg-warning/20 hover:text-warning transition-colors font-bold text-sm tracking-wide">
  Voces
  </a>
  )}
@@ -130,7 +130,7 @@ if (estadoNormalized === 'nueva') {
  {linkSecuencias.trim() !== '' && (
  <a href={linkSecuencias} 
  target="_blank" rel="noopener noreferrer"
- class="flex items-center justify-center py-2.5 rounded-xl bg-pink-500/10 text-pink-400 hover:bg-pink-500/20 hover:text-pink-300 transition-colors font-bold text-sm tracking-wide">
+ class="flex items-center justify-center py-2.5 rounded-xl bg-accent/10 text-accent hover:bg-accent/20 hover:text-accent transition-colors font-bold text-sm tracking-wide">
  Secuencia
  </a>
  )}
@@ -138,3 +138,5 @@ if (estadoNormalized === 'nueva') {
  </div>
  </div>
 </article>
+
+

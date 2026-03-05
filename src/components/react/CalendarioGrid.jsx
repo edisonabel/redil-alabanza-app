@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 
 /**
  * CalendarioGrid (React Phase 2)
  * Renderizador maestro del motor de Eventos (Tarjetas, Listas y Calendarios).
- * Reemplaza más de 1000 líneas de Vanilla JS en programacion.astro
+ * Reemplaza mÃ¡s de 1000 lÃ­neas de Vanilla JS en programacion.astro
  */
 export default function CalendarioGrid({ initialEvents, sessionUser, initialRoles, ssrError, isAdmin }) {
     // --- ESTADOS REACTIVOS PRINCIPALES ---
@@ -18,7 +18,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
     const [deleteConfirmTarget, setDeleteConfirmTarget] = useState(null);
     const [isDeleting, setIsDeleting] = useState(false);
 
-    // --- INICIALIZACIÓN Y MERGE POR FECHA (TIMEZONE SAFE) ---
+    // --- INICIALIZACIÃ“N Y MERGE POR FECHA (TIMEZONE SAFE) ---
     // Helper estricto de Strings para evitar offsets de zona horaria del cliente
     const getPaddedDateKey = (dateInput) => {
         if (!dateInput) return null;
@@ -39,7 +39,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
         return null;
     };
 
-    // --- DERIVACIÓN PURA (1:1 DB MAP) ---
+    // --- DERIVACIÃ“N PURA (1:1 DB MAP) ---
     // Al dejar de crear "Virtuales" domingos, cualquier borrado se refleja como inexistente en la UI.
     const tarjetasGeneradas = useMemo(() => {
         return [...eventos]
@@ -77,7 +77,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
             const isN2 = ['encargado_letras'].includes(rolMatch.codigo);
             const isVoz = ['voz_soprano', 'voz_tenor'].includes(rolMatch.codigo);
 
-            const bgColor = isN1 ? 'bg-violet-500' : (isN2 ? 'bg-amber-500' : 'bg-teal-500');
+            const bgColor = isN1 ? 'bg-rol-dir' : (isN2 ? 'bg-rol-let' : 'bg-rol-ban');
 
             // Map standard badges / icons 
             let badgeSvg = '';
@@ -90,25 +90,25 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
             else if (rolMatch.codigo === 'bajo') badgeSvg = <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>;
 
             const iniciales = names.length > 1 ? `${names[0].charAt(0)}${names[1].charAt(0)}` : names[0].charAt(0);
-            const colorSeccion = isN1 ? 'bg-violet-500' : (isN2 ? 'bg-amber-500' : (isVoz ? 'bg-purple-500' : 'bg-teal-500'));
+            const colorSeccion = isN1 ? 'bg-rol-dir' : (isN2 ? 'bg-rol-let' : (isVoz ? 'bg-rol-voc' : 'bg-rol-ban'));
 
             const itemNode = (
-                <div key={asig.id || `${asig.rol_id}-${asig.perfiles?.id || Math.random()}`} className="flex flex-col items-center gap-1.5 group relative cursor-pointer hover:bg-neutral-200/50 rounded-xl p-2 -m-2 transition-colors" title={`${asig.perfiles.nombre} (${rolMatch.nombre})`}>
+                <div key={asig.id || `${asig.rol_id}-${asig.perfiles?.id || Math.random()}`} className="flex flex-col items-center gap-1.5 group relative cursor-pointer hover:bg-neutral/20 rounded-xl p-2 -m-2 transition-colors" title={`${asig.perfiles.nombre} (${rolMatch.nombre})`}>
                     <div className="relative">
                         {asig.perfiles.avatar_url ? (
-                            <img src={asig.perfiles.avatar_url} alt={asig.perfiles.nombre} className="w-[42px] h-[42px] sm:w-[46px] sm:h-[46px] shrink-0 rounded-full object-cover shadow-sm border border-neutral-200" />
+                            <img src={asig.perfiles.avatar_url} alt={asig.perfiles.nombre} className="w-[42px] h-[42px] sm:w-[46px] sm:h-[46px] shrink-0 rounded-full object-cover shadow-sm border border-border" />
                         ) : (
                             <div className={`w-[42px] h-[42px] sm:w-[46px] sm:h-[46px] shrink-0 rounded-full text-white flex items-center justify-center font-bold text-sm shadow-sm ${colorSeccion}`}>
                                 {iniciales.toUpperCase()}
                             </div>
                         )}
                         {badgeSvg && (
-                            <div className="absolute -top-1.5 -right-1.5 w-[22px] h-[22px] bg-white rounded-full flex items-center justify-center shadow-sm border border-neutral-200 text-neutral-500 z-10 transition-transform group-hover:scale-110">
+                            <div className="absolute -top-1.5 -right-1.5 w-[22px] h-[22px] bg-surface rounded-full flex items-center justify-center shadow-sm border border-border text-content-muted z-10 transition-transform group-hover:scale-110">
                                 {badgeSvg}
                             </div>
                         )}
                     </div>
-                    <span className="text-[11px] font-semibold text-neutral-800 capitalize max-w-[60px] truncate text-center leading-none tracking-tight">{displayName}</span>
+                    <span className="text-[11px] font-semibold text-content capitalize max-w-[60px] truncate text-center leading-none tracking-tight">{displayName}</span>
                 </div>
             );
 
@@ -119,44 +119,44 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
         });
 
         return (
-            <div className="bg-neutral-50 rounded-2xl p-4 border border-neutral-100 flex flex-col gap-4">
+            <div className="bg-border/45 rounded-2xl p-4 border border-border/80 flex flex-col gap-4">
                 <div className="grid grid-cols-2 gap-4">
                     <div className="flex flex-col">
                         <div className="flex items-center justify-between mb-2 w-full">
-                            <span className="text-[10px] font-bold text-violet-600 uppercase tracking-widest leading-none mt-0.5">Dirección</span>
-                            <div className="h-px flex-1 bg-violet-200/80 ml-3"></div>
+                            <span className="text-[10px] font-bold text-rol-dir uppercase tracking-widest leading-none mt-0.5">Dirección</span>
+                            <div className="h-px flex-1 bg-rol-dir/10 ml-3"></div>
                         </div>
-                        <div className="flex flex-wrap gap-3">{direccion.length > 0 ? direccion : <span className="text-xs text-neutral-300 font-medium">Vacío</span>}</div>
+                        <div className="flex flex-wrap gap-3">{direccion.length > 0 ? direccion : <span className="text-xs text-content-muted font-medium">Vacío</span>}</div>
                     </div>
                     <div className="flex flex-col">
                         <div className="flex items-center justify-between mb-2 w-full">
-                            <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest leading-none mt-0.5">Letras</span>
-                            <div className="h-px flex-1 bg-amber-200/80 ml-3"></div>
+                            <span className="text-[10px] font-bold text-rol-let uppercase tracking-widest leading-none mt-0.5">Letras</span>
+                            <div className="h-px flex-1 bg-rol-let/10 ml-3"></div>
                         </div>
-                        <div className="flex flex-wrap gap-3">{letras.length > 0 ? letras : <span className="text-xs text-neutral-300 font-medium">Vacío</span>}</div>
+                        <div className="flex flex-wrap gap-3">{letras.length > 0 ? letras : <span className="text-xs text-content-muted font-medium">Vacío</span>}</div>
                     </div>
                 </div>
 
                 <div>
                     <div className="flex items-center justify-between mb-2 w-full">
-                        <span className="text-[10px] font-bold text-teal-600 uppercase tracking-widest leading-none mt-0.5">Banda</span>
-                        <div className="h-px flex-1 bg-teal-200/80 ml-3"></div>
+                        <span className="text-[10px] font-bold text-rol-ban uppercase tracking-widest leading-none mt-0.5">Banda</span>
+                        <div className="h-px flex-1 bg-rol-ban/10 ml-3"></div>
                     </div>
-                    <div className="flex flex-wrap gap-3">{banda.length > 0 ? banda : <span className="text-xs text-neutral-300 font-medium">Vacío</span>}</div>
+                    <div className="flex flex-wrap gap-3">{banda.length > 0 ? banda : <span className="text-xs text-content-muted font-medium">Vacío</span>}</div>
                 </div>
 
                 <div>
                     <div className="flex items-center justify-between mb-2 w-full">
-                        <span className="text-[10px] font-bold text-purple-600 uppercase tracking-widest leading-none mt-0.5">Voces</span>
-                        <div className="h-px flex-1 bg-purple-200/80 ml-3"></div>
+                        <span className="text-[10px] font-bold text-rol-voc uppercase tracking-widest leading-none mt-0.5">Voces</span>
+                        <div className="h-px flex-1 bg-rol-voc/10 ml-3"></div>
                     </div>
-                    <div className="flex flex-wrap gap-3">{voces.length > 0 ? voces : <span className="text-xs text-neutral-300 font-medium">Vacío</span>}</div>
+                    <div className="flex flex-wrap gap-3">{voces.length > 0 ? voces : <span className="text-xs text-content-muted font-medium">Vacío</span>}</div>
                 </div>
             </div>
         );
     };
 
-    // La función renderSetlist fue removida a petición del Arquitecto (reservada para la vista "Ver Más").
+    // La funciÃ³n renderSetlist fue removida a peticiÃ³n del Arquitecto (reservada para la vista "VER MAS").
 
     const handleDeleteEventClick = (e, evId, isVirtual) => {
         e.stopPropagation();
@@ -214,13 +214,13 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
 
         const canManage = isAdmin || isModerator;
 
-        const listHighlightClass = isUsuarioAsignado ? 'border-teal-300 bg-[#f4faf9] ' : 'border-neutral-200 bg-white hover:bg-neutral-50 border-solid';
+        const listHighlightClass = isUsuarioAsignado ? 'border-brand/30 bg-brand/10' : 'border-border bg-surface hover:bg-background border-solid';
 
         let miRolBadge = null;
         if (miAsignacion) {
             const rolText = dictRoles.find((r) => r.id === miAsignacion.rol_id)?.nombre || 'Banda';
             miRolBadge = (
-                <span className="inline-flex items-center gap-1.5 md:gap-2 bg-teal-50 md:bg-white text-teal-700 md:text-teal-600 border border-teal-200 md:border-teal-200/80 md:px-5 md:py-1.5 text-[10px] md:text-xs font-bold px-2.5 py-1 rounded-md md:rounded-[10px] uppercase tracking-wider max-w-[50vw] sm:max-w-none shadow-sm" title={`Tú: ${rolText}`}>
+                <span className="inline-flex items-center gap-1.5 md:gap-2 bg-brand/10 md:bg-surface text-brand md:text-brand border border-brand/30 md:border-brand/30 md:px-5 md:py-1.5 text-[10px] md:text-xs font-bold px-2.5 py-1 rounded-md md:rounded-[10px] uppercase tracking-wider max-w-[50vw] sm:max-w-none shadow-sm" title={`Tú: ${rolText}`}>
                     <strong className="font-extrabold flex items-center">TÚ:</strong>
                     <span className="truncate">{rolText}</span>
                 </span>
@@ -228,13 +228,13 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
         }
 
         let dirListStr = (
-            <span className="inline-flex items-center md:bg-white text-neutral-500 text-[10px] md:text-xs font-bold px-2.5 md:px-5 md:py-1.5 py-1 rounded-md md:rounded-[10px] border border-neutral-200 md:border-neutral-200/80 bg-neutral-50 uppercase tracking-wider italic shadow-sm">Dirección vacía</span>
+            <span className="inline-flex items-center md:bg-surface text-content-muted text-[10px] md:text-xs font-bold px-2.5 md:px-5 md:py-1.5 py-1 rounded-md md:rounded-[10px] border border-border md:border-border/80 bg-background uppercase tracking-wider italic shadow-sm">Dirección vacía</span>
         );
         const asignadoLider = rosterDb.find((r) => dictRoles.find((ro) => ro.id === r.rol_id && ro.codigo === 'lider_alabanza'));
         if (asignadoLider && asignadoLider.perfiles) {
             const shortName = asignadoLider.perfiles.nombre.split(' ')[0];
             dirListStr = (
-                <span className="inline-flex items-center gap-1.5 md:gap-2 bg-violet-50 md:bg-white text-violet-700 md:text-violet-600 border border-violet-200 md:border-violet-200/80 md:px-5 md:py-1.5 text-[10px] md:text-xs font-bold px-2.5 py-1 rounded-md md:rounded-[10px] uppercase tracking-wider max-w-[50vw] sm:max-w-none shadow-sm" title={`Dirige: ${shortName}`}>
+                <span className="inline-flex items-center gap-1.5 md:gap-2 bg-rol-dir/10 md:bg-surface text-rol-dir md:text-rol-dir border border-rol-dir md:border-rol-dir md:px-5 md:py-1.5 text-[10px] md:text-xs font-bold px-2.5 py-1 rounded-md md:rounded-[10px] uppercase tracking-wider max-w-[50vw] sm:max-w-none shadow-sm" title={`Dirige: ${shortName}`}>
                     <strong className="font-extrabold flex items-center">DIRIGE:</strong>
                     <span className="truncate">{shortName}</span>
                 </span>
@@ -272,21 +272,21 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                 )}
 
                 {isUsuarioAsignado && (
-                    <div className="w-3 md:w-3.5 h-3 md:h-3.5 rounded-full bg-teal-500 shadow-[0_0_8px_rgba(20,184,166,0.6)] absolute -left-1.5 md:-left-[7px] top-1/2 -translate-y-1/2"></div>
+                    <div className="w-3 md:w-3.5 h-3 md:h-3.5 rounded-full bg-brand shadow-[0_0_8px_rgba(20,184,166,0.6)] absolute -left-1.5 md:-left-[7px] top-1/2 -translate-y-1/2"></div>
                 )}
 
                 <div className="flex items-center gap-5 md:gap-10 min-w-0 flex-1">
-                    <div className="flex flex-col items-center justify-center shrink-0 w-16 md:w-auto px-3 py-2 md:p-0 bg-neutral-100 md:bg-transparent rounded-xl md:rounded-none border border-neutral-200/50 md:border-transparent">
-                        <span className="text-2xl md:text-[32px] font-black md:font-extrabold text-neutral-900 leading-none tracking-tight">{diaStr}</span>
-                        <span className="text-[10px] md:text-xs font-bold md:font-semibold text-neutral-500 md:text-neutral-400/80 uppercase tracking-widest mt-0.5 md:mt-1">{mesStr}</span>
+                    <div className="flex flex-col items-center justify-center shrink-0 w-16 md:w-auto px-3 py-2 md:p-0 bg-background md:bg-transparent rounded-xl md:rounded-none border border-border/50 md:border-transparent">
+                        <span className="text-2xl md:text-[32px] font-black md:font-extrabold text-content leading-none tracking-tight">{diaStr}</span>
+                        <span className="text-[10px] md:text-xs font-bold md:font-semibold text-content-muted md:text-content-muted/80 uppercase tracking-widest mt-0.5 md:mt-1">{mesStr}</span>
                     </div>
 
                     <div className="min-w-0 flex flex-col justify-center">
                         <div className="flex items-start md:items-center justify-between gap-2 md:gap-3 md:mb-1">
-                            <h4 className={`font-bold text-lg md:text-[22px] md:tracking-tight leading-tight flex-1 ${isSuspended ? 'text-neutral-500 line-through' : 'text-neutral-900'}`}>{tema !== 'Sin tema asignado' ? tema : titulo}</h4>
+                            <h4 className={`font-bold text-lg md:text-[22px] md:tracking-tight leading-tight flex-1 ${isSuspended ? 'text-content-muted line-through' : 'text-content'}`}>{tema !== 'Sin tema asignado' ? tema : titulo}</h4>
                             {canManage && (
                                 <button
-                                    className="ml-auto shrink-0 p-1.5 md:p-2 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100/80 md:bg-transparent rounded-lg transition-colors"
+                                    className="ml-auto shrink-0 p-1.5 md:p-2 text-content-muted hover:text-content hover:bg-background/80 dark:text-white/80 dark:hover:text-white dark:hover:bg-white/10 md:bg-transparent rounded-lg transition-colors"
                                     title="Gestionar Evento"
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -308,7 +308,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                                 </button>
                             )}
                         </div>
-                        <p className="text-xs md:text-sm text-neutral-500 md:text-neutral-400 flex items-center gap-2 mt-1 md:mt-0 md:font-medium">
+                        <p className="text-xs md:text-sm text-content-muted md:text-content-muted flex items-center gap-2 mt-1 md:mt-0 md:font-medium">
                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" className="opacity-70 md:w-3.5 md:h-3.5" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
                             {timeString}
                             {isSuspended && <span className="ml-2 text-red-500 font-bold uppercase md:tracking-widest md:text-[10px]">SUSPENDIDO</span>}
@@ -316,7 +316,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2 md:gap-4 flex-wrap border-t md:border-t-0 md:border-l border-neutral-200/80 pt-2 md:pt-0 md:pl-6 shrink-0 md:ml-4">
+                <div className="flex items-center gap-2 md:gap-4 flex-wrap border-t md:border-t-0 md:border-l border-border/80 pt-2 md:pt-0 md:pl-6 shrink-0 md:ml-4">
                     {dirListStr}
                     {miRolBadge}
                 </div>
@@ -334,16 +334,16 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
         const fechaObj = cardData.fecha;
         const diaStr = fechaObj.getDate().toString();
         const mesStr = fechaObj.toLocaleString('es-ES', { month: 'short' }).toLowerCase();
-        const añoStr = fechaObj.getFullYear().toString();
+        const anioStr = fechaObj.getFullYear().toString();
         const diaSemana = fechaObj.toLocaleString('es-ES', { weekday: 'long' }).toUpperCase();
 
         const horaInicio = fechaObj.toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit' });
         const timeString = cardData.dbData?.hora_fin ? `${horaInicio} - ${cardData.dbData.hora_fin.substring(0, 5)}` : horaInicio;
 
-        // Cascarón Suspendido (JSX puro)
+        // CascarÃ³n Suspendido (JSX puro)
         if (isSuspended) {
             return (
-                <div key={cardData.id} className="agenda-card w-[85vw] sm:w-[380px] shrink-0 snap-center md:snap-align-none relative transition-all duration-700 bg-neutral-100 border border-red-500/30 rounded-[2rem] p-8 opacity-70">
+                <div key={cardData.id} className="agenda-card w-[85vw] sm:w-[380px] shrink-0 snap-center md:snap-align-none relative transition-all duration-700 bg-background border border-red-500/30 rounded-[2rem] p-8 opacity-70">
                     <div className="flex items-start justify-between mb-6">
                         <span className="px-3 py-1 bg-red-500/10 text-red-600 text-xs font-bold rounded-full border border-red-500/20">
                             {fechaObj.toLocaleString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
@@ -352,13 +352,13 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                             SUSPENDIDO
                         </span>
                     </div>
-                    <h3 className="text-xl font-bold text-neutral-500 mb-4 line-through">{tema !== 'Sin tema asignado' ? tema : titulo}</h3>
+                    <h3 className="text-xl font-bold text-content-muted mb-4 line-through">{tema !== 'Sin tema asignado' ? tema : titulo}</h3>
                 </div>
             );
         }
 
         return (
-            <div key={cardData.id} className="agenda-card w-[85vw] sm:w-[340px] shrink-0 snap-center group relative bg-white rounded-[2rem] shadow-sm hover:shadow-lg transition-shadow duration-300 border border-neutral-200 p-5 flex flex-col">
+            <div key={cardData.id} className="agenda-card w-[85vw] sm:w-[340px] shrink-0 snap-center group relative bg-surface rounded-[2rem] shadow-sm hover:shadow-lg transition-shadow duration-300 border border-border p-5 flex flex-col">
 
                 {/* --- BOTON ELIMINAR --- */}
                 {isAdmin && !cardData.isVirtual && (
@@ -378,30 +378,30 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
 
                 {/* HEADER ROW 1 */}
                 <div className="flex justify-between items-start mb-2 relative z-20">
-                    <div className="flex items-baseline gap-1 text-gray-900">
+                    <div className="flex items-baseline gap-1 text-content">
                         <span className="text-[2.75rem] font-normal tracking-tighter leading-none">{diaStr}</span>
                         <span className="text-3xl font-light tracking-tight leading-none ml-0.5">{mesStr}</span>
-                        <span className="text-xs font-bold text-neutral-500 ml-1 pb-1">{añoStr}</span>
+                        <span className="text-xs font-bold text-content-muted ml-1 pb-1">{anioStr}</span>
                     </div>
-                    <span className="px-3 py-1 bg-neutral-50 text-neutral-600 text-[10px] font-bold rounded-lg border border-neutral-200 uppercase tracking-widest">{estado}</span>
+                    <span className="px-3 py-1 bg-background text-content-muted text-[10px] font-bold rounded-lg border border-border uppercase tracking-widest">{estado}</span>
                 </div>
 
                 {/* HEADER ROW 2 */}
                 <div className="flex items-center gap-3 mb-3 relative z-20">
-                    <span className="px-2.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-200/60 rounded-md text-[10px] font-bold uppercase tracking-widest leading-relaxed">{diaSemana}</span>
-                    <span className="text-sm font-medium text-neutral-500">{timeString}</span>
+                    <span className="px-2.5 py-0.5 bg-info/10 text-info border border-info/30 rounded-md text-[10px] font-bold uppercase tracking-widest leading-relaxed">{diaSemana}</span>
+                    <span className="text-sm font-medium text-content-muted">{timeString}</span>
                 </div>
 
-                {/* TEMA PREDICACIÓN (GIGANTE) */}
-                <h1 className="text-[22px] font-bold text-gray-900 tracking-tight leading-tight mb-4 relative z-20">
+                {/* TEMA PREDICACIÃ“N (GIGANTE) */}
+                <h1 className="text-[22px] font-bold text-content tracking-tight leading-tight mb-4 relative z-20">
                     {tema}
                 </h1>
 
-                {/* ROSTER ESTÁTICO PHASE 2 */}
+                {/* ROSTER ESTÃTICO PHASE 2 */}
                 {renderRoster(cardData.dbData)}
 
                 {/* BOTONES INFERIORES */}
-                <div className="grid grid-cols-2 gap-3 border-t border-neutral-200 mt-auto pt-4 -mx-5 px-5 pb-0 relative z-20">
+                <div className="grid grid-cols-2 gap-3 border-t border-border mt-auto pt-4 -mx-5 px-5 pb-0 relative z-20">
                     <button
                         onClick={() => {
                             if (window.toggleModalGlobal) {
@@ -418,7 +418,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                                 });
                             }
                         }}
-                        className="btn-gestionar-modal flex items-center justify-center gap-2 py-2.5 bg-neutral-100/80 text-neutral-700 hover:bg-neutral-200 rounded-xl transition-colors font-bold text-xs tracking-wide border border-transparent"
+                        className="btn-gestionar-modal flex items-center justify-center gap-2 py-2.5 bg-surface text-content hover:bg-background rounded-xl transition-colors font-bold text-xs tracking-wide border border-border dark:bg-white dark:text-zinc-900 dark:border-white/90 dark:hover:bg-zinc-100"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-60"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
                         GESTIONAR
@@ -439,7 +439,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                                 alert("Guarda / GESTIONA este evento virtual primero.");
                             }
                         }}
-                        className="btn-expandir-detalle flex items-center justify-center gap-2 py-2.5 bg-white border border-neutral-200 text-neutral-700 hover:bg-neutral-50 rounded-xl transition-colors font-bold text-xs tracking-wide shadow-sm"
+                        className="btn-expandir-detalle flex items-center justify-center gap-2 py-2.5 bg-surface border border-border text-content hover:bg-background rounded-xl transition-colors font-bold text-xs tracking-wide shadow-sm dark:bg-transparent dark:border-white/80 dark:text-white dark:hover:bg-white/10"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-60"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
                         VER MÁS
@@ -451,7 +451,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
 
     // --- RENDERIZADO PRINCIPAL ---
 
-    // 1. Agrupación por Meses (Lógica Reactiva)
+    // 1. AgrupaciÃ³n por Meses (LÃ³gica Reactiva)
     const groupedMonths = [];
     let currentMonthName = '';
 
@@ -514,24 +514,24 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
         return (
             <div className="w-full hidden md:flex flex-col animate-in fade-in duration-300">
                 <div className="flex items-center justify-between mb-4 px-2">
-                    <h2 className="text-2xl font-bold text-neutral-900 capitalize">{monthYearLabel}</h2>
-                    <div className="flex items-center gap-1 bg-white border border-neutral-200 rounded-xl p-1 shadow-sm">
-                        <button onClick={goToToday} className="px-4 py-1.5 text-sm font-bold text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors">Hoy</button>
-                        <div className="w-px h-4 bg-neutral-200 mx-1"></div>
-                        <button onClick={goToPrevMonth} className="p-1.5 text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors">
+                    <h2 className="text-2xl font-bold text-content capitalize">{monthYearLabel}</h2>
+                    <div className="flex items-center gap-1 bg-surface border border-border rounded-xl p-1 shadow-sm">
+                        <button onClick={goToToday} className="px-4 py-1.5 text-sm font-bold text-content-muted hover:text-content hover:bg-background rounded-lg transition-colors">Hoy</button>
+                        <div className="w-px h-4 bg-neutral/20 mx-1"></div>
+                        <button onClick={goToPrevMonth} className="p-1.5 text-content-muted hover:text-content hover:bg-background rounded-lg transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
                         </button>
-                        <button onClick={goToNextMonth} className="p-1.5 text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors">
+                        <button onClick={goToNextMonth} className="p-1.5 text-content-muted hover:text-content hover:bg-background rounded-lg transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
                         </button>
                     </div>
                 </div>
 
-                <div className="rounded-2xl border border-neutral-200 overflow-hidden bg-white shadow-sm ring-1 ring-neutral-900/5">
+                <div className="rounded-2xl border border-border overflow-hidden bg-surface shadow-sm ring-1 ring-neutral-900/5">
                     {/* Header Dias */}
-                    <div className="grid grid-cols-7 border-b border-neutral-200 bg-neutral-50/50">
+                    <div className="grid grid-cols-7 border-b border-border bg-background/50">
                         {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(dia => (
-                            <div key={dia} className="py-3 px-3 text-center text-[11px] font-bold text-neutral-500 uppercase tracking-widest">{dia}</div>
+                            <div key={dia} className="py-3 px-3 text-center text-[11px] font-bold text-content-muted uppercase tracking-widest">{dia}</div>
                         ))}
                     </div>
 
@@ -543,7 +543,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                             const dayKey = getPaddedDateKey(cell.date);
 
                             // 1. Agregar todos los eventos reales documentados en base de datos.
-                            // Iteramos 'eventos' para no perder citas de Miércoles u otros días.
+                            // Iteramos 'eventos' para no perder citas de MiÃ©rcoles u otros dÃ­as.
                             eventos.forEach(ev => {
                                 if (ev.fecha_hora && getPaddedDateKey(new Date(ev.fecha_hora)) === dayKey) {
                                     dayEvents.push({
@@ -555,21 +555,21 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                                 }
                             });
 
-                            // 2. Agregar SOLO los eventos virtuales generados dinámicamente.
-                            // Ignoramos los tc reales de tarjetasGeneradas porque ya los añadimos arriba.
+                            // 2. Agregar SOLO los eventos virtuales generados dinÃ¡micamente.
+                            // Ignoramos los tc reales de tarjetasGeneradas porque ya los aÃ±adimos arriba.
                             tarjetasGeneradas.forEach(tc => {
                                 if (tc.isVirtual && getPaddedDateKey(tc.fecha) === dayKey) {
                                     dayEvents.push(tc);
                                 }
                             });
 
-                            // Ordenar cronológicamente ascendente
+                            // Ordenar cronolÃ³gicamente ascendente
                             dayEvents.sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
 
                             return (
-                                <div key={idx} className={`min-h-[140px] border-r border-b border-neutral-100 p-2 lg:p-3 relative group transition-colors ${cell.isCurrentMonth ? 'bg-white hover:bg-neutral-50/30' : 'bg-neutral-50/80'}`}>
+                                <div key={idx} className={`min-h-[140px] border-r border-b border-border p-2 lg:p-3 relative group transition-colors ${cell.isCurrentMonth ? 'bg-surface hover:bg-background/30' : 'bg-background/80'}`}>
                                     <div className="flex justify-between items-start mb-2">
-                                        <span className={`w-8 h-8 flex items-center justify-center rounded-full text-sm font-bold ${isToday(cell.date) ? 'bg-red-500 text-white shadow-md' : (cell.isCurrentMonth ? 'text-neutral-700' : 'text-neutral-400')}`}>
+                                        <span className={`w-8 h-8 flex items-center justify-center rounded-full text-sm font-bold ${isToday(cell.date) ? 'bg-red-500 text-white shadow-md' : (cell.isCurrentMonth ? 'text-neutral-700' : 'text-content-muted')}`}>
                                             {cell.date.getDate()}
                                         </span>
                                     </div>
@@ -592,8 +592,8 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                                             const finalTitleDisplay = ev.isVirtual ? 'Actividad Redil' : (tema_predicacion !== tituloBase ? tema_predicacion : tituloBase);
 
                                             return (
-                                                <button key={i} onClick={clickHandler} title={finalTitleDisplay} className={`text-left text-xs px-2 py-1.5 rounded-lg font-medium tracking-tight truncate w-full flex items-center gap-1.5 transition-colors ${ev.isVirtual ? 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200' : 'bg-teal-50 text-teal-700 hover:bg-teal-100/80 cursor-pointer pointer-events-auto shadow-sm border border-teal-100/50'}`}>
-                                                    <div className={`w-2 h-2 rounded-full shrink-0 ${ev.isVirtual ? 'bg-neutral-300' : 'bg-teal-500'}`}></div>
+                                                <button key={i} onClick={clickHandler} title={finalTitleDisplay} className={`text-left text-xs px-2 py-1.5 rounded-lg font-medium tracking-tight truncate w-full flex items-center gap-1.5 transition-colors ${ev.isVirtual ? 'bg-background text-content-muted hover:bg-neutral/20' : 'bg-brand/10 text-brand hover:bg-brand/20 cursor-pointer pointer-events-auto shadow-sm border border-brand/20'}`}>
+                                                    <div className={`w-2 h-2 rounded-full shrink-0 ${ev.isVirtual ? 'bg-neutral-300' : 'bg-brand'}`}></div>
                                                     <span className="font-bold opacity-70">{timeStr}</span>
                                                     <span className="truncate">{finalTitleDisplay}</span>
                                                 </button>
@@ -627,24 +627,24 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
 
             {/* HEADER DE GRID / CONTROLES DE VISTA AQUI (Migrado desde programacion.astro HTML) */}
             <div className="flex items-center justify-center md:justify-end gap-2 mb-4 md:mb-6 mt-1 md:mt-2 w-full">
-                <div className="flex bg-neutral-100 p-1 rounded-2xl border border-neutral-200/60 shadow-inner">
+                <div className="flex bg-background p-1 rounded-2xl border border-border/60 shadow-inner">
                     <button
                         onClick={() => setViewMode('tarjeta')}
-                        className={`flex items-center justify-center px-4 py-2 ${viewMode === 'tarjeta' ? 'bg-white text-orange-500 shadow-sm border border-neutral-200/50' : 'bg-transparent text-neutral-500 border border-transparent hover:text-neutral-700'} text-xs sm:text-sm font-bold rounded-xl transition-all`}
+                        className={`flex items-center justify-center px-4 py-2 ${viewMode === 'tarjeta' ? 'bg-surface text-orange-500 shadow-sm border border-border/50' : 'bg-transparent text-content-muted border border-transparent hover:text-neutral-700'} text-xs sm:text-sm font-bold rounded-xl transition-all`}
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" className="inline-block mr-1.5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><line x1="3" y1="9" x2="21" y2="9" /><line x1="9" y1="21" x2="9" y2="9" /></svg>
                         Tarjeta
                     </button>
                     <button
                         onClick={() => setViewMode('lista')}
-                        className={`flex items-center justify-center px-4 py-2 ${viewMode === 'lista' ? 'bg-white text-orange-500 shadow-sm border border-neutral-200/50' : 'bg-transparent text-neutral-500 border border-transparent hover:text-neutral-700'} text-xs sm:text-sm font-bold rounded-xl transition-all`}
+                        className={`flex items-center justify-center px-4 py-2 ${viewMode === 'lista' ? 'bg-surface text-orange-500 shadow-sm border border-border/50' : 'bg-transparent text-content-muted border border-transparent hover:text-neutral-700'} text-xs sm:text-sm font-bold rounded-xl transition-all`}
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" className="inline-block mr-1.5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
                         Lista
                     </button>
                     <button
                         onClick={() => setViewMode('calendario')}
-                        className={`hidden md:flex items-center justify-center px-4 py-2 ${viewMode === 'calendario' ? 'bg-white text-orange-500 shadow-sm border border-neutral-200/50' : 'bg-transparent text-neutral-500 border border-transparent hover:text-neutral-700'} text-xs sm:text-sm font-bold rounded-xl transition-all`}
+                        className={`hidden md:flex items-center justify-center px-4 py-2 ${viewMode === 'calendario' ? 'bg-surface text-orange-500 shadow-sm border border-border/50' : 'bg-transparent text-content-muted border border-transparent hover:text-neutral-700'} text-xs sm:text-sm font-bold rounded-xl transition-all`}
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" className="inline-block mr-1.5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2" /><line x1="16" x2="16" y1="2" y2="6" /><line x1="8" x2="8" y1="2" y2="6" /><line x1="3" x2="21" y1="10" y2="10" /><path d="M8 14h.01" /><path d="M12 14h.01" /><path d="M16 14h.01" /><path d="M8 18h.01" /><path d="M12 18h.01" /><path d="M16 18h.01" /></svg>
                         Calendario
@@ -654,10 +654,10 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
 
             {/* MAIN CONTENT AREA */}
             {eventos.length === 0 ? (
-                <div id="empty-state" className="flex flex-col items-center justify-center py-20 bg-neutral-100 border border-neutral-300 rounded-3xl w-full max-w-7xl mx-auto my-10 shadow-inner">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" className="text-neutral-500 mb-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2v4" /><path d="M16 2v4" /><rect width="18" height="18" x="3" y="4" rx="2" /><path d="M3 10h18" /><path d="M10 16h4" /><path d="M12 14v4" /></svg>
-                    <h3 className="text-2xl font-bold text-neutral-900 mb-2">No hay programaciones</h3>
-                    <p className="text-neutral-500 text-center max-w-sm">No se encontraron registros activos en la base de datos.</p>
+                <div id="empty-state" className="flex flex-col items-center justify-center py-20 bg-background border border-border rounded-3xl w-full max-w-7xl mx-auto my-10 shadow-inner">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" className="text-content-muted mb-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2v4" /><path d="M16 2v4" /><rect width="18" height="18" x="3" y="4" rx="2" /><path d="M3 10h18" /><path d="M10 16h4" /><path d="M12 14v4" /></svg>
+                    <h3 className="text-2xl font-bold text-content mb-2">No hay programaciones</h3>
+                    <p className="text-content-muted text-center max-w-sm">No se encontraron registros activos en la base de datos.</p>
                 </div>
             ) : (
                 <>
@@ -666,7 +666,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                         <div className="flex flex-col gap-10 max-w-7xl mx-auto w-full">
                             {groupedMonths.map((group, idx) => (
                                 <div key={idx} className="w-full">
-                                    <h3 className="text-[12px] font-bold text-neutral-400 uppercase tracking-widest mb-4 ml-1">{group.month}</h3>
+                                    <h3 className="text-[12px] font-bold text-content-muted uppercase tracking-widest mb-4 ml-1">{group.month}</h3>
                                     <div
                                         className="flex overflow-x-auto overflow-y-visible snap-x snap-mandatory gap-6 pb-8 pt-6 px-4 -mx-4 hide-scrollbar cursor-grab active:cursor-grabbing scroll-smooth"
                                         onMouseDown={onMouseDown}
@@ -700,10 +700,10 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                 onClick={() => {
                     if (window.toggleModalGlobal) window.toggleModalGlobal(true, 'new');
                 }}
-                className="fixed bottom-24 right-4 md:bottom-28 md:right-8 bg-teal-500 hover:bg-teal-400 text-white w-14 h-14 md:w-auto md:px-6 rounded-full shadow-2xl flex items-center justify-center gap-2 transition-transform hover:scale-105 z-40 group"
+                className="fixed bottom-24 right-4 md:bottom-28 md:right-8 bg-brand hover:bg-brand text-white w-14 h-14 md:w-auto md:px-6 rounded-full shadow-2xl flex items-center justify-center gap-2 transition-transform hover:scale-105 z-40 group"
             >
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:rotate-90 transition-transform duration-300"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
-                <span className="hidden md:block font-bold text-base">Añadir Evento</span>
+                <span className="hidden md:block font-ui-strong text-base">Añadir Evento</span>
             </button>
 
             {/* FAB GENERAR SERIE (SOLO ADMIN) */}
@@ -712,29 +712,29 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                     onClick={() => {
                         if (window.openSerieModal) window.openSerieModal();
                     }}
-                    className="fixed bottom-40 right-4 md:bottom-44 md:right-8 bg-violet-500 hover:bg-violet-400 text-white w-14 h-14 md:w-auto md:px-5 rounded-full shadow-2xl flex items-center justify-center gap-2 transition-transform hover:scale-105 z-40 group"
+                    className="fixed bottom-40 right-4 md:bottom-44 md:right-8 bg-rol-dir hover:bg-rol-dir/90 text-white w-14 h-14 md:w-auto md:px-5 rounded-full shadow-2xl flex items-center justify-center gap-2 transition-transform hover:scale-105 z-40 group"
                     title="Generar Serie de Eventos"
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:rotate-180 transition-transform duration-500"><path d="M17 2.1l4 4-4 4" /><path d="M3 12.2v-2a4 4 0 0 1 4-4h12.8M7 21.9l-4-4 4-4" /><path d="M21 11.8v2a4 4 0 0 1-4 4H4.2" /></svg>
-                    <span className="hidden md:block font-bold text-sm">Generar Serie</span>
+                    <span className="hidden md:block font-ui-strong text-sm">Generar Serie</span>
                 </button>
             )}
             {/* DELETE CONFIRMATION MODAL PRO */}
             {deleteConfirmTarget && (
-                <div className="fixed inset-0 z-[200] bg-neutral-900/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-                    <div className="bg-white rounded-[2rem] shadow-2xl max-w-sm w-full p-8 text-center animate-in zoom-in-95 duration-200 border border-neutral-100 relative overflow-hidden">
+                <div className="fixed inset-0 z-[200] bg-overlay/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-surface rounded-[2rem] shadow-2xl max-w-sm w-full p-8 text-center animate-in zoom-in-95 duration-200 border border-border relative overflow-hidden">
                         <div className="w-16 h-16 rounded-full flex items-center justify-center bg-red-50 text-red-500 mx-auto mb-5 relative shrink-0 shadow-[0_0_0_4px_rgba(254,226,226,0.5)]">
                             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></svg>
                         </div>
-                        <h3 className="text-xl font-extrabold text-neutral-900 mb-2 tracking-tight">Eliminar Evento</h3>
-                        <p className="text-sm text-neutral-600 mb-6 leading-relaxed">
+                        <h3 className="text-xl font-extrabold text-content mb-2 tracking-tight">Eliminar Evento</h3>
+                        <p className="text-sm text-content-muted mb-6 leading-relaxed">
                             ¿Estás seguro de que deseas borrar este evento permanentemente? <br /> <strong className="text-red-500">Esta acción es irreversible</strong> y liberará la fecha en tu calendario.
                         </p>
                         <div className="flex gap-3">
                             <button
                                 onClick={() => setDeleteConfirmTarget(null)}
                                 disabled={isDeleting}
-                                className="flex-1 py-3 px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-sm font-bold rounded-xl transition-colors shadow-sm"
+                                className="flex-1 py-3 px-4 bg-background hover:bg-neutral/20 text-neutral text-sm font-bold rounded-xl transition-colors shadow-sm"
                             >
                                 Cancelar
                             </button>
@@ -756,3 +756,6 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
         </div>
     );
 }
+
+
+

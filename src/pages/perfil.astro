@@ -3,10 +3,15 @@ import Layout from '../layouts/Layout.astro';
 ---
 
 <Layout title="Mi Perfil - Redil">
- <header class="w-full flex items-center justify-between py-6 px-4 md:px-8 mb-4 border-b border-neutral-200 ">
+ <header class="w-full flex items-center justify-between py-6 px-4 md:px-8 mb-4 border-b border-border ">
  <div>
- <h1 class="text-2xl font-bold text-neutral-900 tracking-tight">Mi Perfil</h1>
- <p class="text-sm text-neutral-500 ">Gestiona tus datos, foto de perfil y fechas indisponibles.</p>
+ <div class="page-title-row">
+ <span class="page-title-icon" aria-hidden="true">
+ <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"></circle><path d="M4 20a8 8 0 0 1 16 0"></path></svg>
+ </span>
+ <h1 class="page-title text-[2.1rem] md:text-[3.5rem]">Mi Perfil</h1>
+ </div>
+ <p class="page-subtitle text-sm">Gestiona tus datos, foto de perfil y fechas indisponibles.</p>
  </div>
  </header>
 
@@ -17,24 +22,24 @@ import Layout from '../layouts/Layout.astro';
  <div class="col-span-1 flex flex-col items-center">
  <div class="relative group w-32 h-32 mb-4">
  {/* Avatar dinámico */}
- <div id="avatar-container" class="w-full h-full rounded-full bg-neutral-200 border-4 border-white flex items-center justify-center font-black text-4xl shadow-md overflow-hidden text-neutral-400">
+ <div id="avatar-container" class="w-full h-full rounded-full bg-neutral/20 border-4 border-white flex items-center justify-center font-black text-4xl shadow-md overflow-hidden text-content-muted">
  <!-- Injected by JS -->
  <svg class="w-8 h-8 animate-pulse" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
  </div>
  
- <button id="btn-change-avatar" class="absolute bottom-0 right-0 p-2.5 rounded-full bg-white shadow-lg border border-neutral-200 text-neutral-600 hover:text-emerald-500 :text-emerald-400 transition-colors z-10" title="Cambiar Foto" disabled>
+ <button id="btn-change-avatar" class="absolute bottom-0 right-0 p-2.5 rounded-full bg-surface shadow-lg border border-border text-content-muted hover:text-emerald-500 :text-emerald-400 transition-colors z-10" title="Cambiar Foto" disabled>
  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" class="shrink-0" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/><path d="m16 9-4 4-2-2"/></svg>
  </button>
  <!-- Input oculto para el file picker -->
  <input type="file" id="avatar-input" accept="image/*" class="hidden" />
  </div>
  
- <h2 id="ui-user-name" class="text-xl font-bold text-neutral-900 text-center mb-1 h-7 min-w-[120px] bg-neutral-200 animate-pulse rounded mx-auto flex items-center justify-center"></h2>
- <p id="ui-user-email" class="text-sm text-neutral-500 text-center mb-4 h-5 min-w-[160px] bg-neutral-200 animate-pulse rounded mx-auto flex items-center justify-center"></p>
+ <h2 id="ui-user-name" class="text-xl font-bold text-content text-center mb-1 h-7 min-w-[120px] bg-neutral/20 animate-pulse rounded mx-auto flex items-center justify-center"></h2>
+ <p id="ui-user-email" class="text-sm text-content-muted text-center mb-4 h-5 min-w-[160px] bg-neutral/20 animate-pulse rounded mx-auto flex items-center justify-center"></p>
 
  <div id="ui-roles-container" class="flex flex-wrap items-center justify-center gap-2 mb-6 w-full min-h-[30px]">
- <div class="h-6 w-16 bg-neutral-200 animate-pulse rounded"></div>
- <div class="h-6 w-20 bg-neutral-200 animate-pulse rounded"></div>
+ <div class="h-6 w-16 bg-neutral/20 animate-pulse rounded"></div>
+ <div class="h-6 w-20 bg-neutral/20 animate-pulse rounded"></div>
  </div>
  </div>
 
@@ -42,24 +47,24 @@ import Layout from '../layouts/Layout.astro';
  <div class="col-span-1 md:col-span-2 space-y-8">
  
  {/* Panel de Datos Personales */}
- <section class="bg-white rounded-2xl p-6 border border-neutral-200 shadow-sm">
- <h3 class="text-lg font-bold text-neutral-900 mb-4 flex items-center gap-2">
+ <section class="bg-surface rounded-2xl p-6 border border-border shadow-sm">
+ <h3 class="text-lg font-bold text-content mb-4 flex items-center gap-2">
  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-500"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
  Datos Personales
  </h3>
  
  <form id="form-datos-personales" class="grid grid-cols-1 md:grid-cols-2 gap-4">
  <div class="space-y-1.5">
- <label class="text-xs font-bold text-neutral-500 uppercase tracking-wide">Nombre Completo</label>
- <input type="text" id="input-nombre" disabled class="w-full bg-neutral-50 border border-neutral-200 text-neutral-900 rounded-xl px-4 py-2 text-sm opacity-70 cursor-not-allowed" placeholder="Cargando..." />
+ <label class="text-xs font-bold text-content-muted uppercase tracking-wide">Nombre Completo</label>
+ <input type="text" id="input-nombre" disabled class="w-full bg-background border border-border text-content rounded-xl px-4 py-2 text-sm opacity-70 cursor-not-allowed" placeholder="Cargando..." />
  </div>
  <div class="space-y-1.5">
- <label class="text-xs font-bold text-neutral-500 uppercase tracking-wide">Correo de Acceso</label>
- <input type="email" id="input-correo" disabled class="w-full bg-neutral-50 border border-neutral-200 text-neutral-900 rounded-xl px-4 py-2 text-sm opacity-70 cursor-not-allowed" placeholder="Cargando..." />
+ <label class="text-xs font-bold text-content-muted uppercase tracking-wide">Correo de Acceso</label>
+ <input type="email" id="input-correo" disabled class="w-full bg-background border border-border text-content rounded-xl px-4 py-2 text-sm opacity-70 cursor-not-allowed" placeholder="Cargando..." />
  </div>
  <div class="space-y-1.5">
- <label class="text-xs font-bold text-neutral-500 uppercase tracking-wide">Registro Vocal</label>
- <select id="tonalidad-select" disabled class="w-full bg-white border border-neutral-200 text-neutral-900 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-shadow">
+ <label class="text-xs font-bold text-content-muted uppercase tracking-wide">Registro Vocal</label>
+ <select id="tonalidad-select" disabled class="w-full bg-surface border border-border text-content rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-shadow">
  <option value="">Seleccionar Perfil Vocal...</option>
  <option value="Soprano">Soprano</option>
  <option value="Contralto">Contralto</option>
@@ -68,12 +73,12 @@ import Layout from '../layouts/Layout.astro';
  </select>
  </div>
  <div class="space-y-1.5">
- <label class="text-xs font-bold text-neutral-500 uppercase tracking-wide">Cumpleaños</label>
- <input type="date" id="input-cumpleanos" disabled class="w-full bg-white border border-neutral-200 text-neutral-900 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-shadow" />
+ <label class="text-xs font-bold text-content-muted uppercase tracking-wide">Cumpleaños</label>
+ <input type="date" id="input-cumpleanos" disabled class="w-full bg-surface border border-border text-content rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-shadow" />
  </div>
  <div class="space-y-1.5">
- <label class="text-xs font-bold text-neutral-500 uppercase tracking-wide">Teléfono / WhatsApp</label>
- <input type="tel" id="input-telefono" disabled class="w-full bg-white border border-neutral-200 text-neutral-900 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-shadow" placeholder="Ej: +123456789" />
+ <label class="text-xs font-bold text-content-muted uppercase tracking-wide">Teléfono / WhatsApp</label>
+ <input type="tel" id="input-telefono" disabled class="w-full bg-surface border border-border text-content rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-shadow" placeholder="Ej: +123456789" />
  </div>
  <div class="md:col-span-2 flex justify-end mt-2">
  <button type="submit" id="btn-save-datos" class="hidden px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl transition-colors shadow-sm flex items-center gap-2">
@@ -87,51 +92,51 @@ import Layout from '../layouts/Layout.astro';
  </section>
 
  {/* PANEL FASE 3: Sistema de Disponibilidad (Ausencias) */}
- <section class="bg-white rounded-2xl p-6 border border-neutral-200 shadow-sm mt-8">
- <h3 class="text-lg font-bold text-neutral-900 mb-4 flex items-center gap-2">
+ <section class="bg-surface rounded-2xl p-6 border border-border shadow-sm mt-8">
+ <h3 class="text-lg font-bold text-content mb-4 flex items-center gap-2">
  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-orange-500"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
  Mis Ausencias / Fechas Bloqueadas
  </h3>
- <p class="text-xs text-neutral-500 mb-6">Informa a tu líder de alabanza los días que no estarás disponible (viajes, trabajo, etc.).</p>
+ <p class="text-xs text-content-muted mb-6">Informa a tu líder de alabanza los días que no estarás disponible (viajes, trabajo, etc.).</p>
 
- <form id="form-ausencia" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8 bg-neutral-50 p-4 rounded-xl border border-neutral-200 opacity-50 pointer-events-none transition-opacity">
+ <form id="form-ausencia" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8 bg-background p-4 rounded-xl border border-border opacity-50 pointer-events-none transition-opacity">
  <div class="space-y-1.5">
- <label class="text-[10px] font-bold text-neutral-500 uppercase tracking-wide">Fecha Inicio</label>
- <input type="date" id="ausencia-inicio" required class="w-full bg-white border border-neutral-200 text-neutral-900 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 focus:outline-none" />
+ <label class="text-[10px] font-bold text-content-muted uppercase tracking-wide">Fecha Inicio</label>
+ <input type="date" id="ausencia-inicio" required class="w-full bg-surface border border-border text-content rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 focus:outline-none" />
  </div>
  <div class="space-y-1.5">
- <label class="text-[10px] font-bold text-neutral-500 uppercase tracking-wide">Fecha Fin</label>
- <input type="date" id="ausencia-fin" required class="w-full bg-white border border-neutral-200 text-neutral-900 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 focus:outline-none" />
+ <label class="text-[10px] font-bold text-content-muted uppercase tracking-wide">Fecha Fin</label>
+ <input type="date" id="ausencia-fin" required class="w-full bg-surface border border-border text-content rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 focus:outline-none" />
  </div>
  <div class="space-y-1.5 md:col-span-2">
- <label class="text-[10px] font-bold text-neutral-500 uppercase tracking-wide">Motivo (Opcional)</label>
+ <label class="text-[10px] font-bold text-content-muted uppercase tracking-wide">Motivo (Opcional)</label>
  <div class="flex gap-2">
- <input type="text" id="ausencia-motivo" placeholder="Ej. Viaje familiar, Trabajo..." class="flex-1 bg-white border border-neutral-200 text-neutral-900 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 focus:outline-none" />
+ <input type="text" id="ausencia-motivo" placeholder="Ej. Viaje familiar, Trabajo..." class="flex-1 bg-surface border border-border text-content rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 focus:outline-none" />
  <button type="submit" id="btn-save-ausencia" class="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white font-bold text-sm rounded-lg shadow-md shadow-orange-500/20 transition-all shrink-0">Registrar</button>
  </div>
  </div>
  </form>
 
  <div class="space-y-3" id="ausencias-list">
- <div class="py-6 text-center border-2 border-dashed border-neutral-200 rounded-xl">
- <p class="text-xs font-bold text-neutral-400">Cargando ausencias...</p>
+ <div class="py-6 text-center border-2 border-dashed border-border rounded-xl">
+ <p class="text-xs font-bold text-content-muted">Cargando ausencias...</p>
  </div>
  </div>
  </section>
 
  {/* PANEL FASE 4: Seguirdad */}
- <section class="bg-white rounded-2xl p-6 border border-neutral-200 shadow-sm mt-8">
- <h3 class="text-lg font-bold text-neutral-900 mb-4 flex items-center gap-2">
+ <section class="bg-surface rounded-2xl p-6 border border-border shadow-sm mt-8">
+ <h3 class="text-lg font-bold text-content mb-4 flex items-center gap-2">
  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
  Seguridad
  </h3>
  
  <div class="flex flex-col sm:flex-row gap-4 mt-6">
- <button id="btn-change-password" class="flex-1 py-3 px-4 rounded-xl border border-neutral-200 bg-white text-neutral-700 font-bold text-sm hover:bg-neutral-50 :bg-neutral-700 transition-colors flex items-center justify-center gap-2">
+ <button id="btn-change-password" class="flex-1 py-3 px-4 rounded-xl border border-border bg-surface text-neutral-700 font-ui-strong text-sm hover:bg-background :bg-neutral-700 transition-colors flex items-center justify-center gap-2">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
  Cambiar Contraseña
  </button>
- <button id="btn-logout" class="flex-1 py-3 px-4 rounded-xl bg-red-500/10 text-red-600 font-bold text-sm hover:bg-red-500/20 transition-colors flex items-center justify-center gap-2">
+ <button id="btn-logout" class="flex-1 py-3 px-4 rounded-xl bg-red-500/10 text-red-600 font-ui-strong text-sm hover:bg-red-500/20 transition-colors flex items-center justify-center gap-2">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
  Cerrar Sesión
  </button>
@@ -142,10 +147,10 @@ import Layout from '../layouts/Layout.astro';
 
  {/* Modal para Recortar Foto */}
  <div id="cropper-modal" class="fixed inset-0 z-50 bg-black/80 hidden items-center justify-center p-4 backdrop-blur-sm transition-opacity opacity-0 duration-300">
- <div id="cropper-content" class="bg-white rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl scale-95 transition-transform duration-300">
- <div class="px-6 py-4 border-b border-neutral-200 flex justify-between items-center">
- <h3 class="text-lg font-bold text-neutral-900 ">Ajustar Foto de Perfil</h3>
- <button id="btn-close-cropper" class="text-neutral-400 hover:text-neutral-600 :text-neutral-200 transition-colors">
+ <div id="cropper-content" class="bg-surface rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl scale-95 transition-transform duration-300">
+ <div class="px-6 py-4 border-b border-border flex justify-between items-center">
+ <h3 class="text-lg font-bold text-content ">Ajustar Foto de Perfil</h3>
+ <button id="btn-close-cropper" class="text-content-muted hover:text-content-muted :text-neutral-200 transition-colors">
  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
  </button>
  </div>
@@ -161,14 +166,14 @@ import Layout from '../layouts/Layout.astro';
  </div>
  </div>
 
- <div class="p-6 bg-neutral-100 aspect-square flex items-center justify-center relative">
+ <div class="p-6 bg-background aspect-square flex items-center justify-center relative">
  <div class="w-full h-full max-h-[60vh] relative z-10">
  <img id="cropper-image" src="" alt="Imagen a recortar" class="max-w-full hidden" />
  </div>
  </div>
- <div class="px-6 py-4 border-t border-neutral-200 flex justify-end gap-3 bg-neutral-50 ">
- <button id="btn-cancel-cropper" class="px-5 py-2.5 rounded-xl font-bold text-sm text-neutral-600 hover:bg-neutral-200 :bg-neutral-800 transition-colors">Cancelar</button>
- <button id="btn-save-cropper" class="px-5 py-2.5 rounded-xl font-bold text-sm bg-emerald-500 hover:bg-emerald-600 text-white shadow-md shadow-emerald-500/20 transition-all flex items-center gap-2">
+ <div class="px-6 py-4 border-t border-border flex justify-end gap-3 bg-background ">
+ <button id="btn-cancel-cropper" class="px-5 py-2.5 rounded-xl font-bold text-sm text-content-muted hover:bg-neutral/20 :bg-neutral-800 transition-colors">Cancelar</button>
+ <button id="btn-save-cropper" class="px-5 py-2.5 rounded-xl font-ui-strong text-sm bg-emerald-500 hover:bg-emerald-600 text-white shadow-md shadow-emerald-500/20 transition-all flex items-center gap-2">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
  Guardar Foto
  </button>
@@ -520,12 +525,12 @@ import Layout from '../layouts/Layout.astro';
  if (inputNombre) inputNombre.value = perfilData.nombre;
  
  if (uiUserName) {
- uiUserName.classList.remove('bg-neutral-200', 'animate-pulse', 'h-7', 'min-w-[120px]', 'flex', 'items-center', 'justify-center');
+ uiUserName.classList.remove('bg-neutral/20', 'animate-pulse', 'h-7', 'min-w-[120px]', 'flex', 'items-center', 'justify-center');
  uiUserName.innerHTML = perfilData.nombre;
  }
  
  if (uiUserEmail) {
- uiUserEmail.classList.remove('bg-neutral-200', 'animate-pulse', 'h-5', 'min-w-[160px]', 'flex', 'items-center', 'justify-center');
+ uiUserEmail.classList.remove('bg-neutral/20', 'animate-pulse', 'h-5', 'min-w-[160px]', 'flex', 'items-center', 'justify-center');
  uiUserEmail.innerHTML = email || '';
  }
 
@@ -577,10 +582,10 @@ import Layout from '../layouts/Layout.astro';
  uiRolesContainer.innerHTML = '';
  
  if (userRoles.length === 0) {
- uiRolesContainer.innerHTML = '<span class="text-xs text-neutral-400 italic">Sin roles asignados</span>';
+ uiRolesContainer.innerHTML = '<span class="text-xs text-content-muted italic">Sin roles asignados</span>';
  } else {
  userRoles.forEach((rol: string) => {
- uiRolesContainer.innerHTML += `<span class="px-2.5 py-1 text-xs font-bold uppercase tracking-wider rounded-md bg-neutral-100 border border-neutral-200 text-neutral-600 shadow-sm">${rol}</span>`;
+ uiRolesContainer.innerHTML += `<span class="px-2.5 py-1 text-xs font-bold uppercase tracking-wider rounded-md bg-background border border-border text-content-muted shadow-sm">${rol}</span>`;
  });
  }
  }
@@ -600,28 +605,28 @@ import Layout from '../layouts/Layout.astro';
  
  if (futureAusencias.length === 0) {
  ausenciasListEl.innerHTML = `
- <div class="py-6 text-center border-2 border-dashed border-neutral-200 rounded-xl">
- <p class="text-xs font-bold text-neutral-400">No tienes ausencias registradas.</p>
+ <div class="py-6 text-center border-2 border-dashed border-border rounded-xl">
+ <p class="text-xs font-bold text-content-muted">No tienes ausencias registradas.</p>
  </div>
  `;
  } else {
  futureAusencias.forEach((aus: any) => {
  const inicio = new Date(aus.fecha_inicio).toLocaleDateString('es', { day: 'numeric', month: 'short', timeZone: 'UTC' });
  const fin = new Date(aus.fecha_fin).toLocaleDateString('es', { day: 'numeric', month: 'short', timeZone: 'UTC' });
- const motivoHtml = aus.motivo ? `<p class="text-xs text-neutral-500">${aus.motivo}</p>` : '';
+ const motivoHtml = aus.motivo ? `<p class="text-xs text-content-muted">${aus.motivo}</p>` : '';
  
  // We recreate the HTML for each item
  const div = document.createElement('div');
- div.className = "flex items-center justify-between p-3 rounded-lg border border-neutral-100 bg-neutral-50 group shrink-0 transition-opacity";
+ div.className = "flex items-center justify-between p-3 rounded-lg border border-neutral-100 bg-background group shrink-0 transition-opacity";
  div.setAttribute('data-ausencia-id', aus.id);
  div.innerHTML = `
  <div>
- <p class="text-sm font-bold text-neutral-900 ">
- ${inicio} <span class="text-neutral-400 mx-1">→</span> ${fin}
+ <p class="text-sm font-bold text-content ">
+ ${inicio} <span class="text-content-muted mx-1">?</span> ${fin}
  </p>
  ${motivoHtml}
  </div>
- <button type="button" class="p-2 rounded-lg text-neutral-400 hover:text-red-500 hover:bg-red-50 :bg-red-950/30 transition-colors" title="Eliminar" onclick="window._deleteAusencia('${aus.id}')">
+ <button type="button" class="p-2 rounded-lg text-content-muted hover:text-red-500 hover:bg-red-50 :bg-red-950/30 transition-colors" title="Eliminar" onclick="window._deleteAusencia('${aus.id}')">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
  </button>
  `;
@@ -737,3 +742,4 @@ import Layout from '../layouts/Layout.astro';
 
  });
 </script>
+

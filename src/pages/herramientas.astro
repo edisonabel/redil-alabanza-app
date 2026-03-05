@@ -1,37 +1,39 @@
----
+﻿---
 import Layout from '../layouts/Layout.astro';
 ---
 <Layout>
- <header class="mb-8 mt-4 md:mt-10 text-center relative max-w-4xl mx-auto px-4">
- <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight text-neutral-900 mb-4 flex flex-col items-center justify-center text-center">
- <span class="mb-2">Herramientas</span>
- <span class="text-2xl md:text-4xl text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400">para Músicos</span>
- </h1>
- <p class="text-neutral-500 text-sm md:text-lg max-w-2xl mx-auto">
- Utilidades para facilitar el ensayo y la preparación del domingo.
+ <header class="mb-8 mt-4 md:mt-10 relative max-w-6xl mx-auto px-4">
+ <div class="page-title-row mb-3">
+ <span class="page-title-icon" aria-hidden="true">
+ <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="21" y1="4" x2="14" y2="4"></line><line x1="10" y1="4" x2="3" y2="4"></line><line x1="21" y1="12" x2="12" y2="12"></line><line x1="8" y1="12" x2="3" y2="12"></line><line x1="21" y1="20" x2="16" y2="20"></line><line x1="12" y1="20" x2="3" y2="20"></line><line x1="14" y1="2" x2="14" y2="6"></line><line x1="8" y1="10" x2="8" y2="14"></line><line x1="12" y1="18" x2="12" y2="22"></line></svg>
+ </span>
+ <h1 class="page-title text-[2.1rem] md:text-[3.5rem]">Herramientas para M&uacute;sicos</h1>
+ </div>
+ <p class="page-subtitle text-sm md:text-lg max-w-2xl">
+ Utilidades para facilitar el ensayo y la preparaci&oacute;n del domingo.
  </p>
  </header>
 
  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8 max-w-5xl mx-auto px-4 pb-12">
  <!-- Calculadora de Capo -->
- <a href="/herramientas/capo" class="bg-white border border-neutral-200 rounded-2xl p-6 hover:bg-neutral-100 hover:-translate-y-1 transition-all duration-300 shadow-xl group card-herramienta">
+ <a href="/herramientas/capo" class="bg-surface border border-border rounded-2xl p-6 hover:bg-background hover:-translate-y-1 transition-all duration-300 shadow-xl group card-herramienta">
  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 mb-3 text-blue-500"><line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><circle cx="8" cy="9" r="2"/><circle cx="16" cy="15" r="2"/></svg>
- <h3 class="text-xl font-bold text-neutral-900 mb-2 group-hover:text-blue-400 transition-colors">Calculadora de Capotraste</h3>
- <p class="text-neutral-500 text-sm leading-relaxed">Encuentra las posiciones de acordes ideales para guitarra acústica según el tono original.</p>
+ <h3 class="text-xl font-bold text-content mb-2 group-hover:text-blue-400 transition-colors">Calculadora de Capotraste</h3>
+ <p class="text-content-muted text-sm leading-relaxed">Encuentra las posiciones de acordes ideales para guitarra ac&uacute;stica seg&uacute;n el tono original.</p>
  </a>
 
  <!-- Transpositor ChordPro -->
- <a href="/herramientas/chordpro" class="bg-white border border-neutral-200 rounded-2xl p-6 hover:bg-neutral-100 hover:-translate-y-1 transition-all duration-300 shadow-xl group card-herramienta">
+ <a href="/herramientas/chordpro" class="bg-surface border border-border rounded-2xl p-6 hover:bg-background hover:-translate-y-1 transition-all duration-300 shadow-xl group card-herramienta">
  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 mb-3 text-emerald-500"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><polyline points="8 13 10 15 16 9"/></svg>
- <h3 class="text-xl font-bold text-neutral-900 mb-2 group-hover:text-emerald-400 transition-colors">Editor & Transpositor ChordPro</h3>
- <p class="text-neutral-500 text-sm leading-relaxed">Pega tu letra, sube o baja de tono, y copia el formato listo para ProPresenter.</p>
+ <h3 class="text-xl font-bold text-content mb-2 group-hover:text-emerald-400 transition-colors">Editor & Transpositor ChordPro</h3>
+ <p class="text-content-muted text-sm leading-relaxed">Pega tu letra, sube o baja de tono, y copia el formato listo para ProPresenter.</p>
  </a>
 
- <!-- Metrónomo PRO -->
- <a href="/herramientas/metronomo" class="bg-white border border-neutral-200 rounded-2xl p-6 hover:bg-neutral-100 hover:-translate-y-1 transition-all duration-300 shadow-xl group card-herramienta">
+ <!-- Metr&oacute;nomo PRO -->
+ <a href="/herramientas/metronomo" class="bg-surface border border-border rounded-2xl p-6 hover:bg-background hover:-translate-y-1 transition-all duration-300 shadow-xl group card-herramienta">
  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 mb-3 text-teal-400"><path d="m15 11 5-5"/><path d="m11 15 5-5"/><path d="M22 12A10 10 0 1 1 12 2a10 10 0 0 1 10 10Z"/><path d="M12 22v-3"/><path d="M12 5V2"/><path d="M22 12h-3"/><path d="M5 12H2"/></svg>
- <h3 class="text-xl font-bold text-neutral-900 mb-2 group-hover:text-teal-400 transition-colors">Metrónomo PRO</h3>
- <p class="text-neutral-500 text-sm leading-relaxed">Motor de alta precisión con Rueda interactiva (iPod style), Tap Tempo y métricas variables.</p>
+ <h3 class="text-xl font-bold text-content mb-2 group-hover:text-teal-400 transition-colors">Metr&oacute;nomo PRO</h3>
+ <p class="text-content-muted text-sm leading-relaxed">Motor de alta precisi&oacute;n con Rueda interactiva (iPod style), Tap Tempo y m&eacute;tricas variables.</p>
  </a>
  </div>
 </Layout>
@@ -48,3 +50,4 @@ import Layout from '../layouts/Layout.astro';
     }
   });
 </script>
+

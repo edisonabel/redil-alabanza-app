@@ -1,1 +1,128 @@
+@config "../../tailwind.config.mjs";
 @import "tailwindcss";
+
+@font-face {
+  font-family: "adineue";
+  src: url("/fonts/redil/adineuePRO-Light.woff2") format("woff2");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "adineue";
+  src: url("/fonts/redil/adineuePRO-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "adineue";
+  src: url("/fonts/redil/adineuePRO-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Modius";
+  src: url("/fonts/redil/Modius.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --font-ui: "adineue", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-cta: "Modius", "adineue", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+html,
+body {
+  font-family: var(--font-ui);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+[role='button'],
+input[type='button'],
+input[type='submit'],
+.font-cta,
+.btn-gestionar-modal,
+.btn-expandir-detalle,
+.btn-roster-inline,
+.btn-remove-roster {
+  font-family: var(--font-cta);
+  font-weight: 400 !important;
+  letter-spacing: 0.003em;
+  line-height: 1.1;
+}
+
+.font-ui-strong {
+  font-family: var(--font-ui) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.004em;
+}
+
+button {
+  text-wrap: balance;
+}
+
+.page-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.page-title-icon {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgb(var(--border-base) / 0.9);
+  background: rgb(var(--bg-surface) / 0.8);
+  color: rgb(var(--text-base) / 0.9);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.page-title-icon svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.page-title {
+  color: rgb(var(--text-base));
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.page-subtitle {
+  color: rgb(var(--text-muted));
+}
+
+@theme inline {
+  --color-background: rgb(var(--bg-background));
+  --color-surface: rgb(var(--bg-surface));
+  --color-border: rgb(var(--border-base));
+  --color-content: rgb(var(--text-base));
+  --color-content-muted: rgb(var(--text-muted));
+
+  --color-brand: rgb(var(--color-brand));
+  --color-danger: rgb(var(--color-danger));
+  --color-success: rgb(var(--color-success));
+  --color-warning: rgb(var(--color-warning));
+  --color-info: rgb(var(--color-info));
+  --color-accent: rgb(var(--color-accent));
+  --color-neutral: rgb(var(--color-neutral));
+  --color-overlay: rgb(var(--color-overlay));
+  --color-rol-dir: rgb(var(--color-rol-dir));
+  --color-rol-let: rgb(var(--color-rol-let));
+  --color-rol-ban: rgb(var(--color-rol-ban));
+  --color-rol-voc: rgb(var(--color-rol-voc));
+}
+

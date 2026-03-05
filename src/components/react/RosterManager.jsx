@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 
 export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr, evEstadoStr, isStrictModerator, dbData }) {
@@ -51,7 +51,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
 
     const handleRemove = async (rolId) => {
         if (!evId || evId.startsWith('virtual|')) return;
-        const confirmDelete = window.confirm("¿Estás seguro de remover esta asignación?");
+        const confirmDelete = window.confirm("Â¿EstÃ¡s seguro de remover esta asignaciÃ³n?");
         if (!confirmDelete) return;
 
         const { error } = await supabase.from('asignaciones').delete()
@@ -78,7 +78,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         setPickerList([]);
 
         const [perfilesRoles, ausenciasResp] = await Promise.all([
-            // Consulta A: Músicos capacitados para el rol
+            // Consulta A: MÃºsicos capacitados para el rol
             supabase
                 .from('perfil_roles')
                 .select('perfiles!inner(*)')
@@ -133,7 +133,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                 });
 
                 if (hasConflictingInstrument) {
-                    alert('Este músico/a ya está asignado a otro instrumento en la banda para este evento. (Un integrante puede cantar y tocar a la vez, pero no tocar 2 instrumentos simultáneamente).');
+                    alert('Este mÃºsico/a ya estÃ¡ asignado a otro instrumento en la banda para este evento. (Un integrante puede cantar y tocar a la vez, pero no tocar 2 instrumentos simultÃ¡neamente).');
                     setPickerLoading(false);
                     return;
                 }
@@ -180,7 +180,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
     };
 
     const selectEquipo = async (equipo) => {
-        const confirm = window.confirm(`Cargar "${equipo.nombre}" sobrescribirá el equipo actual. ¿Continuar?`);
+        const confirm = window.confirm(`Cargar "${equipo.nombre}" sobrescribirÃ¡ el equipo actual. Â¿Continuar?`);
         if (!confirm) return;
 
         setEquipoLoading(true);
@@ -192,7 +192,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
 
             if (bpError) throw bpError;
             if (!blueprint || blueprint.length === 0) {
-                alert('Este equipo está vacío.');
+                alert('Este equipo estÃ¡ vacÃ­o.');
                 setEquipoLoading(false);
                 return;
             }
@@ -224,7 +224,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                 key={`empty-${rolMap.id}`}
                 type="button"
                 onClick={() => openPicker(rolMap.id, rolMap.nombre)}
-                className="btn-roster-inline empty-slot px-4 h-9 flex items-center justify-center gap-1.5 rounded-full border border-dashed border-neutral-300 text-[11px] font-bold text-neutral-500 uppercase tracking-widest hover:border-teal-500 hover:text-teal-500 hover:bg-teal-50 transition-all"
+                className="btn-roster-inline empty-slot px-4 h-9 flex items-center justify-center gap-1.5 rounded-full border border-dashed border-border text-[11px] font-bold text-content-muted uppercase tracking-widest hover:border-brand/30 hover:text-brand hover:bg-brand/10 transition-all"
             >
                 {rolMap.nombre.split(' ')[0]} <span className="font-normal opacity-60 text-lg leading-none mt-[-2px]">+</span>
             </button>
@@ -242,13 +242,13 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         const isN1 = ['lider_alabanza', 'talkback'].includes(rolMatch.codigo);
         const isN2 = ['encargado_letras'].includes(rolMatch.codigo);
         const isVoz = ['voz_soprano', 'voz_tenor'].includes(rolMatch.codigo);
-        const colorSeccion = isN1 ? 'bg-violet-500' : (isN2 ? 'bg-amber-500' : (isVoz ? 'bg-purple-500' : 'bg-teal-500'));
+        const colorSeccion = isN1 ? 'bg-rol-dir' : (isN2 ? 'bg-rol-let' : (isVoz ? 'bg-rol-voc' : 'bg-rol-ban'));
 
         return (
-            <div key={`${asig.rol_id}-${asig.perfil_id}`} className="flex flex-col items-center gap-1.5 group relative cursor-pointer hover:bg-neutral-200/50 rounded-xl p-2 -m-2 transition-colors" title={`${p.nombre} (${rolMatch.nombre})`} onClick={() => !isStrictModerator && openPicker(rolMatch.id, rolMatch.nombre)}>
+            <div key={`${asig.rol_id}-${asig.perfil_id}`} className="flex flex-col items-center gap-1.5 group relative cursor-pointer hover:bg-neutral/20 rounded-xl p-2 -m-2 transition-colors" title={`${p.nombre} (${rolMatch.nombre})`} onClick={() => !isStrictModerator && openPicker(rolMatch.id, rolMatch.nombre)}>
                 <div className="relative">
                     {p.avatar_url ? (
-                        <img src={p.avatar_url} alt={p.nombre} className="w-[42px] h-[42px] sm:w-[46px] sm:h-[46px] shrink-0 rounded-full object-cover shadow-sm border border-neutral-200" />
+                        <img src={p.avatar_url} alt={p.nombre} className="w-[42px] h-[42px] sm:w-[46px] sm:h-[46px] shrink-0 rounded-full object-cover shadow-sm border border-border" />
                     ) : (
                         <div className={`w-[42px] h-[42px] sm:w-[46px] sm:h-[46px] shrink-0 rounded-full text-white flex items-center justify-center font-bold text-sm shadow-sm ${colorSeccion}`}>
                             {iniciales.toUpperCase()}
@@ -260,12 +260,12 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                         </button>
                     )}
                 </div>
-                <span className="text-[11px] font-semibold text-neutral-800 capitalize max-w-[60px] truncate text-center leading-none tracking-tight">{displayName}</span>
+                <span className="text-[11px] font-semibold text-content capitalize max-w-[60px] truncate text-center leading-none tracking-tight">{displayName}</span>
             </div>
         );
     };
 
-    if (roles.length === 0) return <div className="p-4 text-center animate-pulse text-sm text-neutral-500">Cargando Roster...</div>;
+    if (roles.length === 0) return <div className="p-4 text-center animate-pulse text-sm text-content-muted">Cargando Roster...</div>;
 
     const direccion = [];
     const letras = [];
@@ -279,7 +279,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
 
         const assigned = asignaciones.filter(a => a.rol_id === rolMatch.id);
 
-        // Vocabulario especifico de vacios segun código
+        // Vocabulario especifico de vacios segun cÃ³digo
         if (assigned.length > 0) {
             assigned.forEach(a => {
                 const node = renderAvatar(a, rolMatch);
@@ -301,61 +301,61 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
 
     return (
         <div className="flex flex-col gap-4">
-            <div id="modal-roster-container" className="bg-neutral-50 rounded-2xl p-4 md:p-5 border border-neutral-200 flex flex-col gap-5">
+            <div id="modal-roster-container" className="bg-background rounded-2xl p-4 md:p-5 border border-border flex flex-col gap-5">
                 <div className="grid grid-cols-2 gap-4">
                     <div className="flex flex-col">
                         <div className="flex items-center justify-between mb-2 w-full">
-                            <span className="text-[10px] font-bold text-violet-600 uppercase tracking-widest leading-none mt-0.5">Dirección</span>
-                            <div className="h-px flex-1 bg-violet-200/80 ml-3"></div>
+                            <span className="text-[10px] font-bold text-rol-dir uppercase tracking-widest leading-none mt-0.5">DirecciÃ³n</span>
+                            <div className="h-px flex-1 bg-rol-dir/10 ml-3"></div>
                         </div>
-                        <div className="flex flex-wrap gap-3">{direccion.length > 0 ? direccion : <span className="text-xs text-neutral-300 font-medium">Vacío</span>}</div>
+                        <div className="flex flex-wrap gap-3">{direccion.length > 0 ? direccion : <span className="text-xs text-content-muted font-medium">VacÃ­o</span>}</div>
                     </div>
                     <div className="flex flex-col">
                         <div className="flex items-center justify-between mb-2 w-full">
-                            <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest leading-none mt-0.5">Letras</span>
-                            <div className="h-px flex-1 bg-amber-200/80 ml-3"></div>
+                            <span className="text-[10px] font-bold text-rol-let uppercase tracking-widest leading-none mt-0.5">Letras</span>
+                            <div className="h-px flex-1 bg-rol-let/10 ml-3"></div>
                         </div>
-                        <div className="flex flex-wrap gap-3">{letras.length > 0 ? letras : <span className="text-xs text-neutral-300 font-medium">Vacío</span>}</div>
+                        <div className="flex flex-wrap gap-3">{letras.length > 0 ? letras : <span className="text-xs text-content-muted font-medium">VacÃ­o</span>}</div>
                     </div>
                 </div>
 
                 <div>
                     <div className="flex items-center justify-between mb-2 w-full">
-                        <span className="text-[10px] font-bold text-teal-600 uppercase tracking-widest leading-none mt-0.5">Banda</span>
-                        <div className="h-px flex-1 bg-teal-200/80 ml-3"></div>
+                        <span className="text-[10px] font-bold text-rol-ban uppercase tracking-widest leading-none mt-0.5">Banda</span>
+                        <div className="h-px flex-1 bg-rol-ban/10 ml-3"></div>
                     </div>
-                    <div className="flex flex-wrap gap-3">{banda.length > 0 ? banda : <span className="text-xs text-neutral-300 font-medium">Vacío</span>}</div>
+                    <div className="flex flex-wrap gap-3">{banda.length > 0 ? banda : <span className="text-xs text-content-muted font-medium">VacÃ­o</span>}</div>
                 </div>
 
                 <div>
                     <div className="flex items-center justify-between mb-2 w-full">
-                        <span className="text-[10px] font-bold text-purple-600 uppercase tracking-widest leading-none mt-0.5">Voces</span>
-                        <div className="h-px flex-1 bg-purple-200/80 ml-3"></div>
+                        <span className="text-[10px] font-bold text-rol-voc uppercase tracking-widest leading-none mt-0.5">Voces</span>
+                        <div className="h-px flex-1 bg-rol-voc/10 ml-3"></div>
                     </div>
-                    <div className="flex flex-wrap gap-3">{voces.length > 0 ? voces : <span className="text-xs text-neutral-300 font-medium">Vacío</span>}</div>
+                    <div className="flex flex-wrap gap-3">{voces.length > 0 ? voces : <span className="text-xs text-content-muted font-medium">VacÃ­o</span>}</div>
                 </div>
             </div>
 
             {!isStrictModerator && (
-                <button type="button" onClick={openEquipoPicker} className="w-full py-3.5 bg-blue-50/50 text-blue-600 border border-blue-200 border-dashed rounded-xl text-sm font-bold hover:bg-blue-100/50 hover:text-blue-700 transition-colors flex items-center justify-center gap-2">
+                <button type="button" onClick={openEquipoPicker} className="w-full py-3.5 bg-info/10 text-info border border-info/30 border-dashed rounded-xl text-sm font-bold hover:bg-info/20 hover:text-info transition-colors flex items-center justify-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="m19 11-4-4v8" /><path d="m11 15 4 4" /></svg> Autocompletar Equipo Base
                 </button>
             )}
 
             {pickerOpen && (
-                <div className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col max-h-[70vh]">
-                        <div className="p-4 border-b flex justify-between items-center">
-                            <h3 className="font-bold text-neutral-900">{pickerRolName}</h3>
-                            <button type="button" onClick={() => setPickerOpen(false)} className="text-neutral-500 hover:text-neutral-800">
+                <div className="fixed inset-0 z-[100] bg-overlay/60 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-surface border border-border rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col max-h-[70vh]">
+                        <div className="p-4 border-b border-border flex justify-between items-center bg-background">
+                            <h3 className="font-bold text-content">{pickerRolName}</h3>
+                            <button type="button" onClick={() => setPickerOpen(false)} className="text-content-muted hover:text-content bg-background hover:bg-border rounded-full p-2 transition-colors">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
                             </button>
                         </div>
                         <div className="p-4 overflow-y-auto flex-1">
                             {pickerLoading ? (
-                                <div className="flex justify-center py-6"><div className="w-6 h-6 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div></div>
+                                <div className="flex justify-center py-6"><div className="w-6 h-6 border-4 border-info/30 border-t-info rounded-full animate-spin"></div></div>
                             ) : pickerList.length === 0 ? (
-                                <div className="text-center text-sm text-neutral-500 py-6">Nadie capacitado en este rol.</div>
+                                <div className="text-center text-sm text-content-muted py-6">Nadie capacitado en este rol.</div>
                             ) : (
                                 <div className="flex flex-col gap-2">
                                     {pickerList.map(p => (
@@ -363,7 +363,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                                             type="button"
                                             key={p.id}
                                             onClick={() => !p.ausente && selectUserForRole(p.id)}
-                                            className={`flex items-center justify-between gap-3 p-3 rounded-xl border border-neutral-200 text-left transition-colors relative ${p.ausente ? 'opacity-50 cursor-not-allowed bg-neutral-50/50 grayscale-[20%]' : 'hover:border-blue-500 hover:bg-neutral-50'}`}
+                                            className={`flex items-center justify-between gap-3 p-3 rounded-xl border border-border text-left transition-colors relative ${p.ausente ? 'opacity-50 cursor-not-allowed bg-background/50 grayscale-[20%]' : 'hover:border-brand/30 hover:bg-background'}`}
                                         >
                                             <div className="flex items-center gap-3 overflow-hidden">
                                                 <div className="relative shrink-0">
@@ -372,14 +372,14 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                                                             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
                                                         </div>
                                                     ) : p.avatar_url ? (
-                                                        <img src={p.avatar_url} className="w-10 h-10 rounded-full object-cover shadow-sm border border-neutral-200" alt={p.nombre} />
+                                                        <img src={p.avatar_url} className="w-10 h-10 rounded-full object-cover shadow-sm border border-border" alt={p.nombre} />
                                                     ) : (
-                                                        <div className="w-10 h-10 rounded-full bg-neutral-200 text-neutral-600 flex items-center justify-center font-bold text-xs shadow-sm border border-neutral-200">{p.nombre.substring(0, 2).toUpperCase()}</div>
+                                                        <div className="w-10 h-10 rounded-full bg-neutral/20 text-content-muted flex items-center justify-center font-bold text-xs shadow-sm border border-border">{p.nombre.substring(0, 2).toUpperCase()}</div>
                                                     )}
                                                 </div>
                                                 <div className="flex-1 overflow-hidden min-w-0">
-                                                    <p className={`font-bold text-sm truncate ${p.ausente ? 'text-neutral-500 line-through' : 'text-neutral-900'}`}>{p.nombre}</p>
-                                                    <p className="text-xs text-neutral-500 truncate">{p.email}</p>
+                                                    <p className={`font-bold text-sm truncate ${p.ausente ? 'text-content-muted line-through' : 'text-content'}`}>{p.nombre}</p>
+                                                    <p className="text-xs text-content-muted truncate">{p.email}</p>
                                                 </div>
                                             </div>
 
@@ -401,32 +401,32 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
             )}
 
             {equipoPickerOpen && (
-                <div className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
-                        <div className="p-5 border-b flex justify-between items-center bg-neutral-50 rounded-t-3xl">
+                <div className="fixed inset-0 z-[100] bg-overlay/60 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-surface border border-border rounded-3xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+                        <div className="p-5 border-b border-border flex justify-between items-center bg-background rounded-t-3xl">
                             <div>
-                                <h3 className="font-bold text-xl text-neutral-900">Cargar Equipo Base</h3>
-                                <p className="text-xs text-neutral-500 mt-1">Sobrescribirá las asignaciones actuales de este evento.</p>
+                                <h3 className="font-bold text-xl text-content">Cargar Equipo Base</h3>
+                                <p className="text-xs text-content-muted mt-1">SobrescribirÃ¡ las asignaciones actuales de este evento.</p>
                             </div>
-                            <button type="button" onClick={() => setEquipoPickerOpen(false)} className="text-neutral-500 hover:text-neutral-800 bg-white p-2 rounded-full border shadow-sm">
+                            <button type="button" onClick={() => setEquipoPickerOpen(false)} className="text-content-muted hover:text-content bg-background hover:bg-border p-2 rounded-full border border-border shadow-sm transition-colors">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
                             </button>
                         </div>
                         <div className="p-5 overflow-y-auto flex-1">
                             {equipoLoading ? (
-                                <div className="flex justify-center py-6"><div className="w-6 h-6 border-4 border-teal-500/30 border-t-teal-500 rounded-full animate-spin"></div></div>
+                                <div className="flex justify-center py-6"><div className="w-6 h-6 border-4 border-brand/30 border-t-brand rounded-full animate-spin"></div></div>
                             ) : equiposList.length === 0 ? (
-                                <div className="text-center text-sm text-neutral-500 py-6">No hay equipos creados. Usa el Constructor en Equipo.</div>
+                                <div className="text-center text-sm text-content-muted py-6">No hay equipos creados. Usa el Constructor en Equipo.</div>
                             ) : (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     {equiposList.map((eq, i) => {
-                                        const colors = ['bg-red-100 text-red-600', 'bg-blue-100 text-blue-600', 'bg-emerald-100 text-emerald-600', 'bg-fuchsia-100 text-fuchsia-600'];
+                                        const colors = ['bg-danger/10 text-danger', 'bg-info/10 text-info', 'bg-success/10 text-success', 'bg-accent/10 text-accent'];
                                         const c = colors[i % colors.length];
                                         return (
-                                            <button type="button" key={eq.id} onClick={() => selectEquipo(eq)} className="flex items-center justify-between p-4 rounded-2xl border border-neutral-200 hover:border-teal-500 group bg-neutral-50 text-left transition-colors">
+                                            <button type="button" key={eq.id} onClick={() => selectEquipo(eq)} className="flex items-center justify-between p-4 rounded-2xl border border-border hover:border-brand/30 group bg-background text-left transition-colors">
                                                 <div>
-                                                    <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Plantilla</span>
-                                                    <p className="font-bold text-base text-neutral-900 group-hover:text-teal-600">{eq.nombre}</p>
+                                                    <span className="text-[10px] font-bold text-content-muted uppercase tracking-widest">Plantilla</span>
+                                                    <p className="font-bold text-base text-content group-hover:text-brand">{eq.nombre}</p>
                                                 </div>
                                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black ${c}`}>
                                                     {eq.letra || 'A'}
@@ -443,3 +443,5 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         </div>
     );
 }
+
+

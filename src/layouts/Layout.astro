@@ -1,14 +1,62 @@
 ---
 import '../styles/global.css';
 import BottomNav from '../components/BottomNav.astro';
+import { supabase } from '../lib/supabase';
 
-const currentPath = Astro.url.pathname;
+const hexToRgbString = (hex) => {
+  if (!hex || typeof hex !== 'string') return '';
+  const value = hex.trim();
+
+  if (!/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value)) {
+    return value;
+  }
+
+  let r = 0;
+  let g = 0;
+  let b = 0;
+
+  if (value.length === 4) {
+    r = parseInt(value[1] + value[1], 16);
+    g = parseInt(value[2] + value[2], 16);
+    b = parseInt(value[3] + value[3], 16);
+  } else {
+    r = parseInt(value[1] + value[2], 16);
+    g = parseInt(value[3] + value[4], 16);
+    b = parseInt(value[5] + value[6], 16);
+  }
+
+  return `${r} ${g} ${b}`;
+};
+
+const { data: configApp } = await supabase
+  .from('configuracion_app')
+  .select('colores')
+  .eq('id', 1)
+  .single();
+
+const themeColors = configApp?.colores || null;
 ---
 <!DOCTYPE html>
 <html lang="es">
 <head>
  <meta charset="UTF-8" />
  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+ <script is:inline>
+  (() => {
+    try {
+      const savedTheme = localStorage.getItem('theme');
+      const shouldUseDark = savedTheme ? savedTheme === 'dark' : true;
+
+      if (shouldUseDark) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    } catch {
+      // no-op
+    }
+  })();
+ </script>
  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
  <meta name="generator" content={Astro.generator} />
  <title>Alabanza</title>
@@ -17,36 +65,88 @@ const currentPath = Astro.url.pathname;
  <meta name="apple-mobile-web-app-capable" content="yes">
  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
  <meta name="apple-mobile-web-app-title" content="App Alabanza">
- <meta name="theme-color" content="#neutral-950" media="(prefers-color-scheme: dark)" />
+ <meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)" />
  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
  
  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
  <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
  
- <link rel="preconnect" href="https://fonts.googleapis.com">
- <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
- <link href="https://fonts.googleapis.com/css2?family=Questrial&display=swap" rel="stylesheet">
+ <style is:global>
+    :root {
+      /* ðŸŽ¨ TOKENS DE SUPERFICIE Y TEXTO (MODO CLARO) */
+      --bg-background: 248 250 252;
+      --bg-surface: 255 255 255;
+      --border-base: 226 232 240;
+      --text-base: 15 23 42;
+      --text-muted: 100 116 139;
+    
+      /* ðŸŽ¨ TOKENS SEMÁNTICOS DE LA APP (RGB puro) */
+      --color-brand: 20 184 166;
+      --color-danger: 239 68 68;
+      --color-success: 34 197 94;
+      --color-warning: 249 115 22;
+      --color-info: 59 130 246;
+      --color-accent: 236 72 153;
+
+      /* ðŸŽ¨ TOKENS ESTRUCTURALES Y ROLES */
+      --color-neutral: 100 116 139;
+      --color-overlay: 10 10 12;
+      --color-rol-dir: 139 92 246;
+      --color-rol-let: 245 158 11;
+      --color-rol-ban: 20 184 166;
+      --color-rol-voc: 168 85 247;
+    }
+    
+    /* ðŸŒ™ TOKENS DE MODO OSCURO (Activados por clase 'dark' en el DOM root) */
+    html.dark {
+      --bg-background: 9 9 11;
+      --bg-surface: 24 24 27;
+      --border-base: 63 63 70;
+      --text-base: 250 250 250;
+      --text-muted: 161 161 170;
+      /* Los tokens semánticos no mutan para mantener contraste vibrante */
+    }
+
+    @media print {
+      body, html { background-color: white !important; color: black !important; }
+      .no-print, nav, header { display: none !important; }
+      .print-only { display: block !important; }
+      @page { margin: 2cm; }
+    }
+
+    .print-only { display: none; }
+    .nav-link-active { color: rgb(var(--text-base)) !important; border-bottom-width: 2px !important; border-color: rgb(var(--color-brand)) !important; }
+    .nav-link-inactive { color: rgb(var(--text-muted)) !important; border-color: transparent !important; }
+  </style>
+
+  {themeColors && (
+    <style is:global set:html={`
+      :root {
+        ${themeColors.brand ? `--color-brand: ${hexToRgbString(themeColors.brand)};` : ''}
+        ${themeColors.danger ? `--color-danger: ${hexToRgbString(themeColors.danger)};` : ''}
+        ${themeColors.success ? `--color-success: ${hexToRgbString(themeColors.success)};` : ''}
+        ${themeColors.warning ? `--color-warning: ${hexToRgbString(themeColors.warning)};` : ''}
+        ${themeColors.info ? `--color-info: ${hexToRgbString(themeColors.info)};` : ''}
+        ${themeColors.accent ? `--color-accent: ${hexToRgbString(themeColors.accent)};` : ''}
+        ${themeColors.neutral ? `--color-neutral: ${hexToRgbString(themeColors.neutral)};` : ''}
+        ${themeColors.overlay ? `--color-overlay: ${hexToRgbString(themeColors.overlay)};` : ''}
+        ${themeColors.rolDir ? `--color-rol-dir: ${hexToRgbString(themeColors.rolDir)};` : ''}
+        ${themeColors.rolLet ? `--color-rol-let: ${hexToRgbString(themeColors.rolLet)};` : ''}
+        ${themeColors.rolBan ? `--color-rol-ban: ${hexToRgbString(themeColors.rolBan)};` : ''}
+        ${themeColors.rolVoc ? `--color-rol-voc: ${hexToRgbString(themeColors.rolVoc)};` : ''}
+      }
+    `} />
+  )}
 </head>
-<body class="bg-neutral-50 text-neutral-900 min-h-screen flex flex-col items-center" style="font-family: 'Questrial', sans-serif;">
+<body class="bg-background text-content min-h-screen flex flex-col items-center">
  <main class="w-full max-w-[2000px] flex-1 pb-24 px-4 lg:px-8 xl:px-12">
- <!-- Contenedor Principal (pb-24 evita choque visual con la barra flotante) -->
+ <!-- Contenedor principal (pb-24 evita choque visual con la barra flotante). -->
  <slot />
  </main>
 
- <!-- Barra de Navegación Fija Mobile-First -->
+ <!-- Barra de navegacion fija mobile-first -->
  <BottomNav />
-    <style is:global>
-        @media print {
-            body, html { background-color: white !important; color: black !important; }
-            .no-print, nav, header { display: none !important; }
-            .print-only { display: block !important; }
-            @page { margin: 2cm; }
-        }
-        .print-only { display: none; }
-        
-        .nav-link-active { color: #111827 !important; border-bottom-width: 2px !important; border-color: #2563eb !important; }
-        .nav-link-inactive { color: #6b7280 !important; border-color: transparent !important; }
-    </style>
 </body>
 </html>
+

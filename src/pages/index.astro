@@ -124,9 +124,10 @@ console.log('Inicio proximosServicios count:', proximosServicios.length, 'user:'
 ---
 
 <Layout title="Inicio | Redil Alabanza">
-  <div id="dashboard-scroll-root" class="h-[calc(100dvh-80px)] lg:h-[calc(86dvh-80px)] overflow-y-auto bg-base w-full pt-4 md:pt-8 pb-32">
+  <div id="dashboard-scroll-root" class="h-[calc(100dvh-80px)] lg:h-[calc(86dvh-80px)] overflow-y-auto bg-background w-full pt-4 md:pt-8 pb-32">
     <div class="max-w-[2000px] mx-auto w-full h-full px-4 xl:px-8">
       <DashboardInicio client:load usuario={perfil} proximosServicios={proximosServicios} />
     </div>
   </div>
 </Layout>
+
