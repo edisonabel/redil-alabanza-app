@@ -305,18 +305,18 @@ export default function ModalEvento() {
                             </div>
 
                             <div className={`w-full grid grid-cols-1 sm:grid-cols-2 gap-4 ${isStrictModerator ? 'hidden' : ''}`} id="ev-container-fechas">
-                                <div className="w-full">
+                                <div className="w-full min-w-0">
                                     <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">Fecha <span className="text-red-500">*</span></label>
-                                    <input type="date" id="ev-fecha" required disabled={isStrictModerator} value={fecha} onChange={e => setFecha(e.target.value)} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" />
+                                    <input type="date" id="ev-fecha" required disabled={isStrictModerator} value={fecha} onChange={e => setFecha(e.target.value)} className="w-full min-w-0 bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" />
                                 </div>
-                                <div className="flex gap-4">
-                                    <div className="flex-1">
+                                <div className="flex gap-4 form-row-compact min-w-0">
+                                    <div className="flex-1 min-w-0">
                                         <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">Hora <span className="text-red-500">*</span></label>
-                                        <input type="time" id="ev-hora-inicio" required disabled={isStrictModerator} value={horaInicio} onChange={e => setHoraInicio(e.target.value)} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" />
+                                        <input type="time" id="ev-hora-inicio" required disabled={isStrictModerator} value={horaInicio} onChange={e => setHoraInicio(e.target.value)} className="w-full min-w-0 bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" />
                                     </div>
-                                    <div className="flex-[0.7]">
+                                    <div className="flex-[0.7] min-w-0">
                                         <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2 truncate" title="Hora Fin">Fin <span className="text-content-muted font-normal lowercase">(opc)</span></label>
-                                        <input type="time" id="ev-hora-fin" disabled={isStrictModerator} value={horaFin} onChange={e => setHoraFin(e.target.value)} className="w-full bg-background border border-border rounded-xl px-3 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" />
+                                        <input type="time" id="ev-hora-fin" disabled={isStrictModerator} value={horaFin} onChange={e => setHoraFin(e.target.value)} className="w-full min-w-0 bg-background border border-border rounded-xl px-3 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" />
                                     </div>
                                 </div>
                             </div>
@@ -330,7 +330,7 @@ export default function ModalEvento() {
                                             <p className="text-[11px] text-violet-500 mt-0.5">Actualiza tÃ­tulo y hora en todos los eventos futuros de esta serie</p>
                                         </div>
                                     </label>
-                                    <button type="button" onClick={handleDeleteSerie} disabled={isDeletingSerie} id="btn-eliminar-serie" className="w-full flex items-center justify-center gap-2 py-2.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded-xl transition-colors font-bold text-sm">
+                                    <button type="button" onClick={handleDeleteSerie} disabled={isDeletingSerie} id="btn-eliminar-serie" className="w-full flex items-center justify-center gap-2 py-2.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded-xl transition-colors font-ui-strong text-sm leading-tight">
                                         {isDeletingSerie ? (
                                             <div className="w-4 h-4 border-2 border-red-600/30 border-t-red-600 rounded-full animate-spin"></div>
                                         ) : (
@@ -360,9 +360,9 @@ export default function ModalEvento() {
                                 <h3 className="text-sm font-bold text-content uppercase tracking-wider flex items-center gap-2">Asignaciones de Equipo <span className="text-[10px] font-normal text-content-muted bg-background px-2 py-0.5 rounded hidden sm:inline-block">Clic editar</span></h3>
                             </div>
 
-                            <button type="button" id="btn-armar-playlist" className={`w-full relative overflow-hidden group items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-gradient-to-br from-purple-500 via-fuchsia-500 to-pink-500 text-white font-bold text-[15px] shadow-md shadow-fuchsia-500/30 hover:shadow-fuchsia-500/50 hover:-translate-y-0.5 transition-all duration-300 ${showPlaylistBtn ? 'flex' : 'hidden'}`}>
+                            <button type="button" id="btn-armar-playlist" className={`w-full relative overflow-hidden group items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-gradient-to-br from-purple-500 via-fuchsia-500 to-pink-500 text-white font-ui-strong text-[15px] leading-tight shadow-md shadow-fuchsia-500/30 hover:shadow-fuchsia-500/50 hover:-translate-y-0.5 transition-all duration-300 ${showPlaylistBtn ? 'flex' : 'hidden'}`}>
                                 <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
-                                <span className="relative z-10 flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>Armar Repertorio (Playlist)</span>
+                                <span className="relative z-10 flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>Armar Repertorio (Setlist)</span>
                             </button>
 
                             <RosterManager

@@ -136,33 +136,33 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
  <div id="scroll-sentinel" class="h-4 w-full mt-8"></div>
 
  <!-- Panel Flotante Setlist (modo normal) -->
- <div id="setlistPanel" class="fixed bottom-20 right-6 bg-background border border-border text-content p-4 rounded-2xl shadow-2xl z-50 flex items-center gap-4 hidden transition-opacity">
- <div class="font-semibold">
+<div id="setlistPanel" class="fixed bottom-[calc(env(safe-area-inset-bottom)+5rem)] md:bottom-24 left-3 right-3 md:left-auto md:right-6 bg-background border border-border text-content p-3 md:p-4 rounded-xl md:rounded-2xl shadow-2xl z-50 flex items-center justify-between gap-3 md:gap-4 hidden transition-opacity">
+ <div class="font-semibold text-sm md:text-base whitespace-nowrap">
  Setlist: <span id="setlistCount" class="text-blue-400">0</span>
  </div>
- <div class="flex gap-2">
- <button id="btnCopySetlist" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold transition-colors">Copiar Enlace</button>
- <button id="btnClearSetlist" class="px-3 py-1.5 bg-neutral/20 text-neutral hover:bg-neutral-300 rounded-lg text-sm font-bold transition-colors">Limpiar</button>
+ <div class="flex items-center gap-2 shrink-0">
+ <button id="btnCopySetlist" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold transition-colors">Copiar Enlace</button>
+ <button id="btnClearSetlist" class="px-3.5 py-2 bg-neutral/20 text-neutral hover:bg-neutral-300 rounded-lg text-sm font-bold transition-colors">Limpiar</button>
  </div>
  </div>
 
  <!-- Barra Flotante Playlist (modo seleccion) - Inyeccion modular -->
- <div id="playlistBar" class="fixed bottom-16 left-0 right-0 z-50 bg-surface border-t border-border shadow-[0_-8px_30px_rgba(0,0,0,0.3)] px-4 py-4 hidden">
- <div class="max-w-6xl mx-auto flex items-center justify-between gap-4">
- <div class="flex items-center gap-3">
+<div id="playlistBar" class="fixed bottom-[calc(env(safe-area-inset-bottom)+5rem)] md:bottom-16 left-0 right-0 z-50 bg-surface border-t border-border shadow-[0_-8px_30px_rgba(0,0,0,0.3)] px-4 py-3 hidden">
+ <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4">
+ <div class="flex items-start sm:items-center gap-3">
  <div class="w-10 h-10 rounded-full bg-brand/20 flex items-center justify-center">
  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-teal-400"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
  </div>
  <div>
- <p class="text-content font-bold text-sm"><span id="playlistCount">0</span> Canciones Seleccionadas</p>
- <p class="text-content-muted text-xs">Toca el + de cada canci&oacute;n para agregar o quitar</p>
+ <p class="text-content font-bold text-base leading-tight"><span id="playlistCount">0</span> Canciones Seleccionadas</p>
+ <p class="text-content-muted text-sm leading-tight">Toca el + de cada canci&oacute;n para agregar o quitar</p>
  </div>
  </div>
  <div class="flex items-center gap-2">
- <button id="btn-cancel-playlist" class="px-4 py-2.5 rounded-xl border border-border text-content-muted text-sm font-bold hover:bg-background transition-colors">
+ <button id="btn-cancel-playlist" class="flex-1 sm:flex-none px-4 py-2.5 rounded-xl border border-border text-content-muted text-sm font-bold hover:bg-background transition-colors">
  Cancelar
  </button>
- <button id="btn-save-playlist" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white text-sm font-bold hover:opacity-90 transition-all shadow-lg flex items-center gap-2">
+ <button id="btn-save-playlist" class="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white text-sm font-bold hover:opacity-90 transition-all shadow-lg flex items-center justify-center gap-2">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
  Guardar Setlist
  </button>

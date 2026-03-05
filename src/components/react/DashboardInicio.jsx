@@ -28,6 +28,7 @@ const formatTimeRange = (isoString, horaFin) => {
 
 const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
     const [isDark, setIsDark] = useState(false);
+    const [dismissUpcomingHint, setDismissUpcomingHint] = useState(false);
 
     useEffect(() => {
         const scrollRoot = document.getElementById('dashboard-scroll-root');
@@ -35,6 +36,10 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
         window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
         setIsDark(document.documentElement.classList.contains('dark'));
     }, []);
+
+    useEffect(() => {
+        setDismissUpcomingHint(false);
+    }, [proximosServicios.length]);
 
     const toggleDarkMode = () => {
         setIsDark((prev) => {
@@ -49,6 +54,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
     const opcionesFecha = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
     const fechaHoy = new Date().toLocaleDateString('es-ES', opcionesFecha);
     const fechaHoyCapitalizada = fechaHoy.charAt(0).toUpperCase() + fechaHoy.slice(1);
+    const showUpcomingHint = proximosServicios.length > 1 && !dismissUpcomingHint;
 
     return (
         <>
@@ -63,17 +69,35 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
         <div className="w-full max-w-[1720px] mx-auto selection:bg-brand/20 flex flex-col lg:flex-row gap-6 lg:gap-8 2xl:gap-10 xl:grid xl:grid-cols-[minmax(0,1fr)_460px] 2xl:grid-cols-[minmax(0,1fr)_560px]">
             {/* Columna Izquierda */}
             <div className="flex-1 min-w-0 w-full flex flex-col gap-6">
-                <header className="px-4 lg:px-0 mt-2 pr-16 md:pr-28">
+                <header className="px-3 sm:px-4 lg:px-0 mt-2 pr-16 md:pr-28">
                     <h1 className="text-3xl font-extrabold text-content tracking-tight">Hola {nombre}</h1>
                     <p className="text-sm font-medium text-content-muted mt-1 capitalize">{fechaHoyCapitalizada}</p>
                 </header>
 
                 <section className="flex-1 flex flex-col">
-                    <div className="flex items-center justify-between px-4 lg:px-0 mb-3">
+                    <div className="flex items-center justify-between gap-3 px-3 sm:px-4 lg:px-0 mb-3">
                         <h2 className="text-lg font-bold text-content tracking-tight">Próximos Servicios</h2>
+                        {showUpcomingHint && (
+                            <span className="md:hidden inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-surface/80 text-[10px] font-bold text-content-muted uppercase tracking-wide [animation:deslizaInicioHintLoop_4.8s_ease-in-out_infinite]">
+                                Desliza
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse">
+                                    <path d="m9 18 6-6-6-6" />
+                                </svg>
+                            </span>
+                        )}
                     </div>
 
-                    <div className="flex overflow-x-auto gap-4 px-4 pb-4 snap-x snap-mandatory hide-scrollbar w-full h-full lg:flex-1 lg:px-0 lg:pb-0 lg:overflow-visible lg:grid lg:[grid-template-columns:repeat(auto-fit,minmax(300px,1fr))] lg:auto-rows-fr lg:gap-6 2xl:gap-8">
+                    <div className="relative -mx-3 sm:mx-0">
+                    <div
+                        className="flex overflow-x-auto gap-4 px-3 sm:px-4 pb-4 snap-x snap-mandatory hide-scrollbar w-full h-full lg:flex-1 lg:px-0 lg:pb-0 lg:overflow-visible lg:grid lg:[grid-template-columns:repeat(auto-fit,minmax(300px,1fr))] lg:auto-rows-fr lg:gap-6 2xl:gap-8"
+                        onScroll={(e) => {
+                            const el = e.currentTarget;
+                            const reachedEnd = (el.scrollWidth - (el.scrollLeft + el.clientWidth)) <= 12;
+                            if (reachedEnd) {
+                                setDismissUpcomingHint(true);
+                            }
+                        }}
+                    >
                         {proximosServicios.length === 0 ? (
                             <div className="w-full h-full shrink-0 snap-center bg-surface rounded-[2rem] p-6 shadow-sm border border-border lg:min-h-[260px] 2xl:min-h-[300px] lg:col-span-full flex items-center justify-center">
                                 <div className="flex flex-col items-center justify-center text-center gap-3 py-4">
@@ -90,6 +114,9 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
                                 const fecha = formatEventDate(evento.fecha_hora);
                                 const tema = evento.tema_predicacion || evento.tema || evento.titulo || 'Servicio';
                                 const horaTexto = formatTimeRange(evento.fecha_hora, evento.hora_fin);
+                                const hasSetlist = Boolean(servicio?.has_setlist);
+                                const setlistCount = Number(servicio?.setlist_count || 0);
+                                const crearSetlistHref = servicio?.crear_setlist_href || `/repertorio?seleccionar_para=${evento.id}`;
                                 const misRoles = Array.isArray(servicio.mis_roles) && servicio.mis_roles.length > 0
                                     ? servicio.mis_roles
                                     : [servicio.roles?.nombre || 'Miembro'];
@@ -98,40 +125,103 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
                                 const roster = Array.isArray(evento.asignaciones) ? evento.asignaciones : [];
                                 const liderAsignado = roster.find((r) => r?.roles?.codigo === 'lider_alabanza' && r?.perfiles?.nombre);
                                 const dirigeTexto = liderAsignado ? getFirstName(liderAsignado.perfiles.nombre) : null;
+                                const openDetalleRepertorio = () => {
+                                    if (typeof window === 'undefined') return;
+
+                                    const detallePayload = {
+                                        id: evento.id,
+                                        isVirtual: false,
+                                        fecha: new Date(evento.fecha_hora),
+                                        dbData: evento
+                                    };
+
+                                    const tryOpen = (attempt = 0) => {
+                                        if (window.openDetalleReact) {
+                                            window.openDetalleReact(detallePayload, { focusSection: 'repertorio' });
+                                            return;
+                                        }
+                                        if (attempt < 12) {
+                                            window.setTimeout(() => tryOpen(attempt + 1), 120);
+                                        }
+                                    };
+
+                                    tryOpen();
+                                };
 
                                 return (
                                     <article
                                         key={servicio.id || `${evento.id}-${evento.fecha_hora}`}
-                                        className="w-[92vw] sm:w-[420px] lg:w-full lg:min-w-0 shrink-0 snap-center bg-surface border border-border rounded-[1.65rem] p-4 md:p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between min-h-[210px]"
+                                        className="w-[90vw] sm:w-[420px] lg:w-full lg:min-w-0 shrink-0 snap-center bg-overlay/95 dark:bg-border border border-border/30 dark:border-border rounded-[1.65rem] p-4 md:p-5 shadow-[0_10px_28px_rgba(2,6,23,0.28)] dark:shadow-sm hover:shadow-[0_14px_32px_rgba(2,6,23,0.34)] dark:hover:shadow-md transition-shadow flex flex-col justify-between min-h-[240px]"
                                     >
                                         <div className="flex items-start gap-4 md:gap-5 min-w-0">
-                                            <div className="shrink-0 w-14 rounded-xl bg-background border border-border flex flex-col items-center justify-center py-2">
-                                                <span className="text-2xl leading-none font-black text-content">{fecha.day}</span>
-                                                <span className="text-[10px] uppercase font-bold tracking-widest text-content-muted mt-1">{fecha.month}</span>
+                                            <div className="shrink-0 w-14 rounded-xl bg-white/5 border border-white/20 dark:bg-surface dark:border-border flex flex-col items-center justify-center py-2">
+                                                <span className="text-2xl leading-none font-black text-white dark:text-content">{fecha.day}</span>
+                                                <span className="text-[10px] uppercase font-bold tracking-widest text-white/70 dark:text-content-muted mt-1">{fecha.month}</span>
                                             </div>
 
                                             <div className="min-w-0 flex-1">
-                                                <h3 className="text-lg md:text-xl font-extrabold text-content leading-tight line-clamp-2">{tema}</h3>
-                                                <p className="text-xs md:text-sm text-content-muted mt-2 flex items-center gap-2">
+                                                <h3 className="text-lg md:text-xl font-extrabold text-white dark:text-content leading-tight line-clamp-2">{tema}</h3>
+                                                <p className="text-xs md:text-sm text-white/70 dark:text-content-muted mt-2 flex items-center gap-2">
                                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
                                                     {horaTexto}
                                                 </p>
                                             </div>
                                         </div>
 
-                                        <div className="mt-4 pt-3 border-t border-border/80 flex flex-wrap items-center gap-2 md:gap-3">
+                                        <div className="mt-4 rounded-2xl border border-white/10 dark:border-border bg-black/20 dark:bg-surface/60 p-3.5">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <p className="text-[11px] font-bold uppercase tracking-wider text-white/70 dark:text-content-muted">Repertorio / Setlist</p>
+                                                {hasSetlist ? (
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-brand/20 text-brand border border-brand/30">
+                                                        {setlistCount} canciones
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/10 text-white/70 border border-white/20 dark:bg-background dark:text-content-muted dark:border-border">
+                                                        Sin setlist
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {hasSetlist ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={openDetalleRepertorio}
+                                                    className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-brand/40 bg-brand/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-brand hover:bg-brand/20 transition-colors"
+                                                >
+                                                    Ver canciones
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                        <path d="m9 18 6-6-6-6" />
+                                                    </svg>
+                                                </button>
+                                            ) : (
+                                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                                    <p className="text-xs text-white/60 dark:text-content-muted">Sin setlist asignada para este servicio.</p>
+                                                    <a
+                                                        href={crearSetlistHref}
+                                                        className="inline-flex items-center gap-1.5 rounded-lg border border-white/25 bg-white/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-white/90 dark:border-border dark:bg-background dark:text-content hover:bg-white/20 dark:hover:bg-surface transition-colors"
+                                                    >
+                                                        Crear setlist
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                            <path d="m9 18 6-6-6-6" />
+                                                        </svg>
+                                                    </a>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="mt-3 h-px bg-white/20 dark:bg-border/80"></div>
+                                        <div className="mt-3 grid grid-cols-2 gap-2.5">
                                             {dirigeTexto ? (
-                                                <span className="inline-flex items-center gap-1.5 bg-rol-dir/10 text-rol-dir border border-rol-dir px-3 py-1 rounded-[10px] text-[10px] md:text-xs font-bold uppercase tracking-wider">
+                                                <span className="inline-flex w-full min-w-0 items-center justify-center gap-1.5 bg-rol-dir/10 text-rol-dir border border-rol-dir px-3 py-1.5 rounded-xl text-[11px] md:text-xs font-bold uppercase tracking-wider">
                                                     <strong>DIRIGE:</strong>
                                                     <span className="truncate">{dirigeTexto}</span>
                                                 </span>
                                             ) : (
-                                                <span className="inline-flex items-center bg-background text-content-muted border border-border px-3 py-1 rounded-[10px] text-[10px] md:text-xs font-bold uppercase tracking-wider italic">
+                                                <span className="inline-flex w-full min-w-0 items-center justify-center bg-white/10 text-white/75 border border-white/20 dark:bg-background dark:text-content-muted dark:border-border px-3 py-1.5 rounded-xl text-[11px] md:text-xs font-bold uppercase tracking-wider italic">
                                                     Dirección vacía
                                                 </span>
                                             )}
 
-                                            <span className="inline-flex items-center gap-1.5 bg-brand/10 text-brand border border-brand/30 px-3 py-1 rounded-[10px] text-[10px] md:text-xs font-bold uppercase tracking-wider max-w-full">
+                                            <span className="inline-flex w-full min-w-0 items-center justify-center gap-1.5 bg-brand/10 text-brand border border-brand/30 px-3 py-1.5 rounded-xl text-[11px] md:text-xs font-bold uppercase tracking-wider max-w-full">
                                                 <strong>TU:</strong>
                                                 <span className="truncate">{miRolTexto}</span>
                                             </span>
@@ -141,12 +231,23 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
                             })
                         )}
                     </div>
+                    {showUpcomingHint && (
+                        <>
+                            <div className="md:hidden pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-background/95 via-background/65 to-transparent dark:from-surface/90 dark:via-surface/55"></div>
+                            <div className="md:hidden pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full border border-border bg-surface/90 text-content-muted flex items-center justify-center shadow-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="m9 18 6-6-6-6" />
+                                </svg>
+                            </div>
+                        </>
+                    )}
+                    </div>
                 </section>
             </div>
 
             {/* Columna Derecha */}
             <div className="w-full lg:w-[44%] xl:w-full shrink-0 flex flex-col gap-6 2xl:gap-8 lg:mt-20">
-                <section className="px-4 lg:px-0 lg:flex-1 lg:flex lg:flex-col">
+                <section className="px-3 sm:px-4 lg:px-0 lg:flex-1 lg:flex lg:flex-col">
                     <h2 className="text-lg font-bold text-content tracking-tight mb-3">Tu Entorno</h2>
                     <div className="grid grid-cols-2 gap-4 2xl:gap-6 lg:flex-1 lg:auto-rows-fr">
                         <a href="/repertorio" className="aspect-square lg:aspect-auto lg:h-full lg:min-h-[240px] xl:min-h-[280px] 2xl:min-h-[320px] rounded-[2rem] p-5 flex flex-col justify-between shadow-md active:scale-[0.98] transition-all relative overflow-hidden group">
@@ -177,7 +278,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
                     </div>
                 </section>
 
-                <section className="px-4 lg:px-0 mb-8 lg:mb-0">
+                <section className="px-3 sm:px-4 lg:px-0 mb-8 lg:mb-0">
                     <h2 className="text-lg font-bold text-content tracking-tight mb-3">Atajos</h2>
                     <div className="bg-surface border border-border rounded-[2rem] p-5 shadow-sm flex justify-between items-start">
                         <a href="/programacion" className="flex flex-col items-center gap-2 group w-1/4">
@@ -215,6 +316,16 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
                 </section>
             </div>
         </div>
+        <style>{`
+            @keyframes deslizaInicioHintLoop {
+                0% { opacity: 0; transform: translateX(0); }
+                12% { opacity: 1; transform: translateX(0); }
+                55% { opacity: 1; transform: translateX(0); }
+                78% { opacity: 1; transform: translateX(12px); }
+                90% { opacity: 0.25; transform: translateX(20px); }
+                100% { opacity: 0; transform: translateX(20px); }
+            }
+        `}</style>
         </>
     );
 };

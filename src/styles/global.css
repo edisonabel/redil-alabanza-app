@@ -48,12 +48,14 @@ body {
 button,
 [role='button'],
 input[type='button'],
-input[type='submit'],
-.font-cta,
-.btn-gestionar-modal,
-.btn-expandir-detalle,
-.btn-roster-inline,
-.btn-remove-roster {
+input[type='submit'] {
+  font-family: var(--font-ui);
+  font-weight: 700 !important;
+  letter-spacing: 0.002em;
+  line-height: 1.15;
+}
+
+.font-cta {
   font-family: var(--font-cta);
   font-weight: 400 !important;
   letter-spacing: 0.003em;
@@ -68,6 +70,39 @@ input[type='submit'],
 
 button {
   text-wrap: balance;
+}
+
+input[type='date'],
+input[type='time'],
+input[type='datetime-local'],
+select {
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.form-row-compact,
+.form-row-compact > * {
+  min-width: 0;
+}
+
+@supports (-webkit-touch-callout: none) {
+  input[type='date'],
+  input[type='time'],
+  input[type='datetime-local'] {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  input[type='date']::-webkit-date-and-time-value,
+  input[type='time']::-webkit-date-and-time-value,
+  input[type='datetime-local']::-webkit-date-and-time-value {
+    text-align: left;
+    min-height: 1.2em;
+  }
 }
 
 .page-title-row {

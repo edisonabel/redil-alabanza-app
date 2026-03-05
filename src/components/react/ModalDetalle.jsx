@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 
 const iconSvgPaths = {
@@ -34,17 +34,35 @@ export default function ModalDetalle({ initialRoles }) {
     const [playlist, setPlaylist] = useState(null);
     const [playlistItems, setPlaylistItems] = useState([]);
     const [loadingPlaylist, setLoadingPlaylist] = useState(false);
+    const [focusSection, setFocusSection] = useState(null);
+    const [flashPlaylistSection, setFlashPlaylistSection] = useState(false);
+    const playlistSectionRef = useRef(null);
 
     useEffect(() => {
         // Register global hook for CalendarioGrid
-        window.openDetalleReact = (cardData) => {
+        window.openDetalleReact = (cardData, options = {}) => {
             if (!cardData) return;
             setEventData(cardData);
+            setFocusSection(options?.focusSection || null);
             setIsOpen(true);
             document.body.style.overflow = 'hidden';
             fetchPlaylist(cardData.dbData?.id);
         };
     }, []);
+
+    useEffect(() => {
+        if (!isOpen || focusSection !== 'repertorio') return;
+
+        const scrollTimer = setTimeout(() => {
+            if (playlistSectionRef.current) {
+                playlistSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                setFlashPlaylistSection(true);
+                setTimeout(() => setFlashPlaylistSection(false), 1200);
+            }
+        }, 240);
+
+        return () => clearTimeout(scrollTimer);
+    }, [isOpen, focusSection, playlistItems.length, loadingPlaylist]);
 
     const fetchPlaylist = async (eventoId) => {
         if (!eventoId) return;
@@ -85,6 +103,8 @@ export default function ModalDetalle({ initialRoles }) {
             setEventData(null);
             setPlaylist(null);
             setPlaylistItems([]);
+            setFocusSection(null);
+            setFlashPlaylistSection(false);
         }, 300);
     };
 
@@ -174,11 +194,14 @@ export default function ModalDetalle({ initialRoles }) {
                         </div>
                     </div>
 
-                    {/* Playlist */}
-                    <div className="relative z-10">
+                                        {/* Setlist */}
+                    <div
+                        ref={playlistSectionRef}
+                        className={`relative z-10 rounded-2xl transition-shadow ${flashPlaylistSection ? 'shadow-[0_0_0_2px_rgba(20,184,166,0.45)]' : ''}`}
+                    >
                         <h4 className="text-xs font-bold text-content-muted uppercase tracking-widest mb-4 flex items-center gap-2">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
-                            Repertorio / Playlist
+                            Repertorio / Setlist
                         </h4>
 
                         <div className="bg-background border border-border rounded-[24px] p-5 shadow-inner min-h-[150px]">
@@ -187,7 +210,7 @@ export default function ModalDetalle({ initialRoles }) {
                             ) : !playlist ? (
                                 <div className="flex flex-col items-center justify-center py-6 opacity-60">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" className="mx-auto mb-3 text-content-muted" stroke="currentColor" strokeWidth="1.5"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
-                                    <p className="text-sm font-bold text-content-muted">Sin playlist asignada</p>
+                                    <p className="text-sm font-bold text-content-muted">Sin setlist asignada</p>
                                     <p className="text-[11px] text-content-muted mt-1">El líder de alabanza puede crear una desde el módulo Repertorio.</p>
                                 </div>
                             ) : (
@@ -249,5 +272,6 @@ export default function ModalDetalle({ initialRoles }) {
         </div>
     );
 }
+
 
 

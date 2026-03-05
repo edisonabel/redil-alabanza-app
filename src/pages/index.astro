@@ -1,6 +1,7 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import DashboardInicio from '../components/react/DashboardInicio.jsx';
+import ModalDetalle from '../components/react/ModalDetalle.jsx';
 import { supabase } from '../lib/supabase';
 import { createClient } from '@supabase/supabase-js';
 
@@ -78,8 +79,31 @@ if (eventosError) {
   console.error('Inicio eventos query error:', eventosError);
 }
 
+const eventoIds = (eventosData || []).map((evento) => evento.id).filter(Boolean);
+const playlistByEvento = new Map();
+
+if (eventoIds.length > 0) {
+  const { data: playlistsData, error: playlistsError } = await supabaseSSR
+    .from('playlists')
+    .select('id, evento_id, playlist_canciones(id)')
+    .in('evento_id', eventoIds);
+
+  if (playlistsError) {
+    console.error('Inicio playlists query error:', playlistsError);
+  } else {
+    for (const playlist of playlistsData || []) {
+      const count = Array.isArray(playlist.playlist_canciones) ? playlist.playlist_canciones.length : 0;
+      playlistByEvento.set(playlist.evento_id, {
+        id: playlist.id,
+        count
+      });
+    }
+  }
+}
+
 const proximosServicios = (eventosData || [])
   .map((evento) => {
+    const playlistMeta = playlistByEvento.get(evento.id) || null;
     const roster = Array.isArray(evento.asignaciones) ? evento.asignaciones : [];
     const misAsignaciones = roster.filter((asig) => {
       const perfilAsignado = asig?.perfiles;
@@ -115,7 +139,11 @@ const proximosServicios = (eventosData || [])
       ...evento,
       asignaciones: rosterConRoles,
       mis_roles: misRoles.length > 0 ? misRoles : ['Miembro'],
-      mi_rol_codigos: miRolCodigos
+      mi_rol_codigos: miRolCodigos,
+      has_setlist: !!playlistMeta && playlistMeta.count > 0,
+      setlist_count: playlistMeta?.count || 0,
+      repertorio_href: `/programacion?ver_evento=${evento.id}&focus=repertorio`,
+      crear_setlist_href: `/repertorio?seleccionar_para=${evento.id}`
     };
   })
   .filter(Boolean);
@@ -125,8 +153,9 @@ console.log('Inicio proximosServicios count:', proximosServicios.length, 'user:'
 
 <Layout title="Inicio | Redil Alabanza">
   <div id="dashboard-scroll-root" class="h-[calc(100dvh-80px)] lg:h-[calc(86dvh-80px)] overflow-y-auto bg-background w-full pt-4 md:pt-8 pb-32">
-    <div class="max-w-[2000px] mx-auto w-full h-full px-4 xl:px-8">
+    <div class="max-w-[2000px] mx-auto w-full h-full px-3 sm:px-4 xl:px-8">
       <DashboardInicio client:load usuario={perfil} proximosServicios={proximosServicios} />
+      <ModalDetalle client:only="react" initialRoles={rolesCatalog || []} />
     </div>
   </div>
 </Layout>

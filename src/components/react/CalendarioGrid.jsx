@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 
 /**
@@ -13,6 +13,8 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
     const [filtro, setFiltro] = useState('Todos');
     const [isLoading, setIsLoading] = useState(false);
     const [calendarDate, setCalendarDate] = useState(new Date());
+    const [dismissedMonthHints, setDismissedMonthHints] = useState({});
+    const autoOpenHandledRef = useRef(false);
 
     // UI Modals
     const [deleteConfirmTarget, setDeleteConfirmTarget] = useState(null);
@@ -51,6 +53,46 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                 dbData: ev
             }));
     }, [eventos]);
+
+    useEffect(() => {
+        if (autoOpenHandledRef.current || typeof window === 'undefined') return;
+
+        const params = new URLSearchParams(window.location.search);
+        const eventoId = params.get('ver_evento');
+        const focus = params.get('focus');
+        if (!eventoId) return;
+
+        const cardData = tarjetasGeneradas.find((card) => String(card?.dbData?.id) === String(eventoId));
+        if (!cardData) return;
+
+        autoOpenHandledRef.current = true;
+
+        const clearParams = () => {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('ver_evento');
+            url.searchParams.delete('focus');
+            const nextQuery = url.searchParams.toString();
+            const nextUrl = `${url.pathname}${nextQuery ? `?${nextQuery}` : ''}${url.hash}`;
+            window.history.replaceState({}, '', nextUrl);
+        };
+
+        const openWithRetry = (attempt = 0) => {
+            if (window.openDetalleReact) {
+                window.openDetalleReact(cardData, { focusSection: focus || null });
+                clearParams();
+                return;
+            }
+
+            if (attempt >= 20) {
+                clearParams();
+                return;
+            }
+
+            window.setTimeout(() => openWithRetry(attempt + 1), 140);
+        };
+
+        openWithRetry();
+    }, [tarjetasGeneradas]);
 
     // --- LOGICA DEL ROSTER ESTATICO ---
     const renderRoster = (dbData) => {
@@ -183,6 +225,13 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
         } finally {
             setIsDeleting(false);
         }
+    };
+
+    const dismissMonthHint = (monthIndex) => {
+        setDismissedMonthHints((prev) => {
+            if (prev[monthIndex]) return prev;
+            return { ...prev, [monthIndex]: true };
+        });
     };
 
     const renderListRow = (cardData) => {
@@ -681,18 +730,33 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                         <div className="flex flex-col gap-10 max-w-7xl mx-auto w-full">
                             {groupedMonths.map((group, idx) => (
                                 <div key={idx} className="w-full">
+                                    {(() => {
+                                        const showMonthHint = group.cards.length > 1 && !dismissedMonthHints[idx];
+                                        return (
+                                            <>
                                     <div className="flex items-center justify-between gap-3 mb-4 ml-1 pr-1">
                                         <h3 className="text-[12px] font-bold text-content-muted uppercase tracking-widest">{group.month}</h3>
-                                        <span className="md:hidden inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-surface/80 text-[10px] font-bold text-content-muted uppercase tracking-wide">
+                                        {showMonthHint && (
+                                            <span
+                                                className="md:hidden inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-surface/80 text-[10px] font-bold text-content-muted uppercase tracking-wide [animation:deslizaHintLoop_4.6s_ease-in-out_infinite]"
+                                            >
                                             Desliza
                                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse">
                                                 <path d="m9 18 6-6-6-6" />
                                             </svg>
-                                        </span>
+                                            </span>
+                                        )}
                                     </div>
-                                    <div className="relative">
+                                    <div className="relative -mx-4 md:mx-0">
                                         <div
-                                            className="flex overflow-x-auto overflow-y-visible snap-x snap-mandatory gap-6 pb-8 pt-6 px-4 -mx-4 hide-scrollbar cursor-grab active:cursor-grabbing scroll-smooth"
+                                            className="flex overflow-x-auto overflow-y-visible snap-x snap-mandatory gap-6 pb-8 pt-6 px-5 md:px-4 hide-scrollbar cursor-grab active:cursor-grabbing scroll-smooth"
+                                            onScroll={(e) => {
+                                                const el = e.currentTarget;
+                                                const reachedEnd = (el.scrollWidth - (el.scrollLeft + el.clientWidth)) <= 16;
+                                                if (reachedEnd) {
+                                                    dismissMonthHint(idx);
+                                                }
+                                            }}
                                             onMouseDown={onMouseDown}
                                             onMouseLeave={onMouseLeave}
                                             onMouseUp={onMouseUp}
@@ -700,13 +764,20 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                                         >
                                             {group.cards.map(card => renderCard(card))}
                                         </div>
-                                        <div className="md:hidden pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-background/95 via-background/60 to-transparent dark:from-surface/90 dark:via-surface/50"></div>
-                                        <div className="md:hidden pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full border border-border bg-surface/90 text-content-muted flex items-center justify-center shadow-sm">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                                <path d="m9 18 6-6-6-6" />
-                                            </svg>
-                                        </div>
+                                        {showMonthHint && (
+                                            <>
+                                                <div className="md:hidden pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-background/95 via-background/65 to-transparent dark:from-surface/90 dark:via-surface/55"></div>
+                                                <div className="md:hidden pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full border border-border bg-surface/90 text-content-muted flex items-center justify-center shadow-sm">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                        <path d="m9 18 6-6-6-6" />
+                                                    </svg>
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             ))}
                         </div>
@@ -784,6 +855,16 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                     </div>
                 </div>
             )}
+            <style>{`
+                @keyframes deslizaHintLoop {
+                    0% { opacity: 0; transform: translateX(0); }
+                    12% { opacity: 1; transform: translateX(0); }
+                    55% { opacity: 1; transform: translateX(0); }
+                    78% { opacity: 1; transform: translateX(12px); }
+                    90% { opacity: 0.25; transform: translateX(20px); }
+                    100% { opacity: 0; transform: translateX(20px); }
+                }
+            `}</style>
         </div>
     );
 }

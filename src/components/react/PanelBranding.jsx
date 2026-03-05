@@ -1,10 +1,17 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 
 const hexToRgbString = (hex) => {
-  let r = 0, g = 0, b = 0;
-  if (hex.length === 4) { r = parseInt(hex[1] + hex[1], 16); g = parseInt(hex[2] + hex[2], 16); b = parseInt(hex[3] + hex[3], 16); }
-  else if (hex.length === 7) { r = parseInt(hex[1] + hex[2], 16); g = parseInt(hex[3] + hex[4], 16); b = parseInt(hex[5] + hex[6], 16); }
+  let r = 0; let g = 0; let b = 0;
+  if (hex.length === 4) {
+    r = parseInt(hex[1] + hex[1], 16);
+    g = parseInt(hex[2] + hex[2], 16);
+    b = parseInt(hex[3] + hex[3], 16);
+  } else if (hex.length === 7) {
+    r = parseInt(hex[1] + hex[2], 16);
+    g = parseInt(hex[3] + hex[4], 16);
+    b = parseInt(hex[5] + hex[6], 16);
+  }
   return `${r} ${g} ${b}`;
 };
 
@@ -25,6 +32,9 @@ const DEFAULT_COLORS = {
   rolVoc: '#a855f7',
 };
 
+const BRANDING_TABLE_CANDIDATES = ['configuracion_app', 'configuracion', 'branding_config'];
+const LOCAL_BRANDING_KEY = 'branding_config_cache_v1';
+
 const COLOR_FIELDS = [
   { key: 'brand', label: 'Brand', cssVar: '--color-brand' },
   { key: 'danger', label: 'Danger', cssVar: '--color-danger' },
@@ -44,6 +54,17 @@ const COLOR_VAR_MAP = COLOR_FIELDS.reduce((acc, field) => {
   acc[field.key] = field.cssVar;
   return acc;
 }, {});
+
+const isTableNotFoundError = (error) => {
+  if (!error) return false;
+  const message = String(error.message || '').toLowerCase();
+  return error.code === 'PGRST205' || message.includes('could not find the table');
+};
+
+const getTableFallbackOrder = (preferredTable) => {
+  if (!preferredTable) return BRANDING_TABLE_CANDIDATES;
+  return [preferredTable, ...BRANDING_TABLE_CANDIDATES.filter((table) => table !== preferredTable)];
+};
 
 const applyColorToDom = (key, hexValue) => {
   const cssVar = COLOR_VAR_MAP[key];
@@ -71,8 +92,41 @@ export default function PanelBranding() {
   const [colors, setColors] = useState(DEFAULT_COLORS);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingConfig, setIsLoadingConfig] = useState(false);
-  const [saveStatus, setSaveStatus] = useState('');
   const [isDarkPreview, setIsDarkPreview] = useState(false);
+  const [feedbackModal, setFeedbackModal] = useState({
+    open: false,
+    type: 'success',
+    title: '',
+    message: '',
+  });
+  const activeTableRef = useRef(BRANDING_TABLE_CANDIDATES[0]);
+  const feedbackTimerRef = useRef(null);
+
+  const showFeedback = (type, title, message) => {
+    if (feedbackTimerRef.current) {
+      clearTimeout(feedbackTimerRef.current);
+      feedbackTimerRef.current = null;
+    }
+
+    setFeedbackModal({
+      open: true,
+      type,
+      title,
+      message,
+    });
+
+    feedbackTimerRef.current = setTimeout(() => {
+      setFeedbackModal((prev) => ({ ...prev, open: false }));
+    }, 4200);
+  };
+
+  const closeFeedback = () => {
+    if (feedbackTimerRef.current) {
+      clearTimeout(feedbackTimerRef.current);
+      feedbackTimerRef.current = null;
+    }
+    setFeedbackModal((prev) => ({ ...prev, open: false }));
+  };
 
   useEffect(() => {
     Object.entries(DEFAULT_COLORS).forEach(([key, value]) => {
@@ -86,20 +140,41 @@ export default function PanelBranding() {
     const loadSavedConfig = async () => {
       setIsLoadingConfig(true);
 
-      const { data, error } = await supabase
-        .from('configuracion_app')
-        .select('colores')
-        .eq('id', 1)
-        .limit(1);
+      let savedColors = null;
+      let resolvedTable = null;
+
+      for (const table of getTableFallbackOrder(activeTableRef.current)) {
+        const { data, error } = await supabase
+          .from(table)
+          .select('colores')
+          .eq('id', 1)
+          .limit(1);
+
+        if (error) {
+          if (isTableNotFoundError(error)) continue;
+          continue;
+        }
+
+        resolvedTable = table;
+        savedColors = sanitizeColorConfig(data?.[0]?.colores);
+        break;
+      }
+
+      if (!savedColors) {
+        try {
+          const localRaw = localStorage.getItem(LOCAL_BRANDING_KEY);
+          savedColors = sanitizeColorConfig(localRaw ? JSON.parse(localRaw) : null);
+        } catch {
+          // no-op
+        }
+      }
 
       if (!isMounted) return;
 
-      if (error) {
-        setIsLoadingConfig(false);
-        return;
+      if (resolvedTable) {
+        activeTableRef.current = resolvedTable;
       }
 
-      const savedColors = sanitizeColorConfig(data?.[0]?.colores);
       if (savedColors) {
         setColors(savedColors);
         Object.entries(savedColors).forEach(([key, value]) => {
@@ -118,6 +193,10 @@ export default function PanelBranding() {
     setIsDarkPreview(document.documentElement.classList.contains('dark'));
   }, []);
 
+  useEffect(() => () => {
+    if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
+  }, []);
+
   const handleDarkModeToggle = () => {
     setIsDarkPreview((prev) => {
       const nextIsDark = !prev;
@@ -130,24 +209,61 @@ export default function PanelBranding() {
   const handleColorChange = (key, hexValue) => {
     setColors((prev) => ({ ...prev, [key]: hexValue }));
     applyColorToDom(key, hexValue);
-    setSaveStatus('');
   };
 
   const handleSave = async () => {
     setIsSaving(true);
-    setSaveStatus('');
 
-    const { error } = await supabase
-      .from('configuracion_app')
-      .upsert([{ id: 1, colores: colors }], { onConflict: 'id' });
+    let savedInTable = null;
+    let lastError = null;
 
-    if (error) {
-      setSaveStatus(`Error al guardar: ${error.message}`);
+    for (const table of getTableFallbackOrder(activeTableRef.current)) {
+      const { error } = await supabase
+        .from(table)
+        .upsert([{ id: 1, colores: colors }], { onConflict: 'id' });
+
+      if (!error) {
+        savedInTable = table;
+        activeTableRef.current = table;
+        break;
+      }
+
+      lastError = error;
+      if (!isTableNotFoundError(error)) {
+        continue;
+      }
+    }
+
+    if (!savedInTable) {
+      try {
+        localStorage.setItem(LOCAL_BRANDING_KEY, JSON.stringify(colors));
+        showFeedback(
+          'warning',
+          'Guardado local',
+          'Configuración guardada en este dispositivo. Falta crear la tabla de branding en Supabase.',
+        );
+      } catch {
+        const rawError = String(lastError?.message || '');
+        const friendlyError = rawError.toLowerCase().includes('no rows returned')
+          ? 'Supabase respondió sin filas. Revisa políticas RLS y que exista el registro id = 1.'
+          : rawError || 'No se pudo persistir la configuración.';
+        showFeedback(
+          'error',
+          'No se pudo guardar',
+          `Error: ${friendlyError}`,
+        );
+      }
       setIsSaving(false);
       return;
     }
 
-    setSaveStatus('Configuración guardada correctamente.');
+    try {
+      localStorage.setItem(LOCAL_BRANDING_KEY, JSON.stringify(colors));
+    } catch {
+      // no-op
+    }
+
+    showFeedback('success', 'Configuración guardada', 'Los colores se guardaron correctamente.');
     setIsSaving(false);
   };
 
@@ -193,12 +309,6 @@ export default function PanelBranding() {
         >
           {isSaving ? 'Guardando...' : 'Guardar Configuración'}
         </button>
-
-        {saveStatus && (
-          <p className={`mt-3 text-sm ${saveStatus.startsWith('Error') ? 'text-danger' : 'text-success'}`}>
-            {saveStatus}
-          </p>
-        )}
       </section>
 
       <section className="sticky top-8 bg-surface rounded-3xl p-6 border border-border h-fit max-h-[calc(100vh-4rem)] overflow-y-auto">
@@ -272,7 +382,46 @@ export default function PanelBranding() {
           </article>
         </div>
       </section>
+
+      {feedbackModal.open && (
+        <div
+          className="fixed inset-0 z-[140] bg-overlay/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={closeFeedback}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-surface border border-border shadow-2xl p-5"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div
+                  className={`mt-0.5 w-9 h-9 rounded-xl flex items-center justify-center text-white ${
+                    feedbackModal.type === 'error'
+                      ? 'bg-danger'
+                      : feedbackModal.type === 'warning'
+                        ? 'bg-warning'
+                        : 'bg-success'
+                  }`}
+                >
+                  {feedbackModal.type === 'error' ? '!' : feedbackModal.type === 'warning' ? '?' : 'OK'}
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-content leading-tight">{feedbackModal.title}</h3>
+                  <p className="text-sm text-content-muted mt-1 leading-snug">{feedbackModal.message}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="w-8 h-8 rounded-lg border border-border text-content-muted hover:text-content hover:bg-background transition-colors"
+                onClick={closeFeedback}
+                aria-label="Cerrar mensaje"
+              >
+                x
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

@@ -28,13 +28,30 @@ const hexToRgbString = (hex) => {
   return `${r} ${g} ${b}`;
 };
 
-const { data: configApp } = await supabase
-  .from('configuracion_app')
-  .select('colores')
-  .eq('id', 1)
-  .single();
+const BRANDING_TABLE_CANDIDATES = ['configuracion_app', 'configuracion', 'branding_config'];
 
-const themeColors = configApp?.colores || null;
+const isTableNotFoundError = (error) => {
+  if (!error) return false;
+  const message = String(error.message || '').toLowerCase();
+  return error.code === 'PGRST205' || message.includes('could not find the table');
+};
+
+let themeColors = null;
+for (const table of BRANDING_TABLE_CANDIDATES) {
+  const { data, error } = await supabase
+    .from(table)
+    .select('colores')
+    .eq('id', 1)
+    .limit(1);
+
+  if (error) {
+    if (isTableNotFoundError(error)) continue;
+    continue;
+  }
+
+  themeColors = data?.[0]?.colores || null;
+  break;
+}
 ---
 <!DOCTYPE html>
 <html lang="es">
@@ -45,12 +62,72 @@ const themeColors = configApp?.colores || null;
   (() => {
     try {
       const savedTheme = localStorage.getItem('theme');
-      const shouldUseDark = savedTheme ? savedTheme === 'dark' : true;
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const shouldUseDark = savedTheme ? savedTheme === 'dark' : mediaQuery.matches;
 
       if (shouldUseDark) {
         document.documentElement.classList.add('dark');
       } else {
         document.documentElement.classList.remove('dark');
+      }
+
+      if (!savedTheme) {
+        const syncWithSystem = (event) => {
+          document.documentElement.classList.toggle('dark', event.matches);
+        };
+
+        if (typeof mediaQuery.addEventListener === 'function') {
+          mediaQuery.addEventListener('change', syncWithSystem);
+        } else if (typeof mediaQuery.addListener === 'function') {
+          mediaQuery.addListener(syncWithSystem);
+        }
+      }
+
+      // Fallback global: si SSR no trae branding, usa cache local del panel.
+      const rawBranding = localStorage.getItem('branding_config_cache_v1');
+      if (rawBranding) {
+        const isHexColor = (value) => /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value || '');
+        const hexToRgb = (hex) => {
+          if (!isHexColor(hex)) return '';
+          const value = hex.trim();
+          let r = 0;
+          let g = 0;
+          let b = 0;
+          if (value.length === 4) {
+            r = parseInt(value[1] + value[1], 16);
+            g = parseInt(value[2] + value[2], 16);
+            b = parseInt(value[3] + value[3], 16);
+          } else {
+            r = parseInt(value[1] + value[2], 16);
+            g = parseInt(value[3] + value[4], 16);
+            b = parseInt(value[5] + value[6], 16);
+          }
+          return `${r} ${g} ${b}`;
+        };
+
+        const map = {
+          brand: '--color-brand',
+          danger: '--color-danger',
+          success: '--color-success',
+          warning: '--color-warning',
+          info: '--color-info',
+          accent: '--color-accent',
+          neutral: '--color-neutral',
+          overlay: '--color-overlay',
+          rolDir: '--color-rol-dir',
+          rolLet: '--color-rol-let',
+          rolBan: '--color-rol-ban',
+          rolVoc: '--color-rol-voc',
+        };
+
+        const parsed = JSON.parse(rawBranding);
+        Object.entries(map).forEach(([key, cssVar]) => {
+          const value = parsed?.[key];
+          const rgbValue = typeof value === 'string' ? hexToRgb(value) : '';
+          if (rgbValue) {
+            document.documentElement.style.setProperty(cssVar, rgbValue);
+          }
+        });
       }
     } catch {
       // no-op
