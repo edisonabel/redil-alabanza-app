@@ -555,7 +555,35 @@ if (isSelectionMode) {
  
  if (sentinel) observer.observe(sentinel);
 
- const normalizeStr = (str) => str ? str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() : '';
+const normalizeStr = (str) => str ? str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() : '';
+
+const matchVoz = (vozValue, vozFilter) => {
+ const v = normalizeStr(vozValue);
+ const f = normalizeStr(vozFilter);
+ if (f === 'todas') return true;
+
+ if (f === 'hombre') {
+ return ['hombre', 'masculino', 'male', 'tenor'].some((alias) => v.includes(alias));
+ }
+
+ if (f === 'mujer') {
+ return ['mujer', 'femenino', 'female', 'soprano', 'alto', 'contralto'].some((alias) => v.includes(alias));
+ }
+
+ return v.includes(f);
+};
+
+const matchCategoria = (categoriaValue, categoriaFilter) => {
+ const c = normalizeStr(categoriaValue);
+ const f = normalizeStr(categoriaFilter);
+ if (f === 'todas') return true;
+
+ if (f.startsWith('rapid')) return c.includes('rapid');
+ if (f.startsWith('lent')) return c.includes('lent');
+ if (f.startsWith('trans')) return c.includes('trans');
+
+ return c.includes(f);
+};
 
  function debounce(func, wait) {
  let timeout;
@@ -565,11 +593,11 @@ if (isSelectionMode) {
  };
  }
 
- function filterCards() {
+function filterCards() {
  const searchTerm = normalizeStr(searchInput.value).trim();
- const vozTerm = filterVoz.value;
- const categoriaTerm = filterCategoria.value;
- const temaTerm = filterTema.value;
+ const vozTerm = normalizeStr(filterVoz.value);
+ const categoriaTerm = normalizeStr(filterCategoria.value);
+ const temaTerm = normalizeStr(filterTema.value);
 
  todasLasCanciones.forEach(card => card.classList.add('cancion-oculta'));
  indiceActual = 0;
@@ -577,14 +605,14 @@ if (isSelectionMode) {
  cancionesFiltradas = todasLasCanciones.filter(card => {
  const titulo = normalizeStr(card.getAttribute('data-titulo') || '');
  const artista = normalizeStr(card.getAttribute('data-artista') || '');
- const voz = card.getAttribute('data-voz') || '';
- const categoria = card.getAttribute('data-categoria') || '';
- const tema = card.getAttribute('data-tema') || '';
+ const voz = normalizeStr(card.getAttribute('data-voz') || '');
+ const categoria = normalizeStr(card.getAttribute('data-categoria') || '');
+ const tema = normalizeStr(card.getAttribute('data-tema') || '');
 
  const matchesSearch = titulo.includes(searchTerm) || artista.includes(searchTerm);
- const matchesVoz = vozTerm === 'Todas' || voz.includes(vozTerm);
- const matchesCategoria = categoriaTerm === 'Todas' || categoria.includes(categoriaTerm);
- const matchesTema = temaTerm === 'Todas' || tema.includes(temaTerm);
+ const matchesVoz = matchVoz(voz, vozTerm);
+ const matchesCategoria = matchCategoria(categoria, categoriaTerm);
+ const matchesTema = temaTerm === 'todas' || tema.includes(temaTerm);
 
  return matchesSearch && matchesVoz && matchesCategoria && matchesTema;
  });
