@@ -366,6 +366,15 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
  <!-- Barra de navegacion fija mobile-first -->
  <BottomNav />
 
+ <div id="global-nav-loading" class="hidden fixed inset-0 z-[115] bg-background/86 backdrop-blur-sm" aria-hidden="true">
+  <div class="absolute inset-0 flex items-center justify-center px-6">
+   <div class="flex items-center gap-3 rounded-2xl border border-border bg-surface/95 px-4 py-3 shadow-2xl">
+    <span class="h-4 w-4 rounded-full border-2 border-brand/30 border-t-brand animate-spin" aria-hidden="true"></span>
+    <span class="text-sm font-semibold text-content">Cargando...</span>
+   </div>
+  </div>
+ </div>
+
  <script>
   import { supabase } from '../lib/supabase';
 
@@ -432,6 +441,66 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
     if (session) writeSessionCookies(session);
     else clearSessionCookies();
   });
+ </script>
+
+ <script is:inline>
+  (() => {
+    if (window.__REDIL_NAV_LOADING_INITIALIZED__) return;
+    window.__REDIL_NAV_LOADING_INITIALIZED__ = true;
+
+    const state = {
+      showTimer: 0,
+      hideTimer: 0,
+      visible: false,
+      shownAt: 0,
+    };
+
+    const MIN_VISIBLE_MS = 220;
+    const SHOW_DELAY_MS = 120;
+
+    const getLoader = () => document.getElementById('global-nav-loading');
+
+    const showLoader = () => {
+      const loader = getLoader();
+      if (!loader || state.visible) return;
+      state.visible = true;
+      state.shownAt = Date.now();
+      loader.classList.remove('hidden');
+      loader.setAttribute('aria-hidden', 'false');
+    };
+
+    const hideLoader = () => {
+      const loader = getLoader();
+      if (!loader) return;
+      state.visible = false;
+      loader.classList.add('hidden');
+      loader.setAttribute('aria-hidden', 'true');
+    };
+
+    const start = () => {
+      window.clearTimeout(state.showTimer);
+      window.clearTimeout(state.hideTimer);
+      state.showTimer = window.setTimeout(showLoader, SHOW_DELAY_MS);
+    };
+
+    const stop = () => {
+      window.clearTimeout(state.showTimer);
+      window.clearTimeout(state.hideTimer);
+      if (!state.visible) {
+        hideLoader();
+        return;
+      }
+      const elapsed = Date.now() - state.shownAt;
+      const wait = Math.max(0, MIN_VISIBLE_MS - elapsed);
+      state.hideTimer = window.setTimeout(hideLoader, wait);
+    };
+
+    window.__REDIL_NAV_LOADING__ = { start, stop };
+
+    document.addEventListener('astro:after-swap', stop);
+    document.addEventListener('astro:page-load', stop);
+    window.addEventListener('pageshow', stop);
+  })();
  </script>
 </body>
 </html>

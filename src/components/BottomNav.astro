@@ -85,7 +85,6 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  <span id="nav-badge-perfil" class="absolute top-2 right-4 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-surface hidden z-10 transition-opacity"></span>
  )}
  <span data-nav-active-indicator class={`absolute top-0 left-1/2 -translate-x-1/2 w-8 h-1 bg-brand rounded-b-full ${active ? '' : 'hidden'}`}></span>
- <span data-nav-loader class="nav-loader hidden" aria-hidden="true"></span>
  <MotionNavIcon key={`nav-icon-${item.href}`} icon={item.icon} active={active} client:load />
   <span data-nav-label class={`block w-full truncate text-center text-[10px] font-medium tracking-wide ${active ? 'font-bold' : ''}`}>
   {item.name}
@@ -112,38 +111,12 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
   transform: translateZ(0) scale(0.93);
  }
 
- .nav-loader {
-  position: absolute;
-  top: 0.36rem;
-  right: 0.52rem;
-  width: 0.62rem;
-  height: 0.62rem;
-  border-radius: 9999px;
-  border: 2px solid rgb(var(--color-brand) / 0.25);
-  border-top-color: rgb(var(--color-brand));
-  opacity: 0;
-  transform: scale(0.8);
-  transition: opacity 200ms ease, transform 200ms ease;
- }
-
- .nav-link.nav-link-loading .nav-loader {
-  opacity: 1;
-  transform: scale(1);
-  animation: nav-loader-spin 0.8s linear infinite;
- }
-
  .nav-link.nav-link-loading [data-nav-label] {
   opacity: 0.88;
  }
 
  .nav-link.nav-link-loading [data-nav-icon] {
   animation: nav-icon-breathe 0.9s ease-in-out infinite;
- }
-
- @keyframes nav-loader-spin {
-  to {
-   transform: rotate(360deg);
-  }
  }
 
  @keyframes nav-icon-breathe {
@@ -205,12 +178,18 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  link.classList.remove('nav-link-loading');
  link.dataset.navLoading = 'false';
  });
+ if (window.__REDIL_NAV_LOADING__?.stop) {
+ window.__REDIL_NAV_LOADING__.stop();
+ }
  };
 
  const setLoadingState = (targetLink) => {
  clearLoadingState();
  targetLink.classList.add('nav-link-loading');
  targetLink.dataset.navLoading = 'true';
+ if (window.__REDIL_NAV_LOADING__?.start) {
+ window.__REDIL_NAV_LOADING__.start();
+ }
  };
 
  const prefetchRoute = (href) => {
