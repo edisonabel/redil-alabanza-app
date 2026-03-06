@@ -230,6 +230,12 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
                                 const hasSetlist = Boolean(servicio?.has_setlist);
                                 const setlistCount = Number(servicio?.setlist_count || 0);
                                 const crearSetlistHref = servicio?.crear_setlist_href || `/repertorio?seleccionar_para=${evento.id}`;
+                                const roleCodes = Array.isArray(servicio?.mi_rol_codigos) ? servicio.mi_rol_codigos : [];
+                                const canManageSetlist = Boolean(
+                                    usuario?.is_admin
+                                    || roleCodes.includes('lider_alabanza')
+                                    || roleCodes.includes('talkback')
+                                );
                                 const misRoles = Array.isArray(servicio.mis_roles) && servicio.mis_roles.length > 0
                                     ? servicio.mis_roles
                                     : [servicio.roles?.nombre || 'Miembro'];
@@ -261,10 +267,34 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
                                     tryOpen();
                                 };
 
+                                const openSetlistFromCard = () => {
+                                    if (hasSetlist) {
+                                        openDetalleRepertorio();
+                                        return;
+                                    }
+
+                                    if (canManageSetlist) {
+                                        if (typeof window !== 'undefined') window.location.href = crearSetlistHref;
+                                        return;
+                                    }
+
+                                    openDetalleRepertorio();
+                                };
+
                                 return (
                                     <article
                                         key={servicio.id || `${evento.id}-${evento.fecha_hora}`}
-                                        className="w-[90vw] sm:w-[420px] lg:w-full lg:min-w-0 shrink-0 snap-center bg-overlay/95 dark:bg-border border border-border/30 dark:border-border rounded-[1.65rem] p-3.5 md:p-4 shadow-[0_10px_28px_rgba(2,6,23,0.28)] dark:shadow-sm hover:shadow-[0_14px_32px_rgba(2,6,23,0.34)] dark:hover:shadow-md transition-shadow flex flex-col gap-2.5 min-h-[220px]"
+                                        className="w-[90vw] sm:w-[420px] lg:w-full lg:min-w-0 shrink-0 snap-center bg-overlay/95 dark:bg-border border border-border/30 dark:border-border rounded-[1.65rem] p-3.5 md:p-4 shadow-none dark:shadow-sm hover:shadow-none dark:hover:shadow-md transition-shadow flex flex-col gap-2.5 min-h-[220px] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action/60"
+                                        role="button"
+                                        tabIndex={0}
+                                        aria-label={hasSetlist ? `Abrir setlist de ${tema}` : canManageSetlist ? `Crear setlist para ${tema}` : `Ver detalle de ${tema}`}
+                                        onClick={openSetlistFromCard}
+                                        onKeyDown={(event) => {
+                                            if (event.key === 'Enter' || event.key === ' ') {
+                                                event.preventDefault();
+                                                openSetlistFromCard();
+                                            }
+                                        }}
                                     >
                                         <div className="flex items-start gap-3 md:gap-4 min-w-0">
                                             <div className="shrink-0 w-14 h-16 rounded-xl bg-white/5 border border-white/20 dark:bg-surface dark:border-border flex flex-col items-center justify-between py-1.5">
@@ -297,7 +327,10 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
                                             {hasSetlist ? (
                                                 <button
                                                     type="button"
-                                                    onClick={openDetalleRepertorio}
+                                                    onClick={(event) => {
+                                                        event.stopPropagation();
+                                                        openDetalleRepertorio();
+                                                    }}
                                                     className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-action/45 bg-action/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-action hover:bg-action/20 dark:bg-action/25 dark:border-action/70 dark:text-white dark:hover:bg-action/35 transition-colors"
                                                 >
                                                     Ver canciones
@@ -308,15 +341,18 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
                                             ) : (
                                                 <div className="mt-2 flex flex-wrap items-center gap-2">
                                                     <p className="text-xs text-white/60 dark:text-content-muted">Sin setlist asignada para este servicio.</p>
-                                                    <a
-                                                        href={crearSetlistHref}
-                                                        className="inline-flex items-center gap-1.5 rounded-lg border border-white/25 bg-white/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-white/90 dark:border-border dark:bg-background dark:text-content hover:bg-white/20 dark:hover:bg-surface transition-colors"
-                                                    >
-                                                        Crear setlist
-                                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                                            <path d="m9 18 6-6-6-6" />
-                                                        </svg>
-                                                    </a>
+                                                    {canManageSetlist ? (
+                                                        <a
+                                                            href={crearSetlistHref}
+                                                            onClick={(event) => event.stopPropagation()}
+                                                            className="inline-flex items-center gap-1.5 rounded-lg border border-white/25 bg-white/10 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-white/90 dark:border-border dark:bg-background dark:text-content hover:bg-white/20 dark:hover:bg-surface transition-colors"
+                                                        >
+                                                            Crear setlist
+                                                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                                <path d="m9 18 6-6-6-6" />
+                                                            </svg>
+                                                        </a>
+                                                    ) : null}
                                                 </div>
                                             )}
                                         </div>
