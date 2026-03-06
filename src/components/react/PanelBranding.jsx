@@ -192,7 +192,16 @@ export default function PanelBranding() {
   }, []);
 
   useEffect(() => {
-    setIsDarkPreview(document.documentElement.classList.contains('dark'));
+    const syncThemeState = () => {
+      setIsDarkPreview(document.documentElement.classList.contains('dark'));
+    };
+    syncThemeState();
+    window.addEventListener('redil:theme-changed', syncThemeState);
+    document.addEventListener('astro:page-load', syncThemeState);
+    return () => {
+      window.removeEventListener('redil:theme-changed', syncThemeState);
+      document.removeEventListener('astro:page-load', syncThemeState);
+    };
   }, []);
 
   useEffect(() => () => {
@@ -202,8 +211,12 @@ export default function PanelBranding() {
   const handleDarkModeToggle = () => {
     setIsDarkPreview((prev) => {
       const nextIsDark = !prev;
-      document.documentElement.classList.toggle('dark', nextIsDark);
-      localStorage.setItem('theme', nextIsDark ? 'dark' : 'light');
+      if (window.__REDIL_THEME_MANAGER__?.setTheme) {
+        window.__REDIL_THEME_MANAGER__.setTheme(nextIsDark ? 'dark' : 'light');
+      } else {
+        document.documentElement.classList.toggle('dark', nextIsDark);
+        localStorage.setItem('theme', nextIsDark ? 'dark' : 'light');
+      }
       return nextIsDark;
     });
   };

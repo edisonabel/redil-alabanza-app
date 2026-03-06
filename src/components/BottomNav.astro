@@ -1,5 +1,6 @@
-﻿---
+---
 import { supabase } from '../lib/supabase';
+import MotionNavIcon from './react/MotionNavIcon.jsx';
 
 const pathname = new URL(Astro.request.url).pathname;
 
@@ -67,7 +68,7 @@ const visibleNavItems = navItems.filter((item) => !item.adminOnly || isAdmin);
 const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, minmax(0, 1fr));`;
 ---
 
-<nav class="fixed bottom-0 w-full z-50 bg-surface/85 backdrop-blur-xl border-t border-border pt-1 pb-safe shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
+<nav transition:persist transition:animate="none" class="fixed bottom-0 w-full z-50 bg-surface/85 backdrop-blur-xl border-t border-border pt-1 pb-safe shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
  <div class="mx-auto grid w-full max-w-none px-2 md:max-w-xl" style={navGridStyle}>
  {visibleNavItems.map((item) => {
  const active = isActive(item.href);
@@ -75,20 +76,17 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  <a 
  href={item.href} 
  id={`nav-item-${item.name.toLowerCase()}`}
+ data-nav-link="true"
+ data-nav-href={item.href}
  data-astro-prefetch="hover"
  class={`flex min-w-0 flex-col items-center justify-center gap-0.5 py-3 px-1 transition-all duration-300 relative ${active ? 'text-brand ' : 'text-content-muted hover:text-content'}`}
  >
  {item.name === 'Perfil' && (
  <span id="nav-badge-perfil" class="absolute top-2 right-4 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-surface hidden z-10 transition-opacity"></span>
  )}
- {active && (
- <span class="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-1 bg-brand rounded-b-full"></span>
- )}
- <div 
- class={`w-6 h-6 mb-1 transition-transform duration-300 ${active ? 'scale-110' : 'scale-100'}`}
- set:html={item.icon}
- />
-  <span class={`block w-full truncate text-center text-[10px] font-medium tracking-wide ${active ? 'font-bold' : ''}`}>
+ <span data-nav-active-indicator class={`absolute top-0 left-1/2 -translate-x-1/2 w-8 h-1 bg-brand rounded-b-full ${active ? '' : 'hidden'}`}></span>
+ <MotionNavIcon key={`nav-icon-${item.href}`} icon={item.icon} active={active} client:load />
+  <span data-nav-label class={`block w-full truncate text-center text-[10px] font-medium tracking-wide ${active ? 'font-bold' : ''}`}>
   {item.name}
   </span>
  </a>
@@ -107,17 +105,113 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
 <script>
  import { supabase } from '../lib/supabase';
 
- document.addEventListener('DOMContentLoaded', async () => {
- const badge = document.getElementById('nav-badge-perfil');
- if (!badge) return;
+ const initBottomNav = async () => {
+ const navLinks = Array.from(document.querySelectorAll('a[data-nav-link="true"]'));
+ if (!navLinks.length) return;
 
- // 1. Get current logged in user
+ const triggerHaptic = () => {
+ try {
+ if (typeof window !== 'undefined' && window.navigator?.vibrate) {
+ window.navigator.vibrate(50);
+ }
+ } catch {
+ // no-op
+ }
+ };
+
+ const prefetchedHrefs = window.__REDIL_PREFETCHED_HREFS__ || new Set();
+ window.__REDIL_PREFETCHED_HREFS__ = prefetchedHrefs;
+
+ const supportsPrefetch = (() => {
+ try {
+ return Boolean(document.createElement('link').relList?.supports?.('prefetch'));
+ } catch {
+ return false;
+ }
+ })();
+
+ const syncActiveState = () => {
+ const currentPath = window.location.pathname;
+ navLinks.forEach((link) => {
+ const href = link.dataset.navHref || link.getAttribute('href') || '';
+ if (!href) return;
+ const active = href === '/' ? currentPath === '/' : currentPath.startsWith(href);
+
+ link.classList.toggle('text-brand', active);
+ link.classList.toggle('text-content-muted', !active);
+ link.classList.toggle('hover:text-content', !active);
+
+ const indicator = link.querySelector('[data-nav-active-indicator]');
+ if (indicator) indicator.classList.toggle('hidden', !active);
+
+ const icon = link.querySelector('[data-nav-icon]');
+ if (icon) {
+ icon.classList.toggle('scale-110', active);
+ icon.classList.toggle('scale-100', !active);
+ }
+
+ const label = link.querySelector('[data-nav-label]');
+ if (label) label.classList.toggle('font-bold', active);
+ });
+ };
+
+ const prefetchRoute = (href) => {
+ if (!href) return;
+
+ let targetUrl;
+ try {
+ targetUrl = new URL(href, window.location.origin);
+ } catch {
+ return;
+ }
+
+ if (targetUrl.origin !== window.location.origin) return;
+ if (targetUrl.pathname === window.location.pathname && targetUrl.search === window.location.search) return;
+ if (prefetchedHrefs.has(targetUrl.href)) return;
+ prefetchedHrefs.add(targetUrl.href);
+
+ if (supportsPrefetch) {
+ const link = document.createElement('link');
+ link.rel = 'prefetch';
+ link.as = 'document';
+ link.href = targetUrl.href;
+ document.head.appendChild(link);
+ return;
+ }
+
+ fetch(targetUrl.href, { credentials: 'same-origin' }).catch(() => {
+ // no-op
+ });
+ };
+
+ navLinks.forEach((link) => {
+ if (link.dataset.prefetchBound === 'true') return;
+ const href = link.getAttribute('href') || '';
+ if (!href) return;
+ link.addEventListener('pointerenter', () => prefetchRoute(href), { passive: true });
+ link.addEventListener('touchstart', () => prefetchRoute(href), { passive: true });
+ link.addEventListener('pointerdown', triggerHaptic, { passive: true });
+ link.dataset.prefetchBound = 'true';
+ });
+
+ if (!window.__REDIL_NAV_ACTIVE_SYNC_BOUND__) {
+ document.addEventListener('astro:after-swap', syncActiveState);
+ document.addEventListener('astro:page-load', syncActiveState);
+ window.addEventListener('popstate', syncActiveState);
+ window.__REDIL_NAV_ACTIVE_SYNC_BOUND__ = true;
+ }
+
+ syncActiveState();
+
+ const badge = document.getElementById('nav-badge-perfil');
+ if (!badge || window.__REDIL_NAV_BADGE_BOUND__) return;
+ window.__REDIL_NAV_BADGE_BOUND__ = true;
+
  const { data: { session } } = await supabase.auth.getSession();
  if (!session?.user) return;
 
  const userId = session.user.id;
 
- // 2. Fetch initial unread notifications count
  const { count, error } = await supabase
  .from('notificaciones')
  .select('*', { count: 'exact', head: true })
@@ -128,7 +222,6 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  badge.classList.remove('hidden');
  }
 
- // 3. Subscribe to Realtime PostgreSQL events for this specific user
  supabase.channel('notificaciones-badge')
  .on(
  'postgres_changes',
@@ -139,7 +232,6 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  filter: `perfil_id=eq.${userId}`
  },
  () => {
- // Turn on badge when new notification arrives
  badge.classList.remove('hidden');
  }
  )
@@ -152,7 +244,6 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  filter: `perfil_id=eq.${userId}`
  },
  async () => {
- // If a notification was updated (e.g. marked as read), re-check the count
  const { count: unreadCount } = await supabase
  .from('notificaciones')
  .select('*', { count: 'exact', head: true })
@@ -165,6 +256,13 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  }
  )
  .subscribe();
- });
+ };
+
+ if (document.readyState === 'loading') {
+ document.addEventListener('DOMContentLoaded', () => { initBottomNav(); }, { once: true });
+ } else {
+ initBottomNav();
+ }
 </script>
+
 

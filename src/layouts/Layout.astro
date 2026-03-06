@@ -2,6 +2,7 @@
 import '../styles/global.css';
 import BottomNav from '../components/BottomNav.astro';
 import { supabase } from '../lib/supabase';
+import { ClientRouter, slide } from 'astro:transitions';
 
 const hexToRgbString = (hex) => {
   if (!hex || typeof hex !== 'string') return '';
@@ -57,23 +58,80 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
 <html lang="es">
 <head>
  <meta charset="UTF-8" />
+ <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
  <script is:inline>
   (() => {
-    try {
-      const savedTheme = localStorage.getItem('theme');
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      const shouldUseDark = savedTheme ? savedTheme === 'dark' : mediaQuery.matches;
-
-      if (shouldUseDark) {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
+    const originalAddEventListener = document.addEventListener.bind(document);
+    document.addEventListener = function (type, listener, options) {
+      if (type === 'DOMContentLoaded' && document.readyState !== 'loading') {
+        queueMicrotask(() => {
+          const event = new Event('DOMContentLoaded');
+          if (typeof listener === 'function') {
+            listener.call(document, event);
+          } else if (listener && typeof listener.handleEvent === 'function') {
+            listener.handleEvent(event);
+          }
+        });
+        return;
       }
 
-      if (!savedTheme) {
-        const syncWithSystem = (event) => {
-          document.documentElement.classList.toggle('dark', event.matches);
+      return originalAddEventListener(type, listener, options);
+    };
+  })();
+ </script>
+ <ClientRouter />
+  <script is:inline>
+   (() => {
+    try {
+      const root = document.documentElement;
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+      const getStoredTheme = () => {
+        try {
+          const value = localStorage.getItem('theme');
+          return value === 'dark' || value === 'light' ? value : null;
+        } catch {
+          return null;
+        }
+      };
+
+      const emitThemeChanged = (isDark) => {
+        window.dispatchEvent(new CustomEvent('redil:theme-changed', { detail: { isDark } }));
+      };
+
+      if (!window.__REDIL_THEME_MANAGER__) {
+        const applyTheme = () => {
+          const savedTheme = getStoredTheme();
+          const isDark = savedTheme ? savedTheme === 'dark' : mediaQuery.matches;
+          root.classList.toggle('dark', isDark);
+          root.style.colorScheme = isDark ? 'dark' : 'light';
+          return isDark;
+        };
+
+        const setTheme = (nextTheme) => {
+          try {
+            if (nextTheme === 'dark' || nextTheme === 'light') {
+              localStorage.setItem('theme', nextTheme);
+            } else {
+              localStorage.removeItem('theme');
+            }
+          } catch {
+            // no-op
+          }
+          const isDark = applyTheme();
+          emitThemeChanged(isDark);
+          return isDark;
+        };
+
+        const syncTheme = () => {
+          const isDark = applyTheme();
+          emitThemeChanged(isDark);
+        };
+
+        const syncWithSystem = () => {
+          if (getStoredTheme()) return;
+          syncTheme();
         };
 
         if (typeof mediaQuery.addEventListener === 'function') {
@@ -81,7 +139,24 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
         } else if (typeof mediaQuery.addListener === 'function') {
           mediaQuery.addListener(syncWithSystem);
         }
+
+        document.addEventListener('astro:after-swap', syncTheme);
+        document.addEventListener('astro:page-load', syncTheme);
+        window.addEventListener('pageshow', syncTheme);
+        window.addEventListener('storage', (event) => {
+          if (event.key !== 'theme') return;
+          syncTheme();
+        });
+
+        window.__REDIL_THEME_MANAGER__ = {
+          applyTheme,
+          setTheme,
+          getStoredTheme,
+        };
       }
+
+      const isDark = window.__REDIL_THEME_MANAGER__.applyTheme();
+      emitThemeChanged(isDark);
 
       // Fallback global: si SSR no trae branding, usa cache local del panel.
       const rawBranding = localStorage.getItem('branding_config_cache_v1');
@@ -140,8 +215,8 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
     } catch {
       // no-op
     }
-  })();
- </script>
+   })();
+  </script>
  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
  <meta name="generator" content={Astro.generator} />
  <title>Alabanza</title>
@@ -157,7 +232,7 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
  <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
  
- <style is:global>
+  <style is:global>
     :root {
       /* ðŸŽ¨ TOKENS DE SUPERFICIE Y TEXTO (MODO CLARO) */
       --bg-background: 248 250 252;
@@ -204,6 +279,50 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
     .print-only { display: none; }
     .nav-link-active { color: rgb(var(--text-base)) !important; border-bottom-width: 2px !important; border-color: rgb(var(--color-brand)) !important; }
     .nav-link-inactive { color: rgb(var(--text-muted)) !important; border-color: transparent !important; }
+
+    html,
+    body {
+      min-height: 100%;
+      background-color: rgb(var(--bg-background));
+    }
+
+    body {
+      min-height: 100dvh;
+    }
+
+    @keyframes app-page-slide-in-up {
+      from {
+        opacity: 0.01;
+        transform: translate3d(0, 22px, 0);
+      }
+      to {
+        opacity: 1;
+        transform: translate3d(0, 0, 0);
+      }
+    }
+
+    @keyframes app-page-slide-out-up {
+      from {
+        opacity: 1;
+        transform: translate3d(0, 0, 0);
+      }
+      to {
+        opacity: 0.01;
+        transform: translate3d(0, -8px, 0);
+      }
+    }
+
+    [data-astro-transition-scope] {
+      background-color: rgb(var(--bg-background));
+      isolation: isolate;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      [data-astro-transition-scope] {
+        animation: none !important;
+        transform: none !important;
+      }
+    }
   </style>
 
   {themeColors && (
@@ -232,8 +351,14 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
     `} />
   )}
 </head>
-<body class="bg-background text-content min-h-screen flex flex-col items-center">
- <main class="w-full max-w-[2000px] flex-1 pb-24 px-4 lg:px-8 xl:px-12">
+<body transition:animate="none" class="bg-background text-content min-h-screen min-h-[100dvh] w-full flex flex-col">
+ <main
+  transition:animate={slide({
+    duration: '0.3s',
+    easing: 'cubic-bezier(0.42, 0, 0.58, 1)'
+  })}
+  class="relative isolate overflow-x-clip w-full min-h-screen min-h-[100dvh] flex-1 bg-background pb-24 px-4 lg:px-8 xl:px-12"
+ >
  <!-- Contenedor principal (pb-24 evita choque visual con la barra flotante). -->
  <slot />
  </main>
@@ -245,6 +370,7 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
   import { supabase } from '../lib/supabase';
 
   const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+  const AUTH_COOKIE_REGEX = /^(sb-|__Host-sb-|__Secure-sb-|supabase-)/i;
 
   const writeSessionCookies = (session) => {
     const secureFlag = window.location.protocol === 'https:' ? '; Secure' : '';
@@ -256,10 +382,39 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
     }
   };
 
-  const clearSessionCookies = () => {
+  const expireCookie = (name) => {
+    if (!name) return;
     const secureFlag = window.location.protocol === 'https:' ? '; Secure' : '';
-    document.cookie = `sb-access-token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=Lax${secureFlag}`;
-    document.cookie = `sb-refresh-token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=Lax${secureFlag}`;
+    document.cookie = `${name}=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=Lax${secureFlag}`;
+    document.cookie = `${name}=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=None${secureFlag}`;
+  };
+
+  const clearSessionCookies = () => {
+    const names = new Set(['sb-access-token', 'sb-refresh-token']);
+    const rawCookies = document.cookie ? document.cookie.split(';') : [];
+    rawCookies.forEach((cookiePart) => {
+      const [rawName] = cookiePart.trim().split('=');
+      if (!rawName) return;
+      if (AUTH_COOKIE_REGEX.test(rawName)) {
+        names.add(rawName);
+      }
+    });
+
+    names.forEach((name) => expireCookie(name));
+
+    try {
+      Object.keys(localStorage).forEach((key) => {
+        if (AUTH_COOKIE_REGEX.test(key) || key.includes('supabase.auth.token')) {
+          localStorage.removeItem(key);
+        }
+      });
+    } catch {
+      // no-op
+    }
+  };
+
+  window.__REDIL_AUTH_MANAGER__ = {
+    clearSessionCookies,
   };
 
   const bootstrapSessionCookieSync = async () => {

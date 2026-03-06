@@ -41,7 +41,16 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
         const scrollRoot = document.getElementById('dashboard-scroll-root');
         if (scrollRoot) scrollRoot.scrollTop = 0;
         window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-        setIsDark(document.documentElement.classList.contains('dark'));
+        const syncThemeState = () => {
+            setIsDark(document.documentElement.classList.contains('dark'));
+        };
+        syncThemeState();
+        window.addEventListener('redil:theme-changed', syncThemeState);
+        document.addEventListener('astro:page-load', syncThemeState);
+        return () => {
+            window.removeEventListener('redil:theme-changed', syncThemeState);
+            document.removeEventListener('astro:page-load', syncThemeState);
+        };
     }, []);
 
     useEffect(() => {
@@ -107,8 +116,12 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
     const toggleDarkMode = () => {
         setIsDark((prev) => {
             const next = !prev;
-            document.documentElement.classList.toggle('dark', next);
-            localStorage.setItem('theme', next ? 'dark' : 'light');
+            if (window.__REDIL_THEME_MANAGER__?.setTheme) {
+                window.__REDIL_THEME_MANAGER__.setTheme(next ? 'dark' : 'light');
+            } else {
+                document.documentElement.classList.toggle('dark', next);
+                localStorage.setItem('theme', next ? 'dark' : 'light');
+            }
             return next;
         });
     };

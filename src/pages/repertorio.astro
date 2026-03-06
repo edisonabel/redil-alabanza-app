@@ -4,105 +4,7 @@ import CardCancion from '../components/CardCancion.astro';
 import BuscadorPredictivo from '../components/BuscadorPredictivo.astro';
 import { supabase } from '../lib/supabase';
 
-const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1Fk4DgxWzizonrG_xB_DZN8wSqLSZY9myj7ROM7JLu-c/export?format=csv';
-
-const normalizeToken = (value: string) =>
-  (value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
-
-const parseCsv = (input: string): string[][] => {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < input.length; i += 1) {
-    const char = input[i];
-    const next = input[i + 1];
-
-    if (char === '"') {
-      if (inQuotes && next === '"') {
-        field += '"';
-        i += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (!inQuotes && char === ',') {
-      row.push(field);
-      field = '';
-      continue;
-    }
-
-    if (!inQuotes && (char === '\n' || char === '\r')) {
-      if (char === '\r' && next === '\n') i += 1;
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = '';
-      continue;
-    }
-
-    field += char;
-  }
-
-  row.push(field);
-  rows.push(row);
-  return rows;
-};
-
-const loadMp3MapFromSheet = async () => {
-  const mp3BySong = new Map<string, string>();
-
-  try {
-    const response = await fetch(SHEET_CSV_URL, { headers: { Accept: 'text/csv' } });
-    if (!response.ok) return mp3BySong;
-    const csvText = await response.text();
-    const rows = parseCsv(csvText);
-    if (!rows.length) return mp3BySong;
-
-    let headerRowIndex = -1;
-    let songCol = -1;
-    let mp3Col = -1;
-
-    for (let i = 0; i < rows.length; i += 1) {
-      const row = rows[i].map((cell) => normalizeToken(cell));
-      const songIndex = row.findIndex((cell) => cell === 'cancion' || cell.includes('cancion'));
-      const mp3Index = row.findIndex((cell) => cell === 'mp3');
-      if (songIndex !== -1 && mp3Index !== -1) {
-        headerRowIndex = i;
-        songCol = songIndex;
-        mp3Col = mp3Index;
-        break;
-      }
-    }
-
-    if (headerRowIndex === -1 || songCol === -1 || mp3Col === -1) return mp3BySong;
-
-    for (let i = headerRowIndex + 1; i < rows.length; i += 1) {
-      const row = rows[i];
-      const songTitle = (row[songCol] || '').trim();
-      const mp3Value = (row[mp3Col] || '').trim();
-      if (!songTitle || !mp3Value) continue;
-
-      const mp3Norm = normalizeToken(mp3Value);
-      if (mp3Norm === 'no esta' || mp3Norm === 'no está') continue;
-      mp3BySong.set(normalizeToken(songTitle), mp3Value);
-    }
-  } catch (error) {
-    console.error('No se pudo leer MP3 desde Google Sheet:', error);
-  }
-
-  return mp3BySong;
-};
-
 let canciones: any[] = [];
-const mp3BySong = await loadMp3MapFromSheet();
 try {
   const { data, error } = await supabase
     .from('canciones')
@@ -112,16 +14,7 @@ try {
   if (error) {
     console.error("Error fetching from Supabase:", error);
   } else if (data) {
-    // Solo en este caso mostramos canciones que no estan archivadas.
-    canciones = data
-      .filter(c => c.estado !== 'Archivada')
-      .map((cancion: any) => {
-        const dbMp3 = (cancion.mp3 || cancion.MP3 || '').trim();
-        if (dbMp3) return cancion;
-
-        const sheetMp3 = mp3BySong.get(normalizeToken(cancion.titulo || '')) || '';
-        return sheetMp3 ? { ...cancion, mp3: sheetMp3 } : cancion;
-      });
+    canciones = data.filter(c => c.estado !== 'Archivada');
   }
 } catch (e) {
   console.error("Fetch failed", e);
@@ -145,8 +38,8 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
 
  <!-- UI Controles -->
  <section id="searchControls" class="max-w-7xl mx-auto mb-6 bg-surface border border-border rounded-2xl p-3 md:p-6 shadow-lg">
- <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-4">
- <div class="col-span-2 md:col-span-1 lg:col-span-1 flex items-center gap-2">
+ <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-4 items-end">
+ <div class="col-span-2 md:col-span-1 lg:col-span-1 flex items-end gap-2">
  <div class="md:hidden flex items-center justify-center shrink-0 text-content-muted" title="Filtros">
  <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
  <line x1="4" y1="21" x2="4" y2="14"></line>
@@ -171,7 +64,7 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
  <div class="col-span-1">
  <label for="filterVoz" class="block text-xs md:text-sm font-medium text-content mb-1 md:mb-2">Voz</label>
  <select id="filterVoz" 
- class="w-full bg-surface border border-border text-content rounded-xl px-2 md:px-3 py-2 md:py-2.5 text-sm md:text-base focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors appearance-none">
+ class="w-full h-11 bg-surface border border-border text-content rounded-xl px-3 text-sm md:text-base focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors appearance-none">
  <option value="Todas">Todas</option>
  <option value="Hombre">Hombre</option>
  <option value="Mujer">Mujer</option>
@@ -182,7 +75,7 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
  <div class="col-span-1">
  <label for="filterCategoria" class="block text-xs md:text-sm font-medium text-content mb-1 md:mb-2">Categor&iacute;a</label>
  <select id="filterCategoria" 
- class="w-full bg-surface border border-border text-content rounded-xl px-2 md:px-3 py-2 md:py-2.5 text-sm md:text-base focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors appearance-none">
+ class="w-full h-11 bg-surface border border-border text-content rounded-xl px-3 text-sm md:text-base focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors appearance-none">
  <option value="Todas">Todas</option>
  <option value="Lenta">Lenta</option>
  <option value="R&aacute;pida">R&aacute;pida</option>
@@ -193,7 +86,7 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
  <div class="col-span-2 md:col-span-1 lg:col-span-1 mt-1 md:mt-0">
  <label for="filterTema" class="block text-xs md:text-sm font-medium text-content mb-1 md:mb-2">Tema</label>
  <select id="filterTema" 
- class="w-full bg-surface border border-border text-content rounded-xl px-3 md:px-4 py-2 md:py-2.5 text-sm md:text-base focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors appearance-none">
+ class="w-full h-11 bg-surface border border-border text-content rounded-xl px-3 text-sm md:text-base focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors appearance-none">
  <option value="Todas">Todas</option>
  {temasUnicos.map(tema => (
  <option value={tema}>{tema}</option>
@@ -220,19 +113,20 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
  <div id="gridCanciones" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto">
  {canciones.map((cancion: any, index: number) => (
  <CardCancion 
- titulo={cancion.titulo || ''}
- cantante={cancion.cantante || cancion.artista || ''}
- tonalidad={cancion.tonalidad || ''}
- bpm={cancion.bpm || 0}
+  cancionId={cancion.id || ''}
+  titulo={cancion.titulo || ''}
+  cantante={cancion.cantante || cancion.artista || ''}
+  tonalidad={cancion.tonalidad || ''}
+  bpm={cancion.bpm || 0}
  linkLetra={cancion.link_letras || ''}
- linkAcordes={cancion.link_acordes || ''}
- linkVoces={cancion.link_voces || ''}
- linkYoutube={cancion.link_youtube || ''}
- linkSecuencias={cancion.link_secuencias || ''}
- linkMp3={cancion.mp3 || cancion.MP3 || ''}
- chordpro={cancion.chordpro || ''}
- categoria={cancion.categoria || ''}
- voz={cancion.voz || cancion.voz_principal || ''}
+  linkAcordes={cancion.link_acordes || ''}
+  linkVoces={cancion.link_voces || ''}
+  linkYoutube={cancion.link_youtube || ''}
+  linkSecuencias={cancion.link_secuencias || ''}
+  linkMp3={cancion.mp3 || ''}
+  chordpro={cancion.chordpro || ''}
+  categoria={cancion.categoria || ''}
+  voz={cancion.voz || cancion.voz_principal || ''}
  tema={cancion.tema || ''}
  estado={cancion.estado || ''}
  oculta={index >= 15}
@@ -590,14 +484,14 @@ if (isSelectionMode) {
  (async () => {
  const { data: pl } = await supabase.from('playlists').select('id').eq('evento_id', seleccionarPara).single();
  if (pl) {
- const { data: items } = await supabase.from('playlist_canciones').select('canciones(titulo)').eq('playlist_id', pl.id);
+ const { data: items } = await supabase.from('playlist_canciones').select('cancion_id').eq('playlist_id', pl.id).order('orden');
  if (items) {
  items.forEach(item => {
- if (item.canciones?.titulo) selectedSongs.push(item.canciones.titulo);
+ if (item.cancion_id) selectedSongs.push(String(item.cancion_id));
  });
  cards.forEach(card => {
- const cancion = card.getAttribute('data-cancion') || '';
- if (selectedSongs.includes(cancion)) {
+ const cancionId = card.getAttribute('data-id') || '';
+ if (cancionId && selectedSongs.includes(cancionId)) {
  const btn = card.querySelector('.btn-add-setlist');
  if (btn) {
  const svg = btn.querySelector('svg');
@@ -627,9 +521,8 @@ if (isSelectionMode) {
  await supabase.from('playlist_canciones').delete().eq('playlist_id', playlist.id);
 
  if (selectedSongs.length > 0) {
- const { data: cancionesDB } = await supabase.from('canciones').select('id, titulo').in('titulo', selectedSongs);
- if (cancionesDB && cancionesDB.length > 0) {
- const insertPayload = cancionesDB.map((c, i) => ({ playlist_id: playlist.id, cancion_id: c.id, orden: i }));
+ const insertPayload = selectedSongs.map((songId, i) => ({ playlist_id: playlist.id, cancion_id: songId, orden: i }));
+ if (insertPayload.length > 0) {
  const { error: insErr } = await supabase.from('playlist_canciones').insert(insertPayload);
  if (insErr) throw insErr;
  }
@@ -688,25 +581,28 @@ if (isSelectionMode) {
  e.preventDefault();
  e.stopPropagation();
 
- const cancion = btn.getAttribute('data-cancion');
- if (!cancion) return;
+ const card = btn.closest('article');
+ const cancionId = btn.getAttribute('data-id') || card?.getAttribute('data-id') || '';
+ const cancion = btn.getAttribute('data-cancion') || '';
  const svg = btn.querySelector('svg');
 
  if (isSelectionMode) {
- const idx = selectedSongs.indexOf(cancion);
+ if (!cancionId) return;
+ const idx = selectedSongs.indexOf(String(cancionId));
  if (idx > -1) {
  selectedSongs.splice(idx, 1);
  if (svg) svg.innerHTML = '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>';
  btn.classList.replace('text-green-400', 'text-blue-400');
  btn.classList.replace('bg-green-500/10', 'bg-blue-500/10');
  } else {
- selectedSongs.push(cancion);
+ selectedSongs.push(String(cancionId));
  if (svg) svg.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
  btn.classList.replace('text-blue-400', 'text-green-400');
  btn.classList.replace('bg-blue-500/10', 'bg-green-500/10');
  }
  updatePlaylistCount();
  } else {
+ if (!cancion) return;
  if (!setlist.includes(cancion)) {
  setlist.push(cancion);
  localStorage.setItem('setlist', JSON.stringify(setlist));
