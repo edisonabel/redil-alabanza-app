@@ -240,6 +240,44 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
 
  <!-- Barra de navegacion fija mobile-first -->
  <BottomNav />
+
+ <script>
+  import { supabase } from '../lib/supabase';
+
+  const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+
+  const writeSessionCookies = (session) => {
+    const secureFlag = window.location.protocol === 'https:' ? '; Secure' : '';
+    if (!session?.access_token) return;
+
+    document.cookie = `sb-access-token=${session.access_token}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax${secureFlag}`;
+    if (session.refresh_token) {
+      document.cookie = `sb-refresh-token=${session.refresh_token}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax${secureFlag}`;
+    }
+  };
+
+  const clearSessionCookies = () => {
+    const secureFlag = window.location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `sb-access-token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=Lax${secureFlag}`;
+    document.cookie = `sb-refresh-token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=Lax${secureFlag}`;
+  };
+
+  const bootstrapSessionCookieSync = async () => {
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data?.session) writeSessionCookies(data.session);
+    } catch {
+      // no-op
+    }
+  };
+
+  bootstrapSessionCookieSync();
+
+  supabase.auth.onAuthStateChange((_event, session) => {
+    if (session) writeSessionCookies(session);
+    else clearSessionCookies();
+  });
+ </script>
 </body>
 </html>
 

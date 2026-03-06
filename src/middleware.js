@@ -1,59 +1,104 @@
-import { defineMiddleware } from "astro:middleware";
+import { defineMiddleware } from 'astro:middleware';
+import { createClient } from '@supabase/supabase-js';
 
-/**
- * Enterprise SSR Authentication Middleware
- * ----------------------------------------
- * Este middleware actúa como la primera línea de defensa (Guardia Frontal) 
- * interceptando todas las peticiones al servidor antes de renderizar las páginas Astro.
- * 
- * Flujo de Seguridad:
- * 1. Omitir recursos estáticos para maximizar rendimiento.
- * 2. Extraer el token de acceso nativo desde las cookies.
- * 3. Prevenir acceso a rutas protegidas sin un token válido, forzando redirección a /login.
- * 4. Optimizar UX redirigiendo usuarios ya autenticados lejos de las rutas de registro y login.
- */
+const rawUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_URL || '';
+const supabaseUrl = rawUrl.replace(/\/$/, '');
+const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY || '';
+
+const supabaseServer = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+});
+
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+const protectedRoutes = ['/', '/programacion', '/repertorio', '/perfil', '/equipo', '/herramientas', '/configuracion'];
+
+const staticAssetRegex = /\.(png|ico|svg|webmanifest|css|js|txt|map|woff2?|ttf|eot|json)$/i;
+
+const setAuthCookies = (cookies, session, isSecure) => {
+  cookies.set('sb-access-token', session.access_token, {
+    path: '/',
+    sameSite: 'lax',
+    secure: isSecure,
+    maxAge: COOKIE_MAX_AGE,
+  });
+
+  if (session.refresh_token) {
+    cookies.set('sb-refresh-token', session.refresh_token, {
+      path: '/',
+      sameSite: 'lax',
+      secure: isSecure,
+      maxAge: COOKIE_MAX_AGE,
+    });
+  }
+};
+
+const clearAuthCookies = (cookies) => {
+  cookies.delete('sb-access-token', { path: '/' });
+  cookies.delete('sb-refresh-token', { path: '/' });
+};
+
+const isProtectedRoute = (path) =>
+  protectedRoutes.some((route) => path === route || path.startsWith(`${route}/`));
+
+const resolveAuthState = async (cookies, isSecure) => {
+  const accessToken = cookies.get('sb-access-token')?.value || null;
+  const refreshToken = cookies.get('sb-refresh-token')?.value || null;
+
+  if (accessToken) {
+    const { data, error } = await supabaseServer.auth.getUser(accessToken);
+    if (!error && data?.user) {
+      return { user: data.user, accessToken, refreshed: false };
+    }
+  }
+
+  if (refreshToken) {
+    const { data, error } = await supabaseServer.auth.refreshSession({ refresh_token: refreshToken });
+    const session = data?.session;
+    if (!error && session?.access_token) {
+      setAuthCookies(cookies, session, isSecure);
+      return { user: data.user || null, accessToken: session.access_token, refreshed: true };
+    }
+  }
+
+  return null;
+};
+
 export const onRequest = defineMiddleware(async (context, next) => {
-    const { cookies, url, redirect } = context;
-    const path = url.pathname;
+  const { cookies, url, redirect, locals } = context;
+  const path = url.pathname;
+  const isSecure = url.protocol === 'https:';
 
-    // 1. Optimización: Omitir verificación en assets estáticos y recursos internos de Astro
-    if (
-        path.startsWith('/_astro') ||
-        path.startsWith('/assets') ||
-        path.match(/\.(png|ico|svg|webmanifest|css)$/)
-    ) {
-        return next();
-    }
-
-    // 2. Extracción Robusta de Cookie (Safe Navigations vs Undefined)
-    const tokenCookie = cookies.get('sb-access-token');
-    const accessToken = tokenCookie ? tokenCookie.value : null;
-
-    // 3. Gestión de Rutas Públicas (Login / Landing)
-    if (path === '/login') {
-        if (accessToken) {
-            console.log(`[Middleware Guardia] Usuario autenticado detectado intentando acceder a ${path}. Redirigiendo a zona segura.`);
-            return redirect('/programacion');
-        }
-        return next();
-    }
-
-    // 4. Protección de Rutas Internas
-    const protectedRoutes = ["/", "/programacion", "/repertorio", "/perfil", "/equipo", "/herramientas"];
-
-    // Verifica si la ruta solicitada coincide o es subruta de alguna protegida
-    const isProtectedRoute = protectedRoutes.some(route => path === route || path.startsWith(route + "/"));
-
-    // 5. Regla de Bloqueo Crítica
-    if (isProtectedRoute && !accessToken) {
-        console.warn(`[Middleware Guardia] 🛑 ACCESO DENEGADO - Cookie ausente o inválida en ruta protegida: ${path}`);
-        return redirect('/login');
-    }
-
-    // 6. Acceso Concedido
-    if (isProtectedRoute) {
-        console.log(`[Middleware Guardia] ✅ ACCESO CONCEDIDO a ${path}`);
-    }
-
+  if (
+    path.startsWith('/_astro') ||
+    path.startsWith('/assets') ||
+    path === '/sw.js' ||
+    path.startsWith('/workbox-') ||
+    staticAssetRegex.test(path)
+  ) {
     return next();
+  }
+
+  const protectedPath = isProtectedRoute(path);
+  const authState = protectedPath || path === '/login' ? await resolveAuthState(cookies, isSecure) : null;
+
+  if (path === '/login') {
+    if (authState?.accessToken) {
+      return redirect('/');
+    }
+    return next();
+  }
+
+  if (protectedPath && !authState?.accessToken) {
+    clearAuthCookies(cookies);
+    return redirect('/login');
+  }
+
+  if (authState?.user) {
+    locals.user = authState.user;
+  }
+
+  return next();
 });

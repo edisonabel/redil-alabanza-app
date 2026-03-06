@@ -31,7 +31,31 @@ export default defineConfig({
         { src: '/icon-512.png', sizes: '512x512', type: 'image/png' }
       ]
     },
-    workbox: { globPatterns: ['**/*.{js,css,html,svg,png,ico,txt}'] }
+    workbox: {
+      cleanupOutdatedCaches: true,
+      clientsClaim: true,
+      skipWaiting: true,
+      navigateFallbackDenylist: [/^\/.*$/],
+      globPatterns: ['**/*.{js,css,svg,png,ico,txt,webmanifest}'],
+      runtimeCaching: [
+        {
+          urlPattern: ({ request }) => request.mode === 'navigate',
+          handler: 'NetworkFirst',
+          options: {
+            cacheName: 'app-pages-network-first',
+            networkTimeoutSeconds: 5,
+            expiration: {
+              maxEntries: 30,
+              maxAgeSeconds: 24 * 60 * 60
+            }
+          }
+        },
+        {
+          urlPattern: ({ url }) => url.origin.includes('supabase.co'),
+          handler: 'NetworkOnly'
+        }
+      ]
+    }
   }), react()],
 
   vite: {

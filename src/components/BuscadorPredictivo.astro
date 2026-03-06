@@ -14,10 +14,10 @@ const idSuggestion = `${idInput}-suggestion`;
 
 <div class="relative w-full flex items-center">
   <input type="text" id={idSuggestion} 
-    class="absolute inset-0 w-full bg-transparent text-neutral-400 pointer-events-none border border-transparent pl-10 md:pl-12 pr-4 py-2.5 md:py-3 md:text-lg" disabled />
+    class="input-ghost-suggestion absolute inset-0 w-full bg-transparent text-content-muted pointer-events-none border border-transparent pl-10 md:pl-12 pr-4 py-2.5 md:py-3 md:text-lg disabled:opacity-100" disabled />
   <input type="text" id={idInput} 
     placeholder={placeholder} 
-    class="relative w-full bg-transparent border border-neutral-200 text-neutral-900 rounded-xl pl-10 md:pl-12 pr-4 py-2.5 md:py-3 md:text-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors placeholder:text-neutral-400 z-10" autocomplete="off" />
+    class="input-ghost-main relative w-full bg-transparent border border-border text-content rounded-xl pl-10 md:pl-12 pr-4 py-2.5 md:py-3 md:text-lg focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/40 transition-colors placeholder:text-content-muted z-10" autocomplete="off" />
 </div>
 
 <script define:vars={{ idInput, idSuggestion }}>
@@ -64,3 +64,24 @@ const idSuggestion = `${idInput}-suggestion`;
     }
   });
 </script>
+
+<style>
+  .input-ghost-main {
+    -webkit-text-fill-color: rgb(var(--text-base));
+    caret-color: rgb(var(--text-base));
+  }
+
+  .input-ghost-suggestion:disabled {
+    -webkit-text-fill-color: rgb(var(--text-muted));
+    opacity: 1;
+  }
+
+  html.dark .input-ghost-main {
+    -webkit-text-fill-color: #ffffff;
+    caret-color: #ffffff;
+  }
+
+  html.dark .input-ghost-suggestion:disabled {
+    -webkit-text-fill-color: rgb(203 213 225);
+  }
+</style>

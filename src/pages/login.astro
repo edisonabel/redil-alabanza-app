@@ -215,10 +215,11 @@ import Layout from '../layouts/Layout.astro';
  if (data.session) {
    try {
      const maxAge = 60 * 60 * 24 * 365; // 1 año
+     const secureFlag = window.location.protocol === 'https:' ? '; Secure' : '';
      
      // InyecciÃ³n robusta de cookies nativas para acceso del servidor (SSR)
-     document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax`;
-     document.cookie = `sb-refresh-token=${data.session.refresh_token}; path=/; max-age=${maxAge}; SameSite=Lax`;
+     document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax${secureFlag}`;
+     document.cookie = `sb-refresh-token=${data.session.refresh_token}; path=/; max-age=${maxAge}; SameSite=Lax${secureFlag}`;
      
      // Retraso obligatorio para que el navegador guarde la cookie fÃ­sicamente
      setTimeout(() => {
