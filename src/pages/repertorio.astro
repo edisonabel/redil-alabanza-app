@@ -69,6 +69,7 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
  <option value="Todas">Todas</option>
  <option value="Hombre">Hombre</option>
  <option value="Mujer">Mujer</option>
+ <option value="Hombre y Mujer">Hombre y Mujer</option>
  </select>
  </div>
 
@@ -114,7 +115,7 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
  {canciones.map((cancion: any, index: number) => (
  <CardCancion 
  titulo={cancion.titulo || ''}
- cantante={cancion.artista || ''}
+ cantante={cancion.cantante || cancion.artista || ''}
  tonalidad={cancion.tonalidad || ''}
  bpm={cancion.bpm || 0}
  linkLetra={cancion.link_letras || ''}
@@ -124,7 +125,7 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
  linkSecuencias={cancion.link_secuencias || ''}
  chordpro={cancion.chordpro || ''}
  categoria={cancion.categoria || ''}
- voz={cancion.voz_principal || ''}
+ voz={cancion.voz || cancion.voz_principal || ''}
  tema={cancion.tema || ''}
  estado={cancion.estado || ''}
  oculta={index >= 15}
@@ -561,6 +562,13 @@ const matchVoz = (vozValue, vozFilter) => {
  const v = normalizeStr(vozValue);
  const f = normalizeStr(vozFilter);
  if (f === 'todas') return true;
+
+ if (f === 'hombre y mujer') {
+ const hasHombre = ['hombre', 'masculino', 'male', 'tenor'].some((alias) => v.includes(alias));
+ const hasMujer = ['mujer', 'femenino', 'female', 'soprano', 'alto', 'contralto'].some((alias) => v.includes(alias));
+ const hasDuetAlias = ['dueto', 'duo', 'mixta', 'mixto', 'mixed'].some((alias) => v.includes(alias));
+ return (hasHombre && hasMujer) || hasDuetAlias;
+ }
 
  if (f === 'hombre') {
  return ['hombre', 'masculino', 'male', 'tenor'].some((alias) => v.includes(alias));
