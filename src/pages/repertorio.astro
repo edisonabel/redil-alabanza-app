@@ -4,7 +4,105 @@ import CardCancion from '../components/CardCancion.astro';
 import BuscadorPredictivo from '../components/BuscadorPredictivo.astro';
 import { supabase } from '../lib/supabase';
 
+const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1Fk4DgxWzizonrG_xB_DZN8wSqLSZY9myj7ROM7JLu-c/export?format=csv';
+
+const normalizeToken = (value: string) =>
+  (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+const parseCsv = (input: string): string[][] => {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < input.length; i += 1) {
+    const char = input[i];
+    const next = input[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        field += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (!inQuotes && char === ',') {
+      row.push(field);
+      field = '';
+      continue;
+    }
+
+    if (!inQuotes && (char === '\n' || char === '\r')) {
+      if (char === '\r' && next === '\n') i += 1;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = '';
+      continue;
+    }
+
+    field += char;
+  }
+
+  row.push(field);
+  rows.push(row);
+  return rows;
+};
+
+const loadMp3MapFromSheet = async () => {
+  const mp3BySong = new Map<string, string>();
+
+  try {
+    const response = await fetch(SHEET_CSV_URL, { headers: { Accept: 'text/csv' } });
+    if (!response.ok) return mp3BySong;
+    const csvText = await response.text();
+    const rows = parseCsv(csvText);
+    if (!rows.length) return mp3BySong;
+
+    let headerRowIndex = -1;
+    let songCol = -1;
+    let mp3Col = -1;
+
+    for (let i = 0; i < rows.length; i += 1) {
+      const row = rows[i].map((cell) => normalizeToken(cell));
+      const songIndex = row.findIndex((cell) => cell === 'cancion' || cell.includes('cancion'));
+      const mp3Index = row.findIndex((cell) => cell === 'mp3');
+      if (songIndex !== -1 && mp3Index !== -1) {
+        headerRowIndex = i;
+        songCol = songIndex;
+        mp3Col = mp3Index;
+        break;
+      }
+    }
+
+    if (headerRowIndex === -1 || songCol === -1 || mp3Col === -1) return mp3BySong;
+
+    for (let i = headerRowIndex + 1; i < rows.length; i += 1) {
+      const row = rows[i];
+      const songTitle = (row[songCol] || '').trim();
+      const mp3Value = (row[mp3Col] || '').trim();
+      if (!songTitle || !mp3Value) continue;
+
+      const mp3Norm = normalizeToken(mp3Value);
+      if (mp3Norm === 'no esta' || mp3Norm === 'no está') continue;
+      mp3BySong.set(normalizeToken(songTitle), mp3Value);
+    }
+  } catch (error) {
+    console.error('No se pudo leer MP3 desde Google Sheet:', error);
+  }
+
+  return mp3BySong;
+};
+
 let canciones: any[] = [];
+const mp3BySong = await loadMp3MapFromSheet();
 try {
   const { data, error } = await supabase
     .from('canciones')
@@ -15,7 +113,15 @@ try {
     console.error("Error fetching from Supabase:", error);
   } else if (data) {
     // Solo en este caso mostramos canciones que no estan archivadas.
-    canciones = data.filter(c => c.estado !== 'Archivada');
+    canciones = data
+      .filter(c => c.estado !== 'Archivada')
+      .map((cancion: any) => {
+        const dbMp3 = (cancion.mp3 || cancion.MP3 || '').trim();
+        if (dbMp3) return cancion;
+
+        const sheetMp3 = mp3BySong.get(normalizeToken(cancion.titulo || '')) || '';
+        return sheetMp3 ? { ...cancion, mp3: sheetMp3 } : cancion;
+      });
   }
 } catch (e) {
   console.error("Fetch failed", e);
@@ -123,6 +229,7 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
  linkVoces={cancion.link_voces || ''}
  linkYoutube={cancion.link_youtube || ''}
  linkSecuencias={cancion.link_secuencias || ''}
+ linkMp3={cancion.mp3 || cancion.MP3 || ''}
  chordpro={cancion.chordpro || ''}
  categoria={cancion.categoria || ''}
  voz={cancion.voz || cancion.voz_principal || ''}
@@ -169,7 +276,54 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
  </button>
  </div>
  </div>
- </div>
+</div>
+
+<!-- Modal Reproductor MP3 (Modo Ensayo con Loop A-B) -->
+<div id="mp3PlayerModal" class="fixed inset-0 z-[130] hidden">
+  <div id="mp3PlayerBackdrop" class="absolute inset-0 bg-overlay/70 backdrop-blur-sm"></div>
+  <div class="relative z-10 w-full h-full flex items-end md:items-center justify-center p-0 md:p-4">
+    <div class="w-full md:max-w-2xl bg-surface border border-border rounded-t-3xl md:rounded-3xl shadow-2xl p-5 md:p-6">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h3 id="mp3Title" class="text-lg md:text-xl font-black text-content truncate">Canción</h3>
+          <p id="mp3Artist" class="text-sm text-content-muted truncate">Artista</p>
+        </div>
+        <button id="btnMp3Close" type="button" class="w-9 h-9 rounded-xl border border-border bg-background text-content-muted hover:text-content hover:bg-surface transition-colors" aria-label="Cerrar reproductor">✕</button>
+      </div>
+
+      <audio id="mp3Audio" class="hidden" preload="metadata"></audio>
+
+      <div class="mt-4 rounded-2xl border border-border bg-background/70 p-4">
+        <div class="flex items-center gap-2">
+          <button id="btnMp3PlayPause" type="button" class="w-12 h-12 rounded-full bg-action text-white grid place-items-center hover:bg-action/90 transition-colors shadow-lg" aria-label="Reproducir">
+            <svg id="mp3PlayIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-6 h-6 fill-current"><path d="M8 5v14l11-7z"></path></svg>
+          </button>
+          <span id="mp3CurrentTime" class="text-xs font-semibold text-content-muted w-12 text-right">00:00</span>
+          <div id="mp3TimelineWrap" class="relative flex-1 h-8 flex items-center">
+            <canvas id="mp3Waveform" class="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-8 w-full opacity-80"></canvas>
+            <input id="mp3Seek" type="range" min="0" max="100" value="0" class="w-full accent-action" />
+            <div id="mp3LoopBracket" class="hidden pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-2">
+              <div id="mp3LoopRangeFill" class="absolute top-0 h-2 rounded-full bg-brand/35"></div>
+              <button id="mp3LoopHandleA" type="button" class="mp3-loop-handle pointer-events-auto absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-md bg-surface text-brand border border-brand/70 shadow-sm grid place-items-center text-xs font-black leading-none" aria-label="Bracket A">[</button>
+              <button id="mp3LoopHandleB" type="button" class="mp3-loop-handle pointer-events-auto absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-md bg-surface text-brand border border-brand/70 shadow-sm grid place-items-center text-xs font-black leading-none" aria-label="Bracket B">]</button>
+            </div>
+          </div>
+          <span id="mp3Duration" class="text-xs font-semibold text-content-muted w-12">00:00</span>
+        </div>
+
+        <div class="mt-3 flex items-center justify-between gap-3 flex-wrap">
+          <label class="inline-flex items-center gap-2 text-sm font-semibold text-content">
+            <input id="chkLoopRange" type="checkbox" class="w-4 h-4 rounded border-border accent-action" />
+            Loop [A-B] (ensayo)
+          </label>
+          <p id="mp3LoopInfo" class="text-xs text-content-muted">[A] 00:00 - [B] 00:00</p>
+          <button id="btnClearLoopRange" type="button" class="px-3 py-1.5 rounded-xl border border-border bg-surface text-content text-xs font-bold hover:bg-background transition-colors">Limpiar loop</button>
+        </div>
+        <p id="mp3Status" class="mt-2 text-xs text-content-muted">Activa el loop y arrastra los brackets A/B sobre la barra.</p>
+      </div>
+    </div>
+  </div>
+</div>
 </Layout>
 
  <!-- Data bridge eliminado. Supabase renderiza directamente. -->
@@ -198,6 +352,28 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
  const setlistCount = document.getElementById('setlistCount');
  const btnCopySetlist = document.getElementById('btnCopySetlist');
  const btnClearSetlist = document.getElementById('btnClearSetlist');
+
+ const mp3PlayerModal = document.getElementById('mp3PlayerModal') as HTMLElement;
+ const mp3PlayerBackdrop = document.getElementById('mp3PlayerBackdrop') as HTMLElement;
+ const btnMp3Close = document.getElementById('btnMp3Close') as HTMLButtonElement;
+ const mp3Title = document.getElementById('mp3Title') as HTMLElement;
+ const mp3Artist = document.getElementById('mp3Artist') as HTMLElement;
+ const mp3Status = document.getElementById('mp3Status') as HTMLElement;
+ const mp3Audio = document.getElementById('mp3Audio') as HTMLAudioElement;
+ const btnMp3PlayPause = document.getElementById('btnMp3PlayPause') as HTMLButtonElement;
+ const mp3PlayIcon = document.getElementById('mp3PlayIcon') as SVGElement;
+ const mp3TimelineWrap = document.getElementById('mp3TimelineWrap') as HTMLElement;
+ const mp3Waveform = document.getElementById('mp3Waveform') as HTMLCanvasElement;
+ const mp3Seek = document.getElementById('mp3Seek') as HTMLInputElement;
+ const mp3CurrentTime = document.getElementById('mp3CurrentTime') as HTMLElement;
+ const mp3Duration = document.getElementById('mp3Duration') as HTMLElement;
+ const mp3LoopBracket = document.getElementById('mp3LoopBracket') as HTMLElement;
+ const mp3LoopRangeFill = document.getElementById('mp3LoopRangeFill') as HTMLElement;
+ const mp3LoopHandleA = document.getElementById('mp3LoopHandleA') as HTMLButtonElement;
+ const mp3LoopHandleB = document.getElementById('mp3LoopHandleB') as HTMLButtonElement;
+ const btnClearLoopRange = document.getElementById('btnClearLoopRange') as HTMLButtonElement;
+ const chkLoopRange = document.getElementById('chkLoopRange') as HTMLInputElement;
+ const mp3LoopInfo = document.getElementById('mp3LoopInfo') as HTMLElement;
  
  const btnViewGrid = document.getElementById('btnViewGrid');
  const btnViewList = document.getElementById('btnViewList');
@@ -469,6 +645,20 @@ if (isSelectionMode) {
  }
  }
 
+ // Listener global para abrir modal MP3 desde la tarjeta
+ document.addEventListener('click', (e) => {
+ const mp3Button = (e.target as Element).closest('.btn-open-mp3') as HTMLElement | null;
+ if (!mp3Button) return;
+
+ e.preventDefault();
+ e.stopPropagation();
+
+ const mp3Url = mp3Button.getAttribute('data-mp3') || '';
+ const songTitle = mp3Button.getAttribute('data-title') || mp3Button.getAttribute('data-cancion') || 'Canción';
+ const songArtist = mp3Button.getAttribute('data-artist') || '';
+ openMp3Modal(songTitle, mp3Url, songArtist);
+ }, true);
+
  // Listener Universal para el boton + de las tarjetas
  document.addEventListener('click', (e) => {
  const btn = e.target.closest('.btn-add-setlist');
@@ -580,6 +770,312 @@ const matchVoz = (vozValue, vozFilter) => {
 
  return v.includes(f);
 };
+
+ const formatTime = (seconds: number) => {
+   if (!Number.isFinite(seconds) || seconds < 0) return '00:00';
+   const total = Math.floor(seconds);
+   const min = Math.floor(total / 60);
+   const sec = total % 60;
+   return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+ };
+
+ const toPlayableMp3Url = (rawUrl: string) => {
+   if (!rawUrl) return '';
+   const normalized = rawUrl.trim();
+   const isDrive =
+     normalized.includes('drive.google.com') ||
+     normalized.includes('docs.google.com') ||
+     normalized.includes('drive.usercontent.google.com');
+
+   if (!isDrive) return normalized;
+   return `/api/mp3-proxy?src=${encodeURIComponent(normalized)}`;
+ };
+
+ let mp3TotalDuration = 0;
+ let loopStartSec = 0;
+ let loopEndSec = 0;
+ let isSeekingAudio = false;
+ let draggingLoopHandle: 'A' | 'B' | null = null;
+ let mp3WaveRaf = 0;
+ let mp3WaveCtx: AudioContext | null = null;
+ let mp3WaveSource: MediaElementAudioSourceNode | null = null;
+ let mp3WaveAnalyser: AnalyserNode | null = null;
+ let mp3WaveData: Uint8Array | null = null;
+
+ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+ const setLoopUiVisibility = () => {
+   const active = !!chkLoopRange?.checked;
+   mp3LoopBracket?.classList.toggle('hidden', !active);
+ };
+
+ const secondsFromPointer = (clientX: number) => {
+   const rect = mp3TimelineWrap.getBoundingClientRect();
+   if (!rect.width || !mp3TotalDuration) return 0;
+   const ratio = clamp((clientX - rect.left) / rect.width, 0, 1);
+   return ratio * mp3TotalDuration;
+ };
+
+ const syncLoopUi = () => {
+   const safeDuration = mp3TotalDuration || 1;
+   const startPct = clamp((loopStartSec / safeDuration) * 100, 0, 100);
+   const endPct = clamp((loopEndSec / safeDuration) * 100, 0, 100);
+
+   mp3LoopInfo.textContent = `[A] ${formatTime(loopStartSec)} - [B] ${formatTime(loopEndSec)}`;
+
+   if (mp3LoopRangeFill) {
+     mp3LoopRangeFill.style.left = `${startPct}%`;
+     mp3LoopRangeFill.style.width = `${Math.max(0, endPct - startPct)}%`;
+   }
+   if (mp3LoopHandleA) mp3LoopHandleA.style.left = `${startPct}%`;
+   if (mp3LoopHandleB) mp3LoopHandleB.style.left = `${endPct}%`;
+  };
+
+ const stopWaveform = () => {
+   if (mp3WaveRaf) {
+     cancelAnimationFrame(mp3WaveRaf);
+     mp3WaveRaf = 0;
+   }
+ };
+
+ const setupWaveform = async () => {
+   if (mp3WaveAnalyser && mp3WaveData) return;
+   const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+   if (!Ctx) return;
+
+   mp3WaveCtx = mp3WaveCtx || new Ctx();
+   if (!mp3WaveSource) {
+     mp3WaveSource = mp3WaveCtx.createMediaElementSource(mp3Audio);
+   }
+   mp3WaveAnalyser = mp3WaveAnalyser || mp3WaveCtx.createAnalyser();
+   mp3WaveAnalyser.fftSize = 1024;
+   mp3WaveData = new Uint8Array(mp3WaveAnalyser.fftSize);
+
+   try { mp3WaveSource.disconnect(); } catch {}
+   try { mp3WaveAnalyser.disconnect(); } catch {}
+   mp3WaveSource.connect(mp3WaveAnalyser);
+   mp3WaveAnalyser.connect(mp3WaveCtx.destination);
+ };
+
+ const drawWaveformFrame = () => {
+   if (!mp3Waveform || !mp3WaveAnalyser || !mp3WaveData) return;
+   const rect = mp3Waveform.getBoundingClientRect();
+   if (!rect.width || !rect.height) return;
+
+   const dpr = window.devicePixelRatio || 1;
+   const targetW = Math.floor(rect.width * dpr);
+   const targetH = Math.floor(rect.height * dpr);
+   if (mp3Waveform.width !== targetW || mp3Waveform.height !== targetH) {
+     mp3Waveform.width = targetW;
+     mp3Waveform.height = targetH;
+   }
+
+   const ctx = mp3Waveform.getContext('2d');
+   if (!ctx) return;
+   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+   ctx.clearRect(0, 0, rect.width, rect.height);
+
+   mp3WaveAnalyser.getByteTimeDomainData(mp3WaveData);
+   const midY = rect.height / 2;
+   const amp = rect.height * 0.34;
+   const step = rect.width / (mp3WaveData.length - 1);
+
+   ctx.lineWidth = 1.25;
+   ctx.strokeStyle = mp3Audio.paused
+     ? 'rgba(96, 165, 250, 0.35)'
+     : 'rgba(110, 231, 183, 0.72)';
+   ctx.beginPath();
+
+   for (let i = 0; i < mp3WaveData.length; i += 1) {
+     const x = i * step;
+     const y = midY + ((mp3WaveData[i] - 128) / 128) * amp;
+     if (i === 0) ctx.moveTo(x, y);
+     else ctx.lineTo(x, y);
+   }
+   ctx.stroke();
+ };
+
+ const runWaveform = () => {
+   stopWaveform();
+   const tick = () => {
+     drawWaveformFrame();
+     if (!mp3Audio.paused && !mp3Audio.ended) {
+       mp3WaveRaf = requestAnimationFrame(tick);
+     } else {
+       mp3WaveRaf = 0;
+     }
+   };
+   tick();
+ };
+
+ const syncPlaybackWaveform = () => {
+   if (!mp3WaveAnalyser) return;
+   drawWaveformFrame();
+ };
+
+ const resetLoopRange = () => {
+   loopStartSec = 0;
+   loopEndSec = mp3TotalDuration;
+   syncLoopUi();
+   syncPlaybackWaveform();
+  };
+
+ const setPlayButtonState = (isPlaying: boolean) => {
+   if (!btnMp3PlayPause || !mp3PlayIcon) return;
+   mp3PlayerModal.classList.toggle('mp3-playing', isPlaying);
+   if (isPlaying) {
+     mp3PlayIcon.innerHTML = '<path d="M8 5h3v14H8zM13 5h3v14h-3z"></path>';
+     btnMp3PlayPause.setAttribute('aria-label', 'Pausar');
+     btnMp3PlayPause.title = 'Pausar';
+   } else {
+     mp3PlayIcon.innerHTML = '<path d="M8 5v14l11-7z"></path>';
+     btnMp3PlayPause.setAttribute('aria-label', 'Reproducir');
+     btnMp3PlayPause.title = 'Reproducir';
+   }
+   if (isPlaying) runWaveform();
+   else drawWaveformFrame();
+ };
+
+ const closeMp3Modal = () => {
+   mp3Audio.pause();
+   mp3Audio.removeAttribute('src');
+   mp3Audio.load();
+   mp3PlayerModal.classList.add('hidden');
+   setPlayButtonState(false);
+   stopWaveform();
+   };
+
+ const openMp3Modal = (title: string, rawUrl: string, artist: string) => {
+   const playableUrl = toPlayableMp3Url(rawUrl);
+   if (!playableUrl) return;
+
+   mp3Title.textContent = title || 'Canción';
+   mp3Artist.textContent = artist?.trim() || 'Artista no especificado';
+   mp3Status.textContent = 'Cargando audio...';
+   setPlayButtonState(false);
+   mp3Seek.value = '0';
+   mp3CurrentTime.textContent = '00:00';
+   mp3Duration.textContent = '00:00';
+   chkLoopRange.checked = false;
+   setLoopUiVisibility();
+   syncPlaybackWaveform();
+   mp3PlayerModal.classList.remove('hidden');
+
+   mp3Audio.src = playableUrl;
+   mp3Audio.load();
+ };
+
+ mp3Audio.addEventListener('loadedmetadata', () => {
+   mp3TotalDuration = Number.isFinite(mp3Audio.duration) ? mp3Audio.duration : 0;
+   mp3Seek.min = '0';
+   mp3Seek.max = String(mp3TotalDuration || 1);
+   mp3Duration.textContent = formatTime(mp3TotalDuration);
+   resetLoopRange();
+   mp3Status.textContent = 'Activa el loop y arrastra los brackets A/B sobre la barra.';
+   void setupWaveform().then(() => drawWaveformFrame());
+  });
+
+  mp3Audio.addEventListener('timeupdate', () => {
+    if (!isSeekingAudio) mp3Seek.value = String(mp3Audio.currentTime || 0);
+    mp3CurrentTime.textContent = formatTime(mp3Audio.currentTime || 0);
+   syncPlaybackWaveform();
+
+    if (chkLoopRange.checked && loopEndSec > loopStartSec + 0.15 && mp3Audio.currentTime >= loopEndSec) {
+      mp3Audio.currentTime = loopStartSec;
+     syncPlaybackWaveform();
+    }
+  });
+
+ mp3Audio.addEventListener('play', () => { setPlayButtonState(true); });
+ mp3Audio.addEventListener('pause', () => { setPlayButtonState(false); });
+ mp3Audio.addEventListener('ended', () => { setPlayButtonState(false); });
+ mp3Audio.addEventListener('error', () => {
+   mp3Status.textContent = 'No se pudo cargar el MP3. Verifica el enlace y permisos en Drive.';
+ });
+
+  btnMp3PlayPause?.addEventListener('click', async () => {
+    try {
+      if (mp3Audio.paused) {
+        await setupWaveform();
+        if (mp3WaveCtx?.state === 'suspended') await mp3WaveCtx.resume();
+        await mp3Audio.play();
+      } else {
+        mp3Audio.pause();
+      }
+   } catch (error) {
+     if (error instanceof DOMException && error.name === 'NotAllowedError') {
+       mp3Status.textContent = 'El navegador bloqueó la reproducción. Toca Reproducir nuevamente.';
+       return;
+     }
+     if (error instanceof DOMException && error.name === 'NotSupportedError') {
+       mp3Status.textContent = 'El enlace no se pudo reproducir. Revisa el formato o permisos del MP3.';
+       return;
+     }
+     mp3Status.textContent = 'No se pudo iniciar el audio. Inténtalo de nuevo.';
+   }
+ });
+
+ mp3Seek?.addEventListener('input', () => {
+   isSeekingAudio = true;
+   mp3CurrentTime.textContent = formatTime(Number(mp3Seek.value || 0));
+ });
+ mp3Seek?.addEventListener('change', () => {
+   mp3Audio.currentTime = Number(mp3Seek.value || 0);
+   syncPlaybackWaveform();
+   isSeekingAudio = false;
+  });
+
+ chkLoopRange?.addEventListener('change', () => {
+   setLoopUiVisibility();
+   syncLoopUi();
+ });
+
+ btnClearLoopRange?.addEventListener('click', () => {
+   resetLoopRange();
+  });
+
+ const updateLoopHandlePosition = (which: 'A' | 'B', clientX: number) => {
+   if (!mp3TotalDuration) return;
+   const nextSec = secondsFromPointer(clientX);
+
+   if (which === 'A') {
+     loopStartSec = clamp(nextSec, 0, Math.max(0, loopEndSec - 0.1));
+   } else {
+     loopEndSec = clamp(nextSec, Math.min(mp3TotalDuration, loopStartSec + 0.1), mp3TotalDuration);
+   }
+   syncLoopUi();
+ };
+
+ const onLoopPointerMove = (event: PointerEvent) => {
+   if (!draggingLoopHandle || !chkLoopRange.checked) return;
+   event.preventDefault();
+   updateLoopHandlePosition(draggingLoopHandle, event.clientX);
+ };
+
+ const onLoopPointerUp = () => {
+   draggingLoopHandle = null;
+   window.removeEventListener('pointermove', onLoopPointerMove);
+   window.removeEventListener('pointerup', onLoopPointerUp);
+ };
+
+ const startLoopDrag = (which: 'A' | 'B', event: PointerEvent) => {
+   if (!chkLoopRange.checked) return;
+   draggingLoopHandle = which;
+   updateLoopHandlePosition(which, event.clientX);
+   window.addEventListener('pointermove', onLoopPointerMove, { passive: false });
+   window.addEventListener('pointerup', onLoopPointerUp);
+ };
+
+ mp3LoopHandleA?.addEventListener('pointerdown', (event) => startLoopDrag('A', event));
+ mp3LoopHandleB?.addEventListener('pointerdown', (event) => startLoopDrag('B', event));
+
+ btnMp3Close?.addEventListener('click', closeMp3Modal);
+ mp3PlayerBackdrop?.addEventListener('click', closeMp3Modal);
+ document.addEventListener('keydown', (event) => {
+   if (event.key === 'Escape' && !mp3PlayerModal.classList.contains('hidden')) {
+     closeMp3Modal();
+   }
+ });
 
 const matchCategoria = (categoriaValue, categoriaFilter) => {
  const c = normalizeStr(categoriaValue);
@@ -818,6 +1314,85 @@ function filterCards() {
  display: block;
  padding-top: 0;
  border-top: 1px solid rgba(255,255,255,0.05);
+ }
+
+ #mp3Seek {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  z-index: 12;
+  height: 8px;
+  border-radius: 9999px;
+  background: transparent;
+  transition: background-color 180ms ease, box-shadow 180ms ease;
+ }
+
+ #mp3Seek::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: rgb(var(--border-base) / 0.55);
+ }
+
+ #mp3Seek::-moz-range-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: rgb(var(--border-base) / 0.55);
+ }
+
+ #mp3Seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: rgb(var(--color-info));
+  border: 2px solid rgb(var(--bg-surface));
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.22);
+  transition: background-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+ }
+
+ #mp3Seek::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: rgb(var(--color-info));
+  border: 2px solid rgb(var(--bg-surface));
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.22);
+  transition: background-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+ }
+
+ #mp3Waveform {
+  z-index: 1;
+  transition: opacity 180ms ease;
+  opacity: 0.75;
+ }
+
+ #mp3PlayerModal.mp3-playing #btnMp3PlayPause {
+  background: linear-gradient(135deg, rgb(16 185 129), rgb(52 211 153));
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.06), 0 8px 22px rgb(16 185 129 / 0.34);
+ }
+
+ #mp3PlayerModal.mp3-playing #mp3Seek::-webkit-slider-thumb {
+  background: rgb(52 211 153);
+  box-shadow: 0 0 0 4px rgb(52 211 153 / 0.16), 0 2px 10px rgb(16 185 129 / 0.28);
+  transform: scale(1.03);
+ }
+
+ #mp3PlayerModal.mp3-playing #mp3Seek::-moz-range-thumb {
+  background: rgb(52 211 153);
+  box-shadow: 0 0 0 4px rgb(52 211 153 / 0.16), 0 2px 10px rgb(16 185 129 / 0.28);
+  transform: scale(1.03);
+ }
+
+ #mp3PlayerModal.mp3-playing #mp3Seek::-webkit-slider-runnable-track {
+  background: rgb(52 211 153 / 0.28);
+ }
+
+ #mp3PlayerModal.mp3-playing #mp3Seek::-moz-range-track {
+  background: rgb(52 211 153 / 0.28);
+ }
+
+ #mp3PlayerModal.mp3-playing #mp3Waveform {
+  opacity: 0.95;
  }
 </style>
 

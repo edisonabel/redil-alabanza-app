@@ -9,6 +9,7 @@ interface Props {
 	linkVoces: string;
 	linkYoutube: string;
 	linkSecuencias: string;
+	linkMp3: string;
 	chordpro: string;
 	categoria: string;
 	voz: string;
@@ -17,7 +18,7 @@ interface Props {
 	oculta?: boolean;
 }
 
-const { titulo = "", cantante = "", tonalidad = "", bpm = 0, linkLetra = "", linkAcordes = "", linkVoces = "", linkYoutube = "", linkSecuencias = "", chordpro = "", categoria = "", voz = "", tema = "", estado = "", oculta = false } = Astro.props;
+const { titulo = "", cantante = "", tonalidad = "", bpm = 0, linkLetra = "", linkAcordes = "", linkVoces = "", linkYoutube = "", linkSecuencias = "", linkMp3 = "", chordpro = "", categoria = "", voz = "", tema = "", estado = "", oculta = false } = Astro.props;
 
 const estadoNormalized = (estado || '').toLowerCase().trim();
 
@@ -82,7 +83,7 @@ if (estadoNormalized === 'nueva') {
  <div class="card-content transition-all duration-300 overflow-hidden px-5 pb-5">
  <div class="grid grid-cols-2 gap-3 mt-2">
  
- {chordpro.trim() !== '' && (
+{chordpro.trim() !== '' && (
  <a href="#" 
  data-chordpro={chordpro}
  data-titulo={titulo}
@@ -92,6 +93,19 @@ if (estadoNormalized === 'nueva') {
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
  Transponer / PDF
  </a>
+)}
+
+ {linkMp3.trim() !== '' && (
+ <button
+ type="button"
+ data-mp3={linkMp3}
+ data-title={titulo}
+ data-artist={cantante || ''}
+ class="btn-open-mp3 col-span-2 flex items-center justify-center py-2.5 rounded-xl bg-action/10 text-action hover:bg-action/20 transition-colors font-bold text-sm tracking-wide"
+ >
+ <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" class="mr-2"><path d="M8 5v14l11-7z"></path></svg>
+ Reproducir
+ </button>
  )}
 
  {linkYoutube.trim() !== '' && (
