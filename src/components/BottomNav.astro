@@ -79,12 +79,13 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  data-nav-link="true"
  data-nav-href={item.href}
  data-astro-prefetch="hover"
- class={`flex min-w-0 flex-col items-center justify-center gap-0.5 py-3 px-1 transition-all duration-300 relative ${active ? 'text-brand ' : 'text-content-muted hover:text-content'}`}
+ class={`nav-link flex min-w-0 flex-col items-center justify-center gap-0.5 py-3 px-1 transition-all duration-300 relative ${active ? 'text-brand ' : 'text-content-muted hover:text-content'}`}
  >
  {item.name === 'Perfil' && (
  <span id="nav-badge-perfil" class="absolute top-2 right-4 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-surface hidden z-10 transition-opacity"></span>
  )}
  <span data-nav-active-indicator class={`absolute top-0 left-1/2 -translate-x-1/2 w-8 h-1 bg-brand rounded-b-full ${active ? '' : 'hidden'}`}></span>
+ <span data-nav-loader class="nav-loader hidden" aria-hidden="true"></span>
  <MotionNavIcon key={`nav-icon-${item.href}`} icon={item.icon} active={active} client:load />
   <span data-nav-label class={`block w-full truncate text-center text-[10px] font-medium tracking-wide ${active ? 'font-bold' : ''}`}>
   {item.name}
@@ -99,6 +100,56 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  /* Support for mobile safe areas (iOS notches/bars) */
  .pb-safe {
  padding-bottom: calc(env(safe-area-inset-bottom) + 0.75rem);
+ }
+
+ .nav-link {
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  transition: transform 220ms cubic-bezier(0.42, 0, 0.58, 1), opacity 220ms cubic-bezier(0.42, 0, 0.58, 1);
+ }
+
+ .nav-link.nav-link-pressed {
+  transform: translateZ(0) scale(0.93);
+ }
+
+ .nav-loader {
+  position: absolute;
+  top: 0.36rem;
+  right: 0.52rem;
+  width: 0.62rem;
+  height: 0.62rem;
+  border-radius: 9999px;
+  border: 2px solid rgb(var(--color-brand) / 0.25);
+  border-top-color: rgb(var(--color-brand));
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 200ms ease, transform 200ms ease;
+ }
+
+ .nav-link.nav-link-loading .nav-loader {
+  opacity: 1;
+  transform: scale(1);
+  animation: nav-loader-spin 0.8s linear infinite;
+ }
+
+ .nav-link.nav-link-loading [data-nav-label] {
+  opacity: 0.88;
+ }
+
+ .nav-link.nav-link-loading [data-nav-icon] {
+  animation: nav-icon-breathe 0.9s ease-in-out infinite;
+ }
+
+ @keyframes nav-loader-spin {
+  to {
+   transform: rotate(360deg);
+  }
+ }
+
+ @keyframes nav-icon-breathe {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
  }
 </style>
 
@@ -144,15 +195,22 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  const indicator = link.querySelector('[data-nav-active-indicator]');
  if (indicator) indicator.classList.toggle('hidden', !active);
 
- const icon = link.querySelector('[data-nav-icon]');
- if (icon) {
- icon.classList.toggle('scale-110', active);
- icon.classList.toggle('scale-100', !active);
- }
-
  const label = link.querySelector('[data-nav-label]');
  if (label) label.classList.toggle('font-bold', active);
  });
+ };
+
+ const clearLoadingState = () => {
+ navLinks.forEach((link) => {
+ link.classList.remove('nav-link-loading');
+ link.dataset.navLoading = 'false';
+ });
+ };
+
+ const setLoadingState = (targetLink) => {
+ clearLoadingState();
+ targetLink.classList.add('nav-link-loading');
+ targetLink.dataset.navLoading = 'true';
  };
 
  const prefetchRoute = (href) => {
@@ -190,14 +248,47 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  if (!href) return;
  link.addEventListener('pointerenter', () => prefetchRoute(href), { passive: true });
  link.addEventListener('touchstart', () => prefetchRoute(href), { passive: true });
- link.addEventListener('pointerdown', triggerHaptic, { passive: true });
+ link.addEventListener('pointerdown', () => {
+ triggerHaptic();
+ link.classList.add('nav-link-pressed');
+ window.setTimeout(() => {
+ link.classList.remove('nav-link-pressed');
+ }, 180);
+ }, { passive: true });
+ link.addEventListener('pointerup', () => link.classList.remove('nav-link-pressed'), { passive: true });
+ link.addEventListener('pointercancel', () => link.classList.remove('nav-link-pressed'), { passive: true });
+ link.addEventListener('click', () => {
+ const targetHref = link.dataset.navHref || link.getAttribute('href') || '';
+ if (!targetHref) return;
+ let targetUrl;
+ try {
+ targetUrl = new URL(targetHref, window.location.origin);
+ } catch {
+ return;
+ }
+ const isSameRoute =
+ targetUrl.pathname === window.location.pathname &&
+ targetUrl.search === window.location.search &&
+ targetUrl.hash === window.location.hash;
+ if (isSameRoute) return;
+ setLoadingState(link);
+ }, { passive: true });
  link.dataset.prefetchBound = 'true';
  });
 
  if (!window.__REDIL_NAV_ACTIVE_SYNC_BOUND__) {
- document.addEventListener('astro:after-swap', syncActiveState);
- document.addEventListener('astro:page-load', syncActiveState);
- window.addEventListener('popstate', syncActiveState);
+ document.addEventListener('astro:after-swap', () => {
+ clearLoadingState();
+ syncActiveState();
+ });
+ document.addEventListener('astro:page-load', () => {
+ clearLoadingState();
+ syncActiveState();
+ });
+ window.addEventListener('popstate', () => {
+ clearLoadingState();
+ syncActiveState();
+ });
  window.__REDIL_NAV_ACTIVE_SYNC_BOUND__ = true;
  }
 
