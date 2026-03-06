@@ -29,6 +29,7 @@ const formatTimeRange = (isoString, horaFin) => {
 const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
     const [isDark, setIsDark] = useState(false);
     const [dismissUpcomingHint, setDismissUpcomingHint] = useState(false);
+    const [dismissEnvironmentHint, setDismissEnvironmentHint] = useState(false);
     const [devicePlatform, setDevicePlatform] = useState('other');
     const [canInstallPrompt, setCanInstallPrompt] = useState(false);
     const [isStandaloneApp, setIsStandaloneApp] = useState(false);
@@ -396,9 +397,28 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
             {/* Columna Derecha */}
             <div className="w-full lg:w-[44%] xl:w-full shrink-0 flex flex-col gap-6 2xl:gap-8 lg:mt-20">
                 <section className="px-3 sm:px-4 lg:px-0 lg:flex-1 lg:flex lg:flex-col">
-                    <h2 className="text-lg font-bold text-content tracking-tight mb-3">Tu Entorno</h2>
-                    <div className="grid grid-cols-2 gap-4 2xl:gap-6 lg:flex-1 lg:auto-rows-fr">
-                        <a href="/repertorio" className="aspect-square lg:aspect-auto lg:h-full lg:min-h-[240px] xl:min-h-[280px] 2xl:min-h-[320px] rounded-[2rem] p-5 flex flex-col justify-between shadow-md active:scale-[0.98] transition-all relative overflow-hidden group">
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                        <h2 className="text-lg font-bold text-content tracking-tight">Tu Entorno</h2>
+                        {!dismissEnvironmentHint && (
+                            <span className="md:hidden inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-surface/80 text-[10px] font-bold text-content-muted uppercase tracking-wide [animation:deslizaInicioHintLoop_4.8s_ease-in-out_infinite]">
+                                Desliza
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse">
+                                    <path d="m9 18 6-6-6-6" />
+                                </svg>
+                            </span>
+                        )}
+                    </div>
+                    <div className="relative -mx-3 sm:mx-0">
+                    <div
+                        className="flex overflow-x-auto gap-3 px-3 sm:px-4 pb-2 snap-x snap-mandatory hide-scrollbar w-full lg:grid lg:grid-cols-3 lg:gap-6 lg:px-0 lg:pb-0 lg:overflow-visible lg:flex-1 lg:auto-rows-fr"
+                        onScroll={(e) => {
+                            const el = e.currentTarget;
+                            const moved = el.scrollLeft > 10;
+                            const reachedEnd = (el.scrollWidth - (el.scrollLeft + el.clientWidth)) <= 12;
+                            if (moved || reachedEnd) setDismissEnvironmentHint(true);
+                        }}
+                    >
+                        <a href="/repertorio" className="w-[44vw] min-w-[160px] max-w-[220px] aspect-square lg:w-full lg:min-w-0 lg:max-w-none lg:aspect-auto lg:h-full lg:min-h-[240px] xl:min-h-[280px] 2xl:min-h-[320px] rounded-[2rem] p-5 flex flex-col justify-between shadow-md active:scale-[0.98] transition-all relative overflow-hidden group snap-center">
                             <div className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110" style={{ backgroundImage: "url('/repertorio-bg.webp')" }}></div>
                             <div className="absolute inset-0 bg-gradient-to-t from-overlay/95 via-overlay/70 to-transparent"></div>
                             <div className="absolute right-0 top-0 w-32 h-32 bg-white/20 rounded-full blur-2xl transform translate-x-1/2 -translate-y-1/2"></div>
@@ -411,7 +431,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
                             </div>
                         </a>
 
-                        <a href="/herramientas" className="aspect-square lg:aspect-auto lg:h-full lg:min-h-[240px] xl:min-h-[280px] 2xl:min-h-[320px] rounded-[2rem] p-5 flex flex-col justify-between shadow-md active:scale-[0.98] transition-all relative overflow-hidden group">
+                        <a href="/herramientas" className="w-[44vw] min-w-[160px] max-w-[220px] aspect-square lg:w-full lg:min-w-0 lg:max-w-none lg:aspect-auto lg:h-full lg:min-h-[240px] xl:min-h-[280px] 2xl:min-h-[320px] rounded-[2rem] p-5 flex flex-col justify-between shadow-md active:scale-[0.98] transition-all relative overflow-hidden group snap-center">
                             <div className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110" style={{ backgroundImage: "url('/afinacion-bg.webp')" }}></div>
                             <div className="absolute inset-0 bg-gradient-to-t from-overlay/95 via-overlay/70 to-transparent"></div>
                             <div className="absolute left-0 bottom-0 w-32 h-32 bg-white/10 rounded-full blur-2xl transform -translate-x-1/2 translate-y-1/2"></div>
@@ -423,6 +443,31 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
                                 <p className="text-white/90 text-xs font-medium mt-1">Metrónomo & Setup</p>
                             </div>
                         </a>
+
+                        <a href="/herramientas/calentamiento-vocal" className="w-[44vw] min-w-[160px] max-w-[220px] aspect-square lg:w-full lg:min-w-0 lg:max-w-none lg:aspect-auto lg:h-full lg:min-h-[240px] xl:min-h-[280px] 2xl:min-h-[320px] rounded-[2rem] p-5 flex flex-col justify-between shadow-md active:scale-[0.98] transition-all relative overflow-hidden group snap-center">
+                            <div className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110" style={{ backgroundImage: "url('/calentamiento-bg.webp')" }}></div>
+                            <div className="absolute inset-0 bg-gradient-to-t from-overlay/95 via-overlay/75 to-transparent"></div>
+                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_78%_12%,rgba(255,255,255,0.24),transparent_45%),radial-gradient(circle_at_18%_86%,rgba(255,255,255,0.12),transparent_42%)]"></div>
+                            <div className="w-12 h-12 relative z-10 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center text-white border border-white/20 shadow-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
+                            </div>
+                            <div className="relative z-10 mt-auto drop-shadow-md">
+                                <h3 className="text-white font-extrabold text-xl leading-tight">Calentamiento<br />Vocal</h3>
+                                <p className="text-white/90 text-xs font-medium mt-1">Ejercicios & Ensayo</p>
+                            </div>
+                        </a>
+                    </div>
+
+                    {!dismissEnvironmentHint && (
+                        <>
+                            <div className="md:hidden pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-background/95 via-background/65 to-transparent dark:from-surface/90 dark:via-surface/55"></div>
+                            <div className="md:hidden pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full border border-border bg-surface/90 text-content-muted flex items-center justify-center shadow-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="m9 18 6-6-6-6" />
+                                </svg>
+                            </div>
+                        </>
+                    )}
                     </div>
                 </section>
 
