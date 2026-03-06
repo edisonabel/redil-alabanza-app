@@ -1,377 +1,750 @@
----
+﻿---
 import Layout from '../../layouts/Layout.astro';
 ---
 
-<Layout title="Metrónomo PRO | Redil Alabanza">
-  <div class="min-h-screen bg-neutral-900 w-full flex flex-col pt-4 md:pt-8 print:hidden pb-20">
-    
+<Layout title="Metronomo PRO | Redil Alabanza">
+  <div class="metronome-page min-h-screen w-full flex flex-col pt-4 md:pt-8 print:hidden pb-20">
     <div class="w-full max-w-6xl mx-auto px-4 flex-1 flex flex-col">
-      
-      <a href="/herramientas" class="inline-flex items-center text-neutral-400 hover:text-white transition-colors mb-6 pb-2 w-max">
+      <a href="/herramientas" class="inline-flex items-center text-content-muted hover:text-content transition-colors mb-6 pb-2 w-max">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 mr-2"><path d="m15 18-6-6 6-6"/></svg>
         Volver a Herramientas
       </a>
 
       <header class="mb-8 text-center md:text-left">
-        <h1 class="text-3xl md:text-5xl font-extrabold tracking-tight text-white mb-2 flex items-center justify-center md:justify-start gap-3 drop-shadow-md">
+        <h1 class="text-3xl md:text-5xl font-extrabold tracking-tight text-content mb-2 flex items-center justify-center md:justify-start gap-3 drop-shadow-md">
           <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" class="text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 11 5-5"/><path d="m11 15 5-5"/><path d="M22 12A10 10 0 1 1 12 2a10 10 0 0 1 10 10Z"/><path d="M12 22v-3"/><path d="M12 5V2"/><path d="M22 12h-3"/><path d="M5 12H2"/></svg>
-          Metrónomo <span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400">PRO</span>
+          Metronomo <span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400">PRO</span>
         </h1>
-        <p class="text-neutral-400 font-medium text-sm md:text-base">Motor de Audio de Alta Precisión & Tap Tempo.</p>
+        <p class="text-content-muted font-medium text-sm md:text-base">Motor de Audio de Alta Precision & Tap Tempo.</p>
       </header>
 
- <!-- UI del Metrónomo -->
- <div class="max-w-sm mx-auto flex flex-col items-center gap-10 py-6 select-none bg-neutral-800/50 p-6 md:p-10 rounded-[2.5rem] border border-neutral-700/50 shadow-2xl backdrop-blur-sm w-full">
- 
- <!-- Controles Superiores -->
- <div class="flex items-center justify-between w-full">
- <!-- Visualizador de Compases (LEDs) -->
- <div id="beat-visualizer" class="flex gap-3 h-4 items-center bg-neutral-950 px-4 py-3 rounded-full border border-neutral-800 shadow-inner"></div>
+      <div class="metronome-panel max-w-sm mx-auto flex flex-col items-center gap-8 py-6 select-none p-6 md:p-10 rounded-[2.5rem] border shadow-2xl backdrop-blur-sm w-full">
+        <div class="metronome-controls flex items-center justify-between w-full">
+          <div class="metronome-counter-group flex items-center gap-2">
+            <div id="beat-visualizer" class="metronome-led-strip flex gap-1.5 h-5 items-center px-3 py-2 rounded-full border shadow-inner" aria-label="Indicador de pulso">
+              <span class="led-dot is-off is-main-marker is-first" aria-hidden="true"></span>
+              <span class="led-dot is-off is-main-marker" aria-hidden="true"></span>
+              <span class="led-dot is-off is-main-marker" aria-hidden="true"></span>
+              <span class="led-dot is-off is-main-marker" aria-hidden="true"></span>
+            </div>
+            <div id="beat-count-display" class="metronome-count-display" aria-live="polite">1/4</div>
+          </div>
 
- <div class="flex items-center bg-neutral-950 p-1.5 rounded-xl border border-neutral-800 shadow-inner">
- <select id="time-signature" class="bg-transparent text-emerald-400 text-lg font-black outline-none cursor-pointer px-2 text-center appearance-none" style="text-align-last:center;">
- <option value="2" class="bg-neutral-900">2/4</option>
- <option value="3" class="bg-neutral-900">3/4</option>
- <option value="4" selected class="bg-neutral-900">4/4</option>
- <option value="5" class="bg-neutral-900">5/4</option>
- <option value="6" class="bg-neutral-900">6/8</option>
- </select>
- </div>
- </div>
+          <div class="flex items-center gap-2">
+            <div class="metronome-select-wrap flex items-center p-1.5 rounded-xl border shadow-inner">
+              <select id="time-signature" class="metronome-select bg-transparent text-lg font-semibold outline-none cursor-pointer px-2 text-center appearance-none" style="text-align-last:center;">
+                <option value="2">2/4</option>
+                <option value="3">3/4</option>
+                <option value="4" selected>4/4</option>
+                <option value="5">5/4</option>
+                <option value="6">6/8</option>
+              </select>
+            </div>
+          </div>
+        </div>
 
- <!-- El "Knob" (Hardware Dial) -->
- <div class="relative w-64 h-64 rounded-full bg-neutral-900 shadow-[20px_20px_60px_#111111,-20px_-20px_60px_#2b2b2b,inset_0_0_0_2px_#333] flex items-center justify-center cursor-pointer select-none ring-4 ring-neutral-950/50" id="bpm-knob" style="touch-action: none;">
- <svg class="absolute inset-0 w-full h-full transform -rotate-90 pointer-events-none drop-shadow-[0_0_12px_rgba(52,211,153,0.3)]" viewBox="0 0 256 256">
- <defs>
- <linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
- <stop offset="0%" stop-color="#34d399" />
- <stop offset="50%" stop-color="#14b8a6" />
- <stop offset="100%" stop-color="#0ea5e9" />
- </linearGradient>
- </defs>
- <!-- Track de fondo oscuro -->
- <circle cx="128" cy="128" r="116" class="stroke-neutral-800" stroke-width="6" fill="none" />
- <!-- Barra de progreso iluminada -->
- <circle id="bpm-ring" cx="128" cy="128" r="116" stroke="url(#ringGradient)" stroke-width="10" fill="none" stroke-linecap="round"
- style="stroke-dasharray: 728.85; stroke-dashoffset: 728.85; transition: stroke-dashoffset 0.1s ease-out;" />
- </svg>
- 
- <!-- Centro del Dial (Display) -->
- <div class="w-[170px] h-[170px] bg-neutral-900 border-4 border-neutral-800 rounded-full flex flex-col items-center justify-center shadow-[inset_10px_10px_20px_#131313,inset_-10px_-10px_20px_#232323] z-10 pointer-events-none relative overflow-hidden">
- <!-- Reflejo Cristal -->
- <div class="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent transform -translate-x-1/2 -translate-y-1/2 rotate-45 pointer-events-none"></div>
- 
- <span id="bpm-display" class="text-7xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-neutral-400 tracking-tighter mix-blend-screen drop-shadow-md">120</span>
- <span class="text-neutral-500 font-extrabold text-xs tracking-[0.3em] uppercase mt-1 drop-shadow-sm">BPM</span>
- </div>
- </div>
+        <div class="metronome-knob relative w-64 h-64 rounded-full flex items-center justify-center cursor-pointer select-none ring-4" id="bpm-knob" style="touch-action: none;">
+          <svg class="absolute inset-0 w-full h-full transform -rotate-90 pointer-events-none drop-shadow-[0_0_12px_rgba(52,211,153,0.3)]" viewBox="0 0 256 256">
+            <defs>
+              <linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#34d399" />
+                <stop offset="50%" stop-color="#14b8a6" />
+                <stop offset="100%" stop-color="#0ea5e9" />
+              </linearGradient>
+            </defs>
+            <circle cx="128" cy="128" r="116" class="metronome-knob-track" stroke-width="6" fill="none" />
+            <circle id="bpm-ring" cx="128" cy="128" r="116" stroke="url(#ringGradient)" stroke-width="10" fill="none" stroke-linecap="round"
+              style="stroke-dasharray: 728.85; stroke-dashoffset: 728.85; transition: stroke-dashoffset 0.1s ease-out;" />
+          </svg>
 
- <!-- Botones de Acción (Pads) -->
- <div class="flex gap-5 w-full justify-between mt-2">
- <button id="btn-tap" class="flex-1 py-5 bg-neutral-800 hover:bg-neutral-700 active:bg-neutral-900 text-neutral-300 font-black tracking-widest rounded-2xl transition-all shadow-[6px_6px_14px_#111111,-6px_-6px_14px_#2b2b2b] active:shadow-[inset_6px_6px_14px_#111111,inset_-6px_-6px_14px_#2b2b2b] border border-neutral-700" style="touch-action: manipulation;">
- TAP
- </button>
- 
- <button id="btn-play" class="flex-1 py-5 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-neutral-950 font-black tracking-widest rounded-2xl transition-all shadow-[0_0_20px_rgba(16,185,129,0.3),6px_6px_14px_#111111,-6px_-6px_14px_#2b2b2b] active:shadow-[inset_6px_6px_14px_rgba(0,0,0,0.4)] border border-emerald-400 flex items-center justify-center gap-2" style="touch-action: manipulation;">
- <svg id="icon-play" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><polygon points="6 3 20 12 6 21 6 3"/></svg>
- <span id="text-play">PLAY</span>
- </button>
- </div>
- 
- </div>
- </div>
- </div>
+          <div class="metronome-knob-center w-[170px] h-[170px] border-4 rounded-full flex flex-col items-center justify-center z-10 pointer-events-none relative overflow-hidden">
+            <div class="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent transform -translate-x-1/2 -translate-y-1/2 rotate-45 pointer-events-none"></div>
+            <span id="bpm-display" class="metronome-bpm-display text-6xl font-extrabold tracking-tighter drop-shadow-sm">120</span>
+            <span class="metronome-bpm-label font-semibold text-xs tracking-[0.3em] uppercase mt-1">BPM</span>
+          </div>
+        </div>
+
+        <div class="metronome-subdivision-row w-full flex justify-center -mt-2">
+          <div id="subdivision-switch" class="metronome-subdivision-switch" data-active="1" role="radiogroup" aria-label="Subdivision del tempo">
+            <span class="metronome-subdivision-thumb" aria-hidden="true"></span>
+            <button id="subdivision-1" type="button" class="subdivision-btn is-active" role="radio" aria-checked="true" aria-label="Negra">
+              <span class="subdivision-emoji" aria-hidden="true">&#9833;</span>
+              <span>Negra</span>
+            </button>
+            <button id="subdivision-2" type="button" class="subdivision-btn" role="radio" aria-checked="false" aria-label="Corchea">
+              <span class="subdivision-emoji" aria-hidden="true">&#9835;</span>
+              <span>Corchea</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex gap-5 w-full justify-between mt-2">
+          <button id="btn-tap" class="metronome-pad metronome-pad-tap flex-1 py-5 font-semibold tracking-wide rounded-2xl transition-all border bg-surface text-content" style="touch-action: manipulation;">
+            TAP
+          </button>
+
+          <button id="btn-play" class="metronome-pad metronome-pad-play flex-1 py-5 font-semibold tracking-wide rounded-2xl transition-all border flex items-center justify-center gap-2 bg-brand text-white" style="touch-action: manipulation;">
+            <svg id="icon-play" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+            <span id="text-play">PLAY</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </Layout>
 
 <script>
 import { supabase } from '../../lib/supabase';
 
 document.addEventListener('DOMContentLoaded', async () => {
- const { data: { session }, error: sessionError } = await supabase.auth.getSession();
- 
- if (sessionError || !session) {
-   /* window.location.replace('/login'); Movido a Middleware */
-   return;
- }
+  let sessionError: unknown = null;
+  try {
+    const { error } = await supabase.auth.getSession();
+    sessionError = error;
+  } catch (err) {
+    sessionError = err;
+  }
+  if (sessionError) console.warn('Session not available for metronomo; running UI fallback.');
 
- // ---------------- ENGINE AUDIO & SCHEDULER ---------------- //
- let audioCtx: AudioContext | null = null;
- let isPlaying = false;
- let currentBPM = 120;
- let beatsPerBar = 4;
- let currentBeatInBar = 0;
- let nextNoteTime = 0.0;
- let timerID: NodeJS.Timeout | null = null;
+  let audioCtx: AudioContext | null = null;
+  let isPlaying = false;
+  let currentBPM = 120;
+  let beatsPerBar = 4;
+  let subdivision = 1;
+  let pulsesPerBar = beatsPerBar * subdivision;
+  let currentPulseInBar = 0;
+  let nextNoteTime = 0.0;
+  let timerID: number | null = null;
 
- const bpmDisplay = document.getElementById('bpm-display');
- const btnPlay = document.getElementById('btn-play');
- const visualizer = document.getElementById('beat-visualizer');
- const timeSignatureSelect = document.getElementById('time-signature') as HTMLSelectElement;
+  const bpmDisplay = document.getElementById('bpm-display') as HTMLElement | null;
+  const btnPlay = document.getElementById('btn-play') as HTMLButtonElement | null;
+  const visualizer = document.getElementById('beat-visualizer') as HTMLElement | null;
+  const beatCountDisplay = document.getElementById('beat-count-display') as HTMLElement | null;
+  const timeSignatureSelect = document.getElementById('time-signature') as HTMLSelectElement | null;
+  const subdivisionSwitch = document.getElementById('subdivision-switch') as HTMLElement | null;
+  const btnSubdivision1 = document.getElementById('subdivision-1') as HTMLButtonElement | null;
+  const btnSubdivision2 = document.getElementById('subdivision-2') as HTMLButtonElement | null;
+  const btnTap = document.getElementById('btn-tap') as HTMLButtonElement | null;
+  const txtPlay = document.getElementById('text-play') as HTMLElement | null;
+  const icnPlay = document.getElementById('icon-play') as SVGElement | null;
 
- function initVisualizer() {
- if (!visualizer) return;
- visualizer.innerHTML = '';
- for(let i=0; i<beatsPerBar; i++) {
- const dot = document.createElement('div');
- // Luces LED apagadas = neutral-800
- dot.className = `w-3 h-3 rounded-full bg-neutral-800 border border-neutral-700/50 transition-colors duration-100 ${i===0 ? 'scale-125' : ''}`;
- visualizer.appendChild(dot);
- }
- }
+  function setDotState(dot: Element, state: 'off' | 'main' | 'downbeat' | 'sub') {
+    dot.classList.remove('is-off', 'is-main', 'is-downbeat', 'is-sub');
+    dot.classList.add(`is-${state}`);
+  }
 
- function nextNote() {
- const secondsPerBeat = 60.0 / currentBPM;
- nextNoteTime += secondsPerBeat;
- currentBeatInBar = (currentBeatInBar + 1) % beatsPerBar;
- }
+  function resetVisualizer() {
+    if (!visualizer) return;
+    const dots = visualizer.children;
+    for (let i = 0; i < dots.length; i += 1) {
+      setDotState(dots[i], 'off');
+    }
+  }
 
- function scheduleNote(beatNumber: number, time: number) {
- // --- Interfaz Gráfica ---
- requestAnimationFrame(() => {
- if (!visualizer) return;
- const dots = visualizer.children;
- for(let i=0; i<dots.length; i++) {
- // Apagar luces previas
- dots[i].classList.replace('bg-red-500', 'bg-neutral-800');
- dots[i].classList.replace('bg-emerald-400', 'bg-neutral-800');
- dots[i].classList.remove('shadow-[0_0_10px_rgba(239,68,68,0.8)]', 'shadow-[0_0_10px_rgba(52,211,153,0.8)]');
- }
- 
- if(dots[beatNumber] && isPlaying) {
- // Encender LED actual
- if (beatNumber === 0) {
- dots[beatNumber].classList.replace('bg-neutral-800', 'bg-red-500');
- dots[beatNumber].classList.add('shadow-[0_0_10px_rgba(239,68,68,0.8)]');
- } else {
- dots[beatNumber].classList.replace('bg-neutral-800', 'bg-emerald-400');
- dots[beatNumber].classList.add('shadow-[0_0_10px_rgba(52,211,153,0.8)]');
- }
- }
- });
+  function initVisualizer() {
+    if (!visualizer) return;
+    visualizer.innerHTML = '';
+    for (let i = 0; i < pulsesPerBar; i += 1) {
+      const isMainPulse = i % subdivision === 0;
+      const dot = document.createElement('div');
+      dot.className = `led-dot is-off ${isMainPulse ? 'is-main-marker' : ''} ${i === 0 ? 'is-first' : ''}`;
+      visualizer.appendChild(dot);
+    }
+    updateCountDisplay(0);
+  }
 
- // --- Sintesis de Audio ---
- if (!audioCtx) return;
- const osc = audioCtx.createOscillator();
- const gain = audioCtx.createGain();
- osc.connect(gain);
- gain.connect(audioCtx.destination);
- 
- // Acento en el primer tiempo (tono agudo penetrante)
- osc.frequency.value = (beatNumber === 0) ? 1000 : 800; 
- 
- gain.gain.setValueAtTime(1, time);
- // Desvanecimiento exponencial brusco estilo T-Bone / Click de madera
- gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
- 
- osc.start(time);
- osc.stop(time + 0.05);
- }
+  function updateCountDisplay(pulseNumber: number) {
+    if (!beatCountDisplay) return;
+    const beat = Math.floor(pulseNumber / subdivision) + 1;
+    const isSubdivisionPulse = subdivision === 2 && pulseNumber % subdivision === 1;
+    beatCountDisplay.textContent = isSubdivisionPulse ? `${beat}+/${beatsPerBar}` : `${beat}/${beatsPerBar}`;
+  }
 
- function scheduler() {
- // Mientras existan notas en los próximos 100ms, empaquetarlas 
- // Esta ventana previene que JS congele los clicks si haces scroll
- if (!audioCtx) return;
- while (nextNoteTime < audioCtx.currentTime + 0.1) {
- scheduleNote(currentBeatInBar, nextNoteTime);
- nextNote();
- }
- timerID = setTimeout(scheduler, 25.0);
- }
+  function updateSubdivisionUI() {
+    const isOne = subdivision === 1;
+    subdivisionSwitch?.setAttribute('data-active', isOne ? '1' : '2');
+    btnSubdivision1?.classList.toggle('is-active', isOne);
+    btnSubdivision2?.classList.toggle('is-active', !isOne);
+    btnSubdivision1?.setAttribute('aria-checked', isOne ? 'true' : 'false');
+    btnSubdivision2?.setAttribute('aria-checked', isOne ? 'false' : 'true');
+  }
 
- btnPlay?.addEventListener('click', () => {
- if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
- if (audioCtx.state === 'suspended') audioCtx.resume();
- 
- const txtPlay = document.getElementById('text-play');
- const icnPlay = document.getElementById('icon-play');
- 
- isPlaying = !isPlaying;
- if (isPlaying) {
- currentBeatInBar = 0;
- nextNoteTime = audioCtx.currentTime + 0.05;
- scheduler();
- if (txtPlay) txtPlay.textContent = 'STOP';
- if (icnPlay) icnPlay.innerHTML = '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>'; // Botón Pausa SVG
- 
- btnPlay.classList.replace('bg-emerald-500', 'bg-red-500');
- btnPlay.classList.replace('hover:bg-emerald-400', 'hover:bg-red-400');
- btnPlay.classList.replace('active:bg-emerald-600', 'active:bg-red-600');
- btnPlay.classList.replace('border-emerald-400', 'border-red-400');
- btnPlay.classList.replace('text-neutral-950', 'text-white');
- btnPlay.classList.replace('shadow-[0_0_20px_rgba(16,185,129,0.3),6px_6px_14px_#111111,-6px_-6px_14px_#2b2b2b]', 'shadow-[0_0_20px_rgba(239,68,68,0.5),6px_6px_14px_#111111,-6px_-6px_14px_#2b2b2b]');
- } else {
- if (timerID) clearTimeout(timerID);
- if (txtPlay) txtPlay.textContent = 'PLAY';
- if (icnPlay) icnPlay.innerHTML = '<polygon points="6 3 20 12 6 21 6 3"/>'; // Botón Play SVG
- 
- btnPlay.classList.replace('bg-red-500', 'bg-emerald-500');
- btnPlay.classList.replace('hover:bg-red-400', 'hover:bg-emerald-400');
- btnPlay.classList.replace('active:bg-red-600', 'active:bg-emerald-600');
- btnPlay.classList.replace('border-red-400', 'border-emerald-400');
- btnPlay.classList.replace('text-white', 'text-neutral-950');
- btnPlay.classList.replace('shadow-[0_0_20px_rgba(239,68,68,0.5),6px_6px_14px_#111111,-6px_-6px_14px_#2b2b2b]', 'shadow-[0_0_20px_rgba(16,185,129,0.3),6px_6px_14px_#111111,-6px_-6px_14px_#2b2b2b]');
- 
- // Apagar luces residuales
- if (visualizer) {
- const dots = visualizer.children;
- for(let i=0; i<dots.length; i++) {
- dots[i].classList.replace('bg-red-500', 'bg-neutral-800');
- dots[i].classList.replace('bg-emerald-400', 'bg-neutral-800');
- dots[i].classList.remove('shadow-[0_0_10px_rgba(239,68,68,0.8)]', 'shadow-[0_0_10px_rgba(52,211,153,0.8)]');
- }
- }
- }
- });
+  function setSubdivision(nextSubdivision: 1 | 2) {
+    subdivision = nextSubdivision;
+    pulsesPerBar = beatsPerBar * subdivision;
+    currentPulseInBar = 0;
+    updateSubdivisionUI();
+    initVisualizer();
+  }
 
- timeSignatureSelect?.addEventListener('change', (e) => {
- beatsPerBar = parseInt((e.target as HTMLSelectElement).value);
- currentBeatInBar = 0; // Resetear compás al cambiar para evitar offset visual
- initVisualizer();
- });
+  function nextNote() {
+    const secondsPerPulse = 60.0 / currentBPM / subdivision;
+    nextNoteTime += secondsPerPulse;
+    currentPulseInBar = (currentPulseInBar + 1) % pulsesPerBar;
+  }
 
- // ---------------- TRIGONOMETRÍA DEL KNOB ---------------- //
- const knob = document.getElementById('bpm-knob');
- let isDragging = false;
- let previousAngle = 0;
+  function scheduleNote(pulseNumber: number, time: number) {
+    const isMainBeat = pulseNumber % subdivision === 0;
+    const isDownBeat = pulseNumber === 0;
+    const isSubdivisionPulse = !isMainBeat;
 
- function actualizarAnilloLED() {
- const ring = document.getElementById('bpm-ring');
- if (!ring || !bpmDisplay) return;
+    requestAnimationFrame(() => {
+      if (!visualizer || !isPlaying) return;
+      resetVisualizer();
+      const dot = visualizer.children[pulseNumber];
+      if (!dot) return;
+      updateCountDisplay(pulseNumber);
+      if (isDownBeat) setDotState(dot, 'downbeat');
+      else if (isMainBeat) setDotState(dot, 'main');
+      else if (isSubdivisionPulse) setDotState(dot, 'sub');
+    });
 
- const minBpm = 30;
- const maxBpm = 300;
- const circunferencia = 2 * Math.PI * 116; // Radio=116 -> ~728.85
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
 
- let porcentaje = (currentBPM - minBpm) / (maxBpm - minBpm);
- if (porcentaje < 0) porcentaje = 0;
- if (porcentaje > 1) porcentaje = 1;
+    if (isDownBeat) {
+      osc.frequency.value = 1200;
+      gain.gain.setValueAtTime(0.9, time);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + 0.055);
+    } else if (isMainBeat) {
+      osc.frequency.value = 900;
+      gain.gain.setValueAtTime(0.65, time);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + 0.045);
+    } else {
+      osc.frequency.value = 700;
+      gain.gain.setValueAtTime(0.35, time);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + 0.035);
+    }
 
- const offset = circunferencia - (porcentaje * circunferencia);
- ring.style.strokeDashoffset = offset.toString();
- bpmDisplay.textContent = currentBPM.toString();
- }
+    osc.start(time);
+    osc.stop(time + 0.06);
+  }
 
- // Matemática para calcular el ángulo del dedo respecto al centro
- function getAngle(clientX: number, clientY: number) {
- if (!knob) return 0;
- const rect = knob.getBoundingClientRect();
- const centerX = rect.left + rect.width / 2;
- const centerY = rect.top + rect.height / 2;
- return Math.atan2(clientY - centerY, clientX - centerX) * 180 / Math.PI;
- }
+  function scheduler() {
+    if (!audioCtx) return;
+    while (nextNoteTime < audioCtx.currentTime + 0.1) {
+      scheduleNote(currentPulseInBar, nextNoteTime);
+      nextNote();
+    }
+    timerID = window.setTimeout(scheduler, 25.0);
+  }
 
- function startDrag(e: MouseEvent | TouchEvent) {
- isDragging = true;
- 
- let clientX, clientY;
- if (window.TouchEvent && e instanceof TouchEvent) {
- clientX = e.touches[0].clientX;
- clientY = e.touches[0].clientY;
- } else {
- clientX = (e as MouseEvent).clientX;
- clientY = (e as MouseEvent).clientY;
- }
- 
- previousAngle = getAngle(clientX, clientY);
- }
+  function stopScheduler() {
+    if (timerID !== null) {
+      window.clearTimeout(timerID);
+      timerID = null;
+    }
+  }
 
- function doDrag(e: MouseEvent | TouchEvent) {
- if (!isDragging) return;
- 
- // Evitar scroll en móviles
- if (window.TouchEvent && e instanceof TouchEvent) {
- if (e.cancelable) e.preventDefault(); 
- }
+  function updatePlayButtonUI() {
+    if (!btnPlay) return;
+    btnPlay.classList.toggle('is-playing', isPlaying);
+    if (txtPlay) txtPlay.textContent = isPlaying ? 'STOP' : 'PLAY';
+    if (icnPlay) {
+      icnPlay.innerHTML = isPlaying
+        ? '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>'
+        : '<polygon points="6 3 20 12 6 21 6 3"/>';
+    }
+  }
 
- let clientX, clientY;
- if (window.TouchEvent && e instanceof TouchEvent) {
- clientX = e.touches[0].clientX;
- clientY = e.touches[0].clientY;
- } else {
- clientX = (e as MouseEvent).clientX;
- clientY = (e as MouseEvent).clientY;
- }
+  btnPlay?.addEventListener('click', async () => {
+    if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
 
- const newAngle = getAngle(clientX, clientY);
- let delta = newAngle - previousAngle;
- 
- // Corregir el salto matemático al cruzar de -180 a 180 grados
- if (delta > 180) delta -= 360;
- if (delta < -180) delta += 360;
- 
- // Sensibilidad del giro
- if (Math.abs(delta) > 2) { 
- currentBPM += (delta > 0) ? 1 : -1;
- 
- // Limitador estricto
- if (currentBPM < 30) currentBPM = 30;
- if (currentBPM > 300) currentBPM = 300;
- 
- actualizarAnilloLED();
- previousAngle = newAngle;
- }
- }
+    isPlaying = !isPlaying;
+    if (isPlaying) {
+      currentPulseInBar = 0;
+      nextNoteTime = audioCtx.currentTime + 0.05;
+      updateCountDisplay(0);
+      scheduler();
+    } else {
+      stopScheduler();
+      resetVisualizer();
+      updateCountDisplay(0);
+    }
+    updatePlayButtonUI();
+  });
 
- function stopDrag() { 
- isDragging = false; 
- }
+  timeSignatureSelect?.addEventListener('change', (e) => {
+    beatsPerBar = parseInt((e.target as HTMLSelectElement).value, 10);
+    pulsesPerBar = beatsPerBar * subdivision;
+    currentPulseInBar = 0;
+    initVisualizer();
+  });
 
- if (knob) {
- knob.addEventListener('mousedown', startDrag);
- window.addEventListener('mousemove', doDrag, { passive: false });
- window.addEventListener('mouseup', stopDrag);
- 
- knob.addEventListener('touchstart', startDrag, { passive: true }); // El touchstart no necesita prevent
- window.addEventListener('touchmove', doDrag, { passive: false }); // El movimiento SÍ bloquea el body
- window.addEventListener('touchend', stopDrag);
- }
+  btnSubdivision1?.addEventListener('click', () => setSubdivision(1));
+  btnSubdivision2?.addEventListener('click', () => setSubdivision(2));
 
- // Estado inicial del visualizador SVG
- actualizarAnilloLED();
+  const knob = document.getElementById('bpm-knob');
+  let isDragging = false;
+  let previousAngle = 0;
 
- // ---------------- TAP TEMPO ENGINE ---------------- //
- const btnTap = document.getElementById('btn-tap');
- let tapTimes: number[] = [];
- let tapResetTimer: NodeJS.Timeout | null = null;
+  function actualizarAnilloLED() {
+    const ring = document.getElementById('bpm-ring') as SVGCircleElement | null;
+    if (!ring || !bpmDisplay) return;
 
- // Prevenir ghost-clicks de iOS Safari interceptando toques temprano
- btnTap?.addEventListener('touchstart', (e) => {
- if (e.cancelable) e.preventDefault();
- btnTap.click();
- }, { passive: false });
+    const minBpm = 30;
+    const maxBpm = 300;
+    const circunferencia = 2 * Math.PI * 116;
 
- btnTap?.addEventListener('click', (e) => {
- // Bloqueo de inercia si el audio está activo no cortarlo, 
- // pero sí permitir registrar y mutar el bpm al vuelo 
- const now = performance.now();
- tapTimes.push(now);
- 
- if (tapTimes.length > 5) tapTimes.shift(); // Estabilizador de 5 promedios
- 
- if (tapTimes.length >= 2) {
- let intervals = [];
- for (let i = 1; i < tapTimes.length; i++) {
- intervals.push(tapTimes[i] - tapTimes[i-1]);
- }
- // Math promedio
- const averageInterval = intervals.reduce((a, b) => a + b) / intervals.length;
- let newBpm = Math.round(60000 / averageInterval);
- 
- if (newBpm >= 30 && newBpm <= 300) {
- currentBPM = newBpm;
- actualizarAnilloLED();
- }
- }
- 
- if (tapResetTimer) clearTimeout(tapResetTimer);
- tapResetTimer = setTimeout(() => { tapTimes = []; }, 2000); // 2 segundos de inactividad rompen la banda
- 
- // Feedback Visual estilo Hardware Button
- btnTap.classList.add('bg-neutral-600', 'scale-95');
- setTimeout(() => btnTap.classList.remove('bg-neutral-600', 'scale-95'), 100);
- });
+    let porcentaje = (currentBPM - minBpm) / (maxBpm - minBpm);
+    if (porcentaje < 0) porcentaje = 0;
+    if (porcentaje > 1) porcentaje = 1;
 
- // Encendido inicial
- initVisualizer();
+    const offset = circunferencia - (porcentaje * circunferencia);
+    ring.style.strokeDashoffset = offset.toString();
+    bpmDisplay.textContent = currentBPM.toString();
+  }
+
+  function getAngle(clientX: number, clientY: number) {
+    if (!knob) return 0;
+    const rect = knob.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    return Math.atan2(clientY - centerY, clientX - centerX) * 180 / Math.PI;
+  }
+
+  function startDrag(e: MouseEvent | TouchEvent) {
+    isDragging = true;
+
+    let clientX;
+    let clientY;
+    if (window.TouchEvent && e instanceof TouchEvent) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = (e as MouseEvent).clientX;
+      clientY = (e as MouseEvent).clientY;
+    }
+
+    previousAngle = getAngle(clientX, clientY);
+  }
+
+  function doDrag(e: MouseEvent | TouchEvent) {
+    if (!isDragging) return;
+
+    if (window.TouchEvent && e instanceof TouchEvent) {
+      if (e.cancelable) e.preventDefault();
+    }
+
+    let clientX;
+    let clientY;
+    if (window.TouchEvent && e instanceof TouchEvent) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = (e as MouseEvent).clientX;
+      clientY = (e as MouseEvent).clientY;
+    }
+
+    const newAngle = getAngle(clientX, clientY);
+    let delta = newAngle - previousAngle;
+
+    if (delta > 180) delta -= 360;
+    if (delta < -180) delta += 360;
+
+    if (Math.abs(delta) > 2) {
+      currentBPM += delta > 0 ? 1 : -1;
+
+      if (currentBPM < 30) currentBPM = 30;
+      if (currentBPM > 300) currentBPM = 300;
+
+      actualizarAnilloLED();
+      previousAngle = newAngle;
+    }
+  }
+
+  function stopDrag() {
+    isDragging = false;
+  }
+
+  if (knob) {
+    knob.addEventListener('mousedown', startDrag);
+    window.addEventListener('mousemove', doDrag, { passive: false });
+    window.addEventListener('mouseup', stopDrag);
+
+    knob.addEventListener('touchstart', startDrag, { passive: true });
+    window.addEventListener('touchmove', doDrag, { passive: false });
+    window.addEventListener('touchend', stopDrag);
+  }
+
+  let tapTimes: number[] = [];
+  let tapResetTimer: number | null = null;
+
+  btnTap?.addEventListener('touchstart', (e) => {
+    if (e.cancelable) e.preventDefault();
+    btnTap.click();
+  }, { passive: false });
+
+  btnTap?.addEventListener('click', () => {
+    const now = performance.now();
+    tapTimes.push(now);
+
+    if (tapTimes.length > 5) tapTimes.shift();
+
+    if (tapTimes.length >= 2) {
+      const intervals: number[] = [];
+      for (let i = 1; i < tapTimes.length; i += 1) {
+        intervals.push(tapTimes[i] - tapTimes[i - 1]);
+      }
+      const averageInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+      const newBpm = Math.round(60000 / averageInterval);
+
+      if (newBpm >= 30 && newBpm <= 300) {
+        currentBPM = newBpm;
+        actualizarAnilloLED();
+      }
+    }
+
+    if (tapResetTimer !== null) window.clearTimeout(tapResetTimer);
+    tapResetTimer = window.setTimeout(() => { tapTimes = []; }, 2000);
+
+    btnTap.classList.add('is-tapping');
+    window.setTimeout(() => btnTap.classList.remove('is-tapping'), 100);
+  });
+
+  updateSubdivisionUI();
+  updatePlayButtonUI();
+  actualizarAnilloLED();
+  initVisualizer();
 });
 </script>
+
+<style>
+  .metronome-page {
+    background-color: rgb(var(--bg-background, 248 250 252));
+    color: rgb(var(--text-base, 15 23 42));
+  }
+
+  .metronome-panel {
+    background: linear-gradient(160deg, #edf2f7 0%, #e5ebf2 100%);
+    border-color: rgba(148, 163, 184, 0.4);
+    box-shadow: 0 20px 40px rgba(100, 116, 139, 0.16);
+  }
+
+  .metronome-controls {
+    align-items: center;
+    gap: 0.65rem;
+  }
+
+  .metronome-counter-group {
+    min-width: 14rem;
+  }
+
+  .metronome-led-strip,
+  .metronome-select-wrap,
+  .metronome-subdivision-switch {
+    background: rgba(255, 255, 255, 0.82);
+    border-color: rgba(148, 163, 184, 0.45);
+  }
+
+  .metronome-led-strip {
+    min-width: 9.6rem;
+    justify-content: center;
+  }
+
+  .metronome-count-display {
+    min-width: 3.95rem;
+    height: 2.3rem;
+    border-radius: 0.85rem;
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    background: rgba(255, 255, 255, 0.86);
+    color: rgb(15, 23, 42);
+    font-size: 1.32rem;
+    font-weight: 500;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    letter-spacing: -0.03em;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  }
+
+  .metronome-select-wrap {
+    min-width: 4.6rem;
+    justify-content: center;
+  }
+
+  .metronome-select {
+    width: 100%;
+    color: rgb(15, 23, 42);
+    font-size: 1.18rem;
+    font-weight: 500;
+    line-height: 1;
+  }
+
+  .metronome-select option {
+    color: rgb(15, 23, 42);
+    background: rgb(241, 245, 249);
+    font-weight: 500;
+  }
+
+  .metronome-subdivision-switch {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding: 0.2rem;
+    border-radius: 0.9rem;
+    min-width: 212px;
+    overflow: hidden;
+  }
+
+  .metronome-subdivision-thumb {
+    position: absolute;
+    top: 0.2rem;
+    left: 0.2rem;
+    height: calc(100% - 0.4rem);
+    width: calc(50% - 0.2rem);
+    border-radius: 0.7rem;
+    background: rgba(59, 130, 246, 0.16);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    box-shadow: 0 8px 14px rgba(30, 64, 175, 0.14);
+    transition: transform 180ms ease;
+  }
+
+  .metronome-subdivision-switch[data-active='2'] .metronome-subdivision-thumb {
+    transform: translateX(100%);
+  }
+
+  .subdivision-btn {
+    position: relative;
+    z-index: 1;
+    border: 0;
+    background: transparent;
+    color: rgb(71, 85, 105);
+    min-height: 2.2rem;
+    border-radius: 0.7rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    transition: color 160ms ease;
+  }
+
+  .subdivision-btn.is-active {
+    color: rgb(15, 23, 42);
+  }
+
+  .subdivision-emoji {
+    font-size: 1.05rem;
+    line-height: 1;
+    transform: translateY(-0.02rem);
+  }
+
+  :global(.led-dot) {
+    width: 0.62rem;
+    height: 0.62rem;
+    display: block;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    border: 1px solid rgba(100, 116, 139, 0.58);
+    transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+  }
+
+  :global(.led-dot.is-off) {
+    background: rgba(71, 85, 105, 0.78);
+    box-shadow: none;
+  }
+
+  :global(.led-dot.is-main-marker) {
+    width: 0.72rem;
+    height: 0.72rem;
+  }
+
+  :global(.led-dot.is-first) {
+    transform: scale(1.14);
+  }
+
+  :global(.led-dot.is-main) {
+    background: rgb(var(--color-success, 34 197 94));
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.55);
+    border-color: rgba(22, 163, 74, 0.7);
+  }
+
+  :global(.led-dot.is-downbeat) {
+    background: rgb(var(--color-danger, 239 68 68));
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.6);
+    border-color: rgba(220, 38, 38, 0.72);
+  }
+
+  :global(.led-dot.is-sub) {
+    background: rgb(var(--color-info, 59 130 246));
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.48);
+    border-color: rgba(37, 99, 235, 0.7);
+  }
+
+  .metronome-knob {
+    border-color: rgba(30, 41, 59, 0.12);
+    background: radial-gradient(circle at 48% 42%, rgba(30, 41, 59, 0.08), rgba(30, 41, 59, 0.02) 60%, transparent 90%);
+  }
+
+  .metronome-knob-track {
+    stroke: rgba(30, 41, 59, 0.88);
+  }
+
+  .metronome-knob-center {
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.95) 0%, rgba(226, 232, 240, 0.95) 100%);
+    border-color: rgba(148, 163, 184, 0.4);
+    box-shadow: inset 0 10px 16px rgba(255, 255, 255, 0.65), inset 0 -8px 12px rgba(148, 163, 184, 0.28);
+  }
+
+  .metronome-bpm-display {
+    color: rgb(15, 23, 42);
+    font-size: clamp(4.15rem, 11.2vw, 5rem);
+    font-weight: 800;
+    letter-spacing: -0.035em;
+  }
+
+  .metronome-bpm-label {
+    color: rgba(15, 23, 42, 0.72);
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.24em;
+  }
+
+  .metronome-pad {
+    min-height: 3.55rem;
+    box-shadow: 0 10px 16px rgba(15, 23, 42, 0.08);
+  }
+
+  .metronome-pad-tap {
+    background: linear-gradient(155deg, rgba(255, 255, 255, 0.95), rgba(226, 232, 240, 0.95));
+    border-color: rgba(148, 163, 184, 0.45);
+    color: rgb(30, 41, 59);
+  }
+
+  .metronome-pad-tap.is-tapping {
+    transform: scale(0.97);
+    filter: brightness(0.96);
+  }
+
+  .metronome-pad-play {
+    background: rgb(var(--color-brand, 20 184 166)) !important;
+    border-color: rgba(var(--color-brand, 20 184 166), 0.82);
+    color: #ffffff !important;
+    box-shadow: 0 14px 24px rgba(var(--color-brand, 20 184 166), 0.34);
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+  }
+
+  .metronome-pad-play.is-playing {
+    background: rgb(var(--color-danger, 239 68 68)) !important;
+    border-color: rgba(var(--color-danger, 239 68 68), 0.72);
+    box-shadow: 0 14px 24px rgba(var(--color-danger, 239 68 68), 0.35);
+    color: #ffffff !important;
+  }
+
+  html.dark .metronome-panel {
+    background: linear-gradient(155deg, rgba(39, 46, 58, 0.96) 0%, rgba(29, 36, 48, 0.97) 100%);
+    border-color: rgba(100, 116, 139, 0.38);
+    box-shadow: 0 22px 38px rgba(0, 0, 0, 0.28);
+  }
+
+  html.dark .metronome-led-strip,
+  html.dark .metronome-select-wrap,
+  html.dark .metronome-subdivision-switch {
+    background: rgba(30, 41, 59, 0.68);
+    border-color: rgba(148, 163, 184, 0.26);
+  }
+
+  html.dark .metronome-count-display {
+    border-color: rgba(148, 163, 184, 0.3);
+    background: rgba(15, 23, 42, 0.72);
+    color: rgb(226 232 240);
+    box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.15);
+  }
+
+  html.dark .metronome-select {
+    color: rgb(248 250 252);
+  }
+
+  html.dark .metronome-select option {
+    color: rgb(226, 232, 240);
+    background: rgb(15, 23, 42);
+    font-weight: 500;
+  }
+
+  html.dark .metronome-subdivision-thumb {
+    background: rgba(var(--color-info, 59 130 246), 0.22);
+    border-color: rgba(var(--color-info, 59 130 246), 0.45);
+    box-shadow: 0 8px 14px rgba(2, 6, 23, 0.38);
+  }
+
+  html.dark .subdivision-btn {
+    color: rgb(148 163 184);
+  }
+
+  html.dark .subdivision-btn.is-active {
+    color: rgb(226 232 240);
+  }
+
+  :global(html.dark .led-dot.is-off) {
+    background: rgba(148, 163, 184, 0.44);
+    border-color: rgba(148, 163, 184, 0.3);
+  }
+
+  html.dark .metronome-knob {
+    border-color: rgba(100, 116, 139, 0.26);
+    background: radial-gradient(circle at 48% 42%, rgba(22, 163, 74, 0.06), rgba(15, 23, 42, 0.18) 62%, transparent 90%);
+  }
+
+  html.dark .metronome-knob-track {
+    stroke: rgba(148, 163, 184, 0.24);
+  }
+
+  html.dark .metronome-knob-center {
+    background: linear-gradient(145deg, rgba(17, 24, 39, 0.92), rgba(8, 12, 20, 0.96));
+    border-color: rgba(100, 116, 139, 0.28);
+    box-shadow: inset 0 10px 20px rgba(255, 255, 255, 0.03), inset 0 -10px 16px rgba(0, 0, 0, 0.26);
+  }
+
+  html.dark .metronome-bpm-display {
+    color: rgb(248 250 252);
+  }
+
+  html.dark .metronome-bpm-label {
+    color: rgb(148 163 184);
+  }
+
+  html.dark .metronome-pad-tap {
+    background: linear-gradient(155deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.95));
+    border-color: rgba(100, 116, 139, 0.35);
+    color: rgb(248 250 252);
+  }
+
+  html.dark .metronome-pad-play {
+    color: #ffffff !important;
+  }
+
+  @media (max-width: 420px) {
+    .metronome-controls {
+      gap: 0.45rem;
+    }
+
+    .metronome-counter-group {
+      min-width: 12.4rem;
+      gap: 0.42rem;
+    }
+
+    .metronome-led-strip {
+      min-width: 8.1rem;
+      padding-left: 0.6rem;
+      padding-right: 0.6rem;
+    }
+
+    .metronome-count-display {
+      min-width: 3.55rem;
+      font-size: 1.28rem;
+      height: 2.05rem;
+    }
+
+    .metronome-subdivision-switch {
+      min-width: 198px;
+    }
+  }
+ </style>
