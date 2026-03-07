@@ -182,10 +182,10 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
 </div>
 
 <!-- Modal Reproductor MP3 (Modo Ensayo con Loop A-B) -->
-<div id="mp3PlayerModal" class="fixed inset-0 z-[130] hidden overscroll-contain" aria-hidden="true">
+<div id="mp3PlayerModal" class="fixed inset-0 z-[180] hidden overscroll-contain" aria-hidden="true">
   <div id="mp3PlayerBackdrop" class="absolute inset-0 bg-overlay/82 backdrop-blur-md opacity-0 transition-opacity duration-[900ms] [transition-timing-function:cubic-bezier(0.2,0.8,0.2,1)]"></div>
-  <div class="relative z-10 w-full h-full flex items-center justify-center p-2 md:p-4 overflow-y-auto overscroll-contain">
-    <div id="mp3PlayerPanel" class="w-full md:max-w-2xl max-h-[92dvh] overflow-y-auto my-2 bg-surface border border-border rounded-3xl shadow-2xl p-4 md:p-6 opacity-0 translate-y-4 transition-all duration-[900ms] [transition-timing-function:cubic-bezier(0.2,0.8,0.2,1)]">
+  <div class="relative z-10 w-full h-full flex items-end md:items-center justify-center px-2 pt-2 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] md:p-4 overflow-y-auto overscroll-contain">
+    <div id="mp3PlayerPanel" class="w-full md:w-[95%] lg:w-[95%] max-w-5xl max-h-[calc(100dvh-env(safe-area-inset-bottom)-7.5rem)] md:max-h-[92dvh] overflow-y-auto my-0 md:my-2 bg-surface border border-border rounded-3xl shadow-2xl p-4 md:p-6 opacity-0 translate-y-4 transition-all duration-[900ms] [transition-timing-function:cubic-bezier(0.2,0.8,0.2,1)]">
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0 flex items-center gap-3">
           <div class="relative w-14 h-14 rounded-xl border border-border bg-background overflow-hidden shrink-0">
@@ -235,11 +235,13 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
           <button id="btnClearLoopRange" type="button" class="px-3 py-1.5 rounded-xl border border-border bg-surface text-content text-xs font-bold hover:bg-background transition-colors">Limpiar loop</button>
         </div>
         <p id="mp3Status" class="mt-3 text-xs text-content-muted leading-tight">Activa el loop y arrastra los brackets A/B sobre la barra.</p>
-        <div class="mt-3">
+        <div class="mt-3 grid grid-cols-[auto_1fr_auto] items-center gap-2">
+          <button id="btnMp3Back5" type="button" class="h-11 px-3.5 rounded-xl border border-border bg-surface text-content text-sm font-bold hover:bg-background transition-colors" aria-label="Retroceder 5 segundos">-5s</button>
           <button id="btnMp3PlayPause" type="button" class="h-11 w-full rounded-xl bg-action text-white inline-flex items-center justify-center gap-2 hover:bg-action/90 transition-colors shadow-lg" aria-label="Reproducir">
             <svg id="mp3PlayIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-5 h-5 fill-current"><path d="M8 5v14l11-7z"></path></svg>
             <span id="mp3PlayLabel" class="text-sm font-semibold tracking-wide">Reproducir</span>
           </button>
+          <button id="btnMp3Forward5" type="button" class="h-11 px-3.5 rounded-xl border border-border bg-surface text-content text-sm font-bold hover:bg-background transition-colors" aria-label="Adelantar 5 segundos">+5s</button>
         </div>
       </div>
     </div>
@@ -308,6 +310,8 @@ const mp3LiveIndicator = document.getElementById('mp3LiveIndicator') as HTMLElem
 const mp3Status = document.getElementById('mp3Status') as HTMLElement;
 const mp3Audio = document.getElementById('mp3Audio') as HTMLAudioElement;
 const btnMp3PlayPause = document.getElementById('btnMp3PlayPause') as HTMLButtonElement;
+const btnMp3Back5 = document.getElementById('btnMp3Back5') as HTMLButtonElement;
+const btnMp3Forward5 = document.getElementById('btnMp3Forward5') as HTMLButtonElement;
 const mp3PlayIcon = document.getElementById('mp3PlayIcon') as SVGElement;
 const mp3PlayLabel = document.getElementById('mp3PlayLabel') as HTMLElement;
 const mp3TimelineWrap = document.getElementById('mp3TimelineWrap') as HTMLElement;
@@ -1392,7 +1396,7 @@ const closeMp3Modal = () => {
    resetLoopRange();
   });
 
- const updateLoopHandlePosition = (which: 'A' | 'B', clientX: number) => {
+const updateLoopHandlePosition = (which: 'A' | 'B', clientX: number) => {
    if (!mp3TotalDuration) return;
    const nextSec = secondsFromPointer(clientX);
 
@@ -1401,8 +1405,22 @@ const closeMp3Modal = () => {
    } else {
      loopEndSec = clamp(nextSec, Math.min(mp3TotalDuration, loopStartSec + 0.1), mp3TotalDuration);
    }
-   syncLoopUi();
- };
+
+   const current = Number.isFinite(mp3Audio.currentTime) ? mp3Audio.currentTime : 0;
+   if (which === 'A' && loopStartSec > current) {
+     mp3Audio.currentTime = loopStartSec;
+     if (!isSeekingAudio) mp3Seek.value = String(loopStartSec);
+     mp3CurrentTime.textContent = formatTime(loopStartSec);
+   } else if (which === 'B' && loopEndSec < current) {
+     const loopSafeStart = clamp(loopStartSec, 0, mp3TotalDuration);
+     mp3Audio.currentTime = loopSafeStart;
+     if (!isSeekingAudio) mp3Seek.value = String(loopSafeStart);
+     mp3CurrentTime.textContent = formatTime(loopSafeStart);
+   }
+
+    syncLoopUi();
+    syncPlaybackWaveform();
+  };
 
  const onLoopPointerMove = (event: PointerEvent) => {
    if (!draggingLoopHandle || !chkLoopRange.checked) return;
@@ -1427,8 +1445,29 @@ const closeMp3Modal = () => {
  mp3LoopHandleA?.addEventListener('pointerdown', (event) => startLoopDrag('A', event));
  mp3LoopHandleB?.addEventListener('pointerdown', (event) => startLoopDrag('B', event));
 
- btnMp3Close?.addEventListener('click', closeMp3Modal);
- mp3PlayerBackdrop?.addEventListener('click', closeMp3Modal);
+  btnMp3Close?.addEventListener('click', closeMp3Modal);
+  btnMp3Back5?.addEventListener('click', () => {
+    if (!Number.isFinite(mp3Audio.currentTime)) return;
+    const next = Math.max(0, (mp3Audio.currentTime || 0) - 5);
+    mp3Audio.currentTime = next;
+    if (!isSeekingAudio) mp3Seek.value = String(next);
+    mp3CurrentTime.textContent = formatTime(next);
+    syncPlaybackWaveform();
+  });
+  btnMp3Forward5?.addEventListener('click', () => {
+    const maxDuration = Number.isFinite(mp3TotalDuration) && mp3TotalDuration > 0
+      ? mp3TotalDuration
+      : Number.isFinite(mp3Audio.duration)
+        ? mp3Audio.duration
+        : 0;
+    if (!maxDuration) return;
+    const next = Math.min(maxDuration, (mp3Audio.currentTime || 0) + 5);
+    mp3Audio.currentTime = next;
+    if (!isSeekingAudio) mp3Seek.value = String(next);
+    mp3CurrentTime.textContent = formatTime(next);
+    syncPlaybackWaveform();
+  });
+  mp3PlayerBackdrop?.addEventListener('click', closeMp3Modal);
  btnVocesClose?.addEventListener('click', closeVocesModal);
  vocesBackdrop?.addEventListener('click', closeVocesModal);
  document.addEventListener('keydown', (event) => {
