@@ -2,7 +2,38 @@
 import '../styles/global.css';
 import BottomNav from '../components/BottomNav.astro';
 import { supabase } from '../lib/supabase';
-import { ClientRouter, slide } from 'astro:transitions';
+import { ClientRouter } from 'astro:transitions';
+
+const premiumPageTransition = {
+  forwards: {
+    old: {
+      name: 'app-page-premium-out',
+      duration: '900ms',
+      easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+      fillMode: 'both',
+    },
+    new: {
+      name: 'app-page-premium-in',
+      duration: '900ms',
+      easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+      fillMode: 'both',
+    },
+  },
+  backwards: {
+    old: {
+      name: 'app-page-premium-out',
+      duration: '900ms',
+      easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+      fillMode: 'both',
+    },
+    new: {
+      name: 'app-page-premium-in',
+      duration: '900ms',
+      easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+      fillMode: 'both',
+    },
+  },
+};
 
 const hexToRgbString = (hex) => {
   if (!hex || typeof hex !== 'string') return '';
@@ -290,10 +321,10 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
       min-height: 100dvh;
     }
 
-    @keyframes app-page-slide-in-up {
+    @keyframes app-page-premium-in {
       from {
-        opacity: 0.01;
-        transform: translate3d(0, 22px, 0);
+        opacity: 0;
+        transform: translate3d(0, 18px, 0);
       }
       to {
         opacity: 1;
@@ -301,14 +332,14 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
       }
     }
 
-    @keyframes app-page-slide-out-up {
+    @keyframes app-page-premium-out {
       from {
         opacity: 1;
         transform: translate3d(0, 0, 0);
       }
       to {
-        opacity: 0.01;
-        transform: translate3d(0, -8px, 0);
+        opacity: 0;
+        transform: translate3d(0, -18px, 0);
       }
     }
 
@@ -353,10 +384,7 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
 </head>
 <body transition:animate="none" class="bg-background text-content min-h-screen min-h-[100dvh] w-full flex flex-col">
  <main
-  transition:animate={slide({
-    duration: '0.3s',
-    easing: 'ease-in-out'
-  })}
+  transition:animate={premiumPageTransition}
   class="relative isolate overflow-x-clip w-full min-h-screen min-h-[100dvh] flex-1 bg-background pb-24 px-4 lg:px-8 xl:px-12"
  >
  <!-- Contenedor principal (pb-24 evita choque visual con la barra flotante). -->
