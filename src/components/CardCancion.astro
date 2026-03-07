@@ -21,6 +21,16 @@ interface Props {
 
 const { cancionId = "", titulo = "", cantante = "", tonalidad = "", bpm = 0, linkLetra = "", linkAcordes = "", linkVoces = "", linkYoutube = "", linkSecuencias = "", linkMp3 = "", chordpro = "", categoria = "", voz = "", tema = "", estado = "", oculta = false } = Astro.props;
 
+const vocesPayload = (() => {
+  const value = linkVoces as unknown;
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value ?? '');
+  } catch {
+    return '';
+  }
+})();
+
 const estadoNormalized = (estado || '').toLowerCase().trim();
 
 let colorEstado = 'bg-neutral-600 text-white'; // Fallback para etiquetas personalizadas no mapeadas
@@ -135,12 +145,15 @@ if (estadoNormalized === 'nueva') {
  </a>
  )}
 
- {linkVoces.trim() !== '' && (
- <a href={linkVoces} 
- target="_blank" rel="noopener noreferrer"
- class="flex items-center justify-center py-2.5 rounded-xl bg-warning/10 text-warning hover:bg-warning/20 hover:text-warning transition-colors font-bold text-sm tracking-wide">
+ {vocesPayload.trim() !== '' && (
+ <button
+ type="button"
+ data-voces={vocesPayload}
+ data-title={titulo}
+ data-artist={cantante || ''}
+ class="btn-open-voces flex items-center justify-center py-2.5 rounded-xl bg-warning/10 text-warning hover:bg-warning/20 hover:text-warning transition-colors font-bold text-sm tracking-wide">
  Voces
- </a>
+ </button>
  )}
 
  {linkSecuencias.trim() !== '' && (
