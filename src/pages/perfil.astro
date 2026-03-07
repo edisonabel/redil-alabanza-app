@@ -197,7 +197,40 @@ import Layout from '../layouts/Layout.astro';
 <script>
  import { supabase } from '../lib/supabase';
 
- document.addEventListener('DOMContentLoaded', async () => {
+ const cleanupPerfilRuntime = () => {
+ const abortController = (window as any).__perfilListenersAbort as AbortController | undefined;
+ if (abortController) {
+ abortController.abort();
+ (window as any).__perfilListenersAbort = null;
+ }
+
+ const cropperInstance = (window as any)._cropperInstance;
+ if (cropperInstance) {
+ try {
+ cropperInstance.destroy();
+ } catch {
+ // no-op
+ }
+ (window as any)._cropperInstance = null;
+ }
+ };
+
+ const initPerfilPage = async () => {
+ cleanupPerfilRuntime();
+ const listenersAbort = new AbortController();
+ const signal = listenersAbort.signal;
+ (window as any).__perfilListenersAbort = listenersAbort;
+
+ const on = (
+ target: EventTarget | null | undefined,
+ eventName: string,
+ handler: EventListenerOrEventListenerObject,
+ options: AddEventListenerOptions = {},
+ ) => {
+ if (!target || typeof (target as EventTarget).addEventListener !== 'function') return;
+ (target as EventTarget).addEventListener(eventName, handler, { ...options, signal });
+ };
+
  // Init global vars
  let currentUserId = null;
 
@@ -283,15 +316,24 @@ import Layout from '../layouts/Layout.astro';
  const avatarPreview = document.getElementById('avatar-preview') as HTMLImageElement;
  const avatarPreviewText = document.getElementById('avatar-preview-text');
 
- let cropper: any = null;
+ let cropper: any = (window as any)._cropperInstance || null;
+ if (cropper) {
+ try {
+ cropper.destroy();
+ } catch {
+ // no-op
+ }
+ cropper = null;
+ (window as any)._cropperInstance = null;
+ }
 
  // Abrir selector de archivos
- btnChangeAvatar?.addEventListener('click', () => {
+ on(btnChangeAvatar, 'click', () => {
  avatarInput?.click();
  });
 
  // Cuando el usuario selecciona una imagen
- avatarInput?.addEventListener('change', (e) => {
+ on(avatarInput, 'change', (e: Event) => {
  const file = (e.target as HTMLInputElement).files?.[0];
  if (file) {
  const reader = new FileReader();
@@ -339,6 +381,7 @@ import Layout from '../layouts/Layout.astro';
  cropBoxResizable: true,
  toggleDragModeOnDblclick: false,
  });
+ (window as any)._cropperInstance = cropper;
  } else {
  alert('Error cargando herramienta de recorte. Intente recargar la página.');
  closeCropperModal();
@@ -356,6 +399,7 @@ import Layout from '../layouts/Layout.astro';
  if (cropper) {
  cropper.destroy();
  cropper = null;
+ (window as any)._cropperInstance = null;
  }
  if (cropperImage) {
  cropperImage.src = '';
@@ -364,16 +408,16 @@ import Layout from '../layouts/Layout.astro';
  }, 300);
  };
 
- btnCloseCropper?.addEventListener('click', closeCropperModal);
- btnCancelCropper?.addEventListener('click', closeCropperModal);
+ on(btnCloseCropper, 'click', closeCropperModal);
+ on(btnCancelCropper, 'click', closeCropperModal);
  
  // Cerrar al hacer clic fuera
- cropperModal?.addEventListener('click', (e) => {
+ on(cropperModal, 'click', (e: Event) => {
  if (e.target === cropperModal) closeCropperModal();
  });
 
  // Guardar recorte y subir a Supabase
- btnSaveCropper?.addEventListener('click', async () => {
+ on(btnSaveCropper, 'click', async () => {
  if (!cropper) return;
  
  const originalText = btnSaveCropper.innerHTML;
@@ -452,7 +496,7 @@ import Layout from '../layouts/Layout.astro';
  const inputFin = document.getElementById('ausencia-fin') as HTMLInputElement;
  const inputMotivo = document.getElementById('ausencia-motivo') as HTMLInputElement;
 
- formAusencia?.addEventListener('submit', async (e) => {
+ on(formAusencia, 'submit', async (e: Event) => {
  e.preventDefault();
  if (!inputInicio.value || !inputFin.value) return;
 
@@ -487,8 +531,8 @@ import Layout from '../layouts/Layout.astro';
  });
 
  // Borrar Ausencia
- document.querySelectorAll('.btn-delete-ausencia').forEach(btn => {
- btn.addEventListener('click', async (e) => {
+ document.querySelectorAll('.btn-delete-ausencia').forEach((btn) => {
+ on(btn, 'click', async (e: Event) => {
  const button = e.currentTarget as HTMLButtonElement;
  const id = button.getAttribute('data-id');
  if (!id) return;
@@ -550,7 +594,7 @@ import Layout from '../layouts/Layout.astro';
  };
 
  const btnLogout = document.getElementById('btn-logout');
- btnLogout?.addEventListener('click', async () => {
+ on(btnLogout, 'click', async () => {
  if (!confirm('\u00BFSeguro que deseas cerrar la sesi\u00F3n?')) return;
 
  try {
@@ -576,7 +620,7 @@ import Layout from '../layouts/Layout.astro';
  });
 
  const btnChangePassword = document.getElementById('btn-change-password');
- btnChangePassword?.addEventListener('click', async () => {
+ on(btnChangePassword, 'click', async () => {
  alert('Se ha enviado un correo con instrucciones a tu email. (Por implementar enlace backend)');
  // Implement Supabase Password Reset Email trigger here
  });
@@ -746,13 +790,13 @@ import Layout from '../layouts/Layout.astro';
  btnSaveDatos.classList.add('hidden');
  }
  };
- selectTonalidad.addEventListener('input', checkChanges);
- inputCumpleanos.addEventListener('input', checkChanges);
- inputTelefono.addEventListener('input', checkChanges);
+ on(selectTonalidad, 'input', checkChanges);
+ on(inputCumpleanos, 'input', checkChanges);
+ on(inputTelefono, 'input', checkChanges);
  }
 
  if (formDatosPersonales && btnSaveDatos) {
- formDatosPersonales.addEventListener('submit', async (e) => {
+ on(formDatosPersonales, 'submit', async (e: Event) => {
  e.preventDefault();
  const vocalVal = selectTonalidad.value;
  const cumpleanosVal = inputCumpleanos.value;
@@ -826,7 +870,24 @@ import Layout from '../layouts/Layout.astro';
  }
  }
 
- });
+ };
+
+ if ((window as any).__perfilPageLoadHandler) {
+ document.removeEventListener('astro:page-load', (window as any).__perfilPageLoadHandler);
+ }
+
+ if ((window as any).__perfilAfterSwapHandler) {
+ document.removeEventListener('astro:after-swap', (window as any).__perfilAfterSwapHandler);
+ }
+
+ const onPerfilAfterSwap = () => {
+ cleanupPerfilRuntime();
+ };
+
+ (window as any).__perfilPageLoadHandler = initPerfilPage;
+ (window as any).__perfilAfterSwapHandler = onPerfilAfterSwap;
+ document.addEventListener('astro:page-load', initPerfilPage);
+ document.addEventListener('astro:after-swap', onPerfilAfterSwap);
 </script>
 
 
