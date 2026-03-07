@@ -1155,6 +1155,18 @@ const openVocesModal = (title: string, artist: string, entries: VoiceEntry[], le
   vocesArtist.textContent = artist?.trim() || 'Selecciona una pista';
   vocesOptions.innerHTML = '';
 
+  const getVoiceColor = (label: string) => {
+   const text = (label || '').toLowerCase();
+   if (text.includes('guia') || text.includes('guía')) return '#2563EB';
+   if (text.includes('segunda')) return '#DC2626';
+   if (text.includes('tercera')) return '#16A34A';
+   if (text.includes('quinta')) return '#CA8A04';
+   if (text.includes('octava')) return '#EA580C';
+   if (text.includes('todas') || text.includes('tres voces')) return 'linear-gradient(135deg, #2563EB, #9333EA)';
+   if (text.includes('pista')) return '#0891B2';
+   return '#64748B';
+  };
+
   if (legacyUrl) {
    const safeLegacyUrl = normalizeExternalUrl(legacyUrl);
    const legacyCard = document.createElement('div');
@@ -1205,12 +1217,38 @@ const openVocesModal = (title: string, artist: string, entries: VoiceEntry[], le
 
   validEntries.forEach((entry, index) => {
    const button = document.createElement('button');
+   const labelText = entry.label || `Pista ${index + 1}`;
+   const color = getVoiceColor(labelText);
    button.type = 'button';
    button.dataset.url = entry.url;
-   button.dataset.voice = entry.label || `Pista ${index + 1}`;
+   button.dataset.voice = labelText;
    button.className =
     'group inline-flex items-center justify-between gap-2 rounded-xl border border-border bg-surface px-3 py-2.5 text-sm font-semibold text-content hover:bg-background hover:border-brand/40 transition-colors';
-   button.innerHTML = `<span class="truncate">${entry.label || `Pista ${index + 1}`}</span><span class="text-content-muted group-hover:text-brand transition-colors">Reproducir</span>`;
+
+   const left = document.createElement('span');
+   left.className = 'min-w-0 inline-flex items-center gap-2';
+
+   const swatch = document.createElement('span');
+   swatch.style.display = 'inline-block';
+   swatch.style.width = '12px';
+   swatch.style.height = '12px';
+   swatch.style.borderRadius = '3px';
+   swatch.style.background = color;
+   swatch.style.flexShrink = '0';
+
+   const labelNode = document.createElement('span');
+   labelNode.className = 'truncate';
+   labelNode.textContent = labelText;
+
+   const right = document.createElement('span');
+   right.className = 'text-content-muted group-hover:text-brand transition-colors shrink-0';
+   right.textContent = 'Reproducir';
+
+   left.appendChild(swatch);
+   left.appendChild(labelNode);
+   button.appendChild(left);
+   button.appendChild(right);
+
    button.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
