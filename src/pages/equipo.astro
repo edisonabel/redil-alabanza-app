@@ -754,7 +754,7 @@ import Layout from '../layouts/Layout.astro';
  const currentRoles = rolesPorPerfil.get(p.id) || new Set();
  
  const article = document.createElement('article');
- article.className = 'equipo-card bg-surface border border-border rounded-2xl p-6 shadow-sm opacity-0 translate-y-4 transition-all duration-500 ease-out flex flex-col justify-between';
+ article.className = 'equipo-card bg-surface border border-border rounded-2xl p-6 shadow-sm opacity-0 translate-y-4 transition-all duration-500 ease-in-out flex flex-col justify-between';
  
  // Generar Toggles HTML para cada Rol
  const togglesHTML = roles.map(r => {
@@ -938,13 +938,13 @@ import Layout from '../layouts/Layout.astro';
  // Modal de confirmaciÃ³n premium inline
  const overlay = document.createElement('div');
  overlay.className = 'fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm';
- overlay.style.animation = 'fadeIn 0.2s ease-out';
+ overlay.style.animation = 'fadeIn 0.2s ease-in-out';
  overlay.innerHTML = `
  <style>
  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
  @keyframes scaleIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
  </style>
- <div class="bg-surface rounded-3xl shadow-2xl max-w-sm w-[90%] overflow-hidden border border-border " style="animation: scaleIn 0.25s ease-out">
+ <div class="bg-surface rounded-3xl shadow-2xl max-w-sm w-[90%] overflow-hidden border border-border " style="animation: scaleIn 0.25s ease-in-out">
  <div class="p-6 text-center">
  <div class="w-14 h-14 rounded-full flex items-center justify-center text-2xl mx-auto mb-4 bg-red-100 text-red-500">
  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
@@ -978,7 +978,7 @@ import Layout from '../layouts/Layout.astro';
 
  const card = btnTarget.closest('.equipo-card');
  if (card) {
- card.style.transition = 'all 0.3s ease-out';
+ card.style.transition = 'all 0.3s ease-in-out';
  card.style.opacity = '0';
  card.style.transform = 'scale(0.9)';
  setTimeout(() => card.remove(), 350);

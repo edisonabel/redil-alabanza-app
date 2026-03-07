@@ -200,6 +200,58 @@ import Layout from '../layouts/Layout.astro';
  document.addEventListener('DOMContentLoaded', async () => {
  // Init global vars
  let currentUserId = null;
+
+ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+ const getCookieValue = (name) => {
+ try {
+ const cookiePart = document.cookie
+ .split(';')
+ .map((chunk) => chunk.trim())
+ .find((chunk) => chunk.startsWith(`${name}=`));
+ if (!cookiePart) return '';
+ return decodeURIComponent(cookiePart.substring(name.length + 1));
+ } catch {
+ return '';
+ }
+ };
+
+ const getStableAuth = async () => {
+ let lastError = null;
+
+ for (let attempt = 0; attempt < 5; attempt += 1) {
+ try {
+ const { data: { session }, error } = await supabase.auth.getSession();
+ if (session?.user) {
+ return { session, user: session.user, error: null };
+ }
+ if (error) lastError = error;
+ } catch (error) {
+ lastError = error;
+ }
+ await wait(120);
+ }
+
+ const tokenFromCookie = getCookieValue('sb-access-token');
+ if (tokenFromCookie) {
+ try {
+ const { data: { user }, error } = await supabase.auth.getUser(tokenFromCookie);
+ if (user) return { session: null, user, error: null };
+ if (error) lastError = error;
+ } catch (error) {
+ lastError = error;
+ }
+ }
+
+ try {
+ const { data: { user }, error } = await supabase.auth.getUser();
+ if (user) return { session: null, user, error: null };
+ if (error) lastError = error;
+ } catch (error) {
+ lastError = error;
+ }
+
+ return { session: null, user: null, error: lastError };
+ };
  
  const avatarContainer = document.getElementById('avatar-container');
  const uiUserName = document.getElementById('ui-user-name');
@@ -343,9 +395,9 @@ import Layout from '../layouts/Layout.astro';
 
  if (!blob) throw new Error("No se pudo generar el recorte de la imagen.");
 
- const { data: { session } } = await supabase.auth.getSession();
- if(!session) throw new Error("No session");
- const userId = session.user.id;
+ const auth = await getStableAuth();
+ const userId = currentUserId || auth.user?.id;
+ if (!userId) throw new Error("No session");
 
  // Upload a Supabase Storage (bucket: avatars)
  const fileName = `${userId}-${Date.now()}.webp`; // Para bust de cachÃ©
@@ -409,13 +461,14 @@ import Layout from '../layouts/Layout.astro';
  btnSaveAusencia.disabled = true;
 
  try {
- const { data: { session } } = await supabase.auth.getSession();
- if (!session) throw new Error("No session");
+ const auth = await getStableAuth();
+ const userId = currentUserId || auth.user?.id;
+ if (!userId) throw new Error("No session");
 
  const { error } = await supabase
  .from('ausencias')
  .insert({
- perfil_id: session.user.id,
+ perfil_id: userId,
  fecha_inicio: inputInicio.value,
  fecha_fin: inputFin.value,
  motivo: inputMotivo.value || null
@@ -532,15 +585,16 @@ import Layout from '../layouts/Layout.astro';
  // CLIENT-SIDE DATA FETCHING
  // ==========================================
  const fetchData = async () => {
- const { data: { session }, error: sessionError } = await supabase.auth.getSession();
- 
- if (!session || sessionError) {
+ const { user, error: sessionError } = await getStableAuth();
+
+ if (!user || sessionError) {
  /* window.location.href = '/login'; Movido a Middleware */
+ console.warn('Perfil: sesión no disponible en cliente', sessionError);
  return;
  }
 
- currentUserId = session.user.id;
- const email = session.user.email;
+ currentUserId = user.id;
+ const email = user.email;
  
  if (inputCorreo) inputCorreo.value = email || '';
  if (uiUserEmail) uiUserEmail.innerHTML = email || '';
@@ -709,8 +763,9 @@ import Layout from '../layouts/Layout.astro';
  btnSaveDatos.disabled = true;
 
  try {
- const { data: { session } } = await supabase.auth.getSession();
- if (!session) throw new Error('No hay sesión activa');
+ const auth = await getStableAuth();
+ const userId = currentUserId || auth.user?.id;
+ if (!userId) throw new Error('No hay sesión activa');
 
  const updates = {
  tonalidad_voz: vocalVal || null,
@@ -722,7 +777,7 @@ import Layout from '../layouts/Layout.astro';
  const { error } = await supabase
  .from('perfiles')
  .update(updates)
- .eq('id', session.user.id);
+ .eq('id', userId);
 
  if (error) throw error;
 

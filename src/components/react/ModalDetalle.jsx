@@ -217,7 +217,7 @@ export default function ModalDetalle({ initialRoles }) {
                                 <div className="flex flex-col">
                                     <div className="flex flex-col items-center justify-center w-full gap-2.5 mb-6">
                                         <a href={rehearsalHref} target="_blank" rel="noopener noreferrer" className="group relative inline-flex items-center justify-center gap-3 px-8 py-3 w-full sm:w-auto overflow-hidden rounded-xl bg-gradient-to-br from-teal-500 via-emerald-500 to-green-500 text-white font-bold text-sm sm:text-base tracking-wide shadow-lg shadow-teal-500/30 hover:shadow-teal-500/50 hover:-translate-y-0.5 transition-all duration-300">
-                                            <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
+                                            <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-in-out"></div>
                                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" className="shrink-0 relative z-10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                                             <span className="relative z-10">Entrar a Modo Ensayo</span>
                                         </a>
