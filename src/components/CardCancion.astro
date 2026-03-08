@@ -31,6 +31,12 @@ const vocesPayload = (() => {
   }
 })();
 
+const rawVoces = vocesPayload ? vocesPayload.trim() : '';
+const rawVocesNormalized = rawVoces
+  ? rawVoces.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  : '';
+const isValidVoces = rawVoces !== '' && rawVoces !== '-' && rawVocesNormalized !== 'no esta';
+
 const estadoNormalized = (estado || '').toLowerCase().trim();
 
 let colorEstado = 'bg-neutral-600 text-white'; // Fallback para etiquetas personalizadas no mapeadas
@@ -145,10 +151,10 @@ if (estadoNormalized === 'nueva') {
  </a>
  )}
 
- {vocesPayload.trim() !== '' && (
- <button
- type="button"
- data-voces={vocesPayload}
+ {isValidVoces && (
+  <button
+  type="button"
+  data-voces={vocesPayload}
  data-title={titulo}
  data-artist={cantante || ''}
  class="btn-open-voces flex items-center justify-center py-2.5 rounded-xl bg-warning/10 text-warning hover:bg-warning/20 hover:text-warning transition-colors font-bold text-sm tracking-wide">

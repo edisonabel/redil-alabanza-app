@@ -3,6 +3,7 @@ import '../styles/global.css';
 import BottomNav from '../components/BottomNav.astro';
 import ProPlayerGlobal from '../components/ProPlayerGlobal.astro';
 import VocesModalGlobal from '../components/VocesModalGlobal.astro';
+import NotificationBell from '../components/react/NotificationBell.jsx';
 import { supabase } from '../lib/supabase';
 import { ClientRouter } from 'astro:transitions';
 
@@ -86,6 +87,8 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
   themeColors = data?.[0]?.colores || null;
   break;
 }
+
+const pathname = new URL(Astro.request.url).pathname;
 ---
 <!DOCTYPE html>
 <html lang="es">
@@ -407,6 +410,11 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
   )}
 </head>
 <body transition:animate="none" class="bg-background text-content min-h-screen min-h-[100dvh] w-full flex flex-col">
+ {pathname !== '/' && (
+  <div class="relative z-[61] flex w-full justify-end px-4 md:px-6" style="padding-top: calc(env(safe-area-inset-top) + 0.75rem);">
+   <NotificationBell inline client:load />
+  </div>
+ )}
  <main
   transition:animate={premiumPageTransition}
   class="relative isolate overflow-x-clip w-full min-h-screen min-h-[100dvh] flex-1 bg-background pb-24 px-4 lg:px-8 xl:px-12"
