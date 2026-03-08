@@ -422,6 +422,115 @@ if (sessionError || !session) {
  dispatchProPlayerEvent({ url: mp3Url, title: songTitle, artist: songArtist, autoPlay: true });
  }, { capture: true });
 
+ // ----- Metronomo Interactivo Logic -----
+ let metronomoActivoDot: HTMLElement | null = null;
+ 
+ const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+ const audioCtx = new AudioContextClass();
+ 
+ function playClick() {
+ if (!audioCtx) return;
+ if (audioCtx.state === 'suspended') audioCtx.resume();
+ 
+ const osc = audioCtx.createOscillator();
+ const gainNode = audioCtx.createGain();
+ 
+ osc.connect(gainNode);
+ gainNode.connect(audioCtx.destination);
+ 
+ osc.type = 'sine';
+ osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+ 
+ gainNode.gain.setValueAtTime(1, audioCtx.currentTime);
+ gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+ 
+ osc.start(audioCtx.currentTime);
+ osc.stop(audioCtx.currentTime + 0.1);
+ }
+ 
+ addListener(document, 'click', (e) => {
+ const badge = (e.target as Element).closest('.badge-bpm');
+ if (badge) {
+ const bpmStr = badge.getAttribute('data-bpm');
+ if (!bpmStr) return;
+ 
+ const bpmVal = parseInt(bpmStr.replace(/[^0-9]/g, ''), 10);
+ if (!bpmVal || bpmVal <= 0) return;
+ 
+ const dot = badge.querySelector('.metronomo-dot') as HTMLElement;
+ if (!dot) return;
+ 
+ if (metronomoActivoDot && metronomoActivoDot !== dot) {
+ metronomoActivoDot.classList.remove('beat-active');
+ metronomoActivoDot.style.removeProperty('--bpm-duration');
+ if (metronomoInterval) clearInterval(metronomoInterval);
+ }
+ 
+ if (dot.classList.contains('beat-active')) {
+ dot.classList.remove('beat-active');
+ dot.style.removeProperty('--bpm-duration');
+ if (metronomoInterval) clearInterval(metronomoInterval);
+ metronomoActivoDot = null;
+ return;
+ }
+ 
+ const duracionSegundos = 60 / bpmVal;
+ dot.style.setProperty('--bpm-duration', `${duracionSegundos}s`);
+ dot.classList.add('beat-active');
+ metronomoActivoDot = dot;
+ 
+ playClick();
+ metronomoInterval = setInterval(playClick, duracionSegundos * 1000);
+ }
+ });
+
+ // ----- Reference Tone (Pitch Pipe) Logic -----
+ const frecuencias: { [key: string]: number } = {
+ 'C': 261.63, 'C#': 277.18, 'D': 293.66, 'Eb': 311.13, 'E': 329.63, 
+ 'F': 349.23, 'F#': 369.99, 'G': 392.00, 'G#': 415.30, 'A': 440.00, 
+ 'Bb': 466.16, 'B': 493.88
+ };
+ 
+ addListener(document, 'click', (e) => {
+ const badgeTono = (e.target as Element).closest('.badge-tono');
+ if (badgeTono) {
+ let tono = badgeTono.getAttribute('data-tono');
+ if (!tono || tono.trim() === '-' || tono.trim() === '') return;
+ 
+ tono = tono.replace(/m/g, '').trim();
+ const frecuencia = frecuencias[tono];
+ 
+ if (frecuencia && audioCtx) {
+ if (audioCtx.state === 'suspended') audioCtx.resume();
+ 
+ const oscPrincipal = audioCtx.createOscillator();
+ oscPrincipal.type = 'triangle';
+ oscPrincipal.frequency.value = frecuencia;
+ 
+ const oscBrillo = audioCtx.createOscillator();
+ oscBrillo.type = 'sine';
+ oscBrillo.frequency.value = frecuencia * 2; 
+ 
+ const gainNode = audioCtx.createGain();
+ 
+ oscPrincipal.connect(gainNode);
+ oscBrillo.connect(gainNode);
+ gainNode.connect(audioCtx.destination);
+ 
+ const now = audioCtx.currentTime;
+ gainNode.gain.setValueAtTime(0, now);
+ gainNode.gain.linearRampToValueAtTime(0.8, now + 0.02);
+ gainNode.gain.exponentialRampToValueAtTime(0.1, now + 0.5);
+ gainNode.gain.exponentialRampToValueAtTime(0.001, now + 3);
+ 
+ oscPrincipal.start(now);
+ oscBrillo.start(now);
+ oscPrincipal.stop(now + 3);
+ oscBrillo.stop(now + 3);
+ }
+ }
+ });
+
  // =============================================
  // BLOQUE 1: MODO SETLIST DE LA SEMANA (Solo ver, no buscar ni scrollear)
  // =============================================
@@ -763,115 +872,6 @@ function filterCards() {
  if(filterCategoria) addListener(filterCategoria, 'change', debouncedFilterCards);
  if(filterTema) addListener(filterTema, 'change', debouncedFilterCards);
 
-
- // ----- Metronomo Interactivo Logic -----
- let metronomoActivoDot: HTMLElement | null = null;
- 
- const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
- const audioCtx = new AudioContextClass();
- 
- function playClick() {
- if (!audioCtx) return;
- if (audioCtx.state === 'suspended') audioCtx.resume();
- 
- const osc = audioCtx.createOscillator();
- const gainNode = audioCtx.createGain();
- 
- osc.connect(gainNode);
- gainNode.connect(audioCtx.destination);
- 
- osc.type = 'sine';
- osc.frequency.setValueAtTime(800, audioCtx.currentTime);
- 
- gainNode.gain.setValueAtTime(1, audioCtx.currentTime);
- gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
- 
- osc.start(audioCtx.currentTime);
- osc.stop(audioCtx.currentTime + 0.1);
- }
- 
- addListener(document, 'click', (e) => {
- const badge = (e.target as Element).closest('.badge-bpm');
- if (badge) {
- const bpmStr = badge.getAttribute('data-bpm');
- if (!bpmStr) return;
- 
- const bpmVal = parseInt(bpmStr.replace(/[^0-9]/g, ''), 10);
- if (!bpmVal || bpmVal <= 0) return;
- 
- const dot = badge.querySelector('.metronomo-dot') as HTMLElement;
- if (!dot) return;
- 
- if (metronomoActivoDot && metronomoActivoDot !== dot) {
- metronomoActivoDot.classList.remove('beat-active');
- metronomoActivoDot.style.removeProperty('--bpm-duration');
- if (metronomoInterval) clearInterval(metronomoInterval);
- }
- 
- if (dot.classList.contains('beat-active')) {
- dot.classList.remove('beat-active');
- dot.style.removeProperty('--bpm-duration');
- if (metronomoInterval) clearInterval(metronomoInterval);
- metronomoActivoDot = null;
- return;
- }
- 
- const duracionSegundos = 60 / bpmVal;
- dot.style.setProperty('--bpm-duration', `${duracionSegundos}s`);
- dot.classList.add('beat-active');
- metronomoActivoDot = dot;
- 
- playClick();
- metronomoInterval = setInterval(playClick, duracionSegundos * 1000);
- }
- });
-
- // ----- Reference Tone (Pitch Pipe) Logic -----
- const frecuencias: { [key: string]: number } = {
- 'C': 261.63, 'C#': 277.18, 'D': 293.66, 'Eb': 311.13, 'E': 329.63, 
- 'F': 349.23, 'F#': 369.99, 'G': 392.00, 'G#': 415.30, 'A': 440.00, 
- 'Bb': 466.16, 'B': 493.88
- };
- 
- addListener(document, 'click', (e) => {
- const badgeTono = (e.target as Element).closest('.badge-tono');
- if (badgeTono) {
- let tono = badgeTono.getAttribute('data-tono');
- if (!tono || tono.trim() === '-' || tono.trim() === '') return;
- 
- tono = tono.replace(/m/g, '').trim();
- const frecuencia = frecuencias[tono];
- 
- if (frecuencia && audioCtx) {
- if (audioCtx.state === 'suspended') audioCtx.resume();
- 
- const oscPrincipal = audioCtx.createOscillator();
- oscPrincipal.type = 'triangle';
- oscPrincipal.frequency.value = frecuencia;
- 
- const oscBrillo = audioCtx.createOscillator();
- oscBrillo.type = 'sine';
- oscBrillo.frequency.value = frecuencia * 2; 
- 
- const gainNode = audioCtx.createGain();
- 
- oscPrincipal.connect(gainNode);
- oscBrillo.connect(gainNode);
- gainNode.connect(audioCtx.destination);
- 
- const now = audioCtx.currentTime;
- gainNode.gain.setValueAtTime(0, now);
- gainNode.gain.linearRampToValueAtTime(0.8, now + 0.02);
- gainNode.gain.exponentialRampToValueAtTime(0.1, now + 0.5);
- gainNode.gain.exponentialRampToValueAtTime(0.001, now + 3);
- 
- oscPrincipal.start(now);
- oscBrillo.start(now);
- oscPrincipal.stop(now + 3);
- oscBrillo.stop(now + 3);
- }
- }
- });
 
  // Helper para Playlist modular
  function updatePlaylistCount() {
