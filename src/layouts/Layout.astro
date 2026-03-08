@@ -1,6 +1,8 @@
 ---
 import '../styles/global.css';
 import BottomNav from '../components/BottomNav.astro';
+import ProPlayerGlobal from '../components/ProPlayerGlobal.astro';
+import VocesModalGlobal from '../components/VocesModalGlobal.astro';
 import { supabase } from '../lib/supabase';
 import { ClientRouter } from 'astro:transitions';
 
@@ -91,6 +93,28 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
  <meta charset="UTF-8" />
  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+ <script is:inline>
+  (() => {
+    const isLocalHost =
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1';
+    if (!isLocalHost) return;
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker
+        .getRegistrations()
+        .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+        .catch(() => {});
+    }
+
+    if ('caches' in window) {
+      caches
+        .keys()
+        .then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+        .catch(() => {});
+    }
+  })();
+ </script>
  <script is:inline>
   (() => {
     const originalAddEventListener = document.addEventListener.bind(document);
@@ -390,6 +414,9 @@ for (const table of BRANDING_TABLE_CANDIDATES) {
  <!-- Contenedor principal (pb-24 evita choque visual con la barra flotante). -->
  <slot />
  </main>
+
+ <ProPlayerGlobal />
+ <VocesModalGlobal />
 
  <!-- Barra de navegacion fija mobile-first -->
  <BottomNav />

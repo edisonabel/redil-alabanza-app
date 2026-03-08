@@ -74,6 +74,7 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  const active = isActive(item.href);
  return (
  <a 
+ key={`nav-item-${item.href}`}
  href={item.href} 
  id={`nav-item-${item.name.toLowerCase()}`}
  data-nav-link="true"

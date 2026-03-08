@@ -1,0 +1,93 @@
+
+> alabanza@0.0.1 dev
+> astro dev --host 127.0.0.1 --port 4321
+
+[2m19:22:02[22m [34m[@astrojs/netlify][39m Enabling sessions with Netlify Blobs
+[2m19:22:03[22m [34m[vite][39m Environment loaded
+[2m19:22:03[22m [34m[vite][39m Middleware loaded. Emulating features: aiGateway, blobs, edgeFunctions, functions, geolocation, headers, images, redirects, static.
+[2m19:22:03[22m [34m[vite][39m 💭 Linking this project to a Netlify site lets you deploy your site, use any environment variables defined on your team and site and much more. Run npx netlify init to get started.
+[2m19:22:03[22m [34m[types][39m Generated [2m1ms[22m
+[2m19:22:03[22m [34m[content][39m Syncing content
+[2m19:22:03[22m [34m[content][39m Synced content
+[2m19:22:03[22m [34m[vite][39m Port 4321 is in use, trying another one...
+
+[42m[1m astro [22m[49m [32mv5.18.0[39m [2mready in[22m 2225 [2mms[22m
+
+[2m┃[22m Local    [36mhttp://127.0.0.1:4322/[39m
+
+[2m19:22:03[22m [32mwatching for file changes...[39m
+[2m19:28:12[22m [33m[302][39m / [2m156ms[22m
+[2m19:28:14[22m [34m[200][39m /login [2m1658ms[22m
+[2m19:28:14[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:28:14[22m [34m[watch][39m tmp-dev-log.txt
+Inicio proximosServicios count: 2 user: 80f063de-6eac-4f53-9e98-acadf481dc1c email: edicionaular@gmail.com
+[2m19:28:22[22m [34m[200][39m / [2m2581ms[22m
+[2m19:28:25[22m [34m[200][39m /repertorio [2m1262ms[22m
+[2m19:28:28[22m [34m[200][39m /repertorio [2m1206ms[22m
+[2m19:28:50[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:28:50[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:28:52[22m [34m[200][39m /repertorio [2m1500ms[22m
+[2m19:28:52[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:28:52[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:31:10[22m [34m[watch][39m src/components/ProPlayerGlobal.astro
+[2m19:31:11[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:31:11[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:31:12[22m [34m[200][39m /repertorio [2m1593ms[22m
+[2m19:31:12[22m [34m[200][39m /repertorio [2m1835ms[22m
+[2m19:31:13[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:31:13[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:40:32[22m [34m[watch][39m src/components/ProPlayerGlobal.astro
+[2m19:40:33[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:40:33[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:40:34[22m [34m[200][39m /repertorio [2m1681ms[22m
+[2m19:40:34[22m [34m[200][39m /repertorio [2m1845ms[22m
+[2m19:40:35[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:40:35[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:40:59[22m Configuration file updated. Restarting...
+[2m19:40:59[22m [34m[watch][39m astro.config.mjs
+[2m19:40:59[22m [34m[watch][39m astro.config.mjs
+[2m19:40:59[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:40:59[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:40:59[22m [34m[@astrojs/netlify][39m Enabling sessions with Netlify Blobs
+[2m19:41:00[22m [34m[vite][39m Environment loaded
+[2m19:41:00[22m [34m[vite][39m Middleware loaded. Emulating features: aiGateway, blobs, edgeFunctions, functions, geolocation, headers, images, redirects, static.
+[2m19:41:00[22m [34m[vite][39m 💭 Linking this project to a Netlify site lets you deploy your site, use any environment variables defined on your team and site and much more. Run npx netlify init to get started.
+[2m19:41:00[22m [34m[vite][39m Re-optimizing dependencies because vite config has changed
+[2m19:41:00[22m [34m[content][39m Syncing content
+[2m19:41:00[22m [34m[content][39m Synced content
+[2m19:41:00[22m [34m[types][39m Generated [2m238ms[22m
+[2m19:41:00[22m [34m[vite][39m Re-optimizing dependencies because vite config has changed
+[2m19:42:43[22m [33m[404][39m /sw.js [2m362ms[22m
+[2m19:47:35[22m [34m[200][39m /repertorio [2m2135ms[22m
+[2m19:47:36[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:47:36[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:49:21[22m [33m[404][39m /No está [2m1ms[22m
+[2m19:49:32[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:49:32[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:49:34[22m [34m[200][39m /repertorio [2m1765ms[22m
+[2m19:49:34[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:49:34[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:49:37[22m [33m[404][39m /No está [2m1ms[22m
+[2m19:54:04[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:54:04[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:54:07[22m [34m[200][39m /repertorio [2m1986ms[22m
+[2m19:54:07[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:54:07[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:54:16[22m [34m[200][39m /repertorio [2m1531ms[22m
+[2m19:54:16[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:54:16[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:54:18[22m [34m[200][39m /repertorio [2m1326ms[22m
+[2m19:54:19[22m [34m[200][39m /repertorio [2m1292ms[22m
+[2m19:55:05[22m [33m[404][39m /No está [2m1ms[22m
+[2m19:55:07[22m [34m[200][39m /perfil [2m988ms[22m
+[2m19:55:08[22m [34m[200][39m /configuracion [2m1626ms[22m
+[2m19:55:08[22m [34m[200][39m /perfil [2m850ms[22m
+[2m19:55:17[22m [34m[200][39m /perfil [2m1004ms[22m
+[2m19:55:23[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:55:23[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:55:24[22m [34m[200][39m /perfil [2m1038ms[22m
+[2m19:55:24[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:55:24[22m [34m[watch][39m tmp-dev-log.txt
+[2m19:55:30[22m [34m[200][39m /repertorio [2m1432ms[22m
+[2m19:55:31[22m [34m[200][39m /repertorio [2m1149ms[22m
+[2m19:55:32[22m [34m[200][39m /repertorio [2m1423ms[22m

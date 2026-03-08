@@ -20,15 +20,6 @@ try {
   console.error("Fetch failed", e);
 }
 
-// LOG TEMPORAL — borrar despues
-const contemplaTest = canciones.find((c: any) =>
-  (c.titulo || c.title || '').toLowerCase().includes('contempla')
-);
-console.log('=== ASTRO BUILD DEBUG ===');
-console.log('Contempla voces field:', contemplaTest?.voces);
-console.log('Contempla link_voces field:', contemplaTest?.link_voces);
-console.log('Contempla all keys:', contemplaTest ? Object.keys(contemplaTest) : 'NOT FOUND');
-
 const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean))].sort() as string[];
 ---
 
@@ -181,108 +172,105 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
  </div>
 </div>
 
-<!-- Modal Reproductor MP3 (Modo Ensayo con Loop A-B) -->
-<div id="mp3PlayerModal" class="fixed inset-0 z-[180] hidden overscroll-contain" aria-hidden="true">
-  <div id="mp3PlayerBackdrop" class="absolute inset-0 bg-overlay/82 backdrop-blur-md opacity-0 transition-opacity duration-[900ms] [transition-timing-function:cubic-bezier(0.2,0.8,0.2,1)]"></div>
-  <div class="relative z-10 w-full h-full flex items-end md:items-center justify-center px-2 pt-2 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] md:p-4 overflow-y-auto overscroll-contain">
-    <div id="mp3PlayerPanel" class="w-full md:w-[95%] lg:w-[95%] max-w-5xl max-h-[calc(100dvh-env(safe-area-inset-bottom)-7.5rem)] md:max-h-[92dvh] overflow-y-auto my-0 md:my-2 bg-surface border border-border rounded-3xl shadow-2xl p-4 md:p-6 opacity-0 translate-y-4 transition-all duration-[900ms] [transition-timing-function:cubic-bezier(0.2,0.8,0.2,1)]">
-      <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0 flex items-center gap-3">
-          <div class="relative w-14 h-14 rounded-xl border border-border bg-background overflow-hidden shrink-0">
-            <img id="mp3Artwork" src="" alt="" class="hidden w-full h-full object-cover" />
-            <div id="mp3ArtworkFallback" class="w-full h-full grid place-items-center text-content-muted bg-gradient-to-br from-surface to-background">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-            </div>
-          </div>
-          <div class="min-w-0">
-            <h3 id="mp3Title" class="text-lg md:text-xl font-black text-content truncate">Canción</h3>
-            <p id="mp3Artist" class="text-sm text-content-muted truncate">Artista</p>
-            <div class="mt-1.5 h-1.5 w-12 rounded-full bg-border/70 overflow-hidden">
-              <span id="mp3LiveIndicator" class="block h-full w-2 rounded-full bg-action transition-all duration-300"></span>
-            </div>
-          </div>
-        </div>
-        <button id="btnMp3Close" type="button" class="w-9 h-9 rounded-xl border border-border bg-background text-content-muted hover:text-content hover:bg-surface transition-colors" aria-label="Cerrar reproductor">✕</button>
-      </div>
-
-      <audio id="mp3Audio" class="hidden" preload="metadata"></audio>
-
-      <div class="mt-4 rounded-2xl border border-border bg-background/70 p-4 md:p-5">
-        <div class="flex items-center gap-3">
-          <span id="mp3CurrentTime" class="text-xs font-semibold text-content-muted w-12 text-right">00:00</span>
-          <div id="mp3TimelineWrap" class="relative flex-1 h-9 flex items-center">
-            <canvas id="mp3Waveform" class="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-8 w-full opacity-80"></canvas>
-            <input id="mp3Seek" type="range" min="0" max="100" value="0" class="w-full accent-action" />
-            <div id="mp3LoopBracket" class="hidden pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-2">
-              <div id="mp3LoopRangeFill" class="absolute top-0 h-2 rounded-full bg-brand/35"></div>
-              <button id="mp3LoopHandleA" type="button" class="mp3-loop-handle pointer-events-auto absolute top-1/2 -translate-x-1/2 -translate-y-1/2" aria-label="Bracket A">
-                <span class="mp3-loop-stick"></span>
-              </button>
-              <button id="mp3LoopHandleB" type="button" class="mp3-loop-handle pointer-events-auto absolute top-1/2 -translate-x-1/2 -translate-y-1/2" aria-label="Bracket B">
-                <span class="mp3-loop-stick"></span>
-              </button>
-            </div>
-          </div>
-          <span id="mp3Duration" class="text-xs font-semibold text-content-muted w-12">00:00</span>
-        </div>
-
-        <div class="mt-3 flex items-center justify-between gap-3 flex-wrap">
-          <label class="inline-flex items-center gap-2 text-sm font-semibold text-content">
-            <input id="chkLoopRange" type="checkbox" class="w-4 h-4 rounded border-border accent-action" />
-            Loop [A-B] (ensayo)
-          </label>
-          <p id="mp3LoopInfo" class="text-xs text-content-muted">[A] 00:00 - [B] 00:00</p>
-          <button id="btnClearLoopRange" type="button" class="px-3 py-1.5 rounded-xl border border-border bg-surface text-content text-xs font-bold hover:bg-background transition-colors">Limpiar loop</button>
-        </div>
-        <p id="mp3Status" class="mt-3 text-xs text-content-muted leading-tight">Activa el loop y arrastra los brackets A/B sobre la barra.</p>
-        <div class="mt-3 grid grid-cols-[auto_1fr_auto] items-center gap-2">
-          <button id="btnMp3Back5" type="button" class="h-11 px-3.5 rounded-xl border border-border bg-surface text-content text-sm font-bold hover:bg-background transition-colors" aria-label="Retroceder 5 segundos">-5s</button>
-          <button id="btnMp3PlayPause" type="button" class="h-11 w-full rounded-xl bg-action text-white inline-flex items-center justify-center gap-2 hover:bg-action/90 transition-colors shadow-lg" aria-label="Reproducir">
-            <svg id="mp3PlayIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-5 h-5 fill-current"><path d="M8 5v14l11-7z"></path></svg>
-            <span id="mp3PlayLabel" class="text-sm font-semibold tracking-wide">Reproducir</span>
-          </button>
-          <button id="btnMp3Forward5" type="button" class="h-11 px-3.5 rounded-xl border border-border bg-surface text-content text-sm font-bold hover:bg-background transition-colors" aria-label="Adelantar 5 segundos">+5s</button>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Modal Voces (Sistema Hibrido: links dinamicos por voz) -->
-<div id="vocesModal" class="fixed inset-0 z-[132] hidden" aria-hidden="true">
-  <div id="vocesBackdrop" class="absolute inset-0 bg-overlay/78 backdrop-blur-md opacity-0 transition-opacity duration-[900ms] [transition-timing-function:cubic-bezier(0.2,0.8,0.2,1)]"></div>
-  <div class="relative z-10 w-full h-full flex items-center justify-center p-3 md:p-5 overflow-y-auto">
-    <div id="vocesPanel" class="w-full max-w-lg bg-surface border border-border rounded-3xl shadow-2xl p-4 md:p-6 opacity-0 translate-y-4 transition-all duration-300 ease-out">
-      <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0">
-          <p class="text-[11px] uppercase tracking-[0.16em] font-bold text-content-muted">Voces</p>
-          <h3 id="vocesTitle" class="text-lg md:text-xl font-black text-content truncate">Recursos de voz</h3>
-          <p id="vocesArtist" class="text-sm text-content-muted truncate">Selecciona una pista</p>
-        </div>
-        <button id="btnVocesClose" type="button" class="w-9 h-9 rounded-xl border border-border bg-background text-content-muted hover:text-content hover:bg-surface transition-colors" aria-label="Cerrar modal de voces">✕</button>
-      </div>
-
-      <div class="mt-4 rounded-2xl border border-border bg-background/65 p-4">
-        <p class="text-xs text-content-muted mb-3">Elige la voz que quieres abrir.</p>
-        <div id="vocesOptions" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></div>
-      </div>
-    </div>
-  </div>
-</div>
 </Layout>
 
  <!-- Data bridge eliminado. Supabase renderiza directamente. -->
  <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
  
- <script>
- import { supabase } from '../lib/supabase';
+<script>
+import { supabase } from '../lib/supabase';
 
- document.addEventListener('DOMContentLoaded', async () => {
- // Puerta Guardiana de Seguridad RLS: Verificar Sesion Activa
- const { data: { session }, error: sessionError } = await supabase.auth.getSession();
- if (sessionError || !session) {
- // Expulsar solicitudes anonimas inmediatamente re-direccionando hacia el tunel de autenticacion
- /* window.location.replace('/login'); Movido a Middleware */
+ type RepertorioWindow = Window & {
+  __REPERTORIO_INIT_BOUND__?: boolean;
+  __REPERTORIO_BEFORE_SWAP_BOUND__?: boolean;
+  __REPERTORIO_CLEANUP__?: (() => void) | null;
+ };
+
+ const repertorioWindow = window as RepertorioWindow;
+
+ const cleanupRepertorioRuntime = () => {
+  if (typeof repertorioWindow.__REPERTORIO_CLEANUP__ === 'function') {
+   repertorioWindow.__REPERTORIO_CLEANUP__();
+  }
+  repertorioWindow.__REPERTORIO_CLEANUP__ = null;
+ };
+
+ async function initRepertorio() {
+ cleanupRepertorioRuntime();
+ if (!window.location.pathname.startsWith('/repertorio')) return;
+
+ const cleanupFns: Array<() => void> = [];
+ const addListener = (
+  target: EventTarget | null | undefined,
+  type: string,
+  handler: EventListenerOrEventListenerObject,
+  options: AddEventListenerOptions | boolean = false,
+ ) => {
+  if (!target) return;
+  target.addEventListener(type, handler as EventListener, options as AddEventListenerOptions);
+  cleanupFns.push(() => {
+   target.removeEventListener(type, handler as EventListener, options as EventListenerOptions);
+  });
+ };
+
+ let observer: IntersectionObserver | null = null;
+ let metronomoInterval: any = null;
+ repertorioWindow.__REPERTORIO_CLEANUP__ = () => {
+  cleanupFns.forEach((dispose) => {
+   try {
+    dispose();
+   } catch {
+    // no-op
+   }
+  });
+  cleanupFns.length = 0;
+
+  if (observer) {
+   observer.disconnect();
+   observer = null;
+  }
+
+  if (metronomoInterval) {
+   clearInterval(metronomoInterval);
+   metronomoInterval = null;
+  }
+
+  const anyAudio = document.querySelector('audio') as HTMLAudioElement | null;
+  if (anyAudio) {
+   try {
+    anyAudio.pause();
+   } catch {
+    // no-op
+   }
+  }
+
+  const modal = document.getElementById('vocesModal') as HTMLElement | null;
+  const backdrop = document.getElementById('vocesBackdrop') as HTMLElement | null;
+  const panel = document.getElementById('vocesPanel') as HTMLElement | null;
+  if (modal && !modal.classList.contains('hidden')) {
+   modal.classList.add('hidden');
+   modal.setAttribute('aria-hidden', 'true');
+   backdrop?.classList.add('opacity-0');
+   panel?.classList.add('opacity-0', 'translate-y-4');
+  }
+
+  if (document.body.dataset.vocesModalOpen === 'true') {
+   delete document.body.dataset.vocesModalOpen;
+   document.body.style.position = '';
+   document.body.style.top = '';
+   document.body.style.left = '';
+   document.body.style.right = '';
+   document.body.style.width = '';
+   document.body.style.overflow = '';
+   document.documentElement.style.overflow = '';
+  }
+ };
+
+// Puerta Guardiana de Seguridad RLS: Verificar Sesion Activa
+const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+if (sessionError || !session) {
+// Expulsar solicitudes anonimas inmediatamente re-direccionando hacia el tunel de autenticacion
+/* window.location.replace('/login'); Movido a Middleware */
  return;
  }
  
@@ -297,44 +285,6 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
  const setlistCount = document.getElementById('setlistCount');
  const btnCopySetlist = document.getElementById('btnCopySetlist');
  const btnClearSetlist = document.getElementById('btnClearSetlist');
-
-const mp3PlayerModal = document.getElementById('mp3PlayerModal') as HTMLElement;
-const mp3PlayerBackdrop = document.getElementById('mp3PlayerBackdrop') as HTMLElement;
-const mp3PlayerPanel = document.getElementById('mp3PlayerPanel') as HTMLElement;
-const btnMp3Close = document.getElementById('btnMp3Close') as HTMLButtonElement;
-const mp3Title = document.getElementById('mp3Title') as HTMLElement;
-const mp3Artist = document.getElementById('mp3Artist') as HTMLElement;
-const mp3Artwork = document.getElementById('mp3Artwork') as HTMLImageElement;
-const mp3ArtworkFallback = document.getElementById('mp3ArtworkFallback') as HTMLElement;
-const mp3LiveIndicator = document.getElementById('mp3LiveIndicator') as HTMLElement;
-const mp3Status = document.getElementById('mp3Status') as HTMLElement;
-const mp3Audio = document.getElementById('mp3Audio') as HTMLAudioElement;
-const btnMp3PlayPause = document.getElementById('btnMp3PlayPause') as HTMLButtonElement;
-const btnMp3Back5 = document.getElementById('btnMp3Back5') as HTMLButtonElement;
-const btnMp3Forward5 = document.getElementById('btnMp3Forward5') as HTMLButtonElement;
-const mp3PlayIcon = document.getElementById('mp3PlayIcon') as SVGElement;
-const mp3PlayLabel = document.getElementById('mp3PlayLabel') as HTMLElement;
-const mp3TimelineWrap = document.getElementById('mp3TimelineWrap') as HTMLElement;
-const mp3Waveform = document.getElementById('mp3Waveform') as HTMLCanvasElement;
-const mp3Seek = document.getElementById('mp3Seek') as HTMLInputElement;
- const mp3CurrentTime = document.getElementById('mp3CurrentTime') as HTMLElement;
- const mp3Duration = document.getElementById('mp3Duration') as HTMLElement;
- const mp3LoopBracket = document.getElementById('mp3LoopBracket') as HTMLElement;
- const mp3LoopRangeFill = document.getElementById('mp3LoopRangeFill') as HTMLElement;
- const mp3LoopHandleA = document.getElementById('mp3LoopHandleA') as HTMLButtonElement;
- const mp3LoopHandleB = document.getElementById('mp3LoopHandleB') as HTMLButtonElement;
- const btnClearLoopRange = document.getElementById('btnClearLoopRange') as HTMLButtonElement;
- const chkLoopRange = document.getElementById('chkLoopRange') as HTMLInputElement;
- const mp3LoopInfo = document.getElementById('mp3LoopInfo') as HTMLElement;
- const vocesModal = document.getElementById('vocesModal') as HTMLElement;
- const vocesBackdrop = document.getElementById('vocesBackdrop') as HTMLElement;
- const vocesPanel = document.getElementById('vocesPanel') as HTMLElement;
- const vocesTitle = document.getElementById('vocesTitle') as HTMLElement;
- const vocesArtist = document.getElementById('vocesArtist') as HTMLElement;
- const vocesOptions = document.getElementById('vocesOptions') as HTMLElement;
- const btnVocesClose = document.getElementById('btnVocesClose') as HTMLButtonElement;
-
- const MODAL_PREMIUM_MS = 900;
  
  const btnViewGrid = document.getElementById('btnViewGrid');
  const btnViewList = document.getElementById('btnViewList');
@@ -392,14 +342,14 @@ const mp3Seek = document.getElementById('mp3Seek') as HTMLInputElement;
  void document.body.offsetHeight; // Fuerza un reflow para corregir glitches de repintado en iOS
  }
 
- if(btnViewGrid) btnViewGrid.addEventListener('click', setGridView);
- if(btnViewList) btnViewList.addEventListener('click', setListView);
+ if(btnViewGrid) addListener(btnViewGrid, 'click', setGridView);
+ if(btnViewList) addListener(btnViewList, 'click', setListView);
 
  // Accordion logic for list view
  cards.forEach(card => {
  const header = card.querySelector('.card-header');
  if (header) {
- header.addEventListener('click', (e) => {
+ addListener(header, 'click', (e) => {
  // Prevent toggling if user clicked the Add to Setlist button
  if ((e.target as Element).closest('.btn-add-setlist')) return;
  
@@ -441,6 +391,36 @@ const mp3Seek = document.getElementById('mp3Seek') as HTMLInputElement;
  function updatePlaylistCount() {
  if (playlistCountEl) playlistCountEl.textContent = selectedSongs.length.toString();
  }
+
+ const dispatchProPlayerEvent = (payload: { url: string; title?: string; artist?: string; isDirectPlayable?: boolean; autoPlay?: boolean }) => {
+  const url = (payload?.url || '').trim();
+  if (!url) return;
+  const proPlayer = (window as any).__REDIL_PRO_PLAYER__;
+  if (proPlayer && typeof proPlayer.open === 'function') {
+   proPlayer.open({
+    url,
+    title: payload.title,
+    artist: payload.artist,
+    autoPlay: payload.autoPlay !== false,
+   });
+   return;
+  }
+  window.dispatchEvent(new CustomEvent('play-pro-audio', { detail: payload }));
+ };
+
+ // Listener global para abrir modal MP3 desde la tarjeta (debe existir en todos los modos, incluido setlist)
+ addListener(document, 'click', (e) => {
+ const mp3Button = (e.target as Element).closest('.btn-open-mp3') as HTMLElement | null;
+ if (!mp3Button) return;
+
+ e.preventDefault();
+ e.stopPropagation();
+
+ const mp3Url = mp3Button.getAttribute('data-mp3') || '';
+ const songTitle = mp3Button.getAttribute('data-title') || mp3Button.getAttribute('data-cancion') || 'Canción';
+ const songArtist = mp3Button.getAttribute('data-artist') || '';
+ dispatchProPlayerEvent({ url: mp3Url, title: songTitle, artist: songArtist, autoPlay: true });
+ }, { capture: true });
 
  // =============================================
  // BLOQUE 1: MODO SETLIST DE LA SEMANA (Solo ver, no buscar ni scrollear)
@@ -552,9 +532,9 @@ if (isSelectionMode) {
  })();
 
  // Listeners de Guardar y Cancelar Playlist
- document.getElementById('btn-cancel-playlist')?.addEventListener('click', () => { window.location.href = '/programacion'; });
+ addListener(document.getElementById('btn-cancel-playlist'), 'click', () => { window.location.href = '/programacion'; });
  
- document.getElementById('btn-save-playlist')?.addEventListener('click', async () => {
+ addListener(document.getElementById('btn-save-playlist'), 'click', async () => {
  const btn = document.getElementById('btn-save-playlist');
  btn.disabled = true;
  btn.innerHTML = 'Guardando...';
@@ -585,7 +565,7 @@ if (isSelectionMode) {
  updateSetlistUI();
 
  if (btnCopySetlist) {
- btnCopySetlist.addEventListener('click', () => {
+ addListener(btnCopySetlist, 'click', () => {
  const base64Str = btoa(encodeURIComponent(JSON.stringify(setlist)));
  const url = window.location.origin + window.location.pathname + '?setlist=' + encodeURIComponent(base64Str);
  navigator.clipboard.writeText(url).then(() => {
@@ -596,7 +576,7 @@ if (isSelectionMode) {
  }
 
  if (btnClearSetlist) {
- btnClearSetlist.addEventListener('click', () => {
+ addListener(btnClearSetlist, 'click', () => {
  setlist = [];
  localStorage.removeItem('setlist');
  updateSetlistUI();
@@ -605,68 +585,8 @@ if (isSelectionMode) {
  }
  }
 
- // Listener global para abrir modal MP3 desde la tarjeta
- document.addEventListener('click', (e) => {
- const mp3Button = (e.target as Element).closest('.btn-open-mp3') as HTMLElement | null;
- if (!mp3Button) return;
-
- e.preventDefault();
- e.stopPropagation();
-
- const mp3Url = mp3Button.getAttribute('data-mp3') || '';
- const songTitle = mp3Button.getAttribute('data-title') || mp3Button.getAttribute('data-cancion') || 'Canción';
- const songArtist = mp3Button.getAttribute('data-artist') || '';
- openMp3Modal(songTitle, mp3Url, songArtist);
- }, true);
-
- // Listener global para abrir modal Voces (JSON + Legacy URL)
- document.addEventListener('click', (e) => {
- const vocesButton = (e.target as Element).closest('.btn-open-voces') as HTMLElement | null;
- if (!vocesButton) return;
-
- e.preventDefault();
- e.stopPropagation();
-
- const rawVoces = vocesButton.getAttribute('data-voces') || '';
- const songTitle = vocesButton.getAttribute('data-title') || vocesButton.getAttribute('data-cancion') || 'Recursos de voz';
- const songArtist = vocesButton.getAttribute('data-artist') || '';
- const value = (rawVoces || '').trim();
-
- if (!value) {
-  openVocesModal(songTitle, songArtist, []);
-  return;
- }
-
- // Legacy: URL plana de carpeta (sin JSON)
- if (value.startsWith('http') && !value.startsWith('[')) {
-  openVocesModal(songTitle, songArtist, [], value);
-  return;
- }
-
- // Nuevo formato: JSON stringificado
- if (value.startsWith('[')) {
-  try {
-   const parsed = JSON.parse(value);
-   if (Array.isArray(parsed)) {
-    openVocesModal(songTitle, songArtist, parsed as VoiceEntry[]);
-    return;
-   }
-   console.error('El JSON de voces no es un array:', parsed);
-   openVocesModal(songTitle, songArtist, []);
-   return;
-  } catch (error) {
-   console.error('Error al parsear voces:', error, 'Raw Value:', rawVoces);
-   openVocesModal(songTitle, songArtist, []);
-   return;
-  }
- }
-
- console.error('Formato de voces no reconocido:', rawVoces);
- openVocesModal(songTitle, songArtist, []);
- }, true);
-
  // Listener Universal para el boton + de las tarjetas
- document.addEventListener('click', (e) => {
+ addListener(document, 'click', (e) => {
  const btn = e.target.closest('.btn-add-setlist');
  if (!btn) return;
  e.preventDefault();
@@ -705,7 +625,7 @@ if (isSelectionMode) {
  }
  }
  }
- }, true);
+ }, { capture: true });
 
  // =============================================
  // BLOQUE 3: INFINITE SCROLL & BUSQUEDA (COMPARTIDO MODO NORMAL Y PLAYLIST)
@@ -749,7 +669,7 @@ if (isSelectionMode) {
  });
  }
  
- const observer = new IntersectionObserver((entries) => {
+ observer = new IntersectionObserver((entries) => {
  if (entries[0].isIntersecting) cargarMasCanciones();
  }, { root: null, rootMargin: '150px', threshold: 0 });
  
@@ -787,697 +707,6 @@ const formatTime = (seconds: number) => {
    const sec = total % 60;
    return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
  };
-
- type VoiceEntry = {
-  url: string;
-  label?: string;
-  nombre?: string;
-  name?: string;
- };
-
- const animateModalOpen = (modal: HTMLElement, backdrop: HTMLElement, panel: HTMLElement) => {
-  if (!modal || !backdrop || !panel) return;
-  modal.classList.remove('hidden');
-  modal.setAttribute('aria-hidden', 'false');
-  backdrop.classList.add('opacity-0');
-  panel.classList.add('opacity-0', 'translate-y-4');
-
-  requestAnimationFrame(() => {
-   requestAnimationFrame(() => {
-    backdrop.classList.remove('opacity-0');
-    panel.classList.remove('opacity-0', 'translate-y-4');
-   });
-  });
- };
-
- const animateModalClose = (
-  modal: HTMLElement,
-  backdrop: HTMLElement,
-  panel: HTMLElement,
-  onAfterClose: () => void = () => {},
- ) => {
-  if (!modal || !backdrop || !panel || modal.classList.contains('hidden')) {
-   onAfterClose();
-   return;
-  }
-
-  backdrop.classList.add('opacity-0');
-  panel.classList.add('opacity-0', 'translate-y-4');
-  window.setTimeout(() => {
-   modal.classList.add('hidden');
-   modal.setAttribute('aria-hidden', 'true');
-   onAfterClose();
-  }, MODAL_PREMIUM_MS);
- };
-
- const normalizeExternalUrl = (rawUrl: string) => {
-  if (!rawUrl) return '';
-  let normalized = rawUrl.trim();
-  if (!normalized) return '';
-
- if (normalized.startsWith('www.')) {
-   normalized = `https://${normalized}`;
-  } else if (normalized.startsWith('//')) {
-   normalized = `https:${normalized}`;
-  } else if (/^\/(uc|open|file)\b/i.test(normalized)) {
-   normalized = `https://drive.google.com${normalized}`;
-  }
-
-  try {
-   const parsed = new URL(normalized, window.location.origin);
-   return parsed.href;
-  } catch {
-   return '';
-  }
- };
-
-const toPlayableMp3Url = (rawUrl: string) => {
-   if (!rawUrl) return '';
-   const normalized = rawUrl.trim();
-   const isDrive =
-     normalized.includes('drive.google.com') ||
-     normalized.includes('docs.google.com') ||
-     normalized.includes('drive.usercontent.google.com');
-
-  if (!isDrive) return normalized;
-  return `/api/mp3-proxy?src=${encodeURIComponent(toDriveDirectDownloadUrl(normalized))}`;
-};
-
-const extractDriveFileId = (rawUrl: string) => {
-  if (!rawUrl) return '';
-  const normalized = rawUrl.trim();
-  const byFilePath = normalized.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (byFilePath?.[1]) return byFilePath[1];
-  const byOpenParam = normalized.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-  if (byOpenParam?.[1]) return byOpenParam[1];
-  const byUcPath = normalized.match(/\/d\/([a-zA-Z0-9_-]+)/);
-  return byUcPath?.[1] || '';
-};
-
-const toDriveDirectDownloadUrl = (rawUrl: string) => {
-  const fileId = extractDriveFileId(rawUrl);
-  if (!fileId) return rawUrl;
-  return `https://drive.google.com/uc?export=download&id=${fileId}`;
-};
-
-const getDriveStreamUrl = (rawUrl: string) => {
-  const fileId = extractDriveFileId(rawUrl);
-  if (!fileId) return rawUrl;
-  return `https://docs.google.com/uc?export=open&id=${fileId}`;
-};
-
-const isDriveAudioUrl = (rawUrl: string) => {
-  if (!rawUrl) return false;
-  const value = rawUrl.toLowerCase();
-  return value.includes('drive.google.com') || value.includes('docs.google.com') || value.includes('drive.usercontent.google.com');
-};
-
-const buildAudioSourceCandidates = (rawUrl: string, isDirectPlayable = false) => {
-  const normalized = normalizeExternalUrl(rawUrl);
-  if (!normalized) return [] as string[];
-
-  if (!isDriveAudioUrl(normalized)) return [normalized];
-
-  const directDownload = toDriveDirectDownloadUrl(normalized);
-  const streamUrl = getDriveStreamUrl(normalized);
-  const proxyUrl = `/api/mp3-proxy?src=${encodeURIComponent(directDownload)}`;
-
-  const candidates = isDirectPlayable
-    ? [proxyUrl, streamUrl, directDownload, normalized]
-    : [toPlayableMp3Url(normalized), proxyUrl, streamUrl, directDownload, normalized];
-
-  return [...new Set(candidates.filter(Boolean))];
-};
-
-const setMp3Source = (index: number) => {
-  const nextUrl = mp3SourceCandidates[index] || '';
-  if (!nextUrl) return '';
-  mp3Audio.src = nextUrl;
-  mp3Audio.load();
-  return nextUrl;
-};
-
-const tryNextMp3Source = (autoPlay = false) => {
-  if (mp3SourceIndex + 1 >= mp3SourceCandidates.length) return false;
-  mp3SourceIndex += 1;
-  setMp3Source(mp3SourceIndex);
-  mp3Status.textContent = `Probando fuente alterna (${mp3SourceIndex + 1}/${mp3SourceCandidates.length})...`;
-  if (autoPlay) {
-    void mp3Audio.play().catch(() => {});
-  }
-  return true;
-};
-
-const setArtworkFallback = (title = '', artist = '') => {
-  if (!mp3Artwork || !mp3ArtworkFallback) return;
-  mp3Artwork.classList.add('hidden');
-  mp3Artwork.removeAttribute('src');
-  mp3Artwork.alt = '';
-  mp3ArtworkFallback.classList.remove('hidden');
-  mp3ArtworkFallback.setAttribute('aria-label', `${title || 'Canción'} ${artist || ''}`.trim());
-};
-
-const setArtworkFromSource = (rawUrl: string, title: string, artist: string) => {
-  const fileId = extractDriveFileId(rawUrl);
-  if (!fileId || !mp3Artwork || !mp3ArtworkFallback) {
-    setArtworkFallback(title, artist);
-    return;
-  }
-
-  const artworkUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w512`;
-  mp3Artwork.alt = `Portada de ${title || 'canción'}${artist ? ` - ${artist}` : ''}`;
-  mp3Artwork.onload = () => {
-    mp3Artwork.classList.remove('hidden');
-    mp3ArtworkFallback.classList.add('hidden');
-  };
-  mp3Artwork.onerror = () => {
-    setArtworkFallback(title, artist);
-  };
-  mp3Artwork.src = artworkUrl;
-};
-
- let mp3TotalDuration = 0;
- let loopStartSec = 0;
- let loopEndSec = 0;
- let isSeekingAudio = false;
- let draggingLoopHandle: 'A' | 'B' | null = null;
- let mp3WaveRaf = 0;
- let mp3WaveCtx: AudioContext | null = null;
- let mp3WaveSource: MediaElementAudioSourceNode | null = null;
- let mp3WaveAnalyser: AnalyserNode | null = null;
- let mp3WaveData: Uint8Array | null = null;
- let mp3LockedScrollY = 0;
- let mp3SourceCandidates: string[] = [];
- let mp3SourceIndex = 0;
- let mp3RequestedPlay = false;
-
- const lockBackgroundScroll = () => {
-   if (document.body.dataset.mp3ModalOpen === 'true') return;
-   mp3LockedScrollY = window.scrollY || window.pageYOffset || 0;
-   document.body.dataset.mp3ModalOpen = 'true';
-   document.body.style.position = 'fixed';
-   document.body.style.top = `-${mp3LockedScrollY}px`;
-   document.body.style.left = '0';
-   document.body.style.right = '0';
-   document.body.style.width = '100%';
-   document.body.style.overflow = 'hidden';
-   document.documentElement.style.overflow = 'hidden';
- };
-
- const unlockBackgroundScroll = () => {
-   if (document.body.dataset.mp3ModalOpen !== 'true') return;
-   delete document.body.dataset.mp3ModalOpen;
-   document.body.style.position = '';
-   document.body.style.top = '';
-   document.body.style.left = '';
-   document.body.style.right = '';
-   document.body.style.width = '';
-   document.body.style.overflow = '';
-   document.documentElement.style.overflow = '';
-   window.scrollTo({ top: mp3LockedScrollY, behavior: 'auto' });
- };
-
- const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-
- const setLoopUiVisibility = () => {
-   const active = !!chkLoopRange?.checked;
-   mp3LoopBracket?.classList.toggle('hidden', !active);
- };
-
- const secondsFromPointer = (clientX: number) => {
-   const rect = mp3TimelineWrap.getBoundingClientRect();
-   if (!rect.width || !mp3TotalDuration) return 0;
-   const ratio = clamp((clientX - rect.left) / rect.width, 0, 1);
-   return ratio * mp3TotalDuration;
- };
-
- const syncLoopUi = () => {
-   const safeDuration = mp3TotalDuration || 1;
-   const startPct = clamp((loopStartSec / safeDuration) * 100, 0, 100);
-   const endPct = clamp((loopEndSec / safeDuration) * 100, 0, 100);
-
-   mp3LoopInfo.textContent = `[A] ${formatTime(loopStartSec)} - [B] ${formatTime(loopEndSec)}`;
-
-   if (mp3LoopRangeFill) {
-     mp3LoopRangeFill.style.left = `${startPct}%`;
-     mp3LoopRangeFill.style.width = `${Math.max(0, endPct - startPct)}%`;
-   }
-   if (mp3LoopHandleA) mp3LoopHandleA.style.left = `${startPct}%`;
-   if (mp3LoopHandleB) mp3LoopHandleB.style.left = `${endPct}%`;
-  };
-
- const stopWaveform = () => {
-   if (mp3WaveRaf) {
-     cancelAnimationFrame(mp3WaveRaf);
-     mp3WaveRaf = 0;
-   }
- };
-
- const setupWaveform = async () => {
-   if (mp3WaveAnalyser && mp3WaveData) return;
-   const Ctx = window.AudioContext || (window as any).webkitAudioContext;
-   if (!Ctx) return;
-
-   mp3WaveCtx = mp3WaveCtx || new Ctx();
-   if (!mp3WaveSource) {
-     mp3WaveSource = mp3WaveCtx.createMediaElementSource(mp3Audio);
-   }
-   mp3WaveAnalyser = mp3WaveAnalyser || mp3WaveCtx.createAnalyser();
-   mp3WaveAnalyser.fftSize = 1024;
-   mp3WaveData = new Uint8Array(mp3WaveAnalyser.fftSize);
-
-   try { mp3WaveSource.disconnect(); } catch {}
-   try { mp3WaveAnalyser.disconnect(); } catch {}
-   mp3WaveSource.connect(mp3WaveAnalyser);
-   mp3WaveAnalyser.connect(mp3WaveCtx.destination);
- };
-
- const drawWaveformFrame = () => {
-   if (!mp3Waveform || !mp3WaveAnalyser || !mp3WaveData) return;
-   const rect = mp3Waveform.getBoundingClientRect();
-   if (!rect.width || !rect.height) return;
-
-   const dpr = window.devicePixelRatio || 1;
-   const targetW = Math.floor(rect.width * dpr);
-   const targetH = Math.floor(rect.height * dpr);
-   if (mp3Waveform.width !== targetW || mp3Waveform.height !== targetH) {
-     mp3Waveform.width = targetW;
-     mp3Waveform.height = targetH;
-   }
-
-   const ctx = mp3Waveform.getContext('2d');
-   if (!ctx) return;
-   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-   ctx.clearRect(0, 0, rect.width, rect.height);
-
-   mp3WaveAnalyser.getByteTimeDomainData(mp3WaveData);
-   const midY = rect.height / 2;
-   const amp = rect.height * 0.34;
-   const step = rect.width / (mp3WaveData.length - 1);
-
-   ctx.lineWidth = 1.25;
-   ctx.strokeStyle = mp3Audio.paused
-     ? 'rgba(96, 165, 250, 0.35)'
-     : 'rgba(110, 231, 183, 0.72)';
-   ctx.beginPath();
-
-   for (let i = 0; i < mp3WaveData.length; i += 1) {
-     const x = i * step;
-     const y = midY + ((mp3WaveData[i] - 128) / 128) * amp;
-     if (i === 0) ctx.moveTo(x, y);
-     else ctx.lineTo(x, y);
-   }
-   ctx.stroke();
- };
-
- const runWaveform = () => {
-   stopWaveform();
-   const tick = () => {
-     drawWaveformFrame();
-     if (!mp3Audio.paused && !mp3Audio.ended) {
-       mp3WaveRaf = requestAnimationFrame(tick);
-     } else {
-       mp3WaveRaf = 0;
-     }
-   };
-   tick();
- };
-
- const syncPlaybackWaveform = () => {
-   if (!mp3WaveAnalyser) return;
-   drawWaveformFrame();
- };
-
-const resetLoopRange = () => {
-  loopStartSec = 0;
-  loopEndSec = mp3TotalDuration;
-  syncLoopUi();
-  syncPlaybackWaveform();
- };
-
-const setLiveIndicatorState = (isPlaying: boolean) => {
-  if (!mp3LiveIndicator) return;
-  mp3LiveIndicator.classList.toggle('mp3-live-on', isPlaying);
-};
-
-const setPlayButtonState = (isPlaying: boolean) => {
-  if (!btnMp3PlayPause || !mp3PlayIcon || !mp3PlayLabel) return;
-  mp3PlayerModal.classList.toggle('mp3-playing', isPlaying);
-  setLiveIndicatorState(isPlaying);
-  if (isPlaying) {
-    mp3PlayIcon.innerHTML = '<path d="M8 5h3v14H8zM13 5h3v14h-3z"></path>';
-    mp3PlayLabel.textContent = 'Pausar';
-    btnMp3PlayPause.setAttribute('aria-label', 'Pausar');
-    btnMp3PlayPause.title = 'Pausar';
-  } else {
-    mp3PlayIcon.innerHTML = '<path d="M8 5v14l11-7z"></path>';
-    mp3PlayLabel.textContent = 'Reproducir';
-    btnMp3PlayPause.setAttribute('aria-label', 'Reproducir');
-    btnMp3PlayPause.title = 'Reproducir';
-  }
-   if (isPlaying) runWaveform();
-   else drawWaveformFrame();
- };
-
-const playAudio = (rawUrl: string, voiceName = '') => {
-  const normalized = normalizeExternalUrl(rawUrl);
-  if (!normalized) return;
-
-  const modalSongTitle = vocesTitle?.textContent?.trim() || 'Recursos de voz';
-  const modalSongArtist = vocesArtist?.textContent?.trim() || '';
-  const finalTitle = voiceName ? `${modalSongTitle} · ${voiceName}` : modalSongTitle;
-  const finalArtist = modalSongArtist;
-
-  closeVocesModal(() => {
-   openMp3Modal(finalTitle, normalized, finalArtist, true);
-  });
-};
-
-const openVocesModal = (title: string, artist: string, entries: VoiceEntry[], legacyUrl = '') => {
-  if (!vocesModal || !vocesBackdrop || !vocesPanel || !vocesOptions) return;
-  vocesTitle.textContent = title || 'Recursos de voz';
-  vocesArtist.textContent = artist?.trim() || 'Selecciona una pista';
-  vocesOptions.innerHTML = '';
-
-  const getVoiceColor = (label: string) => {
-   const text = (label || '').toLowerCase();
-   if (text.includes('guia') || text.includes('guía')) return '#2563EB';
-   if (text.includes('segunda')) return '#DC2626';
-   if (text.includes('tercera')) return '#16A34A';
-   if (text.includes('quinta')) return '#CA8A04';
-   if (text.includes('octava')) return '#EA580C';
-   if (text.includes('todas') || text.includes('tres voces')) return 'linear-gradient(135deg, #2563EB, #9333EA)';
-   if (text.includes('pista')) return '#0891B2';
-   return '#64748B';
-  };
-
-  if (legacyUrl) {
-   const safeLegacyUrl = normalizeExternalUrl(legacyUrl);
-   const legacyCard = document.createElement('div');
-   legacyCard.className = 'col-span-full rounded-xl border border-border bg-surface px-3 py-3';
-   legacyCard.innerHTML = `
-    <p class="text-sm font-semibold text-content">Pistas no disponibles aún</p>
-    <p class="mt-1 text-xs text-content-muted">Esta canción aún usa el formato legacy.</p>
-   `;
-
-   if (safeLegacyUrl) {
-    const link = document.createElement('a');
-    link.href = safeLegacyUrl;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    link.className = 'mt-3 inline-flex items-center justify-center rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold text-content hover:bg-surface transition-colors';
-    link.textContent = 'Abrir carpeta de Drive';
-    legacyCard.appendChild(link);
-   }
-
-   vocesOptions.appendChild(legacyCard);
-   lockBackgroundScroll();
-   animateModalOpen(vocesModal, vocesBackdrop, vocesPanel);
-   return;
-  }
-
-  const validEntries = (entries || [])
-   .map((entry, index) => {
-    const labelRaw = entry?.label || entry?.nombre || entry?.name || 'Pista';
-    const label = String(labelRaw).trim() || `Pista ${index + 1}`;
-    const url = normalizeExternalUrl(typeof entry?.url === 'string' ? entry.url : '');
-    if (!url) return null;
-    return { label, url };
-   })
-   .filter(Boolean) as Array<{ label: string; url: string }>;
-
-  if (!validEntries.length) {
-   const emptyCard = document.createElement('div');
-   emptyCard.className = 'col-span-full rounded-xl border border-border bg-surface px-3 py-3';
-   emptyCard.innerHTML = `
-    <p class="text-sm font-semibold text-content">Pistas no disponibles aún</p>
-    <p class="mt-1 text-xs text-content-muted">No encontramos pistas válidas para reproducir.</p>
-   `;
-   vocesOptions.appendChild(emptyCard);
-   lockBackgroundScroll();
-   animateModalOpen(vocesModal, vocesBackdrop, vocesPanel);
-   return;
-  }
-
-  validEntries.forEach((entry, index) => {
-   const button = document.createElement('button');
-   const labelText = entry.label || `Pista ${index + 1}`;
-   const color = getVoiceColor(labelText);
-   button.type = 'button';
-   button.dataset.url = entry.url;
-   button.dataset.voice = labelText;
-   button.className =
-    'group inline-flex items-center justify-between gap-2 rounded-xl border border-border bg-surface px-3 py-2.5 text-sm font-semibold text-content hover:bg-background hover:border-brand/40 transition-colors';
-
-   const left = document.createElement('span');
-   left.className = 'min-w-0 inline-flex items-center gap-2';
-
-   const swatch = document.createElement('span');
-   swatch.style.display = 'inline-block';
-   swatch.style.width = '12px';
-   swatch.style.height = '12px';
-   swatch.style.borderRadius = '3px';
-   swatch.style.background = color;
-   swatch.style.flexShrink = '0';
-
-   const labelNode = document.createElement('span');
-   labelNode.className = 'truncate';
-   labelNode.textContent = labelText;
-
-   const right = document.createElement('span');
-   right.className = 'text-content-muted group-hover:text-brand transition-colors shrink-0';
-   right.textContent = 'Reproducir';
-
-   left.appendChild(swatch);
-   left.appendChild(labelNode);
-   button.appendChild(left);
-   button.appendChild(right);
-
-   button.addEventListener('click', (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const url = button.dataset.url || '';
-    const voice = button.dataset.voice || '';
-    playAudio(url, voice);
-   });
-   vocesOptions.appendChild(button);
-  });
-
-  lockBackgroundScroll();
-  animateModalOpen(vocesModal, vocesBackdrop, vocesPanel);
- };
-
-const closeVocesModal = (onAfterClose?: (() => void) | Event) => {
-  const runAfterClose = () => {
-   if (typeof onAfterClose === 'function') onAfterClose();
-  };
-  if (!vocesModal || vocesModal.classList.contains('hidden')) {
-   runAfterClose();
-   return;
-  }
-  animateModalClose(vocesModal, vocesBackdrop, vocesPanel, () => {
-   unlockBackgroundScroll();
-   runAfterClose();
-  });
-};
-
-const closeMp3Modal = () => {
-  mp3Audio.pause();
-  mp3Audio.removeAttribute('src');
-  mp3Audio.load();
-  mp3SourceCandidates = [];
-  mp3SourceIndex = 0;
-  mp3RequestedPlay = false;
-  setArtworkFallback();
-  setPlayButtonState(false);
-  stopWaveform();
-  animateModalClose(mp3PlayerModal, mp3PlayerBackdrop, mp3PlayerPanel, () => {
-   unlockBackgroundScroll();
-  });
-  };
-
- const openMp3Modal = (title: string, rawUrl: string, artist: string, isDirectPlayable = false) => {
-   const playableCandidates = buildAudioSourceCandidates(rawUrl, isDirectPlayable);
-   if (!playableCandidates.length) return;
-   mp3SourceCandidates = playableCandidates;
-   mp3SourceIndex = 0;
-   mp3RequestedPlay = false;
-
-  mp3Title.textContent = title || 'Canción';
-  mp3Artist.textContent = artist?.trim() || 'Artista no especificado';
-  setArtworkFromSource(rawUrl, title, artist || '');
-  mp3Status.textContent = 'Cargando audio...';
-  setPlayButtonState(false);
-   mp3Seek.value = '0';
-   mp3CurrentTime.textContent = '00:00';
-   mp3Duration.textContent = '00:00';
-   chkLoopRange.checked = false;
-  setLoopUiVisibility();
-  syncPlaybackWaveform();
-   lockBackgroundScroll();
-   animateModalOpen(mp3PlayerModal, mp3PlayerBackdrop, mp3PlayerPanel);
-
-   setMp3Source(0);
-  };
-
- mp3Audio.addEventListener('loadedmetadata', () => {
-   mp3TotalDuration = Number.isFinite(mp3Audio.duration) ? mp3Audio.duration : 0;
-   mp3Seek.min = '0';
-   mp3Seek.max = String(mp3TotalDuration || 1);
-   mp3Duration.textContent = formatTime(mp3TotalDuration);
-   resetLoopRange();
-   mp3Status.textContent = 'Activa el loop y arrastra los brackets A/B sobre la barra.';
-   void setupWaveform().then(() => drawWaveformFrame());
-  });
-
-  mp3Audio.addEventListener('timeupdate', () => {
-    if (!isSeekingAudio) mp3Seek.value = String(mp3Audio.currentTime || 0);
-    mp3CurrentTime.textContent = formatTime(mp3Audio.currentTime || 0);
-   syncPlaybackWaveform();
-
-    if (chkLoopRange.checked && loopEndSec > loopStartSec + 0.15 && mp3Audio.currentTime >= loopEndSec) {
-      mp3Audio.currentTime = loopStartSec;
-     syncPlaybackWaveform();
-    }
-  });
-
- mp3Audio.addEventListener('play', () => { mp3RequestedPlay = true; setPlayButtonState(true); });
- mp3Audio.addEventListener('pause', () => { setPlayButtonState(false); });
- mp3Audio.addEventListener('ended', () => { mp3RequestedPlay = false; setPlayButtonState(false); });
- mp3Audio.addEventListener('error', () => {
-   if (tryNextMp3Source(mp3RequestedPlay)) return;
-   mp3RequestedPlay = false;
-   mp3Status.textContent = 'El enlace no se pudo reproducir. Verifica permisos o formato del archivo.';
- });
-
-  btnMp3PlayPause?.addEventListener('click', async () => {
-    try {
-     if (mp3Audio.paused) {
-        mp3RequestedPlay = true;
-        await setupWaveform();
-        if (mp3WaveCtx?.state === 'suspended') await mp3WaveCtx.resume();
-        await mp3Audio.play();
-      } else {
-        mp3RequestedPlay = false;
-        mp3Audio.pause();
-      }
-   } catch (error) {
-     if (error instanceof DOMException && error.name === 'NotAllowedError') {
-       mp3Status.textContent = 'El navegador bloqueó la reproducción. Toca Reproducir nuevamente.';
-       return;
-      }
-      if (error instanceof DOMException && error.name === 'NotSupportedError') {
-        if (tryNextMp3Source(true)) return;
-        mp3RequestedPlay = false;
-        mp3Status.textContent = 'El enlace no se pudo reproducir. Revisa el formato o permisos del MP3.';
-        return;
-      }
-      mp3RequestedPlay = false;
-      mp3Status.textContent = 'No se pudo iniciar el audio. Inténtalo de nuevo.';
-   }
- });
-
- mp3Seek?.addEventListener('input', () => {
-   isSeekingAudio = true;
-   mp3CurrentTime.textContent = formatTime(Number(mp3Seek.value || 0));
- });
- mp3Seek?.addEventListener('change', () => {
-   mp3Audio.currentTime = Number(mp3Seek.value || 0);
-   syncPlaybackWaveform();
-   isSeekingAudio = false;
-  });
-
- chkLoopRange?.addEventListener('change', () => {
-   setLoopUiVisibility();
-   syncLoopUi();
- });
-
- btnClearLoopRange?.addEventListener('click', () => {
-   resetLoopRange();
-  });
-
-const updateLoopHandlePosition = (which: 'A' | 'B', clientX: number) => {
-   if (!mp3TotalDuration) return;
-   const nextSec = secondsFromPointer(clientX);
-
-   if (which === 'A') {
-     loopStartSec = clamp(nextSec, 0, Math.max(0, loopEndSec - 0.1));
-   } else {
-     loopEndSec = clamp(nextSec, Math.min(mp3TotalDuration, loopStartSec + 0.1), mp3TotalDuration);
-   }
-
-   const current = Number.isFinite(mp3Audio.currentTime) ? mp3Audio.currentTime : 0;
-   if (which === 'A' && loopStartSec > current) {
-     mp3Audio.currentTime = loopStartSec;
-     if (!isSeekingAudio) mp3Seek.value = String(loopStartSec);
-     mp3CurrentTime.textContent = formatTime(loopStartSec);
-   } else if (which === 'B' && loopEndSec < current) {
-     const loopSafeStart = clamp(loopStartSec, 0, mp3TotalDuration);
-     mp3Audio.currentTime = loopSafeStart;
-     if (!isSeekingAudio) mp3Seek.value = String(loopSafeStart);
-     mp3CurrentTime.textContent = formatTime(loopSafeStart);
-   }
-
-    syncLoopUi();
-    syncPlaybackWaveform();
-  };
-
- const onLoopPointerMove = (event: PointerEvent) => {
-   if (!draggingLoopHandle || !chkLoopRange.checked) return;
-   event.preventDefault();
-   updateLoopHandlePosition(draggingLoopHandle, event.clientX);
- };
-
- const onLoopPointerUp = () => {
-   draggingLoopHandle = null;
-   window.removeEventListener('pointermove', onLoopPointerMove);
-   window.removeEventListener('pointerup', onLoopPointerUp);
- };
-
- const startLoopDrag = (which: 'A' | 'B', event: PointerEvent) => {
-   if (!chkLoopRange.checked) return;
-   draggingLoopHandle = which;
-   updateLoopHandlePosition(which, event.clientX);
-   window.addEventListener('pointermove', onLoopPointerMove, { passive: false });
-   window.addEventListener('pointerup', onLoopPointerUp);
- };
-
- mp3LoopHandleA?.addEventListener('pointerdown', (event) => startLoopDrag('A', event));
- mp3LoopHandleB?.addEventListener('pointerdown', (event) => startLoopDrag('B', event));
-
-  btnMp3Close?.addEventListener('click', closeMp3Modal);
-  btnMp3Back5?.addEventListener('click', () => {
-    if (!Number.isFinite(mp3Audio.currentTime)) return;
-    const next = Math.max(0, (mp3Audio.currentTime || 0) - 5);
-    mp3Audio.currentTime = next;
-    if (!isSeekingAudio) mp3Seek.value = String(next);
-    mp3CurrentTime.textContent = formatTime(next);
-    syncPlaybackWaveform();
-  });
-  btnMp3Forward5?.addEventListener('click', () => {
-    const maxDuration = Number.isFinite(mp3TotalDuration) && mp3TotalDuration > 0
-      ? mp3TotalDuration
-      : Number.isFinite(mp3Audio.duration)
-        ? mp3Audio.duration
-        : 0;
-    if (!maxDuration) return;
-    const next = Math.min(maxDuration, (mp3Audio.currentTime || 0) + 5);
-    mp3Audio.currentTime = next;
-    if (!isSeekingAudio) mp3Seek.value = String(next);
-    mp3CurrentTime.textContent = formatTime(next);
-    syncPlaybackWaveform();
-  });
-  mp3PlayerBackdrop?.addEventListener('click', closeMp3Modal);
- btnVocesClose?.addEventListener('click', closeVocesModal);
- vocesBackdrop?.addEventListener('click', closeVocesModal);
- document.addEventListener('keydown', (event) => {
-   if (event.key === 'Escape' && !vocesModal.classList.contains('hidden')) {
-     closeVocesModal();
-   }
-   if (event.key === 'Escape' && !mp3PlayerModal.classList.contains('hidden')) {
-     closeMp3Modal();
-   }
- });
 
 const matchCategoria = (categoriaValue, categoriaFilter) => {
  const c = normalizeStr(categoriaValue);
@@ -1529,15 +758,14 @@ function filterCards() {
 
  const debouncedFilterCards = debounce(filterCards, 300);
 
- if(searchInput) searchInput.addEventListener('input', debouncedFilterCards);
- if(filterVoz) filterVoz.addEventListener('change', debouncedFilterCards);
- if(filterCategoria) filterCategoria.addEventListener('change', debouncedFilterCards);
- if(filterTema) filterTema.addEventListener('change', debouncedFilterCards);
+ if(searchInput) addListener(searchInput, 'input', debouncedFilterCards);
+ if(filterVoz) addListener(filterVoz, 'change', debouncedFilterCards);
+ if(filterCategoria) addListener(filterCategoria, 'change', debouncedFilterCards);
+ if(filterTema) addListener(filterTema, 'change', debouncedFilterCards);
 
 
  // ----- Metronomo Interactivo Logic -----
  let metronomoActivoDot: HTMLElement | null = null;
- let metronomoInterval: any = null;
  
  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
  const audioCtx = new AudioContextClass();
@@ -1562,7 +790,7 @@ function filterCards() {
  osc.stop(audioCtx.currentTime + 0.1);
  }
  
- document.addEventListener('click', (e) => {
+ addListener(document, 'click', (e) => {
  const badge = (e.target as Element).closest('.badge-bpm');
  if (badge) {
  const bpmStr = badge.getAttribute('data-bpm');
@@ -1605,7 +833,7 @@ function filterCards() {
  'Bb': 466.16, 'B': 493.88
  };
  
- document.addEventListener('click', (e) => {
+ addListener(document, 'click', (e) => {
  const badgeTono = (e.target as Element).closest('.badge-tono');
  if (badgeTono) {
  let tono = badgeTono.getAttribute('data-tono');
@@ -1649,7 +877,19 @@ function filterCards() {
  function updatePlaylistCount() {
  if (playlistCountEl) playlistCountEl.textContent = selectedSongs.length.toString();
  }
- });
+ }
+
+ if (!repertorioWindow.__REPERTORIO_INIT_BOUND__) {
+  document.addEventListener('astro:page-load', initRepertorio);
+  repertorioWindow.__REPERTORIO_INIT_BOUND__ = true;
+ }
+
+ if (!repertorioWindow.__REPERTORIO_BEFORE_SWAP_BOUND__) {
+  document.addEventListener('astro:before-swap', cleanupRepertorioRuntime);
+  repertorioWindow.__REPERTORIO_BEFORE_SWAP_BOUND__ = true;
+ }
+
+ void initRepertorio();
 </script>
 
 <style is:global>
@@ -1718,124 +958,6 @@ function filterCards() {
  border-top: 1px solid rgba(255,255,255,0.05);
  }
 
-#mp3Seek {
- appearance: none;
- -webkit-appearance: none;
- position: relative;
- z-index: 12;
- height: 6px;
- border-radius: 9999px;
- background: transparent;
- transition: background-color 180ms ease, box-shadow 180ms ease;
-}
-
-#mp3Seek::-webkit-slider-runnable-track {
- height: 6px;
- border-radius: 9999px;
- background: rgb(var(--border-base) / 0.55);
-}
-
-#mp3Seek::-moz-range-track {
- height: 6px;
- border-radius: 9999px;
- background: rgb(var(--border-base) / 0.55);
-}
-
-#mp3Seek::-webkit-slider-thumb {
- -webkit-appearance: none;
- width: 5px;
- height: 16px;
- margin-top: -5px;
- border-radius: 9999px;
- background: rgb(var(--color-info));
- border: 1px solid rgb(var(--bg-surface));
- box-shadow: 0 2px 8px rgb(0 0 0 / 0.22);
- transition: background-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
-}
-
-#mp3Seek::-moz-range-thumb {
- width: 5px;
- height: 16px;
- border-radius: 9999px;
- background: rgb(var(--color-info));
- border: 1px solid rgb(var(--bg-surface));
- box-shadow: 0 2px 8px rgb(0 0 0 / 0.22);
- transition: background-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
-}
-
-#mp3LoopBracket .mp3-loop-handle {
-  width: 22px;
-  height: 30px;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  margin-top: -2px;
-  touch-action: none;
-  cursor: ew-resize;
-  display: grid;
-  place-items: center;
-}
-
-#mp3LoopBracket .mp3-loop-stick {
-  width: 3px;
-  height: 18px;
-  border-radius: 9999px;
-  background: rgb(var(--color-brand));
-  border: 1px solid rgb(var(--bg-surface) / 0.9);
-  box-shadow: 0 0 0 1px rgb(var(--color-brand) / 0.28), 0 4px 9px rgb(0 0 0 / 0.16);
-}
-
-#mp3PlayerModal.mp3-playing #mp3LoopBracket .mp3-loop-stick {
-  background: rgb(16 185 129);
-  box-shadow: 0 0 0 1px rgb(16 185 129 / 0.35), 0 4px 10px rgb(16 185 129 / 0.25);
-}
-
-#mp3Waveform {
- z-index: 1;
- transition: opacity 180ms ease;
- opacity: 0.75;
-}
-
-
-#mp3PlayerModal.mp3-playing #btnMp3PlayPause {
- background: linear-gradient(135deg, rgb(16 185 129), rgb(52 211 153));
- box-shadow: 0 0 0 1px rgb(255 255 255 / 0.06), 0 8px 22px rgb(16 185 129 / 0.34);
-}
-
-#mp3PlayerModal.mp3-playing #mp3Seek::-webkit-slider-thumb {
- background: rgb(16 185 129);
- box-shadow: 0 0 0 3px rgb(52 211 153 / 0.18), 0 2px 10px rgb(16 185 129 / 0.32);
- transform: scale(1.03);
-}
-
-#mp3PlayerModal.mp3-playing #mp3Seek::-moz-range-thumb {
- background: rgb(16 185 129);
- box-shadow: 0 0 0 3px rgb(52 211 153 / 0.18), 0 2px 10px rgb(16 185 129 / 0.32);
- transform: scale(1.03);
-}
-
- #mp3PlayerModal.mp3-playing #mp3Seek::-webkit-slider-runnable-track {
-  background: rgb(52 211 153 / 0.28);
- }
-
- #mp3PlayerModal.mp3-playing #mp3Seek::-moz-range-track {
-  background: rgb(52 211 153 / 0.28);
- }
-
-#mp3PlayerModal.mp3-playing #mp3Waveform {
- opacity: 0.95;
-}
-
-@keyframes mp3-live-slide {
-  0% { transform: translateX(0); opacity: 0.72; }
-  50% { transform: translateX(26px); opacity: 1; }
-  100% { transform: translateX(0); opacity: 0.72; }
-}
-
-#mp3LiveIndicator.mp3-live-on {
-  animation: mp3-live-slide 1.2s ease-in-out infinite;
-  box-shadow: 0 0 10px rgb(var(--color-action) / 0.45);
-}
 </style>
 
 

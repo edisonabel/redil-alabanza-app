@@ -1,0 +1,355 @@
+<div id="globalVocesModalRoot" transition:persist transition:animate="none">
+  <div id="vocesModal" class="fixed inset-0 z-[132] hidden" aria-hidden="true">
+    <div id="vocesBackdrop" class="absolute inset-0 bg-overlay/78 backdrop-blur-md opacity-0 transition-opacity duration-[900ms] [transition-timing-function:cubic-bezier(0.2,0.8,0.2,1)]"></div>
+    <div class="relative z-10 w-full h-full flex items-center justify-center p-3 md:p-5 overflow-y-auto">
+      <div id="vocesPanel" class="w-full max-w-lg bg-surface border border-border rounded-3xl shadow-2xl p-4 md:p-6 opacity-0 translate-y-4 transition-all duration-300 ease-out">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <p class="text-[11px] uppercase tracking-[0.16em] font-bold text-content-muted">Voces</p>
+            <h3 id="vocesTitle" class="text-lg md:text-xl font-black text-content truncate">Recursos de voz</h3>
+            <p id="vocesArtist" class="text-sm text-content-muted truncate">Selecciona una pista</p>
+          </div>
+          <button id="btnVocesClose" type="button" class="shrink-0 inline-flex items-center justify-center leading-none w-10 h-10 rounded-2xl border border-border bg-background text-content-muted hover:text-content hover:bg-surface transition-colors" aria-label="Cerrar modal de voces">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6l-12 12"/></svg>
+          </button>
+        </div>
+
+        <div class="mt-4 rounded-2xl border border-border bg-background/65 p-4">
+          <p class="text-xs text-content-muted mb-3">Elige la voz que quieres abrir.</p>
+          <div id="vocesOptions" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (() => {
+    if (window.__REDIL_VOCES_MODAL_READY__) return;
+    window.__REDIL_VOCES_MODAL_READY__ = true;
+
+    const MODAL_PREMIUM_MS = 900;
+    let vocesLockedScrollY = 0;
+
+    const getRefs = () => ({
+      vocesModal: document.getElementById('vocesModal'),
+      vocesBackdrop: document.getElementById('vocesBackdrop'),
+      vocesPanel: document.getElementById('vocesPanel'),
+      vocesTitle: document.getElementById('vocesTitle'),
+      vocesArtist: document.getElementById('vocesArtist'),
+      vocesOptions: document.getElementById('vocesOptions'),
+    });
+
+    const animateModalOpen = (modal, backdrop, panel) => {
+      if (!modal || !backdrop || !panel) return;
+      modal.classList.remove('hidden');
+      modal.setAttribute('aria-hidden', 'false');
+      backdrop.classList.add('opacity-0');
+      panel.classList.add('opacity-0', 'translate-y-4');
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          backdrop.classList.remove('opacity-0');
+          panel.classList.remove('opacity-0', 'translate-y-4');
+        });
+      });
+    };
+
+    const animateModalClose = (modal, backdrop, panel, onAfterClose = () => {}) => {
+      if (!modal || !backdrop || !panel || modal.classList.contains('hidden')) {
+        onAfterClose();
+        return;
+      }
+
+      backdrop.classList.add('opacity-0');
+      panel.classList.add('opacity-0', 'translate-y-4');
+      window.setTimeout(() => {
+        modal.classList.add('hidden');
+        modal.setAttribute('aria-hidden', 'true');
+        onAfterClose();
+      }, MODAL_PREMIUM_MS);
+    };
+
+    const normalizeExternalUrl = (rawUrl) => {
+      if (!rawUrl) return '';
+      let normalized = String(rawUrl).trim();
+      if (!normalized) return '';
+
+      if (normalized.startsWith('www.')) {
+        normalized = `https://${normalized}`;
+      } else if (normalized.startsWith('//')) {
+        normalized = `https:${normalized}`;
+      } else if (/^\/(uc|open|file)\b/i.test(normalized)) {
+        normalized = `https://drive.google.com${normalized}`;
+      }
+
+      try {
+        const parsed = new URL(normalized, window.location.origin);
+        return parsed.href;
+      } catch {
+        return '';
+      }
+    };
+
+    const lockBackgroundScroll = () => {
+      if (document.body.dataset.vocesModalOpen === 'true') return;
+      vocesLockedScrollY = window.scrollY || window.pageYOffset || 0;
+      document.body.dataset.vocesModalOpen = 'true';
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${vocesLockedScrollY}px`;
+      document.body.style.left = '0';
+      document.body.style.right = '0';
+      document.body.style.width = '100%';
+      document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
+    };
+
+    const unlockBackgroundScroll = () => {
+      if (document.body.dataset.vocesModalOpen !== 'true') return;
+      delete document.body.dataset.vocesModalOpen;
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.left = '';
+      document.body.style.right = '';
+      document.body.style.width = '';
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+      window.scrollTo({ top: vocesLockedScrollY, behavior: 'auto' });
+    };
+
+    const dispatchProPlayerEvent = (payload) => {
+      const url = String(payload?.url || '').trim();
+      if (!url) return;
+      window.dispatchEvent(new CustomEvent('play-pro-audio', { detail: payload }));
+    };
+
+    const getVoiceColor = (label) => {
+      const text = (label || '').toLowerCase();
+      if (text.includes('guia') || text.includes('guía')) return '#2563EB';
+      if (text.includes('segunda')) return '#DC2626';
+      if (text.includes('tercera')) return '#16A34A';
+      if (text.includes('quinta')) return '#CA8A04';
+      if (text.includes('octava')) return '#EA580C';
+      if (text.includes('todas') || text.includes('tres voces')) return 'linear-gradient(135deg, #2563EB, #9333EA)';
+      if (text.includes('pista')) return '#0891B2';
+      return '#64748B';
+    };
+
+    const closeVocesModal = (onAfterClose = () => {}) => {
+      const { vocesModal, vocesBackdrop, vocesPanel } = getRefs();
+      const runAfterClose = () => {
+        if (typeof onAfterClose === 'function') onAfterClose();
+      };
+      if (!vocesModal || vocesModal.classList.contains('hidden')) {
+        runAfterClose();
+        return;
+      }
+      animateModalClose(vocesModal, vocesBackdrop, vocesPanel, () => {
+        unlockBackgroundScroll();
+        runAfterClose();
+      });
+    };
+
+    const playAudio = (rawUrl, voiceName = '') => {
+      const normalized = normalizeExternalUrl(rawUrl);
+      if (!normalized) return;
+
+      const { vocesTitle, vocesArtist } = getRefs();
+      const modalSongTitle = vocesTitle?.textContent?.trim() || 'Recursos de voz';
+      const modalSongArtist = vocesArtist?.textContent?.trim() || '';
+      const finalTitle = voiceName ? `${modalSongTitle} · ${voiceName}` : modalSongTitle;
+
+      closeVocesModal(() => {
+        dispatchProPlayerEvent({
+          url: normalized,
+          title: finalTitle,
+          artist: modalSongArtist,
+          isDirectPlayable: true,
+          autoPlay: true,
+        });
+      });
+    };
+
+    const openVocesModal = (title, artist, entries, legacyUrl = '') => {
+      const { vocesModal, vocesBackdrop, vocesPanel, vocesTitle, vocesArtist, vocesOptions } = getRefs();
+      if (!vocesModal || !vocesBackdrop || !vocesPanel || !vocesOptions || !vocesTitle || !vocesArtist) return;
+
+      vocesTitle.textContent = title || 'Recursos de voz';
+      vocesArtist.textContent = String(artist || '').trim() || 'Selecciona una pista';
+      vocesOptions.innerHTML = '';
+
+      if (legacyUrl) {
+        const safeLegacyUrl = normalizeExternalUrl(legacyUrl);
+        const legacyCard = document.createElement('div');
+        legacyCard.className = 'col-span-full rounded-xl border border-border bg-surface px-3 py-3';
+        legacyCard.innerHTML = `
+          <p class="text-sm font-semibold text-content">Pistas no disponibles aún</p>
+          <p class="mt-1 text-xs text-content-muted">Esta canción aún usa el formato legacy.</p>
+        `;
+
+        if (safeLegacyUrl) {
+          const link = document.createElement('a');
+          link.href = safeLegacyUrl;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.className = 'mt-3 inline-flex items-center justify-center rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold text-content hover:bg-surface transition-colors';
+          link.textContent = 'Abrir carpeta de Drive';
+          legacyCard.appendChild(link);
+        }
+
+        vocesOptions.appendChild(legacyCard);
+        lockBackgroundScroll();
+        animateModalOpen(vocesModal, vocesBackdrop, vocesPanel);
+        return;
+      }
+
+      const validEntries = (Array.isArray(entries) ? entries : [])
+        .map((entry, index) => {
+          const labelRaw = entry?.label || entry?.nombre || entry?.name || 'Pista';
+          const label = String(labelRaw).trim() || `Pista ${index + 1}`;
+          const url = normalizeExternalUrl(typeof entry?.url === 'string' ? entry.url : '');
+          if (!url) return null;
+          return { label, url };
+        })
+        .filter(Boolean);
+
+      if (!validEntries.length) {
+        const emptyCard = document.createElement('div');
+        emptyCard.className = 'col-span-full rounded-xl border border-border bg-surface px-3 py-3';
+        emptyCard.innerHTML = `
+          <p class="text-sm font-semibold text-content">Pistas no disponibles aún</p>
+          <p class="mt-1 text-xs text-content-muted">No encontramos pistas válidas para reproducir.</p>
+        `;
+        vocesOptions.appendChild(emptyCard);
+        lockBackgroundScroll();
+        animateModalOpen(vocesModal, vocesBackdrop, vocesPanel);
+        return;
+      }
+
+      validEntries.forEach((entry, index) => {
+        const button = document.createElement('button');
+        const labelText = entry.label || `Pista ${index + 1}`;
+        const color = getVoiceColor(labelText);
+        button.type = 'button';
+        button.dataset.url = entry.url;
+        button.dataset.voice = labelText;
+        button.className =
+          'group inline-flex items-center justify-between gap-2 rounded-xl border border-border bg-surface px-3 py-2.5 text-sm font-semibold text-content hover:bg-background hover:border-brand/40 transition-colors';
+
+        const left = document.createElement('span');
+        left.className = 'min-w-0 inline-flex items-center gap-2';
+
+        const swatch = document.createElement('span');
+        swatch.style.display = 'inline-block';
+        swatch.style.width = '12px';
+        swatch.style.height = '12px';
+        swatch.style.borderRadius = '3px';
+        swatch.style.background = color;
+        swatch.style.flexShrink = '0';
+
+        const labelNode = document.createElement('span');
+        labelNode.className = 'truncate';
+        labelNode.textContent = labelText;
+
+        const right = document.createElement('span');
+        right.className = 'text-content-muted group-hover:text-brand transition-colors shrink-0';
+        right.textContent = 'Reproducir';
+
+        left.appendChild(swatch);
+        left.appendChild(labelNode);
+        button.appendChild(left);
+        button.appendChild(right);
+
+        button.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const url = button.dataset.url || '';
+          const voice = button.dataset.voice || '';
+          playAudio(url, voice);
+        });
+        vocesOptions.appendChild(button);
+      });
+
+      lockBackgroundScroll();
+      animateModalOpen(vocesModal, vocesBackdrop, vocesPanel);
+    };
+
+    const parseDatasetVoces = (rawVoces) => {
+      const value = String(rawVoces || '').trim();
+      if (!value || value === 'null') return null;
+      if (value.startsWith('http') && !value.startsWith('[')) {
+        return { type: 'legacy', legacyUrl: value, entries: [] };
+      }
+      if (value.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(value);
+          if (Array.isArray(parsed)) {
+            return { type: 'json', entries: parsed, legacyUrl: '' };
+          }
+          return null;
+        } catch {
+          return null;
+        }
+      }
+      return null;
+    };
+
+    const handleDocumentClick = (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target) return;
+
+      const closeBtn = target.closest('#btnVocesClose');
+      const backdrop = target.id === 'vocesBackdrop' ? target : target.closest('#vocesBackdrop');
+      if (closeBtn || backdrop) {
+        event.preventDefault();
+        event.stopPropagation();
+        closeVocesModal();
+        return;
+      }
+
+      const vocesButton = target.closest('.btn-open-voces');
+      if (!vocesButton) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const rawVoces = vocesButton.getAttribute('data-voces') || '';
+      const songTitle = vocesButton.getAttribute('data-title') || vocesButton.getAttribute('data-cancion') || 'Recursos de voz';
+      const songArtist = vocesButton.getAttribute('data-artist') || '';
+
+      const parsed = parseDatasetVoces(rawVoces);
+      if (!parsed) return;
+
+      if (parsed.type === 'legacy') {
+        openVocesModal(songTitle, songArtist, [], parsed.legacyUrl);
+        return;
+      }
+
+      openVocesModal(songTitle, songArtist, parsed.entries || []);
+    };
+
+    const handleEscape = (event) => {
+      if (event.key !== 'Escape') return;
+      const { vocesModal } = getRefs();
+      if (!vocesModal || vocesModal.classList.contains('hidden')) return;
+      closeVocesModal();
+    };
+
+    document.addEventListener('click', handleDocumentClick, true);
+    document.addEventListener('keydown', handleEscape);
+
+    window.addEventListener('open-voces-modal', (event) => {
+      const detail = event?.detail || {};
+      openVocesModal(detail.title || 'Recursos de voz', detail.artist || '', detail.entries || [], detail.legacyUrl || '');
+    });
+
+    document.addEventListener('astro:before-swap', () => {
+      closeVocesModal();
+    });
+
+    window.__REDIL_VOCES_MODAL__ = {
+      open: openVocesModal,
+      close: closeVocesModal,
+    };
+  })();
+</script>

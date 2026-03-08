@@ -77,10 +77,10 @@ const loadWarmups = async (): Promise<WarmupItem[]> => {
     for (let i = 0; i < rows.length; i += 1) {
       const normalizedRow = rows[i].map((cell) => normalizeToken(cell));
       const detectedTitleCol = normalizedRow.findIndex(
-        (cell) => (cell.includes('nombre') && cell.includes('calentamiento')) || cell === 'calentamiento'
+        (cell) => (cell.includes('nombre') && cell.includes('calentamiento')) || cell === 'calentamiento',
       );
       const detectedLinkCol = normalizedRow.findIndex(
-        (cell) => cell === 'link' || cell === 'mp3' || cell.includes('enlace')
+        (cell) => cell === 'link' || cell === 'mp3' || cell.includes('enlace'),
       );
 
       if (detectedTitleCol !== -1 && detectedLinkCol !== -1) {
@@ -98,7 +98,6 @@ const loadWarmups = async (): Promise<WarmupItem[]> => {
       const row = rows[i];
       const titulo = (row[titleCol] || '').trim();
       const link = (row[linkCol] || '').trim();
-
       if (!titulo || !link) continue;
 
       const key = `${normalizeToken(titulo)}|${link}`;
@@ -108,7 +107,7 @@ const loadWarmups = async (): Promise<WarmupItem[]> => {
       results.push({
         id: `warmup-${i}`,
         titulo,
-        link
+        link,
       });
     }
   } catch (error) {
@@ -202,298 +201,56 @@ const showSwipeHint = warmups.length > 1;
     </div>
   </section>
 
-  <div id="warmupMp3Modal" class="fixed inset-0 z-[140] hidden">
-    <div id="warmupMp3Backdrop" class="absolute inset-0 bg-overlay/70 backdrop-blur-sm"></div>
-    <div class="relative z-10 w-full h-full flex items-end md:items-center justify-center p-0 md:p-4">
-      <div class="w-full md:max-w-2xl rounded-t-3xl md:rounded-3xl border border-border bg-surface p-5 md:p-6 shadow-2xl">
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <h3 id="warmupMp3Title" class="text-xl font-black text-content truncate">Calentamiento</h3>
-            <p id="warmupMp3Artist" class="text-sm text-content-muted mt-1 truncate">Calentamiento vocal</p>
-          </div>
-          <button id="warmupMp3Close" type="button" class="w-9 h-9 rounded-xl border border-border bg-background text-content-muted hover:bg-surface hover:text-content transition-colors" aria-label="Cerrar">✕</button>
-        </div>
-
-        <audio id="warmupMp3Audio" class="hidden" preload="metadata"></audio>
-
-        <div class="mt-4 rounded-2xl border border-border bg-background/70 p-4 md:p-5">
-          <div class="flex items-center gap-3">
-            <button id="warmupPlayPause" type="button" class="w-12 h-12 rounded-full bg-action text-white flex items-center justify-center hover:bg-action/90 transition-colors shadow-md" aria-label="Reproducir">
-              <svg id="warmupPlayIcon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
-            </button>
-            <span id="warmupCurrent" class="text-xs font-semibold text-content-muted w-10 text-right">00:00</span>
-            <div id="warmupTimelineWrap" class="relative flex-1 h-10 flex items-center">
-              <input id="warmupSeek" type="range" min="0" max="100" value="0" class="w-full accent-action" />
-              <div id="warmupLoopLayer" class="hidden absolute inset-x-0 top-1/2 -translate-y-1/2 h-2 pointer-events-none">
-                <div id="warmupLoopFill" class="absolute top-0 h-2 rounded-full bg-action/35"></div>
-                <button id="warmupHandleA" type="button" class="warmup-loop-handle pointer-events-auto absolute top-1/2 -translate-x-1/2 -translate-y-1/2" aria-label="Loop A">
-                  <span class="warmup-loop-stick"></span>
-                </button>
-                <button id="warmupHandleB" type="button" class="warmup-loop-handle pointer-events-auto absolute top-1/2 -translate-x-1/2 -translate-y-1/2" aria-label="Loop B">
-                  <span class="warmup-loop-stick"></span>
-                </button>
-              </div>
-            </div>
-            <span id="warmupDuration" class="text-xs font-semibold text-content-muted w-10">00:00</span>
-          </div>
-
-          <div class="mt-3 flex items-center justify-between gap-3">
-            <label class="inline-flex items-center gap-2 text-sm font-bold text-content">
-              <input id="warmupLoopToggle" type="checkbox" class="w-4 h-4 rounded border-border accent-action" />
-              Loop [A-B]
-            </label>
-            <button id="warmupLoopClear" type="button" class="px-3 py-1.5 rounded-xl border border-border bg-surface text-content text-xs font-bold hover:bg-background transition-colors">
-              Limpiar loop
-            </button>
-          </div>
-          <p id="warmupLoopInfo" class="mt-2 text-xs text-content-muted">[A] 00:00 - [B] 00:00</p>
-          <p id="warmupStatus" class="mt-2 text-xs text-content-muted">Activa loop y arrastra los brackets sobre la barra.</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <script is:inline>
     (() => {
-      const modal = document.getElementById('warmupMp3Modal');
-      const backdrop = document.getElementById('warmupMp3Backdrop');
-      const closeBtn = document.getElementById('warmupMp3Close');
-      const titleEl = document.getElementById('warmupMp3Title');
-      const artistEl = document.getElementById('warmupMp3Artist');
-      const statusEl = document.getElementById('warmupStatus');
-      const audio = document.getElementById('warmupMp3Audio');
-      const playBtn = document.getElementById('warmupPlayPause');
-      const playIcon = document.getElementById('warmupPlayIcon');
-      const seek = document.getElementById('warmupSeek');
-      const currentEl = document.getElementById('warmupCurrent');
-      const durationEl = document.getElementById('warmupDuration');
-      const timelineWrap = document.getElementById('warmupTimelineWrap');
-      const loopToggle = document.getElementById('warmupLoopToggle');
-      const loopInfo = document.getElementById('warmupLoopInfo');
-      const loopClear = document.getElementById('warmupLoopClear');
-      const loopLayer = document.getElementById('warmupLoopLayer');
-      const loopFill = document.getElementById('warmupLoopFill');
-      const handleA = document.getElementById('warmupHandleA');
-      const handleB = document.getElementById('warmupHandleB');
-      const scroller = document.getElementById('warmupScroller');
-      const hintFade = document.getElementById('warmupHintFade');
-      const hintArrow = document.getElementById('warmupHintArrow');
+      if (!window.__REDIL_WARMUP_PLAYER_BINDING__) {
+        window.__REDIL_WARMUP_PLAYER_BINDING__ = true;
+        document.addEventListener(
+          'click',
+          (event) => {
+            const trigger = (event.target as Element | null)?.closest('.btn-open-warmup-mp3') as HTMLElement | null;
+            if (!trigger) return;
+            event.preventDefault();
+            event.stopPropagation();
 
-      if (!modal || !audio || !seek || !playBtn || !playIcon || !titleEl || !artistEl) return;
+            const title = trigger.getAttribute('data-title') || 'Calentamiento';
+            const artist = trigger.getAttribute('data-artist') || 'Calentamiento vocal';
+            const link = trigger.getAttribute('data-mp3') || '';
+            if (!link) return;
 
-      const formatTime = (sec) => {
-        const value = Number.isFinite(sec) ? Math.max(0, sec) : 0;
-        const min = Math.floor(value / 60);
-        const s = Math.floor(value % 60);
-        return `${String(min).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-      };
-
-      const toPlayableMp3Url = (rawUrl) => {
-        const source = String(rawUrl || '').trim();
-        if (!source) return '';
-        const fileIdMatch = source.match(/\/d\/([a-zA-Z0-9_-]+)/) || source.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-        let normalized = source;
-        if (fileIdMatch?.[1]) {
-          normalized = `https://drive.google.com/uc?export=download&id=${fileIdMatch[1]}`;
-        }
-        return `/api/mp3-proxy?src=${encodeURIComponent(normalized)}`;
-      };
-
-      let isSeeking = false;
-      let totalDuration = 0;
-      let loopA = 0;
-      let loopB = 0;
-      let dragging = null;
-
-      const clamp = (num, min, max) => Math.min(max, Math.max(min, num));
-
-      const syncPlayUi = () => {
-        if (audio.paused) {
-          playIcon.innerHTML = '<path d="M8 5v14l11-7z"></path>';
-          playBtn.setAttribute('aria-label', 'Reproducir');
-        } else {
-          playIcon.innerHTML = '<path d="M8 5h3v14H8zM13 5h3v14h-3z"></path>';
-          playBtn.setAttribute('aria-label', 'Pausar');
-        }
-      };
-
-      const updateLoopUi = () => {
-        const duration = totalDuration || 1;
-        const startPct = clamp((loopA / duration) * 100, 0, 100);
-        const endPct = clamp((loopB / duration) * 100, 0, 100);
-
-        if (loopFill) {
-          loopFill.style.left = `${startPct}%`;
-          loopFill.style.width = `${Math.max(0, endPct - startPct)}%`;
-        }
-        if (handleA) handleA.style.left = `${startPct}%`;
-        if (handleB) handleB.style.left = `${endPct}%`;
-        if (loopInfo) loopInfo.textContent = `[A] ${formatTime(loopA)} - [B] ${formatTime(loopB)}`;
-      };
-
-      const setLoopVisible = () => {
-        if (!loopLayer || !loopToggle) return;
-        loopLayer.classList.toggle('hidden', !loopToggle.checked);
-      };
-
-      const pxToSec = (clientX) => {
-        if (!timelineWrap || !totalDuration) return 0;
-        const rect = timelineWrap.getBoundingClientRect();
-        if (!rect.width) return 0;
-        const ratio = clamp((clientX - rect.left) / rect.width, 0, 1);
-        return ratio * totalDuration;
-      };
-
-      const updateHandlePosition = (which, clientX) => {
-        const nextSec = pxToSec(clientX);
-        if (which === 'A') {
-          loopA = clamp(nextSec, 0, Math.max(0, loopB - 0.1));
-        } else {
-          loopB = clamp(nextSec, Math.min(totalDuration, loopA + 0.1), totalDuration);
-        }
-        updateLoopUi();
-      };
-
-      const onPointerMove = (event) => {
-        if (!dragging || !loopToggle?.checked) return;
-        event.preventDefault();
-        updateHandlePosition(dragging, event.clientX);
-      };
-
-      const onPointerUp = () => {
-        dragging = null;
-        window.removeEventListener('pointermove', onPointerMove);
-        window.removeEventListener('pointerup', onPointerUp);
-      };
-
-      const startDrag = (which, event) => {
-        if (!loopToggle?.checked) return;
-        dragging = which;
-        updateHandlePosition(which, event.clientX);
-        window.addEventListener('pointermove', onPointerMove, { passive: false });
-        window.addEventListener('pointerup', onPointerUp);
-      };
-
-      const closeModal = () => {
-        audio.pause();
-        audio.removeAttribute('src');
-        audio.load();
-        modal.classList.add('hidden');
-        syncPlayUi();
-      };
-
-      const openModal = (title, artist, rawUrl) => {
-        const playable = toPlayableMp3Url(rawUrl);
-        if (!playable) return;
-
-        titleEl.textContent = title || 'Calentamiento';
-        artistEl.textContent = artist || 'Calentamiento vocal';
-        if (statusEl) statusEl.textContent = 'Cargando audio...';
-
-        currentEl.textContent = '00:00';
-        durationEl.textContent = '00:00';
-        seek.value = '0';
-        loopA = 0;
-        loopB = 0;
-        totalDuration = 0;
-        if (loopToggle) loopToggle.checked = false;
-        setLoopVisible();
-        updateLoopUi();
-
-        modal.classList.remove('hidden');
-        audio.src = playable;
-        audio.load();
-      };
-
-      document.addEventListener('click', (event) => {
-        const trigger = event.target && event.target.closest('.btn-open-warmup-mp3');
-        if (!trigger) return;
-        event.preventDefault();
-        const title = trigger.getAttribute('data-title') || 'Calentamiento';
-        const artist = trigger.getAttribute('data-artist') || 'Calentamiento vocal';
-        const link = trigger.getAttribute('data-mp3') || '';
-        openModal(title, artist, link);
-      });
-
-      closeBtn?.addEventListener('click', closeModal);
-      backdrop?.addEventListener('click', closeModal);
-
-      document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && !modal.classList.contains('hidden')) closeModal();
-      });
-
-      playBtn.addEventListener('click', async () => {
-        try {
-          if (audio.paused) {
-            await audio.play();
-          } else {
-            audio.pause();
-          }
-          syncPlayUi();
-        } catch {
-          if (statusEl) statusEl.textContent = 'El navegador bloqueó la reproducción. Toca Reproducir de nuevo.';
-        }
-      });
-
-      audio.addEventListener('loadedmetadata', () => {
-        totalDuration = Number.isFinite(audio.duration) ? audio.duration : 0;
-        loopA = 0;
-        loopB = totalDuration;
-        seek.min = '0';
-        seek.max = String(totalDuration || 1);
-        durationEl.textContent = formatTime(totalDuration);
-        updateLoopUi();
-        if (statusEl) statusEl.textContent = 'Activa loop y arrastra los brackets sobre la barra.';
-      });
-
-      audio.addEventListener('timeupdate', () => {
-        if (!isSeeking) seek.value = String(audio.currentTime || 0);
-        currentEl.textContent = formatTime(audio.currentTime || 0);
-
-        if (loopToggle?.checked && loopB > loopA + 0.1 && audio.currentTime >= loopB) {
-          audio.currentTime = loopA;
-        }
-      });
-
-      audio.addEventListener('play', syncPlayUi);
-      audio.addEventListener('pause', syncPlayUi);
-      audio.addEventListener('ended', syncPlayUi);
-      audio.addEventListener('error', () => {
-        if (statusEl) statusEl.textContent = 'No se pudo cargar el MP3. Verifica el enlace y permisos.';
-      });
-
-      seek.addEventListener('input', () => {
-        isSeeking = true;
-        currentEl.textContent = formatTime(Number(seek.value || 0));
-      });
-      seek.addEventListener('change', () => {
-        audio.currentTime = Number(seek.value || 0);
-        isSeeking = false;
-      });
-
-      loopToggle?.addEventListener('change', () => {
-        setLoopVisible();
-        updateLoopUi();
-      });
-
-      loopClear?.addEventListener('click', () => {
-        loopA = 0;
-        loopB = totalDuration;
-        updateLoopUi();
-      });
-
-      handleA?.addEventListener('pointerdown', (event) => startDrag('A', event));
-      handleB?.addEventListener('pointerdown', (event) => startDrag('B', event));
-
-      if (scroller && hintFade && hintArrow) {
-        scroller.addEventListener('scroll', () => {
-          const reachedEnd = (scroller.scrollWidth - (scroller.scrollLeft + scroller.clientWidth)) <= 12;
-          if (reachedEnd || scroller.scrollLeft > 12) {
-            hintFade.classList.add('hidden');
-            hintArrow.classList.add('hidden');
-          }
-        }, { passive: true });
+            window.dispatchEvent(
+              new CustomEvent('play-pro-audio', {
+                detail: { url: link, title, artist, autoPlay: true },
+              }),
+            );
+          },
+          true,
+        );
       }
+
+      const initWarmupHint = () => {
+        const scroller = document.getElementById('warmupScroller');
+        const hintFade = document.getElementById('warmupHintFade');
+        const hintArrow = document.getElementById('warmupHintArrow');
+        if (!scroller || !hintFade || !hintArrow) return;
+        if (scroller.dataset.hintBound === 'true') return;
+        scroller.dataset.hintBound = 'true';
+
+        scroller.addEventListener(
+          'scroll',
+          () => {
+            const reachedEnd = scroller.scrollWidth - (scroller.scrollLeft + scroller.clientWidth) <= 12;
+            if (reachedEnd || scroller.scrollLeft > 12) {
+              hintFade.classList.add('hidden');
+              hintArrow.classList.add('hidden');
+            }
+          },
+          { passive: true },
+        );
+      };
+
+      document.addEventListener('astro:page-load', initWarmupHint);
+      initWarmupHint();
     })();
   </script>
 
@@ -505,58 +262,6 @@ const showSwipeHint = warmups.length > 1;
       78% { opacity: 1; transform: translateX(12px); }
       90% { opacity: 0.25; transform: translateX(20px); }
       100% { opacity: 0; transform: translateX(20px); }
-    }
-
-    .warmup-loop-handle {
-      width: 16px;
-      height: 28px;
-      border: none;
-      background: transparent;
-      cursor: ew-resize;
-      padding: 0;
-      touch-action: none;
-    }
-
-    .warmup-loop-stick {
-      display: block;
-      width: 3px;
-      height: 22px;
-      border-radius: 999px;
-      background: rgb(var(--color-brand) / 0.95);
-      box-shadow: 0 0 0 1px rgb(var(--bg-surface) / 0.95);
-    }
-
-    #warmupSeek::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 14px;
-      height: 14px;
-      border-radius: 999px;
-      border: 2px solid rgb(var(--bg-surface) / 1);
-      background: rgb(var(--color-brand) / 1);
-      margin-top: -4px;
-      cursor: pointer;
-    }
-
-    #warmupSeek::-webkit-slider-runnable-track {
-      height: 6px;
-      border-radius: 999px;
-      background: rgb(var(--border-base) / 0.9);
-    }
-
-    #warmupSeek::-moz-range-thumb {
-      width: 14px;
-      height: 14px;
-      border-radius: 999px;
-      border: 2px solid rgb(var(--bg-surface) / 1);
-      background: rgb(var(--color-brand) / 1);
-      cursor: pointer;
-    }
-
-    #warmupSeek::-moz-range-track {
-      height: 6px;
-      border-radius: 999px;
-      background: rgb(var(--border-base) / 0.9);
     }
   </style>
 </Layout>

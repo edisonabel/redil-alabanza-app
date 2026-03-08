@@ -18,7 +18,7 @@ export default defineConfig({
   integrations: [AstroPWA({
     registerType: 'autoUpdate',
     devOptions: {
-      enabled: true
+      enabled: false
     },
     manifest: {
       name: 'Repertorio Alabanza Redil',
