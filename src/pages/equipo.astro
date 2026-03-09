@@ -292,10 +292,10 @@ import Layout from '../layouts/Layout.astro';
  </div>
  <div>
  <h3 class="font-bold text-content text-base">Eliminar Equipo</h3>
- <p class="text-xs text-content-muted" id="confirm-delete-msg">Â¿Seguro que deseas eliminar este equipo?</p>
+ <p class="text-xs text-content-muted" id="confirm-delete-msg">&iquest;Seguro que deseas eliminar este equipo?</p>
  </div>
  </div>
- <p class="text-xs text-content-muted bg-background rounded-lg p-3 border border-border ">Los integrantes del equipo se perderÃ¡n. Los eventos de domingos anteriores NO se afectan.</p>
+ <p class="text-xs text-content-muted bg-background rounded-lg p-3 border border-border ">Los integrantes del equipo se perder&aacute;n. Los eventos de domingos anteriores NO se afectan.</p>
  <div class="flex gap-3">
  <button id="confirm-delete-cancel" type="button" class="flex-1 py-2.5 px-4 rounded-xl border border-border text-neutral-700 font-semibold text-sm hover:bg-background :bg-neutral-800 transition-colors">Cancelar</button>
  <button id="confirm-delete-ok" type="button" class="flex-1 py-2.5 px-4 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-colors flex items-center justify-center gap-2">
@@ -313,7 +313,7 @@ import Layout from '../layouts/Layout.astro';
  <div class="relative bg-background w-full sm:max-w-md rounded-3xl shadow-2xl flex flex-col max-h-[85vh] mx-4" id="picker-panel">
  <div class="px-5 py-4 border-b border-border flex justify-between items-center bg-surface rounded-t-3xl sm:rounded-t-3xl shadow-sm z-10">
  <div>
- <h3 class="text-lg font-bold text-content ">Seleccionar MÃºsico</h3>
+ <h3 class="text-lg font-bold text-content ">Seleccionar M&uacute;sico</h3>
 <p class="text-[10px] font-bold uppercase tracking-widest text-action mt-1 flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span id="picker-role-name">Buscando...</span></p>
  </div>
  <button type="button" id="picker-close" class="p-2 -mr-2 bg-background text-content-muted hover:text-content :text-white rounded-full transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
@@ -349,7 +349,7 @@ import Layout from '../layouts/Layout.astro';
  <input type="text" id="add-musico-nombre" class="w-full px-4 py-3 rounded-xl border border-border bg-background text-content text-sm font-medium focus:ring-2 focus:ring-brand focus:border-transparent outline-none transition-all" placeholder="Ej: Carlos (Pianista)">
  </div>
  <div>
- <label class="text-xs font-bold text-content-muted uppercase tracking-widest mb-1.5 block">Correo electrÃ³nico</label>
+ <label class="text-xs font-bold text-content-muted uppercase tracking-widest mb-1.5 block">Correo electr&oacute;nico</label>
  <input type="email" id="add-musico-email" class="w-full px-4 py-3 rounded-xl border border-border bg-background text-content text-sm font-medium focus:ring-2 focus:ring-brand focus:border-transparent outline-none transition-all" placeholder="correo@ejemplo.com">
  </div>
  </div>
@@ -416,7 +416,7 @@ import Layout from '../layouts/Layout.astro';
  .single();
 
  if (perfilError || !perfil?.is_admin) {
- alert('Acceso Restringido. Esta pÃ¡gina es exclusiva para Administradores.');
+ alert('Acceso Restringido. Esta p\u00E1gina es exclusiva para Administradores.');
  window.location.replace('/programacion');
  return;
  }
@@ -806,7 +806,7 @@ import Layout from '../layouts/Layout.astro';
  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
  Editar Roles
  </button>
- <button type="button" class="btn-eliminar-perfil w-9 h-9 flex items-center justify-center bg-red-50 hover:bg-red-100 :bg-red-900/40 text-red-400 hover:text-red-600 :text-red-400 transition-all rounded-xl border border-red-200/60 shrink-0" data-perfil="${p.id}" data-nombre="${p.nombre}" title="Eliminar mÃºsico">
+ <button type="button" class="btn-eliminar-perfil w-9 h-9 flex items-center justify-center bg-red-50 hover:bg-red-100 :bg-red-900/40 text-red-400 hover:text-red-600 :text-red-400 transition-all rounded-xl border border-red-200/60 shrink-0" data-perfil="${p.id}" data-nombre="${p.nombre}" title="Eliminar m\u00FAsico">
  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
  </button>
  </div>
@@ -950,7 +950,7 @@ import Layout from '../layouts/Layout.astro';
  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
  </div>
  <h3 class="text-lg font-extrabold text-content mb-1">Eliminar "${perfilNombre}"</h3>
- <p class="text-sm text-content-muted leading-relaxed">Se eliminarÃ¡ este mÃºsico y todas sus asignaciones. Esta acciÃ³n no se puede deshacer.</p>
+ <p class="text-sm text-content-muted leading-relaxed">Se eliminar\u00E1 este m\u00FAsico y todas sus asignaciones. Esta acci\u00F3n no se puede deshacer.</p>
  </div>
  <div class="flex border-t border-border ">
  <button id="del-cancel" class="flex-1 py-3.5 text-sm font-bold text-content-muted hover:bg-background :bg-neutral-800 transition-colors">Cancelar</button>
@@ -986,7 +986,7 @@ import Layout from '../layouts/Layout.astro';
 
  const toast = document.createElement('div');
  toast.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 z-[300] bg-neutral-900 text-white text-sm font-semibold px-5 py-3 rounded-full shadow-2xl flex items-center gap-2';
- toast.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg> MÃºsico eliminado';
+ toast.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg> M\u00FAsico eliminado';
  document.body.appendChild(toast);
  setTimeout(() => toast.remove(), 3000);
  } catch(err) {
@@ -1055,7 +1055,7 @@ import Layout from '../layouts/Layout.astro';
  // Toast de Ã©xito
  const toast = document.createElement('div');
  toast.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 z-[300] bg-neutral-900 text-white text-sm font-semibold px-5 py-3 rounded-full shadow-2xl flex items-center gap-2';
- toast.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg> MÃºsico registrado';
+ toast.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg> M\u00FAsico registrado';
  document.body.appendChild(toast);
  setTimeout(() => toast.remove(), 3000);
 

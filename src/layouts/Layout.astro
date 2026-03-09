@@ -476,8 +476,13 @@ const themeColors = brandingData;
 </head>
 <body transition:animate="none" class="bg-background text-content min-h-screen min-h-[100dvh] w-full flex flex-col">
  {pathname !== '/' && user && (
-  <div class="relative z-[61] flex w-full justify-end px-4 md:px-6" style="padding-top: calc(env(safe-area-inset-top) + 0.75rem);">
-   <NotificationBell inline client:load />
+  <div
+   class="fixed right-4 md:right-6 z-[61] pointer-events-none"
+   style="top: calc(env(safe-area-inset-top) + 0.75rem);"
+  >
+   <div class="pointer-events-auto flex-shrink-0">
+    <NotificationBell inline client:load />
+   </div>
   </div>
  )}
  <main
