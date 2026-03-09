@@ -10,6 +10,55 @@ declare global {
   }
 }
 
+const FIRST_LOGIN_ONBOARDING_KEY = 'redil_onboarding_first_login_completed';
+const ACTIVE_ONBOARDING_PAGES_KEY = 'redil_onboarding_active_pages';
+const ALL_ONBOARDING_PAGES: OnboardingPageKey[] = ['home', 'repertorio', 'programacion', 'perfil'];
+const ONBOARDING_STORAGE_KEYS: Record<OnboardingPageKey, string> = {
+  home: 'redil_onboarding_seen',
+  repertorio: 'redil_onboarding_seen_repertorio',
+  programacion: 'redil_onboarding_seen_programacion',
+  perfil: 'redil_onboarding_seen_perfil',
+};
+
+const readActivePages = (): OnboardingPageKey[] => {
+  if (typeof window === 'undefined') return [];
+
+  try {
+    const raw = window.sessionStorage.getItem(ACTIVE_ONBOARDING_PAGES_KEY);
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter((page): page is OnboardingPageKey => ALL_ONBOARDING_PAGES.includes(page as OnboardingPageKey));
+  } catch {
+    return [];
+  }
+};
+
+const writeActivePages = (pages: OnboardingPageKey[]) => {
+  if (typeof window === 'undefined') return;
+
+  if (pages.length === 0) {
+    window.sessionStorage.removeItem(ACTIVE_ONBOARDING_PAGES_KEY);
+    return;
+  }
+
+  window.sessionStorage.setItem(ACTIVE_ONBOARDING_PAGES_KEY, JSON.stringify(pages));
+};
+
+const activateAllOnboardingPages = () => {
+  if (typeof window === 'undefined') return;
+  writeActivePages(ALL_ONBOARDING_PAGES);
+};
+
+const clearAllOnboardingSeenKeys = () => {
+  if (typeof window === 'undefined') return;
+  Object.values(ONBOARDING_STORAGE_KEYS).forEach((key) => {
+    window.localStorage.removeItem(key);
+  });
+};
+
 type UseOnboardingReturn = {
   isReady: boolean;
   isWelcomeOpen: boolean;
@@ -34,8 +83,11 @@ export function useOnboarding({ buildDriver, storageKey, page, getSteps }: UseOn
 
   const markSeen = useCallback(() => {
     if (typeof window === 'undefined') return;
+    const activePages = readActivePages();
+    const nextPages = activePages.filter((activePage) => activePage !== page);
+    writeActivePages(nextPages);
     window.localStorage.setItem(storageKey, 'true');
-  }, [storageKey]);
+  }, [page, storageKey]);
 
   const openWelcome = useCallback(() => {
     setIsWelcomeOpen(true);
@@ -52,9 +104,10 @@ export function useOnboarding({ buildDriver, storageKey, page, getSteps }: UseOn
 
   const resetOnboarding = useCallback(() => {
     if (typeof window === 'undefined') return;
-    window.localStorage.removeItem(storageKey);
+    window.localStorage.removeItem(FIRST_LOGIN_ONBOARDING_KEY);
+    clearAllOnboardingSeenKeys();
     setIsWelcomeOpen(true);
-  }, [storageKey]);
+  }, []);
 
   const startTour = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -78,11 +131,13 @@ export function useOnboarding({ buildDriver, storageKey, page, getSteps }: UseOn
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const seen = window.localStorage.getItem(storageKey) === 'true';
+    const activePages = readActivePages();
+    const shouldOpenForThisPage = activePages.includes(page);
     setIsReady(true);
-    setIsWelcomeOpen(!seen);
+    setIsWelcomeOpen(shouldOpenForThisPage);
 
     const openHandler = () => {
+      activateAllOnboardingPages();
       if (driverRef.current) {
         driverRef.current.destroy();
         driverRef.current = null;
@@ -93,7 +148,9 @@ export function useOnboarding({ buildDriver, storageKey, page, getSteps }: UseOn
 
     window.openOnboarding = openHandler;
     window.resetOnboarding = () => {
-      window.localStorage.removeItem(storageKey);
+      window.localStorage.removeItem(FIRST_LOGIN_ONBOARDING_KEY);
+      clearAllOnboardingSeenKeys();
+      activateAllOnboardingPages();
       openHandler();
     };
 
@@ -112,7 +169,7 @@ export function useOnboarding({ buildDriver, storageKey, page, getSteps }: UseOn
         driverRef.current = null;
       }
     };
-  }, [storageKey]);
+  }, [page]);
 
   useEffect(() => {
     if (!isWelcomeOpen) return;

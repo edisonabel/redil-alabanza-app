@@ -31,6 +31,17 @@ export default function OnboardingRoot({ page = 'home' }: OnboardingRootProps) {
       popoverOffset: 16,
       popoverClass: 'redil-onboarding-popover',
       steps,
+      onHighlightStarted: (element) => {
+        if (!(element instanceof HTMLElement)) return;
+
+        window.requestAnimationFrame(() => {
+          element.scrollIntoView({
+            behavior: 'smooth',
+            block: window.innerWidth < 768 ? 'center' : 'nearest',
+            inline: 'nearest',
+          });
+        });
+      },
       onPopoverRender: (popover, { driver: tourDriver }) => {
         const existingSkip = popover.footer?.querySelector<HTMLButtonElement>('[data-redil-onboarding-skip]');
         if (existingSkip) return;

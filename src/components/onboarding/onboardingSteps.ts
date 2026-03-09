@@ -1,7 +1,7 @@
 ﻿import type { DriveStep } from 'driver.js';
 
 type OnboardingStep = Pick<DriveStep, 'element' | 'popover'>;
-export type OnboardingPageKey = 'home' | 'repertorio' | 'programacion';
+export type OnboardingPageKey = 'home' | 'repertorio' | 'programacion' | 'perfil';
 
 type OnboardingConfig = {
   storageKey: string;
@@ -109,22 +109,22 @@ const repertorioSteps: OnboardingStep[] = [
 
 const programacionSteps: OnboardingStep[] = [
   {
-    element: '[data-tour="programacion-header"]',
+    element: '[data-tour="programacion-view-mode"]',
     popover: {
-      title: 'Tu programación del mes',
+      title: 'Cambia la forma de ver los servicios',
       description:
-        'Aquí puedes ver los servicios programados y moverte entre las vistas para revisar la agenda de la forma que te resulte más cómoda.',
+        'Aquí eliges si prefieres revisar la programación en modo tarjeta o en modo lista. En escritorio también puedes abrir la vista calendario.',
       side: 'bottom',
-      align: 'start',
+      align: 'center',
     },
   },
   {
-    element: '[data-tour="programacion-card"]',
+    element: '[data-tour="programacion-event-info"]',
     popover: {
-      title: 'Lee cada evento rápido',
+      title: 'Lee la información clave del evento',
       description:
-        'Cada tarjeta te muestra la fecha, la hora, el tipo de servicio y, si aplica, si será un servicio acústico.',
-      side: 'right',
+        'Aquí ves la fecha, el horario, el tema de predicación y si el servicio será acústico, para ubicarte rápido antes de revisar el equipo.',
+      side: 'bottom',
       align: 'start',
     },
   },
@@ -144,6 +144,39 @@ const programacionSteps: OnboardingStep[] = [
       title: 'Abre el detalle o gestiona',
       description:
         'Desde aquí puedes ver más información del evento y, si tienes permiso, entrar a gestionarlo rápidamente.',
+      side: 'top',
+      align: 'center',
+    },
+  },
+];
+
+const perfilSteps: OnboardingStep[] = [
+  {
+    element: '[data-tour="perfil-photo"]',
+    popover: {
+      title: 'Cuida tu foto de perfil',
+      description:
+        'Desde aquí puedes cambiar tu foto. Usa un retrato cercano para que tu equipo te identifique rápido en cada asignación.',
+      side: 'right',
+      align: 'center',
+    },
+  },
+  {
+    element: '[data-tour="perfil-birthday"]',
+    popover: {
+      title: 'Tu cumpleaños sí importa',
+      description:
+        'Registra tu fecha de nacimiento correctamente. La usamos para recordarte en la app y mantener tu perfil completo.',
+      side: 'left',
+      align: 'center',
+    },
+  },
+  {
+    element: '[data-tour="perfil-availability"]',
+    popover: {
+      title: 'Bloquea fechas con tiempo',
+      description:
+        'Aquí puedes registrar ausencias o días no disponibles para evitar que te asignen cuando no podrás servir.',
       side: 'top',
       align: 'center',
     },
@@ -176,6 +209,15 @@ const onboardingConfigs: Record<OnboardingPageKey, OnboardingConfig> = {
     modalSecondary:
       'Te mostraremos lo esencial para moverte por esta vista en menos de un minuto.',
     steps: programacionSteps,
+  },
+  perfil: {
+    storageKey: 'redil_onboarding_seen_perfil',
+    modalTitle: 'Configura bien tu perfil',
+    modalBody:
+      'Aquí puedes actualizar tu foto, completar tu fecha de nacimiento y bloquear fechas para que el equipo tenga tu disponibilidad clara.',
+    modalSecondary:
+      'Te mostraremos lo esencial para dejar tu perfil listo en menos de un minuto.',
+    steps: perfilSteps,
   },
 };
 

@@ -233,10 +233,20 @@ accessCodeInput.required = true;
    try {
      const maxAge = 60 * 60 * 24 * 365; // 1 año
      const secureFlag = window.location.protocol === 'https:' ? '; Secure' : '';
+     const firstLoginOnboardingKey = 'redil_onboarding_first_login_completed';
+     const onboardingPagesKey = 'redil_onboarding_active_pages';
      
      // InyecciÃ³n robusta de cookies nativas para acceso del servidor (SSR)
      document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax${secureFlag}`;
      document.cookie = `sb-refresh-token=${data.session.refresh_token}; path=/; max-age=${maxAge}; SameSite=Lax${secureFlag}`;
+
+     if (window.localStorage.getItem(firstLoginOnboardingKey) !== 'true') {
+       window.localStorage.setItem(firstLoginOnboardingKey, 'true');
+       window.sessionStorage.setItem(
+         onboardingPagesKey,
+         JSON.stringify(['home', 'repertorio', 'programacion', 'perfil'])
+       );
+     }
      
      // Retraso obligatorio para que el navegador guarde la cookie fÃ­sicamente
      setTimeout(() => {

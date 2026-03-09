@@ -192,6 +192,10 @@ console.log('Inicio proximosServicios count:', proximosServicios.length, 'user:'
 <Layout title="Inicio | Redil Alabanza">
   <script is:inline>
     window.openOnboarding = window.openOnboarding || function () {
+      window.sessionStorage.setItem(
+        'redil_onboarding_active_pages',
+        JSON.stringify(['home', 'repertorio', 'programacion', 'perfil'])
+      );
       window.__REDIL_OPEN_ONBOARDING_PENDING__ = true;
       window.dispatchEvent(new CustomEvent('redil:open-onboarding'));
     };

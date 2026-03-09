@@ -1,5 +1,6 @@
 ﻿---
 import Layout from '../layouts/Layout.astro';
+import OnboardingRoot from '../components/onboarding/OnboardingRoot';
 ---
 
 <Layout title="Mi Perfil - Redil">
@@ -19,7 +20,7 @@ import Layout from '../layouts/Layout.astro';
  <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
  
  {/* Lado Izquierdo: Avatar y Roles (Fase 1 y 2) */}
- <div class="col-span-1 flex flex-col items-center">
+ <div class="col-span-1 flex flex-col items-center" data-tour="perfil-photo">
  <div class="relative group w-32 h-32 mb-4">
  {/* Avatar dinÃ¡mico */}
  <div id="avatar-container" class="w-full h-full rounded-full bg-neutral/20 border-4 border-white flex items-center justify-center font-black text-4xl shadow-md overflow-hidden text-content-muted">
@@ -72,7 +73,7 @@ import Layout from '../layouts/Layout.astro';
  <option value="Bar&iacute;tono">Bar&iacute;tono / Bajo</option>
  </select>
  </div>
-<div class="space-y-1.5">
+<div class="space-y-1.5" data-tour="perfil-birthday">
 <label class="text-xs font-bold text-content-muted uppercase tracking-wide">Fecha de nacimiento</label>
 <input type="date" id="input-cumpleanos" required disabled class="w-full min-w-0 bg-surface border border-border text-content rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-action focus:outline-none transition-shadow" />
 <p class="text-sm text-gray-500">Esto es para recordar tu cumpleaños</p>
@@ -93,7 +94,7 @@ import Layout from '../layouts/Layout.astro';
  </section>
 
  {/* PANEL FASE 3: Sistema de Disponibilidad (Ausencias) */}
- <section class="bg-surface rounded-2xl p-6 border border-border shadow-sm mt-8">
+ <section class="bg-surface rounded-2xl p-6 border border-border shadow-sm mt-8" data-tour="perfil-availability">
  <h3 class="text-lg font-bold text-content mb-4 flex items-center gap-2">
  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-orange-500"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
  Mis Ausencias / Fechas Bloqueadas
@@ -145,6 +146,8 @@ import Layout from '../layouts/Layout.astro';
  </section>
  </div>
  </main>
+
+ <OnboardingRoot client:load page="perfil" />
 
  {/* Modal para Recortar Foto */}
  <div id="cropper-modal" class="fixed inset-0 z-50 bg-black/80 hidden items-center justify-center p-4 backdrop-blur-sm transition-opacity opacity-0 duration-300">

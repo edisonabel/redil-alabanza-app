@@ -485,36 +485,38 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                     {titulo}
                 </p>
 
-                {/* HEADER ROW 1 */}
-                <div className="flex justify-between items-start mb-2 relative z-20">
-                    <div className="flex items-baseline gap-1 text-content">
-                        <span className="text-[2.75rem] font-normal tracking-tighter leading-none">{diaStr}</span>
-                        <span className="text-3xl font-light tracking-tight leading-none ml-0.5">{mesStr}</span>
-                        <span className="text-xs font-bold text-content-muted ml-1 pb-1">{anioStr}</span>
+                <div data-tour={tourTargets ? 'programacion-event-info' : undefined} className="relative z-20">
+                    {/* HEADER ROW 1 */}
+                    <div className="flex justify-between items-start mb-2">
+                        <div className="flex items-baseline gap-1 text-content">
+                            <span className="text-[2.75rem] font-normal tracking-tighter leading-none">{diaStr}</span>
+                            <span className="text-3xl font-light tracking-tight leading-none ml-0.5">{mesStr}</span>
+                            <span className="text-xs font-bold text-content-muted ml-1 pb-1">{anioStr}</span>
+                        </div>
+                        <div className="flex flex-col items-end gap-1.5">
+                            {isAdmin && (
+                                <span className="px-3 py-1 bg-background text-content-muted text-[10px] font-bold rounded-lg border border-border uppercase tracking-widest">{estado}</span>
+                            )}
+                        </div>
                     </div>
-                    <div className="flex flex-col items-end gap-1.5">
-                        {isAdmin && (
-                            <span className="px-3 py-1 bg-background text-content-muted text-[10px] font-bold rounded-lg border border-border uppercase tracking-widest">{estado}</span>
+
+                    {/* HEADER ROW 2 */}
+                    <div className="flex flex-wrap items-center gap-2.5 mb-1.5">
+                        <span className="px-2.5 py-0.5 bg-info/10 text-info border border-info/30 rounded-md text-[10px] font-bold uppercase tracking-widest leading-relaxed">{diaSemana}</span>
+                        <span className="text-sm font-medium text-content-muted">{timeString}</span>
+                        {esAcustico && (
+                            <span className="px-2.5 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-full border border-emerald-200 uppercase tracking-widest leading-none dark:bg-teal-100 dark:text-teal-800 dark:border-teal-200">
+                                SOLO ACÚSTICO
+                            </span>
                         )}
                     </div>
-                </div>
 
-                {/* HEADER ROW 2 */}
-                <div className="flex flex-wrap items-center gap-2.5 mb-1.5 relative z-20">
-                    <span className="px-2.5 py-0.5 bg-info/10 text-info border border-info/30 rounded-md text-[10px] font-bold uppercase tracking-widest leading-relaxed">{diaSemana}</span>
-                    <span className="text-sm font-medium text-content-muted">{timeString}</span>
-                    {esAcustico && (
-                        <span className="px-2.5 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-full border border-emerald-200 uppercase tracking-widest leading-none dark:bg-teal-100 dark:text-teal-800 dark:border-teal-200">
-                            SOLO ACÚSTICO
-                        </span>
+                    {temaPredicacion && (
+                        <h3 className="mt-0 mb-4 text-xl sm:text-2xl font-extrabold tracking-tight leading-tight text-content">
+                            {temaPredicacion}
+                        </h3>
                     )}
                 </div>
-
-                {temaPredicacion && (
-                    <h3 className="mt-0 mb-4 text-xl sm:text-2xl font-extrabold tracking-tight leading-tight text-content relative z-20">
-                        {temaPredicacion}
-                    </h3>
-                )}
 
                 {/* ROSTER ESTÃƒÂTICO PHASE 2 */}
                 <div data-tour={tourTargets ? 'programacion-roster' : undefined} className="mb-4">
@@ -751,7 +753,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
 
             {/* HEADER DE GRID / CONTROLES DE VISTA AQUI (Migrado desde programacion.astro HTML) */}
             <div data-tour="programacion-header" className="flex items-center justify-center md:justify-end gap-2 mb-4 md:mb-6 mt-1 md:mt-2 w-full">
-                <div className="flex bg-background p-1 rounded-2xl border border-border/60 shadow-inner">
+                <div data-tour="programacion-view-mode" className="flex bg-background p-1 rounded-2xl border border-border/60 shadow-inner">
                     <button
                         onClick={() => setViewMode('tarjeta')}
                         className={`flex items-center justify-center px-4 py-2 ${viewMode === 'tarjeta' ? 'bg-surface text-orange-500 shadow-sm border border-border/50' : 'bg-transparent text-content-muted border border-transparent hover:text-neutral-700'} text-xs sm:text-sm font-bold rounded-xl transition-all`}
