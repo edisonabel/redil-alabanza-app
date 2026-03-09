@@ -7,6 +7,13 @@ import CalendarioGrid from '../components/react/CalendarioGrid.jsx';
 import OnboardingRoot from '../components/onboarding/OnboardingRoot';
 import { supabase } from '../lib/supabase';
 
+const INITIAL_MONTH_WINDOW = 2;
+
+const initialFetchFloor = new Date(Date.now() - 12 * 60 * 60 * 1000);
+const initialFetchLimit = new Date(initialFetchFloor);
+initialFetchLimit.setMonth(initialFetchLimit.getMonth() + INITIAL_MONTH_WINDOW, 0);
+initialFetchLimit.setHours(23, 59, 59, 999);
+
 // SSR Auth Retrieval (runs safely on the server)
 const tokenCookie = Astro.cookies.get('sb-access-token');
 const token = tokenCookie ? tokenCookie.value : null;
@@ -15,6 +22,7 @@ let ssrRoles = [];
 let ssrEventos = [];
 let queryError = null;
 let ssrAdmin = false;
+let ssrHasMoreEventos = false;
 
 if (token) {
   const { data: userData } = await supabase.auth.getUser(token);
@@ -34,8 +42,23 @@ if (token) {
     let query = supabase
       .from('eventos')
       .select('*, asignaciones(rol_id, perfiles(id, nombre, email, avatar_url))')
-      .gte('fecha_hora', new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString())
+      .gte('fecha_hora', initialFetchFloor.toISOString())
+      .lte('fecha_hora', initialFetchLimit.toISOString())
       .order('fecha_hora', { ascending: true });
+
+    if (!isAdmin) {
+      query = query.eq('estado', 'Publicado');
+    }
+
+    return query;
+  });
+  const moreEventosPromise = perfilPromise.then(({ data: perfil }) => {
+    const isAdmin = perfil?.is_admin || false;
+
+    let query = supabase
+      .from('eventos')
+      .select('id', { count: 'exact', head: true })
+      .gt('fecha_hora', initialFetchLimit.toISOString());
 
     if (!isAdmin) {
       query = query.eq('estado', 'Publicado');
@@ -48,11 +71,13 @@ if (token) {
     { data: globalRoles, error: rolesError },
     { data: perfil, error: perfilError },
     { data: eventosDb, error: err },
-  ] = await Promise.all([rolesPromise, perfilPromise, eventosPromise]);
+    { count: moreEventosCount, error: moreEventosError },
+  ] = await Promise.all([rolesPromise, perfilPromise, eventosPromise, moreEventosPromise]);
 
   ssrRoles = globalRoles || [];
   ssrAdmin = perfil?.is_admin || false;
-  queryError = err || perfilError || rolesError;
+  ssrHasMoreEventos = (moreEventosCount || 0) > 0;
+  queryError = err || perfilError || rolesError || moreEventosError;
   
   console.log("=== PROGRAMACION QUERY LOG ===", { 
     error: queryError, 
@@ -97,6 +122,8 @@ if (token) {
         initialRoles={ssrRoles} 
         ssrError={queryError?.message || null}
         isAdmin={ssrAdmin}
+        initialLoadUntil={initialFetchLimit.toISOString()}
+        hasMoreInitialEvents={ssrHasMoreEventos}
     />
     
     <!-- MODAL DE GESTIÃ“N (FASE 1) -->

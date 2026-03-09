@@ -195,7 +195,7 @@ export default function ModalDetalle({ initialRoles }) {
                             {roster.length > 0 ? roster.map((asig, idx) => {
                                 if (!asig.perfiles) return null;
                                 const p = asig.perfiles;
-                                const rNombre = initialRoles?.find?.(r => r.id === asig.rol_id)?.nombre || asig.roles?.nombre || 'MÃºsico';
+                                const rNombre = initialRoles?.find?.(r => r.id === asig.rol_id)?.nombre || asig.roles?.nombre || 'Músico';
                                 const rCodigo = initialRoles?.find?.(r => r.id === asig.rol_id)?.codigo || asig.roles?.codigo || '';
 
                                 const cleanName = p.nombre.replace(/\s*\(.*?\)\s*/g, '').trim();
@@ -222,7 +222,7 @@ export default function ModalDetalle({ initialRoles }) {
                             }) : (
                                 <div className="col-span-1 md:col-span-2 flex flex-col items-center justify-center py-8 opacity-50 bg-background rounded-2xl border border-border border-dashed">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mb-3 text-content-muted"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="m19 8 3 3-3 3" /></svg>
-                                    <p className="font-bold text-base text-content-muted">Nadie asignado aÃºn al roster</p>
+                                    <p className="font-bold text-base text-content-muted">Nadie asignado aún al roster</p>
                                 </div>
                             )}
                         </div>
@@ -245,7 +245,7 @@ export default function ModalDetalle({ initialRoles }) {
                                 <div className="flex flex-col items-center justify-center py-6 opacity-60">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" className="mx-auto mb-3 text-content-muted" stroke="currentColor" strokeWidth="1.5"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
                                     <p className="text-sm font-bold text-content-muted">Sin setlist asignada</p>
-                                    <p className="text-[11px] text-content-muted mt-1">El lÃ­der de alabanza puede crear una desde el mÃ³dulo Repertorio.</p>
+                                    <p className="text-[11px] text-content-muted mt-1">El líder de alabanza puede crear una desde el módulo Repertorio.</p>
                                 </div>
                             ) : (
                                 <div className="flex flex-col">
@@ -264,7 +264,7 @@ export default function ModalDetalle({ initialRoles }) {
                                                     <div className="px-3 py-2.5 sm:px-4 sm:py-3 flex items-center gap-3">
                                                         <div className="w-8 h-8 rounded-full bg-brand/10 text-brand border border-brand/30 flex items-center justify-center font-black shrink-0 text-sm shadow-sm">{idx + 1}</div>
                                                         <div className="flex-1 min-w-0">
-                                                            <h3 className="text-base font-bold tracking-tight text-content truncate">{c.titulo || 'Sin tÃ­tulo'}</h3>
+                                                            <h3 className="text-base font-bold tracking-tight text-content truncate">{c.titulo || 'Sin título'}</h3>
                                                             <p className="text-xs font-medium text-content-muted truncate">{c.cantante || 'Redil Sur'}</p>
                                                         </div>
                                                     </div>
@@ -273,7 +273,7 @@ export default function ModalDetalle({ initialRoles }) {
                                         }) : null}
                                     </div>
                                     <p className="text-[10px] sm:text-xs text-content-muted mt-4 text-center">
-                                        Ãšltima modificaciÃ³n: {new Date(playlist.updated_at).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                        Última modificación: {new Date(playlist.updated_at).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                                     </p>
                                 </div>
                             )}

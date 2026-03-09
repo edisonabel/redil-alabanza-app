@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Icon } from '@iconify/react';
 import microphoneIcon from '@iconify-icons/mdi/microphone';
 import guitarAcousticIcon from '@iconify-icons/mdi/guitar-acoustic';
@@ -11,12 +11,60 @@ import scriptTextIcon from '@iconify-icons/mdi/script-text';
 import musicNoteIcon from '@iconify-icons/mdi/music-note';
 import { supabase } from '../../lib/supabase';
 
+const MONTH_CHUNK_SIZE = 2;
+const EVENT_SELECT = '*, asignaciones(id, rol_id, perfiles(id, nombre, email, avatar_url))';
+
+const getMonthStart = (date) => {
+    const next = new Date(date);
+    next.setDate(1);
+    next.setHours(0, 0, 0, 0);
+    return next;
+};
+
+const getMonthEnd = (date) => {
+    const next = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+    next.setHours(23, 59, 59, 999);
+    return next;
+};
+
+const getWindowAfterDate = (cursorDate, monthCount = MONTH_CHUNK_SIZE) => {
+    const start = new Date(cursorDate);
+    start.setDate(1);
+    start.setMonth(start.getMonth() + 1);
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(start);
+    end.setMonth(end.getMonth() + monthCount, 0);
+    end.setHours(23, 59, 59, 999);
+
+    return { start, end };
+};
+
+const mergeUniqueEvents = (currentEvents, incomingEvents) => {
+    const byId = new Map();
+
+    [...currentEvents, ...incomingEvents].forEach((eventItem) => {
+        if (!eventItem?.id) return;
+        byId.set(eventItem.id, eventItem);
+    });
+
+    return [...byId.values()].sort((a, b) => new Date(a.fecha_hora) - new Date(b.fecha_hora));
+};
+
 /**
  * CalendarioGrid (React Phase 2)
  * Renderizador maestro del motor de Eventos (Tarjetas, Listas y Calendarios).
  * Reemplaza mÃƒÂ¡s de 1000 lÃƒÂ­neas de Vanilla JS en programacion.astro
  */
-export default function CalendarioGrid({ initialEvents, sessionUser, initialRoles, ssrError, isAdmin }) {
+export default function CalendarioGrid({
+    initialEvents,
+    sessionUser,
+    initialRoles,
+    ssrError,
+    isAdmin,
+    initialLoadUntil,
+    hasMoreInitialEvents = false,
+}) {
     const getRoleBadgeIcon = (role) => {
         const codigo = String(role?.codigo || '').toLowerCase();
         const nombre = String(role?.nombre || '').toLowerCase();
@@ -52,9 +100,14 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
     const [viewMode, setViewMode] = useState('tarjeta'); // 'tarjeta', 'lista', 'calendario'
     const [filtro, setFiltro] = useState('Todos');
     const [isLoading, setIsLoading] = useState(false);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const [hasMoreEventos, setHasMoreEventos] = useState(Boolean(hasMoreInitialEvents));
     const [calendarDate, setCalendarDate] = useState(new Date());
     const [dismissedMonthHints, setDismissedMonthHints] = useState({});
+    const [loadedUntil, setLoadedUntil] = useState(() => (initialLoadUntil ? new Date(initialLoadUntil) : null));
     const autoOpenHandledRef = useRef(false);
+    const autoOpenFetchAttemptedRef = useRef(false);
+    const loadMoreSentinelRef = useRef(null);
 
     // UI Modals
     const [deleteConfirmTarget, setDeleteConfirmTarget] = useState(null);
@@ -94,6 +147,72 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
             }));
     }, [eventos]);
 
+    const buildVisibilityQuery = useCallback((query) => {
+        if (isAdmin) return query;
+        return query.eq('estado', 'Publicado');
+    }, [isAdmin]);
+
+    const fetchMoreWindow = useCallback(async (startDate, endDate) => {
+        const query = buildVisibilityQuery(
+            supabase
+                .from('eventos')
+                .select(EVENT_SELECT)
+                .gte('fecha_hora', startDate.toISOString())
+                .lte('fecha_hora', endDate.toISOString())
+                .order('fecha_hora', { ascending: true })
+        );
+
+        return query;
+    }, [buildVisibilityQuery]);
+
+    const fetchRemainingCount = useCallback(async (afterDate) => {
+        const query = buildVisibilityQuery(
+            supabase
+                .from('eventos')
+                .select('id', { count: 'exact', head: true })
+                .gt('fecha_hora', afterDate.toISOString())
+        );
+
+        return query;
+    }, [buildVisibilityQuery]);
+
+    const loadMoreEvents = useCallback(async (targetDate = null) => {
+        if (isLoadingMore || !loadedUntil || !hasMoreEventos) return;
+
+        const nextStart = getMonthStart(new Date(loadedUntil.getFullYear(), loadedUntil.getMonth() + 1, 1));
+        const nextTarget = targetDate ? getMonthEnd(targetDate) : null;
+        const nextEnd = nextTarget && nextTarget > loadedUntil
+            ? nextTarget
+            : getWindowAfterDate(loadedUntil, MONTH_CHUNK_SIZE).end;
+
+        setIsLoadingMore(true);
+
+        try {
+            const [
+                { data: fetchedEvents, error: fetchError },
+                { count: remainingCount, error: remainingError },
+            ] = await Promise.all([
+                fetchMoreWindow(nextStart, nextEnd),
+                fetchRemainingCount(nextEnd),
+            ]);
+
+            if (fetchError) throw fetchError;
+            if (remainingError) throw remainingError;
+
+            const safeEvents = fetchedEvents || [];
+            if (safeEvents.length > 0) {
+                setEventos((prev) => mergeUniqueEvents(prev, safeEvents));
+            }
+
+            setLoadedUntil(nextEnd);
+            setHasMoreEventos((remainingCount || 0) > 0);
+        } catch (error) {
+            console.error('Programación: no se pudieron cargar más eventos', error);
+        } finally {
+            setIsLoadingMore(false);
+        }
+    }, [fetchMoreWindow, fetchRemainingCount, hasMoreEventos, isLoadingMore, loadedUntil]);
+
     useEffect(() => {
         if (autoOpenHandledRef.current || typeof window === 'undefined') return;
 
@@ -101,11 +220,6 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
         const eventoId = params.get('ver_evento');
         const focus = params.get('focus');
         if (!eventoId) return;
-
-        const cardData = tarjetasGeneradas.find((card) => String(card?.dbData?.id) === String(eventoId));
-        if (!cardData) return;
-
-        autoOpenHandledRef.current = true;
 
         const clearParams = () => {
             const url = new URL(window.location.href);
@@ -116,23 +230,104 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
             window.history.replaceState({}, '', nextUrl);
         };
 
-        const openWithRetry = (attempt = 0) => {
-            if (window.openDetalleReact) {
-                window.openDetalleReact(cardData, { focusSection: focus || null });
-                clearParams();
-                return;
-            }
+        const cardData = tarjetasGeneradas.find((card) => String(card?.dbData?.id) === String(eventoId));
+        if (cardData) {
+            autoOpenHandledRef.current = true;
 
-            if (attempt >= 20) {
-                clearParams();
-                return;
-            }
+            const openWithRetry = (attempt = 0) => {
+                if (window.openDetalleReact) {
+                    window.openDetalleReact(cardData, { focusSection: focus || null });
+                    clearParams();
+                    return;
+                }
 
-            window.setTimeout(() => openWithRetry(attempt + 1), 140);
+                if (attempt >= 20) {
+                    clearParams();
+                    return;
+                }
+
+                window.setTimeout(() => openWithRetry(attempt + 1), 140);
+            };
+
+            openWithRetry();
+            return;
+        }
+
+        if (autoOpenFetchAttemptedRef.current) return;
+        autoOpenFetchAttemptedRef.current = true;
+
+        const fetchMissingEvent = async () => {
+            try {
+                let query = supabase
+                    .from('eventos')
+                    .select(EVENT_SELECT)
+                    .eq('id', eventoId)
+                    .single();
+
+                if (!isAdmin) {
+                    query = query.eq('estado', 'Publicado');
+                }
+
+                const { data, error } = await query;
+                if (error || !data) {
+                    clearParams();
+                    return;
+                }
+
+                setEventos((prev) => mergeUniqueEvents(prev, [data]));
+
+                const eventDate = new Date(data.fecha_hora);
+                if (!Number.isNaN(eventDate.getTime())) {
+                    setLoadedUntil((prev) => {
+                        if (!prev || eventDate > prev) return getMonthEnd(eventDate);
+                        return prev;
+                    });
+                    setCalendarDate((prev) => (eventDate > prev ? eventDate : prev));
+                }
+            } catch (error) {
+                console.error('Programación: no se pudo recuperar el evento solicitado', error);
+                clearParams();
+            }
         };
 
-        openWithRetry();
-    }, [tarjetasGeneradas]);
+        fetchMissingEvent();
+    }, [isAdmin, tarjetasGeneradas]);
+
+    useEffect(() => {
+        if (!loadedUntil || !hasMoreEventos || isLoadingMore || eventos.length > 0) return;
+        loadMoreEvents();
+    }, [eventos.length, hasMoreEventos, isLoadingMore, loadMoreEvents, loadedUntil]);
+
+    useEffect(() => {
+        if (viewMode !== 'calendario' || !loadedUntil || isLoadingMore) return;
+        if (calendarDate <= loadedUntil || !hasMoreEventos) return;
+
+        loadMoreEvents(calendarDate);
+    }, [calendarDate, hasMoreEventos, isLoadingMore, loadMoreEvents, loadedUntil, viewMode]);
+
+    useEffect(() => {
+        if (viewMode === 'calendario' || !hasMoreEventos || !loadMoreSentinelRef.current) return;
+
+        const sentinel = loadMoreSentinelRef.current;
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        loadMoreEvents();
+                    }
+                });
+            },
+            {
+                root: null,
+                rootMargin: '320px 0px 320px 0px',
+                threshold: 0.01,
+            }
+        );
+
+        observer.observe(sentinel);
+
+        return () => observer.disconnect();
+    }, [hasMoreEventos, loadMoreEvents, viewMode]);
 
     // --- LOGICA DEL ROSTER ESTATICO ---
     const renderRoster = (dbData) => {
@@ -578,17 +773,21 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
     // --- RENDERIZADO PRINCIPAL ---
 
     // 1. AgrupaciÃƒÂ³n por Meses (LÃƒÂ³gica Reactiva)
-    const groupedMonths = [];
-    let currentMonthName = '';
+    const groupedMonths = useMemo(() => {
+        const grouped = [];
+        let currentMonthName = '';
 
-    tarjetasGeneradas.forEach(card => {
-        const monthName = card.fecha.toLocaleString('es-ES', { month: 'long' });
-        if (monthName !== currentMonthName) {
-            groupedMonths.push({ month: monthName, cards: [] });
-            currentMonthName = monthName;
-        }
-        groupedMonths[groupedMonths.length - 1].cards.push(card);
-    });
+        tarjetasGeneradas.forEach((card) => {
+            const monthName = card.fecha.toLocaleString('es-ES', { month: 'long' });
+            if (monthName !== currentMonthName) {
+                grouped.push({ month: monthName, cards: [] });
+                currentMonthName = monthName;
+            }
+            grouped[grouped.length - 1].cards.push(card);
+        });
+
+        return grouped;
+    }, [tarjetasGeneradas]);
 
     // --- LOGICA DE CALENDARIO MENSUAL (PC) ---
     const renderMonthCalendar = () => {
@@ -779,7 +978,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
             </div>
 
             {/* MAIN CONTENT AREA */}
-            {eventos.length === 0 ? (
+            {eventos.length === 0 && !hasMoreEventos && !isLoadingMore ? (
                 <div id="empty-state" className="flex flex-col items-center justify-center py-20 bg-background border border-border rounded-3xl w-full max-w-7xl mx-auto my-10 shadow-inner">
                     <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" className="text-content-muted mb-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2v4" /><path d="M16 2v4" /><rect width="18" height="18" x="3" y="4" rx="2" /><path d="M3 10h18" /><path d="M10 16h4" /><path d="M12 14v4" /></svg>
                     <h3 className="text-2xl font-bold text-content mb-2">No hay programaciones</h3>
@@ -855,6 +1054,17 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                     {/* VISTA CALENDARIO GRID */}
                     {viewMode === 'calendario' && renderMonthCalendar()}
 
+                    {(viewMode === 'tarjeta' || viewMode === 'lista') && (
+                        <div className="max-w-7xl mx-auto w-full px-4">
+                            <div ref={loadMoreSentinelRef} className="h-4 w-full" aria-hidden="true" />
+                            {isLoadingMore && (
+                                <div className="flex items-center justify-center gap-3 py-6 text-sm text-content-muted">
+                                    <div className="w-5 h-5 rounded-full border-2 border-border border-t-brand animate-spin"></div>
+                                    <span>Cargando más eventos...</span>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                 </>
             )}
@@ -930,6 +1140,8 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
         </div>
     );
 }
+
+
 
 
 
