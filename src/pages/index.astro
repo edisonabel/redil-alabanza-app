@@ -34,7 +34,7 @@ if (authError || !user) {
 
 const { data: perfil } = await supabaseSSR
   .from('perfiles')
-  .select('id, nombre, avatar_url, is_admin')
+  .select('id, nombre, avatar_url, is_admin, tour_completado')
   .eq('id', user.id)
   .single();
 
@@ -215,6 +215,11 @@ console.log('Inicio proximosServicios count:', proximosServicios.length, 'user:'
     </div>
   </div>
 
-  <OnboardingRoot client:load page="home" />
+  <OnboardingRoot
+    client:load
+    page="home"
+    userId={user.id}
+    onboardingCompleted={Boolean(perfil?.tour_completado)}
+  />
 </Layout>
 

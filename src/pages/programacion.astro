@@ -134,7 +134,7 @@ if (token) {
 
     <!-- MODAL GENERADOR DE SERIES -->
     <ModalSerie client:only="react" sessionUser={ssrUser} />
-    <OnboardingRoot client:load page="programacion" />
+    <OnboardingRoot client:load page="programacion" userId={ssrUser?.id ?? null} />
   </div>
 
   <style is:global>

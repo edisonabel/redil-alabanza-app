@@ -6,6 +6,7 @@ import OnboardingRoot from '../components/onboarding/OnboardingRoot';
 import { supabase } from '../lib/supabase';
 
 let canciones: any[] = [];
+const userId = Astro.locals.user?.id ?? null;
 try {
   const { data, error } = await supabase
     .from('canciones')
@@ -180,7 +181,7 @@ const firstTourResourcesId =
  </div>
 </div>
 
-  <OnboardingRoot client:load page="repertorio" />
+  <OnboardingRoot client:load page="repertorio" userId={userId} />
 </Layout>
 
  <!-- Data bridge eliminado. Supabase renderiza directamente. -->

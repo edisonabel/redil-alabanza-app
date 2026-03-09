@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { driver, type Driver, type DriveStep } from 'driver.js';
 import type { OnboardingPageKey } from './onboardingSteps';
+import { supabase } from '../../lib/supabase';
 
 declare global {
   interface Window {
@@ -10,7 +11,6 @@ declare global {
   }
 }
 
-const FIRST_LOGIN_ONBOARDING_KEY = 'redil_onboarding_first_login_completed';
 const ACTIVE_ONBOARDING_PAGES_KEY = 'redil_onboarding_active_pages';
 const ALL_ONBOARDING_PAGES: OnboardingPageKey[] = ['home', 'repertorio', 'programacion', 'perfil'];
 const ONBOARDING_STORAGE_KEYS: Record<OnboardingPageKey, string> = {
@@ -74,12 +74,47 @@ type UseOnboardingOptions = {
   storageKey: string;
   page: OnboardingPageKey;
   getSteps: (page: OnboardingPageKey) => DriveStep[];
+  userId?: string | null;
+  onboardingCompleted?: boolean;
 };
 
-export function useOnboarding({ buildDriver, storageKey, page, getSteps }: UseOnboardingOptions): UseOnboardingReturn {
+export function useOnboarding({
+  buildDriver,
+  storageKey,
+  page,
+  getSteps,
+  userId = null,
+  onboardingCompleted = false,
+}: UseOnboardingOptions): UseOnboardingReturn {
   const [isReady, setIsReady] = useState(false);
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
   const driverRef = useRef<Driver | null>(null);
+  const onboardingPersistedRef = useRef(Boolean(onboardingCompleted));
+
+  useEffect(() => {
+    onboardingPersistedRef.current = Boolean(onboardingCompleted);
+  }, [onboardingCompleted]);
+
+  const persistOnboardingCompletion = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+    if (!userId || onboardingPersistedRef.current) return;
+
+    try {
+      const { error } = await supabase
+        .from('perfiles')
+        .update({ tour_completado: true })
+        .eq('id', userId);
+
+      if (error) {
+        console.error('Onboarding: no se pudo persistir tour_completado', error);
+        return;
+      }
+
+      onboardingPersistedRef.current = true;
+    } catch (error) {
+      console.error('Onboarding: fallo inesperado persistiendo el tour', error);
+    }
+  }, [userId]);
 
   const markSeen = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -98,14 +133,15 @@ export function useOnboarding({ buildDriver, storageKey, page, getSteps }: UseOn
   }, []);
 
   const dismissWelcome = useCallback(() => {
+    void persistOnboardingCompletion();
     markSeen();
     setIsWelcomeOpen(false);
-  }, [markSeen]);
+  }, [markSeen, persistOnboardingCompletion]);
 
   const resetOnboarding = useCallback(() => {
     if (typeof window === 'undefined') return;
-    window.localStorage.removeItem(FIRST_LOGIN_ONBOARDING_KEY);
     clearAllOnboardingSeenKeys();
+    onboardingPersistedRef.current = false;
     setIsWelcomeOpen(true);
   }, []);
 
@@ -113,6 +149,7 @@ export function useOnboarding({ buildDriver, storageKey, page, getSteps }: UseOn
     if (typeof window === 'undefined') return;
 
     const steps = getSteps(page);
+    void persistOnboardingCompletion();
     markSeen();
     setIsWelcomeOpen(false);
 
@@ -126,13 +163,19 @@ export function useOnboarding({ buildDriver, storageKey, page, getSteps }: UseOn
     const nextDriver = buildDriver(steps);
     driverRef.current = nextDriver;
     window.requestAnimationFrame(() => nextDriver.drive());
-  }, [buildDriver, getSteps, markSeen, page]);
+  }, [buildDriver, getSteps, markSeen, page, persistOnboardingCompletion]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const activePages = readActivePages();
-    const shouldOpenForThisPage = activePages.includes(page);
+    let shouldOpenForThisPage = activePages.includes(page);
+
+    if (!shouldOpenForThisPage && page === 'home' && !onboardingCompleted) {
+      activateAllOnboardingPages();
+      shouldOpenForThisPage = true;
+    }
+
     setIsReady(true);
     setIsWelcomeOpen(shouldOpenForThisPage);
 
@@ -148,8 +191,8 @@ export function useOnboarding({ buildDriver, storageKey, page, getSteps }: UseOn
 
     window.openOnboarding = openHandler;
     window.resetOnboarding = () => {
-      window.localStorage.removeItem(FIRST_LOGIN_ONBOARDING_KEY);
       clearAllOnboardingSeenKeys();
+      onboardingPersistedRef.current = false;
       activateAllOnboardingPages();
       openHandler();
     };
@@ -169,7 +212,7 @@ export function useOnboarding({ buildDriver, storageKey, page, getSteps }: UseOn
         driverRef.current = null;
       }
     };
-  }, [page]);
+  }, [onboardingCompleted, page]);
 
   useEffect(() => {
     if (!isWelcomeOpen) return;

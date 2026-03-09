@@ -9,9 +9,15 @@ import { getOnboardingConfig, getOnboardingSteps, type OnboardingPageKey } from 
 
 type OnboardingRootProps = {
   page?: OnboardingPageKey;
+  userId?: string | null;
+  onboardingCompleted?: boolean;
 };
 
-export default function OnboardingRoot({ page = 'home' }: OnboardingRootProps) {
+export default function OnboardingRoot({
+  page = 'home',
+  userId = null,
+  onboardingCompleted = false,
+}: OnboardingRootProps) {
   const config = getOnboardingConfig(page);
 
   const buildDriver = useCallback((steps: DriveStep[]): Driver => {
@@ -65,6 +71,8 @@ export default function OnboardingRoot({ page = 'home' }: OnboardingRootProps) {
     storageKey: config.storageKey,
     page,
     getSteps: getOnboardingSteps,
+    userId,
+    onboardingCompleted,
   });
 
   if (!isReady) return null;
