@@ -570,9 +570,23 @@ const themeColors = brandingData;
 
   bootstrapSessionCookieSync();
 
-  supabase.auth.onAuthStateChange((_event, session) => {
-    if (session) writeSessionCookies(session);
-    else clearSessionCookies();
+  supabase.auth.onAuthStateChange((event, session) => {
+    if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') && session) {
+      writeSessionCookies(session);
+      return;
+    }
+
+    if (event === 'INITIAL_SESSION' && session) {
+      writeSessionCookies(session);
+      return;
+    }
+
+    if (event === 'SIGNED_OUT') {
+      clearSessionCookies();
+      if (window.location.pathname !== '/login') {
+        window.location.assign('/login');
+      }
+    }
   });
  </script>
 

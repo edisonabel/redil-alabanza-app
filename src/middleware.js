@@ -59,7 +59,15 @@ const resolveAuthState = async (cookies, isSecure) => {
     const session = data?.session;
     if (!error && session?.access_token) {
       setAuthCookies(cookies, session, isSecure);
-      return { user: data.user || null, accessToken: session.access_token, refreshed: true };
+
+      if (data?.user) {
+        return { user: data.user, accessToken: session.access_token, refreshed: true };
+      }
+
+      const { data: refreshedUserData, error: refreshedUserError } = await supabaseServer.auth.getUser(session.access_token);
+      if (!refreshedUserError && refreshedUserData?.user) {
+        return { user: refreshedUserData.user, accessToken: session.access_token, refreshed: true };
+      }
     }
   }
 
