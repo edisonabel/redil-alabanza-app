@@ -7,6 +7,9 @@ import NotificationBell from '../components/react/NotificationBell.jsx';
 import { supabase } from '../lib/supabase';
 import { ClientRouter } from 'astro:transitions';
 
+const user = Astro.locals.user;
+const perfil = Astro.locals.perfil;
+
 const premiumPageTransition = {
   forwards: {
     old: {
@@ -451,7 +454,7 @@ const pathname = new URL(Astro.request.url).pathname;
   )}
 </head>
 <body transition:animate="none" class="bg-background text-content min-h-screen min-h-[100dvh] w-full flex flex-col">
- {pathname !== '/' && (
+ {pathname !== '/' && user && (
   <div class="relative z-[61] flex w-full justify-end px-4 md:px-6" style="padding-top: calc(env(safe-area-inset-top) + 0.75rem);">
    <NotificationBell inline client:load />
   </div>
@@ -608,4 +611,3 @@ const pathname = new URL(Astro.request.url).pathname;
  </script>
 </body>
 </html>
-

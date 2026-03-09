@@ -1,22 +1,10 @@
 ---
-import { supabase } from '../lib/supabase';
 import MotionNavIcon from './react/MotionNavIcon.jsx';
 
 const pathname = new URL(Astro.request.url).pathname;
-
-// 1. SSR Auth Check for Layout Stability
-let isAdmin = false;
-const tokenCookie = Astro.cookies.get('sb-access-token');
-
-if (tokenCookie) {
-  const { data: { user } } = await supabase.auth.getUser(tokenCookie.value);
-  if (user) {
-    const { data: profile } = await supabase.from('perfiles').select('is_admin').eq('id', user.id).single();
-    if (profile?.is_admin) {
-      isAdmin = true;
-    }
-  }
-}
+const user = Astro.locals.user;
+const perfil = Astro.locals.perfil;
+const isAdmin = Boolean(user && perfil?.is_admin);
 
 const navItems = [
  {

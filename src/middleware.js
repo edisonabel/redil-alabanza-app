@@ -70,6 +70,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const { cookies, url, redirect, locals } = context;
   const path = url.pathname;
   const isSecure = url.protocol === 'https:';
+  locals.user = null;
+  locals.perfil = null;
 
   if (
     path.startsWith('/_astro') ||
@@ -98,6 +100,14 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   if (authState?.user) {
     locals.user = authState.user;
+
+    const { data: perfil } = await supabaseServer
+      .from('perfiles')
+      .select('*')
+      .eq('id', authState.user.id)
+      .single();
+
+    locals.perfil = perfil || null;
   }
 
   return next();
