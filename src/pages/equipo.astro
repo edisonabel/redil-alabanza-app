@@ -36,10 +36,10 @@ import Layout from '../layouts/Layout.astro';
  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
  </button>
 
- <!-- BotÃ³n Flotante para AÃ±adir MÃºsico -->
+ <!-- Botón Flotante para Añadir Músico -->
  <button id="fab-add-musico" class="fixed bottom-32 right-4 md:bottom-32 md:right-8 bg-blue-500 hover:bg-blue-400 text-white w-14 h-14 md:w-auto md:px-6 rounded-full shadow-2xl flex items-center justify-center gap-2 transition-transform hover:scale-105 z-40 group">
  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="group-hover:rotate-90 transition-transform duration-300"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
- <span class="hidden md:block font-bold text-base">AÃ±adir MÃºsico</span>
+ <span class="hidden md:block font-bold text-base">A&#241;adir M&#250;sico</span>
  </button>
 
  <main id="equipo-page-root" class="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-32">
@@ -330,13 +330,13 @@ import Layout from '../layouts/Layout.astro';
  </div>
 
  
- <!-- MODAL AÃ‘ADIR MÃšSICO -->
+ <!-- MODAL AÑADIR MÚSICO -->
  <div id="modal-add-musico" class="fixed inset-0 z-[100] hidden items-center justify-center">
  <div class="absolute inset-0 bg-neutral-900/40 backdrop-blur-sm transition-opacity opacity-0" id="add-musico-backdrop"></div>
  <div class="relative bg-surface w-full md:max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] mx-4 transition-all scale-95 opacity-0" id="add-musico-panel">
  <div class="px-6 py-5 border-b border-neutral-100 flex justify-between items-center">
  <div>
- <h3 class="text-lg font-bold text-content ">AÃ±adir MÃºsico</h3>
+ <h3 class="text-lg font-bold text-content ">A&#241;adir M&#250;sico</h3>
  <p class="text-xs text-content-muted mt-0.5">Registra un nuevo integrante del equipo.</p>
  </div>
  <button type="button" id="btn-close-add-musico" class="p-2 -mr-2 bg-background text-content-muted hover:text-content :text-white rounded-full transition-colors">
@@ -802,7 +802,7 @@ import Layout from '../layouts/Layout.astro';
  </div>
  
  <div class="flex items-center gap-2">
- <button type="button" class="btn-editar-roles flex-1 py-2 bg-background hover:bg-neutral/20 :bg-neutral-700 text-neutral-700 transition-colors rounded-xl text-xs font-bold flex items-center justify-center gap-2 border border-transparent shadow-sm" data-perfil="${p.id}" data-nombre="${p.nombre}">
+ <button type="button" class="btn-editar-roles flex-1 py-2 bg-background hover:bg-neutral/20 dark:bg-slate-800 dark:hover:bg-slate-700 text-content dark:text-slate-100 transition-colors rounded-xl text-xs font-bold flex items-center justify-center gap-2 border border-border shadow-sm" data-perfil="${p.id}" data-nombre="${p.nombre}">
  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
  Editar Roles
  </button>
