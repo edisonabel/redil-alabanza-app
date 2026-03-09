@@ -25,25 +25,33 @@ if (token) {
     return Astro.redirect('/login');
   }
 
-  // Fetch inicial Roles globales
-  const { data: globalRoles } = await supabase.from('roles').select('*').order('nombre');
-  ssrRoles = globalRoles || [];
+  const rolesPromise = supabase.from('roles').select('*').order('nombre');
+  const perfilPromise = supabase.from('perfiles').select('is_admin').eq('id', ssrUser.id).single();
+  const eventosPromise = perfilPromise.then(({ data: perfil }) => {
+    const isAdmin = perfil?.is_admin || false;
 
-  // Fetch inicial Eventos filtrados por RBAC
-  const { data: perfil } = await supabase.from('perfiles').select('is_admin').eq('id', ssrUser.id).single();
+    let query = supabase
+      .from('eventos')
+      .select('*, asignaciones(rol_id, perfiles(id, nombre, email, avatar_url))')
+      .gte('fecha_hora', new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString())
+      .order('fecha_hora', { ascending: true });
+
+    if (!isAdmin) {
+      query = query.eq('estado', 'Publicado');
+    }
+
+    return query;
+  });
+
+  const [
+    { data: globalRoles, error: rolesError },
+    { data: perfil, error: perfilError },
+    { data: eventosDb, error: err },
+  ] = await Promise.all([rolesPromise, perfilPromise, eventosPromise]);
+
+  ssrRoles = globalRoles || [];
   ssrAdmin = perfil?.is_admin || false;
-  
-  let query = supabase.from('eventos')
-    .select('*, asignaciones(rol_id, perfiles(id, nombre, email, avatar_url))')
-    .gte('fecha_hora', new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString())
-    .order('fecha_hora', { ascending: true });
-    
-  if (!ssrAdmin) {
-    query = query.eq('estado', 'Publicado');
-  }
-  
-  const { data: eventosDb, error: err } = await query;
-  queryError = err;
+  queryError = err || perfilError || rolesError;
   
   console.log("=== PROGRAMACION QUERY LOG ===", { 
     error: queryError, 

@@ -14,6 +14,10 @@ export default defineConfig({
   output: 'server',
   site: 'https://alabanzaredilestadio.com',
   base: '/',
+  prefetch: {
+    prefetchAll: true,
+    defaultStrategy: 'hover',
+  },
 
   integrations: [AstroPWA({
     registerType: 'autoUpdate',
