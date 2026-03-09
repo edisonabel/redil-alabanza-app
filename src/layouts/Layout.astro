@@ -4,7 +4,7 @@ import BottomNav from '../components/BottomNav.astro';
 import ProPlayerGlobal from '../components/ProPlayerGlobal.astro';
 import VocesModalGlobal from '../components/VocesModalGlobal.astro';
 import NotificationBell from '../components/react/NotificationBell.jsx';
-import { supabase } from '../lib/supabase';
+import { getBrandingConfig, invalidarCacheBranding } from '../lib/branding';
 import { ClientRouter } from 'astro:transitions';
 
 const user = Astro.locals.user;
@@ -66,35 +66,22 @@ const hexToRgbString = (hex) => {
   return `${r} ${g} ${b}`;
 };
 
-const BRANDING_TABLE_CANDIDATES = ['configuracion_app', 'configuracion', 'branding_config'];
+const pathname = new URL(Astro.request.url).pathname;
+const shouldBustBrandingCache =
+  Astro.cookies.has('branding_cache_bust') ||
+  Astro.request.headers.get('x-branding-bust') === '1' ||
+  new URL(Astro.request.url).searchParams.get('branding_bust') === '1';
 
-const isTableNotFoundError = (error) => {
-  if (!error) return false;
-  const message = String(error.message || '').toLowerCase();
-  return error.code === 'PGRST205' || message.includes('could not find the table');
-};
-
-let themeColors = null;
-for (const table of BRANDING_TABLE_CANDIDATES) {
-  const { data, error } = await supabase
-    .from(table)
-    .select('colores')
-    .eq('id', 1)
-    .limit(1);
-
-  if (error) {
-    if (isTableNotFoundError(error)) continue;
-    continue;
-  }
-
-  themeColors = data?.[0]?.colores || null;
-  break;
+if (shouldBustBrandingCache) {
+  invalidarCacheBranding();
+  Astro.cookies.delete('branding_cache_bust', { path: '/' });
 }
 
-const pathname = new URL(Astro.request.url).pathname;
+const brandingData = await getBrandingConfig({ forceFresh: shouldBustBrandingCache });
+const themeColors = brandingData;
 ---
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-branding-source={themeColors ? 'ssr' : 'default'}>
 <head>
  <meta charset="UTF-8" />
  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
@@ -260,9 +247,23 @@ const pathname = new URL(Astro.request.url).pathname;
       const isDark = window.__REDIL_THEME_MANAGER__.applyTheme();
       emitThemeChanged(isDark);
 
-      // Fallback global: si SSR no trae branding, usa cache local del panel.
-      const rawBranding = localStorage.getItem('branding_config_cache_v1');
-      if (rawBranding) {
+      const applyBrandingFallbackFromLocalStorage = () => {
+        const brandingSource = document.documentElement.dataset.brandingSource || '';
+        const ssrTrajoColores = getComputedStyle(document.documentElement)
+          .getPropertyValue('--color-brand')
+          .trim();
+        const esDefaultHardcodeado = ssrTrajoColores === '20 184 166';
+        const shouldUseLocalFallback =
+          brandingSource !== 'ssr' && (!ssrTrajoColores || esDefaultHardcodeado);
+
+        if (!shouldUseLocalFallback) {
+          console.log('[Branding] SSR trajo branding válido, localStorage no interviene');
+          return;
+        }
+
+        const rawBranding = localStorage.getItem('branding_config_cache_v1');
+        if (!rawBranding) return;
+
         const isHexColor = (value) => /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value || '');
         const hexToRgb = (hex) => {
           if (!isHexColor(hex)) return '';
@@ -298,22 +299,41 @@ const pathname = new URL(Astro.request.url).pathname;
           rolVoc: '--color-rol-voc',
         };
 
-        const parsed = JSON.parse(rawBranding);
-        Object.entries(map).forEach(([key, cssVar]) => {
-          const value = parsed?.[key];
-          const rgbValue = typeof value === 'string' ? hexToRgb(value) : '';
-          if (rgbValue) {
-            document.documentElement.style.setProperty(cssVar, rgbValue);
+        try {
+          const parsed = JSON.parse(rawBranding);
+          if (!parsed || typeof parsed !== 'object' || Object.keys(parsed).length === 0) {
+            return;
           }
-        });
 
-        if (!parsed?.action && parsed?.brand) {
-          const brandAsAction = hexToRgb(parsed.brand);
-          if (brandAsAction) {
-            document.documentElement.style.setProperty('--color-action', brandAsAction);
+          Object.entries(map).forEach(([key, cssVar]) => {
+            const value = parsed?.[key];
+            const rgbValue = typeof value === 'string' ? hexToRgb(value) : '';
+            if (rgbValue) {
+              document.documentElement.style.setProperty(cssVar, rgbValue);
+            }
+          });
+
+          if (!parsed?.action && parsed?.brand) {
+            const brandAsAction = hexToRgb(parsed.brand);
+            if (brandAsAction) {
+              document.documentElement.style.setProperty('--color-action', brandAsAction);
+            }
           }
+
+          console.log('[Branding] Fallback: usando localStorage porque SSR no trajo branding válido');
+        } catch (error) {
+          console.warn('[Branding] localStorage corrupto, ignorando', error);
         }
+      };
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', applyBrandingFallbackFromLocalStorage, { once: true });
+      } else {
+        applyBrandingFallbackFromLocalStorage();
       }
+
+      document.addEventListener('astro:page-load', applyBrandingFallbackFromLocalStorage);
+      document.addEventListener('astro:after-swap', applyBrandingFallbackFromLocalStorage);
     } catch {
       // no-op
     }

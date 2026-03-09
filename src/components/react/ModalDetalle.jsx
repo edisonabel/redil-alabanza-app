@@ -170,7 +170,7 @@ export default function ModalDetalle({ initialRoles }) {
                 {/* Header */}
                 <div className="p-6 border-b border-border flex justify-between items-start bg-background shrink-0">
                     <div>
-                        <span className="inline-block px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold tracking-widest uppercase mb-3 border border-blue-200/60 shadow-sm">{estado}</span>
+                        <span className="inline-block px-3 py-1 bg-brand/10 text-brand rounded-full text-xs font-bold tracking-widest uppercase mb-3 border border-brand/30 shadow-sm">{estado}</span>
                         <h2 className="text-3xl font-black text-content tracking-tight capitalize">{fechaFormat}</h2>
                         <div className="flex items-center gap-2 mt-2">
                             <span className="text-content-muted font-medium text-lg capitalize">{tema !== titulo ? tema : titulo}</span>
@@ -207,7 +207,7 @@ export default function ModalDetalle({ initialRoles }) {
                                             {p.avatar_url ? (
                                                 <img src={p.avatar_url} alt={p.nombre} className="w-14 h-14 shrink-0 rounded-full object-cover shadow-sm bg-surface" />
                                             ) : (
-                                                <div className="w-14 h-14 shrink-0 rounded-full bg-blue-100 text-blue-700 border border-blue-200 flex items-center justify-center font-black text-lg shadow-sm">{initials}</div>
+                                                <div className="w-14 h-14 shrink-0 rounded-full bg-brand/10 text-brand border border-brand/30 flex items-center justify-center font-black text-lg shadow-sm">{initials}</div>
                                             )}
                                             <div className="absolute -bottom-1 -right-1 w-7 h-7 bg-surface rounded-full flex items-center justify-center shadow-md border border-border text-content-muted">
                                                 <RosterIcon role={{ codigo: rCodigo, nombre: rNombre }} />
@@ -250,8 +250,8 @@ export default function ModalDetalle({ initialRoles }) {
                             ) : (
                                 <div className="flex flex-col">
                                     <div className="flex flex-col items-center justify-center w-full gap-2.5 mb-6">
-                                        <a href={rehearsalHref} target="_blank" rel="noopener noreferrer" className="group relative inline-flex w-full items-center justify-center gap-3 px-8 py-3 overflow-hidden rounded-xl bg-gradient-to-br from-teal-500 via-emerald-500 to-green-500 text-white font-bold text-sm sm:text-base tracking-wide shadow-lg shadow-teal-500/30 hover:shadow-teal-500/50 hover:-translate-y-0.5 transition-all duration-300">
-                                            <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-in-out"></div>
+                                        <a href={rehearsalHref} target="_blank" rel="noopener noreferrer" className="group relative inline-flex w-full items-center justify-center gap-3 px-8 py-3 overflow-hidden rounded-xl bg-action text-white font-bold text-sm sm:text-base tracking-wide shadow-lg hover:bg-action/90 hover:-translate-y-0.5 transition-all duration-300">
+                                            <div className="absolute inset-0 bg-white/15 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-in-out"></div>
                                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" className="shrink-0 relative z-10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                                             <span className="relative z-10">Entrar a Modo Ensayo</span>
                                         </a>

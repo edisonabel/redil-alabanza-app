@@ -131,12 +131,6 @@ export default function PanelBranding() {
   };
 
   useEffect(() => {
-    Object.entries(DEFAULT_COLORS).forEach(([key, value]) => {
-      applyColorToDom(key, value);
-    });
-  }, []);
-
-  useEffect(() => {
     let isMounted = true;
 
     const loadSavedConfig = async () => {
@@ -157,9 +151,12 @@ export default function PanelBranding() {
           continue;
         }
 
-        resolvedTable = table;
-        savedColors = sanitizeColorConfig(data?.[0]?.colores);
-        break;
+        const candidateColors = sanitizeColorConfig(data?.[0]?.colores);
+        if (candidateColors) {
+          resolvedTable = table;
+          savedColors = candidateColors;
+          break;
+        }
       }
 
       if (!savedColors) {
@@ -274,6 +271,16 @@ export default function PanelBranding() {
 
     try {
       localStorage.setItem(LOCAL_BRANDING_KEY, JSON.stringify(colors));
+      document.cookie = 'branding_cache_bust=1; path=/; max-age=60; SameSite=Lax';
+      await fetch(`${window.location.pathname}?branding_bust=1`, {
+        method: 'GET',
+        headers: {
+          'x-branding-bust': '1',
+          'cache-control': 'no-store',
+        },
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
     } catch {
       // no-op
     }

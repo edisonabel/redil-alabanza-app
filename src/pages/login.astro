@@ -51,7 +51,7 @@ import Layout from '../layouts/Layout.astro';
  <div>
  <label class="block text-sm font-semibold text-content mb-2">Rol / Instrumento <span class="text-content-muted font-normal text-xs ml-1">(Puedes elegir varios)</span></label>
  <div id="register-roles-grid" class="grid grid-cols-2 gap-2 max-h-[140px] overflow-y-auto p-3 border border-border rounded-xl bg-background custom-scrollbar">
- <div class="col-span-2 text-center text-xs text-content-muted py-2 flex items-center justify-center gap-2"><div class="w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin"></div>Cargando roles...</div>
+ <div class="col-span-2 text-center text-xs text-content-muted py-2 flex items-center justify-center gap-2"><div class="w-4 h-4 border-2 border-action border-t-transparent rounded-full animate-spin"></div>Cargando roles...</div>
  </div>
  </div>
  </div>
@@ -74,10 +74,10 @@ import Layout from '../layouts/Layout.astro';
  </div>
 
  <div id="error-message" class="hidden text-red-600 text-sm font-medium bg-red-100 border border-red-300 p-3 rounded-xl text-center mt-2"></div>
- <div id="success-message" class="hidden text-teal-600 text-sm font-medium bg-teal-100 border border-teal-300 p-3 rounded-xl text-center mt-2"></div>
+ <div id="success-message" class="hidden text-success text-sm font-medium bg-success/10 border border-success/30 p-3 rounded-xl text-center mt-2"></div>
 
  <div class="flex flex-col gap-3 mt-2">
- <button type="submit" id="btn-submit" class="w-full py-4 bg-teal-500 hover:bg-teal-400 text-white font-ui-strong rounded-xl active:scale-95 transition-all shadow-[0_0_15px_rgba(20,184,166,0.3)]">
+ <button type="submit" id="btn-submit" class="w-full py-4 bg-action hover:bg-action/80 text-white font-ui-strong rounded-xl active:scale-95 transition-all shadow-lg">
  Iniciar Sesión
  </button>
  </div>
