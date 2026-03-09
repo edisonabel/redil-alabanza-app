@@ -21,18 +21,32 @@ import Layout from '../layouts/Layout.astro';
  
  <!-- Campos Exclusivos de Registro (Ocultos por defecto) -->
  <div id="register-fields" class="hidden flex-col gap-5">
+ <div class="bg-blue-50 text-blue-900 border border-blue-200 rounded-xl px-4 py-4 dark:bg-blue-900/40 dark:text-blue-100 dark:border-blue-800 flex items-start gap-3">
+ <div class="mt-0.5 text-blue-700 dark:text-blue-200 shrink-0">
+ <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+ </div>
+ <div class="space-y-1">
+ <p class="text-sm font-bold leading-snug">Usa una foto de cerca (Retrato)</p>
+ <p class="text-sm leading-snug text-blue-900 dark:text-blue-100">Ampl&iacute;a la imagen hasta que <strong class="text-blue-700 dark:text-white">tu rostro llene el c&iacute;rculo</strong>. No uses fotos de cuerpo entero ni grupales.</p>
+ </div>
+ </div>
  <div>
  <label for="fullname" class="block text-sm font-semibold text-content mb-2">Nombre Completo <span class="text-red-500">*</span></label>
  <input type="text" id="fullname" class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted" placeholder="Ej: Juan Pérez">
  </div>
- <div>
- <label for="telefono" class="block text-sm font-semibold text-content mb-2">Teléfono / WhatsApp <span class="text-red-500">*</span></label>
- <input type="tel" id="telefono" class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted" placeholder="Ej: +123456789">
- </div>
- <div>
- <label for="accesscode" class="block text-sm font-semibold text-content mb-2">Código de Acceso del Equipo <span class="text-red-500">*</span></label>
- <input type="text" id="accesscode" class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted font-mono tracking-widest uppercase" placeholder="Ej: CLAVE123">
- <p class="text-[11px] text-content-muted mt-1.5 ml-1">Requerido para unirse a la plataforma.</p>
+<div>
+<label for="telefono" class="block text-sm font-semibold text-content mb-2">Teléfono / WhatsApp <span class="text-red-500">*</span></label>
+<input type="tel" id="telefono" class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted" placeholder="Ej: +123456789">
+</div>
+<div>
+<label for="fecha-nacimiento" class="block text-sm font-semibold text-content mb-2">Fecha de nacimiento <span class="text-red-500">*</span></label>
+<input type="date" id="fecha-nacimiento" class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all" />
+<p class="text-sm text-gray-500 mt-1.5">Esto es para recordar tu cumpleaños</p>
+</div>
+<div>
+<label for="accesscode" class="block text-sm font-semibold text-content mb-2">Código de Acceso del Equipo <span class="text-red-500">*</span></label>
+<input type="text" id="accesscode" class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted font-mono tracking-widest uppercase" placeholder="Ej: CLAVE123">
+<p class="text-[11px] text-content-muted mt-1.5 ml-1">Requerido para unirse a la plataforma.</p>
  </div>
  <div>
  <label class="block text-sm font-semibold text-content mb-2">Rol / Instrumento <span class="text-content-muted font-normal text-xs ml-1">(Puedes elegir varios)</span></label>
@@ -80,11 +94,12 @@ import Layout from '../layouts/Layout.astro';
 
   const form = document.getElementById('login-form');
  const emailInput = document.getElementById('email') as HTMLInputElement;
- const passwordInput = document.getElementById('password') as HTMLInputElement;
- const fullnameInput = document.getElementById('fullname') as HTMLInputElement;
- const telefonoInput = document.getElementById('telefono') as HTMLInputElement;
- const accessCodeInput = document.getElementById('accesscode') as HTMLInputElement;
- const rememberMeCheckbox = document.getElementById('remember-me') as HTMLInputElement;
+const passwordInput = document.getElementById('password') as HTMLInputElement;
+const fullnameInput = document.getElementById('fullname') as HTMLInputElement;
+const telefonoInput = document.getElementById('telefono') as HTMLInputElement;
+const fechaNacimientoInput = document.getElementById('fecha-nacimiento') as HTMLInputElement;
+const accessCodeInput = document.getElementById('accesscode') as HTMLInputElement;
+const rememberMeCheckbox = document.getElementById('remember-me') as HTMLInputElement;
  
  const errorMessage = document.getElementById('error-message');
  const successMessage = document.getElementById('success-message');
@@ -130,10 +145,11 @@ import Layout from '../layouts/Layout.astro';
  registerFields?.classList.remove('flex');
  passwordHint?.classList.add('hidden');
  
- fullnameInput.required = false;
- telefonoInput.required = false;
- accessCodeInput.required = false;
- accessCodeInput.value = ''; // limpiar por si acaso
+fullnameInput.required = false;
+telefonoInput.required = false;
+fechaNacimientoInput.required = false;
+accessCodeInput.required = false;
+accessCodeInput.value = ''; // limpiar por si acaso
  
  if (btnSubmit) btnSubmit.textContent = 'Iniciar Sesión';
  hideMessages();
@@ -151,9 +167,10 @@ import Layout from '../layouts/Layout.astro';
  registerFields?.classList.add('flex');
  passwordHint?.classList.remove('hidden');
 
- fullnameInput.required = true;
- telefonoInput.required = true;
- accessCodeInput.required = true;
+fullnameInput.required = true;
+telefonoInput.required = true;
+fechaNacimientoInput.required = true;
+accessCodeInput.required = true;
 
  if (btnSubmit) btnSubmit.textContent = 'Crear Cuenta';
  hideMessages();
@@ -238,9 +255,10 @@ import Layout from '../layouts/Layout.astro';
  
  } else {
  // Logic for Registration
- const fullName = fullnameInput.value;
- const telefono = telefonoInput.value;
- const accessCode = accessCodeInput.value?.trim().toUpperCase();
+const fullName = fullnameInput.value;
+const telefono = telefonoInput.value;
+const fechaNacimiento = fechaNacimientoInput.value;
+const accessCode = accessCodeInput.value?.trim().toUpperCase();
 
  // SECRET CODE VALIDATION
  const SECRET_CODE = 'REDIL2026';
@@ -248,7 +266,7 @@ import Layout from '../layouts/Layout.astro';
   throw new Error("El Código de Acceso es incorrecto. Contacta a tu líder si no lo tienes.");
  }
 
- if (!fullName || !telefono) throw new Error("Nombre y Teléfono son obligatorios para el registro.");
+if (!fullName || !telefono || !fechaNacimiento) throw new Error("Nombre, Teléfono y Fecha de nacimiento son obligatorios para el registro.");
 
  const selectedRoles = Array.from(document.querySelectorAll('input[name="register_role"]:checked')).map(cb => (cb as HTMLInputElement).value);
 
@@ -256,11 +274,12 @@ import Layout from '../layouts/Layout.astro';
  email,
  password,
  options: {
- data: {
- full_name: fullName,
- telefono: telefono,
- roles: selectedRoles
- }
+data: {
+full_name: fullName,
+telefono: telefono,
+fecha_nacimiento: fechaNacimiento,
+roles: selectedRoles
+}
  }
  });
 

@@ -1,12 +1,52 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Icon } from '@iconify/react';
+import microphoneIcon from '@iconify-icons/mdi/microphone';
+import guitarAcousticIcon from '@iconify-icons/mdi/guitar-acoustic';
+import guitarElectricIcon from '@iconify-icons/mdi/guitar-electric';
+import pianoIcon from '@iconify-icons/mdi/piano';
+import drumIcon from '@iconify-icons/mdi/music-circle';
+import violinIcon from '@iconify-icons/mdi/violin';
+import speakerIcon from '@iconify-icons/mdi/speaker';
+import scriptTextIcon from '@iconify-icons/mdi/script-text';
+import musicNoteIcon from '@iconify-icons/mdi/music-note';
 import { supabase } from '../../lib/supabase';
 
 /**
  * CalendarioGrid (React Phase 2)
  * Renderizador maestro del motor de Eventos (Tarjetas, Listas y Calendarios).
- * Reemplaza mÃ¡s de 1000 lÃ­neas de Vanilla JS en programacion.astro
+ * Reemplaza mÃƒÂ¡s de 1000 lÃƒÂ­neas de Vanilla JS en programacion.astro
  */
 export default function CalendarioGrid({ initialEvents, sessionUser, initialRoles, ssrError, isAdmin }) {
+    const getRoleBadgeIcon = (role) => {
+        const codigo = String(role?.codigo || '').toLowerCase();
+        const nombre = String(role?.nombre || '').toLowerCase();
+        const text = `${codigo} ${nombre}`.trim();
+
+        if (
+            text.includes('voz') ||
+            text.includes('direccion') ||
+            text.includes('dirección') ||
+            text.includes('talkback') ||
+            text.includes('lider_alabanza') ||
+            text.includes('líder de alabanza')
+        ) return microphoneIcon;
+
+        if (text.includes('guitarra_acustica') || text.includes('guitarra acústica')) return guitarAcousticIcon;
+
+        if (
+            text.includes('guitarra_electrica') ||
+            text.includes('guitarra eléctrica') ||
+            text.includes('bajo')
+        ) return guitarElectricIcon;
+
+        if (text.includes('piano') || text.includes('teclado')) return pianoIcon;
+        if (text.includes('bateria') || text.includes('batería')) return drumIcon;
+        if (text.includes('violin') || text.includes('violín')) return violinIcon;
+        if (text.includes('caja') || text.includes('cajon') || text.includes('cajón')) return speakerIcon;
+        if (text.includes('encargado_letras') || text.includes('encargado de letras')) return scriptTextIcon;
+
+        return musicNoteIcon;
+    };
     // --- ESTADOS REACTIVOS PRINCIPALES ---
     const [eventos, setEventos] = useState(initialEvents || []);
     const [viewMode, setViewMode] = useState('tarjeta'); // 'tarjeta', 'lista', 'calendario'
@@ -20,7 +60,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
     const [deleteConfirmTarget, setDeleteConfirmTarget] = useState(null);
     const [isDeleting, setIsDeleting] = useState(false);
 
-    // --- INICIALIZACIÃ“N Y MERGE POR FECHA (TIMEZONE SAFE) ---
+    // --- INICIALIZACIÃƒâ€œN Y MERGE POR FECHA (TIMEZONE SAFE) ---
     // Helper estricto de Strings para evitar offsets de zona horaria del cliente
     const getPaddedDateKey = (dateInput) => {
         if (!dateInput) return null;
@@ -41,7 +81,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
         return null;
     };
 
-    // --- DERIVACIÃ“N PURA (1:1 DB MAP) ---
+    // --- DERIVACIÃƒâ€œN PURA (1:1 DB MAP) ---
     // Al dejar de crear "Virtuales" domingos, cualquier borrado se refleja como inexistente en la UI.
     const tarjetasGeneradas = useMemo(() => {
         return [...eventos]
@@ -104,8 +144,9 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
         // Agrupadores
         const direccion = [];
         const letras = [];
-        const voces = [];
+        const vocesAsignadas = [];
         const banda = [];
+        const MAX_VOZ_SLOTS = 4;
 
         asignaciones.forEach(asig => {
             if (!asig.perfiles) return;
@@ -117,19 +158,12 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
 
             const isN1 = ['lider_alabanza', 'talkback'].includes(rolMatch.codigo);
             const isN2 = ['encargado_letras'].includes(rolMatch.codigo);
-            const isVoz = ['voz_soprano', 'voz_tenor'].includes(rolMatch.codigo);
+            const isVoz = String(rolMatch.codigo || '').startsWith('voz_');
 
             const bgColor = isN1 ? 'bg-rol-dir' : (isN2 ? 'bg-rol-let' : 'bg-rol-ban');
 
-            // Map standard badges / icons 
-            let badgeSvg = '';
-            if (rolMatch.codigo === 'lider_alabanza') badgeSvg = <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" x2="12" y1="19" y2="22" /></svg>;
-            else if (rolMatch.codigo === 'talkback') badgeSvg = <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3" /></svg>;
-            else if (isVoz) badgeSvg = <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m12 8-9.04 9.06a2.82 2.82 0 1 0 3.98 3.98L16 12" /><circle cx="17" cy="7" r="5" /></svg>;
-            else if (rolMatch.codigo === 'bateria') badgeSvg = <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m2 2 8 8" /><path d="m22 2-8 8" /><ellipse cx="12" cy="9" rx="10" ry="5" /><path d="M2 9v6c0 2.8 4.5 5 10 5s10-2.2 10-5V9" /></svg>;
-            else if (rolMatch.codigo === 'piano') badgeSvg = <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="5" rx="2" /><path d="M6 5v4" /><path d="M10 5v4" /><path d="M14 5v4" /><path d="M18 5v4" /></svg>;
-            else if (rolMatch.codigo.includes('guitarra')) badgeSvg = <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10 15v4a2 2 0 0 1-2 2v0a2 2 0 0 1-2-2v-4" /><path d="M14 15v4a2 2 0 0 0 2 2v0a2 2 0 0 0 2-2v-4" /><path d="M8 15V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v10" /><path d="M4 15h16" /><path d="M8 11h8" /></svg>;
-            else if (rolMatch.codigo === 'bajo') badgeSvg = <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>;
+            const badgeIcon = getRoleBadgeIcon(rolMatch);
+            const isPianoBadge = ['piano', 'piano_teclado'].includes(String(rolMatch.codigo || '').toLowerCase()) || String(rolMatch.nombre || '').toLowerCase().includes('teclado');
 
             const iniciales = names.length > 1 ? `${names[0].charAt(0)}${names[1].charAt(0)}` : names[0].charAt(0);
             const colorSeccion = isN1 ? 'bg-rol-dir' : (isN2 ? 'bg-rol-let' : (isVoz ? 'bg-rol-voc' : 'bg-rol-ban'));
@@ -144,9 +178,9 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                                 {iniciales.toUpperCase()}
                             </div>
                         )}
-                        {badgeSvg && (
+                        {badgeIcon && (
                             <div className="absolute -top-1.5 -right-1.5 w-[22px] h-[22px] bg-surface rounded-full flex items-center justify-center shadow-sm border border-border text-content-muted z-10 transition-transform group-hover:scale-110">
-                                {badgeSvg}
+                                <Icon icon={badgeIcon} className={isPianoBadge ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
                             </div>
                         )}
                     </div>
@@ -156,9 +190,11 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
 
             if (isN1) direccion.push(itemNode);
             else if (isN2) letras.push(itemNode);
-            else if (isVoz) voces.push(itemNode);
+            else if (isVoz && vocesAsignadas.length < MAX_VOZ_SLOTS) vocesAsignadas.push(itemNode);
             else banda.push(itemNode);
         });
+
+        const voces = vocesAsignadas;
 
         return (
             <div className="bg-border/45 rounded-2xl p-4 border border-border/80 flex flex-col gap-4">
@@ -192,13 +228,13 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                         <span className="text-[10px] font-bold text-rol-voc uppercase tracking-widest leading-none mt-0.5">Voces</span>
                         <div className="h-px flex-1 bg-rol-voc/10 ml-3"></div>
                     </div>
-                    <div className="flex flex-wrap gap-3">{voces.length > 0 ? voces : <span className="text-xs text-content-muted font-medium">Vacío</span>}</div>
+                    <div className="flex flex-wrap gap-3">{voces.length > 0 ? voces : <span className="text-xs text-content-muted font-medium">{"Vac\u00EDo"}</span>}</div>
                 </div>
             </div>
         );
     };
 
-    // La funciÃ³n renderSetlist fue removida a peticiÃ³n del Arquitecto (reservada para la vista "VER MAS").
+    // La funciÃƒÂ³n renderSetlist fue removida a peticiÃƒÂ³n del Arquitecto (reservada para la vista "VER MAS").
 
     const handleDeleteEventClick = (e, evId, isVirtual) => {
         e.stopPropagation();
@@ -238,7 +274,9 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
         const isSuspended = cardData.dbData && cardData.dbData.notas_especiales && cardData.dbData.notas_especiales.includes('SUSPENDIDO');
         const titulo = cardData.dbData?.titulo || 'Actividad Redil';
         const tema = cardData.dbData?.tema_predicacion || cardData.dbData?.titulo || 'Sin tema asignado';
+        const contextoTitulo = (tema && tema !== 'Sin tema asignado' ? tema : titulo).toLowerCase();
         const estado = cardData.dbData?.estado || 'ACTIVO';
+        const esAcustico = Boolean(cardData.dbData?.es_acustico);
 
         const fechaObj = cardData.fecha;
         const diaStr = fechaObj.getDate().toString();
@@ -345,10 +383,11 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                                                 fecha: cardData.fecha,
                                                 titulo,
                                                 tema,
-                                                estado,
-                                                hora_fin: cardData.dbData?.hora_fin || '',
-                                                serie_id: cardData.dbData?.serie_id || '',
-                                                moderator: !isAdmin && isModerator ? 'true' : 'false'
+                                            estado,
+                                            es_acustico: esAcustico,
+                                            hora_fin: cardData.dbData?.hora_fin || '',
+                                            serie_id: cardData.dbData?.serie_id || '',
+                                            moderator: !isAdmin && isModerator ? 'true' : 'false'
                                             });
                                         }
                                     }}
@@ -378,7 +417,11 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
         const isSuspended = cardData.dbData && cardData.dbData.notas_especiales && cardData.dbData.notas_especiales.includes('SUSPENDIDO');
         const titulo = cardData.dbData?.titulo || 'Actividad Redil';
         const tema = cardData.dbData?.tema_predicacion || cardData.dbData?.titulo || 'Sin tema asignado';
+        const temaPredicacion = typeof cardData.dbData?.tema_predicacion === 'string'
+            ? cardData.dbData.tema_predicacion.trim()
+            : '';
         const estado = cardData.dbData?.estado || 'ACTIVO';
+        const esAcustico = Boolean(cardData.dbData?.es_acustico);
 
         const fechaObj = cardData.fecha;
         const diaStr = fechaObj.getDate().toString();
@@ -402,7 +445,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
 
         const canManage = isAdmin || isModerator;
 
-        // CascarÃ³n Suspendido (JSX puro)
+        // CascarÃƒÂ³n Suspendido (JSX puro)
         if (isSuspended) {
             return (
                 <div key={cardData.id} className="agenda-card w-[85vw] sm:w-[380px] shrink-0 snap-center md:snap-align-none relative transition-all duration-700 bg-background border border-red-500/30 rounded-[2rem] p-8 opacity-70">
@@ -420,7 +463,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
         }
 
         return (
-            <div key={cardData.id} className="agenda-card w-[85vw] sm:w-[340px] shrink-0 snap-center group relative bg-border/20 dark:bg-surface rounded-[2rem] shadow-md hover:shadow-xl transition-shadow duration-300 border border-border/90 p-5 flex flex-col">
+            <div key={cardData.id} className="agenda-card w-[85vw] sm:w-[340px] shrink-0 snap-center group relative bg-border/20 dark:bg-surface rounded-[2rem] shadow-md hover:shadow-xl transition-shadow duration-300 border border-border/90 px-5 pb-5 pt-4 flex flex-col">
 
                 {/* --- BOTON ELIMINAR --- */}
                 {isAdmin && !cardData.isVirtual && (
@@ -438,6 +481,10 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                     <div className="absolute top-0 right-0 py-1 px-3 bg-red-500 text-white text-[10px] font-black uppercase tracking-widest rounded-bl-3xl rounded-tr-[2rem] shadow-sm z-10">Suspendido</div>
                 )}
 
+                <p className="mb-1 w-full text-center text-[9px] font-semibold text-content-muted/80 uppercase tracking-[0.12em] leading-none truncate relative z-20">
+                    {titulo}
+                </p>
+
                 {/* HEADER ROW 1 */}
                 <div className="flex justify-between items-start mb-2 relative z-20">
                     <div className="flex items-baseline gap-1 text-content">
@@ -445,22 +492,34 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                         <span className="text-3xl font-light tracking-tight leading-none ml-0.5">{mesStr}</span>
                         <span className="text-xs font-bold text-content-muted ml-1 pb-1">{anioStr}</span>
                     </div>
-                    <span className="px-3 py-1 bg-background text-content-muted text-[10px] font-bold rounded-lg border border-border uppercase tracking-widest">{estado}</span>
+                    <div className="flex flex-col items-end gap-1.5">
+                        {isAdmin && (
+                            <span className="px-3 py-1 bg-background text-content-muted text-[10px] font-bold rounded-lg border border-border uppercase tracking-widest">{estado}</span>
+                        )}
+                    </div>
                 </div>
 
                 {/* HEADER ROW 2 */}
-                <div className="flex items-center gap-3 mb-3 relative z-20">
+                <div className="flex flex-wrap items-center gap-2.5 mb-1.5 relative z-20">
                     <span className="px-2.5 py-0.5 bg-info/10 text-info border border-info/30 rounded-md text-[10px] font-bold uppercase tracking-widest leading-relaxed">{diaSemana}</span>
                     <span className="text-sm font-medium text-content-muted">{timeString}</span>
+                    {esAcustico && (
+                        <span className="px-2.5 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-full border border-emerald-200 uppercase tracking-widest leading-none dark:bg-teal-100 dark:text-teal-800 dark:border-teal-200">
+                            SOLO ACÚSTICO
+                        </span>
+                    )}
                 </div>
 
-                {/* TEMA PREDICACIÃ“N (GIGANTE) */}
-                <h1 className="text-[22px] font-bold text-content tracking-tight leading-tight mb-4 relative z-20">
-                    {tema}
-                </h1>
+                {temaPredicacion && (
+                    <h3 className="mt-0 mb-4 text-xl sm:text-2xl font-extrabold tracking-tight leading-tight text-content relative z-20">
+                        {temaPredicacion}
+                    </h3>
+                )}
 
-                {/* ROSTER ESTÃTICO PHASE 2 */}
-                {renderRoster(cardData.dbData)}
+                {/* ROSTER ESTÃƒÂTICO PHASE 2 */}
+                <div className="mb-4">
+                    {renderRoster(cardData.dbData)}
+                </div>
 
                 {/* BOTONES INFERIORES */}
                 <div className={`grid ${canManage ? 'grid-cols-2' : 'grid-cols-1'} gap-3 border-t border-border mt-auto pt-4 -mx-5 px-5 pb-0 relative z-20`}>
@@ -474,6 +533,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                                         titulo,
                                         tema,
                                         estado,
+                                        es_acustico: esAcustico,
                                         hora_fin: cardData.dbData?.hora_fin || '',
                                         serie_id: cardData.dbData?.serie_id || '',
                                         moderator: !isAdmin && isModerator ? 'true' : 'false',
@@ -515,7 +575,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
 
     // --- RENDERIZADO PRINCIPAL ---
 
-    // 1. AgrupaciÃ³n por Meses (LÃ³gica Reactiva)
+    // 1. AgrupaciÃƒÂ³n por Meses (LÃƒÂ³gica Reactiva)
     const groupedMonths = [];
     let currentMonthName = '';
 
@@ -607,7 +667,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                             const dayKey = getPaddedDateKey(cell.date);
 
                             // 1. Agregar todos los eventos reales documentados en base de datos.
-                            // Iteramos 'eventos' para no perder citas de MiÃ©rcoles u otros dÃ­as.
+                            // Iteramos 'eventos' para no perder citas de MiÃƒÂ©rcoles u otros dÃƒÂ­as.
                             eventos.forEach(ev => {
                                 if (ev.fecha_hora && getPaddedDateKey(new Date(ev.fecha_hora)) === dayKey) {
                                     dayEvents.push({
@@ -619,15 +679,15 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                                 }
                             });
 
-                            // 2. Agregar SOLO los eventos virtuales generados dinÃ¡micamente.
-                            // Ignoramos los tc reales de tarjetasGeneradas porque ya los aÃ±adimos arriba.
+                            // 2. Agregar SOLO los eventos virtuales generados dinÃƒÂ¡micamente.
+                            // Ignoramos los tc reales de tarjetasGeneradas porque ya los aÃƒÂ±adimos arriba.
                             tarjetasGeneradas.forEach(tc => {
                                 if (tc.isVirtual && getPaddedDateKey(tc.fecha) === dayKey) {
                                     dayEvents.push(tc);
                                 }
                             });
 
-                            // Ordenar cronolÃ³gicamente ascendente
+                            // Ordenar cronolÃƒÂ³gicamente ascendente
                             dayEvents.sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
 
                             return (
@@ -797,7 +857,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                 </>
             )}
 
-            {/* FAB AÑADIR EVENTO */}
+            {/* FAB AÃ‘ADIR EVENTO */}
             <button
                 onClick={() => {
                     if (window.toggleModalGlobal) window.toggleModalGlobal(true, 'new');
@@ -868,6 +928,12 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
         </div>
     );
 }
+
+
+
+
+
+
 
 
 

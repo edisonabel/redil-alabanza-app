@@ -18,7 +18,7 @@ const formatRelative = (value, _tick = 0) => {
   return rtf.format(Math.round(diffSeconds / 604800), 'week');
 };
 
-export default function NotificationBell({ inline = false }) {
+export default function NotificationBell({ inline = false, direction = 'down' }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState('');
@@ -148,14 +148,19 @@ export default function NotificationBell({ inline = false }) {
   if (!currentUserId && !loading) return null;
 
   const rootClass = inline
-    ? 'relative ml-auto'
-    : 'relative ml-auto';
+    ? 'relative inline-flex'
+    : 'relative ml-auto inline-flex';
   const rootStyle = undefined;
   const buttonClass = inline
     ? 'relative w-12 h-12 bg-background border border-border text-content rounded-full flex items-center justify-center group-active:scale-90 transition-transform'
     : 'relative h-11 w-11 rounded-2xl border border-border bg-surface/95 text-content shadow-lg backdrop-blur-md transition-all duration-200 hover:scale-[1.02] hover:border-brand/40';
-  const dropdownClass =
-    'absolute right-0 top-full mt-2 w-80 z-50 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-border bg-surface/95 shadow-2xl backdrop-blur-xl';
+  const dropdownBaseClass =
+    'absolute w-80 z-50 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-border bg-surface/95 shadow-2xl backdrop-blur-xl';
+  const dropdownPositionClass =
+    direction === 'up'
+      ? 'bottom-full mb-4 left-1/2 -translate-x-1/2 origin-bottom'
+      : 'right-0 top-full mt-2 origin-top-right';
+  const dropdownClass = `${dropdownBaseClass} ${dropdownPositionClass}`;
 
   return (
     <div

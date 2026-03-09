@@ -72,10 +72,11 @@ import Layout from '../layouts/Layout.astro';
  <option value="Bar&iacute;tono">Bar&iacute;tono / Bajo</option>
  </select>
  </div>
- <div class="space-y-1.5">
- <label class="text-xs font-bold text-content-muted uppercase tracking-wide">Cumplea&ntilde;os</label>
- <input type="date" id="input-cumpleanos" disabled class="w-full min-w-0 bg-surface border border-border text-content rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-shadow" />
- </div>
+<div class="space-y-1.5">
+<label class="text-xs font-bold text-content-muted uppercase tracking-wide">Fecha de nacimiento</label>
+<input type="date" id="input-cumpleanos" required disabled class="w-full min-w-0 bg-surface border border-border text-content rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-shadow" />
+<p class="text-sm text-gray-500">Esto es para recordar tu cumpleaños</p>
+</div>
  <div class="space-y-1.5">
  <label class="text-xs font-bold text-content-muted uppercase tracking-wide">Tel&eacute;fono / WhatsApp</label>
  <input type="tel" id="input-telefono" disabled class="w-full bg-surface border border-border text-content rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-shadow" placeholder="Ej: +123456789" />
@@ -155,14 +156,13 @@ import Layout from '../layouts/Layout.astro';
  </button>
  </div>
  
- <!-- GuÃ­a visual inyectada -->
- <div class="px-6 py-3 bg-blue-50/50 border-b border-blue-100 flex items-start gap-3">
- <div class="mt-0.5 text-blue-500 shrink-0">
+ <div class="px-6 py-4 bg-blue-50 text-blue-900 border-b border-blue-200 dark:bg-blue-900/40 dark:text-blue-100 dark:border-blue-800 flex items-start gap-3">
+ <div class="mt-0.5 text-blue-700 dark:text-blue-200 shrink-0">
  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
  </div>
- <div>
- <p class="text-[13px] font-bold text-blue-900 mb-0.5">Usa una foto de cerca (Estilo Retrato)</p>
- <p class="text-xs text-blue-700 leading-tight">Para que el equipo pueda identificarte r&aacute;pido en los horarios, ampl&iacute;a la imagen hasta que <b>tu rostro llene el c&iacute;rculo</b>. Evita fotos de cuerpo entero o de lejos.</p>
+ <div class="space-y-1">
+ <p class="text-sm font-bold leading-snug">Usa una foto de cerca (Retrato)</p>
+ <p class="text-sm leading-snug text-blue-900 dark:text-blue-100">Ampl&iacute;a la imagen hasta que <strong class="text-blue-700 dark:text-white">tu rostro llene el c&iacute;rculo</strong>. No uses fotos de cuerpo entero ni grupales.</p>
  </div>
  </div>
 

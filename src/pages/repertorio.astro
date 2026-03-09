@@ -149,18 +149,29 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
  </div>
 
  <!-- Barra Flotante Playlist (modo seleccion) - Inyeccion modular -->
-<div id="playlistBar" class="fixed bottom-[calc(env(safe-area-inset-bottom)+5rem)] md:bottom-16 left-0 right-0 z-50 bg-surface border-t border-border shadow-[0_-8px_30px_rgba(0,0,0,0.3)] px-4 py-3 hidden">
+<div id="playlistBar" class="fixed bottom-[calc(env(safe-area-inset-bottom)+5rem)] md:bottom-[calc(var(--spacing)*22)] left-0 right-0 z-50 bg-surface border-t border-border shadow-[0_-8px_30px_rgba(0,0,0,0.3)] px-4 py-3 hidden">
  <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4">
- <div class="flex items-start sm:items-center gap-3">
+ <div class="flex items-start sm:items-center gap-3 min-w-0">
  <div class="w-10 h-10 rounded-full bg-brand/20 flex items-center justify-center">
  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-teal-400"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
  </div>
- <div>
- <p class="text-content font-bold text-base leading-tight"><span id="playlistCount">0</span> Canciones Seleccionadas</p>
- <p class="text-content-muted text-sm leading-tight">Toca el + de cada canci&oacute;n para agregar o quitar</p>
+ <div class="min-w-0">
+ <div class="flex flex-wrap items-center gap-2">
+ <span id="playlistCountBadge" class="inline-flex items-center rounded-full bg-brand/15 text-brand border border-brand/25 px-2.5 py-1 text-xs font-bold tracking-wide">
+ <span id="playlistCount">0</span>&nbsp;canciones
+ </span>
+ <button id="btn-clear-playlist-selection" type="button" class="hidden md:inline-flex items-center rounded-full border border-border bg-background/80 px-2.5 py-1 text-[11px] font-bold text-content-muted hover:bg-background hover:text-content transition-colors">
+ Limpiar lista
+ </button>
+ </div>
+ <p class="text-content font-bold text-base md:text-lg leading-tight mt-1">Canciones seleccionadas</p>
+ <p class="text-content-muted text-sm leading-tight truncate">Toca el + de cada canci&oacute;n para agregar o quitar</p>
  </div>
  </div>
  <div class="flex items-center gap-2">
+ <button id="btn-clear-playlist-selection-mobile" class="inline-flex md:hidden px-3 py-2.5 rounded-xl border border-border text-content-muted text-sm font-bold hover:bg-background transition-colors">
+ Limpiar
+ </button>
  <button id="btn-cancel-playlist" class="flex-1 sm:flex-none px-4 py-2.5 rounded-xl border border-border text-content-muted text-sm font-bold hover:bg-background transition-colors">
  Cancelar
  </button>
@@ -184,6 +195,11 @@ import { supabase } from '../lib/supabase';
   __REPERTORIO_INIT_BOUND__?: boolean;
   __REPERTORIO_BEFORE_SWAP_BOUND__?: boolean;
   __REPERTORIO_CLEANUP__?: (() => void) | null;
+  __REPERTORIO_METRONOME__?: {
+   intervalId: number | null;
+   activeDot: HTMLElement | null;
+   audioCtx: AudioContext | null;
+  };
  };
 
  const repertorioWindow = window as RepertorioWindow;
@@ -214,7 +230,34 @@ import { supabase } from '../lib/supabase';
  };
 
  let observer: IntersectionObserver | null = null;
- let metronomoInterval: any = null;
+ const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+ const metronomeState = repertorioWindow.__REPERTORIO_METRONOME__ || {
+  intervalId: null,
+  activeDot: null,
+  audioCtx: null,
+ };
+ repertorioWindow.__REPERTORIO_METRONOME__ = metronomeState;
+
+ const getSharedAudioCtx = () => {
+  if (!AudioContextClass) return null;
+  if (!metronomeState.audioCtx || metronomeState.audioCtx.state === 'closed') {
+   metronomeState.audioCtx = new AudioContextClass();
+  }
+  return metronomeState.audioCtx;
+ };
+
+ const stopMetronome = () => {
+  if (metronomeState.intervalId) {
+   clearInterval(metronomeState.intervalId);
+   metronomeState.intervalId = null;
+  }
+  if (metronomeState.activeDot) {
+   metronomeState.activeDot.classList.remove('beat-active');
+   metronomeState.activeDot.style.removeProperty('--bpm-duration');
+   metronomeState.activeDot = null;
+  }
+ };
+
  repertorioWindow.__REPERTORIO_CLEANUP__ = () => {
   cleanupFns.forEach((dispose) => {
    try {
@@ -230,10 +273,7 @@ import { supabase } from '../lib/supabase';
    observer = null;
   }
 
-  if (metronomoInterval) {
-   clearInterval(metronomoInterval);
-   metronomoInterval = null;
-  }
+  stopMetronome();
 
   const anyAudio = document.querySelector('audio') as HTMLAudioElement | null;
   if (anyAudio) {
@@ -373,6 +413,8 @@ if (sessionError || !session) {
  let selectedSongs = [];
  const playlistBar = document.getElementById('playlistBar');
  const playlistCountEl = document.getElementById('playlistCount');
+ const btnClearPlaylistSelection = document.getElementById('btn-clear-playlist-selection');
+ const btnClearPlaylistSelectionMobile = document.getElementById('btn-clear-playlist-selection-mobile');
 
  // Helper local para setlist normal
  let setlist = JSON.parse(localStorage.getItem('setlist') || '[]');
@@ -390,6 +432,28 @@ if (sessionError || !session) {
 
  function updatePlaylistCount() {
  if (playlistCountEl) playlistCountEl.textContent = selectedSongs.length.toString();
+ }
+
+ function syncSelectionButtons() {
+  cards.forEach(card => {
+   const btn = card.querySelector('.btn-add-setlist') as HTMLElement | null;
+   if (!btn) return;
+
+   const cancionId = btn.getAttribute('data-id') || card.getAttribute('data-id') || '';
+   const svg = btn.querySelector('svg');
+   const isSelected = cancionId && selectedSongs.includes(String(cancionId));
+
+   if (svg) {
+    svg.innerHTML = isSelected
+     ? '<polyline points="20 6 9 17 4 12"></polyline>'
+     : '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>';
+   }
+
+   btn.classList.toggle('text-green-400', Boolean(isSelected));
+   btn.classList.toggle('bg-green-500/10', Boolean(isSelected));
+   btn.classList.toggle('text-blue-400', !isSelected);
+   btn.classList.toggle('bg-blue-500/10', !isSelected);
+  });
  }
 
  const dispatchProPlayerEvent = (payload: { url: string; title?: string; artist?: string; isDirectPlayable?: boolean; autoPlay?: boolean }) => {
@@ -422,15 +486,12 @@ if (sessionError || !session) {
  dispatchProPlayerEvent({ url: mp3Url, title: songTitle, artist: songArtist, autoPlay: true });
  }, { capture: true });
 
- // ----- Metronomo Interactivo Logic -----
- let metronomoActivoDot: HTMLElement | null = null;
- 
- const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
- const audioCtx = new AudioContextClass();
- 
- function playClick() {
- if (!audioCtx) return;
- if (audioCtx.state === 'suspended') audioCtx.resume();
+// ----- Metronomo Interactivo Logic -----
+
+function playClick() {
+const audioCtx = getSharedAudioCtx();
+if (!audioCtx) return;
+if (audioCtx.state === 'suspended') audioCtx.resume();
  
  const osc = audioCtx.createOscillator();
  const gainNode = audioCtx.createGain();
@@ -460,29 +521,25 @@ if (sessionError || !session) {
  const dot = badge.querySelector('.metronomo-dot') as HTMLElement;
  if (!dot) return;
  
- if (metronomoActivoDot && metronomoActivoDot !== dot) {
- metronomoActivoDot.classList.remove('beat-active');
- metronomoActivoDot.style.removeProperty('--bpm-duration');
- if (metronomoInterval) clearInterval(metronomoInterval);
+ if (metronomeState.activeDot && metronomeState.activeDot !== dot) {
+ stopMetronome();
  }
- 
+
  if (dot.classList.contains('beat-active')) {
- dot.classList.remove('beat-active');
- dot.style.removeProperty('--bpm-duration');
- if (metronomoInterval) clearInterval(metronomoInterval);
- metronomoActivoDot = null;
+ stopMetronome();
  return;
  }
- 
+
+ stopMetronome();
  const duracionSegundos = 60 / bpmVal;
  dot.style.setProperty('--bpm-duration', `${duracionSegundos}s`);
  dot.classList.add('beat-active');
- metronomoActivoDot = dot;
- 
+ metronomeState.activeDot = dot;
+
  playClick();
- metronomoInterval = setInterval(playClick, duracionSegundos * 1000);
+ metronomeState.intervalId = window.setInterval(playClick, duracionSegundos * 1000);
  }
- });
+});
 
  // ----- Reference Tone (Pitch Pipe) Logic -----
  const frecuencias: { [key: string]: number } = {
@@ -500,6 +557,7 @@ if (sessionError || !session) {
  tono = tono.replace(/m/g, '').trim();
  const frecuencia = frecuencias[tono];
  
+ const audioCtx = getSharedAudioCtx();
  if (frecuencia && audioCtx) {
  if (audioCtx.state === 'suspended') audioCtx.resume();
  
@@ -609,10 +667,16 @@ if (sessionError || !session) {
  // =============================================
  // BLOQUE 2: PREPARACION DE UI PARA SELECCION O MODO NORMAL
  // =============================================
-if (isSelectionMode) {
+ if (isSelectionMode) {
  if (mainTitle) mainTitle.innerHTML = 'Seleccionar Setlist';
  if (setlistPanel) setlistPanel.style.display = 'none';
  if (playlistBar) playlistBar.classList.remove('hidden');
+
+ const clearPlaylistSelection = () => {
+  selectedSongs = [];
+  updatePlaylistCount();
+  syncSelectionButtons();
+ };
 
  // Pre-cargar canciones de la playlist existente
  (async () => {
@@ -642,6 +706,8 @@ if (isSelectionMode) {
 
  // Listeners de Guardar y Cancelar Playlist
  addListener(document.getElementById('btn-cancel-playlist'), 'click', () => { window.location.href = '/programacion'; });
+ addListener(btnClearPlaylistSelection, 'click', clearPlaylistSelection);
+ addListener(btnClearPlaylistSelectionMobile, 'click', clearPlaylistSelection);
  
  addListener(document.getElementById('btn-save-playlist'), 'click', async () => {
  const btn = document.getElementById('btn-save-playlist');
@@ -711,16 +777,11 @@ if (isSelectionMode) {
  const idx = selectedSongs.indexOf(String(cancionId));
  if (idx > -1) {
  selectedSongs.splice(idx, 1);
- if (svg) svg.innerHTML = '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>';
- btn.classList.replace('text-green-400', 'text-blue-400');
- btn.classList.replace('bg-green-500/10', 'bg-blue-500/10');
  } else {
  selectedSongs.push(String(cancionId));
- if (svg) svg.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
- btn.classList.replace('text-blue-400', 'text-green-400');
- btn.classList.replace('bg-blue-500/10', 'bg-green-500/10');
  }
  updatePlaylistCount();
+ syncSelectionButtons();
  } else {
  if (!cancion) return;
  if (!setlist.includes(cancion)) {

@@ -1,31 +1,54 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Icon } from '@iconify/react';
+import microphoneIcon from '@iconify-icons/mdi/microphone';
+import guitarAcousticIcon from '@iconify-icons/mdi/guitar-acoustic';
+import guitarElectricIcon from '@iconify-icons/mdi/guitar-electric';
+import pianoIcon from '@iconify-icons/mdi/piano';
+import drumIcon from '@iconify-icons/mdi/music-circle';
+import violinIcon from '@iconify-icons/mdi/violin';
+import speakerIcon from '@iconify-icons/mdi/speaker';
+import scriptTextIcon from '@iconify-icons/mdi/script-text';
+import musicNoteIcon from '@iconify-icons/mdi/music-note';
 import { supabase } from '../../lib/supabase';
 
-const iconSvgPaths = {
-    'lider_alabanza': '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>',
-    'talkback': '<path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>',
-    'encargado_letras': '<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>',
-    'voz_soprano': '<path d="m12 8-9.04 9.06a2.82 2.82 0 1 0 3.98 3.98L16 12"/><circle cx="17" cy="7" r="5"/>',
-    'voz_tenor': '<path d="m12 8-9.04 9.06a2.82 2.82 0 1 0 3.98 3.98L16 12"/><circle cx="17" cy="7" r="5"/>',
-    'bateria': '<path d="m2 2 8 8"/><path d="m22 2-8 8"/><ellipse cx="12" cy="9" rx="10" ry="5"/><path d="M2 9v6c0 2.8 4.5 5 10 5s10-2.2 10-5V9"/>',
-    'piano': '<rect width="20" height="14" x="2" y="5" rx="2"/><path d="M6 5v4"/><path d="M10 5v4"/><path d="M14 5v4"/><path d="M18 5v4"/>',
-    'guitarra_electrica': '<path d="M10 15v4a2 2 0 0 1-2 2v0a2 2 0 0 1-2-2v-4"/><path d="M14 15v4a2 2 0 0 0 2 2v0a2 2 0 0 0 2-2v-4"/><path d="M8 15V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v10"/><path d="M4 15h16"/><path d="M8 11h8"/>',
-    'guitarra_acustica': '<path d="M10 15v4a2 2 0 0 1-2 2v0a2 2 0 0 1-2-2v-4"/><path d="M14 15v4a2 2 0 0 0 2 2v0a2 2 0 0 0 2-2v-4"/><path d="M8 15V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v10"/><path d="M4 15h16"/><path d="M8 11h8"/>',
-    'bajo': '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
-    'violin': '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>'
+const getRoleBadgeIcon = (role) => {
+    const codigo = String(role?.codigo || '').toLowerCase();
+    const nombre = String(role?.nombre || '').toLowerCase();
+    const text = `${codigo} ${nombre}`.trim();
+
+    if (
+        text.includes('voz') ||
+        text.includes('direccion') ||
+        text.includes('dirección') ||
+        text.includes('talkback') ||
+        text.includes('lider_alabanza') ||
+        text.includes('líder de alabanza')
+    ) return microphoneIcon;
+
+    if (text.includes('guitarra_acustica') || text.includes('guitarra acústica')) return guitarAcousticIcon;
+
+    if (
+        text.includes('guitarra_electrica') ||
+        text.includes('guitarra eléctrica') ||
+        text.includes('bajo')
+    ) return guitarElectricIcon;
+
+    if (text.includes('piano') || text.includes('teclado')) return pianoIcon;
+    if (text.includes('bateria') || text.includes('batería')) return drumIcon;
+    if (text.includes('violin') || text.includes('violín')) return violinIcon;
+    if (text.includes('caja') || text.includes('cajon') || text.includes('cajón')) return speakerIcon;
+    if (text.includes('encargado_letras') || text.includes('encargado de letras')) return scriptTextIcon;
+
+    return musicNoteIcon;
 };
 
-const DefaultIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-content-muted" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
-    </svg>
-);
+const RosterIcon = ({ role }) => {
+    const icon = getRoleBadgeIcon(role);
+    const codigo = String(role?.codigo || '').toLowerCase();
+    const nombre = String(role?.nombre || '').toLowerCase();
+    const isPianoBadge = codigo.includes('piano') || nombre.includes('teclado');
 
-const RosterIcon = ({ codigo }) => {
-    if (!codigo || !iconSvgPaths[codigo]) return <DefaultIcon />;
-    return (
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-content-muted" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" dangerouslySetInnerHTML={{ __html: iconSvgPaths[codigo] }} />
-    );
+    return <Icon icon={icon} className={isPianoBadge ? 'w-3 h-3' : 'w-3.5 h-3.5'} />;
 };
 
 export default function ModalDetalle({ initialRoles }) {
@@ -83,11 +106,22 @@ export default function ModalDetalle({ initialRoles }) {
 
             const { data: items } = await supabase
                 .from('playlist_canciones')
-                .select('orden, canciones(titulo, cantante, tonalidad, bpm, link_youtube, link_acordes, link_letras, link_voces, link_secuencias)')
+                .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, link_youtube, link_acordes, link_letras, link_voces, link_secuencias)')
                 .eq('playlist_id', pl.id)
                 .order('orden');
 
-            setPlaylistItems(items || []);
+            const uniqueItems = [];
+            const seenSongs = new Set();
+
+            (items || []).forEach((item) => {
+                const c = item?.canciones || {};
+                const dedupeKey = item?.cancion_id || c?.id || `${(c?.titulo || '').trim().toLowerCase()}::${(c?.cantante || '').trim().toLowerCase()}`;
+                if (!dedupeKey || seenSongs.has(dedupeKey)) return;
+                seenSongs.add(dedupeKey);
+                uniqueItems.push(item);
+            });
+
+            setPlaylistItems(uniqueItems);
         } catch (err) {
             console.error('Error fetching playlist:', err);
         } finally {
@@ -161,7 +195,7 @@ export default function ModalDetalle({ initialRoles }) {
                             {roster.length > 0 ? roster.map((asig, idx) => {
                                 if (!asig.perfiles) return null;
                                 const p = asig.perfiles;
-                                const rNombre = initialRoles?.find?.(r => r.id === asig.rol_id)?.nombre || asig.roles?.nombre || 'Músico';
+                                const rNombre = initialRoles?.find?.(r => r.id === asig.rol_id)?.nombre || asig.roles?.nombre || 'MÃºsico';
                                 const rCodigo = initialRoles?.find?.(r => r.id === asig.rol_id)?.codigo || asig.roles?.codigo || '';
 
                                 const cleanName = p.nombre.replace(/\s*\(.*?\)\s*/g, '').trim();
@@ -176,7 +210,7 @@ export default function ModalDetalle({ initialRoles }) {
                                                 <div className="w-14 h-14 shrink-0 rounded-full bg-blue-100 text-blue-700 border border-blue-200 flex items-center justify-center font-black text-lg shadow-sm">{initials}</div>
                                             )}
                                             <div className="absolute -bottom-1 -right-1 w-7 h-7 bg-surface rounded-full flex items-center justify-center shadow-md border border-border text-content-muted">
-                                                <RosterIcon codigo={rCodigo} />
+                                                <RosterIcon role={{ codigo: rCodigo, nombre: rNombre }} />
                                             </div>
                                         </div>
                                         <div className="flex-1 min-w-0">
@@ -188,7 +222,7 @@ export default function ModalDetalle({ initialRoles }) {
                             }) : (
                                 <div className="col-span-1 md:col-span-2 flex flex-col items-center justify-center py-8 opacity-50 bg-background rounded-2xl border border-border border-dashed">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mb-3 text-content-muted"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="m19 8 3 3-3 3" /></svg>
-                                    <p className="font-bold text-base text-content-muted">Nadie asignado aún al roster</p>
+                                    <p className="font-bold text-base text-content-muted">Nadie asignado aÃºn al roster</p>
                                 </div>
                             )}
                         </div>
@@ -211,49 +245,27 @@ export default function ModalDetalle({ initialRoles }) {
                                 <div className="flex flex-col items-center justify-center py-6 opacity-60">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" className="mx-auto mb-3 text-content-muted" stroke="currentColor" strokeWidth="1.5"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
                                     <p className="text-sm font-bold text-content-muted">Sin setlist asignada</p>
-                                    <p className="text-[11px] text-content-muted mt-1">El líder de alabanza puede crear una desde el módulo Repertorio.</p>
+                                    <p className="text-[11px] text-content-muted mt-1">El lÃ­der de alabanza puede crear una desde el mÃ³dulo Repertorio.</p>
                                 </div>
                             ) : (
                                 <div className="flex flex-col">
                                     <div className="flex flex-col items-center justify-center w-full gap-2.5 mb-6">
-                                        <a href={rehearsalHref} target="_blank" rel="noopener noreferrer" className="group relative inline-flex items-center justify-center gap-3 px-8 py-3 w-full sm:w-auto overflow-hidden rounded-xl bg-gradient-to-br from-teal-500 via-emerald-500 to-green-500 text-white font-bold text-sm sm:text-base tracking-wide shadow-lg shadow-teal-500/30 hover:shadow-teal-500/50 hover:-translate-y-0.5 transition-all duration-300">
+                                        <a href={rehearsalHref} target="_blank" rel="noopener noreferrer" className="group relative inline-flex w-full items-center justify-center gap-3 px-8 py-3 overflow-hidden rounded-xl bg-gradient-to-br from-teal-500 via-emerald-500 to-green-500 text-white font-bold text-sm sm:text-base tracking-wide shadow-lg shadow-teal-500/30 hover:shadow-teal-500/50 hover:-translate-y-0.5 transition-all duration-300">
                                             <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-in-out"></div>
                                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" className="shrink-0 relative z-10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                                             <span className="relative z-10">Entrar a Modo Ensayo</span>
                                         </a>
                                     </div>
-                                    <div className="flex flex-col gap-3">
+                                    <div className="flex flex-col gap-2">
                                         {playlistItems.length > 0 ? playlistItems.map((item, idx) => {
                                             const c = item.canciones || {};
                                             return (
-                                                <article key={idx} className="relative bg-surface border border-border rounded-2xl shadow-sm flex flex-col mb-2 overflow-hidden hover:border-brand/30 transition-colors">
-                                                    <div className="p-4 sm:p-5 flex gap-4">
-                                                        <div className="w-10 h-10 rounded-full bg-brand/10 text-brand border border-brand/30 flex items-center justify-center font-black shrink-0 text-lg shadow-sm">{idx + 1}</div>
-                                                        <div className="flex-1 min-w-0 flex flex-col pt-0.5">
-                                                            <h3 className="text-lg sm:text-xl font-bold tracking-tight text-content mb-0.5 truncate">{c.titulo || 'Sin Título'}</h3>
-                                                            <p className="text-sm font-medium text-content-muted mb-3 truncate">{c.cantante || 'Redil Sur'}</p>
-                                                            <div className="flex flex-wrap gap-2 text-[11px] sm:text-xs">
-                                                                {c.tonalidad && c.tonalidad !== '-' && (
-                                                                    <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-background border border-border text-content font-bold tracking-wider dark:bg-surface/80 dark:border-white/60 dark:text-white">
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5 text-content-muted"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
-                                                                        Key: {c.tonalidad}
-                                                                    </span>
-                                                                )}
-                                                                {c.bpm > 0 && (
-                                                                    <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-background border border-border text-content font-bold tracking-wider dark:bg-surface/80 dark:border-white/60 dark:text-white">
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5 text-content-muted"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
-                                                                        {c.bpm} BPM
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="px-4 pb-4 sm:px-5 sm:pb-5">
-                                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-1">
-                                                            {c.link_youtube && <a href={c.link_youtube} target="_blank" rel="noreferrer" className="flex items-center justify-center py-2.5 rounded-xl bg-danger/10 text-danger hover:bg-danger/20 font-bold text-xs tracking-wide transition-colors">YouTube</a>}
-                                                            {c.link_acordes && <a href={c.link_acordes} target="_blank" rel="noreferrer" className="flex items-center justify-center py-2.5 rounded-xl bg-success/10 text-success hover:bg-success/20 font-bold text-xs tracking-wide transition-colors">Acordes</a>}
-                                                            {c.link_voces && <a href={c.link_voces} target="_blank" rel="noreferrer" className="flex items-center justify-center py-2.5 rounded-xl bg-warning/10 text-warning hover:bg-warning/20 font-bold text-xs tracking-wide transition-colors">Voces</a>}
-                                                            {c.link_secuencias && <a href={c.link_secuencias} target="_blank" rel="noreferrer" className="flex items-center justify-center py-2.5 rounded-xl bg-accent/10 text-accent hover:bg-accent/20 font-bold text-xs tracking-wide transition-colors">E-Tracks</a>}
+                                                <article key={idx} className="relative bg-surface border border-border rounded-xl shadow-sm overflow-hidden hover:border-brand/30 transition-colors">
+                                                    <div className="px-3 py-2.5 sm:px-4 sm:py-3 flex items-center gap-3">
+                                                        <div className="w-8 h-8 rounded-full bg-brand/10 text-brand border border-brand/30 flex items-center justify-center font-black shrink-0 text-sm shadow-sm">{idx + 1}</div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <h3 className="text-base font-bold tracking-tight text-content truncate">{c.titulo || 'Sin tÃ­tulo'}</h3>
+                                                            <p className="text-xs font-medium text-content-muted truncate">{c.cantante || 'Redil Sur'}</p>
                                                         </div>
                                                     </div>
                                                 </article>
@@ -261,7 +273,7 @@ export default function ModalDetalle({ initialRoles }) {
                                         }) : null}
                                     </div>
                                     <p className="text-[10px] sm:text-xs text-content-muted mt-4 text-center">
-                                        Última modificación: {new Date(playlist.updated_at).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                        Ãšltima modificaciÃ³n: {new Date(playlist.updated_at).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                                     </p>
                                 </div>
                             )}

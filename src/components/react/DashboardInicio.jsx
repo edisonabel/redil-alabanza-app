@@ -27,7 +27,14 @@ const formatTimeRange = (isoString, horaFin) => {
     return `${startText} - ${String(horaFin).slice(0, 5)}`;
 };
 
-const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
+const formatDayMonth = (isoDate) => {
+    if (!isoDate || typeof isoDate !== 'string') return '';
+    const safeDate = new Date(`${isoDate}T00:00:00`);
+    if (Number.isNaN(safeDate.getTime())) return '';
+    return safeDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' });
+};
+
+const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = [], cumpleanerosMes = [] }) => {
     const [isDark, setIsDark] = useState(false);
     const [dismissUpcomingHint, setDismissUpcomingHint] = useState(false);
     const [dismissEnvironmentHint, setDismissEnvironmentHint] = useState(false);
@@ -182,29 +189,34 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
     const opcionesFecha = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
     const fechaHoy = new Date().toLocaleDateString('es-ES', opcionesFecha);
     const fechaHoyCapitalizada = fechaHoy.charAt(0).toUpperCase() + fechaHoy.slice(1);
+    const mesActualStr = new Date().toLocaleString('es-ES', { month: 'long' });
     const showUpcomingHint = proximosServicios.length > 1 && !dismissUpcomingHint;
 
     return (
         <>
-        <a
-            href="/"
-            className="fixed top-3 right-4 z-40 rounded-2xl border border-border bg-surface/80 backdrop-blur p-1.5 shadow-lg"
-            aria-label="Inicio Redil"
-        >
-            <img src="/LOGO%20REDIL%20LIGHT.png" alt="Redil" className="w-[80px] h-auto dark:hidden md:w-[96px]" />
-            <img src="/LOGO%20REDIL.png" alt="Redil" className="hidden w-[80px] h-auto dark:block md:w-[96px]" />
-        </a>
         <div className="w-full max-w-[1720px] mx-auto selection:bg-brand/20 flex flex-col lg:flex-row gap-6 lg:gap-8 2xl:gap-10 xl:grid xl:grid-cols-[minmax(0,1fr)_460px] 2xl:grid-cols-[minmax(0,1fr)_560px]">
             {/* Columna Izquierda */}
             <div className="flex-1 min-w-0 w-full flex flex-col gap-6">
-                <header className="px-3 sm:px-4 lg:px-0 mt-2 pr-16 md:pr-28">
-                    <h1 className="text-3xl font-extrabold text-content tracking-tight">Hola {nombre}</h1>
-                    <p className="text-sm font-medium text-content-muted mt-1 capitalize">{fechaHoyCapitalizada}</p>
+                <header className="px-3 sm:px-4 lg:px-0 mt-2">
+                    <div className="flex items-start justify-between gap-4">
+                        <div>
+                            <h1 className="text-3xl font-extrabold text-content tracking-tight">Hola {nombre}</h1>
+                            <p className="text-sm font-medium text-content-muted mt-1 capitalize">{fechaHoyCapitalizada}</p>
+                        </div>
+                        <a
+                            href="/"
+                            className="rounded-xl border border-border bg-surface/90 p-1 shadow-sm"
+                            aria-label="Inicio Redil"
+                        >
+                            <img src="/LOGO%20REDIL%20LIGHT.png" alt="Redil" className="w-12 h-auto dark:hidden md:w-14" />
+                            <img src="/LOGO%20REDIL.png" alt="Redil" className="hidden w-12 h-auto dark:block md:w-14" />
+                        </a>
+                    </div>
                 </header>
 
                 <section className="flex-1 flex flex-col">
                     <div className="flex items-center justify-between gap-3 px-3 sm:px-4 lg:px-0 mb-3">
-                        <h2 className="text-lg font-bold text-content tracking-tight">Próximos Servicios</h2>
+                        <h2 className="text-lg font-bold text-content tracking-tight">Mis Asignaciones</h2>
                         {showUpcomingHint && (
                             <span className="md:hidden inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-surface/80 text-[10px] font-bold text-content-muted uppercase tracking-wide [animation:deslizaInicioHintLoop_4.8s_ease-in-out_infinite]">
                                 Desliza
@@ -487,21 +499,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
 
                 <section className="px-3 sm:px-4 lg:px-0 mb-8 lg:mb-0">
                     <h2 className="text-lg font-bold text-content tracking-tight mb-3">Atajos</h2>
-                    <div className="bg-surface border border-border rounded-[2rem] p-5 shadow-sm grid grid-cols-5 gap-2 sm:gap-3 items-start">
-                        <a href="/programacion" className="flex flex-col items-center gap-2 group min-w-0">
-                            <div className="w-12 h-12 bg-background border border-border text-content rounded-full flex items-center justify-center group-active:scale-90 transition-transform">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2" /><line x1="16" x2="16" y1="2" y2="6" /><line x1="8" x2="8" y1="2" y2="6" /><line x1="3" x2="21" y1="10" y2="10" /></svg>
-                            </div>
-                            <span className="text-[10px] sm:text-xs font-semibold text-content text-center leading-tight">Calendario</span>
-                        </a>
-
-                        <a href="/perfil" className="flex flex-col items-center gap-2 group min-w-0">
-                            <div className="w-12 h-12 bg-background border border-border text-content rounded-full flex items-center justify-center group-active:scale-90 transition-transform">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="10" r="3" /><path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662" /></svg>
-                            </div>
-                            <span className="text-[10px] sm:text-xs font-semibold text-content text-center leading-tight">Mi Perfil</span>
-                        </a>
-
+                    <div className="bg-surface border border-border rounded-[2rem] p-5 shadow-sm grid grid-cols-3 gap-2 sm:gap-3 items-start">
                         <a href="/perfil#ausencias" className="flex flex-col items-center gap-2 group min-w-0">
                             <div className="w-12 h-12 bg-background border border-border text-content rounded-full flex items-center justify-center group-active:scale-90 transition-transform">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
@@ -510,8 +508,8 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
                         </a>
 
                         <div className="flex flex-col items-center gap-2 group min-w-0">
-                            <NotificationBell inline />
-                            <span className="text-[10px] sm:text-xs font-semibold text-content text-center leading-tight">Avisos</span>
+                            <NotificationBell inline direction="up" />
+                            <span className="text-[10px] sm:text-xs font-semibold text-content text-center leading-tight">Notificaciones</span>
                         </div>
 
                         <button type="button" onClick={toggleDarkMode} className="flex flex-col items-center gap-2 group min-w-0">
@@ -524,6 +522,85 @@ const DashboardInicio = ({ usuario, proximosServicios = [] }) => {
                             </div>
                             <span className="text-[10px] sm:text-xs font-semibold text-content text-center leading-tight">{isDark ? 'Claro' : 'Oscuro'}</span>
                         </button>
+                    </div>
+
+                    <div className="mt-4 space-y-4">
+                        <article className="bg-surface border border-border rounded-2xl p-4 shadow-sm">
+                            <div className="flex items-center justify-between gap-3 mb-3">
+                                <h3 className="text-sm font-black text-content uppercase tracking-wide">Eventos Especiales</h3>
+                            </div>
+                            {eventosEspeciales.length === 0 ? (
+                                <p className="text-sm text-content-muted">No hay eventos especiales activos.</p>
+                            ) : (
+                                <div className="space-y-2.5">
+                                    {eventosEspeciales.map((evento) => (
+                                        <div
+                                            key={evento.id}
+                                            className="rounded-2xl border border-white/35 px-4 py-3 shadow-sm"
+                                            style={{ backgroundColor: 'rgb(var(--color-brand))', color: 'white' }}
+                                        >
+                                            <div className="flex items-start gap-3">
+                                                <div className="mt-0.5 w-8 h-8 rounded-lg bg-white/15 border border-white/35 flex items-center justify-center shrink-0">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="text-white">
+                                                        <rect width="18" height="18" x="3" y="4" rx="2" />
+                                                        <line x1="16" x2="16" y1="2" y2="6" />
+                                                        <line x1="8" x2="8" y1="2" y2="6" />
+                                                        <line x1="3" x2="21" y1="10" y2="10" />
+                                                    </svg>
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <p className="text-3xl md:text-4xl leading-none font-black tracking-tight text-white">{formatDayMonth(evento.fecha)}</p>
+                                                    <p className="text-lg font-bold text-white mt-1.5">{evento.titulo}</p>
+                                                    {evento.descripcion ? (
+                                                        <p className="text-sm text-white/90 mt-1.5 line-clamp-2">{evento.descripcion}</p>
+                                                    ) : null}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </article>
+
+                        <article className="bg-surface border border-border rounded-2xl p-4 shadow-sm">
+                            <div className="flex items-center justify-between gap-3 mb-3">
+                                <h3 className="text-sm font-black text-content uppercase tracking-wide inline-flex items-center gap-2">
+                                    <span className="w-6 h-6 rounded-md bg-brand/15 border border-brand/30 text-brand flex items-center justify-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M20 12v10H4V12" />
+                                            <path d="M2 7h20v5H2z" />
+                                            <path d="M12 22V7" />
+                                            <path d="M12 7h4a2 2 0 1 0 0-4c-2.1 0-4 2-4 4Z" />
+                                            <path d="M12 7H8a2 2 0 1 1 0-4c2.1 0 4 2 4 4Z" />
+                                        </svg>
+                                    </span>
+                                    Cumpleaneros del Mes
+                                </h3>
+                            </div>
+                            {cumpleanerosMes.length === 0 ? (
+                                <p className="text-sm text-content-muted">No hay cumpleaneros registrados este mes.</p>
+                            ) : (
+                                <div className="flex gap-2.5 overflow-x-auto hide-scrollbar pb-1">
+                                    {cumpleanerosMes.map((persona) => (
+                                        <article key={persona.id} className="min-w-[220px] rounded-xl border border-border bg-background px-3.5 py-3 shrink-0 flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-xl bg-brand/10 border border-brand/25 text-brand flex items-center justify-center shrink-0">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M20 12v10H4V12" />
+                                                    <path d="M2 7h20v5H2z" />
+                                                    <path d="M12 22V7" />
+                                                    <path d="M12 7h4a2 2 0 1 0 0-4c-2.1 0-4 2-4 4Z" />
+                                                    <path d="M12 7H8a2 2 0 1 1 0-4c2.1 0 4 2 4 4Z" />
+                                                </svg>
+                                            </div>
+                                            <div className="min-w-0">
+                                                <p className="text-lg font-black text-content truncate">{persona.nombre}</p>
+                                                <p className="text-sm font-semibold text-content-muted mt-0.5">{`${persona.dia} de ${mesActualStr}`}</p>
+                                            </div>
+                                        </article>
+                                    ))}
+                                </div>
+                            )}
+                        </article>
                     </div>
 
                     {!isStandaloneApp && (

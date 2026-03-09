@@ -54,8 +54,8 @@ export default function ModalSerie({ sessionUser }) {
             }
 
             if (count > 0) {
-                const dias = ['Domingo', 'Lunes', 'Martes', 'MiÃ©rcoles', 'Jueves', 'Viernes', 'SÃ¡bado'];
-                setPreviewText(`âœ… Se generarÃ¡n ${count} eventos cada ${dias[dia]} desde el ${formData.fechaInicio} hasta el ${formData.fechaLimite}`);
+                const dias = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+                setPreviewText(`Se generarán ${count} eventos cada ${dias[dia]} desde el ${formData.fechaInicio} hasta el ${formData.fechaLimite}`);
             } else {
                 setPreviewText('No se encontraron fechas coincidentes en este rango.');
             }
@@ -69,7 +69,7 @@ export default function ModalSerie({ sessionUser }) {
             const currentYear = new Date().getFullYear();
             const selectedYear = parseInt(value.substring(0, 4), 10);
             if (selectedYear > currentYear) {
-                alert(`La fecha lÃ­mite no puede pasar del aÃ±o en curso (${currentYear}).`);
+                alert(`La fecha límite no puede pasar del año en curso (${currentYear}).`);
                 value = `${currentYear}-12-31`;
             }
         }
@@ -86,7 +86,7 @@ export default function ModalSerie({ sessionUser }) {
 
         const currentYear = new Date().getFullYear();
         if (parseInt(formData.fechaLimite.substring(0, 4), 10) > currentYear) {
-            alert(`La fecha lÃ­mite no puede pasar del aÃ±o en curso (${currentYear}).`);
+            alert(`La fecha límite no puede pasar del año en curso (${currentYear}).`);
             return;
         }
 
@@ -154,7 +154,7 @@ export default function ModalSerie({ sessionUser }) {
             }
 
             if (eventos.length === 0) {
-                alert("No hay fechas seleccionadas en ese rango coincidiendo con ese dÃ­a de la semana.");
+                alert("No hay fechas seleccionadas en ese rango coincidiendo con ese día de la semana.");
                 setIsLoading(false);
                 return;
             }
@@ -166,7 +166,7 @@ export default function ModalSerie({ sessionUser }) {
                 if (error && !error.message?.includes('No rows returned') && error.code !== '201') throw error;
             }
 
-            alert(`Â¡Serie creada! Se insertaron masivamente ${eventos.length} programaciones en el sistema.`);
+            alert(`¡Serie creada! Se insertaron masivamente ${eventos.length} programaciones en el sistema.`);
             setIsOpen(false);
             window.location.reload();
 
@@ -195,21 +195,21 @@ export default function ModalSerie({ sessionUser }) {
 
                 <form onSubmit={handleGenerate} className="p-6 flex flex-col gap-5 text-left">
                     <div>
-                        <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">TÃ­tulo Base <span className="text-red-500">*</span></label>
-                        <input type="text" name="titulo" value={formData.titulo} onChange={handleChange} required className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" placeholder="Ej: Culto de AdoraciÃ³n" />
+                        <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">TÍTULO DEL EVENTO (RECURRENTE) <span className="text-red-500">*</span></label>
+                        <input type="text" name="titulo" value={formData.titulo} onChange={handleChange} required className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" placeholder="Ej: Culto de Adoración" />
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">DÃ­a de la Semana <span className="text-red-500">*</span></label>
+                            <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">DÍA DE LA SEMANA <span className="text-red-500">*</span></label>
                             <select name="dia" value={formData.dia} onChange={handleChange} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors appearance-none">
                                 <option value="0">Domingo</option>
                                 <option value="1">Lunes</option>
                                 <option value="2">Martes</option>
-                                <option value="3">MiÃ©rcoles</option>
+                                <option value="3">Miércoles</option>
                                 <option value="4">Jueves</option>
                                 <option value="5">Viernes</option>
-                                <option value="6">SÃ¡bado</option>
+                                <option value="6">Sábado</option>
                             </select>
                         </div>
                         <div>
@@ -238,9 +238,9 @@ export default function ModalSerie({ sessionUser }) {
                             <input type="date" name="fechaInicio" value={formData.fechaInicio} onChange={handleChange} required className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" />
                         </div>
                         <div>
-                            <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">Fecha LÃ­mite <span className="text-red-500">*</span></label>
+                            <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">FECHA LÍMITE <span className="text-red-500">*</span></label>
                             <input type="date" name="fechaLimite" value={formData.fechaLimite} onChange={handleChange} required max={`${new Date().getFullYear()}-12-31`} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" />
-                            <p className="text-[10px] text-content-muted mt-1">MÃ¡ximo: 31 de Diciembre del aÃ±o en curso</p>
+                            <p className="text-[10px] text-content-muted mt-1">Máximo: 31 de Diciembre del año en curso</p>
                         </div>
                     </div>
 
@@ -275,12 +275,12 @@ export default function ModalSerie({ sessionUser }) {
                                     <div className="w-2 h-2 rounded-full bg-red-500 animate-ping"></div>
                                 </div>
                             </div>
-                            <h3 className="text-xl font-extrabold text-content mb-3 tracking-tight">Â¡DÃ­a Ocupado!</h3>
+                            <h3 className="text-xl font-extrabold text-content mb-3 tracking-tight">¡Día Ocupado!</h3>
                             <p className="text-sm text-content-muted leading-relaxed">
-                                Ya existe un evento en la base de datos para el dÃ­a <br /> <strong className="text-red-500 bg-red-50 px-2 py-1 rounded-lg inline-block mt-2 mb-1">{collisionDate}</strong>
+                                Ya existe un evento en la base de datos para el día <br /> <strong className="text-red-500 bg-red-50 px-2 py-1 rounded-lg inline-block mt-2 mb-1">{collisionDate}</strong>
                             </p>
                             <p className="text-xs text-content-muted mt-4 px-2">
-                                Para evitar sobreescribir o duplicar eventos, por favor ajusta tu lÃ­mite de fecha o borra el evento conflictivo.
+                                Para evitar sobreescribir o duplicar eventos, por favor ajusta tu límite de fecha o borra el evento conflictivo.
                             </p>
                         </div>
                         <div className="flex bg-background p-4 border-t border-red-100/50">

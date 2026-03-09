@@ -1,4 +1,4 @@
----
+﻿---
 import Layout from '../layouts/Layout.astro';
 ---
 
@@ -120,7 +120,7 @@ import Layout from '../layouts/Layout.astro';
  
  <!-- Body -->
  <div class="p-6 overflow-y-auto flex-1 custom-scrollbar">
- <p class="text-xs font-bold uppercase tracking-widest text-content-muted mb-4">MÃºltiples Asignaciones Permitidas</p>
+ <p class="text-xs font-bold uppercase tracking-widest text-content-muted mb-4">MÚLTIPLES ASIGNACIONES PERMITIDAS</p>
  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2" id="modal-roles-container">
  <!-- InyecciÃ³n dinÃ¡mica de Toggles -->
  </div>
@@ -197,7 +197,7 @@ import Layout from '../layouts/Layout.astro';
  <!-- L1 L2 -->
  <div class="grid grid-cols-2 gap-4 mb-5">
  <div class="flex flex-col">
- <div class="flex items-center justify-between mb-3"><span class="text-[10px] font-bold text-violet-600 uppercase tracking-widest">DirecciÃ³n</span><div class="h-px flex-1 bg-violet-200 ml-2"></div></div>
+            <div class="flex items-center justify-between mb-3"><span class="text-[10px] font-bold text-violet-600 uppercase tracking-widest">Dirección</span><div class="h-px flex-1 bg-violet-200 ml-2"></div></div>
  <div class="grid grid-cols-1 gap-2" id="tb-n1-slots"></div>
  </div>
  <div class="flex flex-col">
@@ -250,7 +250,7 @@ import Layout from '../layouts/Layout.astro';
  <!-- DirecciÃ³n -->
  <div>
  <div class="flex items-center justify-between mb-3">
- <span class="text-xs font-bold text-violet-600 uppercase tracking-widest flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"/><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M12 2v2"/><path d="M12 22v-2"/><path d="m17 20.66-1-1.73"/><path d="M11 10.27 7 3.34"/><path d="m20.66 17-1.73-1"/><path d="m3.34 7 1.73 1"/><path d="M14 12h8"/><path d="M2 12h2"/><path d="m20.66 7-1.73 1"/><path d="m3.34 17 1.73-1"/><path d="m17 3.34-1 1.73"/><path d="m11 13.73-4 6.93"/></svg> DirecciÃ³n</span>
+                    <span class="text-xs font-bold text-violet-600 uppercase tracking-widest flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"/><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M12 2v2"/><path d="M12 22v-2"/><path d="m17 20.66-1-1.73"/><path d="M11 10.27 7 3.34"/><path d="m20.66 17-1.73-1"/><path d="m3.34 7 1.73 1"/><path d="M14 12h8"/><path d="M2 12h2"/><path d="m20.66 7-1.73 1"/><path d="m3.34 17 1.73-1"/><path d="m17 3.34-1 1.73"/><path d="m11 13.73-4 6.93"/></svg> Dirección</span>
  <div class="h-px flex-1 bg-violet-200 ml-3"></div>
  </div>
  <div class="grid grid-cols-2 gap-2" id="detalle-direccion">
@@ -471,7 +471,7 @@ import Layout from '../layouts/Layout.astro';
  // Enforcement Limit
  if(currentCount >= 10) {
  btnBuilderBig.disabled = true;
- btnBuilderBig.title = "LÃ­mite MÃ¡ximo de Equipos alcanzado";
+            btnBuilderBig.title = "Límite Máximo de Equipos alcanzado";
  btnBuilderFab.classList.add('hidden');
  } else {
  btnBuilderBig.disabled = false;
@@ -1156,7 +1156,7 @@ import Layout from '../layouts/Layout.astro';
  });
  
  // '+' Button para el slot
- const canAdd = !(['lider_alabanza', 'director_musical', 'bateria', 'bajo', 'piano', 'guitarra_acustica', 'guitarra_electrica'].includes(codigo) && assigned.length >= 1);
+ const canAdd = !(['lider_alabanza', 'director_musical', 'bateria', 'bajo', 'piano', 'guitarra_acustica', 'guitarra_electrica', 'caja', 'caja_peruana', 'cajon_peruano'].includes(codigo) && assigned.length >= 1);
  if (canAdd) {
  html += `<button type="button" class="btn-tb-add w-full h-[42px] px-2 flex items-center justify-center bg-transparent hover:bg-blue-50 :bg-teal-900/20 border border-dashed border-border text-content-muted hover:text-blue-600 :text-brand hover:border-blue-400 :border-teal-600 rounded-xl transition-all cursor-pointer text-[11px] font-bold gap-1 truncate" data-rol="${rolId}" data-rolname="${rolNombre}">
  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" class="shrink-0 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
@@ -1169,7 +1169,7 @@ import Layout from '../layouts/Layout.astro';
  // ===== POOL DE VOCES: 4 slots genÃ©ricos (soprano + tenor sin distinciÃ³n) =====
  const buildVoicePoolHtml = () => {
  // Obtener IDs reales de soprano y tenor
- const vozRoles = window.appStateRoles.filter((r:any) => ['voz_soprano', 'voz_tenor'].includes(r.codigo));
+ const vozRoles = window.appStateRoles.filter((r:any) => String(r.codigo || '').startsWith('voz_'));
  const vozRoleIds = vozRoles.map((r:any) => r.id);
  
  // Todas las voces asignadas en tbState (de cualquier rol de voz)
@@ -1206,7 +1206,7 @@ import Layout from '../layouts/Layout.astro';
 
  window.appStateRoles.forEach((rol:any) => {
  // Saltar soprano y tenor individualmente â€” se manejan via pool unificado
- if (['voz_soprano', 'voz_tenor'].includes(rol.codigo)) return;
+ if (String(rol.codigo || '').startsWith('voz_')) return;
  
  const markup = buildSlotHtml(rol.id, rol.nombre, rol.codigo);
  if (['lider_alabanza', 'director_musical', 'talkback'].includes(rol.codigo)) n1.insertAdjacentHTML('beforeend', markup);
@@ -1251,7 +1251,7 @@ import Layout from '../layouts/Layout.astro';
  let perfilesRol: any[] = [];
 
  if (isVozPool) {
- const vozRoles = window.appStateRoles.filter((r:any) => ['voz_soprano', 'voz_tenor'].includes(r.codigo));
+ const vozRoles = window.appStateRoles.filter((r:any) => String(r.codigo || '').startsWith('voz_'));
  const vozRoleIds = vozRoles.map((r:any) => r.id);
  const seen = new Set();
  vozRoleIds.forEach((voiceRoleId:any) => {
@@ -1277,7 +1277,7 @@ import Layout from '../layouts/Layout.astro';
  }
 
  const vozRolesIds = window.appStateRoles
- .filter((r:any) => ['voz_soprano', 'voz_tenor'].includes(r.codigo))
+ .filter((r:any) => String(r.codigo || '').startsWith('voz_'))
  .map((r:any) => r.id);
  const vozCount = window.tbState.assignments.filter((a:any) => vozRolesIds.includes(a.rol_id)).length;
 

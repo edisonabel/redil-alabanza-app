@@ -1,7 +1,7 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 
-export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr, evEstadoStr, isStrictModerator, dbData }) {
+export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr, evEstadoStr, esAcustico = false, isStrictModerator, dbData }) {
     const [asignaciones, setAsignaciones] = useState(dbData?.asignaciones || []);
     const [roles, setRoles] = useState([]);
 
@@ -9,6 +9,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
     const [pickerOpen, setPickerOpen] = useState(false);
     const [pickerRolId, setPickerRolId] = useState(null);
     const [pickerRolName, setPickerRolName] = useState('');
+    const [pickerSlotIndex, setPickerSlotIndex] = useState(null);
     const [pickerList, setPickerList] = useState([]);
     const [pickerLoading, setPickerLoading] = useState(false);
 
@@ -23,25 +24,44 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
     }, [dbData]);
 
     useEffect(() => {
+        const hasCajaRole = (list = []) =>
+            list.some((rol) => /(^|_)(caja|cajon)(_|$)/.test(String(rol.codigo || '')));
         const fetchRoles = async () => {
-            if (window.appStateRoles && window.appStateRoles.length > 0) {
-                setRoles(window.appStateRoles);
-            } else {
-                const { data } = await supabase.from('roles').select('*').order('nombre');
-                if (data) {
-                    setRoles(data);
-                    window.appStateRoles = data;
-                }
+            const cachedRoles = Array.isArray(window.appStateRoles) ? window.appStateRoles : [];
+            const shouldUseCache = cachedRoles.length > 0 && (!esAcustico || hasCajaRole(cachedRoles));
+            if (shouldUseCache) {
+                setRoles(cachedRoles);
+                return;
+            }
+            const { data } = await supabase.from('roles').select('*').order('nombre');
+            if (data) {
+                setRoles(data);
+                window.appStateRoles = data;
             }
         };
         fetchRoles();
-    }, []);
+    }, [esAcustico]);
+
+    const effectiveRoles = useMemo(() => {
+        const hasCajaRole = roles.some((rol) => /(^|_)(caja|cajon)(_|$)/.test(String(rol.codigo || '')));
+        if (!esAcustico || hasCajaRole) return roles;
+
+        return [
+            ...roles,
+            {
+                id: '__virtual_caja__',
+                codigo: 'caja',
+                nombre: 'Caja',
+                isVirtual: true
+            }
+        ];
+    }, [roles, esAcustico]);
 
     const fetchCurrentRoster = async () => {
         if (!evId || evId.startsWith('virtual|')) return;
         const { data } = await supabase
             .from('eventos')
-            .select('asignaciones(rol_id, perfiles(id, nombre, email, avatar_url))')
+            .select('asignaciones(id, perfil_id, rol_id, perfiles(id, nombre, email, avatar_url))')
             .eq('id', evId)
             .single();
         if (data) {
@@ -49,14 +69,14 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         }
     };
 
-    const handleRemove = async (rolId) => {
+    const handleRemove = async (assignmentId, rolId = null) => {
         if (!evId || evId.startsWith('virtual|')) return;
-        const confirmDelete = window.confirm("Â¿EstÃ¡s seguro de remover esta asignaciÃ³n?");
+        const confirmDelete = window.confirm("¿Estás seguro de remover esta asignación?");
         if (!confirmDelete) return;
 
-        const { error } = await supabase.from('asignaciones').delete()
-            .eq('evento_id', evId)
-            .eq('rol_id', rolId);
+        let query = supabase.from('asignaciones').delete().eq('evento_id', evId);
+        query = assignmentId ? query.eq('id', assignmentId) : query.eq('rol_id', rolId);
+        const { error } = await query;
 
         if (!error) {
             await fetchCurrentRoster();
@@ -65,24 +85,38 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         }
     };
 
-    const openPicker = async (rId, rName) => {
+    const openPicker = async (rId, rName, slotIndex = null) => {
         if (!evId || evId.startsWith('virtual|')) {
             alert('Guarda/crea primero este evento para asignarle equipo.');
             return;
         }
 
+        if (rId === '__virtual_caja__') {
+            alert('Falta crear el rol "Caja" en la base de datos. Ejecuta la migración y recarga la vista.');
+            return;
+        }
+
         setPickerRolId(rId);
         setPickerRolName(rName);
+        setPickerSlotIndex(slotIndex);
         setPickerOpen(true);
         setPickerLoading(true);
         setPickerList([]);
 
+        const isVoicePool = rId === '_voz_pool';
+        const voiceRoles = effectiveRoles.filter((rol) => String(rol.codigo || '').startsWith('voz_'));
+        const voiceRoleIds = voiceRoles.map((rol) => rol.id);
+
         const [perfilesRoles, ausenciasResp] = await Promise.all([
-            // Consulta A: MÃºsicos capacitados para el rol
-            supabase
-                .from('perfil_roles')
-                .select('perfiles!inner(*)')
-                .eq('rol_id', rId),
+            isVoicePool
+                ? supabase
+                    .from('perfil_roles')
+                    .select('rol_id, perfiles!inner(*)')
+                    .in('rol_id', voiceRoleIds)
+                : supabase
+                    .from('perfil_roles')
+                    .select('rol_id, perfiles!inner(*)')
+                    .eq('rol_id', rId),
 
             // Consulta B: Ausencias que choquen con la fecha del evento
             supabase
@@ -94,46 +128,86 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
 
         setPickerLoading(false);
         if (!perfilesRoles.error && perfilesRoles.data) {
-            // Mapear los datos sumando el flag de ausencia
             const mappedList = perfilesRoles.data.map(d => {
                 const p = d.perfiles;
                 const ausencia = ausenciasResp.data?.find(a => a.perfil_id === p.id);
-                if (ausencia) {
-                    return { ...p, ausente: true, ausenteMotivo: ausencia.motivo };
-                }
-                return { ...p, ausente: false };
+                return {
+                    ...p,
+                    realRolId: d.rol_id,
+                    realRolNombre: effectiveRoles.find(rol => rol.id === d.rol_id)?.nombre || rName,
+                    ausente: Boolean(ausencia),
+                    ausenteMotivo: ausencia?.motivo || ''
+                };
             });
             setPickerList(mappedList);
         }
     };
 
-    const selectUserForRole = async (perfilId) => {
+    const selectUserForRole = async (perfilId, forcedRolId = null) => {
         setPickerLoading(true);
+        const saveRolId = forcedRolId || pickerRolId;
+        const isVoicePool = pickerRolId === '_voz_pool';
+        const voiceRoleIds = effectiveRoles
+            .filter((rol) => String(rol.codigo || '').startsWith('voz_'))
+            .map((rol) => rol.id);
+
+        if (isVoicePool) {
+            const existingVoiceAssignments = asignaciones.filter((a) => voiceRoleIds.includes(a.rol_id));
+            const duplicateVoice = existingVoiceAssignments.some((a) => (a.perfil_id || a.perfiles?.id) === perfilId);
+
+            if (duplicateVoice) {
+                alert('Esta persona ya está asignada en la sección de Voces para este evento.');
+                setPickerLoading(false);
+                return;
+            }
+
+            if (pickerSlotIndex !== null && existingVoiceAssignments[pickerSlotIndex]) {
+                alert('Ese slot de voces ya está ocupado. Elige uno vacío.');
+                setPickerLoading(false);
+                return;
+            }
+
+            const { error } = await supabase.from('asignaciones').insert([{
+                evento_id: evId,
+                perfil_id: perfilId,
+                rol_id: saveRolId
+            }]);
+
+            setPickerLoading(false);
+            if (!error) {
+                setPickerOpen(false);
+                setPickerSlotIndex(null);
+                await fetchCurrentRoster();
+            } else {
+                alert('Error: ' + error.message);
+            }
+            return;
+        }
 
         // Validation for exclusive instrument assignment
-        const newRol = roles.find(r => r.id === pickerRolId);
+        const newRol = effectiveRoles.find(r => r.id === saveRolId);
         if (newRol) {
             const isN1 = ['lider_alabanza', 'talkback'].includes(newRol.codigo);
             const isN2 = ['encargado_letras'].includes(newRol.codigo);
-            const isVoz = ['voz_soprano', 'voz_tenor'].includes(newRol.codigo);
+            const isVoz = String(newRol.codigo || '').startsWith('voz_');
             const isInstrumento = !isN1 && !isN2 && !isVoz;
 
             if (isInstrumento) {
                 // Check if user already has an instrument role
                 const userExistingAsig = asignaciones.filter(a => a.perfil_id === perfilId);
                 const hasConflictingInstrument = userExistingAsig.some(a => {
-                    if (a.rol_id === pickerRolId) return false; // same role is fine to overwrite
-                    const existingRol = roles.find(r => r.id === a.rol_id);
+                    if (a.rol_id === saveRolId) return false; // same role is fine to overwrite
+                    const existingRol = effectiveRoles.find(r => r.id === a.rol_id);
                     if (!existingRol) return false;
                     const eIsN1 = ['lider_alabanza', 'talkback'].includes(existingRol.codigo);
                     const eIsN2 = ['encargado_letras'].includes(existingRol.codigo);
-                    const eIsVoz = ['voz_soprano', 'voz_tenor'].includes(existingRol.codigo);
+                    const eIsVoz = String(existingRol.codigo || '').startsWith('voz_');
                     const eIsInstrumento = !eIsN1 && !eIsN2 && !eIsVoz;
                     return eIsInstrumento;
                 });
 
                 if (hasConflictingInstrument) {
-                    alert('Este mÃºsico/a ya estÃ¡ asignado a otro instrumento en la banda para este evento. (Un integrante puede cantar y tocar a la vez, pero no tocar 2 instrumentos simultÃ¡neamente).');
+                    alert('Este músico/a ya está asignado a otro instrumento en la banda para este evento. (Un integrante puede cantar y tocar a la vez, pero no tocar 2 instrumentos simultáneamente).');
                     setPickerLoading(false);
                     return;
                 }
@@ -143,18 +217,19 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         // Clean first
         await supabase.from('asignaciones').delete()
             .eq('evento_id', evId)
-            .eq('rol_id', pickerRolId);
+            .eq('rol_id', saveRolId);
 
         // Insert new
         const { error } = await supabase.from('asignaciones').insert([{
             evento_id: evId,
             perfil_id: perfilId,
-            rol_id: pickerRolId
+            rol_id: saveRolId
         }]);
 
         setPickerLoading(false);
         if (!error) {
             setPickerOpen(false);
+            setPickerSlotIndex(null);
             await fetchCurrentRoster();
         } else {
             alert('Error: ' + error.message);
@@ -180,7 +255,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
     };
 
     const selectEquipo = async (equipo) => {
-        const confirm = window.confirm(`Cargar "${equipo.nombre}" sobrescribirÃ¡ el equipo actual. Â¿Continuar?`);
+        const confirm = window.confirm(`Cargar "${equipo.nombre}" sobrescribirá el equipo actual. ¿Continuar?`);
         if (!confirm) return;
 
         setEquipoLoading(true);
@@ -192,7 +267,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
 
             if (bpError) throw bpError;
             if (!blueprint || blueprint.length === 0) {
-                alert('Este equipo estÃ¡ vacÃ­o.');
+                alert('Este equipo está vacío.');
                 setEquipoLoading(false);
                 return;
             }
@@ -217,16 +292,25 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         setEquipoLoading(false);
     };
 
-    const renderEmptySlot = (rolMap) => {
-        if (isStrictModerator) return null;
+    const renderEmptySlot = (rolMap, { forceVisible = false, label = null, keySuffix = '' } = {}) => {
+        const isDisabled = isStrictModerator && !forceVisible;
+        if (isDisabled) return null;
         return (
             <button
-                key={`empty-${rolMap.id}`}
+                key={`empty-${rolMap.id}-${label || rolMap.nombre}-${keySuffix}`}
                 type="button"
-                onClick={() => openPicker(rolMap.id, rolMap.nombre)}
-                className="btn-roster-inline empty-slot px-4 h-9 flex items-center justify-center gap-1.5 rounded-full border border-dashed border-border text-[11px] font-bold text-content-muted uppercase tracking-widest hover:border-brand/30 hover:text-brand hover:bg-brand/10 transition-all"
+                onClick={() => {
+                    if (isStrictModerator) return;
+                    openPicker(
+                        rolMap.id,
+                        label || rolMap.nombre,
+                        Number.isInteger(keySuffix) ? keySuffix : null
+                    );
+                }}
+                className={`btn-roster-inline empty-slot inline-flex whitespace-nowrap px-4 h-9 items-center justify-center gap-1.5 rounded-full border border-dashed border-border text-[11px] font-bold leading-none text-content-muted uppercase tracking-widest transition-all ${isStrictModerator ? 'cursor-default opacity-55' : 'hover:border-brand/30 hover:text-brand hover:bg-brand/10'}`}
+                disabled={isStrictModerator}
             >
-                {rolMap.nombre.split(' ')[0]} <span className="font-normal opacity-60 text-lg leading-none mt-[-2px]">+</span>
+                {(label || rolMap.nombre).split(' ')[0]} <span className="font-normal opacity-60 text-lg leading-none mt-[-2px]">+</span>
             </button>
         );
     };
@@ -241,11 +325,11 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
 
         const isN1 = ['lider_alabanza', 'talkback'].includes(rolMatch.codigo);
         const isN2 = ['encargado_letras'].includes(rolMatch.codigo);
-        const isVoz = ['voz_soprano', 'voz_tenor'].includes(rolMatch.codigo);
+        const isVoz = String(rolMatch.codigo || '').startsWith('voz_');
         const colorSeccion = isN1 ? 'bg-rol-dir' : (isN2 ? 'bg-rol-let' : (isVoz ? 'bg-rol-voc' : 'bg-rol-ban'));
 
         return (
-            <div key={`${asig.rol_id}-${asig.perfil_id}`} className="flex flex-col items-center gap-1.5 group relative cursor-pointer hover:bg-neutral/20 rounded-xl p-2 -m-2 transition-colors" title={`${p.nombre} (${rolMatch.nombre})`} onClick={() => !isStrictModerator && openPicker(rolMatch.id, rolMatch.nombre)}>
+            <div key={`${asig.rol_id}-${asig.perfil_id}`} className="flex flex-col items-center gap-1 group relative cursor-pointer hover:bg-neutral/20 rounded-xl p-2 -m-2 transition-colors" title={`${p.nombre} (${rolMatch.nombre})`} onClick={() => !isStrictModerator && openPicker(rolMatch.id, rolMatch.nombre)}>
                 <div className="relative">
                     {p.avatar_url ? (
                         <img src={p.avatar_url} alt={p.nombre} className="w-[42px] h-[42px] sm:w-[46px] sm:h-[46px] shrink-0 rounded-full object-cover shadow-sm border border-border" />
@@ -255,7 +339,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                         </div>
                     )}
                     {!isStrictModerator && (
-                        <button type="button" onClick={(e) => { e.stopPropagation(); handleRemove(asig.rol_id); }} className="btn-remove-roster absolute -top-1.5 -left-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full p-1.5 shadow-md z-20 opacity-0 group-hover:opacity-100 transition-opacity" title="Remover">
+                        <button type="button" onClick={(e) => { e.stopPropagation(); handleRemove(asig.id, asig.rol_id); }} className="btn-remove-roster absolute -top-1.5 -left-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full p-1.5 shadow-md z-20 opacity-0 group-hover:opacity-100 transition-opacity" title="Remover">
                             <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
                         </button>
                     )}
@@ -269,15 +353,35 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
 
     const direccion = [];
     const letras = [];
-    const voces = [];
     const banda = [];
+    const MAX_VOZ_SLOTS = 4;
+    const voiceRoles = effectiveRoles.filter(rol => String(rol.codigo || '').startsWith('voz_'));
+    const voiceRoleIds = new Set(voiceRoles.map((rol) => rol.id));
+    const voicePoolRole = { id: '_voz_pool', nombre: 'Voz' };
+    const vocesAsignadas = asignaciones
+        .filter((asig) => voiceRoleIds.has(asig.rol_id))
+        .slice(0, MAX_VOZ_SLOTS)
+        .map((asig) => {
+            const rolMatch = effectiveRoles.find((rol) => rol.id === asig.rol_id) || voiceRoles[0];
+            return rolMatch ? renderAvatar(asig, rolMatch) : null;
+        })
+        .filter(Boolean);
 
-    roles.forEach(rolMatch => {
+    effectiveRoles.forEach(rolMatch => {
         const isN1 = ['lider_alabanza', 'talkback'].includes(rolMatch.codigo);
         const isN2 = ['encargado_letras'].includes(rolMatch.codigo);
-        const isVoz = ['voz_soprano', 'voz_tenor'].includes(rolMatch.codigo);
+        const isVoz = String(rolMatch.codigo || '').startsWith('voz_');
+        const isCajaRole = /(^|_)(caja|cajon)(_|\b)/.test(String(rolMatch.codigo || ''));
 
         const assigned = asignaciones.filter(a => a.rol_id === rolMatch.id);
+
+        if (isCajaRole && !esAcustico && assigned.length === 0) {
+            return;
+        }
+
+        if (isVoz) {
+            return;
+        }
 
         // Vocabulario especifico de vacios segun cÃ³digo
         if (assigned.length > 0) {
@@ -285,7 +389,6 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                 const node = renderAvatar(a, rolMatch);
                 if (isN1) direccion.push(node);
                 else if (isN2) letras.push(node);
-                else if (isVoz) voces.push(node);
                 else banda.push(node);
             });
         } else {
@@ -293,29 +396,41 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
             if (emptyBtn) {
                 if (isN1) direccion.push(emptyBtn);
                 else if (isN2) letras.push(emptyBtn);
-                else if (isVoz) voces.push(emptyBtn);
+                else if (isVoz) return;
                 else banda.push(emptyBtn);
             }
         }
     });
 
+    const voces = Array.from({ length: MAX_VOZ_SLOTS }, (_, index) => {
+        if (vocesAsignadas[index]) return vocesAsignadas[index];
+        return renderEmptySlot(
+            voicePoolRole,
+            {
+                forceVisible: true,
+                label: 'Voz',
+                keySuffix: index
+            }
+        );
+    }).filter(Boolean);
+
     return (
         <div className="flex flex-col gap-4">
-            <div id="modal-roster-container" className="bg-background rounded-2xl p-4 md:p-5 border border-border flex flex-col gap-5">
+            <div id="modal-roster-container" className="bg-background rounded-2xl p-4 md:p-5 border border-border flex flex-col gap-4">
                 <div className="grid grid-cols-2 gap-4">
                     <div className="flex flex-col">
                         <div className="flex items-center justify-between mb-2 w-full">
-                            <span className="text-[10px] font-bold text-rol-dir uppercase tracking-widest leading-none mt-0.5">DirecciÃ³n</span>
+                    <span className="text-[10px] font-bold text-rol-dir uppercase tracking-widest leading-none mt-0.5">Dirección</span>
                             <div className="h-px flex-1 bg-rol-dir/10 ml-3"></div>
                         </div>
-                        <div className="flex flex-wrap gap-3">{direccion.length > 0 ? direccion : <span className="text-xs text-content-muted font-medium">VacÃ­o</span>}</div>
+                        <div className="flex flex-wrap gap-2.5 items-start">{direccion.length > 0 ? direccion : <span className="text-xs text-content-muted font-medium">Vacío</span>}</div>
                     </div>
                     <div className="flex flex-col">
                         <div className="flex items-center justify-between mb-2 w-full">
                             <span className="text-[10px] font-bold text-rol-let uppercase tracking-widest leading-none mt-0.5">Letras</span>
                             <div className="h-px flex-1 bg-rol-let/10 ml-3"></div>
                         </div>
-                        <div className="flex flex-wrap gap-3">{letras.length > 0 ? letras : <span className="text-xs text-content-muted font-medium">VacÃ­o</span>}</div>
+                        <div className="flex flex-wrap gap-2.5 items-start">{letras.length > 0 ? letras : <span className="text-xs text-content-muted font-medium">Vacío</span>}</div>
                     </div>
                 </div>
 
@@ -324,7 +439,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                         <span className="text-[10px] font-bold text-rol-ban uppercase tracking-widest leading-none mt-0.5">Banda</span>
                         <div className="h-px flex-1 bg-rol-ban/10 ml-3"></div>
                     </div>
-                    <div className="flex flex-wrap gap-3">{banda.length > 0 ? banda : <span className="text-xs text-content-muted font-medium">VacÃ­o</span>}</div>
+                    <div className="flex flex-wrap gap-2.5 items-start">{banda.length > 0 ? banda : <span className="text-xs text-content-muted font-medium">Vacío</span>}</div>
                 </div>
 
                 <div>
@@ -332,7 +447,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                         <span className="text-[10px] font-bold text-rol-voc uppercase tracking-widest leading-none mt-0.5">Voces</span>
                         <div className="h-px flex-1 bg-rol-voc/10 ml-3"></div>
                     </div>
-                    <div className="flex flex-wrap gap-3">{voces.length > 0 ? voces : <span className="text-xs text-content-muted font-medium">VacÃ­o</span>}</div>
+                    <div className="flex flex-wrap gap-2.5 items-start">{voces}</div>
                 </div>
             </div>
 
@@ -361,8 +476,8 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                                     {pickerList.map(p => (
                                         <button
                                             type="button"
-                                            key={p.id}
-                                            onClick={() => !p.ausente && selectUserForRole(p.id)}
+                                            key={`${p.id}-${p.realRolId || pickerRolId}`}
+                                            onClick={() => !p.ausente && selectUserForRole(p.id, p.realRolId || pickerRolId)}
                                             className={`flex items-center justify-between gap-3 p-3 rounded-xl border border-border text-left transition-colors relative ${p.ausente ? 'opacity-50 cursor-not-allowed bg-background/50 grayscale-[20%]' : 'hover:border-brand/30 hover:bg-background'}`}
                                         >
                                             <div className="flex items-center gap-3 overflow-hidden">
@@ -379,7 +494,9 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                                                 </div>
                                                 <div className="flex-1 overflow-hidden min-w-0">
                                                     <p className={`font-bold text-sm truncate ${p.ausente ? 'text-content-muted line-through' : 'text-content'}`}>{p.nombre}</p>
-                                                    <p className="text-xs text-content-muted truncate">{p.email}</p>
+                                                    <p className="text-xs text-content-muted truncate">
+                                                        {pickerRolId === '_voz_pool' ? (p.realRolNombre || p.email) : p.email}
+                                                    </p>
                                                 </div>
                                             </div>
 
@@ -406,7 +523,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                         <div className="p-5 border-b border-border flex justify-between items-center bg-background rounded-t-3xl">
                             <div>
                                 <h3 className="font-bold text-xl text-content">Cargar Equipo Base</h3>
-                                <p className="text-xs text-content-muted mt-1">SobrescribirÃ¡ las asignaciones actuales de este evento.</p>
+                                <p className="text-xs text-content-muted mt-1">Sobrescribirá las asignaciones actuales de este evento.</p>
                             </div>
                             <button type="button" onClick={() => setEquipoPickerOpen(false)} className="text-content-muted hover:text-content bg-background hover:bg-border p-2 rounded-full border border-border shadow-sm transition-colors">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
@@ -443,5 +560,12 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         </div>
     );
 }
+
+
+
+
+
+
+
 
 

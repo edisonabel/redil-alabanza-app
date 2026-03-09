@@ -13,6 +13,7 @@ export default function ModalEvento() {
     const [collisionDate, setCollisionDate] = useState(null);
     const [estado, setEstado] = useState('Publicado');
     const [tema, setTema] = useState('');
+    const [esAcustico, setEsAcustico] = useState(false);
     const [isSerie, setIsSerie] = useState(false);
     const [applySerie, setApplySerie] = useState(false);
     const [serieId, setSerieId] = useState('');
@@ -24,6 +25,7 @@ export default function ModalEvento() {
     const [rosterHtml, setRosterHtml] = useState('');
     const [dbData, setDbData] = useState(null);
     const [showPlaylistBtn, setShowPlaylistBtn] = useState(false);
+    const [hasPlaylist, setHasPlaylist] = useState(false);
     const [user, setUser] = useState(null);
 
     useEffect(() => {
@@ -52,6 +54,7 @@ export default function ModalEvento() {
                 setHoraFin('');
                 setTema('');
                 setEstado('Publicado');
+                setEsAcustico(false);
                 setIsSerie(false);
                 setSerieId('');
                 setApplySerie(false);
@@ -59,6 +62,7 @@ export default function ModalEvento() {
                 setRosterHtml('');
                 setDbData(null);
                 setShowPlaylistBtn(false);
+                setHasPlaylist(false);
                 setCollisionDate(null);
             } else if (modalMode === 'edit' && data) {
                 setEvId(data.id || '');
@@ -76,6 +80,7 @@ export default function ModalEvento() {
                 setHoraFin(data.hora_fin || '');
                 setTema(data.tema && data.tema !== 'undefined' && data.tema !== 'null' ? data.tema : '');
                 setEstado(data.estado || 'Publicado');
+                setEsAcustico(Boolean(data.es_acustico ?? data.dbData?.es_acustico));
 
                 const strictMod = data.moderator === 'true';
                 setIsStrictModerator(strictMod);
@@ -109,7 +114,14 @@ export default function ModalEvento() {
         const originalShowPlaylistBtn = window._showPlaylistBtn;
         window._showPlaylistBtn = async (id) => {
             if (originalShowPlaylistBtn) originalShowPlaylistBtn(id); // Para mantener cualquier otra lÃ³gica viva
-            if (!id) { setShowPlaylistBtn(false); return; }
+            if (!id) {
+                setShowPlaylistBtn(false);
+                setHasPlaylist(false);
+                return;
+            }
+
+            setShowPlaylistBtn(false);
+            setHasPlaylist(false);
 
             const profileReq = await supabase.from('perfiles').select('is_admin').eq('id', user?.id || '').single();
             if (profileReq.data?.is_admin) {
@@ -123,19 +135,21 @@ export default function ModalEvento() {
                     }
                 }
             }
+
+            const { data: playlistData, error: playlistError } = await supabase
+                .from('playlists')
+                .select('id')
+                .eq('evento_id', id)
+                .maybeSingle();
+
+            if (playlistError) {
+                console.error('Error revisando setlist del evento:', playlistError);
+                return;
+            }
+
+            setHasPlaylist(Boolean(playlistData?.id));
         };
 
-        // Armar_playlist click pasarela nativa (se mantuvo igual en UI, pero la atamos aquÃ­)
-        // Usar requestAnimationFrame para evitar buscar elementos que aÃºn no pintan
-        requestAnimationFrame(() => {
-            const btnP = document.getElementById('btn-armar-playlist');
-            const clickHandler = () => {
-                if (evId) window.location.href = '/repertorio?seleccionar_para=' + evId;
-            };
-            if (btnP) {
-                btnP.addEventListener('click', clickHandler);
-            }
-        });
     }, [user, evId]);
 
     const [hasRosterChanges, setHasRosterChanges] = useState(false);
@@ -208,7 +222,7 @@ export default function ModalEvento() {
                     // ActualizaciÃ³n masiva a la serie
                     const { error } = await supabase
                         .from('eventos')
-                        .update({ titulo, hora_fin: horaFin || null })
+                        .update({ titulo, hora_fin: horaFin || null, es_acustico: esAcustico })
                         .eq('serie_id', serieId)
                         .gte('fecha_hora', startCheck);
                     transacError = error;
@@ -221,7 +235,8 @@ export default function ModalEvento() {
                             fecha_hora: isoPayload,
                             hora_fin: horaFin || null,
                             tema_predicacion: tema || null,
-                            estado
+                            estado,
+                            es_acustico: esAcustico
                         })
                         .eq('id', evId);
                     transacError = error;
@@ -234,6 +249,7 @@ export default function ModalEvento() {
                     hora_fin: horaFin || null,
                     tema_predicacion: tema || null,
                     estado,
+                    es_acustico: esAcustico,
                     created_by: currentUserId
                 };
 
@@ -248,22 +264,22 @@ export default function ModalEvento() {
 
             handleClose();
             if (evId && evId.startsWith('virtual|')) {
-                alert('Evento publicado. Haz clic en GESTIONAR de nuevo para aÃ±adir el equipo.');
+            alert('Evento publicado. Haz clic en GESTIONAR de nuevo para añadir el equipo.');
             }
 
             // Forzar recarga SSR para que Astro pinte los datos frescos de Supabase
             window.location.reload();
 
         } catch (err) {
-            console.error('âŒ [ModalEvento] Error Guardando:', err);
-            alert('Error crÃ­tico al guardar: ' + (err?.message || 'Revisa la consola.'));
+            console.error('❌ [ModalEvento] Error Guardando:', err);
+            alert('Error crítico al guardar: ' + (err?.message || 'Revisa la consola.'));
             setIsSaving(false); // Solo bajamos el spinner si hubo error, si no se recarga la pÃ¡gina
         }
     };
 
     const handleDeleteSerie = async () => {
         if (!serieId) return;
-        if (!window.confirm('ATENCIÃ“N: EstÃ¡s a punto de eliminar TODOS los eventos asociados a esta serie de forma permanente.\\n\\nÂ¿EstÃ¡s seguro de que deseas continuar?')) return;
+        if (!window.confirm('ATENCIÓN: Estás a punto de eliminar TODOS los eventos asociados a esta serie de forma permanente.\\n\\n¿Estás seguro de que deseas continuar?')) return;
 
         setIsDeletingSerie(true);
         try {
@@ -300,8 +316,8 @@ export default function ModalEvento() {
 
                         <div className="grid grid-cols-1 gap-5 w-full">
                             <div className={`w-full ${isStrictModerator ? 'hidden' : ''}`} id="ev-container-titulo">
-                                <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">TÃ­tulo del Evento <span className="text-red-500">*</span></label>
-                                <input type="text" id="ev-titulo" required disabled={isStrictModerator} value={titulo} onChange={e => setTitulo(e.target.value)} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" placeholder="Ej: Culto de AdoraciÃ³n" />
+                                <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">TÍTULO DEL EVENTO <span className="text-red-500">*</span></label>
+                                <input type="text" id="ev-titulo" required disabled={isStrictModerator} value={titulo} onChange={e => setTitulo(e.target.value)} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" placeholder="Ej: Culto de Adoración" />
                             </div>
 
                             <div className={`w-full grid grid-cols-1 sm:grid-cols-2 gap-4 ${isStrictModerator ? 'hidden' : ''}`} id="ev-container-fechas">
@@ -327,7 +343,7 @@ export default function ModalEvento() {
                                         <input type="checkbox" id="ev-serie-check" checked={applySerie} onChange={e => setApplySerie(e.target.checked)} className="w-5 h-5 accent-violet-500 rounded" />
                                         <div>
                                             <span className="text-sm font-bold text-violet-700">Aplicar a toda la serie</span>
-                                            <p className="text-[11px] text-violet-500 mt-0.5">Actualiza tÃ­tulo y hora en todos los eventos futuros de esta serie</p>
+                                            <p className="text-[11px] text-violet-500 mt-0.5">Actualiza título y hora en todos los eventos futuros de esta serie</p>
                                         </div>
                                     </label>
                                     <button type="button" onClick={handleDeleteSerie} disabled={isDeletingSerie} id="btn-eliminar-serie" className="w-full flex items-center justify-center gap-2 py-2.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded-xl transition-colors font-ui-strong text-sm leading-tight">
@@ -341,18 +357,35 @@ export default function ModalEvento() {
                                 </div>
                             )}
 
-                            <div className={isStrictModerator ? 'hidden' : ''} id="ev-container-estado">
-                                <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">Estado</label>
-                                <select id="ev-estado" value={estado} onChange={e => setEstado(e.target.value)} disabled={isStrictModerator} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors appearance-none">
-                                    <option value="Borrador">Borrador</option>
-                                    <option value="Publicado">Publicado</option>
-                                </select>
+                            <div className={`grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-4 items-end ${isStrictModerator ? 'hidden' : ''}`} id="ev-container-estado">
+                                <div className="min-w-0">
+                                    <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">Estado</label>
+                                    <select id="ev-estado" value={estado} onChange={e => setEstado(e.target.value)} disabled={isStrictModerator} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors appearance-none">
+                                        <option value="Borrador">Borrador</option>
+                                        <option value="Publicado">Publicado</option>
+                                    </select>
+                                </div>
+
+                                <div className="w-full md:w-auto" id="ev-container-acustico">
+                                    <label className="inline-flex w-full md:w-auto items-center gap-3 bg-background border border-border rounded-xl px-4 py-3 cursor-pointer hover:bg-surface transition-colors select-none">
+                                        <input
+                                            type="checkbox"
+                                            id="ev-es-acustico"
+                                            checked={esAcustico}
+                                            onChange={e => setEsAcustico(e.target.checked)}
+                                            disabled={isStrictModerator}
+                                            className="h-5 w-5 rounded border-border accent-brand"
+                                        />
+                                        <span className="text-sm font-semibold text-content whitespace-nowrap">Servicio Acústico</span>
+                                    </label>
+                                </div>
                             </div>
 
                             <div className="w-full">
-                                <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">Tema de PredicaciÃ³n <span className="text-content-muted font-normal lowercase">(opcional)</span></label>
+                                <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">TEMA DE PREDICACIÓN <span className="text-content-muted font-normal lowercase">(opcional)</span></label>
                                 <input type="text" id="ev-tema" value={tema} onChange={e => setTema(e.target.value)} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" placeholder="Ej: La Gracia de Dios" />
                             </div>
+
                         </div>
 
                         <div id="modal-roster-section" className={`${mode === 'new' ? 'hidden' : ''} mt-4 pt-6 border-t border-border flex flex-col gap-4`}>
@@ -360,9 +393,16 @@ export default function ModalEvento() {
                                 <h3 className="text-sm font-bold text-content uppercase tracking-wider flex items-center gap-2">Asignaciones de Equipo <span className="text-[10px] font-normal text-content-muted bg-background px-2 py-0.5 rounded hidden sm:inline-block">Clic editar</span></h3>
                             </div>
 
-                            <button type="button" id="btn-armar-playlist" className={`w-full relative overflow-hidden group items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-gradient-to-br from-purple-500 via-fuchsia-500 to-pink-500 text-white font-ui-strong text-[15px] leading-tight shadow-md shadow-fuchsia-500/30 hover:shadow-fuchsia-500/50 hover:-translate-y-0.5 transition-all duration-300 ${showPlaylistBtn ? 'flex' : 'hidden'}`}>
+                            <button
+                                type="button"
+                                id="btn-armar-playlist"
+                                onClick={() => {
+                                    if (evId) window.location.href = '/repertorio?seleccionar_para=' + evId;
+                                }}
+                                className={`w-full relative overflow-hidden group items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-gradient-to-br from-purple-500 via-fuchsia-500 to-pink-500 text-white font-ui-strong text-[15px] leading-tight shadow-md shadow-fuchsia-500/30 hover:shadow-fuchsia-500/50 hover:-translate-y-0.5 transition-all duration-300 ${showPlaylistBtn ? 'flex' : 'hidden'}`}
+                            >
                                 <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-in-out"></div>
-                                <span className="relative z-10 flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>Armar Repertorio (Setlist)</span>
+                                <span className="relative z-10 flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>{hasPlaylist ? 'Editar Repertorio' : 'Armar Repertorio (Setlist)'}</span>
                             </button>
 
                             <RosterManager
@@ -371,6 +411,7 @@ export default function ModalEvento() {
                                 evTituloStr={titulo}
                                 evTemaStr={tema}
                                 evEstadoStr={estado}
+                                esAcustico={esAcustico}
                                 isStrictModerator={isStrictModerator}
                                 dbData={dbData}
                                 onRosterChange={() => setHasRosterChanges(true)}
@@ -402,12 +443,12 @@ export default function ModalEvento() {
                                     <div className="w-2 h-2 rounded-full bg-red-500 animate-ping"></div>
                                 </div>
                             </div>
-                            <h3 className="text-xl font-extrabold text-content mb-3 tracking-tight">Â¡DÃ­a Ocupado!</h3>
+                            <h3 className="text-xl font-extrabold text-content mb-3 tracking-tight">¡Día Ocupado!</h3>
                             <p className="text-sm text-content-muted leading-relaxed">
-                                Ya existe un evento en la base de datos para el dÃ­a <br /> <strong className="text-red-500 bg-red-50 px-2 py-1 rounded-lg inline-block mt-2 mb-1">{collisionDate}</strong>
+                                Ya existe un evento en la base de datos para el día <br /> <strong className="text-red-500 bg-red-50 px-2 py-1 rounded-lg inline-block mt-2 mb-1">{collisionDate}</strong>
                             </p>
                             <p className="text-xs text-content-muted mt-4 px-2">
-                                Para evitar sobreescribir o colisionar eventos, por favor elige una fecha libre o borra el evento actual en ese dÃ­a.
+                                Para evitar sobreescribir o colisionar eventos, por favor elige una fecha libre o borra el evento actual en ese día.
                             </p>
                         </div>
                         <div className="flex bg-background p-4 border-t border-red-100/50">
