@@ -1,10 +1,5 @@
-﻿import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 
-let cachedBranding = null;
-let hasCachedBranding = false;
-let lastFetchTime = 0;
-
-const CACHE_DURATION = 1000 * 60 * 5;
 const BRANDING_TABLE_CANDIDATES = ['configuracion_app', 'configuracion', 'branding_config'];
 const rawUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_URL || '';
 const supabaseUrl = rawUrl.replace(/\/$/, '');
@@ -56,23 +51,15 @@ const createBrandingClient = (accessToken = '') => {
 };
 
 export function invalidarCacheBranding() {
-  cachedBranding = null;
-  hasCachedBranding = false;
-  lastFetchTime = 0;
-  console.log('[branding.js] Cache de branding invalidada manualmente');
+  // No-op: el branding ahora se consulta fresco en cada request SSR.
+  console.log('[branding.js] invalidarCacheBranding() ejecutado: no hay caché en RAM activa.');
 }
 
-export async function getBrandingConfig({ forceFresh = false, accessToken = '' } = {}) {
-  const now = Date.now();
-
-  if (!forceFresh && hasCachedBranding && now - lastFetchTime < CACHE_DURATION) {
-    return cachedBranding;
-  }
-
+export async function getBrandingConfig({ accessToken = '' } = {}) {
   const brandingClient = createBrandingClient(accessToken);
   if (!brandingClient) {
-    console.warn('[branding.js] Cliente de branding no disponible. Conservando cache actual si existe.');
-    return hasValidBranding(cachedBranding) ? cachedBranding : null;
+    console.warn('[branding.js] Cliente de branding no disponible.');
+    return null;
   }
 
   let resultado = null;
@@ -98,20 +85,16 @@ export async function getBrandingConfig({ forceFresh = false, accessToken = '' }
         break;
       }
 
-      console.log(`[branding.js] Tabla ${table} sin datos validos, probando siguiente...`);
+      console.log(`[branding.js] Tabla ${table} sin datos válidos, probando siguiente...`);
     } catch (error) {
       console.warn(`[branding.js] Error consultando tabla ${table}:`, error?.message || error);
-      continue;
     }
   }
 
-  if (hasValidBranding(resultado)) {
-    cachedBranding = resultado;
-    hasCachedBranding = true;
-    lastFetchTime = now;
-    return cachedBranding;
+  if (!hasValidBranding(resultado)) {
+    console.warn('[branding.js] No se encontró branding válido en las tablas candidatas.');
+    return null;
   }
 
-  console.warn('[branding.js] Consulta devolvio resultado vacio o null, no se cachea.');
-  return hasValidBranding(cachedBranding) ? cachedBranding : null;
+  return resultado;
 }

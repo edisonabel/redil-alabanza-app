@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import NotificationBell from './NotificationBell.jsx';
+import BotonNotificaciones from './BotonNotificaciones.jsx';
 
 const getFirstName = (fullName) => {
     if (!fullName || typeof fullName !== 'string') return '';
@@ -34,7 +35,7 @@ const formatDayMonth = (isoDate) => {
     return safeDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' });
 };
 
-const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = [], cumpleanerosMes = [] }) => {
+const DashboardInicio = ({ usuario, userId = null, proximosServicios = [], eventosEspeciales = [], cumpleanerosMes = [] }) => {
     const [isDark, setIsDark] = useState(false);
     const [dismissUpcomingHint, setDismissUpcomingHint] = useState(false);
     const [dismissEnvironmentHint, setDismissEnvironmentHint] = useState(false);
@@ -509,40 +510,46 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
 
                 <section className="px-3 sm:px-4 lg:px-0 mb-8 lg:mb-0" data-tour="shortcuts">
                     <h2 className="text-lg font-bold text-content tracking-tight mb-3">Atajos</h2>
-                    <div className="bg-surface border border-border rounded-[2rem] p-5 shadow-sm grid grid-cols-4 gap-2 sm:gap-3 items-start">
-                        <a href="/perfil#ausencias" className="flex flex-col items-center gap-2 group min-w-0">
-                            <div className="w-12 h-12 bg-background border border-border text-content rounded-full flex items-center justify-center group-active:scale-90 transition-transform">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
-                            </div>
-                            <span className="text-[10px] sm:text-xs font-semibold text-content text-center leading-tight">Ausencias</span>
-                        </a>
+                    <div className="bg-surface border border-border rounded-[2rem] p-5 shadow-sm">
+                        <div className="grid grid-cols-4 gap-2 sm:gap-3 items-start">
+                            <a href="/perfil#ausencias" className="flex flex-col items-center gap-2 group min-w-0">
+                                <div className="w-12 h-12 bg-background border border-border text-content rounded-full flex items-center justify-center group-active:scale-90 transition-transform">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
+                                </div>
+                                <span className="text-[10px] sm:text-xs font-semibold text-content text-center leading-tight">Ausencias</span>
+                            </a>
 
-                        <div className="flex flex-col items-center gap-2 group min-w-0">
-                            <NotificationBell inline direction="up" />
-                            <span className="text-[10px] sm:text-xs font-semibold text-content text-center leading-tight">Notificaciones</span>
+                            <div className="flex flex-col items-center gap-2 group min-w-0">
+                                <NotificationBell inline direction="up" />
+                                <span className="text-[10px] sm:text-xs font-semibold text-content text-center leading-tight">Notificaciones</span>
+                            </div>
+
+                            <button type="button" onClick={handleOpenOnboarding} className="flex flex-col items-center gap-2 group min-w-0">
+                                <div className="w-12 h-12 rounded-full border border-border bg-background text-content flex items-center justify-center transition-colors group-active:scale-90">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <circle cx="12" cy="12" r="10" />
+                                        <path d="M9.09 9a3 3 0 0 1 5.82 1c0 2-3 3-3 3" />
+                                        <path d="M12 17h.01" />
+                                    </svg>
+                                </div>
+                                <span className="text-[10px] sm:text-xs font-semibold text-content text-center leading-tight">Ayuda</span>
+                            </button>
+
+                            <button type="button" onClick={toggleDarkMode} className="flex flex-col items-center gap-2 group min-w-0">
+                                <div className={`w-12 h-12 rounded-full border border-border flex items-center justify-center transition-colors ${isDark ? 'bg-action/20 text-action' : 'bg-background text-content'}`}>
+                                    {isDark ? (
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>
+                                    ) : (
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>
+                                    )}
+                                </div>
+                                <span className="text-[10px] sm:text-xs font-semibold text-content text-center leading-tight">{isDark ? 'Claro' : 'Oscuro'}</span>
+                            </button>
                         </div>
 
-                        <button type="button" onClick={handleOpenOnboarding} className="flex flex-col items-center gap-2 group min-w-0">
-                            <div className="w-12 h-12 rounded-full border border-border bg-background text-content flex items-center justify-center transition-colors group-active:scale-90">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                    <circle cx="12" cy="12" r="10" />
-                                    <path d="M9.09 9a3 3 0 0 1 5.82 1c0 2-3 3-3 3" />
-                                    <path d="M12 17h.01" />
-                                </svg>
-                            </div>
-                            <span className="text-[10px] sm:text-xs font-semibold text-content text-center leading-tight">Ayuda</span>
-                        </button>
-
-                        <button type="button" onClick={toggleDarkMode} className="flex flex-col items-center gap-2 group min-w-0">
-                            <div className={`w-12 h-12 rounded-full border border-border flex items-center justify-center transition-colors ${isDark ? 'bg-action/20 text-action' : 'bg-background text-content'}`}>
-                                {isDark ? (
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>
-                                ) : (
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>
-                                )}
-                            </div>
-                            <span className="text-[10px] sm:text-xs font-semibold text-content text-center leading-tight">{isDark ? 'Claro' : 'Oscuro'}</span>
-                        </button>
+                        <div className="mt-4">
+                            <BotonNotificaciones userId={userId || null} compact className="w-full" />
+                        </div>
                     </div>
                 </section>
 

@@ -78,10 +78,7 @@ if (shouldBustBrandingCache) {
   Astro.cookies.delete('branding_cache_bust', { path: '/' });
 }
 
-const brandingData = await getBrandingConfig({
-  forceFresh: shouldBustBrandingCache,
-  accessToken: brandingAccessToken,
-});
+const brandingData = await getBrandingConfig({ accessToken: brandingAccessToken });
 const themeColors = brandingData;
 ---
 <!DOCTYPE html>
@@ -91,8 +88,8 @@ const themeColors = brandingData;
  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
  <script is:inline>
-  (function nuclearCacheFlushV2() {
-    const FLAG_KEY = "v2_cache_cleared";
+  (function nuclearCacheFlushV3() {
+    const FLAG_KEY = "v3_force_purge";
 
     try {
       if (localStorage.getItem(FLAG_KEY) === "1") return;

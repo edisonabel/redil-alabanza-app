@@ -34,7 +34,7 @@ if (authError || !user) {
 
 const { data: perfil } = await supabaseSSR
   .from('perfiles')
-  .select('nombre, avatar_url, is_admin')
+  .select('id, nombre, avatar_url, is_admin')
   .eq('id', user.id)
   .single();
 
@@ -206,6 +206,7 @@ console.log('Inicio proximosServicios count:', proximosServicios.length, 'user:'
       <DashboardInicio
         client:load
         usuario={perfil}
+        userId={user.id}
         proximosServicios={proximosServicios}
         eventosEspeciales={eventosEspecialesData || []}
         cumpleanerosMes={cumpleanerosMes || []}
