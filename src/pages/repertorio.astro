@@ -2,6 +2,7 @@
 import Layout from '../layouts/Layout.astro';
 import CardCancion from '../components/CardCancion.astro';
 import BuscadorPredictivo from '../components/BuscadorPredictivo.astro';
+import OnboardingRoot from '../components/onboarding/OnboardingRoot';
 import { supabase } from '../lib/supabase';
 
 let canciones: any[] = [];
@@ -21,6 +22,16 @@ try {
 }
 
 const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean))].sort() as string[];
+const visibleInitialSongs = canciones.slice(0, 15);
+const firstTourCardId = visibleInitialSongs.find(Boolean)?.id ?? null;
+const firstTourAudioId = visibleInitialSongs.find((c: any) => typeof c?.mp3 === 'string' && c.mp3.trim() !== '')?.id ?? firstTourCardId;
+const firstTourResourcesId =
+  visibleInitialSongs.find((c: any) =>
+    ['voces', 'link_voces', 'link_acordes', 'link_youtube', 'link_secuencias'].some((key) => {
+      const value = c?.[key];
+      return typeof value === 'string' && value.trim() !== '';
+    }),
+  )?.id ?? firstTourAudioId ?? firstTourCardId;
 ---
 
 <Layout>
@@ -37,19 +48,15 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
   </header>
 
  <!-- UI Controles -->
- <section id="searchControls" class="max-w-7xl mx-auto mb-6 bg-surface border border-border rounded-2xl p-3 md:p-6 shadow-lg">
- <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-4 items-end">
+ <section id="searchControls" data-tour="repertorio-search" class="max-w-7xl mx-auto mb-6 bg-surface border border-border rounded-2xl px-2.5 py-3 md:px-4 md:py-4 shadow-lg">
+ <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3 items-end">
  <div class="col-span-2 md:col-span-1 lg:col-span-1">
- <div class="w-full">
- <label for="search-input" class="hidden md:block text-sm font-medium text-content mb-2">Buscar</label>
-  <div class="relative w-full flex items-center">
+ <label for="search-input" class="hidden md:block text-sm font-medium text-content mb-1.5">Buscar</label>
   <BuscadorPredictivo idInput="searchInput" placeholder="Buscar canci&oacute;n o artista..." />
-  </div>
- </div>
  </div>
  
  <div class="col-span-1">
- <label for="filterVoz" class="block text-xs md:text-sm font-medium text-content mb-1 md:mb-2">Voz</label>
+ <label for="filterVoz" class="block text-xs md:text-sm font-medium text-content mb-1.5">Voz</label>
  <select id="filterVoz" 
  class="w-full h-11 bg-surface border border-border text-content rounded-xl px-3 text-sm md:text-base focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors appearance-none">
  <option value="Todas">Todas</option>
@@ -60,7 +67,7 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
  </div>
 
  <div class="col-span-1">
- <label for="filterCategoria" class="block text-xs md:text-sm font-medium text-content mb-1 md:mb-2">Categor&iacute;a</label>
+ <label for="filterCategoria" class="block text-xs md:text-sm font-medium text-content mb-1.5">Categor&iacute;a</label>
  <select id="filterCategoria" 
  class="w-full h-11 bg-surface border border-border text-content rounded-xl px-3 text-sm md:text-base focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors appearance-none">
  <option value="Todas">Todas</option>
@@ -70,8 +77,8 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
  </select>
  </div>
 
- <div class="col-span-2 md:col-span-1 lg:col-span-1 mt-1 md:mt-0">
- <label for="filterTema" class="block text-xs md:text-sm font-medium text-content mb-1 md:mb-2">Tema</label>
+ <div class="col-span-2 md:col-span-1 lg:col-span-1 mt-0.5 md:mt-0">
+ <label for="filterTema" class="block text-xs md:text-sm font-medium text-content mb-1.5">Tema</label>
  <select id="filterTema" 
  class="w-full h-11 bg-surface border border-border text-content rounded-xl px-3 text-sm md:text-base focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors appearance-none">
  <option value="Todas">Todas</option>
@@ -113,10 +120,13 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
   linkMp3={cancion.mp3 || ''}
   chordpro={cancion.chordpro || ''}
   categoria={cancion.categoria || ''}
-  voz={cancion.voz || cancion.voz_principal || ''}
+ voz={cancion.voz || cancion.voz_principal || ''}
  tema={cancion.tema || ''}
  estado={cancion.estado || ''}
  oculta={index >= 15}
+ tourCard={String(cancion.id) === String(firstTourCardId) ? 'repertorio-card' : undefined}
+ tourAudio={String(cancion.id) === String(firstTourAudioId) ? 'repertorio-audio' : undefined}
+ tourResources={String(cancion.id) === String(firstTourResourcesId) ? 'repertorio-resources' : undefined}
  />
  ))}
  </div>
@@ -170,6 +180,7 @@ const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean
  </div>
 </div>
 
+  <OnboardingRoot client:load page="repertorio" />
 </Layout>
 
  <!-- Data bridge eliminado. Supabase renderiza directamente. -->

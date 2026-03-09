@@ -1,0 +1,131 @@
+.redil-onboarding-popover.driver-popover {
+  max-width: 22rem;
+  border-radius: 1.5rem;
+  border: 1px solid rgba(var(--border-base), 0.9);
+  background: rgb(var(--bg-surface));
+  color: rgb(var(--text-base));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.24);
+  padding: 1rem 1rem 0.95rem;
+}
+
+.redil-onboarding-popover .driver-popover-arrow {
+  color: rgb(var(--bg-surface));
+}
+
+.redil-onboarding-popover .driver-popover-title {
+  color: rgb(var(--text-base));
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.redil-onboarding-popover .driver-popover-description {
+  color: rgb(var(--text-muted));
+  font-size: 0.92rem;
+  line-height: 1.55;
+  margin-top: 0.45rem;
+}
+
+.redil-onboarding-popover .driver-popover-progress-text {
+  color: rgb(var(--text-muted));
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.redil-onboarding-popover .driver-popover-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.95rem;
+}
+
+.redil-onboarding-popover .driver-popover-navigation-btns {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.redil-onboarding-popover .driver-popover-btn {
+  min-height: 2.5rem;
+  border-radius: 0.95rem;
+  border: 1px solid rgba(var(--border-base), 0.95);
+  background: rgb(var(--bg-background));
+  color: rgb(var(--text-base));
+  padding: 0.55rem 0.9rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-shadow: none;
+  box-shadow: none;
+}
+
+.redil-onboarding-popover .driver-popover-btn:hover,
+.redil-onboarding-popover .driver-popover-btn:focus-visible {
+  background: rgba(var(--bg-base), 0.75);
+  color: rgb(var(--text-base));
+}
+
+.redil-onboarding-popover .driver-popover-next-btn {
+  background: rgb(var(--color-action));
+  border-color: rgba(var(--color-action), 0.9);
+  color: #fff;
+}
+
+.redil-onboarding-popover .driver-popover-next-btn:hover,
+.redil-onboarding-popover .driver-popover-next-btn:focus-visible {
+  background: rgba(var(--color-action), 0.82);
+  color: #fff;
+}
+
+.redil-onboarding-skip {
+  min-height: 2.5rem;
+  border: 1px solid rgba(var(--border-base), 0.95);
+  border-radius: 0.95rem;
+  background: transparent;
+  color: rgb(var(--text-muted));
+  padding: 0.55rem 0.85rem;
+  font-weight: 700;
+  font-size: 0.8rem;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.redil-onboarding-skip:hover,
+.redil-onboarding-skip:focus-visible {
+  background: rgba(var(--bg-base), 0.75);
+  color: rgb(var(--text-base));
+  border-color: rgba(var(--color-action), 0.3);
+  outline: none;
+}
+
+.dark .redil-onboarding-popover.driver-popover {
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+}
+
+@media (max-width: 640px) {
+  .redil-onboarding-popover.driver-popover {
+    max-width: min(20rem, calc(100vw - 1.5rem));
+    padding: 0.9rem 0.9rem 0.85rem;
+  }
+
+  .redil-onboarding-popover .driver-popover-title {
+    font-size: 0.95rem;
+  }
+
+  .redil-onboarding-popover .driver-popover-description {
+    font-size: 0.88rem;
+  }
+}
+
+@keyframes onboardingModalIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

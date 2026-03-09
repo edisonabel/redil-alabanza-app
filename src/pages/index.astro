@@ -2,6 +2,7 @@
 import Layout from '../layouts/Layout.astro';
 import DashboardInicio from '../components/react/DashboardInicio.jsx';
 import ModalDetalle from '../components/react/ModalDetalle.jsx';
+import OnboardingRoot from '../components/onboarding/OnboardingRoot';
 import { supabase } from '../lib/supabase';
 import { createClient } from '@supabase/supabase-js';
 
@@ -189,6 +190,13 @@ console.log('Inicio proximosServicios count:', proximosServicios.length, 'user:'
 ---
 
 <Layout title="Inicio | Redil Alabanza">
+  <script is:inline>
+    window.openOnboarding = window.openOnboarding || function () {
+      window.__REDIL_OPEN_ONBOARDING_PENDING__ = true;
+      window.dispatchEvent(new CustomEvent('redil:open-onboarding'));
+    };
+  </script>
+
   <div id="dashboard-scroll-root" class="h-[calc(100dvh-80px)] lg:h-[calc(86dvh-80px)] overflow-y-auto bg-background w-full pt-4 md:pt-8 pb-32">
     <div class="max-w-[2000px] mx-auto w-full h-full px-3 sm:px-4 xl:px-8">
       <DashboardInicio
@@ -201,5 +209,7 @@ console.log('Inicio proximosServicios count:', proximosServicios.length, 'user:'
       <ModalDetalle client:only="react" initialRoles={rolesCatalog || []} />
     </div>
   </div>
+
+  <OnboardingRoot client:load page="home" />
 </Layout>
 

@@ -17,9 +17,12 @@ interface Props {
 	tema: string;
 	estado?: string;
 	oculta?: boolean;
+	tourCard?: string;
+	tourAudio?: string;
+	tourResources?: string;
 }
 
-const { cancionId = "", titulo = "", cantante = "", tonalidad = "", bpm = 0, linkLetra = "", linkAcordes = "", linkVoces = "", linkYoutube = "", linkSecuencias = "", linkMp3 = "", chordpro = "", categoria = "", voz = "", tema = "", estado = "", oculta = false } = Astro.props;
+const { cancionId = "", titulo = "", cantante = "", tonalidad = "", bpm = 0, linkLetra = "", linkAcordes = "", linkVoces = "", linkYoutube = "", linkSecuencias = "", linkMp3 = "", chordpro = "", categoria = "", voz = "", tema = "", estado = "", oculta = false, tourCard = "", tourAudio = "", tourResources = "" } = Astro.props;
 
 const vocesPayload = (() => {
   const value = linkVoces as unknown;
@@ -59,7 +62,8 @@ if (estadoNormalized === 'nueva') {
  data-categoria={categoria || ''}
  data-tonalidad={tonalidad || ''}
  data-voz={voz || ''}
- data-tema={tema || ''}>
+ data-tema={tema || ''}
+ data-tour={tourCard || undefined}>
  
  {estado && estado.trim() !== '' && (
  <span class={`absolute top-0 right-0 -mt-2 -mr-2 px-3 py-1 text-[10px] md:text-xs font-black uppercase rounded-lg shadow-lg z-20 transform rotate-3 ${colorEstado}`}>
@@ -99,7 +103,7 @@ if (estadoNormalized === 'nueva') {
  </div>
  
  <div class="card-content transition-all duration-300 overflow-hidden px-5 pb-5">
- <div class="grid grid-cols-2 gap-3 mt-2">
+ <div class="grid grid-cols-2 gap-3 mt-2" data-tour={tourResources || undefined}>
  
 {chordpro.trim() !== '' && (
  <a href="#" 
@@ -119,6 +123,7 @@ if (estadoNormalized === 'nueva') {
  data-mp3={linkMp3}
  data-title={titulo}
  data-artist={cantante || ''}
+ data-tour={tourAudio || undefined}
  class="btn-open-mp3 col-span-2 flex items-center justify-center py-2.5 rounded-xl bg-action/10 text-action hover:bg-action/20 transition-colors font-bold text-sm tracking-wide"
  >
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" class="mr-2"><path d="M8 5v14l11-7z"></path></svg>

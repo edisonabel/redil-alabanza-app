@@ -413,7 +413,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
     };
 
     // --- HANDLERS SECUNDARIOS JSX ---
-    const renderCard = (cardData) => {
+    const renderCard = (cardData, tourTargets = false) => {
         const isSuspended = cardData.dbData && cardData.dbData.notas_especiales && cardData.dbData.notas_especiales.includes('SUSPENDIDO');
         const titulo = cardData.dbData?.titulo || 'Actividad Redil';
         const tema = cardData.dbData?.tema_predicacion || cardData.dbData?.titulo || 'Sin tema asignado';
@@ -463,7 +463,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
         }
 
         return (
-            <div key={cardData.id} className="agenda-card w-[85vw] sm:w-[340px] shrink-0 snap-center group relative bg-border/20 dark:bg-surface rounded-[2rem] shadow-md hover:shadow-xl transition-shadow duration-300 border border-border/90 px-5 pb-5 pt-4 flex flex-col">
+            <div key={cardData.id} data-tour={tourTargets ? 'programacion-card' : undefined} className="agenda-card w-[85vw] sm:w-[340px] shrink-0 snap-center group relative bg-border/20 dark:bg-surface rounded-[2rem] shadow-md hover:shadow-xl transition-shadow duration-300 border border-border/90 px-5 pb-5 pt-4 flex flex-col">
 
                 {/* --- BOTON ELIMINAR --- */}
                 {isAdmin && !cardData.isVirtual && (
@@ -517,12 +517,12 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                 )}
 
                 {/* ROSTER ESTÃƒÂTICO PHASE 2 */}
-                <div className="mb-4">
+                <div data-tour={tourTargets ? 'programacion-roster' : undefined} className="mb-4">
                     {renderRoster(cardData.dbData)}
                 </div>
 
                 {/* BOTONES INFERIORES */}
-                <div className={`grid ${canManage ? 'grid-cols-2' : 'grid-cols-1'} gap-3 border-t border-border mt-auto pt-4 -mx-5 px-5 pb-0 relative z-20`}>
+                <div data-tour={tourTargets ? 'programacion-actions' : undefined} className={`grid ${canManage ? 'grid-cols-2' : 'grid-cols-1'} gap-3 border-t border-border mt-auto pt-4 -mx-5 px-5 pb-0 relative z-20`}>
                     {canManage && (
                         <button
                             onClick={() => {
@@ -750,7 +750,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
         <div className="w-full">
 
             {/* HEADER DE GRID / CONTROLES DE VISTA AQUI (Migrado desde programacion.astro HTML) */}
-            <div className="flex items-center justify-center md:justify-end gap-2 mb-4 md:mb-6 mt-1 md:mt-2 w-full">
+            <div data-tour="programacion-header" className="flex items-center justify-center md:justify-end gap-2 mb-4 md:mb-6 mt-1 md:mt-2 w-full">
                 <div className="flex bg-background p-1 rounded-2xl border border-border/60 shadow-inner">
                     <button
                         onClick={() => setViewMode('tarjeta')}
@@ -822,7 +822,7 @@ export default function CalendarioGrid({ initialEvents, sessionUser, initialRole
                                             onMouseUp={onMouseUp}
                                             onMouseMove={onMouseMove}
                                         >
-                                            {group.cards.map(card => renderCard(card))}
+                                            {group.cards.map((card, cardIndex) => renderCard(card, idx === 0 && cardIndex === 0))}
                                         </div>
                                         {showMonthHint && (
                                             <>

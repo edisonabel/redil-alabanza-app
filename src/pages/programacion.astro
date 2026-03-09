@@ -4,6 +4,7 @@ import ModalEvento from '../components/react/ModalEvento.jsx';
 import ModalDetalle from '../components/react/ModalDetalle.jsx';
 import ModalSerie from '../components/react/ModalSerie.jsx';
 import CalendarioGrid from '../components/react/CalendarioGrid.jsx';
+import OnboardingRoot from '../components/onboarding/OnboardingRoot';
 import { supabase } from '../lib/supabase';
 
 // SSR Auth Retrieval (runs safely on the server)
@@ -106,6 +107,7 @@ if (token) {
 
     <!-- MODAL GENERADOR DE SERIES -->
     <ModalSerie client:only="react" sessionUser={ssrUser} />
+    <OnboardingRoot client:load page="programacion" />
   </div>
 
   <style is:global>
