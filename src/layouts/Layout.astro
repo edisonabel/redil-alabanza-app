@@ -67,6 +67,7 @@ const hexToRgbString = (hex) => {
 };
 
 const pathname = new URL(Astro.request.url).pathname;
+const brandingAccessToken = Astro.cookies.get('sb-access-token')?.value || '';
 const shouldBustBrandingCache =
   Astro.cookies.has('branding_cache_bust') ||
   Astro.request.headers.get('x-branding-bust') === '1' ||
@@ -77,7 +78,10 @@ if (shouldBustBrandingCache) {
   Astro.cookies.delete('branding_cache_bust', { path: '/' });
 }
 
-const brandingData = await getBrandingConfig({ forceFresh: shouldBustBrandingCache });
+const brandingData = await getBrandingConfig({
+  forceFresh: shouldBustBrandingCache,
+  accessToken: brandingAccessToken,
+});
 const themeColors = brandingData;
 ---
 <!DOCTYPE html>

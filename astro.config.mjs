@@ -44,18 +44,6 @@ export default defineConfig({
       globPatterns: ['**/*.{js,css,svg,png,ico,txt,webmanifest}'],
       runtimeCaching: [
         {
-          urlPattern: ({ request }) => request.mode === 'navigate',
-          handler: 'NetworkFirst',
-          options: {
-            cacheName: 'app-pages-network-first',
-            networkTimeoutSeconds: 5,
-            expiration: {
-              maxEntries: 30,
-              maxAgeSeconds: 24 * 60 * 60
-            }
-          }
-        },
-        {
           urlPattern: ({ url }) => url.origin.includes('supabase.co'),
           handler: 'NetworkOnly'
         }
