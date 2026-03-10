@@ -147,7 +147,7 @@ const firstTourResourcesId =
  </div>
 
  <!-- Barra Flotante Playlist (modo seleccion) - Inyeccion modular -->
-<div id="playlistBar" class="fixed bottom-[calc(env(safe-area-inset-bottom)+5rem)] md:bottom-[calc(var(--spacing)*22)] left-0 right-0 z-50 bg-surface border-t border-border shadow-[0_-8px_30px_rgba(0,0,0,0.3)] px-4 py-3 hidden">
+<div id="playlistBar" class="fixed bottom-[calc(env(safe-area-inset-bottom)+5rem)] md:bottom-[calc(var(--spacing)*21)] left-0 right-0 z-50 bg-surface border-t border-border shadow-[0_-8px_30px_rgba(0,0,0,0.3)] px-4 py-3 hidden">
  <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4">
  <div class="flex items-start sm:items-center gap-3 min-w-0">
  <div class="w-10 h-10 rounded-full bg-brand/20 flex items-center justify-center">
@@ -433,25 +433,58 @@ if (sessionError || !session) {
  if (playlistCountEl) playlistCountEl.textContent = selectedSongs.length.toString();
  }
 
+ function setSelectionButtonState(btn, isSelected) {
+  if (!btn) return;
+  const svg = btn.querySelector('svg');
+
+  if (svg) {
+   svg.innerHTML = isSelected
+    ? '<polyline points="20 6 9 17 4 12"></polyline>'
+    : '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>';
+  }
+
+  btn.classList.toggle('bg-action', Boolean(isSelected));
+  btn.classList.toggle('border-action', Boolean(isSelected));
+  btn.classList.toggle('text-white', Boolean(isSelected));
+  btn.classList.toggle('hover:bg-action/90', Boolean(isSelected));
+  btn.classList.toggle('bg-transparent', !isSelected);
+  btn.classList.toggle('border-border', !isSelected);
+  btn.classList.toggle('text-content-muted', !isSelected);
+  btn.classList.toggle('hover:border-content-muted', !isSelected);
+  btn.classList.toggle('hover:text-content', !isSelected);
+ }
+
+ function sortSongsSelectedFirst(songCards) {
+  if (!isSelectionMode) return [...songCards];
+
+  return [...songCards].sort((a, b) => {
+   const aId = String(a.getAttribute('data-id') || '');
+   const bId = String(b.getAttribute('data-id') || '');
+   const aSeleccionada = selectedSongs.includes(aId);
+   const bSeleccionada = selectedSongs.includes(bId);
+
+   if (aSeleccionada && !bSeleccionada) return -1;
+   if (!aSeleccionada && bSeleccionada) return 1;
+
+   const aIndex = Number(a.dataset.originalIndex || '0');
+   const bIndex = Number(b.dataset.originalIndex || '0');
+   return aIndex - bIndex;
+  });
+ }
+
+ function applySongOrder(songCards) {
+  if (!gridCanciones) return;
+  songCards.forEach((card) => gridCanciones.appendChild(card));
+ }
+
  function syncSelectionButtons() {
   cards.forEach(card => {
    const btn = card.querySelector('.btn-add-setlist') as HTMLElement | null;
    if (!btn) return;
 
    const cancionId = btn.getAttribute('data-id') || card.getAttribute('data-id') || '';
-   const svg = btn.querySelector('svg');
    const isSelected = cancionId && selectedSongs.includes(String(cancionId));
-
-   if (svg) {
-    svg.innerHTML = isSelected
-     ? '<polyline points="20 6 9 17 4 12"></polyline>'
-     : '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>';
-   }
-
-   btn.classList.toggle('text-success', Boolean(isSelected));
-   btn.classList.toggle('bg-success/10', Boolean(isSelected));
-   btn.classList.toggle('text-action', !isSelected);
-   btn.classList.toggle('bg-action/10', !isSelected);
+   setSelectionButtonState(btn, Boolean(isSelected));
   });
  }
 
@@ -671,8 +704,10 @@ if (audioCtx.state === 'suspended') audioCtx.resume();
  if (setlistPanel) setlistPanel.style.display = 'none';
  if (playlistBar) playlistBar.classList.remove('hidden');
 
- const clearPlaylistSelection = () => {
-  selectedSongs = [];
+const clearPlaylistSelection = () => {
+ selectedSongs = [];
+  cancionesFiltradas = sortSongsSelectedFirst(cancionesFiltradas);
+  applySongOrder(cancionesFiltradas);
   updatePlaylistCount();
   syncSelectionButtons();
  };
@@ -686,19 +721,10 @@ if (audioCtx.state === 'suspended') audioCtx.resume();
  items.forEach(item => {
  if (item.cancion_id) selectedSongs.push(String(item.cancion_id));
  });
- cards.forEach(card => {
- const cancionId = card.getAttribute('data-id') || '';
- if (cancionId && selectedSongs.includes(cancionId)) {
- const btn = card.querySelector('.btn-add-setlist');
- if (btn) {
- const svg = btn.querySelector('svg');
- if (svg) svg.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
- btn.classList.remove('text-action', 'bg-action/10');
- btn.classList.add('text-success', 'bg-success/10');
- }
- }
- });
+ cancionesFiltradas = sortSongsSelectedFirst(cancionesFiltradas);
+ applySongOrder(cancionesFiltradas);
  updatePlaylistCount();
+ syncSelectionButtons();
  }
  }
  })();
@@ -779,6 +805,8 @@ if (audioCtx.state === 'suspended') audioCtx.resume();
  } else {
  selectedSongs.push(String(cancionId));
  }
+ cancionesFiltradas = sortSongsSelectedFirst(cancionesFiltradas);
+ applySongOrder(cancionesFiltradas);
  updatePlaylistCount();
  syncSelectionButtons();
  } else {
@@ -787,11 +815,7 @@ if (audioCtx.state === 'suspended') audioCtx.resume();
  setlist.push(cancion);
  localStorage.setItem('setlist', JSON.stringify(setlist));
  updateSetlistUI();
- if (svg) {
- svg.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
- btn.classList.remove('text-action', 'bg-action/10');
- btn.classList.add('text-success', 'bg-success/10');
- }
+ setSelectionButtonState(btn, true);
  }
  }
  }, { capture: true });
@@ -801,6 +825,9 @@ if (audioCtx.state === 'suspended') audioCtx.resume();
  // =============================================
  const sentinel = document.getElementById('scroll-sentinel');
  const todasLasCanciones = Array.from(cards);
+ todasLasCanciones.forEach((card, index) => {
+  card.dataset.originalIndex = String(index);
+ });
  let cancionesFiltradas = [...todasLasCanciones];
  let indiceActual = 0;
  const limite = 15;
@@ -920,6 +947,9 @@ function filterCards() {
 
  return matchesSearch && matchesVoz && matchesCategoria && matchesTema;
  });
+
+ cancionesFiltradas = sortSongsSelectedFirst(cancionesFiltradas);
+ applySongOrder(cancionesFiltradas);
 
  todasLasCanciones.forEach(card => card.style.display = 'none');
  cargarMasCanciones();

@@ -1,24 +1,24 @@
--- =========================================================
--- EXPANSIÓN DE INFRAESTRUCTURA: Notificaciones (Fase 1 V2)
+﻿-- =========================================================
+-- EXPANSIÃ“N DE INFRAESTRUCTURA: Notificaciones (Fase 1 V2)
 -- Ejecuta este script manualmente en el SQL Editor de Supabase
 -- =========================================================
 
 BEGIN;
 
 -----------------------------------------------------------
--- 1. PREPARACIÓN PARA PUSH (Modificación de Schema)
+-- 1. PREPARACIÃ“N PARA PUSH (ModificaciÃ³n de Schema)
 -----------------------------------------------------------
--- Cambiamos web_push_token a push_token según directiva
+-- Cambiamos web_push_token a push_token segÃºn directiva
 ALTER TABLE public.perfiles 
 RENAME COLUMN web_push_token TO push_token;
 
 -----------------------------------------------------------
 -- 2. INFRAESTRUCTURA DE NOTIFICACIONES (DB & Realtime)
 -----------------------------------------------------------
--- Destruimos la tabla anterior si existía para actualizar el esquema
+-- Destruimos la tabla anterior si existÃ­a para actualizar el esquema
 DROP TABLE IF EXISTS public.notificaciones CASCADE;
 
--- Creamos el Enum para Tipo de Notificación
+-- Creamos el Enum para Tipo de NotificaciÃ³n
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'notificacion_tipo') THEN
@@ -40,19 +40,19 @@ CREATE TABLE public.notificaciones (
 -- Habilitar RLS en Notificaciones
 ALTER TABLE public.notificaciones ENABLE ROW LEVEL SECURITY;
 
--- Políticas de Seguridad (RLS)
+-- PolÃ­ticas de Seguridad (RLS)
 CREATE POLICY "Usuarios pueden ver sus propias notificaciones"
     ON public.notificaciones FOR SELECT
     USING (auth.uid() = perfil_id);
     
-CREATE POLICY "Usuarios pueden marcar como leídas sus notificaciones"
+CREATE POLICY "Usuarios pueden marcar como leÃ­das sus notificaciones"
     ON public.notificaciones FOR UPDATE
     USING (auth.uid() = perfil_id);
 
 -- Activar Realtime para notificaciones de forma segura
 DO $$ 
 BEGIN
-  -- Verificar si no está ya en la publicación
+  -- Verificar si no estÃ¡ ya en la publicaciÃ³n
   IF NOT EXISTS (
     SELECT 1 FROM pg_publication_tables 
     WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'notificaciones'
@@ -62,26 +62,26 @@ BEGIN
 END $$;
 
 -----------------------------------------------------------
--- 3. DISPARADOR DE EMAIL E INSERCIÓN AUTOMÁTICA
+-- 3. DISPARADOR DE EMAIL E INSERCIÃ“N AUTOMÃTICA
 -----------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.trigger_email_asignacion()
 RETURNS trigger AS $$
 DECLARE
   v_nombre_evento text;
 BEGIN
-  -- Extraer el título del evento asociado
+  -- Extraer el tÃ­tulo del evento asociado
   SELECT titulo INTO v_nombre_evento FROM public.eventos WHERE id = NEW.evento_id;
 
   -- 1. Insertamos en la nueva tabla de notificaciones
   INSERT INTO public.notificaciones (perfil_id, titulo, contenido, tipo)
   VALUES (
     NEW.perfil_id, 
-    'Nueva Asignación: ' || COALESCE(v_nombre_evento, 'Evento'),
-    'Has sido programado para servir en este evento. Por favor confirma tu asistencia en tu agenda.',
+    'Nueva AsignaciÃ³n: ' || COALESCE(v_nombre_evento, 'Evento'),
+    'Has sido asignado a un nuevo servicio.',
     'asignacion'
   );
   
-  -- 2. Llamada asíncrona a la Edge Function 'notify-assignment' para enviar Email/Push
+  -- 2. Llamada asÃ­ncrona a la Edge Function 'notify-assignment' para enviar Email/Push
   -- Nota: Requiere pg_net extension activa, lo usaremos como placeholder
   -- PERFORM net.http_post(
   --     url:='https://[PROYECTO].supabase.co/functions/v1/notify-assignment',
@@ -100,3 +100,4 @@ CREATE TRIGGER on_nueva_asignacion
   FOR EACH ROW EXECUTE FUNCTION public.trigger_email_asignacion();
 
 COMMIT;
+
