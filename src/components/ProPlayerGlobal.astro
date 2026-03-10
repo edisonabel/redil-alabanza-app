@@ -24,7 +24,7 @@
           </button>
         </div>
 
-        <audio id="mp3Audio" class="hidden" preload="metadata"></audio>
+        <audio id="mp3Audio" class="hidden" preload="metadata" crossorigin="anonymous"></audio>
 
         <div class="mt-4 rounded-2xl border border-border bg-background/70 p-4 md:p-5">
           <div class="flex items-center gap-3">
@@ -311,18 +311,23 @@
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
 
-      waveCtx = waveCtx || new AudioCtx();
-      if (!waveSource) {
-        waveSource = waveCtx.createMediaElementSource(audio);
-      }
-      waveAnalyser = waveAnalyser || waveCtx.createAnalyser();
-      waveAnalyser.fftSize = 1024;
-      waveData = new Uint8Array(waveAnalyser.fftSize);
+      try {
+        waveCtx = waveCtx || new AudioCtx();
+        if (!waveSource) {
+          waveSource = waveCtx.createMediaElementSource(audio);
+        }
+        waveAnalyser = waveAnalyser || waveCtx.createAnalyser();
+        waveAnalyser.fftSize = 1024;
+        waveData = new Uint8Array(waveAnalyser.fftSize);
 
-      try { waveSource.disconnect(); } catch {}
-      try { waveAnalyser.disconnect(); } catch {}
-      waveSource.connect(waveAnalyser);
-      waveAnalyser.connect(waveCtx.destination);
+        try { waveSource.disconnect(); } catch {}
+        try { waveAnalyser.disconnect(); } catch {}
+        waveSource.connect(waveAnalyser);
+        waveAnalyser.connect(waveCtx.destination);
+      } catch {
+        waveAnalyser = null;
+        waveData = null;
+      }
     };
 
     const drawWaveformFrame = () => {
