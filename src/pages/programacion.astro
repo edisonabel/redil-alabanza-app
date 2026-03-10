@@ -130,7 +130,7 @@ if (token) {
     <ModalEvento client:only="react" />
     
     <!-- MODAL VISTA DETALLE COMPLETADO (FASE 1) -->
-    <ModalDetalle client:only="react" initialRoles={ssrRoles} />
+    <ModalDetalle client:only="react" initialRoles={ssrRoles} sessionUser={ssrUser} isAdmin={ssrAdmin} />
 
     <!-- MODAL GENERADOR DE SERIES -->
     <ModalSerie client:only="react" sessionUser={ssrUser} />

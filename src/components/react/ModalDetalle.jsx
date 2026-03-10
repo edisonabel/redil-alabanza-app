@@ -19,24 +19,24 @@ const getRoleBadgeIcon = (role) => {
     if (
         text.includes('voz') ||
         text.includes('direccion') ||
-        text.includes('dirección') ||
+        text.includes('direcciÃ³n') ||
         text.includes('talkback') ||
         text.includes('lider_alabanza') ||
-        text.includes('líder de alabanza')
+        text.includes('lÃ­der de alabanza')
     ) return microphoneIcon;
 
-    if (text.includes('guitarra_acustica') || text.includes('guitarra acústica')) return guitarAcousticIcon;
+    if (text.includes('guitarra_acustica') || text.includes('guitarra acÃºstica')) return guitarAcousticIcon;
 
     if (
         text.includes('guitarra_electrica') ||
-        text.includes('guitarra eléctrica') ||
+        text.includes('guitarra elÃ©ctrica') ||
         text.includes('bajo')
     ) return guitarElectricIcon;
 
     if (text.includes('piano') || text.includes('teclado')) return pianoIcon;
-    if (text.includes('bateria') || text.includes('batería')) return drumIcon;
-    if (text.includes('violin') || text.includes('violín')) return violinIcon;
-    if (text.includes('caja') || text.includes('cajon') || text.includes('cajón')) return speakerIcon;
+    if (text.includes('bateria') || text.includes('baterÃ­a')) return drumIcon;
+    if (text.includes('violin') || text.includes('violÃ­n')) return violinIcon;
+    if (text.includes('caja') || text.includes('cajon') || text.includes('cajÃ³n')) return speakerIcon;
     if (text.includes('encargado_letras') || text.includes('encargado de letras')) return scriptTextIcon;
 
     return musicNoteIcon;
@@ -51,7 +51,7 @@ const RosterIcon = ({ role }) => {
     return <Icon icon={icon} className={isPianoBadge ? 'w-3 h-3' : 'w-3.5 h-3.5'} />;
 };
 
-export default function ModalDetalle({ initialRoles }) {
+export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = false }) {
     const [isOpen, setIsOpen] = useState(false);
     const [eventData, setEventData] = useState(null);
     const [playlist, setPlaylist] = useState(null);
@@ -155,6 +155,17 @@ export default function ModalDetalle({ initialRoles }) {
     const timeString = eventData?.dbData?.hora_fin ? `${horaInicio} - ${eventData.dbData.hora_fin.substring(0, 5)}` : horaInicio;
 
     const roster = eventData?.dbData?.asignaciones || [];
+    const eventoId = eventData?.dbData?.id || '';
+    const miAsignacion = roster.find((asig) => asig?.perfiles?.id === sessionUser?.id || asig?.perfiles?.email === sessionUser?.email);
+    let isModerator = false;
+    if (miAsignacion) {
+        const miRolObj = initialRoles?.find?.((r) => r.id === miAsignacion.rol_id);
+        if (miRolObj && (miRolObj.codigo === 'lider_alabanza' || miRolObj.codigo === 'talkback' || miRolObj.codigo === 'moderador')) {
+            isModerator = true;
+        }
+    }
+    const canManageRepertorio = isAdmin || isModerator;
+    const manageRepertorioLabel = playlistItems.length > 0 ? 'Editar repertorio' : 'Armar repertorio';
 
     // URL parameter for rehearsal mode
     let rehearsalHref = '';
@@ -163,6 +174,11 @@ export default function ModalDetalle({ initialRoles }) {
         const base64Str = btoa(encodeURIComponent(JSON.stringify(setlistArray)));
         rehearsalHref = `/repertorio?setlist=${encodeURIComponent(base64Str)}`;
     }
+
+    const handleManageRepertorio = () => {
+        if (!eventoId) return;
+        window.location.href = `/repertorio?seleccionar_para=${eventoId}`;
+    };
 
     return (
         <div className={`fixed inset-0 z-[70] bg-overlay/60 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
@@ -183,7 +199,7 @@ export default function ModalDetalle({ initialRoles }) {
                 </div>
 
                 {/* Body scrollable */}
-                <div className="p-6 overflow-y-auto flex-1 bg-surface">
+                <div className="p-6 pb-24 overflow-y-auto flex-1 bg-surface">
                     {/* Assigned Personnel */}
                     <div className="mb-8 relative z-10">
                         <h4 className="text-xs font-bold text-content-muted uppercase tracking-widest mb-4 flex items-center gap-2">
@@ -278,6 +294,20 @@ export default function ModalDetalle({ initialRoles }) {
                                 </div>
                             )}
                         </div>
+                        {canManageRepertorio && (
+                            <button
+                                type="button"
+                                onClick={handleManageRepertorio}
+                                className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 bg-surface text-content hover:bg-background rounded-xl transition-colors font-bold text-xs tracking-wide border border-border dark:bg-white dark:text-zinc-900 dark:border-white/90 dark:hover:bg-zinc-100"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                                    <path d="M9 18V5l12-2v13"></path>
+                                    <circle cx="6" cy="18" r="3"></circle>
+                                    <circle cx="18" cy="16" r="3"></circle>
+                                </svg>
+                                <span>{manageRepertorioLabel}</span>
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>

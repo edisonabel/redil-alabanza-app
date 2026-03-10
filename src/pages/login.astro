@@ -384,6 +384,7 @@ const telefono = telefonoInput.value;
 const fechaNacimiento = fechaNacimientoInput.value;
 const accessCode = accessCodeInput.value?.trim().toUpperCase();
 let avatarUrl = '';
+let uploadedAvatarPath = '';
 
  // SECRET CODE VALIDATION
  const SECRET_CODE = 'REDIL2026';
@@ -407,9 +408,13 @@ if (!fullName || !telefono || !fechaNacimiento) throw new Error("Nombre, Teléfo
 
  if (uploadError) throw uploadError;
 
- const uploadedPath = uploadData?.path || avatarPath;
- const { data: publicAvatar } = supabase.storage.from('avatars').getPublicUrl(uploadedPath);
- avatarUrl = publicAvatar?.publicUrl || '';
+ uploadedAvatarPath = uploadData?.path || avatarPath;
+ const { data: publicAvatar } = supabase.storage.from('avatars').getPublicUrl(uploadedAvatarPath);
+ avatarUrl = String(publicAvatar?.publicUrl || '').trim();
+
+ if (!avatarUrl) {
+  throw new Error('No se pudo obtener la URL pública de la foto de perfil.');
+ }
 
  const selectedRoles = Array.from(document.querySelectorAll('input[name="register_role"]:checked')).map(cb => (cb as HTMLInputElement).value);
 
@@ -427,7 +432,16 @@ roles: selectedRoles
  }
  });
 
- if (error) throw error;
+ if (error) {
+  if (uploadedAvatarPath) {
+   try {
+    await supabase.storage.from('avatars').remove([uploadedAvatarPath]);
+   } catch (cleanupError) {
+    console.warn('No se pudo limpiar el avatar subido tras fallo de registro:', cleanupError);
+   }
+  }
+  throw error;
+ }
  if (data.user && !data.session) {
   resetAvatarPreview();
   passwordInput.value = '';
