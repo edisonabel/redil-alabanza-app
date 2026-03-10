@@ -466,18 +466,38 @@ const userId = Astro.locals.user?.id ?? null;
  if (uploadError) throw uploadError;
 
  // Obtener URL PÃºblica
+ const uploadedPath = uploadData?.path || fileName;
  const { data: { publicUrl } } = supabase
  .storage
  .from('avatars')
- .getPublicUrl(fileName);
+ .getPublicUrl(uploadedPath);
+
+ if (!publicUrl) {
+ throw new Error("No se pudo obtener la URL pública del avatar.");
+ }
 
  // Actualizar tabla perfiles
- const { error: updateError } = await supabase
+ const { error: dbError } = await supabase
  .from('perfiles')
  .update({ avatar_url: publicUrl })
  .eq('id', userId);
 
- if (updateError) throw updateError;
+ if (dbError) {
+ console.error("Error actualizando avatar_url en perfiles:", dbError);
+ alert("La foto se subió, pero no se pudo guardar en tu perfil. Intenta de nuevo.");
+ throw dbError;
+ }
+
+ // Actualizar metadata de Auth para reflejar el cambio en toda la app
+ const { error: authError } = await supabase.auth.updateUser({
+ data: { avatar_url: publicUrl }
+ });
+
+ if (authError) {
+ console.error("Error actualizando avatar_url en auth metadata:", authError);
+ alert("La foto se subió y se guardó en tu perfil, pero no se pudo sincronizar la sesión. Intenta cerrar y abrir sesión o vuelve a intentarlo.");
+ throw authError;
+ }
 
  // Actualizar DOM visualmente
  const avatarContainerToUpdate = document.getElementById('avatar-container');
