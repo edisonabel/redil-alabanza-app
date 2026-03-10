@@ -211,7 +211,7 @@ console.log('Inicio proximosServicios count:', proximosServicios.length, 'user:'
         eventosEspeciales={eventosEspecialesData || []}
         cumpleanerosMes={cumpleanerosMes || []}
       />
-      <ModalDetalle client:only="react" initialRoles={rolesCatalog || []} />
+      <ModalDetalle client:only="react" initialRoles={rolesCatalog || []} sessionUser={user} isAdmin={Boolean(perfil?.is_admin)} />
     </div>
   </div>
 

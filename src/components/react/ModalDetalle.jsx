@@ -199,7 +199,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                 </div>
 
                 {/* Body scrollable */}
-                <div className="p-6 pb-24 overflow-y-auto flex-1 bg-surface">
+                <div className="p-6 pb-[100px] overflow-y-auto flex-1 bg-surface">
                     {/* Assigned Personnel */}
                     <div className="mb-8 relative z-10">
                         <h4 className="text-xs font-bold text-content-muted uppercase tracking-widest mb-4 flex items-center gap-2">
