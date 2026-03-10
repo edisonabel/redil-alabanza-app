@@ -476,16 +476,24 @@ const userId = Astro.locals.user?.id ?? null;
  throw new Error("No se pudo obtener la URL pública del avatar.");
  }
 
- // Actualizar tabla perfiles
- const { error: dbError } = await supabase
+ // Actualizar tabla perfiles obligando a devolver la fila (.select)
+ const { data: updatedRow, error: dbError } = await supabase
  .from('perfiles')
  .update({ avatar_url: publicUrl })
- .eq('id', userId);
+ .eq('id', userId)
+ .select();
 
  if (dbError) {
  console.error("Error actualizando avatar_url en perfiles:", dbError);
- alert("La foto se subió, pero no se pudo guardar en tu perfil. Intenta de nuevo.");
- throw dbError;
+ alert("La foto se subió, pero ocurrió un error en la base de datos. Intenta de nuevo.");
+  throw dbError;
+ }
+
+ // Validación Anti-Fallo Silencioso RLS
+ if (!updatedRow || updatedRow.length === 0) {
+ console.error("Fallo silencioso: El RLS bloqueó el UPDATE o el usuario no existe.");
+ alert("Error de permisos: La base de datos bloqueó tu cambio de foto. Contacta al administrador.");
+ throw new Error("Violación de RLS al actualizar avatar");
  }
 
  // Actualizar metadata de Auth para reflejar el cambio en toda la app
@@ -847,12 +855,20 @@ const userId = Astro.locals.user?.id ?? null;
  updated_at: new Date().toISOString()
  };
 
- const { error } = await supabase
+ const { data: updatedProfile, error } = await supabase
  .from('perfiles')
  .update(updates)
- .eq('id', userId);
+ .eq('id', userId)
+ .select();
 
  if (error) throw error;
+
+ // Validación Anti-Fallo Silencioso RLS
+ if (!updatedProfile || updatedProfile.length === 0) {
+ console.error("Fallo silencioso RLS: Supabase bloqueó la actualización de datos.");
+ alert("Error de permisos: No pudimos guardar tu información.");
+ throw new Error("Violación de RLS al actualizar datos personales");
+ }
 
  (window as any)._initialTonalidad = vocalVal;
  (window as any)._initialCumpleanos = cumpleanosVal;
