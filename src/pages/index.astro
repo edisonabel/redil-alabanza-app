@@ -32,27 +32,35 @@ if (authError || !user) {
   return Astro.redirect('/login');
 }
 
-const { data: perfil } = await supabaseSSR
-  .from('perfiles')
-  .select('id, nombre, avatar_url, is_admin, tour_completado')
-  .eq('id', user.id)
-  .single();
-
-const { data: eventosEspecialesData, error: eventosEspecialesError } = await supabaseSSR
-  .from('eventos_especiales')
-  .select('id, titulo, descripcion, fecha, activo')
-  .eq('activo', true)
-  .order('fecha', { ascending: true })
-  .limit(5);
+const [
+  { data: perfil },
+  { data: eventosEspecialesData, error: eventosEspecialesError },
+  { data: perfilesCumplesData, error: perfilesCumplesError },
+  { data: rolesCatalog, error: rolesError },
+] = await Promise.all([
+  supabaseSSR
+    .from('perfiles')
+    .select('id, nombre, avatar_url, is_admin, tour_completado')
+    .eq('id', user.id)
+    .single(),
+  supabaseSSR
+    .from('eventos_especiales')
+    .select('id, titulo, descripcion, fecha, activo')
+    .eq('activo', true)
+    .order('fecha', { ascending: true })
+    .limit(5),
+  supabaseSSR
+    .from('perfiles')
+    .select('id, nombre, fecha_nacimiento')
+    .not('fecha_nacimiento', 'is', null),
+  supabaseSSR
+    .from('roles')
+    .select('id, nombre, codigo'),
+]);
 
 if (eventosEspecialesError) {
   console.error('Inicio eventos_especiales query error:', eventosEspecialesError);
 }
-
-const { data: perfilesCumplesData, error: perfilesCumplesError } = await supabaseSSR
-  .from('perfiles')
-  .select('id, nombre, fecha_nacimiento')
-  .not('fecha_nacimiento', 'is', null);
 
 if (perfilesCumplesError) {
   console.error('Inicio cumpleaneros query error:', perfilesCumplesError);
@@ -78,10 +86,6 @@ const cumpleanerosMes = (perfilesCumplesData || [])
 // Keep a 12h tolerance like Programacion to avoid timezone edge-cases.
 const fechaFiltroISO = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
 const userEmail = user.email || null;
-
-const { data: rolesCatalog, error: rolesError } = await supabaseSSR
-  .from('roles')
-  .select('id, nombre, codigo');
 
 if (rolesError) {
   console.error('Inicio roles query error:', rolesError);

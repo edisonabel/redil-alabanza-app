@@ -760,7 +760,7 @@ const userId = Astro.locals.user?.id ?? null;
  const ausenciasListEl = document.getElementById('ausencias-list');
  const { data: ausenciasData, error: ausenciasError } = await supabase
  .from('ausencias')
- .select('*')
+	.select('id, fecha_inicio, fecha_fin, motivo')
  .eq('perfil_id', currentUserId)
  .gte('fecha_fin', new Date().toISOString().split('T')[0])
  .order('fecha_inicio', { ascending: true });

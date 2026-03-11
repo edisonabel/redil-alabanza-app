@@ -111,7 +111,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
     const { data: perfil } = await supabaseServer
       .from('perfiles')
-      .select('*')
+      .select('id, is_admin')
       .eq('id', authState.user.id)
       .single();
 

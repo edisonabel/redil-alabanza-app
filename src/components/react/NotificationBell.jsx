@@ -20,11 +20,15 @@ const formatRelative = (value, _tick = 0) => {
 
 export default function NotificationBell({ inline = false, direction = 'down' }) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [bootstrapped, setBootstrapped] = useState(false);
   const [currentUserId, setCurrentUserId] = useState('');
   const [notifications, setNotifications] = useState([]);
   const [tick, setTick] = useState(0);
   const rootRef = useRef(null);
+  const channelRef = useRef(null);
+  const bootstrapPromiseRef = useRef(null);
+  const mountedRef = useRef(false);
 
   const unreadCount = useMemo(
     () => notifications.reduce((total, item) => total + (item?.leida ? 0 : 1), 0),
@@ -49,51 +53,13 @@ export default function NotificationBell({ inline = false, direction = 'down' })
   };
 
   useEffect(() => {
-    let active = true;
-    let channel = null;
-
-    const boot = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!active) return;
-      if (!session?.user?.id) {
-        setCurrentUserId('');
-        setNotifications([]);
-        setLoading(false);
-        return;
-      }
-
-      const uid = session.user.id;
-      setCurrentUserId(uid);
-      await fetchNotifications(uid);
-      if (!active) return;
-      setLoading(false);
-
-      channel = supabase
-        .channel(`notificaciones-ui-${uid}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'notificaciones',
-            filter: `perfil_id=eq.${uid}`,
-          },
-          () => {
-            fetchNotifications(uid);
-          },
-        )
-        .subscribe();
-    };
-
-    boot();
+    mountedRef.current = true;
 
     return () => {
-      active = false;
-      if (channel) {
-        supabase.removeChannel(channel);
+      mountedRef.current = false;
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
       }
     };
   }, []);
@@ -125,6 +91,70 @@ export default function NotificationBell({ inline = false, direction = 'down' })
     return () => window.clearInterval(intervalId);
   }, []);
 
+  const ensureBootstrapped = async () => {
+    if (bootstrapPromiseRef.current) {
+      return bootstrapPromiseRef.current;
+    }
+
+    bootstrapPromiseRef.current = (async () => {
+      if (mountedRef.current) {
+        setLoading(true);
+      }
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!mountedRef.current) return;
+
+        if (!session?.user?.id) {
+          setCurrentUserId('');
+          setNotifications([]);
+          setBootstrapped(true);
+          return;
+        }
+
+        const uid = session.user.id;
+        setCurrentUserId(uid);
+        await fetchNotifications(uid);
+        if (!mountedRef.current) return;
+
+        if (!channelRef.current) {
+          channelRef.current = supabase
+            .channel(`notificaciones-ui-${uid}`)
+            .on(
+              'postgres_changes',
+              {
+                event: '*',
+                schema: 'public',
+                table: 'notificaciones',
+                filter: `perfil_id=eq.${uid}`,
+              },
+              () => {
+                fetchNotifications(uid);
+              },
+            )
+            .subscribe();
+        }
+
+        setBootstrapped(true);
+      } catch (error) {
+        console.error('Error al inicializar NotificationBell:', error);
+      } finally {
+        if (mountedRef.current) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return bootstrapPromiseRef.current;
+  };
+
+  const handleIntent = () => {
+    ensureBootstrapped();
+  };
+
   const markAsRead = async (id) => {
     if (!id || !currentUserId) return;
     setNotifications((prev) =>
@@ -145,7 +175,7 @@ export default function NotificationBell({ inline = false, direction = 'down' })
     }
   };
 
-  if (!currentUserId && !loading) return null;
+  if (bootstrapped && !currentUserId && !loading) return null;
 
   const rootClass = inline
     ? 'relative inline-flex'
@@ -167,12 +197,17 @@ export default function NotificationBell({ inline = false, direction = 'down' })
       ref={rootRef}
       className={rootClass}
       style={rootStyle}
+      onPointerEnter={handleIntent}
     >
       <button
         type="button"
         aria-label="Abrir notificaciones"
         aria-expanded={open}
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={() => {
+          handleIntent();
+          setOpen((prev) => !prev);
+        }}
+        onFocus={handleIntent}
         className={buttonClass}
       >
         <svg
