@@ -1,6 +1,7 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import DashboardInicio from '../components/react/DashboardInicio.jsx';
+import DashboardShortcuts from '../components/react/DashboardShortcuts.jsx';
 import ModalDetalle from '../components/react/ModalDetalle.jsx';
 import OnboardingRoot from '../components/onboarding/OnboardingRoot';
 import { supabase } from '../lib/supabase';
@@ -210,11 +211,11 @@ const proximosServicios = (eventosData || [])
       <DashboardInicio
         client:load
         usuario={perfil}
-        userId={user.id}
         proximosServicios={proximosServicios}
         eventosEspeciales={eventosEspecialesData || []}
         cumpleanerosMes={cumpleanerosMes || []}
       />
+      <DashboardShortcuts client:idle userId={user.id} />
       <ModalDetalle client:only="react" initialRoles={rolesCatalog || []} sessionUser={user} isAdmin={Boolean(perfil?.is_admin)} />
     </div>
   </div>

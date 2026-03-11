@@ -1,6 +1,4 @@
 ---
-import MotionNavIcon from './react/MotionNavIcon.jsx';
-
 const pathname = new URL(Astro.request.url).pathname;
 const user = Astro.locals.user;
 const perfil = Astro.locals.perfil;
@@ -68,10 +66,10 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  data-nav-link="true"
  data-nav-href={item.href}
  data-astro-prefetch="hover"
- class={`nav-link flex min-w-0 flex-col items-center justify-center gap-0.5 py-3 px-1 transition-all duration-300 relative ${active ? 'text-brand ' : 'text-content-muted hover:text-content'}`}
+ class={`nav-link ${active ? 'is-active text-brand ' : 'text-content-muted hover:text-content'} flex min-w-0 flex-col items-center justify-center gap-0.5 py-3 px-1 transition-all duration-300 relative`}
  >
  <span data-nav-active-indicator class={`absolute top-0 left-1/2 -translate-x-1/2 w-8 h-1 bg-brand rounded-b-full ${active ? '' : 'hidden'}`}></span>
- <MotionNavIcon key={`nav-icon-${item.href}`} icon={item.icon} active={active} client:load />
+ <span data-nav-icon class="nav-icon mb-1 flex h-6 w-6 origin-center items-center justify-center" set:html={item.icon}></span>
   <span data-nav-label class={`block w-full truncate text-center text-[10px] font-medium tracking-wide ${active ? 'font-bold' : ''}`}>
   {item.name}
   </span>
@@ -93,8 +91,24 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
   transition: transform 220ms cubic-bezier(0.42, 0, 0.58, 1), opacity 220ms cubic-bezier(0.42, 0, 0.58, 1);
  }
 
+ .nav-icon {
+  transform: translateY(0) scale(1);
+  transition:
+   transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+   opacity 220ms ease;
+  will-change: transform;
+ }
+
+ .nav-link.is-active .nav-icon {
+  transform: translateY(-1px) scale(1.13);
+ }
+
  .nav-link.nav-link-pressed {
   transform: translateZ(0) scale(0.93);
+ }
+
+ .nav-link.nav-link-pressed .nav-icon {
+  transform: translateY(1px) scale(0.8);
  }
 
  .nav-link.nav-link-loading [data-nav-label] {
@@ -109,6 +123,22 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
   0% { transform: scale(1); }
   50% { transform: scale(1.1); }
   100% { transform: scale(1); }
+ }
+
+ @media (prefers-reduced-motion: reduce) {
+  .nav-icon,
+  .nav-link.nav-link-pressed .nav-icon,
+  .nav-link.is-active .nav-icon {
+   transition: transform 80ms linear;
+  }
+
+  .nav-link.is-active .nav-icon {
+   transform: scale(1.08);
+  }
+
+  .nav-link.nav-link-pressed .nav-icon {
+   transform: scale(0.96);
+  }
  }
 </style>
 
@@ -145,6 +175,7 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  if (!href) return;
  const active = href === '/' ? currentPath === '/' : currentPath.startsWith(href);
 
+ link.classList.toggle('is-active', active);
  link.classList.toggle('text-brand', active);
  link.classList.toggle('text-content-muted', !active);
  link.classList.toggle('hover:text-content', !active);
