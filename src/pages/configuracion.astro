@@ -2,6 +2,7 @@
 import Layout from '../layouts/Layout.astro';
 import PanelBranding from '../components/react/PanelBranding.jsx';
 import PanelAdminPush from '../components/react/PanelAdminPush.jsx';
+import PanelModoExperto from '../components/react/PanelModoExperto.jsx';
 import { supabase } from '../lib/supabase';
 
 let isAdmin = false;
@@ -46,6 +47,7 @@ if (!isAdmin) {
       </div>
     </header>
 
+    <PanelModoExperto client:load />
     <PanelBranding client:load />
     <PanelAdminPush client:load isAdmin={isAdmin} />
   </section>
