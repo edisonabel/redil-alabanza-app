@@ -163,7 +163,7 @@ export async function POST({ request, cookies }) {
                 deleted += 1;
               }
             } else {
-              console.warn('Push cleanup: suscripción expirada sin id, no se pudo limpiar automáticamente.', row);
+
             }
             return;
           }

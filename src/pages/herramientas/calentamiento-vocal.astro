@@ -208,7 +208,9 @@ const showSwipeHint = warmups.length > 1;
         document.addEventListener(
           'click',
           (event) => {
-            const trigger = (event.target as Element | null)?.closest('.btn-open-warmup-mp3') as HTMLElement | null;
+            const target = event.target;
+            if (!target || typeof target.closest !== 'function') return;
+            const trigger = target.closest('.btn-open-warmup-mp3');
             if (!trigger) return;
             event.preventDefault();
             event.stopPropagation();

@@ -5,6 +5,9 @@
     "**/*"
   ],
   "exclude": [
+    "node_modules",
+    "src/archivos_legacy/**/*",
+    "src/scripts-prueba/**/*",
     "dist"
   ],
   "compilerOptions": {

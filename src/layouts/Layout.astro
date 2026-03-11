@@ -87,69 +87,7 @@ const themeColors = brandingData;
  <meta charset="UTF-8" />
  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
- <script is:inline>
-  (function nuclearCacheFlushV3() {
-    const FLAG_KEY = "v3_force_purge";
 
-    try {
-      if (localStorage.getItem(FLAG_KEY) === "1") return;
-    } catch (_) {
-      return;
-    }
-
-    (async () => {
-      try {
-        // 1) Destruir todas las Cache Storage
-        if ("caches" in window) {
-          const cacheNames = await window.caches.keys();
-          await Promise.all(cacheNames.map((name) => window.caches.delete(name)));
-        }
-
-        // 2) Matar todos los Service Workers
-        if ("serviceWorker" in navigator) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(regs.map((reg) => reg.unregister()));
-        }
-
-        // 3) Marcar como ejecutado (one-shot)
-        localStorage.setItem(FLAG_KEY, "1");
-
-        // 4) Recarga dura
-        // reload(true) está deprecado en algunos navegadores, pero se mantiene por compat.
-        window.location.reload(true);
-      } catch (err) {
-        console.error("[CACHE-NUCLEAR-FLUSH] Error:", err);
-        // Evitar loop incluso si algo falla
-        try {
-          localStorage.setItem(FLAG_KEY, "1");
-        } catch (_) {}
-        window.location.reload();
-      }
-    })();
-  })();
-</script>
-  <script is:inline>
-  (() => {
-    const isLocalHost =
-      window.location.hostname === 'localhost' ||
-      window.location.hostname === '127.0.0.1';
-    if (!isLocalHost) return;
-
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker
-        .getRegistrations()
-        .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
-        .catch(() => {});
-    }
-
-    if ('caches' in window) {
-      caches
-        .keys()
-        .then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
-        .catch(() => {});
-    }
-  })();
- </script>
  <script is:inline>
   (() => {
     const originalAddEventListener = document.addEventListener.bind(document);
@@ -676,6 +614,69 @@ const themeColors = brandingData;
       .catch((error) => {
         console.warn('SW main registration sync failed', error);
       });
+  })();
+ </script>
+  <script is:inline>
+  (function nuclearCacheFlushV3() {
+    const FLAG_KEY = "v3_force_purge";
+
+    try {
+      if (localStorage.getItem(FLAG_KEY) === "1") return;
+    } catch (_) {
+      return;
+    }
+
+    (async () => {
+      try {
+        // 1) Destruir todas las Cache Storage
+        if ("caches" in window) {
+          const cacheNames = await window.caches.keys();
+          await Promise.all(cacheNames.map((name) => window.caches.delete(name)));
+        }
+
+        // 2) Matar todos los Service Workers
+        if ("serviceWorker" in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map((reg) => reg.unregister()));
+        }
+
+        // 3) Marcar como ejecutado (one-shot)
+        localStorage.setItem(FLAG_KEY, "1");
+
+        // 4) Recarga dura
+        // reload(true) está deprecado en algunos navegadores, pero se mantiene por compat.
+        window.location.reload(true);
+      } catch (err) {
+        console.error("[CACHE-NUCLEAR-FLUSH] Error:", err);
+        // Evitar loop incluso si algo falla
+        try {
+          localStorage.setItem(FLAG_KEY, "1");
+        } catch (_) {}
+        window.location.reload();
+      }
+    })();
+  })();
+</script>
+  <script is:inline>
+  (() => {
+    const isLocalHost =
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1';
+    if (!isLocalHost) return;
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker
+        .getRegistrations()
+        .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+        .catch(() => {});
+    }
+
+    if ('caches' in window) {
+      caches
+        .keys()
+        .then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+        .catch(() => {});
+    }
   })();
  </script>
 </body>

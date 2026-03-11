@@ -79,7 +79,7 @@ if (token) {
   ssrHasMoreEventos = (moreEventosCount || 0) > 0;
   queryError = err || perfilError || rolesError || moreEventosError;
   
-  console.log("=== PROGRAMACION QUERY LOG ===", { 
+  /* console.log("=== PROGRAMACION QUERY LOG ===", { 
     error: queryError, 
     rowsCount: eventosDb?.length, 
     sample: eventosDb?.[0] ? {
@@ -90,7 +90,7 @@ if (token) {
         estado: eventosDb[0].estado,
         playlists: eventosDb[0].playlists
     } : null 
-  });
+  }); */
   
   ssrEventos = eventosDb || [];
 }

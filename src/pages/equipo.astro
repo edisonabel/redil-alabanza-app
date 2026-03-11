@@ -1,4 +1,4 @@
-﻿---
+---
 import Layout from '../layouts/Layout.astro';
 ---
 
@@ -556,12 +556,12 @@ import Layout from '../layouts/Layout.astro';
  if (targetBtn) {
  e.stopPropagation();
  e.preventDefault();
- console.log('CLICK EN BORRAR DETECTADO');
+ // log
  
  const idEq = targetBtn.getAttribute('data-id');
  const letEq = targetBtn.getAttribute('data-letra');
  const nomEq = targetBtn.getAttribute('data-nombre');
- console.log('ID a borrar:', idEq, '| Nombre:', nomEq);
+ // log
 
  // === Abrir Modal de Confirm Personalizado ===
  const modalConfirm = document.getElementById('modal-confirm-delete');
@@ -592,7 +592,7 @@ import Layout from '../layouts/Layout.astro';
  newBtnOk.addEventListener('click', async () => {
  // Cerrar modal inmediatamente (style.display v/s classList para evitar conflicto flex/hidden)
  modalConfirm.style.display = 'none';
- console.log('Usuario confirmÃ³ borrado. Llamando a Supabase...');
+ // log
  
  newBtnOk.disabled = true;
  targetBtn.disabled = true;
@@ -602,7 +602,7 @@ import Layout from '../layouts/Layout.astro';
  const { error } = await supabase.from('equipos').delete().eq('id', idEq);
  if (error) throw error;
  
- console.log('Borrado exitoso en Supabase âœ…');
+ // log
  
  // Remover del array maestro in-memory
  const idx = equiposMaster.findIndex((x:any) => x.id === idEq);

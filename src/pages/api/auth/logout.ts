@@ -1,4 +1,4 @@
-import type { APIRoute } from 'astro';
+import type { APIRoute, AstroCookies } from 'astro';
 
 const AUTH_COOKIE_REGEX = /^(sb-|__Host-sb-|__Secure-sb-|supabase-)/i;
 const FALLBACK_COOKIE_NAMES = ['sb-access-token', 'sb-refresh-token'];
@@ -21,7 +21,7 @@ const collectAuthCookieNames = (cookieHeader: string | null) => {
   return names;
 };
 
-const clearAuthCookies = (cookies: APIRoute['cookies'], names: Set<string>) => {
+const clearAuthCookies = (cookies: AstroCookies, names: Set<string>) => {
   names.forEach((name) => {
     cookies.delete(name, { path: '/' });
   });

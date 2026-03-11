@@ -73,6 +73,7 @@ import Layout from '../../layouts/Layout.astro';
  if(!selector || !contenedor) return;
 
  function calcularCapo() {
+ if (!selector || !contenedor) return;
  const tonoBase = selector.value;
  const indiceBase = notas.indexOf(tonoBase);
  contenedor.innerHTML = ''; // Limpiar resultados
