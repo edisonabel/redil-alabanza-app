@@ -2,8 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { CheckCircle, UploadCloud, Loader2, Plus } from 'lucide-react';
 
-const EditableCell = ({ cancionId, campoBd, valorInicial, onSave, isSaving, anchoClases = "min-w-[8rem]" }) => {
+const EditableCell = ({ cancionId, campoBd, valorInicial, onSave, isSaving, anchoClases = "min-w-[8rem]", customInputClasses = "" }) => {
   const [valor, setValor] = useState(valorInicial || '');
+
+  const defaultInputClasses = "w-full min-h-[44px] px-3 py-2 bg-transparent border border-transparent focus:border-brand focus:ring-1 focus:ring-brand hover:border-border transition-colors outline-none text-sm text-content truncate";
+  const inputClasses = customInputClasses || defaultInputClasses;
 
   useEffect(() => {
     setValor(valorInicial || '');
@@ -16,17 +19,17 @@ const EditableCell = ({ cancionId, campoBd, valorInicial, onSave, isSaving, anch
   };
 
   return (
-    <div className={`relative flex items-center h-full w-full ${anchoClases}`}>
+    <div className={`relative flex items-center w-full ${anchoClases}`}>
       <input
         type="text"
-        className="w-full h-full min-h-[44px] px-3 py-2 bg-transparent border border-transparent focus:border-brand focus:ring-1 focus:ring-brand hover:border-border transition-colors outline-none text-sm text-content truncate"
+        className={inputClasses}
         value={valor}
         onChange={(e) => setValor(e.target.value)}
         onBlur={handleBlur}
         title={valor}
       />
       {isSaving && (
-        <div className="absolute right-2 text-brand bg-surface rounded-full p-0.5">
+        <div className="absolute right-2 text-brand bg-surface rounded-full p-0.5 z-10">
           <Loader2 className="w-4 h-4 animate-spin" />
         </div>
       )}
@@ -282,10 +285,7 @@ export default function AdminRepertorio() {
                 <tr className="text-xs uppercase tracking-wider text-content-muted font-bold divide-x divide-border">
                   {/* Fijas */}
                   <th className="sticky left-0 z-30 bg-background top-0 px-0 py-0 border-r border-border text-center overflow-hidden min-w-[14rem] max-w-[14rem]">
-                    <div className="px-4 py-4 w-full h-full text-left truncate">Título</div>
-                  </th>
-                  <th className="sticky left-[14rem] z-30 bg-background top-0 px-0 py-0 border-r border-border text-center overflow-hidden min-w-[10rem] max-w-[10rem]">
-                    <div className="px-4 py-4 w-full h-full text-left truncate">Cantante</div>
+                    <div className="px-4 py-4 w-full h-full text-left truncate">Título / Cantante</div>
                   </th>
                   {/* Metadata */}
                   <th className="px-4 py-4 min-w-[6rem]">Tonalidad</th>
@@ -308,25 +308,29 @@ export default function AdminRepertorio() {
                 {canciones.map((cancion) => (
                   <tr key={cancion.id} className="hover:bg-background/40 transition-colors group divide-x divide-border">
                     {/* Fijas */}
-                    <td className="sticky left-0 z-10 bg-surface group-hover:bg-background/80 border-r border-border p-0 align-top min-w-[14rem] max-w-[14rem]">
-                      <EditableCell
-                        cancionId={cancion.id}
-                        campoBd="titulo"
-                        valorInicial={cancion.titulo}
-                        onSave={guardarMetadata}
-                        isSaving={savingCell[`${cancion.id}_titulo`]}
-                        anchoClases="w-full"
-                      />
-                    </td>
-                    <td className="sticky left-[14rem] z-10 bg-surface group-hover:bg-background/80 border-r border-border p-0 align-top min-w-[10rem] max-w-[10rem]">
-                      <EditableCell
-                        cancionId={cancion.id}
-                        campoBd="cantante"
-                        valorInicial={cancion.cantante}
-                        onSave={guardarMetadata}
-                        isSaving={savingCell[`${cancion.id}_cantante`]}
-                        anchoClases="w-full"
-                      />
+                    <td className="sticky left-0 z-10 bg-surface group-hover:bg-background/80 border-r border-border align-top min-w-[14rem] max-w-[14rem]">
+                      <div className="flex flex-col justify-center gap-0.5 py-1.5 px-3">
+                        <EditableCell
+                          cancionId={cancion.id}
+                          campoBd="titulo"
+                          valorInicial={cancion.titulo}
+                          onSave={guardarMetadata}
+                          isSaving={savingCell[`${cancion.id}_titulo`]}
+                          anchoClases="w-full"
+                          customInputClasses="text-[13px] font-semibold text-gray-900 dark:text-gray-100 bg-transparent border-none p-0 m-0 leading-none focus:ring-0 w-full h-auto shadow-none truncate"
+                        />
+                        <div className="w-full">
+                          <EditableCell
+                            cancionId={cancion.id}
+                            campoBd="cantante"
+                            valorInicial={cancion.cantante}
+                            onSave={guardarMetadata}
+                            isSaving={savingCell[`${cancion.id}_cantante`]}
+                            anchoClases="w-full"
+                            customInputClasses="text-[11px] text-gray-500 dark:text-gray-400 bg-transparent border-none p-0 m-0 leading-none focus:ring-0 w-full h-auto shadow-none truncate"
+                          />
+                        </div>
+                      </div>
                     </td>
                     
                     {/* Metadata */}
