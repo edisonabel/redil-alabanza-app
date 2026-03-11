@@ -1,0 +1,18 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AdminRepertorio from '../components/AdminRepertorio.jsx';
+---
+
+<Layout>
+  <main class="min-h-screen bg-background">
+    <header class="py-6 bg-surface border-b border-border shadow-sm mb-6">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h1 class="text-2xl font-bold text-content leading-tight">Administración de Repertorio</h1>
+      </div>
+    </header>
+
+    <div class="max-w-7xl mx-auto">
+      <AdminRepertorio client:load />
+    </div>
+  </main>
+</Layout>
