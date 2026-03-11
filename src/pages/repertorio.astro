@@ -1,4 +1,4 @@
-﻿---
+---
 import Layout from '../layouts/Layout.astro';
 import CardCancion from '../components/CardCancion.astro';
 import BuscadorPredictivo from '../components/BuscadorPredictivo.astro';
@@ -505,7 +505,7 @@ if (sessionError || !session) {
  };
 
  // Listener global para abrir modal MP3 desde la tarjeta (debe existir en todos los modos, incluido setlist)
- addListener(document, 'click', (e) => {
+ addListener(document, 'click', async (e) => {
  const mp3Button = (e.target as Element).closest('.btn-open-mp3') as HTMLElement | null;
  if (!mp3Button) return;
 
@@ -515,6 +515,22 @@ if (sessionError || !session) {
  const mp3Url = mp3Button.getAttribute('data-mp3') || '';
  const songTitle = mp3Button.getAttribute('data-title') || mp3Button.getAttribute('data-cancion') || 'Canción';
  const songArtist = mp3Button.getAttribute('data-artist') || '';
+
+ // Llamada al RPC seguro para sumar una reproducción (sin detener la música si falla)
+ const cancionId = mp3Button.getAttribute('data-id') || mp3Button.closest('article')?.getAttribute('data-id');
+ if (cancionId) {
+   try {
+     const { error } = await supabase.rpc('incrementar_reproduccion', { 
+       cancion_id: cancionId 
+     });
+     if (error) {
+       console.warn('Aviso: No se pudo sumar la reproducción', error.message);
+     }
+   } catch (err) {
+     console.warn('Aviso: Excepción silenciosa en el contador', err);
+   }
+ }
+
  dispatchProPlayerEvent({ url: mp3Url, title: songTitle, artist: songArtist, autoPlay: true });
  }, { capture: true });
 
