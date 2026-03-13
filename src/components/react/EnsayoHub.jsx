@@ -634,9 +634,9 @@ export default function EnsayoHub({
               const isMetronomeActive = activeMetronomeSongId === song?.id;
               const hasSongAudio = typeof song?.mp3 === 'string' && song.mp3.trim() !== '';
               const parsedVoices = parseVoiceResources(song?.linkVoces);
-              const safeVocesPayload = JSON.stringify(
-                parsedVoices.entries.length > 0 ? parsedVoices.entries : (parsedVoices.legacyUrl || '')
-              );
+              const safeVocesPayload = parsedVoices.entries.length > 0
+                ? JSON.stringify(parsedVoices.entries)
+                : (parsedVoices.legacyUrl || '');
               const hasVoiceResources = parsedVoices.hasResources || Boolean(parsedVoices.legacyUrl);
               const voiceLabel = normalizeVoiceLabel(song?.voz);
               const isLastViewed = String(song?.id || index) === String(lastViewedSongId || '');
@@ -674,19 +674,6 @@ export default function EnsayoHub({
                       {song?.artist || 'Redil Worship'}
                     </p>
                     <div className="mt-2 flex items-center gap-2 overflow-x-auto pb-1 pr-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                      <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-700 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-200">
-                        {keyLabel}
-                      </span>
-                      {song?.category && (
-                        <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-400">
-                          {song.category}
-                        </span>
-                      )}
-                      {voiceLabel && (
-                        <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold tracking-[0.04em] text-zinc-500 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-400">
-                          {voiceLabel}
-                        </span>
-                      )}
                       {hasVoiceResources && (
                         <button
                           type="button"
@@ -700,6 +687,19 @@ export default function EnsayoHub({
                           <Mic2 className="h-3.5 w-3.5" />
                           Voces
                         </button>
+                      )}
+                      <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-700 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-200">
+                        {keyLabel}
+                      </span>
+                      {song?.category && (
+                        <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-400">
+                          {song.category}
+                        </span>
+                      )}
+                      {voiceLabel && (
+                        <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold tracking-[0.04em] text-zinc-500 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-400">
+                          {voiceLabel}
+                        </span>
                       )}
                     </div>
                   </div>
