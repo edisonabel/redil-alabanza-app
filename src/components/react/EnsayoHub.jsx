@@ -431,8 +431,9 @@ export default function EnsayoHub({
 
   const openSongInPlayer = useCallback((song, autoPlay = true) => {
     if (!song?.mp3) return;
+    const safeUrl = song.mp3.replace(/ /g, '%20');
     dispatchProPlayerEvent({
-      url: song.mp3,
+      url: safeUrl,
       title: song.title,
       artist: song.artist,
       autoPlay,
@@ -441,16 +442,27 @@ export default function EnsayoHub({
 
   const openSongVoices = useCallback((song) => {
     if (typeof window === 'undefined') return;
+    console.log('[EnsayoHub] 🎤 Iniciando openSongVoices para:', song?.title);
+
     const rawVoicePayload = serializeVoicePayload(song?.linkVoces);
     const parsed = parseVoiceResources(rawVoicePayload);
+    console.log('[EnsayoHub] ⚙️ Payload procesado:', parsed);
+
     const fallbackLegacyUrl =
       parsed.legacyUrl ||
       normalizeVoiceExternalUrl(rawVoicePayload) ||
       normalizeVoiceExternalUrl(song?.linkVoces?.legacyUrl || song?.linkVoces?.folder || song?.linkVoces?.drive || '');
-    if (!parsed.hasResources && !fallbackLegacyUrl) return;
+
+    if (!parsed.hasResources && !fallbackLegacyUrl) {
+      console.warn('[EnsayoHub] ⚠️ No se encontraron recursos de voz válidos.');
+      return;
+    }
+
     stopMetronome();
     stopQueue();
     window.__REDIL_PRO_PLAYER__?.close?.();
+
+    console.log('[EnsayoHub] 🚀 Disparando evento/modal de voces...');
     openVoicesModal({
       title: song?.title || 'Recursos de voz',
       artist: song?.artist || '',
@@ -621,15 +633,21 @@ export default function EnsayoHub({
               const bpmValue = Number.isFinite(Number(song?.bpm)) ? Math.max(0, Math.round(Number(song.bpm))) : 0;
               const isMetronomeActive = activeMetronomeSongId === song?.id;
               const hasSongAudio = typeof song?.mp3 === 'string' && song.mp3.trim() !== '';
-              const rawVoicePayload = serializeVoicePayload(song?.linkVoces);
-              const hasVoiceResources = hasValidVoicePayload(rawVoicePayload);
+              const parsedVoices = parseVoiceResources(song?.linkVoces);
+              const safeVocesPayload = JSON.stringify(
+                parsedVoices.entries.length > 0 ? parsedVoices.entries : (parsedVoices.legacyUrl || '')
+              );
+              const hasVoiceResources = parsedVoices.hasResources || Boolean(parsedVoices.legacyUrl);
               const voiceLabel = normalizeVoiceLabel(song?.voz);
               const isLastViewed = String(song?.id || index) === String(lastViewedSongId || '');
 
               return (
                 <article
                   key={song?.id || `${song?.title || 'song'}-${index}`}
-                  onClick={() => openCompactSong(song)}
+                  onClick={(event) => {
+                    if (event.target.closest('button')) return;
+                    openCompactSong(song);
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
@@ -672,12 +690,10 @@ export default function EnsayoHub({
                       {hasVoiceResources && (
                         <button
                           type="button"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            openSongVoices(song);
-                          }}
-                          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-teal-300/60 bg-teal-50 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-teal-700 transition-colors hover:bg-teal-100 dark:border-teal-500/25 dark:bg-teal-500/10 dark:text-teal-300 dark:hover:bg-teal-500/16"
+                          className="btn-open-voces inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-teal-300/60 bg-teal-50 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-teal-700 transition-colors hover:bg-teal-100 dark:border-teal-500/25 dark:bg-teal-500/10 dark:text-teal-300 dark:hover:bg-teal-500/16"
+                          data-voces={safeVocesPayload}
+                          data-title={song?.title || ''}
+                          data-artist={song?.artist || ''}
                           aria-label={`Abrir voces de ${song?.title || 'cancion'}`}
                           title="Ensayar voces"
                         >
