@@ -1,0 +1,541 @@
+﻿---
+import '../../styles/global.css';
+import { createClient } from '@supabase/supabase-js';
+import EnsayoHub from '../../components/react/EnsayoHub.jsx';
+import ProPlayerGlobal from '../../components/ProPlayerGlobal.astro';
+import { getBrandingConfig } from '../../lib/branding';
+
+const MOCK_CANCION_ENSAYO = {
+  id: 'demo',
+  title: 'Grande y Fuerte',
+  artist: 'Miel San Marcos',
+  key: 'Sol',
+  originalKey: 'Sol',
+  bpm: 76,
+  mp3: '',
+  sectionMarkers: [],
+  duration: 298,
+  sections: [
+    {
+      name: 'Intro',
+      note: 'Pad y Piano',
+      lines: [
+        '[G]Oh oh oh [D/F#]oh oh [Em]oh [C]',
+        '[G]Oh oh oh [D/F#]oh oh [Em]oh [C]',
+      ],
+    },
+    {
+      name: 'Verso 1',
+      note: 'Entrada suave',
+      lines: [
+        '[G]Tu voz resuena [D/F#]fuerte en la ma\u00f1ana',
+        '[C]Tu gloria llena todo [G]mi interior',
+        '[G]Mi fe despierta [D/F#]cuando T\u00fa me llamas',
+        '[C]Y canta el pueblo al [D]Rey de amor',
+      ],
+    },
+    {
+      name: 'Coro',
+      lines: [
+        '[G]Grande y fuerte [D]es nuestro Dios',
+        '[Em]Digno por siempre [C]de adoraci\u00f3n',
+        '[G]Toda la tierra [D]cantar\u00e1',
+        '[Em]Cristo es mi roca, [C]mi salvaci\u00f3n',
+      ],
+    },
+  ],
+};
+
+const PURE_SECTION_HEADER_RE = /^\[([^\[\]]+)\]$/;
+const CHORD_SYMBOL_RE = /^[A-G][#b]?(?:m|maj|min|sus|dim|aug|add)?(?:\/[A-G][#b]?)?$/i;
+const LEADING_CHORD_SECTION_RE = /^\[([A-G][#b]?(?:m|maj|min|sus|dim|aug|add)?(?:\/[A-G][#b]?)?)\|/i;
+const BROKEN_INLINE_CHORD_RE = /\[([A-G][#b]?(?:m|maj|min|sus|dim|aug|add)?(?:\/[A-G][#b]?)?)\s*\|\s*/gi;
+
+const { id = 'demo' } = Astro.params;
+const tokenCookie = Astro.cookies.get('sb-access-token');
+if (!tokenCookie) {
+  return Astro.redirect('/login');
+}
+
+const rawUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_URL || '';
+const supabaseUrl = rawUrl.replace(/\/$/, '');
+const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY || '';
+
+const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
+  global: {
+    headers: {
+      Authorization: `Bearer ${tokenCookie.value}`,
+    },
+  },
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+});
+
+const { data: userData, error: authError } = await supabaseSSR.auth.getUser(tokenCookie.value);
+const user = userData?.user || null;
+if (authError || !user) {
+  return Astro.redirect('/login');
+}
+
+const hexToRgbString = (hex) => {
+  if (!hex || typeof hex !== 'string') return '';
+  const value = hex.trim();
+
+  if (!/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value)) {
+    return value;
+  }
+
+  let r = 0;
+  let g = 0;
+  let b = 0;
+
+  if (value.length === 4) {
+    r = parseInt(value[1] + value[1], 16);
+    g = parseInt(value[2] + value[2], 16);
+    b = parseInt(value[3] + value[3], 16);
+  } else {
+    r = parseInt(value[1] + value[2], 16);
+    g = parseInt(value[3] + value[4], 16);
+    b = parseInt(value[5] + value[6], 16);
+  }
+
+  return `${r} ${g} ${b}`;
+};
+
+const normalizeSectionName = (rawValue = '') => {
+  const cleaned = String(rawValue).trim();
+  if (!cleaned) return 'Secci\u00f3n';
+
+  const normalized = cleaned.toLowerCase();
+  if (normalized === 'soc' || normalized === 'start_of_chorus') return 'Coro';
+  if (normalized === 'sov' || normalized === 'start_of_verse') return 'Verso';
+  if (normalized === 'sob' || normalized === 'start_of_bridge') return 'Puente';
+  if (normalized === 'soi' || normalized === 'start_of_intro') return 'Intro';
+  if (normalized === 'interlude' || normalized === 'interludio' || normalized === 'instrumental' || normalized === 'instrumental 1' || normalized === 'instrumental 2' || normalized === 'solo instrumental' || normalized === 'start_of_interlude') return 'Interludio';
+  if (normalized === 'sot' || normalized === 'start_of_tag') return 'Tag';
+  if (normalized === 'eoc' || normalized === 'end_of_chorus') return '';
+  if (normalized === 'eov' || normalized === 'end_of_verse') return '';
+  if (normalized === 'eob' || normalized === 'end_of_bridge') return '';
+  if (normalized === 'eoi' || normalized === 'end_of_intro') return '';
+  if (normalized === 'eot' || normalized === 'end_of_tag') return '';
+
+  return cleaned;
+};
+
+const isLikelySectionHeader = (rawHeader = '') => {
+  const cleaned = String(rawHeader || '').trim();
+  if (!cleaned) return false;
+
+  if (CHORD_SYMBOL_RE.test(cleaned)) return false;
+
+  const normalized = cleaned.toLowerCase();
+  if ([
+    'intro',
+    'interlude',
+    'interludio',
+    'instrumental',
+    'solo instrumental',
+    'coro',
+    'chorus',
+    'pre coro',
+    'pre-coro',
+    'verse',
+    'verso',
+    'puente',
+    'bridge',
+    'tag',
+    'outro',
+    'final',
+  ].some((label) => normalized.startsWith(label))) {
+    return true;
+  }
+
+  return /\d/.test(cleaned);
+};
+
+const repararChordProCorrupto = (rawValue = '') => {
+  if (!rawValue || typeof rawValue !== 'string') return '';
+
+  return String(rawValue)
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map((line) => {
+      let fixedLine = line;
+
+      if (LEADING_CHORD_SECTION_RE.test(fixedLine) || BROKEN_INLINE_CHORD_RE.test(fixedLine)) {
+        fixedLine = fixedLine.replace(LEADING_CHORD_SECTION_RE, '[$1]');
+        fixedLine = fixedLine.replace(BROKEN_INLINE_CHORD_RE, '[$1]');
+        fixedLine = fixedLine.replace(/(?:\s*\|\s*)+\]+\s*$/, '');
+      }
+
+      BROKEN_INLINE_CHORD_RE.lastIndex = 0;
+      return fixedLine;
+    })
+    .join('\n');
+};
+
+const createFallbackSong = ({
+  songId = 'fallback',
+  title = 'Setlist pendiente',
+  artist = 'Redil Worship',
+  key = '-',
+  bpm = 0,
+  message = 'Todav\u00eda no hay una gu\u00eda ChordPro disponible para esta canci\u00f3n.',
+} = {}) => ({
+  id: songId,
+  title,
+  artist,
+  key,
+  originalKey: key,
+  bpm,
+  mp3: '',
+  sectionMarkers: [],
+  duration: 160,
+  sections: [
+    {
+      name: 'Ensayo',
+      note: '',
+      lines: [message],
+    },
+  ],
+});
+
+const estimateDuration = (sections = []) => {
+  const totalLines = sections.reduce((acc, section) => acc + (section?.lines?.length || 0), 0);
+  return Math.max(120, Math.min(480, totalLines * 7 + 36));
+};
+
+const parseChordProSections = (rawChordpro = '', fallbackTitle = 'Letra') => {
+  const content = repararChordProCorrupto(String(rawChordpro || '')).replace(/\r\n/g, '\n').trim();
+  if (!content) {
+    return createFallbackSong({
+      title: fallbackTitle,
+      message: 'Todav\u00eda no hay una gu\u00eda ChordPro disponible para esta canci\u00f3n.',
+    }).sections;
+  }
+
+  const sections = [];
+  let currentSection = { name: 'Letra', note: '', lines: [] };
+
+  const pushCurrentSection = () => {
+    const sectionName = String(currentSection.name || '').trim();
+    const shouldKeepEmptyNamedSection = sectionName && sectionName.toLowerCase() !== 'letra';
+    if (currentSection.lines.length === 0 && !currentSection.note && !shouldKeepEmptyNamedSection) return;
+    sections.push({
+      name: sectionName || 'Letra',
+      note: currentSection.note || '',
+      lines: [...currentSection.lines],
+    });
+  };
+
+  const parseSectionHeader = (rawHeader = '') => {
+    const cleaned = String(rawHeader || '').trim();
+    if (!cleaned) {
+      return { name: 'Secci\u00f3n', note: '' };
+    }
+
+    const [rawName, ...rawNoteParts] = cleaned.split('|');
+    return {
+      name: normalizeSectionName(rawName.trim()) || 'Secci\u00f3n',
+      note: rawNoteParts.join('|').trim(),
+    };
+  };
+
+  for (const rawLine of content.split('\n')) {
+    const line = rawLine.trimEnd();
+    const trimmed = line.trim();
+
+    if (!trimmed) continue;
+
+    const sectionLineMatch = trimmed.match(PURE_SECTION_HEADER_RE);
+    if (sectionLineMatch && isLikelySectionHeader(sectionLineMatch[1])) {
+      pushCurrentSection();
+      const nextSection = parseSectionHeader(sectionLineMatch[1]);
+      currentSection = {
+        name: nextSection.name,
+        note: nextSection.note,
+        lines: [],
+      };
+      continue;
+    }
+
+    const directiveMatch = trimmed.match(/^\{([^}:]+)(?::\s*(.+))?\}$/);
+    if (directiveMatch) {
+      const rawDirectiveName = String(directiveMatch[1] || '').trim();
+      const directiveKey = rawDirectiveName.toLowerCase();
+      const directiveName = normalizeSectionName(rawDirectiveName);
+      const directiveValue = directiveMatch[2]?.trim() || '';
+
+      if (directiveKey === 'title' || directiveKey === 'artist' || directiveKey === 'subtitle' || directiveKey === 'key' || directiveKey === 'tempo' || directiveKey === 'bpm' || directiveKey === 'capo') {
+        continue;
+      }
+
+      if (directiveKey === 'comment' || directiveKey === 'c') {
+        if (!currentSection.note && directiveValue) {
+          currentSection.note = directiveValue;
+        } else if (directiveValue) {
+          currentSection.lines.push(directiveValue);
+        }
+        continue;
+      }
+
+      if (directiveName) {
+        pushCurrentSection();
+        const nextSection = parseSectionHeader(directiveValue || directiveName);
+        currentSection = {
+          name: nextSection.name,
+          note: nextSection.note,
+          lines: [],
+        };
+      }
+      continue;
+    }
+
+    currentSection.lines.push(line);
+  }
+
+  pushCurrentSection();
+
+  if (sections.length === 0) {
+    return createFallbackSong({
+      title: fallbackTitle,
+      message: 'Todav\u00eda no hay una gu\u00eda ChordPro disponible para esta canci\u00f3n.',
+    }).sections;
+  }
+
+  return sections;
+};
+
+const readChordProContent = async (songRow) => {
+  const rawChordpro = String(songRow?.chordpro || '').trim();
+  if (!rawChordpro) return '';
+
+  const looksLikeRemoteText =
+    /^https?:\/\//i.test(rawChordpro) &&
+    /\.(txt|pro|cho|chordpro)(\?.*)?$/i.test(rawChordpro);
+
+  if (!looksLikeRemoteText) {
+    return repararChordProCorrupto(rawChordpro);
+  }
+
+  try {
+    const remoteResponse = await fetch(rawChordpro);
+    if (!remoteResponse.ok) {
+      console.error('Ensayo chordpro remote fetch failed:', remoteResponse.status, rawChordpro);
+      return rawChordpro;
+    }
+
+    return repararChordProCorrupto((await remoteResponse.text()).trim() || rawChordpro);
+  } catch (error) {
+    console.error('Ensayo chordpro remote fetch error:', error);
+    return repararChordProCorrupto(rawChordpro);
+  }
+};
+
+const buildSongFromRow = async (songRow, orderIndex = 0) => {
+  const chordproContent = await readChordProContent(songRow);
+  const sections = parseChordProSections(chordproContent, songRow?.titulo || `Canci\u00f3n ${orderIndex + 1}`);
+
+  return {
+    id: songRow?.id || `song-${orderIndex + 1}`,
+    title: songRow?.titulo || `Canci\u00f3n ${orderIndex + 1}`,
+    artist: songRow?.cantante || 'Redil Worship',
+    key: songRow?.tonalidad || '-',
+    originalKey: songRow?.tonalidad || '-',
+    bpm: songRow?.bpm || 0,
+    category: songRow?.categoria || '',
+    mp3: songRow?.mp3 || '',
+    sectionMarkers: Array.isArray(songRow?.section_markers) ? songRow.section_markers : [],
+    duration: estimateDuration(sections),
+    sections,
+  };
+};
+
+let eventData = null;
+let playlistSongs = [];
+
+if (id !== 'demo') {
+  const { data: eventRow, error: eventError } = await supabaseSSR
+    .from('eventos')
+    .select('id, titulo, tema_predicacion, fecha_hora, hora_fin')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (eventError) {
+    console.error('Ensayo evento query error:', eventError);
+  }
+
+  eventData = eventRow || null;
+
+  if (eventData?.id) {
+    const { data: playlistRow, error: playlistError } = await supabaseSSR
+      .from('playlists')
+      .select('id')
+      .eq('evento_id', eventData.id)
+      .maybeSingle();
+
+    if (playlistError) {
+      console.error('Ensayo playlist query error:', playlistError);
+    }
+
+    if (playlistRow?.id) {
+      let playlistItems = [];
+      let playlistItemsError = null;
+
+      const playlistQueryWithMarkers = await supabaseSSR
+        .from('playlist_canciones')
+        .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, categoria, mp3, chordpro, section_markers)')
+        .eq('playlist_id', playlistRow.id)
+        .order('orden', { ascending: true });
+
+      if (playlistQueryWithMarkers.error) {
+        const playlistQueryFallback = await supabaseSSR
+          .from('playlist_canciones')
+          .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, categoria, mp3, chordpro)')
+          .eq('playlist_id', playlistRow.id)
+          .order('orden', { ascending: true });
+
+        playlistItems = playlistQueryFallback.data || [];
+        playlistItemsError = playlistQueryFallback.error;
+      } else {
+        playlistItems = playlistQueryWithMarkers.data || [];
+      }
+
+      if (playlistItemsError) {
+        console.error('Ensayo playlist_canciones query error:', playlistItemsError);
+      }
+
+      const seenSongs = new Set();
+      playlistSongs = await Promise.all((playlistItems || [])
+        .filter((item) => {
+          const songId = item?.cancion_id || item?.canciones?.id;
+          if (!songId || seenSongs.has(songId)) return false;
+          seenSongs.add(songId);
+          return true;
+        })
+        .map((item, index) => buildSongFromRow(item.canciones, index)));
+    }
+  }
+}
+
+const rehearsalSongs =
+  playlistSongs.length > 0
+    ? playlistSongs
+    : id === 'demo'
+      ? [MOCK_CANCION_ENSAYO]
+      : [
+          createFallbackSong({
+            songId: `fallback-${id}`,
+            title: eventData?.tema_predicacion || eventData?.titulo || 'Setlist pendiente',
+            message: eventData?.id
+              ? 'Este servicio todav\u00eda no tiene canciones listas para el modo ensayo.'
+              : 'No encontramos el evento solicitado o a\u00fan no tiene repertorio cargado.',
+          }),
+        ];
+
+const initialSongId = Astro.url.searchParams.get('song') || null;
+const contextTitle = eventData?.tema_predicacion || eventData?.titulo || 'Modo Ensayo';
+const pageTitle = `${contextTitle} | Modo Ensayo`;
+const pageDescription = eventData?.id
+  ? `Vista de ensayo para ${contextTitle}.`
+  : 'Vista de ensayo enfocada para leer acordes y letras en vivo.';
+
+const themeColors = await getBrandingConfig({ accessToken: tokenCookie.value });
+const resolvedColorTokens = {
+  brand: hexToRgbString(themeColors?.brand || '#14b8a6'),
+  action: hexToRgbString(themeColors?.action || themeColors?.brand || '#14b8a6'),
+  danger: hexToRgbString(themeColors?.danger || '#ef4444'),
+  success: hexToRgbString(themeColors?.success || '#22c55e'),
+  warning: hexToRgbString(themeColors?.warning || '#f59e0b'),
+  info: hexToRgbString(themeColors?.info || '#3b82f6'),
+  accent: hexToRgbString(themeColors?.accent || '#ec4899'),
+  neutral: hexToRgbString(themeColors?.neutral || '#64748b'),
+  overlay: hexToRgbString(themeColors?.overlay || '#0f172a'),
+  rolDir: hexToRgbString(themeColors?.rolDir || '#8b5cf6'),
+  rolLet: hexToRgbString(themeColors?.rolLet || '#f59e0b'),
+  rolBan: hexToRgbString(themeColors?.rolBan || '#14b8a6'),
+  rolVoc: hexToRgbString(themeColors?.rolVoc || '#a855f7'),
+};
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content={pageDescription} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+    <title>{pageTitle}</title>
+    <style
+      is:global
+      set:html={`
+        :root {
+          --bg-background: 248 250 252;
+          --bg-surface: 255 255 255;
+          --border-base: 226 232 240;
+          --text-base: 15 23 42;
+          --text-muted: 100 116 139;
+          --color-brand: ${resolvedColorTokens.brand};
+          --color-action: ${resolvedColorTokens.action};
+          --color-danger: ${resolvedColorTokens.danger};
+          --color-success: ${resolvedColorTokens.success};
+          --color-warning: ${resolvedColorTokens.warning};
+          --color-info: ${resolvedColorTokens.info};
+          --color-accent: ${resolvedColorTokens.accent};
+          --color-neutral: ${resolvedColorTokens.neutral};
+          --color-overlay: ${resolvedColorTokens.overlay};
+          --color-rol-dir: ${resolvedColorTokens.rolDir};
+          --color-rol-let: ${resolvedColorTokens.rolLet};
+          --color-rol-ban: ${resolvedColorTokens.rolBan};
+          --color-rol-voc: ${resolvedColorTokens.rolVoc};
+        }
+
+        .dark {
+          --bg-background: 9 9 11;
+          --bg-surface: 24 24 27;
+          --border-base: 63 63 70;
+          --text-base: 250 250 250;
+          --text-muted: 161 161 170;
+        }
+
+        html,
+        body {
+          margin: 0;
+          background: rgb(var(--bg-background));
+        }
+      `}
+    />
+    <script is:inline>
+      (() => {
+        try {
+          const storedTheme = localStorage.getItem('theme');
+          const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          const isDark = storedTheme ? storedTheme === 'dark' : prefersDark;
+          document.documentElement.classList.toggle('dark', isDark);
+        } catch {
+          // noop
+        }
+      })();
+    </script>
+  </head>
+  <body class="min-h-screen overflow-hidden bg-white dark:bg-zinc-950">
+    <EnsayoHub
+      client:load
+      playlist={rehearsalSongs}
+      contextTitle={contextTitle}
+      eventMeta={eventData}
+      initialSongId={initialSongId}
+    />
+    <ProPlayerGlobal />
+  </body>
+</html>

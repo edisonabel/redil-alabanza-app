@@ -167,13 +167,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
     const canManageRepertorio = isAdmin || isModerator;
     const manageRepertorioLabel = playlistItems.length > 0 ? 'Editar repertorio' : 'Armar repertorio';
 
-    // URL parameter for rehearsal mode
-    let rehearsalHref = '';
-    if (playlistItems.length > 0) {
-        const setlistArray = playlistItems.map(item => item.canciones?.titulo).filter(Boolean);
-        const base64Str = btoa(encodeURIComponent(JSON.stringify(setlistArray)));
-        rehearsalHref = `/repertorio?setlist=${encodeURIComponent(base64Str)}`;
-    }
+    const rehearsalHref = eventoId ? `/ensayo/${eventoId}` : '/ensayo/demo';
 
     const handleManageRepertorio = () => {
         if (!eventoId) return;

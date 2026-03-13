@@ -13,7 +13,7 @@ const supabaseServer = createClient(supabaseUrl, supabaseAnonKey, {
 });
 
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
-const protectedRoutes = ['/', '/programacion', '/repertorio', '/perfil', '/equipo', '/herramientas', '/configuracion'];
+const protectedRoutes = ['/', '/admin', '/programacion', '/repertorio', '/perfil', '/equipo', '/herramientas', '/configuracion', '/ensayo'];
 
 const staticAssetRegex = /\.(png|ico|svg|webmanifest|css|js|txt|map|woff2?|ttf|eot|json)$/i;
 
@@ -109,7 +109,19 @@ export const onRequest = defineMiddleware(async (context, next) => {
   if (authState?.user) {
     locals.user = authState.user;
 
-    const { data: perfil } = await supabaseServer
+    const supabaseAuthed = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+      global: {
+        headers: {
+          Authorization: `Bearer ${authState.accessToken}`,
+        },
+      },
+    });
+
+    const { data: perfil } = await supabaseAuthed
       .from('perfiles')
       .select('id, is_admin')
       .eq('id', authState.user.id)
@@ -120,3 +132,4 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   return next();
 });
+
