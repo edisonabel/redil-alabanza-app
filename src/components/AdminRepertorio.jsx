@@ -6,10 +6,11 @@ const { useRef } = React;
 
 const SECTION_LABEL_RE = /^\s*\[([^\]]+)\]\s*(.*)$/;
 const PURE_SECTION_HEADER_RE = /^\[([^\[\]]+)\]$/;
-const CHORD_TOKEN_RE = /^\(?\s*(\[[A-G][#b]?(?:m|maj|min|sus|dim|aug|add)?(?:\/[A-G][#b]?)?\]\s*)+\)?\s*$/i;
-const CHORD_SYMBOL_RE = /^[A-G][#b]?(?:m|maj|min|sus|dim|aug|add)?(?:\/[A-G][#b]?)?$/i;
-const LEADING_CHORD_SECTION_RE = /^\[([A-G][#b]?(?:m|maj|min|sus|dim|aug|add)?(?:\/[A-G][#b]?)?)\|/i;
-const BROKEN_INLINE_CHORD_RE = /\[([A-G][#b]?(?:m|maj|min|sus|dim|aug|add)?(?:\/[A-G][#b]?)?)\s*\|\s*/gi;
+const CHORD_BODY_PATTERN = '[A-G](?:#|b)?(?:[a-z0-9+#°ø()\\-]*)?(?:\\/[A-G](?:#|b)?(?:[a-z0-9+#°ø()\\-]*)?)?';
+const CHORD_TOKEN_RE = new RegExp(`^\\(?\\s*(\\[${CHORD_BODY_PATTERN}\\]\\s*)+\\)?\\s*$`, 'i');
+const CHORD_SYMBOL_RE = new RegExp(`^${CHORD_BODY_PATTERN}$`, 'i');
+const LEADING_CHORD_SECTION_RE = new RegExp(`^\\[(${CHORD_BODY_PATTERN})\\|`, 'i');
+const BROKEN_INLINE_CHORD_RE = new RegExp(`\\[(${CHORD_BODY_PATTERN})\\s*\\|\\s*`, 'gi');
 const EDITOR_MODAL_MAX_HEIGHT = 'min(90vh, calc(100dvh - 9.5rem - env(safe-area-inset-bottom)))';
 
 const normalizeSectionName = (rawValue = '') => {
@@ -163,6 +164,30 @@ const parseChordProSections = (rawChordpro = '') => {
     const trimmed = line.trim();
 
     if (!trimmed) continue;
+
+    const inlineSectionMatch = trimmed.match(SECTION_LABEL_RE);
+    if (inlineSectionMatch && isLikelySectionHeader(inlineSectionMatch[1])) {
+      pushCurrentSection();
+      const nextSection = parseSectionHeader(inlineSectionMatch[1]);
+      const inlineRest = String(inlineSectionMatch[2] || '').trim();
+
+      currentSection = {
+        name: nextSection.name,
+        note: nextSection.note,
+        lines: [],
+      };
+
+      if (inlineRest) {
+        if (CHORD_TOKEN_RE.test(inlineRest)) {
+          currentSection.lines.push(inlineRest.replace(/\s{2,}/g, ' ').trim());
+        } else {
+          currentSection.note = currentSection.note
+            ? `${currentSection.note} | ${inlineRest}`
+            : inlineRest;
+        }
+      }
+      continue;
+    }
 
     const sectionLineMatch = trimmed.match(PURE_SECTION_HEADER_RE);
     if (sectionLineMatch && isLikelySectionHeader(sectionLineMatch[1])) {

@@ -1,22 +1,22 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Pause, Play, Repeat, Repeat1, SlidersHorizontal } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Pause, Play, Repeat, Repeat1, SlidersHorizontal } from 'lucide-react';
 
 const FONT_PRESETS = {
   compacta: {
     section: 'text-[0.64rem] sm:text-[0.68rem] tracking-[0.26em]',
-    chord: 'text-[0.8rem] sm:text-[0.85rem]',
+    chord: 'text-[0.84rem] sm:text-[0.89rem]',
     lyric: 'text-[0.94rem] sm:text-[0.98rem]',
     lineGap: 'gap-y-0.5',
   },
   normal: {
     section: 'text-[0.68rem] sm:text-[0.72rem] tracking-[0.28em]',
-    chord: 'text-[0.84rem] sm:text-[0.9rem]',
+    chord: 'text-[0.88rem] sm:text-[0.94rem]',
     lyric: 'text-[0.98rem] sm:text-[1.04rem]',
     lineGap: 'gap-y-1',
   },
   grande: {
     section: 'text-[0.78rem] sm:text-[0.82rem] tracking-[0.3em]',
-    chord: 'text-[0.96rem] sm:text-[1rem]',
+    chord: 'text-[1rem] sm:text-[1.06rem]',
     lyric: 'text-[1.1rem] sm:text-[1.18rem]',
     lineGap: 'gap-y-1.5',
   },
@@ -182,6 +182,194 @@ const formatSeconds = (value) => {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 };
 
+const AUDIO_SOURCE_EXT_RE = /\.(mp3|wav|m4a|aac|ogg|flac)(\?.*)?$/i;
+
+const isAudioSourceUrl = (value = '') => {
+  const source = String(value || '').trim();
+  if (!source) return false;
+  return AUDIO_SOURCE_EXT_RE.test(source);
+};
+
+const normalizePlaybackSourceEntry = (entry, index, fallbackKind = 'sequence') => {
+  if (!entry) return null;
+
+  if (typeof entry === 'string') {
+    const trimmedEntry = entry.trim();
+    if (!isAudioSourceUrl(trimmedEntry)) return null;
+
+    return {
+      id: `${fallbackKind}-${index}-${trimmedEntry}`,
+      label: fallbackKind === 'original' ? 'Musica original' : `Secuencia ${index + 1}`,
+      url: trimmedEntry,
+      kind: fallbackKind,
+    };
+  }
+
+  if (typeof entry === 'object') {
+    const rawUrl = String(entry.url || entry.src || entry.href || entry.link || '').trim();
+    if (!isAudioSourceUrl(rawUrl)) return null;
+
+    const rawKind = String(entry.kind || entry.type || fallbackKind || 'sequence').trim().toLowerCase();
+    const kind = rawKind === 'original' ? 'original' : 'sequence';
+    const label = String(
+      entry.label ||
+      entry.name ||
+      entry.title ||
+      (kind === 'original' ? 'Musica original' : `Secuencia ${index + 1}`)
+    ).trim();
+
+    return {
+      id: String(entry.id || `${kind}-${index}-${rawUrl}`),
+      label: label || (kind === 'original' ? 'Musica original' : `Secuencia ${index + 1}`),
+      url: rawUrl,
+      kind,
+    };
+  }
+
+  return null;
+};
+
+const parseSequenceSourceEntries = (rawValue = '') => {
+  const source = String(rawValue || '').trim();
+  if (!source) return [];
+
+  if ((source.startsWith('[') || source.startsWith('{'))) {
+    try {
+      const parsed = JSON.parse(source);
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && typeof parsed === 'object') return [parsed];
+    } catch (_error) {
+      // fallback to plain-text parsing
+    }
+  }
+
+  if (isAudioSourceUrl(source)) {
+    return [source];
+  }
+
+  return source
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [maybeLabel, ...rest] = line.split('|');
+      if (rest.length === 0) return line;
+      return {
+        label: maybeLabel.trim(),
+        url: rest.join('|').trim(),
+      };
+    });
+};
+
+const buildPlaybackSources = (song) => {
+  const sources = [];
+  const seenUrls = new Set();
+  const pushSource = (entry, index, fallbackKind = 'sequence') => {
+    const normalized = normalizePlaybackSourceEntry(entry, index, fallbackKind);
+    if (!normalized || seenUrls.has(normalized.url)) return;
+    seenUrls.add(normalized.url);
+    sources.push(normalized);
+  };
+
+  pushSource({
+    id: 'original',
+    label: 'Musica original',
+    url: song?.mp3,
+    kind: 'original',
+  }, 0, 'original');
+
+  const collectionCandidates = [];
+
+  if (Array.isArray(song?.playbackSources)) {
+    collectionCandidates.push(...song.playbackSources);
+  }
+
+  if (Array.isArray(song?.sequenceSources)) {
+    collectionCandidates.push(...song.sequenceSources);
+  }
+
+  if (Array.isArray(song?.sequences)) {
+    collectionCandidates.push(...song.sequences);
+  }
+
+  const rawLinkSecuencias = song?.linkSecuencias || song?.link_secuencias || '';
+  if (rawLinkSecuencias) {
+    collectionCandidates.push(...parseSequenceSourceEntries(rawLinkSecuencias));
+  }
+
+  collectionCandidates.forEach((entry, index) => {
+    pushSource(entry, index, 'sequence');
+  });
+
+  return sources;
+};
+
+const formatChordAccidentals = (value = '') => (
+  String(value || '')
+    .replace(/#/g, '♯')
+    .replace(/b/g, '♭')
+);
+
+const splitChordDisplayParts = (value = '') => {
+  const chord = String(value || '').trim();
+  if (!chord) return null;
+
+  const chordMatch = chord.match(/^([A-G])([#b]?)([^/]*?)(?:\/([A-G])([#b]?)(.*))?$/);
+  if (!chordMatch) {
+    return {
+      root: chord,
+      accidental: '',
+      suffix: '',
+      bass: null,
+    };
+  }
+
+  const [, root, accidental = '', suffix = '', bassRoot, bassAccidental = '', bassSuffix = ''] = chordMatch;
+
+  return {
+    root,
+    accidental,
+    suffix,
+    bass: bassRoot
+      ? {
+          root: bassRoot,
+          accidental: bassAccidental,
+          suffix: bassSuffix,
+        }
+      : null,
+  };
+};
+
+function ChordDisplay({ chord, sizeClass = '' }) {
+  const parts = splitChordDisplayParts(chord);
+  if (!parts) return null;
+
+  const fallbackLabel = formatChordAccidentals(chord);
+  const rootLabel = parts.root.length === 1 ? parts.root : fallbackLabel;
+
+  return (
+    <span className={`ensayo-chord-token font-black leading-none ${sizeClass}`.trim()}>
+      <span className="ensayo-chord-root">{rootLabel}</span>
+      {(parts.accidental || parts.suffix) && (
+        <span className="ensayo-chord-suffix">
+          {formatChordAccidentals(`${parts.accidental}${parts.suffix}`)}
+        </span>
+      )}
+      {parts.bass && (
+        <span className="ensayo-chord-bass">
+          <span className="ensayo-chord-bass-divider">/</span>
+          <span className="ensayo-chord-root">{parts.bass.root}</span>
+          {(parts.bass.accidental || parts.bass.suffix) && (
+            <span className="ensayo-chord-suffix">
+              {formatChordAccidentals(`${parts.bass.accidental}${parts.bass.suffix}`)}
+            </span>
+          )}
+        </span>
+      )}
+    </span>
+  );
+}
+
 const normalizeKeyToAmerican = (rawKey = '') => {
   const source = String(rawKey || '').trim();
   if (!source) return '-';
@@ -333,20 +521,32 @@ export default function ModoEnsayoCompacto({
   const [isMetronomeOn, setIsMetronomeOn] = useState(false);
   const [loopState, setLoopState] = useState(0);
   const [isLandscapeCompact, setIsLandscapeCompact] = useState(false);
+  const [showKeyMenu, setShowKeyMenu] = useState(false);
+  const [showPlaybackOptions, setShowPlaybackOptions] = useState(false);
+  const [selectedPlaybackSourceId, setSelectedPlaybackSourceId] = useState('original');
 
   const audioRef = useRef(null);
   const headerRef = useRef(null);
   const scrollRef = useRef(null);
   const lastScrollTop = useRef(0);
   const sectionRefs = useRef([]);
+  const keyMenuRef = useRef(null);
+  const playbackOptionsRef = useRef(null);
   const metronomeIntervalRef = useRef(null);
   const metronomeAudioCtxRef = useRef(null);
+  const pendingPlaybackResumeRef = useRef(false);
   const [headerHeight, setHeaderHeight] = useState(148);
   const currentSong = song;
   const activeSongIndex = 0;
   const currentSongBpm = Number.isFinite(Number(currentSong?.bpm)) ? Math.max(0, Math.round(Number(currentSong.bpm))) : 0;
   const originalSongKey = normalizeKeyToAmerican(currentSong?.originalKey || currentSong?.key || '-');
   const currentSongDisplayKey = useMemo(() => transposeChordToken(originalSongKey, transposeSteps), [originalSongKey, transposeSteps]);
+  const transposeKeyOptions = useMemo(() => (
+    TRANSPOSE_OPTIONS.map((steps) => ({
+      steps,
+      label: transposeChordToken(originalSongKey, steps),
+    }))
+  ), [originalSongKey]);
   const currentSections = useMemo(() => (
     (currentSong?.sections || []).map((section) => ({
       ...section,
@@ -378,6 +578,14 @@ export default function ModoEnsayoCompacto({
   const titleLine = currentSong.title || 'Titulo de Cancion';
   const artistLine = currentSong.artist || 'Artista';
   const shouldRotateHeaderMeta = Boolean(artistLine) && titleLine.trim() !== artistLine.trim();
+  const playbackSources = useMemo(() => buildPlaybackSources(currentSong), [currentSong]);
+  const hasSequenceSources = useMemo(() => (
+    playbackSources.some((source) => source.kind === 'sequence')
+  ), [playbackSources]);
+  const activePlaybackSource = useMemo(() => (
+    playbackSources.find((source) => source.id === selectedPlaybackSourceId) || playbackSources[0] || null
+  ), [playbackSources, selectedPlaybackSourceId]);
+  const activePlaybackUrl = activePlaybackSource?.url || '';
   const currentSongMarkers = useMemo(() => (
     Array.isArray(currentSong?.sectionMarkers)
       ? (() => {
@@ -441,7 +649,7 @@ export default function ModoEnsayoCompacto({
         })()
       : []
   ), [currentSections, currentSong?.duration, currentSong?.sectionMarkers, currentSongKey]);
-  const hasAudio = typeof currentSong?.mp3 === 'string' && currentSong.mp3.trim() !== '';
+  const hasAudio = typeof activePlaybackUrl === 'string' && activePlaybackUrl.trim() !== '';
   const markerBySectionIndex = useMemo(() => {
     const map = new Map();
     currentSongMarkers.forEach((marker) => {
@@ -629,9 +837,56 @@ export default function ModoEnsayoCompacto({
     }
     setTransposeSteps(0);
     setLoopState(0);
+    setShowKeyMenu(false);
+    setShowPlaybackOptions(false);
+    setSelectedPlaybackSourceId('original');
     setHeaderHidden(isLandscapeCompact);
     stopMetronome();
   }, [currentSongKey, currentSong?.mp3, isLandscapeCompact, stopMetronome]);
+
+  useEffect(() => {
+    if (playbackSources.length === 0) return;
+    const hasSelectedSource = playbackSources.some((source) => source.id === selectedPlaybackSourceId);
+    if (!hasSelectedSource) {
+      setSelectedPlaybackSourceId(playbackSources[0].id);
+    }
+  }, [playbackSources, selectedPlaybackSourceId]);
+
+  useEffect(() => {
+    if (!showKeyMenu || typeof window === 'undefined') return undefined;
+
+    const handlePointerDown = (event) => {
+      if (!keyMenuRef.current?.contains(event.target)) {
+        setShowKeyMenu(false);
+      }
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('touchstart', handlePointerDown, { passive: true });
+
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('touchstart', handlePointerDown);
+    };
+  }, [showKeyMenu]);
+
+  useEffect(() => {
+    if (!showPlaybackOptions || typeof window === 'undefined') return undefined;
+
+    const handlePointerDown = (event) => {
+      if (!playbackOptionsRef.current?.contains(event.target)) {
+        setShowPlaybackOptions(false);
+      }
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('touchstart', handlePointerDown, { passive: true });
+
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('touchstart', handlePointerDown);
+    };
+  }, [showPlaybackOptions]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
@@ -855,7 +1110,16 @@ export default function ModoEnsayoCompacto({
     window.requestAnimationFrame(() => {
       syncAudioMetrics(audioElement);
     });
-  }, [currentSong?.mp3, hasAudio]);
+  }, [activePlaybackUrl, hasAudio]);
+
+  useEffect(() => {
+    if (!pendingPlaybackResumeRef.current || !audioReady || !audioRef.current) return;
+
+    pendingPlaybackResumeRef.current = false;
+    audioRef.current.play().catch(() => {
+      setIsPlaying(false);
+    });
+  }, [audioReady]);
 
   const selectSection = (index, { seekAudio = true, scrollBehavior = 'smooth' } = {}) => {
     setActiveSectionManualIndex(index);
@@ -910,12 +1174,34 @@ export default function ModoEnsayoCompacto({
     });
   };
 
+  const handleSelectPlaybackSource = (sourceId) => {
+    if (sourceId === selectedPlaybackSourceId) {
+      setShowPlaybackOptions(false);
+      return;
+    }
+
+    const wasPlaying = Boolean(audioRef.current && !audioRef.current.paused);
+    pendingPlaybackResumeRef.current = wasPlaying;
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+
+    setIsPlaying(false);
+    setAudioCurrentTime(0);
+    setAudioDuration(0);
+    setAudioReady(false);
+    setSelectedPlaybackSourceId(sourceId);
+    setShowPlaybackOptions(false);
+  };
+
   return (
     <div className="ensayo-mobile-shell relative flex h-screen w-full flex-col overflow-hidden bg-white text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
       <audio
-        key={`${currentSongKey}-${currentSong?.mp3 || 'no-audio'}`}
+        key={`${currentSongKey}-${selectedPlaybackSourceId}-${activePlaybackUrl || 'no-audio'}`}
         ref={audioRef}
-        src={hasAudio ? currentSong.mp3 : undefined}
+        src={hasAudio ? activePlaybackUrl : undefined}
         preload="metadata"
         onLoadedMetadata={(event) => syncAudioMetrics(event.currentTarget)}
         onLoadedData={(event) => syncAudioMetrics(event.currentTarget)}
@@ -1018,12 +1304,55 @@ export default function ModoEnsayoCompacto({
                   {currentSongBpm || '--'}
                 </span>
             </button>
-            <div
-              className="ensayo-control-chip flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-sm font-black text-zinc-900 shadow-sm dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50"
-              aria-label={currentSongDisplayKey !== '-' ? `Tonalidad ${currentSongDisplayKey}` : 'Sin tonalidad'}
-              title={currentSongDisplayKey !== '-' ? `Tonalidad ${currentSongDisplayKey}` : 'Sin tonalidad'}
-            >
-              {currentSongDisplayKey !== '-' ? currentSongDisplayKey : '-'}
+            <div ref={keyMenuRef} className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  if (originalSongKey === '-') return;
+                  setShowKeyMenu((prev) => !prev);
+                }}
+                disabled={originalSongKey === '-'}
+                className={`ensayo-control-chip flex h-10 min-w-[3.45rem] items-center justify-center gap-1.5 rounded-2xl border border-zinc-200 bg-white px-2.5 text-sm font-black text-zinc-900 shadow-sm transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800 dark:disabled:text-zinc-500 ${
+                  showKeyMenu ? 'ring-2 ring-brand/20' : ''
+                }`}
+                aria-label={currentSongDisplayKey !== '-' ? `Tonalidad ${currentSongDisplayKey}` : 'Sin tonalidad'}
+                aria-expanded={showKeyMenu}
+                title={currentSongDisplayKey !== '-' ? `Tonalidad ${currentSongDisplayKey}` : 'Sin tonalidad'}
+              >
+                <span>{currentSongDisplayKey !== '-' ? currentSongDisplayKey : '-'}</span>
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showKeyMenu ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showKeyMenu && originalSongKey !== '-' && (
+                <div className="ensayo-key-menu absolute right-0 top-[calc(100%+0.55rem)] z-50 w-[13.75rem] rounded-[1.35rem] border border-zinc-200/85 bg-white/96 p-3 shadow-[0_18px_50px_rgba(15,23,42,0.22)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/96">
+                  <p className="mb-2 px-1 text-[0.72rem] font-black uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+                    Tonalidad
+                  </p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {transposeKeyOptions.map((option, optionIndex) => {
+                      const active = option.steps === transposeSteps;
+                      return (
+                        <button
+                          key={`transpose-option-${option.steps}-${optionIndex}`}
+                          type="button"
+                          onClick={() => {
+                            setTransposeSteps(option.steps);
+                            setShowKeyMenu(false);
+                          }}
+                          className={`rounded-[1rem] border px-2 py-4 text-center text-lg font-black leading-none transition-all ${
+                            active
+                              ? 'border-brand bg-brand text-white shadow-[0_8px_20px_rgba(59,130,246,0.32)]'
+                              : 'border-zinc-200 bg-white text-zinc-900 hover:border-zinc-300 hover:bg-zinc-50 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800'
+                          }`}
+                          aria-pressed={active}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
             <button
               type="button"
@@ -1175,12 +1504,11 @@ export default function ModoEnsayoCompacto({
                           {renderedLine.mode === 'instrumental' && (
                             <div className="flex flex-row flex-wrap gap-2">
                               {renderedLine.chords.map((chord, chordIndex) => (
-                                <span
+                                <ChordDisplay
                                   key={`${section.name}-${lineIndex}-chord-${chordIndex}`}
-                                  className={`font-mono font-black leading-none text-brand ${fontPreset.chord}`}
-                                >
-                                  {chord}
-                                </span>
+                                  chord={chord}
+                                  sizeClass={`font-mono ${fontPreset.chord}`}
+                                />
                               ))}
                             </div>
                           )}
@@ -1197,10 +1525,11 @@ export default function ModoEnsayoCompacto({
                                     className="relative inline-block align-top whitespace-pre pt-[1.05em]"
                                   >
                                     {segment.chord ? (
-                                      <span
-                                        className={`pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 whitespace-nowrap font-mono font-black leading-none text-brand ${fontPreset.chord}`}
-                                      >
-                                        {segment.chord}
+                                      <span className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 whitespace-nowrap">
+                                        <ChordDisplay
+                                          chord={segment.chord}
+                                          sizeClass={`font-mono ${fontPreset.chord}`}
+                                        />
                                       </span>
                                     ) : null}
                                     <span className="block">{lyricValue}</span>
@@ -1227,6 +1556,48 @@ export default function ModoEnsayoCompacto({
           paddingRight: 'calc(env(safe-area-inset-right) + 0.3rem)',
         }}
       >
+        {showPlaybackOptions && (
+          <div ref={playbackOptionsRef} className="mx-auto mb-2 max-w-5xl px-4">
+            <div className="rounded-[1.1rem] border border-zinc-200/85 bg-white/96 px-3 py-3 shadow-[0_14px_34px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/96">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="text-[0.66rem] font-black uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">
+                  Fuentes de reproduccion
+                </p>
+                <span className="truncate text-[0.72rem] font-semibold text-zinc-500 dark:text-zinc-400">
+                  {activePlaybackSource?.label || 'Sin audio'}
+                </span>
+              </div>
+
+              <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {playbackSources.map((source) => {
+                  const active = source.id === selectedPlaybackSourceId;
+                  return (
+                    <button
+                      key={`playback-source-${source.id}`}
+                      type="button"
+                      onClick={() => handleSelectPlaybackSource(source.id)}
+                      className={`shrink-0 rounded-full border px-3.5 py-2 text-sm font-bold transition-colors ${
+                        active
+                          ? 'border-brand bg-brand text-white shadow-[0_8px_18px_rgba(59,130,246,0.24)]'
+                          : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-800'
+                      }`}
+                      aria-pressed={active}
+                    >
+                      {source.label}
+                    </button>
+                  );
+                })}
+
+                {!hasSequenceSources && (
+                  <div className="shrink-0 rounded-full border border-dashed border-zinc-300 bg-zinc-50 px-3.5 py-2 text-sm font-semibold text-zinc-500 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-400">
+                    Secuencia no disponible
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="ensayo-footer-row mx-auto flex max-w-5xl items-center gap-3 px-4">
           <button
             type="button"
@@ -1310,10 +1681,15 @@ export default function ModoEnsayoCompacto({
 
             <button
               type="button"
-              onClick={() => console.log('Abrir menú de secuencias')}
-              className="ensayo-footer-icon flex h-10 w-10 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-500 transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              aria-label="Abrir herramientas"
-              title="Herramientas"
+              onClick={() => setShowPlaybackOptions((prev) => !prev)}
+              className={`ensayo-footer-icon flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors ${
+                showPlaybackOptions
+                  ? 'border-brand/35 bg-brand/10 text-brand'
+                  : 'border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
+              }`}
+              aria-label="Abrir fuentes de reproduccion"
+              title="Fuentes de reproduccion"
+              aria-expanded={showPlaybackOptions}
             >
               <SlidersHorizontal className="h-4.5 w-4.5" />
             </button>
@@ -1350,6 +1726,39 @@ export default function ModoEnsayoCompacto({
           background: rgb(var(--color-action));
           border: 0;
           box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+        }
+
+        .ensayo-chord-token {
+          color: rgb(var(--color-brand));
+          text-rendering: geometricPrecision;
+        }
+
+        .ensayo-chord-root {
+          display: inline-block;
+        }
+
+        .ensayo-chord-suffix {
+          position: relative;
+          top: -0.34em;
+          margin-left: 0.02em;
+          font-size: 0.72em;
+          font-weight: 900;
+          letter-spacing: -0.03em;
+          vertical-align: baseline;
+        }
+
+        .ensayo-chord-bass {
+          margin-left: 0.05em;
+          white-space: nowrap;
+        }
+
+        .ensayo-chord-bass-divider {
+          margin-right: 0.02em;
+        }
+
+        .dark .ensayo-chord-token {
+          color: rgb(125 211 252);
+          text-shadow: 0 0 12px rgba(125, 211, 252, 0.08);
         }
 
         .ensayo-header-slot {
