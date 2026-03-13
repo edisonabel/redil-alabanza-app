@@ -1475,7 +1475,7 @@ export default function ModoEnsayoCompacto({
                   <div className="flex min-w-0 items-center gap-2 rounded-full pl-2" style={headerBgStyle}>
                     {section.note && (
                       <span
-                        className={`max-w-[10rem] truncate rounded-full bg-white px-2 py-[0.18rem] text-[12px] font-medium tracking-[0.08em] dark:bg-zinc-950 ${
+                        className={`max-w-[10rem] truncate rounded-full bg-white px-2 py-[0.18rem] text-[13px] font-medium tracking-[0.08em] dark:bg-zinc-950 ${
                           isActiveSection ? '' : 'text-zinc-400 dark:text-zinc-500'
                         }`}
                         style={isActiveSection ? { color: toRgba(visual.rgb, 0.92) } : undefined}
