@@ -362,9 +362,43 @@ const readChordProContent = async (songRow) => {
   }
 };
 
+const mergeMarkerNotesIntoSections = (sections = [], rawMarkers = []) => {
+  const markers = Array.isArray(rawMarkers) ? rawMarkers.filter(Boolean) : [];
+  if (markers.length === 0) return sections;
+
+  const markerGroups = markers.reduce((acc, marker, index) => {
+    const key = String(marker?.sectionName || marker?.name || '').trim().toLowerCase() || `marker-${index}`;
+    if (!acc.has(key)) acc.set(key, []);
+    acc.get(key).push(marker);
+    return acc;
+  }, new Map());
+
+  const markerOccurrences = new Map();
+
+  return sections.map((section, index) => {
+    const existingSectionNote = String(section?.note || '').trim();
+    if (existingSectionNote) return section;
+
+    const normalizedSectionName = String(section?.name || '').trim().toLowerCase();
+    const occurrence = markerOccurrences.get(normalizedSectionName) || 0;
+    markerOccurrences.set(normalizedSectionName, occurrence + 1);
+
+    const groupedMarkers = markerGroups.get(normalizedSectionName) || [];
+    const markerByIndex = markers.find((marker) => Number(marker?.sectionIndex) === index);
+    const markerByOccurrence = groupedMarkers[occurrence];
+    const markerNote = String(markerByIndex?.note || markerByOccurrence?.note || '').trim();
+
+    return markerNote ? { ...section, note: markerNote } : section;
+  });
+};
+
 const buildSongFromRow = async (songRow, orderIndex = 0) => {
   const chordproContent = await readChordProContent(songRow);
-  const sections = parseChordProSections(chordproContent, songRow?.titulo || `Canci\u00f3n ${orderIndex + 1}`);
+  const rawSectionMarkers = Array.isArray(songRow?.section_markers) ? songRow.section_markers : [];
+  const sections = mergeMarkerNotesIntoSections(
+    parseChordProSections(chordproContent, songRow?.titulo || `Canci\u00f3n ${orderIndex + 1}`),
+    rawSectionMarkers,
+  );
 
   return {
     id: songRow?.id || `song-${orderIndex + 1}`,
@@ -374,9 +408,11 @@ const buildSongFromRow = async (songRow, orderIndex = 0) => {
     originalKey: songRow?.tonalidad || '-',
     bpm: songRow?.bpm || 0,
     category: songRow?.categoria || '',
+    voz: songRow?.voz || '',
     mp3: songRow?.mp3 || '',
+    linkVoces: songRow?.link_voces || '',
     linkSecuencias: songRow?.link_secuencias || '',
-    sectionMarkers: Array.isArray(songRow?.section_markers) ? songRow.section_markers : [],
+    sectionMarkers: rawSectionMarkers,
     duration: estimateDuration(sections),
     sections,
   };
@@ -413,18 +449,18 @@ if (id !== 'demo') {
       let playlistItems = [];
       let playlistItemsError = null;
 
-      const playlistQueryWithMarkers = await supabaseSSR
-        .from('playlist_canciones')
-        .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, categoria, mp3, link_secuencias, chordpro, section_markers)')
-        .eq('playlist_id', playlistRow.id)
-        .order('orden', { ascending: true });
-
-      if (playlistQueryWithMarkers.error) {
-        const playlistQueryFallback = await supabaseSSR
+        const playlistQueryWithMarkers = await supabaseSSR
           .from('playlist_canciones')
-          .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, categoria, mp3, link_secuencias, chordpro)')
+          .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, categoria, voz, mp3, link_voces, link_secuencias, chordpro, section_markers)')
           .eq('playlist_id', playlistRow.id)
           .order('orden', { ascending: true });
+
+      if (playlistQueryWithMarkers.error) {
+          const playlistQueryFallback = await supabaseSSR
+            .from('playlist_canciones')
+            .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, categoria, voz, mp3, link_voces, link_secuencias, chordpro)')
+            .eq('playlist_id', playlistRow.id)
+            .order('orden', { ascending: true });
 
         playlistItems = playlistQueryFallback.data || [];
         playlistItemsError = playlistQueryFallback.error;

@@ -301,7 +301,7 @@ const normalizeSectionMarkers = (sections = [], rawMarkers = []) => {
       sectionOccurrence,
       sectionKey: `${slugBase}__${sectionOccurrence}`,
       startSec: Number.isFinite(startSec) ? Math.max(0, Math.round(startSec)) : null,
-      note: section?.note || '',
+      note: String(existingMarker?.note || section?.note || '').trim(),
     };
   });
 };
@@ -734,8 +734,7 @@ export default function AdminRepertorio() {
 
     try {
       const contenidoNormalizado = normalizarChordPro(editorChordproValor);
-      const markersNormalizados = normalizeSectionMarkers(parseChordProSections(contenidoNormalizado), editorSectionMarkers)
-        .filter((marker) => Number.isFinite(marker.startSec));
+      const markersNormalizados = normalizeSectionMarkers(parseChordProSections(contenidoNormalizado), editorSectionMarkers);
       const updatePayload = { chordpro: contenidoNormalizado || null };
 
       if (sectionMarkersDisponibles) {
@@ -871,6 +870,12 @@ export default function AdminRepertorio() {
       itemIndex === markerIndex
         ? { ...item, startSec: Math.round(editorAudioCurrentTimeRef.current) }
         : item
+    )));
+  };
+
+  const actualizarEditorSectionMarker = (markerIndex, patch) => {
+    setEditorSectionMarkers((prev) => prev.map((item, itemIndex) => (
+      itemIndex === markerIndex ? { ...item, ...patch } : item
     )));
   };
 
@@ -1280,54 +1285,55 @@ export default function AdminRepertorio() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold text-content">{marker.sectionName}</p>
-                          {marker.note ? (
-                            <p className="truncate text-xs text-content-muted">{marker.note}</p>
-                          ) : (
-                            <p className="text-xs text-content-muted">Sin nota de seccion</p>
-                          )}
                         </div>
-                        <span className="rounded-full border border-brand/20 bg-brand/10 px-2 py-1 text-[11px] font-bold text-brand">
+                        <button
+                          type="button"
+                          onClick={() => capturarMarkerActual(index)}
+                          disabled={!editorChordproCancion?.mp3}
+                          title={editorChordproCancion?.mp3 ? 'Usar tiempo actual' : 'No hay MP3 para capturar tiempo'}
+                          className="rounded-full border border-brand/20 bg-brand/10 px-2 py-1 text-[11px] font-bold text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted"
+                        >
                           {marker.startSec == null ? '--:--' : formatMarkerTime(marker.startSec)}
-                        </span>
+                        </button>
                       </div>
-
-                      <p className="mt-2 text-[11px] font-medium uppercase tracking-[0.14em] text-content-muted">
-                        Inicio de la seccion
-                      </p>
-                      <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                      <div className="mt-3 grid grid-cols-[4.9rem_minmax(0,1fr)_auto_auto] gap-2">
                         <input
                           type="text"
                           inputMode="numeric"
                           value={marker.startSec == null ? '' : formatMarkerTime(marker.startSec)}
                           onChange={(e) => {
                             const nextValue = parseMarkerTime(e.target.value);
-                            setEditorSectionMarkers((prev) => prev.map((item, itemIndex) => (
-                              itemIndex === index ? { ...item, startSec: nextValue } : item
-                            )));
+                            actualizarEditorSectionMarker(index, { startSec: nextValue });
                           }}
                           placeholder="00:00"
+                          className="min-h-[44px] rounded-xl border border-border bg-background px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                        />
+                        <input
+                          type="text"
+                          value={marker.note || ''}
+                          onChange={(e) => {
+                            actualizarEditorSectionMarker(index, { note: e.target.value });
+                          }}
+                          placeholder="Nota de seccion"
                           className="min-h-[44px] rounded-xl border border-border bg-background px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                         />
                         <button
                           type="button"
                           onClick={() => {
-                            setEditorSectionMarkers((prev) => prev.map((item, itemIndex) => (
-                              itemIndex === index ? { ...item, startSec: null } : item
-                            )));
+                            actualizarEditorSectionMarker(index, { startSec: null });
                           }}
                           className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-border bg-surface px-3 text-xs font-bold text-content-muted hover:bg-background hover:text-content transition-colors"
                         >
                           Limpiar
                         </button>
-                      </div>
-                      <div className="mt-2 flex justify-end">
                         <button
                           type="button"
                           onClick={() => capturarMarkerActual(index)}
                           disabled={!editorChordproCancion?.mp3}
                           className="inline-flex min-h-[40px] items-center justify-center rounded-xl border border-brand/25 bg-brand/10 px-3 text-xs font-bold text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted"
                         >
-                          Marcar ahora
+                          <span className="sm:hidden">Marcar</span>
+                          <span className="hidden sm:inline">Marcar ahora</span>
                         </button>
                       </div>
                     </div>
@@ -1418,7 +1424,7 @@ export default function AdminRepertorio() {
           --range-progress: 0%;
           appearance: none;
           -webkit-appearance: none;
-          height: 18px;
+          height: 22px;
           cursor: pointer;
           background: transparent;
         }
@@ -1428,7 +1434,7 @@ export default function AdminRepertorio() {
         }
 
         .admin-marker-range::-webkit-slider-runnable-track {
-          height: 4px;
+          height: 5px;
           border-radius: 999px;
           background: linear-gradient(
             90deg,
@@ -1441,35 +1447,39 @@ export default function AdminRepertorio() {
 
         .admin-marker-range::-webkit-slider-thumb {
           -webkit-appearance: none;
-          width: 3px;
-          height: 18px;
-          margin-top: -7px;
+          width: 4px;
+          height: 22px;
+          margin-top: -8.5px;
           border: none;
           border-radius: 999px;
-          background: rgba(15, 23, 42, 0.92);
-          box-shadow: none;
+          background: rgba(45, 212, 191, 1);
+          box-shadow:
+            0 0 0 2px rgba(9, 9, 11, 0.96),
+            0 0 0 5px rgba(45, 212, 191, 0.16);
         }
 
         .admin-marker-range::-moz-range-track {
-          height: 4px;
+          height: 5px;
           border: none;
           border-radius: 999px;
           background: rgba(148, 163, 184, 0.26);
         }
 
         .admin-marker-range::-moz-range-progress {
-          height: 4px;
+          height: 5px;
           border-radius: 999px;
           background: rgba(24, 191, 175, 1);
         }
 
         .admin-marker-range::-moz-range-thumb {
-          width: 3px;
-          height: 18px;
+          width: 4px;
+          height: 22px;
           border: none;
           border-radius: 999px;
-          background: rgba(15, 23, 42, 0.92);
-          box-shadow: none;
+          background: rgba(45, 212, 191, 1);
+          box-shadow:
+            0 0 0 2px rgba(9, 9, 11, 0.96),
+            0 0 0 5px rgba(45, 212, 191, 0.16);
         }
       `}</style>
     </div>

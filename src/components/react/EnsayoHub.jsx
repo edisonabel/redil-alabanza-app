@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, CalendarDays, ChevronRight, Clock3, ListMusic, Play } from 'lucide-react';
+import { ArrowLeft, CalendarDays, ChevronRight, Clock3, ListMusic, Mic2, Play } from 'lucide-react';
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
 
 const LATIN_TO_AMERICAN = {
@@ -112,6 +112,235 @@ const dispatchProPlayerEvent = ({ url, title, artist, autoPlay = true }) => {
   }));
 };
 
+const serializeVoicePayload = (value) => {
+  if (typeof value === 'string') return value.trim();
+  if (value == null) return '';
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '';
+  }
+};
+
+const normalizeVoiceExternalUrl = (rawUrl = '') => {
+  let normalized = String(rawUrl || '').trim();
+  if (!normalized) return '';
+
+  if (normalized.startsWith('www.')) {
+    normalized = `https://${normalized}`;
+  } else if (normalized.startsWith('//')) {
+    normalized = `https:${normalized}`;
+  } else if (/^\/(uc|open|file)\b/i.test(normalized)) {
+    normalized = `https://drive.google.com${normalized}`;
+  }
+
+  if (!/^https?:\/\//i.test(normalized)) return '';
+
+  try {
+    const url = new URL(normalized);
+    const hostname = url.hostname.replace(/^www\./i, '').toLowerCase();
+
+    if (hostname === 'drive.google.com') {
+      const fullUrl = `${url.origin}${url.pathname}${url.search}`;
+      const driveIdPatterns = [
+        /\/file\/d\/([a-zA-Z0-9_-]+)/i,
+        /[?&]id=([a-zA-Z0-9_-]+)/i,
+        /\/uc\b.*[?&]id=([a-zA-Z0-9_-]+)/i,
+      ];
+
+      let fileId = '';
+      for (const pattern of driveIdPatterns) {
+        const match = fullUrl.match(pattern);
+        if (match?.[1]) {
+          fileId = match[1];
+          break;
+        }
+      }
+
+      if (fileId) {
+        return `https://drive.google.com/uc?export=download&id=${fileId}`;
+      }
+    }
+
+    return url.toString();
+  } catch {
+    return normalized;
+  }
+};
+
+const parseVoiceResources = (value) => {
+  const raw = serializeVoicePayload(value);
+  const rawNormalized = raw
+    ? raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    : '';
+  const audioFilePattern = /\.(mp3|wav|m4a|aac|ogg)(\?.*)?$/i;
+  const toVoiceEntry = (candidate, index = 0, forcedLabel = '') => {
+    if (typeof candidate === 'string') {
+      const url = normalizeVoiceExternalUrl(candidate);
+      if (!url) return null;
+      return {
+        label: forcedLabel || `Voz ${index + 1}`,
+        url,
+      };
+    }
+
+    if (!candidate || typeof candidate !== 'object') return null;
+
+    const url = normalizeVoiceExternalUrl(
+      candidate.url ||
+      candidate.link ||
+      candidate.href ||
+      candidate.src ||
+      candidate.audio ||
+      '',
+    );
+
+    if (!url) return null;
+
+    const labelRaw =
+      forcedLabel ||
+      candidate.label ||
+      candidate.nombre ||
+      candidate.name ||
+      candidate.title ||
+      candidate.voice ||
+      '';
+
+    return {
+      label: String(labelRaw || `Voz ${index + 1}`).trim() || `Voz ${index + 1}`,
+      url,
+    };
+  };
+
+  if (!raw || raw === '-' || rawNormalized === 'no esta') {
+    return { hasResources: false, entries: [], legacyUrl: '' };
+  }
+
+  const normalizedDirectUrl = normalizeVoiceExternalUrl(raw);
+  if (normalizedDirectUrl && !raw.trim().startsWith('[') && !raw.trim().startsWith('{')) {
+    if (audioFilePattern.test(normalizedDirectUrl)) {
+      return {
+        hasResources: true,
+        entries: [{ label: 'Voz guía', url: normalizedDirectUrl }],
+        legacyUrl: '',
+      };
+    }
+    return { hasResources: true, entries: [], legacyUrl: normalizedDirectUrl };
+  }
+
+  if (raw.includes('\n')) {
+    const entries = raw
+      .split('\n')
+      .map((line, index) => {
+        const trimmed = String(line || '').trim();
+        if (!trimmed) return null;
+        const [labelPart, urlPart] = trimmed.includes('|') ? trimmed.split('|') : [`Voz ${index + 1}`, trimmed];
+        return toVoiceEntry(
+          String(urlPart || '').trim(),
+          index,
+          String(labelPart || `Voz ${index + 1}`).trim() || `Voz ${index + 1}`,
+        );
+      })
+      .filter(Boolean);
+
+    if (entries.length > 0) {
+      return { hasResources: true, entries, legacyUrl: '' };
+    }
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed === 'string') {
+      return parseVoiceResources(parsed);
+    }
+    if (Array.isArray(parsed)) {
+      const entries = parsed
+        .map((entry, index) => toVoiceEntry(entry, index, index === 0 ? 'Voz guía' : ''))
+        .filter(Boolean);
+      return { hasResources: entries.length > 0, entries, legacyUrl: '' };
+    }
+    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.entries)) {
+      const entries = parsed.entries
+        .map((entry, index) => toVoiceEntry(entry, index, index === 0 ? 'Voz guía' : ''))
+        .filter(Boolean);
+      const legacyUrl = normalizeVoiceExternalUrl(String(parsed.legacyUrl || parsed.folder || parsed.drive || '').trim());
+      return { hasResources: entries.length > 0 || Boolean(legacyUrl), entries, legacyUrl };
+    }
+    if (parsed && typeof parsed === 'object') {
+      const directEntry = toVoiceEntry(
+        parsed,
+        0,
+        parsed.label || parsed.nombre || parsed.name || parsed.title || 'Voz guía',
+      );
+      if (directEntry) {
+        return { hasResources: true, entries: [directEntry], legacyUrl: '' };
+      }
+
+      const entries = Object.entries(parsed)
+        .map(([key, candidate], index) => toVoiceEntry(candidate, index, String(key || `Voz ${index + 1}`)))
+        .filter(Boolean);
+      if (entries.length > 0) {
+        return { hasResources: true, entries, legacyUrl: '' };
+      }
+    }
+  } catch {
+    const fallbackLegacyUrl = normalizeVoiceExternalUrl(raw);
+    return {
+      hasResources: Boolean(fallbackLegacyUrl),
+      entries: [],
+      legacyUrl: fallbackLegacyUrl,
+    };
+  }
+
+  return { hasResources: false, entries: [], legacyUrl: '' };
+};
+
+const normalizeVoiceLabel = (rawVoice = '') => {
+  const source = String(rawVoice || '').trim();
+  if (!source) return '';
+
+  const normalized = source
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+  const hasHombre = normalized.includes('hombre');
+  const hasMujer = normalized.includes('mujer');
+
+  if (hasHombre && hasMujer) return 'Hombre y Mujer';
+  if (hasMujer) return 'Mujer';
+  if (hasHombre) return 'Hombre';
+
+  return source;
+};
+
+const hasValidVoicePayload = (value) => {
+  const raw = serializeVoicePayload(value);
+  const normalized = raw
+    ? raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    : '';
+
+  return Boolean(raw && raw !== '-' && normalized !== 'no esta');
+};
+
+const openVoicesModal = ({ title, artist, entries = [], legacyUrl = '' }) => {
+  if (typeof window === 'undefined') return;
+
+  if (window.__REDIL_VOCES_MODAL__?.open) {
+    window.__REDIL_VOCES_MODAL__.open(title || 'Recursos de voz', artist || '', entries, legacyUrl || '');
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent('open-voces-modal', {
+    detail: {
+      title,
+      artist,
+      entries,
+      legacyUrl,
+    },
+  }));
+};
+
 export default function EnsayoHub({
   playlist = [],
   contextTitle = 'Modo Ensayo',
@@ -209,6 +438,26 @@ export default function EnsayoHub({
       autoPlay,
     });
   }, []);
+
+  const openSongVoices = useCallback((song) => {
+    if (typeof window === 'undefined') return;
+    const rawVoicePayload = serializeVoicePayload(song?.linkVoces);
+    const parsed = parseVoiceResources(rawVoicePayload);
+    const fallbackLegacyUrl =
+      parsed.legacyUrl ||
+      normalizeVoiceExternalUrl(rawVoicePayload) ||
+      normalizeVoiceExternalUrl(song?.linkVoces?.legacyUrl || song?.linkVoces?.folder || song?.linkVoces?.drive || '');
+    if (!parsed.hasResources && !fallbackLegacyUrl) return;
+    stopMetronome();
+    stopQueue();
+    window.__REDIL_PRO_PLAYER__?.close?.();
+    openVoicesModal({
+      title: song?.title || 'Recursos de voz',
+      artist: song?.artist || '',
+      entries: parsed.entries || [],
+      legacyUrl: fallbackLegacyUrl || '',
+    });
+  }, [stopMetronome, stopQueue]);
 
   const playQueueItem = useCallback((index) => {
     const queueSongs = queueSongsRef.current;
@@ -372,6 +621,9 @@ export default function EnsayoHub({
               const bpmValue = Number.isFinite(Number(song?.bpm)) ? Math.max(0, Math.round(Number(song.bpm))) : 0;
               const isMetronomeActive = activeMetronomeSongId === song?.id;
               const hasSongAudio = typeof song?.mp3 === 'string' && song.mp3.trim() !== '';
+              const rawVoicePayload = serializeVoicePayload(song?.linkVoces);
+              const hasVoiceResources = hasValidVoicePayload(rawVoicePayload);
+              const voiceLabel = normalizeVoiceLabel(song?.voz);
               const isLastViewed = String(song?.id || index) === String(lastViewedSongId || '');
 
               return (
@@ -386,13 +638,13 @@ export default function EnsayoHub({
                   }}
                   role="button"
                   tabIndex={0}
-                  className={`group flex w-full items-center gap-3 border-b border-zinc-200/90 px-4 py-4 text-left transition-colors dark:border-white/10 last:border-b-0 ${
+                  className={`group grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 border-b border-zinc-200/90 px-4 py-4 text-left transition-colors dark:border-white/10 last:border-b-0 ${
                     isLastViewed
                       ? 'bg-brand/6 hover:bg-brand/10 dark:bg-brand/10 dark:hover:bg-brand/12'
                       : 'hover:bg-zinc-50 dark:hover:bg-white/[0.03]'
                   }`}
                 >
-                  <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-zinc-200 bg-[linear-gradient(180deg,_rgba(255,255,255,0.96),_rgba(244,244,245,0.96))] text-sm font-black text-zinc-600 shadow-sm dark:border-white/10 dark:bg-[linear-gradient(180deg,_rgba(39,39,42,0.92),_rgba(24,24,27,0.92))] dark:text-zinc-200">
+                  <div className="grid h-12 w-12 shrink-0 place-items-center self-center rounded-2xl border border-zinc-200 bg-[linear-gradient(180deg,_rgba(255,255,255,0.96),_rgba(244,244,245,0.96))] text-sm font-black text-zinc-600 shadow-sm dark:border-white/10 dark:bg-[linear-gradient(180deg,_rgba(39,39,42,0.92),_rgba(24,24,27,0.92))] dark:text-zinc-200">
                     {String(index + 1).padStart(2, '0')}
                   </div>
 
@@ -403,19 +655,40 @@ export default function EnsayoHub({
                     <p className="truncate text-sm text-zinc-500 dark:text-zinc-400">
                       {song?.artist || 'Redil Worship'}
                     </p>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-700 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-200">
+                    <div className="mt-2 flex items-center gap-2 overflow-x-auto pb-1 pr-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                      <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-700 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-200">
                         {keyLabel}
                       </span>
                       {song?.category && (
-                        <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-400">
+                        <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-400">
                           {song.category}
                         </span>
+                      )}
+                      {voiceLabel && (
+                        <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold tracking-[0.04em] text-zinc-500 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-400">
+                          {voiceLabel}
+                        </span>
+                      )}
+                      {hasVoiceResources && (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            openSongVoices(song);
+                          }}
+                          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-teal-300/60 bg-teal-50 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-teal-700 transition-colors hover:bg-teal-100 dark:border-teal-500/25 dark:bg-teal-500/10 dark:text-teal-300 dark:hover:bg-teal-500/16"
+                          aria-label={`Abrir voces de ${song?.title || 'cancion'}`}
+                          title="Ensayar voces"
+                        >
+                          <Mic2 className="h-3.5 w-3.5" />
+                          Voces
+                        </button>
                       )}
                     </div>
                   </div>
 
-                  <div className="ensayo-hub-row-actions flex shrink-0 items-center gap-2">
+                  <div className="ensayo-hub-row-actions flex shrink-0 items-start gap-2 self-start pt-1">
                     <button
                       type="button"
                       onClick={(event) => {
@@ -541,12 +814,16 @@ export default function EnsayoHub({
 
         body[data-pro-player-modal-open='true'] .ensayo-hub-row-actions,
         body[data-pro-player-modal-open='true'] .ensayo-hub-row-chevron,
-        body[data-pro-player-modal-open='true'] .ensayo-hub-queuebar {
+        body[data-voces-modal-open='true'] .ensayo-hub-row-actions,
+        body[data-voces-modal-open='true'] .ensayo-hub-row-chevron,
+        body[data-pro-player-modal-open='true'] .ensayo-hub-queuebar,
+        body[data-voces-modal-open='true'] .ensayo-hub-queuebar {
           opacity: 0;
           pointer-events: none;
         }
 
-        body[data-pro-player-modal-open='true'] .ensayo-hub-queuebar {
+        body[data-pro-player-modal-open='true'] .ensayo-hub-queuebar,
+        body[data-voces-modal-open='true'] .ensayo-hub-queuebar {
           transform: translateY(calc(100% + env(safe-area-inset-bottom) + 1rem));
         }
       `}</style>
