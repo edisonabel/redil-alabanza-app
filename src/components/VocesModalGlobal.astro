@@ -25,7 +25,14 @@
 
 <script>
   (() => {
-    if (window.__REDIL_VOCES_MODAL_READY__) return;
+    const alreadyInit = Boolean(window.__REDIL_VOCES_MODAL_READY__);
+    if (alreadyInit) {
+      // Re-expose API in case it was lost (e.g. script errored before line 350 on first load)
+      if (!window.__REDIL_VOCES_MODAL__) {
+        console.warn('[VocesModal] Guard hit but API missing — skipping (DOM already persisted)');
+      }
+      return;
+    }
     window.__REDIL_VOCES_MODAL_READY__ = true;
 
     const MODAL_PREMIUM_MS = 900;

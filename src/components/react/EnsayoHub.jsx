@@ -634,9 +634,9 @@ export default function EnsayoHub({
               const isMetronomeActive = activeMetronomeSongId === song?.id;
               const hasSongAudio = typeof song?.mp3 === 'string' && song.mp3.trim() !== '';
               const parsedVoices = parseVoiceResources(song?.linkVoces);
-              const safeVocesPayload = JSON.stringify(
-                parsedVoices.entries.length > 0 ? parsedVoices.entries : (parsedVoices.legacyUrl || '')
-              );
+              const safeVocesPayload = parsedVoices.entries.length > 0
+                ? JSON.stringify(parsedVoices.entries)
+                : (parsedVoices.legacyUrl || '');
               const hasVoiceResources = parsedVoices.hasResources || Boolean(parsedVoices.legacyUrl);
               const voiceLabel = normalizeVoiceLabel(song?.voz);
               const isLastViewed = String(song?.id || index) === String(lastViewedSongId || '');
