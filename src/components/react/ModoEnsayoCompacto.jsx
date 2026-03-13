@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ChevronDown, ChevronUp, Minus, Pause, Play, Plus, Type } from 'lucide-react';
+import { ArrowLeft, Pause, Play, Repeat, Repeat1, SlidersHorizontal } from 'lucide-react';
 
 const FONT_PRESETS = {
   compacta: {
@@ -21,6 +21,8 @@ const FONT_PRESETS = {
     lineGap: 'gap-y-1.5',
   },
 };
+
+const FONT_SCALE_SEQUENCE = ['compacta', 'normal', 'grande'];
 
 const SHARP_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_TO_SHARP = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
@@ -321,8 +323,6 @@ export default function ModoEnsayoCompacto({
 
   const [headerHidden, setHeaderHidden] = useState(false);
   const [fontScale, setFontScale] = useState('normal');
-  const [showViewSettings, setShowViewSettings] = useState(false);
-  const [showKeyMenu, setShowKeyMenu] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeSectionManualIndex, setActiveSectionManualIndex] = useState(0);
   const [collapsedSections, setCollapsedSections] = useState({});
@@ -331,25 +331,21 @@ export default function ModoEnsayoCompacto({
   const [audioReady, setAudioReady] = useState(false);
   const [transposeSteps, setTransposeSteps] = useState(0);
   const [isMetronomeOn, setIsMetronomeOn] = useState(false);
+  const [loopState, setLoopState] = useState(0);
 
   const audioRef = useRef(null);
+  const headerRef = useRef(null);
   const scrollRef = useRef(null);
   const lastScrollTop = useRef(0);
   const sectionRefs = useRef([]);
   const metronomeIntervalRef = useRef(null);
   const metronomeAudioCtxRef = useRef(null);
+  const [headerHeight, setHeaderHeight] = useState(148);
   const currentSong = song;
   const activeSongIndex = 0;
   const currentSongBpm = Number.isFinite(Number(currentSong?.bpm)) ? Math.max(0, Math.round(Number(currentSong.bpm))) : 0;
   const originalSongKey = normalizeKeyToAmerican(currentSong?.originalKey || currentSong?.key || '-');
   const currentSongDisplayKey = useMemo(() => transposeChordToken(originalSongKey, transposeSteps), [originalSongKey, transposeSteps]);
-  const transposeKeyOptions = useMemo(() => (
-    TRANSPOSE_OPTIONS.map((value) => ({
-      value,
-      keyLabel: transposeChordToken(originalSongKey, value),
-      isBase: value === 0,
-    }))
-  ), [originalSongKey]);
   const currentSections = useMemo(() => (
     (currentSong?.sections || []).map((section) => ({
       ...section,
@@ -378,6 +374,9 @@ export default function ModoEnsayoCompacto({
   }, [currentSections]);
   const fontPreset = FONT_PRESETS[fontScale] || FONT_PRESETS.normal;
   const currentSongKey = String(currentSong?.id || 'demo');
+  const titleLine = currentSong.title || 'Titulo de Cancion';
+  const artistLine = currentSong.artist || 'Artista';
+  const shouldRotateHeaderMeta = Boolean(artistLine) && titleLine.trim() !== artistLine.trim();
   const currentSongMarkers = useMemo(() => (
     Array.isArray(currentSong?.sectionMarkers)
       ? (() => {
@@ -550,11 +549,15 @@ export default function ModoEnsayoCompacto({
         marker,
         isActive: index === activeSectionIndex,
         visual,
+        startSec: safeStart,
+        endSec: safeEnd,
         startPercent: (safeStart / timelineDuration) * 100,
         widthPercent: Math.max(2.8, ((safeEnd - safeStart) / timelineDuration) * 100),
       };
     })
   ), [activeSectionIndex, currentSections, markerBySectionIndex, sectionMapItems, timelineDuration]);
+  const activeLoopSection = playbackSectionStrip[activeSectionIndex] || null;
+  const currentHeaderOffset = headerHidden ? 18 : headerHeight + 18;
 
   const stopMetronome = React.useCallback(() => {
     if (metronomeIntervalRef.current) {
@@ -622,9 +625,25 @@ export default function ModoEnsayoCompacto({
       audioRef.current.currentTime = 0;
     }
     setTransposeSteps(0);
-    setShowKeyMenu(false);
+    setLoopState(0);
     stopMetronome();
   }, [currentSongKey, currentSong?.mp3, stopMetronome]);
+
+  useEffect(() => {
+    const headerNode = headerRef.current;
+    if (!headerNode || typeof ResizeObserver === 'undefined') return undefined;
+
+    const syncHeaderHeight = () => {
+      const nextHeight = headerNode.getBoundingClientRect().height || 0;
+      setHeaderHeight((prev) => (Math.abs(prev - nextHeight) < 1 ? prev : nextHeight));
+    };
+
+    syncHeaderHeight();
+    const observer = new ResizeObserver(syncHeaderHeight);
+    observer.observe(headerNode);
+
+    return () => observer.disconnect();
+  }, [currentSections.length, currentSongKey]);
 
   useEffect(() => {
     setCollapsedSections((prev) => {
@@ -659,7 +678,7 @@ export default function ModoEnsayoCompacto({
       let nextSectionIndex = 0;
       sectionRefs.current.forEach((node, index) => {
         if (!node) return;
-        if (node.offsetTop - 110 <= currentTop) {
+        if (node.offsetTop - currentHeaderOffset <= currentTop) {
           nextSectionIndex = index;
         }
       });
@@ -669,7 +688,7 @@ export default function ModoEnsayoCompacto({
 
     scroller.addEventListener('scroll', handleScroll, { passive: true });
     return () => scroller.removeEventListener('scroll', handleScroll);
-  }, [currentSections.length]);
+  }, [currentHeaderOffset, currentSections.length]);
 
   useEffect(() => {
     if (activeSectionByAudioIndex < 0 || !scrollRef.current) return;
@@ -694,7 +713,7 @@ export default function ModoEnsayoCompacto({
 
     const scrollerRect = scroller.getBoundingClientRect();
     const nodeRect = node.getBoundingClientRect();
-    const targetTop = scroller.scrollTop + (nodeRect.top - scrollerRect.top) - 104;
+    const targetTop = scroller.scrollTop + (nodeRect.top - scrollerRect.top) - currentHeaderOffset;
     return Math.max(0, targetTop);
   };
 
@@ -718,6 +737,22 @@ export default function ModoEnsayoCompacto({
       scrollToSectionIndex(activeSectionByAudioIndex, 'smooth');
     });
   }, [activeSectionByAudioIndex]);
+
+  useEffect(() => {
+    if (loopState !== 2 || !isPlaying || !audioRef.current || !activeLoopSection) return undefined;
+
+    const audioElement = audioRef.current;
+    const handleSectionLoop = () => {
+      if (!Number.isFinite(activeLoopSection.endSec) || !Number.isFinite(activeLoopSection.startSec)) return;
+      if (audioElement.currentTime >= Math.max(activeLoopSection.endSec - 0.08, activeLoopSection.startSec)) {
+        audioElement.currentTime = activeLoopSection.startSec;
+        setAudioCurrentTime(activeLoopSection.startSec);
+      }
+    };
+
+    audioElement.addEventListener('timeupdate', handleSectionLoop);
+    return () => audioElement.removeEventListener('timeupdate', handleSectionLoop);
+  }, [activeLoopSection, isPlaying, loopState]);
 
   useEffect(() => {
     if (currentSongBpm > 0) return;
@@ -761,13 +796,6 @@ export default function ModoEnsayoCompacto({
     }
 
     window.location.href = '/repertorio';
-  };
-
-  const cycleFontScale = (direction) => {
-    const order = ['compacta', 'normal', 'grande'];
-    const currentIndex = order.indexOf(fontScale);
-    const nextIndex = Math.min(order.length - 1, Math.max(0, currentIndex + direction));
-    setFontScale(order[nextIndex]);
   };
 
   const syncAudioMetrics = (audioElement) => {
@@ -818,22 +846,6 @@ export default function ModoEnsayoCompacto({
     });
   };
 
-  const toggleSectionCollapsed = (index) => {
-    setCollapsedSections((prev) => {
-      const songState = prev[currentSongKey] || {};
-      const currentValue = songState[index] ?? false;
-      return {
-        ...prev,
-        [currentSongKey]: {
-          ...songState,
-          [index]: !currentValue,
-        },
-      };
-    });
-  };
-
-  const sectionStateForSong = collapsedSections[currentSongKey] || {};
-
   const handleTogglePlayback = async () => {
     if (!audioRef.current || !hasAudio) return;
 
@@ -856,8 +868,16 @@ export default function ModoEnsayoCompacto({
     }
   };
 
+  const cycleFontScale = () => {
+    setFontScale((current) => {
+      const currentIndex = FONT_SCALE_SEQUENCE.indexOf(current);
+      const nextIndex = currentIndex === -1 ? 1 : (currentIndex + 1) % FONT_SCALE_SEQUENCE.length;
+      return FONT_SCALE_SEQUENCE[nextIndex];
+    });
+  };
+
   return (
-    <div className="h-screen w-full flex flex-col bg-white text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
+    <div className="ensayo-mobile-shell relative flex h-screen w-full flex-col overflow-hidden bg-white text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
       <audio
         key={`${currentSongKey}-${currentSong?.mp3 || 'no-audio'}`}
         ref={audioRef}
@@ -873,7 +893,18 @@ export default function ModoEnsayoCompacto({
         }}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
-        onEnded={() => {
+        onEnded={async () => {
+          if (loopState === 1 && audioRef.current) {
+            audioRef.current.currentTime = 0;
+            setAudioCurrentTime(0);
+            try {
+              await audioRef.current.play();
+              return;
+            } catch (_error) {
+              // keep regular ended fallback
+            }
+          }
+
           setIsPlaying(false);
           const finalTime = Number.isFinite(audioRef.current?.duration) ? audioRef.current.duration : 0;
           setAudioCurrentTime(finalTime || 0);
@@ -884,32 +915,63 @@ export default function ModoEnsayoCompacto({
         }}
       />
       <header
-        className={`sticky top-0 z-30 border-b border-zinc-200/70 bg-white/92 backdrop-blur-xl dark:border-white/8 dark:bg-zinc-950/96 transition-transform duration-300 ${
+        ref={headerRef}
+        className={`absolute inset-x-0 top-0 z-30 border-b border-zinc-200/70 bg-white/92 backdrop-blur-xl dark:border-white/8 dark:bg-zinc-950/96 transition-transform duration-300 ${
           headerHidden ? '-translate-y-full' : 'translate-y-0'
         }`}
       >
-        <div className="flex items-center justify-between gap-3 px-3 pb-1 pt-[calc(env(safe-area-inset-top)+0.45rem)]">
-            <button
-              type="button"
-              onClick={handleGoBack}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-900 shadow-sm transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800"
-              aria-label="Volver"
-            >
+        <div
+          className="ensayo-header-top flex items-center justify-between gap-3 pb-1 pt-[calc(env(safe-area-inset-top)+0.45rem)]"
+          style={{
+            paddingLeft: 'calc(env(safe-area-inset-left) + 0.75rem)',
+            paddingRight: 'calc(env(safe-area-inset-right) + 0.75rem)',
+          }}
+        >
+          <button
+            type="button"
+            onClick={handleGoBack}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-900 shadow-sm transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800"
+            aria-label="Volver"
+          >
             <ArrowLeft className="h-4.5 w-4.5" />
           </button>
 
-          <div className="min-w-0 flex-1 text-center">
-            <p className="truncate text-[10px] font-semibold uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">
-              {currentSong.artist}{hasAudio ? ' · MP3' : ''}
-            </p>
+          <div className="min-w-0 flex-1">
+            <div className="ensayo-header-slot overflow-hidden">
+              {shouldRotateHeaderMeta ? (
+                <div className="ensayo-header-mask flex flex-col">
+                  <div className="ensayo-header-line flex items-center">
+                    <p className="ensayo-header-title truncate font-black tracking-tight text-zinc-950 dark:text-zinc-50">
+                      {titleLine}
+                    </p>
+                  </div>
+                  <div className="ensayo-header-line flex items-center">
+                    <p className="ensayo-header-artist truncate font-semibold tracking-tight text-zinc-500 dark:text-zinc-400">
+                      {artistLine}
+                    </p>
+                  </div>
+                  <div className="ensayo-header-line flex items-center" aria-hidden="true">
+                    <p className="ensayo-header-title truncate font-black tracking-tight text-zinc-950 dark:text-zinc-50">
+                      {titleLine}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="ensayo-header-line flex items-center">
+                  <p className="ensayo-header-title truncate font-black tracking-tight text-zinc-950 dark:text-zinc-50">
+                    {titleLine}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={handleToggleMetronome}
               disabled={!currentSongBpm}
-              className={`ensayo-bpm-chip relative inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl border bg-white text-zinc-900 shadow-sm transition-colors dark:bg-zinc-900 dark:text-zinc-50 ${
+              className={`ensayo-control-chip ensayo-bpm-chip relative inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl border bg-white text-zinc-900 shadow-sm transition-colors dark:bg-zinc-900 dark:text-zinc-50 ${
                 currentSongBpm
                   ? 'border-zinc-200 hover:bg-zinc-100 dark:border-white/10 dark:hover:bg-zinc-800'
                   : 'cursor-not-allowed border-zinc-200/70 text-zinc-400 dark:border-white/10 dark:text-zinc-500'
@@ -917,98 +979,37 @@ export default function ModoEnsayoCompacto({
               style={isMetronomeOn && currentSongBpm ? { '--bpm-duration': `${60 / currentSongBpm}s` } : undefined}
               aria-label={isMetronomeOn ? `Detener metrónomo ${currentSongBpm} BPM` : `Activar metrónomo ${currentSongBpm || 0} BPM`}
               title={currentSongBpm ? `${currentSongBpm} BPM` : 'Sin BPM'}
-            >
-              <span className={`relative z-[1] font-black leading-none ${String(currentSongBpm || '--').length > 2 ? 'text-[11px]' : 'text-sm'}`}>
-                {currentSongBpm || '--'}
-              </span>
-            </button>
-
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowKeyMenu((prev) => !prev)}
-                className="inline-flex h-10 min-w-[3.2rem] items-center justify-center gap-1 rounded-2xl border border-zinc-200 bg-white px-2.5 text-sm font-bold text-zinc-900 shadow-sm transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800"
-                aria-label="Cambiar tonalidad"
               >
-                <span>{currentSongDisplayKey}</span>
-                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showKeyMenu ? 'rotate-180' : ''}`} />
-              </button>
-
-              {showKeyMenu && (
-                <div className="absolute right-0 mt-2 w-[208px] rounded-2xl border border-zinc-200 bg-white/98 p-2 shadow-2xl dark:border-white/10 dark:bg-zinc-950/95">
-                  <p className="px-2 pb-2 text-[11px] font-bold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
-                    Tonalidad
-                  </p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {transposeKeyOptions.map((option) => {
-                      const active = option.value === transposeSteps;
-                      return (
-                        <button
-                          key={`transpose-${option.value}`}
-                          type="button"
-                          onClick={() => {
-                            setTransposeSteps(option.value);
-                            setShowKeyMenu(false);
-                          }}
-                          className={`flex h-10 items-center justify-center rounded-xl border text-[11px] font-bold uppercase transition-colors ${
-                            active
-                              ? 'border-brand/35 bg-brand/10 text-brand'
-                              : 'border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800'
-                          }`}
-                          title={option.isBase ? 'Tonalidad base original' : `Mover a ${option.keyLabel}`}
-                        >
-                          {option.keyLabel}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+                <span className={`relative z-[1] font-black leading-none ${String(currentSongBpm || '--').length > 2 ? 'text-[11px]' : 'text-sm'}`}>
+                  {currentSongBpm || '--'}
+                </span>
+            </button>
+            <div
+              className="ensayo-control-chip flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-sm font-black text-zinc-900 shadow-sm dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50"
+              aria-label={currentSongDisplayKey !== '-' ? `Tonalidad ${currentSongDisplayKey}` : 'Sin tonalidad'}
+              title={currentSongDisplayKey !== '-' ? `Tonalidad ${currentSongDisplayKey}` : 'Sin tonalidad'}
+            >
+              {currentSongDisplayKey !== '-' ? currentSongDisplayKey : '-'}
             </div>
-
-            <div className="relative">
             <button
               type="button"
-              onClick={() => setShowViewSettings((prev) => !prev)}
-              className="flex h-10 w-10 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-900 shadow-sm transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800"
-              aria-label="Ajustes de vista"
+              onClick={cycleFontScale}
+              className="ensayo-control-chip flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-base font-black text-zinc-900 shadow-sm transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800"
+              aria-label="Cambiar tamano del texto"
+              title="Cambiar tamano del texto"
             >
-              <Type className="h-4.5 w-4.5" />
+              T
             </button>
-
-            {showViewSettings && (
-              <div className="absolute right-0 mt-2 w-[164px] rounded-2xl border border-zinc-200 bg-white/98 p-2 shadow-2xl dark:border-white/10 dark:bg-zinc-950/95">
-                <p className="px-2 pb-2 text-[11px] font-bold uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
-                  Tamaño
-                </p>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => cycleFontScale(-1)}
-                    className="flex h-10 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50"
-                    aria-label="Reducir texto"
-                  >
-                    <Minus className="h-4 w-4" />
-                  </button>
-                  <div className="flex h-10 items-center justify-center rounded-xl border border-brand/30 bg-brand/10 text-xs font-bold uppercase text-brand">
-                    {fontScale}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => cycleFontScale(1)}
-                    className="flex h-10 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50"
-                    aria-label="Aumentar texto"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-            </div>
           </div>
         </div>
 
-        <div className="px-3 pb-2">
+        <div
+          className="ensayo-section-map px-3 pb-2"
+          style={{
+            paddingLeft: 'calc(env(safe-area-inset-left) + 0.75rem)',
+            paddingRight: 'calc(env(safe-area-inset-right) + 0.75rem)',
+          }}
+        >
           <div className="flex gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {currentSections.map((section, index) => {
               const active = index === activeSectionIndex;
@@ -1018,14 +1019,13 @@ export default function ModoEnsayoCompacto({
                   key={`${currentSong.id || 'song'}-${section.name}-${index}`}
                   type="button"
                   onClick={() => selectSection(index, { seekAudio: true, scrollBehavior: 'smooth' })}
-                  className="shrink-0 rounded-full border text-[11px] font-black uppercase tracking-[0.02em] transition-all"
+                    className="ensayo-section-chip shrink-0 rounded-full border bg-white text-[11px] font-black uppercase tracking-[0.02em] transition-all dark:bg-zinc-950"
                   style={{
                     minWidth: '2.45rem',
                     height: '2.45rem',
                     borderColor: toRgba(visual.rgb, active ? 0.92 : 0.5),
                     color: toRgba(visual.rgb, active ? 1 : 0.94),
-                    backgroundColor: active ? toRgba(visual.rgb, 0.14) : 'rgba(255,255,255,0.92)',
-                    boxShadow: active ? `0 0 0 4px ${toRgba(visual.rgb, 0.15)}` : 'none',
+                    boxShadow: active ? `0 0 0 4px ${toRgba(visual.rgb, 0.16)}` : 'none',
                   }}
                   title={section.name}
                   aria-label={`Ir a ${section.name}`}
@@ -1038,10 +1038,18 @@ export default function ModoEnsayoCompacto({
         </div>
       </header>
 
-      <main ref={scrollRef} className="flex-grow overflow-y-auto px-3 pb-24 pt-2 sm:px-4">
-        <div className="mx-auto max-w-6xl columns-1 gap-3 xl:columns-2 xl:gap-4">
+      <main
+        ref={scrollRef}
+        className="min-h-0 flex-1 overflow-y-auto pb-24 transition-[padding-top] duration-300"
+        style={{
+          paddingTop: `${currentHeaderOffset + 8}px`,
+          paddingLeft: 'calc(env(safe-area-inset-left) + 0.75rem)',
+          paddingRight: 'calc(env(safe-area-inset-right) + 0.75rem)',
+        }}
+      >
+        <div className="ensayo-sections-layout mx-auto max-w-6xl columns-1 gap-4 xl:columns-2 xl:gap-5">
           {currentSections.map((section, sectionIndex) => {
-            const isCollapsed = sectionStateForSong[sectionIndex] ?? false;
+            const isCollapsed = false;
             const isActiveSection = sectionIndex === activeSectionIndex;
             const visual = sectionMapItems[sectionIndex] || SECTION_VISUALS.default;
             const headerBgStyle = isActiveSection
@@ -1055,7 +1063,9 @@ export default function ModoEnsayoCompacto({
                   sectionRefs.current[sectionIndex] = node;
                 }}
                 open={!isCollapsed}
-                className={`relative mb-3 inline-block w-full break-inside-avoid-column self-start overflow-visible rounded-[1.2rem] border border-zinc-200/90 px-3 pb-2 pt-3.5 shadow-sm transition-all xl:mb-4 dark:border-white/10 ${
+                className={`relative inline-block w-full break-inside-avoid-column self-start overflow-visible rounded-[1.02rem] border border-zinc-200/90 px-3.5 pb-3.5 pt-4 shadow-sm transition-all ${
+                  sectionIndex === 0 ? 'mt-2 mb-5 xl:mt-3 xl:mb-6' : 'mb-5 xl:mb-6'
+                } dark:border-white/10 ${
                   isActiveSection
                     ? 'bg-white/96 dark:bg-zinc-900'
                     : 'border-zinc-200 bg-white/92 dark:border-white/10 dark:bg-zinc-900/88'
@@ -1066,7 +1076,6 @@ export default function ModoEnsayoCompacto({
                   boxShadow: `0 0 0 1.5px ${toRgba(visual.rgb, 0.18)}, 0 18px 34px rgba(24,24,27,0.12)`,
                 } : undefined}
                 onClick={(event) => {
-                  if (event.target.closest('[data-collapse-toggle="true"]')) return;
                   if (event.target.closest('summary')) return;
                   selectSection(sectionIndex, { seekAudio: true, scrollBehavior: 'smooth' });
                 }}
@@ -1075,20 +1084,15 @@ export default function ModoEnsayoCompacto({
                   className="absolute inset-x-3 -top-[0.78rem] z-10 flex cursor-pointer list-none items-center justify-between gap-2 text-left marker:hidden [&::-webkit-details-marker]:hidden"
                   aria-expanded={!isCollapsed}
                   onClick={(event) => {
-                    if (event.target.closest('[data-collapse-toggle="true"]')) {
-                      event.preventDefault();
-                      return;
-                    }
                     event.preventDefault();
                     selectSection(sectionIndex, { seekAudio: true, scrollBehavior: 'smooth' });
                   }}
                 >
                   <div className="flex min-w-0 flex-1 items-center gap-2 rounded-full pr-3" style={headerBgStyle}>
                     <span
-                      className="flex h-6 min-w-6 items-center justify-center rounded-full border px-1.5 text-[10px] font-black uppercase shadow-sm dark:bg-zinc-950"
+                      className="flex h-6 min-w-6 items-center justify-center rounded-full border bg-white px-1.5 text-[10px] font-black uppercase shadow-sm dark:bg-zinc-950"
                       style={{
                         borderColor: toRgba(visual.rgb, isActiveSection ? 0.62 : 0.42),
-                        backgroundColor: isActiveSection ? toRgba(visual.rgb, 0.12) : 'rgba(255,255,255,0.96)',
                         color: toRgba(visual.rgb, 1),
                       }}
                     >
@@ -1096,10 +1100,9 @@ export default function ModoEnsayoCompacto({
                     </span>
                     <div className="flex min-w-0 flex-1 items-center">
                       <h2
-                        className={`shrink-0 px-1.5 font-black uppercase ${isActiveSection ? '' : 'bg-white dark:bg-zinc-950'} ${fontPreset.section}`}
+                        className={`shrink-0 px-1.5 font-black uppercase bg-white dark:bg-zinc-950 ${fontPreset.section}`}
                         style={{
                           color: toRgba(visual.rgb, 1),
-                          backgroundColor: isActiveSection ? toRgba(visual.rgb, 0.1) : undefined,
                         }}
                       >
                         {section.name}
@@ -1117,25 +1120,12 @@ export default function ModoEnsayoCompacto({
                         {section.note}
                       </span>
                     )}
-                    <button
-                      type="button"
-                      data-collapse-toggle="true"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        toggleSectionCollapsed(sectionIndex);
-                      }}
-                      className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-500 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-300"
-                      aria-label={isCollapsed ? `Expandir ${section.name}` : `Colapsar ${section.name}`}
-                    >
-                      {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-                    </button>
                   </div>
                 </summary>
 
                 {!isCollapsed && (
                   <div
-                    className="space-y-0.5 pt-0.5"
+                    className="space-y-1.5 pt-2"
                     onClick={() => selectSection(sectionIndex, { seekAudio: true, scrollBehavior: 'smooth' })}
                   >
                     {section.lines.map((line, lineIndex) => {
@@ -1196,7 +1186,13 @@ export default function ModoEnsayoCompacto({
         </div>
       </main>
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200 bg-white/96 pb-[calc(env(safe-area-inset-bottom)+0.7rem)] pt-2.5 backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/96">
+      <div
+        className="ensayo-footer-shell fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200 bg-white/96 pb-[calc(env(safe-area-inset-bottom)+0.7rem)] pt-2.5 backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/96"
+        style={{
+          paddingLeft: 'calc(env(safe-area-inset-left) + 0.3rem)',
+          paddingRight: 'calc(env(safe-area-inset-right) + 0.3rem)',
+        }}
+      >
         <div className="mx-auto flex max-w-5xl items-center gap-3 px-4">
           <button
             type="button"
@@ -1257,6 +1253,37 @@ export default function ModoEnsayoCompacto({
               </p>
             )}
           </div>
+
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setLoopState((prev) => ((prev + 1) % 3))}
+              className={`relative flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors ${
+                loopState
+                  ? 'border-brand/35 bg-brand/10 text-brand'
+                  : 'border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
+              }`}
+              aria-label={loopState === 0 ? 'Loop apagado' : loopState === 1 ? 'Repetir todo' : 'Repetir seccion'}
+              title={loopState === 0 ? 'Loop apagado' : loopState === 1 ? 'Repetir todo' : 'Repetir seccion'}
+            >
+              {loopState === 1 ? <Repeat1 className="h-4.5 w-4.5" /> : <Repeat className="h-4.5 w-4.5" />}
+              {loopState === 2 && (
+                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-brand text-[9px] font-black text-white">
+                  S
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => console.log('Abrir menú de secuencias')}
+              className="flex h-10 w-10 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-500 transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              aria-label="Abrir herramientas"
+              title="Herramientas"
+            >
+              <SlidersHorizontal className="h-4.5 w-4.5" />
+            </button>
+          </div>
         </div>
       </div>
       <style>{`
@@ -1291,6 +1318,25 @@ export default function ModoEnsayoCompacto({
           box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
         }
 
+        .ensayo-header-slot {
+          --header-mask-step: 2.25rem;
+          height: var(--header-mask-step);
+        }
+
+        .ensayo-header-line {
+          height: var(--header-mask-step);
+        }
+
+        .ensayo-header-title {
+          font-size: 1.55rem;
+          line-height: 1;
+        }
+
+        .ensayo-header-artist {
+          font-size: 1.1rem;
+          line-height: 1;
+        }
+
         @keyframes ensayo-bpm-pulse {
           0% {
             transform: scale(1);
@@ -1316,6 +1362,83 @@ export default function ModoEnsayoCompacto({
 
         .dark .ensayo-bpm-chip.beat-active {
           background-color: rgba(24, 24, 27, 0.98);
+        }
+
+        .ensayo-header-mask {
+          animation: ensayo-header-rotate 8.4s infinite ease-in-out;
+          will-change: transform;
+        }
+
+        @keyframes ensayo-header-rotate {
+          0%,
+          34% {
+            transform: translateY(0);
+          }
+          40%,
+          72% {
+            transform: translateY(calc(var(--header-mask-step, 2.25rem) * -1));
+          }
+          78%,
+          100% {
+            transform: translateY(calc(var(--header-mask-step, 2.25rem) * -2));
+          }
+        }
+
+        @media (orientation: landscape) and (max-height: 540px) {
+          .ensayo-header-top {
+            gap: 0.55rem;
+            padding-top: calc(env(safe-area-inset-top) + 0.3rem);
+            padding-bottom: 0.2rem;
+          }
+
+          .ensayo-header-slot {
+            --header-mask-step: 1.75rem;
+          }
+
+          .ensayo-header-title {
+            font-size: 1.05rem;
+          }
+
+          .ensayo-header-artist {
+            font-size: 0.82rem;
+          }
+
+          .ensayo-control-chip,
+          .ensayo-header-top > button {
+            width: 2.35rem;
+            height: 2.35rem;
+            border-radius: 0.95rem;
+          }
+
+          .ensayo-control-chip {
+            font-size: 0.88rem;
+          }
+
+          .ensayo-section-map {
+            padding-bottom: 0.4rem;
+          }
+
+          .ensayo-section-chip {
+            min-width: 2rem !important;
+            height: 2rem !important;
+            font-size: 0.64rem !important;
+          }
+
+          .ensayo-sections-layout {
+            columns: 2;
+            column-gap: 0.85rem;
+          }
+
+          .ensayo-footer-shell {
+            padding-top: 0.55rem;
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .ensayo-header-mask,
+          .ensayo-bpm-chip.beat-active {
+            animation: none;
+          }
         }
       `}</style>
     </div>
