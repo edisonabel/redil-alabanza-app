@@ -332,6 +332,7 @@ export default function ModoEnsayoCompacto({
   const [transposeSteps, setTransposeSteps] = useState(0);
   const [isMetronomeOn, setIsMetronomeOn] = useState(false);
   const [loopState, setLoopState] = useState(0);
+  const [isLandscapeCompact, setIsLandscapeCompact] = useState(false);
 
   const audioRef = useRef(null);
   const headerRef = useRef(null);
@@ -557,7 +558,9 @@ export default function ModoEnsayoCompacto({
     })
   ), [activeSectionIndex, currentSections, markerBySectionIndex, sectionMapItems, timelineDuration]);
   const activeLoopSection = playbackSectionStrip[activeSectionIndex] || null;
-  const currentHeaderOffset = headerHidden ? 18 : headerHeight + 18;
+  const currentHeaderOffset = headerHidden
+    ? (isLandscapeCompact ? 8 : 18)
+    : headerHeight + (isLandscapeCompact ? 8 : 18);
 
   const stopMetronome = React.useCallback(() => {
     if (metronomeIntervalRef.current) {
@@ -626,8 +629,33 @@ export default function ModoEnsayoCompacto({
     }
     setTransposeSteps(0);
     setLoopState(0);
+    setHeaderHidden(isLandscapeCompact);
     stopMetronome();
-  }, [currentSongKey, currentSong?.mp3, stopMetronome]);
+  }, [currentSongKey, currentSong?.mp3, isLandscapeCompact, stopMetronome]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+
+    const mediaQuery = window.matchMedia('(orientation: landscape) and (max-height: 540px)');
+    const syncLandscapeCompact = (event) => {
+      const matches = typeof event?.matches === 'boolean' ? event.matches : mediaQuery.matches;
+      setIsLandscapeCompact((prev) => (prev === matches ? prev : matches));
+      setHeaderHidden((prev) => {
+        if (matches) return true;
+        return prev ? false : prev;
+      });
+    };
+
+    syncLandscapeCompact();
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', syncLandscapeCompact);
+      return () => mediaQuery.removeEventListener('change', syncLandscapeCompact);
+    }
+
+    mediaQuery.addListener(syncLandscapeCompact);
+    return () => mediaQuery.removeListener(syncLandscapeCompact);
+  }, []);
 
   useEffect(() => {
     const headerNode = headerRef.current;
@@ -665,15 +693,21 @@ export default function ModoEnsayoCompacto({
     const scroller = scrollRef.current;
     if (!scroller) return undefined;
 
-    const handleScroll = () => {
-      const currentTop = scroller.scrollTop;
+      const handleScroll = () => {
+        const currentTop = scroller.scrollTop;
 
-      if (currentTop > lastScrollTop.current + 8 && currentTop > 24) {
-        setHeaderHidden(true);
-      } else if (currentTop < lastScrollTop.current - 8 || currentTop < 12) {
-        setHeaderHidden(false);
-      }
-      lastScrollTop.current = currentTop;
+        if (isLandscapeCompact) {
+          if (currentTop < lastScrollTop.current - 8) {
+            setHeaderHidden(false);
+          } else if (currentTop > lastScrollTop.current + 8) {
+            setHeaderHidden(true);
+          }
+        } else if (currentTop > lastScrollTop.current + 8 && currentTop > 24) {
+          setHeaderHidden(true);
+        } else if (currentTop < lastScrollTop.current - 8 || currentTop < 12) {
+          setHeaderHidden(false);
+        }
+        lastScrollTop.current = currentTop;
 
       let nextSectionIndex = 0;
       sectionRefs.current.forEach((node, index) => {
@@ -688,7 +722,7 @@ export default function ModoEnsayoCompacto({
 
     scroller.addEventListener('scroll', handleScroll, { passive: true });
     return () => scroller.removeEventListener('scroll', handleScroll);
-  }, [currentHeaderOffset, currentSections.length]);
+  }, [currentHeaderOffset, currentSections.length, isLandscapeCompact]);
 
   useEffect(() => {
     if (activeSectionByAudioIndex < 0 || !scrollRef.current) return;
@@ -1040,9 +1074,9 @@ export default function ModoEnsayoCompacto({
 
       <main
         ref={scrollRef}
-        className="min-h-0 flex-1 overflow-y-auto pb-24 transition-[padding-top] duration-300"
+        className="ensayo-main-scroll min-h-0 flex-1 overflow-y-auto pb-24 transition-[padding-top] duration-300"
         style={{
-          paddingTop: `${currentHeaderOffset + 8}px`,
+          paddingTop: `${currentHeaderOffset + (isLandscapeCompact ? 4 : 8)}px`,
           paddingLeft: 'calc(env(safe-area-inset-left) + 0.75rem)',
           paddingRight: 'calc(env(safe-area-inset-right) + 0.75rem)',
         }}
@@ -1193,19 +1227,19 @@ export default function ModoEnsayoCompacto({
           paddingRight: 'calc(env(safe-area-inset-right) + 0.3rem)',
         }}
       >
-        <div className="mx-auto flex max-w-5xl items-center gap-3 px-4">
+        <div className="ensayo-footer-row mx-auto flex max-w-5xl items-center gap-3 px-4">
           <button
             type="button"
             onClick={handleTogglePlayback}
             disabled={!hasAudio}
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-white shadow-lg transition-transform active:scale-95 ${hasAudio ? 'bg-action' : 'bg-zinc-500/50 cursor-not-allowed shadow-none'}`}
+            className={`ensayo-footer-play flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-white shadow-lg transition-transform active:scale-95 ${hasAudio ? 'bg-action' : 'bg-zinc-500/50 cursor-not-allowed shadow-none'}`}
             aria-label={isPlaying ? 'Pausar ensayo' : 'Reproducir ensayo'}
           >
             {isPlaying ? <Pause className="h-4.5 w-4.5" /> : <Play className="ml-0.5 h-4.5 w-4.5" />}
           </button>
 
-          <div className="min-w-0 flex-1">
-            <div className="mb-1.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
+          <div className="ensayo-footer-timeline min-w-0 flex-1">
+            <div className="ensayo-footer-meta mb-1.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
               <span>{formatSeconds(audioCurrentTime)}</span>
               <span>{currentSections[activeSectionIndex]?.name || 'Sección'}</span>
               <span>{durationLabel}</span>
@@ -1227,7 +1261,7 @@ export default function ModoEnsayoCompacto({
               />
             </div>
             {playbackSectionStrip.length > 0 && (
-              <div className="relative mt-2 h-3">
+              <div className="ensayo-playback-strip relative mt-2 h-3">
                 {playbackSectionStrip.map((item) => (
                   <button
                     key={`footer-section-${item.index}`}
@@ -1254,11 +1288,11 @@ export default function ModoEnsayoCompacto({
             )}
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="ensayo-footer-actions flex shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={() => setLoopState((prev) => ((prev + 1) % 3))}
-              className={`relative flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors ${
+              className={`ensayo-footer-icon relative flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors ${
                 loopState
                   ? 'border-brand/35 bg-brand/10 text-brand'
                   : 'border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
@@ -1277,7 +1311,7 @@ export default function ModoEnsayoCompacto({
             <button
               type="button"
               onClick={() => console.log('Abrir menú de secuencias')}
-              className="flex h-10 w-10 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-500 transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              className="ensayo-footer-icon flex h-10 w-10 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-500 transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
               aria-label="Abrir herramientas"
               title="Herramientas"
             >
@@ -1388,7 +1422,7 @@ export default function ModoEnsayoCompacto({
           .ensayo-header-top {
             gap: 0.55rem;
             padding-top: calc(env(safe-area-inset-top) + 0.3rem);
-            padding-bottom: 0.2rem;
+            padding-bottom: 0.1rem;
           }
 
           .ensayo-header-slot {
@@ -1415,7 +1449,7 @@ export default function ModoEnsayoCompacto({
           }
 
           .ensayo-section-map {
-            padding-bottom: 0.4rem;
+            padding-bottom: 0.2rem;
           }
 
           .ensayo-section-chip {
@@ -1429,8 +1463,44 @@ export default function ModoEnsayoCompacto({
             column-gap: 0.85rem;
           }
 
+          .ensayo-main-scroll {
+            padding-bottom: 5.15rem !important;
+          }
+
           .ensayo-footer-shell {
-            padding-top: 0.55rem;
+            padding-top: 0.35rem;
+            padding-bottom: calc(env(safe-area-inset-bottom) + 0.35rem);
+          }
+
+          .ensayo-footer-row {
+            gap: 0.55rem;
+            align-items: flex-end;
+          }
+
+          .ensayo-footer-play,
+          .ensayo-footer-icon {
+            width: 2.7rem;
+            height: 2.7rem;
+            border-radius: 1rem;
+          }
+
+          .ensayo-footer-meta {
+            margin-bottom: 0.35rem;
+            font-size: 0.52rem;
+            letter-spacing: 0.16em;
+          }
+
+          .ensayo-footer-timeline .ensayo-seek {
+            height: 0.95rem;
+          }
+
+          .ensayo-playback-strip {
+            margin-top: 0.35rem;
+            height: 0.5rem;
+          }
+
+          .ensayo-playback-strip button {
+            height: 0.45rem;
           }
         }
 
