@@ -3,6 +3,7 @@ import '../../styles/global.css';
 import { createClient } from '@supabase/supabase-js';
 import EnsayoHub from '../../components/react/EnsayoHub.jsx';
 import ProPlayerGlobal from '../../components/ProPlayerGlobal.astro';
+import VocesModalGlobal from '../../components/VocesModalGlobal.astro';
 import { getBrandingConfig } from '../../lib/branding';
 
 const MOCK_CANCION_ENSAYO = {
@@ -601,5 +602,6 @@ const resolvedColorTokens = {
       initialSongId={initialSongId}
     />
     <ProPlayerGlobal />
+    <VocesModalGlobal />
   </body>
 </html>
