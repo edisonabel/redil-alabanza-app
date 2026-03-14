@@ -1037,7 +1037,7 @@ export default function AdminRepertorio() {
         </div>
       ) : (
         <div className="w-full overflow-hidden border-y border-border bg-surface shadow-sm">
-          <div className="admin-table-scroll h-[calc(100dvh-11.5rem-env(safe-area-inset-bottom))] min-h-[32rem] overflow-x-scroll overflow-y-auto bg-background md:h-[calc(100dvh-12.5rem-env(safe-area-inset-bottom))]">
+          <div className="admin-table-scroll h-[calc(90dvh-12.8rem-env(safe-area-inset-bottom))] min-h-[32rem] overflow-x-scroll overflow-y-auto bg-background md:h-[calc(90dvh-12.8rem-env(safe-area-inset-bottom))]">
             <table className="w-max text-left border-collapse bg-surface relative">
               <thead className="sticky top-0 z-20 bg-background border-b border-border shadow-sm">
                 <tr className="text-xs uppercase tracking-wider text-content-muted font-bold divide-x divide-border">
