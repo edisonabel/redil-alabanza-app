@@ -1,0 +1,41 @@
+---
+import EnsayoGlobalIsland from './react/EnsayoGlobalIsland.jsx';
+---
+
+<div id="ensayo-global-mount" transition:persist>
+  <EnsayoGlobalIsland client:only="react" />
+</div>
+
+<script>
+  // Singleton guard: only register listener once across SPA navigations
+  if (!window.__REDIL_ENSAYO_GLOBAL_READY__) {
+    window.__REDIL_ENSAYO_GLOBAL_READY__ = true;
+
+    document.addEventListener(
+      'click',
+      (event) => {
+        const btn = (event.target as Element).closest('.btn-open-ensayo');
+        if (!btn) return;
+        event.preventDefault();
+        event.stopPropagation();
+
+        const song = {
+          id:        (btn as HTMLElement).dataset.id    || '',
+          title:     (btn as HTMLElement).dataset.title  || '',
+          artist:    (btn as HTMLElement).dataset.artist || '',
+          key:       (btn as HTMLElement).dataset.key    || '',
+          bpm:       Number((btn as HTMLElement).dataset.bpm) || 0,
+          mp3:       (btn as HTMLElement).dataset.mp3    || '',
+          chordpro:  (btn as HTMLElement).dataset.chordpro || '',
+          linkVoces: (btn as HTMLElement).dataset.voces  || '',
+          linkYoutube: (btn as HTMLElement).dataset.youtube || '',
+        };
+
+        window.dispatchEvent(
+          new CustomEvent('open-ensayo-compacto', { detail: { song } }),
+        );
+      },
+      true, // capture phase so it fires before card's own click handler
+    );
+  }
+</script>

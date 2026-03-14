@@ -3,6 +3,7 @@ import '../styles/global.css';
 import BottomNav from '../components/BottomNav.astro';
 import ProPlayerGlobal from '../components/ProPlayerGlobal.astro';
 import VocesModalGlobal from '../components/VocesModalGlobal.astro';
+import EnsayoGlobal from '../components/EnsayoGlobal.astro';
 import NotificationBell from '../components/react/NotificationBell.jsx';
 import { getBrandingConfig, invalidarCacheBranding } from '../lib/branding';
 import { ClientRouter } from 'astro:transitions';
@@ -433,6 +434,7 @@ const themeColors = brandingData;
 
  <ProPlayerGlobal />
  <VocesModalGlobal />
+ <EnsayoGlobal />
 
  <!-- Barra de navegacion fija mobile-first -->
  <BottomNav />
