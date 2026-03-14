@@ -905,47 +905,32 @@ export default function AdminRepertorio() {
 
   return (
     <div className="antialiased w-full h-full flex flex-col">
-      <div className="mb-3 flex flex-col gap-3 px-3 md:px-5 xl:px-6">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <p className="min-w-0 text-sm leading-relaxed text-content-muted">
-            Vista compacta para cargar datos rapido. Las notas por seccion y los tiempos del ensayo viven dentro de <span className="font-semibold text-content">Editar / Sincronizar</span>.
-          </p>
-          <button
-            onClick={agregarCancion}
-            disabled={loading}
-            className="inline-flex min-h-[44px] items-center justify-center gap-2 self-start rounded-xl bg-brand px-5 py-2.5 font-bold text-white shadow transition-colors hover:bg-brand/90 disabled:opacity-50"
-          >
-            {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Plus className="h-5 w-5" />}
-            Anadir Cancion
-          </button>
-        </div>
+      <div className="mb-3 flex flex-wrap items-center gap-2 px-3 md:px-5 xl:px-6">
+        <button
+          onClick={agregarCancion}
+          disabled={loading}
+          className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl bg-brand px-5 py-2 font-bold text-white shadow transition-colors hover:bg-brand/90 disabled:opacity-50"
+        >
+          {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Plus className="h-5 w-5" />}
+          Anadir Cancion
+        </button>
 
-        <div className="flex flex-wrap items-center gap-2 text-xs md:text-sm">
-          <span className={`inline-flex min-h-[40px] items-center gap-2 rounded-full border px-3 py-2 font-semibold ${
-            cancionesPendientesChordpro.length > 0
-              ? 'border-amber-500/25 bg-amber-500/10 text-amber-600'
-              : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600'
-          }`}>
-            <span className="inline-flex min-w-[1.75rem] items-center justify-center rounded-full bg-white/70 px-2 py-1 text-[11px] font-black">
-              {cancionesPendientesChordpro.length}
-            </span>
-            Pendientes sin ChordPro
+        <span className={`inline-flex min-h-[40px] items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold md:text-sm ${
+          cancionesPendientesChordpro.length > 0
+            ? 'border-amber-500/25 bg-amber-500/10 text-amber-600'
+            : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600'
+        }`}>
+          <span className="inline-flex min-w-[1.75rem] items-center justify-center rounded-full bg-white/70 px-2 py-1 text-[11px] font-black">
+            {cancionesPendientesChordpro.length}
           </span>
+          Pendientes sin ChordPro
+        </span>
 
-          <span className="inline-flex min-h-[40px] items-center rounded-full border border-border bg-surface px-3 py-2 text-content-muted">
-            Nota por seccion: <code className="ml-2 text-[12px] font-semibold text-brand">[Intro|Pad y Piano]</code>
+        {!sectionMarkersDisponibles && (
+          <span className="inline-flex min-h-[40px] items-center rounded-full border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 md:text-sm">
+            Falta la migracion para guardar <code className="mx-1 text-[12px] font-semibold">section_markers</code>
           </span>
-
-          <span className="inline-flex min-h-[40px] items-center rounded-full border border-border bg-surface px-3 py-2 text-content-muted">
-            Tiempos: <span className="ml-2 font-semibold text-content">Editar / Sincronizar - panel derecho</span>
-          </span>
-
-          {!sectionMarkersDisponibles && (
-            <span className="inline-flex min-h-[40px] items-center rounded-full border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-amber-600">
-              Falta la migracion para guardar <code className="mx-1 text-[12px] font-semibold">section_markers</code>
-            </span>
-          )}
-        </div>
+        )}
       </div>
 
       <div className="hidden mb-6 flex-col sm:flex-row sm:items-center justify-between gap-4 px-4 max-w-7xl mx-auto w-full">
@@ -1051,7 +1036,7 @@ export default function AdminRepertorio() {
                   <th className="px-4 py-4 min-w-[8rem]">Categoria</th>
                   <th className="px-4 py-4 min-w-[8rem]">Voz</th>
                   <th className="px-4 py-4 min-w-[8rem]">Tema</th>
-                  <th className="px-4 py-4 min-w-[8rem]">Estado</th>
+                  <th className="px-4 py-4 min-w-[6rem]">Estado</th>
                   <th className="px-4 py-4 min-w-[10rem]">Youtube (URL)</th>
                   {/* Archivos R2 */}
                   <th className="px-4 py-4 text-center min-w-[8rem]">MP3</th>
