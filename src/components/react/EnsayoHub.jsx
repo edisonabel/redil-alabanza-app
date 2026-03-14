@@ -607,19 +607,6 @@ export default function EnsayoHub({
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => startQueue(0)}
-                  disabled={playableSongs.length === 0}
-                  className={`col-span-2 justify-self-start md:col-span-1 md:justify-self-end inline-flex h-11 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-black shadow-sm transition-colors ${
-                    playableSongs.length > 0
-                      ? 'bg-action text-white hover:bg-action/90'
-                      : 'cursor-not-allowed bg-zinc-300 text-zinc-500 shadow-none dark:bg-zinc-800 dark:text-zinc-500'
-                  }`}
-                >
-                  <Play className="ml-0.5 h-4 w-4" />
-                  Reproducir fila
-                </button>
               </div>
             </div>
         </div>
@@ -769,7 +756,7 @@ export default function EnsayoHub({
             <p className="truncate text-sm font-medium text-zinc-600 dark:text-zinc-300">
               {queueState.active
                 ? `${queueSongsRef.current[queueState.index]?.title || 'Reproduciendo setlist'}`
-                : 'Toca una canción para abrir el modo ensayo compacto o escucha la fila completa.'}
+                : 'Reproduce toda la fila.'}
             </p>
           </div>
 
