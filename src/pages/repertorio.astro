@@ -130,12 +130,13 @@ const firstTourResourcesId =
  tourResources={String(cancion.id) === String(firstTourResourcesId) ? 'repertorio-resources' : undefined}
  />
  ))}
- <!-- Empty state when filters match no songs -->
- <div id="emptyFilterState" class="hidden col-span-full flex-col items-center justify-center py-16 px-6 text-center">
-  <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mx-auto text-content-muted/40 mb-4"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-  <p class="text-lg font-bold text-content-muted">No se encontraron canciones</p>
-  <p class="mt-1 text-sm text-content-muted/70">Intenta con otros filtros o busca algo diferente</p>
  </div>
+
+ <!-- Empty state when filters match no songs -->
+ <div id="emptyFilterState" style="display:none" class="max-w-7xl mx-auto flex flex-col items-center justify-center py-20 px-6 text-center">
+  <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-content-muted mb-4" style="opacity:0.35"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+  <p class="text-lg font-bold text-content-muted">No se encontraron canciones</p>
+  <p class="mt-1 text-sm text-content-muted" style="opacity:0.6">Intenta con otros filtros o busca algo diferente</p>
  </div>
 
  <!-- Centinela para Infinite Scroll -->
