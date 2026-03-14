@@ -132,6 +132,13 @@ const firstTourResourcesId =
  ))}
  </div>
 
+ <!-- Empty state when filters match no songs -->
+ <div id="emptyFilterState" class="hidden col-span-full flex flex-col items-center justify-center py-16 px-6 text-center">
+  <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-content-muted/40 mb-4"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+  <p class="text-lg font-bold text-content-muted">No se encontraron canciones</p>
+  <p class="mt-1 text-sm text-content-muted/70">Intenta con otros filtros o busca algo diferente</p>
+ </div>
+
  <!-- Centinela para Infinite Scroll -->
  <div id="scroll-sentinel" class="h-4 w-full mt-8"></div>
 
@@ -389,9 +396,9 @@ if (sessionError || !session) {
  const header = card.querySelector('.card-header');
  if (header) {
  addListener(header, 'click', (e) => {
- // Prevent toggling if user clicked the Add to Setlist button
- if ((e.target as Element).closest('.btn-add-setlist')) return;
- 
+ // Prevent toggling if user clicked an interactive badge or button
+ if ((e.target as Element).closest('.btn-add-setlist, .badge-bpm, .badge-tono, .btn-open-ensayo, .btn-open-voces, .btn-open-mp3')) return;
+
  if (isListView) {
  card.classList.toggle('expandido');
  }
@@ -536,39 +543,41 @@ if (sessionError || !session) {
 
 // ----- Metronomo Interactivo Logic -----
 
-function playClick() {
+async function playClick() {
 const audioCtx = getSharedAudioCtx();
 if (!audioCtx) return;
-if (audioCtx.state === 'suspended') audioCtx.resume();
- 
+if (audioCtx.state === 'suspended') {
+ try { await audioCtx.resume(); } catch { /* no-op */ }
+}
+
  const osc = audioCtx.createOscillator();
  const gainNode = audioCtx.createGain();
- 
+
  osc.connect(gainNode);
  gainNode.connect(audioCtx.destination);
- 
+
  osc.type = 'sine';
  osc.frequency.setValueAtTime(800, audioCtx.currentTime);
- 
+
  gainNode.gain.setValueAtTime(1, audioCtx.currentTime);
  gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
- 
+
  osc.start(audioCtx.currentTime);
  osc.stop(audioCtx.currentTime + 0.1);
  }
- 
- addListener(document, 'click', (e) => {
+
+ addListener(document, 'click', async (e) => {
  const badge = (e.target as Element).closest('.badge-bpm');
  if (badge) {
  const bpmStr = badge.getAttribute('data-bpm');
  if (!bpmStr) return;
- 
+
  const bpmVal = parseInt(bpmStr.replace(/[^0-9]/g, ''), 10);
  if (!bpmVal || bpmVal <= 0) return;
- 
+
  const dot = badge.querySelector('.metronomo-dot') as HTMLElement;
  if (!dot) return;
- 
+
  if (metronomeState.activeDot && metronomeState.activeDot !== dot) {
  stopMetronome();
  }
@@ -584,7 +593,7 @@ if (audioCtx.state === 'suspended') audioCtx.resume();
  dot.classList.add('beat-active');
  metronomeState.activeDot = dot;
 
- playClick();
+ await playClick();
  metronomeState.intervalId = window.setInterval(playClick, duracionSegundos * 1000);
  }
 });
@@ -596,18 +605,20 @@ if (audioCtx.state === 'suspended') audioCtx.resume();
  'Bb': 466.16, 'B': 493.88
  };
  
- addListener(document, 'click', (e) => {
+ addListener(document, 'click', async (e) => {
  const badgeTono = (e.target as Element).closest('.badge-tono');
  if (badgeTono) {
  let tono = badgeTono.getAttribute('data-tono');
  if (!tono || tono.trim() === '-' || tono.trim() === '') return;
- 
+
  tono = tono.replace(/m/g, '').trim();
  const frecuencia = frecuencias[tono];
- 
+
  const audioCtx = getSharedAudioCtx();
  if (frecuencia && audioCtx) {
- if (audioCtx.state === 'suspended') audioCtx.resume();
+ if (audioCtx.state === 'suspended') {
+  try { await audioCtx.resume(); } catch { /* no-op */ }
+ }
  
  const oscPrincipal = audioCtx.createOscillator();
  oscPrincipal.type = 'triangle';
@@ -840,6 +851,7 @@ const clearPlaylistSelection = () => {
  // BLOQUE 3: INFINITE SCROLL & BUSQUEDA (COMPARTIDO MODO NORMAL Y PLAYLIST)
  // =============================================
  const sentinel = document.getElementById('scroll-sentinel');
+ const emptyState = document.getElementById('emptyFilterState');
  const todasLasCanciones = Array.from(cards);
  todasLasCanciones.forEach((card, index) => {
   card.dataset.originalIndex = String(index);
@@ -968,6 +980,18 @@ function filterCards() {
  applySongOrder(cancionesFiltradas);
 
  todasLasCanciones.forEach(card => card.style.display = 'none');
+
+ // Show/hide empty state
+ if (emptyState) {
+  if (cancionesFiltradas.length === 0) {
+   emptyState.classList.remove('hidden');
+   emptyState.classList.add('flex');
+  } else {
+   emptyState.classList.add('hidden');
+   emptyState.classList.remove('flex');
+  }
+ }
+
  cargarMasCanciones();
  }
 
