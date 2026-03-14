@@ -957,9 +957,8 @@ export default function ModoEnsayoCompacto({
           } else if (currentTop > lastScrollTop.current + 8) {
             setHeaderHidden(true);
           }
-        } else if (currentTop > lastScrollTop.current + 8 && currentTop > 24) {
-          setHeaderHidden(true);
-        } else if (currentTop < lastScrollTop.current - 8 || currentTop < 12) {
+        } else {
+          // Portrait: header always visible — safe zone for notch / dynamic island
           setHeaderHidden(false);
         }
         lastScrollTop.current = currentTop;
@@ -1002,7 +1001,9 @@ export default function ModoEnsayoCompacto({
 
     const scrollerRect = scroller.getBoundingClientRect();
     const nodeRect = node.getBoundingClientRect();
-    const targetTop = scroller.scrollTop + (nodeRect.top - scrollerRect.top) - currentHeaderOffset;
+    // Extra 14px breathing room so the section label doesn't sit flush against the header
+    const SECTION_TOP_PAD = 14;
+    const targetTop = scroller.scrollTop + (nodeRect.top - scrollerRect.top) - currentHeaderOffset - SECTION_TOP_PAD;
     return Math.max(0, targetTop);
   };
 
