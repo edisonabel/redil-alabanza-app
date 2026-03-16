@@ -132,7 +132,26 @@ const firstTourResourcesId =
  ))}
  </div>
 
- <!-- Centinela para Infinite Scroll -->
+ <!-- Estado vacío — sin resultados de filtros -->
+<div id="emptyFilterState" class="hidden max-w-7xl mx-auto px-4 py-6">
+  <div class="relative overflow-hidden rounded-[2rem] border border-dashed border-zinc-200 bg-gradient-to-br from-white to-zinc-50/80 dark:border-white/[0.08] dark:from-zinc-900 dark:to-zinc-950/90 px-8 py-16 flex flex-col items-center justify-center text-center gap-5 shadow-[0_8px_40px_rgba(15,23,42,0.04)] dark:shadow-[0_8px_40px_rgba(2,6,23,0.3)]">
+    <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,rgba(59,130,246,0.07),transparent)] dark:bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,rgba(59,130,246,0.12),transparent)]"></div>
+    <div class="relative flex items-center justify-center w-20 h-20 rounded-full bg-zinc-100 dark:bg-zinc-800/80 shadow-inner">
+      <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-400 dark:text-zinc-500"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><path d="M8 11h6"/></svg>
+      <span class="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" class="text-zinc-500 dark:text-zinc-400"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+    </div>
+    <div class="relative flex flex-col gap-2 max-w-sm">
+      <p class="text-xl font-black tracking-tight text-zinc-900 dark:text-zinc-50">Sin canciones para esos filtros</p>
+      <p class="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">No encontramos canciones con esa combinacion. Intenta con otros filtros o limpia la busqueda.</p>
+    </div>
+    <button id="btnResetFilters" class="relative mt-1 inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-zinc-900 text-white text-sm font-bold hover:bg-zinc-700 transition-all shadow-md dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+      Limpiar filtros
+    </button>
+  </div>
+</div>
+
+<!-- Centinela para Infinite Scroll -->
  <div id="scroll-sentinel" class="h-4 w-full mt-8"></div>
 
  <!-- Panel Flotante Setlist (modo normal) -->
@@ -328,6 +347,8 @@ if (sessionError || !session) {
  const btnViewGrid = document.getElementById('btnViewGrid');
  const btnViewList = document.getElementById('btnViewList');
  const gridCanciones = document.getElementById('gridCanciones');
+ const emptyFilterState = document.getElementById('emptyFilterState');
+ const btnResetFilters = document.getElementById('btnResetFilters');
  
  // Obtenemos todos los <article> dentro del grid
  const cards = document.querySelectorAll('#gridCanciones article') as NodeListOf<HTMLElement>;
@@ -991,9 +1012,25 @@ function filterCards() {
 
  todasLasCanciones.forEach(card => card.style.display = 'none');
  cargarMasCanciones();
+
+ // Show/hide empty state
+ if (emptyFilterState) {
+  emptyFilterState.classList.toggle('hidden', cancionesFiltradas.length > 0);
+ }
  }
 
  const debouncedFilterCards = debounce(filterCards, 300);
+
+ // Limpiar filtros button
+ if (btnResetFilters) {
+  addListener(btnResetFilters, 'click', () => {
+   if (searchInput) (searchInput as HTMLInputElement).value = '';
+   if (filterVoz) (filterVoz as HTMLSelectElement).value = 'Todas';
+   if (filterCategoria) (filterCategoria as HTMLSelectElement).value = 'Todas';
+   if (filterTema) (filterTema as HTMLSelectElement).value = 'Todas';
+   filterCards();
+  });
+ }
 
  if(searchInput) addListener(searchInput, 'input', debouncedFilterCards);
  if(filterVoz) addListener(filterVoz, 'change', debouncedFilterCards);
