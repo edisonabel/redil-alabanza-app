@@ -95,7 +95,7 @@ const firstTourResourcesId =
  <div class="max-w-7xl mx-auto mb-2 md:mb-4 mt-2 md:mt-8 flex justify-between items-center px-2 md:px-0">
  <h3 class="text-xl font-bold text-content mb-2 md:mb-4">Setlist</h3>
  <div id="viewToggleContainer" class="flex bg-surface flex-shrink-0 mb-2 md:mb-4 rounded-lg p-1 border border-border h-fit">
- <button id="btnViewGrid" class="p-1.5 rounded-md bg-surface text-content shadow-sm border border-border transition-all" title="Vista de Cuadr&iacute;cula">
+ <button id="btnViewGrid" class="p-1.5 rounded-md view-btn-active transition-all" title="Vista de Cuadr&iacute;cula">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
  </button>
  <button id="btnViewList" class="p-1.5 rounded-md text-content-muted hover:text-content transition-all" title="Vista de Lista">
@@ -138,7 +138,7 @@ const firstTourResourcesId =
  <!-- Panel Flotante Setlist (modo normal) -->
 <div id="setlistPanel" class="fixed bottom-[calc(env(safe-area-inset-bottom)+5rem)] md:bottom-24 left-3 right-3 md:left-auto md:right-6 bg-background border border-border text-content p-3 md:p-4 rounded-xl md:rounded-2xl shadow-2xl z-50 flex items-center justify-between gap-3 md:gap-4 hidden transition-opacity">
  <div class="font-semibold text-sm md:text-base whitespace-nowrap">
- Setlist: <span id="setlistCount" class="text-action">0</span>
+ Setlist: <span id="setlistCount" class="text-blue-600 font-extrabold">0</span>
  </div>
  <div class="flex items-center gap-2 shrink-0">
  <button id="btnCopySetlist" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold transition-colors shadow-[0_0_14px_rgba(37,99,235,0.45)]">Copiar Enlace</button>
@@ -371,10 +371,10 @@ if (sessionError || !session) {
  // Update button styles
  const updateBtns = (gridBtn: HTMLElement | null, listBtn: HTMLElement | null) => {
  if(!gridBtn || !listBtn) return;
- listBtn.classList.add('bg-background', 'text-white', 'shadow-sm');
- listBtn.classList.remove('text-content-muted', 'hover:text-content');
- gridBtn.classList.remove('bg-background', 'text-white', 'shadow-sm');
- gridBtn.classList.add('text-content-muted', 'hover:text-content');
+ listBtn.classList.add('view-btn-active');
+ listBtn.classList.remove('text-content-muted');
+ gridBtn.classList.remove('view-btn-active');
+ gridBtn.classList.add('text-content-muted');
  };
  
  updateBtns(btnViewGrid, btnViewList);
@@ -1028,7 +1028,9 @@ function filterCards() {
  body.tema-claro #btn-theme-toggle { background-color: #ffffff; color: #111827; border-color: #d1d5db; }
  body.tema-claro #btn-theme-toggle:hover { background-color: #f3f4f6; }
  body.tema-claro #viewToggleContainer { background-color: #e5e7eb; border-color: #d1d5db; }
- body.tema-claro #btnViewGrid.bg-background, body.tema-claro #btnViewList.bg-background { background-color: #ffffff; color: #111827; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); }
+ /* Toggle activo: zinc-900 fondo siempre legible en claro y oscuro */
+ .view-btn-active { background-color: #18181b; color: #ffffff; box-shadow: 0 1px 4px rgba(0,0,0,0.25); border-radius: 0.375rem; }
+ body.tema-claro .view-btn-active { background-color: #18181b; color: #ffffff; }
  body.tema-claro #btnViewGrid.text-content-muted, body.tema-claro #btnViewList.text-content-muted { color: #6b7280; }
  body.tema-claro #btnViewGrid.text-content-muted:hover, body.tema-claro #btnViewList.text-content-muted:hover { color: #111827; }
  
@@ -1072,6 +1074,9 @@ function filterCards() {
   /* Show quick-action play button only in list mode */
  .modo-lista .list-play-btn {
    display: flex !important;
+   top: 50% !important;
+   transform: translateY(-50%) !important;
+   right: 4.5rem !important;
  }
  .modo-lista .card-content {
    display: none;
