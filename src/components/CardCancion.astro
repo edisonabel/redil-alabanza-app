@@ -1,4 +1,4 @@
-﻿---
+---
 interface Props {
 	cancionId?: string | number;
 	titulo: string;
@@ -42,19 +42,30 @@ const isValidVoces = rawVoces !== '' && rawVoces !== '-' && rawVocesNormalized !
 
 const estadoNormalized = (estado || '').toLowerCase().trim();
 
-let colorEstado = 'bg-neutral-600 text-white'; // Fallback para etiquetas personalizadas no mapeadas
+let colorEstado = 'bg-neutral-600 text-white';
 if (estadoNormalized === 'nueva') {
-  colorEstado = 'bg-emerald-500 text-white animate-pulse'; // Verde
+  colorEstado = 'bg-emerald-500 text-white animate-pulse';
 } else if (estadoNormalized === 'recurrente') {
-  colorEstado = 'bg-red-500 text-white'; // Rojo
+  colorEstado = 'bg-red-500 text-white';
 } else if (estadoNormalized === 'activa') {
-  colorEstado = 'bg-action text-white';
+  colorEstado = 'bg-teal-500 text-white';
 } else if (estadoNormalized === 'ensayo') {
-  colorEstado = 'bg-yellow-500 text-black'; // Amarillo (Manteniendo retrocompatibilidad)
+  colorEstado = 'bg-yellow-500 text-black';
 }
+
+const hasMp3 = linkMp3.trim() !== '';
+const hasChordpro = chordpro.trim() !== '';
+const hasYoutube = linkYoutube.trim() !== '';
+const hasAcordes = linkAcordes.trim() !== '';
+const hasLetra = linkLetra.trim() !== '';
+const hasSecuencias = linkSecuencias.trim() !== '';
+
+/* Primary CTA logic: Reproducir > Ensayar */
+const primaryIsMp3 = hasMp3;
+const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
 ---
 
-<article class:list={["relative bg-surface border border-border rounded-2xl hover:border-border transition-all duration-300 shadow-xl hover:shadow-2xl overflow-visible card-container card-cancion", { "cancion-oculta": oculta }]}
+<article class:list={["relative border border-zinc-200/80 rounded-[2rem] transition-all duration-300 shadow-[0_24px_80px_rgba(15,23,42,0.06)] hover:shadow-[0_24px_80px_rgba(15,23,42,0.12)] hover:scale-[1.01] active:scale-[0.99] overflow-visible card-container card-cancion bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.10),_transparent_40%),linear-gradient(180deg,_rgba(255,255,255,0.99),_rgba(244,244,245,0.97))] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.22),_transparent_34%),linear-gradient(180deg,_rgba(9,9,11,0.98),_rgba(15,23,42,0.94))] dark:backdrop-blur-xl dark:shadow-[0_28px_80px_rgba(2,6,23,0.5)]", { "cancion-oculta": oculta }]}
  data-id={String(cancionId || '')}
  data-titulo={(titulo || '').toLowerCase()}
  data-cancion={titulo || ''}
@@ -64,119 +75,204 @@ if (estadoNormalized === 'nueva') {
  data-voz={voz || ''}
  data-tema={tema || ''}
  data-tour={tourCard || undefined}>
- 
+
  {estado && estado.trim() !== '' && (
- <span class={`absolute top-0 right-0 -mt-2 -mr-2 px-3 py-1 text-[10px] md:text-xs font-black uppercase rounded-lg shadow-lg z-20 transform rotate-3 ${colorEstado}`}>
+ <span class={`absolute top-0 right-0 -mt-2 -mr-2 px-3 py-1 text-[10px] font-black uppercase tracking-[0.08em] rounded-full shadow-md z-20 transform rotate-3 ${colorEstado}`}>
  {estado}
  </span>
  )}
- <div class="card-header cursor-pointer relative z-10 flex flex-col pt-5 px-5 pb-5">
- <button class="btn-add-setlist absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full border-2 border-border bg-transparent text-content-muted hover:border-content-muted hover:text-content transition-colors" title="A&ntilde;adir a Setlist" data-id={String(cancionId || '')} data-cancion={titulo}>
- <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
- </button>
- <h3 class="text-xl md:text-2xl font-bold tracking-tight mb-0.5 pr-12 transition-all card-title">{titulo}</h3>
- {cantante && <p class="text-sm font-medium text-content-muted mb-3 line-clamp-1 pr-12">{cantante}</p>}
- {!cantante && <div class="mb-3"></div>}
- <div class="flex flex-wrap gap-2 text-xs card-badges transition-all">
- <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-background border border-border text-content tracking-wide badge-tono cursor-pointer hover:bg-border transition-colors dark:bg-surface/80 dark:border-white/60 dark:text-white" data-tono={tonalidad || ""}>
- <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5 text-content-muted"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
- Key: {tonalidad || "-"}
- </span>
- <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-background border border-border text-content tracking-wide badge-bpm cursor-pointer hover:bg-border transition-colors dark:bg-surface/80 dark:border-white/60 dark:text-white" data-bpm={bpm || 0}>
- <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5 text-content-muted"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
- {bpm || 0} BPM
- <span class="w-2 h-2 rounded-full bg-content-muted inline-block ml-2 metronomo-dot transition-colors"></span>
- </span>
- {voz && (
- <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-background border border-border text-content tracking-wide badge-voz dark:bg-surface/80 dark:border-white/60 dark:text-white">
- <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5 text-content-muted"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg>
- {voz}
- </span>
- )}
- {categoria && (
- <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-background border border-border text-content tracking-wide badge-categoria dark:bg-surface/80 dark:border-white/60 dark:text-white">
- <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5 text-content-muted"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
- {categoria}
- </span>
- )}
+
+ <div class="card-header cursor-pointer relative z-10 flex flex-col pt-5 px-5 pb-4">
+   {/* Botón setlist */}
+   <button class="btn-add-setlist absolute top-4 right-4 h-10 w-10 flex items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-400 shadow-sm hover:bg-zinc-50 hover:text-zinc-700 transition-all dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" title="A&ntilde;adir a Setlist" data-id={String(cancionId || '')} data-cancion={titulo}>
+     <svg class="setlist-icon-plus" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+     <svg class="setlist-icon-check hidden" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+   </button>
+
+   {/* Botón de play rápido — solo visible en modo lista */}
+   {hasMp3 && (
+   <button
+     type="button"
+     data-mp3={linkMp3}
+     data-title={titulo}
+     data-artist={cantante || ''}
+     class="list-play-btn btn-open-mp3 hidden absolute top-4 right-16 h-10 w-10 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-600 shadow-sm hover:bg-zinc-50 hover:text-zinc-900 transition-all dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+     title="Reproducir">
+     <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"></path></svg>
+   </button>
+   )}
+   {!hasMp3 && hasChordpro && (
+   <button
+     type="button"
+     data-id={cancionId}
+     data-title={titulo}
+     data-artist={cantante}
+     data-key={tonalidad}
+     data-bpm={bpm}
+     data-mp3={linkMp3}
+     data-chordpro={chordpro}
+     data-voces={vocesPayload}
+     data-youtube={linkYoutube}
+     class="list-play-btn btn-open-ensayo hidden absolute top-4 right-16 h-10 w-10 items-center justify-center rounded-2xl border border-indigo-300/60 bg-indigo-50 text-indigo-700 shadow-sm hover:bg-indigo-100 transition-all dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300"
+     title="Ensayar">
+     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+   </button>
+   )}
+
+   <h3 class="text-lg md:text-xl font-black tracking-tight text-zinc-950 mb-0.5 pr-14 transition-all card-title dark:text-zinc-50">{titulo}</h3>
+   {cantante && <p class="text-sm text-zinc-500 mb-3 line-clamp-1 pr-14 dark:text-zinc-400">{cantante}</p>}
+   {!cantante && <div class="mb-3"></div>}
+
+   <div class="flex items-center gap-2 overflow-x-auto pb-1 card-badges transition-all [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+     <span class="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-700 badge-tono cursor-pointer hover:bg-zinc-100 transition-colors dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800" data-tono={tonalidad || ""}>
+       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5 text-zinc-400 dark:text-zinc-500"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+       {tonalidad || "-"}
+     </span>
+
+     <span class="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-700 badge-bpm cursor-pointer hover:bg-zinc-100 transition-colors dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800" data-bpm={bpm || 0}>
+       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5 text-zinc-400 dark:text-zinc-500"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+       {bpm || 0}
+       <span class="w-1.5 h-1.5 rounded-full bg-zinc-300 inline-block ml-1.5 metronomo-dot transition-colors dark:bg-zinc-600"></span>
+     </span>
+
+     {voz && (
+     <span class="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-700 badge-voz dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-200">
+       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5 text-zinc-400 dark:text-zinc-500"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg>
+       {voz}
+     </span>
+     )}
+
+     {categoria && (
+     <span class="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 badge-categoria dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-400">
+       {categoria}
+     </span>
+     )}
+   </div>
  </div>
- </div>
- 
- <div class="card-content transition-all duration-300 overflow-hidden px-5 pb-5">
- <div class="grid grid-cols-2 gap-3 mt-2" data-tour={tourResources || undefined}>
- 
-{chordpro.trim() !== '' && (
- <a href="#" 
- data-chordpro={chordpro}
- data-titulo={titulo}
- data-bpm={bpm}
- data-key={tonalidad}
- class="btn-editor col-span-2 flex items-center justify-center py-2.5 rounded-xl bg-action text-white shadow-md hover:bg-action/80 transition-colors font-bold text-sm tracking-wide">
- <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
- Transponer / PDF
- </a>
-)}
 
- {linkMp3.trim() !== '' && (
- <button
- type="button"
- data-mp3={linkMp3}
- data-title={titulo}
- data-artist={cantante || ''}
- data-tour={tourAudio || undefined}
- class="btn-open-mp3 col-span-2 flex items-center justify-center py-2.5 rounded-xl bg-action/10 text-action hover:bg-action/20 transition-colors font-bold text-sm tracking-wide"
- >
- <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" class="mr-2"><path d="M8 5v14l11-7z"></path></svg>
- Reproducir
- </button>
- )}
+ <div class="card-content transition-all duration-300 overflow-hidden px-5 pb-5" data-tour={tourResources || undefined}>
 
- {linkYoutube.trim() !== '' && (
- <a href={linkYoutube} 
- target="_blank" rel="noopener noreferrer"
- class="flex items-center justify-center py-2.5 rounded-xl bg-danger/10 text-danger hover:bg-danger/20 hover:text-danger transition-colors font-bold text-sm tracking-wide">
- <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" class="mr-2"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path><polygon fill="white" stroke="none" points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon></svg>
- YouTube
- </a>
- )}
+   {/* ── Primary CTA ─────────────────────────────── */}
+   {primaryIsMp3 && (
+   <button
+     type="button"
+     data-mp3={linkMp3}
+     data-title={titulo}
+     data-artist={cantante || ''}
+     data-tour={tourAudio || undefined}
+     class="btn-open-mp3 group/play flex items-center justify-center gap-2 h-11 w-full rounded-2xl bg-zinc-950 text-white font-bold text-sm tracking-wide shadow-md transition-all hover:bg-zinc-800 hover:shadow-lg active:scale-[0.98] dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-100">
+     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"></path></svg>
+     Reproducir
+   </button>
+   )}
 
- {linkLetra.trim() !== '' && (
- <a href={linkLetra} 
- target="_blank" rel="noopener noreferrer"
- class="flex items-center justify-center py-2.5 rounded-xl bg-info/10 text-info hover:bg-info/20 hover:text-info transition-colors font-bold text-sm tracking-wide">
- Letra
- </a>
- )}
+   {showEnsayarAsPrimary && (
+   <button
+     type="button"
+     data-id={cancionId}
+     data-title={titulo}
+     data-artist={cantante}
+     data-key={tonalidad}
+     data-bpm={bpm}
+     data-mp3={linkMp3}
+     data-chordpro={chordpro}
+     data-voces={vocesPayload}
+     data-youtube={linkYoutube}
+     class="btn-open-ensayo group/play flex items-center justify-center gap-2 h-11 w-full rounded-2xl bg-indigo-600 text-white font-bold text-sm tracking-wide shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-[0.98] dark:bg-indigo-500 dark:hover:bg-indigo-400">
+     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+     Ensayar
+   </button>
+   )}
 
- {linkAcordes.trim() !== '' && (
- <a href={linkAcordes} 
- target="_blank" rel="noopener noreferrer"
- class="flex items-center justify-center py-2.5 rounded-xl bg-success/10 text-success hover:bg-success/20 hover:text-success transition-colors font-bold text-sm tracking-wide">
- Acordes
- </a>
- )}
+   {/* ── Secondary Actions Strip (pills con texto) ── */}
+   <div class="flex items-center flex-wrap gap-2 mt-3">
 
- {isValidVoces && (
-  <button
-  type="button"
-  data-voces={vocesPayload}
- data-title={titulo}
- data-artist={cantante || ''}
- class="btn-open-voces flex items-center justify-center py-2.5 rounded-xl bg-warning/10 text-warning hover:bg-warning/20 hover:text-warning transition-colors font-bold text-sm tracking-wide">
- Voces
- </button>
- )}
+     {/* Ensayar (secondary when MP3 is primary) */}
+     {primaryIsMp3 && hasChordpro && (
+     <button
+       type="button"
+       data-id={cancionId}
+       data-title={titulo}
+       data-artist={cantante}
+       data-key={tonalidad}
+       data-bpm={bpm}
+       data-mp3={linkMp3}
+       data-chordpro={chordpro}
+       data-voces={vocesPayload}
+       data-youtube={linkYoutube}
+       class="btn-open-ensayo h-9 rounded-xl border border-indigo-300/60 bg-indigo-50 shadow-sm inline-flex items-center gap-1.5 px-3 text-[12px] font-bold text-indigo-700 hover:bg-indigo-100 transition-all active:scale-95 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/16">
+       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+       Ensayar
+     </button>
+     )}
 
- {linkSecuencias.trim() !== '' && (
- <a href={linkSecuencias} 
- target="_blank" rel="noopener noreferrer"
- class="flex items-center justify-center py-2.5 rounded-xl bg-accent/10 text-accent hover:bg-accent/20 hover:text-accent transition-colors font-bold text-sm tracking-wide">
- Secuencia
- </a>
- )}
+     {/* Reproducir (secondary when Ensayar is primary) */}
+     {showEnsayarAsPrimary && hasMp3 && (
+     <button
+       type="button"
+       data-mp3={linkMp3}
+       data-title={titulo}
+       data-artist={cantante || ''}
+       data-tour={tourAudio || undefined}
+       class="btn-open-mp3 h-9 rounded-xl border border-zinc-200 bg-white shadow-sm inline-flex items-center gap-1.5 px-3 text-[12px] font-bold text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 transition-all active:scale-95 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">
+       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"></path></svg>
+       Reproducir
+     </button>
+     )}
 
- </div>
+     {/* Acordes */}
+     {hasAcordes && (
+     <a href={linkAcordes}
+       target="_blank" rel="noopener noreferrer"
+       class="h-9 rounded-xl border border-zinc-200 bg-white shadow-sm inline-flex items-center gap-1.5 px-3 text-[12px] font-bold text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 transition-all active:scale-95 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">
+       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path><path d="M8 7h6"></path><path d="M8 11h8"></path></svg>
+       Acordes
+     </a>
+     )}
+
+     {/* Voces */}
+     {isValidVoces && (
+     <button
+       type="button"
+       data-voces={vocesPayload}
+       data-title={titulo}
+       data-artist={cantante || ''}
+       class="btn-open-voces h-9 rounded-xl border border-teal-300/60 bg-teal-50 shadow-sm inline-flex items-center gap-1.5 px-3 text-[12px] font-bold text-teal-700 hover:bg-teal-100 transition-all active:scale-95 dark:border-teal-500/25 dark:bg-teal-500/10 dark:text-teal-300 dark:hover:bg-teal-500/16">
+       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg>
+       Voces
+     </button>
+     )}
+
+     {/* YouTube */}
+     {hasYoutube && (
+     <a href={linkYoutube}
+       target="_blank" rel="noopener noreferrer"
+       class="h-9 rounded-xl border border-red-200/80 bg-red-50 shadow-sm inline-flex items-center gap-1.5 px-3 text-[12px] font-bold text-red-600 hover:bg-red-100 transition-all active:scale-95 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/16">
+       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path><polygon fill="white" stroke="none" points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon></svg>
+       YouTube
+     </a>
+     )}
+
+     {/* Letra */}
+     {hasLetra && (
+     <a href={linkLetra}
+       target="_blank" rel="noopener noreferrer"
+       class="h-9 rounded-xl border border-zinc-200 bg-white shadow-sm inline-flex items-center gap-1.5 px-3 text-[12px] font-bold text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 transition-all active:scale-95 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">
+       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 6.1H3"></path><path d="M21 12.1H3"></path><path d="M15.1 18H3"></path></svg>
+       Letra
+     </a>
+     )}
+
+     {/* Secuencias */}
+     {hasSecuencias && (
+     <a href={linkSecuencias}
+       target="_blank" rel="noopener noreferrer"
+       class="h-9 rounded-xl border border-zinc-200 bg-white shadow-sm inline-flex items-center gap-1.5 px-3 text-[12px] font-bold text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 transition-all active:scale-95 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">
+       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="14" y="3" rx="1"></rect><path d="M10 21V8a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5a1 1 0 0 0-1-1H3"></path></svg>
+       Secuencias
+     </a>
+     )}
+   </div>
+
  </div>
 </article>
-
-

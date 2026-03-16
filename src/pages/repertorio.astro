@@ -141,7 +141,7 @@ const firstTourResourcesId =
  Setlist: <span id="setlistCount" class="text-action">0</span>
  </div>
  <div class="flex items-center gap-2 shrink-0">
- <button id="btnCopySetlist" class="px-3.5 py-2 bg-action hover:bg-action/80 text-white rounded-lg text-sm font-bold transition-colors">Copiar Enlace</button>
+ <button id="btnCopySetlist" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold transition-colors shadow-[0_0_14px_rgba(37,99,235,0.45)]">Copiar Enlace</button>
  <button id="btnClearSetlist" class="px-3.5 py-2 bg-neutral/20 text-neutral hover:bg-neutral-300 rounded-lg text-sm font-bold transition-colors">Limpiar</button>
  </div>
  </div>
@@ -363,7 +363,7 @@ if (sessionError || !session) {
  isListView = true;
  
  // Switch classes on container to vertical flow
- gridCanciones.className = 'flex flex-col gap-3 max-w-4xl mx-auto';
+ gridCanciones.className = 'flex flex-col gap-3 max-w-7xl mx-auto';
  
  // Add list mode to all cards
  cards.forEach(card => card.classList.add('modo-lista'));
@@ -435,23 +435,34 @@ if (sessionError || !session) {
 
  function setSelectionButtonState(btn, isSelected) {
   if (!btn) return;
-  const svg = btn.querySelector('svg');
+  const iconPlus = btn.querySelector('.setlist-icon-plus');
+  const iconCheck = btn.querySelector('.setlist-icon-check');
 
-  if (svg) {
-   svg.innerHTML = isSelected
-    ? '<polyline points="20 6 9 17 4 12"></polyline>'
-    : '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>';
+  if (iconPlus && iconCheck) {
+   if (isSelected) {
+    iconPlus.classList.add('hidden');
+    iconCheck.classList.remove('hidden');
+   } else {
+    iconPlus.classList.remove('hidden');
+    iconCheck.classList.add('hidden');
+   }
   }
 
-  btn.classList.toggle('bg-action', Boolean(isSelected));
-  btn.classList.toggle('border-action', Boolean(isSelected));
+  // Selected: teal premium look
+  btn.classList.toggle('bg-teal-500', Boolean(isSelected));
+  btn.classList.toggle('border-teal-500', Boolean(isSelected));
   btn.classList.toggle('text-white', Boolean(isSelected));
-  btn.classList.toggle('hover:bg-action/90', Boolean(isSelected));
-  btn.classList.toggle('bg-transparent', !isSelected);
-  btn.classList.toggle('border-border', !isSelected);
-  btn.classList.toggle('text-content-muted', !isSelected);
-  btn.classList.toggle('hover:border-content-muted', !isSelected);
-  btn.classList.toggle('hover:text-content', !isSelected);
+  btn.classList.toggle('shadow-md', Boolean(isSelected));
+  btn.classList.toggle('dark:bg-teal-500', Boolean(isSelected));
+  btn.classList.toggle('dark:border-teal-500', Boolean(isSelected));
+  btn.classList.toggle('dark:text-white', Boolean(isSelected));
+  // Unselected: restore defaults
+  btn.classList.toggle('bg-white', !isSelected);
+  btn.classList.toggle('border-zinc-200', !isSelected);
+  btn.classList.toggle('text-zinc-400', !isSelected);
+  btn.classList.toggle('dark:bg-zinc-900', !isSelected);
+  btn.classList.toggle('dark:border-white/10', !isSelected);
+  btn.classList.toggle('dark:text-zinc-500', !isSelected);
  }
 
  function sortSongsSelectedFirst(songCards) {
@@ -1032,36 +1043,46 @@ function filterCards() {
  background-color: #10b981 !important; 
  }
  /* Estilos para el Modo Lista */
+ .modo-lista {
+   border-radius: 1.25rem;
+   box-shadow: none;
+ }
+ .modo-lista:hover {
+   transform: none;
+   box-shadow: none;
+ }
  .modo-lista .card-header {
- padding: 0.75rem 1.25rem;
+   padding: 0.875rem 1.25rem;
  }
- 
  .modo-lista .card-title {
- font-size: 1.125rem;
- margin-bottom: 0;
- white-space: nowrap;
- overflow: hidden;
- text-overflow: ellipsis;
+   font-size: 1rem;
+   margin-bottom: 0;
+   white-space: nowrap;
+   overflow: hidden;
+   text-overflow: ellipsis;
  }
- 
  .modo-lista .card-badges {
- display: none !important;
+   display: none !important;
  }
- 
  .modo-lista .btn-add-setlist {
- top: 50%;
- transform: translateY(-50%);
- right: 1.25rem;
+   top: 50%;
+   transform: translateY(-50%);
+   right: 1rem;
  }
- 
+  /* Show quick-action play button only in list mode */
+ .modo-lista .list-play-btn {
+   display: flex !important;
+ }
  .modo-lista .card-content {
- display: none;
+   display: none;
  }
- 
  .modo-lista.expandido .card-content {
- display: block;
- padding-top: 0;
- border-top: 1px solid rgba(255,255,255,0.05);
+   display: block;
+   padding-top: 0.5rem;
+   border-top: 1px solid rgba(228,228,231,0.5);
+ }
+ :global(.dark) .modo-lista.expandido .card-content {
+   border-top-color: rgba(255,255,255,0.07);
  }
 
 </style>
