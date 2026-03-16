@@ -525,8 +525,18 @@ export default function AdminRepertorio() {
   const agregarCancion = async () => {
     try {
       setLoading(true);
+
+      // Generate a unique title to avoid UNIQUE constraint violation
+      const titulosExistentes = new Set(canciones.map(c => (c.titulo || '').toLowerCase()));
+      let titulo = 'Nueva Cancion';
+      let contador = 2;
+      while (titulosExistentes.has(titulo.toLowerCase())) {
+        titulo = `Nueva Cancion ${contador}`;
+        contador++;
+      }
+
       const nuevaCancion = {
-        titulo: 'Nueva Cancion',
+        titulo,
         estado: 'Activa',
       };
       const { data, error } = await supabase
@@ -541,7 +551,8 @@ export default function AdminRepertorio() {
       }
     } catch (err) {
       console.error('Error al agregar:', err);
-      alert('Error al anadir la cancion.');
+      const detalle = err?.message || err?.details || 'Error desconocido';
+      alert(`Error al anadir la cancion:\n${detalle}`);
     } finally {
       setLoading(false);
     }

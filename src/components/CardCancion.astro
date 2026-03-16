@@ -150,7 +150,8 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
    </div>
  </div>
 
- <div class="card-content transition-all duration-300 overflow-hidden px-5 pb-5" data-tour={tourResources || undefined}>
+ <div class="card-content px-5 pb-5" data-tour={tourResources || undefined}>
+  <div class="card-content-inner min-h-0">
 
    {/* ── Primary CTA ─────────────────────────────── */}
    {primaryIsMp3 && (
@@ -273,6 +274,6 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
      </a>
      )}
    </div>
-
+  </div>
  </div>
 </article>

@@ -94,7 +94,7 @@ const firstTourResourcesId =
  <!-- Encabezado de Resultados y Vista -->
  <div class="max-w-7xl mx-auto mb-2 md:mb-4 mt-2 md:mt-8 flex justify-between items-center px-2 md:px-0 anim-fade-in-up anim-stagger" style="--delay: 280ms">
  <h3 class="text-xl font-bold text-content mb-2 md:mb-4">Setlist</h3>
- <div id="viewToggleContainer" class="flex bg-surface flex-shrink-0 mb-2 md:mb-4 rounded-lg p-1 border border-border h-fit">
+ <div id="viewToggleContainer" class="flex bg-zinc-100 dark:bg-zinc-800 flex-shrink-0 mb-2 md:mb-4 rounded-lg p-1 border border-zinc-300 dark:border-zinc-700 h-fit shadow-inner">
  <button id="btnViewGrid" class="p-1.5 rounded-md view-btn-active transition-all" title="Vista de Cuadr&iacute;cula">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
  </button>
@@ -157,7 +157,7 @@ const firstTourResourcesId =
  <!-- Panel Flotante Setlist (modo normal) -->
 <div id="setlistPanel" class="fixed bottom-[calc(env(safe-area-inset-bottom)+5rem)] md:bottom-24 left-3 right-3 md:left-auto md:right-6 bg-background border border-border text-content p-3 md:p-4 rounded-xl md:rounded-2xl shadow-2xl z-50 flex items-center justify-between gap-3 md:gap-4 hidden transition-opacity">
  <div class="font-semibold text-sm md:text-base whitespace-nowrap">
- Setlist: <span id="setlistCount" class="text-blue-600 dark:text-blue-400 font-extrabold">0</span>
+ Setlist: <span id="setlistCount" class="text-blue-500 dark:text-blue-300 font-extrabold">0</span>
  </div>
  <div class="flex items-center gap-2 shrink-0">
  <button id="btnCopySetlist" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold transition-colors shadow-[0_0_14px_rgba(37,99,235,0.45)]">Copiar Enlace</button>
@@ -400,11 +400,21 @@ if (sessionError || !session) {
  const header = card.querySelector('.card-header');
  if (header) {
  addListener(header, 'click', (e) => {
- // Prevent toggling if user clicked the Add to Setlist button
- if ((e.target as Element).closest('.btn-add-setlist') || (e.target as Element).closest('.list-play-btn')) return;
- 
+ // Prevent toggling if user clicked the Add to Setlist button or play btn
+ const target = e.target as Element;
+ if (target.closest('.btn-add-setlist') || target.closest('.list-play-btn') || target.closest('.btn-open-mp3') || target.closest('.btn-open-ensayo')) return;
+
  if (isListView) {
+ const wasExpanded = card.classList.contains('expandido');
+ // Collapse all other cards first
+ cards.forEach(c => { if (c !== card) c.classList.remove('expandido'); });
  card.classList.toggle('expandido');
+ // Smooth scroll into view if expanding
+ if (!wasExpanded) {
+  requestAnimationFrame(() => {
+   card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+ }
  }
  });
  }
@@ -872,7 +882,13 @@ const clearPlaylistSelection = () => {
  syncSelectionButtons();
  } else {
  if (!cancion) return;
- if (!setlist.includes(cancion)) {
+ const sIdx = setlist.indexOf(cancion);
+ if (sIdx > -1) {
+ setlist.splice(sIdx, 1);
+ localStorage.setItem('setlist', JSON.stringify(setlist));
+ updateSetlistUI();
+ setSelectionButtonState(btn, false);
+ } else {
  setlist.push(cancion);
  localStorage.setItem('setlist', JSON.stringify(setlist));
  updateSetlistUI();
@@ -1021,14 +1037,23 @@ function filterCards() {
  cargarMasCanciones();
 
  // Show/hide empty state
- if (emptyFilterState) {
+ if (emptyFilterState && gridCanciones) {
   if (cancionesFiltradas.length === 0) {
+   gridCanciones.style.display = 'none';
    emptyFilterState.classList.remove('hidden');
-   emptyFilterState.classList.remove('anim-scale-in');
-   void (emptyFilterState as HTMLElement).offsetWidth;
-   emptyFilterState.classList.add('anim-scale-in');
+   emptyFilterState.style.opacity = '0';
+   emptyFilterState.style.transform = 'scale(0.95) translateY(12px)';
+   requestAnimationFrame(() => {
+    emptyFilterState.style.transition = 'opacity 400ms cubic-bezier(0.22,1,0.36,1), transform 400ms cubic-bezier(0.22,1,0.36,1)';
+    emptyFilterState.style.opacity = '1';
+    emptyFilterState.style.transform = 'scale(1) translateY(0)';
+   });
   } else {
+   gridCanciones.style.display = '';
    emptyFilterState.classList.add('hidden');
+   emptyFilterState.style.opacity = '';
+   emptyFilterState.style.transform = '';
+   emptyFilterState.style.transition = '';
   }
  }
  }
@@ -1109,7 +1134,25 @@ function filterCards() {
  /* Prevent background gradient from transitioning (avoids white flash on view switch) */
  .card-cancion { transition-property: box-shadow, transform, border-color, opacity !important; }
  /* Smooth crossfade for grid/list view toggle */
- #gridCanciones { transition: opacity 180ms ease-in-out; }
+ #gridCanciones { transition: opacity 250ms cubic-bezier(0.22,1,0.36,1); }
+
+ /* Premium scale-in animation for empty state */
+ @keyframes scale-in {
+   0% { opacity: 0; transform: scale(0.92) translateY(16px); }
+   100% { opacity: 1; transform: scale(1) translateY(0); }
+ }
+ .anim-scale-in { animation: scale-in 450ms cubic-bezier(0.22,1,0.36,1) forwards; }
+
+ /* Smooth card stagger entrance */
+ @keyframes card-slide-up {
+   0% { opacity: 0; transform: translateY(20px) scale(0.97); }
+   100% { opacity: 1; transform: translateY(0) scale(1); }
+ }
+
+ /* List mode hover feedback */
+ .modo-lista .card-header { transition: background-color 200ms ease; }
+ .modo-lista .card-header:hover { background-color: rgba(59,130,246,0.03); }
+ :global(.dark) .modo-lista .card-header:hover { background-color: rgba(59,130,246,0.06); }
  /* Estilos para el Modo Lista */
  .modo-lista {
    border-radius: 1.25rem;
@@ -1128,6 +1171,7 @@ function filterCards() {
    white-space: nowrap;
    overflow: hidden;
    text-overflow: ellipsis;
+   padding-right: 7rem;
  }
  .modo-lista .card-badges {
    display: none !important;
@@ -1145,15 +1189,32 @@ function filterCards() {
    right: 4.5rem !important;
  }
  .modo-lista .card-content {
-   display: none;
+   display: grid;
+   grid-template-rows: 0fr;
+   opacity: 0;
+   transition: grid-template-rows 350ms cubic-bezier(0.22,1,0.36,1), opacity 300ms ease, padding 300ms ease;
+   padding-top: 0;
+   overflow: hidden;
+ }
+ .modo-lista .card-content .card-content-inner {
+   min-height: 0;
+   overflow: hidden;
  }
  .modo-lista.expandido .card-content {
-   display: block;
-   padding-top: 0.5rem;
+   grid-template-rows: 1fr;
+   opacity: 1;
+   padding-top: 0.75rem;
    border-top: 1px solid rgba(228,228,231,0.5);
  }
  :global(.dark) .modo-lista.expandido .card-content {
    border-top-color: rgba(255,255,255,0.07);
+ }
+ /* Subtle highlight on expanded card */
+ .modo-lista.expandido {
+   box-shadow: 0 0 0 1.5px rgba(59,130,246,0.18), 0 8px 32px rgba(15,23,42,0.06);
+ }
+ :global(.dark) .modo-lista.expandido {
+   box-shadow: 0 0 0 1.5px rgba(59,130,246,0.25), 0 8px 32px rgba(2,6,23,0.3);
  }
 
 </style>

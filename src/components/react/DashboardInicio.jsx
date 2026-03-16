@@ -177,8 +177,8 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                 <header className="px-3 sm:px-4 lg:px-0 mt-2">
                     <div className="flex items-start justify-between gap-4">
                         <div>
-                            <h1 className="text-3xl font-extrabold text-content tracking-tight">Hola {nombre}</h1>
-                            <p className="text-sm font-medium text-content-muted mt-1 capitalize">{fechaHoyCapitalizada}</p>
+                            <h1 className="text-[2rem] md:text-[2.5rem] font-extrabold text-content tracking-tight leading-none">Hola {nombre}</h1>
+                            <p className="text-sm font-medium text-content-muted mt-2 capitalize">{fechaHoyCapitalizada}</p>
                         </div>
                         <a
                             href="/"
@@ -216,7 +216,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                         }}
                     >
                         {proximosServicios.length === 0 ? (
-                            <div className="w-full h-full shrink-0 snap-center bg-surface rounded-[2rem] p-6 shadow-sm border border-border lg:min-h-[260px] 2xl:min-h-[300px] lg:col-span-full flex items-center justify-center">
+                            <div className="w-full h-full shrink-0 snap-center rounded-[2rem] p-6 shadow-sm border border-zinc-200/80 lg:min-h-[260px] 2xl:min-h-[300px] lg:col-span-full flex items-center justify-center bg-[radial-gradient(circle_at_center,_rgba(59,130,246,0.05),_transparent_50%),linear-gradient(180deg,_rgba(255,255,255,0.99),_rgba(244,244,245,0.97))] dark:border-white/10 dark:bg-[radial-gradient(circle_at_center,_rgba(59,130,246,0.12),_transparent_50%),linear-gradient(180deg,_rgba(24,24,27,0.98),_rgba(15,23,42,0.95))]">
                                 <div className="flex flex-col items-center justify-center text-center gap-3 py-4">
                                     <div className="w-16 h-16 bg-neutral/20 rounded-full flex items-center justify-center text-neutral mb-2">
                                         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12h20" /><path d="M20 12v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8" /><path d="m4 8 16-4" /><path d="m4 4 16 4" /></svg>
@@ -288,7 +288,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                                 return (
                                     <article
                                         key={servicio.id || `${evento.id}-${evento.fecha_hora}`}
-                                        className="w-[90vw] sm:w-[420px] lg:w-full lg:min-w-0 shrink-0 snap-center bg-overlay/95 dark:bg-border border border-border/30 dark:border-border rounded-[1.65rem] p-3.5 md:p-4 shadow-none dark:shadow-sm hover:shadow-none dark:hover:shadow-md transition-shadow flex flex-col gap-2.5 min-h-[220px] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action/60"
+                                        className="w-[90vw] sm:w-[420px] lg:w-full lg:min-w-0 shrink-0 snap-center border rounded-[1.65rem] p-3.5 md:p-4 transition-all duration-300 flex flex-col gap-2.5 min-h-[220px] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action/60 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.08),_transparent_50%),linear-gradient(180deg,_rgba(24,24,27,0.97),_rgba(15,23,42,0.95))] border-zinc-700/50 shadow-[0_8px_32px_rgba(2,6,23,0.3)] hover:shadow-[0_12px_40px_rgba(2,6,23,0.45)] hover:border-zinc-600/60 dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_45%),linear-gradient(180deg,_rgba(39,39,42,0.98),_rgba(24,24,27,0.95))] dark:border-zinc-700 dark:shadow-[0_8px_32px_rgba(2,6,23,0.5)] dark:hover:shadow-[0_12px_40px_rgba(2,6,23,0.6)]"
                                         role="button"
                                         tabIndex={0}
                                         aria-label={hasSetlist ? `Abrir setlist de ${tema}` : canManageSetlist ? `Crear setlist para ${tema}` : `Ver detalle de ${tema}`}
@@ -301,7 +301,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                                         }}
                                     >
                                         <div className="flex items-start gap-3 md:gap-4 min-w-0">
-                                            <div className="shrink-0 w-14 h-16 rounded-xl bg-white/5 border border-white/20 dark:bg-surface dark:border-border flex flex-col items-center justify-between py-1.5">
+                                            <div className="shrink-0 w-14 h-16 rounded-xl bg-white/8 border border-white/15 dark:bg-white/5 dark:border-white/10 flex flex-col items-center justify-between py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
                                                 <span className="text-[2rem] leading-none font-black text-white dark:text-content">{fecha.day}</span>
                                                 <span className="text-[10px] uppercase font-bold tracking-widest text-white/70 dark:text-content-muted mt-0.5">{fecha.month}</span>
                                             </div>
@@ -398,8 +398,8 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
             </div>
 
             {/* Columna Derecha */}
-            <div className="w-full lg:w-[44%] xl:w-full shrink-0 flex flex-col gap-6 2xl:gap-8 lg:mt-20">
-                <section className="px-3 sm:px-4 lg:px-0 lg:flex-1 lg:flex lg:flex-col" data-tour="environment">
+            <div className="w-full lg:w-[44%] xl:w-full shrink-0 flex flex-col gap-5 2xl:gap-6">
+                <section className="px-3 sm:px-4 lg:px-0" data-tour="environment">
                     <div className="flex items-center justify-between gap-3 mb-3">
                         <h2 className="text-lg font-bold text-content tracking-tight">Tu Entorno</h2>
                         {!dismissEnvironmentHint && (
@@ -413,7 +413,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                     </div>
                     <div className="relative -mx-3 sm:mx-0">
                     <div
-                        className="flex overflow-x-auto gap-3 px-3 sm:px-4 pb-2 snap-x snap-mandatory hide-scrollbar w-full lg:grid lg:grid-cols-3 lg:gap-6 lg:px-0 lg:pb-0 lg:overflow-visible lg:flex-1 lg:auto-rows-fr"
+                        className="flex overflow-x-auto gap-3 px-3 sm:px-4 pb-2 snap-x snap-mandatory hide-scrollbar w-full lg:grid lg:grid-cols-3 lg:gap-4 lg:px-0 lg:pb-0 lg:overflow-visible"
                         onScroll={(e) => {
                             const el = e.currentTarget;
                             const moved = el.scrollLeft > 10;
@@ -421,7 +421,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                             if (moved || reachedEnd) setDismissEnvironmentHint(true);
                         }}
                     >
-                        <a href="/repertorio" data-tour="setlist" data-astro-prefetch="hover" className="w-[44vw] min-w-[160px] max-w-[220px] aspect-square lg:w-full lg:min-w-0 lg:max-w-none lg:aspect-auto lg:h-full lg:min-h-[240px] xl:min-h-[280px] 2xl:min-h-[320px] rounded-[2rem] p-5 flex flex-col justify-between shadow-md active:scale-[0.98] transition-all relative overflow-hidden group snap-center">
+                        <a href="/repertorio" data-tour="setlist" data-astro-prefetch="hover" className="w-[44vw] min-w-[160px] max-w-[220px] aspect-square lg:w-full lg:min-w-0 lg:max-w-none lg:aspect-auto lg:h-full lg:min-h-[180px] xl:min-h-[200px] 2xl:min-h-[220px] rounded-[2rem] p-5 flex flex-col justify-between shadow-md active:scale-[0.98] transition-all relative overflow-hidden group snap-center">
                             <div className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110" style={{ backgroundImage: "url('/repertorio-bg.webp')" }}></div>
                             <div className="absolute inset-0 bg-gradient-to-t from-overlay/95 via-overlay/70 to-transparent"></div>
                             <div className="absolute right-0 top-0 w-32 h-32 bg-white/20 rounded-full blur-2xl transform translate-x-1/2 -translate-y-1/2"></div>
@@ -434,7 +434,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                             </div>
                         </a>
 
-                        <a href="/herramientas" data-astro-prefetch="hover" className="w-[44vw] min-w-[160px] max-w-[220px] aspect-square lg:w-full lg:min-w-0 lg:max-w-none lg:aspect-auto lg:h-full lg:min-h-[240px] xl:min-h-[280px] 2xl:min-h-[320px] rounded-[2rem] p-5 flex flex-col justify-between shadow-md active:scale-[0.98] transition-all relative overflow-hidden group snap-center">
+                        <a href="/herramientas" data-astro-prefetch="hover" className="w-[44vw] min-w-[160px] max-w-[220px] aspect-square lg:w-full lg:min-w-0 lg:max-w-none lg:aspect-auto lg:h-full lg:min-h-[180px] xl:min-h-[200px] 2xl:min-h-[220px] rounded-[2rem] p-5 flex flex-col justify-between shadow-md active:scale-[0.98] transition-all relative overflow-hidden group snap-center">
                             <div className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110" style={{ backgroundImage: "url('/afinacion-bg.webp')" }}></div>
                             <div className="absolute inset-0 bg-gradient-to-t from-overlay/95 via-overlay/70 to-transparent"></div>
                             <div className="absolute left-0 bottom-0 w-32 h-32 bg-white/10 rounded-full blur-2xl transform -translate-x-1/2 translate-y-1/2"></div>
@@ -447,7 +447,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                             </div>
                         </a>
 
-                        <a href="/herramientas/calentamiento-vocal" data-astro-prefetch="hover" className="w-[44vw] min-w-[160px] max-w-[220px] aspect-square lg:w-full lg:min-w-0 lg:max-w-none lg:aspect-auto lg:h-full lg:min-h-[240px] xl:min-h-[280px] 2xl:min-h-[320px] rounded-[2rem] p-5 flex flex-col justify-between shadow-md active:scale-[0.98] transition-all relative overflow-hidden group snap-center">
+                        <a href="/herramientas/calentamiento-vocal" data-astro-prefetch="hover" className="w-[44vw] min-w-[160px] max-w-[220px] aspect-square lg:w-full lg:min-w-0 lg:max-w-none lg:aspect-auto lg:h-full lg:min-h-[180px] xl:min-h-[200px] 2xl:min-h-[220px] rounded-[2rem] p-5 flex flex-col justify-between shadow-md active:scale-[0.98] transition-all relative overflow-hidden group snap-center">
                             <div className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110" style={{ backgroundImage: "url('/calentamiento-bg.webp')" }}></div>
                             <div className="absolute inset-0 bg-gradient-to-t from-overlay/95 via-overlay/75 to-transparent"></div>
                             <div className="absolute inset-0 bg-[radial-gradient(circle_at_78%_12%,rgba(255,255,255,0.24),transparent_45%),radial-gradient(circle_at_18%_86%,rgba(255,255,255,0.12),transparent_42%)]"></div>
@@ -474,13 +474,13 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                     </div>
                 </section>
 
-                <section className="px-3 sm:px-4 lg:px-0 mb-8 lg:mb-0" data-tour="shortcuts">
-                    <div id="dashboard-shortcuts-slot" className="min-h-[238px]"></div>
+                <section className="px-3 sm:px-4 lg:px-0 mb-2 lg:mb-0" data-tour="shortcuts">
+                    <div id="dashboard-shortcuts-slot" className="min-h-[200px]"></div>
                 </section>
 
                 <section className="px-3 sm:px-4 lg:px-0" data-tour="extras">
                     <div className="space-y-4">
-                        <article className="bg-surface border border-border rounded-2xl p-4 shadow-sm">
+                        <article className="relative overflow-hidden border border-zinc-200/80 rounded-[2rem] p-5 shadow-sm bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.07),_transparent_45%),linear-gradient(180deg,_rgba(255,255,255,0.99),_rgba(244,244,245,0.97))] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_40%),linear-gradient(180deg,_rgba(24,24,27,0.98),_rgba(15,23,42,0.95))] dark:shadow-[0_8px_32px_rgba(2,6,23,0.3)]">
                             <div className="flex items-center justify-between gap-3 mb-3">
                                 <h3 className="text-sm font-black text-content uppercase tracking-wide">Eventos Especiales</h3>
                             </div>
@@ -517,7 +517,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                             )}
                         </article>
 
-                        <article className="bg-surface border border-border rounded-2xl p-4 shadow-sm">
+                        <article className="relative overflow-hidden border border-zinc-200/80 rounded-[2rem] p-5 shadow-sm bg-[radial-gradient(circle_at_top_right,_rgba(20,184,166,0.06),_transparent_45%),linear-gradient(180deg,_rgba(255,255,255,0.99),_rgba(244,244,245,0.97))] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_right,_rgba(20,184,166,0.15),_transparent_40%),linear-gradient(180deg,_rgba(24,24,27,0.98),_rgba(15,23,42,0.95))] dark:shadow-[0_8px_32px_rgba(2,6,23,0.3)]">
                             <div className="flex items-center justify-between gap-3 mb-3">
                                 <h3 className="text-sm font-black text-content uppercase tracking-wide inline-flex items-center gap-2">
                                     <span className="w-6 h-6 rounded-md bg-brand/15 border border-brand/30 text-brand flex items-center justify-center">
@@ -560,7 +560,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
 
                     {!isStandaloneApp && (
                         <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <article className="bg-surface border border-border rounded-2xl p-4 shadow-sm">
+                            <article className="border border-zinc-200/80 rounded-[1.5rem] p-4 shadow-sm bg-white dark:border-white/10 dark:bg-zinc-900/80">
                                 <div className="flex items-start gap-3">
                                     <div className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center border border-border ${devicePlatform === 'android' ? 'bg-action/10 text-action' : 'bg-background text-content'}`}>
                                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -584,7 +584,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                                 </button>
                             </article>
 
-                            <article className="bg-surface border border-border rounded-2xl p-4 shadow-sm">
+                            <article className="border border-zinc-200/80 rounded-[1.5rem] p-4 shadow-sm bg-white dark:border-white/10 dark:bg-zinc-900/80">
                                 <div className="flex items-start gap-3">
                                     <div className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center border border-border ${devicePlatform === 'ios' ? 'bg-action/10 text-action' : 'bg-background text-content'}`}>
                                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
