@@ -138,7 +138,7 @@ const firstTourResourcesId =
  <!-- Panel Flotante Setlist (modo normal) -->
 <div id="setlistPanel" class="fixed bottom-[calc(env(safe-area-inset-bottom)+5rem)] md:bottom-24 left-3 right-3 md:left-auto md:right-6 bg-background border border-border text-content p-3 md:p-4 rounded-xl md:rounded-2xl shadow-2xl z-50 flex items-center justify-between gap-3 md:gap-4 hidden transition-opacity">
  <div class="font-semibold text-sm md:text-base whitespace-nowrap">
- Setlist: <span id="setlistCount" class="text-blue-600 font-extrabold">0</span>
+ Setlist: <span id="setlistCount" class="text-blue-600 dark:text-blue-400 font-extrabold">0</span>
  </div>
  <div class="flex items-center gap-2 shrink-0">
  <button id="btnCopySetlist" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-bold transition-colors shadow-[0_0_14px_rgba(37,99,235,0.45)]">Copiar Enlace</button>
@@ -390,7 +390,7 @@ if (sessionError || !session) {
  if (header) {
  addListener(header, 'click', (e) => {
  // Prevent toggling if user clicked the Add to Setlist button
- if ((e.target as Element).closest('.btn-add-setlist')) return;
+ if ((e.target as Element).closest('.btn-add-setlist') || (e.target as Element).closest('.list-play-btn')) return;
  
  if (isListView) {
  card.classList.toggle('expandido');
@@ -791,6 +791,17 @@ const clearPlaylistSelection = () => {
  // Modo local / Setlist normal temporal
  updateSetlistUI();
 
+ // Sync visual state of setlist buttons from localStorage on page load
+ function syncSetlistButtons() {
+  cards.forEach(card => {
+   const btn = card.querySelector('.btn-add-setlist') as HTMLElement | null;
+   if (!btn) return;
+   const cancion = btn.getAttribute('data-cancion') || '';
+   setSelectionButtonState(btn, Boolean(cancion && setlist.includes(cancion)));
+  });
+ }
+ syncSetlistButtons();
+
  if (btnCopySetlist) {
  addListener(btnCopySetlist, 'click', () => {
  const base64Str = btoa(encodeURIComponent(JSON.stringify(setlist)));
@@ -1044,6 +1055,8 @@ function filterCards() {
  animation: pulse-beat var(--bpm-duration) infinite; 
  background-color: #10b981 !important; 
  }
+ /* Prevent background gradient from transitioning (avoids white flash on view switch) */
+ .card-cancion { transition-property: box-shadow, transform, border-color, opacity !important; }
  /* Estilos para el Modo Lista */
  .modo-lista {
    border-radius: 1.25rem;

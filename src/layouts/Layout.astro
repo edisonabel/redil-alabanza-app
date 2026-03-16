@@ -350,6 +350,18 @@ const themeColors = brandingData;
 
     body {
       min-height: 100dvh;
+      /* Dot grid — premium texture (Linear/Vercel style) */
+      background-image: radial-gradient(circle, rgba(0,0,0,0.055) 1px, transparent 1px);
+      background-size: 22px 22px;
+    }
+
+    html.dark body {
+      background-image: radial-gradient(circle, rgba(255,255,255,0.038) 1px, transparent 1px);
+      background-size: 22px 22px;
+    }
+
+    @media print {
+      body { background-image: none !important; }
     }
 
     @keyframes app-page-premium-in {
