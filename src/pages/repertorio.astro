@@ -200,11 +200,11 @@ const firstTourResourcesId =
  </div>
 </div>
 
-  <OnboardingRoot client:load page="repertorio" userId={userId} />
+  <OnboardingRoot client:idle page="repertorio" userId={userId} />
 </Layout>
 
  <!-- Data bridge eliminado. Supabase renderiza directamente. -->
- <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+ <!-- SortableJS se carga dinámicamente solo cuando se necesita (modo setlist) -->
  
 <script>
 import { supabase } from '../lib/supabase';
@@ -490,21 +490,36 @@ if (sessionError || !session) {
  }
 
  function sortSongsSelectedFirst(songCards) {
-  if (!isSelectionMode) return [...songCards];
+  if (isSelectionMode) {
+   return [...songCards].sort((a, b) => {
+    const aId = String(a.getAttribute('data-id') || '');
+    const bId = String(b.getAttribute('data-id') || '');
+    const aSeleccionada = selectedSongs.includes(aId);
+    const bSeleccionada = selectedSongs.includes(bId);
+    if (aSeleccionada && !bSeleccionada) return -1;
+    if (!aSeleccionada && bSeleccionada) return 1;
+    const aIndex = Number(a.dataset.originalIndex || '0');
+    const bIndex = Number(b.dataset.originalIndex || '0');
+    return aIndex - bIndex;
+   });
+  }
 
-  return [...songCards].sort((a, b) => {
-   const aId = String(a.getAttribute('data-id') || '');
-   const bId = String(b.getAttribute('data-id') || '');
-   const aSeleccionada = selectedSongs.includes(aId);
-   const bSeleccionada = selectedSongs.includes(bId);
+  // Modo normal: setlist songs go to top
+  if (setlist.length > 0) {
+   return [...songCards].sort((a, b) => {
+    const aCancion = a.querySelector('.btn-add-setlist')?.getAttribute('data-cancion') || '';
+    const bCancion = b.querySelector('.btn-add-setlist')?.getAttribute('data-cancion') || '';
+    const aInSetlist = setlist.includes(aCancion);
+    const bInSetlist = setlist.includes(bCancion);
+    if (aInSetlist && !bInSetlist) return -1;
+    if (!aInSetlist && bInSetlist) return 1;
+    const aIndex = Number(a.dataset.originalIndex || '0');
+    const bIndex = Number(b.dataset.originalIndex || '0');
+    return aIndex - bIndex;
+   });
+  }
 
-   if (aSeleccionada && !bSeleccionada) return -1;
-   if (!aSeleccionada && bSeleccionada) return 1;
-
-   const aIndex = Number(a.dataset.originalIndex || '0');
-   const bIndex = Number(b.dataset.originalIndex || '0');
-   return aIndex - bIndex;
-  });
+  return [...songCards];
  }
 
  function applySongOrder(songCards) {
@@ -727,14 +742,16 @@ if (audioCtx.state === 'suspended') audioCtx.resume();
  }
  });
  
- // Iniciar SortableJS para Drag and Drop
- if (typeof window.Sortable !== 'undefined' && gridCanciones) {
-   new window.Sortable(gridCanciones, {
-     animation: 150,
-     ghostClass: 'opacity-50',
-     delay: 100, // delay on mobile to prevent accidental dragging during scroll
-     delayOnTouchOnly: true,
-   });
+ // Cargar SortableJS dinámicamente solo cuando se necesita
+ if (gridCanciones) {
+   import('https://cdn.jsdelivr.net/npm/sortablejs@latest/+esm').then(({ default: Sortable }) => {
+     new Sortable(gridCanciones, {
+       animation: 150,
+       ghostClass: 'opacity-50',
+       delay: 100,
+       delayOnTouchOnly: true,
+     });
+   }).catch(err => console.warn('SortableJS load failed:', err));
  }
  
  // Detenemos la ejecucion aqui porque no necesitamos modo infinito ni filtros
@@ -894,6 +911,38 @@ const clearPlaylistSelection = () => {
  updateSetlistUI();
  setSelectionButtonState(btn, true);
  }
+
+ // Reorder: selected songs float to top with FLIP animation
+ const visibleCards = cancionesFiltradas.filter(c => !c.classList.contains('cancion-oculta') && c.style.display !== 'none');
+ // Capture old positions (FLIP: First)
+ const oldRects = new Map();
+ visibleCards.forEach(c => oldRects.set(c, c.getBoundingClientRect()));
+
+ // Sort and reorder DOM
+ cancionesFiltradas = sortSongsSelectedFirst(cancionesFiltradas);
+ applySongOrder(cancionesFiltradas);
+
+ // Animate (FLIP: Last, Invert, Play)
+ requestAnimationFrame(() => {
+  visibleCards.forEach(c => {
+   const oldRect = oldRects.get(c);
+   const newRect = c.getBoundingClientRect();
+   if (!oldRect) return;
+   const dx = oldRect.left - newRect.left;
+   const dy = oldRect.top - newRect.top;
+   if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+   c.style.transform = `translate(${dx}px, ${dy}px)`;
+   c.style.transition = 'none';
+   requestAnimationFrame(() => {
+    c.style.transition = 'transform 420ms cubic-bezier(0.22,1,0.36,1)';
+    c.style.transform = '';
+    c.addEventListener('transitionend', function cleanup() {
+     c.style.transition = '';
+     c.removeEventListener('transitionend', cleanup);
+    }, { once: true });
+   });
+  });
+ });
  }
  }, { capture: true });
 
@@ -905,7 +954,8 @@ const clearPlaylistSelection = () => {
  todasLasCanciones.forEach((card, index) => {
   card.dataset.originalIndex = String(index);
  });
- let cancionesFiltradas = [...todasLasCanciones];
+ let cancionesFiltradas = sortSongsSelectedFirst([...todasLasCanciones]);
+ applySongOrder(cancionesFiltradas);
  let indiceActual = 0;
  const limite = 15;
  let isLoading = false;
@@ -1100,6 +1150,10 @@ function filterCards() {
  /* Content visibility optimizations for long list scroll performance */
  .cancion-oculta { display: none !important; }
  .btn-add-setlist { transform: translateZ(0); -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+
+ /* GPU-accelerated containment for card grid — reduces layout/paint on scroll */
+ #gridCanciones { contain: style; }
+ .card-cancion { content-visibility: auto; contain-intrinsic-size: auto 280px; }
 
  /* Estilos Tema Claro */
  body.tema-claro { background-color: #f3f4f6; color: #111827; }

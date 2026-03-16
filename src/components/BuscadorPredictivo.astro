@@ -29,10 +29,18 @@ const idSuggestion = `${idInput}-suggestion`;
       // Helper para normalizar texto (quitar tildes y pasar a minusculas)
       const normalizeStr = (str) => str ? str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() : '';
 
+      // Cache DOM queries — titles rarely change during a session
+      let _cachedTitulos = null;
+      const getTitulos = () => {
+        if (!_cachedTitulos) {
+          const articles = Array.from(document.querySelectorAll('article[data-titulo]'));
+          _cachedTitulos = [...new Set(articles.map(c => c.getAttribute('data-titulo')).filter(Boolean))];
+        }
+        return _cachedTitulos;
+      };
+
       searchInput.addEventListener('input', () => {
-        // Extraer los títulos dinámicamente del DOM para que el componente funcione en cualquier página
-        const articles = Array.from(document.querySelectorAll('article[data-titulo]'));
-        const titulos = [...new Set(articles.map(c => c.getAttribute('data-titulo')).filter(Boolean))];
+        const titulos = getTitulos();
 
         const searchTerm = searchInput.value;
         if (!searchTerm) {
