@@ -36,20 +36,20 @@ const firstTourResourcesId =
 ---
 
 <Layout>
- <header class="mb-1.5 mt-2 md:mb-10 md:mt-6 px-2 md:px-4 max-w-7xl mx-auto">
+ <header class="mb-1.5 mt-2 md:mb-10 md:mt-6 px-2 md:px-4 max-w-7xl mx-auto anim-fade-in-up anim-stagger" style="--delay: 60ms">
  <div class="text-left flex flex-col justify-center">
  <div class="page-title-row mb-1.5">
   <span class="page-title-icon" aria-hidden="true">
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
   </span>
- <h1 id="mainTitle" class="page-title text-[2.1rem] md:text-[3.5rem]">Repertorio Alabanza</h1>
+ <h1 id="mainTitle" class="page-title text-[2.1rem] md:text-[3.5rem] anim-fade-in-up anim-stagger" style="--delay: 100ms">Repertorio Alabanza</h1>
   </div>
- <p class="page-subtitle text-sm md:text-lg">Administraci&oacute;n de canciones, tonos y recursos.</p>
+ <p class="page-subtitle text-sm md:text-lg anim-fade-in-up anim-stagger" style="--delay: 160ms">Administraci&oacute;n de canciones, tonos y recursos.</p>
   </div>
   </header>
 
  <!-- UI Controles -->
- <section id="searchControls" data-tour="repertorio-search" class="max-w-7xl mx-auto mb-6 bg-surface border border-border rounded-2xl px-2.5 py-3 md:px-4 md:py-4 shadow-lg">
+ <section id="searchControls" data-tour="repertorio-search" class="max-w-7xl mx-auto mb-6 bg-surface border border-border rounded-2xl px-2.5 py-3 md:px-4 md:py-4 shadow-lg anim-fade-in-up anim-stagger" style="--delay: 220ms">
  <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3 items-end">
  <div class="col-span-2 md:col-span-1 lg:col-span-1">
  <label for="search-input" class="hidden md:block text-sm font-medium text-content mb-1.5">Buscar</label>
@@ -92,7 +92,7 @@ const firstTourResourcesId =
  </section>
 
  <!-- Encabezado de Resultados y Vista -->
- <div class="max-w-7xl mx-auto mb-2 md:mb-4 mt-2 md:mt-8 flex justify-between items-center px-2 md:px-0">
+ <div class="max-w-7xl mx-auto mb-2 md:mb-4 mt-2 md:mt-8 flex justify-between items-center px-2 md:px-0 anim-fade-in-up anim-stagger" style="--delay: 280ms">
  <h3 class="text-xl font-bold text-content mb-2 md:mb-4">Setlist</h3>
  <div id="viewToggleContainer" class="flex bg-surface flex-shrink-0 mb-2 md:mb-4 rounded-lg p-1 border border-border h-fit">
  <button id="btnViewGrid" class="p-1.5 rounded-md view-btn-active transition-all" title="Vista de Cuadr&iacute;cula">
@@ -359,47 +359,37 @@ if (sessionError || !session) {
  function setGridView() {
  if (!gridCanciones) return;
  isListView = false;
- 
- // Switch classes on container
- gridCanciones.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto';
- 
- // Remove list mode from all cards
- cards.forEach(card => card.classList.remove('modo-lista', 'expandido'));
- 
- // Update button styles
- const updateBtns = (gridBtn: HTMLElement | null, listBtn: HTMLElement | null) => {
- if(!gridBtn || !listBtn) return;
- gridBtn.classList.add('bg-background', 'text-white', 'shadow-sm');
- gridBtn.classList.remove('text-content-muted', 'hover:text-content');
- listBtn.classList.remove('bg-background', 'text-white', 'shadow-sm');
- listBtn.classList.add('text-content-muted', 'hover:text-content');
- };
- 
- updateBtns(btnViewGrid, btnViewList);
- void document.body.offsetHeight; // Fuerza un reflow para corregir glitches de repintado en iOS
+ // Crossfade: opacity 0 → swap → opacity 1
+ gridCanciones.style.opacity = '0';
+ requestAnimationFrame(() => {
+  gridCanciones.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto';
+  cards.forEach(card => card.classList.remove('modo-lista', 'expandido'));
+  if (btnViewGrid && btnViewList) {
+   btnViewGrid.classList.add('view-btn-active');
+   btnViewGrid.classList.remove('text-content-muted');
+   btnViewList.classList.remove('view-btn-active');
+   btnViewList.classList.add('text-content-muted');
+  }
+  requestAnimationFrame(() => { gridCanciones.style.opacity = '1'; });
+ });
  }
 
  function setListView() {
  if (!gridCanciones) return;
  isListView = true;
- 
- // Switch classes on container to vertical flow
- gridCanciones.className = 'flex flex-col gap-3 max-w-7xl mx-auto';
- 
- // Add list mode to all cards
- cards.forEach(card => card.classList.add('modo-lista'));
- 
- // Update button styles
- const updateBtns = (gridBtn: HTMLElement | null, listBtn: HTMLElement | null) => {
- if(!gridBtn || !listBtn) return;
- listBtn.classList.add('view-btn-active');
- listBtn.classList.remove('text-content-muted');
- gridBtn.classList.remove('view-btn-active');
- gridBtn.classList.add('text-content-muted');
- };
- 
- updateBtns(btnViewGrid, btnViewList);
- void document.body.offsetHeight; // Fuerza un reflow para corregir glitches de repintado en iOS
+ // Crossfade: opacity 0 → swap → opacity 1
+ gridCanciones.style.opacity = '0';
+ requestAnimationFrame(() => {
+  gridCanciones.className = 'flex flex-col gap-3 max-w-7xl mx-auto';
+  cards.forEach(card => card.classList.add('modo-lista'));
+  if (btnViewGrid && btnViewList) {
+   btnViewList.classList.add('view-btn-active');
+   btnViewList.classList.remove('text-content-muted');
+   btnViewGrid.classList.remove('view-btn-active');
+   btnViewGrid.classList.add('text-content-muted');
+  }
+  requestAnimationFrame(() => { gridCanciones.style.opacity = '1'; });
+ });
  }
 
  if(btnViewGrid) addListener(btnViewGrid, 'click', setGridView);
@@ -442,13 +432,16 @@ if (sessionError || !session) {
  function updateSetlistUI() {
  if (setlistCount) setlistCount.textContent = setlist.length.toString();
  if (setlistPanel) {
- if (setlist.length > 0) {
- setlistPanel.classList.remove('hidden');
- } else {
- setlistPanel.classList.add('hidden');
+  if (setlist.length > 0) {
+   setlistPanel.classList.remove('hidden');
+   setlistPanel.classList.remove('anim-slide-up-in');
+   void (setlistPanel as HTMLElement).offsetWidth;
+   setlistPanel.classList.add('anim-slide-up-in');
+  } else {
+   setlistPanel.classList.add('hidden');
+  }
  }
- }
- }
+}
 
  function updatePlaylistCount() {
  if (playlistCountEl) playlistCountEl.textContent = selectedSongs.length.toString();
@@ -823,6 +816,15 @@ const clearPlaylistSelection = () => {
  }
  syncSetlistButtons();
 
+ // Premium stagger entrance for initially visible cards
+ requestAnimationFrame(() => {
+  const visibleCards = Array.from(cards).filter(c => !c.classList.contains('cancion-oculta'));
+  visibleCards.forEach((card, i) => {
+   card.style.setProperty('--delay', `${i * 55}ms`);
+   card.classList.add('anim-fade-in-up', 'anim-stagger');
+  });
+ });
+
  if (btnCopySetlist) {
  addListener(btnCopySetlist, 'click', () => {
  const base64Str = btoa(encodeURIComponent(JSON.stringify(setlist)));
@@ -903,9 +905,14 @@ const clearPlaylistSelection = () => {
  return;
  }
  
- fragmento.forEach(card => {
+ fragmento.forEach((card, i) => {
  card.classList.remove('cancion-oculta');
- card.style.display = ''; // Resetear el display modificado por el filtrado
+ card.style.display = '';
+ // Stagger entrance for scroll-loaded cards
+ card.style.setProperty('--delay', `${i * 45}ms`);
+ card.classList.remove('anim-fade-in-up');
+ void (card as HTMLElement).offsetWidth; // reflow to re-trigger
+ card.classList.add('anim-fade-in-up', 'anim-stagger');
  });
  indiceActual += limite;
  
@@ -1015,7 +1022,14 @@ function filterCards() {
 
  // Show/hide empty state
  if (emptyFilterState) {
-  emptyFilterState.classList.toggle('hidden', cancionesFiltradas.length > 0);
+  if (cancionesFiltradas.length === 0) {
+   emptyFilterState.classList.remove('hidden');
+   emptyFilterState.classList.remove('anim-scale-in');
+   void (emptyFilterState as HTMLElement).offsetWidth;
+   emptyFilterState.classList.add('anim-scale-in');
+  } else {
+   emptyFilterState.classList.add('hidden');
+  }
  }
  }
 
@@ -1094,6 +1108,8 @@ function filterCards() {
  }
  /* Prevent background gradient from transitioning (avoids white flash on view switch) */
  .card-cancion { transition-property: box-shadow, transform, border-color, opacity !important; }
+ /* Smooth crossfade for grid/list view toggle */
+ #gridCanciones { transition: opacity 180ms ease-in-out; }
  /* Estilos para el Modo Lista */
  .modo-lista {
    border-radius: 1.25rem;
