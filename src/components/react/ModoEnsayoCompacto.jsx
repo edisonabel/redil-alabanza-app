@@ -1,6 +1,5 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ChevronDown, Pause, Play, Repeat, Repeat1, SlidersHorizontal } from 'lucide-react';
-
 const FONT_PRESETS = {
   compacta: {
     section: 'text-[0.64rem] sm:text-[0.68rem] tracking-[0.26em]',
@@ -21,9 +20,7 @@ const FONT_PRESETS = {
     lineGap: 'gap-y-1.5',
   },
 };
-
 const FONT_SCALE_SEQUENCE = ['compacta', 'normal', 'grande'];
-
 const SHARP_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_TO_SHARP = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
 const TRANSPOSE_OPTIONS = [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6];
@@ -47,11 +44,9 @@ const LATIN_TO_AMERICAN = {
   Si: 'B',
   Dob: 'B',
 };
-
 const normalizeSectionLabel = (value = '') => String(value || '').trim().toLowerCase();
 const stripAccents = (value = '') => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 const toRgba = (rgb = [161, 161, 170], alpha = 1) => `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
-
 const SECTION_VISUALS = {
   intro: { short: 'I', rgb: [34, 211, 238] },
   verse: { short: 'V', rgb: [99, 102, 241] },
@@ -64,10 +59,8 @@ const SECTION_VISUALS = {
   vamp: { short: 'Vp', rgb: [248, 113, 113] },
   default: { short: 'S', rgb: [148, 163, 184] },
 };
-
 const getSectionKind = (sectionName = '') => {
   const normalized = normalizeSectionLabel(stripAccents(sectionName));
-
   if (normalized.includes('pre coro') || normalized.includes('pre-coro') || normalized.includes('prechorus') || normalized.includes('pre chorus')) return 'prechorus';
   if (normalized.includes('verso') || normalized.includes('verse')) return 'verse';
   if (normalized.includes('coro') || normalized.includes('chorus')) return 'chorus';
@@ -77,15 +70,12 @@ const getSectionKind = (sectionName = '') => {
   if (normalized.includes('outro') || normalized.includes('final') || normalized.includes('ending') || normalized.includes('fin')) return 'outro';
   if (normalized.includes('vamp')) return 'vamp';
   if (normalized.includes('intro') || normalized.includes('entrada')) return 'intro';
-
   return 'default';
 };
-
 const buildSectionShortLabel = (sectionName = '', kind = 'default', occurrence = 1) => {
   const source = stripAccents(sectionName);
   const explicitNumber = source.match(/(\d+)/)?.[1];
   const fallbackNumber = explicitNumber || occurrence;
-
   if (kind === 'verse') return `V${fallbackNumber}`;
   if (kind === 'intro') return 'I';
   if (kind === 'prechorus') return 'Pr';
@@ -95,48 +85,39 @@ const buildSectionShortLabel = (sectionName = '', kind = 'default', occurrence =
   if (kind === 'refrain') return 'Rf';
   if (kind === 'outro') return 'F';
   if (kind === 'vamp') return 'Vp';
-
   const compact = source.replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase();
   return compact || `S${fallbackNumber}`;
 };
-
 const repairMarkerTimeline = (markers = [], durationHint = 0) => {
   if (!Array.isArray(markers) || markers.length < 2) return Array.isArray(markers) ? markers : [];
-
   const working = markers.map((marker) => ({
     ...marker,
     startSec: Number.isFinite(Number(marker?.startSec)) ? Math.max(0, Number(marker.startSec)) : null,
   }));
-
   const hasOutOfOrderValue = working.some((marker, index) => (
     Number.isFinite(marker.startSec) &&
     working.slice(index + 1).some((nextMarker) => (
       Number.isFinite(nextMarker.startSec) && nextMarker.startSec < marker.startSec
     ))
   ));
-
   if (!hasOutOfOrderValue) {
     return working;
   }
-
   const repaired = working.map((marker, index) => {
     const isOutOfOrder = Number.isFinite(marker.startSec) &&
       working.slice(index + 1).some((nextMarker) => (
         Number.isFinite(nextMarker.startSec) && nextMarker.startSec < marker.startSec
       ));
-
     return isOutOfOrder
       ? { ...marker, startSec: null, repaired: true }
       : marker;
   });
-
   let index = 0;
   while (index < repaired.length) {
     if (Number.isFinite(repaired[index].startSec)) {
       index += 1;
       continue;
     }
-
     const gapStart = index;
     while (index < repaired.length && !Number.isFinite(repaired[index].startSec)) {
       index += 1;
@@ -145,13 +126,10 @@ const repairMarkerTimeline = (markers = [], durationHint = 0) => {
     const prevMarker = repaired[gapStart - 1];
     const nextMarker = repaired[index];
     const gapCount = gapEnd - gapStart + 1;
-
     const prevStart = Number.isFinite(prevMarker?.startSec) ? prevMarker.startSec : null;
     const nextStart = Number.isFinite(nextMarker?.startSec) ? nextMarker.startSec : null;
-
     let segmentStart = prevStart;
     let segmentEnd = nextStart;
-
     if (segmentStart == null && segmentEnd == null) {
       segmentStart = 0;
       segmentEnd = Math.max(durationHint || 0, gapCount * 12);
@@ -160,9 +138,7 @@ const repairMarkerTimeline = (markers = [], durationHint = 0) => {
     } else if (segmentEnd == null) {
       segmentEnd = Math.max(segmentStart + gapCount * 12, durationHint || (segmentStart + gapCount * 12));
     }
-
     const step = Math.max(1, (segmentEnd - segmentStart) / (gapCount + 1));
-
     for (let offset = 0; offset < gapCount; offset += 1) {
       repaired[gapStart + offset] = {
         ...repaired[gapStart + offset],
@@ -171,32 +147,25 @@ const repairMarkerTimeline = (markers = [], durationHint = 0) => {
       };
     }
   }
-
   return repaired;
 };
-
 const formatSeconds = (value) => {
   const total = Math.max(0, Math.floor(value));
   const minutes = Math.floor(total / 60);
   const seconds = total % 60;
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 };
-
 const AUDIO_SOURCE_EXT_RE = /\.(mp3|wav|m4a|aac|ogg|flac)(\?.*)?$/i;
-
 const isAudioSourceUrl = (value = '') => {
   const source = String(value || '').trim();
   if (!source) return false;
   return AUDIO_SOURCE_EXT_RE.test(source);
 };
-
 const normalizePlaybackSourceEntry = (entry, index, fallbackKind = 'sequence') => {
   if (!entry) return null;
-
   if (typeof entry === 'string') {
     const trimmedEntry = entry.trim();
     if (!isAudioSourceUrl(trimmedEntry)) return null;
-
     return {
       id: `${fallbackKind}-${index}-${trimmedEntry}`,
       label: fallbackKind === 'original' ? 'Musica original' : `Secuencia ${index + 1}`,
@@ -204,11 +173,9 @@ const normalizePlaybackSourceEntry = (entry, index, fallbackKind = 'sequence') =
       kind: fallbackKind,
     };
   }
-
   if (typeof entry === 'object') {
     const rawUrl = String(entry.url || entry.src || entry.href || entry.link || '').trim();
     if (!isAudioSourceUrl(rawUrl)) return null;
-
     const rawKind = String(entry.kind || entry.type || fallbackKind || 'sequence').trim().toLowerCase();
     const kind = rawKind === 'original' ? 'original' : 'sequence';
     const label = String(
@@ -217,7 +184,6 @@ const normalizePlaybackSourceEntry = (entry, index, fallbackKind = 'sequence') =
       entry.title ||
       (kind === 'original' ? 'Musica original' : `Secuencia ${index + 1}`)
     ).trim();
-
     return {
       id: String(entry.id || `${kind}-${index}-${rawUrl}`),
       label: label || (kind === 'original' ? 'Musica original' : `Secuencia ${index + 1}`),
@@ -225,14 +191,11 @@ const normalizePlaybackSourceEntry = (entry, index, fallbackKind = 'sequence') =
       kind,
     };
   }
-
   return null;
 };
-
 const parseSequenceSourceEntries = (rawValue = '') => {
   const source = String(rawValue || '').trim();
   if (!source) return [];
-
   if ((source.startsWith('[') || source.startsWith('{'))) {
     try {
       const parsed = JSON.parse(source);
@@ -242,11 +205,9 @@ const parseSequenceSourceEntries = (rawValue = '') => {
       // fallback to plain-text parsing
     }
   }
-
   if (isAudioSourceUrl(source)) {
     return [source];
   }
-
   return source
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -260,7 +221,6 @@ const parseSequenceSourceEntries = (rawValue = '') => {
       };
     });
 };
-
 const buildPlaybackSources = (song) => {
   const sources = [];
   const seenUrls = new Set();
@@ -270,50 +230,39 @@ const buildPlaybackSources = (song) => {
     seenUrls.add(normalized.url);
     sources.push(normalized);
   };
-
   pushSource({
     id: 'original',
     label: 'Musica original',
     url: song?.mp3,
     kind: 'original',
   }, 0, 'original');
-
   const collectionCandidates = [];
-
   if (Array.isArray(song?.playbackSources)) {
     collectionCandidates.push(...song.playbackSources);
   }
-
   if (Array.isArray(song?.sequenceSources)) {
     collectionCandidates.push(...song.sequenceSources);
   }
-
   if (Array.isArray(song?.sequences)) {
     collectionCandidates.push(...song.sequences);
   }
-
   const rawLinkSecuencias = song?.linkSecuencias || song?.link_secuencias || '';
   if (rawLinkSecuencias) {
     collectionCandidates.push(...parseSequenceSourceEntries(rawLinkSecuencias));
   }
-
   collectionCandidates.forEach((entry, index) => {
     pushSource(entry, index, 'sequence');
   });
-
   return sources;
 };
-
 const formatChordAccidentals = (value = '') => (
   String(value || '')
-    .replace(/#/g, '♯')
-    .replace(/b/g, '♭')
+    .replace(/#/g, '\u266F')
+    .replace(/b/g, '\u266D')
 );
-
 const splitChordDisplayParts = (value = '') => {
   const chord = String(value || '').trim();
   if (!chord) return null;
-
   const chordMatch = chord.match(/^([A-G])([#b]?)([^/]*?)(?:\/([A-G])([#b]?)(.*))?$/);
   if (!chordMatch) {
     return {
@@ -323,9 +272,7 @@ const splitChordDisplayParts = (value = '') => {
       bass: null,
     };
   }
-
   const [, root, accidental = '', suffix = '', bassRoot, bassAccidental = '', bassSuffix = ''] = chordMatch;
-
   return {
     root,
     accidental,
@@ -339,14 +286,11 @@ const splitChordDisplayParts = (value = '') => {
       : null,
   };
 };
-
 function ChordDisplay({ chord, sizeClass = '' }) {
   const parts = splitChordDisplayParts(chord);
   if (!parts) return null;
-
   const fallbackLabel = formatChordAccidentals(chord);
   const rootLabel = parts.root.length === 1 ? parts.root : fallbackLabel;
-
   return (
     <span className={`ensayo-chord-token font-black leading-none ${sizeClass}`.trim()}>
       <span className="ensayo-chord-root">{rootLabel}</span>
@@ -369,41 +313,32 @@ function ChordDisplay({ chord, sizeClass = '' }) {
     </span>
   );
 }
-
 const normalizeKeyToAmerican = (rawKey = '') => {
   const source = String(rawKey || '').trim();
   if (!source) return '-';
-
   const normalizedSource = source
-    .replace(/♯/g, '#')
-    .replace(/♭/g, 'b')
+    .replace(/\u266F/g, '#')
+    .replace(/\u266D/g, 'b')
     .replace(/\s+/g, '');
-
   if (LATIN_TO_AMERICAN[normalizedSource]) {
     return LATIN_TO_AMERICAN[normalizedSource];
   }
-
   const upperRoot = normalizedSource.charAt(0).toUpperCase() + normalizedSource.slice(1);
   const rootMatch = upperRoot.match(/^([A-G][#b]?)/);
   if (!rootMatch) return source;
-
   const root = FLAT_TO_SHARP[rootMatch[1]] || rootMatch[1];
   return root;
 };
-
 const transposeChordToken = (token, steps = 0) => {
   if (!token || !steps) return token;
   const match = String(token).match(/^([A-G][#b]?)(.*)$/);
   if (!match) return token;
-
   let [, root, suffix] = match;
   root = FLAT_TO_SHARP[root] || root;
   const rootIndex = SHARP_NOTES.indexOf(root);
   if (rootIndex === -1) return token;
-
   let nextIndex = (rootIndex + steps) % 12;
   if (nextIndex < 0) nextIndex += 12;
-
   let nextSuffix = suffix;
   if (suffix.startsWith('/')) {
     const bassMatch = suffix.match(/^\/([A-G][#b]?)(.*)$/);
@@ -427,24 +362,19 @@ const transposeChordToken = (token, steps = 0) => {
       return `/${SHARP_NOTES[nextBassIndex]}`;
     });
   }
-
   return `${SHARP_NOTES[nextIndex]}${nextSuffix}`;
 };
-
 const transposeChordProLine = (line, steps = 0) => {
   if (!line || !steps) return line;
   return String(line).replace(/\[([^\]]+)\]/g, (_match, chord) => `[${transposeChordToken(chord, steps)}]`);
 };
-
 const parseChordProLine = (line) => {
   if (!line) return [];
-
   const segments = [];
   const regex = /\[([^\]]+)\]/g;
   let currentChord = '';
   let lastIndex = 0;
   let match;
-
   while ((match = regex.exec(line)) !== null) {
     const lyric = line.slice(lastIndex, match.index);
     if (lyric || currentChord) {
@@ -453,39 +383,31 @@ const parseChordProLine = (line) => {
     currentChord = match[1].trim();
     lastIndex = match.index + match[0].length;
   }
-
   const tail = line.slice(lastIndex);
   if (tail || currentChord) {
     segments.push({ chord: currentChord, lyric: tail });
   }
-
   return segments.length > 0 ? segments : [{ chord: '', lyric: line }];
 };
-
 const buildChordOverlayLine = (line) => {
   const segments = parseChordProLine(line);
   if (!segments.length) {
     return { mode: 'plain', text: line || '' };
   }
-
   const hasChord = segments.some((segment) => segment.chord);
   const lyricLine = segments.map((segment) => segment.lyric || '').join('');
   const hasVisibleLyric = lyricLine.trim().length > 0;
-
   if (!hasChord) {
     return { mode: 'plain', text: lyricLine || line || '' };
   }
-
   if (!hasVisibleLyric) {
     return {
       mode: 'instrumental',
       chords: segments.map((segment) => segment.chord).filter(Boolean),
     };
   }
-
   let charIndex = 0;
   const chordMarks = [];
-
   segments.forEach((segment) => {
     if (segment.chord) {
       chordMarks.push({
@@ -495,20 +417,17 @@ const buildChordOverlayLine = (line) => {
     }
     charIndex += (segment.lyric || '').length;
   });
-
   return {
     mode: 'segments',
     segments,
   };
 };
-
 export default function ModoEnsayoCompacto({
   song,
   contextTitle = '',
   onGoBack,
 }) {
   if (!song) return null;
-
   const [headerHidden, setHeaderHidden] = useState(false);
   const [fontScale, setFontScale] = useState('normal');
   const [isPlaying, setIsPlaying] = useState(false);
@@ -524,7 +443,6 @@ export default function ModoEnsayoCompacto({
   const [showKeyMenu, setShowKeyMenu] = useState(false);
   const [showPlaybackOptions, setShowPlaybackOptions] = useState(false);
   const [selectedPlaybackSourceId, setSelectedPlaybackSourceId] = useState('original');
-
   const audioRef = useRef(null);
   const headerRef = useRef(null);
   const scrollRef = useRef(null);
@@ -557,13 +475,11 @@ export default function ModoEnsayoCompacto({
   ), [currentSong?.sections, transposeSteps]);
   const sectionMapItems = useMemo(() => {
     const kindOccurrences = new Map();
-
     return currentSections.map((section, index) => {
       const kind = getSectionKind(section?.name || '');
       const nextOccurrence = (kindOccurrences.get(kind) || 0) + 1;
       kindOccurrences.set(kind, nextOccurrence);
       const visual = SECTION_VISUALS[kind] || SECTION_VISUALS.default;
-
       return {
         index,
         kind,
@@ -590,7 +506,6 @@ export default function ModoEnsayoCompacto({
     Array.isArray(currentSong?.sectionMarkers)
       ? (() => {
           let nextSectionSearchIndex = 0;
-
           const mappedMarkers = currentSong.sectionMarkers
           .filter((marker) => Number.isFinite(Number(marker?.startSec)))
           .map((marker, index) => ({
@@ -604,13 +519,11 @@ export default function ModoEnsayoCompacto({
           }))
           .map((marker, index) => {
             const normalizedMarkerName = normalizeSectionLabel(marker.sectionName);
-
             let sectionIndex = Number.isInteger(marker.rawSectionIndex) &&
               marker.rawSectionIndex >= 0 &&
               marker.rawSectionIndex < currentSections.length
               ? marker.rawSectionIndex
               : -1;
-
             if (sectionIndex === -1 && Number.isInteger(marker.rawSectionOccurrence)) {
               let occurrenceCount = 0;
               sectionIndex = currentSections.findIndex((section) => {
@@ -619,32 +532,26 @@ export default function ModoEnsayoCompacto({
                 return occurrenceCount === marker.rawSectionOccurrence;
               });
             }
-
             if (sectionIndex === -1) {
               sectionIndex = currentSections.findIndex((section, candidateIndex) => (
                 candidateIndex >= nextSectionSearchIndex &&
                 normalizeSectionLabel(section?.name) === normalizedMarkerName
               ));
             }
-
             if (sectionIndex === -1) {
               sectionIndex = currentSections.findIndex((section) => (
                 normalizeSectionLabel(section?.name) === normalizedMarkerName
               ));
             }
-
             if (sectionIndex === -1) {
               sectionIndex = Math.min(index, Math.max(currentSections.length - 1, 0));
             }
-
             nextSectionSearchIndex = Math.max(nextSectionSearchIndex, sectionIndex + 1);
-
             return {
               ...marker,
               sectionIndex,
             };
           });
-
           return repairMarkerTimeline(mappedMarkers, Math.max(0, currentSong?.duration || 0));
         })()
       : []
@@ -659,26 +566,21 @@ export default function ModoEnsayoCompacto({
     });
     return map;
   }, [currentSongMarkers]);
-
   const fallbackTrackDuration = useMemo(() => {
     const highestMarkerPoint = currentSongMarkers.reduce((maxValue, marker) => {
       const markerEdge = Number.isFinite(marker?.endSec) ? marker.endSec : marker?.startSec;
       return Math.max(maxValue, markerEdge || 0);
     }, 0);
-
     return Math.max(0, currentSong?.duration || 0, highestMarkerPoint);
   }, [currentSong?.duration, currentSongMarkers]);
-
   const timelineDuration = Math.max(1, audioDuration > 0 ? audioDuration : fallbackTrackDuration || 1);
   const durationLabel = audioDuration > 0
     ? formatSeconds(audioDuration)
     : hasAudio
       ? '--:--'
       : formatSeconds(fallbackTrackDuration);
-
   const activeMarkerIndex = useMemo(() => {
     if (!hasAudio || currentSongMarkers.length === 0 || timelineDuration <= 0) return -1;
-
     let activeIndex = -1;
     currentSongMarkers.forEach((marker, markerIndex) => {
       const nextMarker = currentSongMarkers[markerIndex + 1];
@@ -687,10 +589,8 @@ export default function ModoEnsayoCompacto({
         activeIndex = markerIndex;
       }
     });
-
     return activeIndex;
   }, [audioCurrentTime, currentSongMarkers, hasAudio, timelineDuration]);
-
   const activeSectionByAudioIndex = activeMarkerIndex >= 0
     ? (
         Number.isInteger(currentSongMarkers[activeMarkerIndex]?.sectionIndex)
@@ -698,7 +598,6 @@ export default function ModoEnsayoCompacto({
           : Math.min(activeMarkerIndex, currentSections.length - 1)
       )
     : -1;
-
   const playbackMarkers = useMemo(() => (
     currentSongMarkers.map((marker, markerIndex) => ({
       ...marker,
@@ -715,7 +614,6 @@ export default function ModoEnsayoCompacto({
         shortLabel: section?.name || `${index + 1}`,
         rgb: SECTION_VISUALS.default.rgb,
       };
-
       const nextMarker = (() => {
         for (let candidate = index + 1; candidate < currentSections.length; candidate += 1) {
           const found = markerBySectionIndex.get(candidate);
@@ -723,7 +621,6 @@ export default function ModoEnsayoCompacto({
         }
         return null;
       })();
-
       const previousMarker = (() => {
         for (let candidate = index - 1; candidate >= 0; candidate -= 1) {
           const found = markerBySectionIndex.get(candidate);
@@ -731,10 +628,8 @@ export default function ModoEnsayoCompacto({
         }
         return null;
       })();
-
       let startSec = marker?.startSec;
       let endSec = nextMarker?.startSec;
-
       if (!Number.isFinite(startSec)) {
         if (Number.isFinite(previousMarker?.startSec) && Number.isFinite(nextMarker?.startSec)) {
           startSec = previousMarker.startSec + ((nextMarker.startSec - previousMarker.startSec) / 2);
@@ -744,14 +639,11 @@ export default function ModoEnsayoCompacto({
           startSec = 0;
         }
       }
-
       if (!Number.isFinite(endSec)) {
         endSec = timelineDuration;
       }
-
       const safeStart = Math.max(0, Math.min(startSec, timelineDuration));
       const safeEnd = Math.max(safeStart, Math.min(endSec, timelineDuration));
-
       return {
         section,
         index,
@@ -769,7 +661,6 @@ export default function ModoEnsayoCompacto({
   const currentHeaderOffset = headerHidden
     ? (isLandscapeCompact ? 8 : 18)
     : headerHeight + (isLandscapeCompact ? 8 : 18);
-
   const stopMetronome = React.useCallback(() => {
     if (metronomeIntervalRef.current) {
       window.clearInterval(metronomeIntervalRef.current);
@@ -777,51 +668,39 @@ export default function ModoEnsayoCompacto({
     }
     setIsMetronomeOn(false);
   }, []);
-
   const playMetronomeClick = React.useCallback(() => {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextClass) return;
-
     if (!metronomeAudioCtxRef.current || metronomeAudioCtxRef.current.state === 'closed') {
       metronomeAudioCtxRef.current = new AudioContextClass();
     }
-
     const audioCtx = metronomeAudioCtxRef.current;
     if (audioCtx.state === 'suspended') {
       audioCtx.resume();
     }
-
     const osc = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
-
     osc.connect(gainNode);
     gainNode.connect(audioCtx.destination);
-
     osc.type = 'sine';
     osc.frequency.setValueAtTime(800, audioCtx.currentTime);
-
     gainNode.gain.setValueAtTime(1, audioCtx.currentTime);
     gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
-
     osc.start(audioCtx.currentTime);
     osc.stop(audioCtx.currentTime + 0.1);
   }, []);
-
   const handleToggleMetronome = React.useCallback(() => {
     if (!currentSongBpm) return;
-
     if (isMetronomeOn) {
       stopMetronome();
       return;
     }
-
     stopMetronome();
     const beatDurationMs = (60 / currentSongBpm) * 1000;
     setIsMetronomeOn(true);
     playMetronomeClick();
     metronomeIntervalRef.current = window.setInterval(playMetronomeClick, beatDurationMs);
   }, [currentSongBpm, isMetronomeOn, playMetronomeClick, stopMetronome]);
-
   useEffect(() => {
     setIsPlaying(false);
     setActiveSectionManualIndex(0);
@@ -843,7 +722,6 @@ export default function ModoEnsayoCompacto({
     setHeaderHidden(isLandscapeCompact);
     stopMetronome();
   }, [currentSongKey, currentSong?.mp3, isLandscapeCompact, stopMetronome]);
-
   useEffect(() => {
     if (playbackSources.length === 0) return;
     const hasSelectedSource = playbackSources.some((source) => source.id === selectedPlaybackSourceId);
@@ -851,46 +729,36 @@ export default function ModoEnsayoCompacto({
       setSelectedPlaybackSourceId(playbackSources[0].id);
     }
   }, [playbackSources, selectedPlaybackSourceId]);
-
   useEffect(() => {
     if (!showKeyMenu || typeof window === 'undefined') return undefined;
-
     const handlePointerDown = (event) => {
       if (!keyMenuRef.current?.contains(event.target)) {
         setShowKeyMenu(false);
       }
     };
-
     window.addEventListener('mousedown', handlePointerDown);
     window.addEventListener('touchstart', handlePointerDown, { passive: true });
-
     return () => {
       window.removeEventListener('mousedown', handlePointerDown);
       window.removeEventListener('touchstart', handlePointerDown);
     };
   }, [showKeyMenu]);
-
   useEffect(() => {
     if (!showPlaybackOptions || typeof window === 'undefined') return undefined;
-
     const handlePointerDown = (event) => {
       if (!playbackOptionsRef.current?.contains(event.target)) {
         setShowPlaybackOptions(false);
       }
     };
-
     window.addEventListener('mousedown', handlePointerDown);
     window.addEventListener('touchstart', handlePointerDown, { passive: true });
-
     return () => {
       window.removeEventListener('mousedown', handlePointerDown);
       window.removeEventListener('touchstart', handlePointerDown);
     };
   }, [showPlaybackOptions]);
-
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
-
     const mediaQuery = window.matchMedia('(orientation: landscape) and (max-height: 540px)');
     const syncLandscapeCompact = (event) => {
       const matches = typeof event?.matches === 'boolean' ? event.matches : mediaQuery.matches;
@@ -900,57 +768,44 @@ export default function ModoEnsayoCompacto({
         return prev ? false : prev;
       });
     };
-
     syncLandscapeCompact();
-
     if (typeof mediaQuery.addEventListener === 'function') {
       mediaQuery.addEventListener('change', syncLandscapeCompact);
       return () => mediaQuery.removeEventListener('change', syncLandscapeCompact);
     }
-
     mediaQuery.addListener(syncLandscapeCompact);
     return () => mediaQuery.removeListener(syncLandscapeCompact);
   }, []);
-
   useEffect(() => {
     const headerNode = headerRef.current;
     if (!headerNode || typeof ResizeObserver === 'undefined') return undefined;
-
     const syncHeaderHeight = () => {
       const nextHeight = headerNode.getBoundingClientRect().height || 0;
       setHeaderHeight((prev) => (Math.abs(prev - nextHeight) < 1 ? prev : nextHeight));
     };
-
     syncHeaderHeight();
     const observer = new ResizeObserver(syncHeaderHeight);
     observer.observe(headerNode);
-
     return () => observer.disconnect();
   }, [currentSections.length, currentSongKey]);
-
   useEffect(() => {
     setCollapsedSections((prev) => {
       if (prev[currentSongKey]) return prev;
-
       const defaults = currentSections.reduce((acc, _section, index) => {
         acc[index] = false;
         return acc;
       }, {});
-
       return {
         ...prev,
         [currentSongKey]: defaults,
       };
     });
   }, [currentSections, currentSongKey]);
-
   useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return undefined;
-
       const handleScroll = () => {
         const currentTop = scroller.scrollTop;
-
         if (isLandscapeCompact) {
           if (currentTop < lastScrollTop.current - 8) {
             setHeaderHidden(false);
@@ -962,7 +817,6 @@ export default function ModoEnsayoCompacto({
           setHeaderHidden(false);
         }
         lastScrollTop.current = currentTop;
-
       let nextSectionIndex = 0;
       sectionRefs.current.forEach((node, index) => {
         if (!node) return;
@@ -970,20 +824,16 @@ export default function ModoEnsayoCompacto({
           nextSectionIndex = index;
         }
       });
-
       setActiveSectionManualIndex((prev) => (prev === nextSectionIndex ? prev : nextSectionIndex));
     };
-
     scroller.addEventListener('scroll', handleScroll, { passive: true });
     return () => scroller.removeEventListener('scroll', handleScroll);
   }, [currentHeaderOffset, currentSections.length, isLandscapeCompact]);
-
   useEffect(() => {
     if (activeSectionByAudioIndex < 0 || !scrollRef.current) return;
     setCollapsedSections((prev) => {
       const songState = prev[currentSongKey] || {};
       if (songState[activeSectionByAudioIndex] === false) return prev;
-
       return {
         ...prev,
         [currentSongKey]: {
@@ -993,12 +843,10 @@ export default function ModoEnsayoCompacto({
       };
     });
   }, [activeSectionByAudioIndex, currentSongKey]);
-
   const getSectionScrollTop = (index) => {
     const scroller = scrollRef.current;
     const node = sectionRefs.current[index];
     if (!scroller || !node) return null;
-
     const scrollerRect = scroller.getBoundingClientRect();
     const nodeRect = node.getBoundingClientRect();
     // Extra 14px breathing room so the section label doesn't sit flush against the header
@@ -1006,31 +854,25 @@ export default function ModoEnsayoCompacto({
     const targetTop = scroller.scrollTop + (nodeRect.top - scrollerRect.top) - currentHeaderOffset - SECTION_TOP_PAD;
     return Math.max(0, targetTop);
   };
-
   const scrollToSectionIndex = (index, behavior = 'smooth') => {
     const scroller = scrollRef.current;
     const targetTop = getSectionScrollTop(index);
     if (!scroller || targetTop === null) return;
-
     const distance = Math.abs(scroller.scrollTop - targetTop);
     if (distance < 40) return;
-
     scroller.scrollTo({
       top: targetTop,
       behavior,
     });
   };
-
   useEffect(() => {
     if (activeSectionByAudioIndex < 0) return;
     window.requestAnimationFrame(() => {
       scrollToSectionIndex(activeSectionByAudioIndex, 'smooth');
     });
   }, [activeSectionByAudioIndex]);
-
   useEffect(() => {
     if (loopState !== 2 || !isPlaying || !audioRef.current || !activeLoopSection) return undefined;
-
     const audioElement = audioRef.current;
     const handleSectionLoop = () => {
       if (!Number.isFinite(activeLoopSection.endSec) || !Number.isFinite(activeLoopSection.startSec)) return;
@@ -1039,16 +881,13 @@ export default function ModoEnsayoCompacto({
         setAudioCurrentTime(activeLoopSection.startSec);
       }
     };
-
     audioElement.addEventListener('timeupdate', handleSectionLoop);
     return () => audioElement.removeEventListener('timeupdate', handleSectionLoop);
   }, [activeLoopSection, isPlaying, loopState]);
-
   useEffect(() => {
     if (currentSongBpm > 0) return;
     stopMetronome();
   }, [currentSongBpm, stopMetronome]);
-
   useEffect(() => () => {
     stopMetronome();
     const audioCtx = metronomeAudioCtxRef.current;
@@ -1057,12 +896,10 @@ export default function ModoEnsayoCompacto({
     }
     metronomeAudioCtxRef.current = null;
   }, [stopMetronome]);
-
   const progressPercent = useMemo(() => {
     if (!timelineDuration) return 0;
     return Math.min(100, Math.max(0, (audioCurrentTime / timelineDuration) * 100));
   }, [audioCurrentTime, timelineDuration]);
-
   const handleGoBack = () => {
     if (audioRef.current) {
       audioRef.current.pause();
@@ -1074,23 +911,18 @@ export default function ModoEnsayoCompacto({
     if (typeof window !== 'undefined') {
       window.__REDIL_PRO_PLAYER__?.close?.();
     }
-
     if (typeof onGoBack === 'function') {
       onGoBack();
       return;
     }
-
     if (window.history.length > 1) {
       window.history.back();
       return;
     }
-
     window.location.href = '/repertorio';
   };
-
   const syncAudioMetrics = (audioElement) => {
     if (!audioElement) return;
-
     const nextDuration =
       Number.isFinite(audioElement.duration) && audioElement.duration > 0
         ? audioElement.duration
@@ -1099,12 +931,10 @@ export default function ModoEnsayoCompacto({
       Number.isFinite(audioElement.currentTime) && audioElement.currentTime >= 0
         ? audioElement.currentTime
         : 0;
-
     setAudioDuration((prev) => (Math.abs(prev - nextDuration) < 0.05 ? prev : nextDuration));
     setAudioReady(nextDuration > 0);
     setAudioCurrentTime((prev) => (Math.abs(prev - nextTime) < 0.05 ? prev : nextTime));
   };
-
   useEffect(() => {
     if (!hasAudio || !audioRef.current) return;
     const audioElement = audioRef.current;
@@ -1112,16 +942,13 @@ export default function ModoEnsayoCompacto({
       syncAudioMetrics(audioElement);
     });
   }, [activePlaybackUrl, hasAudio]);
-
   useEffect(() => {
     if (!pendingPlaybackResumeRef.current || !audioReady || !audioRef.current) return;
-
     pendingPlaybackResumeRef.current = false;
     audioRef.current.play().catch(() => {
       setIsPlaying(false);
     });
   }, [audioReady]);
-
   const selectSection = (index, { seekAudio = true, scrollBehavior = 'smooth' } = {}) => {
     setActiveSectionManualIndex(index);
     setCollapsedSections((prev) => ({
@@ -1131,7 +958,6 @@ export default function ModoEnsayoCompacto({
         [index]: false,
       },
     }));
-
     const marker = markerBySectionIndex.get(index);
     if (marker && audioRef.current) {
       if (seekAudio) {
@@ -1139,15 +965,12 @@ export default function ModoEnsayoCompacto({
         setAudioCurrentTime(marker.startSec);
       }
     }
-
     window.requestAnimationFrame(() => {
       scrollToSectionIndex(index, scrollBehavior);
     });
   };
-
   const handleTogglePlayback = async () => {
     if (!audioRef.current || !hasAudio) return;
-
     try {
       if (audioRef.current.paused) {
         await audioRef.current.play();
@@ -1158,7 +981,6 @@ export default function ModoEnsayoCompacto({
       setIsPlaying(false);
     }
   };
-
   const handleSeekChange = (event) => {
     const nextTime = Number(event.target.value || 0);
     setAudioCurrentTime(nextTime);
@@ -1166,7 +988,6 @@ export default function ModoEnsayoCompacto({
       audioRef.current.currentTime = nextTime;
     }
   };
-
   const cycleFontScale = () => {
     setFontScale((current) => {
       const currentIndex = FONT_SCALE_SEQUENCE.indexOf(current);
@@ -1174,21 +995,17 @@ export default function ModoEnsayoCompacto({
       return FONT_SCALE_SEQUENCE[nextIndex];
     });
   };
-
   const handleSelectPlaybackSource = (sourceId) => {
     if (sourceId === selectedPlaybackSourceId) {
       setShowPlaybackOptions(false);
       return;
     }
-
     const wasPlaying = Boolean(audioRef.current && !audioRef.current.paused);
     pendingPlaybackResumeRef.current = wasPlaying;
-
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
     }
-
     setIsPlaying(false);
     setAudioCurrentTime(0);
     setAudioDuration(0);
@@ -1196,7 +1013,6 @@ export default function ModoEnsayoCompacto({
     setSelectedPlaybackSourceId(sourceId);
     setShowPlaybackOptions(false);
   };
-
   return (
     <div className="ensayo-mobile-shell relative flex h-screen w-full flex-col overflow-hidden bg-white text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
       <audio
@@ -1225,7 +1041,6 @@ export default function ModoEnsayoCompacto({
               // keep regular ended fallback
             }
           }
-
           setIsPlaying(false);
           const finalTime = Number.isFinite(audioRef.current?.duration) ? audioRef.current.duration : 0;
           setAudioCurrentTime(finalTime || 0);
@@ -1256,7 +1071,6 @@ export default function ModoEnsayoCompacto({
           >
             <ArrowLeft className="h-4.5 w-4.5" />
           </button>
-
           <div className="min-w-0 flex-1">
             <div className="ensayo-header-slot overflow-hidden">
               {shouldRotateHeaderMeta ? (
@@ -1286,7 +1100,6 @@ export default function ModoEnsayoCompacto({
               )}
             </div>
           </div>
-
           <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
@@ -1298,7 +1111,7 @@ export default function ModoEnsayoCompacto({
                   : 'cursor-not-allowed border-zinc-200/70 text-zinc-400 dark:border-white/10 dark:text-zinc-500'
               } ${isMetronomeOn ? 'beat-active' : ''}`}
               style={isMetronomeOn && currentSongBpm ? { '--bpm-duration': `${60 / currentSongBpm}s` } : undefined}
-              aria-label={isMetronomeOn ? `Detener metrónomo ${currentSongBpm} BPM` : `Activar metrónomo ${currentSongBpm || 0} BPM`}
+              aria-label={isMetronomeOn ? `Detener metr\u00F3nomo ${currentSongBpm} BPM` : `Activar metr\u00F3nomo ${currentSongBpm || 0} BPM`}
               title={currentSongBpm ? `${currentSongBpm} BPM` : 'Sin BPM'}
               >
                 <span className={`relative z-[1] font-black leading-none ${String(currentSongBpm || '--').length > 2 ? 'text-[11px]' : 'text-sm'}`}>
@@ -1323,7 +1136,6 @@ export default function ModoEnsayoCompacto({
                 <span>{currentSongDisplayKey !== '-' ? currentSongDisplayKey : '-'}</span>
                 <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showKeyMenu ? 'rotate-180' : ''}`} />
               </button>
-
               {showKeyMenu && originalSongKey !== '-' && (
                 <div className="ensayo-key-menu absolute right-0 top-[calc(100%+0.55rem)] z-50 w-[13.75rem] rounded-[1.35rem] border border-zinc-200/85 bg-white/96 p-3 shadow-[0_18px_50px_rgba(15,23,42,0.22)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/96">
                   <p className="mb-2 px-1 text-[0.72rem] font-black uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
@@ -1366,7 +1178,6 @@ export default function ModoEnsayoCompacto({
             </button>
           </div>
         </div>
-
         <div
           className="ensayo-section-map px-3 pb-2"
           style={{
@@ -1401,7 +1212,6 @@ export default function ModoEnsayoCompacto({
           </div>
         </div>
       </header>
-
       <main
         ref={scrollRef}
         className="ensayo-main-scroll min-h-0 flex-1 overflow-y-auto pb-24 transition-[padding-top] duration-300"
@@ -1419,7 +1229,6 @@ export default function ModoEnsayoCompacto({
             const headerBgStyle = isActiveSection
               ? { backgroundColor: toRgba(visual.rgb, 0.045) }
               : undefined;
-
             return (
               <details
                 key={`${currentSongKey}-${section.name}-${sectionIndex}`}
@@ -1486,7 +1295,6 @@ export default function ModoEnsayoCompacto({
                     )}
                   </div>
                 </summary>
-
                 {!isCollapsed && (
                   <div
                     className="space-y-1.5 pt-2"
@@ -1501,7 +1309,6 @@ export default function ModoEnsayoCompacto({
                               {renderedLine.text}
                             </p>
                           )}
-
                           {renderedLine.mode === 'instrumental' && (
                             <div className="flex flex-row flex-wrap gap-2">
                               {renderedLine.chords.map((chord, chordIndex) => (
@@ -1513,13 +1320,11 @@ export default function ModoEnsayoCompacto({
                               ))}
                             </div>
                           )}
-
                           {renderedLine.mode === 'segments' && (
                             <p className={`leading-[1.12] text-zinc-900 dark:text-zinc-50 ${fontPreset.lyric}`}>
                               {renderedLine.segments.map((segment, segmentIndex) => {
                                 const lyricValue =
                                   segment.lyric && segment.lyric.length > 0 ? segment.lyric : '\u200A';
-
                                 return (
                                   <span
                                     key={`${section.name}-${lineIndex}-segment-${segmentIndex}`}
@@ -1549,7 +1354,6 @@ export default function ModoEnsayoCompacto({
           })}
         </div>
       </main>
-
       <div
         className="ensayo-footer-shell fixed inset-x-0 bottom-0 z-40 border-t border-zinc-200 bg-white/96 pb-[calc(env(safe-area-inset-bottom)+0.7rem)] pt-2.5 backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/96"
         style={{
@@ -1568,7 +1372,6 @@ export default function ModoEnsayoCompacto({
                   {activePlaybackSource?.label || 'Sin audio'}
                 </span>
               </div>
-
               <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {playbackSources.map((source) => {
                   const active = source.id === selectedPlaybackSourceId;
@@ -1588,7 +1391,6 @@ export default function ModoEnsayoCompacto({
                     </button>
                   );
                 })}
-
                 {!hasSequenceSources && (
                   <div className="shrink-0 rounded-full border border-dashed border-zinc-300 bg-zinc-50 px-3.5 py-2 text-sm font-semibold text-zinc-500 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-400">
                     Secuencia no disponible
@@ -1598,7 +1400,6 @@ export default function ModoEnsayoCompacto({
             </div>
           </div>
         )}
-
         <div className="ensayo-footer-row mx-auto flex max-w-5xl items-center gap-3 px-4">
           <button
             type="button"
@@ -1609,14 +1410,12 @@ export default function ModoEnsayoCompacto({
           >
             {isPlaying ? <Pause className="h-4.5 w-4.5" /> : <Play className="ml-0.5 h-4.5 w-4.5" />}
           </button>
-
           <div className="ensayo-footer-timeline min-w-0 flex-1">
             <div className="ensayo-footer-meta mb-1.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
               <span>{formatSeconds(audioCurrentTime)}</span>
-              <span>{currentSections[activeSectionIndex]?.name || 'Sección'}</span>
+              <span>{currentSections[activeSectionIndex]?.name || 'Secci\u00F3n'}</span>
               <span>{durationLabel}</span>
             </div>
-
             <div className="relative pt-1">
               <div className="pointer-events-none absolute left-0 right-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-zinc-300/75 dark:bg-white/10" />
               <div className="pointer-events-none absolute left-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-action" style={{ width: `${progressPercent}%` }} />
@@ -1629,7 +1428,7 @@ export default function ModoEnsayoCompacto({
                 onChange={handleSeekChange}
                 disabled={!hasAudio || !audioReady}
                 className="ensayo-seek relative z-10 h-5 w-full cursor-pointer appearance-none bg-transparent disabled:cursor-not-allowed"
-                aria-label="Posición de reproducción"
+                aria-label="Posici\u00F3n de reproducci\u00F3n"
               />
             </div>
             {playbackSectionStrip.length > 0 && (
@@ -1647,7 +1446,7 @@ export default function ModoEnsayoCompacto({
                       backgroundColor: item.isActive ? toRgba(item.visual.rgb, 0.96) : 'rgba(228,228,231,0.95)',
                       boxShadow: item.isActive ? `0 0 0 1px ${toRgba(item.visual.rgb, 0.2)}` : 'none',
                     }}
-                    title={`${item.section.name}${item.marker ? ` · ${formatSeconds(item.marker.startSec)}` : ''}`}
+                    title={`${item.section.name}${item.marker ? ` \u00B7 ${formatSeconds(item.marker.startSec)}` : ''}`}
                     aria-label={`Ir a ${item.section.name}`}
                   />
                 ))}
@@ -1655,11 +1454,10 @@ export default function ModoEnsayoCompacto({
             )}
             {!hasAudio && (
               <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400">
-                Esta canción todavía no tiene MP3 cargado.
+                Esta canci\u00F3n todav\u00EDa no tiene MP3 cargado.
               </p>
             )}
           </div>
-
           <div className="ensayo-footer-actions flex shrink-0 items-center gap-2">
             <button
               type="button"
@@ -1679,7 +1477,6 @@ export default function ModoEnsayoCompacto({
                 </span>
               )}
             </button>
-
             <button
               type="button"
               onClick={() => setShowPlaybackOptions((prev) => !prev)}
@@ -1702,12 +1499,10 @@ export default function ModoEnsayoCompacto({
           height: 3px;
           background: transparent;
         }
-
         .ensayo-seek::-moz-range-track {
           height: 3px;
           background: transparent;
         }
-
         .ensayo-seek::-webkit-slider-thumb {
           -webkit-appearance: none;
           appearance: none;
@@ -1719,7 +1514,6 @@ export default function ModoEnsayoCompacto({
           margin-top: -7px;
           box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
         }
-
         .ensayo-seek::-moz-range-thumb {
           width: 3px;
           height: 18px;
@@ -1728,16 +1522,13 @@ export default function ModoEnsayoCompacto({
           border: 0;
           box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
         }
-
         .ensayo-chord-token {
           color: rgb(var(--color-brand));
           text-rendering: geometricPrecision;
         }
-
         .ensayo-chord-root {
           display: inline-block;
         }
-
         .ensayo-chord-suffix {
           position: relative;
           top: -0.34em;
@@ -1747,40 +1538,32 @@ export default function ModoEnsayoCompacto({
           letter-spacing: -0.03em;
           vertical-align: baseline;
         }
-
         .ensayo-chord-bass {
           margin-left: 0.05em;
           white-space: nowrap;
         }
-
         .ensayo-chord-bass-divider {
           margin-right: 0.02em;
         }
-
         .dark .ensayo-chord-token {
           color: rgb(125 211 252);
           text-shadow: 0 0 12px rgba(125, 211, 252, 0.08);
         }
-
         .ensayo-header-slot {
           --header-mask-step: 2.25rem;
           height: var(--header-mask-step);
         }
-
         .ensayo-header-line {
           height: var(--header-mask-step);
         }
-
         .ensayo-header-title {
           font-size: 1.55rem;
           line-height: 1;
         }
-
         .ensayo-header-artist {
           font-size: 1.1rem;
           line-height: 1;
         }
-
         @keyframes ensayo-bpm-pulse {
           0% {
             transform: scale(1);
@@ -1799,20 +1582,16 @@ export default function ModoEnsayoCompacto({
             box-shadow: 0 1px 2px rgba(24, 24, 27, 0.08);
           }
         }
-
         .ensayo-bpm-chip.beat-active {
           animation: ensayo-bpm-pulse var(--bpm-duration, 1s) infinite;
         }
-
         .dark .ensayo-bpm-chip.beat-active {
           background-color: rgba(24, 24, 27, 0.98);
         }
-
         .ensayo-header-mask {
           animation: ensayo-header-rotate 8.4s infinite ease-in-out;
           will-change: transform;
         }
-
         @keyframes ensayo-header-rotate {
           0%,
           34% {
@@ -1827,93 +1606,75 @@ export default function ModoEnsayoCompacto({
             transform: translateY(calc(var(--header-mask-step, 2.25rem) * -2));
           }
         }
-
         @media (orientation: landscape) and (max-height: 540px) {
           .ensayo-header-top {
             gap: 0.55rem;
             padding-top: calc(env(safe-area-inset-top) + 0.3rem);
             padding-bottom: 0.1rem;
           }
-
           .ensayo-header-slot {
             --header-mask-step: 1.75rem;
           }
-
           .ensayo-header-title {
             font-size: 1.05rem;
           }
-
           .ensayo-header-artist {
             font-size: 0.82rem;
           }
-
           .ensayo-control-chip,
           .ensayo-header-top > button {
             width: 2.35rem;
             height: 2.35rem;
             border-radius: 0.95rem;
           }
-
           .ensayo-control-chip {
             font-size: 0.88rem;
           }
-
           .ensayo-section-map {
             padding-bottom: 0.2rem;
           }
-
           .ensayo-section-chip {
             min-width: 2rem !important;
             height: 2rem !important;
             font-size: 0.64rem !important;
           }
-
           .ensayo-sections-layout {
             columns: 2;
             column-gap: 0.85rem;
           }
-
           .ensayo-main-scroll {
             padding-bottom: 5.15rem !important;
           }
-
           .ensayo-footer-shell {
             padding-top: 0.35rem;
             padding-bottom: calc(env(safe-area-inset-bottom) + 0.35rem);
           }
-
           .ensayo-footer-row {
             gap: 0.55rem;
             align-items: flex-end;
           }
-
           .ensayo-footer-play,
           .ensayo-footer-icon {
             width: 2.7rem;
             height: 2.7rem;
             border-radius: 1rem;
           }
-
           .ensayo-footer-meta {
             margin-bottom: 0.35rem;
             font-size: 0.52rem;
             letter-spacing: 0.16em;
           }
-
           .ensayo-footer-timeline .ensayo-seek {
             height: 0.95rem;
           }
-
           .ensayo-playback-strip {
             margin-top: 0.35rem;
             height: 0.5rem;
           }
-
           .ensayo-playback-strip button {
             height: 0.45rem;
           }
         }
-
         @media (prefers-reduced-motion: reduce) {
           .ensayo-header-mask,
           .ensayo-bpm-chip.beat-active {

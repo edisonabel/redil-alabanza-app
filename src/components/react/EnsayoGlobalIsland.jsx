@@ -234,7 +234,7 @@ export default function EnsayoGlobalIsland() {
   if (!activeSong) return null;
 
   return (
-    <div className="fixed inset-0 z-50">
+    <div className="fixed inset-0 z-[100]">
       <ModoEnsayoCompacto
         song={activeSong}
         contextTitle="Repertorio"
