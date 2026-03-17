@@ -439,6 +439,7 @@ export default function ModoEnsayoCompacto({
   const [showPlaybackOptions, setShowPlaybackOptions] = useState(false);
   const [selectedPlaybackSourceId, setSelectedPlaybackSourceId] = useState('original');
   const [syncRole, setSyncRole] = useState('local');
+  const [panValue, setPanValue] = useState(0);
   const syncChannelRef = useRef(null);
   const audioRef = useRef(null);
   const headerRef = useRef(null);
@@ -450,6 +451,13 @@ export default function ModoEnsayoCompacto({
   const metronomeIntervalRef = useRef(null);
   const metronomeAudioCtxRef = useRef(null);
   const pendingPlaybackResumeRef = useRef(false);
+  const audioCtxRef = useRef(null);
+  const trackSourceRef = useRef(null);
+  const trackGainRef = useRef(null);
+  const trackPanRef = useRef(null);
+  const padAudioRef = useRef(null);
+  const [padVolume, setPadVolume] = useState(0.5);
+  const [isPadActive, setIsPadActive] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(148);
   const currentSong = song;
   const activeSongIndex = 0;
@@ -462,6 +470,11 @@ export default function ModoEnsayoCompacto({
       label: transposeChordToken(originalSongKey, steps),
     }))
   ), [originalSongKey]);
+  const activePadUrl = useMemo(() => {
+    if (!currentSongDisplayKey || currentSongDisplayKey === '-') return null;
+    const safeKey = currentSongDisplayKey.replace('#', 'Sharp').replace('b', 'Flat');
+    return `https://pub-4faa87e319a345c38e4f3be570797088.r2.dev/pads/Pad_${safeKey}.mp3`;
+  }, [currentSongDisplayKey]);
   const currentSections = useMemo(() => (
     (currentSong?.sections || []).map((section) => ({
       ...section,
@@ -698,6 +711,65 @@ export default function ModoEnsayoCompacto({
     playMetronomeClick();
     metronomeIntervalRef.current = window.setInterval(playMetronomeClick, beatDurationMs);
   }, [currentSongBpm, isMetronomeOn, playMetronomeClick, stopMetronome]);
+  const ensureWebAudioConnected = async () => {
+    const audioElement = audioRef.current;
+    if (!audioElement || typeof window === 'undefined') return;
+    if (audioElement.dataset.webaudioConnected === 'true') return;
+
+    // Limpiar contexto anterior si existe
+    if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+      try { audioCtxRef.current.close(); } catch {}
+    }
+
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    const ctx = new AudioContextClass();
+    audioCtxRef.current = ctx;
+
+    const source = ctx.createMediaElementSource(audioElement);
+    const gainNode = ctx.createGain();
+    const panNode = ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createPanner();
+
+    // Cadena: Source -> Panner -> Gain -> Salida
+    source.connect(panNode);
+    panNode.connect(gainNode);
+    gainNode.connect(ctx.destination);
+
+    trackSourceRef.current = source;
+    trackGainRef.current = gainNode;
+    trackPanRef.current = panNode;
+
+    audioElement.dataset.webaudioConnected = 'true';
+
+    // Aplicar paneo actual
+    if (panNode.pan) {
+      panNode.pan.setTargetAtTime(panValue, ctx.currentTime, 0.05);
+    }
+  };
+  useEffect(() => {
+    // Solo actualiza el panner si Web Audio ya está conectado (requiere CORS en R2)
+    const panner = trackPanRef.current;
+    if (!panner) return;
+    if (panner.pan) {
+      panner.pan.setTargetAtTime(panValue, audioCtxRef.current?.currentTime || 0, 0.05);
+    } else if (panner.setPosition) {
+      panner.setPosition(panValue, 0, 1 - Math.abs(panValue));
+    }
+  }, [panValue]);
+  useEffect(() => {
+    const padEl = padAudioRef.current;
+    if (!padEl) return;
+    padEl.volume = padVolume;
+    if (isPadActive && activePadUrl) {
+      padEl.play().catch(err => {
+        console.warn('[Pads] Autoplay bloqueado o archivo no encontrado', err);
+        setIsPadActive(false);
+      });
+    } else {
+      padEl.pause();
+    }
+  }, [isPadActive, activePadUrl, padVolume]);
   useEffect(() => {
     setIsPlaying(false);
     setActiveSectionManualIndex(0);
@@ -1011,6 +1083,10 @@ export default function ModoEnsayoCompacto({
     if (!audioRef.current || !hasAudio) return;
     try {
       if (audioRef.current.paused) {
+        await ensureWebAudioConnected();
+        if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+          await audioCtxRef.current.resume();
+        }
         await audioRef.current.play();
       } else {
         audioRef.current.pause();
@@ -1057,6 +1133,7 @@ export default function ModoEnsayoCompacto({
         key={`${currentSongKey}-${selectedPlaybackSourceId}-${activePlaybackUrl || 'no-audio'}`}
         ref={audioRef}
         src={hasAudio ? activePlaybackUrl : undefined}
+        crossOrigin="anonymous"
         preload="metadata"
         onLoadedMetadata={(event) => syncAudioMetrics(event.currentTarget)}
         onLoadedData={(event) => syncAudioMetrics(event.currentTarget)}
@@ -1087,6 +1164,13 @@ export default function ModoEnsayoCompacto({
           setAudioReady(false);
           setAudioDuration(0);
         }}
+      />
+      <audio
+        key={`pad-${activePadUrl}`}
+        ref={padAudioRef}
+        src={activePadUrl || undefined}
+        loop
+        preload="none"
       />
       <header
         ref={headerRef}
@@ -1466,6 +1550,72 @@ export default function ModoEnsayoCompacto({
                   </div>
                 )}
               </div>
+              {hasAudio && (
+                <div className="mt-4 border-t border-zinc-200/60 pt-3 dark:border-white/10">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <p className="text-[0.66rem] font-black uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">
+                      Ruteo de Salida (Split Track)
+                    </p>
+                  </div>
+                  <div className="flex gap-2 rounded-xl bg-zinc-50 p-1 dark:bg-zinc-950/50">
+                    <button
+                      type="button"
+                      onClick={() => setPanValue(-1)}
+                      className={`flex-1 rounded-lg py-2 text-xs font-bold transition-all ${panValue === -1 ? 'bg-white text-brand shadow-sm dark:bg-zinc-800 dark:text-brand' : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
+                    >
+                      Izquierda (Click)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPanValue(0)}
+                      className={`flex-1 rounded-lg py-2 text-xs font-bold transition-all ${panValue === 0 ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50' : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
+                    >
+                      Estéreo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPanValue(1)}
+                      className={`flex-1 rounded-lg py-2 text-xs font-bold transition-all ${panValue === 1 ? 'bg-white text-brand shadow-sm dark:bg-zinc-800 dark:text-brand' : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'}`}
+                    >
+                      Derecha (Pistas)
+                    </button>
+                  </div>
+                </div>
+              )}
+              {activePadUrl && (
+                <div className="mt-4 border-t border-zinc-200/60 pt-3 dark:border-white/10">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <p className="text-[0.66rem] font-black uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">
+                      Pad Ambiental ({currentSongDisplayKey})
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setIsPadActive(!isPadActive)}
+                      className={`rounded-full px-3 py-1 text-xs font-bold transition-all ${
+                        isPadActive
+                          ? 'bg-brand text-white shadow-sm'
+                          : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
+                      }`}
+                    >
+                      {isPadActive ? 'Pad ON' : 'Pad OFF'}
+                    </button>
+                  </div>
+                  {isPadActive && (
+                    <div className="flex items-center gap-3 rounded-xl bg-zinc-50 px-3 py-2 dark:bg-zinc-950/50">
+                      <span className="text-xs font-bold text-zinc-400">Vol</span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={padVolume}
+                        onChange={(e) => setPadVolume(parseFloat(e.target.value))}
+                        className="ensayo-seek h-4 flex-1 cursor-pointer appearance-none bg-transparent"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
