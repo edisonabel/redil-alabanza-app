@@ -123,6 +123,7 @@ const firstTourResourcesId =
   categoria={cancion.categoria || ''}
  voz={cancion.voz || cancion.voz_principal || ''}
  tema={cancion.tema || ''}
+ sectionMarkers={cancion.section_markers || []}
  estado={cancion.estado || ''}
  oculta={index >= 15}
  tourCard={String(cancion.id) === String(firstTourCardId) ? 'repertorio-card' : undefined}

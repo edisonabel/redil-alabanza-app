@@ -19,16 +19,21 @@ import EnsayoGlobalIsland from './react/EnsayoGlobalIsland.jsx';
         event.preventDefault();
         event.stopPropagation();
 
+        const el = btn as HTMLElement;
+        let sectionMarkers: any[] = [];
+        try { sectionMarkers = JSON.parse(el.dataset.sectionMarkers || '[]'); } catch {}
+
         const song = {
-          id:        (btn as HTMLElement).dataset.id    || '',
-          title:     (btn as HTMLElement).dataset.title  || '',
-          artist:    (btn as HTMLElement).dataset.artist || '',
-          key:       (btn as HTMLElement).dataset.key    || '',
-          bpm:       Number((btn as HTMLElement).dataset.bpm) || 0,
-          mp3:       (btn as HTMLElement).dataset.mp3    || '',
-          chordpro:  (btn as HTMLElement).dataset.chordpro || '',
-          linkVoces: (btn as HTMLElement).dataset.voces  || '',
-          linkYoutube: (btn as HTMLElement).dataset.youtube || '',
+          id:        el.dataset.id    || '',
+          title:     el.dataset.title  || '',
+          artist:    el.dataset.artist || '',
+          key:       el.dataset.key    || '',
+          bpm:       Number(el.dataset.bpm) || 0,
+          mp3:       el.dataset.mp3    || '',
+          chordpro:  el.dataset.chordpro || '',
+          linkVoces: el.dataset.voces  || '',
+          linkYoutube: el.dataset.youtube || '',
+          sectionMarkers,
         };
 
         window.dispatchEvent(

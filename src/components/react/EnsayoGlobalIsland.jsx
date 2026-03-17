@@ -222,7 +222,8 @@ export default function EnsayoGlobalIsland() {
           ? raw.sections
           : parseChordProSections(chordproText);
 
-      setActiveSong({ ...raw, chordpro: chordproText, sections });
+      const sectionMarkers = Array.isArray(raw.sectionMarkers) ? raw.sectionMarkers : [];
+      setActiveSong({ ...raw, chordpro: chordproText, sections, sectionMarkers });
     };
 
     window.addEventListener('open-ensayo-compacto', handleOpen);

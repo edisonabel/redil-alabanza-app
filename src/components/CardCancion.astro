@@ -15,6 +15,7 @@ interface Props {
 	categoria: string;
 	voz: string;
 	tema: string;
+	sectionMarkers?: any[];
 	estado?: string;
 	oculta?: boolean;
 	tourCard?: string;
@@ -22,7 +23,12 @@ interface Props {
 	tourResources?: string;
 }
 
-const { cancionId = "", titulo = "", cantante = "", tonalidad = "", bpm = 0, linkLetra = "", linkAcordes = "", linkVoces = "", linkYoutube = "", linkSecuencias = "", linkMp3 = "", chordpro = "", categoria = "", voz = "", tema = "", estado = "", oculta = false, tourCard = "", tourAudio = "", tourResources = "" } = Astro.props;
+const { cancionId = "", titulo = "", cantante = "", tonalidad = "", bpm = 0, linkLetra = "", linkAcordes = "", linkVoces = "", linkYoutube = "", linkSecuencias = "", linkMp3 = "", chordpro = "", categoria = "", voz = "", tema = "", sectionMarkers = [], estado = "", oculta = false, tourCard = "", tourAudio = "", tourResources = "" } = Astro.props;
+
+const sectionMarkersPayload = (() => {
+  try { return JSON.stringify(Array.isArray(sectionMarkers) ? sectionMarkers : []); }
+  catch { return '[]'; }
+})();
 
 const vocesPayload = (() => {
   const value = linkVoces as unknown;
@@ -113,6 +119,7 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
      data-chordpro={chordpro}
      data-voces={vocesPayload}
      data-youtube={linkYoutube}
+     data-section-markers={sectionMarkersPayload}
      class="list-play-btn btn-open-ensayo hidden absolute top-4 right-16 h-10 w-10 items-center justify-center rounded-2xl border border-indigo-300/60 bg-indigo-50 text-indigo-700 shadow-sm hover:bg-indigo-100 transition-all dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300"
      title="Ensayar">
      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
@@ -179,6 +186,7 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
      data-chordpro={chordpro}
      data-voces={vocesPayload}
      data-youtube={linkYoutube}
+     data-section-markers={sectionMarkersPayload}
      class="btn-open-ensayo group/play flex items-center justify-center gap-2 h-11 w-full rounded-2xl bg-indigo-600 text-white font-bold text-sm tracking-wide shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-[0.98] dark:bg-indigo-500 dark:hover:bg-indigo-400">
      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
      Ensayar
@@ -201,6 +209,7 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
        data-chordpro={chordpro}
        data-voces={vocesPayload}
        data-youtube={linkYoutube}
+       data-section-markers={sectionMarkersPayload}
        class="btn-open-ensayo h-9 rounded-xl border border-indigo-300/60 bg-indigo-50 shadow-sm inline-flex items-center gap-1.5 px-3 text-[12px] font-bold text-indigo-700 hover:bg-indigo-100 transition-all active:scale-95 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/16">
        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
        Ensayar
