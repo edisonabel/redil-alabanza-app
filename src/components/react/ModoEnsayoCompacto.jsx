@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ChevronDown, Pause, Play, Repeat, Repeat1, SlidersHorizontal } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Pause, Play, Radio, RadioReceiver, Repeat, Repeat1, SlidersHorizontal } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 const FONT_PRESETS = {
   compacta: {
     section: 'text-[0.64rem] sm:text-[0.68rem] tracking-[0.26em]',
@@ -443,6 +444,8 @@ export default function ModoEnsayoCompacto({
   const [showKeyMenu, setShowKeyMenu] = useState(false);
   const [showPlaybackOptions, setShowPlaybackOptions] = useState(false);
   const [selectedPlaybackSourceId, setSelectedPlaybackSourceId] = useState('original');
+  const [syncRole, setSyncRole] = useState('local');
+  const syncChannelRef = useRef(null);
   const audioRef = useRef(null);
   const headerRef = useRef(null);
   const scrollRef = useRef(null);
@@ -949,6 +952,47 @@ export default function ModoEnsayoCompacto({
       setIsPlaying(false);
     });
   }, [audioReady]);
+  useEffect(() => {
+    if (syncRole === 'local' || typeof window === 'undefined') {
+      if (syncChannelRef.current) {
+        supabase.removeChannel(syncChannelRef.current);
+        syncChannelRef.current = null;
+      }
+      return;
+    }
+    const channel = supabase.channel('ensayo-live-sync', {
+      config: { broadcast: { self: false } },
+    });
+    channel.on('broadcast', { event: 'SECTION_CHANGE' }, (payload) => {
+      if (syncRole === 'musico' && payload.payload) {
+        const { songId, sectionIndex } = payload.payload;
+        if (songId === currentSongKey) {
+          console.log('[LiveSync] Señal recibida, saltando a sección:', sectionIndex);
+          selectSection(sectionIndex, { seekAudio: false, scrollBehavior: 'smooth' });
+        }
+      }
+    }).subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        console.log(`[LiveSync] Conectado como ${syncRole}`);
+      }
+    });
+    syncChannelRef.current = channel;
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [syncRole]);
+  useEffect(() => {
+    if (syncRole !== 'director' || !syncChannelRef.current) return;
+    console.log('[LiveSync] Emitiendo cambio de sección:', activeSectionIndex);
+    syncChannelRef.current.send({
+      type: 'broadcast',
+      event: 'SECTION_CHANGE',
+      payload: {
+        songId: currentSongKey,
+        sectionIndex: activeSectionIndex,
+      },
+    }).catch(err => console.warn('[LiveSync] Error enviando señal:', err));
+  }, [activeSectionIndex, syncRole, currentSongKey]);
   const selectSection = (index, { seekAudio = true, scrollBehavior = 'smooth' } = {}) => {
     setActiveSectionManualIndex(index);
     setCollapsedSections((prev) => ({
@@ -1101,6 +1145,21 @@ export default function ModoEnsayoCompacto({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSyncRole(prev => prev === 'local' ? 'director' : prev === 'director' ? 'musico' : 'local')}
+              className={`ensayo-control-chip flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border transition-all ${
+                syncRole === 'director'
+                  ? 'border-brand bg-brand text-white shadow-[0_8px_18px_rgba(59,130,246,0.3)]'
+                  : syncRole === 'musico'
+                  ? 'border-emerald-500 bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
+                  : 'border-zinc-200 bg-white text-zinc-400 hover:bg-zinc-50 dark:border-white/10 dark:bg-zinc-900 dark:hover:bg-zinc-800'
+              }`}
+              aria-label="Modo de Sincronización"
+              title={syncRole === 'local' ? 'Desconectado' : syncRole === 'director' ? 'Modo Director (Enviando)' : 'Modo Músico (Recibiendo)'}
+            >
+              {syncRole === 'director' ? <Radio className="h-4.5 w-4.5 animate-pulse" /> : <RadioReceiver className="h-4.5 w-4.5" />}
+            </button>
             <button
               type="button"
               onClick={handleToggleMetronome}
