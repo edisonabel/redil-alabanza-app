@@ -757,19 +757,49 @@ export default function ModoEnsayoCompacto({
       panner.setPosition(panValue, 0, 1 - Math.abs(panValue));
     }
   }, [panValue]);
+  // Efecto Maestro de Fades (Encendido/Apagado) — 5 segundos suave
   useEffect(() => {
     const padEl = padAudioRef.current;
     if (!padEl) return;
-    padEl.volume = padVolume;
+    if (padEl._fadeInterval) clearInterval(padEl._fadeInterval);
     if (isPadActive && activePadUrl) {
-      padEl.play().catch(err => {
-        console.warn('[Pads] Autoplay bloqueado o archivo no encontrado', err);
-        setIsPadActive(false);
-      });
+      if (padEl.paused) {
+        padEl.volume = 0;
+        padEl.play().then(() => {
+          const step = padVolume / 100;
+          padEl._fadeInterval = setInterval(() => {
+            if (padEl.volume + step < padVolume) {
+              padEl.volume += step;
+            } else {
+              padEl.volume = padVolume;
+              clearInterval(padEl._fadeInterval);
+            }
+          }, 50); // 100 pasos × 50ms = 5 segundos de Fade-In
+        }).catch(err => {
+          console.warn('[Pads] Autoplay bloqueado', err);
+          setIsPadActive(false);
+        });
+      }
     } else {
-      padEl.pause();
+      const startVol = padEl.volume;
+      const step = startVol / 100;
+      padEl._fadeInterval = setInterval(() => {
+        if (padEl.volume - step > 0) {
+          padEl.volume -= step;
+        } else {
+          padEl.volume = 0;
+          padEl.pause();
+          clearInterval(padEl._fadeInterval);
+        }
+      }, 50); // 100 pasos × 50ms = 5 segundos de Fade-Out
     }
-  }, [isPadActive, activePadUrl, padVolume]);
+  }, [isPadActive, activePadUrl]); // Sin padVolume para no interrumpir el fade
+  // Efecto secundario: slider de volumen (solo si no hay fade activo)
+  useEffect(() => {
+    const padEl = padAudioRef.current;
+    if (!padEl || !isPadActive || padEl._fadeInterval) return;
+    padEl.volume = padVolume;
+  }, [padVolume, isPadActive]);
   useEffect(() => {
     setIsPlaying(false);
     setActiveSectionManualIndex(0);
@@ -1071,8 +1101,28 @@ export default function ModoEnsayoCompacto({
     const marker = markerBySectionIndex.get(index);
     if (marker && audioRef.current) {
       if (seekAudio) {
-        audioRef.current.currentTime = marker.startSec;
-        setAudioCurrentTime(marker.startSec);
+        const gainNode = trackGainRef?.current;
+        const ctx = audioCtxRef?.current;
+        if (gainNode && ctx && ctx.state === 'running') {
+          // Micro Fade-out de 150ms (Anti-pop)
+          gainNode.gain.cancelScheduledValues(ctx.currentTime);
+          gainNode.gain.setValueAtTime(gainNode.gain.value, ctx.currentTime);
+          gainNode.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.15);
+          setTimeout(() => {
+            if (audioRef.current) {
+              audioRef.current.currentTime = marker.startSec;
+              setAudioCurrentTime(marker.startSec);
+            }
+            // Micro Fade-in de 150ms tras el salto
+            gainNode.gain.cancelScheduledValues(ctx.currentTime);
+            gainNode.gain.setValueAtTime(0, ctx.currentTime);
+            gainNode.gain.linearRampToValueAtTime(1, ctx.currentTime + 0.15);
+          }, 150);
+        } else {
+          // Fallback si Web Audio no está inicializado
+          audioRef.current.currentTime = marker.startSec;
+          setAudioCurrentTime(marker.startSec);
+        }
       }
     }
     window.requestAnimationFrame(() => {
@@ -1170,7 +1220,7 @@ export default function ModoEnsayoCompacto({
         ref={padAudioRef}
         src={activePadUrl || undefined}
         loop
-        preload="none"
+        preload="auto"
       />
       <header
         ref={headerRef}
