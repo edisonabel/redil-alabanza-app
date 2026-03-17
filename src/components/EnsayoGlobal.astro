@@ -20,17 +20,24 @@ import EnsayoGlobalIsland from './react/EnsayoGlobalIsland.jsx';
         event.stopPropagation();
 
         const el = btn as HTMLElement;
-        let sectionMarkers: any[] = [];
-        try { sectionMarkers = JSON.parse(el.dataset.sectionMarkers || '[]'); } catch {}
+        const songId = el.dataset.id || '';
+
+        // Prefer global registry (lightweight) over data attributes (heavy)
+        const reg = (window as any).__REDIL_SONG_REGISTRY__?.[songId];
+        const chordpro = reg?.c || el.dataset.chordpro || '';
+        let sectionMarkers: any[] = reg?.m || [];
+        if (!sectionMarkers.length) {
+          try { sectionMarkers = JSON.parse(el.dataset.sectionMarkers || '[]'); } catch {}
+        }
 
         const song = {
-          id:        el.dataset.id    || '',
+          id:        songId,
           title:     el.dataset.title  || '',
           artist:    el.dataset.artist || '',
           key:       el.dataset.key    || '',
           bpm:       Number(el.dataset.bpm) || 0,
           mp3:       el.dataset.mp3    || '',
-          chordpro:  el.dataset.chordpro || '',
+          chordpro,
           linkVoces: el.dataset.voces  || '',
           linkYoutube: el.dataset.youtube || '',
           sectionMarkers,

@@ -12,6 +12,7 @@ interface Props {
 	linkSecuencias: string;
 	linkMp3: string;
 	chordpro: string;
+	hasChordproOverride?: boolean;
 	categoria: string;
 	voz: string;
 	tema: string;
@@ -23,7 +24,7 @@ interface Props {
 	tourResources?: string;
 }
 
-const { cancionId = "", titulo = "", cantante = "", tonalidad = "", bpm = 0, linkLetra = "", linkAcordes = "", linkVoces = "", linkYoutube = "", linkSecuencias = "", linkMp3 = "", chordpro = "", categoria = "", voz = "", tema = "", sectionMarkers = [], estado = "", oculta = false, tourCard = "", tourAudio = "", tourResources = "" } = Astro.props;
+const { cancionId = "", titulo = "", cantante = "", tonalidad = "", bpm = 0, linkLetra = "", linkAcordes = "", linkVoces = "", linkYoutube = "", linkSecuencias = "", linkMp3 = "", chordpro = "", hasChordproOverride, categoria = "", voz = "", tema = "", sectionMarkers = [], estado = "", oculta = false, tourCard = "", tourAudio = "", tourResources = "" } = Astro.props;
 
 const sectionMarkersPayload = (() => {
   try { return JSON.stringify(Array.isArray(sectionMarkers) ? sectionMarkers : []); }
@@ -60,7 +61,7 @@ if (estadoNormalized === 'nueva') {
 }
 
 const hasMp3 = linkMp3.trim() !== '';
-const hasChordpro = chordpro.trim() !== '';
+const hasChordpro = typeof hasChordproOverride === 'boolean' ? hasChordproOverride : chordpro.trim() !== '';
 const hasYoutube = linkYoutube.trim() !== '';
 const hasAcordes = linkAcordes.trim() !== '';
 const hasLetra = linkLetra.trim() !== '';

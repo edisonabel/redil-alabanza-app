@@ -12,7 +12,7 @@ try {
     .from('canciones')
     .select('*')
     .order('titulo');
-    
+
   if (error) {
     console.error("Error fetching from Supabase:", error);
   } else if (data) {
@@ -119,11 +119,12 @@ const firstTourResourcesId =
   linkYoutube={cancion.link_youtube || ''}
   linkSecuencias={cancion.link_secuencias || ''}
   linkMp3={cancion.mp3 || ''}
-  chordpro={cancion.chordpro || ''}
+  chordpro=""
+  hasChordproOverride={!!(cancion.chordpro && String(cancion.chordpro).trim())}
   categoria={cancion.categoria || ''}
  voz={cancion.voz || cancion.voz_principal || ''}
  tema={cancion.tema || ''}
- sectionMarkers={cancion.section_markers || []}
+ sectionMarkers={[]}
  estado={cancion.estado || ''}
  oculta={index >= 15}
  tourCard={String(cancion.id) === String(firstTourCardId) ? 'repertorio-card' : undefined}
@@ -132,6 +133,11 @@ const firstTourResourcesId =
  />
  ))}
  </div>
+
+ {/* Registro global: chordpro + markers fuera del DOM para ahorrar payload en data-attributes */}
+ <script is:inline define:vars={{ songRegistry: canciones.reduce((acc, c) => { if (c.chordpro || (Array.isArray(c.section_markers) && c.section_markers.length)) { acc[String(c.id)] = {}; if (c.chordpro) acc[String(c.id)].c = c.chordpro; if (Array.isArray(c.section_markers) && c.section_markers.length) acc[String(c.id)].m = c.section_markers; } return acc; }, {}) }}>
+   window.__REDIL_SONG_REGISTRY__ = songRegistry;
+ </script>
 
  <!-- Estado vacío — sin resultados de filtros -->
 <div id="emptyFilterState" class="hidden max-w-7xl mx-auto px-4 py-6">

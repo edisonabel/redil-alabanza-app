@@ -614,26 +614,35 @@ const themeColors = brandingData;
     if (isLocalHost) return;
     window.__REDIL_MAIN_SW_SYNC__ = true;
 
-    navigator.serviceWorker
-      .register('/sw.js')
-      .then((registration) => {
-        registration.onupdatefound = () => {
-          const installingWorker = registration.installing;
-          if (!installingWorker) return;
+    // Defer SW registration to after page is interactive
+    const doRegister = () => {
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then((registration) => {
+          registration.onupdatefound = () => {
+            const installingWorker = registration.installing;
+            if (!installingWorker) return;
 
-          installingWorker.onstatechange = () => {
-            if (
-              installingWorker.state === 'installed' &&
-              navigator.serviceWorker.controller
-            ) {
-              window.location.reload();
-            }
+            installingWorker.onstatechange = () => {
+              if (
+                installingWorker.state === 'installed' &&
+                navigator.serviceWorker.controller
+              ) {
+                window.location.reload();
+              }
+            };
           };
-        };
-      })
-      .catch((error) => {
-        console.warn('SW main registration sync failed', error);
-      });
+        })
+        .catch((error) => {
+          console.warn('SW main registration sync failed', error);
+        });
+    };
+
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(doRegister);
+    } else {
+      setTimeout(doRegister, 2000);
+    }
   })();
  </script>
   <script is:inline>
