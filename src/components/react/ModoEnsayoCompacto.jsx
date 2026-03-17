@@ -20,8 +20,14 @@ const FONT_PRESETS = {
     lyric: 'text-[1.1rem] sm:text-[1.18rem]',
     lineGap: 'gap-y-1.5',
   },
+  enorme: {
+    section: 'text-[0.88rem] sm:text-[0.94rem] tracking-[0.32em]',
+    chord: 'text-[1.18rem] sm:text-[1.28rem]',
+    lyric: 'text-[1.32rem] sm:text-[1.44rem]',
+    lineGap: 'gap-y-2',
+  },
 };
-const FONT_SCALE_SEQUENCE = ['compacta', 'normal', 'grande'];
+const FONT_SCALE_SEQUENCE = ['compacta', 'normal', 'grande', 'enorme'];
 const SHARP_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_TO_SHARP = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
 const TRANSPOSE_OPTIONS = [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6];
@@ -430,7 +436,7 @@ export default function ModoEnsayoCompacto({
 }) {
   if (!song) return null;
   const [headerHidden, setHeaderHidden] = useState(false);
-  const [fontScale, setFontScale] = useState('normal');
+  const [fontScale, setFontScale] = useState('grande');
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeSectionManualIndex, setActiveSectionManualIndex] = useState(0);
   const [collapsedSections, setCollapsedSections] = useState({});
@@ -968,7 +974,7 @@ export default function ModoEnsayoCompacto({
         const { songId, sectionIndex } = payload.payload;
         if (songId === currentSongKey) {
           console.log('[LiveSync] Señal recibida, saltando a sección:', sectionIndex);
-          selectSection(sectionIndex, { seekAudio: false, scrollBehavior: 'smooth' });
+          selectSection(sectionIndex, { seekAudio: true, scrollBehavior: 'smooth' });
         }
       }
     }).subscribe((status) => {
