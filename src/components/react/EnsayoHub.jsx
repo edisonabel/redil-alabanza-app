@@ -664,7 +664,7 @@ export default function EnsayoHub({
                       {hasVoiceResources && (
                         <button
                           type="button"
-                          className="btn-open-voces inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-teal-300/60 bg-teal-50 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-teal-700 transition-colors hover:bg-teal-100 dark:border-teal-500/25 dark:bg-teal-500/10 dark:text-teal-300 dark:hover:bg-teal-500/16"
+                          className="btn-open-voces inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-brand/30 bg-brand/10 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-brand transition-colors hover:bg-brand/15 dark:border-brand/25 dark:bg-brand/10 dark:text-brand dark:hover:bg-brand/16"
                           data-voces={safeVocesPayload}
                           data-title={song?.title || ''}
                           data-artist={song?.artist || ''}

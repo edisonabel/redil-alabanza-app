@@ -1169,7 +1169,7 @@ export default function AdminRepertorio() {
             {(editorChordproAviso || !sectionMarkersDisponibles) && (
               <div className="shrink-0 space-y-3 border-b border-border bg-surface px-6 py-4">
                 {editorChordproAviso && (
-                  <p className="rounded-2xl border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-xs font-medium text-sky-600 dark:text-sky-300">
+                  <p className="rounded-2xl border border-info/20 bg-info/10 px-3 py-2 text-xs font-medium text-info dark:text-info">
                     {editorChordproAviso}
                   </p>
                 )}

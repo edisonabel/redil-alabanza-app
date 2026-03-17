@@ -226,7 +226,7 @@ export default function NotificationBell({ inline = false, direction = 'down' })
         </svg>
 
         {unreadCount > 0 && (
-          <span className="absolute -right-1 -top-1 min-w-[18px] h-[18px] rounded-full bg-red-500 px-1 text-[10px] leading-[18px] font-bold text-white shadow-md">
+          <span className="absolute -right-1 -top-1 min-w-[18px] h-[18px] rounded-full bg-danger px-1 text-[10px] leading-[18px] font-bold text-white shadow-md">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}

@@ -51,13 +51,13 @@ const estadoNormalized = (estado || '').toLowerCase().trim();
 
 let colorEstado = 'bg-neutral-600 text-white';
 if (estadoNormalized === 'nueva') {
-  colorEstado = 'bg-emerald-500 text-white animate-pulse';
+  colorEstado = 'bg-success text-white animate-pulse';
 } else if (estadoNormalized === 'recurrente') {
-  colorEstado = 'bg-red-500 text-white';
+  colorEstado = 'bg-danger text-white';
 } else if (estadoNormalized === 'activa') {
-  colorEstado = 'bg-teal-500 text-white';
+  colorEstado = 'bg-brand text-white';
 } else if (estadoNormalized === 'ensayo') {
-  colorEstado = 'bg-yellow-500 text-black';
+  colorEstado = 'bg-warning text-black';
 }
 
 const hasMp3 = linkMp3.trim() !== '';
@@ -121,7 +121,7 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
      data-voces={vocesPayload}
      data-youtube={linkYoutube}
      data-section-markers={sectionMarkersPayload}
-     class="list-play-btn btn-open-ensayo hidden absolute top-4 right-16 h-10 w-10 items-center justify-center rounded-2xl border border-indigo-300/60 bg-indigo-50 text-indigo-700 shadow-sm hover:bg-indigo-100 transition-all dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300"
+     class="list-play-btn btn-open-ensayo hidden absolute top-4 right-16 h-10 w-10 items-center justify-center rounded-2xl border border-brand/30 bg-brand/10 text-brand shadow-sm hover:bg-brand/15 transition-all dark:border-brand/25 dark:bg-brand/10 dark:text-brand"
      title="Ensayar">
      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
    </button>
@@ -188,7 +188,7 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
      data-voces={vocesPayload}
      data-youtube={linkYoutube}
      data-section-markers={sectionMarkersPayload}
-     class="btn-open-ensayo group/play flex items-center justify-center gap-2 h-11 w-full rounded-2xl bg-indigo-600 text-white font-bold text-sm tracking-wide shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg active:scale-[0.98] dark:bg-indigo-500 dark:hover:bg-indigo-400">
+     class="btn-open-ensayo group/play flex items-center justify-center gap-2 h-11 w-full rounded-2xl bg-brand text-white font-bold text-sm tracking-wide shadow-md transition-all hover:bg-brand/90 hover:shadow-lg active:scale-[0.98] dark:bg-brand dark:hover:bg-brand/80">
      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
      Ensayar
    </button>
@@ -211,7 +211,7 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
        data-voces={vocesPayload}
        data-youtube={linkYoutube}
        data-section-markers={sectionMarkersPayload}
-       class="btn-open-ensayo h-9 rounded-xl border border-indigo-300/60 bg-indigo-50 shadow-sm inline-flex items-center gap-1.5 px-3 text-[12px] font-bold text-indigo-700 hover:bg-indigo-100 transition-all active:scale-95 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300 dark:hover:bg-indigo-500/16">
+       class="btn-open-ensayo h-9 rounded-xl border border-brand/30 bg-brand/10 shadow-sm inline-flex items-center gap-1.5 px-3 text-[12px] font-bold text-brand hover:bg-brand/15 transition-all active:scale-95 dark:border-brand/25 dark:bg-brand/10 dark:text-brand dark:hover:bg-brand/16">
        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
        Ensayar
      </button>
@@ -248,7 +248,7 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
        data-voces={vocesPayload}
        data-title={titulo}
        data-artist={cantante || ''}
-       class="btn-open-voces h-9 rounded-xl border border-teal-300/60 bg-teal-50 shadow-sm inline-flex items-center gap-1.5 px-3 text-[12px] font-bold text-teal-700 hover:bg-teal-100 transition-all active:scale-95 dark:border-teal-500/25 dark:bg-teal-500/10 dark:text-teal-300 dark:hover:bg-teal-500/16">
+       class="btn-open-voces h-9 rounded-xl border border-brand/30 bg-brand/10 shadow-sm inline-flex items-center gap-1.5 px-3 text-[12px] font-bold text-brand hover:bg-brand/15 transition-all active:scale-95 dark:border-brand/25 dark:bg-brand/10 dark:text-brand dark:hover:bg-brand/16">
        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg>
        Voces
      </button>
@@ -258,7 +258,7 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
      {hasYoutube && (
      <a href={linkYoutube}
        target="_blank" rel="noopener noreferrer"
-       class="h-9 rounded-xl border border-red-200/80 bg-red-50 shadow-sm inline-flex items-center gap-1.5 px-3 text-[12px] font-bold text-red-600 hover:bg-red-100 transition-all active:scale-95 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/16">
+       class="h-9 rounded-xl border border-danger/20 bg-danger/10 shadow-sm inline-flex items-center gap-1.5 px-3 text-[12px] font-bold text-danger hover:bg-danger/15 transition-all active:scale-95 dark:border-danger/20 dark:bg-danger/10 dark:text-danger dark:hover:bg-danger/16">
        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path><polygon fill="white" stroke="none" points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon></svg>
        YouTube
      </a>

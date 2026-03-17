@@ -1546,8 +1546,8 @@ export default function ModoEnsayoCompacto({
           margin-right: 0.02em;
         }
         .dark .ensayo-chord-token {
-          color: rgb(125 211 252);
-          text-shadow: 0 0 12px rgba(125, 211, 252, 0.08);
+          color: rgb(var(--color-brand));
+          text-shadow: 0 0 12px rgba(var(--color-brand), 0.15);
         }
         .ensayo-header-slot {
           --header-mask-step: 2.25rem;
