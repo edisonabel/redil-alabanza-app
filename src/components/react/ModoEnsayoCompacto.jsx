@@ -2,18 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ChevronDown, Pause, Play, Radio, RadioReceiver, Repeat, Repeat1, SlidersHorizontal } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 const FONT_PRESETS = {
-  compacta: {
-    section: 'text-[0.64rem] sm:text-[0.68rem] tracking-[0.26em]',
-    chord: 'text-[0.84rem] sm:text-[0.89rem]',
-    lyric: 'text-[0.94rem] sm:text-[0.98rem]',
-    lineGap: 'gap-y-0.5',
-  },
-  normal: {
-    section: 'text-[0.68rem] sm:text-[0.72rem] tracking-[0.28em]',
-    chord: 'text-[0.88rem] sm:text-[0.94rem]',
-    lyric: 'text-[0.98rem] sm:text-[1.04rem]',
-    lineGap: 'gap-y-1',
-  },
   grande: {
     section: 'text-[0.78rem] sm:text-[0.82rem] tracking-[0.3em]',
     chord: 'text-[1rem] sm:text-[1.06rem]',
@@ -27,7 +15,7 @@ const FONT_PRESETS = {
     lineGap: 'gap-y-2',
   },
 };
-const FONT_SCALE_SEQUENCE = ['compacta', 'normal', 'grande', 'enorme'];
+const FONT_SCALE_SEQUENCE = ['grande', 'enorme'];
 const SHARP_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_TO_SHARP = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
 const TRANSPOSE_OPTIONS = [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6];
@@ -436,7 +424,7 @@ export default function ModoEnsayoCompacto({
 }) {
   if (!song) return null;
   const [headerHidden, setHeaderHidden] = useState(false);
-  const [fontScale, setFontScale] = useState('grande');
+  const [fontScale, setFontScale] = useState('enorme');
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeSectionManualIndex, setActiveSectionManualIndex] = useState(0);
   const [collapsedSections, setCollapsedSections] = useState({});
@@ -447,7 +435,7 @@ export default function ModoEnsayoCompacto({
   const [isMetronomeOn, setIsMetronomeOn] = useState(false);
   const [loopState, setLoopState] = useState(0);
   const [isLandscapeCompact, setIsLandscapeCompact] = useState(false);
-  const [showKeyMenu, setShowKeyMenu] = useState(false);
+  const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const [showPlaybackOptions, setShowPlaybackOptions] = useState(false);
   const [selectedPlaybackSourceId, setSelectedPlaybackSourceId] = useState('original');
   const [syncRole, setSyncRole] = useState('local');
@@ -457,7 +445,7 @@ export default function ModoEnsayoCompacto({
   const scrollRef = useRef(null);
   const lastScrollTop = useRef(0);
   const sectionRefs = useRef([]);
-  const keyMenuRef = useRef(null);
+  const optionsMenuRef = useRef(null);
   const playbackOptionsRef = useRef(null);
   const metronomeIntervalRef = useRef(null);
   const metronomeAudioCtxRef = useRef(null);
@@ -498,7 +486,7 @@ export default function ModoEnsayoCompacto({
       };
     });
   }, [currentSections]);
-  const fontPreset = FONT_PRESETS[fontScale] || FONT_PRESETS.normal;
+  const fontPreset = FONT_PRESETS[fontScale] || FONT_PRESETS.grande;
   const currentSongKey = String(currentSong?.id || 'demo');
   const titleLine = currentSong.title || 'Titulo de Cancion';
   const artistLine = currentSong.artist || 'Artista';
@@ -725,7 +713,7 @@ export default function ModoEnsayoCompacto({
     }
     setTransposeSteps(0);
     setLoopState(0);
-    setShowKeyMenu(false);
+    setShowOptionsMenu(false);
     setShowPlaybackOptions(false);
     setSelectedPlaybackSourceId('original');
     setHeaderHidden(isLandscapeCompact);
@@ -739,10 +727,10 @@ export default function ModoEnsayoCompacto({
     }
   }, [playbackSources, selectedPlaybackSourceId]);
   useEffect(() => {
-    if (!showKeyMenu || typeof window === 'undefined') return undefined;
+    if (!showOptionsMenu || typeof window === 'undefined') return undefined;
     const handlePointerDown = (event) => {
-      if (!keyMenuRef.current?.contains(event.target)) {
-        setShowKeyMenu(false);
+      if (!optionsMenuRef.current?.contains(event.target)) {
+        setShowOptionsMenu(false);
       }
     };
     window.addEventListener('mousedown', handlePointerDown);
@@ -751,7 +739,7 @@ export default function ModoEnsayoCompacto({
       window.removeEventListener('mousedown', handlePointerDown);
       window.removeEventListener('touchstart', handlePointerDown);
     };
-  }, [showKeyMenu]);
+  }, [showOptionsMenu]);
   useEffect(() => {
     if (!showPlaybackOptions || typeof window === 'undefined') return undefined;
     const handlePointerDown = (event) => {
@@ -1183,64 +1171,80 @@ export default function ModoEnsayoCompacto({
                   {currentSongBpm || '--'}
                 </span>
             </button>
-            <div ref={keyMenuRef} className="relative shrink-0">
+            <div ref={optionsMenuRef} className="relative shrink-0">
               <button
                 type="button"
-                onClick={() => {
-                  if (originalSongKey === '-') return;
-                  setShowKeyMenu((prev) => !prev);
-                }}
-                disabled={originalSongKey === '-'}
-                className={`ensayo-control-chip flex h-10 min-w-[3.45rem] items-center justify-center gap-1.5 rounded-2xl border border-zinc-200 bg-white px-2.5 text-sm font-black text-zinc-900 shadow-sm transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800 dark:disabled:text-zinc-500 ${
-                  showKeyMenu ? 'ring-2 ring-brand/20' : ''
+                onClick={() => setShowOptionsMenu((prev) => !prev)}
+                className={`ensayo-control-chip flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-900 shadow-sm transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800 ${
+                  showOptionsMenu ? 'ring-2 ring-brand/20 border-brand/30' : ''
                 }`}
-                aria-label={currentSongDisplayKey !== '-' ? `Tonalidad ${currentSongDisplayKey}` : 'Sin tonalidad'}
-                aria-expanded={showKeyMenu}
-                title={currentSongDisplayKey !== '-' ? `Tonalidad ${currentSongDisplayKey}` : 'Sin tonalidad'}
+                aria-label="Opciones de ensayo"
+                aria-expanded={showOptionsMenu}
+                title="Opciones"
               >
-                <span>{currentSongDisplayKey !== '-' ? currentSongDisplayKey : '-'}</span>
-                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showKeyMenu ? 'rotate-180' : ''}`} />
+                <SlidersHorizontal className="h-4.5 w-4.5" />
               </button>
-              {showKeyMenu && originalSongKey !== '-' && (
-                <div className="ensayo-key-menu absolute right-0 top-[calc(100%+0.55rem)] z-50 w-[13.75rem] rounded-[1.35rem] border border-zinc-200/85 bg-white/96 p-3 shadow-[0_18px_50px_rgba(15,23,42,0.22)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/96">
-                  <p className="mb-2 px-1 text-[0.72rem] font-black uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
-                    Tonalidad
-                  </p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {transposeKeyOptions.map((option, optionIndex) => {
-                      const active = option.steps === transposeSteps;
-                      return (
-                        <button
-                          key={`transpose-option-${option.steps}-${optionIndex}`}
-                          type="button"
-                          onClick={() => {
-                            setTransposeSteps(option.steps);
-                            setShowKeyMenu(false);
-                          }}
-                          className={`rounded-[1rem] border px-2 py-4 text-center text-lg font-black leading-none transition-all ${
-                            active
-                              ? 'border-brand bg-brand text-white shadow-[0_8px_20px_rgba(59,130,246,0.32)]'
-                              : 'border-zinc-200 bg-white text-zinc-900 hover:border-zinc-300 hover:bg-zinc-50 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800'
-                          }`}
-                          aria-pressed={active}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    })}
+              {showOptionsMenu && (
+                <div className="absolute right-0 top-[calc(100%+0.55rem)] z-50 w-[15rem] rounded-[1.35rem] border border-zinc-200/85 bg-white/96 p-3.5 shadow-[0_18px_50px_rgba(15,23,42,0.22)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/96 flex flex-col gap-4">
+                  {/* Tono */}
+                  {originalSongKey !== '-' && (
+                    <div>
+                      <p className="mb-2 px-1 text-[0.72rem] font-black uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+                        Tonalidad
+                      </p>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {transposeKeyOptions.map((option, optionIndex) => {
+                          const active = option.steps === transposeSteps;
+                          return (
+                            <button
+                              key={`transpose-option-${option.steps}-${optionIndex}`}
+                              type="button"
+                              onClick={() => setTransposeSteps(option.steps)}
+                              className={`rounded-[0.9rem] border px-2 py-3.5 text-center text-base font-black leading-none transition-all ${
+                                active
+                                  ? 'border-brand bg-brand text-white shadow-[0_8px_20px_rgba(59,130,246,0.32)]'
+                                  : 'border-zinc-200 bg-white text-zinc-900 hover:border-zinc-300 hover:bg-zinc-50 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800'
+                              }`}
+                              aria-pressed={active}
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {/* Tamaño */}
+                  <div>
+                    <p className="mb-2 px-1 text-[0.72rem] font-black uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+                      Tamaño de texto
+                    </p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {FONT_SCALE_SEQUENCE.map((size) => {
+                        const active = fontScale === size;
+                        return (
+                          <button
+                            key={size}
+                            type="button"
+                            onClick={() => setFontScale(size)}
+                            className={`rounded-[0.9rem] border px-3 py-2.5 text-center font-black leading-none transition-all ${
+                              size === 'grande' ? 'text-sm' : 'text-base'
+                            } ${
+                              active
+                                ? 'border-brand bg-brand text-white shadow-[0_8px_20px_rgba(59,130,246,0.32)]'
+                                : 'border-zinc-200 bg-white text-zinc-900 hover:bg-zinc-50 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800'
+                            }`}
+                            aria-pressed={active}
+                          >
+                            {size === 'grande' ? 'Grande' : 'Enorme'}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              onClick={cycleFontScale}
-              className="ensayo-control-chip flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-base font-black text-zinc-900 shadow-sm transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800"
-              aria-label="Cambiar tamano del texto"
-              title="Cambiar tamano del texto"
-            >
-              T
-            </button>
           </div>
         </div>
         <div
