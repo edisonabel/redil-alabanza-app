@@ -1555,16 +1555,16 @@ export default function ModoEnsayoCompacto({
                           )}
                           {renderedLine.mode === 'segments' && (
                             <p
-                              className={`relative mt-[1.8em] whitespace-pre-wrap break-words text-zinc-900 dark:text-zinc-50 ${fontPreset.lyric}`}
+                              className={`relative text-zinc-900 dark:text-zinc-50 whitespace-pre-wrap ${fontPreset.lyric}`}
                               style={{
-                                lineHeight: '1.4',
+                                lineHeight: '2.15',
                               }}
                             >
                               {renderedLine.segments.map((segment, segmentIndex) => (
                                 <React.Fragment key={`${section.name}-${lineIndex}-segment-${segmentIndex}`}>
                                   {segment.chord && (
                                     <span className="relative">
-                                      <span className="pointer-events-none absolute bottom-full left-0 whitespace-nowrap pb-[0.15em]">
+                                      <span className="pointer-events-none absolute bottom-[0.9em] left-0 whitespace-nowrap">
                                         <ChordDisplay
                                           chord={segment.chord}
                                           sizeClass={`font-mono ${fontPreset.chord}`}
