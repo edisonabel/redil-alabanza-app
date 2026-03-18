@@ -384,6 +384,30 @@ const parseChordProLine = (line) => {
   }
   return segments.length > 0 ? segments : [{ chord: '', lyric: line }];
 };
+/* ── Word-group builder: splits segments into per-word tokens ── */
+const segmentsToWordGroups = (segments) => {
+  const groups = [];
+  segments.forEach((seg) => {
+    const lyric = seg.lyric || '';
+    const tokens = lyric.split(/(\s+)/);
+    let chordAssigned = !seg.chord;
+    tokens.forEach((token) => {
+      if (token.length === 0) return;
+      const isSpace = /^\s+$/.test(token);
+      if (!isSpace && !chordAssigned) {
+        groups.push({ text: token, chord: seg.chord, isSpace: false });
+        chordAssigned = true;
+      } else {
+        groups.push({ text: token, chord: null, isSpace });
+      }
+    });
+    if (!chordAssigned) {
+      groups.push({ text: '\u200B', chord: seg.chord, isSpace: false });
+    }
+  });
+  return groups;
+};
+
 const buildChordOverlayLine = (line) => {
   const segments = parseChordProLine(line);
   if (!segments.length) {
@@ -401,20 +425,10 @@ const buildChordOverlayLine = (line) => {
       chords: segments.map((segment) => segment.chord).filter(Boolean),
     };
   }
-  let charIndex = 0;
-  const chordMarks = [];
-  segments.forEach((segment) => {
-    if (segment.chord) {
-      chordMarks.push({
-        chord: segment.chord,
-        index: charIndex,
-      });
-    }
-    charIndex += (segment.lyric || '').length;
-  });
   return {
     mode: 'segments',
     segments,
+    wordGroups: segmentsToWordGroups(segments),
   };
 };
 export default function ModoEnsayoCompacto({
@@ -1554,32 +1568,29 @@ export default function ModoEnsayoCompacto({
                             </div>
                           )}
                           {renderedLine.mode === 'segments' && (
-                            <p
-                              className={`text-zinc-900 dark:text-zinc-50 whitespace-pre-wrap ${fontPreset.lyric}`}
-                              style={{
-                                lineHeight: '2.6',
-                                paddingTop: '0.9em',
-                              }}
-                            >
-                              {renderedLine.segments.map((segment, segmentIndex) => (
-                                <React.Fragment key={`${section.name}-${lineIndex}-segment-${segmentIndex}`}>
-                                  {segment.chord ? (
-                                    <span className="relative">
-                                      <span
-                                        className="pointer-events-none absolute left-0 top-0 -translate-y-full whitespace-nowrap pb-[0.15em]"
-                                      >
+                            <p className={`text-zinc-900 dark:text-zinc-50 ${fontPreset.lyric}`}>
+                              {renderedLine.wordGroups.map((g, i) => {
+                                if (g.isSpace) {
+                                  return <React.Fragment key={`${section.name}-${lineIndex}-ws-${i}`}>{g.text}</React.Fragment>;
+                                }
+                                return (
+                                  <span
+                                    key={`${section.name}-${lineIndex}-wg-${i}`}
+                                    className="relative inline-block align-bottom"
+                                    style={{ paddingTop: '1.3em', lineHeight: '1.3' }}
+                                  >
+                                    {g.chord && (
+                                      <span className="pointer-events-none absolute left-0 top-0 whitespace-nowrap">
                                         <ChordDisplay
-                                          chord={segment.chord}
+                                          chord={g.chord}
                                           sizeClass={`font-mono ${fontPreset.chord}`}
                                         />
                                       </span>
-                                      {segment.lyric || '\u200B'}
-                                    </span>
-                                  ) : (
-                                    segment.lyric
-                                  )}
-                                </React.Fragment>
-                              ))}
+                                    )}
+                                    {g.text}
+                                  </span>
+                                );
+                              })}
                             </p>
                           )}
                         </div>
