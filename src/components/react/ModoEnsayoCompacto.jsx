@@ -1555,24 +1555,29 @@ export default function ModoEnsayoCompacto({
                           )}
                           {renderedLine.mode === 'segments' && (
                             <p
-                              className={`relative text-zinc-900 dark:text-zinc-50 whitespace-pre-wrap ${fontPreset.lyric}`}
+                              className={`text-zinc-900 dark:text-zinc-50 whitespace-pre-wrap ${fontPreset.lyric}`}
                               style={{
-                                lineHeight: '2.15',
+                                lineHeight: '2.6',
+                                paddingTop: '0.9em',
                               }}
                             >
                               {renderedLine.segments.map((segment, segmentIndex) => (
                                 <React.Fragment key={`${section.name}-${lineIndex}-segment-${segmentIndex}`}>
-                                  {segment.chord && (
+                                  {segment.chord ? (
                                     <span className="relative">
-                                      <span className="pointer-events-none absolute bottom-[0.9em] left-0 whitespace-nowrap">
+                                      <span
+                                        className="pointer-events-none absolute left-0 top-0 -translate-y-full whitespace-nowrap pb-[0.15em]"
+                                      >
                                         <ChordDisplay
                                           chord={segment.chord}
                                           sizeClass={`font-mono ${fontPreset.chord}`}
                                         />
                                       </span>
+                                      {segment.lyric || '\u200B'}
                                     </span>
+                                  ) : (
+                                    segment.lyric
                                   )}
-                                  {segment.lyric}
                                 </React.Fragment>
                               ))}
                             </p>
