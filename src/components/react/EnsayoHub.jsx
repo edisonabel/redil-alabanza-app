@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, CalendarDays, ChevronRight, Clock3, ListMusic, Mic2, Play, RadioReceiver, Zap } from 'lucide-react';
+import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Clock3, GripVertical, ListMusic, Mic2, Play, Plus, RadioReceiver, X, Zap } from 'lucide-react';
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
 import ModoLiveDirector from './ModoLiveDirector.jsx';
 import { supabase } from '../../lib/supabase';
@@ -348,10 +348,18 @@ export default function EnsayoHub({
   contextTitle = 'Modo Ensayo',
   eventMeta = null,
   initialSongId = null,
+  playlistId = null,
+  canEdit = false,
 }) {
-  const songs = useMemo(() => (
+  const [localPlaylist, setLocalPlaylist] = useState(() =>
     Array.isArray(playlist) ? playlist.filter(Boolean) : []
-  ), [playlist]);
+  );
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [showPrayerModal, setShowPrayerModal] = useState(false);
+  const [prayerText, setPrayerText] = useState('');
+  const [prayerTitle, setPrayerTitle] = useState('Oración de Confesión');
+
+  const songs = localPlaylist;
 
   const initialSong = useMemo(() => (
     initialSongId
@@ -372,10 +380,67 @@ export default function EnsayoHub({
   const queueSongsRef = useRef([]);
   const queueIndexRef = useRef(-1);
   const queueActiveRef = useRef(false);
+  const [insertAfterIndex, setInsertAfterIndex] = useState(-1);
 
   const playableSongs = useMemo(() => (
     songs.filter((song) => typeof song?.mp3 === 'string' && song.mp3.trim() !== '')
   ), [songs]);
+
+  // ── Reordenamiento de canciones ──
+  const moveSong = useCallback(async (fromIndex, direction) => {
+    const toIndex = fromIndex + direction;
+    if (toIndex < 0 || toIndex >= localPlaylist.length) return;
+    const newList = [...localPlaylist];
+    const [moved] = newList.splice(fromIndex, 1);
+    newList.splice(toIndex, 0, moved);
+    setLocalPlaylist(newList);
+    if (playlistId) {
+      for (let i = 0; i < newList.length; i++) {
+        const s = newList[i];
+        if (s?.isPrayer) continue; // no persistir oraciones (son locales)
+        await supabase
+          .from('playlist_canciones')
+          .update({ orden: i })
+          .eq('playlist_id', playlistId)
+          .eq('cancion_id', s.id);
+      }
+    }
+  }, [localPlaylist, playlistId]);
+
+  // ── Insertar sección de oración ──
+  const insertPrayerSection = useCallback((afterIndex) => {
+    const prayerSong = {
+      id: `prayer-${Date.now()}`,
+      title: prayerTitle || 'Oración de Confesión',
+      artist: '',
+      key: '-',
+      originalKey: '-',
+      bpm: 0,
+      category: 'Oración',
+      mp3: '',
+      linkVoces: '',
+      linkSecuencias: '',
+      sectionMarkers: [],
+      duration: 0,
+      sections: [],
+      isPrayer: true,
+      prayerText: prayerText || '',
+    };
+    const newList = [...localPlaylist];
+    newList.splice(afterIndex + 1, 0, prayerSong);
+    setLocalPlaylist(newList);
+    setShowPrayerModal(false);
+    setPrayerText('');
+    setPrayerTitle('Oración de Confesión');
+  }, [localPlaylist, prayerText, prayerTitle]);
+
+  const removePrayerSection = useCallback((index) => {
+    const newList = [...localPlaylist];
+    if (newList[index]?.isPrayer) {
+      newList.splice(index, 1);
+      setLocalPlaylist(newList);
+    }
+  }, [localPlaylist]);
 
   // ── Receptor Global: Escucha al Director y navega automáticamente ──
   useEffect(() => {
@@ -610,7 +675,7 @@ export default function EnsayoHub({
   if (isLiveMode) {
     return (
       <ModoLiveDirector
-        playlist={playableSongs}
+        playlist={songs}
         contextTitle={contextTitle}
         onExit={() => {
           stopMetronome();
@@ -664,6 +729,20 @@ export default function EnsayoHub({
                       <ListMusic className="h-4 w-4 text-zinc-400 dark:text-zinc-500" />
                       {songs.length} canciones
                     </span>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => setIsEditMode(!isEditMode)}
+                        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-wider transition-all ${
+                          isEditMode
+                            ? 'bg-brand text-white'
+                            : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
+                        }`}
+                      >
+                        <GripVertical className="h-3 w-3" />
+                        {isEditMode ? 'Listo' : 'Editar'}
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -676,6 +755,50 @@ export default function EnsayoHub({
         <div className="mx-auto max-w-5xl">
           <div className="overflow-hidden rounded-[2rem] border border-zinc-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-zinc-950/88 dark:shadow-[0_24px_80px_rgba(0,0,0,0.4)]">
             {songs.map((song, index) => {
+              // ── Card de Oración ──
+              if (song?.isPrayer) {
+                return (
+                  <article
+                    key={song.id}
+                    className="group flex w-full items-center gap-3 border-b border-zinc-200/90 bg-amber-50/50 px-4 py-4 dark:border-white/10 dark:bg-amber-500/5"
+                  >
+                    <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-amber-300/50 bg-amber-100 text-lg dark:border-amber-500/20 dark:bg-amber-500/10">
+                      🙏
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-base font-black tracking-tight text-amber-800 dark:text-amber-300">
+                        {song.title}
+                      </p>
+                      {song.prayerText && (
+                        <p className="mt-0.5 line-clamp-2 text-sm text-amber-600/80 dark:text-amber-400/60">
+                          {song.prayerText}
+                        </p>
+                      )}
+                      <span className="mt-1 inline-flex items-center rounded-full bg-amber-200/50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
+                        Sección de Oración
+                      </span>
+                    </div>
+                    {isEditMode && (
+                      <div className="flex items-center gap-1">
+                        <button type="button" onClick={() => moveSong(index, -1)} disabled={index === 0}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:border-white/10 dark:bg-zinc-800 dark:hover:bg-zinc-700">
+                          <ChevronUp className="h-4 w-4" />
+                        </button>
+                        <button type="button" onClick={() => moveSong(index, 1)} disabled={index === songs.length - 1}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:border-white/10 dark:bg-zinc-800 dark:hover:bg-zinc-700">
+                          <ChevronDown className="h-4 w-4" />
+                        </button>
+                        <button type="button" onClick={() => removePrayerSection(index)}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-500 hover:bg-red-100 dark:border-red-500/20 dark:bg-red-500/10 dark:hover:bg-red-500/20">
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
+                  </article>
+                );
+              }
+
+              // ── Card de Canción normal ──
               const keyLabel = normalizeKeyToAmerican(song?.originalKey || song?.key || '-');
               const bpmValue = Number.isFinite(Number(song?.bpm)) ? Math.max(0, Math.round(Number(song.bpm))) : 0;
               const isMetronomeActive = activeMetronomeSongId === song?.id;
@@ -689,26 +812,46 @@ export default function EnsayoHub({
               const isLastViewed = String(song?.id || index) === String(lastViewedSongId || '');
 
               return (
+                <React.Fragment key={song?.id || `${song?.title || 'song'}-${index}`}>
                 <article
-                  key={song?.id || `${song?.title || 'song'}-${index}`}
                   onClick={(event) => {
-                    if (event.target.closest('button')) return;
+                    if (isEditMode || event.target.closest('button')) return;
                     openCompactSong(song);
                   }}
                   onKeyDown={(event) => {
+                    if (isEditMode) return;
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
                       openCompactSong(song);
                     }
                   }}
                   role="button"
-                  tabIndex={0}
-                  className={`group grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 border-b border-zinc-200/90 px-4 py-4 text-left transition-colors dark:border-white/10 last:border-b-0 ${
+                  tabIndex={isEditMode ? -1 : 0}
+                  className={`group grid w-full items-start gap-x-3 gap-y-2 border-b border-zinc-200/90 px-4 py-4 text-left transition-colors dark:border-white/10 last:border-b-0 ${
+                    isEditMode
+                      ? 'grid-cols-[auto_auto_minmax(0,1fr)_auto]'
+                      : 'grid-cols-[auto_minmax(0,1fr)_auto]'
+                  } ${
                     isLastViewed
                       ? 'bg-brand/6 hover:bg-brand/10 dark:bg-brand/10 dark:hover:bg-brand/12'
-                      : 'hover:bg-zinc-50 dark:hover:bg-white/[0.03]'
+                      : isEditMode ? '' : 'hover:bg-zinc-50 dark:hover:bg-white/[0.03]'
                   }`}
                 >
+                  {/* Flechas de reorden (solo en modo edición) */}
+                  {isEditMode && (
+                    <div className="flex flex-col items-center gap-0.5 self-center">
+                      <button type="button" onClick={(e) => { e.stopPropagation(); moveSong(index, -1); }} disabled={index === 0}
+                        className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-20 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+                        <ChevronUp className="h-4 w-4" />
+                      </button>
+                      <GripVertical className="h-3.5 w-3.5 text-zinc-300 dark:text-zinc-600" />
+                      <button type="button" onClick={(e) => { e.stopPropagation(); moveSong(index, 1); }} disabled={index === songs.length - 1}
+                        className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-20 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+                        <ChevronDown className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+
                   <div className="grid h-12 w-12 shrink-0 place-items-center self-center rounded-2xl border border-zinc-200 bg-[linear-gradient(180deg,_rgba(255,255,255,0.96),_rgba(244,244,245,0.96))] text-sm font-black text-zinc-600 shadow-sm dark:border-white/10 dark:bg-[linear-gradient(180deg,_rgba(39,39,42,0.92),_rgba(24,24,27,0.92))] dark:text-zinc-200">
                     {String(index + 1).padStart(2, '0')}
                   </div>
@@ -752,6 +895,8 @@ export default function EnsayoHub({
                   </div>
 
                   <div className="ensayo-hub-row-actions flex shrink-0 items-start gap-2 self-start pt-1">
+                    {!isEditMode && (
+                      <>
                     <button
                       type="button"
                       onClick={(event) => {
@@ -797,8 +942,25 @@ export default function EnsayoHub({
                     <div className="ensayo-hub-row-chevron hidden h-10 w-10 items-center justify-center rounded-full text-zinc-300 transition-colors group-hover:text-zinc-500 dark:text-zinc-700 dark:group-hover:text-zinc-400 md:flex">
                       <ChevronRight className="h-5 w-5" />
                     </div>
+                      </>
+                    )}
                   </div>
                 </article>
+
+                {/* Botón para insertar oración entre canciones (solo en modo edición) */}
+                {isEditMode && (
+                  <div className="flex items-center justify-center border-b border-zinc-200/90 py-1 dark:border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => { setInsertAfterIndex(index); setShowPrayerModal(true); }}
+                      className="flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-zinc-400 transition-colors hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-500/10 dark:hover:text-amber-400"
+                    >
+                      <Plus className="h-3 w-3" />
+                      Insertar oración
+                    </button>
+                  </div>
+                )}
+                </React.Fragment>
               );
             })}
           </div>
@@ -915,6 +1077,56 @@ export default function EnsayoHub({
           transform: translateY(calc(100% + env(safe-area-inset-bottom) + 1rem));
         }
       `}</style>
+
+      {/* MODAL: Insertar sección de oración */}
+      {showPrayerModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-2xl dark:border-white/10 dark:bg-zinc-900">
+            <div className="border-b border-zinc-200/80 bg-amber-50 px-5 py-4 dark:border-white/10 dark:bg-amber-500/10">
+              <h3 className="text-lg font-black text-amber-800 dark:text-amber-300">🙏 Sección de Oración</h3>
+              <p className="mt-0.5 text-sm text-amber-600/70 dark:text-amber-400/60">Se insertará después de la canción {insertAfterIndex + 1}</p>
+            </div>
+            <div className="flex flex-col gap-4 p-5">
+              <div>
+                <label className="mb-1.5 block text-[11px] font-black uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Título</label>
+                <input
+                  type="text"
+                  value={prayerTitle}
+                  onChange={(e) => setPrayerTitle(e.target.value)}
+                  placeholder="Oración de Confesión"
+                  className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm font-bold text-zinc-900 placeholder-zinc-400 outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10 dark:bg-zinc-800 dark:text-white dark:placeholder-zinc-500"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-[11px] font-black uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Texto de la oración (opcional)</label>
+                <textarea
+                  value={prayerText}
+                  onChange={(e) => setPrayerText(e.target.value)}
+                  placeholder="Padre celestial, venimos ante tu presencia..."
+                  rows={4}
+                  className="w-full resize-none rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-700 placeholder-zinc-400 outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-white/10 dark:bg-zinc-800 dark:text-zinc-300 dark:placeholder-zinc-500"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-zinc-200/80 px-5 py-3 dark:border-white/10">
+              <button
+                type="button"
+                onClick={() => { setShowPrayerModal(false); setPrayerText(''); setPrayerTitle('Oración de Confesión'); }}
+                className="rounded-xl px-4 py-2 text-sm font-bold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => insertPrayerSection(insertAfterIndex)}
+                className="rounded-xl bg-amber-500 px-5 py-2 text-sm font-black text-white shadow-lg shadow-amber-500/25 hover:bg-amber-600"
+              >
+                Insertar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* OVERLAY DE CONEXIÓN LIVE — Cuenta regresiva */}
       {syncCountdown !== null && (

@@ -9,10 +9,12 @@ import {
   Music2,
   Zap,
   ChevronRight,
+  ChevronUp,
   Disc3,
   Repeat,
   Repeat2,
   Waves,
+  ListMusic,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
@@ -207,6 +209,61 @@ const formatTime = (secs) => {
   return `${m}:${String(s).padStart(2, '0')}`;
 };
 
+// ── Playback Sources: Extracción de secuencias ──
+const AUDIO_SOURCE_EXT_RE = /\.(mp3|wav|m4a|aac|ogg|flac)(\?.*)?$/i;
+const isAudioSourceUrl = (v = '') => AUDIO_SOURCE_EXT_RE.test(String(v || '').trim());
+
+const normalizePlaybackSourceEntry = (entry, index, fallbackKind = 'sequence') => {
+  if (!entry) return null;
+  if (typeof entry === 'string') {
+    const t = entry.trim();
+    if (!isAudioSourceUrl(t)) return null;
+    return { id: `${fallbackKind}-${index}-${t}`, label: fallbackKind === 'original' ? 'Música original' : `Secuencia ${index + 1}`, url: t, kind: fallbackKind };
+  }
+  if (typeof entry === 'object') {
+    const rawUrl = String(entry.url || entry.src || entry.href || entry.link || '').trim();
+    if (!isAudioSourceUrl(rawUrl)) return null;
+    const kind = String(entry.kind || entry.type || fallbackKind || 'sequence').trim().toLowerCase() === 'original' ? 'original' : 'sequence';
+    const label = String(entry.label || entry.name || entry.title || (kind === 'original' ? 'Música original' : `Secuencia ${index + 1}`)).trim();
+    return { id: String(entry.id || `${kind}-${index}-${rawUrl}`), label, url: rawUrl, kind };
+  }
+  return null;
+};
+
+const parseSequenceSourceEntries = (rawValue = '') => {
+  const source = String(rawValue || '').trim();
+  if (!source) return [];
+  if (source.startsWith('[') || source.startsWith('{')) {
+    try { const p = JSON.parse(source); return Array.isArray(p) ? p : (p && typeof p === 'object' ? [p] : []); } catch {}
+  }
+  if (isAudioSourceUrl(source)) return [source];
+  return source.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map((line, i) => {
+    const [maybeLabel, ...rest] = line.split('|');
+    return rest.length === 0 ? line : { label: maybeLabel.trim(), url: rest.join('|').trim() };
+  });
+};
+
+const buildPlaybackSources = (song) => {
+  const sources = [];
+  const seenUrls = new Set();
+  const push = (entry, i, kind = 'sequence') => {
+    const n = normalizePlaybackSourceEntry(entry, i, kind);
+    if (!n || seenUrls.has(n.url)) return;
+    seenUrls.add(n.url);
+    sources.push(n);
+  };
+  push({ id: 'original', label: 'Música original', url: song?.mp3, kind: 'original' }, 0, 'original');
+  const candidates = [
+    ...(Array.isArray(song?.playbackSources) ? song.playbackSources : []),
+    ...(Array.isArray(song?.sequenceSources) ? song.sequenceSources : []),
+    ...(Array.isArray(song?.sequences) ? song.sequences : []),
+  ];
+  const raw = song?.linkSecuencias || song?.link_secuencias || '';
+  if (raw) candidates.push(...parseSequenceSourceEntries(raw));
+  candidates.forEach((e, i) => push(e, i));
+  return sources;
+};
+
 // Extrae la primera línea cantable de la letra (sin acordes entre corchetes)
 const getFirstLyricLine = (body = '') => {
   if (!body) return '';
@@ -226,7 +283,13 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
   const [isPadActive, setIsPadActive] = useState(false);
   const [padVolume, setPadVolume] = useState(0.5);
   const [activePadChannel, setActivePadChannel] = useState('A');
+  const [showPadPanel, setShowPadPanel] = useState(false);
+  const [padBridging, setPadBridging] = useState(false); // true durante gap entre pistas
+  const padPanelRef = useRef(null);
   const [panValue, setPanValue] = useState(0); // -1 Izq, 0 Centro, 1 Der
+  const [showRouteMenu, setShowRouteMenu] = useState(false);
+  const [selectedSourceId, setSelectedSourceId] = useState('original');
+  const routeMenuRef = useRef(null);
   const audioRef = useRef(null);
   const padAudioRefA = useRef(null);
   const padAudioRefB = useRef(null);
@@ -234,6 +297,8 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
   const trackSourceRef = useRef(null);
   const trackGainRef = useRef(null);
   const trackPanRef = useRef(null);
+  const analyserRef = useRef(null);
+  const silenceStartRef = useRef(null); // timestamp cuando empezó el silencio
   const timelineRef = useRef(null);
   const syncChannelRef = useRef(null);
   const syncDataRef = useRef({ songId: null, sectionIndex: 0, time: 0 });
@@ -242,6 +307,14 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
   const sections = Array.isArray(activeSong?.sectionMarkers) ? activeSong.sectionMarkers : [];
   const hasSections = sections.length > 0;
   const activeCover = activeSong?.mp3 ? coverArts[activeSong.mp3] : null;
+
+  // ── Playback Sources: fuentes de audio disponibles ──
+  const playbackSources = useMemo(() => buildPlaybackSources(activeSong), [activeSong]);
+  const activeSource = useMemo(
+    () => playbackSources.find(s => s.id === selectedSourceId) || playbackSources[0] || null,
+    [playbackSources, selectedSourceId]
+  );
+  const activeSourceUrl = activeSource?.url || activeSong?.mp3 || '';
 
   // Marcadores filtrados (solo válidos)
   const markers = useMemo(() => {
@@ -469,6 +542,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
 
   // Cargar canción cuando cambia (no pausar si es auto-transición)
   useEffect(() => {
+    silenceStartRef.current = null; // Reset detector de silencio
     const audio = audioRef.current;
     if (!audio) return;
     if (!autoTransitionRef.current) {
@@ -484,6 +558,15 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = volume;
   }, [volume]);
+
+  // ── Auto-pausa cuando la canción activa es una oración ──
+  useEffect(() => {
+    if (activeSong?.isPrayer) {
+      const audio = audioRef.current;
+      if (audio && !audio.paused) audio.pause();
+      setIsPlaying(false);
+    }
+  }, [activeSong?.isPrayer, activeSong?.id]);
 
   // ── Motor Dual de Pads: Crossfade A/B ──
   useEffect(() => {
@@ -528,6 +611,8 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
           fadeOutPad.volume = 0;
           fadeOutPad.pause();
           clearInterval(interval);
+          fadeInPad._fadeInterval = null;
+          fadeOutPad._fadeInterval = null;
         }
       }, stepTime);
       fadeInPad._fadeInterval = interval;
@@ -542,8 +627,8 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
   useEffect(() => {
     const activePad = activePadChannel === 'A' ? padAudioRefA.current : padAudioRefB.current;
     if (!activePad || !isPadActive || activePad._fadeInterval) return;
-    activePad.volume = padVolume;
-  }, [padVolume, isPadActive, activePadChannel]);
+    activePad.volume = padBridging ? Math.min(1, padVolume * 1.4) : padVolume;
+  }, [padVolume, isPadActive, activePadChannel, padBridging]);
 
   // ── Web Audio API: Lazy init en primer play (para Split Track) ──
   const ensureWebAudioConnected = useCallback(async () => {
@@ -565,15 +650,19 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
     const source = ctx.createMediaElementSource(audioElement);
     const gainNode = ctx.createGain();
     const panNode = ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createPanner();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
 
-    // Cadena: Source → Panner → Gain → Salida
+    // Cadena: Source → Panner → Gain → Analyser → Salida
     source.connect(panNode);
     panNode.connect(gainNode);
-    gainNode.connect(ctx.destination);
+    gainNode.connect(analyser);
+    analyser.connect(ctx.destination);
 
     trackSourceRef.current = source;
     trackGainRef.current = gainNode;
     trackPanRef.current = panNode;
+    analyserRef.current = analyser;
 
     audioElement.dataset.webaudioConnected = 'true';
 
@@ -596,7 +685,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
 
   const handleTogglePlay = useCallback(async () => {
     const audio = audioRef.current;
-    if (!audio || !activeSong?.mp3) return;
+    if (!audio || !activeSourceUrl) return;
     if (audio.paused) {
       try {
         await ensureWebAudioConnected();
@@ -664,20 +753,78 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
 
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
 
+  // Click-outside para cerrar menú de ruteo
+  useEffect(() => {
+    if (!showRouteMenu) return;
+    const handler = (e) => {
+      if (routeMenuRef.current && !routeMenuRef.current.contains(e.target)) {
+        setShowRouteMenu(false);
+      }
+    };
+    document.addEventListener('pointerdown', handler);
+    return () => document.removeEventListener('pointerdown', handler);
+  }, [showRouteMenu]);
+
+  // Click-outside para cerrar panel del pad
+  useEffect(() => {
+    if (!showPadPanel) return;
+    const handler = (e) => {
+      if (padPanelRef.current && !padPanelRef.current.contains(e.target)) {
+        setShowPadPanel(false);
+      }
+    };
+    document.addEventListener('pointerdown', handler);
+    return () => document.removeEventListener('pointerdown', handler);
+  }, [showPadPanel]);
+
+  // Etiqueta actual del ruteo
+  const panLabel = panValue === -1 ? 'Click (L)' : panValue === 1 ? 'Pistas (R)' : 'Estéreo';
+
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-zinc-950 text-white">
       {/* Audio elements */}
-      {activeSong?.mp3 && (
+      {activeSourceUrl && (
         <audio
-          key={`live-${activeSong.id || activeSongIndex}`}
+          key={`live-${activeSong?.id || activeSongIndex}-${selectedSourceId}`}
           ref={audioRef}
-          src={activeSong.mp3}
+          src={activeSourceUrl}
           crossOrigin="anonymous"
           preload="auto"
           onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
           onTimeUpdate={(e) => {
-            const time = e.currentTarget.currentTime;
+            const audio = e.currentTarget;
+            const time = audio.currentTime;
+            const dur = audio.duration || 0;
             setCurrentTime(time);
+
+            // ── Detección de silencio (último 30% de la pista) ──
+            if (analyserRef.current && dur > 0 && time > dur * 0.7 && !audio.paused) {
+              const analyser = analyserRef.current;
+              const data = new Uint8Array(analyser.fftSize);
+              analyser.getByteTimeDomainData(data);
+              // Calcular RMS (nivel de volumen real)
+              let sum = 0;
+              for (let i = 0; i < data.length; i++) {
+                const sample = (data[i] - 128) / 128;
+                sum += sample * sample;
+              }
+              const rms = Math.sqrt(sum / data.length);
+
+              // Umbral: ~0.005 es prácticamente silencio
+              if (rms < 0.005) {
+                if (!silenceStartRef.current) {
+                  silenceStartRef.current = Date.now();
+                } else if (Date.now() - silenceStartRef.current > 3000) {
+                  // 3 segundos de silencio → forzar transición
+                  silenceStartRef.current = null;
+                  audio.pause();
+                  audio.dispatchEvent(new Event('ended'));
+                  return;
+                }
+              } else {
+                silenceStartRef.current = null;
+              }
+            }
 
             const markers = visualMarkers;
             if (markers.length === 0) return;
@@ -706,12 +853,29 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
           onEnded={() => {
             if (activeSongIndex < playlist.length - 1) {
               autoTransitionRef.current = true;
-              setActiveSongIndex(prev => prev + 1);
-              setActivePadChannel(prev => prev === 'A' ? 'B' : 'A');
               setCurrentTime(0);
               setLoopedSectionIndex(null);
 
-              // Gap de 5 segundos antes de la pista nueva
+              // ── Pad Bridge: subir volumen del pad durante la transición ──
+              if (isPadActive) {
+                setPadBridging(true);
+              }
+
+              // Verificar si la siguiente canción tiene otra tonalidad
+              const nextSong = playlist[activeSongIndex + 1];
+              const currentKey = normalizeKeyForPad(activeSong?.originalKey || activeSong?.key);
+              const nextKey = normalizeKeyForPad(nextSong?.originalKey || nextSong?.key);
+              const keyChanges = currentKey !== nextKey && nextKey;
+
+              // Cambiar canción
+              setActiveSongIndex(prev => prev + 1);
+
+              // Solo cambiar canal de pad si la tonalidad cambia (crossfade A/B)
+              if (keyChanges) {
+                setActivePadChannel(prev => prev === 'A' ? 'B' : 'A');
+              }
+
+              // Gap de 5 segundos — el pad llena el silencio
               setTimeout(async () => {
                 const audio = audioRef.current;
                 if (!audio) return;
@@ -723,6 +887,8 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
                   await audio.play();
                 } catch {}
                 autoTransitionRef.current = false;
+                // Bajar el pad bridge después de 1s (suaviza la vuelta)
+                setTimeout(() => setPadBridging(false), 1000);
               }, 5000);
             }
           }}
@@ -760,8 +926,44 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
       {/* BODY */}
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3">
 
+        {/* ── PANTALLA DE ORACIÓN ── */}
+        {activeSong?.isPrayer && (
+          <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden rounded-2xl border border-amber-500/20 bg-[radial-gradient(ellipse_at_center,_rgba(245,158,11,0.12),_rgba(0,0,0,0))] shadow-2xl">
+            {/* Fondo decorativo */}
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-5">
+              <span className="text-[20rem] leading-none">🙏</span>
+            </div>
+            <div className="relative flex flex-col items-center gap-6 px-8 text-center">
+              <span className="text-7xl">🙏</span>
+              <div>
+                <p className="mb-2 text-[10px] font-black uppercase tracking-[0.3em] text-amber-500">Sección de Oración</p>
+                <h2 className="text-3xl font-black text-white md:text-4xl">{activeSong.title}</h2>
+              </div>
+              {activeSong.prayerText && (
+                <p className="max-w-lg text-lg font-medium leading-relaxed text-zinc-300/80 italic">
+                  &ldquo;{activeSong.prayerText}&rdquo;
+                </p>
+              )}
+              <p className="text-sm font-bold text-amber-500/60">
+                {isPadActive ? '🎵 Pad ambiental activo' : 'Silencio'}
+              </p>
+            </div>
+
+            {/* Botón Continuar */}
+            <button
+              type="button"
+              onClick={handleNext}
+              disabled={activeSongIndex >= playlist.length - 1}
+              className="absolute bottom-6 right-6 flex items-center gap-2 rounded-2xl bg-amber-500 px-6 py-3 text-sm font-black text-zinc-950 shadow-lg shadow-amber-500/25 transition-all hover:bg-amber-400 disabled:opacity-30"
+            >
+              Continuar
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
         {/* CANCIÓN ACTIVA — STAGE CARD */}
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/6 bg-zinc-900/60 shadow-2xl">
+        <div className={`relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/6 bg-zinc-900/60 shadow-2xl ${activeSong?.isPrayer ? 'hidden' : ''}`}>
           {/* Cover art blur background */}
           {activeCover && (
             <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -1018,6 +1220,37 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
           ) : playlist.map((song, idx) => {
             const isActive = idx === activeSongIndex;
             const isPrev = idx < activeSongIndex;
+
+            // Prayer section card
+            if (song?.isPrayer) {
+              return (
+                <button
+                  key={song.id || `prayer-${idx}`}
+                  type="button"
+                  onClick={() => setActiveSongIndex(idx)}
+                  className={`relative flex w-44 shrink-0 items-center gap-3 overflow-hidden rounded-2xl border px-3 text-left transition-all ${
+                    isActive
+                      ? 'border-amber-500/40 bg-amber-500/12 shadow-[0_0_24px_rgba(251,191,36,0.15)]'
+                      : isPrev
+                      ? 'border-amber-900/20 bg-amber-900/5 opacity-40'
+                      : 'border-amber-900/20 bg-amber-900/10 hover:bg-amber-900/20 hover:border-amber-500/20'
+                  }`}
+                >
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-amber-500/20 bg-amber-500/10 text-2xl">
+                    🙏
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className={`block text-[9px] font-black uppercase tracking-[0.24em] ${isActive ? 'text-amber-400' : 'text-amber-700'}`}>
+                      {isActive ? '▶ Oración' : 'Oración'}
+                    </span>
+                    <span className={`block truncate text-sm font-black ${isActive ? 'text-amber-200' : 'text-amber-400/70'}`}>
+                      {song.title || 'Momento de Oración'}
+                    </span>
+                  </div>
+                </button>
+              );
+            }
+
             const songCover = song?.mp3 ? coverArts[song.mp3] : null;
             return (
               <button
@@ -1107,11 +1340,11 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
 
         {/* Controles */}
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
-          {/* Mezcladora izquierda: Track vol + Pad Ambiental */}
-          <div className="flex flex-col gap-2">
-            {/* Volumen pista */}
+          {/* Mezcladora izquierda: Pista + Pad (dos filas etiquetadas) */}
+          <div className="flex flex-col gap-1.5 w-36">
+            {/* Fila 1: Volumen pista */}
             <div className="flex items-center gap-1.5">
-              <Volume2 className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+              <Volume2 className="h-3 w-3 shrink-0 text-zinc-500" />
               <input
                 type="range"
                 min={0}
@@ -1122,31 +1355,38 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
                 className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-brand"
                 aria-label="Volumen pista"
               />
+              <span className="w-7 text-right text-[8px] font-bold tabular-nums text-zinc-600">{Math.round(volume * 100)}</span>
             </div>
-            {/* Pad Ambiental ON/OFF + Vol */}
-            <div className="flex flex-col gap-1.5 w-28">
+            {/* Fila 2: Pad ON/OFF + volumen inline */}
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => setIsPadActive(!isPadActive)}
-                className={`rounded-lg py-1.5 text-[10px] font-black tracking-widest uppercase transition-all ${
+                className={`flex h-5 shrink-0 items-center gap-1 rounded px-1.5 text-[8px] font-black uppercase tracking-wider transition-all ${
                   isPadActive
-                    ? 'bg-emerald-500 text-zinc-950 shadow-[0_0_15px_rgba(16,185,129,0.4)]'
-                    : 'bg-zinc-800 text-zinc-500 hover:bg-zinc-700 hover:text-white'
+                    ? 'bg-emerald-500 text-zinc-950 shadow-[0_0_10px_rgba(16,185,129,0.35)]'
+                    : 'bg-zinc-800 text-zinc-500 hover:bg-zinc-700'
                 }`}
               >
-                Pad {isPadActive ? 'ON' : 'OFF'}
+                <Waves className="h-2.5 w-2.5" />
+                {isPadActive ? (activeSong?.originalKey || activeSong?.key || 'ON') : 'Pad'}
               </button>
-              {isPadActive && (
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={padVolume}
-                  onChange={(e) => setPadVolume(Number(e.target.value))}
-                  className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-zinc-700 accent-emerald-500"
-                  aria-label="Volumen pad"
-                />
+              {isPadActive ? (
+                <>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.02}
+                    value={padVolume}
+                    onChange={(e) => setPadVolume(Number(e.target.value))}
+                    className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-emerald-500"
+                    aria-label="Volumen pad"
+                  />
+                  <span className="w-7 text-right text-[8px] font-bold tabular-nums text-emerald-500">{Math.round(padVolume * 100)}</span>
+                </>
+              ) : (
+                <span className="text-[8px] text-zinc-600">OFF</span>
               )}
             </div>
           </div>
@@ -1166,7 +1406,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
             <button
               type="button"
               onClick={handleTogglePlay}
-              disabled={!activeSong?.mp3}
+              disabled={!activeSourceUrl}
               className="flex h-16 w-16 items-center justify-center rounded-full bg-brand text-white shadow-[0_0_32px_rgba(59,130,246,0.5)] transition-all hover:scale-105 hover:bg-brand/90 disabled:opacity-30 disabled:shadow-none"
               aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
             >
@@ -1187,35 +1427,80 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
             </button>
           </div>
 
-          {/* Salida Split Track + Siguiente */}
-          <div className="flex flex-col items-end gap-1.5">
-            {/* Split Track routing */}
-            <div className="flex items-center gap-1">
-              <span className="mr-1 text-[8px] font-black uppercase tracking-widest text-zinc-600">Split</span>
-              {[
-                { val: -1, label: 'L', tip: 'Izquierda (Click)' },
-                { val: 0,  label: 'C', tip: 'Estéreo (Centro)' },
-                { val: 1,  label: 'R', tip: 'Derecha (Pistas)' },
-              ].map(({ val, label, tip }) => {
-                const isActive = panValue === val;
-                return (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() => setPanValue(val)}
-                    className={`flex h-6 w-6 items-center justify-center rounded-md text-[10px] font-black transition-all duration-200 ${
-                      isActive
-                        ? 'bg-brand text-white shadow-[0_0_10px_rgba(59,130,246,0.4)]'
-                        : 'bg-white/6 text-zinc-500 hover:bg-white/12 hover:text-zinc-300'
-                    }`}
-                    title={tip}
-                    aria-label={tip}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
+          {/* Pista + Ruteo (Menú desplegable) + Siguiente */}
+          <div className="relative flex flex-col items-end gap-1.5" ref={routeMenuRef}>
+            {/* Botón que abre el menú */}
+            <button
+              type="button"
+              onClick={() => setShowRouteMenu(prev => !prev)}
+              className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-800/80 px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-zinc-300 transition-all hover:bg-zinc-700 hover:text-white"
+            >
+              <ListMusic className="h-3.5 w-3.5" />
+              <span className="max-w-[80px] truncate">{activeSource?.label || 'Original'}</span>
+              <ChevronUp className={`h-3 w-3 transition-transform ${showRouteMenu ? '' : 'rotate-180'}`} />
+            </button>
+
+            {/* Menú desplegable unificado */}
+            {showRouteMenu && (
+              <div className="absolute bottom-full right-0 z-50 mb-2 w-52 overflow-hidden rounded-xl border border-white/10 bg-zinc-900 shadow-2xl shadow-black/60">
+                {/* Sección: Fuente de audio */}
+                <p className="border-b border-white/5 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-zinc-500">
+                  Fuente de Audio
+                </p>
+                {playbackSources.map((source) => {
+                  const isSel = selectedSourceId === source.id;
+                  return (
+                    <button
+                      key={source.id}
+                      type="button"
+                      onClick={() => { setSelectedSourceId(source.id); }}
+                      className={`flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors ${
+                        isSel ? 'bg-brand/15 text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'
+                      }`}
+                    >
+                      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded text-[9px] font-black ${
+                        isSel ? 'bg-brand text-white' : 'bg-white/8 text-zinc-500'
+                      }`}>
+                        {source.kind === 'original' ? '♪' : 'S'}
+                      </span>
+                      <span className="truncate text-xs font-bold">{source.label}</span>
+                      {isSel && <span className="ml-auto text-[10px] text-brand">●</span>}
+                    </button>
+                  );
+                })}
+
+                {/* Sección: Ruteo L/C/R */}
+                <p className="border-y border-white/5 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-zinc-500">
+                  Ruteo de Salida
+                </p>
+                {[
+                  { val: -1, label: 'Click (Izquierda)', badge: 'L' },
+                  { val: 0,  label: 'Estéreo (Centro)', badge: 'C' },
+                  { val: 1,  label: 'Pistas (Derecha)', badge: 'R' },
+                ].map(({ val, label, badge }) => {
+                  const isActive = panValue === val;
+                  return (
+                    <button
+                      key={`pan-${val}`}
+                      type="button"
+                      onClick={() => { setPanValue(val); setShowRouteMenu(false); }}
+                      className={`flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors ${
+                        isActive ? 'bg-brand/15 text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'
+                      }`}
+                    >
+                      <span className={`flex h-5 w-5 items-center justify-center rounded text-[10px] font-black ${
+                        isActive ? 'bg-brand text-white' : 'bg-white/8 text-zinc-500'
+                      }`}>
+                        {badge}
+                      </span>
+                      <span className="text-xs font-bold">{label}</span>
+                      {isActive && <span className="ml-auto text-[10px] text-brand">●</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {/* Info siguiente */}
             {playlist[activeSongIndex + 1] && (
               <div className="flex items-center gap-1.5">
