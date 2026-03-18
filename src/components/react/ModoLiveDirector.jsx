@@ -408,14 +408,31 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
     };
   }, []);
 
-  // ── Sync Ref: actualiza sin re-gatillar el heartbeat ──
+  // ── Sync Ref: predicción anticipada (+500ms de compensación de red) ──
   useEffect(() => {
+    if (!activeSong) return;
+
+    const LATENCY_OFFSET = 0.5;
+    const anticipatedTime = currentTime + LATENCY_OFFSET;
+
+    // Calcular predictivamente qué sección estará activa en +500ms
+    let anticipatedSectionIndex = -1;
+    for (let i = visualMarkers.length - 1; i >= 0; i--) {
+      if (anticipatedTime >= visualMarkers[i].startSec) {
+        anticipatedSectionIndex = i;
+        break;
+      }
+    }
+    if (anticipatedSectionIndex === -1 && visualMarkers.length > 0) {
+      anticipatedSectionIndex = 0;
+    }
+
     syncDataRef.current = {
-      songId: activeSong?.id,
-      sectionIndex: activeSectionIdx,
-      time: currentTime,
+      songId: activeSong.id,
+      sectionIndex: anticipatedSectionIndex,
+      time: anticipatedTime,
     };
-  }, [activeSong, activeSectionIdx, currentTime]);
+  }, [activeSong, currentTime, visualMarkers]);
 
   // ── Heartbeat: emite cada 1.5s leyendo de la ref (sin flooding) ──
   useEffect(() => {
