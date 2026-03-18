@@ -1554,27 +1554,28 @@ export default function ModoEnsayoCompacto({
                             </div>
                           )}
                           {renderedLine.mode === 'segments' && (
-                            <p className={`leading-[1.12] text-zinc-900 dark:text-zinc-50 ${fontPreset.lyric}`}>
-                              {renderedLine.segments.map((segment, segmentIndex) => {
-                                const lyricValue =
-                                  segment.lyric && segment.lyric.length > 0 ? segment.lyric : '\u200A';
-                                return (
-                                  <span
-                                    key={`${section.name}-${lineIndex}-segment-${segmentIndex}`}
-                                    className="relative inline-block align-top whitespace-pre pt-[1.05em]"
-                                  >
-                                    {segment.chord ? (
-                                      <span className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 whitespace-nowrap">
+                            <p
+                              className={`whitespace-pre-wrap break-words text-zinc-900 dark:text-zinc-50 ${fontPreset.lyric}`}
+                              style={{
+                                lineHeight: '2.5',
+                                paddingTop: '0.4em',
+                              }}
+                            >
+                              {renderedLine.segments.map((segment, segmentIndex) => (
+                                <React.Fragment key={`${section.name}-${lineIndex}-segment-${segmentIndex}`}>
+                                  {segment.chord && (
+                                    <span className="relative">
+                                      <span className="pointer-events-none absolute bottom-[80%] left-0 whitespace-nowrap">
                                         <ChordDisplay
                                           chord={segment.chord}
                                           sizeClass={`font-mono ${fontPreset.chord}`}
                                         />
                                       </span>
-                                    ) : null}
-                                    <span className="block">{lyricValue}</span>
-                                  </span>
-                                );
-                              })}
+                                    </span>
+                                  )}
+                                  {segment.lyric}
+                                </React.Fragment>
+                              ))}
                             </p>
                           )}
                         </div>
