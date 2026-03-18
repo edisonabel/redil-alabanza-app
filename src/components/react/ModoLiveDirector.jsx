@@ -407,7 +407,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
     };
   }, []);
 
-  // ── Heartbeat: Emitir estado periódicamente (cada 2.5s) + en cada cambio ──
+  // ── Heartbeat: Emitir estado + currentTime cada 1.5s ──
   useEffect(() => {
     if (!syncChannelRef.current || !activeSong) return;
 
@@ -418,17 +418,16 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
         payload: {
           songId: String(activeSong.id || ''),
           sectionIndex: activeSectionIdx,
+          currentTime,
         },
       }).catch(err => console.warn('[LiveSync Director] Error:', err));
     };
 
-    // Emitir inmediatamente al cambiar de estado
     emitState();
 
-    // Heartbeat cada 2.5s para enganchar receptores que se conecten tarde
-    const heartbeat = setInterval(emitState, 2500);
+    const heartbeat = setInterval(emitState, 1500);
     return () => clearInterval(heartbeat);
-  }, [activeSong, activeSectionIdx]);
+  }, [activeSong, activeSectionIdx, currentTime]);
 
   // Cargar canción cuando cambia (no pausar si es auto-transición)
   useEffect(() => {

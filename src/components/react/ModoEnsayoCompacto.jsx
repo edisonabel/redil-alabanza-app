@@ -1072,10 +1072,18 @@ export default function ModoEnsayoCompacto({
     });
     channel.on('broadcast', { event: 'SECTION_CHANGE' }, (payload) => {
       if (syncRole === 'musico' && payload.payload) {
-        const { songId, sectionIndex } = payload.payload;
-        if (songId === currentSongKey) {
-          console.log('[LiveSync] Señal recibida, saltando a sección:', sectionIndex);
-          selectSection(sectionIndex, { seekAudio: true, scrollBehavior: 'smooth' });
+        const { songId, sectionIndex, currentTime: directorTime } = payload.payload;
+
+        if (String(songId) === String(currentSongKey)) {
+          // 1. Mover la barra de progreso del músico al tiempo del Director
+          if (typeof directorTime === 'number') {
+            setAudioCurrentTime(directorTime);
+          }
+
+          // 2. Scroll a la sección con 300ms de gracia para que el DOM exista
+          setTimeout(() => {
+            selectSection(sectionIndex, { seekAudio: false, scrollBehavior: 'smooth' });
+          }, 300);
         }
       }
     }).subscribe((status) => {
