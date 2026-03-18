@@ -440,6 +440,7 @@ export default function ModoEnsayoCompacto({
   const [showPlaybackOptions, setShowPlaybackOptions] = useState(false);
   const [selectedPlaybackSourceId, setSelectedPlaybackSourceId] = useState('original');
   const [syncRole, setSyncRole] = useState(globalSyncMode ? 'musico' : 'local');
+  const [remotePayload, setRemotePayload] = useState(null);
   const [panValue, setPanValue] = useState(0);
   const syncChannelRef = useRef(null);
   const audioRef = useRef(null);
@@ -1071,20 +1072,8 @@ export default function ModoEnsayoCompacto({
       config: { broadcast: { self: false } },
     });
     channel.on('broadcast', { event: 'SECTION_CHANGE' }, (payload) => {
-      if (syncRole === 'musico' && payload.payload) {
-        const { songId, sectionIndex, currentTime: directorTime } = payload.payload;
-
-        if (String(songId) === String(currentSongKey)) {
-          // 1. Mover la barra de progreso del músico al tiempo del Director
-          if (typeof directorTime === 'number') {
-            setAudioCurrentTime(directorTime);
-          }
-
-          // 2. Scroll a la sección con 300ms de gracia para que el DOM exista
-          setTimeout(() => {
-            selectSection(sectionIndex, { seekAudio: false, scrollBehavior: 'smooth' });
-          }, 300);
-        }
+      if (payload.payload) {
+        setRemotePayload(payload.payload);
       }
     }).subscribe((status) => {
       if (status === 'SUBSCRIBED') {
@@ -1108,6 +1097,28 @@ export default function ModoEnsayoCompacto({
       },
     }).catch(err => console.warn('[LiveSync] Error enviando señal:', err));
   }, [activeSectionIndex, syncRole, currentSongKey]);
+
+  // ── Receptor: procesa el payload remoto en un ciclo seguro de React ──
+  useEffect(() => {
+    if (!remotePayload || syncRole !== 'musico') return;
+
+    const { songId, sectionIndex, currentTime: directorTime } = remotePayload;
+
+    if (String(songId) === String(currentSongKey)) {
+      // Mover la barra de progreso al tiempo del Director
+      if (typeof directorTime === 'number') {
+        setAudioCurrentTime(directorTime);
+      }
+      // Scroll a la sección solo si cambió
+      if (activeSectionManualIndex !== sectionIndex) {
+        setActiveSectionManualIndex(sectionIndex);
+        setTimeout(() => {
+          scrollToSectionIndex(sectionIndex, 'smooth');
+        }, 150);
+      }
+    }
+  }, [remotePayload, currentSongKey, syncRole]);
+
   const selectSection = (index, { seekAudio = true, scrollBehavior = 'smooth' } = {}) => {
     setActiveSectionManualIndex(index);
     setCollapsedSections((prev) => ({

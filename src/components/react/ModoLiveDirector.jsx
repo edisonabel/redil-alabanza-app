@@ -236,6 +236,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
   const trackPanRef = useRef(null);
   const timelineRef = useRef(null);
   const syncChannelRef = useRef(null);
+  const syncDataRef = useRef({ songId: null, sectionIndex: 0, time: 0 });
 
   const activeSong = playlist[activeSongIndex] || null;
   const sections = Array.isArray(activeSong?.sectionMarkers) ? activeSong.sectionMarkers : [];
@@ -407,27 +408,47 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
     };
   }, []);
 
-  // ── Heartbeat: Emitir estado + currentTime cada 1.5s ──
+  // ── Sync Ref: actualiza sin re-gatillar el heartbeat ──
+  useEffect(() => {
+    syncDataRef.current = {
+      songId: activeSong?.id,
+      sectionIndex: activeSectionIdx,
+      time: currentTime,
+    };
+  }, [activeSong, activeSectionIdx, currentTime]);
+
+  // ── Heartbeat: emite cada 1.5s leyendo de la ref (sin flooding) ──
   useEffect(() => {
     if (!syncChannelRef.current || !activeSong) return;
 
-    const emitState = () => {
+    // Emitir estado inmediato al montar/cambiar canción
+    syncChannelRef.current.send({
+      type: 'broadcast',
+      event: 'SECTION_CHANGE',
+      payload: {
+        songId: String(activeSong.id || ''),
+        sectionIndex: activeSectionIdx,
+        currentTime,
+      },
+    }).catch(e => console.warn('[LiveSync] Error:', e));
+
+    // Heartbeat seguro: lee de la ref, no re-monta al cambiar time/section
+    const heartbeat = setInterval(() => {
+      const data = syncDataRef.current;
+      if (!data.songId) return;
       syncChannelRef.current?.send({
         type: 'broadcast',
         event: 'SECTION_CHANGE',
         payload: {
-          songId: String(activeSong.id || ''),
-          sectionIndex: activeSectionIdx,
-          currentTime,
+          songId: String(data.songId),
+          sectionIndex: data.sectionIndex,
+          currentTime: data.time,
         },
-      }).catch(err => console.warn('[LiveSync Director] Error:', err));
-    };
+      }).catch(err => console.warn('[LiveSync] Error:', err));
+    }, 1500);
 
-    emitState();
-
-    const heartbeat = setInterval(emitState, 1500);
     return () => clearInterval(heartbeat);
-  }, [activeSong, activeSectionIdx, currentTime]);
+  }, [activeSong]); // SOLO depende de la canción
 
   // Cargar canción cuando cambia (no pausar si es auto-transición)
   useEffect(() => {
