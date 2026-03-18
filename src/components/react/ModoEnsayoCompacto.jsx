@@ -421,6 +421,7 @@ export default function ModoEnsayoCompacto({
   song,
   contextTitle = '',
   onGoBack,
+  globalSyncMode = false,
 }) {
   if (!song) return null;
   const [headerHidden, setHeaderHidden] = useState(false);
@@ -438,7 +439,7 @@ export default function ModoEnsayoCompacto({
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const [showPlaybackOptions, setShowPlaybackOptions] = useState(false);
   const [selectedPlaybackSourceId, setSelectedPlaybackSourceId] = useState('original');
-  const [syncRole, setSyncRole] = useState('local');
+  const [syncRole, setSyncRole] = useState(globalSyncMode ? 'musico' : 'local');
   const [panValue, setPanValue] = useState(0);
   const syncChannelRef = useRef(null);
   const audioRef = useRef(null);
@@ -459,6 +460,16 @@ export default function ModoEnsayoCompacto({
   const [padVolume, setPadVolume] = useState(0.5);
   const [isPadActive, setIsPadActive] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(148);
+  // ── Herencia de sincronización global desde EnsayoHub ──
+  useEffect(() => {
+    if (globalSyncMode) {
+      setSyncRole('musico');
+    } else if (syncRole === 'musico') {
+      setSyncRole('local');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [globalSyncMode]);
+
   const currentSong = song;
   const activeSongIndex = 0;
   const currentSongBpm = Number.isFinite(Number(currentSong?.bpm)) ? Math.max(0, Math.round(Number(currentSong.bpm))) : 0;

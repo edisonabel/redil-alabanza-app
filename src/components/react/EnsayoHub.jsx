@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, CalendarDays, ChevronRight, Clock3, ListMusic, Mic2, Play } from 'lucide-react';
+import { ArrowLeft, CalendarDays, ChevronRight, Clock3, ListMusic, Mic2, Play, RadioReceiver, Zap } from 'lucide-react';
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
+import ModoLiveDirector from './ModoLiveDirector.jsx';
+import { supabase } from '../../lib/supabase';
 
 const LATIN_TO_AMERICAN = {
   Do: 'C',
@@ -361,6 +363,9 @@ export default function EnsayoHub({
   const [lastViewedSongId, setLastViewedSongId] = useState(initialSong ? String(initialSong.id || '') : null);
   const [activeMetronomeSongId, setActiveMetronomeSongId] = useState(null);
   const [queueState, setQueueState] = useState({ active: false, index: -1 });
+  const [isLiveMode, setIsLiveMode] = useState(false);
+  const [isSyncReceiver, setIsSyncReceiver] = useState(false);
+  const [syncCountdown, setSyncCountdown] = useState(null); // null | 3 | 2 | 1 | 0
 
   const metronomeIntervalRef = useRef(null);
   const metronomeAudioCtxRef = useRef(null);
@@ -371,6 +376,46 @@ export default function EnsayoHub({
   const playableSongs = useMemo(() => (
     songs.filter((song) => typeof song?.mp3 === 'string' && song.mp3.trim() !== '')
   ), [songs]);
+
+  // ── Receptor Global: Escucha al Director y navega automáticamente ──
+  useEffect(() => {
+    if (!isSyncReceiver || playableSongs.length === 0) return;
+
+    const channel = supabase.channel('ensayo-live-sync', {
+      config: { broadcast: { self: false } },
+    });
+
+    channel.on('broadcast', { event: 'SECTION_CHANGE' }, (payload) => {
+      if (!payload.payload?.songId) return;
+      const incomingSongId = String(payload.payload.songId);
+
+      setCancionActiva(current => {
+        if (current && String(current.id) === incomingSongId) return current;
+        const nextSong = playableSongs.find(s => String(s.id) === incomingSongId);
+        if (nextSong) {
+          console.log('📡 [Global Sync] Cambiando a:', nextSong.title);
+          return nextSong;
+        }
+        return current;
+      });
+    }).subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [isSyncReceiver, playableSongs]);
+
+  // ── Cuenta regresiva de conexión ──
+  useEffect(() => {
+    if (syncCountdown === null) return;
+
+    if (syncCountdown > 0) {
+      const timer = setTimeout(() => setSyncCountdown(syncCountdown - 1), 1000);
+      return () => clearTimeout(timer);
+    } else if (syncCountdown === 0) {
+      setIsSyncReceiver(true);
+      const timer = setTimeout(() => setSyncCountdown(null), 800);
+      return () => clearTimeout(timer);
+    }
+  }, [syncCountdown]);
 
   const stopMetronome = useCallback(() => {
     if (metronomeIntervalRef.current) {
@@ -557,6 +602,21 @@ export default function EnsayoHub({
         song={cancionActiva}
         contextTitle={contextTitle}
         onGoBack={handleCompactBack}
+        globalSyncMode={isSyncReceiver}
+      />
+    );
+  }
+
+  if (isLiveMode) {
+    return (
+      <ModoLiveDirector
+        playlist={playableSongs}
+        contextTitle={contextTitle}
+        onExit={() => {
+          stopMetronome();
+          stopQueue();
+          setIsLiveMode(false);
+        }}
       />
     );
   }
@@ -774,14 +834,39 @@ export default function EnsayoHub({
               type="button"
               onClick={() => startQueue(queueState.active ? queueState.index : 0)}
               disabled={playableSongs.length === 0}
-              className={`inline-flex h-11 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-black shadow-sm transition-colors ${
-                playableSongs.length > 0
-                  ? 'bg-action text-white hover:bg-action/90'
-                  : 'cursor-not-allowed bg-zinc-300 text-zinc-500 shadow-none dark:bg-zinc-800 dark:text-zinc-500'
-              }`}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-zinc-200 bg-white px-4 text-sm font-black text-zinc-700 shadow-sm transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
             >
               <Play className="ml-0.5 h-4 w-4" />
-              {queueState.active ? 'Reiniciar fila' : 'Reproducir fila'}
+              {queueState.active ? 'Reiniciar' : 'Ensayo'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (isSyncReceiver) {
+                  setIsSyncReceiver(false);
+                  setSyncCountdown(null);
+                } else {
+                  setSyncCountdown(3);
+                }
+              }}
+              className={`inline-flex h-11 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-black transition-all ${
+                isSyncReceiver || syncCountdown !== null
+                  ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.3)]'
+                  : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
+              }`}
+              title={isSyncReceiver ? 'Sincronización Activa (Escuchando al Director)' : 'Conectar al Director'}
+            >
+              <RadioReceiver className={`h-4 w-4 ${isSyncReceiver ? 'animate-pulse' : ''}`} />
+              <span className="hidden sm:inline">RECIBIR LIVE</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { stopMetronome(); stopQueue(); setIsLiveMode(true); }}
+              disabled={playableSongs.length === 0}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-brand px-5 text-sm font-black text-white shadow-lg shadow-brand/25 transition-all hover:bg-brand/90 hover:shadow-brand/40 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Zap className="h-4 w-4" />
+              MODO LIVE
             </button>
           </div>
         </div>
@@ -830,6 +915,31 @@ export default function EnsayoHub({
           transform: translateY(calc(100% + env(safe-area-inset-bottom) + 1rem));
         }
       `}</style>
+
+      {/* OVERLAY DE CONEXIÓN LIVE — Cuenta regresiva */}
+      {syncCountdown !== null && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-zinc-950/95 backdrop-blur-md transition-all duration-300">
+          <div className="flex flex-col items-center gap-6 text-center">
+            <RadioReceiver className={`h-16 w-16 text-emerald-500 ${syncCountdown > 0 ? 'animate-pulse' : 'animate-bounce'}`} />
+            <h2 className="text-xl font-black uppercase tracking-[0.2em] text-white opacity-80">
+              {syncCountdown > 0 ? 'Sincronizando con Director' : '¡Conexión Establecida!'}
+            </h2>
+            <div className="relative flex h-40 w-40 items-center justify-center rounded-full border-4 border-emerald-500/20 bg-emerald-500/10 shadow-[0_0_50px_rgba(16,185,129,0.2)]">
+              <p className="absolute text-[6rem] font-black leading-none text-emerald-400">
+                {syncCountdown > 0 ? syncCountdown : 'ON'}
+              </p>
+              {syncCountdown > 0 && (
+                <svg className="absolute inset-0 h-full w-full animate-spin text-emerald-500" style={{ animationDuration: '1.5s' }} viewBox="0 0 100 100">
+                  <circle cx="50" cy="50" r="48" fill="none" stroke="currentColor" strokeWidth="4" strokeDasharray="150" strokeLinecap="round" />
+                </svg>
+              )}
+            </div>
+            <p className="mt-4 text-xs font-bold uppercase tracking-widest text-zinc-500">
+              Por favor, no toque la pantalla
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
