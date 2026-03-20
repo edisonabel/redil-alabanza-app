@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import NotificationBell from './NotificationBell.jsx';
 import BotonNotificaciones from './BotonNotificaciones.jsx';
 
-export default function DashboardShortcuts({ userId = null }) {
+export default function DashboardShortcuts({ userId = null, isAdmin = false }) {
   const [isDark, setIsDark] = useState(false);
   const [target, setTarget] = useState(null);
 
@@ -53,7 +53,7 @@ export default function DashboardShortcuts({ userId = null }) {
     <>
       <h2 className="text-lg font-bold text-content tracking-tight mb-3">Atajos</h2>
       <div className="relative z-20 overflow-visible border border-zinc-200/80 rounded-[2rem] p-5 shadow-sm bg-[radial-gradient(circle_at_bottom_left,_rgba(20,184,166,0.05),_transparent_50%),linear-gradient(180deg,_rgba(255,255,255,0.99),_rgba(244,244,245,0.97))] dark:border-white/10 dark:bg-[radial-gradient(circle_at_bottom_left,_rgba(20,184,166,0.12),_transparent_50%),linear-gradient(180deg,_rgba(24,24,27,0.98),_rgba(15,23,42,0.95))] dark:shadow-[0_8px_32px_rgba(2,6,23,0.25)]">
-        <div className="grid grid-cols-4 gap-2 sm:gap-3 items-start">
+        <div className={`grid gap-2 sm:gap-3 items-start ${isAdmin ? 'grid-cols-5' : 'grid-cols-4'}`}>
           <a href="/perfil#ausencias" className="flex flex-col items-center gap-2 group min-w-0">
             <div className="w-12 h-12 bg-background border border-border text-content rounded-full flex items-center justify-center group-active:scale-90 transition-transform">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
@@ -87,6 +87,20 @@ export default function DashboardShortcuts({ userId = null }) {
             </div>
             <span className="text-[10px] sm:text-xs font-semibold text-content text-center leading-tight">{isDark ? 'Claro' : 'Oscuro'}</span>
           </button>
+
+          {isAdmin ? (
+            <a href="/panel" className="flex flex-col items-center gap-2 group min-w-0">
+              <div className="w-12 h-12 rounded-full border border-border bg-background text-content flex items-center justify-center transition-transform group-active:scale-90">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="7" height="7" rx="1.5" />
+                  <rect x="14" y="3" width="7" height="5" rx="1.5" />
+                  <rect x="14" y="12" width="7" height="9" rx="1.5" />
+                  <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                </svg>
+              </div>
+              <span className="text-[10px] sm:text-xs font-semibold text-content text-center leading-tight">Panel</span>
+            </a>
+          ) : null}
         </div>
 
         <div className="mt-4">

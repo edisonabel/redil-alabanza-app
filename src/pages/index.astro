@@ -237,7 +237,7 @@ const proximosServicios = (eventosData || [])
         cumpleanerosMes={cumpleanerosMes || []}
         cumpleanerosTodos={cumpleanerosTodos || []}
       />
-      <DashboardShortcuts client:idle userId={user.id} />
+      <DashboardShortcuts client:idle userId={user.id} isAdmin={Boolean(perfil?.is_admin)} />
       <ModalDetalle client:only="react" initialRoles={rolesCatalog || []} sessionUser={user} isAdmin={Boolean(perfil?.is_admin)} />
     </div>
     </div>

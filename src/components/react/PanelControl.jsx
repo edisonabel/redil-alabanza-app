@@ -289,14 +289,17 @@ function SimpleList({ items = [], renderItem, emptyTitle, emptyDetail }) {
   return <div className="space-y-3">{items.map(renderItem)}</div>;
 }
 
-export default function PanelControl({ data, userName = 'Equipo' }) {
+export default function PanelControl({ data }) {
   const [activeTab, setActiveTab] = useState('operacion');
-  const activeData = data?.[activeTab] || {};
+  const [activePeriod, setActivePeriod] = useState(data?.activePeriod || data?.periods?.[0]?.id || 'proximos_45');
+  const activeSnapshot = data?.snapshots?.[activePeriod] || {};
+  const activeData = activeSnapshot?.[activeTab] || {};
+  const activePeriodMeta = activeSnapshot?.meta || {};
 
   return (
     <div className="relative z-10">
       <section className="rounded-[32px] border border-zinc-200/80 bg-white/94 px-4 py-5 shadow-[0_24px_90px_-58px_rgba(15,23,42,0.45)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/94 dark:shadow-[0_30px_120px_-60px_rgba(0,0,0,0.78)] sm:px-6 sm:py-6">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div className="max-w-3xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-blue-200/70 bg-blue-50/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-700 dark:border-blue-500/25 dark:bg-blue-500/10 dark:text-blue-200">
               <Activity className="h-3.5 w-3.5" />
@@ -308,16 +311,37 @@ export default function PanelControl({ data, userName = 'Equipo' }) {
             <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">
               {data?.header?.helper || 'Vista operativa del sistema.'}
             </p>
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              {(data?.periods || []).map((period) => {
+                const isActive = activePeriod === period.id;
+                return (
+                  <button
+                    key={period.id}
+                    type="button"
+                    onClick={() => setActivePeriod(period.id)}
+                    className={`inline-flex h-10 items-center rounded-full px-4 text-sm font-semibold transition-colors ${
+                      isActive
+                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+                        : 'border border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:text-zinc-50'
+                    }`}
+                  >
+                    {period.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/70">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">Usuario</p>
-              <p className="mt-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{userName}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">Periodo</p>
+              <p className="mt-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{activePeriodMeta?.label || 'Actual'}</p>
             </div>
             <div className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/70">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">Ventana</p>
-              <p className="mt-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{data?.windowLabel || 'Actual'}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">{activePeriodMeta?.serviceLabel || 'Servicios'}</p>
+              <p className="mt-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{activePeriodMeta?.serviceValue || '--'}</p>
+              <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">{activePeriodMeta?.serviceDetail || 'Sin resumen para este periodo.'}</p>
             </div>
             <div className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/70">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500 dark:text-zinc-400">Actualizado</p>
@@ -358,7 +382,7 @@ export default function PanelControl({ data, userName = 'Equipo' }) {
       {activeTab === 'operacion' ? (
         <div className="mt-6 grid gap-6 xl:grid-cols-[1.25fr_0.95fr]">
           <div className="space-y-6">
-            <PanelCard title="Proximo servicio" subtitle="Lo mas importante para alinear en el siguiente evento." action={activeData?.nextService ? <StatusBadge status={activeData.nextService.status} /> : null}>
+            <PanelCard title={activeData?.heroTitle || 'Proximo servicio'} subtitle={activeData?.heroSubtitle || 'Lo mas importante para alinear en el siguiente evento.'} action={activeData?.nextService ? <StatusBadge status={activeData.nextService.status} /> : null}>
               {activeData?.nextService ? (
                 <div className="space-y-5">
                   <div className="flex flex-wrap items-start justify-between gap-4">
@@ -392,7 +416,7 @@ export default function PanelControl({ data, userName = 'Equipo' }) {
                   <SectionSummary items={activeData.nextService.summary || []} />
                 </div>
               ) : (
-                <EmptyState title="Sin servicios cercanos" detail="No hay eventos publicados o visibles en la ventana actual." />
+                <EmptyState title={activeData?.emptyFocusTitle || 'Sin servicios cercanos'} detail={activeData?.emptyFocusDetail || 'No hay eventos publicados o visibles en la ventana actual.'} />
               )}
             </PanelCard>
 
@@ -402,8 +426,8 @@ export default function PanelControl({ data, userName = 'Equipo' }) {
           </div>
 
           <div className="space-y-6">
-            <PanelCard title="Servicios proximos" subtitle="Acceso rapido a los eventos que requieren atencion.">
-              <SimpleList items={activeData?.upcomingServices || []} emptyTitle="Sin servicios en la ventana" emptyDetail="Cuando haya programacion proxima, aparecera aqui." renderItem={(item) => <UpcomingServiceItem key={item.id} item={item} />} />
+            <PanelCard title={activeData?.listTitle || 'Servicios proximos'} subtitle={activeData?.listSubtitle || 'Acceso rapido a los eventos que requieren atencion.'}>
+              <SimpleList items={activeData?.upcomingServices || []} emptyTitle={activeData?.emptyListTitle || 'Sin servicios en la ventana'} emptyDetail={activeData?.emptyListDetail || 'Cuando haya programacion proxima, aparecera aqui.'} renderItem={(item) => <UpcomingServiceItem key={item.id} item={item} />} />
             </PanelCard>
           </div>
         </div>

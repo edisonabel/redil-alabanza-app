@@ -41,6 +41,12 @@ const fetchFutureLimit = new Date(now);
 fetchFutureLimit.setDate(fetchFutureLimit.getDate() + 120);
 const upcomingAbsenceFloor = new Date(now);
 upcomingAbsenceFloor.setDate(upcomingAbsenceFloor.getDate() - 7);
+const panelPeriods = [
+  { id: 'proximos_45', label: 'Proximos 45 dias', mode: 'future', days: 45 },
+  { id: 'ultimos_30', label: 'Ultimos 30 dias', mode: 'past', days: 30 },
+  { id: 'ultimos_90', label: 'Ultimos 90 dias', mode: 'past', days: 90 },
+  { id: 'ultimos_365', label: 'Ultimos 12 meses', mode: 'past', days: 365 },
+];
 
 const hasText = (value) => typeof value === 'string' && value.trim() !== '';
 const safeText = (value, fallback = '') => (hasText(value) ? value.trim() : fallback);
@@ -361,6 +367,15 @@ const operationalEvents = eventos
       hasRoster,
       hasDirection,
       hasLyrics,
+      setlistSongIds: setlistSongs.map((song) => String(song.id)),
+      rosterMembers: roster
+        .filter((item) => item.perfil_id)
+        .map((item) => ({
+          profileId: String(item.perfil_id),
+          name: safeText(item?.profile?.nombre, 'Sin nombre'),
+          avatarUrl: safeText(item?.profile?.avatar_url),
+          roleName: safeText(item?.role?.nombre),
+        })),
       missingChordproCount: missingChordproSongs.length,
       missingMp3Count: missingMp3Songs.length,
       conflictingAbsences,
@@ -372,42 +387,7 @@ const operationalEvents = eventos
   .filter(Boolean)
   .sort((a, b) => new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime());
 
-const upcomingOperationalEvents = operationalEvents.filter((evento) => {
-  const eventDate = new Date(evento.dateIso);
-  return eventDate >= operationFloor && eventDate <= upcomingWindowEnd;
-});
-
-const nextService = upcomingOperationalEvents[0] || null;
-const servicesReadyCount = upcomingOperationalEvents.filter((evento) => evento.status === 'listo').length;
-const servicesAtRiskCount = upcomingOperationalEvents.filter((evento) => evento.status !== 'listo').length;
-const servicesWithRoster = upcomingOperationalEvents.filter((evento) => evento.hasRoster).length;
-const servicesWithSetlist = upcomingOperationalEvents.filter((evento) => evento.hasSetlist).length;
-
-const operationAlerts = upcomingOperationalEvents
-  .flatMap((evento) =>
-    evento.alerts.map((alert) => ({
-      id: `${evento.id}-${alert.title}`,
-      level: alert.level,
-      title: alert.title,
-      detail: alert.detail,
-      serviceTitle: evento.title,
-      dateIso: evento.dateIso,
-    })),
-  )
-  .slice(0, 10);
-
-const nextServiceSummary = nextService
-  ? [
-      { label: 'Roles faltantes', value: formatCountLabel(nextService.alerts.filter((alert) => alert.title.includes('Falta')).length, 'alerta'), detail: 'Direccion y letras son prioridad.' },
-      { label: 'Ausencias cruzadas', value: String(nextService.conflictingAbsences.length), detail: nextService.conflictingAbsences.length ? 'Hay personas asignadas que no estaran disponibles.' : 'Sin ausencias que afecten el servicio.' },
-      { label: 'ChordPro listo', value: nextService.hasSetlist ? `${nextService.setlistCount - nextService.missingChordproCount}/${nextService.setlistCount}` : '0/0', detail: 'Canciones del siguiente servicio con guia de ensayo.' },
-      { label: 'MP3 listo', value: nextService.hasSetlist ? `${nextService.setlistCount - nextService.missingMp3Count}/${nextService.setlistCount}` : '0/0', detail: 'Canciones del siguiente servicio con audio base.' },
-    ]
-  : [];
-
 const activeSongIds = new Set(canciones.map((song) => String(song.id)));
-const usedSongIds = new Set([...usageBySongId.keys()].filter((songId) => activeSongIds.has(songId)));
-const songsNeverUsed = canciones.filter((song) => !usedSongIds.has(String(song.id)));
 
 const hasVoiceResource = (song) => hasText(song?.voces) || hasText(song?.link_voces);
 const hasSequenceResource = (song) => hasText(song?.link_secuencias);
@@ -419,21 +399,13 @@ const voicesReadyCount = canciones.filter((song) => hasVoiceResource(song)).leng
 const sequencesReadyCount = canciones.filter((song) => hasSequenceResource(song)).length;
 const markersReadyCount = canciones.filter((song) => hasMarkers(song)).length;
 const rehearsalReadyCount = canciones.filter((song) => hasText(song?.chordpro) && hasText(song?.mp3) && hasMarkers(song)).length;
-
-const topSongs = canciones
-  .map((song) => ({
-    id: String(song.id),
-    title: safeText(song.titulo, 'Cancion sin titulo'),
-    artist: safeText(song.cantante, 'Sin cantante'),
-    count: usageBySongId.get(String(song.id)) || 0,
-  }))
-  .filter((song) => song.count > 0)
-  .sort((a, b) => (b.count - a.count) || a.title.localeCompare(b.title, 'es'))
-  .slice(0, 10);
-
-const songCategoryDistribution = histogram(canciones, (song) => getSongCategoryLabel(song?.categoria), { limit: 6 });
-const songVoiceDistribution = histogram(canciones, (song) => getSongVoiceLabel(song?.voz), { limit: 5 });
-const songThemeDistribution = histogram(canciones, (song) => safeText(song?.tema, 'Sin tema'), { limit: 8 });
+const baseResourceCoverage = [
+  resourceCoverageItem('ChordPro', chordproReadyCount, canciones.length),
+  resourceCoverageItem('MP3', mp3ReadyCount, canciones.length),
+  resourceCoverageItem('Voces', voicesReadyCount, canciones.length),
+  resourceCoverageItem('Secuencias', sequencesReadyCount, canciones.length),
+  resourceCoverageItem('Markers', markersReadyCount, canciones.length),
+];
 
 const profileRolesByProfileId = new Map();
 perfilRoles.forEach((entry) => {
@@ -444,53 +416,6 @@ perfilRoles.forEach((entry) => {
   if (role) bucket.push(role);
   profileRolesByProfileId.set(profileId, bucket);
 });
-
-const teamAssignmentsByProfile = new Map();
-upcomingOperationalEvents.forEach((evento) => {
-  const originalEvent = eventos.find((item) => String(item.id) === evento.id);
-  const roster = Array.isArray(originalEvent?.asignaciones) ? originalEvent.asignaciones : [];
-  roster.forEach((assignment) => {
-    const profileId = String(assignment?.perfil_id || assignment?.perfiles?.id || '');
-    if (!profileId) return;
-    const role = rolesById.get(String(assignment?.rol_id || ''));
-    const profile = perfilesById.get(profileId) || assignment?.perfiles || null;
-    const bucket = teamAssignmentsByProfile.get(profileId) || {
-      profileId,
-      name: safeText(profile?.nombre, 'Sin nombre'),
-      avatarUrl: safeText(profile?.avatar_url),
-      assignments: 0,
-      eventIds: new Set(),
-      roles: new Set(),
-    };
-    bucket.assignments += 1;
-    bucket.eventIds.add(evento.id);
-    if (role?.nombre) bucket.roles.add(role.nombre);
-    teamAssignmentsByProfile.set(profileId, bucket);
-  });
-});
-
-const workload = [...teamAssignmentsByProfile.values()]
-  .map((item) => ({
-    id: item.profileId,
-    name: item.name,
-    avatarUrl: item.avatarUrl,
-    assignments: item.assignments,
-    services: item.eventIds.size,
-    roles: [...item.roles].sort((a, b) => a.localeCompare(b, 'es')).slice(0, 3),
-  }))
-  .sort((a, b) => (b.services - a.services) || (b.assignments - a.assignments) || a.name.localeCompare(b.name, 'es'))
-  .slice(0, 12);
-
-const assignedProfileIds = new Set(workload.map((item) => item.id));
-const idleProfiles = perfiles
-  .filter((profile) => !assignedProfileIds.has(String(profile.id)))
-  .map((profile) => ({
-    id: String(profile.id),
-    name: safeText(profile.nombre, 'Sin nombre'),
-    avatarUrl: safeText(profile.avatar_url),
-    roles: (profileRolesByProfileId.get(String(profile.id)) || []).map((role) => role.nombre).slice(0, 2),
-  }))
-  .slice(0, 8);
 
 const roleCoverage = roles
   .map((role) => ({
@@ -503,23 +428,6 @@ const roleCoverage = roles
 
 const rolesWithCoverage = roleCoverage.filter((role) => role.count > 0).length;
 const lowCoverageRoles = roleCoverage.filter((role) => role.count <= 1).slice(0, 10);
-
-const upcomingAbsences = ausencias.filter((absence) => {
-  const endDate = toDateEnd(absence?.fecha_fin || absence?.fecha_inicio);
-  return endDate && endDate >= now;
-});
-
-const teamConflicts = upcomingOperationalEvents
-  .flatMap((evento) =>
-    evento.conflictingAbsences.map((conflict) => ({
-      id: `${evento.id}-${conflict.profileId}`,
-      name: conflict.profileName,
-      serviceTitle: evento.title,
-      dateIso: evento.dateIso,
-      detail: conflict.reason,
-    })),
-  )
-  .slice(0, 10);
 
 const completeProfilesCount = perfiles.filter(
   (profile) => hasText(profile?.avatar_url) && hasText(profile?.telefono) && hasText(profile?.fecha_nacimiento),
@@ -539,16 +447,6 @@ const profileGaps = perfiles
     };
   })
   .filter(Boolean)
-  .slice(0, 10);
-
-const systemEventGaps = upcomingOperationalEvents
-  .filter((evento) => !evento.hasSetlist || !evento.hasRoster || !evento.hasDirection)
-  .map((evento) => ({
-    id: evento.id,
-    title: evento.title,
-    dateIso: evento.dateIso,
-    detail: evento.alerts.map((alert) => alert.title).join(' | '),
-  }))
   .slice(0, 10);
 
 const systemSongGaps = [
@@ -574,100 +472,310 @@ const systemSongGaps = [
   },
 ];
 
+const absenceIntersectsWindow = (absence, windowStart, windowEnd) => {
+  const start = toDateStart(absence?.fecha_inicio);
+  const end = toDateEnd(absence?.fecha_fin || absence?.fecha_inicio);
+  if (!start || !end || !windowStart || !windowEnd) return false;
+  return start <= windowEnd && end >= windowStart;
+};
+
+const getPeriodEvents = ({ mode, days }) => {
+  const windowStart = new Date(now);
+  const windowEnd = new Date(now);
+
+  if (mode === 'future') {
+    windowStart.setTime(operationFloor.getTime());
+    windowEnd.setDate(windowEnd.getDate() + days);
+  } else {
+    windowStart.setDate(windowStart.getDate() - days);
+  }
+
+  return operationalEvents
+    .filter((evento) => {
+      const eventDate = new Date(evento.dateIso);
+      if (Number.isNaN(eventDate.getTime())) return false;
+      if (mode === 'future') return eventDate >= windowStart && eventDate <= windowEnd;
+      return eventDate >= windowStart && eventDate < now;
+    })
+    .sort((a, b) =>
+      mode === 'future'
+        ? new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime()
+        : new Date(b.dateIso).getTime() - new Date(a.dateIso).getTime(),
+    );
+};
+
+const buildPanelSnapshot = ({ label, mode, days }) => {
+  const periodEvents = getPeriodEvents({ mode, days });
+  const focusService = periodEvents[0] || null;
+  const servicesReadyCount = periodEvents.filter((evento) => evento.status === 'listo').length;
+  const servicesAtRiskCount = periodEvents.filter((evento) => evento.status !== 'listo').length;
+  const servicesWithRoster = periodEvents.filter((evento) => evento.hasRoster).length;
+  const servicesWithSetlist = periodEvents.filter((evento) => evento.hasSetlist).length;
+
+  const periodStart = new Date(now);
+  const periodEnd = new Date(now);
+  if (mode === 'future') {
+    periodStart.setTime(operationFloor.getTime());
+    periodEnd.setDate(periodEnd.getDate() + days);
+  } else {
+    periodStart.setDate(periodStart.getDate() - days);
+  }
+
+  const periodAbsences = ausencias.filter((absence) => absenceIntersectsWindow(absence, periodStart, periodEnd));
+
+  const operationAlerts = periodEvents
+    .flatMap((evento) =>
+      evento.alerts.map((alert) => ({
+        id: `${evento.id}-${alert.title}`,
+        level: alert.level,
+        title: alert.title,
+        detail: alert.detail,
+        serviceTitle: evento.title,
+        dateIso: evento.dateIso,
+      })),
+    )
+    .slice(0, 10);
+
+  const focusServiceSummary = focusService
+    ? [
+        {
+          label: 'Roles faltantes',
+          value: formatCountLabel(focusService.alerts.filter((alert) => alert.title.includes('Falta')).length, 'alerta'),
+          detail: 'Direccion y letras son prioridad.',
+        },
+        {
+          label: 'Ausencias cruzadas',
+          value: String(focusService.conflictingAbsences.length),
+          detail: focusService.conflictingAbsences.length ? 'Hay personas asignadas que no estaran disponibles.' : 'Sin ausencias que afecten el servicio.',
+        },
+        {
+          label: 'ChordPro listo',
+          value: focusService.hasSetlist ? `${focusService.setlistCount - focusService.missingChordproCount}/${focusService.setlistCount}` : '0/0',
+          detail: 'Canciones del servicio con guia de ensayo.',
+        },
+        {
+          label: 'MP3 listo',
+          value: focusService.hasSetlist ? `${focusService.setlistCount - focusService.missingMp3Count}/${focusService.setlistCount}` : '0/0',
+          detail: 'Canciones del servicio con audio base.',
+        },
+      ]
+    : [];
+
+  const periodUsageBySongId = new Map();
+  periodEvents.forEach((evento) => {
+    (evento.setlistSongIds || []).forEach((songId) => {
+      const key = String(songId || '');
+      if (!key) return;
+      periodUsageBySongId.set(key, (periodUsageBySongId.get(key) || 0) + 1);
+    });
+  });
+
+  const usedSongIds = new Set([...periodUsageBySongId.keys()].filter((songId) => activeSongIds.has(songId)));
+  const songsNeverUsed = canciones.filter((song) => !usedSongIds.has(String(song.id)));
+  const periodSongPool = usedSongIds.size > 0
+    ? canciones.filter((song) => usedSongIds.has(String(song.id)))
+    : canciones;
+
+  const topSongs = canciones
+    .map((song) => ({
+      id: String(song.id),
+      title: safeText(song.titulo, 'Cancion sin titulo'),
+      artist: safeText(song.cantante, 'Sin cantante'),
+      count: periodUsageBySongId.get(String(song.id)) || 0,
+    }))
+    .filter((song) => song.count > 0)
+    .sort((a, b) => (b.count - a.count) || a.title.localeCompare(b.title, 'es'))
+    .slice(0, 10);
+
+  const teamAssignmentsByProfile = new Map();
+  periodEvents.forEach((evento) => {
+    (evento.rosterMembers || []).forEach((member) => {
+      const profileId = String(member?.profileId || '');
+      if (!profileId) return;
+      const bucket = teamAssignmentsByProfile.get(profileId) || {
+        profileId,
+        name: safeText(member?.name, 'Sin nombre'),
+        avatarUrl: safeText(member?.avatarUrl),
+        assignments: 0,
+        eventIds: new Set(),
+        roles: new Set(),
+      };
+      bucket.assignments += 1;
+      bucket.eventIds.add(evento.id);
+      if (member?.roleName) bucket.roles.add(member.roleName);
+      teamAssignmentsByProfile.set(profileId, bucket);
+    });
+  });
+
+  const workload = [...teamAssignmentsByProfile.values()]
+    .map((item) => ({
+      id: item.profileId,
+      name: item.name,
+      avatarUrl: item.avatarUrl,
+      assignments: item.assignments,
+      services: item.eventIds.size,
+      roles: [...item.roles].sort((a, b) => a.localeCompare(b, 'es')).slice(0, 3),
+    }))
+    .sort((a, b) => (b.services - a.services) || (b.assignments - a.assignments) || a.name.localeCompare(b.name, 'es'))
+    .slice(0, 12);
+
+  const assignedProfileIds = new Set(workload.map((item) => item.id));
+  const idleProfiles = perfiles
+    .filter((profile) => !assignedProfileIds.has(String(profile.id)))
+    .map((profile) => ({
+      id: String(profile.id),
+      name: safeText(profile.nombre, 'Sin nombre'),
+      avatarUrl: safeText(profile.avatar_url),
+      roles: (profileRolesByProfileId.get(String(profile.id)) || []).map((role) => role.nombre).slice(0, 2),
+    }))
+    .slice(0, 8);
+
+  const teamConflicts = periodEvents
+    .flatMap((evento) =>
+      evento.conflictingAbsences.map((conflict) => ({
+        id: `${evento.id}-${conflict.profileId}`,
+        name: conflict.profileName,
+        serviceTitle: evento.title,
+        dateIso: evento.dateIso,
+        detail: conflict.reason,
+      })),
+    )
+    .slice(0, 10);
+
+  const systemEventGaps = periodEvents
+    .filter((evento) => !evento.hasSetlist || !evento.hasRoster || !evento.hasDirection)
+    .map((evento) => ({
+      id: evento.id,
+      title: evento.title,
+      dateIso: evento.dateIso,
+      detail: evento.alerts.map((alert) => alert.title).join(' | '),
+    }))
+    .slice(0, 10);
+
+  return {
+    meta: {
+      label,
+      serviceLabel: mode === 'future' ? 'Servicios proximos' : 'Servicios analizados',
+      serviceValue: String(periodEvents.length),
+      serviceDetail: `${servicesReadyCount} listos | ${servicesAtRiskCount} con pendiente`,
+    },
+    operacion: {
+      heroTitle: mode === 'future' ? 'Proximo servicio' : 'Servicio mas reciente',
+      heroSubtitle:
+        mode === 'future'
+          ? 'Lo mas importante para alinear en el siguiente evento.'
+          : 'El evento mas reciente dentro del periodo seleccionado.',
+      listTitle: mode === 'future' ? 'Servicios proximos' : 'Servicios analizados',
+      listSubtitle:
+        mode === 'future'
+          ? 'Acceso rapido a los eventos que requieren atencion.'
+          : 'Lectura rapida de lo que ya sucedio en el periodo.',
+      emptyFocusTitle: mode === 'future' ? 'Sin servicios cercanos' : 'Sin servicios en el periodo',
+      emptyFocusDetail:
+        mode === 'future'
+          ? 'No hay eventos publicados o visibles en la ventana actual.'
+          : 'No hubo eventos visibles dentro del periodo seleccionado.',
+      emptyListTitle: mode === 'future' ? 'Sin servicios en la ventana' : 'Sin servicios en el periodo',
+      emptyListDetail:
+        mode === 'future'
+          ? 'Cuando haya programacion proxima, aparecera aqui.'
+          : 'Cuando existan servicios en este rango, apareceran aqui.',
+      kpis: [
+        {
+          label: mode === 'future' ? 'Readiness proximo servicio' : 'Readiness ultimo servicio',
+          value: focusService ? `${focusService.readinessScore}%` : '--',
+          detail: focusService ? `${focusService.readinessChecks.filter((check) => check.ok).length}/${focusService.readinessChecks.length} checks` : 'Sin servicios en la ventana',
+          tone: 'brand',
+        },
+        {
+          label: mode === 'future' ? 'Servicios proximos' : 'Servicios analizados',
+          value: String(periodEvents.length),
+          detail: `${servicesReadyCount} listos | ${servicesAtRiskCount} con pendiente`,
+          tone: 'blue',
+        },
+        {
+          label: mode === 'future' ? 'Rosters cargados' : 'Rosters en periodo',
+          value: `${servicesWithRoster}/${periodEvents.length || 0}`,
+          detail: 'Servicios con personal asignado',
+          tone: 'amber',
+        },
+        {
+          label: mode === 'future' ? 'Setlists listas' : 'Setlists en periodo',
+          value: `${servicesWithSetlist}/${periodEvents.length || 0}`,
+          detail: 'Servicios con playlist lista',
+          tone: 'emerald',
+        },
+      ],
+      nextService: focusService
+        ? {
+            ...focusService,
+            summary: focusServiceSummary,
+          }
+        : null,
+      upcomingServices: periodEvents.slice(0, 8),
+      alerts: operationAlerts,
+    },
+    repertorio: {
+      kpis: [
+        { label: 'Canciones activas', value: String(canciones.length), detail: 'Catalogo disponible', tone: 'brand' },
+        { label: 'Usadas en periodo', value: String(usedSongIds.size), detail: mode === 'future' ? 'Canciones presentes en servicios proximos' : 'Canciones presentes en servicios pasados', tone: 'blue' },
+        { label: 'Sin uso en periodo', value: String(songsNeverUsed.length), detail: 'Oportunidad para refrescar repertorio', tone: 'amber' },
+        { label: 'Listas para ensayo', value: String(rehearsalReadyCount), detail: 'ChordPro + MP3 + markers', tone: 'emerald' },
+      ],
+      resourceCoverage: baseResourceCoverage,
+      topSongs,
+      categoryDistribution: histogram(periodSongPool, (song) => getSongCategoryLabel(song?.categoria), { limit: 6 }),
+      voiceDistribution: histogram(periodSongPool, (song) => getSongVoiceLabel(song?.voz), { limit: 5 }),
+      themeDistribution: histogram(periodSongPool, (song) => safeText(song?.tema, 'Sin tema'), { limit: 8 }),
+    },
+    equipo: {
+      kpis: [
+        { label: 'Miembros registrados', value: String(perfiles.length), detail: 'Perfiles visibles en el sistema', tone: 'brand' },
+        { label: mode === 'future' ? 'Con asignacion proxima' : 'Activos en periodo', value: String(assignedProfileIds.size), detail: 'Personas sirviendo dentro del rango', tone: 'blue' },
+        { label: mode === 'future' ? 'Ausencias proximas' : 'Ausencias en periodo', value: String(periodAbsences.length), detail: 'Bloqueos que caen dentro de la ventana', tone: 'amber' },
+        { label: 'Roles cubiertos', value: `${rolesWithCoverage}/${roles.length || 0}`, detail: 'Roles con al menos una persona', tone: 'emerald' },
+      ],
+      workload,
+      roleCoverage: roleCoverage.slice(0, 12),
+      lowCoverageRoles,
+      conflicts: teamConflicts,
+      idleProfiles,
+    },
+    sistema: {
+      kpis: [
+        { label: 'Eventos con setlist', value: `${servicesWithSetlist}/${periodEvents.length || 0}`, detail: 'Dentro del periodo seleccionado', tone: 'brand' },
+        { label: 'Eventos con roster', value: `${servicesWithRoster}/${periodEvents.length || 0}`, detail: 'Servicios con equipo cargado', tone: 'blue' },
+        { label: 'Canciones con markers', value: String(markersReadyCount), detail: 'Listas para auto-resaltado', tone: 'amber' },
+        { label: 'Perfiles completos', value: `${completeProfilesCount}/${perfiles.length || 0}`, detail: 'Foto, telefono y cumpleanos', tone: 'emerald' },
+      ],
+      eventGaps: systemEventGaps,
+      songGaps: systemSongGaps,
+      profileGaps,
+      warnings,
+    },
+  };
+};
+
+const panelSnapshots = Object.fromEntries(panelPeriods.map((period) => [period.id, buildPanelSnapshot(period)]));
+const defaultPanelPeriod = panelPeriods[0];
+const defaultPanelSnapshot = panelSnapshots[defaultPanelPeriod.id];
+
 const panelData = {
   generatedAt: new Date().toISOString(),
-  windowLabel: 'Proximos 45 dias',
+  activePeriod: defaultPanelPeriod.id,
+  periods: panelPeriods.map(({ id, label }) => ({ id, label })),
   header: {
     title: 'Panel Redil',
     subtitle: 'Estado operativo del ministerio',
-    helper: `${formatCountLabel(upcomingOperationalEvents.length, 'servicio')} | ${formatCountLabel(canciones.length, 'cancion')} activas | ${formatCountLabel(perfiles.length, 'miembro')}`,
+    helper: `${formatCountLabel(defaultPanelSnapshot.operacion.upcomingServices.length, 'servicio')} | ${formatCountLabel(canciones.length, 'cancion')} activas | ${formatCountLabel(perfiles.length, 'miembro')}`,
   },
-  operacion: {
-    kpis: [
-      {
-        label: 'Readiness proximo servicio',
-        value: nextService ? `${nextService.readinessScore}%` : '--',
-        detail: nextService ? `${nextService.readinessChecks.filter((check) => check.ok).length}/${nextService.readinessChecks.length} checks` : 'Sin servicios en la ventana',
-        tone: 'brand',
-      },
-      {
-        label: 'Servicios proximos',
-        value: String(upcomingOperationalEvents.length),
-        detail: `${servicesReadyCount} listos | ${servicesAtRiskCount} con pendiente`,
-        tone: 'blue',
-      },
-      {
-        label: 'Rosters cargados',
-        value: `${servicesWithRoster}/${upcomingOperationalEvents.length || 0}`,
-        detail: 'Servicios con personal asignado',
-        tone: 'amber',
-      },
-      {
-        label: 'Setlists listas',
-        value: `${servicesWithSetlist}/${upcomingOperationalEvents.length || 0}`,
-        detail: 'Servicios con playlist lista',
-        tone: 'emerald',
-      },
-    ],
-    nextService: nextService
-      ? {
-          ...nextService,
-          summary: nextServiceSummary,
-        }
-      : null,
-    upcomingServices: upcomingOperationalEvents.slice(0, 8),
-    alerts: operationAlerts,
-  },
-  repertorio: {
-    kpis: [
-      { label: 'Canciones activas', value: String(canciones.length), detail: 'Catalogo disponible', tone: 'brand' },
-      { label: 'Usadas en servicios', value: String(usedSongIds.size), detail: 'Canciones presentes en playlists', tone: 'blue' },
-      { label: 'Nunca usadas', value: String(songsNeverUsed.length), detail: 'Oportunidad para refrescar repertorio', tone: 'amber' },
-      { label: 'Listas para ensayo', value: String(rehearsalReadyCount), detail: 'ChordPro + MP3 + markers', tone: 'emerald' },
-    ],
-    resourceCoverage: [
-      resourceCoverageItem('ChordPro', chordproReadyCount, canciones.length),
-      resourceCoverageItem('MP3', mp3ReadyCount, canciones.length),
-      resourceCoverageItem('Voces', voicesReadyCount, canciones.length),
-      resourceCoverageItem('Secuencias', sequencesReadyCount, canciones.length),
-      resourceCoverageItem('Markers', markersReadyCount, canciones.length),
-    ],
-    topSongs,
-    categoryDistribution: songCategoryDistribution,
-    voiceDistribution: songVoiceDistribution,
-    themeDistribution: songThemeDistribution,
-  },
-  equipo: {
-    kpis: [
-      { label: 'Miembros registrados', value: String(perfiles.length), detail: 'Perfiles visibles en el sistema', tone: 'brand' },
-      { label: 'Con asignacion proxima', value: String(assignedProfileIds.size), detail: 'Personas sirviendo en la ventana', tone: 'blue' },
-      { label: 'Ausencias proximas', value: String(upcomingAbsences.length), detail: 'Bloqueos activos o futuros', tone: 'amber' },
-      { label: 'Roles cubiertos', value: `${rolesWithCoverage}/${roles.length || 0}`, detail: 'Roles con al menos una persona', tone: 'emerald' },
-    ],
-    workload,
-    roleCoverage: roleCoverage.slice(0, 12),
-    lowCoverageRoles,
-    conflicts: teamConflicts,
-    idleProfiles,
-  },
-  sistema: {
-    kpis: [
-      { label: 'Eventos con setlist', value: `${servicesWithSetlist}/${upcomingOperationalEvents.length || 0}`, detail: 'Dentro de la ventana operativa', tone: 'brand' },
-      { label: 'Eventos con roster', value: `${servicesWithRoster}/${upcomingOperationalEvents.length || 0}`, detail: 'Servicios con equipo cargado', tone: 'blue' },
-      { label: 'Canciones con markers', value: String(markersReadyCount), detail: 'Listas para auto-resaltado', tone: 'amber' },
-      { label: 'Perfiles completos', value: `${completeProfilesCount}/${perfiles.length || 0}`, detail: 'Foto, telefono y cumpleanos', tone: 'emerald' },
-    ],
-    eventGaps: systemEventGaps,
-    songGaps: systemSongGaps,
-    profileGaps,
-    warnings,
-  },
+  snapshots: panelSnapshots,
 };
 ---
 
 <Layout title="Panel | Redil Alabanza">
   <div class="relative max-w-[1900px] mx-auto w-full px-2 sm:px-4 xl:px-8 pt-4 md:pt-8 pb-32">
     <div class="pointer-events-none absolute inset-x-0 top-0 h-[320px] bg-[radial-gradient(ellipse_75%_50%_at_50%_-5%,rgba(59,130,246,0.08),transparent)] dark:bg-[radial-gradient(ellipse_75%_50%_at_50%_-5%,rgba(59,130,246,0.14),transparent)]"></div>
-    <PanelControl client:load data={panelData} userName={safeText(perfilesById.get(String(user.id))?.nombre, 'Equipo')} />
+    <PanelControl client:load data={panelData} />
   </div>
 </Layout>
