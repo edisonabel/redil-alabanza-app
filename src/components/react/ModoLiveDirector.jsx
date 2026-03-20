@@ -466,26 +466,27 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
         const cache = await caches.open('repertorio-offline-cache-v1');
         let downloadedCount = 0;
 
-        for (const song of playlist) {
-          if (song?.isPrayer) { downloadedCount += 2; continue; }
+        const cacheOne = async (url) => {
+          const matched = await cache.match(url);
+          if (!matched) {
+            try {
+              const response = await fetch(url);
+              if (response.ok) await cache.put(url, response);
+            } catch (err) {
+              console.warn('[AutoCache] Error en background:', url, err);
+            }
+          }
+          downloadedCount++;
+          setDownloadStatus((prev) => ({ ...prev, progress: downloadedCount }));
+        };
+
+        await Promise.all(playlist.map(async (song) => {
+          if (song?.isPrayer) { downloadedCount += 2; return; }
           const safeKey = song.key ? song.key.replace('#', 'Sharp').replace('b', 'Flat') : null;
           const padUrl = safeKey ? `${PAD_BASE_URL}/Pad_${safeKey}.mp3` : null;
           const urlsToCache = [song.mp3, padUrl].filter(Boolean);
-
-          for (const url of urlsToCache) {
-            const matched = await cache.match(url);
-            if (!matched) {
-              try {
-                const response = await fetch(url);
-                if (response.ok) await cache.put(url, response);
-              } catch (err) {
-                console.warn('[AutoCache] Error en background:', url, err);
-              }
-            }
-            downloadedCount++;
-            setDownloadStatus((prev) => ({ ...prev, progress: downloadedCount }));
-          }
-        }
+          await Promise.all(urlsToCache.map(cacheOne));
+        }));
         setDownloadStatus((prev) => ({ ...prev, active: false, done: true }));
       } catch (error) {
         console.error('[AutoCache] Error fatal:', error);
@@ -499,28 +500,35 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
 
   // ── Efecto: Interceptor de Audio (Blob Generator) ──
   useEffect(() => {
-    const resolveLocalResource = async (cloudUrl, setterFunction) => {
-      if (!cloudUrl) return setterFunction(null);
+    const resolveLocalResource = async (cloudUrl) => {
+      if (!cloudUrl) return null;
       try {
         const cache = await caches.open('repertorio-offline-cache-v1');
         const matchedResponse = await cache.match(cloudUrl);
         if (matchedResponse) {
           const blob = await matchedResponse.blob();
-          setterFunction(URL.createObjectURL(blob));
-        } else {
-          setterFunction(cloudUrl);
+          return URL.createObjectURL(blob);
         }
-      } catch (err) {
-        setterFunction(cloudUrl);
-      }
+      } catch (_) { /* fallback */ }
+      return cloudUrl;
     };
 
-    // Limpieza de blob URLs anteriores
-    setResolvedAudioSrc((prev) => { if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev); return null; });
-    setResolvedPadSrc((prev) => { if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev); return null; });
+    let cancelled = false;
+    Promise.all([
+      resolveLocalResource(activeSourceUrl),
+      resolveLocalResource(currentPadUrl),
+    ]).then(([audioSrc, padSrc]) => {
+      if (cancelled) {
+        // Revocar blob URLs si el efecto fue cancelado antes de aplicarlas
+        if (audioSrc?.startsWith('blob:')) URL.revokeObjectURL(audioSrc);
+        if (padSrc?.startsWith('blob:')) URL.revokeObjectURL(padSrc);
+        return;
+      }
+      setResolvedAudioSrc((prev) => { if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev); return audioSrc; });
+      setResolvedPadSrc((prev) => { if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev); return padSrc; });
+    });
 
-    resolveLocalResource(activeSourceUrl, setResolvedAudioSrc);
-    resolveLocalResource(currentPadUrl, setResolvedPadSrc);
+    return () => { cancelled = true; };
   }, [activeSourceUrl, currentPadUrl]);
 
   // Calcular sección activa basada en tiempo (usa visualMarkers)

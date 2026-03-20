@@ -94,7 +94,10 @@ import Layout from '../layouts/Layout.astro';
  </div>
  
  <div>
- <label for="password" class="block text-sm font-semibold text-content mb-2">Contraseña <span class="text-danger">*</span></label>
+ <div class="flex items-center justify-between mb-2">
+   <label for="password" class="block text-sm font-semibold text-content">Contraseña <span class="text-danger">*</span></label>
+   <button type="button" id="btn-forgot-password" class="text-xs text-brand hover:underline font-medium transition-colors">¿Olvidaste tu contraseña?</button>
+ </div>
  <input type="password" id="password" required class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted " placeholder="••••••••">
  <p class="text-[11px] text-content-muted mt-1.5 ml-1" id="password-hint">Mínimo 6 caracteres.</p>
  </div>
@@ -369,11 +372,32 @@ const rememberMeCheckbox = document.getElementById('remember-me') as HTMLInputEl
  };
 
  // --- Tab Switching Logic ---
+ const btnForgotPassword = document.getElementById('btn-forgot-password');
+ btnForgotPassword?.addEventListener('click', async () => {
+   const email = (document.getElementById('email') as HTMLInputElement).value.trim();
+   if (!email) {
+     showError('Ingresa tu correo electrónico primero.');
+     return;
+   }
+   btnForgotPassword.setAttribute('disabled', 'true');
+   (btnForgotPassword as HTMLButtonElement).textContent = 'Enviando…';
+   const { error } = await supabase.auth.resetPasswordForEmail(email, {
+     redirectTo: `${window.location.origin}/reset-password`,
+   });
+   (btnForgotPassword as HTMLButtonElement).removeAttribute('disabled');
+   (btnForgotPassword as HTMLButtonElement).textContent = '¿Olvidaste tu contraseña?';
+   if (error) {
+     showError('Error: ' + error.message);
+   } else {
+     showSuccess('✅ Correo enviado. Revisa tu bandeja de entrada y sigue el enlace.');
+   }
+ });
+
  const setLoginMode = () => {
  isLoginMode = true;
  tabLogin?.classList.add('bg-surface', 'text-content', 'shadow-sm');
  tabLogin?.classList.remove('text-content-muted', 'hover:text-content');
- 
+
  tabRegister?.classList.remove('bg-surface', 'text-content', 'shadow-sm');
  tabRegister?.classList.add('text-content-muted', 'hover:text-content');
 
@@ -391,6 +415,7 @@ fechaNacimientoInput.required = false;
 accessCodeInput.required = false;
 accessCodeInput.value = ''; // limpiar por si acaso
  
+ btnForgotPassword?.classList.remove('hidden');
  if (btnSubmit) btnSubmit.textContent = 'Iniciar Sesión';
  hideMessages();
  };
@@ -416,6 +441,7 @@ telefonoInput.required = true;
 fechaNacimientoInput.required = true;
 accessCodeInput.required = true;
 
+ btnForgotPassword?.classList.add('hidden');
  if (btnSubmit) btnSubmit.textContent = 'Crear Cuenta';
  hideMessages();
 
