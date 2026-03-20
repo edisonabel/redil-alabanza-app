@@ -15,6 +15,8 @@ import {
   Repeat2,
   Waves,
   ListMusic,
+  CloudDownload,
+  CheckCircle2,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
@@ -302,6 +304,10 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
   const timelineRef = useRef(null);
   const syncChannelRef = useRef(null);
   const syncDataRef = useRef({ songId: null, sectionIndex: 0, time: 0 });
+  const hasAutoDownloadedRef = useRef(false);
+  const [downloadStatus, setDownloadStatus] = useState({ active: false, progress: 0, total: 0, done: false });
+  const [resolvedAudioSrc, setResolvedAudioSrc] = useState(null);
+  const [resolvedPadSrc, setResolvedPadSrc] = useState(null);
 
   const activeSong = playlist[activeSongIndex] || null;
   const sections = Array.isArray(activeSong?.sectionMarkers) ? activeSong.sectionMarkers : [];
@@ -447,6 +453,75 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
     extract();
     return () => { cancelled = true; };
   }, [playlist]);
+
+  // ── Efecto: Descargador Silencioso (Background Auto-Cache) ──
+  useEffect(() => {
+    if (!playlist || playlist.length === 0 || hasAutoDownloadedRef.current) return;
+
+    const autoCacheSetlist = async () => {
+      hasAutoDownloadedRef.current = true;
+      setDownloadStatus({ active: true, progress: 0, total: playlist.length * 2, done: false });
+
+      try {
+        const cache = await caches.open('repertorio-offline-cache-v1');
+        let downloadedCount = 0;
+
+        for (const song of playlist) {
+          if (song?.isPrayer) { downloadedCount += 2; continue; }
+          const safeKey = song.key ? song.key.replace('#', 'Sharp').replace('b', 'Flat') : null;
+          const padUrl = safeKey ? `${PAD_BASE_URL}/Pad_${safeKey}.mp3` : null;
+          const urlsToCache = [song.mp3, padUrl].filter(Boolean);
+
+          for (const url of urlsToCache) {
+            const matched = await cache.match(url);
+            if (!matched) {
+              try {
+                const response = await fetch(url);
+                if (response.ok) await cache.put(url, response);
+              } catch (err) {
+                console.warn('[AutoCache] Error en background:', url, err);
+              }
+            }
+            downloadedCount++;
+            setDownloadStatus((prev) => ({ ...prev, progress: downloadedCount }));
+          }
+        }
+        setDownloadStatus((prev) => ({ ...prev, active: false, done: true }));
+      } catch (error) {
+        console.error('[AutoCache] Error fatal:', error);
+        setDownloadStatus({ active: false, progress: 0, total: 0, done: false });
+      }
+    };
+
+    const timer = setTimeout(() => autoCacheSetlist(), 2000);
+    return () => clearTimeout(timer);
+  }, [playlist]);
+
+  // ── Efecto: Interceptor de Audio (Blob Generator) ──
+  useEffect(() => {
+    const resolveLocalResource = async (cloudUrl, setterFunction) => {
+      if (!cloudUrl) return setterFunction(null);
+      try {
+        const cache = await caches.open('repertorio-offline-cache-v1');
+        const matchedResponse = await cache.match(cloudUrl);
+        if (matchedResponse) {
+          const blob = await matchedResponse.blob();
+          setterFunction(URL.createObjectURL(blob));
+        } else {
+          setterFunction(cloudUrl);
+        }
+      } catch (err) {
+        setterFunction(cloudUrl);
+      }
+    };
+
+    // Limpieza de blob URLs anteriores
+    setResolvedAudioSrc((prev) => { if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev); return null; });
+    setResolvedPadSrc((prev) => { if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev); return null; });
+
+    resolveLocalResource(activeSourceUrl, setResolvedAudioSrc);
+    resolveLocalResource(currentPadUrl, setResolvedPadSrc);
+  }, [activeSourceUrl, currentPadUrl]);
 
   // Calcular sección activa basada en tiempo (usa visualMarkers)
   const activeSectionIdx = visualMarkers.length > 0
@@ -619,9 +694,10 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
       fadeOutPad._fadeInterval = interval;
     };
 
-    if (activePadChannel === 'A') crossfade(padA, padB, currentPadUrl);
-    else crossfade(padB, padA, currentPadUrl);
-  }, [currentPadUrl, isPadActive, activePadChannel]);
+    const padSrc = resolvedPadSrc || currentPadUrl;
+    if (activePadChannel === 'A') crossfade(padA, padB, padSrc);
+    else crossfade(padB, padA, padSrc);
+  }, [currentPadUrl, isPadActive, activePadChannel, resolvedPadSrc]);
 
   // Pad: slider de volumen directo
   useEffect(() => {
@@ -787,7 +863,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
         <audio
           key={`live-${activeSong?.id || activeSongIndex}-${selectedSourceId}`}
           ref={audioRef}
-          src={activeSourceUrl}
+          src={resolvedAudioSrc || activeSourceUrl}
           crossOrigin="anonymous"
           preload="auto"
           onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
@@ -913,13 +989,26 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
             <h1 className="text-sm font-black leading-tight tracking-tight">{contextTitle}</h1>
           </div>
         </div>
-        {/* Indicador Sync */}
-        <div className="flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/8 px-3 py-1.5">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-          </span>
-          <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">SYNC MASTER</span>
+        <div className="flex items-center gap-2">
+          {/* Indicador Offline Automático */}
+          {downloadStatus.active ? (
+            <div className="flex items-center gap-2 rounded-full border border-zinc-500/30 bg-zinc-900 px-3 py-1" title="Descargando audios en segundo plano...">
+              <CloudDownload className="h-3 w-3 animate-pulse text-zinc-400" />
+              <span className="text-[10px] font-bold text-zinc-400">{downloadStatus.progress}/{downloadStatus.total}</span>
+            </div>
+          ) : downloadStatus.done ? (
+            <div className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold text-emerald-400" title="Setlist completo guardado en tu dispositivo">
+              <CheckCircle2 className="h-3 w-3" /> OFFLINE
+            </div>
+          ) : null}
+          {/* Indicador Sync */}
+          <div className="flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/8 px-3 py-1.5">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            </span>
+            <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">SYNC MASTER</span>
+          </div>
         </div>
       </header>
 
