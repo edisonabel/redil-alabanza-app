@@ -215,7 +215,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                                     <div key={idx} className="flex items-center gap-4 p-3 rounded-2xl border border-border bg-background hover:bg-surface transition-colors group relative overflow-hidden">
                                         <div className="relative">
                                             {p.avatar_url ? (
-                                                <img src={p.avatar_url} alt={p.nombre} className="w-14 h-14 shrink-0 rounded-full object-cover shadow-sm bg-surface" />
+                                                <img src={p.avatar_url} alt={p.nombre} loading="lazy" decoding="async" className="w-14 h-14 shrink-0 rounded-full object-cover shadow-sm bg-surface" />
                                             ) : (
                                                 <div className="w-14 h-14 shrink-0 rounded-full bg-brand/10 text-brand border border-brand/30 flex items-center justify-center font-black text-lg shadow-sm">{initials}</div>
                                             )}

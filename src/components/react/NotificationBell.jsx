@@ -57,7 +57,9 @@ export default function NotificationBell({ inline = false, direction = 'down' })
 
     return () => {
       mountedRef.current = false;
+      bootstrapPromiseRef.current = null;
       if (channelRef.current) {
+        channelRef.current.unsubscribe();
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }

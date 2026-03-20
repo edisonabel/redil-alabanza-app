@@ -548,10 +548,15 @@ const accessCode = accessCodeInput.value?.trim().toUpperCase();
 let avatarUrl = '';
 let uploadedAvatarPath = '';
 
- // SECRET CODE VALIDATION
- const SECRET_CODE = 'REDIL2026';
- if (accessCode !== SECRET_CODE) {
-  throw new Error("El Código de Acceso es incorrecto. Contacta a tu líder si no lo tienes.");
+ // SECRET CODE VALIDATION (server-side)
+ const verifyRes = await fetch('/api/verify-access-code', {
+   method: 'POST',
+   headers: { 'Content-Type': 'application/json' },
+   body: JSON.stringify({ code: accessCode }),
+ });
+ const verifyData = await verifyRes.json();
+ if (!verifyData.valid) {
+   throw new Error("El Código de Acceso es incorrecto. Contacta a tu líder si no lo tienes.");
  }
 
 if (!fullName || !telefono || !fechaNacimiento) throw new Error("Nombre, Teléfono y Fecha de nacimiento son obligatorios para el registro.");

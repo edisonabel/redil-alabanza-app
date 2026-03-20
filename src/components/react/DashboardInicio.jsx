@@ -185,8 +185,8 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                             className="rounded-xl border border-border bg-surface/90 p-1 shadow-sm"
                             aria-label="Inicio Redil"
                         >
-                            <img src="/LOGO%20REDIL%20LIGHT.png" alt="Redil" className="w-12 h-auto dark:hidden md:w-14" />
-                            <img src="/LOGO%20REDIL.png" alt="Redil" className="hidden w-12 h-auto dark:block md:w-14" />
+                            <img src="/LOGO%20REDIL%20LIGHT.png" alt="Redil" decoding="async" className="w-12 h-auto dark:hidden md:w-14" />
+                            <img src="/LOGO%20REDIL.png" alt="Redil" decoding="async" className="hidden w-12 h-auto dark:block md:w-14" />
                         </a>
                     </div>
                 </header>

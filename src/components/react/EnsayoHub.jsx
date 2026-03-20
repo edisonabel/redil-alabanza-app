@@ -465,7 +465,7 @@ export default function EnsayoHub({
       });
     }).subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { channel.unsubscribe(); supabase.removeChannel(channel); };
   }, [isSyncReceiver, playableSongs]);
 
   // ── Cuenta regresiva de conexión ──

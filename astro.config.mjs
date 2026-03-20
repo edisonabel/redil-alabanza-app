@@ -15,7 +15,7 @@ export default defineConfig({
   site: 'https://alabanzaredilestadio.com',
   base: '/',
   prefetch: {
-    prefetchAll: true,
+    prefetchAll: false,
     defaultStrategy: 'hover',
   },
 
@@ -41,7 +41,7 @@ export default defineConfig({
       clientsClaim: true,
       skipWaiting: true,
       navigateFallbackDenylist: [/^\/.*$/],
-      globPatterns: ['**/*.{js,css,svg,png,ico,txt,webmanifest}'],
+      globPatterns: ['**/*.{js,css,svg,png,jpg,jpeg,webp,avif,ico,txt,webmanifest}'],
       runtimeCaching: [
         {
           urlPattern: ({ url }) => url.origin.includes('supabase.co'),

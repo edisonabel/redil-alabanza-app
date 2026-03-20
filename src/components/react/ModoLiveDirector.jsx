@@ -1064,7 +1064,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
           {/* Cover art blur background */}
           {activeCover && (
             <div className="pointer-events-none absolute inset-0 overflow-hidden">
-              <img src={activeCover} alt="" className="h-full w-full object-cover opacity-15 blur-3xl scale-110" />
+              <img src={activeCover} alt="" decoding="async" className="h-full w-full object-cover opacity-15 blur-3xl scale-110" />
               <div className="absolute inset-0 bg-gradient-to-b from-zinc-900/40 via-zinc-900/80 to-zinc-900" />
             </div>
           )}
@@ -1078,7 +1078,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
               {/* Album art thumbnail */}
               <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-zinc-800 shadow-lg md:h-20 md:w-20">
                 {activeCover ? (
-                  <img src={activeCover} alt="" className="h-full w-full object-cover" />
+                  <img src={activeCover} alt="" decoding="async" className="h-full w-full object-cover" />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center">
                     <Disc3 className="h-8 w-8 text-zinc-600" />
@@ -1365,7 +1365,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
                 {/* Mini album art */}
                 <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-white/8 bg-zinc-800">
                   {songCover ? (
-                    <img src={songCover} alt="" className="h-full w-full object-cover" />
+                    <img src={songCover} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-zinc-600">
                       <Disc3 className="h-5 w-5" />

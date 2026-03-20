@@ -367,7 +367,7 @@ export default function CalendarioGrid({
                 <div key={asig.id || `${asig.rol_id}-${asig.perfiles?.id || Math.random()}`} className="flex flex-col items-center gap-1.5 group relative cursor-pointer hover:bg-neutral/20 rounded-xl p-2 -m-2 transition-colors" title={`${asig.perfiles.nombre} (${rolMatch.nombre})`}>
                     <div className="relative">
                         {asig.perfiles.avatar_url ? (
-                            <img src={asig.perfiles.avatar_url} alt={asig.perfiles.nombre} className="w-[42px] h-[42px] sm:w-[46px] sm:h-[46px] shrink-0 rounded-full object-cover shadow-sm border border-border" />
+                            <img src={asig.perfiles.avatar_url} alt={asig.perfiles.nombre} loading="lazy" decoding="async" className="w-[42px] h-[42px] sm:w-[46px] sm:h-[46px] shrink-0 rounded-full object-cover shadow-sm border border-border" />
                         ) : (
                             <div className={`w-[42px] h-[42px] sm:w-[46px] sm:h-[46px] shrink-0 rounded-full text-white flex items-center justify-center font-bold text-sm shadow-sm ${colorSeccion}`}>
                                 {iniciales.toUpperCase()}

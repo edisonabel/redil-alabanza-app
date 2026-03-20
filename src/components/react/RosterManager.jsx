@@ -337,7 +337,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
             <div key={`${asig.rol_id}-${asig.perfil_id}`} className="flex flex-col items-center gap-1 group relative cursor-pointer hover:bg-neutral/20 rounded-xl p-2 -m-2 transition-colors" title={`${p.nombre} (${rolMatch.nombre})`} onClick={() => !isStrictModerator && openPicker(rolMatch.id, rolMatch.nombre)}>
                 <div className="relative">
                     {p.avatar_url ? (
-                        <img src={p.avatar_url} alt={p.nombre} className="w-[42px] h-[42px] sm:w-[46px] sm:h-[46px] shrink-0 rounded-full object-cover shadow-sm border border-border" />
+                        <img src={p.avatar_url} alt={p.nombre} loading="lazy" decoding="async" className="w-[42px] h-[42px] sm:w-[46px] sm:h-[46px] shrink-0 rounded-full object-cover shadow-sm border border-border" />
                     ) : (
                         <div className={`w-[42px] h-[42px] sm:w-[46px] sm:h-[46px] shrink-0 rounded-full text-white flex items-center justify-center font-bold text-sm shadow-sm ${colorSeccion}`}>
                             {iniciales.toUpperCase()}
@@ -492,7 +492,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                                                             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
                                                         </div>
                                                     ) : p.avatar_url ? (
-                                                        <img src={p.avatar_url} className="w-10 h-10 rounded-full object-cover shadow-sm border border-border" alt={p.nombre} />
+                                                        <img src={p.avatar_url} loading="lazy" decoding="async" className="w-10 h-10 rounded-full object-cover shadow-sm border border-border" alt={p.nombre} />
                                                     ) : (
                                                         <div className="w-10 h-10 rounded-full bg-neutral/20 text-content-muted flex items-center justify-center font-bold text-xs shadow-sm border border-border">{p.nombre.substring(0, 2).toUpperCase()}</div>
                                                     )}
