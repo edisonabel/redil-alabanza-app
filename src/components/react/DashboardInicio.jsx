@@ -33,7 +33,24 @@ const formatDayMonth = (isoDate) => {
     return safeDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' });
 };
 
-const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = [], cumpleanerosMes = [] }) => {
+const getInitials = (fullName) => {
+    if (!fullName || typeof fullName !== 'string') return 'RD';
+    return fullName
+        .trim()
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((part) => part.charAt(0).toUpperCase())
+        .join('');
+};
+
+const getMonthName = (monthNumber) => {
+    if (!monthNumber) return '';
+    const safeDate = new Date(2026, monthNumber - 1, 1);
+    if (Number.isNaN(safeDate.getTime())) return '';
+    return safeDate.toLocaleDateString('es-ES', { month: 'long' });
+};
+
+const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = [], cumpleanerosMes = [], cumpleanerosTodos = [] }) => {
     const [dismissUpcomingHint, setDismissUpcomingHint] = useState(false);
     const [dismissEnvironmentHint, setDismissEnvironmentHint] = useState(false);
     const [devicePlatform, setDevicePlatform] = useState('other');
@@ -41,6 +58,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
     const [isStandaloneApp, setIsStandaloneApp] = useState(false);
     const [installNotice, setInstallNotice] = useState('');
     const [installModal, setInstallModal] = useState({ open: false, title: '', steps: [], platform: 'ios' });
+    const [birthdaysModalOpen, setBirthdaysModalOpen] = useState(false);
     const installPromptRef = useRef(null);
 
     useEffect(() => {
@@ -168,6 +186,21 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
     const fechaHoyCapitalizada = fechaHoy.charAt(0).toUpperCase() + fechaHoy.slice(1);
     const mesActualStr = new Date().toLocaleString('es-ES', { month: 'long' });
     const showUpcomingHint = proximosServicios.length > 1 && !dismissUpcomingHint;
+    const cumpleanerosPorMes = cumpleanerosTodos.reduce((groups, persona) => {
+        if (!persona?.mes) return groups;
+        const month = persona.mes;
+        const existingGroup = groups.find((group) => group.month === month);
+        if (existingGroup) {
+            existingGroup.personas.push(persona);
+        } else {
+            groups.push({
+                month,
+                label: getMonthName(month),
+                personas: [persona],
+            });
+        }
+        return groups;
+    }, []);
 
     return (
         <>
@@ -531,22 +564,35 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                                     </span>
                                     Cumpleaneros del Mes
                                 </h3>
+                                {cumpleanerosTodos.length > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setBirthdaysModalOpen(true)}
+                                        className="inline-flex h-8 items-center rounded-full border border-border bg-background/90 px-3 text-[11px] font-bold uppercase tracking-[0.16em] text-content-muted transition-colors hover:bg-surface hover:text-content dark:bg-white/5 dark:hover:bg-white/10"
+                                    >
+                                        Ver todos
+                                    </button>
+                                )}
                             </div>
                             {cumpleanerosMes.length === 0 ? (
                                 <p className="text-sm text-content-muted">No hay cumpleaneros registrados este mes.</p>
                             ) : (
                                 <div className="flex gap-2.5 overflow-x-auto hide-scrollbar pb-1">
                                     {cumpleanerosMes.map((persona) => (
-                                        <article key={persona.id} className="min-w-[220px] rounded-xl border border-border bg-background px-3.5 py-3 shrink-0 flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-xl bg-brand/10 border border-brand/25 text-brand flex items-center justify-center shrink-0">
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
-                                                    <path d="M20 12v10H4V12" />
-                                                    <path d="M2 7h20v5H2z" />
-                                                    <path d="M12 22V7" />
-                                                    <path d="M12 7h4a2 2 0 1 0 0-4c-2.1 0-4 2-4 4Z" />
-                                                    <path d="M12 7H8a2 2 0 1 1 0-4c2.1 0 4 2 4 4Z" />
-                                                </svg>
-                                            </div>
+                                        <article key={persona.id} className="min-w-[232px] rounded-xl border border-border bg-background px-3.5 py-3 shrink-0 flex items-center gap-3">
+                                            {persona.avatar_url ? (
+                                                <img
+                                                    src={persona.avatar_url}
+                                                    alt={persona.nombre}
+                                                    loading="lazy"
+                                                    decoding="async"
+                                                    className="w-11 h-11 rounded-xl object-cover border border-white/10 shadow-sm shrink-0"
+                                                />
+                                            ) : (
+                                                <div className="w-11 h-11 rounded-xl bg-brand/10 border border-brand/25 text-brand flex items-center justify-center shrink-0 text-xs font-black uppercase">
+                                                    {getInitials(persona.nombre)}
+                                                </div>
+                                            )}
                                             <div className="min-w-0">
                                                 <p className="text-lg font-black text-content truncate">{persona.nombre}</p>
                                                 <p className="text-sm font-semibold text-content-muted mt-0.5">{`${persona.dia} de ${mesActualStr}`}</p>
@@ -616,6 +662,77 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                 </section>
             </div>
         </div>
+        {birthdaysModalOpen && (
+            <div
+                className="fixed inset-0 z-[155] bg-overlay/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 pt-6 pb-[calc(104px+env(safe-area-inset-bottom))]"
+                onClick={() => setBirthdaysModalOpen(false)}
+            >
+                <div
+                    className="w-full max-w-3xl rounded-[2rem] bg-surface border border-border shadow-2xl p-5 md:p-6 max-h-[calc(100dvh-132px-env(safe-area-inset-bottom))] overflow-hidden flex flex-col my-auto"
+                    onClick={(event) => event.stopPropagation()}
+                >
+                    <div className="flex items-start justify-between gap-3 mb-4">
+                        <div>
+                            <h3 className="text-xl font-black text-content">Cumpleanos del equipo</h3>
+                            <p className="text-sm text-content-muted mt-1">Todos los cumpleanos registrados, ordenados por mes.</p>
+                        </div>
+                        <button
+                            type="button"
+                            className="w-9 h-9 rounded-xl border border-border text-content-muted hover:text-content hover:bg-background"
+                            onClick={() => setBirthdaysModalOpen(false)}
+                            aria-label="Cerrar cumpleanos"
+                        >
+                            x
+                        </button>
+                    </div>
+
+                    <div className="overflow-y-auto pr-1 space-y-5">
+                        {cumpleanerosPorMes.map((grupo) => (
+                            <section key={grupo.month} className="space-y-3">
+                                <h4 className="text-xs font-black uppercase tracking-[0.18em] text-content-muted">{grupo.label}</h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    {grupo.personas
+                                        .slice()
+                                        .sort((a, b) => a.dia - b.dia)
+                                        .map((persona, index) => {
+                                            const isNextBirthday = index === 0
+                                                && cumpleanerosTodos[0]?.id === persona.id
+                                                && cumpleanerosTodos[0]?.mes === persona.mes;
+
+                                            return (
+                                                <article key={persona.id} className="rounded-2xl border border-border bg-background px-3.5 py-3 flex items-center gap-3">
+                                                    {persona.avatar_url ? (
+                                                        <img
+                                                            src={persona.avatar_url}
+                                                            alt={persona.nombre}
+                                                            loading="lazy"
+                                                            decoding="async"
+                                                            className="w-12 h-12 rounded-2xl object-cover border border-white/10 shadow-sm shrink-0"
+                                                        />
+                                                    ) : (
+                                                        <div className="w-12 h-12 rounded-2xl bg-brand/10 border border-brand/25 text-brand flex items-center justify-center shrink-0 text-sm font-black uppercase">
+                                                            {getInitials(persona.nombre)}
+                                                        </div>
+                                                    )}
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="text-base font-black text-content truncate">{persona.nombre}</p>
+                                                        <p className="text-sm font-semibold text-content-muted">{`${persona.dia} de ${grupo.label}`}</p>
+                                                    </div>
+                                                    {isNextBirthday && (
+                                                        <span className="inline-flex h-7 items-center rounded-full border border-brand/30 bg-brand/10 px-2.5 text-[10px] font-black uppercase tracking-[0.16em] text-brand">
+                                                            Proximo
+                                                        </span>
+                                                    )}
+                                                </article>
+                                            );
+                                        })}
+                                </div>
+                            </section>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        )}
         {installModal.open && (
             <div
                 className="fixed inset-0 z-[150] bg-overlay/60 backdrop-blur-sm flex items-center justify-center p-4"
@@ -676,4 +793,3 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
 };
 
 export default DashboardInicio;
-

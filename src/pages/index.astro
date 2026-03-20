@@ -52,7 +52,7 @@ const [
     .limit(5),
   supabaseSSR
     .from('perfiles')
-    .select('id, nombre, fecha_nacimiento')
+    .select('id, nombre, fecha_nacimiento, avatar_url')
     .not('fecha_nacimiento', 'is', null),
   supabaseSSR
     .from('roles')
@@ -67,21 +67,41 @@ if (perfilesCumplesError) {
   console.error('Inicio cumpleaneros query error:', perfilesCumplesError);
 }
 
-const mesActual = new Date().getMonth() + 1;
-const cumpleanerosMes = (perfilesCumplesData || [])
+const hoy = new Date();
+hoy.setHours(0, 0, 0, 0);
+const mesActual = hoy.getMonth() + 1;
+const cumpleanerosTodos = (perfilesCumplesData || [])
   .map((perfilCumple) => {
     const rawFecha = perfilCumple?.fecha_nacimiento;
     if (!rawFecha || typeof rawFecha !== 'string') return null;
     const [year, month, day] = rawFecha.split('-').map((v) => Number(v));
     if (!year || !month || !day) return null;
-    if (month !== mesActual) return null;
+    const proximoCumple = new Date(hoy.getFullYear(), month - 1, day);
+    if (proximoCumple < hoy) {
+      proximoCumple.setFullYear(proximoCumple.getFullYear() + 1);
+    }
     return {
       id: perfilCumple.id,
       nombre: perfilCumple.nombre || 'Músico',
-      dia: day
+      dia: day,
+      nombre: perfilCumple.nombre || 'Musico',
+      mes: month,
+      avatar_url: perfilCumple.avatar_url || '',
+      proximo_cumple_ts: proximoCumple.getTime()
     };
   })
   .filter(Boolean)
+  .sort((a, b) => a.proximo_cumple_ts - b.proximo_cumple_ts);
+
+const cumpleanerosMes = cumpleanerosTodos
+  .filter((persona) => persona.mes === mesActual)
+  .map((persona) => ({
+    id: persona.id,
+    nombre: persona.nombre || 'Musico',
+    dia: persona.dia,
+    mes: persona.mes,
+    avatar_url: persona.avatar_url || ''
+  }))
   .sort((a, b) => a.dia - b.dia);
 
 // Keep a 12h tolerance like Programacion to avoid timezone edge-cases.
@@ -215,6 +235,7 @@ const proximosServicios = (eventosData || [])
         proximosServicios={proximosServicios}
         eventosEspeciales={eventosEspecialesData || []}
         cumpleanerosMes={cumpleanerosMes || []}
+        cumpleanerosTodos={cumpleanerosTodos || []}
       />
       <DashboardShortcuts client:idle userId={user.id} />
       <ModalDetalle client:only="react" initialRoles={rolesCatalog || []} sessionUser={user} isAdmin={Boolean(perfil?.is_admin)} />
