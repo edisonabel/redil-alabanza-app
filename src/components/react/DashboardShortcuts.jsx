@@ -52,7 +52,7 @@ export default function DashboardShortcuts({ userId = null }) {
   return createPortal(
     <>
       <h2 className="text-lg font-bold text-content tracking-tight mb-3">Atajos</h2>
-      <div className="relative overflow-hidden border border-zinc-200/80 rounded-[2rem] p-5 shadow-sm bg-[radial-gradient(circle_at_bottom_left,_rgba(20,184,166,0.05),_transparent_50%),linear-gradient(180deg,_rgba(255,255,255,0.99),_rgba(244,244,245,0.97))] dark:border-white/10 dark:bg-[radial-gradient(circle_at_bottom_left,_rgba(20,184,166,0.12),_transparent_50%),linear-gradient(180deg,_rgba(24,24,27,0.98),_rgba(15,23,42,0.95))] dark:shadow-[0_8px_32px_rgba(2,6,23,0.25)]">
+      <div className="relative z-20 overflow-visible border border-zinc-200/80 rounded-[2rem] p-5 shadow-sm bg-[radial-gradient(circle_at_bottom_left,_rgba(20,184,166,0.05),_transparent_50%),linear-gradient(180deg,_rgba(255,255,255,0.99),_rgba(244,244,245,0.97))] dark:border-white/10 dark:bg-[radial-gradient(circle_at_bottom_left,_rgba(20,184,166,0.12),_transparent_50%),linear-gradient(180deg,_rgba(24,24,27,0.98),_rgba(15,23,42,0.95))] dark:shadow-[0_8px_32px_rgba(2,6,23,0.25)]">
         <div className="grid grid-cols-4 gap-2 sm:gap-3 items-start">
           <a href="/perfil#ausencias" className="flex flex-col items-center gap-2 group min-w-0">
             <div className="w-12 h-12 bg-background border border-border text-content rounded-full flex items-center justify-center group-active:scale-90 transition-transform">

@@ -1,0 +1,673 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PanelControl from '../components/react/PanelControl.jsx';
+import { createClient } from '@supabase/supabase-js';
+
+const tokenCookie = Astro.cookies.get('sb-access-token');
+if (!tokenCookie) {
+  return Astro.redirect('/login');
+}
+
+const user = Astro.locals.user;
+const perfilBase = Astro.locals.perfil;
+
+if (!user) {
+  return Astro.redirect('/login');
+}
+
+const rawUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_URL || '';
+const supabaseUrl = rawUrl.replace(/\/$/, '');
+const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY || '';
+
+const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
+  global: {
+    headers: {
+      Authorization: `Bearer ${tokenCookie.value}`,
+    },
+  },
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+});
+
+const now = new Date();
+const operationFloor = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+const upcomingWindowEnd = new Date(now);
+upcomingWindowEnd.setDate(upcomingWindowEnd.getDate() + 45);
+const fetchPastFloor = new Date(now);
+fetchPastFloor.setDate(fetchPastFloor.getDate() - 120);
+const fetchFutureLimit = new Date(now);
+fetchFutureLimit.setDate(fetchFutureLimit.getDate() + 120);
+const upcomingAbsenceFloor = new Date(now);
+upcomingAbsenceFloor.setDate(upcomingAbsenceFloor.getDate() - 7);
+
+const hasText = (value) => typeof value === 'string' && value.trim() !== '';
+const safeText = (value, fallback = '') => (hasText(value) ? value.trim() : fallback);
+const normalizeFold = (value) =>
+  String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+const formatCountLabel = (count, singular, plural = `${singular}s`) => `${count} ${count === 1 ? singular : plural}`;
+
+const formatDateKey = (dateValue) => {
+  if (!dateValue) return null;
+  const safeDate = dateValue instanceof Date ? dateValue : new Date(dateValue);
+  if (Number.isNaN(safeDate.getTime())) return null;
+  return safeDate.toISOString().slice(0, 10);
+};
+
+const toDateStart = (value) => {
+  if (!value) return null;
+  const safe = new Date(`${value}T00:00:00`);
+  return Number.isNaN(safe.getTime()) ? null : safe;
+};
+
+const toDateEnd = (value) => {
+  if (!value) return null;
+  const safe = new Date(`${value}T23:59:59`);
+  return Number.isNaN(safe.getTime()) ? null : safe;
+};
+
+const inAbsenceRange = (eventDate, absence) => {
+  const start = toDateStart(absence?.fecha_inicio);
+  const end = toDateEnd(absence?.fecha_fin || absence?.fecha_inicio);
+  if (!start || !end || !(eventDate instanceof Date) || Number.isNaN(eventDate.getTime())) return false;
+  return eventDate >= start && eventDate <= end;
+};
+
+const getSongVoiceLabel = (voiceValue) => {
+  const text = normalizeFold(voiceValue);
+  if (!text) return 'Sin definir';
+  const hasMale = ['hombre', 'masculino', 'male', 'tenor'].some((alias) => text.includes(alias));
+  const hasFemale = ['mujer', 'femenino', 'female', 'soprano', 'alto', 'contralto'].some((alias) => text.includes(alias));
+  if ((hasMale && hasFemale) || text.includes('mixto') || text.includes('mixta') || text.includes('dueto') || text.includes('duo')) {
+    return 'Mixto';
+  }
+  if (hasMale) return 'Hombre';
+  if (hasFemale) return 'Mujer';
+  return safeText(voiceValue, 'Sin definir');
+};
+
+const getSongCategoryLabel = (categoryValue) => {
+  const text = normalizeFold(categoryValue);
+  if (!text) return 'Sin categoria';
+  if (text.startsWith('rapid')) return 'Rapida';
+  if (text.startsWith('lent')) return 'Lenta';
+  if (text.startsWith('trans')) return 'Transicion';
+  return safeText(categoryValue, 'Sin categoria');
+};
+
+const histogram = (items, getLabel, { limit = 8 } = {}) => {
+  const counts = new Map();
+  items.forEach((item) => {
+    const label = safeText(getLabel(item), 'Sin definir');
+    counts.set(label, (counts.get(label) || 0) + 1);
+  });
+  return [...counts.entries()]
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => (b.count - a.count) || a.label.localeCompare(b.label, 'es'))
+    .slice(0, limit);
+};
+
+const resourceCoverageItem = (label, count, total) => ({
+  label,
+  count,
+  total,
+  percent: total > 0 ? Math.round((count / total) * 100) : 0,
+});
+
+const fetchSongs = async () => {
+  const fullSelect = 'id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, mp3, voces, link_voces, link_secuencias, chordpro, section_markers';
+  const fallbackSelect = 'id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, mp3, voces, link_voces, link_secuencias, chordpro';
+
+  const fullResp = await supabaseSSR.from('canciones').select(fullSelect).order('titulo');
+  if (!fullResp.error) {
+    return {
+      data: fullResp.data || [],
+      warnings: [],
+    };
+  }
+
+  const fallbackResp = await supabaseSSR.from('canciones').select(fallbackSelect).order('titulo');
+  if (fallbackResp.error) {
+    return {
+      data: [],
+      warnings: [`Canciones: ${fallbackResp.error.message}`],
+    };
+  }
+
+  return {
+    data: (fallbackResp.data || []).map((song) => ({ ...song, section_markers: [] })),
+    warnings: ['Canciones: no se encontro section_markers, usando fallback sin markers.'],
+  };
+};
+
+const isAdmin = Boolean(perfilBase?.is_admin);
+
+let eventosQuery = supabaseSSR
+  .from('eventos')
+  .select(`
+    id,
+    fecha_hora,
+    hora_fin,
+    titulo,
+    tema_predicacion,
+    estado,
+    asignaciones (
+      perfil_id,
+      rol_id,
+      perfiles (id, nombre, avatar_url)
+    )
+  `)
+  .gte('fecha_hora', fetchPastFloor.toISOString())
+  .lte('fecha_hora', fetchFutureLimit.toISOString())
+  .order('fecha_hora', { ascending: true });
+
+if (!isAdmin) {
+  eventosQuery = eventosQuery.eq('estado', 'Publicado');
+}
+
+const [
+  perfilesResp,
+  rolesResp,
+  perfilRolesResp,
+  eventosResp,
+  playlistsResp,
+  playlistCancionesResp,
+  ausenciasResp,
+  songsBundle,
+] = await Promise.all([
+  supabaseSSR.from('perfiles').select('id, nombre, avatar_url, telefono, fecha_nacimiento').order('nombre'),
+  supabaseSSR.from('roles').select('id, nombre, codigo').order('nombre'),
+  supabaseSSR.from('perfil_roles').select('perfil_id, rol_id'),
+  eventosQuery,
+  supabaseSSR.from('playlists').select('id, evento_id, updated_at'),
+  supabaseSSR.from('playlist_canciones').select('playlist_id, cancion_id, orden'),
+  supabaseSSR
+    .from('ausencias')
+    .select('id, perfil_id, fecha_inicio, fecha_fin, motivo')
+    .gte('fecha_fin', formatDateKey(upcomingAbsenceFloor) || formatDateKey(now))
+    .order('fecha_inicio', { ascending: true }),
+  fetchSongs(),
+]);
+
+const warnings = [];
+
+if (perfilesResp.error) warnings.push(`Perfiles: ${perfilesResp.error.message}`);
+if (rolesResp.error) warnings.push(`Roles: ${rolesResp.error.message}`);
+if (perfilRolesResp.error) warnings.push(`Perfil roles: ${perfilRolesResp.error.message}`);
+if (eventosResp.error) warnings.push(`Eventos: ${eventosResp.error.message}`);
+if (playlistsResp.error) warnings.push(`Playlists: ${playlistsResp.error.message}`);
+if (playlistCancionesResp.error) warnings.push(`Playlist canciones: ${playlistCancionesResp.error.message}`);
+if (ausenciasResp.error) warnings.push(`Ausencias: ${ausenciasResp.error.message}`);
+warnings.push(...(songsBundle.warnings || []));
+
+const perfiles = perfilesResp.data || [];
+const roles = rolesResp.data || [];
+const perfilRoles = perfilRolesResp.data || [];
+const eventos = eventosResp.data || [];
+const playlists = playlistsResp.data || [];
+const playlistCanciones = playlistCancionesResp.data || [];
+const ausencias = ausenciasResp.data || [];
+const cancionesRaw = songsBundle.data || [];
+
+const canciones = cancionesRaw.filter((song) => normalizeFold(song?.estado) !== 'archivada');
+const perfilesById = new Map(perfiles.map((perfil) => [String(perfil.id), perfil]));
+const rolesById = new Map(roles.map((rol) => [String(rol.id), rol]));
+const cancionesById = new Map(canciones.map((song) => [String(song.id), song]));
+
+const playlistsByEventId = new Map();
+playlists.forEach((playlist) => {
+  if (playlist?.evento_id) {
+    playlistsByEventId.set(String(playlist.evento_id), playlist);
+  }
+});
+
+const playlistSongsByPlaylistId = new Map();
+const usageBySongId = new Map();
+playlistCanciones.forEach((item) => {
+  const playlistId = String(item?.playlist_id || '');
+  const songId = String(item?.cancion_id || '');
+  if (!playlistId || !songId) return;
+  const bucket = playlistSongsByPlaylistId.get(playlistId) || [];
+  bucket.push(item);
+  playlistSongsByPlaylistId.set(playlistId, bucket);
+  usageBySongId.set(songId, (usageBySongId.get(songId) || 0) + 1);
+});
+
+const absencesByProfileId = new Map();
+ausencias.forEach((absence) => {
+  const profileId = String(absence?.perfil_id || '');
+  if (!profileId) return;
+  const bucket = absencesByProfileId.get(profileId) || [];
+  bucket.push(absence);
+  absencesByProfileId.set(profileId, bucket);
+});
+
+const directionRoleCodes = ['lider_alabanza', 'director_musical', 'talkback'];
+const lyricsRoleCodes = ['encargado_letras', 'letra_y_notas', 'produccion_visual', 'letras'];
+
+const operationalEvents = eventos
+  .map((evento) => {
+    const eventDate = new Date(evento.fecha_hora);
+    if (Number.isNaN(eventDate.getTime())) return null;
+
+    const playlist = playlistsByEventId.get(String(evento.id)) || null;
+    const playlistItems = playlist
+      ? (playlistSongsByPlaylistId.get(String(playlist.id)) || []).slice().sort((a, b) => Number(a?.orden || 0) - Number(b?.orden || 0))
+      : [];
+    const setlistSongs = playlistItems
+      .map((item) => cancionesById.get(String(item.cancion_id)))
+      .filter(Boolean);
+
+    const roster = (Array.isArray(evento.asignaciones) ? evento.asignaciones : []).map((asig) => {
+      const role = rolesById.get(String(asig?.rol_id || '')) || null;
+      const profile = asig?.perfiles || perfilesById.get(String(asig?.perfil_id || '')) || null;
+      return {
+        perfil_id: String(asig?.perfil_id || profile?.id || ''),
+        rol_id: String(asig?.rol_id || ''),
+        role,
+        profile,
+      };
+    });
+
+    const roleCodes = roster.map((item) => item?.role?.codigo).filter(Boolean);
+    const hasSetlist = setlistSongs.length > 0;
+    const hasRoster = roster.length > 0;
+    const hasDirection = roleCodes.some((code) => directionRoleCodes.includes(code));
+    const hasLyrics = roleCodes.some((code) => lyricsRoleCodes.includes(code));
+    const missingChordproSongs = setlistSongs.filter((song) => !hasText(song?.chordpro));
+    const missingMp3Songs = setlistSongs.filter((song) => !hasText(song?.mp3));
+    const conflictingAbsences = roster
+      .map((item) => {
+        const personAbsences = absencesByProfileId.get(String(item.perfil_id)) || [];
+        const activeAbsence = personAbsences.find((absence) => inAbsenceRange(eventDate, absence));
+        if (!activeAbsence || !item?.profile?.nombre) return null;
+        return {
+          profileId: item.perfil_id,
+          profileName: item.profile.nombre,
+          reason: safeText(activeAbsence?.motivo, 'Sin motivo'),
+        };
+      })
+      .filter(Boolean)
+      .reduce((unique, current) => {
+        if (!unique.some((item) => item.profileId === current.profileId)) unique.push(current);
+        return unique;
+      }, []);
+
+    const readinessChecks = [
+      { key: 'setlist', label: 'Setlist cargada', ok: hasSetlist, detail: hasSetlist ? formatCountLabel(setlistSongs.length, 'cancion') : 'Sin playlist' },
+      { key: 'roster', label: 'Equipo cargado', ok: hasRoster, detail: hasRoster ? formatCountLabel(roster.length, 'asignacion') : 'Sin roster' },
+      { key: 'direction', label: 'Direccion cubierta', ok: hasDirection, detail: hasDirection ? 'Direccion presente' : 'Falta direccion' },
+      { key: 'lyrics', label: 'Letras cubiertas', ok: hasLyrics, detail: hasLyrics ? 'Letras presentes' : 'Falta letras' },
+      {
+        key: 'chordpro',
+        label: 'ChordPro listo',
+        ok: hasSetlist && missingChordproSongs.length === 0,
+        detail: hasSetlist ? `${setlistSongs.length - missingChordproSongs.length}/${setlistSongs.length}` : 'Sin setlist',
+      },
+      {
+        key: 'mp3',
+        label: 'MP3 listo',
+        ok: hasSetlist && missingMp3Songs.length === 0,
+        detail: hasSetlist ? `${setlistSongs.length - missingMp3Songs.length}/${setlistSongs.length}` : 'Sin setlist',
+      },
+    ];
+
+    const readinessPassed = readinessChecks.filter((check) => check.ok).length;
+    const readinessScore = Math.round((readinessPassed / readinessChecks.length) * 100);
+
+    const alerts = [];
+    if (!hasSetlist) alerts.push({ level: 'danger', title: 'Sin setlist', detail: 'Este servicio aun no tiene playlist cargada.' });
+    if (!hasRoster) alerts.push({ level: 'danger', title: 'Sin roster', detail: 'Todavia no hay personal asignado.' });
+    if (!hasDirection) alerts.push({ level: 'warning', title: 'Falta direccion', detail: 'No hay rol de direccion o talkback asignado.' });
+    if (!hasLyrics) alerts.push({ level: 'warning', title: 'Falta letras', detail: 'No hay cobertura para letras o visuales.' });
+    if (missingChordproSongs.length > 0) alerts.push({ level: 'warning', title: 'ChordPro pendiente', detail: `${missingChordproSongs.length} canciones sin guia de ensayo.` });
+    if (missingMp3Songs.length > 0) alerts.push({ level: 'warning', title: 'MP3 pendiente', detail: `${missingMp3Songs.length} canciones sin audio base.` });
+    if (conflictingAbsences.length > 0) alerts.push({ level: 'danger', title: 'Ausencias cruzadas', detail: `${conflictingAbsences.length} asignados con ausencia en esta fecha.` });
+
+    let status = 'listo';
+    if (!hasSetlist || !hasRoster || !hasDirection) {
+      status = 'incompleto';
+    } else if (alerts.length > 0) {
+      status = 'riesgo';
+    }
+
+    const leaderName =
+      roster.find((item) => item?.role?.codigo === 'lider_alabanza')?.profile?.nombre ||
+      roster.find((item) => item?.role?.codigo === 'director_musical')?.profile?.nombre ||
+      roster.find((item) => item?.role?.codigo === 'talkback')?.profile?.nombre ||
+      '';
+
+    return {
+      id: String(evento.id),
+      title: safeText(evento.tema_predicacion) || safeText(evento.titulo, 'Servicio'),
+      eventTitle: safeText(evento.titulo, 'Evento'),
+      dateIso: evento.fecha_hora,
+      status,
+      leaderName,
+      playlistId: playlist?.id ? String(playlist.id) : '',
+      setlistCount: setlistSongs.length,
+      rosterCount: roster.length,
+      readinessScore,
+      readinessChecks,
+      alerts,
+      hasSetlist,
+      hasRoster,
+      hasDirection,
+      hasLyrics,
+      missingChordproCount: missingChordproSongs.length,
+      missingMp3Count: missingMp3Songs.length,
+      conflictingAbsences,
+      programacionHref: `/programacion?ver_evento=${evento.id}`,
+      ensayoHref: playlist?.id && setlistSongs.length > 0 ? `/ensayo/${playlist.id}` : '',
+      repertorioHref: `/repertorio?seleccionar_para=${evento.id}`,
+    };
+  })
+  .filter(Boolean)
+  .sort((a, b) => new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime());
+
+const upcomingOperationalEvents = operationalEvents.filter((evento) => {
+  const eventDate = new Date(evento.dateIso);
+  return eventDate >= operationFloor && eventDate <= upcomingWindowEnd;
+});
+
+const nextService = upcomingOperationalEvents[0] || null;
+const servicesReadyCount = upcomingOperationalEvents.filter((evento) => evento.status === 'listo').length;
+const servicesAtRiskCount = upcomingOperationalEvents.filter((evento) => evento.status !== 'listo').length;
+const servicesWithRoster = upcomingOperationalEvents.filter((evento) => evento.hasRoster).length;
+const servicesWithSetlist = upcomingOperationalEvents.filter((evento) => evento.hasSetlist).length;
+
+const operationAlerts = upcomingOperationalEvents
+  .flatMap((evento) =>
+    evento.alerts.map((alert) => ({
+      id: `${evento.id}-${alert.title}`,
+      level: alert.level,
+      title: alert.title,
+      detail: alert.detail,
+      serviceTitle: evento.title,
+      dateIso: evento.dateIso,
+    })),
+  )
+  .slice(0, 10);
+
+const nextServiceSummary = nextService
+  ? [
+      { label: 'Roles faltantes', value: formatCountLabel(nextService.alerts.filter((alert) => alert.title.includes('Falta')).length, 'alerta'), detail: 'Direccion y letras son prioridad.' },
+      { label: 'Ausencias cruzadas', value: String(nextService.conflictingAbsences.length), detail: nextService.conflictingAbsences.length ? 'Hay personas asignadas que no estaran disponibles.' : 'Sin ausencias que afecten el servicio.' },
+      { label: 'ChordPro listo', value: nextService.hasSetlist ? `${nextService.setlistCount - nextService.missingChordproCount}/${nextService.setlistCount}` : '0/0', detail: 'Canciones del siguiente servicio con guia de ensayo.' },
+      { label: 'MP3 listo', value: nextService.hasSetlist ? `${nextService.setlistCount - nextService.missingMp3Count}/${nextService.setlistCount}` : '0/0', detail: 'Canciones del siguiente servicio con audio base.' },
+    ]
+  : [];
+
+const activeSongIds = new Set(canciones.map((song) => String(song.id)));
+const usedSongIds = new Set([...usageBySongId.keys()].filter((songId) => activeSongIds.has(songId)));
+const songsNeverUsed = canciones.filter((song) => !usedSongIds.has(String(song.id)));
+
+const hasVoiceResource = (song) => hasText(song?.voces) || hasText(song?.link_voces);
+const hasSequenceResource = (song) => hasText(song?.link_secuencias);
+const hasMarkers = (song) => Array.isArray(song?.section_markers) && song.section_markers.length > 0;
+
+const chordproReadyCount = canciones.filter((song) => hasText(song?.chordpro)).length;
+const mp3ReadyCount = canciones.filter((song) => hasText(song?.mp3)).length;
+const voicesReadyCount = canciones.filter((song) => hasVoiceResource(song)).length;
+const sequencesReadyCount = canciones.filter((song) => hasSequenceResource(song)).length;
+const markersReadyCount = canciones.filter((song) => hasMarkers(song)).length;
+const rehearsalReadyCount = canciones.filter((song) => hasText(song?.chordpro) && hasText(song?.mp3) && hasMarkers(song)).length;
+
+const topSongs = canciones
+  .map((song) => ({
+    id: String(song.id),
+    title: safeText(song.titulo, 'Cancion sin titulo'),
+    artist: safeText(song.cantante, 'Sin cantante'),
+    count: usageBySongId.get(String(song.id)) || 0,
+  }))
+  .filter((song) => song.count > 0)
+  .sort((a, b) => (b.count - a.count) || a.title.localeCompare(b.title, 'es'))
+  .slice(0, 10);
+
+const songCategoryDistribution = histogram(canciones, (song) => getSongCategoryLabel(song?.categoria), { limit: 6 });
+const songVoiceDistribution = histogram(canciones, (song) => getSongVoiceLabel(song?.voz), { limit: 5 });
+const songThemeDistribution = histogram(canciones, (song) => safeText(song?.tema, 'Sin tema'), { limit: 8 });
+
+const profileRolesByProfileId = new Map();
+perfilRoles.forEach((entry) => {
+  const profileId = String(entry?.perfil_id || '');
+  if (!profileId) return;
+  const bucket = profileRolesByProfileId.get(profileId) || [];
+  const role = rolesById.get(String(entry?.rol_id || ''));
+  if (role) bucket.push(role);
+  profileRolesByProfileId.set(profileId, bucket);
+});
+
+const teamAssignmentsByProfile = new Map();
+upcomingOperationalEvents.forEach((evento) => {
+  const originalEvent = eventos.find((item) => String(item.id) === evento.id);
+  const roster = Array.isArray(originalEvent?.asignaciones) ? originalEvent.asignaciones : [];
+  roster.forEach((assignment) => {
+    const profileId = String(assignment?.perfil_id || assignment?.perfiles?.id || '');
+    if (!profileId) return;
+    const role = rolesById.get(String(assignment?.rol_id || ''));
+    const profile = perfilesById.get(profileId) || assignment?.perfiles || null;
+    const bucket = teamAssignmentsByProfile.get(profileId) || {
+      profileId,
+      name: safeText(profile?.nombre, 'Sin nombre'),
+      avatarUrl: safeText(profile?.avatar_url),
+      assignments: 0,
+      eventIds: new Set(),
+      roles: new Set(),
+    };
+    bucket.assignments += 1;
+    bucket.eventIds.add(evento.id);
+    if (role?.nombre) bucket.roles.add(role.nombre);
+    teamAssignmentsByProfile.set(profileId, bucket);
+  });
+});
+
+const workload = [...teamAssignmentsByProfile.values()]
+  .map((item) => ({
+    id: item.profileId,
+    name: item.name,
+    avatarUrl: item.avatarUrl,
+    assignments: item.assignments,
+    services: item.eventIds.size,
+    roles: [...item.roles].sort((a, b) => a.localeCompare(b, 'es')).slice(0, 3),
+  }))
+  .sort((a, b) => (b.services - a.services) || (b.assignments - a.assignments) || a.name.localeCompare(b.name, 'es'))
+  .slice(0, 12);
+
+const assignedProfileIds = new Set(workload.map((item) => item.id));
+const idleProfiles = perfiles
+  .filter((profile) => !assignedProfileIds.has(String(profile.id)))
+  .map((profile) => ({
+    id: String(profile.id),
+    name: safeText(profile.nombre, 'Sin nombre'),
+    avatarUrl: safeText(profile.avatar_url),
+    roles: (profileRolesByProfileId.get(String(profile.id)) || []).map((role) => role.nombre).slice(0, 2),
+  }))
+  .slice(0, 8);
+
+const roleCoverage = roles
+  .map((role) => ({
+    id: String(role.id),
+    label: safeText(role.nombre, 'Rol'),
+    code: safeText(role.codigo),
+    count: perfilRoles.filter((entry) => String(entry?.rol_id || '') === String(role.id)).length,
+  }))
+  .sort((a, b) => (b.count - a.count) || a.label.localeCompare(b.label, 'es'));
+
+const rolesWithCoverage = roleCoverage.filter((role) => role.count > 0).length;
+const lowCoverageRoles = roleCoverage.filter((role) => role.count <= 1).slice(0, 10);
+
+const upcomingAbsences = ausencias.filter((absence) => {
+  const endDate = toDateEnd(absence?.fecha_fin || absence?.fecha_inicio);
+  return endDate && endDate >= now;
+});
+
+const teamConflicts = upcomingOperationalEvents
+  .flatMap((evento) =>
+    evento.conflictingAbsences.map((conflict) => ({
+      id: `${evento.id}-${conflict.profileId}`,
+      name: conflict.profileName,
+      serviceTitle: evento.title,
+      dateIso: evento.dateIso,
+      detail: conflict.reason,
+    })),
+  )
+  .slice(0, 10);
+
+const completeProfilesCount = perfiles.filter(
+  (profile) => hasText(profile?.avatar_url) && hasText(profile?.telefono) && hasText(profile?.fecha_nacimiento),
+).length;
+
+const profileGaps = perfiles
+  .map((profile) => {
+    const missing = [];
+    if (!hasText(profile?.avatar_url)) missing.push('foto');
+    if (!hasText(profile?.telefono)) missing.push('telefono');
+    if (!hasText(profile?.fecha_nacimiento)) missing.push('cumpleanos');
+    if (missing.length === 0) return null;
+    return {
+      id: String(profile.id),
+      name: safeText(profile.nombre, 'Sin nombre'),
+      missing,
+    };
+  })
+  .filter(Boolean)
+  .slice(0, 10);
+
+const systemEventGaps = upcomingOperationalEvents
+  .filter((evento) => !evento.hasSetlist || !evento.hasRoster || !evento.hasDirection)
+  .map((evento) => ({
+    id: evento.id,
+    title: evento.title,
+    dateIso: evento.dateIso,
+    detail: evento.alerts.map((alert) => alert.title).join(' | '),
+  }))
+  .slice(0, 10);
+
+const systemSongGaps = [
+  {
+    title: 'Sin ChordPro',
+    count: canciones.filter((song) => !hasText(song?.chordpro)).length,
+    items: canciones.filter((song) => !hasText(song?.chordpro)).slice(0, 6).map((song) => safeText(song.titulo, 'Cancion sin titulo')),
+  },
+  {
+    title: 'Sin MP3',
+    count: canciones.filter((song) => !hasText(song?.mp3)).length,
+    items: canciones.filter((song) => !hasText(song?.mp3)).slice(0, 6).map((song) => safeText(song.titulo, 'Cancion sin titulo')),
+  },
+  {
+    title: 'Sin voces',
+    count: canciones.filter((song) => !hasVoiceResource(song)).length,
+    items: canciones.filter((song) => !hasVoiceResource(song)).slice(0, 6).map((song) => safeText(song.titulo, 'Cancion sin titulo')),
+  },
+  {
+    title: 'Sin secuencias',
+    count: canciones.filter((song) => !hasSequenceResource(song)).length,
+    items: canciones.filter((song) => !hasSequenceResource(song)).slice(0, 6).map((song) => safeText(song.titulo, 'Cancion sin titulo')),
+  },
+];
+
+const panelData = {
+  generatedAt: new Date().toISOString(),
+  windowLabel: 'Proximos 45 dias',
+  header: {
+    title: 'Panel Redil',
+    subtitle: 'Estado operativo del ministerio',
+    helper: `${formatCountLabel(upcomingOperationalEvents.length, 'servicio')} | ${formatCountLabel(canciones.length, 'cancion')} activas | ${formatCountLabel(perfiles.length, 'miembro')}`,
+  },
+  operacion: {
+    kpis: [
+      {
+        label: 'Readiness proximo servicio',
+        value: nextService ? `${nextService.readinessScore}%` : '--',
+        detail: nextService ? `${nextService.readinessChecks.filter((check) => check.ok).length}/${nextService.readinessChecks.length} checks` : 'Sin servicios en la ventana',
+        tone: 'brand',
+      },
+      {
+        label: 'Servicios proximos',
+        value: String(upcomingOperationalEvents.length),
+        detail: `${servicesReadyCount} listos | ${servicesAtRiskCount} con pendiente`,
+        tone: 'blue',
+      },
+      {
+        label: 'Rosters cargados',
+        value: `${servicesWithRoster}/${upcomingOperationalEvents.length || 0}`,
+        detail: 'Servicios con personal asignado',
+        tone: 'amber',
+      },
+      {
+        label: 'Setlists listas',
+        value: `${servicesWithSetlist}/${upcomingOperationalEvents.length || 0}`,
+        detail: 'Servicios con playlist lista',
+        tone: 'emerald',
+      },
+    ],
+    nextService: nextService
+      ? {
+          ...nextService,
+          summary: nextServiceSummary,
+        }
+      : null,
+    upcomingServices: upcomingOperationalEvents.slice(0, 8),
+    alerts: operationAlerts,
+  },
+  repertorio: {
+    kpis: [
+      { label: 'Canciones activas', value: String(canciones.length), detail: 'Catalogo disponible', tone: 'brand' },
+      { label: 'Usadas en servicios', value: String(usedSongIds.size), detail: 'Canciones presentes en playlists', tone: 'blue' },
+      { label: 'Nunca usadas', value: String(songsNeverUsed.length), detail: 'Oportunidad para refrescar repertorio', tone: 'amber' },
+      { label: 'Listas para ensayo', value: String(rehearsalReadyCount), detail: 'ChordPro + MP3 + markers', tone: 'emerald' },
+    ],
+    resourceCoverage: [
+      resourceCoverageItem('ChordPro', chordproReadyCount, canciones.length),
+      resourceCoverageItem('MP3', mp3ReadyCount, canciones.length),
+      resourceCoverageItem('Voces', voicesReadyCount, canciones.length),
+      resourceCoverageItem('Secuencias', sequencesReadyCount, canciones.length),
+      resourceCoverageItem('Markers', markersReadyCount, canciones.length),
+    ],
+    topSongs,
+    categoryDistribution: songCategoryDistribution,
+    voiceDistribution: songVoiceDistribution,
+    themeDistribution: songThemeDistribution,
+  },
+  equipo: {
+    kpis: [
+      { label: 'Miembros registrados', value: String(perfiles.length), detail: 'Perfiles visibles en el sistema', tone: 'brand' },
+      { label: 'Con asignacion proxima', value: String(assignedProfileIds.size), detail: 'Personas sirviendo en la ventana', tone: 'blue' },
+      { label: 'Ausencias proximas', value: String(upcomingAbsences.length), detail: 'Bloqueos activos o futuros', tone: 'amber' },
+      { label: 'Roles cubiertos', value: `${rolesWithCoverage}/${roles.length || 0}`, detail: 'Roles con al menos una persona', tone: 'emerald' },
+    ],
+    workload,
+    roleCoverage: roleCoverage.slice(0, 12),
+    lowCoverageRoles,
+    conflicts: teamConflicts,
+    idleProfiles,
+  },
+  sistema: {
+    kpis: [
+      { label: 'Eventos con setlist', value: `${servicesWithSetlist}/${upcomingOperationalEvents.length || 0}`, detail: 'Dentro de la ventana operativa', tone: 'brand' },
+      { label: 'Eventos con roster', value: `${servicesWithRoster}/${upcomingOperationalEvents.length || 0}`, detail: 'Servicios con equipo cargado', tone: 'blue' },
+      { label: 'Canciones con markers', value: String(markersReadyCount), detail: 'Listas para auto-resaltado', tone: 'amber' },
+      { label: 'Perfiles completos', value: `${completeProfilesCount}/${perfiles.length || 0}`, detail: 'Foto, telefono y cumpleanos', tone: 'emerald' },
+    ],
+    eventGaps: systemEventGaps,
+    songGaps: systemSongGaps,
+    profileGaps,
+    warnings,
+  },
+};
+---
+
+<Layout title="Panel | Redil Alabanza">
+  <div class="relative max-w-[1900px] mx-auto w-full px-2 sm:px-4 xl:px-8 pt-4 md:pt-8 pb-32">
+    <div class="pointer-events-none absolute inset-x-0 top-0 h-[320px] bg-[radial-gradient(ellipse_75%_50%_at_50%_-5%,rgba(59,130,246,0.08),transparent)] dark:bg-[radial-gradient(ellipse_75%_50%_at_50%_-5%,rgba(59,130,246,0.14),transparent)]"></div>
+    <PanelControl client:load data={panelData} userName={safeText(perfilesById.get(String(user.id))?.nombre, 'Equipo')} />
+  </div>
+</Layout>

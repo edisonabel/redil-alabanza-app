@@ -508,7 +508,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                 </section>
 
                 <section className="px-3 sm:px-4 lg:px-0 mb-2 lg:mb-0" data-tour="shortcuts">
-                    <div id="dashboard-shortcuts-slot" className="min-h-[200px]"></div>
+                    <div id="dashboard-shortcuts-slot" className="relative z-20 min-h-[200px]"></div>
                 </section>
 
                 <section className="px-3 sm:px-4 lg:px-0" data-tour="extras">

@@ -175,8 +175,8 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
     };
 
     return (
-        <div className={`fixed inset-0 z-[70] bg-overlay/60 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
-            <div className={`bg-surface border border-border rounded-[24px] md:rounded-3xl w-full max-w-2xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden transition-transform duration-300 ${isOpen ? 'scale-100' : 'scale-95'}`}>
+        <div className={`fixed inset-0 z-[70] bg-overlay/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 pt-6 pb-[calc(104px+env(safe-area-inset-bottom))] transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
+            <div className={`bg-surface border border-border rounded-[24px] md:rounded-3xl w-full max-w-2xl max-h-[calc(100dvh-132px-env(safe-area-inset-bottom))] shadow-2xl flex flex-col overflow-hidden transition-transform duration-300 my-auto ${isOpen ? 'scale-100' : 'scale-95'}`}>
                 {/* Header */}
                 <div className="p-6 border-b border-border flex justify-between items-start bg-background shrink-0">
                     <div>
@@ -308,6 +308,5 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
         </div>
     );
 }
-
 
 

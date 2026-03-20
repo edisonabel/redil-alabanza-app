@@ -180,14 +180,14 @@ export default function NotificationBell({ inline = false, direction = 'down' })
   if (bootstrapped && !currentUserId && !loading) return null;
 
   const rootClass = inline
-    ? 'relative inline-flex'
-    : 'relative ml-auto inline-flex';
+    ? `relative inline-flex ${open ? 'z-[90]' : 'z-10'}`
+    : `relative ml-auto inline-flex ${open ? 'z-[90]' : 'z-10'}`;
   const rootStyle = undefined;
   const buttonClass = inline
     ? 'relative w-12 h-12 bg-background border border-border text-content rounded-full flex items-center justify-center group-active:scale-90 transition-transform'
     : 'relative h-11 w-11 rounded-2xl border border-border bg-surface/95 text-content shadow-lg backdrop-blur-md transition-all duration-200 hover:scale-[1.02] hover:border-brand/40';
   const dropdownBaseClass =
-    'absolute w-80 z-50 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-border bg-surface/95 shadow-2xl backdrop-blur-xl';
+    'absolute w-80 z-[95] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-border bg-surface/95 shadow-2xl backdrop-blur-xl';
   const dropdownPositionClass =
     direction === 'up'
       ? 'bottom-full mb-4 left-1/2 -translate-x-1/2 origin-bottom'

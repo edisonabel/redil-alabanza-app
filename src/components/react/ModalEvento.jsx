@@ -298,8 +298,8 @@ export default function ModalEvento() {
     if (!isOpen) return null;
 
     return (
-        <div id="event-modal-react" className="fixed inset-0 z-[80] bg-overlay/60 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity">
-            <div className="bg-surface border border-border rounded-3xl w-full max-w-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden shadow-2xl flex flex-col transform">
+        <div id="event-modal-react" className="fixed inset-0 z-[80] bg-overlay/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 pt-6 pb-[calc(104px+env(safe-area-inset-bottom))] transition-opacity">
+            <div className="bg-surface border border-border rounded-3xl w-full max-w-2xl max-h-[calc(100dvh-132px-env(safe-area-inset-bottom))] overflow-hidden shadow-2xl flex flex-col transform my-auto">
                 <div className="p-6 border-b border-border flex justify-between items-center bg-background sticky top-0 z-10">
                     <h2 id="modal-title" className="text-xl font-bold text-content ">
                         {mode === 'new' ? 'Nuevo Evento' : 'Gestionar Evento'}
@@ -309,7 +309,7 @@ export default function ModalEvento() {
                     </button>
                 </div>
 
-                <div className="p-6 bg-surface flex-1 overflow-x-hidden">
+                <div className="p-6 bg-surface flex-1 overflow-y-auto overflow-x-hidden">
                     <form id="form-event" className="flex flex-col gap-5" onSubmit={handleSave}>
                         <input type="hidden" id="ev-id" value={evId} readOnly />
                         <input type="hidden" id="ev-serie-id" value={serieId} readOnly />
@@ -418,19 +418,34 @@ export default function ModalEvento() {
                             />
                         </div>
 
-                        <div className="mt-8 flex gap-3 pt-5 border-t border-border sticky bottom-0 bg-surface pb-6 z-20">
-                            <button type="button" onClick={handleClose} id="btn-cancel-modal" className="flex-1 py-3.5 px-4 bg-background hover:bg-border border border-border text-sm text-content rounded-xl font-bold transition-colors">Cancelar</button>
-                            <button type="submit" disabled={isSaving} id="btn-submit-modal" className="flex-1 py-3.5 px-4 bg-brand hover:bg-brand/90 text-white text-sm rounded-xl font-bold transition-colors flex justify-center items-center gap-2">
-                                <span>{isSaving ? 'Guardando...' : 'Guardar Evento'}</span>
-                                {isSaving && <div id="btn-spinner" className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>}
-                            </button>
-                        </div>
                     </form>
+                </div>
+                <div className="shrink-0 border-t border-border bg-surface px-6 pt-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
+                    <div className="flex gap-3">
+                        <button
+                            type="button"
+                            onClick={handleClose}
+                            id="btn-cancel-modal"
+                            className="flex-1 py-3.5 px-4 bg-background hover:bg-border border border-border text-sm text-content rounded-xl font-bold transition-colors"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            type="submit"
+                            form="form-event"
+                            disabled={isSaving}
+                            id="btn-submit-modal"
+                            className="flex-1 py-3.5 px-4 bg-brand hover:bg-brand/90 text-white text-sm rounded-xl font-bold transition-colors flex justify-center items-center gap-2"
+                        >
+                            <span>{isSaving ? 'Guardando...' : 'Guardar Evento'}</span>
+                            {isSaving && <div id="btn-spinner" className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>}
+                        </button>
+                    </div>
                 </div>
             </div>
             {/* ERROR MODAL NATIVO OVERRIDE (COLISIÃ“N) */}
             {collisionDate && (
-                <div className="fixed inset-0 z-[100] bg-overlay/60 backdrop-blur-sm flex items-center justify-center p-4" style={{ animation: 'fadeIn 0.2s ease-in-out' }}>
+                <div className="fixed inset-0 z-[100] bg-overlay/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 pt-6 pb-[calc(104px+env(safe-area-inset-bottom))]" style={{ animation: 'fadeIn 0.2s ease-in-out' }}>
                     <div className="bg-surface rounded-[2rem] shadow-2xl max-w-sm w-full overflow-hidden border border-red-100" style={{ animation: 'scaleUp 0.3s ease-in-out' }}>
                         <style>{`
                             @keyframes scaleUp { from { transform: scale(0.95) translateY(10px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }

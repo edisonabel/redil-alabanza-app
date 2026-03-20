@@ -13,7 +13,7 @@ const supabaseServer = createClient(supabaseUrl, supabaseAnonKey, {
 });
 
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
-const protectedRoutes = ['/', '/admin', '/programacion', '/repertorio', '/perfil', '/equipo', '/herramientas', '/configuracion', '/ensayo'];
+const protectedRoutes = ['/', '/admin', '/programacion', '/repertorio', '/perfil', '/equipo', '/herramientas', '/configuracion', '/ensayo', '/panel'];
 
 const staticAssetRegex = /\.(png|ico|svg|webmanifest|css|js|txt|map|woff2?|ttf|eot|json)$/i;
 
