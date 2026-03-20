@@ -37,7 +37,7 @@ const userId = Astro.locals.user?.id ?? null;
  <!-- Input oculto para el file picker -->
  <input type="file" id="avatar-input" accept="image/*" class="hidden" />
  </div>
- 
+
  <h2 id="ui-user-name" class="text-xl font-bold text-content text-center mb-1 h-7 min-w-[120px] bg-neutral/20 animate-pulse rounded mx-auto flex items-center justify-center"></h2>
  <p id="ui-user-email" class="text-sm text-content-muted text-center mb-4 h-5 min-w-[160px] bg-neutral/20 animate-pulse rounded mx-auto flex items-center justify-center"></p>
 
@@ -191,6 +191,47 @@ const userId = Astro.locals.user?.id ?? null;
  </div>
 </Layout>
 
+<div id="avatar-lock-modal" class="fixed inset-0 z-[55] hidden items-center justify-center bg-black/60 p-4 backdrop-blur-sm opacity-0 transition-opacity duration-300">
+ <div id="avatar-lock-content" class="w-full max-w-md rounded-[28px] border border-sky-200/80 bg-white shadow-2xl shadow-sky-950/10 transition-transform duration-300 scale-95 dark:border-sky-800/50 dark:bg-surface dark:shadow-black/40">
+ <div class="flex items-center justify-between border-b border-border px-6 py-5">
+ <div class="flex items-center gap-3">
+ <div class="rounded-2xl bg-sky-100 p-2.5 text-sky-700 dark:bg-sky-900/60 dark:text-sky-200">
+ <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+ <path d="M12 3a9 9 0 1 0 9 9"></path>
+ <path d="M12 7v5l3 3"></path>
+ </svg>
+ </div>
+ <div>
+ <h3 class="text-lg font-bold text-content">Cambio de foto de perfil</h3>
+ <p class="text-sm text-content-muted">Informacion importante</p>
+ </div>
+ </div>
+ <button id="btn-close-avatar-lock" class="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-border bg-surface text-content-muted transition-colors hover:text-content hover:bg-background" type="button" aria-label="Cerrar aviso">
+ <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+ </button>
+ </div>
+
+ <div class="space-y-4 px-6 py-6">
+ <p class="rounded-3xl border border-sky-200/80 bg-gradient-to-br from-sky-50 via-white to-amber-50 px-5 py-5 text-sm leading-7 text-slate-700 shadow-sm shadow-sky-100/70 dark:border-sky-800/50 dark:from-sky-950/40 dark:via-surface dark:to-amber-950/10 dark:text-slate-200 dark:shadow-none">
+ <strong class="font-bold text-slate-900 dark:text-slate-50">&iexcl;Hola, Dios te bendiga!</strong>
+ Para poder <strong class="font-semibold text-slate-900 dark:text-slate-50">identificarte f&aacute;cilmente en el calendario y en las asignaciones</strong>, hemos actualizado tu foto de perfil con una donde
+ <strong class="font-semibold text-slate-900 dark:text-slate-50">se ve tu rostro claramente</strong>.
+ Si prefieres usar una distinta, <strong class="font-semibold text-slate-900 dark:text-slate-50">&iexcl;no hay problema!</strong>
+ Solo env&iacute;ale
+ <strong class="font-semibold text-slate-900 dark:text-slate-50">una foto clara de tu rostro al administrador</strong>
+ y con gusto la cambiaremos.
+ <strong class="font-semibold text-slate-900 dark:text-slate-50">&iexcl;Un abrazo y gracias por tu comprensi&oacute;n!</strong>
+ </p>
+ </div>
+
+ <div class="flex justify-end border-t border-border px-6 py-5">
+ <button id="btn-confirm-avatar-lock" type="button" class="inline-flex min-h-[48px] items-center justify-center rounded-2xl bg-action px-5 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-action/85">
+ Entendido
+ </button>
+ </div>
+ </div>
+</div>
+
 <!-- Estilos para forzar el recorte circular de Cropperjs -->
 <style is:global>
  .cropper-view-box,
@@ -321,9 +362,42 @@ const userId = Astro.locals.user?.id ?? null;
  const btnCloseCropper = document.getElementById('btn-close-cropper');
  const btnCancelCropper = document.getElementById('btn-cancel-cropper');
  const btnSaveCropper = document.getElementById('btn-save-cropper') as HTMLButtonElement;
+ const avatarLockModal = document.getElementById('avatar-lock-modal');
+ const avatarLockContent = document.getElementById('avatar-lock-content');
+ const btnCloseAvatarLock = document.getElementById('btn-close-avatar-lock');
+ const btnConfirmAvatarLock = document.getElementById('btn-confirm-avatar-lock');
  
  const avatarPreview = document.getElementById('avatar-preview') as HTMLImageElement;
  const avatarPreviewText = document.getElementById('avatar-preview-text');
+ let canChangeAvatar = true;
+
+ const setAvatarChangeState = (isAllowed: boolean) => {
+ canChangeAvatar = isAllowed;
+ if (btnChangeAvatar) {
+ btnChangeAvatar.removeAttribute('disabled');
+ }
+ if (avatarInput) {
+ avatarInput.disabled = !isAllowed;
+ }
+ };
+
+ const openAvatarLockModal = () => {
+ avatarLockModal?.classList.remove('hidden');
+ avatarLockModal?.classList.add('flex');
+ requestAnimationFrame(() => {
+ avatarLockModal?.classList.remove('opacity-0');
+ avatarLockContent?.classList.remove('scale-95');
+ });
+ };
+
+ const closeAvatarLockModal = () => {
+ avatarLockModal?.classList.add('opacity-0');
+ avatarLockContent?.classList.add('scale-95');
+ setTimeout(() => {
+ avatarLockModal?.classList.add('hidden');
+ avatarLockModal?.classList.remove('flex');
+ }, 250);
+ };
 
  let cropper: any = (window as any)._cropperInstance || null;
  if (cropper) {
@@ -338,11 +412,16 @@ const userId = Astro.locals.user?.id ?? null;
 
  // Abrir selector de archivos
  on(btnChangeAvatar, 'click', () => {
+ if (!canChangeAvatar) {
+ openAvatarLockModal();
+ return;
+ }
  avatarInput?.click();
  });
 
  // Cuando el usuario selecciona una imagen
  on(avatarInput, 'change', (e: Event) => {
+ if (!canChangeAvatar) return;
  const file = (e.target as HTMLInputElement).files?.[0];
  if (file) {
  const reader = new FileReader();
@@ -419,14 +498,20 @@ const userId = Astro.locals.user?.id ?? null;
 
  on(btnCloseCropper, 'click', closeCropperModal);
  on(btnCancelCropper, 'click', closeCropperModal);
+ on(btnCloseAvatarLock, 'click', closeAvatarLockModal);
+ on(btnConfirmAvatarLock, 'click', closeAvatarLockModal);
  
  // Cerrar al hacer clic fuera
  on(cropperModal, 'click', (e: Event) => {
  if (e.target === cropperModal) closeCropperModal();
  });
+ on(avatarLockModal, 'click', (e: Event) => {
+ if (e.target === avatarLockModal) closeAvatarLockModal();
+ });
 
  // Guardar recorte y subir a Supabase
  on(btnSaveCropper, 'click', async () => {
+ if (!canChangeAvatar) return;
  if (!cropper) return;
  
  const originalText = btnSaveCropper.innerHTML;
@@ -695,11 +780,12 @@ const userId = Astro.locals.user?.id ?? null;
  // 1. Fetch Perfil
  const { data: perfilData, error: perfilError } = await supabase
  .from('perfiles')
- .select('id, nombre, avatar_url, tonalidad_voz, fecha_nacimiento, telefono')
+ .select('id, nombre, avatar_url, tonalidad_voz, fecha_nacimiento, telefono, can_change_avatar')
  .eq('id', currentUserId)
  .single();
 
  if (!perfilError && perfilData) {
+ setAvatarChangeState(perfilData.can_change_avatar !== false);
  if (inputNombre) inputNombre.value = perfilData.nombre;
  
  if (uiUserName) {
@@ -743,10 +829,10 @@ const userId = Astro.locals.user?.id ?? null;
  avatarContainer.classList.add('bg-brand/10');
  }
  }
+ } else {
+ setAvatarChangeState(true);
  }
 
- // Enable avatar button and form
- btnChangeAvatar?.removeAttribute('disabled');
  formAusencia?.classList.remove('opacity-50', 'pointer-events-none');
 
  // 2. Fetch Roles
