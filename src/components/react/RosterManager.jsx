@@ -167,11 +167,6 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                 return;
             }
 
-            // Limpiar slot previo antes de asignar (evita duplicados)
-            await supabase.from('asignaciones').delete()
-                .eq('evento_id', evId)
-                .eq('rol_id', saveRolId);
-
             const { error } = await supabase.from('asignaciones').insert([{
                 evento_id: evId,
                 perfil_id: perfilId,
