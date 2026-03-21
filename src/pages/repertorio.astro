@@ -496,8 +496,25 @@ if (sessionError || !session) {
   btn.classList.toggle('dark:text-zinc-500', !isSelected);
  }
 
+ function sortSongsByOriginalIndex(songCards) {
+  return [...songCards].sort((a, b) => {
+   const aIndex = Number(a.dataset.originalIndex || '0');
+   const bIndex = Number(b.dataset.originalIndex || '0');
+   return aIndex - bIndex;
+  });
+ }
+
+ function hasActiveSongFilters() {
+  const searchTerm = searchInput?.value?.trim() || '';
+  const vozTerm = (filterVoz?.value || 'Todas').trim().toLowerCase();
+  const categoriaTerm = (filterCategoria?.value || 'Todas').trim().toLowerCase();
+  const temaTerm = (filterTema?.value || 'Todas').trim().toLowerCase();
+
+  return Boolean(searchTerm) || vozTerm !== 'todas' || categoriaTerm !== 'todas' || temaTerm !== 'todas';
+ }
+
  function sortSongsSelectedFirst(songCards) {
-  if (isSelectionMode) {
+  if (isSelectionMode && !hasActiveSongFilters()) {
    return [...songCards].sort((a, b) => {
     const aId = String(a.getAttribute('data-id') || '');
     const bId = String(b.getAttribute('data-id') || '');
@@ -509,6 +526,10 @@ if (sessionError || !session) {
     const bIndex = Number(b.dataset.originalIndex || '0');
     return aIndex - bIndex;
    });
+  }
+
+  if (isSelectionMode) {
+   return sortSongsByOriginalIndex(songCards);
   }
 
   // Modo normal: setlist songs go to top
@@ -781,10 +802,9 @@ if (audioCtx.state === 'suspended') audioCtx.resume();
 
 const clearPlaylistSelection = () => {
  selectedSongs = [];
-  cancionesFiltradas = sortSongsSelectedFirst(cancionesFiltradas);
-  applySongOrder(cancionesFiltradas);
-  updatePlaylistCount();
-  syncSelectionButtons();
+ filterCards();
+ updatePlaylistCount();
+ syncSelectionButtons();
  };
 
  // Pre-cargar canciones de la playlist existente
@@ -796,8 +816,7 @@ const clearPlaylistSelection = () => {
  items.forEach(item => {
  if (item.cancion_id) selectedSongs.push(String(item.cancion_id));
  });
- cancionesFiltradas = sortSongsSelectedFirst(cancionesFiltradas);
- applySongOrder(cancionesFiltradas);
+ filterCards();
  updatePlaylistCount();
  syncSelectionButtons();
  }
