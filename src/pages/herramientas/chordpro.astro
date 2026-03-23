@@ -106,6 +106,7 @@ import Layout from '../../layouts/Layout.astro';
 <script>
   import { supabase } from '../../lib/supabase';
   import { metronomeService } from '../../services/MetronomeEngine';
+  import { screenWakeLockService } from '../../services/ScreenWakeLockService';
 
   document.addEventListener('DOMContentLoaded', async () => {
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -493,24 +494,8 @@ import Layout from '../../layouts/Layout.astro';
   }, { once: true });
 
   // ---------------- MODO ATRIL (STAGE DISPLAY) ---------------- //
- let wakeLock: any = null;
  const stageContainer = document.getElementById('stage-mode-container');
  const btnCerrarAtril = document.getElementById('btn-cerrar-atril');
-
- async function activarWakeLock() {
- try {
- if ('wakeLock' in navigator) {
- wakeLock = await (navigator as any).wakeLock.request('screen');
- }
- } catch (err) { console.log('WakeLock no soportado', err); }
- }
-
- function liberarWakeLock() {
- if (wakeLock !== null) { 
- wakeLock.release(); 
- wakeLock = null; 
- }
- }
 
  document.getElementById('btn-atril')?.addEventListener('click', async () => {
  const titulo = (document.getElementById('print-titulo') as HTMLInputElement)?.value.trim() || 'SIN TÍTULO';
@@ -563,7 +548,7 @@ import Layout from '../../layouts/Layout.astro';
  stageContainer?.classList.remove('hidden');
  document.body.style.overflow = 'hidden'; // Evitar scroll de fondo
  
- await activarWakeLock();
+ screenWakeLockService.setRequested('chordpro-stage-mode', true);
 
  // Intentar Fullscreen nativo
  if (stageContainer && stageContainer.requestFullscreen) {
@@ -574,11 +559,19 @@ import Layout from '../../layouts/Layout.astro';
  btnCerrarAtril?.addEventListener('click', () => {
  stageContainer?.classList.add('hidden');
  document.body.style.overflow = '';
- liberarWakeLock();
+ screenWakeLockService.setRequested('chordpro-stage-mode', false);
  if (document.fullscreenElement) {
  document.exitFullscreen().catch(err => console.log(err));
  }
  });
+
+ window.addEventListener('pagehide', () => {
+ screenWakeLockService.setRequested('chordpro-stage-mode', false);
+ }, { once: true });
+
+ document.addEventListener('astro:after-swap', () => {
+ screenWakeLockService.setRequested('chordpro-stage-mode', false);
+ }, { once: true });
 
  });
 </script>

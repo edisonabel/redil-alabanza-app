@@ -19,6 +19,8 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { audioSessionService } from '../../services/AudioSessionService';
+import { screenWakeLockService } from '../../services/ScreenWakeLockService';
 
 // ── ID3v2 APIC (Cover Art) Extractor ──────────────────────────
 const coverArtCache = new Map();
@@ -308,6 +310,12 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
   const [downloadStatus, setDownloadStatus] = useState({ active: false, progress: 0, total: 0, done: false });
   const [resolvedAudioSrc, setResolvedAudioSrc] = useState(null);
   const [resolvedPadSrc, setResolvedPadSrc] = useState(null);
+  useEffect(() => {
+    screenWakeLockService.setRequested('modo-live-director', true);
+    return () => {
+      screenWakeLockService.setRequested('modo-live-director', false);
+    };
+  }, []);
 
   const activeSong = playlist[activeSongIndex] || null;
   const sections = Array.isArray(activeSong?.sectionMarkers) ? activeSong.sectionMarkers : [];
@@ -755,6 +763,28 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
       panNode.pan.setTargetAtTime(panValue, ctx.currentTime, 0.05);
     }
   }, [panValue]);
+  useEffect(() => {
+    const audioElement = audioRef.current;
+    if (!audioElement) return undefined;
+
+    return audioSessionService.registerPrimaryAudio(
+      'modo-live-director',
+      {
+        audioElement,
+        onPlay: async () => {
+          await ensureWebAudioConnected();
+          if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+            await audioCtxRef.current.resume();
+          }
+          await audioElement.play();
+        },
+        onPause: () => {
+          audioElement.pause();
+        },
+      },
+      40
+    );
+  }, [activeSourceUrl, ensureWebAudioConnected]);
 
   // ── Efecto de Paneo: actualiza panner sin reconectar ──
   useEffect(() => {

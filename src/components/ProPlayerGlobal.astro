@@ -70,6 +70,8 @@
 </div>
 
 <script>
+  import { audioSessionService } from '../services/AudioSessionService';
+
   (() => {
     if (window.__REDIL_PRO_PLAYER_READY__) return;
     window.__REDIL_PRO_PLAYER_READY__ = true;
@@ -141,6 +143,25 @@
     ) {
       return;
     }
+
+    audioSessionService.install();
+    audioSessionService.registerPrimaryAudio(
+      'pro-player-global',
+      {
+        audioElement: audio,
+        onPlay: async () => {
+          await setupWaveform().catch(() => {});
+          if (waveCtx && waveCtx.state === 'suspended') {
+            await waveCtx.resume();
+          }
+          await audio.play();
+        },
+        onPause: () => {
+          audio.pause();
+        },
+      },
+      10
+    );
 
     let totalDuration = 0;
     let loopStartSec = 0;

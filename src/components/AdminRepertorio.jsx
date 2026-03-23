@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { audioSessionService } from '../services/AudioSessionService';
 import { CheckCircle, UploadCloud, Loader2, Plus, PencilLine, X, Save, Pause, Play } from 'lucide-react';
 
 const { useRef } = React;
@@ -461,6 +462,19 @@ export default function AdminRepertorio() {
       audio.removeEventListener('pause', handlePause);
       audio.removeEventListener('ended', handleEnded);
     };
+  }, [editorChordproAbierto, editorChordproCancion?.mp3]);
+  useEffect(() => {
+    if (!editorChordproAbierto) return undefined;
+    const audio = document.getElementById('admin-chordpro-audio');
+    if (!(audio instanceof HTMLAudioElement)) return undefined;
+
+    return audioSessionService.registerPrimaryAudio(
+      'admin-chordpro-preview',
+      {
+        audioElement: audio,
+      },
+      15
+    );
   }, [editorChordproAbierto, editorChordproCancion?.mp3]);
 
   useEffect(() => {
@@ -1481,5 +1495,3 @@ export default function AdminRepertorio() {
     </div>
   );
 }
-
-

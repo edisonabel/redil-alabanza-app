@@ -96,6 +96,7 @@ import Layout from '../../layouts/Layout.astro';
 <script>
 import { supabase } from '../../lib/supabase';
 import { metronomeService } from '../../services/MetronomeEngine';
+import { screenWakeLockService } from '../../services/ScreenWakeLockService';
 
 const bootMetronomePage = async () => {
   let sessionError: unknown = null;
@@ -308,6 +309,7 @@ const bootMetronomePage = async () => {
     if (isPlaying) {
       metronomeService.stop();
       isPlaying = false;
+      screenWakeLockService.setRequested('metronomo-tool', false);
       resetVisualizer();
       updateCountDisplay(0);
       updatePlayButtonUI();
@@ -317,6 +319,7 @@ const bootMetronomePage = async () => {
     syncEngineSettings(true);
     await metronomeService.start();
     isPlaying = true;
+    screenWakeLockService.setRequested('metronomo-tool', true);
     updatePlayButtonUI();
   });
 
@@ -382,6 +385,7 @@ const bootMetronomePage = async () => {
     unsubscribeBeat();
     metronomeService.stop();
     isPlaying = false;
+    screenWakeLockService.setRequested('metronomo-tool', false);
   };
 
   on(window, 'pagehide', cleanup, { once: true });

@@ -463,6 +463,15 @@ const themeColors = brandingData;
  </div>
 
  <script>
+  import { audioSessionService } from '../services/AudioSessionService';
+
+  if (!window.__REDIL_AUDIO_SESSION_BOOTSTRAPPED__) {
+    window.__REDIL_AUDIO_SESSION_BOOTSTRAPPED__ = true;
+    audioSessionService.install();
+  }
+ </script>
+
+ <script>
   import { supabase } from '../lib/supabase';
 
   const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;

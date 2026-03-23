@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ChevronDown, Pause, Play, Radio, RadioReceiver, Repeat, Repeat1, SlidersHorizontal } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { audioSessionService } from '../../services/AudioSessionService';
 import { metronomeService } from '../../services/MetronomeEngine';
+import { screenWakeLockService } from '../../services/ScreenWakeLockService';
 const FONT_PRESETS = {
   grande: {
     section: 'text-[0.78rem] sm:text-[0.82rem] tracking-[0.3em]',
@@ -474,6 +476,12 @@ export default function ModoEnsayoCompacto({
   const [padVolume, setPadVolume] = useState(0.5);
   const [isPadActive, setIsPadActive] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(148);
+  useEffect(() => {
+    screenWakeLockService.setRequested('modo-ensayo-compacto', true);
+    return () => {
+      screenWakeLockService.setRequested('modo-ensayo-compacto', false);
+    };
+  }, []);
   // ── Herencia de sincronización global desde EnsayoHub ──
   useEffect(() => {
     if (globalSyncMode) {
@@ -715,7 +723,7 @@ export default function ModoEnsayoCompacto({
     });
     setIsMetronomeOn(true);
   }, [currentSongBpm, isMetronomeOn, stopMetronome]);
-  const ensureWebAudioConnected = async () => {
+  const ensureWebAudioConnected = React.useCallback(async () => {
     const audioElement = audioRef.current;
     if (!audioElement || typeof window === 'undefined') return;
     if (audioElement.dataset.webaudioConnected === 'true') return;
@@ -750,7 +758,29 @@ export default function ModoEnsayoCompacto({
     if (panNode.pan) {
       panNode.pan.setTargetAtTime(panValue, ctx.currentTime, 0.05);
     }
-  };
+  }, [panValue]);
+  useEffect(() => {
+    const audioElement = audioRef.current;
+    if (!audioElement) return undefined;
+
+    return audioSessionService.registerPrimaryAudio(
+      'modo-ensayo-compacto',
+      {
+        audioElement,
+        onPlay: async () => {
+          await ensureWebAudioConnected();
+          if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+            await audioCtxRef.current.resume();
+          }
+          await audioElement.play();
+        },
+        onPause: () => {
+          audioElement.pause();
+        },
+      },
+      30
+    );
+  }, [activePlaybackUrl, ensureWebAudioConnected]);
   useEffect(() => {
     // Solo actualiza el panner si Web Audio ya está conectado (requiere CORS en R2)
     const panner = trackPanRef.current;

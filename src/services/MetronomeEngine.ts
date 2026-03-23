@@ -1,3 +1,5 @@
+import { audioSessionService } from './AudioSessionService';
+
 export interface MetronomeBeatEvent {
   beatNumber: number;
   beatInMeasure: number;
@@ -32,6 +34,7 @@ class MetronomeEngine {
   private workerHealthTimerId: number | null = null;
   private lastWorkerTickAt = 0;
   private listeners = new Set<BeatListener>();
+  private visibilityRecoveryInstalled = false;
 
   private isPlaying = false;
   private tempo = 120;
@@ -90,6 +93,7 @@ class MetronomeEngine {
 
   async init() {
     if (typeof window === 'undefined') return;
+    this.installVisibilityRecovery();
     if (this.audioContext && this.worker) return;
     if (this.initPromise) {
       await this.initPromise;
@@ -131,6 +135,27 @@ class MetronomeEngine {
       }
     }
   }
+
+  private installVisibilityRecovery() {
+    if (this.visibilityRecoveryInstalled) return;
+    this.visibilityRecoveryInstalled = true;
+    audioSessionService.registerVisibilityResumeHandler(this.handleVisibilityResume);
+  }
+
+  private handleVisibilityResume = async () => {
+    if (!this.audioContext || this.audioContext.state === 'closed') return;
+
+    if (this.audioContext.state === 'suspended') {
+      await this.audioContext.resume();
+    }
+
+    if (!this.isPlaying) return;
+
+    this.stopTicker();
+    this.nextNoteTime = this.audioContext.currentTime + 0.05;
+    this.scheduler();
+    this.startTicker();
+  };
 
   subscribe(listener: BeatListener) {
     this.listeners.add(listener);
