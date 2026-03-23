@@ -215,21 +215,27 @@ const firstTourResourcesId =
  
 <script>
 import { supabase } from '../lib/supabase';
+import { metronomeService } from '../services/MetronomeEngine';
 
  type RepertorioWindow = Window & {
   __REPERTORIO_INIT_BOUND__?: boolean;
   __REPERTORIO_BEFORE_SWAP_BOUND__?: boolean;
+  __REPERTORIO_INIT_RUN_ID__?: number;
   __REPERTORIO_CLEANUP__?: (() => void) | null;
   __REPERTORIO_METRONOME__?: {
-   intervalId: number | null;
    activeDot: HTMLElement | null;
    audioCtx: AudioContext | null;
   };
  };
 
  const repertorioWindow = window as RepertorioWindow;
+ const nextRepertorioInitRun = () => {
+  repertorioWindow.__REPERTORIO_INIT_RUN_ID__ = (repertorioWindow.__REPERTORIO_INIT_RUN_ID__ ?? 0) + 1;
+  return repertorioWindow.__REPERTORIO_INIT_RUN_ID__;
+ };
 
  const cleanupRepertorioRuntime = () => {
+  nextRepertorioInitRun();
   if (typeof repertorioWindow.__REPERTORIO_CLEANUP__ === 'function') {
    repertorioWindow.__REPERTORIO_CLEANUP__();
   }
@@ -239,6 +245,8 @@ import { supabase } from '../lib/supabase';
  async function initRepertorio() {
  cleanupRepertorioRuntime();
  if (!window.location.pathname.startsWith('/repertorio')) return;
+ const initRunId = nextRepertorioInitRun();
+ const isStaleInit = () => repertorioWindow.__REPERTORIO_INIT_RUN_ID__ !== initRunId;
 
  const cleanupFns: Array<() => void> = [];
  const addListener = (
@@ -254,13 +262,12 @@ import { supabase } from '../lib/supabase';
   });
  };
 
- let observer: IntersectionObserver | null = null;
- const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
- const metronomeState = repertorioWindow.__REPERTORIO_METRONOME__ || {
-  intervalId: null,
-  activeDot: null,
-  audioCtx: null,
- };
+  let observer: IntersectionObserver | null = null;
+  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+  const metronomeState = repertorioWindow.__REPERTORIO_METRONOME__ || {
+   activeDot: null,
+   audioCtx: null,
+  };
  repertorioWindow.__REPERTORIO_METRONOME__ = metronomeState;
 
  const getSharedAudioCtx = () => {
@@ -269,18 +276,15 @@ import { supabase } from '../lib/supabase';
    metronomeState.audioCtx = new AudioContextClass();
   }
   return metronomeState.audioCtx;
- };
+  };
 
- const stopMetronome = () => {
-  if (metronomeState.intervalId) {
-   clearInterval(metronomeState.intervalId);
-   metronomeState.intervalId = null;
-  }
-  if (metronomeState.activeDot) {
-   metronomeState.activeDot.classList.remove('beat-active');
-   metronomeState.activeDot.style.removeProperty('--bpm-duration');
-   metronomeState.activeDot = null;
-  }
+  const stopMetronome = () => {
+   metronomeService.stop();
+   if (metronomeState.activeDot) {
+    metronomeState.activeDot.classList.remove('beat-active');
+    metronomeState.activeDot.style.removeProperty('--bpm-duration');
+    metronomeState.activeDot = null;
+   }
  };
 
  repertorioWindow.__REPERTORIO_CLEANUP__ = () => {
@@ -333,6 +337,7 @@ import { supabase } from '../lib/supabase';
 
 // Puerta Guardiana de Seguridad RLS: Verificar Sesion Activa
 const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+if (isStaleInit()) return;
 if (sessionError || !session) {
 // Expulsar solicitudes anonimas inmediatamente re-direccionando hacia el tunel de autenticacion
 /* window.location.replace('/login'); Movido a Middleware */
@@ -613,47 +618,33 @@ if (sessionError || !session) {
  }, { capture: true });
 
 // ----- Metronomo Interactivo Logic -----
+ addListener(document, 'click', async (e) => {
+  const event = e as MouseEvent & { __repertorioMetronomeHandled__?: boolean };
+  const badge = (event.target as Element | null)?.closest('.badge-bpm') as HTMLElement | null;
+  if (!badge) return;
+  if (event.__repertorioMetronomeHandled__) return;
 
-function playClick() {
-const audioCtx = getSharedAudioCtx();
-if (!audioCtx) return;
-if (audioCtx.state === 'suspended') audioCtx.resume();
- 
- const osc = audioCtx.createOscillator();
- const gainNode = audioCtx.createGain();
- 
- osc.connect(gainNode);
- gainNode.connect(audioCtx.destination);
- 
- osc.type = 'sine';
- osc.frequency.setValueAtTime(800, audioCtx.currentTime);
- 
- gainNode.gain.setValueAtTime(1, audioCtx.currentTime);
- gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
- 
- osc.start(audioCtx.currentTime);
- osc.stop(audioCtx.currentTime + 0.1);
- }
- 
- addListener(document, 'click', (e) => {
- const badge = (e.target as Element).closest('.badge-bpm');
- if (badge) {
- const bpmStr = badge.getAttribute('data-bpm');
+  event.__repertorioMetronomeHandled__ = true;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+
+  const bpmStr = badge.getAttribute('data-bpm');
  if (!bpmStr) return;
- 
+
  const bpmVal = parseInt(bpmStr.replace(/[^0-9]/g, ''), 10);
  if (!bpmVal || bpmVal <= 0) return;
- 
- const dot = badge.querySelector('.metronomo-dot') as HTMLElement;
+
+ const dot = badge.querySelector('.metronomo-dot') as HTMLElement | null;
  if (!dot) return;
- 
+
+ const isSameDotPlaying = metronomeState.activeDot === dot && metronomeService.getIsPlaying();
  if (metronomeState.activeDot && metronomeState.activeDot !== dot) {
- stopMetronome();
+  stopMetronome();
  }
 
- if (dot.classList.contains('beat-active')) {
- stopMetronome();
- return;
+ if (isSameDotPlaying) {
+  stopMetronome();
+  return;
  }
 
  stopMetronome();
@@ -662,10 +653,19 @@ if (audioCtx.state === 'suspended') audioCtx.resume();
  dot.classList.add('beat-active');
  metronomeState.activeDot = dot;
 
- playClick();
- metronomeState.intervalId = window.setInterval(playClick, duracionSegundos * 1000);
+ try {
+  await metronomeService.start({
+   tempo: bpmVal,
+   beatsPerMeasure: 1,
+   subdivision: 1,
+   accentFirstBeat: false,
+   resetCycle: true,
+  });
+ } catch (error) {
+  console.warn('No se pudo iniciar el metrónomo en repertorio.', error);
+  stopMetronome();
  }
-});
+ }, { capture: true });
 
  // ----- Reference Tone (Pitch Pipe) Logic -----
  const frecuencias: { [key: string]: number } = {

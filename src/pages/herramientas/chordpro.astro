@@ -105,6 +105,7 @@ import Layout from '../../layouts/Layout.astro';
 
 <script>
   import { supabase } from '../../lib/supabase';
+  import { metronomeService } from '../../services/MetronomeEngine';
 
   document.addEventListener('DOMContentLoaded', async () => {
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -456,55 +457,42 @@ import Layout from '../../layouts/Layout.astro';
  });
 
  // ---------------- METRÓNOMO AUDIO API ---------------- //
- let audioCtx: AudioContext | null = null;
- let metronomeInterval: NodeJS.Timeout | null = null;
- let isPlaying = false;
+  let isPlaying = false;
  const btnMetronomo = document.getElementById('btn-metronomo');
  const inputBpm = document.getElementById('print-bpm') as HTMLInputElement;
 
- function playClick() {
- if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
- const osc = audioCtx.createOscillator();
- const gain = audioCtx.createGain();
- osc.connect(gain);
- gain.connect(audioCtx.destination);
- 
- osc.frequency.value = 800; // Tono del click
- osc.type = 'sine';
- gain.gain.setValueAtTime(1, audioCtx.currentTime);
- gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
- 
- osc.start(audioCtx.currentTime);
- osc.stop(audioCtx.currentTime + 0.1);
- }
-
- btnMetronomo?.addEventListener('click', () => {
- if (isPlaying) {
- if (metronomeInterval) clearInterval(metronomeInterval);
- btnMetronomo.classList.replace('bg-green-600', 'bg-neutral-100');
- btnMetronomo.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`;
- isPlaying = false;
- } else {
+  btnMetronomo?.addEventListener('click', async () => {
+  if (isPlaying) {
+  metronomeService.stop();
+  btnMetronomo.classList.replace('bg-green-600', 'bg-neutral-100');
+  btnMetronomo.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`;
+  isPlaying = false;
+  } else {
  // Extraer el número del BPM usando Regex
- const bpmTexto = inputBpm.value;
- const match = bpmTexto.match(/\b([3-9]\d|[1-2]\d{2})\b/);
- const bpm = match ? parseInt(match[0]) : 120; // Default 120 si no encuentra
- const msPerBeat = 60000 / bpm;
+  const bpmTexto = inputBpm.value;
+  const match = bpmTexto.match(/\b([3-9]\d|[1-2]\d{2})\b/);
+  const bpm = match ? parseInt(match[0]) : 120; // Default 120 si no encuentra
 
- // Reanudar contexto de audio (requerido por navegadores)
- if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
- if (audioCtx.state === 'suspended') audioCtx.resume();
- 
- playClick(); // Primer click inmediato
- metronomeInterval = setInterval(playClick, msPerBeat);
+  await metronomeService.start({
+  tempo: bpm,
+  beatsPerMeasure: 1,
+  subdivision: 1,
+  accentFirstBeat: false,
+  resetCycle: true,
+  });
  
  btnMetronomo.classList.replace('bg-neutral-100', 'bg-green-600');
  btnMetronomo.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; 
- isPlaying = true;
- }
- });
+  isPlaying = true;
+  }
+  });
 
- // ---------------- MODO ATRIL (STAGE DISPLAY) ---------------- //
+  window.addEventListener('pagehide', () => {
+  metronomeService.stop();
+  isPlaying = false;
+  }, { once: true });
+
+  // ---------------- MODO ATRIL (STAGE DISPLAY) ---------------- //
  let wakeLock: any = null;
  const stageContainer = document.getElementById('stage-mode-container');
  const btnCerrarAtril = document.getElementById('btn-cerrar-atril');

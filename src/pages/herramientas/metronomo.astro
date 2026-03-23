@@ -95,8 +95,9 @@ import Layout from '../../layouts/Layout.astro';
 
 <script>
 import { supabase } from '../../lib/supabase';
+import { metronomeService } from '../../services/MetronomeEngine';
 
-document.addEventListener('DOMContentLoaded', async () => {
+const bootMetronomePage = async () => {
   let sessionError: unknown = null;
   try {
     const { error } = await supabase.auth.getSession();
@@ -106,15 +107,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   if (sessionError) console.warn('Session not available for metronomo; running UI fallback.');
 
-  let audioCtx: AudioContext | null = null;
   let isPlaying = false;
   let currentBPM = 120;
   let beatsPerBar = 4;
-  let subdivision = 1;
+  let subdivision: 1 | 2 = 1;
   let pulsesPerBar = beatsPerBar * subdivision;
-  let currentPulseInBar = 0;
-  let nextNoteTime = 0.0;
-  let timerID: number | null = null;
+
+  const listenersAbort = new AbortController();
+  const { signal } = listenersAbort;
 
   const bpmDisplay = document.getElementById('bpm-display') as HTMLElement | null;
   const btnPlay = document.getElementById('btn-play') as HTMLButtonElement | null;
@@ -127,6 +127,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnTap = document.getElementById('btn-tap') as HTMLButtonElement | null;
   const txtPlay = document.getElementById('text-play') as HTMLElement | null;
   const icnPlay = document.getElementById('icon-play') as SVGElement | null;
+  const knob = document.getElementById('bpm-knob');
+
+  const on = (
+    target: EventTarget | null | undefined,
+    eventName: string,
+    handler: EventListenerOrEventListenerObject,
+    options: AddEventListenerOptions = {},
+  ) => {
+    if (!target || typeof (target as EventTarget).addEventListener !== 'function') return;
+    (target as EventTarget).addEventListener(eventName, handler, { ...options, signal });
+  };
+
+  const syncEngineSettings = (resetCycle = false) => {
+    metronomeService.updateSettings({
+      tempo: currentBPM,
+      beatsPerMeasure: beatsPerBar,
+      subdivision,
+      accentFirstBeat: true,
+      resetCycle,
+    });
+  };
 
   function setDotState(dot: Element, state: 'off' | 'main' | 'downbeat' | 'sub') {
     dot.classList.remove('is-off', 'is-main', 'is-downbeat', 'is-sub');
@@ -141,6 +162,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  function updateCountDisplay(pulseNumber: number) {
+    if (!beatCountDisplay) return;
+    const beat = Math.floor(pulseNumber / subdivision) + 1;
+    const isSubdivisionPulse = subdivision === 2 && pulseNumber % subdivision === 1;
+    beatCountDisplay.textContent = isSubdivisionPulse ? `${beat}+/${beatsPerBar}` : `${beat}/${beatsPerBar}`;
+  }
+
   function initVisualizer() {
     if (!visualizer) return;
     visualizer.innerHTML = '';
@@ -153,13 +181,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateCountDisplay(0);
   }
 
-  function updateCountDisplay(pulseNumber: number) {
-    if (!beatCountDisplay) return;
-    const beat = Math.floor(pulseNumber / subdivision) + 1;
-    const isSubdivisionPulse = subdivision === 2 && pulseNumber % subdivision === 1;
-    beatCountDisplay.textContent = isSubdivisionPulse ? `${beat}+/${beatsPerBar}` : `${beat}/${beatsPerBar}`;
-  }
-
   function updateSubdivisionUI() {
     const isOne = subdivision === 1;
     subdivisionSwitch?.setAttribute('data-active', isOne ? '1' : '2');
@@ -167,76 +188,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnSubdivision2?.classList.toggle('is-active', !isOne);
     btnSubdivision1?.setAttribute('aria-checked', isOne ? 'true' : 'false');
     btnSubdivision2?.setAttribute('aria-checked', isOne ? 'false' : 'true');
-  }
-
-  function setSubdivision(nextSubdivision: 1 | 2) {
-    subdivision = nextSubdivision;
-    pulsesPerBar = beatsPerBar * subdivision;
-    currentPulseInBar = 0;
-    updateSubdivisionUI();
-    initVisualizer();
-  }
-
-  function nextNote() {
-    const secondsPerPulse = 60.0 / currentBPM / subdivision;
-    nextNoteTime += secondsPerPulse;
-    currentPulseInBar = (currentPulseInBar + 1) % pulsesPerBar;
-  }
-
-  function scheduleNote(pulseNumber: number, time: number) {
-    const isMainBeat = pulseNumber % subdivision === 0;
-    const isDownBeat = pulseNumber === 0;
-    const isSubdivisionPulse = !isMainBeat;
-
-    requestAnimationFrame(() => {
-      if (!visualizer || !isPlaying) return;
-      resetVisualizer();
-      const dot = visualizer.children[pulseNumber];
-      if (!dot) return;
-      updateCountDisplay(pulseNumber);
-      if (isDownBeat) setDotState(dot, 'downbeat');
-      else if (isMainBeat) setDotState(dot, 'main');
-      else if (isSubdivisionPulse) setDotState(dot, 'sub');
-    });
-
-    if (!audioCtx) return;
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-
-    if (isDownBeat) {
-      osc.frequency.value = 1200;
-      gain.gain.setValueAtTime(0.9, time);
-      gain.gain.exponentialRampToValueAtTime(0.001, time + 0.055);
-    } else if (isMainBeat) {
-      osc.frequency.value = 900;
-      gain.gain.setValueAtTime(0.65, time);
-      gain.gain.exponentialRampToValueAtTime(0.001, time + 0.045);
-    } else {
-      osc.frequency.value = 700;
-      gain.gain.setValueAtTime(0.35, time);
-      gain.gain.exponentialRampToValueAtTime(0.001, time + 0.035);
-    }
-
-    osc.start(time);
-    osc.stop(time + 0.06);
-  }
-
-  function scheduler() {
-    if (!audioCtx) return;
-    while (nextNoteTime < audioCtx.currentTime + 0.1) {
-      scheduleNote(currentPulseInBar, nextNoteTime);
-      nextNote();
-    }
-    timerID = window.setTimeout(scheduler, 25.0);
-  }
-
-  function stopScheduler() {
-    if (timerID !== null) {
-      window.clearTimeout(timerID);
-      timerID = null;
-    }
   }
 
   function updatePlayButtonUI() {
@@ -250,37 +201,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  btnPlay?.addEventListener('click', async () => {
-    if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    if (audioCtx.state === 'suspended') await audioCtx.resume();
-
-    isPlaying = !isPlaying;
-    if (isPlaying) {
-      currentPulseInBar = 0;
-      nextNoteTime = audioCtx.currentTime + 0.05;
-      updateCountDisplay(0);
-      scheduler();
-    } else {
-      stopScheduler();
-      resetVisualizer();
-      updateCountDisplay(0);
-    }
-    updatePlayButtonUI();
-  });
-
-  timeSignatureSelect?.addEventListener('change', (e) => {
-    beatsPerBar = parseInt((e.target as HTMLSelectElement).value, 10);
+  function setSubdivision(nextSubdivision: 1 | 2) {
+    subdivision = nextSubdivision;
     pulsesPerBar = beatsPerBar * subdivision;
-    currentPulseInBar = 0;
+    updateSubdivisionUI();
     initVisualizer();
-  });
-
-  btnSubdivision1?.addEventListener('click', () => setSubdivision(1));
-  btnSubdivision2?.addEventListener('click', () => setSubdivision(2));
-
-  const knob = document.getElementById('bpm-knob');
-  let isDragging = false;
-  let previousAngle = 0;
+    syncEngineSettings(true);
+  }
 
   function actualizarAnilloLED() {
     const ring = document.getElementById('bpm-ring') as SVGCircleElement | null;
@@ -297,6 +224,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const offset = circunferencia - (porcentaje * circunferencia);
     ring.style.strokeDashoffset = offset.toString();
     bpmDisplay.textContent = currentBPM.toString();
+
+    if (isPlaying) {
+      metronomeService.setTempo(currentBPM);
+    }
   }
 
   function getAngle(clientX: number, clientY: number) {
@@ -306,6 +237,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const centerY = rect.top + rect.height / 2;
     return Math.atan2(clientY - centerY, clientX - centerX) * 180 / Math.PI;
   }
+
+  let isDragging = false;
+  let previousAngle = 0;
 
   function startDrag(e: MouseEvent | TouchEvent) {
     isDragging = true;
@@ -326,8 +260,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   function doDrag(e: MouseEvent | TouchEvent) {
     if (!isDragging) return;
 
-    if (window.TouchEvent && e instanceof TouchEvent) {
-      if (e.cancelable) e.preventDefault();
+    if (window.TouchEvent && e instanceof TouchEvent && e.cancelable) {
+      e.preventDefault();
     }
 
     let clientX;
@@ -348,10 +282,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (Math.abs(delta) > 2) {
       currentBPM += delta > 0 ? 1 : -1;
-
       if (currentBPM < 30) currentBPM = 30;
       if (currentBPM > 300) currentBPM = 300;
-
       actualizarAnilloLED();
       previousAngle = newAngle;
     }
@@ -361,25 +293,62 @@ document.addEventListener('DOMContentLoaded', async () => {
     isDragging = false;
   }
 
-  if (knob) {
-    knob.addEventListener('mousedown', startDrag);
-    window.addEventListener('mousemove', doDrag, { passive: false });
-    window.addEventListener('mouseup', stopDrag);
+  const unsubscribeBeat = metronomeService.subscribe((beatEvent) => {
+    if (!visualizer || !isPlaying) return;
+    resetVisualizer();
+    const dot = visualizer.children[beatEvent.pulseInBar];
+    if (!dot) return;
+    updateCountDisplay(beatEvent.pulseInBar);
+    if (beatEvent.isDownbeat) setDotState(dot, 'downbeat');
+    else if (beatEvent.isMainBeat) setDotState(dot, 'main');
+    else if (beatEvent.isSubdivisionPulse) setDotState(dot, 'sub');
+  });
 
-    knob.addEventListener('touchstart', startDrag, { passive: true });
-    window.addEventListener('touchmove', doDrag, { passive: false });
-    window.addEventListener('touchend', stopDrag);
+  on(btnPlay, 'click', async () => {
+    if (isPlaying) {
+      metronomeService.stop();
+      isPlaying = false;
+      resetVisualizer();
+      updateCountDisplay(0);
+      updatePlayButtonUI();
+      return;
+    }
+
+    syncEngineSettings(true);
+    await metronomeService.start();
+    isPlaying = true;
+    updatePlayButtonUI();
+  });
+
+  on(timeSignatureSelect, 'change', (e: Event) => {
+    beatsPerBar = parseInt((e.target as HTMLSelectElement).value, 10);
+    pulsesPerBar = beatsPerBar * subdivision;
+    initVisualizer();
+    syncEngineSettings(true);
+  });
+
+  on(btnSubdivision1, 'click', () => setSubdivision(1));
+  on(btnSubdivision2, 'click', () => setSubdivision(2));
+
+  if (knob) {
+    on(knob, 'mousedown', startDrag);
+    on(window, 'mousemove', doDrag, { passive: false });
+    on(window, 'mouseup', stopDrag);
+    on(knob, 'touchstart', startDrag, { passive: true });
+    on(window, 'touchmove', doDrag, { passive: false });
+    on(window, 'touchend', stopDrag);
   }
 
   let tapTimes: number[] = [];
   let tapResetTimer: number | null = null;
 
-  btnTap?.addEventListener('touchstart', (e) => {
-    if (e.cancelable) e.preventDefault();
-    btnTap.click();
+  on(btnTap, 'touchstart', (e: Event) => {
+    const touchEvent = e as TouchEvent;
+    if (touchEvent.cancelable) touchEvent.preventDefault();
+    btnTap?.click();
   }, { passive: false });
 
-  btnTap?.addEventListener('click', () => {
+  on(btnTap, 'click', () => {
     const now = performance.now();
     tapTimes.push(now);
 
@@ -400,17 +369,37 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (tapResetTimer !== null) window.clearTimeout(tapResetTimer);
-    tapResetTimer = window.setTimeout(() => { tapTimes = []; }, 2000);
+    tapResetTimer = window.setTimeout(() => {
+      tapTimes = [];
+    }, 2000);
 
-    btnTap.classList.add('is-tapping');
-    window.setTimeout(() => btnTap.classList.remove('is-tapping'), 100);
+    btnTap?.classList.add('is-tapping');
+    window.setTimeout(() => btnTap?.classList.remove('is-tapping'), 100);
   });
+
+  const cleanup = () => {
+    listenersAbort.abort();
+    unsubscribeBeat();
+    metronomeService.stop();
+    isPlaying = false;
+  };
+
+  on(window, 'pagehide', cleanup, { once: true });
+  on(document, 'astro:after-swap', cleanup, { once: true });
 
   updateSubdivisionUI();
   updatePlayButtonUI();
   actualizarAnilloLED();
   initVisualizer();
-});
+};
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    void bootMetronomePage();
+  }, { once: true });
+} else {
+  void bootMetronomePage();
+}
 </script>
 
 <style>

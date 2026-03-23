@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ChevronDown, Pause, Play, Radio, RadioReceiver, Repeat, Repeat1, SlidersHorizontal } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { metronomeService } from '../../services/MetronomeEngine';
 const FONT_PRESETS = {
   grande: {
     section: 'text-[0.78rem] sm:text-[0.82rem] tracking-[0.3em]',
@@ -464,8 +465,6 @@ export default function ModoEnsayoCompacto({
   const sectionRefs = useRef([]);
   const optionsMenuRef = useRef(null);
   const playbackOptionsRef = useRef(null);
-  const metronomeIntervalRef = useRef(null);
-  const metronomeAudioCtxRef = useRef(null);
   const pendingPlaybackResumeRef = useRef(false);
   const audioCtxRef = useRef(null);
   const trackSourceRef = useRef(null);
@@ -698,45 +697,24 @@ export default function ModoEnsayoCompacto({
     ? (isLandscapeCompact ? 8 : 18)
     : headerHeight + (isLandscapeCompact ? 8 : 18);
   const stopMetronome = React.useCallback(() => {
-    if (metronomeIntervalRef.current) {
-      window.clearInterval(metronomeIntervalRef.current);
-      metronomeIntervalRef.current = null;
-    }
+    metronomeService.stop();
     setIsMetronomeOn(false);
   }, []);
-  const playMetronomeClick = React.useCallback(() => {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return;
-    if (!metronomeAudioCtxRef.current || metronomeAudioCtxRef.current.state === 'closed') {
-      metronomeAudioCtxRef.current = new AudioContextClass();
-    }
-    const audioCtx = metronomeAudioCtxRef.current;
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
-    }
-    const osc = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
-    osc.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(800, audioCtx.currentTime);
-    gainNode.gain.setValueAtTime(1, audioCtx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
-    osc.start(audioCtx.currentTime);
-    osc.stop(audioCtx.currentTime + 0.1);
-  }, []);
-  const handleToggleMetronome = React.useCallback(() => {
+  const handleToggleMetronome = React.useCallback(async () => {
     if (!currentSongBpm) return;
     if (isMetronomeOn) {
       stopMetronome();
       return;
     }
-    stopMetronome();
-    const beatDurationMs = (60 / currentSongBpm) * 1000;
+    await metronomeService.start({
+      tempo: currentSongBpm,
+      beatsPerMeasure: 1,
+      subdivision: 1,
+      accentFirstBeat: false,
+      resetCycle: true,
+    });
     setIsMetronomeOn(true);
-    playMetronomeClick();
-    metronomeIntervalRef.current = window.setInterval(playMetronomeClick, beatDurationMs);
-  }, [currentSongBpm, isMetronomeOn, playMetronomeClick, stopMetronome]);
+  }, [currentSongBpm, isMetronomeOn, stopMetronome]);
   const ensureWebAudioConnected = async () => {
     const audioElement = audioRef.current;
     if (!audioElement || typeof window === 'undefined') return;
@@ -1015,11 +993,6 @@ export default function ModoEnsayoCompacto({
   }, [currentSongBpm, stopMetronome]);
   useEffect(() => () => {
     stopMetronome();
-    const audioCtx = metronomeAudioCtxRef.current;
-    if (audioCtx && audioCtx.state !== 'closed') {
-      audioCtx.close().catch(() => {});
-    }
-    metronomeAudioCtxRef.current = null;
   }, [stopMetronome]);
   const progressPercent = useMemo(() => {
     if (!timelineDuration) return 0;

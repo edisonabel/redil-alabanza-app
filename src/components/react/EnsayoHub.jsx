@@ -3,6 +3,7 @@ import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Clock3, 
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
 import ModoLiveDirector from './ModoLiveDirector.jsx';
 import { supabase } from '../../lib/supabase';
+import { metronomeService } from '../../services/MetronomeEngine';
 
 const LATIN_TO_AMERICAN = {
   Do: 'C',
@@ -375,8 +376,6 @@ export default function EnsayoHub({
   const [isSyncReceiver, setIsSyncReceiver] = useState(false);
   const [syncCountdown, setSyncCountdown] = useState(null); // null | 3 | 2 | 1 | 0
 
-  const metronomeIntervalRef = useRef(null);
-  const metronomeAudioCtxRef = useRef(null);
   const queueSongsRef = useRef([]);
   const queueIndexRef = useRef(-1);
   const queueActiveRef = useRef(false);
@@ -483,40 +482,11 @@ export default function EnsayoHub({
   }, [syncCountdown]);
 
   const stopMetronome = useCallback(() => {
-    if (metronomeIntervalRef.current) {
-      window.clearInterval(metronomeIntervalRef.current);
-      metronomeIntervalRef.current = null;
-    }
+    metronomeService.stop();
     setActiveMetronomeSongId(null);
   }, []);
 
-  const playMetronomeClick = useCallback(() => {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return;
-
-    if (!metronomeAudioCtxRef.current || metronomeAudioCtxRef.current.state === 'closed') {
-      metronomeAudioCtxRef.current = new AudioContextClass();
-    }
-
-    const audioCtx = metronomeAudioCtxRef.current;
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
-    }
-
-    const osc = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
-
-    osc.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(800, audioCtx.currentTime);
-    gainNode.gain.setValueAtTime(1, audioCtx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
-    osc.start(audioCtx.currentTime);
-    osc.stop(audioCtx.currentTime + 0.1);
-  }, []);
-
-  const toggleSongMetronome = useCallback((songId, bpm) => {
+  const toggleSongMetronome = useCallback(async (songId, bpm) => {
     const safeBpm = Number.isFinite(Number(bpm)) ? Math.max(0, Math.round(Number(bpm))) : 0;
     if (!safeBpm) return;
 
@@ -526,11 +496,15 @@ export default function EnsayoHub({
     }
 
     stopMetronome();
-    const beatDurationMs = (60 / safeBpm) * 1000;
+    await metronomeService.start({
+      tempo: safeBpm,
+      beatsPerMeasure: 1,
+      subdivision: 1,
+      accentFirstBeat: false,
+      resetCycle: true,
+    });
     setActiveMetronomeSongId(songId);
-    playMetronomeClick();
-    metronomeIntervalRef.current = window.setInterval(playMetronomeClick, beatDurationMs);
-  }, [activeMetronomeSongId, playMetronomeClick, stopMetronome]);
+  }, [activeMetronomeSongId, stopMetronome]);
 
   const stopQueue = useCallback(() => {
     queueSongsRef.current = [];
@@ -627,10 +601,6 @@ export default function EnsayoHub({
   useEffect(() => () => {
     stopMetronome();
     stopQueue();
-    const audioCtx = metronomeAudioCtxRef.current;
-    if (audioCtx && audioCtx.state !== 'closed') {
-      audioCtx.close().catch(() => {});
-    }
   }, [stopMetronome, stopQueue]);
 
   useEffect(() => {

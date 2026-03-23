@@ -245,7 +245,15 @@ const userId = Astro.locals.user?.id ?? null;
 <script is:inline src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js" integrity="sha512-9KkIqdfN7ipEW6B6k+Aq20PV31bjODg4AA52W+tYtAE0jE0kMx49bjJ3FgvS56wzmyfMUHbQ4Km2b7l9+Y/+Eg==" crossorigin="anonymous"></script>
 
 <script>
- import { supabase } from '../lib/supabase';
+ import { supabase, uploadAvatarAtomic } from '../lib/supabase';
+ import { getSafeImageForCropper } from '../utils/safeImageProcessor';
+
+ const revokePerfilSafeCropperUrl = () => {
+ const safeUrl = (window as any).__perfilSafeCropperUrl as string | null | undefined;
+ if (!safeUrl) return;
+ URL.revokeObjectURL(safeUrl);
+ (window as any).__perfilSafeCropperUrl = null;
+ };
 
  const cleanupPerfilRuntime = () => {
  const abortController = (window as any).__perfilListenersAbort as AbortController | undefined;
@@ -263,6 +271,7 @@ const userId = Astro.locals.user?.id ?? null;
  }
  (window as any)._cropperInstance = null;
  }
+ revokePerfilSafeCropperUrl();
  };
 
  const initPerfilPage = async () => {
@@ -283,6 +292,7 @@ const userId = Astro.locals.user?.id ?? null;
 
  // Init global vars
  let currentUserId = null;
+ let currentAvatarUrl: string | null = null;
 
  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  const getCookieValue = (name) => {
@@ -354,7 +364,7 @@ const userId = Astro.locals.user?.id ?? null;
  // ==========================================
  // LÃ³gica de Cropper y Upload de Foto de Perfil
  // ==========================================
- const btnChangeAvatar = document.getElementById('btn-change-avatar');
+ const btnChangeAvatar = document.getElementById('btn-change-avatar') as HTMLButtonElement | null;
  const avatarInput = document.getElementById('avatar-input') as HTMLInputElement;
  const cropperModal = document.getElementById('cropper-modal');
  const cropperContent = document.getElementById('cropper-content');
@@ -367,19 +377,42 @@ const userId = Astro.locals.user?.id ?? null;
  const btnCloseAvatarLock = document.getElementById('btn-close-avatar-lock');
  const btnConfirmAvatarLock = document.getElementById('btn-confirm-avatar-lock');
  
- const avatarPreview = document.getElementById('avatar-preview') as HTMLImageElement;
- const avatarPreviewText = document.getElementById('avatar-preview-text');
- let canChangeAvatar = true;
+const avatarPreview = document.getElementById('avatar-preview') as HTMLImageElement;
+const avatarPreviewText = document.getElementById('avatar-preview-text');
+ let canChangeAvatar = false;
+ let isPreparingAvatar = false;
+
+ const syncAvatarControls = () => {
+ if (btnChangeAvatar) {
+ btnChangeAvatar.disabled = !canChangeAvatar || isPreparingAvatar;
+ btnChangeAvatar.classList.toggle('opacity-70', isPreparingAvatar);
+ btnChangeAvatar.setAttribute('aria-busy', isPreparingAvatar ? 'true' : 'false');
+ }
+ if (avatarInput) {
+ avatarInput.disabled = !canChangeAvatar || isPreparingAvatar;
+ }
+ };
 
  const setAvatarChangeState = (isAllowed: boolean) => {
  canChangeAvatar = isAllowed;
- if (btnChangeAvatar) {
- btnChangeAvatar.removeAttribute('disabled');
- }
- if (avatarInput) {
- avatarInput.disabled = !isAllowed;
- }
+ syncAvatarControls();
  };
+
+ const setAvatarProcessingState = (isBusy: boolean) => {
+ isPreparingAvatar = isBusy;
+ syncAvatarControls();
+ };
+
+ const supportsCanvasMimeType = (mimeType: string): Promise<boolean> => {
+ return new Promise((resolve) => {
+ const testCanvas = document.createElement('canvas');
+ testCanvas.width = 1;
+ testCanvas.height = 1;
+ testCanvas.toBlob((blob) => resolve(Boolean(blob && blob.type === mimeType)), mimeType, 0.6);
+ });
+ };
+
+ syncAvatarControls();
 
  const openAvatarLockModal = () => {
  avatarLockModal?.classList.remove('hidden');
@@ -420,22 +453,52 @@ const userId = Astro.locals.user?.id ?? null;
  });
 
  // Cuando el usuario selecciona una imagen
- on(avatarInput, 'change', (e: Event) => {
+ on(avatarInput, 'change', async (e: Event) => {
  if (!canChangeAvatar) return;
  const file = (e.target as HTMLInputElement).files?.[0];
- if (file) {
- const reader = new FileReader();
- reader.onload = (event) => {
- if (cropperImage && event.target?.result) {
- cropperImage.src = event.target.result as string;
- cropperImage.classList.remove('hidden');
- openCropperModal();
- }
- };
- reader.readAsDataURL(file);
- }
  // Reset input so the same file can be selected again if needed
  avatarInput.value = '';
+
+ if (!file) return;
+
+ setAvatarProcessingState(true);
+
+ try {
+ const { url: safeImageUrl } = await getSafeImageForCropper(file, 1000);
+ revokePerfilSafeCropperUrl();
+ (window as any).__perfilSafeCropperUrl = safeImageUrl;
+
+ if (cropperImage) {
+ const waitForImageLoad = new Promise<void>((resolve, reject) => {
+ const cleanupImageListeners = () => {
+ cropperImage.onload = null;
+ cropperImage.onerror = null;
+ };
+
+ cropperImage.onload = () => {
+ cleanupImageListeners();
+ resolve();
+ };
+
+ cropperImage.onerror = () => {
+ cleanupImageListeners();
+ reject(new Error('No se pudo preparar la imagen para el recorte.'));
+ };
+ });
+
+ cropperImage.src = safeImageUrl;
+ cropperImage.classList.remove('hidden');
+ if (!cropperImage.complete) {
+ await waitForImageLoad;
+ }
+ openCropperModal();
+ }
+ } catch (error) {
+ console.error('Error al preparar la imagen para el cropper:', error);
+ alert(error instanceof Error ? error.message : 'Hubo un problema al cargar la imagen. Intenta con otra más pequeña.');
+ } finally {
+ setAvatarProcessingState(false);
+ }
  });
 
  const openCropperModal = () => {
@@ -493,6 +556,7 @@ const userId = Astro.locals.user?.id ?? null;
  cropperImage.src = '';
  cropperImage.classList.add('hidden');
  }
+ revokePerfilSafeCropperUrl();
  }, 300);
  };
 
@@ -517,9 +581,14 @@ const userId = Astro.locals.user?.id ?? null;
  const originalText = btnSaveCropper.innerHTML;
  btnSaveCropper.innerHTML = '<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Subiendo...';
  btnSaveCropper.disabled = true;
+ setAvatarProcessingState(true);
 
  try {
- // Generar blob webp de 400x400
+ const useWebP = await supportsCanvasMimeType('image/webp');
+ const outputMimeType = useWebP ? 'image/webp' : 'image/jpeg';
+ const outputExtension = useWebP ? 'webp' : 'jpg';
+
+ // Generar blob seguro de 400x400
  const canvas = cropper.getCroppedCanvas({
  width: 400,
  height: 400,
@@ -528,7 +597,7 @@ const userId = Astro.locals.user?.id ?? null;
  });
 
  const blob = await new Promise<Blob | null>((resolve) => {
- canvas.toBlob((b) => resolve(b), 'image/webp', 0.9);
+ canvas.toBlob((b) => resolve(b), outputMimeType, useWebP ? 0.9 : 0.88);
  });
 
  if (!blob) throw new Error("No se pudo generar el recorte de la imagen.");
@@ -537,76 +606,28 @@ const userId = Astro.locals.user?.id ?? null;
  const userId = currentUserId || auth.user?.id;
  if (!userId) throw new Error("No session");
 
- // Upload a Supabase Storage (bucket: avatars)
- const fileName = `${userId}-${Date.now()}.webp`; // Para bust de cachÃ©
- const { data: uploadData, error: uploadError } = await supabase
- .storage
- .from('avatars')
- .upload(fileName, blob, {
- cacheControl: '3600',
- upsert: true,
- contentType: 'image/webp'
+ const fileName = `avatar-${Date.now()}.${outputExtension}`;
+ const { publicUrl } = await uploadAvatarAtomic(userId, blob, fileName, {
+ previousAvatarUrl: currentAvatarUrl,
+ contentType: outputMimeType,
  });
-
- if (uploadError) throw uploadError;
-
- // Obtener URL PÃºblica
- const uploadedPath = uploadData?.path || fileName;
- const { data: { publicUrl } } = supabase
- .storage
- .from('avatars')
- .getPublicUrl(uploadedPath);
-
- if (!publicUrl) {
- throw new Error("No se pudo obtener la URL pública del avatar.");
- }
-
- // Actualizar tabla perfiles obligando a devolver la fila (.select)
- const { data: updatedRow, error: dbError } = await supabase
- .from('perfiles')
- .update({ avatar_url: publicUrl })
- .eq('id', userId)
- .select();
-
- if (dbError) {
- console.error("Error actualizando avatar_url en perfiles:", dbError);
- alert("La foto se subió, pero ocurrió un error en la base de datos. Intenta de nuevo.");
-  throw dbError;
- }
-
- // Validación Anti-Fallo Silencioso RLS
- if (!updatedRow || updatedRow.length === 0) {
- console.error("Fallo silencioso: El RLS bloqueó el UPDATE o el usuario no existe.");
- alert("Error de permisos: La base de datos bloqueó tu cambio de foto. Contacta al administrador.");
- throw new Error("Violación de RLS al actualizar avatar");
- }
-
- // Actualizar metadata de Auth para reflejar el cambio en toda la app
- const { error: authError } = await supabase.auth.updateUser({
- data: { avatar_url: publicUrl }
- });
-
- if (authError) {
- console.error("Error actualizando avatar_url en auth metadata:", authError);
- alert("La foto se subió y se guardó en tu perfil, pero no se pudo sincronizar la sesión. Intenta cerrar y abrir sesión o vuelve a intentarlo.");
- throw authError;
- }
+ currentAvatarUrl = publicUrl;
 
  // Actualizar DOM visualmente
  const avatarContainerToUpdate = document.getElementById('avatar-container');
  if (avatarContainerToUpdate) {
+ avatarContainerToUpdate.classList.remove('bg-brand/10');
  avatarContainerToUpdate.innerHTML = `<img src="${publicUrl}" alt="Avatar" class="w-full h-full object-cover" id="avatar-preview" />`;
  }
 
  closeCropperModal();
- btnSaveCropper.innerHTML = originalText;
- btnSaveCropper.disabled = false;
-
  } catch (err) {
  console.error("Error al subir avatar:", err);
- alert("Error al subir imagen. Revisa que el Storage (bucket 'avatars') exista en Supabase.");
+ alert(err instanceof Error ? err.message : 'Error al subir imagen. Intenta de nuevo.');
+ } finally {
  btnSaveCropper.innerHTML = originalText;
  btnSaveCropper.disabled = false;
+ setAvatarProcessingState(false);
  }
  });
  // ==========================================
@@ -822,14 +843,18 @@ const userId = Astro.locals.user?.id ?? null;
  }
  if(avatarContainer) {
  if (perfilData.avatar_url) {
+ currentAvatarUrl = perfilData.avatar_url;
+ avatarContainer.classList.remove('bg-brand/10');
  avatarContainer.innerHTML = `<img src="${perfilData.avatar_url}" alt="${perfilData.nombre}" class="w-full h-full object-cover" id="avatar-preview" />`;
  } else {
+ currentAvatarUrl = null;
  const initials = perfilData.nombre.split(' ').map((n: string) => n[0]).join('').substring(0,2).toUpperCase();
  avatarContainer.innerHTML = `<span id="avatar-preview-text" class="text-brand">${initials}</span>`;
  avatarContainer.classList.add('bg-brand/10');
  }
  }
  } else {
+ currentAvatarUrl = null;
  setAvatarChangeState(true);
  }
 
