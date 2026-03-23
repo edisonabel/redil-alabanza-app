@@ -175,33 +175,33 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
     };
 
     return (
-        <div className={`fixed inset-0 z-[70] bg-overlay/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 pt-6 pb-[calc(104px+env(safe-area-inset-bottom))] transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
-            <div className={`bg-surface border border-border rounded-[24px] md:rounded-3xl w-full max-w-2xl max-h-[calc(100dvh-132px-env(safe-area-inset-bottom))] shadow-2xl flex flex-col overflow-hidden transition-transform duration-300 my-auto ${isOpen ? 'scale-100' : 'scale-95'}`}>
+        <div className={`fixed inset-0 z-[70] min-h-[100dvh] bg-overlay/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 pt-6 pb-[calc(104px+env(safe-area-inset-bottom))] lg:items-center lg:p-6 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
+            <div className={`bg-surface border border-border rounded-[24px] md:rounded-3xl w-full max-w-2xl lg:max-w-[1180px] xl:max-w-[1260px] max-h-[calc(100dvh-132px-env(safe-area-inset-bottom))] lg:max-h-[calc(100dvh-96px)] shadow-2xl flex flex-col overflow-hidden transition-transform duration-300 my-auto lg:my-0 ${isOpen ? 'scale-100' : 'scale-95'}`}>
                 {/* Header */}
-                <div className="p-6 border-b border-border flex justify-between items-start bg-background shrink-0">
+                <div className="p-6 border-b border-border flex justify-between items-start bg-background shrink-0 lg:px-5 lg:py-4">
                     <div>
-                        <span className="inline-block px-3 py-1 bg-brand/10 text-brand rounded-full text-xs font-bold tracking-widest uppercase mb-3 border border-brand/30 shadow-sm">{estado}</span>
-                        <h2 className="text-3xl font-black text-content tracking-tight capitalize">{fechaFormat}</h2>
-                        <div className="flex items-center gap-2 mt-2">
-                            <span className="text-content-muted font-medium text-lg capitalize">{tema !== titulo ? tema : titulo}</span>
+                        <span className="inline-block px-3 py-1 bg-brand/10 text-brand rounded-full text-xs font-bold tracking-widest uppercase mb-3 border border-brand/30 shadow-sm lg:mb-2">{estado}</span>
+                        <h2 className="text-3xl font-black text-content tracking-tight capitalize lg:text-[2rem]">{fechaFormat}</h2>
+                        <div className="flex items-center gap-2 mt-2 lg:mt-1.5">
+                            <span className="text-content-muted font-medium text-lg capitalize lg:text-[1.05rem]">{tema !== titulo ? tema : titulo}</span>
                             <span className="text-sm font-bold text-content-muted bg-border/50 px-2 py-0.5 rounded-md ml-2">{timeString}</span>
                         </div>
                     </div>
-                    <button onClick={handleClose} className="text-content-muted hover:text-content transition-colors p-2 bg-background hover:bg-border rounded-full shadow-sm border border-border">
+                    <button onClick={handleClose} className="text-content-muted hover:text-content transition-colors p-2 bg-background hover:bg-border rounded-full shadow-sm border border-border lg:p-1.5">
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
                     </button>
                 </div>
 
                 {/* Body scrollable */}
-                <div className="p-6 pb-[100px] overflow-y-auto flex-1 bg-surface">
+                <div className="p-6 pb-[100px] overflow-y-auto flex-1 bg-surface lg:grid lg:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)] lg:grid-rows-1 lg:gap-5 lg:overflow-hidden lg:px-5 lg:pt-4 lg:pb-5 xl:grid-cols-[minmax(0,1.14fr)_minmax(390px,0.86fr)]">
                     {/* Assigned Personnel */}
-                    <div className="mb-8 relative z-10">
-                        <h4 className="text-xs font-bold text-content-muted uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <div className="mb-8 relative z-10 lg:mb-0 lg:min-h-0 lg:overflow-y-auto lg:pr-2">
+                        <h4 className="text-xs font-bold text-content-muted uppercase tracking-widest mb-4 flex items-center gap-2 lg:mb-3">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg>
                             Personal Asignado
                         </h4>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-3">
                             {roster.length > 0 ? roster.map((asig, idx) => {
                                 if (!asig.perfiles) return null;
                                 const p = asig.perfiles;
@@ -212,20 +212,20 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                                 const initials = cleanName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 
                                 return (
-                                    <div key={idx} className="flex items-center gap-4 p-3 rounded-2xl border border-border bg-background hover:bg-surface transition-colors group relative overflow-hidden">
+                                    <div key={idx} className="flex items-center gap-4 p-3 rounded-2xl border border-border bg-background hover:bg-surface transition-colors group relative overflow-hidden lg:gap-3 lg:px-3 lg:py-2.5">
                                         <div className="relative">
                                             {p.avatar_url ? (
-                                                <img src={p.avatar_url} alt={p.nombre} loading="lazy" decoding="async" className="w-14 h-14 shrink-0 rounded-full object-cover shadow-sm bg-surface" />
+                                                <img src={p.avatar_url} alt={p.nombre} loading="lazy" decoding="async" className="w-14 h-14 shrink-0 rounded-full object-cover shadow-sm bg-surface lg:w-12 lg:h-12" />
                                             ) : (
-                                                <div className="w-14 h-14 shrink-0 rounded-full bg-brand/10 text-brand border border-brand/30 flex items-center justify-center font-black text-lg shadow-sm">{initials}</div>
+                                                <div className="w-14 h-14 shrink-0 rounded-full bg-brand/10 text-brand border border-brand/30 flex items-center justify-center font-black text-lg shadow-sm lg:w-12 lg:h-12 lg:text-base">{initials}</div>
                                             )}
-                                            <div className="absolute -bottom-1 -right-1 w-7 h-7 bg-surface rounded-full flex items-center justify-center shadow-md border border-border text-content-muted">
+                                            <div className="absolute -bottom-1 -right-1 w-7 h-7 bg-surface rounded-full flex items-center justify-center shadow-md border border-border text-content-muted lg:w-6 lg:h-6">
                                                 <RosterIcon role={{ codigo: rCodigo, nombre: rNombre }} />
                                             </div>
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <p className="font-bold text-content text-base truncate">{p.nombre}</p>
-                                            <p className="text-xs font-semibold text-content-muted uppercase tracking-wider">{rNombre}</p>
+                                            <p className="font-bold text-content text-base truncate lg:text-[0.97rem]">{p.nombre}</p>
+                                            <p className="text-xs font-semibold text-content-muted uppercase tracking-wider lg:text-[11px]">{rNombre}</p>
                                         </div>
                                     </div>
                                 );
@@ -241,14 +241,14 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                                         {/* Setlist */}
                     <div
                         ref={playlistSectionRef}
-                        className={`relative z-10 rounded-2xl transition-shadow ${flashPlaylistSection ? 'shadow-[0_0_0_2px_rgba(20,184,166,0.45)]' : ''}`}
+                        className={`relative z-10 rounded-2xl transition-shadow lg:min-h-0 lg:overflow-y-auto lg:pl-1 ${flashPlaylistSection ? 'shadow-[0_0_0_2px_rgba(20,184,166,0.45)]' : ''}`}
                     >
-                        <h4 className="text-xs font-bold text-content-muted uppercase tracking-widest mb-4 flex items-center gap-2">
+                        <h4 className="text-xs font-bold text-content-muted uppercase tracking-widest mb-4 flex items-center gap-2 lg:mb-3">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
                             Repertorio / Setlist
                         </h4>
 
-                        <div className="bg-background border border-border rounded-[24px] p-5 shadow-inner min-h-[150px]">
+                        <div className="bg-background border border-border rounded-[24px] p-5 shadow-inner min-h-[150px] lg:p-4">
                             {loadingPlaylist ? (
                                 <div className="flex justify-center py-10"><div className="w-8 h-8 border-4 border-brand/30 border-t-brand rounded-full animate-spin"></div></div>
                             ) : !playlist ? (
@@ -259,20 +259,20 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                                 </div>
                             ) : (
                                 <div className="flex flex-col">
-                                    <div className="flex flex-col items-center justify-center w-full gap-2.5 mb-6">
-                                        <a href={rehearsalHref} target="_blank" rel="noopener noreferrer" className="group relative inline-flex w-full items-center justify-center gap-3 px-8 py-3 overflow-hidden rounded-xl bg-action text-white font-bold text-sm sm:text-base tracking-wide shadow-lg hover:bg-action/90 hover:-translate-y-0.5 transition-all duration-300">
+                                    <div className="flex flex-col items-center justify-center w-full gap-2.5 mb-6 lg:mb-4">
+                                        <a href={rehearsalHref} target="_blank" rel="noopener noreferrer" className="group relative inline-flex w-full items-center justify-center gap-3 px-8 py-3 overflow-hidden rounded-xl bg-action text-white font-bold text-sm sm:text-base tracking-wide shadow-lg hover:bg-action/90 hover:-translate-y-0.5 transition-all duration-300 lg:px-6 lg:py-2.5">
                                             <div className="absolute inset-0 bg-white/15 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-in-out"></div>
                                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" className="shrink-0 relative z-10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                                             <span className="relative z-10">Entrar a Modo Ensayo</span>
                                         </a>
                                     </div>
-                                    <div className="flex flex-col gap-2">
+                                    <div className="flex flex-col gap-2 lg:gap-1.5">
                                         {playlistItems.length > 0 ? playlistItems.map((item, idx) => {
                                             const c = item.canciones || {};
                                             return (
                                                 <article key={idx} className="relative bg-surface border border-border rounded-xl shadow-sm overflow-hidden hover:border-brand/30 transition-colors">
-                                                    <div className="px-3 py-2.5 sm:px-4 sm:py-3 flex items-center gap-3">
-                                                        <div className="w-8 h-8 rounded-full bg-brand/10 text-brand border border-brand/30 flex items-center justify-center font-black shrink-0 text-sm shadow-sm">{idx + 1}</div>
+                                                    <div className="px-3 py-2.5 sm:px-4 sm:py-3 flex items-center gap-3 lg:px-3 lg:py-2.5">
+                                                        <div className="w-8 h-8 rounded-full bg-brand/10 text-brand border border-brand/30 flex items-center justify-center font-black shrink-0 text-sm shadow-sm lg:w-7 lg:h-7 lg:text-xs">{idx + 1}</div>
                                                         <div className="flex-1 min-w-0">
                                                             <h3 className="text-base font-bold tracking-tight text-content truncate">{c.titulo || 'Sin título'}</h3>
                                                             <p className="text-xs font-medium text-content-muted truncate">{c.cantante || 'Redil Sur'}</p>
@@ -282,7 +282,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                                             )
                                         }) : null}
                                     </div>
-                                    <p className="text-[10px] sm:text-xs text-content-muted mt-4 text-center">
+                                    <p className="text-[10px] sm:text-xs text-content-muted mt-4 text-center lg:mt-3">
                                         Última modificación: {new Date(playlist.updated_at).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                                     </p>
                                 </div>
@@ -292,7 +292,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                             <button
                                 type="button"
                                 onClick={handleManageRepertorio}
-                                className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 bg-surface text-content hover:bg-background rounded-xl transition-colors font-bold text-xs tracking-wide border border-border dark:bg-white dark:text-zinc-900 dark:border-white/90 dark:hover:bg-zinc-100"
+                                className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 bg-surface text-content hover:bg-background rounded-xl transition-colors font-bold text-xs tracking-wide border border-border dark:bg-white dark:text-zinc-900 dark:border-white/90 dark:hover:bg-zinc-100 lg:mt-3 lg:py-2"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                                     <path d="M9 18V5l12-2v13"></path>
@@ -308,5 +308,3 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
         </div>
     );
 }
-
-

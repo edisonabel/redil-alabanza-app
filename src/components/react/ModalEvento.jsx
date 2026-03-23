@@ -298,8 +298,8 @@ export default function ModalEvento() {
     if (!isOpen) return null;
 
     return (
-        <div id="event-modal-react" className="fixed inset-0 z-[80] bg-overlay/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 pt-6 pb-[calc(104px+env(safe-area-inset-bottom))] transition-opacity">
-            <div className="bg-surface border border-border rounded-3xl w-full max-w-2xl max-h-[calc(100dvh-132px-env(safe-area-inset-bottom))] overflow-hidden shadow-2xl flex flex-col transform my-auto">
+        <div id="event-modal-react" className="fixed inset-0 z-[80] min-h-[100dvh] bg-overlay/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 pt-6 pb-[calc(104px+env(safe-area-inset-bottom))] lg:items-center lg:p-6 transition-opacity">
+            <div className="bg-surface border border-border rounded-3xl w-full max-w-2xl max-h-[calc(100dvh-132px-env(safe-area-inset-bottom))] lg:max-h-[calc(100dvh-96px)] overflow-hidden shadow-2xl flex flex-col transform my-auto lg:my-0">
                 <div className="p-6 border-b border-border flex justify-between items-center bg-background sticky top-0 z-10">
                     <h2 id="modal-title" className="text-xl font-bold text-content ">
                         {mode === 'new' ? 'Nuevo Evento' : 'Gestionar Evento'}
@@ -445,7 +445,7 @@ export default function ModalEvento() {
             </div>
             {/* ERROR MODAL NATIVO OVERRIDE (COLISIÃ“N) */}
             {collisionDate && (
-                <div className="fixed inset-0 z-[100] bg-overlay/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 pt-6 pb-[calc(104px+env(safe-area-inset-bottom))]" style={{ animation: 'fadeIn 0.2s ease-in-out' }}>
+                <div className="fixed inset-0 z-[100] min-h-[100dvh] bg-overlay/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 pt-6 pb-[calc(104px+env(safe-area-inset-bottom))] lg:items-center lg:p-6" style={{ animation: 'fadeIn 0.2s ease-in-out' }}>
                     <div className="bg-surface rounded-[2rem] shadow-2xl max-w-sm w-full overflow-hidden border border-red-100" style={{ animation: 'scaleUp 0.3s ease-in-out' }}>
                         <style>{`
                             @keyframes scaleUp { from { transform: scale(0.95) translateY(10px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }

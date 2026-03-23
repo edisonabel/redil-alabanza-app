@@ -12,7 +12,6 @@ import {
   ChevronUp,
   Disc3,
   Repeat,
-  Repeat2,
   Waves,
   ListMusic,
   CloudDownload,
@@ -892,10 +891,18 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
   }, [showPadPanel]);
 
   // Etiqueta actual del ruteo
-  const panLabel = panValue === -1 ? 'Click (L)' : panValue === 1 ? 'Pistas (R)' : 'Estéreo';
+  const panLabel = panValue === -1 ? 'Click L' : panValue === 1 ? 'Pistas R' : 'Estereo';
+
+  const upcomingSong = playlist[activeSongIndex + 1] || null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-zinc-950 text-white">
+    <div
+      className="fixed inset-0 z-[100] flex min-h-[100dvh] flex-col overflow-hidden bg-zinc-950 text-white [overscroll-behavior:contain]"
+      style={{
+        paddingLeft: 'env(safe-area-inset-left)',
+        paddingRight: 'env(safe-area-inset-right)',
+      }}
+    >
       {/* Audio elements */}
       {activeSourceUrl && (
         <audio
@@ -1013,45 +1020,50 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
       <audio ref={padAudioRefB} loop preload="auto" />
 
       {/* HEADER */}
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/8 bg-black/60 px-4 backdrop-blur-xl">
-        <div className="flex items-center gap-3">
+      <header className="shrink-0 border-b border-white/8 bg-black/72 backdrop-blur-xl">
+        <div
+          className="flex items-start justify-between gap-3 px-4 pb-3 sm:px-5"
+          style={{ paddingTop: 'max(calc(env(safe-area-inset-top) + 0.35rem), 1rem)' }}
+        >
+          <div className="flex min-w-0 items-center gap-3">
           <button
             type="button"
             onClick={onExit}
-            className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/6 text-zinc-400 transition-colors hover:bg-white/12 hover:text-white"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/6 text-zinc-300 transition-colors hover:bg-white/12 hover:text-white"
           >
             <ArrowLeft className="h-4.5 w-4.5" />
           </button>
-          <div>
+          <div className="min-w-0">
             <p className="text-[9px] font-black uppercase tracking-[0.3em] text-brand">Modo Live · Director</p>
-            <h1 className="text-sm font-black leading-tight tracking-tight">{contextTitle}</h1>
+            <h1 className="mt-1 truncate text-sm font-black leading-tight tracking-tight text-white sm:text-base">{contextTitle}</h1>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
           {/* Indicador Offline Automático */}
           {downloadStatus.active ? (
-            <div className="flex items-center gap-2 rounded-full border border-zinc-500/30 bg-zinc-900 px-3 py-1" title="Descargando audios en segundo plano...">
+            <div className="flex items-center gap-1.5 rounded-full border border-zinc-500/30 bg-zinc-900/90 px-2.5 py-1" title="Descargando audios en segundo plano...">
               <CloudDownload className="h-3 w-3 animate-pulse text-zinc-400" />
-              <span className="text-[10px] font-bold text-zinc-400">{downloadStatus.progress}/{downloadStatus.total}</span>
+              <span className="text-[9px] font-bold text-zinc-400">{downloadStatus.progress}/{downloadStatus.total}</span>
             </div>
           ) : downloadStatus.done ? (
-            <div className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold text-emerald-400" title="Setlist completo guardado en tu dispositivo">
-              <CheckCircle2 className="h-3 w-3" /> OFFLINE
+            <div className="flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-emerald-400" title="Setlist completo guardado en tu dispositivo">
+              <CheckCircle2 className="h-3 w-3" /> Offline
             </div>
           ) : null}
           {/* Indicador Sync */}
-          <div className="flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/8 px-3 py-1.5">
+          <div className="flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/8 px-2.5 py-1.5">
             <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
             </span>
-            <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">SYNC MASTER</span>
+            <span className="text-[9px] font-black uppercase tracking-[0.16em] text-emerald-400">Sync</span>
           </div>
         </div>
+      </div>
       </header>
 
       {/* BODY */}
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-3 pb-2 pt-3 sm:px-4">
 
         {/* ── PANTALLA DE ORACIÓN ── */}
         {activeSong?.isPrayer && (
@@ -1423,9 +1435,13 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
       </div>
 
       {/* FOOTER — TRANSPORTE + TIMELINE */}
-      <footer className="shrink-0 border-t border-white/8 bg-black/70 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur-xl">
+      <footer
+        className="shrink-0 border-t border-white/8 bg-black/78 px-3 pt-3 backdrop-blur-xl sm:px-5"
+        style={{ paddingBottom: 'max(calc(env(safe-area-inset-bottom) + 0.95rem), 1rem)' }}
+      >
         {/* Timeline / seek bar con secciones coloreadas */}
-        <div className="mb-3 flex items-center gap-3">
+        <div className="mb-3 rounded-[1.3rem] border border-white/7 bg-white/[0.03] px-3 py-2.5 sm:px-4">
+          <div className="flex items-center gap-3">
           <span className="w-10 text-right text-[11px] font-bold tabular-nums text-zinc-500">{formatTime(currentTime)}</span>
           <div
             ref={timelineRef}
@@ -1463,12 +1479,13 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
             />
           </div>
           <span className="w-10 text-[11px] font-bold tabular-nums text-zinc-500">{formatTime(duration)}</span>
+          </div>
         </div>
 
         {/* Controles */}
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4">
+        <div className="grid grid-cols-[minmax(7rem,1fr)_auto_minmax(7rem,1fr)] items-stretch gap-2.5 sm:grid-cols-[minmax(8.75rem,1fr)_auto_minmax(8.75rem,1fr)] sm:gap-4">
           {/* Mezcladora izquierda: Pista + Pad (dos filas etiquetadas) */}
-          <div className="flex flex-col gap-1.5 w-36">
+          <div className="flex h-full w-[7rem] max-w-full flex-col justify-center gap-1.5 rounded-[1.2rem] border border-white/8 bg-white/[0.04] px-2.5 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] sm:w-36">
             {/* Fila 1: Volumen pista */}
             <div className="flex items-center gap-1.5">
               <Volume2 className="h-3 w-3 shrink-0 text-zinc-500" />
@@ -1519,7 +1536,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
           </div>
 
           {/* Controles centrales */}
-          <div className="flex items-center gap-2">
+          <div className="justify-self-center flex h-full items-center gap-2.5 rounded-[1.25rem] border border-white/8 bg-white/[0.04] px-3 py-2 sm:gap-3 sm:px-4">
             <button
               type="button"
               onClick={handlePrev}
@@ -1555,16 +1572,24 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
           </div>
 
           {/* Pista + Ruteo (Menú desplegable) + Siguiente */}
-          <div className="relative flex flex-col items-end gap-1.5" ref={routeMenuRef}>
+          <div className="relative flex h-full w-[7rem] max-w-full flex-col justify-between gap-1.5 rounded-[1.2rem] border border-white/10 bg-white/[0.04] px-2.5 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] justify-self-end sm:w-36" ref={routeMenuRef}>
             {/* Botón que abre el menú */}
             <button
               type="button"
               onClick={() => setShowRouteMenu(prev => !prev)}
-              className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-800/80 px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-zinc-300 transition-all hover:bg-zinc-700 hover:text-white"
+              className="w-full rounded-[1rem] border border-white/8 bg-zinc-900/82 px-2.5 py-2 text-left shadow-inner shadow-black/15 transition-all hover:bg-zinc-800 hover:text-white"
             >
-              <ListMusic className="h-3.5 w-3.5" />
-              <span className="max-w-[80px] truncate">{activeSource?.label || 'Original'}</span>
-              <ChevronUp className={`h-3 w-3 transition-transform ${showRouteMenu ? '' : 'rotate-180'}`} />
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1 text-[8px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                  <ListMusic className="h-3 w-3" />
+                  Musica
+                </span>
+                <ChevronUp className={`h-3 w-3 text-zinc-500 transition-transform ${showRouteMenu ? '' : 'rotate-180'}`} />
+              </div>
+              <p className="mt-1 truncate text-[11px] font-black text-zinc-200">{activeSource?.label || 'Original'}</p>
+              <p className="mt-0.5 truncate text-[8px] font-bold uppercase tracking-[0.16em] text-zinc-500">
+                {panLabel}
+              </p>
             </button>
 
             {/* Menú desplegable unificado */}
@@ -1629,15 +1654,17 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
             )}
 
             {/* Info siguiente */}
-            {playlist[activeSongIndex + 1] && (
-              <div className="flex items-center gap-1.5">
-                <div className="min-w-0 text-right">
-                  <p className="text-[8px] font-bold uppercase tracking-widest text-zinc-600">Siguiente</p>
-                  <p className="truncate text-[10px] font-black text-zinc-500 max-w-[100px]">{playlist[activeSongIndex + 1].title}</p>
-                </div>
-                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-600" />
+            <div className="flex w-full items-center justify-between gap-1.5 rounded-[0.95rem] border border-white/6 bg-black/20 px-2 py-1.5">
+              <div className="min-w-0">
+                <p className="text-[8px] font-black uppercase tracking-[0.18em] text-zinc-500">
+                  {upcomingSong ? 'Siguiente' : 'Salida'}
+                </p>
+                <p className="truncate text-[10px] font-bold text-zinc-300">
+                  {upcomingSong ? upcomingSong.title : panLabel}
+                </p>
               </div>
-            )}
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+            </div>
           </div>
         </div>
       </footer>

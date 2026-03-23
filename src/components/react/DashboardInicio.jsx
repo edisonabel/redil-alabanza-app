@@ -664,11 +664,11 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
         </div>
         {birthdaysModalOpen && (
             <div
-                className="fixed inset-0 z-[155] bg-overlay/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 pt-6 pb-[calc(104px+env(safe-area-inset-bottom))]"
+                className="fixed inset-0 z-[155] min-h-[100dvh] bg-overlay/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 pt-6 pb-[calc(104px+env(safe-area-inset-bottom))] lg:items-center lg:p-6"
                 onClick={() => setBirthdaysModalOpen(false)}
             >
                 <div
-                    className="w-full max-w-3xl rounded-[2rem] bg-surface border border-border shadow-2xl p-5 md:p-6 max-h-[calc(100dvh-132px-env(safe-area-inset-bottom))] overflow-hidden flex flex-col my-auto"
+                    className="w-full max-w-3xl rounded-[2rem] bg-surface border border-border shadow-2xl p-5 md:p-6 max-h-[calc(100dvh-132px-env(safe-area-inset-bottom))] lg:max-h-[calc(100dvh-96px)] overflow-hidden flex flex-col my-auto lg:my-0"
                     onClick={(event) => event.stopPropagation()}
                 >
                     <div className="flex items-start justify-between gap-3 mb-4">

@@ -1,8 +1,8 @@
 <div id="globalVocesModalRoot" transition:persist transition:animate="none">
   <div id="vocesModal" class="fixed inset-0 z-[132] hidden" aria-hidden="true">
     <div id="vocesBackdrop" class="absolute inset-0 bg-black/60 backdrop-blur-xl opacity-0 transition-opacity duration-[900ms] [transition-timing-function:cubic-bezier(0.2,0.8,0.2,1)]"></div>
-    <div class="relative z-10 w-full h-full flex items-start justify-center p-3 pt-[max(env(safe-area-inset-top),1.5rem)] md:p-5 md:pt-8 overflow-y-auto">
-      <div id="vocesPanel" class="w-full max-w-lg my-auto opacity-0 translate-y-4 transition-all duration-300 ease-out">
+    <div class="relative z-10 w-full min-h-[100dvh] flex items-start justify-center p-3 pt-[max(env(safe-area-inset-top),1.5rem)] md:items-center md:p-5 overflow-y-auto">
+      <div id="vocesPanel" class="w-full max-w-lg my-auto md:my-0 opacity-0 translate-y-4 transition-all duration-300 ease-out">
         <div class="overflow-hidden rounded-[2rem] border border-zinc-200/80 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.12),_transparent_50%),linear-gradient(180deg,_rgba(255,255,255,0.98),_rgba(244,244,245,0.96))] shadow-[0_24px_80px_rgba(15,23,42,0.12)] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_45%),linear-gradient(180deg,_rgba(9,9,11,0.98),_rgba(15,23,42,0.94))] dark:shadow-[0_28px_80px_rgba(2,6,23,0.6)]">
           <div class="px-4 pt-3.5 pb-2 md:px-6 md:pt-5 md:pb-3">
             <div class="flex items-start justify-between gap-3">
