@@ -22,6 +22,10 @@ const FONT_SCALE_SEQUENCE = ['grande', 'enorme'];
 const SHARP_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_TO_SHARP = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
 const TRANSPOSE_OPTIONS = [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6];
+const TRACK_DEFAULT_GAIN = 1;
+const TRACK_DUCKED_GAIN = 0.38;
+const TRACK_DUCK_IN_DURATION_MS = 3200;
+const TRACK_DUCK_OUT_DURATION_MS = 4200;
 const LATIN_TO_AMERICAN = {
   Do: 'C',
   'Do#': 'C#',
@@ -472,6 +476,8 @@ export default function ModoEnsayoCompacto({
   const trackSourceRef = useRef(null);
   const trackGainRef = useRef(null);
   const trackPanRef = useRef(null);
+  const trackGainFadeFrameRef = useRef(null);
+  const trackTargetGainRef = useRef(TRACK_DEFAULT_GAIN);
   const padAudioRef = useRef(null);
   const [padVolume, setPadVolume] = useState(0.5);
   const [isPadActive, setIsPadActive] = useState(false);
@@ -704,25 +710,83 @@ export default function ModoEnsayoCompacto({
   const currentHeaderOffset = headerHidden
     ? (isLandscapeCompact ? 8 : 18)
     : headerHeight + (isLandscapeCompact ? 8 : 18);
-  const stopMetronome = React.useCallback(() => {
-    metronomeService.stop();
-    setIsMetronomeOn(false);
+  const cancelTrackGainFade = React.useCallback(() => {
+    if (typeof window !== 'undefined' && trackGainFadeFrameRef.current) {
+      window.cancelAnimationFrame(trackGainFadeFrameRef.current);
+      trackGainFadeFrameRef.current = null;
+    }
+    const ctx = audioCtxRef.current;
+    const gainNode = trackGainRef.current;
+    if (ctx && gainNode && ctx.state !== 'closed') {
+      try {
+        gainNode.gain.cancelScheduledValues(ctx.currentTime);
+      } catch {
+        // ignore gain automation cleanup errors
+      }
+    }
   }, []);
-  const handleToggleMetronome = React.useCallback(async () => {
-    if (!currentSongBpm) return;
-    if (isMetronomeOn) {
-      stopMetronome();
+  const setTrackGainImmediate = React.useCallback((nextGain) => {
+    const safeGain = Math.min(TRACK_DEFAULT_GAIN, Math.max(0, Number(nextGain) || 0));
+    trackTargetGainRef.current = safeGain;
+    cancelTrackGainFade();
+
+    const ctx = audioCtxRef.current;
+    const gainNode = trackGainRef.current;
+    if (ctx && gainNode && ctx.state !== 'closed') {
+      gainNode.gain.setValueAtTime(safeGain, ctx.currentTime);
+      if (audioRef.current) {
+        audioRef.current.volume = TRACK_DEFAULT_GAIN;
+      }
       return;
     }
-    await metronomeService.start({
-      tempo: currentSongBpm,
-      beatsPerMeasure: 1,
-      subdivision: 1,
-      accentFirstBeat: false,
-      resetCycle: true,
-    });
-    setIsMetronomeOn(true);
-  }, [currentSongBpm, isMetronomeOn, stopMetronome]);
+
+    if (audioRef.current) {
+      audioRef.current.volume = safeGain;
+    }
+  }, [cancelTrackGainFade]);
+  const fadeTrackGainTo = React.useCallback((targetGain, durationMs) => {
+    const safeTarget = Math.min(TRACK_DEFAULT_GAIN, Math.max(0, Number(targetGain) || 0));
+    const safeDuration = Math.max(0, Number(durationMs) || 0);
+    trackTargetGainRef.current = safeTarget;
+    cancelTrackGainFade();
+
+    const ctx = audioCtxRef.current;
+    const gainNode = trackGainRef.current;
+    if (ctx && gainNode && ctx.state !== 'closed') {
+      const now = ctx.currentTime;
+      const currentValue = Number.isFinite(gainNode.gain.value) ? gainNode.gain.value : TRACK_DEFAULT_GAIN;
+      gainNode.gain.setValueAtTime(currentValue, now);
+      gainNode.gain.linearRampToValueAtTime(safeTarget, now + (safeDuration / 1000));
+      if (audioRef.current) {
+        audioRef.current.volume = TRACK_DEFAULT_GAIN;
+      }
+      return;
+    }
+
+    if (!audioRef.current || typeof window === 'undefined') return;
+
+    const startVolume = Number.isFinite(audioRef.current.volume) ? audioRef.current.volume : TRACK_DEFAULT_GAIN;
+    if (safeDuration === 0) {
+      audioRef.current.volume = safeTarget;
+      return;
+    }
+
+    const startedAt = window.performance.now();
+    const animateVolume = (now) => {
+      const progress = Math.min(1, (now - startedAt) / safeDuration);
+      const eased = 1 - ((1 - progress) * (1 - progress) * (1 - progress));
+      if (audioRef.current) {
+        audioRef.current.volume = startVolume + ((safeTarget - startVolume) * eased);
+      }
+      if (progress < 1) {
+        trackGainFadeFrameRef.current = window.requestAnimationFrame(animateVolume);
+      } else {
+        trackGainFadeFrameRef.current = null;
+      }
+    };
+
+    trackGainFadeFrameRef.current = window.requestAnimationFrame(animateVolume);
+  }, [cancelTrackGainFade]);
   const ensureWebAudioConnected = React.useCallback(async () => {
     const audioElement = audioRef.current;
     if (!audioElement || typeof window === 'undefined') return;
@@ -752,6 +816,8 @@ export default function ModoEnsayoCompacto({
     trackGainRef.current = gainNode;
     trackPanRef.current = panNode;
 
+    gainNode.gain.setValueAtTime(trackTargetGainRef.current, ctx.currentTime);
+    audioElement.volume = TRACK_DEFAULT_GAIN;
     audioElement.dataset.webaudioConnected = 'true';
 
     // Aplicar paneo actual
@@ -759,6 +825,29 @@ export default function ModoEnsayoCompacto({
       panNode.pan.setTargetAtTime(panValue, ctx.currentTime, 0.05);
     }
   }, [panValue]);
+  const stopMetronome = React.useCallback(() => {
+    metronomeService.stop();
+    setIsMetronomeOn(false);
+  }, []);
+  const handleToggleMetronome = React.useCallback(async () => {
+    if (!currentSongBpm) return;
+    if (isMetronomeOn) {
+      stopMetronome();
+      return;
+    }
+    await ensureWebAudioConnected();
+    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+      await audioCtxRef.current.resume();
+    }
+    await metronomeService.start({
+      tempo: currentSongBpm,
+      beatsPerMeasure: 1,
+      subdivision: 1,
+      accentFirstBeat: false,
+      resetCycle: true,
+    });
+    setIsMetronomeOn(true);
+  }, [currentSongBpm, ensureWebAudioConnected, isMetronomeOn, stopMetronome]);
   useEffect(() => {
     const audioElement = audioRef.current;
     if (!audioElement) return undefined;
@@ -835,6 +924,12 @@ export default function ModoEnsayoCompacto({
     padEl.volume = padVolume;
   }, [padVolume, isPadActive]);
   useEffect(() => {
+    fadeTrackGainTo(
+      isMetronomeOn ? TRACK_DUCKED_GAIN : TRACK_DEFAULT_GAIN,
+      isMetronomeOn ? TRACK_DUCK_IN_DURATION_MS : TRACK_DUCK_OUT_DURATION_MS,
+    );
+  }, [fadeTrackGainTo, isMetronomeOn]);
+  useEffect(() => {
     setIsPlaying(false);
     setActiveSectionManualIndex(0);
     setAudioCurrentTime(0);
@@ -854,7 +949,8 @@ export default function ModoEnsayoCompacto({
     setSelectedPlaybackSourceId('original');
     setHeaderHidden(isLandscapeCompact);
     stopMetronome();
-  }, [currentSongKey, currentSong?.mp3, isLandscapeCompact, stopMetronome]);
+    setTrackGainImmediate(TRACK_DEFAULT_GAIN);
+  }, [currentSongKey, currentSong?.mp3, isLandscapeCompact, setTrackGainImmediate, stopMetronome]);
   useEffect(() => {
     if (playbackSources.length === 0) return;
     const hasSelectedSource = playbackSources.some((source) => source.id === selectedPlaybackSourceId);
@@ -1022,8 +1118,10 @@ export default function ModoEnsayoCompacto({
     stopMetronome();
   }, [currentSongBpm, stopMetronome]);
   useEffect(() => () => {
+    cancelTrackGainFade();
+    setTrackGainImmediate(TRACK_DEFAULT_GAIN);
     stopMetronome();
-  }, [stopMetronome]);
+  }, [cancelTrackGainFade, setTrackGainImmediate, stopMetronome]);
   const progressPercent = useMemo(() => {
     if (!timelineDuration) return 0;
     return Math.min(100, Math.max(0, (audioCurrentTime / timelineDuration) * 100));
@@ -1163,7 +1261,7 @@ export default function ModoEnsayoCompacto({
             // Micro Fade-in de 150ms tras el salto
             gainNode.gain.cancelScheduledValues(ctx.currentTime);
             gainNode.gain.setValueAtTime(0, ctx.currentTime);
-            gainNode.gain.linearRampToValueAtTime(1, ctx.currentTime + 0.15);
+            gainNode.gain.linearRampToValueAtTime(trackTargetGainRef.current, ctx.currentTime + 0.15);
           }, 150);
         } else {
           // Fallback si Web Audio no está inicializado
