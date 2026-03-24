@@ -254,12 +254,28 @@ export default function EnsayoPersonalView({
   const songId = String(currentSong?.id || '');
   const safeTracks = Array.isArray(tracksOriginales) ? tracksOriginales.filter(Boolean) : [];
   const safeMembers = Array.isArray(memberOptions) ? memberOptions.filter(Boolean) : [];
-  const currentAssignment = String(songVoiceAssignments?.[songId]?.[userId]?.trackName || '').trim();
   const songAssignments = useMemo(() => (
     songVoiceAssignments?.[songId] && typeof songVoiceAssignments[songId] === 'object'
       ? songVoiceAssignments[songId]
       : {}
   ), [songVoiceAssignments, songId]);
+  const memberIdSet = useMemo(() => (
+    new Set(
+      safeMembers
+        .map((member) => String(member?.id || '').trim())
+        .filter(Boolean)
+    )
+  ), [safeMembers]);
+  const viewerMemberId = useMemo(() => {
+    const safeUserId = String(userId || '').trim();
+    return safeUserId && memberIdSet.has(safeUserId) ? safeUserId : '';
+  }, [memberIdSet, userId]);
+  const validSongAssignments = useMemo(() => (
+    Object.fromEntries(
+      Object.entries(songAssignments).filter(([memberId]) => memberIdSet.has(String(memberId || '').trim()))
+    )
+  ), [memberIdSet, songAssignments]);
+  const currentAssignment = String(validSongAssignments?.[viewerMemberId]?.trackName || '').trim();
 
   const memberNameById = useMemo(() => {
     const entries = safeMembers.map((member) => [
@@ -272,7 +288,7 @@ export default function EnsayoPersonalView({
   const trackAssignmentsByName = useMemo(() => {
     const assignmentsMap = new Map();
 
-    Object.entries(songAssignments).forEach(([memberId, assignment]) => {
+    Object.entries(validSongAssignments).forEach(([memberId, assignment]) => {
       const safeTrackName = String(assignment?.trackName || '').trim();
       if (!safeTrackName) return;
 
@@ -280,23 +296,23 @@ export default function EnsayoPersonalView({
       existing.push({
         id: String(memberId || ''),
         name: memberNameById.get(String(memberId || '')) || 'Integrante',
-        isCurrentUser: String(memberId || '') === String(userId || ''),
+        isCurrentUser: String(memberId || '') === viewerMemberId,
       });
       assignmentsMap.set(safeTrackName, existing);
     });
 
     return assignmentsMap;
-  }, [songAssignments, memberNameById, userId]);
+  }, [validSongAssignments, memberNameById, viewerMemberId]);
 
   const tracksOrdenados = useMemo(() => (
     priorizarVozAsignada(
       safeTracks,
       songId,
-      userId,
-      songVoiceAssignments,
+      viewerMemberId,
+      { [songId]: validSongAssignments },
       getTrackDisplayName
     )
-  ), [safeTracks, songId, userId, songVoiceAssignments]);
+  ), [safeTracks, songId, viewerMemberId, validSongAssignments]);
 
   const tracksParaVista = useMemo(() => (
     tracksOrdenados.map((track, index) => ({
@@ -319,7 +335,7 @@ export default function EnsayoPersonalView({
 
   const [activeTrackId, setActiveTrackId] = useState(null);
   const [selectedMemberId, setSelectedMemberId] = useState(() => (
-    String(userId || safeMembers[0]?.id || '')
+    String(viewerMemberId || safeMembers[0]?.id || '')
   ));
   const [selectedTrackName, setSelectedTrackName] = useState(() => (
     currentAssignment || availableTrackNames[0] || ''
@@ -329,10 +345,12 @@ export default function EnsayoPersonalView({
   const canManageAssignments = canEdit && safeMembers.length > 0 && availableTrackNames.length > 0;
 
   useEffect(() => {
-    if (!selectedMemberId && (userId || safeMembers[0]?.id)) {
-      setSelectedMemberId(String(userId || safeMembers[0]?.id || ''));
+    const fallbackMemberId = String(viewerMemberId || safeMembers[0]?.id || '');
+    if (!fallbackMemberId) return;
+    if (!selectedMemberId || !memberIdSet.has(String(selectedMemberId || '').trim())) {
+      setSelectedMemberId(fallbackMemberId);
     }
-  }, [selectedMemberId, userId, safeMembers]);
+  }, [memberIdSet, selectedMemberId, safeMembers, viewerMemberId]);
 
   useEffect(() => {
     setSelectedTrackName((prev) => {
@@ -355,11 +373,10 @@ export default function EnsayoPersonalView({
   }, [canManageAssignments, showAssignmentPanel]);
 
   const selectedTrackAssignmentOwnerId = useMemo(() => {
-    const songAssignments = songVoiceAssignments?.[songId] || {};
-    return Object.keys(songAssignments).find((memberId) => (
-      String(songAssignments?.[memberId]?.trackName || '').trim() === String(selectedTrackName || '').trim()
+    return Object.keys(validSongAssignments).find((memberId) => (
+      String(validSongAssignments?.[memberId]?.trackName || '').trim() === String(selectedTrackName || '').trim()
     )) || '';
-  }, [songVoiceAssignments, songId, selectedTrackName]);
+  }, [selectedTrackName, validSongAssignments]);
 
   const smartSuggestedMemberId = useMemo(() => {
     if (selectedTrackAssignmentOwnerId) return String(selectedTrackAssignmentOwnerId);
@@ -375,13 +392,14 @@ export default function EnsayoPersonalView({
       setSelectedMemberId(String(smartSuggestedMemberId));
       return;
     }
-    if (!selectedMemberId && (userId || safeMembers[0]?.id)) {
-      setSelectedMemberId(String(userId || safeMembers[0]?.id || ''));
+    const fallbackMemberId = String(viewerMemberId || safeMembers[0]?.id || '');
+    if (fallbackMemberId && (!selectedMemberId || !memberIdSet.has(String(selectedMemberId || '').trim()))) {
+      setSelectedMemberId(fallbackMemberId);
     }
-  }, [hasManualMemberSelection, selectedMemberId, smartSuggestedMemberId, userId, safeMembers]);
+  }, [hasManualMemberSelection, memberIdSet, selectedMemberId, smartSuggestedMemberId, safeMembers, viewerMemberId]);
 
   const selectedMemberAssignment = String(
-    songVoiceAssignments?.[songId]?.[selectedMemberId]?.trackName || ''
+    validSongAssignments?.[selectedMemberId]?.trackName || ''
   ).trim();
 
   const handleTrackClick = (track) => {
@@ -411,7 +429,9 @@ export default function EnsayoPersonalView({
   const selectedMemberLabel = safeMembers.find((member) => String(member?.id || '') === String(selectedMemberId || ''));
   const priorityDescription = currentAssignment
     ? 'Tu voz estara resaltada y aparecera de primera. Las voces asignadas a tus companeros quedaran debajo con su nombre.'
-    : 'Cuando el director te asigne una voz, aparecera aqui resaltada y de primera. Abajo veras tambien las voces de tus companeros.';
+    : viewerMemberId
+      ? 'Cuando el director te asigne una voz, aparecera aqui resaltada y de primera. Abajo veras tambien las voces de tus companeros.'
+      : 'Aqui ves la asignacion vocal del equipo. Las voces asignadas se muestran con el nombre del integrante correspondiente.';
 
   if (!song) return null;
 

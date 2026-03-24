@@ -420,6 +420,10 @@ export default function EnsayoHub({
       }))
       .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }))
   ), [rosterMembers]);
+  const viewerVoiceMemberId = useMemo(() => {
+    const safeUserId = String(userId || '').trim();
+    return voiceMemberOptions.some((member) => String(member?.id || '') === safeUserId) ? safeUserId : '';
+  }, [userId, voiceMemberOptions]);
 
   useEffect(() => {
     setSongVoiceAssignments(sanitizeSongVoiceAssignments(initialSongVoiceAssignments));
@@ -1048,7 +1052,9 @@ export default function EnsayoHub({
               const voiceLabel = normalizeVoiceLabel(song?.voz);
               const isLastViewed = String(song?.id || index) === String(lastViewedSongId || '');
               const currentUserAssignedTrackName = String(
-                songVoiceAssignments?.[String(song?.id || '')]?.[String(userId || '')]?.trackName || ''
+                viewerVoiceMemberId
+                  ? songVoiceAssignments?.[String(song?.id || '')]?.[viewerVoiceMemberId]?.trackName || ''
+                  : ''
               ).trim();
               const hasPersonalVoiceAssignment = Boolean(
                 currentUserAssignedTrackName &&
