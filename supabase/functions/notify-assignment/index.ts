@@ -104,6 +104,8 @@ serve(async (req) => {
           titulo: title,
           contenido: body,
           source: "assignment_notification",
+          url: "/equipo",
+          cta_label: "Ver agenda",
         }),
       });
 

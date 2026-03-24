@@ -117,6 +117,8 @@ export async function POST({ request, cookies }) {
         recipients,
         title,
         body,
+        url: targetUrl,
+        ctaLabel: 'Abrir alerta',
         source: 'admin_alert',
       }),
       sendPushNotifications({

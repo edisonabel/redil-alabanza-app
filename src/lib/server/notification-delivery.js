@@ -16,6 +16,7 @@ const supabaseUrl = rawSupabaseUrl.replace(/\/$/, '');
 const supabaseServiceRoleKey = readEnv('SUPABASE_SERVICE_ROLE_KEY');
 const resendApiKey = readEnv('RESEND_API_KEY');
 const resendFrom = readEnv('RESEND_FROM') || 'Worship App <onboarding@resend.dev>';
+const siteUrl = readEnv('PUBLIC_SITE_URL', 'SITE_URL', 'URL') || 'https://alabanzaredilestadio.com';
 const vapidPublicKey = readEnv('VAPID_PUBLIC_KEY', 'PUBLIC_VAPID_KEY');
 const vapidPrivateKey = readEnv('VAPID_PRIVATE_KEY', 'PRIVATE_VAPID_KEY');
 const vapidSubject = readEnv('VAPID_SUBJECT');
@@ -30,6 +31,55 @@ const escapeHtml = (value = '') =>
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+
+const toAbsoluteUrl = (value = '') => {
+  const safeValue = String(value || '').trim();
+  if (!safeValue) return '';
+
+  try {
+    return new URL(safeValue, `${siteUrl.replace(/\/$/, '')}/`).toString();
+  } catch {
+    return '';
+  }
+};
+
+const renderNotificationEmailHtml = ({
+  title = '',
+  body = '',
+  ctaUrl = '',
+  ctaLabel = 'Abrir app',
+} = {}) => {
+  const safeTitle = escapeHtml(title);
+  const safeBody = escapeHtml(body);
+  const safeCtaLabel = escapeHtml(ctaLabel || 'Abrir app');
+  const absoluteCtaUrl = toAbsoluteUrl(ctaUrl);
+  const ctaMarkup = absoluteCtaUrl
+    ? `
+      <div style="margin-top:24px;">
+        <a href="${absoluteCtaUrl}" style="display:inline-block;padding:12px 18px;border-radius:12px;background:#0ea5e9;color:#ffffff;text-decoration:none;font-weight:700;">
+          ${safeCtaLabel}
+        </a>
+      </div>
+    `
+    : '';
+
+  return `
+    <div style="margin:0;padding:24px;background:#0f172a;font-family:Arial,sans-serif;color:#e5eefb;">
+      <div style="max-width:560px;margin:0 auto;padding:28px;border:1px solid rgba(148,163,184,0.2);border-radius:20px;background:#111827;">
+        <p style="margin:0 0 10px;font-size:11px;letter-spacing:0.22em;font-weight:700;text-transform:uppercase;color:#67e8f9;">
+          Alabanza Redil
+        </p>
+        <h1 style="margin:0 0 12px;font-size:26px;line-height:1.2;color:#ffffff;">
+          ${safeTitle}
+        </h1>
+        <p style="margin:0;font-size:15px;line-height:1.65;color:#cbd5e1;">
+          ${safeBody}
+        </p>
+        ${ctaMarkup}
+      </div>
+    </div>
+  `;
+};
 
 const isExpiredPushError = (error) => {
   const statusCode = typeof error === 'object' && error && 'statusCode' in error ? Number(error.statusCode) : NaN;
@@ -191,7 +241,7 @@ export async function insertInAppNotifications({
   };
 }
 
-const sendEmailWithSupabaseFunction = async ({ perfilId, title, body, source }) => {
+const sendEmailWithSupabaseFunction = async ({ perfilId, title, body, source, url = '', ctaLabel = 'Abrir app' }) => {
   if (!supabaseUrl || !supabaseServiceRoleKey) {
     throw new Error('Faltan credenciales de Supabase para invocar el email transaccional.');
   }
@@ -207,6 +257,8 @@ const sendEmailWithSupabaseFunction = async ({ perfilId, title, body, source }) 
       titulo: title,
       contenido: body,
       source,
+      url,
+      cta_label: ctaLabel,
     }),
   });
 
@@ -260,6 +312,8 @@ export async function sendEmailNotifications({
   recipients = [],
   title = '',
   body = '',
+  url = '',
+  ctaLabel = 'Abrir app',
   htmlBuilder,
   source = 'system',
 }) {
@@ -280,6 +334,10 @@ export async function sendEmailNotifications({
         provider: resendApiKey ? 'resend-api' : 'supabase-edge-function',
         source,
         errorMessage: 'missing-email',
+        metadata: {
+          url: toAbsoluteUrl(url) || null,
+          cta_label: String(ctaLabel || 'Abrir app').trim() || 'Abrir app',
+        },
       })),
     );
   }
@@ -297,7 +355,12 @@ export async function sendEmailNotifications({
   const htmlFor = (recipient) => (
     typeof htmlBuilder === 'function'
       ? htmlBuilder(recipient)
-      : `<strong>${escapeHtml(title)}</strong><p>${escapeHtml(body)}</p>`
+      : renderNotificationEmailHtml({
+        title,
+        body,
+        ctaUrl: url,
+        ctaLabel,
+      })
   );
 
   const results = await Promise.all(
@@ -322,6 +385,8 @@ export async function sendEmailNotifications({
           title,
           body,
           source,
+          url,
+          ctaLabel,
         });
 
         return {
@@ -352,6 +417,10 @@ export async function sendEmailNotifications({
         providerMessageId: result.providerMessageId || null,
         source,
         errorMessage: result.errorMessage || '',
+        metadata: {
+          url: toAbsoluteUrl(url) || null,
+          cta_label: String(ctaLabel || 'Abrir app').trim() || 'Abrir app',
+        },
       })),
     );
   }

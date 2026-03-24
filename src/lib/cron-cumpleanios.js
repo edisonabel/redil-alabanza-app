@@ -68,6 +68,8 @@ export async function enviarPushCumpleaniosHoy({ today = new Date() } = {}) {
         recipients: teamRecipients,
         title: teamTitle,
         body: teamBody,
+        url: '/perfil',
+        ctaLabel: 'Ver perfil',
         source: 'birthday_team',
       }),
       sendPushNotifications({
@@ -88,6 +90,8 @@ export async function enviarPushCumpleaniosHoy({ today = new Date() } = {}) {
         recipients: birthdayRecipient,
         title: selfTitle,
         body: selfBody,
+        url: '/perfil',
+        ctaLabel: 'Ver perfil',
         source: 'birthday_self',
       }),
       sendPushNotifications({

@@ -8,6 +8,8 @@ type NotificationRow = {
   titulo?: string;
   contenido?: string;
   source?: string;
+  url?: string;
+  cta_label?: string;
 };
 
 type WebhookPayload = {
@@ -35,6 +37,66 @@ const escapeHtml = (value: string) =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+
+const toAbsoluteUrl = (value: string) => {
+  const safeValue = value.trim();
+  if (!safeValue) return "";
+
+  const baseUrl =
+    Deno.env.get("PUBLIC_SITE_URL") ??
+    Deno.env.get("SITE_URL") ??
+    Deno.env.get("URL") ??
+    "https://alabanzaredilestadio.com";
+
+  try {
+    return new URL(safeValue, `${baseUrl.replace(/\/$/, "")}/`).toString();
+  } catch {
+    return "";
+  }
+};
+
+const renderNotificationEmailHtml = ({
+  title,
+  body,
+  ctaUrl,
+  ctaLabel,
+}: {
+  title: string;
+  body: string;
+  ctaUrl: string;
+  ctaLabel: string;
+}) => {
+  const safeTitle = escapeHtml(title);
+  const safeBody = escapeHtml(body);
+  const safeCtaLabel = escapeHtml(ctaLabel || "Abrir app");
+  const absoluteCtaUrl = toAbsoluteUrl(ctaUrl);
+  const ctaMarkup = absoluteCtaUrl
+    ? `
+      <div style="margin-top:24px;">
+        <a href="${absoluteCtaUrl}" style="display:inline-block;padding:12px 18px;border-radius:12px;background:#0ea5e9;color:#ffffff;text-decoration:none;font-weight:700;">
+          ${safeCtaLabel}
+        </a>
+      </div>
+    `
+    : "";
+
+  return `
+    <div style="margin:0;padding:24px;background:#0f172a;font-family:Arial,sans-serif;color:#e5eefb;">
+      <div style="max-width:560px;margin:0 auto;padding:28px;border:1px solid rgba(148,163,184,0.2);border-radius:20px;background:#111827;">
+        <p style="margin:0 0 10px;font-size:11px;letter-spacing:0.22em;font-weight:700;text-transform:uppercase;color:#67e8f9;">
+          Alabanza Redil
+        </p>
+        <h1 style="margin:0 0 12px;font-size:26px;line-height:1.2;color:#ffffff;">
+          ${safeTitle}
+        </h1>
+        <p style="margin:0;font-size:15px;line-height:1.65;color:#cbd5e1;">
+          ${safeBody}
+        </p>
+        ${ctaMarkup}
+      </div>
+    </div>
+  `;
+};
 
 const writeAudit = async (
   supabase: ReturnType<typeof createClient>,
@@ -80,6 +142,8 @@ serve(async (req) => {
     const titulo = notification?.titulo?.trim() ?? "";
     const contenido = notification?.contenido?.trim() ?? "";
     const source = notification?.source?.trim() ?? "system";
+    const url = notification?.url?.trim() ?? "";
+    const ctaLabel = notification?.cta_label?.trim() ?? "Abrir app";
 
     if (!perfilId || !titulo || !contenido) {
       return new Response(
@@ -120,7 +184,10 @@ serve(async (req) => {
         provider: "resend-edge-function",
         source,
         error_message: "missing-email",
-        metadata: {},
+        metadata: {
+          url: toAbsoluteUrl(url) || null,
+          cta_label: ctaLabel,
+        },
       });
 
       return new Response(
@@ -138,7 +205,12 @@ serve(async (req) => {
       from: "Worship App <onboarding@resend.dev>",
       to: [email],
       subject: titulo,
-      html: `<strong>${escapeHtml(titulo)}</strong><p>${escapeHtml(contenido)}</p>`,
+      html: renderNotificationEmailHtml({
+        title: titulo,
+        body: contenido,
+        ctaUrl: url,
+        ctaLabel,
+      }),
     });
 
     if (error) {
@@ -154,7 +226,10 @@ serve(async (req) => {
         provider: "resend-edge-function",
         source,
         error_message: typeof error === "object" ? JSON.stringify(error) : String(error),
-        metadata: {},
+        metadata: {
+          url: toAbsoluteUrl(url) || null,
+          cta_label: ctaLabel,
+        },
       });
       return new Response(JSON.stringify({ error: "Failed to send email", details: error }), {
         status: 502,
@@ -173,7 +248,10 @@ serve(async (req) => {
       provider: "resend-edge-function",
       provider_message_id: data?.id ?? null,
       source,
-      metadata: {},
+      metadata: {
+        url: toAbsoluteUrl(url) || null,
+        cta_label: ctaLabel,
+      },
     });
 
     return new Response(
