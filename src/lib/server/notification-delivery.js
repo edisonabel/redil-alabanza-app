@@ -37,6 +37,60 @@ const isExpiredPushError = (error) => {
   return statusCode === 404 || statusCode === 410 || status === 404 || status === 410;
 };
 
+const buildAuditRow = ({
+  channel = 'in_app',
+  status = 'sent',
+  recipient = null,
+  notificationId = null,
+  email = '',
+  endpoint = '',
+  title = '',
+  body = '',
+  provider = '',
+  providerMessageId = '',
+  source = 'system',
+  errorMessage = '',
+  metadata = {},
+} = {}) => ({
+  channel,
+  status,
+  perfil_id: recipient?.id || null,
+  notification_id: notificationId || null,
+  email: String(email || recipient?.email || '').trim() || null,
+  endpoint: String(endpoint || '').trim() || null,
+  title: String(title || '').trim(),
+  body: String(body || '').trim(),
+  provider: String(provider || '').trim() || null,
+  provider_message_id: String(providerMessageId || '').trim() || null,
+  source: String(source || 'system').trim() || 'system',
+  error_message: String(errorMessage || '').trim() || null,
+  metadata: metadata && typeof metadata === 'object' ? metadata : {},
+});
+
+const writeDeliveryAuditRows = async (rows = []) => {
+  const safeRows = Array.isArray(rows)
+    ? rows.filter((row) => row?.channel && row?.status && row?.title && row?.body)
+    : [];
+
+  if (!safeRows.length) {
+    return { attempted: 0, inserted: 0, failed: 0 };
+  }
+
+  try {
+    const client = getServiceRoleClient();
+    const { error } = await client.from('notification_delivery_audit').insert(safeRows);
+    if (error) {
+      console.error('Notification audit insert error:', error);
+      return { attempted: safeRows.length, inserted: 0, failed: safeRows.length };
+    }
+
+    return { attempted: safeRows.length, inserted: safeRows.length, failed: 0 };
+  } catch (error) {
+    console.error('Notification audit unexpected error:', error);
+    return { attempted: safeRows.length, inserted: 0, failed: safeRows.length };
+  }
+};
+
 export const getServiceRoleClient = () => {
   if (!supabaseUrl || !supabaseServiceRoleKey) {
     throw new Error('Faltan credenciales de Supabase para el motor de notificaciones.');
@@ -68,7 +122,7 @@ export async function listNotificationRecipients({ excludeUserIds = [] } = {}) {
   const excluded = new Set(
     (Array.isArray(excludeUserIds) ? excludeUserIds : [excludeUserIds])
       .map((value) => String(value || '').trim())
-      .filter(Boolean)
+      .filter(Boolean),
   );
 
   const { data, error } = await client
@@ -93,6 +147,7 @@ export async function insertInAppNotifications({
   title = '',
   body = '',
   type = 'recordatorio',
+  source = 'system',
 }) {
   const safeRecipients = Array.isArray(recipients) ? recipients.filter((item) => item?.id) : [];
   if (!safeRecipients.length || !title || !body) {
@@ -107,10 +162,28 @@ export async function insertInAppNotifications({
     tipo: type,
   }));
 
-  const { error } = await client.from('notificaciones').insert(rows);
+  const { data: insertedRows, error } = await client
+    .from('notificaciones')
+    .insert(rows)
+    .select('id, perfil_id');
   if (error) {
     throw error;
   }
+
+  const recipientById = new Map(safeRecipients.map((recipient) => [recipient.id, recipient]));
+  await writeDeliveryAuditRows(
+    (insertedRows || []).map((row) => buildAuditRow({
+      channel: 'in_app',
+      status: 'sent',
+      recipient: recipientById.get(row?.perfil_id),
+      notificationId: row?.id || null,
+      title,
+      body,
+      provider: 'supabase',
+      source,
+      metadata: { type },
+    })),
+  );
 
   return {
     attempted: rows.length,
@@ -118,7 +191,7 @@ export async function insertInAppNotifications({
   };
 }
 
-const sendEmailWithSupabaseFunction = async ({ perfilId, title, body }) => {
+const sendEmailWithSupabaseFunction = async ({ perfilId, title, body, source }) => {
   if (!supabaseUrl || !supabaseServiceRoleKey) {
     throw new Error('Faltan credenciales de Supabase para invocar el email transaccional.');
   }
@@ -133,13 +206,24 @@ const sendEmailWithSupabaseFunction = async ({ perfilId, title, body }) => {
       perfil_id: perfilId,
       titulo: title,
       contenido: body,
+      source,
     }),
   });
 
+  const jsonPayload = await response.json().catch(() => null);
   if (!response.ok) {
-    const payload = await response.text().catch(() => '');
-    throw new Error(payload || `Supabase email function respondió ${response.status}`);
+    throw new Error(
+      jsonPayload?.error ||
+      jsonPayload?.message ||
+      `Supabase email function responded ${response.status}`,
+    );
   }
+
+  return {
+    provider: 'supabase-edge-function',
+    providerMessageId: jsonPayload?.resend_id || null,
+    sentTo: jsonPayload?.sent_to || null,
+  };
 };
 
 const sendEmailWithResendApi = async ({ email, title, html }) => {
@@ -157,10 +241,19 @@ const sendEmailWithResendApi = async ({ email, title, html }) => {
     }),
   });
 
+  const jsonPayload = await response.json().catch(() => null);
   if (!response.ok) {
-    const payload = await response.text().catch(() => '');
-    throw new Error(payload || `Resend respondió ${response.status}`);
+    throw new Error(
+      jsonPayload?.message ||
+      jsonPayload?.error ||
+      `Resend responded ${response.status}`,
+    );
   }
+
+  return {
+    provider: 'resend-api',
+    providerMessageId: jsonPayload?.id || jsonPayload?.data?.id || null,
+  };
 };
 
 export async function sendEmailNotifications({
@@ -168,16 +261,35 @@ export async function sendEmailNotifications({
   title = '',
   body = '',
   htmlBuilder,
+  source = 'system',
 }) {
-  const safeRecipients = Array.isArray(recipients)
-    ? recipients.filter((item) => item?.id && item?.email)
+  const recipientsWithIdentity = Array.isArray(recipients)
+    ? recipients.filter((item) => item?.id)
     : [];
+  const skippedRecipients = recipientsWithIdentity.filter((item) => !item?.email);
+  const safeRecipients = recipientsWithIdentity.filter((item) => item?.email);
+
+  if (title && body && skippedRecipients.length > 0) {
+    await writeDeliveryAuditRows(
+      skippedRecipients.map((recipient) => buildAuditRow({
+        channel: 'email',
+        status: 'skipped',
+        recipient,
+        title,
+        body,
+        provider: resendApiKey ? 'resend-api' : 'supabase-edge-function',
+        source,
+        errorMessage: 'missing-email',
+      })),
+    );
+  }
 
   if (!safeRecipients.length || !title || !body) {
     return {
       attempted: 0,
       sent: 0,
       failed: 0,
+      skipped: skippedRecipients.length,
       provider: resendApiKey ? 'resend-api' : 'supabase-edge-function',
     };
   }
@@ -188,33 +300,70 @@ export async function sendEmailNotifications({
       : `<strong>${escapeHtml(title)}</strong><p>${escapeHtml(body)}</p>`
   );
 
-  const results = await Promise.allSettled(
+  const results = await Promise.all(
     safeRecipients.map(async (recipient) => {
-      if (resendApiKey) {
-        await sendEmailWithResendApi({
-          email: recipient.email,
-          title,
-          html: htmlFor(recipient),
-        });
-        return recipient.id;
-      }
+      try {
+        if (resendApiKey) {
+          const result = await sendEmailWithResendApi({
+            email: recipient.email,
+            title,
+            html: htmlFor(recipient),
+          });
 
-      await sendEmailWithSupabaseFunction({
-        perfilId: recipient.id,
-        title,
-        body,
-      });
-      return recipient.id;
-    })
+          return {
+            status: 'sent',
+            recipient,
+            ...result,
+          };
+        }
+
+        const result = await sendEmailWithSupabaseFunction({
+          perfilId: recipient.id,
+          title,
+          body,
+          source,
+        });
+
+        return {
+          status: 'sent',
+          recipient,
+          ...result,
+        };
+      } catch (error) {
+        return {
+          status: 'failed',
+          recipient,
+          provider: resendApiKey ? 'resend-api' : 'supabase-edge-function',
+          errorMessage: error instanceof Error ? error.message : String(error || 'email-send-failed'),
+        };
+      }
+    }),
   );
 
-  const sent = results.filter((result) => result.status === 'fulfilled').length;
+  if (resendApiKey) {
+    await writeDeliveryAuditRows(
+      results.map((result) => buildAuditRow({
+        channel: 'email',
+        status: result.status,
+        recipient: result.recipient,
+        title,
+        body,
+        provider: result.provider,
+        providerMessageId: result.providerMessageId || null,
+        source,
+        errorMessage: result.errorMessage || '',
+      })),
+    );
+  }
+
+  const sent = results.filter((result) => result.status === 'sent').length;
   const failed = results.length - sent;
 
   return {
     attempted: results.length,
     sent,
     failed,
+    skipped: skippedRecipients.length,
     provider: resendApiKey ? 'resend-api' : 'supabase-edge-function',
   };
 }
@@ -261,6 +410,7 @@ export async function sendPushNotifications({
   title = '',
   body = '',
   url = '/',
+  source = 'system',
 }) {
   const safeRecipients = Array.isArray(recipients) ? recipients.filter((item) => item?.id) : [];
   if (!safeRecipients.length || !title || !body) {
@@ -276,6 +426,20 @@ export async function sendPushNotifications({
   }
 
   if (!ensureWebPushConfigured()) {
+    await writeDeliveryAuditRows(
+      safeRecipients.map((recipient) => buildAuditRow({
+        channel: 'push',
+        status: 'skipped',
+        recipient,
+        title,
+        body,
+        provider: 'web-push',
+        source,
+        errorMessage: 'missing-vapid',
+        metadata: { url },
+      })),
+    );
+
     return {
       attemptedUsers: safeRecipients.length,
       uniqueSubscriptions: 0,
@@ -290,6 +454,8 @@ export async function sendPushNotifications({
 
   const userIds = safeRecipients.map((recipient) => recipient.id);
   const rows = await loadPushSubscriptionRows(userIds);
+  const recipientById = new Map(safeRecipients.map((recipient) => [recipient.id, recipient]));
+  const subscriptionsByUser = new Map();
   const uniqueRows = [];
   const seenEndpoints = new Set();
 
@@ -297,10 +463,41 @@ export async function sendPushNotifications({
     const endpoint = String(row?.endpoint || row?.suscripcion?.endpoint || '').trim();
     if (!endpoint || seenEndpoints.has(endpoint)) continue;
     seenEndpoints.add(endpoint);
-    uniqueRows.push({
+
+    const normalizedRow = {
       ...row,
       endpoint,
-    });
+    };
+
+    uniqueRows.push(normalizedRow);
+
+    const userId = String(row?.user_id || '').trim();
+    if (userId) {
+      const existingRows = subscriptionsByUser.get(userId) || [];
+      existingRows.push(normalizedRow);
+      subscriptionsByUser.set(userId, existingRows);
+    }
+  }
+
+  const recipientsWithoutSubscription = safeRecipients.filter((recipient) => {
+    const entries = subscriptionsByUser.get(String(recipient.id || '').trim()) || [];
+    return entries.length === 0;
+  });
+
+  if (recipientsWithoutSubscription.length > 0) {
+    await writeDeliveryAuditRows(
+      recipientsWithoutSubscription.map((recipient) => buildAuditRow({
+        channel: 'push',
+        status: 'skipped',
+        recipient,
+        title,
+        body,
+        provider: 'web-push',
+        source,
+        errorMessage: 'no-subscription',
+        metadata: { url },
+      })),
+    );
   }
 
   if (!uniqueRows.length) {
@@ -322,11 +519,14 @@ export async function sendPushNotifications({
     url,
   });
 
-  const results = await Promise.allSettled(
+  const results = await Promise.all(
     uniqueRows.map(async (row) => {
       try {
         await webpush.sendNotification(row.suscripcion, payload);
-        return { status: 'sent', id: row.id };
+        return {
+          status: 'sent',
+          row,
+        };
       } catch (error) {
         if (isExpiredPushError(error) && row?.id) {
           const { error: deleteError } = await client
@@ -335,23 +535,43 @@ export async function sendPushNotifications({
             .eq('id', row.id);
 
           if (!deleteError) {
-            return { status: 'deleted', id: row.id };
+            return {
+              status: 'deleted',
+              row,
+            };
           }
         }
 
-        return { status: 'failed', id: row.id };
+        return {
+          status: 'failed',
+          row,
+          errorMessage: error instanceof Error ? error.message : String(error || 'push-send-failed'),
+        };
       }
-    })
+    }),
+  );
+
+  await writeDeliveryAuditRows(
+    results.map((result) => buildAuditRow({
+      channel: 'push',
+      status: result.status,
+      recipient: recipientById.get(String(result?.row?.user_id || '').trim()),
+      endpoint: result?.row?.endpoint || result?.row?.suscripcion?.endpoint || '',
+      title,
+      body,
+      provider: 'web-push',
+      source,
+      errorMessage: result.errorMessage || '',
+      metadata: {
+        url,
+        subscription_id: result?.row?.id || null,
+      },
+    })),
   );
 
   const summary = results.reduce((acc, result) => {
-    if (result.status !== 'fulfilled') {
-      acc.failed += 1;
-      return acc;
-    }
-
-    if (result.value.status === 'sent') acc.sent += 1;
-    else if (result.value.status === 'deleted') acc.deleted += 1;
+    if (result.status === 'sent') acc.sent += 1;
+    else if (result.status === 'deleted') acc.deleted += 1;
     else acc.failed += 1;
     return acc;
   }, {
@@ -366,7 +586,7 @@ export async function sendPushNotifications({
     sent: summary.sent,
     failed: summary.failed,
     deleted: summary.deleted,
-    skipped: Math.max(0, safeRecipients.length - uniqueRows.length),
+    skipped: recipientsWithoutSubscription.length,
     provider: 'web-push',
   };
 }

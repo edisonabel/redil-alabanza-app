@@ -28,6 +28,20 @@ const configureWebPush = () => {
   return true;
 };
 
+const writeAudit = async (
+  supabase: ReturnType<typeof createClient>,
+  row: Record<string, unknown>,
+) => {
+  try {
+    const { error } = await supabase.from("notification_delivery_audit").insert([row]);
+    if (error) {
+      console.error("notification_delivery_audit insert error:", error);
+    }
+  } catch (error) {
+    console.error("notification_delivery_audit unexpected error:", error);
+  }
+};
+
 serve(async (req) => {
   try {
     if (req.method !== "POST") {
@@ -89,6 +103,7 @@ serve(async (req) => {
           perfil_id: perfilId,
           titulo: title,
           contenido: body,
+          source: "assignment_notification",
         }),
       });
 
@@ -131,6 +146,22 @@ serve(async (req) => {
 
         push.total = uniqueSubscriptions.size;
 
+        if (uniqueSubscriptions.size === 0) {
+          await writeAudit(supabase, {
+            channel: "push",
+            status: "skipped",
+            perfil_id: perfilId,
+            title,
+            body,
+            provider: "web-push",
+            source: "assignment_notification",
+            error_message: "no-subscription",
+            metadata: {
+              url: "/equipo",
+            },
+          });
+        }
+
         const results = await Promise.allSettled(
           Array.from(uniqueSubscriptions.values()).map(async (row) => {
             try {
@@ -152,22 +183,71 @@ serve(async (req) => {
                 }
               }
 
-              return { status: "failed" as const };
+              return {
+                status: "failed" as const,
+                errorMessage: error instanceof Error ? error.message : String(error),
+              };
             }
           }),
         );
 
-        for (const result of results) {
+        for (const [index, result] of results.entries()) {
+          const row = Array.from(uniqueSubscriptions.values())[index];
           if (result.status !== "fulfilled") {
             push.failed += 1;
+            await writeAudit(supabase, {
+              channel: "push",
+              status: "failed",
+              perfil_id: perfilId,
+              endpoint: typeof row?.suscripcion?.endpoint === "string" ? row.suscripcion.endpoint : null,
+              title,
+              body,
+              provider: "web-push",
+              source: "assignment_notification",
+              error_message: result.reason instanceof Error ? result.reason.message : String(result.reason),
+              metadata: {
+                url: "/equipo",
+                subscription_id: row?.id || null,
+              },
+            });
             continue;
           }
 
           if (result.value.status === "sent") push.sent += 1;
           else if (result.value.status === "deleted") push.deleted += 1;
           else push.failed += 1;
+
+          await writeAudit(supabase, {
+            channel: "push",
+            status: result.value.status,
+            perfil_id: perfilId,
+            endpoint: typeof row?.suscripcion?.endpoint === "string" ? row.suscripcion.endpoint : null,
+            title,
+            body,
+            provider: "web-push",
+            source: "assignment_notification",
+            error_message: "errorMessage" in result.value ? result.value.errorMessage : null,
+            metadata: {
+              url: "/equipo",
+              subscription_id: row?.id || null,
+            },
+          });
         }
       }
+    } else {
+      await writeAudit(supabase, {
+        channel: "push",
+        status: "skipped",
+        perfil_id: perfilId,
+        title,
+        body,
+        provider: "web-push",
+        source: "assignment_notification",
+        error_message: "missing-vapid",
+        metadata: {
+          url: "/equipo",
+        },
+      });
     }
 
     return new Response(

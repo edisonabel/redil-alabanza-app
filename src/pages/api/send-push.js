@@ -111,17 +111,20 @@ export async function POST({ request, cookies }) {
         title,
         body,
         type: 'recordatorio',
+        source: 'admin_alert',
       }),
       sendEmailNotifications({
         recipients,
         title,
         body,
+        source: 'admin_alert',
       }),
       sendPushNotifications({
         recipients,
         title,
         body,
         url: targetUrl,
+        source: 'admin_alert',
       }),
     ]);
 

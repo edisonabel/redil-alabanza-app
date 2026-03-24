@@ -62,34 +62,40 @@ export async function enviarPushCumpleaniosHoy({ today = new Date() } = {}) {
         title: teamTitle,
         body: teamBody,
         type: 'recordatorio',
+        source: 'birthday_team',
       }),
       sendEmailNotifications({
         recipients: teamRecipients,
         title: teamTitle,
         body: teamBody,
+        source: 'birthday_team',
       }),
       sendPushNotifications({
         recipients: teamRecipients,
         title: teamTitle,
         body: teamBody,
         url: '/perfil',
+        source: 'birthday_team',
       }),
       insertInAppNotifications({
         recipients: birthdayRecipient,
         title: selfTitle,
         body: selfBody,
         type: 'recordatorio',
+        source: 'birthday_self',
       }),
       sendEmailNotifications({
         recipients: birthdayRecipient,
         title: selfTitle,
         body: selfBody,
+        source: 'birthday_self',
       }),
       sendPushNotifications({
         recipients: birthdayRecipient,
         title: selfTitle,
         body: selfBody,
         url: '/perfil',
+        source: 'birthday_self',
       }),
     ]);
 

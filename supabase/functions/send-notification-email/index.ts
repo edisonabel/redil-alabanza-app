@@ -7,6 +7,7 @@ type NotificationRow = {
   perfil_id?: string;
   titulo?: string;
   contenido?: string;
+  source?: string;
 };
 
 type WebhookPayload = {
@@ -34,6 +35,20 @@ const escapeHtml = (value: string) =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+
+const writeAudit = async (
+  supabase: ReturnType<typeof createClient>,
+  row: Record<string, unknown>,
+) => {
+  try {
+    const { error } = await supabase.from("notification_delivery_audit").insert([row]);
+    if (error) {
+      console.error("notification_delivery_audit insert error:", error);
+    }
+  } catch (error) {
+    console.error("notification_delivery_audit unexpected error:", error);
+  }
+};
 
 serve(async (req) => {
   if (req.method !== "POST") {
@@ -64,6 +79,7 @@ serve(async (req) => {
     const perfilId = notification?.perfil_id?.trim() ?? "";
     const titulo = notification?.titulo?.trim() ?? "";
     const contenido = notification?.contenido?.trim() ?? "";
+    const source = notification?.source?.trim() ?? "system";
 
     if (!perfilId || !titulo || !contenido) {
       return new Response(
@@ -93,6 +109,20 @@ serve(async (req) => {
 
     const email = (perfil?.email ?? "").trim();
     if (!email || !isValidEmail(email)) {
+      await writeAudit(supabase, {
+        channel: "email",
+        status: "skipped",
+        perfil_id: perfilId,
+        notification_id: notification?.id ?? null,
+        email: email || null,
+        title: titulo,
+        body: contenido,
+        provider: "resend-edge-function",
+        source,
+        error_message: "missing-email",
+        metadata: {},
+      });
+
       return new Response(
         JSON.stringify({
           error: "Perfil has no valid email assigned",
@@ -113,11 +143,38 @@ serve(async (req) => {
 
     if (error) {
       console.error("Resend send error:", error);
+      await writeAudit(supabase, {
+        channel: "email",
+        status: "failed",
+        perfil_id: perfilId,
+        notification_id: notification?.id ?? null,
+        email,
+        title: titulo,
+        body: contenido,
+        provider: "resend-edge-function",
+        source,
+        error_message: typeof error === "object" ? JSON.stringify(error) : String(error),
+        metadata: {},
+      });
       return new Response(JSON.stringify({ error: "Failed to send email", details: error }), {
         status: 502,
         headers: JSON_HEADERS,
       });
     }
+
+    await writeAudit(supabase, {
+      channel: "email",
+      status: "sent",
+      perfil_id: perfilId,
+      notification_id: notification?.id ?? null,
+      email,
+      title: titulo,
+      body: contenido,
+      provider: "resend-edge-function",
+      provider_message_id: data?.id ?? null,
+      source,
+      metadata: {},
+    });
 
     return new Response(
       JSON.stringify({
@@ -140,4 +197,3 @@ serve(async (req) => {
     );
   }
 });
-
