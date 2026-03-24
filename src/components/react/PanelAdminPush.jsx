@@ -51,15 +51,15 @@ export default function PanelAdminPush({ isAdmin = false }) {
         setFeedback({
           type: 'error',
           title: 'No se pudo enviar',
-          message: result?.error || 'El endpoint de push respondió con un error.',
+          message: result?.error || 'El motor de alertas respondio con un error.',
         });
         return;
       }
 
       setFeedback({
         type: 'success',
-        title: 'Notificación enviada',
-        message: `Enviado con éxito a ${result?.sent ?? 0} dispositivos.`,
+        title: 'Alerta enviada',
+        message: `Se procesaron ${result?.recipients ?? 0} destinatarios entre campanita, correo y push.`,
         meta: result,
       });
       setForm(initialForm);
@@ -80,20 +80,19 @@ export default function PanelAdminPush({ isAdmin = false }) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.22em] text-content-muted">
-            Notificaciones Push
+            Alertas del Equipo
           </p>
           <h2 className="mt-2 text-2xl font-black tracking-tight text-content">
-            Centro de envíos al equipo
+            Centro de alertas multicanal
           </h2>
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-content-muted">
-            Envía un aviso rápido a todos los dispositivos suscritos. Úsalo para ensayos,
-            recordatorios y alertas importantes del ministerio.
+            Envia una alerta y el sistema la reparte por campanita interna, correo y push a quienes tengan el canal activo.
           </p>
         </div>
 
         <div className="inline-flex items-center gap-2 rounded-2xl border border-action/25 bg-action/10 px-3 py-2 text-xs font-semibold text-action">
           <span className="inline-flex h-2.5 w-2.5 rounded-full bg-action" aria-hidden="true"></span>
-          Envío masivo habilitado
+          Envio multicanal habilitado
         </div>
       </div>
 
@@ -101,14 +100,14 @@ export default function PanelAdminPush({ isAdmin = false }) {
         <div className="space-y-4">
           <label className="block">
             <span className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-content-muted">
-              Título
+              Titulo
             </span>
             <input
               type="text"
               name="title"
               value={form.title}
               onChange={handleChange}
-              placeholder="¡Ensayo este Jueves!"
+              placeholder="Ensayo este jueves"
               className="h-12 w-full rounded-2xl border border-border bg-background px-4 text-sm text-content outline-none transition focus:border-action focus:ring-2 focus:ring-action/15"
             />
           </label>
@@ -121,7 +120,7 @@ export default function PanelAdminPush({ isAdmin = false }) {
               name="body"
               value={form.body}
               onChange={handleChange}
-              placeholder="Músicos, recuerden traer sus partituras y llegar con tiempo."
+              placeholder="Musicos, recuerden traer sus partituras y llegar con tiempo."
               rows={5}
               className="w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm leading-relaxed text-content outline-none transition focus:border-action focus:ring-2 focus:ring-action/15 resize-none"
             />
@@ -154,9 +153,9 @@ export default function PanelAdminPush({ isAdmin = false }) {
                 </svg>
               </div>
               <div>
-                <p className="text-sm font-bold text-content">Resumen del envío</p>
+                <p className="text-sm font-bold text-content">Resumen del envio</p>
                 <p className="text-xs text-content-muted">
-                  El endpoint notificará a todas las suscripciones activas y limpiará las expiradas.
+                  Se crea la alerta interna y luego se intenta entregar por correo y push usando la misma base de destinatarios.
                 </p>
               </div>
             </div>
@@ -168,8 +167,8 @@ export default function PanelAdminPush({ isAdmin = false }) {
             >
               {isSending ? (
                 <>
-                  <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" aria-hidden="true"></span>
-                  Cargando...
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" aria-hidden="true"></span>
+                  Enviando...
                 </>
               ) : (
                 <>
@@ -177,7 +176,7 @@ export default function PanelAdminPush({ isAdmin = false }) {
                     <path d="m22 2-7 20-4-9-9-4Z" />
                     <path d="M22 2 11 13" />
                   </svg>
-                  Enviar Notificación a Todo el Equipo
+                  Enviar Alerta al Equipo
                 </>
               )}
             </button>
@@ -204,23 +203,23 @@ export default function PanelAdminPush({ isAdmin = false }) {
                 {feedback.meta && (
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-content-muted">
                     <div className="rounded-xl border border-border bg-surface px-3 py-2">
-                      Enviadas: <span className="text-content">{feedback.meta.sent ?? 0}</span>
+                      Internas: <span className="text-content">{feedback.meta.inApp?.inserted ?? 0}</span>
                     </div>
                     <div className="rounded-xl border border-border bg-surface px-3 py-2">
-                      Limpiadas: <span className="text-content">{feedback.meta.deleted ?? 0}</span>
+                      Correos: <span className="text-content">{feedback.meta.email?.sent ?? 0}</span>
                     </div>
                     <div className="rounded-xl border border-border bg-surface px-3 py-2">
-                      Fallidas: <span className="text-content">{feedback.meta.failed ?? 0}</span>
+                      Push: <span className="text-content">{feedback.meta.push?.sent ?? 0}</span>
                     </div>
                     <div className="rounded-xl border border-border bg-surface px-3 py-2">
-                      Total: <span className="text-content">{feedback.meta.total ?? 0}</span>
+                      Destinatarios: <span className="text-content">{feedback.meta.recipients ?? 0}</span>
                     </div>
                   </div>
                 )}
               </div>
             ) : (
               <p className="mt-3 text-sm leading-relaxed text-content-muted">
-                Aquí verás el resultado del envío masivo cuando el endpoint termine de procesar las suscripciones.
+                Aqui veras cuantos recibieron campanita, correo y push cuando el motor termine de procesar la alerta.
               </p>
             )}
           </div>

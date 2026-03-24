@@ -151,20 +151,7 @@ export default function ModalEvento() {
         };
 
     }, [user, evId]);
-
-    const [hasRosterChanges, setHasRosterChanges] = useState(false);
-
     const handleClose = () => {
-        if (hasRosterChanges) {
-            if (typeof window !== 'undefined' && typeof window.toggleModalGlobal === 'function') {
-                window.toggleModalGlobal(false);
-            } else {
-                setIsOpen(false);
-            }
-            setTimeout(() => window.location.reload(), 150);
-            return;
-        }
-
         if (typeof window !== 'undefined' && typeof window.toggleModalGlobal === 'function') {
             window.toggleModalGlobal(false);
         } else {
@@ -414,7 +401,13 @@ export default function ModalEvento() {
                                 esAcustico={esAcustico}
                                 isStrictModerator={isStrictModerator}
                                 dbData={dbData}
-                                onRosterChange={() => setHasRosterChanges(true)}
+                                onRosterChange={(nextAsignaciones) => {
+                                    setDbData((prev) => (
+                                        prev
+                                            ? { ...prev, asignaciones: nextAsignaciones }
+                                            : { asignaciones: nextAsignaciones }
+                                    ));
+                                }}
                             />
                         </div>
 

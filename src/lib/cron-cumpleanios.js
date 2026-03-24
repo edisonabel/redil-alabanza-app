@@ -1,47 +1,20 @@
-import { createClient } from '@supabase/supabase-js';
-import webpush from 'web-push';
-
-const rawUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_URL || '';
-const supabaseUrl = rawUrl.replace(/\/$/, '');
-const supabaseServiceRoleKey = import.meta.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const vapidPublicKey = import.meta.env.VAPID_PUBLIC_KEY || import.meta.env.PUBLIC_VAPID_KEY || '';
-const vapidPrivateKey = import.meta.env.VAPID_PRIVATE_KEY || '';
-const vapidSubject = import.meta.env.VAPID_SUBJECT || '';
-
-const serviceRoleClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-  },
-});
-
-const isExpiredPushError = (error) => {
-  const statusCode = typeof error === 'object' && error && 'statusCode' in error ? Number(error.statusCode) : NaN;
-  const status = typeof error === 'object' && error && 'status' in error ? Number(error.status) : NaN;
-  return statusCode === 404 || statusCode === 410 || status === 404 || status === 410;
-};
-
-const configureWebPush = () => {
-  if (!supabaseUrl || !supabaseServiceRoleKey) {
-    throw new Error('Faltan credenciales de Supabase para el cron de cumpleaños.');
-  }
-
-  if (!vapidPublicKey || !vapidPrivateKey || !vapidSubject) {
-    throw new Error('Faltan variables VAPID para el cron de cumpleaños.');
-  }
-
-  webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
-};
+import {
+  getServiceRoleClient,
+  insertInAppNotifications,
+  listNotificationRecipients,
+  sendEmailNotifications,
+  sendPushNotifications,
+} from './server/notification-delivery.js';
 
 export async function enviarPushCumpleaniosHoy({ today = new Date() } = {}) {
-  configureWebPush();
+  const serviceRoleClient = getServiceRoleClient();
 
   const month = today.getUTCMonth() + 1;
   const day = today.getUTCDate();
 
   const { data: perfiles, error: perfilesError } = await serviceRoleClient
     .from('perfiles')
-    .select('id, nombre, fecha_nacimiento')
+    .select('id, nombre, email, fecha_nacimiento')
     .not('fecha_nacimiento', 'is', null);
 
   if (perfilesError) {
@@ -55,72 +28,91 @@ export async function enviarPushCumpleaniosHoy({ today = new Date() } = {}) {
   });
 
   if (cumpleaneros.length === 0) {
-    return { ok: true, sent: 0, deleted: 0, failed: 0, usuarios: 0 };
+    return {
+      ok: true,
+      usuarios: 0,
+      inApp: { inserted: 0 },
+      email: { sent: 0, failed: 0 },
+      push: { sent: 0, failed: 0, deleted: 0, skipped: 0 },
+    };
   }
 
-  const cumpleanerosIds = cumpleaneros.map((perfil) => perfil.id);
-  const nombrePorUsuario = new Map(cumpleaneros.map((perfil) => [perfil.id, perfil.nombre || 'Miembro del equipo']));
+  const recipients = await listNotificationRecipients();
+  const totals = {
+    inApp: { inserted: 0, attempted: 0 },
+    email: { sent: 0, attempted: 0, failed: 0 },
+    push: { sent: 0, attemptedUsers: 0, uniqueSubscriptions: 0, failed: 0, deleted: 0, skipped: 0 },
+  };
 
-  const { data: subscriptions, error: subscriptionsError } = await serviceRoleClient
-    .from('suscripciones_push')
-    .select('id, user_id, suscripcion')
-    .in('user_id', cumpleanerosIds);
+  for (const cumpleanero of cumpleaneros) {
+    const cumpleaneroId = String(cumpleanero?.id || '').trim();
+    const cumpleaneroNombre = String(cumpleanero?.nombre || 'Miembro del equipo').trim() || 'Miembro del equipo';
 
-  if (subscriptionsError) {
-    throw subscriptionsError;
-  }
+    const teamRecipients = recipients.filter((recipient) => recipient.id && recipient.id !== cumpleaneroId);
+    const birthdayRecipient = recipients.filter((recipient) => recipient.id === cumpleaneroId);
 
-  let sent = 0;
-  let deleted = 0;
-  let failed = 0;
+    const teamTitle = '🎂 Cumpleaños en el Equipo';
+    const teamBody = `Hoy es el cumpleaños de ${cumpleaneroNombre}. Toma un momento para felicitarle y bendecir su vida en este dia especial.`;
+    const selfTitle = '🥳 ¡Feliz Cumpleaños!';
+    const selfBody = `Feliz cumpleaños, ${cumpleaneroNombre}. Damos gracias a Dios por tu vida y tu servicio en el ministerio.`;
 
-  await Promise.all(
-    (subscriptions || []).map(async (row) => {
-      if (!row?.suscripcion || typeof row.suscripcion !== 'object') return;
-
-      const nombre = nombrePorUsuario.get(row.user_id) || 'Miembro del equipo';
-      const payload = JSON.stringify({
-        title: 'Feliz cumpleaños',
-        body: `Hoy celebramos a ${nombre}. Que tengas un día muy especial.`,
+    const [teamInApp, teamEmail, teamPush, selfInApp, selfEmail, selfPush] = await Promise.all([
+      insertInAppNotifications({
+        recipients: teamRecipients,
+        title: teamTitle,
+        body: teamBody,
+        type: 'recordatorio',
+      }),
+      sendEmailNotifications({
+        recipients: teamRecipients,
+        title: teamTitle,
+        body: teamBody,
+      }),
+      sendPushNotifications({
+        recipients: teamRecipients,
+        title: teamTitle,
+        body: teamBody,
         url: '/perfil',
-      });
+      }),
+      insertInAppNotifications({
+        recipients: birthdayRecipient,
+        title: selfTitle,
+        body: selfBody,
+        type: 'recordatorio',
+      }),
+      sendEmailNotifications({
+        recipients: birthdayRecipient,
+        title: selfTitle,
+        body: selfBody,
+      }),
+      sendPushNotifications({
+        recipients: birthdayRecipient,
+        title: selfTitle,
+        body: selfBody,
+        url: '/perfil',
+      }),
+    ]);
 
-      try {
-        await webpush.sendNotification(row.suscripcion, payload);
-        sent += 1;
-      } catch (error) {
-        if (isExpiredPushError(error)) {
-          const { error: deleteError } = await serviceRoleClient
-            .from('suscripciones_push')
-            .delete()
-            .eq('id', row.id);
+    totals.inApp.inserted += (teamInApp?.inserted || 0) + (selfInApp?.inserted || 0);
+    totals.inApp.attempted += (teamInApp?.attempted || 0) + (selfInApp?.attempted || 0);
 
-          if (deleteError) {
-            console.error('Cron cumpleaños: no se pudo limpiar suscripción expirada', {
-              id: row.id,
-              error: deleteError,
-            });
-          } else {
-            deleted += 1;
-          }
-          return;
-        }
+    totals.email.sent += (teamEmail?.sent || 0) + (selfEmail?.sent || 0);
+    totals.email.attempted += (teamEmail?.attempted || 0) + (selfEmail?.attempted || 0);
+    totals.email.failed += (teamEmail?.failed || 0) + (selfEmail?.failed || 0);
 
-        failed += 1;
-        console.error('Cron cumpleaños: fallo enviando push', {
-          id: row.id,
-          userId: row.user_id,
-          error,
-        });
-      }
-    })
-  );
+    totals.push.sent += (teamPush?.sent || 0) + (selfPush?.sent || 0);
+    totals.push.attemptedUsers += (teamPush?.attemptedUsers || 0) + (selfPush?.attemptedUsers || 0);
+    totals.push.uniqueSubscriptions += (teamPush?.uniqueSubscriptions || 0) + (selfPush?.uniqueSubscriptions || 0);
+    totals.push.failed += (teamPush?.failed || 0) + (selfPush?.failed || 0);
+    totals.push.deleted += (teamPush?.deleted || 0) + (selfPush?.deleted || 0);
+    totals.push.skipped += (teamPush?.skipped || 0) + (selfPush?.skipped || 0);
+  }
 
   return {
     ok: true,
-    sent,
-    deleted,
-    failed,
     usuarios: cumpleaneros.length,
+    inApp: totals.inApp,
+    email: totals.email,
+    push: totals.push,
   };
 }

@@ -1,7 +1,10 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
+import { getAssignmentProfileId, getVisibleVoiceAssignments, normalizeRosterAssignments } from '../../lib/roster-utils';
 
-export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr, evEstadoStr, esAcustico = false, isStrictModerator, dbData }) {
+const MAX_VOZ_SLOTS = 4;
+
+export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr, evEstadoStr, esAcustico = false, isStrictModerator, dbData, onRosterChange }) {
     const [asignaciones, setAsignaciones] = useState(dbData?.asignaciones || []);
     const [roles, setRoles] = useState([]);
 
@@ -16,12 +19,6 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
     const [equipoPickerOpen, setEquipoPickerOpen] = useState(false);
     const [equiposList, setEquiposList] = useState([]);
     const [equipoLoading, setEquipoLoading] = useState(false);
-
-    useEffect(() => {
-        if (dbData?.asignaciones) {
-            setAsignaciones(dbData.asignaciones);
-        }
-    }, [dbData]);
 
     useEffect(() => {
         const hasCajaRole = (list = []) =>
@@ -57,6 +54,31 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         ];
     }, [roles, esAcustico]);
 
+    const normalizedAssignments = useMemo(
+        () => normalizeRosterAssignments(asignaciones, effectiveRoles, { maxVoiceSlots: MAX_VOZ_SLOTS }),
+        [asignaciones, effectiveRoles],
+    );
+
+    const broadcastRosterChange = (nextAssignments) => {
+        onRosterChange?.(nextAssignments);
+
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('redil:roster-updated', {
+                detail: {
+                    eventoId: evId,
+                    asignaciones: nextAssignments,
+                },
+            }));
+        }
+    };
+
+    useEffect(() => {
+        if (!dbData?.asignaciones || effectiveRoles.length === 0) return;
+        setAsignaciones(
+            normalizeRosterAssignments(dbData.asignaciones, effectiveRoles, { maxVoiceSlots: MAX_VOZ_SLOTS }),
+        );
+    }, [dbData, effectiveRoles]);
+
     const fetchCurrentRoster = async () => {
         if (!evId || evId.startsWith('virtual|')) return;
         const { data } = await supabase
@@ -65,9 +87,16 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
             .eq('id', evId)
             .single();
         if (data) {
-            setAsignaciones(data.asignaciones || []);
+            const nextAssignments = normalizeRosterAssignments(data.asignaciones || [], effectiveRoles, { maxVoiceSlots: MAX_VOZ_SLOTS });
+            setAsignaciones(nextAssignments);
+            broadcastRosterChange(nextAssignments);
         }
     };
+
+    useEffect(() => {
+        if (!evId || evId.startsWith('virtual|') || effectiveRoles.length === 0) return;
+        fetchCurrentRoster();
+    }, [evId, effectiveRoles]);
 
     const handleRemove = async (assignmentId, rolId = null) => {
         if (!evId || evId.startsWith('virtual|')) return;
@@ -152,8 +181,8 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
             .map((rol) => rol.id);
 
         if (isVoicePool) {
-            const existingVoiceAssignments = asignaciones.filter((a) => voiceRoleIds.includes(a.rol_id));
-            const duplicateVoice = existingVoiceAssignments.some((a) => (a.perfil_id || a.perfiles?.id) === perfilId);
+            const existingVoiceAssignments = normalizedAssignments.filter((a) => voiceRoleIds.includes(a.rol_id));
+            const duplicateVoice = existingVoiceAssignments.some((a) => getAssignmentProfileId(a) === perfilId);
 
             if (duplicateVoice) {
                 alert('Esta persona ya está asignada en la sección de Voces para este evento.');
@@ -194,7 +223,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
 
             if (isInstrumento) {
                 // Check if user already has an instrument role
-                const userExistingAsig = asignaciones.filter(a => a.perfil_id === perfilId);
+                const userExistingAsig = normalizedAssignments.filter(a => getAssignmentProfileId(a) === perfilId);
                 const hasConflictingInstrument = userExistingAsig.some(a => {
                     if (a.rol_id === saveRolId) return false; // same role is fine to overwrite
                     const existingRol = effectiveRoles.find(r => r.id === a.rol_id);
@@ -318,6 +347,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
     const renderAvatar = (asig, rolMatch) => {
         const p = asig.perfiles;
         if (!p) return null;
+        const assignmentProfileId = getAssignmentProfileId(asig) || p.id || 'perfil-desconocido';
 
         const names = p.nombre.trim().split(' ');
         const displayName = `${names[0]}`.trim();
@@ -329,7 +359,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         const colorSeccion = isN1 ? 'bg-rol-dir' : (isN2 ? 'bg-rol-let' : (isVoz ? 'bg-rol-voc' : 'bg-rol-ban'));
 
         return (
-            <div key={`${asig.rol_id}-${asig.perfil_id}`} className="flex flex-col items-center gap-1 group relative cursor-pointer hover:bg-neutral/20 rounded-xl p-2 -m-2 transition-colors" title={`${p.nombre} (${rolMatch.nombre})`} onClick={() => !isStrictModerator && openPicker(rolMatch.id, rolMatch.nombre)}>
+            <div key={asig.id || `${asig.rol_id}-${assignmentProfileId}`} className="flex flex-col items-center gap-1 group relative cursor-pointer hover:bg-neutral/20 rounded-xl p-2 -m-2 transition-colors" title={`${p.nombre} (${rolMatch.nombre})`} onClick={() => !isStrictModerator && openPicker(rolMatch.id, rolMatch.nombre)}>
                 <div className="relative">
                     {p.avatar_url ? (
                         <img src={p.avatar_url} alt={p.nombre} loading="lazy" decoding="async" className="w-[42px] h-[42px] sm:w-[46px] sm:h-[46px] shrink-0 rounded-full object-cover shadow-sm border border-border" />
@@ -354,13 +384,10 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
     const direccion = [];
     const letras = [];
     const banda = [];
-    const MAX_VOZ_SLOTS = 4;
     const voiceRoles = effectiveRoles.filter(rol => String(rol.codigo || '').startsWith('voz_'));
     const voiceRoleIds = new Set(voiceRoles.map((rol) => rol.id));
     const voicePoolRole = { id: '_voz_pool', nombre: 'Voz' };
-    const vocesAsignadas = asignaciones
-        .filter((asig) => voiceRoleIds.has(asig.rol_id))
-        .slice(0, MAX_VOZ_SLOTS)
+    const vocesAsignadas = getVisibleVoiceAssignments(normalizedAssignments, effectiveRoles, { maxVoiceSlots: MAX_VOZ_SLOTS })
         .map((asig) => {
             const rolMatch = effectiveRoles.find((rol) => rol.id === asig.rol_id) || voiceRoles[0];
             return rolMatch ? renderAvatar(asig, rolMatch) : null;
@@ -373,7 +400,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         const isVoz = String(rolMatch.codigo || '').startsWith('voz_');
         const isCajaRole = /(^|_)(caja|cajon)(_|\b)/.test(String(rolMatch.codigo || ''));
 
-        const assigned = asignaciones.filter(a => a.rol_id === rolMatch.id);
+        const assigned = normalizedAssignments.filter(a => a.rol_id === rolMatch.id);
 
         if (isCajaRole && !esAcustico && assigned.length === 0) {
             return;
@@ -560,12 +587,6 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         </div>
     );
 }
-
-
-
-
-
-
 
 
 

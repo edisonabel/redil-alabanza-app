@@ -1,79 +1,199 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import webpush from "npm:web-push@3.6.7";
 
-// Interfaz para el Payload del Trigger de Postgres que invoca esta función
 interface WebhookPayload {
-    asignacion_id: string;
-    perfil_id: string;
+  asignacion_id?: string;
+  perfil_id?: string;
 }
 
+const JSON_HEADERS = { "Content-Type": "application/json" };
+
+const isExpiredPushError = (error: unknown) => {
+  const statusCode = typeof error === "object" && error && "statusCode" in error ? Number(error.statusCode) : NaN;
+  const status = typeof error === "object" && error && "status" in error ? Number(error.status) : NaN;
+  return statusCode === 404 || statusCode === 410 || status === 404 || status === 410;
+};
+
+const configureWebPush = () => {
+  const vapidPublicKey = Deno.env.get("VAPID_PUBLIC_KEY") ?? Deno.env.get("PUBLIC_VAPID_KEY") ?? "";
+  const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY") ?? Deno.env.get("PRIVATE_VAPID_KEY") ?? "";
+  const vapidSubject = Deno.env.get("VAPID_SUBJECT") ?? "";
+
+  if (!vapidPublicKey || !vapidPrivateKey || !vapidSubject) {
+    return false;
+  }
+
+  webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
+  return true;
+};
+
 serve(async (req) => {
-    try {
-        // 1. Validar el Request Method
-        if (req.method !== 'POST') {
-            return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
-        }
-
-        // 2. Extraer Payload JWT Seguro
-        const payload: WebhookPayload = await req.json()
-
-        // Inicializar Supabase Admin Client usando Storage Secrets
-        const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
-        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-        const supabase = createClient(supabaseUrl, supabaseServiceKey)
-
-        // 3. Buscar la información del músico y su asignación
-        const { data: musico, error: musicoError } = await supabase
-            .from('perfiles')
-            .select('email, nombre, push_token')
-            .eq('id', payload.perfil_id)
-            .single()
-
-        if (musicoError || !musico) throw new Error('Músico no encontrado')
-
-        // 4. Integraciones de Notificación (Placeholder de Fases)
-        console.log(`[ALERTA] Preparando envío para: ${musico.email}`)
-
-        // 4A. Simulación: Enviar OTP/Email de Asignación por Supabase Auth Admin
-        /*
-          await supabase.auth.admin.generateLink({
-            type: 'magiclink',
-            email: musico.email,
-            options: { redirectTo: 'https://tu-app.com/mi-agenda' }
-          })
-        */
-
-        // 4B. Simulación: SMTP / Resend.com (Descomentar al implementar)
-        /*
-          const res = await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${Deno.env.get('RESEND_API_KEY')}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              from: 'Redil App <no-reply@redil.com>',
-              to: musico.email,
-              subject: `Nueva Asignación Dominical`,
-              html: `<p>Hola ${musico.nombre}, has sido programado...</p>`
-            })
-          });
-        */
-
-        // 4C. Simulación: Expo Push Notifications (Mobile App)
-        if (musico.push_token) {
-            console.log(`[PUSH] Disparando a dispositivo móvil: ${musico.push_token}`)
-            // const expoPushParams = { to: musico.push_token, title: "Nueva Asignación", body: "Revisa tu agenda." }...
-        }
-
-        return new Response(
-            JSON.stringify({ success: true, message: `Email & Push programados para ${musico.email}` }),
-            { headers: { "Content-Type": "application/json" }, status: 200 }
-        )
-    } catch (error) {
-        return new Response(
-            JSON.stringify({ error: error.message }),
-            { headers: { "Content-Type": "application/json" }, status: 400 }
-        )
+  try {
+    if (req.method !== "POST") {
+      return new Response(JSON.stringify({ error: "Method not allowed" }), {
+        status: 405,
+        headers: JSON_HEADERS,
+      });
     }
-})
+
+    const payload = (await req.json()) as WebhookPayload;
+    const perfilId = String(payload?.perfil_id || "").trim();
+
+    if (!perfilId) {
+      return new Response(JSON.stringify({ error: "perfil_id is required" }), {
+        status: 400,
+        headers: JSON_HEADERS,
+      });
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return new Response(JSON.stringify({ error: "Missing Supabase env vars" }), {
+        status: 500,
+        headers: JSON_HEADERS,
+      });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    const { data: musico, error: musicoError } = await supabase
+      .from("perfiles")
+      .select("id, email, nombre")
+      .eq("id", perfilId)
+      .maybeSingle();
+
+    if (musicoError || !musico) {
+      return new Response(JSON.stringify({ error: "Musico no encontrado" }), {
+        status: 404,
+        headers: JSON_HEADERS,
+      });
+    }
+
+    const title = "Nueva asignacion de servicio";
+    const body = `Hola ${musico.nombre || "musico"}, revisa tu agenda. Tienes una nueva asignacion en el equipo.`;
+
+    let emailSent = false;
+    let emailError: string | null = null;
+
+    try {
+      const emailResponse = await fetch(`${supabaseUrl}/functions/v1/send-notification-email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${supabaseServiceKey}`,
+        },
+        body: JSON.stringify({
+          perfil_id: perfilId,
+          titulo: title,
+          contenido: body,
+        }),
+      });
+
+      emailSent = emailResponse.ok;
+      if (!emailResponse.ok) {
+        emailError = await emailResponse.text();
+      }
+    } catch (error) {
+      emailError = error instanceof Error ? error.message : String(error);
+    }
+
+    let push = {
+      enabled: false,
+      sent: 0,
+      failed: 0,
+      deleted: 0,
+      total: 0,
+    };
+
+    if (configureWebPush()) {
+      push.enabled = true;
+      const { data: subscriptions, error: subscriptionsError } = await supabase
+        .from("suscripciones_push")
+        .select("id, suscripcion")
+        .eq("user_id", perfilId);
+
+      if (subscriptionsError) {
+        push.failed += 1;
+      } else {
+        const uniqueSubscriptions = new Map<string, { id: string; suscripcion: Record<string, unknown> }>();
+
+        for (const row of subscriptions || []) {
+          const endpoint = typeof row?.suscripcion?.endpoint === "string" ? row.suscripcion.endpoint : "";
+          if (!endpoint || uniqueSubscriptions.has(endpoint)) continue;
+          uniqueSubscriptions.set(endpoint, {
+            id: String(row?.id || ""),
+            suscripcion: row?.suscripcion || {},
+          });
+        }
+
+        push.total = uniqueSubscriptions.size;
+
+        const results = await Promise.allSettled(
+          Array.from(uniqueSubscriptions.values()).map(async (row) => {
+            try {
+              await webpush.sendNotification(row.suscripcion, JSON.stringify({
+                title,
+                body,
+                url: "/equipo",
+              }));
+              return { status: "sent" as const };
+            } catch (error) {
+              if (isExpiredPushError(error) && row.id) {
+                const { error: deleteError } = await supabase
+                  .from("suscripciones_push")
+                  .delete()
+                  .eq("id", row.id);
+
+                if (!deleteError) {
+                  return { status: "deleted" as const };
+                }
+              }
+
+              return { status: "failed" as const };
+            }
+          }),
+        );
+
+        for (const result of results) {
+          if (result.status !== "fulfilled") {
+            push.failed += 1;
+            continue;
+          }
+
+          if (result.value.status === "sent") push.sent += 1;
+          else if (result.value.status === "deleted") push.deleted += 1;
+          else push.failed += 1;
+        }
+      }
+    }
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        perfil_id: perfilId,
+        email: {
+          sent: emailSent,
+          error: emailError,
+        },
+        push,
+      }),
+      {
+        status: 200,
+        headers: JSON_HEADERS,
+      },
+    );
+  } catch (error) {
+    return new Response(
+      JSON.stringify({
+        error: error instanceof Error ? error.message : String(error),
+      }),
+      {
+        status: 400,
+        headers: JSON_HEADERS,
+      },
+    );
+  }
+});

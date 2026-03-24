@@ -10,6 +10,7 @@ import speakerIcon from '@iconify-icons/mdi/speaker';
 import scriptTextIcon from '@iconify-icons/mdi/script-text';
 import musicNoteIcon from '@iconify-icons/mdi/music-note';
 import { supabase } from '../../lib/supabase';
+import { normalizeRosterAssignments } from '../../lib/roster-utils';
 
 const MONTH_CHUNK_SIZE = 2;
 const EVENT_SELECT = '*, asignaciones(id, rol_id, perfiles(id, nombre, email, avatar_url))';
@@ -112,6 +113,25 @@ export default function CalendarioGrid({
     // UI Modals
     const [deleteConfirmTarget, setDeleteConfirmTarget] = useState(null);
     const [isDeleting, setIsDeleting] = useState(false);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return undefined;
+
+        const handleRosterUpdated = (event) => {
+            const eventoId = event?.detail?.eventoId;
+            const nextAssignments = event?.detail?.asignaciones;
+            if (!eventoId || !Array.isArray(nextAssignments)) return;
+
+            setEventos((prev) => prev.map((ev) => (
+                String(ev?.id) === String(eventoId)
+                    ? { ...ev, asignaciones: nextAssignments }
+                    : ev
+            )));
+        };
+
+        window.addEventListener('redil:roster-updated', handleRosterUpdated);
+        return () => window.removeEventListener('redil:roster-updated', handleRosterUpdated);
+    }, []);
 
     // --- INICIALIZACIÃƒâ€œN Y MERGE POR FECHA (TIMEZONE SAFE) ---
     // Helper estricto de Strings para evitar offsets de zona horaria del cliente
@@ -333,15 +353,15 @@ export default function CalendarioGrid({
     const renderRoster = (dbData) => {
         if (!dbData || !dbData.asignaciones) return null;
 
-        const asignaciones = dbData.asignaciones;
         const dictRoles = initialRoles || [];
+        const MAX_VOZ_SLOTS = 4;
+        const asignaciones = normalizeRosterAssignments(dbData.asignaciones, dictRoles, { maxVoiceSlots: MAX_VOZ_SLOTS });
 
         // Agrupadores
         const direccion = [];
         const letras = [];
         const vocesAsignadas = [];
         const banda = [];
-        const MAX_VOZ_SLOTS = 4;
 
         asignaciones.forEach(asig => {
             if (!asig.perfiles) return;
@@ -626,8 +646,8 @@ export default function CalendarioGrid({
 
         const horaInicio = fechaObj.toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit' });
         const timeString = cardData.dbData?.hora_fin ? `${horaInicio} - ${cardData.dbData.hora_fin.substring(0, 5)}` : horaInicio;
-        const rosterDb = cardData.dbData?.asignaciones || [];
         const dictRoles = initialRoles || [];
+        const rosterDb = normalizeRosterAssignments(cardData.dbData?.asignaciones || [], dictRoles, { maxVoiceSlots: 4 });
         const miAsignacion = rosterDb.find((asig) => asig.perfiles?.id === sessionUser?.id || asig.perfiles?.email === sessionUser?.email);
 
         let isModerator = false;
@@ -1140,11 +1160,6 @@ export default function CalendarioGrid({
         </div>
     );
 }
-
-
-
-
-
 
 
 

@@ -189,43 +189,69 @@ export default function BotonNotificaciones({
         return;
       }
 
-      const { data: existingRows, error: existingError } = await supabase
-        .from('suscripciones_push')
-        .select('id, suscripcion')
-        .eq('user_id', userId);
-
-      if (existingError) {
-        console.error('Push: no se pudo verificar suscripciones existentes', existingError);
-        setStatusMessage('No se pudo validar tu suscripción actual. Revisa tu conexión.');
-        return;
-      }
-
-      const existingMatch = (existingRows || []).find((row) => {
-        const savedEndpoint = row?.suscripcion?.endpoint;
-        return typeof savedEndpoint === 'string' && savedEndpoint === subscriptionEndpoint;
-      });
-
       let saveError = null;
 
-      if (existingMatch?.id) {
-        const { error } = await supabase
-          .from('suscripciones_push')
-          .update({
-            suscripcion: subscriptionJson,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', existingMatch.id);
-        saveError = error;
-      } else {
-        const { error } = await supabase
-          .from('suscripciones_push')
-          .insert([
+      const { error: upsertError } = await supabase
+        .from('suscripciones_push')
+        .upsert(
+          [
             {
               user_id: userId,
+              endpoint: subscriptionEndpoint,
               suscripcion: subscriptionJson,
             },
-          ]);
-        saveError = error;
+          ],
+          {
+            onConflict: 'endpoint',
+          }
+        );
+
+      if (!upsertError) {
+        saveError = null;
+      } else {
+        const missingModernColumns = ['endpoint', 'updated_at'].some((columnName) => (
+          String(upsertError?.message || '').toLowerCase().includes(columnName)
+        ));
+
+        if (!missingModernColumns) {
+          saveError = upsertError;
+        } else {
+          const { data: existingRows, error: existingError } = await supabase
+            .from('suscripciones_push')
+            .select('id, suscripcion')
+            .eq('user_id', userId);
+
+          if (existingError) {
+            console.error('Push: no se pudo verificar suscripciones existentes', existingError);
+            setStatusMessage('No se pudo validar tu suscripción actual. Revisa tu conexión.');
+            return;
+          }
+
+          const existingMatch = (existingRows || []).find((row) => {
+            const savedEndpoint = row?.suscripcion?.endpoint;
+            return typeof savedEndpoint === 'string' && savedEndpoint === subscriptionEndpoint;
+          });
+
+          if (existingMatch?.id) {
+            const { error } = await supabase
+              .from('suscripciones_push')
+              .update({
+                suscripcion: subscriptionJson,
+              })
+              .eq('id', existingMatch.id);
+            saveError = error;
+          } else {
+            const { error } = await supabase
+              .from('suscripciones_push')
+              .insert([
+                {
+                  user_id: userId,
+                  suscripcion: subscriptionJson,
+                },
+              ]);
+            saveError = error;
+          }
+        }
       }
 
       if (saveError) {

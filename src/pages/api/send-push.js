@@ -1,5 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
-import webpush from 'web-push';
+import {
+  insertInAppNotifications,
+  listNotificationRecipients,
+  sendEmailNotifications,
+  sendPushNotifications,
+} from '../../lib/server/notification-delivery.js';
 
 export const prerender = false;
 
@@ -20,14 +25,6 @@ const supabaseServiceRoleKey =
   import.meta.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   '';
-const vapidPublicKey =
-  import.meta.env.VAPID_PUBLIC_KEY ||
-  process.env.VAPID_PUBLIC_KEY ||
-  import.meta.env.PUBLIC_VAPID_KEY ||
-  process.env.PUBLIC_VAPID_KEY ||
-  '';
-const vapidPrivateKey = import.meta.env.VAPID_PRIVATE_KEY || process.env.VAPID_PRIVATE_KEY || '';
-const vapidSubject = import.meta.env.VAPID_SUBJECT || process.env.VAPID_SUBJECT || '';
 
 const authClient = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
@@ -47,33 +44,13 @@ const jsonHeaders = {
   'content-type': 'application/json',
 };
 
-const isExpiredPushError = (error) => {
-  const statusCode = typeof error === 'object' && error && 'statusCode' in error ? Number(error.statusCode) : NaN;
-  const status = typeof error === 'object' && error && 'status' in error ? Number(error.status) : NaN;
-  return statusCode === 404 || statusCode === 410 || status === 404 || status === 410;
-};
-
 const getErrorMessage = (error) => {
   if (error instanceof Error) return error.message;
   return String(error || 'Error desconocido');
 };
 
-const configureWebPush = () => {
-  if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
-    throw new Error('Faltan credenciales de Supabase en variables de entorno.');
-  }
-
-  if (!vapidPublicKey || !vapidPrivateKey || !vapidSubject) {
-    throw new Error('Faltan variables VAPID necesarias para enviar Web Push.');
-  }
-
-  webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
-};
-
 export async function POST({ request, cookies }) {
   try {
-    configureWebPush();
-
     const token = cookies.get('sb-access-token')?.value || '';
     if (!token) {
       return new Response(JSON.stringify({ error: 'No autenticado.' }), {
@@ -101,7 +78,7 @@ export async function POST({ request, cookies }) {
       .single();
 
     if (perfilError || !perfil?.is_admin) {
-      return new Response(JSON.stringify({ error: 'Solo administradores pueden enviar notificaciones push.' }), {
+      return new Response(JSON.stringify({ error: 'Solo administradores pueden enviar alertas.' }), {
         status: 403,
         headers: jsonHeaders,
       });
@@ -119,72 +96,42 @@ export async function POST({ request, cookies }) {
       });
     }
 
-    const { data: subscriptions, error: subscriptionsError } = await serviceRoleClient
-      .from('suscripciones_push')
-      .select('id, user_id, suscripcion');
+    const recipients = await listNotificationRecipients();
 
-    if (subscriptionsError) {
-      throw subscriptionsError;
+    if (recipients.length === 0) {
+      return new Response(JSON.stringify({ error: 'No hay destinatarios válidos para esta alerta.' }), {
+        status: 422,
+        headers: jsonHeaders,
+      });
     }
 
-    const validSubscriptions = (subscriptions || []).filter(
-      (row) => row?.suscripcion && typeof row.suscripcion === 'object'
-    );
-
-    const notificationPayload = JSON.stringify({
-      title,
-      body,
-      url: targetUrl,
-    });
-
-    let sent = 0;
-    let deleted = 0;
-    let failed = 0;
-
-    await Promise.all(
-      validSubscriptions.map(async (row) => {
-        try {
-          await webpush.sendNotification(row.suscripcion, notificationPayload);
-          sent += 1;
-        } catch (error) {
-          if (isExpiredPushError(error)) {
-            if (row.id) {
-              const { error: deleteError } = await serviceRoleClient
-                .from('suscripciones_push')
-                .delete()
-                .eq('id', row.id);
-
-              if (deleteError) {
-                console.error('Push cleanup: no se pudo eliminar la suscripción expirada', {
-                  id: row.id,
-                  error: deleteError,
-                });
-              } else {
-                deleted += 1;
-              }
-            } else {
-
-            }
-            return;
-          }
-
-          failed += 1;
-          console.error('Push send: fallo enviando notificación', {
-            id: row.id,
-            userId: row.user_id,
-            error: getErrorMessage(error),
-          });
-        }
-      })
-    );
+    const [inApp, email, push] = await Promise.all([
+      insertInAppNotifications({
+        recipients,
+        title,
+        body,
+        type: 'recordatorio',
+      }),
+      sendEmailNotifications({
+        recipients,
+        title,
+        body,
+      }),
+      sendPushNotifications({
+        recipients,
+        title,
+        body,
+        url: targetUrl,
+      }),
+    ]);
 
     return new Response(
       JSON.stringify({
         ok: true,
-        sent,
-        deleted,
-        failed,
-        total: validSubscriptions.length,
+        recipients: recipients.length,
+        inApp,
+        email,
+        push,
       }),
       {
         status: 200,

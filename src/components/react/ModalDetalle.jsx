@@ -10,6 +10,7 @@ import speakerIcon from '@iconify-icons/mdi/speaker';
 import scriptTextIcon from '@iconify-icons/mdi/script-text';
 import musicNoteIcon from '@iconify-icons/mdi/music-note';
 import { supabase } from '../../lib/supabase';
+import { normalizeRosterAssignments } from '../../lib/roster-utils';
 
 const getRoleBadgeIcon = (role) => {
     const codigo = String(role?.codigo || '').toLowerCase();
@@ -154,7 +155,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
     const horaInicio = fechaObj.toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit' });
     const timeString = eventData?.dbData?.hora_fin ? `${horaInicio} - ${eventData.dbData.hora_fin.substring(0, 5)}` : horaInicio;
 
-    const roster = eventData?.dbData?.asignaciones || [];
+    const roster = normalizeRosterAssignments(eventData?.dbData?.asignaciones || [], initialRoles || [], { maxVoiceSlots: 4 });
     const eventoId = eventData?.dbData?.id || '';
     const miAsignacion = roster.find((asig) => asig?.perfiles?.id === sessionUser?.id || asig?.perfiles?.email === sessionUser?.email);
     let isModerator = false;
