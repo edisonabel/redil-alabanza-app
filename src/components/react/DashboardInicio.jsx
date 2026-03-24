@@ -50,6 +50,19 @@ const getMonthName = (monthNumber) => {
     return safeDate.toLocaleDateString('es-ES', { month: 'long' });
 };
 
+const ScrollHintDots = () => (
+    <span
+        className="md:hidden inline-flex items-center gap-1 rounded-full px-1.5 py-1"
+        aria-label="Puedes deslizar horizontalmente"
+        title="Desliza"
+    >
+        <span className="sr-only">Desliza</span>
+        <span className="h-1.5 w-1.5 rounded-full bg-content-muted/45 [animation:deslizaInicioHintLoop_4.8s_ease-in-out_infinite]" />
+        <span className="h-1.5 w-1.5 rounded-full bg-content-muted/65 [animation:deslizaInicioHintLoop_4.8s_ease-in-out_160ms_infinite]" />
+        <span className="h-1.5 w-1.5 rounded-full bg-content-muted/45 [animation:deslizaInicioHintLoop_4.8s_ease-in-out_320ms_infinite]" />
+    </span>
+);
+
 const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = [], cumpleanerosMes = [], cumpleanerosTodos = [] }) => {
     const [dismissUpcomingHint, setDismissUpcomingHint] = useState(false);
     const [dismissEnvironmentHint, setDismissEnvironmentHint] = useState(false);
@@ -228,12 +241,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                     <div className="flex items-center justify-between gap-3 px-3 sm:px-4 lg:px-0 mb-3">
                         <h2 className="text-lg font-bold text-content tracking-tight">Mis Asignaciones</h2>
                         {showUpcomingHint && (
-                            <span className="md:hidden inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-surface/80 text-[10px] font-bold text-content-muted uppercase tracking-wide [animation:deslizaInicioHintLoop_4.8s_ease-in-out_infinite]">
-                                Desliza
-                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse">
-                                    <path d="m9 18 6-6-6-6" />
-                                </svg>
-                            </span>
+                            <ScrollHintDots />
                         )}
                     </div>
 
@@ -321,7 +329,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                                 return (
                                     <article
                                         key={servicio.id || `${evento.id}-${evento.fecha_hora}`}
-                                        className="w-[90vw] sm:w-[420px] lg:w-full lg:min-w-0 shrink-0 snap-center border rounded-[1.65rem] p-3.5 md:p-4 transition-all duration-300 flex flex-col gap-2.5 min-h-[220px] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action/60 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.08),_transparent_50%),linear-gradient(180deg,_rgba(24,24,27,0.97),_rgba(15,23,42,0.95))] border-zinc-700/50 shadow-[0_8px_32px_rgba(2,6,23,0.3)] hover:shadow-[0_12px_40px_rgba(2,6,23,0.45)] hover:border-zinc-600/60 dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_45%),linear-gradient(180deg,_rgba(39,39,42,0.98),_rgba(24,24,27,0.95))] dark:border-zinc-700 dark:shadow-[0_8px_32px_rgba(2,6,23,0.5)] dark:hover:shadow-[0_12px_40px_rgba(2,6,23,0.6)]"
+                                        className="ui-pressable-card w-[90vw] sm:w-[420px] lg:w-full lg:min-w-0 shrink-0 snap-center border rounded-[1.65rem] p-3.5 md:p-4 transition-all duration-300 flex flex-col gap-2.5 min-h-[220px] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action/60 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.08),_transparent_50%),linear-gradient(180deg,_rgba(24,24,27,0.97),_rgba(15,23,42,0.95))] border-zinc-700/50 shadow-[0_8px_32px_rgba(2,6,23,0.3)] hover:shadow-[0_12px_40px_rgba(2,6,23,0.45)] hover:border-zinc-600/60 dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_45%),linear-gradient(180deg,_rgba(39,39,42,0.98),_rgba(24,24,27,0.95))] dark:border-zinc-700 dark:shadow-[0_8px_32px_rgba(2,6,23,0.5)] dark:hover:shadow-[0_12px_40px_rgba(2,6,23,0.6)]"
                                         role="button"
                                         tabIndex={0}
                                         aria-label={hasSetlist ? `Abrir setlist de ${tema}` : canManageSetlist ? `Crear setlist para ${tema}` : `Ver detalle de ${tema}`}
@@ -396,9 +404,9 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
 
                                         <div className="mt-1 grid grid-cols-2 gap-2">
                                             {dirigeTexto ? (
-                                                <span className="inline-flex w-full min-w-0 items-center justify-center gap-1.5 bg-rol-dir/10 text-rol-dir border border-rol-dir/60 dark:bg-rol-dir/25 dark:text-white dark:border-rol-dir/90 px-3 py-1 rounded-xl text-[11px] md:text-xs font-bold uppercase tracking-wider">
-                                                    <strong>DIRIGE:</strong>
-                                                    <span className="truncate">{dirigeTexto}</span>
+                                                <span className="inline-flex w-full min-w-0 items-center gap-1.5 overflow-hidden bg-rol-dir/10 text-rol-dir border border-rol-dir/60 dark:bg-rol-dir/25 dark:text-white dark:border-rol-dir/90 px-2.5 py-1.5 rounded-xl text-[11px] md:text-xs font-bold uppercase tracking-wider">
+                                                    <strong className="shrink-0">DIRIGE:</strong>
+                                                    <span className="min-w-0 flex-1 truncate">{dirigeTexto}</span>
                                                 </span>
                                             ) : (
                                                 <span className="inline-flex w-full min-w-0 items-center justify-center bg-white/10 text-white/75 border border-white/20 dark:bg-background dark:text-content-muted dark:border-border px-3 py-1.5 rounded-xl text-[11px] md:text-xs font-bold uppercase tracking-wider italic">
@@ -406,9 +414,9 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                                                 </span>
                                             )}
 
-                                            <span className="inline-flex w-full min-w-0 items-center justify-center gap-1.5 bg-action/10 text-action border border-action/40 dark:bg-action/25 dark:text-white dark:border-action/75 px-3 py-1 rounded-xl text-[11px] md:text-xs font-bold uppercase tracking-wider max-w-full">
-                                                <strong>TU:</strong>
-                                                <span className="truncate">{miRolTexto}</span>
+                                            <span className="inline-flex w-full min-w-0 items-center gap-1.5 overflow-hidden bg-action/10 text-action border border-action/40 dark:bg-action/25 dark:text-white dark:border-action/75 px-2.5 py-1.5 rounded-xl text-[11px] md:text-xs font-bold uppercase tracking-wider max-w-full">
+                                                <strong className="shrink-0">TU:</strong>
+                                                <span className="min-w-0 flex-1 truncate">{miRolTexto}</span>
                                             </span>
                                         </div>
                                     </article>
@@ -436,12 +444,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                     <div className="flex items-center justify-between gap-3 mb-3">
                         <h2 className="text-lg font-bold text-content tracking-tight">Tu Entorno</h2>
                         {!dismissEnvironmentHint && (
-                            <span className="md:hidden inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-surface/80 text-[10px] font-bold text-content-muted uppercase tracking-wide [animation:deslizaInicioHintLoop_4.8s_ease-in-out_infinite]">
-                                Desliza
-                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse">
-                                    <path d="m9 18 6-6-6-6" />
-                                </svg>
-                            </span>
+                            <ScrollHintDots />
                         )}
                     </div>
                     <div className="relative -mx-3 sm:mx-0">
@@ -454,7 +457,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                             if (moved || reachedEnd) setDismissEnvironmentHint(true);
                         }}
                     >
-                        <a href="/repertorio" data-tour="setlist" data-astro-prefetch="hover" className="w-[44vw] min-w-[160px] max-w-[220px] aspect-square lg:w-full lg:min-w-0 lg:max-w-none lg:aspect-auto lg:h-full lg:min-h-[180px] xl:min-h-[200px] 2xl:min-h-[220px] rounded-[2rem] p-5 flex flex-col justify-between shadow-md active:scale-[0.98] transition-all relative overflow-hidden group snap-center">
+                        <a href="/repertorio" data-tour="setlist" data-astro-prefetch="hover" className="ui-pressable-card w-[44vw] min-w-[160px] max-w-[220px] aspect-square lg:w-full lg:min-w-0 lg:max-w-none lg:aspect-auto lg:h-full lg:min-h-[180px] xl:min-h-[200px] 2xl:min-h-[220px] rounded-[2rem] p-5 flex flex-col justify-between shadow-md transition-all relative overflow-hidden group snap-center">
                             <div className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110" style={{ backgroundImage: "url('/repertorio-bg.webp')" }}></div>
                             <div className="absolute inset-0 bg-gradient-to-t from-overlay/95 via-overlay/70 to-transparent"></div>
                             <div className="absolute right-0 top-0 w-32 h-32 bg-white/20 rounded-full blur-2xl transform translate-x-1/2 -translate-y-1/2"></div>
@@ -467,7 +470,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                             </div>
                         </a>
 
-                        <a href="/herramientas" data-astro-prefetch="hover" className="w-[44vw] min-w-[160px] max-w-[220px] aspect-square lg:w-full lg:min-w-0 lg:max-w-none lg:aspect-auto lg:h-full lg:min-h-[180px] xl:min-h-[200px] 2xl:min-h-[220px] rounded-[2rem] p-5 flex flex-col justify-between shadow-md active:scale-[0.98] transition-all relative overflow-hidden group snap-center">
+                        <a href="/herramientas" data-astro-prefetch="hover" className="ui-pressable-card w-[44vw] min-w-[160px] max-w-[220px] aspect-square lg:w-full lg:min-w-0 lg:max-w-none lg:aspect-auto lg:h-full lg:min-h-[180px] xl:min-h-[200px] 2xl:min-h-[220px] rounded-[2rem] p-5 flex flex-col justify-between shadow-md transition-all relative overflow-hidden group snap-center">
                             <div className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110" style={{ backgroundImage: "url('/afinacion-bg.webp')" }}></div>
                             <div className="absolute inset-0 bg-gradient-to-t from-overlay/95 via-overlay/70 to-transparent"></div>
                             <div className="absolute left-0 bottom-0 w-32 h-32 bg-white/10 rounded-full blur-2xl transform -translate-x-1/2 translate-y-1/2"></div>
@@ -480,7 +483,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                             </div>
                         </a>
 
-                        <a href="/herramientas/calentamiento-vocal" data-astro-prefetch="hover" className="w-[44vw] min-w-[160px] max-w-[220px] aspect-square lg:w-full lg:min-w-0 lg:max-w-none lg:aspect-auto lg:h-full lg:min-h-[180px] xl:min-h-[200px] 2xl:min-h-[220px] rounded-[2rem] p-5 flex flex-col justify-between shadow-md active:scale-[0.98] transition-all relative overflow-hidden group snap-center">
+                        <a href="/herramientas/calentamiento-vocal" data-astro-prefetch="hover" className="ui-pressable-card w-[44vw] min-w-[160px] max-w-[220px] aspect-square lg:w-full lg:min-w-0 lg:max-w-none lg:aspect-auto lg:h-full lg:min-h-[180px] xl:min-h-[200px] 2xl:min-h-[220px] rounded-[2rem] p-5 flex flex-col justify-between shadow-md transition-all relative overflow-hidden group snap-center">
                             <div className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110" style={{ backgroundImage: "url('/calentamiento-bg.webp')" }}></div>
                             <div className="absolute inset-0 bg-gradient-to-t from-overlay/95 via-overlay/75 to-transparent"></div>
                             <div className="absolute inset-0 bg-[radial-gradient(circle_at_78%_12%,rgba(255,255,255,0.24),transparent_45%),radial-gradient(circle_at_18%_86%,rgba(255,255,255,0.12),transparent_42%)]"></div>
@@ -568,7 +571,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                                     <button
                                         type="button"
                                         onClick={() => setBirthdaysModalOpen(true)}
-                                        className="inline-flex h-8 items-center rounded-full border border-border bg-background/90 px-3 text-[11px] font-bold uppercase tracking-[0.16em] text-content-muted transition-colors hover:bg-surface hover:text-content dark:bg-white/5 dark:hover:bg-white/10"
+                                        className="ui-pressable-soft inline-flex h-8 items-center rounded-full border border-border bg-background/90 px-3 text-[11px] font-bold uppercase tracking-[0.16em] text-content-muted transition-colors hover:bg-surface hover:text-content dark:bg-white/5 dark:hover:bg-white/10"
                                     >
                                         Ver todos
                                     </button>

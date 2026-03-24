@@ -899,7 +899,7 @@ export default function EnsayoHub({
             <button
               type="button"
               onClick={handleListBack}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-900 shadow-sm transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800"
+              className="ui-pressable-soft flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-900 shadow-sm transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800"
               aria-label="Volver al inicio"
             >
               <ArrowLeft className="h-5 w-5" />
@@ -933,7 +933,7 @@ export default function EnsayoHub({
                       <button
                         type="button"
                         onClick={() => setIsEditMode(!isEditMode)}
-                        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-wider transition-all ${
+                        className={`ui-pressable-soft inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-wider transition-all ${
                           isEditMode
                             ? 'bg-brand text-white'
                             : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
@@ -1077,7 +1077,7 @@ export default function EnsayoHub({
                   }}
                   role="button"
                   tabIndex={isEditMode ? -1 : 0}
-                  className={`group grid w-full items-start gap-x-3 gap-y-2 border-b border-zinc-200/90 px-4 py-4 text-left transition-colors dark:border-white/10 last:border-b-0 ${
+                  className={`ui-pressable-row group grid w-full items-start gap-x-3 gap-y-2 border-b border-zinc-200/90 px-4 py-4 text-left transition-colors dark:border-white/10 last:border-b-0 ${
                     isEditMode
                       ? 'grid-cols-[auto_auto_minmax(0,1fr)_auto]'
                       : 'grid-cols-[auto_minmax(0,1fr)_auto]'
@@ -1113,7 +1113,7 @@ export default function EnsayoHub({
                     <p className="truncate text-sm text-zinc-500 dark:text-zinc-400">
                       {song?.artist || 'Redil Worship'}
                     </p>
-                    <div className="mt-2 flex items-center gap-2 overflow-x-auto pb-1 pr-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    <div className="mt-1.5 flex items-center gap-2 overflow-x-auto px-0.5 py-1.5 pr-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                       {hasStructuredVoiceEntries && (
                         <button
                           type="button"
@@ -1122,7 +1122,7 @@ export default function EnsayoHub({
                             event.stopPropagation();
                             openPersonalVoiceView(song);
                           }}
-                          className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] transition-all ${
+                          className={`ui-pressable-soft inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] transition-all ${
                             hasPersonalVoiceAssignment
                               ? 'border-cyan-300 bg-cyan-50 text-cyan-700 shadow-[0_1px_2px_rgba(8,145,178,0.08),0_0_0_1px_rgba(34,211,238,0.12)] hover:bg-cyan-100 dark:border-cyan-400/55 dark:bg-cyan-400/12 dark:text-cyan-300 dark:shadow-[0_0_0_1px_rgba(34,211,238,0.14),0_0_16px_rgba(34,211,238,0.16)] dark:hover:bg-cyan-400/16'
                               : 'border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800'
@@ -1137,7 +1137,7 @@ export default function EnsayoHub({
                       {hasVoiceResources && (
                         <button
                           type="button"
-                          className="btn-open-voces inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-brand/30 bg-brand/10 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-brand transition-colors hover:bg-brand/15 dark:border-brand/25 dark:bg-brand/10 dark:text-brand dark:hover:bg-brand/16"
+                          className="btn-open-voces ui-pressable-soft inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-brand/30 bg-brand/10 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-brand transition-colors hover:bg-brand/15 dark:border-brand/25 dark:bg-brand/10 dark:text-brand dark:hover:bg-brand/16"
                           data-voces={safeVocesPayload}
                           data-title={song?.title || ''}
                           data-artist={song?.artist || ''}

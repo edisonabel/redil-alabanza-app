@@ -55,6 +55,160 @@ input[type='submit'] {
   line-height: 1.15;
 }
 
+:where(
+  button,
+  [role='button'],
+  input[type='button'],
+  input[type='submit'],
+  .ui-pressable,
+  .ui-pressable-soft,
+  .ui-pressable-card,
+  .ui-pressable-row
+):not(.ui-no-press) {
+  --press-scale-hover: 1.012;
+  --press-scale-active: 0.986;
+  --press-translate-hover: -1px;
+  --press-shadow-rest: 0 1px 1px rgb(0 0 0 / 0);
+  --press-shadow-hover:
+    0 10px 24px rgb(var(--color-overlay) / 0.12),
+    0 0 0 1px rgb(var(--color-action) / 0.16);
+  --press-shadow-active:
+    0 6px 16px rgb(var(--color-overlay) / 0.1),
+    0 0 0 1px rgb(var(--color-action) / 0.12);
+  --press-filter-hover: brightness(1.015) saturate(1.02);
+  --press-filter-active: brightness(0.995) saturate(1.01);
+  --press-transition-duration: 180ms;
+  --press-transition-easing: cubic-bezier(0.22, 1, 0.36, 1);
+  --press-focus-ring: 2px solid rgb(var(--color-action) / 0.34);
+  -webkit-tap-highlight-color: rgb(var(--color-action) / 0.16);
+  translate: 0 0;
+  scale: 1;
+  transform-origin: center;
+  backface-visibility: hidden;
+  box-shadow: var(--press-shadow-rest);
+  filter: none;
+  transition:
+    translate var(--press-transition-duration) var(--press-transition-easing),
+    scale var(--press-transition-duration) var(--press-transition-easing),
+    box-shadow var(--press-transition-duration) var(--press-transition-easing),
+    filter var(--press-transition-duration) var(--press-transition-easing),
+    outline-color 120ms ease;
+}
+
+:where(
+  button,
+  [role='button'],
+  input[type='button'],
+  input[type='submit'],
+  .ui-pressable,
+  .ui-pressable-soft,
+  .ui-pressable-card,
+  .ui-pressable-row
+):not(.ui-no-press):is(:disabled, [aria-disabled='true']) {
+  translate: 0 0 !important;
+  scale: 1 !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+:where(
+  button,
+  [role='button'],
+  input[type='button'],
+  input[type='submit'],
+  .ui-pressable,
+  .ui-pressable-soft,
+  .ui-pressable-card,
+  .ui-pressable-row
+):not(.ui-no-press):focus-visible {
+  outline: var(--press-focus-ring);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) {
+  :where(
+    button,
+    [role='button'],
+    input[type='button'],
+    input[type='submit'],
+    .ui-pressable,
+    .ui-pressable-soft,
+    .ui-pressable-card,
+    .ui-pressable-row
+  ):not(.ui-no-press, :disabled, [aria-disabled='true']):hover {
+    translate: 0 var(--press-translate-hover);
+    scale: var(--press-scale-hover);
+    box-shadow: var(--press-shadow-hover);
+    filter: var(--press-filter-hover);
+  }
+}
+
+:where(
+  button,
+  [role='button'],
+  input[type='button'],
+  input[type='submit'],
+  .ui-pressable,
+  .ui-pressable-soft,
+  .ui-pressable-card,
+  .ui-pressable-row
+):not(.ui-no-press, :disabled, [aria-disabled='true']):active {
+  translate: 0 0;
+  scale: var(--press-scale-active);
+  box-shadow: var(--press-shadow-active);
+  filter: var(--press-filter-active);
+}
+
+.ui-pressable-soft {
+  --press-scale-hover: 1.008;
+  --press-scale-active: 0.99;
+  --press-translate-hover: 0px;
+  --press-shadow-hover:
+    0 8px 18px rgb(var(--color-overlay) / 0.09),
+    0 0 0 1px rgb(var(--color-action) / 0.1);
+  --press-shadow-active:
+    0 4px 10px rgb(var(--color-overlay) / 0.08),
+    0 0 0 1px rgb(var(--color-action) / 0.08);
+}
+
+.ui-pressable-card {
+  --press-scale-hover: 1.004;
+  --press-scale-active: 0.994;
+  --press-translate-hover: -1px;
+  --press-shadow-hover:
+    0 12px 24px rgb(var(--color-overlay) / 0.12),
+    0 0 0 1px rgb(var(--border-base) / 0.76);
+  --press-shadow-active:
+    0 6px 14px rgb(var(--color-overlay) / 0.1),
+    0 0 0 1px rgb(var(--border-base) / 0.68);
+  --press-filter-hover: brightness(1.01);
+}
+
+.ui-pressable-row {
+  --press-scale-hover: 1.0015;
+  --press-scale-active: 0.997;
+  --press-translate-hover: 0px;
+  --press-shadow-hover:
+    0 10px 18px rgb(var(--color-overlay) / 0.055),
+    0 0 0 1px rgb(var(--border-base) / 0.3);
+  --press-shadow-active:
+    0 6px 12px rgb(var(--color-overlay) / 0.04),
+    0 0 0 1px rgb(var(--border-base) / 0.22);
+  --press-filter-hover: brightness(1.006);
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+  background: transparent;
+}
+
 .font-cta {
   font-family: var(--font-cta);
   font-weight: 400 !important;
@@ -170,6 +324,23 @@ select {
 .card-cancion     { animation-fill-mode: both; }
 
 @media (prefers-reduced-motion: reduce) {
+  :where(
+    button,
+    [role='button'],
+    input[type='button'],
+    input[type='submit'],
+    .ui-pressable,
+    .ui-pressable-soft,
+    .ui-pressable-card,
+    .ui-pressable-row
+  ):not(.ui-no-press) {
+    transition: none !important;
+    translate: 0 0 !important;
+    scale: 1 !important;
+    box-shadow: none !important;
+    filter: none !important;
+  }
+
   .anim-fade-in-up,
   .anim-fade-in,
   .anim-scale-in,
@@ -198,4 +369,3 @@ select {
   --color-rol-ban: rgb(var(--color-rol-ban));
   --color-rol-voc: rgb(var(--color-rol-voc));
 }
-
