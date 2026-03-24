@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Clock3, GripVertical, ListMusic, Mic2, Play, Plus, RadioReceiver, X, Zap } from 'lucide-react';
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
+import EnsayoPersonalView from './EnsayoPersonalView.jsx';
 import ModoLiveDirector from './ModoLiveDirector.jsx';
 import { supabase } from '../../lib/supabase';
 import { metronomeService } from '../../services/MetronomeEngine';
@@ -344,6 +345,18 @@ const openVoicesModal = ({ title, artist, entries = [], legacyUrl = '' }) => {
   }));
 };
 
+const sanitizeSongVoiceAssignments = (value) => (
+  value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+);
+
+const getVoiceAssignmentErrorMessage = (error, fallbackMessage) => {
+  if (error?.code === 'PGRST205') {
+    return 'Falta aplicar la migracion de asignaciones vocales en Supabase.';
+  }
+
+  return fallbackMessage;
+};
+
 export default function EnsayoHub({
   playlist = [],
   contextTitle = 'Modo Ensayo',
@@ -351,6 +364,9 @@ export default function EnsayoHub({
   initialSongId = null,
   playlistId = null,
   canEdit = false,
+  userId = '',
+  rosterMembers = [],
+  initialSongVoiceAssignments = {},
 }) {
   const [localPlaylist, setLocalPlaylist] = useState(() =>
     Array.isArray(playlist) ? playlist.filter(Boolean) : []
@@ -369,21 +385,70 @@ export default function EnsayoHub({
   ), [initialSongId, songs]);
 
   const [cancionActiva, setCancionActiva] = useState(initialSong);
+  const [cancionPersonalActiva, setCancionPersonalActiva] = useState(null);
   const [lastViewedSongId, setLastViewedSongId] = useState(initialSong ? String(initialSong.id || '') : null);
   const [activeMetronomeSongId, setActiveMetronomeSongId] = useState(null);
   const [queueState, setQueueState] = useState({ active: false, index: -1 });
   const [isLiveMode, setIsLiveMode] = useState(false);
   const [isSyncReceiver, setIsSyncReceiver] = useState(false);
   const [syncCountdown, setSyncCountdown] = useState(null); // null | 3 | 2 | 1 | 0
+  const [songVoiceAssignments, setSongVoiceAssignments] = useState(() => (
+    sanitizeSongVoiceAssignments(initialSongVoiceAssignments)
+  ));
+  const [isSavingVoiceAssignments, setIsSavingVoiceAssignments] = useState(false);
+  const [voiceAssignmentFeedback, setVoiceAssignmentFeedback] = useState(null);
 
   const queueSongsRef = useRef([]);
   const queueIndexRef = useRef(-1);
   const queueActiveRef = useRef(false);
+  const voiceAssignmentFeedbackTimeoutRef = useRef(null);
   const [insertAfterIndex, setInsertAfterIndex] = useState(-1);
 
   const playableSongs = useMemo(() => (
     songs.filter((song) => typeof song?.mp3 === 'string' && song.mp3.trim() !== '')
   ), [songs]);
+  const voiceMemberOptions = useMemo(() => (
+    (Array.isArray(rosterMembers) ? rosterMembers : [])
+      .filter((member) => member?.id)
+      .map((member) => ({
+        id: String(member.id),
+        name: String(member.name || member.nombre || member.email || 'Integrante').trim() || 'Integrante',
+        roleLabel: String(member.roleLabel || '').trim(),
+        roleCodes: Array.isArray(member.roleCodes)
+          ? member.roleCodes.map((code) => String(code || '').trim()).filter(Boolean)
+          : [],
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }))
+  ), [rosterMembers]);
+
+  useEffect(() => {
+    setSongVoiceAssignments(sanitizeSongVoiceAssignments(initialSongVoiceAssignments));
+  }, [initialSongVoiceAssignments]);
+
+  useEffect(() => {
+    return () => {
+      if (voiceAssignmentFeedbackTimeoutRef.current) {
+        window.clearTimeout(voiceAssignmentFeedbackTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const showVoiceAssignmentFeedback = useCallback((type, message) => {
+    if (!message || typeof window === 'undefined') {
+      setVoiceAssignmentFeedback(message ? { type, message } : null);
+      return;
+    }
+
+    if (voiceAssignmentFeedbackTimeoutRef.current) {
+      window.clearTimeout(voiceAssignmentFeedbackTimeoutRef.current);
+    }
+
+    setVoiceAssignmentFeedback({ type, message });
+    voiceAssignmentFeedbackTimeoutRef.current = window.setTimeout(() => {
+      setVoiceAssignmentFeedback(null);
+      voiceAssignmentFeedbackTimeoutRef.current = null;
+    }, 2400);
+  }, []);
 
   // ── Reordenamiento de canciones ──
   const moveSong = useCallback(async (fromIndex, direction) => {
@@ -555,6 +620,140 @@ export default function EnsayoHub({
     });
   }, [stopMetronome, stopQueue]);
 
+  const openPersonalVoiceView = useCallback((song) => {
+    if (!song) return;
+
+    const parsed = parseVoiceResources(song?.linkVoces);
+    const fallbackLegacyUrl =
+      parsed.legacyUrl ||
+      normalizeVoiceExternalUrl(serializeVoicePayload(song?.linkVoces)) ||
+      normalizeVoiceExternalUrl(song?.linkVoces?.legacyUrl || song?.linkVoces?.folder || song?.linkVoces?.drive || '');
+
+    if ((!parsed.entries || parsed.entries.length === 0) && fallbackLegacyUrl) {
+      openSongVoices(song);
+      return;
+    }
+
+    stopMetronome();
+    stopQueue();
+    window.__REDIL_PRO_PLAYER__?.close?.();
+    setCancionActiva(null);
+    setCancionPersonalActiva(song);
+    setLastViewedSongId(String(song?.id || ''));
+  }, [openSongVoices, stopMetronome, stopQueue]);
+
+  const handlePersonalVoiceTrackPlay = useCallback((song, track) => {
+    const safeUrl = normalizeVoiceExternalUrl(track?.url || track?.href || '');
+    if (!safeUrl) return;
+    dispatchProPlayerEvent({
+      url: safeUrl,
+      title: track?.label ? `${song?.title || 'Recursos de voz'} - ${track.label}` : (song?.title || 'Recursos de voz'),
+      artist: song?.artist || '',
+      autoPlay: true,
+    });
+  }, []);
+
+  const handleSaveVoiceAssignment = useCallback(async ({ songId, targetUserId, trackName }) => {
+    const safeSongId = String(songId || '').trim();
+    const safeTargetUserId = String(targetUserId || '').trim();
+    const safeTrackName = String(trackName || '').trim();
+
+    if (!safeSongId || !safeTargetUserId || !safeTrackName) return;
+    if (!playlistId || !eventMeta?.id || !userId) {
+      showVoiceAssignmentFeedback('error', 'No pudimos identificar este setlist para guardar.');
+      return;
+    }
+
+    const nextAssignments = {
+      ...sanitizeSongVoiceAssignments(songVoiceAssignments),
+      [safeSongId]: {
+        ...(songVoiceAssignments?.[safeSongId] || {}),
+        [safeTargetUserId]: {
+          trackName: safeTrackName,
+        },
+      },
+    };
+
+    setIsSavingVoiceAssignments(true);
+
+    try {
+      const { error } = await supabase
+        .from('playlist_voice_assignments')
+        .upsert({
+          playlist_id: playlistId,
+          evento_id: eventMeta.id,
+          assignments: nextAssignments,
+          updated_by: userId,
+        }, {
+          onConflict: 'playlist_id',
+        });
+
+      if (error) {
+        console.error('EnsayoHub voice assignment save error:', error);
+        showVoiceAssignmentFeedback('error', getVoiceAssignmentErrorMessage(error, 'No se pudo guardar la asignacion.'));
+        return;
+      }
+
+      setSongVoiceAssignments(nextAssignments);
+      showVoiceAssignmentFeedback('success', 'Asignacion guardada.');
+    } catch (error) {
+      console.error('EnsayoHub unexpected voice assignment save error:', error);
+      showVoiceAssignmentFeedback('error', 'Ocurrio un problema guardando la asignacion.');
+    } finally {
+      setIsSavingVoiceAssignments(false);
+    }
+  }, [playlistId, eventMeta?.id, userId, songVoiceAssignments, showVoiceAssignmentFeedback]);
+
+  const handleClearVoiceAssignment = useCallback(async ({ songId, targetUserId }) => {
+    const safeSongId = String(songId || '').trim();
+    const safeTargetUserId = String(targetUserId || '').trim();
+
+    if (!safeSongId || !safeTargetUserId) return;
+    if (!playlistId || !eventMeta?.id || !userId) {
+      showVoiceAssignmentFeedback('error', 'No pudimos identificar este setlist para guardar.');
+      return;
+    }
+
+    const nextAssignments = { ...sanitizeSongVoiceAssignments(songVoiceAssignments) };
+    const songAssignments = { ...(nextAssignments?.[safeSongId] || {}) };
+    delete songAssignments[safeTargetUserId];
+
+    if (Object.keys(songAssignments).length === 0) {
+      delete nextAssignments[safeSongId];
+    } else {
+      nextAssignments[safeSongId] = songAssignments;
+    }
+
+    setIsSavingVoiceAssignments(true);
+
+    try {
+      const { error } = await supabase
+        .from('playlist_voice_assignments')
+        .upsert({
+          playlist_id: playlistId,
+          evento_id: eventMeta.id,
+          assignments: nextAssignments,
+          updated_by: userId,
+        }, {
+          onConflict: 'playlist_id',
+        });
+
+      if (error) {
+        console.error('EnsayoHub voice assignment clear error:', error);
+        showVoiceAssignmentFeedback('error', getVoiceAssignmentErrorMessage(error, 'No se pudo limpiar la asignacion.'));
+        return;
+      }
+
+      setSongVoiceAssignments(nextAssignments);
+      showVoiceAssignmentFeedback('success', 'Asignacion actualizada.');
+    } catch (error) {
+      console.error('EnsayoHub unexpected voice assignment clear error:', error);
+      showVoiceAssignmentFeedback('error', 'Ocurrio un problema limpiando la asignacion.');
+    } finally {
+      setIsSavingVoiceAssignments(false);
+    }
+  }, [playlistId, eventMeta?.id, userId, songVoiceAssignments, showVoiceAssignmentFeedback]);
+
   const playQueueItem = useCallback((index) => {
     const queueSongs = queueSongsRef.current;
     const nextSong = queueSongs[index];
@@ -581,6 +780,7 @@ export default function EnsayoHub({
     if (!song) return;
     stopMetronome();
     stopQueue();
+    setCancionPersonalActiva(null);
     setCancionActiva(song);
     setLastViewedSongId(String(song?.id || ''));
   }, [stopMetronome, stopQueue]);
@@ -593,6 +793,10 @@ export default function EnsayoHub({
     }
     setCancionActiva(null);
   }, [stopMetronome, stopQueue]);
+
+  const handlePersonalViewBack = useCallback(() => {
+    setCancionPersonalActiva(null);
+  }, []);
 
   const handleListBack = useCallback(() => {
     window.location.href = '/';
@@ -630,6 +834,28 @@ export default function EnsayoHub({
       backdrop?.removeEventListener('click', handleQueueStop);
     };
   }, [playQueueItem, stopQueue]);
+
+  if (cancionPersonalActiva) {
+    const parsedVoices = parseVoiceResources(cancionPersonalActiva?.linkVoces);
+
+    return (
+      <EnsayoPersonalView
+        song={cancionPersonalActiva}
+        contextTitle={`${contextTitle} · Vista vocal`}
+        userId={String(userId || '')}
+        tracksOriginales={parsedVoices.entries || []}
+        songVoiceAssignments={songVoiceAssignments}
+        memberOptions={voiceMemberOptions}
+        canEdit={canEdit}
+        isSavingAssignments={isSavingVoiceAssignments}
+        saveFeedback={voiceAssignmentFeedback}
+        onBack={handlePersonalViewBack}
+        onTrackPlay={(track) => handlePersonalVoiceTrackPlay(cancionPersonalActiva, track)}
+        onSaveAssignment={handleSaveVoiceAssignment}
+        onClearAssignment={handleClearVoiceAssignment}
+      />
+    );
+  }
 
   if (cancionActiva) {
     return (
@@ -724,6 +950,46 @@ export default function EnsayoHub({
       <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-28 pt-4">
         <div className="mx-auto max-w-5xl">
           <div className="overflow-hidden rounded-[2rem] border border-zinc-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-zinc-950/88 dark:shadow-[0_24px_80px_rgba(0,0,0,0.4)]">
+            {playableSongs.length > 0 && (
+              <section className="border-b border-zinc-200/90 bg-[linear-gradient(180deg,_rgba(248,250,252,0.92),_rgba(255,255,255,0.96))] px-4 py-4 dark:border-white/10 dark:bg-[linear-gradient(180deg,_rgba(15,23,42,0.55),_rgba(9,9,11,0.92))]">
+                <div className="grid grid-cols-[minmax(0,1fr)_minmax(148px,176px)] items-center gap-3 sm:gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
+                      Reproducir setlist
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                      Reproduce toda la lista de canciones.
+                    </p>
+                    {queueState.active && (
+                      <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                        Sonando: {queueSongsRef.current[queueState.index]?.title || 'Setlist en reproduccion'}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 lg:justify-end">
+                    {queueState.active && (
+                      <button
+                        type="button"
+                        onClick={stopQueue}
+                        className="inline-flex h-11 items-center justify-center rounded-2xl border border-zinc-200 bg-white px-4 text-sm font-black text-zinc-700 shadow-sm transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                      >
+                        Detener reproduccion
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => startQueue(queueState.active ? queueState.index : 0)}
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-brand px-4 text-sm font-black text-white shadow-lg shadow-brand/20 transition-all hover:bg-brand/90 hover:shadow-brand/35"
+                    >
+                      <Play className="ml-0.5 h-4 w-4" />
+                      {queueState.active ? 'Reiniciar lista' : 'Reproducir todo'}
+                    </button>
+                  </div>
+                </div>
+              </section>
+            )}
+
             {songs.map((song, index) => {
               // ── Card de Oración ──
               if (song?.isPrayer) {
@@ -778,8 +1044,16 @@ export default function EnsayoHub({
                 ? JSON.stringify(parsedVoices.entries)
                 : (parsedVoices.legacyUrl || '');
               const hasVoiceResources = parsedVoices.hasResources || Boolean(parsedVoices.legacyUrl);
+              const hasStructuredVoiceEntries = parsedVoices.entries.length > 0;
               const voiceLabel = normalizeVoiceLabel(song?.voz);
               const isLastViewed = String(song?.id || index) === String(lastViewedSongId || '');
+              const currentUserAssignedTrackName = String(
+                songVoiceAssignments?.[String(song?.id || '')]?.[String(userId || '')]?.trackName || ''
+              ).trim();
+              const hasPersonalVoiceAssignment = Boolean(
+                currentUserAssignedTrackName &&
+                parsedVoices.entries.some((entry) => String(entry?.label || '').trim() === currentUserAssignedTrackName)
+              );
 
               return (
                 <React.Fragment key={song?.id || `${song?.title || 'song'}-${index}`}>
@@ -834,6 +1108,26 @@ export default function EnsayoHub({
                       {song?.artist || 'Redil Worship'}
                     </p>
                     <div className="mt-2 flex items-center gap-2 overflow-x-auto pb-1 pr-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                      {hasStructuredVoiceEntries && (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            openPersonalVoiceView(song);
+                          }}
+                          className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] transition-all ${
+                            hasPersonalVoiceAssignment
+                              ? 'border-cyan-300 bg-cyan-50 text-cyan-700 shadow-[0_1px_2px_rgba(8,145,178,0.08),0_0_0_1px_rgba(34,211,238,0.12)] hover:bg-cyan-100 dark:border-cyan-400/55 dark:bg-cyan-400/12 dark:text-cyan-300 dark:shadow-[0_0_0_1px_rgba(34,211,238,0.14),0_0_16px_rgba(34,211,238,0.16)] dark:hover:bg-cyan-400/16'
+                              : 'border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800'
+                          }`}
+                          aria-label={`Abrir vista vocal de ${song?.title || 'cancion'}`}
+                          title="Abrir vista vocal personalizada"
+                        >
+                          <Mic2 className="h-3.5 w-3.5" />
+                          {hasPersonalVoiceAssignment ? 'Mi voz' : 'Vista vocal'}
+                        </button>
+                      )}
                       {hasVoiceResources && (
                         <button
                           type="button"
@@ -859,6 +1153,11 @@ export default function EnsayoHub({
                       {voiceLabel && (
                         <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold tracking-[0.04em] text-zinc-500 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-400">
                           {voiceLabel}
+                        </span>
+                      )}
+                      {hasPersonalVoiceAssignment && (
+                        <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-cyan-300 bg-cyan-50 px-2.5 text-[11px] font-black tracking-[0.04em] text-cyan-800 shadow-[0_1px_2px_rgba(8,145,178,0.08)] dark:border-cyan-400/25 dark:bg-cyan-400/10 dark:text-cyan-300 dark:shadow-none">
+                          Tu voz: {currentUserAssignedTrackName}
                         </span>
                       )}
                     </div>
@@ -941,36 +1240,14 @@ export default function EnsayoHub({
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4">
           <div className="min-w-0">
             <p className="text-[10px] font-black uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
-              {queueState.active
-                ? `Fila activa · ${queueState.index + 1}/${queueSongsRef.current.length}`
-                : `${playableSongs.length} con MP3`}
+              Herramientas de ensayo
             </p>
             <p className="truncate text-sm font-medium text-zinc-600 dark:text-zinc-300">
-              {queueState.active
-                ? `${queueSongsRef.current[queueState.index]?.title || 'Reproduciendo setlist'}`
-                : 'Reproduce toda la fila.'}
+              Live y sincronizacion del director.
             </p>
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            {queueState.active && (
-              <button
-                type="button"
-                onClick={stopQueue}
-                className="inline-flex h-11 items-center justify-center rounded-2xl border border-zinc-200 bg-white px-4 text-sm font-black text-zinc-700 shadow-sm transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-              >
-                Detener fila
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => startQueue(queueState.active ? queueState.index : 0)}
-              disabled={playableSongs.length === 0}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-zinc-200 bg-white px-4 text-sm font-black text-zinc-700 shadow-sm transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-            >
-              <Play className="ml-0.5 h-4 w-4" />
-              {queueState.active ? 'Reiniciar' : 'Ensayo'}
-            </button>
             <button
               type="button"
               onClick={() => {

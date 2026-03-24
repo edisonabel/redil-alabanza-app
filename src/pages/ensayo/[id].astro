@@ -422,6 +422,8 @@ const buildSongFromRow = async (songRow, orderIndex = 0) => {
 let eventData = null;
 let playlistSongs = [];
 let playlistDbId = null;
+let rosterMembers = [];
+let initialSongVoiceAssignments = {};
 
 // ── Verificar si el usuario puede editar el setlist ──
 let canEditSetlist = false;
@@ -450,6 +452,54 @@ if (id !== 'demo') {
   eventData = eventRow || null;
 
   if (eventData?.id) {
+    const { data: rosterRows, error: rosterError } = await supabaseSSR
+      .from('asignaciones')
+      .select('perfil_id, roles(codigo, nombre), perfiles(id, nombre, email, avatar_url)')
+      .eq('evento_id', eventData.id);
+
+    if (rosterError) {
+      console.error('Ensayo roster query error:', rosterError);
+    } else if (Array.isArray(rosterRows)) {
+      const rosterMap = new Map();
+
+      rosterRows.forEach((row) => {
+        const profileId = String(row?.perfil_id || row?.perfiles?.id || '').trim();
+        if (!profileId) return;
+
+        const roleCode = String(row?.roles?.codigo || '').trim();
+        const roleName = String(row?.roles?.nombre || '').trim();
+        const existing = rosterMap.get(profileId) || {
+          id: profileId,
+          name: String(row?.perfiles?.nombre || row?.perfiles?.email || 'Integrante').trim() || 'Integrante',
+          email: String(row?.perfiles?.email || '').trim(),
+          avatarUrl: String(row?.perfiles?.avatar_url || '').trim(),
+          roleCodes: [],
+          roleNames: [],
+        };
+
+        if (roleCode && !existing.roleCodes.includes(roleCode)) existing.roleCodes.push(roleCode);
+        if (roleName && !existing.roleNames.includes(roleName)) existing.roleNames.push(roleName);
+        rosterMap.set(profileId, existing);
+      });
+
+      const allMembers = Array.from(rosterMap.values()).map((member) => ({
+        id: member.id,
+        name: member.name,
+        email: member.email,
+        avatarUrl: member.avatarUrl,
+        roleCodes: member.roleCodes,
+        roleLabel: member.roleNames.join(', '),
+      }));
+
+      const voiceMembers = allMembers.filter((member) => (
+        Array.isArray(member.roleCodes) &&
+        member.roleCodes.some((code) => String(code || '').startsWith('voz_'))
+      ));
+
+      rosterMembers = (voiceMembers.length > 0 ? voiceMembers : allMembers)
+        .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
+    }
+
     const { data: playlistRow, error: playlistError } = await supabaseSSR
       .from('playlists')
       .select('id')
@@ -462,6 +512,22 @@ if (id !== 'demo') {
 
     if (playlistRow?.id) {
       playlistDbId = playlistRow.id;
+      const { data: voiceAssignmentsRow, error: voiceAssignmentsError } = await supabaseSSR
+        .from('playlist_voice_assignments')
+        .select('assignments')
+        .eq('playlist_id', playlistRow.id)
+        .maybeSingle();
+
+      if (voiceAssignmentsError) {
+        console.error('Ensayo playlist_voice_assignments query error:', voiceAssignmentsError);
+      } else if (
+        voiceAssignmentsRow?.assignments &&
+        typeof voiceAssignmentsRow.assignments === 'object' &&
+        !Array.isArray(voiceAssignmentsRow.assignments)
+      ) {
+        initialSongVoiceAssignments = voiceAssignmentsRow.assignments;
+      }
+
       let playlistItems = [];
       let playlistItemsError = null;
 
@@ -617,6 +683,9 @@ const resolvedColorTokens = {
       initialSongId={initialSongId}
       playlistId={playlistDbId}
       canEdit={canEditSetlist}
+      userId={user.id}
+      rosterMembers={rosterMembers}
+      initialSongVoiceAssignments={initialSongVoiceAssignments}
     />
     <ProPlayerGlobal />
     <VocesModalGlobal />
