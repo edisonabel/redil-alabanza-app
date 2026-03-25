@@ -50,19 +50,6 @@ const getMonthName = (monthNumber) => {
     return safeDate.toLocaleDateString('es-ES', { month: 'long' });
 };
 
-const ScrollHintDots = () => (
-    <span
-        className="md:hidden inline-flex items-center gap-1 rounded-full px-1.5 py-1"
-        aria-label="Puedes deslizar horizontalmente"
-        title="Desliza"
-    >
-        <span className="sr-only">Desliza</span>
-        <span className="h-1.5 w-1.5 rounded-full bg-content-muted/45 [animation:deslizaInicioHintLoop_4.8s_ease-in-out_infinite]" />
-        <span className="h-1.5 w-1.5 rounded-full bg-content-muted/65 [animation:deslizaInicioHintLoop_4.8s_ease-in-out_160ms_infinite]" />
-        <span className="h-1.5 w-1.5 rounded-full bg-content-muted/45 [animation:deslizaInicioHintLoop_4.8s_ease-in-out_320ms_infinite]" />
-    </span>
-);
-
 const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = [], cumpleanerosMes = [], cumpleanerosTodos = [] }) => {
     const [dismissUpcomingHint, setDismissUpcomingHint] = useState(false);
     const [dismissEnvironmentHint, setDismissEnvironmentHint] = useState(false);
@@ -241,7 +228,12 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                     <div className="flex items-center justify-between gap-3 px-3 sm:px-4 lg:px-0 mb-3">
                         <h2 className="text-lg font-bold text-content tracking-tight">Mis Asignaciones</h2>
                         {showUpcomingHint && (
-                            <ScrollHintDots />
+                            <span className="md:hidden inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-surface/80 text-[10px] font-bold text-content-muted uppercase tracking-wide [animation:deslizaInicioHintLoop_4.8s_ease-in-out_infinite]">
+                                Desliza
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse">
+                                    <path d="m9 18 6-6-6-6" />
+                                </svg>
+                            </span>
                         )}
                     </div>
 
@@ -444,7 +436,12 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                     <div className="flex items-center justify-between gap-3 mb-3">
                         <h2 className="text-lg font-bold text-content tracking-tight">Tu Entorno</h2>
                         {!dismissEnvironmentHint && (
-                            <ScrollHintDots />
+                            <span className="md:hidden inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-surface/80 text-[10px] font-bold text-content-muted uppercase tracking-wide [animation:deslizaInicioHintLoop_4.8s_ease-in-out_infinite]">
+                                Desliza
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse">
+                                    <path d="m9 18 6-6-6-6" />
+                                </svg>
+                            </span>
                         )}
                     </div>
                     <div className="relative -mx-3 sm:mx-0">
@@ -553,7 +550,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                             )}
                         </article>
 
-                        <article className="relative overflow-hidden border border-zinc-200/80 rounded-[2rem] p-5 shadow-sm bg-[radial-gradient(circle_at_top_right,_rgba(20,184,166,0.06),_transparent_45%),linear-gradient(180deg,_rgba(255,255,255,0.99),_rgba(244,244,245,0.97))] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_right,_rgba(20,184,166,0.15),_transparent_40%),linear-gradient(180deg,_rgba(24,24,27,0.98),_rgba(15,23,42,0.95))] dark:shadow-[0_8px_32px_rgba(2,6,23,0.3)]">
+                        <article className="relative mb-[calc(7rem+env(safe-area-inset-bottom))] overflow-hidden border border-zinc-200/80 rounded-[2rem] p-5 shadow-sm bg-[radial-gradient(circle_at_top_right,_rgba(20,184,166,0.06),_transparent_45%),linear-gradient(180deg,_rgba(255,255,255,0.99),_rgba(244,244,245,0.97))] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_right,_rgba(20,184,166,0.15),_transparent_40%),linear-gradient(180deg,_rgba(24,24,27,0.98),_rgba(15,23,42,0.95))] dark:shadow-[0_8px_32px_rgba(2,6,23,0.3)] lg:mb-0">
                             <div className="flex items-center justify-between gap-3 mb-3">
                                 <h3 className="text-sm font-black text-content uppercase tracking-wide inline-flex items-center gap-2">
                                     <span className="w-6 h-6 rounded-md bg-brand/15 border border-brand/30 text-brand flex items-center justify-center">
