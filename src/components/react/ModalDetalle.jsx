@@ -11,6 +11,7 @@ import scriptTextIcon from '@iconify-icons/mdi/script-text';
 import musicNoteIcon from '@iconify-icons/mdi/music-note';
 import { supabase } from '../../lib/supabase';
 import { normalizeRosterAssignments } from '../../lib/roster-utils';
+import { getEventThemeAndPreacher } from '../../lib/event-display.js';
 
 const getRoleBadgeIcon = (role) => {
     const codigo = String(role?.codigo || '').toLowerCase();
@@ -147,8 +148,8 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
 
     const fechaObj = eventData?.fecha || new Date();
     const titulo = eventData?.dbData?.titulo || 'Actividad Redil';
-    const tema = eventData?.dbData?.tema_predicacion || titulo;
     const estado = eventData?.dbData?.estado || 'Activo';
+    const { theme: temaPrincipal, preacher: predicador } = getEventThemeAndPreacher(eventData?.dbData || {}, titulo);
 
     const mesStr = fechaObj.toLocaleString('es-ES', { month: 'short' });
     const fechaFormat = `${fechaObj.toLocaleString('es-ES', { weekday: 'long' })} ${fechaObj.getDate()} ${mesStr}`;
@@ -183,9 +184,22 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                     <div>
                         <span className="inline-block px-3 py-1 bg-brand/10 text-brand rounded-full text-xs font-bold tracking-widest uppercase mb-3 border border-brand/30 shadow-sm lg:mb-2">{estado}</span>
                         <h2 className="text-3xl font-black text-content tracking-tight capitalize lg:text-[2rem]">{fechaFormat}</h2>
-                        <div className="flex items-center gap-2 mt-2 lg:mt-1.5">
-                            <span className="text-content-muted font-medium text-lg capitalize lg:text-[1.05rem]">{tema !== titulo ? tema : titulo}</span>
-                            <span className="text-sm font-bold text-content-muted bg-border/50 px-2 py-0.5 rounded-md ml-2">{timeString}</span>
+                        <div className="mt-2 flex items-end gap-2 lg:mt-1.5">
+                            <div className="flex min-w-0 flex-1 items-end gap-3">
+                                <div className={`min-w-0 ${predicador ? 'flex-[0_1_65%] max-w-[65%]' : 'flex-1 max-w-full'}`}>
+                                    <span className="min-w-0 line-clamp-2 font-medium text-lg text-content-muted lg:text-[1.05rem]">
+                                        {temaPrincipal || titulo}
+                                    </span>
+                                </div>
+                                {predicador && (
+                                    <div className="min-w-0 flex-[1_1_35%] self-end border-l border-white/12 pl-2.5 lg:pl-3">
+                                        <p className="min-w-0 text-left line-clamp-2 text-[13px] lg:text-[14px] font-light leading-[1.08] text-content dark:text-white">
+                                            {predicador}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                            <span className="shrink-0 text-sm font-bold text-content-muted bg-border/50 px-2 py-0.5 rounded-md ml-2">{timeString}</span>
                         </div>
                     </div>
                     <button onClick={handleClose} className="text-content-muted hover:text-content transition-colors p-2 bg-background hover:bg-border rounded-full shadow-sm border border-border lg:p-1.5">

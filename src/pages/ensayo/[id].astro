@@ -5,6 +5,8 @@ import EnsayoHub from '../../components/react/EnsayoHub.jsx';
 import ProPlayerGlobal from '../../components/ProPlayerGlobal.astro';
 import VocesModalGlobal from '../../components/VocesModalGlobal.astro';
 import { getBrandingConfig } from '../../lib/branding';
+import { buildEventHeadline, getEventThemeAndPreacher } from '../../lib/event-display.js';
+import { isPredicadorColumnMissingError, withPredicadorFallbackRow } from '../../lib/predicador-compat.js';
 
 const MOCK_CANCION_ENSAYO = {
   id: 'demo',
@@ -439,11 +441,30 @@ if (user?.id) {
 }
 
 if (id !== 'demo') {
-  const { data: eventRow, error: eventError } = await supabaseSSR
-    .from('eventos')
-    .select('id, titulo, tema_predicacion, fecha_hora, hora_fin')
-    .eq('id', id)
-    .maybeSingle();
+  const fetchEventRow = (includePredicador = true) =>
+    supabaseSSR
+      .from('eventos')
+      .select(includePredicador
+        ? 'id, titulo, tema_predicacion, predicador, fecha_hora, hora_fin'
+        : 'id, titulo, tema_predicacion, fecha_hora, hora_fin')
+      .eq('id', id)
+      .maybeSingle();
+
+  let { data: eventRow, error: eventError } = await fetchEventRow(true);
+
+  if (isPredicadorColumnMissingError(eventError)) {
+    const fallbackEventResp = await fetchEventRow(false);
+    if (!fallbackEventResp.error) {
+      eventRow = withPredicadorFallbackRow(fallbackEventResp.data || null);
+      eventError = null;
+      console.warn('Ensayo evento query: usando fallback sin columna predicador.');
+    } else {
+      eventRow = fallbackEventResp.data;
+      eventError = fallbackEventResp.error;
+    }
+  } else {
+    eventRow = withPredicadorFallbackRow(eventRow || null);
+  }
 
   if (eventError) {
     console.error('Ensayo evento query error:', eventError);
@@ -575,7 +596,7 @@ const rehearsalSongs =
       : [
           createFallbackSong({
             songId: `fallback-${id}`,
-            title: eventData?.tema_predicacion || eventData?.titulo || 'Setlist pendiente',
+            title: getEventThemeAndPreacher(eventData || {}, 'Setlist pendiente').theme || 'Setlist pendiente',
             message: eventData?.id
               ? 'Este servicio todav\u00eda no tiene canciones listas para el modo ensayo.'
               : 'No encontramos el evento solicitado o a\u00fan no tiene repertorio cargado.',
@@ -583,10 +604,11 @@ const rehearsalSongs =
         ];
 
 const initialSongId = Astro.url.searchParams.get('song') || null;
-const contextTitle = eventData?.tema_predicacion || eventData?.titulo || 'Modo Ensayo';
-const pageTitle = `${contextTitle} | Modo Ensayo`;
+const { theme: contextTheme, preacher: contextPreacher } = getEventThemeAndPreacher(eventData || {}, 'Modo Ensayo');
+const contextTitle = contextTheme || 'Modo Ensayo';
+const pageTitle = `${buildEventHeadline(eventData || {}, 'Modo Ensayo')} | Modo Ensayo`;
 const pageDescription = eventData?.id
-  ? `Vista de ensayo para ${contextTitle}.`
+  ? `Vista de ensayo para ${buildEventHeadline(eventData || {}, contextTitle)}.`
   : 'Vista de ensayo enfocada para leer acordes y letras en vivo.';
 
 const themeColors = await getBrandingConfig({ accessToken: tokenCookie.value });
@@ -679,7 +701,7 @@ const resolvedColorTokens = {
       client:load
       playlist={rehearsalSongs}
       contextTitle={contextTitle}
-      eventMeta={eventData}
+      eventMeta={eventData ? { ...eventData, display_theme: contextTheme, display_preacher: contextPreacher } : null}
       initialSongId={initialSongId}
       playlistId={playlistDbId}
       canEdit={canEditSetlist}

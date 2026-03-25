@@ -11,6 +11,7 @@ import scriptTextIcon from '@iconify-icons/mdi/script-text';
 import musicNoteIcon from '@iconify-icons/mdi/music-note';
 import { supabase } from '../../lib/supabase';
 import { normalizeRosterAssignments } from '../../lib/roster-utils';
+import { buildEventHeadline, getEventThemeAndPreacher } from '../../lib/event-display.js';
 
 const MONTH_CHUNK_SIZE = 2;
 const EVENT_SELECT = '*, asignaciones(id, rol_id, perfiles(id, nombre, email, avatar_url))';
@@ -488,8 +489,6 @@ export default function CalendarioGrid({
     const renderListRow = (cardData) => {
         const isSuspended = cardData.dbData && cardData.dbData.notas_especiales && cardData.dbData.notas_especiales.includes('SUSPENDIDO');
         const titulo = cardData.dbData?.titulo || 'Actividad Redil';
-        const tema = cardData.dbData?.tema_predicacion || cardData.dbData?.titulo || 'Sin tema asignado';
-        const contextoTitulo = (tema && tema !== 'Sin tema asignado' ? tema : titulo).toLowerCase();
         const estado = cardData.dbData?.estado || 'ACTIVO';
         const esAcustico = Boolean(cardData.dbData?.es_acustico);
 
@@ -499,6 +498,7 @@ export default function CalendarioGrid({
 
         const horaInicio = fechaObj.toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit' });
         const timeString = cardData.dbData?.hora_fin ? `${horaInicio} - ${cardData.dbData.hora_fin.substring(0, 5)}` : horaInicio;
+        const { theme: temaPrincipal, preacher: predicador } = getEventThemeAndPreacher(cardData.dbData || {}, titulo);
 
         const rosterDb = cardData.dbData?.asignaciones || [];
         const dictRoles = initialRoles || [];
@@ -585,7 +585,22 @@ export default function CalendarioGrid({
 
                     <div className="min-w-0 flex flex-col justify-center">
                         <div className="flex items-start md:items-center justify-between gap-2 md:gap-3 md:mb-1">
-                            <h4 className={`font-bold text-lg md:text-[22px] md:tracking-tight leading-tight flex-1 ${isSuspended ? 'text-content-muted line-through' : 'text-content'}`}>{tema !== 'Sin tema asignado' ? tema : titulo}</h4>
+                            <div className="min-w-0 flex-1">
+                                <div className="flex min-w-0 items-end gap-3">
+                                    <div className={`min-w-0 ${predicador ? 'flex-[0_1_65%] max-w-[65%]' : 'flex-1 max-w-full'}`}>
+                                        <h4 className={`min-w-0 line-clamp-2 font-extrabold text-[1.02rem] md:text-[1.18rem] md:tracking-tight leading-[1.02] ${isSuspended ? 'text-content-muted line-through' : 'text-content'}`}>
+                                            {temaPrincipal}
+                                        </h4>
+                                    </div>
+                                    {predicador && (
+                                        <div className="min-w-0 flex-[1_1_35%] self-end border-l border-white/12 pl-2.5 md:pl-3">
+                                            <p className="min-w-0 text-left line-clamp-2 text-[14px] md:text-[15px] font-light leading-[1.08] text-content dark:text-white">
+                                                {predicador}
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                             {canManage && (
                                 <button
                                     className="ml-auto shrink-0 p-1.5 md:p-2 text-content-muted hover:text-content hover:bg-background/80 dark:text-white/80 dark:hover:text-white dark:hover:bg-white/10 md:bg-transparent rounded-lg transition-colors"
@@ -597,12 +612,14 @@ export default function CalendarioGrid({
                                                 id: cardData.id,
                                                 fecha: cardData.fecha,
                                                 titulo,
-                                                tema,
-                                            estado,
-                                            es_acustico: esAcustico,
-                                            hora_fin: cardData.dbData?.hora_fin || '',
-                                            serie_id: cardData.dbData?.serie_id || '',
-                                            moderator: !isAdmin && isModerator ? 'true' : 'false'
+                                                tema: cardData.dbData?.tema_predicacion || '',
+                                                predicador: cardData.dbData?.predicador || '',
+                                                estado,
+                                                es_acustico: esAcustico,
+                                                hora_fin: cardData.dbData?.hora_fin || '',
+                                                serie_id: cardData.dbData?.serie_id || '',
+                                                moderator: !isAdmin && isModerator ? 'true' : 'false',
+                                                dbData: cardData.dbData
                                             });
                                         }
                                     }}
@@ -631,10 +648,11 @@ export default function CalendarioGrid({
     const renderCard = (cardData, tourTargets = false) => {
         const isSuspended = cardData.dbData && cardData.dbData.notas_especiales && cardData.dbData.notas_especiales.includes('SUSPENDIDO');
         const titulo = cardData.dbData?.titulo || 'Actividad Redil';
-        const tema = cardData.dbData?.tema_predicacion || cardData.dbData?.titulo || 'Sin tema asignado';
-        const temaPredicacion = typeof cardData.dbData?.tema_predicacion === 'string'
-            ? cardData.dbData.tema_predicacion.trim()
-            : '';
+        const { theme: temaPrincipal, preacher: predicador } = getEventThemeAndPreacher(cardData.dbData || {}, titulo);
+        const hasTemaInfo = Boolean(
+            String(cardData.dbData?.tema_predicacion || '').trim() ||
+            String(cardData.dbData?.predicador || '').trim()
+        );
         const estado = cardData.dbData?.estado || 'ACTIVO';
         const esAcustico = Boolean(cardData.dbData?.es_acustico);
 
@@ -672,7 +690,7 @@ export default function CalendarioGrid({
                             SUSPENDIDO
                         </span>
                     </div>
-                    <h3 className="text-xl font-bold text-content-muted mb-4 line-through">{tema !== 'Sin tema asignado' ? tema : titulo}</h3>
+                    <h3 className="text-xl font-bold text-content-muted mb-4 line-through">{temaPrincipal || titulo}</h3>
                 </div>
             );
         }
@@ -726,10 +744,21 @@ export default function CalendarioGrid({
                         )}
                     </div>
 
-                    {temaPredicacion && (
-                        <h3 className="mt-0 mb-4 text-xl sm:text-2xl font-extrabold tracking-tight leading-tight text-content">
-                            {temaPredicacion}
-                        </h3>
+                    {hasTemaInfo && (
+                        <div className="mt-0 mb-3.5 flex min-w-0 items-end gap-3">
+                            <div className={`min-w-0 ${predicador ? 'flex-[0_1_65%] max-w-[65%]' : 'flex-1 max-w-full'}`}>
+                                <h3 className="min-w-0 line-clamp-2 text-[1.24rem] sm:text-[1.42rem] font-extrabold tracking-tight leading-[1.02] text-content">
+                                    {temaPrincipal}
+                                </h3>
+                            </div>
+                            {predicador && (
+                                <div className="min-w-0 flex-[1_1_35%] self-end border-l border-white/12 pl-2.5 sm:pl-3">
+                                    <p className="min-w-0 text-left line-clamp-2 text-[14px] sm:text-[15px] font-light leading-[1.08] tracking-[0.01em] text-content dark:text-white">
+                                        {predicador}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
                     )}
                 </div>
 
@@ -744,14 +773,15 @@ export default function CalendarioGrid({
                         <button
                             onClick={() => {
                                 if (window.toggleModalGlobal) {
-                                    window.toggleModalGlobal(true, 'edit', {
-                                        id: cardData.id,
-                                        fecha: cardData.fecha,
-                                        titulo,
-                                        tema,
-                                        estado,
-                                        es_acustico: esAcustico,
-                                        hora_fin: cardData.dbData?.hora_fin || '',
+                            window.toggleModalGlobal(true, 'edit', {
+                                id: cardData.id,
+                                fecha: cardData.fecha,
+                                titulo,
+                                tema: cardData.dbData?.tema_predicacion || '',
+                                predicador: cardData.dbData?.predicador || '',
+                                estado,
+                                es_acustico: esAcustico,
+                                hora_fin: cardData.dbData?.hora_fin || '',
                                         serie_id: cardData.dbData?.serie_id || '',
                                         moderator: !isAdmin && isModerator ? 'true' : 'false',
                                         dbData: cardData.dbData
@@ -933,11 +963,12 @@ export default function CalendarioGrid({
                                             };
 
                                             const tituloBase = ev.dbData?.titulo || 'Actividad Redil';
-                                            const tema_predicacion = ev.dbData?.tema_predicacion && ev.dbData?.tema_predicacion !== 'Sin tema asignado' ? ev.dbData.tema_predicacion : tituloBase;
-                                            const finalTitleDisplay = ev.isVirtual ? 'Actividad Redil' : (tema_predicacion !== tituloBase ? tema_predicacion : tituloBase);
+                                            const { theme: calendarTheme } = getEventThemeAndPreacher(ev.dbData || {}, tituloBase);
+                                            const finalTitleDisplay = ev.isVirtual ? 'Actividad Redil' : (calendarTheme || tituloBase);
+                                            const finalTitleTooltip = ev.isVirtual ? 'Actividad Redil' : buildEventHeadline(ev.dbData || {}, tituloBase);
 
                                             return (
-                                                <button key={i} onClick={clickHandler} title={finalTitleDisplay} className={`text-left text-xs px-2 py-1.5 rounded-lg font-medium tracking-tight truncate w-full flex items-center gap-1.5 transition-colors ${ev.isVirtual ? 'bg-background text-content-muted hover:bg-neutral/20' : 'bg-brand/10 text-brand hover:bg-brand/20 cursor-pointer pointer-events-auto shadow-sm border border-brand/20'}`}>
+                                                <button key={i} onClick={clickHandler} title={finalTitleTooltip} className={`text-left text-xs px-2 py-1.5 rounded-lg font-medium tracking-tight truncate w-full flex items-center gap-1.5 transition-colors ${ev.isVirtual ? 'bg-background text-content-muted hover:bg-neutral/20' : 'bg-brand/10 text-brand hover:bg-brand/20 cursor-pointer pointer-events-auto shadow-sm border border-brand/20'}`}>
                                                     <div className={`w-2 h-2 rounded-full shrink-0 ${ev.isVirtual ? 'bg-neutral-300' : 'bg-brand'}`}></div>
                                                     <span className="font-bold opacity-70">{timeStr}</span>
                                                     <span className="truncate">{finalTitleDisplay}</span>
@@ -1160,8 +1191,3 @@ export default function CalendarioGrid({
         </div>
     );
 }
-
-
-
-
-

@@ -1,6 +1,18 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import RosterManager from './RosterManager.jsx';
+import { getEventThemeAndPreacher } from '../../lib/event-display.js';
+import { isPredicadorColumnMissingError } from '../../lib/predicador-compat.js';
+
+const composeLegacyTemaPredicacion = (temaValue, predicadorValue) => {
+    const temaSafe = String(temaValue || '').trim();
+    const predicadorSafe = String(predicadorValue || '').trim();
+
+    if (temaSafe && predicadorSafe) return `${temaSafe} - ${predicadorSafe}`;
+    if (temaSafe) return temaSafe;
+    if (predicadorSafe) return predicadorSafe;
+    return null;
+};
 
 export default function ModalEvento() {
     const [isOpen, setIsOpen] = useState(false);
@@ -13,6 +25,7 @@ export default function ModalEvento() {
     const [collisionDate, setCollisionDate] = useState(null);
     const [estado, setEstado] = useState('Publicado');
     const [tema, setTema] = useState('');
+    const [predicador, setPredicador] = useState('');
     const [esAcustico, setEsAcustico] = useState(false);
     const [isSerie, setIsSerie] = useState(false);
     const [applySerie, setApplySerie] = useState(false);
@@ -53,6 +66,7 @@ export default function ModalEvento() {
                 setHoraInicio('');
                 setHoraFin('');
                 setTema('');
+                setPredicador('');
                 setEstado('Publicado');
                 setEsAcustico(false);
                 setIsSerie(false);
@@ -78,7 +92,23 @@ export default function ModalEvento() {
                 } catch (e) { }
 
                 setHoraFin(data.hora_fin || '');
-                setTema(data.tema && data.tema !== 'undefined' && data.tema !== 'null' ? data.tema : '');
+                const rawTema =
+                    typeof data.tema === 'string' && data.tema !== 'undefined' && data.tema !== 'null'
+                        ? data.tema
+                        : data.dbData?.tema_predicacion || '';
+                const rawPredicador =
+                    typeof data.predicador === 'string' && data.predicador !== 'undefined' && data.predicador !== 'null'
+                        ? data.predicador
+                        : data.dbData?.predicador || '';
+                const parsedPredicacion = getEventThemeAndPreacher(
+                    {
+                        tema_predicacion: rawTema,
+                        predicador: rawPredicador,
+                    },
+                    '',
+                );
+                setTema(parsedPredicacion.theme || '');
+                setPredicador(parsedPredicacion.preacher || '');
                 setEstado(data.estado || 'Publicado');
                 setEsAcustico(Boolean(data.es_acustico ?? data.dbData?.es_acustico));
 
@@ -187,7 +217,7 @@ export default function ModalEvento() {
 
             if (fetchErr) {
                 alert("Error validando fecha: " + fetchErr.message);
-                setIsLoading(false);
+                setIsSaving(false);
                 return;
             }
 
@@ -202,48 +232,101 @@ export default function ModalEvento() {
             const [h, m] = horaInicio.split(':').map(Number);
             localDate.setHours(h, m, 0, 0);
             const isoPayload = localDate.toISOString();
+            const legacyTemaPredicacion = composeLegacyTemaPredicacion(tema, predicador);
+
+            const buildEventWritePayload = (includePredicador = true) => {
+                const payload = {
+                    titulo,
+                    fecha_hora: isoPayload,
+                    hora_fin: horaFin || null,
+                    tema_predicacion: includePredicador ? (tema || null) : legacyTemaPredicacion,
+                    estado,
+                    es_acustico: esAcustico
+                };
+
+                if (includePredicador) {
+                    payload.predicador = predicador || null;
+                }
+
+                return payload;
+            };
 
             // Camino A: EdiciÃ³n de un evento existente
             if (evId && !evId.startsWith('virtual|')) {
                 if (applySerie && serieId) {
                     // ActualizaciÃ³n masiva a la serie
-                    const { error } = await supabase
-                        .from('eventos')
-                        .update({ titulo, hora_fin: horaFin || null, es_acustico: esAcustico })
-                        .eq('serie_id', serieId)
-                        .gte('fecha_hora', startCheck);
-                    transacError = error;
+                    const [
+                        { error: serieError },
+                        { error: currentEventError },
+                    ] = await Promise.all([
+                        supabase
+                            .from('eventos')
+                            .update({ titulo, hora_fin: horaFin || null, es_acustico: esAcustico })
+                            .eq('serie_id', serieId)
+                            .gte('fecha_hora', startCheck),
+                        supabase
+                            .from('eventos')
+                            .update(buildEventWritePayload(true))
+                            .eq('id', evId),
+                    ]);
+                    transacError = serieError || currentEventError;
+
+                    if (transacError && isPredicadorColumnMissingError(transacError)) {
+                        console.warn('[ModalEvento] Guardando con fallback legado sin columna predicador.');
+                        const [
+                            { error: fallbackSerieError },
+                            { error: fallbackCurrentEventError },
+                        ] = await Promise.all([
+                            supabase
+                                .from('eventos')
+                                .update({ titulo, hora_fin: horaFin || null, es_acustico: esAcustico })
+                                .eq('serie_id', serieId)
+                                .gte('fecha_hora', startCheck),
+                            supabase
+                                .from('eventos')
+                                .update(buildEventWritePayload(false))
+                                .eq('id', evId),
+                        ]);
+                        transacError = fallbackSerieError || fallbackCurrentEventError;
+                    }
                 } else {
                     // ActualizaciÃ³n individual
-                    const { error } = await supabase
+                    let { error } = await supabase
                         .from('eventos')
-                        .update({
-                            titulo,
-                            fecha_hora: isoPayload,
-                            hora_fin: horaFin || null,
-                            tema_predicacion: tema || null,
-                            estado,
-                            es_acustico: esAcustico
-                        })
+                        .update(buildEventWritePayload(true))
                         .eq('id', evId);
+
+                    if (error && isPredicadorColumnMissingError(error)) {
+                        console.warn('[ModalEvento] Guardando con fallback legado sin columna predicador.');
+                        const fallbackResp = await supabase
+                            .from('eventos')
+                            .update(buildEventWritePayload(false))
+                            .eq('id', evId);
+                        error = fallbackResp.error;
+                    }
                     transacError = error;
                 }
             } else {
                 // Camino B: Evento Nuevo
                 const newEv = {
-                    titulo,
-                    fecha_hora: isoPayload,
-                    hora_fin: horaFin || null,
-                    tema_predicacion: tema || null,
-                    estado,
-                    es_acustico: esAcustico,
+                    ...buildEventWritePayload(true),
                     created_by: currentUserId
                 };
 
                 // Evento virtual o FAB (No tiene setteo de serie propio aquÃ­, la serie se crea en Generator modal)
                 if (!evId) newEv.notas_especiales = 'FREQ=WEEKLY;BYDAY=SU';
 
-                const { error } = await supabase.from('eventos').insert([newEv]);
+                let { error } = await supabase.from('eventos').insert([newEv]);
+
+                if (error && isPredicadorColumnMissingError(error)) {
+                    console.warn('[ModalEvento] Insertando con fallback legado sin columna predicador.');
+                    const fallbackResp = await supabase.from('eventos').insert([{
+                        ...buildEventWritePayload(false),
+                        created_by: currentUserId,
+                        ...(evId ? {} : { notas_especiales: 'FREQ=WEEKLY;BYDAY=SU' })
+                    }]);
+                    error = fallbackResp.error;
+                }
                 transacError = error;
             }
 
@@ -368,9 +451,15 @@ export default function ModalEvento() {
                                 </div>
                             </div>
 
-                            <div className="w-full">
-                                <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">TEMA DE PREDICACIÓN <span className="text-content-muted font-normal lowercase">(opcional)</span></label>
-                                <input type="text" id="ev-tema" value={tema} onChange={e => setTema(e.target.value)} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" placeholder="Ej: La Gracia de Dios" />
+                            <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1.65fr)_minmax(220px,0.95fr)] gap-4 w-full">
+                                <div className="min-w-0">
+                                    <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">Tema de predicacion <span className="text-content-muted font-normal lowercase">(opcional)</span></label>
+                                    <input type="text" id="ev-tema" value={tema} onChange={e => setTema(e.target.value)} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" placeholder="Ej: Proverbios" />
+                                </div>
+                                <div className="min-w-0">
+                                    <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">Predicador <span className="text-content-muted font-normal lowercase">(opcional)</span></label>
+                                    <input type="text" id="ev-predicador" value={predicador} onChange={e => setPredicador(e.target.value)} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" placeholder="Ej: P. Ronald" />
+                                </div>
                             </div>
 
                         </div>

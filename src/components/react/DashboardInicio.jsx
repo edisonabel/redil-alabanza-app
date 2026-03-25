@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { buildEventHeadline, getEventThemeAndPreacher } from '../../lib/event-display.js';
 
 const getFirstName = (fullName) => {
     if (!fullName || typeof fullName !== 'string') return '';
@@ -262,7 +263,11 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                             proximosServicios.map((servicio) => {
                                 const evento = servicio.eventos || servicio;
                                 const fecha = formatEventDate(evento.fecha_hora);
-                                const tema = evento.tema_predicacion || evento.tema || evento.titulo || 'Servicio';
+                                const { theme: temaPrincipal, preacher: predicador } = getEventThemeAndPreacher(
+                                    evento,
+                                    evento.titulo || 'Servicio',
+                                );
+                                const headline = buildEventHeadline(evento, evento.titulo || 'Servicio');
                                 const horaTexto = formatTimeRange(evento.fecha_hora, evento.hora_fin);
                                 const hasSetlist = Boolean(servicio?.has_setlist);
                                 const setlistCount = Number(servicio?.setlist_count || 0);
@@ -324,7 +329,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                                         className="ui-pressable-card w-[90vw] sm:w-[420px] lg:w-full lg:min-w-0 shrink-0 snap-center border rounded-[1.65rem] p-3.5 md:p-4 transition-all duration-300 flex flex-col gap-2.5 min-h-[220px] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action/60 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.08),_transparent_50%),linear-gradient(180deg,_rgba(24,24,27,0.97),_rgba(15,23,42,0.95))] border-zinc-700/50 shadow-[0_8px_32px_rgba(2,6,23,0.3)] hover:shadow-[0_12px_40px_rgba(2,6,23,0.45)] hover:border-zinc-600/60 dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_45%),linear-gradient(180deg,_rgba(39,39,42,0.98),_rgba(24,24,27,0.95))] dark:border-zinc-700 dark:shadow-[0_8px_32px_rgba(2,6,23,0.5)] dark:hover:shadow-[0_12px_40px_rgba(2,6,23,0.6)]"
                                         role="button"
                                         tabIndex={0}
-                                        aria-label={hasSetlist ? `Abrir setlist de ${tema}` : canManageSetlist ? `Crear setlist para ${tema}` : `Ver detalle de ${tema}`}
+                                        aria-label={hasSetlist ? `Abrir setlist de ${headline}` : canManageSetlist ? `Crear setlist para ${headline}` : `Ver detalle de ${headline}`}
                                         onClick={openSetlistFromCard}
                                         onKeyDown={(event) => {
                                             if (event.key === 'Enter' || event.key === ' ') {
@@ -340,7 +345,20 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                                             </div>
 
                                             <div className="min-w-0 flex-1">
-                                                <h3 className="text-lg md:text-xl font-extrabold text-white dark:text-content leading-tight line-clamp-2">{tema}</h3>
+                                                <div className="flex min-w-0 items-end gap-3">
+                                                    <div className={`min-w-0 ${predicador ? 'flex-[0_1_65%] max-w-[65%]' : 'flex-1 max-w-full'}`}>
+                                                        <h3 className="min-w-0 text-lg md:text-xl font-extrabold text-white dark:text-content leading-[1.04] line-clamp-2">
+                                                            {temaPrincipal || evento.titulo || 'Servicio'}
+                                                        </h3>
+                                                    </div>
+                                                    {predicador && (
+                                                        <div className="min-w-0 flex-[1_1_35%] self-end border-l border-white/12 pl-2.5">
+                                                            <p className="min-w-0 text-left line-clamp-2 text-[12px] md:text-[13px] font-light leading-[1.08] text-white/92 dark:text-white/95">
+                                                                {predicador}
+                                                            </p>
+                                                        </div>
+                                                    )}
+                                                </div>
                                                 <p className="text-xs md:text-sm text-white/70 dark:text-content-muted mt-2 flex items-center gap-2">
                                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
                                                     {horaTexto}

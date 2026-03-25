@@ -6,6 +6,7 @@ import ModalDetalle from '../components/react/ModalDetalle.jsx';
 import OnboardingRoot from '../components/onboarding/OnboardingRoot';
 import { supabase } from '../lib/supabase';
 import { createClient } from '@supabase/supabase-js';
+import { isPredicadorColumnMissingError, withPredicadorFallbackRows } from '../lib/predicador-compat.js';
 
 const tokenCookie = Astro.cookies.get('sb-access-token');
 if (!tokenCookie) {
@@ -114,29 +115,50 @@ if (rolesError) {
 
 const rolesById = new Map((rolesCatalog || []).map((rol) => [rol.id, rol]));
 
-let eventosQuery = supabaseSSR
-  .from('eventos')
-  .select(`
-    id,
-    fecha_hora,
-    hora_fin,
-    titulo,
-    tema_predicacion,
-    estado,
-    asignaciones (
-      perfil_id,
-      rol_id,
-      perfiles (id, nombre, email, avatar_url)
-    )
-  `)
-  .gte('fecha_hora', fechaFiltroISO)
-  .order('fecha_hora', { ascending: true });
+const buildEventosSelect = (includePredicador = true) => `
+  id,
+  fecha_hora,
+  hora_fin,
+  titulo,
+  tema_predicacion,
+  ${includePredicador ? 'predicador,' : ''}
+  estado,
+  asignaciones (
+    perfil_id,
+    rol_id,
+    perfiles (id, nombre, email, avatar_url)
+  )
+`;
 
-if (!perfil?.is_admin) {
-  eventosQuery = eventosQuery.eq('estado', 'Publicado');
+const buildEventosQuery = (includePredicador = true) => {
+  let query = supabaseSSR
+    .from('eventos')
+    .select(buildEventosSelect(includePredicador))
+    .gte('fecha_hora', fechaFiltroISO)
+    .order('fecha_hora', { ascending: true });
+
+  if (!perfil?.is_admin) {
+    query = query.eq('estado', 'Publicado');
+  }
+
+  return query;
+};
+
+let { data: eventosData, error: eventosError } = await buildEventosQuery(true);
+
+if (isPredicadorColumnMissingError(eventosError)) {
+  const fallbackResp = await buildEventosQuery(false);
+  if (!fallbackResp.error) {
+    eventosData = withPredicadorFallbackRows(fallbackResp.data || []);
+    eventosError = null;
+    console.warn('Inicio eventos query: usando fallback sin columna predicador.');
+  } else {
+    eventosData = fallbackResp.data;
+    eventosError = fallbackResp.error;
+  }
+} else {
+  eventosData = withPredicadorFallbackRows(eventosData || []);
 }
-
-const { data: eventosData, error: eventosError } = await eventosQuery;
 
 if (eventosError) {
   console.error('Inicio eventos query error:', eventosError);

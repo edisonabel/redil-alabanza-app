@@ -2,6 +2,8 @@
 import Layout from '../layouts/Layout.astro';
 import PanelControl from '../components/react/PanelControl.jsx';
 import { createClient } from '@supabase/supabase-js';
+import { buildEventHeadline } from '../lib/event-display.js';
+import { isPredicadorColumnMissingError, withPredicadorFallbackRows } from '../lib/predicador-compat.js';
 
 const tokenCookie = Astro.cookies.get('sb-access-token');
 if (!tokenCookie) {
@@ -155,28 +157,35 @@ const fetchSongs = async () => {
 
 const isAdmin = Boolean(perfilBase?.is_admin);
 
-let eventosQuery = supabaseSSR
-  .from('eventos')
-  .select(`
-    id,
-    fecha_hora,
-    hora_fin,
-    titulo,
-    tema_predicacion,
-    estado,
-    asignaciones (
-      perfil_id,
-      rol_id,
-      perfiles (id, nombre, avatar_url)
-    )
-  `)
-  .gte('fecha_hora', fetchPastFloor.toISOString())
-  .lte('fecha_hora', fetchFutureLimit.toISOString())
-  .order('fecha_hora', { ascending: true });
+const buildEventosSelect = (includePredicador = true) => `
+  id,
+  fecha_hora,
+  hora_fin,
+  titulo,
+  tema_predicacion,
+  ${includePredicador ? 'predicador,' : ''}
+  estado,
+  asignaciones (
+    perfil_id,
+    rol_id,
+    perfiles (id, nombre, avatar_url)
+  )
+`;
 
-if (!isAdmin) {
-  eventosQuery = eventosQuery.eq('estado', 'Publicado');
-}
+const buildEventosQuery = (includePredicador = true) => {
+  let query = supabaseSSR
+    .from('eventos')
+    .select(buildEventosSelect(includePredicador))
+    .gte('fecha_hora', fetchPastFloor.toISOString())
+    .lte('fecha_hora', fetchFutureLimit.toISOString())
+    .order('fecha_hora', { ascending: true });
+
+  if (!isAdmin) {
+    query = query.eq('estado', 'Publicado');
+  }
+
+  return query;
+};
 
 const [
   perfilesResp,
@@ -191,7 +200,7 @@ const [
   supabaseSSR.from('perfiles').select('id, nombre, avatar_url, telefono, fecha_nacimiento').order('nombre'),
   supabaseSSR.from('roles').select('id, nombre, codigo').order('nombre'),
   supabaseSSR.from('perfil_roles').select('perfil_id, rol_id'),
-  eventosQuery,
+  buildEventosQuery(true),
   supabaseSSR.from('playlists').select('id, evento_id, updated_at'),
   supabaseSSR.from('playlist_canciones').select('playlist_id, cancion_id, orden'),
   supabaseSSR
@@ -216,7 +225,19 @@ warnings.push(...(songsBundle.warnings || []));
 const perfiles = perfilesResp.data || [];
 const roles = rolesResp.data || [];
 const perfilRoles = perfilRolesResp.data || [];
-const eventos = eventosResp.data || [];
+let eventos = withPredicadorFallbackRows(eventosResp.data || []);
+
+if (isPredicadorColumnMissingError(eventosResp.error)) {
+  const fallbackEventosResp = await buildEventosQuery(false);
+  if (!fallbackEventosResp.error) {
+    eventos = withPredicadorFallbackRows(fallbackEventosResp.data || []);
+    const warningIndex = warnings.findIndex((warning) => warning === `Eventos: ${eventosResp.error.message}`);
+    if (warningIndex >= 0) warnings.splice(warningIndex, 1);
+    console.warn('Panel eventos query: usando fallback sin columna predicador.');
+  } else {
+    if (fallbackEventosResp.error) warnings.push(`Eventos fallback: ${fallbackEventosResp.error.message}`);
+  }
+}
 const playlists = playlistsResp.data || [];
 const playlistCanciones = playlistCancionesResp.data || [];
 const ausencias = ausenciasResp.data || [];
@@ -352,7 +373,7 @@ const operationalEvents = eventos
 
     return {
       id: String(evento.id),
-      title: safeText(evento.tema_predicacion) || safeText(evento.titulo, 'Servicio'),
+      title: buildEventHeadline(evento, safeText(evento.titulo, 'Servicio')),
       eventTitle: safeText(evento.titulo, 'Evento'),
       dateIso: evento.fecha_hora,
       status,

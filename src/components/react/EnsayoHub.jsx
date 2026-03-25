@@ -889,6 +889,8 @@ export default function EnsayoHub({
   const serviceDate = formatDateLabel(eventMeta?.fecha_hora);
   const serviceHour = formatHourLabel(eventMeta?.fecha_hora);
   const serviceDuration = formatServiceDuration(eventMeta?.fecha_hora, eventMeta?.hora_fin);
+  const displayContextTitle = String(eventMeta?.display_theme || contextTitle || '').trim() || 'Modo Ensayo';
+  const displayContextPreacher = String(eventMeta?.display_preacher || eventMeta?.predicador || '').trim();
 
   return (
     <div className="flex h-screen w-full flex-col bg-white text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
@@ -910,8 +912,13 @@ export default function EnsayoHub({
                     Setlist de Ensayo
                   </p>
                   <h1 className="mt-2 text-2xl font-black tracking-tight text-zinc-950 dark:text-zinc-50 md:text-4xl">
-                    {contextTitle}
+                    {displayContextTitle}
                   </h1>
+                  {displayContextPreacher && (
+                    <p className="mt-1.5 text-sm font-light text-zinc-600 dark:text-zinc-300 md:text-base">
+                      {displayContextPreacher}
+                    </p>
+                  )}
                   <div className="mt-3 flex flex-wrap items-center gap-3 text-sm font-medium text-zinc-600 dark:text-zinc-300">
                     {serviceDate && (
                       <span className="inline-flex items-center gap-2">
