@@ -36,6 +36,7 @@
 :root {
   --font-ui: "adineue", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --font-cta: "Modius", "adineue", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --app-safe-top-offset: 0px;
 }
 
 html,
@@ -43,6 +44,20 @@ body {
   font-family: var(--font-ui);
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+}
+
+@media (max-width: 767px) {
+  html[data-standalone-app='true'] {
+    --app-safe-top-offset: calc(env(safe-area-inset-top) + 0.55rem);
+  }
+}
+
+html[data-standalone-app='true'] .app-safe-main {
+  padding-top: var(--app-safe-top-offset);
+}
+
+html[data-standalone-app='true'] #dashboard-scroll-root {
+  height: calc(100dvh - 80px - var(--app-safe-top-offset));
 }
 
 button,
