@@ -1,7 +1,8 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { audioSessionService } from '../services/AudioSessionService';
-import { CheckCircle, UploadCloud, Loader2, Plus, PencilLine, X, Save, Pause, Play } from 'lucide-react';
+import { CheckCircle, UploadCloud, Loader2, Plus, PencilLine, X, Save, Pause, Play, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const { useRef } = React;
 
@@ -13,6 +14,7 @@ const CHORD_SYMBOL_RE = new RegExp(`^${CHORD_BODY_PATTERN}$`, 'i');
 const LEADING_CHORD_SECTION_RE = new RegExp(`^\\[(${CHORD_BODY_PATTERN})\\|`, 'i');
 const BROKEN_INLINE_CHORD_RE = new RegExp(`\\[(${CHORD_BODY_PATTERN})\\s*\\|\\s*`, 'gi');
 const EDITOR_MODAL_MAX_HEIGHT = 'min(90vh, calc(100dvh - 9.5rem - env(safe-area-inset-bottom)))';
+const ARCHIVO_ELIMINABLE_FIELDS = new Set(['mp3', 'link_acordes']);
 
 const normalizeSectionName = (rawValue = '') => {
   const cleaned = String(rawValue).trim();
@@ -314,7 +316,7 @@ const areTimesClose = (left, right, precision = 0.25) => (
 const EditableCell = ({ cancionId, campoBd, valorInicial, onSave, isSaving, anchoClases = "min-w-[8rem]", customInputClasses = "" }) => {
   const [valor, setValor] = useState(valorInicial || '');
 
-  const defaultInputClasses = "w-full min-h-[44px] px-3 py-2 bg-transparent border border-transparent focus:border-brand focus:ring-1 focus:ring-brand hover:border-border transition-colors outline-none text-sm text-content truncate";
+  const defaultInputClasses = "w-full min-h-[38px] px-2.5 py-1.5 bg-transparent border border-transparent focus:border-brand focus:ring-1 focus:ring-brand hover:border-border transition-colors outline-none text-[13px] text-content truncate";
   const inputClasses = customInputClasses || defaultInputClasses;
 
   useEffect(() => {
@@ -368,6 +370,20 @@ export default function AdminRepertorio() {
   const editorAudioCurrentTimeRef = useRef(0);
   const editorAudioDurationRef = useRef(0);
   const editorAudioFrameRef = useRef(null);
+  const tableScrollRef = useRef(null);
+  const horizontalTrackRef = useRef(null);
+  const horizontalDragStateRef = useRef({ startX: 0, startScrollLeft: 0 });
+  const [horizontalScrollUi, setHorizontalScrollUi] = useState({
+    hasOverflow: false,
+    scrollLeft: 0,
+    scrollWidth: 0,
+    clientWidth: 0,
+    thumbWidth: 0,
+    thumbOffset: 0,
+  });
+  const [draggingHorizontalThumb, setDraggingHorizontalThumb] = useState(false);
+  const [headerActionsHost, setHeaderActionsHost] = useState(null);
+  const [headerActionsReady, setHeaderActionsReady] = useState(false);
 
   const [sessionUser, setSessionUser] = useState(null);
 
@@ -403,10 +419,124 @@ export default function AdminRepertorio() {
     })
   ), [canciones]);
 
+  const canScrollHorizontalLeft = horizontalScrollUi.scrollLeft > 2;
+  const canScrollHorizontalRight =
+    horizontalScrollUi.scrollLeft < (horizontalScrollUi.scrollWidth - horizontalScrollUi.clientWidth - 2);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    setHeaderActionsHost(document.getElementById('admin-header-actions'));
+    setHeaderActionsReady(true);
+  }, []);
+
   useEffect(() => {
     if (!editorChordproAbierto) return;
     setEditorSectionMarkers((prev) => normalizeSectionMarkers(seccionesEditorChordpro, prev));
   }, [editorChordproAbierto, seccionesEditorChordpro]);
+
+  useEffect(() => {
+    const scrollEl = tableScrollRef.current;
+    if (!scrollEl) return undefined;
+
+    const updateHorizontalScrollUi = () => {
+      const nextScrollWidth = scrollEl.scrollWidth;
+      const nextClientWidth = scrollEl.clientWidth;
+      const nextScrollLeft = scrollEl.scrollLeft;
+      const trackWidth = horizontalTrackRef.current?.clientWidth || 0;
+      const hasOverflow = nextScrollWidth - nextClientWidth > 1;
+      const thumbWidth = hasOverflow && trackWidth > 0
+        ? Math.max(72, (nextClientWidth / nextScrollWidth) * trackWidth)
+        : 0;
+      const maxScrollLeft = Math.max(0, nextScrollWidth - nextClientWidth);
+      const maxThumbOffset = Math.max(0, trackWidth - thumbWidth);
+      const thumbOffset = maxScrollLeft > 0 && maxThumbOffset > 0
+        ? (nextScrollLeft / maxScrollLeft) * maxThumbOffset
+        : 0;
+
+      setHorizontalScrollUi((prev) => {
+        const nextState = {
+          hasOverflow,
+          scrollLeft: nextScrollLeft,
+          scrollWidth: nextScrollWidth,
+          clientWidth: nextClientWidth,
+          thumbWidth,
+          thumbOffset,
+        };
+
+        const sameState = Object.keys(nextState).every((key) => (
+          Math.abs((prev[key] || 0) - (nextState[key] || 0)) < 0.5
+        ));
+
+        return sameState ? prev : nextState;
+      });
+    };
+
+    const scheduleUpdate = () => {
+      window.requestAnimationFrame(updateHorizontalScrollUi);
+    };
+
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(scheduleUpdate)
+      : null;
+
+    resizeObserver?.observe(scrollEl);
+    if (horizontalTrackRef.current) {
+      resizeObserver?.observe(horizontalTrackRef.current);
+    }
+
+    const tableEl = scrollEl.querySelector('table');
+    if (tableEl) {
+      resizeObserver?.observe(tableEl);
+    }
+
+    scrollEl.addEventListener('scroll', scheduleUpdate, { passive: true });
+    window.addEventListener('resize', scheduleUpdate);
+    scheduleUpdate();
+
+    return () => {
+      resizeObserver?.disconnect();
+      scrollEl.removeEventListener('scroll', scheduleUpdate);
+      window.removeEventListener('resize', scheduleUpdate);
+    };
+  }, [canciones.length, loading]);
+
+  useEffect(() => {
+    if (!draggingHorizontalThumb) return undefined;
+
+    const handlePointerMove = (event) => {
+      const scrollEl = tableScrollRef.current;
+      const trackEl = horizontalTrackRef.current;
+      if (!scrollEl || !trackEl) return;
+
+      const trackWidth = trackEl.clientWidth;
+      const maxThumbOffset = Math.max(1, trackWidth - horizontalScrollUi.thumbWidth);
+      const maxScrollLeft = Math.max(0, scrollEl.scrollWidth - scrollEl.clientWidth);
+      const deltaX = event.clientX - horizontalDragStateRef.current.startX;
+      const nextScrollLeft = horizontalDragStateRef.current.startScrollLeft + ((deltaX / maxThumbOffset) * maxScrollLeft);
+
+      scrollEl.scrollLeft = Math.max(0, Math.min(nextScrollLeft, maxScrollLeft));
+    };
+
+    const stopDragging = () => {
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      setDraggingHorizontalThumb(false);
+    };
+
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'grabbing';
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', stopDragging);
+    window.addEventListener('pointercancel', stopDragging);
+
+    return () => {
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', stopDragging);
+      window.removeEventListener('pointercancel', stopDragging);
+    };
+  }, [draggingHorizontalThumb, horizontalScrollUi.thumbWidth]);
 
   useEffect(() => {
     if (!editorChordproAbierto) return undefined;
@@ -686,6 +816,62 @@ export default function AdminRepertorio() {
     }
   };
 
+  const eliminarArchivoActual = async (cancion, campoBd) => {
+    const valorActual = String(cancion?.[campoBd] || '').trim();
+    if (!cancion?.id || !valorActual) return;
+
+    const etiquetaCampo = campoBd === 'mp3' ? 'el MP3' : 'los acordes';
+    const tituloCancion = String(cancion?.titulo || 'esta cancion').trim() || 'esta cancion';
+    const confirmar = window.confirm(
+      `Se quitara ${etiquetaCampo} de "${tituloCancion}".\n\nSi pertenece al almacenamiento de la app, tambien se intentara borrar del bucket.\n\nDeseas continuar?`
+    );
+
+    if (!confirmar) return;
+
+    const keyContext = `${cancion.id}_${campoBd}`;
+    setUploading((prev) => ({ ...prev, [keyContext]: true }));
+
+    try {
+      const cleanupResponse = await fetch('/api/delete-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileUrl: valorActual }),
+      });
+
+      if (!cleanupResponse.ok) {
+        const cleanupBody = await cleanupResponse.json().catch(() => null);
+        throw new Error(cleanupBody?.error || 'No se pudo limpiar el archivo actual.');
+      }
+
+      const { error: updateError } = await supabase
+        .from('canciones')
+        .update({ [campoBd]: null })
+        .eq('id', cancion.id);
+
+      if (updateError) throw updateError;
+
+      setCanciones((prev) => prev.map((item) => (
+        item.id === cancion.id
+          ? { ...item, [campoBd]: null }
+          : item
+      )));
+
+      if (campoBd === 'mp3' && editorChordproCancion?.id === cancion.id) {
+        setEditorChordproCancion((prev) => (prev ? { ...prev, mp3: null } : prev));
+        setEditorAudioCurrentTime(0);
+        setEditorAudioDuration(0);
+        setEditorAudioPlaying(false);
+        editorAudioCurrentTimeRef.current = 0;
+        editorAudioDurationRef.current = 0;
+      }
+    } catch (err) {
+      console.error('Error eliminando archivo:', err);
+      alert(`Error al quitar ${etiquetaCampo}: ${err.message}`);
+    } finally {
+      setUploading((prev) => ({ ...prev, [keyContext]: false }));
+    }
+  };
+
   const abrirEditorChordpro = async (cancion) => {
     const rawChordpro = String(cancion?.chordpro || '').trim();
     let chordproParaEditor = rawChordpro;
@@ -798,6 +984,9 @@ export default function AdminRepertorio() {
     const keyContext = `${cancion.id}_${campoBd}`;
     const estaCargando = uploading[keyContext];
     const esChordPro = campoBd === 'chordpro';
+    const valorTexto = String(valor || '').trim();
+    const puedeEliminar = ARCHIVO_ELIMINABLE_FIELDS.has(campoBd);
+    const etiquetaArchivo = campoBd === 'mp3' ? 'MP3 actual' : 'Acordes actuales';
 
     if (estaCargando) {
       return (
@@ -807,24 +996,35 @@ export default function AdminRepertorio() {
       );
     }
 
-    if (valor && valor.trim() !== '' && !esChordPro) {
+    if (valorTexto && !esChordPro) {
       return (
-        <div className="flex justify-center items-center h-full text-green-500 min-w-[8rem]" title={valor}>
-          <CheckCircle className="w-5 h-5" />
+        <div className="group relative flex min-h-[44px] min-w-[8rem] items-center justify-center px-2 py-1.5" title={valorTexto}>
+          <CheckCircle className="h-5 w-5 text-emerald-500" />
+          {puedeEliminar && (
+            <button
+              type="button"
+              onClick={() => eliminarArchivoActual(cancion, campoBd)}
+              className="absolute right-1.5 top-1.5 inline-flex h-7 w-7 items-center justify-center rounded-full border border-transparent bg-surface/90 text-content-muted opacity-100 transition-all hover:border-danger/20 hover:bg-danger/10 hover:text-danger focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+              aria-label={`Eliminar ${etiquetaArchivo}`}
+              title={`Quitar ${etiquetaArchivo}`}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       );
     }
 
     if (esChordPro) {
         return (
-          <div className="inline-flex w-full min-w-[17rem] flex-nowrap items-center justify-center gap-2 py-1 px-2">
+          <div className="inline-flex w-full min-w-[17rem] flex-nowrap items-center justify-center gap-2 py-0.5 px-1.5">
             <label
-              className={`cursor-pointer group inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border hover:bg-surface text-action transition-all shadow-sm whitespace-nowrap ${valor && valor.trim() !== '' ? 'bg-brand/10 border-brand/30 text-brand' : ''}`}
-              title={valor ? 'ChordPro cargado. Puedes reemplazarlo.' : undefined}
+              className={`cursor-pointer group inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-action transition-all shadow-sm whitespace-nowrap hover:bg-surface ${valorTexto ? 'border-brand/30 bg-brand/10 text-brand' : ''}`}
+              title={valorTexto ? 'ChordPro cargado. Puedes reemplazarlo.' : undefined}
             >
               <UploadCloud className="w-4 h-4" />
               <span className="text-xs font-semibold text-content group-hover:text-action transition-colors">
-                {valor && valor.trim() !== '' ? 'Reemplazar TXT' : 'Subir TXT'}
+                {valorTexto ? 'Reemplazar TXT' : 'Subir TXT'}
             </span>
             <input
               type="file"
@@ -837,10 +1037,10 @@ export default function AdminRepertorio() {
             <button
               type="button"
               onClick={() => abrirEditorChordpro(cancion)}
-              className={`inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all shadow-sm text-xs font-semibold whitespace-nowrap ${valor && valor.trim() !== '' ? 'border-brand/30 bg-brand/10 text-brand hover:bg-brand/15' : 'border-border bg-surface text-content hover:bg-background'}`}
+              className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-all shadow-sm ${valorTexto ? 'border-brand/30 bg-brand/10 text-brand hover:bg-brand/15' : 'border-border bg-surface text-content hover:bg-background'}`}
             >
               <PencilLine className="w-3.5 h-3.5" />
-              {valor && valor.trim() !== '' ? 'Editar' : 'Pegar'}
+              {valorTexto ? 'Editar' : 'Pegar'}
             </button>
           </div>
       );
@@ -849,7 +1049,7 @@ export default function AdminRepertorio() {
     return (
       <div className="flex justify-center items-center h-full min-w-[8rem]">
         <label
-          className="cursor-pointer group flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-border hover:bg-surface text-action transition-all shadow-sm"
+          className="cursor-pointer group flex items-center justify-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-action transition-all shadow-sm hover:bg-surface"
         >
           <UploadCloud className="w-4 h-4" />
           <span className="text-xs font-semibold text-content group-hover:text-action transition-colors">
@@ -863,6 +1063,51 @@ export default function AdminRepertorio() {
         </label>
       </div>
     );
+  };
+
+  const desplazarTablaHorizontalmente = (delta) => {
+    const scrollEl = tableScrollRef.current;
+    if (!scrollEl) return;
+
+    scrollEl.scrollBy({
+      left: delta,
+      behavior: 'smooth',
+    });
+  };
+
+  const manejarClickEnTrackHorizontal = (event) => {
+    if (event.target instanceof HTMLElement && event.target.dataset.adminScrollThumb === 'true') {
+      return;
+    }
+
+    const scrollEl = tableScrollRef.current;
+    const trackEl = horizontalTrackRef.current;
+    if (!scrollEl || !trackEl || !horizontalScrollUi.hasOverflow) return;
+
+    const rect = trackEl.getBoundingClientRect();
+    const clickOffset = event.clientX - rect.left - (horizontalScrollUi.thumbWidth / 2);
+    const maxThumbOffset = Math.max(0, rect.width - horizontalScrollUi.thumbWidth);
+    const clampedOffset = Math.max(0, Math.min(clickOffset, maxThumbOffset));
+    const maxScrollLeft = Math.max(0, scrollEl.scrollWidth - scrollEl.clientWidth);
+    const nextScrollLeft = maxThumbOffset > 0
+      ? (clampedOffset / maxThumbOffset) * maxScrollLeft
+      : 0;
+
+    scrollEl.scrollTo({
+      left: nextScrollLeft,
+      behavior: 'smooth',
+    });
+  };
+
+  const iniciarDragHorizontalThumb = (event) => {
+    if (!horizontalScrollUi.hasOverflow) return;
+
+    event.preventDefault();
+    horizontalDragStateRef.current = {
+      startX: event.clientX,
+      startScrollLeft: tableScrollRef.current?.scrollLeft || 0,
+    };
+    setDraggingHorizontalThumb(true);
   };
 
   const toggleEditorAudioPlayback = async () => {
@@ -908,6 +1153,37 @@ export default function AdminRepertorio() {
     ? Math.min(100, Math.max(0, (editorAudioCurrentTime / editorAudioDuration) * 100))
     : 0;
 
+  const headerActions = (
+    <>
+      <button
+        onClick={agregarCancion}
+        disabled={loading}
+        className="inline-flex min-h-[34px] items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand/90 disabled:opacity-50"
+      >
+        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+        Nueva
+      </button>
+
+      <span className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold md:text-xs ${
+        cancionesPendientesChordpro.length > 0
+          ? 'border-amber-500/25 bg-amber-500/10 text-amber-600'
+          : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600'
+      }`}>
+        <span className="inline-flex min-w-[1.65rem] items-center justify-center rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-black">
+          {cancionesPendientesChordpro.length}
+        </span>
+        <span>Sin ChordPro</span>
+      </span>
+
+      {!sectionMarkersDisponibles && (
+        <span className="inline-flex min-h-[34px] items-center rounded-full border border-amber-500/25 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-600 md:text-xs">
+          <span className="hidden sm:inline">Falta migracion de</span>
+          <code className="mx-1 text-[11px] font-semibold">section_markers</code>
+        </span>
+      )}
+    </>
+  );
+
   if (!loading && !sessionUser) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
@@ -929,34 +1205,14 @@ export default function AdminRepertorio() {
   }
 
   return (
-    <div className="antialiased w-full h-full flex flex-col">
-      <div className="mb-3 flex flex-wrap items-center gap-2 px-3 md:px-5 xl:px-6">
-        <button
-          onClick={agregarCancion}
-          disabled={loading}
-          className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl bg-brand px-5 py-2 font-bold text-white shadow transition-colors hover:bg-brand/90 disabled:opacity-50"
-        >
-          {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Plus className="h-5 w-5" />}
-          Anadir Cancion
-        </button>
-
-        <span className={`inline-flex min-h-[40px] items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold md:text-sm ${
-          cancionesPendientesChordpro.length > 0
-            ? 'border-amber-500/25 bg-amber-500/10 text-amber-600'
-            : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600'
-        }`}>
-          <span className="inline-flex min-w-[1.75rem] items-center justify-center rounded-full bg-white/70 px-2 py-1 text-[11px] font-black">
-            {cancionesPendientesChordpro.length}
-          </span>
-          Pendientes sin ChordPro
-        </span>
-
-        {!sectionMarkersDisponibles && (
-          <span className="inline-flex min-h-[40px] items-center rounded-full border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 md:text-sm">
-            Falta la migracion para guardar <code className="mx-1 text-[12px] font-semibold">section_markers</code>
-          </span>
-        )}
-      </div>
+    <div className="antialiased flex h-full min-h-0 flex-1 flex-col overflow-hidden pb-[calc(env(safe-area-inset-bottom)+0.2rem)]">
+      {headerActionsReady && (headerActionsHost
+        ? createPortal(headerActions, headerActionsHost)
+        : (
+          <div className="mb-1.5 shrink-0 flex flex-wrap items-center gap-1.5 px-2 md:px-3 xl:px-4">
+            {headerActions}
+          </div>
+        ))}
 
       <div className="hidden mb-6 flex-col sm:flex-row sm:items-center justify-between gap-4 px-4 max-w-7xl mx-auto w-full">
         <div>
@@ -1035,112 +1291,162 @@ export default function AdminRepertorio() {
       </div>
 
       {errorTexto && (
-        <div className="mx-3 mb-4 rounded-xl border border-red-500/20 bg-red-50/10 p-4 font-medium text-red-500 md:mx-5 xl:mx-6">
+        <div className="mx-2 mb-3 shrink-0 rounded-xl border border-red-500/20 bg-red-50/10 p-4 font-medium text-red-500 md:mx-4 xl:mx-5">
           {errorTexto}
         </div>
       )}
 
       {loading && canciones.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-32 gap-4">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 py-16">
           <Loader2 className="w-10 h-10 text-brand animate-spin" />
           <span className="text-content-muted font-medium tracking-wide">Cargando base de datos...</span>
         </div>
       ) : (
-        <div className="w-full overflow-hidden border-y border-border bg-surface shadow-sm">
-          <div className="admin-table-scroll h-[calc(100dvh-16.8rem-env(safe-area-inset-bottom))] min-h-[32rem] overflow-x-scroll overflow-y-auto bg-background md:h-[calc(100dvh-16.8rem-env(safe-area-inset-bottom))]">
-            <table className="w-max text-left border-collapse bg-surface relative">
-              <thead className="sticky top-0 z-20 bg-background border-b border-border shadow-sm">
-                <tr className="text-xs uppercase tracking-wider text-content-muted font-bold divide-x divide-border">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-2 md:px-3 xl:px-4">
+          <section className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-[1.05rem] border border-border/90 bg-surface/95 shadow-[0_18px_38px_-24px_rgba(15,23,42,0.28)]">
+            <div ref={tableScrollRef} className="admin-table-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-background/90 pb-[calc(env(safe-area-inset-bottom)+2.45rem)]">
+              <table className="relative w-max min-w-full border-separate border-spacing-0 bg-surface text-left">
+                <thead className="admin-table-head">
+                <tr className="admin-table-head-row text-xs uppercase tracking-wider text-content-muted font-bold divide-x divide-border">
                   {/* Fijas */}
-                  <th className="sticky left-0 z-30 bg-background top-0 px-0 py-0 border-r border-border text-center overflow-hidden min-w-[14rem] max-w-[14rem]">
-                    <div className="px-4 py-4 w-full h-full text-left truncate">Titulo / Cantante</div>
+                  <th className="admin-head-cell admin-head-cell-primary overflow-hidden border-r border-border px-0 py-0 text-center min-w-[14rem] max-w-[14rem]">
+                    <div className="h-full w-full truncate px-4 py-3 text-left">Titulo / Cantante</div>
                   </th>
                   {/* Metadata */}
-                  <th className="px-4 py-4 min-w-[6rem]">Tonalidad</th>
-                  <th className="px-4 py-4 min-w-[5rem]">BPM</th>
-                  <th className="px-4 py-4 min-w-[8rem]">Categoria</th>
-                  <th className="px-4 py-4 min-w-[8rem]">Voz</th>
-                  <th className="px-4 py-4 min-w-[8rem]">Tema</th>
-                  <th className="px-4 py-4 min-w-[6rem]">Estado</th>
-                  <th className="px-4 py-4 min-w-[10rem]">Youtube (URL)</th>
+                  <th className="admin-head-cell px-4 py-3 min-w-[6rem]">Tonalidad</th>
+                  <th className="admin-head-cell px-4 py-3 min-w-[5rem]">BPM</th>
+                  <th className="admin-head-cell px-4 py-3 min-w-[8rem]">Categoria</th>
+                  <th className="admin-head-cell px-4 py-3 min-w-[8rem]">Voz</th>
+                  <th className="admin-head-cell px-4 py-3 min-w-[8rem]">Tema</th>
+                  <th className="admin-head-cell px-4 py-3 min-w-[6rem]">Estado</th>
+                  <th className="admin-head-cell px-4 py-3 min-w-[10rem]">Youtube (URL)</th>
                   {/* Archivos R2 */}
-                  <th className="px-4 py-4 text-center min-w-[8rem]">MP3</th>
-                  <th className="px-4 py-4 text-center min-w-[8rem]">Acordes</th>
-                  <th className="px-4 py-4 text-center min-w-[8rem]">Letras</th>
-                  <th className="px-4 py-4 text-center min-w-[8rem]">Voces</th>
-                  <th className="px-4 py-4 text-center min-w-[8rem]">Secuencias</th>
-                  <th className="px-4 py-4 text-center min-w-[17rem]">ChordPro</th>
+                  <th className="admin-head-cell px-4 py-3 text-center min-w-[8rem]">MP3</th>
+                  <th className="admin-head-cell px-4 py-3 text-center min-w-[8rem]">Acordes</th>
+                  <th className="admin-head-cell px-4 py-3 text-center min-w-[8rem]">Letras</th>
+                  <th className="admin-head-cell px-4 py-3 text-center min-w-[8rem]">Voces</th>
+                  <th className="admin-head-cell px-4 py-3 text-center min-w-[8rem]">Secuencias</th>
+                  <th className="admin-head-cell px-4 py-3 text-center min-w-[17rem]">ChordPro</th>
                 </tr>
-              </thead>
-              <tbody className="text-sm divide-y divide-border">
-                {canciones.map((cancion) => (
-                  <tr key={cancion.id} className="hover:bg-background/40 transition-colors group divide-x divide-border">
-                    {/* Fijas */}
-                    <td className="sticky left-0 z-10 bg-surface group-hover:bg-background/80 border-r border-border align-top min-w-[14rem] max-w-[14rem]">
-                      <div className="flex flex-col justify-center gap-0.5 py-1.5 px-3">
-                        <EditableCell
-                          cancionId={cancion.id}
-                          campoBd="titulo"
-                          valorInicial={cancion.titulo}
-                          onSave={guardarMetadata}
-                          isSaving={savingCell[`${cancion.id}_titulo`]}
-                          anchoClases="w-full"
-                          customInputClasses="text-[13px] font-semibold text-gray-900 dark:text-gray-100 bg-transparent border-none p-0 m-0 leading-none focus:ring-0 w-full h-auto shadow-none truncate"
-                        />
-                        <div className="w-full">
+                </thead>
+                <tbody className="text-sm">
+                  {canciones.map((cancion) => (
+                    <tr key={cancion.id} className="group divide-x divide-border border-b border-border/80 hover:bg-background/40 transition-colors">
+                      {/* Fijas */}
+                      <td className="admin-row-primary align-top min-w-[14rem] max-w-[14rem] border-r border-border">
+                        <div className="flex flex-col justify-center gap-0.5 px-3 py-1">
                           <EditableCell
                             cancionId={cancion.id}
-                            campoBd="cantante"
-                            valorInicial={cancion.cantante}
+                            campoBd="titulo"
+                            valorInicial={cancion.titulo}
                             onSave={guardarMetadata}
-                            isSaving={savingCell[`${cancion.id}_cantante`]}
+                            isSaving={savingCell[`${cancion.id}_titulo`]}
                             anchoClases="w-full"
-                            customInputClasses="text-[11px] text-gray-500 dark:text-gray-400 bg-transparent border-none p-0 m-0 leading-none focus:ring-0 w-full h-auto shadow-none truncate"
+                            customInputClasses="text-[13px] font-semibold text-gray-900 dark:text-gray-100 bg-transparent border-none p-0 m-0 leading-none focus:ring-0 w-full h-auto shadow-none truncate"
                           />
+                          <div className="w-full">
+                            <EditableCell
+                              cancionId={cancion.id}
+                              campoBd="cantante"
+                              valorInicial={cancion.cantante}
+                              onSave={guardarMetadata}
+                              isSaving={savingCell[`${cancion.id}_cantante`]}
+                              anchoClases="w-full"
+                              customInputClasses="text-[11px] text-gray-500 dark:text-gray-400 bg-transparent border-none p-0 m-0 leading-none focus:ring-0 w-full h-auto shadow-none truncate"
+                            />
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    
-                    {/* Metadata */}
-                    <td className="p-0 align-top">
-                      <EditableCell cancionId={cancion.id} campoBd="tonalidad" valorInicial={cancion.tonalidad} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_tonalidad`]} anchoClases="min-w-[6rem] max-w-[6rem]" />
-                    </td>
-                    <td className="p-0 align-top">
-                      <EditableCell cancionId={cancion.id} campoBd="bpm" valorInicial={cancion.bpm} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_bpm`]} anchoClases="min-w-[5rem] max-w-[5rem]" />
-                    </td>
-                    <td className="p-0 align-top">
-                      <EditableCell cancionId={cancion.id} campoBd="categoria" valorInicial={cancion.categoria} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_categoria`]} anchoClases="min-w-[8rem] max-w-[8rem]" />
-                    </td>
-                    <td className="p-0 align-top">
-                      <EditableCell cancionId={cancion.id} campoBd="voz" valorInicial={cancion.voz || cancion.voz_principal} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_voz`]} anchoClases="min-w-[8rem] max-w-[8rem]" />
-                    </td>
-                    <td className="p-0 align-top">
-                      <EditableCell cancionId={cancion.id} campoBd="tema" valorInicial={cancion.tema} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_tema`]} anchoClases="min-w-[8rem] max-w-[8rem]" />
-                    </td>
-                    <td className="p-0 align-top">
-                      <EditableCell cancionId={cancion.id} campoBd="estado" valorInicial={cancion.estado} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_estado`]} anchoClases="min-w-[8rem] max-w-[8rem]" />
-                    </td>
-                    <td className="p-0 align-top">
-                      <EditableCell cancionId={cancion.id} campoBd="link_youtube" valorInicial={cancion.link_youtube} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_link_youtube`]} anchoClases="min-w-[10rem] max-w-[10rem]" />
-                    </td>
+                      </td>
+                      
+                      {/* Metadata */}
+                      <td className="p-0 align-top">
+                        <EditableCell cancionId={cancion.id} campoBd="tonalidad" valorInicial={cancion.tonalidad} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_tonalidad`]} anchoClases="min-w-[6rem] max-w-[6rem]" />
+                      </td>
+                      <td className="p-0 align-top">
+                        <EditableCell cancionId={cancion.id} campoBd="bpm" valorInicial={cancion.bpm} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_bpm`]} anchoClases="min-w-[5rem] max-w-[5rem]" />
+                      </td>
+                      <td className="p-0 align-top">
+                        <EditableCell cancionId={cancion.id} campoBd="categoria" valorInicial={cancion.categoria} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_categoria`]} anchoClases="min-w-[8rem] max-w-[8rem]" />
+                      </td>
+                      <td className="p-0 align-top">
+                        <EditableCell cancionId={cancion.id} campoBd="voz" valorInicial={cancion.voz || cancion.voz_principal} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_voz`]} anchoClases="min-w-[8rem] max-w-[8rem]" />
+                      </td>
+                      <td className="p-0 align-top">
+                        <EditableCell cancionId={cancion.id} campoBd="tema" valorInicial={cancion.tema} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_tema`]} anchoClases="min-w-[8rem] max-w-[8rem]" />
+                      </td>
+                      <td className="p-0 align-top">
+                        <EditableCell cancionId={cancion.id} campoBd="estado" valorInicial={cancion.estado} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_estado`]} anchoClases="min-w-[8rem] max-w-[8rem]" />
+                      </td>
+                      <td className="p-0 align-top">
+                        <EditableCell cancionId={cancion.id} campoBd="link_youtube" valorInicial={cancion.link_youtube} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_link_youtube`]} anchoClases="min-w-[10rem] max-w-[10rem]" />
+                      </td>
 
-                    {/* Archivos R2 */}
-                    <td className="p-1 align-middle">{renderizarCeldaArchivo(cancion, 'mp3')}</td>
-                    <td className="p-1 align-middle">{renderizarCeldaArchivo(cancion, 'link_acordes')}</td>
-                    <td className="p-1 align-middle">{renderizarCeldaArchivo(cancion, 'link_letras')}</td>
-                    <td className="p-1 align-middle">{renderizarCeldaArchivo(cancion, 'link_voces')}</td>
-                    <td className="p-1 align-middle">{renderizarCeldaArchivo(cancion, 'link_secuencias')}</td>
-                    <td className="p-1 align-middle">{renderizarCeldaArchivo(cancion, 'chordpro')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {canciones.length === 0 && !loading && (
-            <div className="p-12 text-center text-content-muted font-medium bg-surface">
-              Aun no hay canciones creadas. Haz clic en "Anadir Cancion" para comenzar.
+                      {/* Archivos R2 */}
+                      <td className="p-0.5 align-middle">{renderizarCeldaArchivo(cancion, 'mp3')}</td>
+                      <td className="p-0.5 align-middle">{renderizarCeldaArchivo(cancion, 'link_acordes')}</td>
+                      <td className="p-0.5 align-middle">{renderizarCeldaArchivo(cancion, 'link_letras')}</td>
+                      <td className="p-0.5 align-middle">{renderizarCeldaArchivo(cancion, 'link_voces')}</td>
+                      <td className="p-0.5 align-middle">{renderizarCeldaArchivo(cancion, 'link_secuencias')}</td>
+                      <td className="p-0.5 align-middle">{renderizarCeldaArchivo(cancion, 'chordpro')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          )}
+            {horizontalScrollUi.hasOverflow && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40">
+                <div className="admin-horizontal-rail-shell pointer-events-auto flex items-center gap-1.5 border-t border-border/70 bg-background/92 px-2 py-1.5 pb-[calc(env(safe-area-inset-bottom)+0.35rem)]">
+                  <button
+                    type="button"
+                    onClick={() => desplazarTablaHorizontalmente(-260)}
+                    disabled={!canScrollHorizontalLeft}
+                    className="admin-horizontal-rail-button"
+                    aria-label="Mover tabla a la izquierda"
+                    title="Ver columnas anteriores"
+                  >
+                    <ChevronLeft className="h-[0.95rem] w-[0.95rem]" strokeWidth={2.8} />
+                  </button>
+
+                  <div className="min-w-0 flex-1">
+                    <div
+                      ref={horizontalTrackRef}
+                      role="presentation"
+                      className="admin-horizontal-track"
+                      onPointerDown={manejarClickEnTrackHorizontal}
+                    >
+                      <button
+                        type="button"
+                        data-admin-scroll-thumb="true"
+                        onPointerDown={iniciarDragHorizontalThumb}
+                        className={`admin-horizontal-thumb ${draggingHorizontalThumb ? 'is-dragging' : ''}`}
+                        style={{
+                          width: `${horizontalScrollUi.thumbWidth}px`,
+                          transform: `translateX(${horizontalScrollUi.thumbOffset}px)`,
+                        }}
+                        aria-label="Barra de desplazamiento horizontal"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => desplazarTablaHorizontalmente(260)}
+                    disabled={!canScrollHorizontalRight}
+                    className="admin-horizontal-rail-button"
+                    aria-label="Mover tabla a la derecha"
+                    title="Ver columnas siguientes"
+                  >
+                    <ChevronRight className="h-[0.95rem] w-[0.95rem]" strokeWidth={2.8} />
+                  </button>
+                </div>
+              </div>
+            )}
+            {canciones.length === 0 && !loading && (
+              <div className="flex shrink-0 items-center justify-center px-6 py-10 text-center font-medium text-content-muted bg-surface">
+                Aun no hay canciones creadas. Haz clic en "Anadir Cancion" para comenzar.
+              </div>
+            )}
+          </section>
         </div>
       )}
 
@@ -1382,25 +1688,213 @@ export default function AdminRepertorio() {
       )}
 
       <style>{`
+        .admin-table-head {
+          position: sticky;
+          top: 0;
+          z-index: 44;
+        }
+
+        .admin-table-head-row {
+          position: sticky;
+          top: 0;
+          z-index: 44;
+        }
+
+        .admin-head-cell {
+          position: sticky;
+          top: 0;
+          z-index: 45;
+          background: color-mix(in srgb, rgb(var(--bg-background)) 94%, white 6%);
+          background-clip: padding-box;
+          box-shadow:
+            inset 0 -1px 0 rgba(226, 232, 240, 0.92),
+            0 10px 24px -20px rgba(15, 23, 42, 0.55);
+          backdrop-filter: blur(14px);
+        }
+
+        .admin-head-cell-primary {
+          position: sticky;
+          top: 0;
+          left: 0;
+          z-index: 60;
+          isolation: isolate;
+          background: color-mix(in srgb, rgb(var(--bg-background)) 96%, white 4%);
+          background-clip: padding-box;
+          box-shadow:
+            inset 0 -1px 0 rgba(226, 232, 240, 0.92),
+            1px 0 0 rgba(226, 232, 240, 0.92),
+            12px 0 24px -22px rgba(15, 23, 42, 0.5);
+        }
+
+        .admin-row-primary {
+          position: sticky;
+          left: 0;
+          z-index: 35;
+          isolation: isolate;
+          background: color-mix(in srgb, rgb(var(--bg-surface)) 96%, white 4%);
+          background-clip: padding-box;
+          box-shadow:
+            1px 0 0 rgba(226, 232, 240, 0.88),
+            12px 0 24px -24px rgba(15, 23, 42, 0.34);
+        }
+
+        .group:hover .admin-row-primary {
+          background: color-mix(in srgb, rgb(var(--bg-background)) 90%, white 10%);
+        }
+
+        html.dark .admin-head-cell {
+          background: color-mix(in srgb, rgb(var(--bg-surface)) 94%, black 6%);
+          box-shadow:
+            inset 0 -1px 0 rgba(63, 63, 70, 0.95),
+            0 10px 24px -20px rgba(0, 0, 0, 0.72);
+        }
+
+        html.dark .admin-head-cell-primary {
+          background: color-mix(in srgb, rgb(var(--bg-surface)) 96%, black 4%);
+          box-shadow:
+            inset 0 -1px 0 rgba(63, 63, 70, 0.95),
+            1px 0 0 rgba(63, 63, 70, 0.92),
+            12px 0 24px -22px rgba(0, 0, 0, 0.55);
+        }
+
+        html.dark .admin-row-primary {
+          background: color-mix(in srgb, rgb(var(--bg-surface)) 95%, black 5%);
+          box-shadow:
+            1px 0 0 rgba(63, 63, 70, 0.9),
+            12px 0 24px -24px rgba(0, 0, 0, 0.42);
+        }
+
+        html.dark .group:hover .admin-row-primary {
+          background: color-mix(in srgb, rgb(var(--bg-background)) 88%, black 12%);
+        }
+
         .admin-table-scroll {
-          scrollbar-gutter: stable both-edges;
+          position: relative;
+          height: 100%;
+          max-height: 100%;
+          overscroll-behavior: contain;
+          scrollbar-gutter: stable;
           scrollbar-width: auto;
-          scrollbar-color: rgba(24, 191, 175, 0.8) rgba(15, 23, 42, 0.08);
+          scrollbar-color: rgba(13, 148, 136, 0.96) rgba(148, 163, 184, 0.16);
         }
 
         .admin-table-scroll::-webkit-scrollbar {
-          height: 14px;
-          width: 14px;
+          height: 0;
+          width: 16px;
+        }
+
+        .admin-table-scroll::-webkit-scrollbar:horizontal {
+          display: none !important;
+          height: 0 !important;
+          background: transparent;
         }
 
         .admin-table-scroll::-webkit-scrollbar-track {
-          background: rgba(148, 163, 184, 0.14);
+          background: linear-gradient(180deg, rgba(148, 163, 184, 0.16) 0%, rgba(148, 163, 184, 0.09) 100%);
+          border-radius: 999px;
         }
 
         .admin-table-scroll::-webkit-scrollbar-thumb {
-          background: rgba(24, 191, 175, 0.85);
+          background: linear-gradient(180deg, rgba(13, 148, 136, 0.96) 0%, rgba(45, 212, 191, 0.98) 100%);
           border-radius: 999px;
-          border: 3px solid rgba(255, 255, 255, 0.72);
+          border: 2px solid rgba(255, 255, 255, 0.72);
+          min-width: 52px;
+          min-height: 56px;
+        }
+
+        .admin-table-scroll::-webkit-scrollbar-thumb:hover {
+          background: linear-gradient(180deg, rgba(15, 118, 110, 0.98) 0%, rgba(20, 184, 166, 1) 100%);
+        }
+
+        .admin-horizontal-rail-shell {
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.72),
+            0 -6px 16px -18px rgba(15, 23, 42, 0.2);
+        }
+
+        .admin-horizontal-rail-button {
+          display: inline-flex;
+          height: 1.8rem;
+          width: 1.8rem;
+          flex-shrink: 0;
+          align-items: center;
+          justify-content: center;
+          border-radius: 999px;
+          border: 1px solid rgba(18, 184, 166, 0.18);
+          background: linear-gradient(180deg, rgba(240, 253, 250, 0.86) 0%, rgba(204, 251, 241, 0.8) 100%);
+          color: rgb(var(--color-action));
+          box-shadow: 0 8px 16px -18px rgba(15, 23, 42, 0.34);
+          transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, opacity 180ms ease;
+        }
+
+        .admin-horizontal-rail-button:hover:not(:disabled) {
+          border-color: rgba(18, 184, 166, 0.45);
+          background: linear-gradient(180deg, rgba(236, 254, 255, 1) 0%, rgba(153, 246, 228, 0.96) 100%);
+          color: rgb(var(--color-action));
+        }
+
+        .admin-horizontal-rail-button:disabled {
+          opacity: 0.42;
+          cursor: not-allowed;
+        }
+
+        .admin-horizontal-track {
+          position: relative;
+          height: 12px;
+          width: 100%;
+          overflow: hidden;
+          border-radius: 999px;
+          background:
+            linear-gradient(90deg, rgba(18, 184, 166, 0.18) 0%, rgba(18, 184, 166, 0.04) 12%, rgba(148, 163, 184, 0.22) 50%, rgba(18, 184, 166, 0.04) 88%, rgba(18, 184, 166, 0.18) 100%);
+          box-shadow:
+            inset 0 0 0 1px rgba(148, 163, 184, 0.24),
+            inset 0 1px 3px rgba(15, 23, 42, 0.08);
+          cursor: pointer;
+        }
+
+        .admin-horizontal-thumb {
+          position: absolute;
+          left: 0;
+          top: 1px;
+          height: 10px;
+          min-width: 72px;
+          border: 0;
+          border-radius: 999px;
+          background: linear-gradient(90deg, rgba(13, 148, 136, 1) 0%, rgba(45, 212, 191, 1) 100%);
+          box-shadow:
+            0 10px 18px -14px rgba(15, 23, 42, 0.64),
+            0 0 0 1px rgba(255, 255, 255, 0.42);
+          cursor: grab;
+          transition: filter 140ms ease, box-shadow 140ms ease;
+        }
+
+        .admin-horizontal-thumb:hover {
+          filter: brightness(1.04);
+        }
+
+        .admin-horizontal-thumb.is-dragging {
+          cursor: grabbing;
+          box-shadow:
+            0 12px 22px -12px rgba(15, 23, 42, 0.7),
+            0 0 0 1px rgba(255, 255, 255, 0.52);
+        }
+
+        html.dark .admin-horizontal-rail-shell {
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+        }
+
+        html.dark .admin-horizontal-rail-button {
+          border-color: rgba(63, 63, 70, 0.92);
+          background: linear-gradient(180deg, rgba(24, 24, 27, 0.96) 0%, rgba(39, 39, 42, 0.98) 100%);
+          color: rgba(94, 234, 212, 0.98);
+        }
+
+        html.dark .admin-horizontal-track {
+          background:
+            linear-gradient(90deg, rgba(20, 184, 166, 0.18) 0%, rgba(20, 184, 166, 0.06) 12%, rgba(63, 63, 70, 0.74) 48%, rgba(20, 184, 166, 0.06) 88%, rgba(20, 184, 166, 0.18) 100%);
+          box-shadow:
+            inset 0 0 0 1px rgba(63, 63, 70, 0.85),
+            inset 0 1px 4px rgba(0, 0, 0, 0.35);
         }
 
         .editor-column-scroll {

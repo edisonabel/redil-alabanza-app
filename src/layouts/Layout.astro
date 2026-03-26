@@ -68,6 +68,8 @@ const hexToRgbString = (hex) => {
 };
 
 const pathname = new URL(Astro.request.url).pathname;
+const isAdminRepertorioView = pathname === '/admin';
+const showBottomNav = !isAdminRepertorioView;
 const brandingAccessToken = Astro.cookies.get('sb-access-token')?.value || '';
 const shouldBustBrandingCache =
   Astro.cookies.has('branding_cache_bust') ||
@@ -83,7 +85,7 @@ const brandingData = await getBrandingConfig({ accessToken: brandingAccessToken 
 const themeColors = brandingData;
 ---
 <!DOCTYPE html>
-<html lang="es" data-branding-source={themeColors ? 'ssr' : 'default'}>
+<html lang="es" data-branding-source={themeColors ? 'ssr' : 'default'} data-admin-route={isAdminRepertorioView ? 'true' : 'false'}>
 <head>
  <meta charset="UTF-8" />
  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
@@ -361,6 +363,14 @@ const themeColors = brandingData;
       background-color: rgb(var(--bg-background));
     }
 
+    html[data-admin-route='true'],
+    html[data-admin-route='true'] body,
+    body[data-admin-route='true'] {
+      height: 100dvh;
+      overflow: hidden;
+      overscroll-behavior: none;
+    }
+
     body {
       min-height: 100dvh;
       /* Dot grid — premium texture (Linear/Vercel style) */
@@ -438,8 +448,8 @@ const themeColors = brandingData;
     `} />
   )}
 </head>
-<body transition:animate="none" class="app-shell bg-background text-content min-h-screen min-h-[100dvh] w-full flex flex-col">
- {pathname !== '/' && user && (
+<body transition:animate="none" data-admin-route={isAdminRepertorioView ? 'true' : 'false'} class="app-shell bg-background text-content min-h-screen min-h-[100dvh] w-full flex flex-col">
+ {pathname !== '/' && user && !isAdminRepertorioView && (
   <div
    class="fixed right-4 md:right-6 z-[61] pointer-events-none"
    style="top: calc(env(safe-area-inset-top) + 0.75rem);"
@@ -451,7 +461,11 @@ const themeColors = brandingData;
  )}
  <main
   transition:animate={premiumPageTransition}
-  class="app-safe-main relative isolate overflow-x-clip w-full min-h-screen min-h-[100dvh] flex-1 bg-background pb-24 px-4 lg:px-8 xl:px-12"
+  class={`app-safe-main relative isolate w-full flex-1 bg-background px-4 lg:px-8 xl:px-12 ${
+    isAdminRepertorioView
+      ? 'box-border flex min-h-0 h-[calc(100dvh-var(--app-safe-top-offset))] max-h-[calc(100dvh-var(--app-safe-top-offset))] flex-col overflow-x-clip overflow-y-hidden pb-[calc(env(safe-area-inset-bottom)+0.35rem)]'
+      : 'min-h-screen min-h-[100dvh] overflow-x-clip pb-24'
+  }`}
  >
  <!-- Contenedor principal (pb-24 evita choque visual con la barra flotante). -->
  <slot />
@@ -462,7 +476,7 @@ const themeColors = brandingData;
  <EnsayoGlobal />
 
  <!-- Barra de navegacion fija mobile-first -->
- <BottomNav />
+ {showBottomNav && <BottomNav />}
 
  <div id="global-nav-loading" class="hidden fixed inset-0 z-40 bg-background/86 backdrop-blur-sm" aria-hidden="true">
   <div class="absolute inset-0 flex items-center justify-center px-6">
