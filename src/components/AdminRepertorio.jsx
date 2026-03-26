@@ -13,7 +13,7 @@ const CHORD_TOKEN_RE = new RegExp(`^\\(?\\s*(\\[${CHORD_BODY_PATTERN}\\]\\s*)+\\
 const CHORD_SYMBOL_RE = new RegExp(`^${CHORD_BODY_PATTERN}$`, 'i');
 const LEADING_CHORD_SECTION_RE = new RegExp(`^\\[(${CHORD_BODY_PATTERN})\\|`, 'i');
 const BROKEN_INLINE_CHORD_RE = new RegExp(`\\[(${CHORD_BODY_PATTERN})\\s*\\|\\s*`, 'gi');
-const EDITOR_MODAL_MAX_HEIGHT = 'min(90vh, calc(100dvh - 9.5rem - env(safe-area-inset-bottom)))';
+const EDITOR_MODAL_MAX_HEIGHT = 'min(94vh, calc(100dvh - 4.75rem - env(safe-area-inset-bottom)))';
 const ARCHIVO_ELIMINABLE_FIELDS = new Set(['mp3', 'link_acordes']);
 
 const normalizeSectionName = (rawValue = '') => {
@@ -1152,6 +1152,8 @@ export default function AdminRepertorio() {
   const editorAudioProgress = editorAudioDuration > 0
     ? Math.min(100, Math.max(0, (editorAudioCurrentTime / editorAudioDuration) * 100))
     : 0;
+  const tituloEditorChordpro = editorChordproCancion?.titulo || 'Sin titulo';
+  const totalMarkersEditor = editorSectionMarkers.length || resumenEditorChordpro.secciones;
 
   const headerActions = (
     <>
@@ -1451,35 +1453,36 @@ export default function AdminRepertorio() {
       )}
 
       {editorChordproAbierto && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-slate-950/70 p-3 pb-[calc(8.5rem+env(safe-area-inset-bottom))] backdrop-blur-sm md:p-4 md:pb-[calc(8.5rem+env(safe-area-inset-bottom))]">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-slate-950/70 p-2 pb-[calc(3.5rem+env(safe-area-inset-bottom))] backdrop-blur-sm md:p-3 md:pb-[calc(3.5rem+env(safe-area-inset-bottom))]">
           <div
-            className="my-2 flex h-full w-full max-w-[min(92vw,96rem)] flex-col overflow-hidden rounded-3xl border border-border bg-surface shadow-2xl md:my-4"
+            className="my-1 flex h-full w-full max-w-[min(94vw,96rem)] flex-col overflow-hidden rounded-[1.6rem] border border-border bg-surface shadow-2xl md:my-2"
             style={{ maxHeight: EDITOR_MODAL_MAX_HEIGHT }}
           >
-            <div className="shrink-0 flex items-center justify-between gap-4 border-b border-border px-6 py-5">
-              <div className="min-w-0">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <h2 className="truncate text-xl font-bold text-content">
-                    Editar ChordPro
-                  </h2>
-                  <button
-                    type="button"
-                    onClick={() => document.getElementById('admin-markers-panel')?.scrollTo({ top: 0, behavior: 'smooth' })}
-                    className="inline-flex min-h-[32px] items-center rounded-full border border-brand/20 bg-brand/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-brand transition-colors hover:bg-brand/15"
-                  >
-                    Markers · {resumenEditorChordpro.secciones}
-                  </button>
-                </div>
-                <p className="truncate text-sm text-content-muted">
-                  {editorChordproCancion?.titulo || 'Sin titulo'}
+            <div className="shrink-0 flex items-center justify-between gap-3 border-b border-border px-4 py-3 md:px-5">
+              <div className="min-w-0 flex flex-1 flex-wrap items-center gap-x-2.5 gap-y-1">
+                <h2 className="truncate text-lg font-bold text-content">
+                  Editar ChordPro
+                </h2>
+                <p className="min-w-0 truncate text-sm font-medium text-content-muted">
+                  {tituloEditorChordpro}
                 </p>
+                <button
+                  type="button"
+                  onClick={() => document.getElementById('admin-markers-panel')?.scrollTo({ top: 0, behavior: 'smooth' })}
+                  className="inline-flex min-h-[28px] items-center rounded-full border border-brand/20 bg-brand/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-brand transition-colors hover:bg-brand/15"
+                >
+                  Markers · {totalMarkersEditor}
+                </button>
+                <span className="hidden min-h-[28px] items-center rounded-full border border-border bg-background px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-content-muted xl:inline-flex">
+                  Lineas · {resumenEditorChordpro.lineas}
+                </span>
               </div>
 
               <button
                 type="button"
                 onClick={cerrarEditorChordpro}
                 disabled={guardandoChordpro}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-border bg-background text-content-muted hover:text-content hover:bg-surface transition-colors disabled:opacity-60"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-background text-content-muted transition-colors hover:bg-surface hover:text-content disabled:opacity-60"
                 aria-label="Cerrar editor de ChordPro"
               >
                 <X className="w-5 h-5" />
@@ -1487,24 +1490,24 @@ export default function AdminRepertorio() {
             </div>
 
             {(editorChordproAviso || !sectionMarkersDisponibles) && (
-              <div className="shrink-0 space-y-3 border-b border-border bg-surface px-6 py-4">
+              <div className="shrink-0 space-y-2 border-b border-border bg-surface px-4 py-2.5 md:px-5">
                 {editorChordproAviso && (
-                  <p className="rounded-2xl border border-info/20 bg-info/10 px-3 py-2 text-xs font-medium text-info dark:text-info">
+                  <p className="rounded-xl border border-info/20 bg-info/10 px-3 py-2 text-[11px] font-medium text-info dark:text-info">
                     {editorChordproAviso}
                   </p>
                 )}
                 {!sectionMarkersDisponibles && (
-                  <p className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-500">
+                  <p className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[11px] font-medium text-amber-500">
                     La base actual todavia no expone <code>section_markers</code>. Puedes preparar los tiempos aqui, pero debes aplicar la migracion nueva para que se guarden en Supabase.
                   </p>
                 )}
               </div>
             )}
 
-            <div className="min-h-0 flex-1 overflow-hidden p-4 md:p-6">
-              <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[minmax(18rem,1fr)_minmax(18rem,1fr)] gap-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(20rem,0.95fr)] lg:grid-rows-1">
+            <div className="min-h-0 flex-1 overflow-hidden p-3 md:p-4">
+              <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[minmax(16rem,1fr)_minmax(16rem,1fr)] gap-3 md:gap-4 lg:grid-cols-[minmax(0,1.24fr)_minmax(24rem,1.1fr)] xl:grid-cols-[minmax(0,1.18fr)_minmax(26rem,1.16fr)] lg:grid-rows-1">
               {editorChordproCargando ? (
-                <div className="flex min-h-0 h-full overflow-hidden rounded-2xl border border-border bg-background">
+                <div className="flex min-h-0 h-full overflow-hidden rounded-xl border border-border bg-background">
                   <div className="flex h-full w-full items-center justify-center px-4">
                   <div className="flex items-center gap-3 text-sm font-medium text-content-muted">
                     <Loader2 className="h-5 w-5 animate-spin text-brand" />
@@ -1513,32 +1516,33 @@ export default function AdminRepertorio() {
                   </div>
                 </div>
               ) : (
-                <div className="flex min-h-0 h-full overflow-hidden rounded-2xl border border-border bg-background">
+                <div className="flex min-h-0 h-full overflow-hidden rounded-xl border border-border bg-background">
                   <textarea
                     value={editorChordproValor}
                     onChange={(e) => setEditorChordproValor(e.target.value)}
                     placeholder="[Verso 1]\n[C]Texto con acordes..."
                     spellCheck={false}
-                    className="editor-column-scroll h-full min-h-0 w-full resize-none overflow-y-auto border-0 bg-transparent px-4 py-4 text-sm leading-7 text-content font-mono outline-none focus:border-transparent focus:ring-0"
+                    className="editor-column-scroll h-full min-h-0 w-full resize-none overflow-y-auto border-0 bg-transparent px-3 py-3 text-[13px] leading-6 text-content font-mono outline-none focus:border-transparent focus:ring-0"
                   />
                 </div>
               )}
-              <section id="admin-markers-panel" className="flex min-h-0 h-full flex-col overflow-hidden rounded-2xl border border-border bg-background/70 p-4">
+              <section id="admin-markers-panel" className="flex min-h-0 h-full flex-col overflow-hidden rounded-xl border border-border bg-background/70 p-3">
                 <audio
                   id="admin-chordpro-audio"
                   src={editorChordproCancion?.mp3 || ''}
                   preload="metadata"
                   className="hidden"
                 />
-                <div className="sticky top-0 z-10 -mx-4 border-b border-border bg-background/95 px-4 pb-4 pt-1 backdrop-blur">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-bold uppercase tracking-[0.2em] text-content">Markers de ensayo</h3>
-                    </div>
+                <div className="sticky top-0 z-10 -mx-3 border-b border-border bg-background/95 px-3 pb-3 pt-0 backdrop-blur">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                    <h3 className="text-[11px] font-bold uppercase tracking-[0.18em] text-content">Markers de ensayo</h3>
+                    <span className="inline-flex min-h-[24px] items-center rounded-full border border-border bg-surface px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-content-muted">
+                      {totalMarkersEditor} items
+                    </span>
                   </div>
 
                   {editorSectionMarkers.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="admin-chip-scroll mt-2 flex gap-1.5 overflow-x-auto pb-1">
                       {editorSectionMarkers.map((marker, index) => (
                         <button
                           key={`jump-${marker.id || `${marker.sectionName}-${index}`}`}
@@ -1547,7 +1551,7 @@ export default function AdminRepertorio() {
                             const element = document.getElementById(`marker-card-${index}`);
                             if (element) element.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
                           }}
-                          className="inline-flex min-h-[32px] items-center rounded-full border border-border bg-surface px-2.5 py-1 text-[11px] font-semibold text-content-muted transition-colors hover:border-brand/30 hover:text-content"
+                          className="inline-flex min-h-[28px] shrink-0 items-center rounded-full border border-border bg-surface px-2.5 py-1 text-[10px] font-semibold text-content-muted transition-colors hover:border-brand/30 hover:text-content"
                         >
                           {marker.sectionName}
                         </button>
@@ -1555,21 +1559,21 @@ export default function AdminRepertorio() {
                     </div>
                   )}
 
-                  <div className="mt-4 rounded-2xl border border-border bg-surface px-3 py-3">
+                  <div className="mt-2 rounded-xl border border-border bg-surface px-2.5 py-2">
                     {editorChordproCancion?.mp3 ? (
                       <>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2.5">
                           <button
                             type="button"
                             onClick={toggleEditorAudioPlayback}
-                            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-action text-white transition-colors hover:bg-action/90"
+                            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-action text-white transition-colors hover:bg-action/90"
                             aria-label={editorAudioPlaying ? 'Pausar audio' : 'Reproducir audio'}
                           >
                             {editorAudioPlaying ? <Pause className="w-4 h-4" /> : <Play className="ml-0.5 w-4 h-4" />}
                           </button>
 
                           <div className="min-w-0 flex-1">
-                            <div className="mb-1.5 flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.14em] text-content-muted">
+                            <div className="mb-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.12em] text-content-muted">
                               <span>{formatMarkerTime(editorAudioCurrentTime)}</span>
                               <span>{formatMarkerTime(editorAudioDuration)}</span>
                             </div>
@@ -1588,31 +1592,18 @@ export default function AdminRepertorio() {
                         </div>
                       </>
                     ) : (
-                      <p className="text-sm text-content-muted">
+                      <p className="text-xs text-content-muted">
                         Esta cancion aun no tiene MP3 cargado. Puedes dejar los tiempos manualmente en formato <code>mm:ss</code>.
                       </p>
                     )}
                   </div>
                 </div>
 
-                <div className="editor-column-scroll mt-4 min-h-0 flex-1 space-y-3 overflow-y-scroll pr-2">
+                <div className="editor-column-scroll mt-3 min-h-0 flex-1 space-y-2.5 overflow-y-scroll pr-1">
                   {editorSectionMarkers.length > 0 ? editorSectionMarkers.map((marker, index) => (
-                    <div id={`marker-card-${index}`} key={marker.id || `${marker.sectionName}-${index}`} className="rounded-2xl border border-border bg-surface px-3 py-3 scroll-mt-52">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-content">{marker.sectionName}</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => capturarMarkerActual(index)}
-                          disabled={!editorChordproCancion?.mp3}
-                          title={editorChordproCancion?.mp3 ? 'Usar tiempo actual' : 'No hay MP3 para capturar tiempo'}
-                          className="rounded-full border border-brand/20 bg-brand/10 px-2 py-1 text-[11px] font-bold text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted"
-                        >
-                          {marker.startSec == null ? '--:--' : formatMarkerTime(marker.startSec)}
-                        </button>
-                      </div>
-                      <div className="mt-3 grid grid-cols-[4.9rem_minmax(0,1fr)_auto_auto] gap-2">
+                    <div id={`marker-card-${index}`} key={marker.id || `${marker.sectionName}-${index}`} className="rounded-xl border border-border bg-surface px-2.5 py-2 scroll-mt-36">
+                      <div className="grid grid-cols-[minmax(6.75rem,0.9fr)_4.75rem_minmax(0,1fr)_auto_auto] items-center gap-1.5">
+                        <p className="truncate text-sm font-semibold text-content">{marker.sectionName}</p>
                         <input
                           type="text"
                           inputMode="numeric"
@@ -1622,7 +1613,7 @@ export default function AdminRepertorio() {
                             actualizarEditorSectionMarker(index, { startSec: nextValue });
                           }}
                           placeholder="00:00"
-                          className="min-h-[44px] rounded-xl border border-border bg-background px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                          className="h-9 w-[4.75rem] rounded-lg border border-border bg-background px-2.5 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                         />
                         <input
                           type="text"
@@ -1631,14 +1622,14 @@ export default function AdminRepertorio() {
                             actualizarEditorSectionMarker(index, { note: e.target.value });
                           }}
                           placeholder="Nota de seccion"
-                          className="min-h-[44px] rounded-xl border border-border bg-background px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                          className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                         />
                         <button
                           type="button"
                           onClick={() => {
                             actualizarEditorSectionMarker(index, { startSec: null });
                           }}
-                          className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-border bg-surface px-3 text-xs font-bold text-content-muted hover:bg-background hover:text-content transition-colors"
+                          className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-surface px-2.5 text-[11px] font-bold text-content-muted transition-colors hover:bg-background hover:text-content"
                         >
                           Limpiar
                         </button>
@@ -1646,7 +1637,7 @@ export default function AdminRepertorio() {
                           type="button"
                           onClick={() => capturarMarkerActual(index)}
                           disabled={!editorChordproCancion?.mp3}
-                          className="inline-flex min-h-[40px] items-center justify-center rounded-xl border border-brand/25 bg-brand/10 px-3 text-xs font-bold text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted"
+                          className="inline-flex h-9 items-center justify-center rounded-lg border border-brand/25 bg-brand/10 px-2.5 text-[11px] font-bold text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted"
                         >
                           <span className="sm:hidden">Marcar</span>
                           <span className="hidden sm:inline">Marcar ahora</span>
@@ -1654,7 +1645,7 @@ export default function AdminRepertorio() {
                       </div>
                     </div>
                   )) : (
-                    <div className="rounded-2xl border border-dashed border-border bg-surface px-4 py-5 text-sm text-content-muted">
+                    <div className="rounded-xl border border-dashed border-border bg-surface px-4 py-4 text-sm text-content-muted">
                       Aun no hay secciones parseadas. Agrega encabezados como <code>[Verso 1]</code> o <code>[Coro]</code> para preparar markers.
                     </div>
                   )}
@@ -1663,12 +1654,12 @@ export default function AdminRepertorio() {
               </div>
             </div>
 
-            <div className="shrink-0 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 px-6 py-5 border-t border-border bg-background/70">
+            <div className="shrink-0 flex flex-col-reverse items-stretch justify-between gap-2 border-t border-border bg-background/70 px-4 py-3 sm:flex-row sm:items-center md:px-5">
               <button
                 type="button"
                 onClick={cerrarEditorChordpro}
                 disabled={guardandoChordpro}
-                className="inline-flex items-center justify-center rounded-2xl border border-border bg-surface px-5 py-3 text-sm font-semibold text-content hover:bg-background transition-colors disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-semibold text-content transition-colors hover:bg-background disabled:opacity-60"
               >
                 Cancelar
               </button>
@@ -1677,7 +1668,7 @@ export default function AdminRepertorio() {
                 type="button"
                 onClick={guardarChordproDesdeEditor}
                 disabled={guardandoChordpro}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-action px-5 py-3 text-sm font-semibold text-white hover:bg-action/90 transition-colors disabled:opacity-60"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-action px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-action/90 disabled:opacity-60"
               >
                 {guardandoChordpro ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                 Guardar ChordPro
