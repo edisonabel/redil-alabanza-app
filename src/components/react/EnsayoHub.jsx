@@ -1051,9 +1051,6 @@ export default function EnsayoHub({
               const isMetronomeActive = activeMetronomeSongId === song?.id;
               const hasSongAudio = typeof song?.mp3 === 'string' && song.mp3.trim() !== '';
               const parsedVoices = parseVoiceResources(song?.linkVoces);
-              const safeVocesPayload = parsedVoices.entries.length > 0
-                ? JSON.stringify(parsedVoices.entries)
-                : (parsedVoices.legacyUrl || '');
               const hasVoiceResources = parsedVoices.hasResources || Boolean(parsedVoices.legacyUrl);
               const hasStructuredVoiceEntries = parsedVoices.entries.length > 0;
               const voiceLabel = normalizeVoiceLabel(song?.voz);
@@ -1139,20 +1136,6 @@ export default function EnsayoHub({
                         >
                           <Mic2 className="h-3.5 w-3.5" />
                           {hasPersonalVoiceAssignment ? 'Mi voz' : 'Vista vocal'}
-                        </button>
-                      )}
-                      {hasVoiceResources && (
-                        <button
-                          type="button"
-                          className="btn-open-voces ui-pressable-soft inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-brand/30 bg-brand/10 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-brand transition-colors hover:bg-brand/15 dark:border-brand/25 dark:bg-brand/10 dark:text-brand dark:hover:bg-brand/16"
-                          data-voces={safeVocesPayload}
-                          data-title={song?.title || ''}
-                          data-artist={song?.artist || ''}
-                          aria-label={`Abrir voces de ${song?.title || 'cancion'}`}
-                          title="Ensayar voces"
-                        >
-                          <Mic2 className="h-3.5 w-3.5" />
-                          Voces
                         </button>
                       )}
                       <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-700 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-200">

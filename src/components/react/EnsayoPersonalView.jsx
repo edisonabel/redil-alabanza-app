@@ -62,6 +62,53 @@ const formatAssignedMembersText = (members = []) => {
   return `${members[0]?.name || 'Integrante'} y ${members.length - 1} mas`;
 };
 
+const VOICE_COLOR_THEMES = [
+  { key: 'guia', tokens: ['guia', 'principal', 'lead'], accent: '#2563EB' },
+  { key: 'segunda', tokens: ['segunda'], accent: '#DC2626' },
+  { key: 'tercera', tokens: ['tercera'], accent: '#16A34A' },
+  { key: 'quinta', tokens: ['quinta'], accent: '#CA8A04' },
+  { key: 'octava', tokens: ['octava'], accent: '#EA580C' },
+  { key: 'todas', tokens: ['todas', 'tres voces'], accent: '#9333EA' },
+  { key: 'pista', tokens: ['pista', 'instru'], accent: '#0891B2' },
+];
+
+const hexToRgba = (hex = '#64748B', alpha = 1) => {
+  const safeHex = String(hex || '').replace('#', '').trim();
+  const normalized = safeHex.length === 3
+    ? safeHex.split('').map((char) => char + char).join('')
+    : safeHex;
+
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(100,116,139,${alpha})`;
+  }
+
+  const value = Number.parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+};
+
+const getVoiceColorTheme = (value = '') => {
+  const normalized = normalizeFold(value);
+  const theme = VOICE_COLOR_THEMES.find((item) => (
+    item.tokens.some((token) => normalized.includes(token))
+  ));
+
+  const accent = theme?.accent || '#64748B';
+
+  return {
+    accent,
+    soft: hexToRgba(accent, 0.1),
+    softStrong: hexToRgba(accent, 0.16),
+    border: hexToRgba(accent, 0.22),
+    borderStrong: hexToRgba(accent, 0.48),
+    glow: hexToRgba(accent, 0.14),
+    glowStrong: hexToRgba(accent, 0.24),
+    text: hexToRgba(accent, theme?.key === 'guia' ? 0.98 : 0.92),
+  };
+};
+
 export function priorizarVozAsignada(
   tracksOriginales = [],
   songId = '',
@@ -114,6 +161,17 @@ export function TrackButton({
   assignmentLabel = '',
 }) {
   const esAsignada = track?.esAsignada === true;
+  const colorTheme = getVoiceColorTheme(title);
+  const toneVars = {
+    '--voice-accent': colorTheme.accent,
+    '--voice-soft': colorTheme.soft,
+    '--voice-soft-strong': colorTheme.softStrong,
+    '--voice-border': colorTheme.border,
+    '--voice-border-strong': colorTheme.borderStrong,
+    '--voice-glow': colorTheme.glow,
+    '--voice-glow-strong': colorTheme.glowStrong,
+    '--voice-text': colorTheme.text,
+  };
 
   const baseClasses = [
     'group relative w-full overflow-hidden rounded-[1.6rem] border px-4 py-3 text-left transition-all duration-200 transform-gpu',
@@ -122,48 +180,49 @@ export function TrackButton({
 
   const stateClasses = esAsignada
     ? [
-        'border-cyan-400/80 bg-[#121722] text-white opacity-100 scale-[1.02]',
-        'shadow-[0_0_0_1px_rgba(34,211,238,0.45),0_0_18px_rgba(34,211,238,0.18),0_0_42px_rgba(59,130,246,0.14)]',
-        'hover:border-cyan-300 hover:shadow-[0_0_0_1px_rgba(34,211,238,0.65),0_0_24px_rgba(34,211,238,0.24),0_0_56px_rgba(59,130,246,0.18)]',
+        'border-[color:var(--voice-accent)] bg-[linear-gradient(180deg,var(--voice-soft-strong),rgba(18,23,34,0.98))] text-white opacity-100 scale-[1.02]',
+        '[box-shadow:inset_0_0_0_1px_rgba(255,255,255,0.1),0_0_0_1px_var(--voice-border-strong),0_0_22px_var(--voice-glow-strong),0_0_52px_var(--voice-glow)]',
+        'hover:border-[color:var(--voice-accent)] hover:[box-shadow:inset_0_0_0_1px_rgba(255,255,255,0.14),0_0_0_1px_var(--voice-accent),0_0_28px_var(--voice-glow-strong),0_0_64px_var(--voice-glow)]',
       ].join(' ')
     : [
-        'border-white/8 bg-[#1E1F24] text-zinc-300 opacity-70',
-        'hover:bg-[#252730] hover:opacity-100 hover:border-white/12',
+        'border-[color:var(--voice-border)] bg-[linear-gradient(180deg,var(--voice-soft),rgba(30,31,36,0.96))] text-zinc-300 opacity-78',
+        'hover:border-[color:var(--voice-border-strong)] hover:bg-[linear-gradient(180deg,var(--voice-soft-strong),rgba(37,39,48,0.96))] hover:opacity-100',
       ].join(' ');
 
   const activeClasses = isActive
-    ? 'ring-1 ring-emerald-400/45 border-emerald-300/35'
+    ? (esAsignada ? 'ring-1 ring-white/10' : 'ring-1 ring-emerald-400/45 border-emerald-300/35')
     : '';
 
   const overlayClass =
     esAsignada && isActive
-      ? 'bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.16),transparent_40%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.12),transparent_36%)] opacity-100'
+      ? 'bg-[radial-gradient(circle_at_top_left,var(--voice-glow-strong),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(255,255,255,0.08),transparent_34%)] opacity-100'
       : esAsignada
-        ? 'bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.16),transparent_42%)] opacity-100'
+        ? 'bg-[radial-gradient(circle_at_top_left,var(--voice-glow),transparent_42%)] opacity-100'
         : isActive
-          ? 'bg-[radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.12),transparent_36%)] opacity-100'
-          : 'opacity-0';
+          ? 'bg-[radial-gradient(circle_at_top_left,var(--voice-glow),transparent_50%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.12),transparent_36%)] opacity-100'
+          : 'bg-[radial-gradient(circle_at_top_left,var(--voice-glow),transparent_54%)] opacity-100';
 
   const leftBarClass =
     esAsignada && isActive
-      ? 'bg-gradient-to-b from-cyan-300 via-cyan-400 to-emerald-400 shadow-[0_0_16px_rgba(34,211,238,0.85)]'
+      ? 'bg-[linear-gradient(180deg,var(--voice-accent),#34d399)] [box-shadow:0_0_16px_var(--voice-glow-strong)]'
       : esAsignada
-        ? 'bg-cyan-400 shadow-[0_0_14px_rgba(34,211,238,0.85)]'
+        ? 'bg-[color:var(--voice-accent)] [box-shadow:0_0_14px_var(--voice-glow-strong)]'
         : isActive
-          ? 'bg-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.75)]'
-          : 'bg-white/10';
+          ? 'bg-[linear-gradient(180deg,var(--voice-accent),#34d399)] [box-shadow:0_0_12px_var(--voice-glow)]'
+          : 'bg-[color:var(--voice-border)]';
 
   const iconClasses = esAsignada
-    ? 'border-cyan-300/30 bg-cyan-400/10 text-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.22)]'
+    ? 'border-[color:var(--voice-border-strong)] bg-[color:var(--voice-soft-strong)] text-[color:var(--voice-accent)] [box-shadow:0_0_18px_var(--voice-glow)]'
     : isActive
-      ? 'border-emerald-300/25 bg-emerald-400/10 text-emerald-300'
-      : 'border-white/10 bg-white/5 text-zinc-500 group-hover:text-zinc-300';
+      ? 'border-[color:var(--voice-border)] bg-[color:var(--voice-soft)] text-[color:var(--voice-accent)]'
+      : 'border-[color:var(--voice-border)] bg-[color:var(--voice-soft)] text-[color:var(--voice-accent)] group-hover:border-[color:var(--voice-border-strong)]';
 
   return (
     <button
       type="button"
       onClick={onClick}
       className={[baseClasses, stateClasses, activeClasses].join(' ')}
+      style={toneVars}
     >
       <div className={`pointer-events-none absolute inset-0 transition-opacity duration-200 ${overlayClass}`} />
 
@@ -173,7 +232,7 @@ export function TrackButton({
 
       <div className="absolute right-3 top-3 flex flex-wrap items-center justify-end gap-2">
         {esAsignada && (
-          <span className="inline-flex items-center gap-1 rounded-full border border-cyan-300/30 bg-cyan-400/10 px-2 py-1 text-[10px] font-black tracking-[0.18em] text-cyan-300">
+          <span className="inline-flex items-center gap-1 rounded-full border border-[color:var(--voice-border-strong)] bg-[color:var(--voice-soft-strong)] px-2 py-1 text-[10px] font-black tracking-[0.18em] text-[color:var(--voice-accent)]">
             <Mic2 className="h-3 w-3" />
             {assignedLabel}
           </span>
@@ -204,11 +263,11 @@ export function TrackButton({
         <div className="min-w-0 flex-1 pr-24">
           <p
             className={[
-              'truncate text-sm transition-colors',
-              esAsignada
-                ? 'font-extrabold text-white'
-                : 'font-semibold text-zinc-200 group-hover:text-white',
-            ].join(' ')}
+                'truncate text-sm transition-colors',
+                esAsignada
+                  ? 'font-extrabold text-white'
+                  : 'font-semibold text-zinc-200 group-hover:text-white',
+              ].join(' ')}
           >
             {title}
           </p>
@@ -218,8 +277,8 @@ export function TrackButton({
               className={[
                 'mt-1 truncate text-xs',
                 esAsignada
-                  ? 'text-cyan-100/80'
-                  : 'text-zinc-400 group-hover:text-zinc-300',
+                  ? 'text-[color:var(--voice-text)]'
+                  : 'text-zinc-400 group-hover:text-zinc-200',
               ].join(' ')}
             >
               {subtitle}
