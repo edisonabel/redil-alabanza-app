@@ -159,6 +159,7 @@ export default function ChordProPrintWorkspace({
     density: 'complete',
     showSongMap: true,
     showSectionDividers: true,
+    styleMode: 'completo',
   });
 
   useEffect(() => {
@@ -498,36 +499,29 @@ export default function ChordProPrintWorkspace({
       </aside>
 
       <div className="min-w-0 flex-1 lg:min-h-[calc(100dvh-3rem)]">
-        <div className="relative mb-3 flex items-center justify-center print:hidden">
-          <p className="text-center text-sm font-black uppercase tracking-[0.22em] text-zinc-400">
+        <div className="mb-3 flex items-center justify-between print:hidden">
+          <p className="text-sm font-black uppercase tracking-[0.22em] text-zinc-400 dark:text-zinc-500">
             Vista previa
           </p>
-          <div
-            className={[
-              'absolute right-0 inline-flex items-center gap-1 rounded-full border px-2 py-1 shadow-sm',
-              isDarkTheme
-                ? 'border-white/10 bg-white/5'
-                : 'border-zinc-200 bg-white/90',
-            ].join(' ')}
-          >
+          <div className="inline-flex items-center gap-1">
             <button
               type="button"
               aria-label="Reducir vista previa"
-              className={getOptionButtonClass(false, isDarkTheme).replace('min-h-10', 'min-h-8').replace('rounded-2xl', 'rounded-full').replace('px-4 py-2.5', 'h-8 w-8 px-0 py-0')}
+              className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-white/5 dark:hover:text-zinc-300"
               onClick={() => setPreviewZoom((current) => Math.max(0.7, Number((current - 0.08).toFixed(2))))}
             >
-              -
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>
-            <span className={['min-w-[3rem] text-center text-xs font-black uppercase tracking-[0.12em]', isDarkTheme ? 'text-zinc-300' : 'text-zinc-600'].join(' ')}>
+            <span className={['min-w-[3rem] text-center text-xs font-black tracking-[0.05em]', isDarkTheme ? 'text-zinc-400' : 'text-zinc-500'].join(' ')}>
               {zoomLabel}
             </span>
             <button
               type="button"
               aria-label="Ampliar vista previa"
-              className={getOptionButtonClass(false, isDarkTheme).replace('min-h-10', 'min-h-8').replace('rounded-2xl', 'rounded-full').replace('px-4 py-2.5', 'h-8 w-8 px-0 py-0')}
+              className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-white/5 dark:hover:text-zinc-300"
               onClick={() => setPreviewZoom((current) => Math.min(1.35, Number((current + 0.08).toFixed(2))))}
             >
-              +
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>
           </div>
         </div>
