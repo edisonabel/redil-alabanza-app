@@ -69,32 +69,41 @@ const SONG_SHEET_PRINT_CSS = `
       margin: 0 !important;
       padding: 0 !important;
       background: #ffffff !important;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
     }
 
     .song-sheet-page {
-      width: 8.5in !important;
-      min-width: 8.5in !important;
+      width: 100% !important;
       max-width: 8.5in !important;
       height: 11in !important;
-      min-height: 11in !important;
       max-height: 11in !important;
       overflow: hidden !important;
       page-break-inside: avoid !important;
+      -webkit-column-break-inside: avoid !important;
       break-inside: avoid !important;
     }
 
     .song-sheet-columns {
+      -webkit-column-count: var(--song-sheet-column-count, 2) !important;
       column-count: var(--song-sheet-column-count, 2) !important;
+      -webkit-column-gap: 1.45rem !important;
       column-gap: 1.45rem !important;
+      -webkit-column-fill: auto !important;
       column-fill: auto !important;
       height: 100% !important;
     }
 
     .song-sheet-section {
       page-break-inside: avoid !important;
+      -webkit-column-break-inside: avoid !important;
       break-inside: avoid !important;
+    }
+
+    .text-blue-600 {
+      color: #2563eb !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
     }
   }
 `;

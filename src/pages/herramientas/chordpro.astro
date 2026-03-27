@@ -193,15 +193,17 @@ if (requestedSongId) {
   margin: 0 !important;
   padding: 0 !important;
   background: #fff !important;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
+  width: 100% !important;
+  height: auto !important;
  }
 
   body.app-shell {
    display: block !important;
    min-height: 0 !important;
    height: auto !important;
-   width: auto !important;
+   width: 100% !important;
    overflow: visible !important;
   }
 
@@ -225,150 +227,157 @@ if (requestedSongId) {
   .print\:hidden { display: none !important; }
   .no-print { display: none !important; }
 
+  body > div[style*='safe-area-inset-top'] {
+   display: none !important;
+  }
+
+  /* ── Print target container ── */
+  #vista-previa-impresion {
+   display: block !important;
+   position: static !important;
+   margin: 0 !important;
+   padding: 0 !important;
+   width: 100% !important;
+   height: auto !important;
+   max-width: none !important;
+   max-height: none !important;
+   overflow: visible !important;
+  }
+
+  /* Strip React inline styles (transform, scale, fixed pixel sizes) from all wrapper divs */
+  #vista-previa-impresion > *,
+  #vista-previa-impresion > * > *,
+  #vista-previa-impresion > * > * > *,
+  #vista-previa-impresion > * > * > * > * {
+   display: block !important;
+   position: static !important;
+   transform: none !important;
+   -webkit-transform: none !important;
+   width: auto !important;
+   height: auto !important;
+   max-width: none !important;
+   max-height: none !important;
+   min-width: 0 !important;
+   min-height: 0 !important;
+   overflow: visible !important;
+   opacity: 1 !important;
+   visibility: visible !important;
+   border: 0 !important;
+   border-radius: 0 !important;
+   box-shadow: none !important;
+   padding: 0 !important;
+   margin: 0 !important;
+   background: transparent !important;
+  }
+
+  /* The actual sheet page needs proper print sizing */
+  #vista-previa-impresion #chordpro-print-sheet {
+   display: block !important;
+   width: 100% !important;
+   max-width: 8.5in !important;
+   height: 11in !important;
+   max-height: 11in !important;
+   overflow: hidden !important;
+   background: #fff !important;
+  }
+
+  /* Restore proper styling inside the song sheet content */
+  #vista-previa-impresion .song-sheet-page {
+   display: block !important;
+   width: 100% !important;
+   max-width: 8.5in !important;
+   height: 11in !important;
+   max-height: 11in !important;
+   overflow: hidden !important;
+   background: #fff !important;
+   border: 0 !important;
+   border-radius: 0 !important;
+   box-shadow: none !important;
+  }
+
+  /* Restore flex layout inside the sheet content area */
+  #vista-previa-impresion .song-sheet-page > div {
+   display: -webkit-flex !important;
+   display: flex !important;
+   -webkit-flex-direction: column !important;
+   flex-direction: column !important;
+   height: 100% !important;
+   overflow: hidden !important;
+   background: #fff !important;
+  }
+
+  /* Restore header and main inside song sheet */
   #vista-previa-impresion .song-sheet-page > div > header {
    display: block !important;
- }
+   -webkit-flex-shrink: 0 !important;
+   flex-shrink: 0 !important;
+  }
 
- #vista-previa-impresion .song-sheet-section > header {
- display: flex !important;
- }
- body > div[style*='safe-area-inset-top'] {
- display: none !important;
- }
+  #vista-previa-impresion .song-sheet-page > div > main {
+   display: block !important;
+   -webkit-flex: 1 !important;
+   flex: 1 !important;
+   min-height: 0 !important;
+   overflow: hidden !important;
+  }
 
-   #vista-previa-impresion {
-    display: block !important;
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    width: 8.5in !important;
-    height: 11in !important;
-    max-width: 8.5in !important;
-    max-height: 11in !important;
-    overflow: hidden !important;
-    break-after: avoid-page !important;
-    page-break-after: avoid !important;
-   }
+  /* Restore columns layout — critical for iOS which needs explicit column properties */
+  #vista-previa-impresion .song-sheet-columns {
+   height: 100% !important;
+   -webkit-column-fill: auto !important;
+   column-fill: auto !important;
+  }
 
-   /* Force all wrapper divs inside the preview to be visible and unstyled for print */
-   #vista-previa-impresion > *,
-   #vista-previa-impresion > * > *,
-   #vista-previa-impresion > * > * > *,
-   #vista-previa-impresion > * > * > * > * {
-    display: block !important;
-    position: static !important;
-    transform: none !important;
-    width: auto !important;
-    height: auto !important;
-    max-width: none !important;
-    max-height: none !important;
-    min-width: 0 !important;
-    min-height: 0 !important;
-    overflow: visible !important;
-    opacity: 1 !important;
-    visibility: visible !important;
-    border: 0 !important;
-    border-radius: 0 !important;
-    box-shadow: none !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    background: transparent !important;
-   }
+  /* Restore section visibility */
+  #vista-previa-impresion .song-sheet-section {
+   display: block !important;
+   -webkit-column-break-inside: avoid !important;
+   page-break-inside: avoid !important;
+   break-inside: avoid !important;
+   background: transparent !important;
+  }
 
-   /* The actual sheet page needs proper print sizing */
-   #vista-previa-impresion #chordpro-print-sheet {
-    display: block !important;
-    width: 8.5in !important;
-    height: 11in !important;
-    max-width: 8.5in !important;
-    max-height: 11in !important;
-    overflow: hidden !important;
-    background: #fff !important;
-   }
+  /* Restore section card styling */
+  #vista-previa-impresion .song-sheet-section > div {
+   display: block !important;
+   position: relative !important;
+   border: 1px solid rgba(212, 212, 216, 0.9) !important;
+   border-radius: 1.28em !important;
+   background: white !important;
+   overflow: visible !important;
+  }
 
-   /* Restore proper styling inside the song sheet content */
-   #vista-previa-impresion .song-sheet-page {
-    display: block !important;
-    width: 8.5in !important;
-    height: 11in !important;
-    max-width: 8.5in !important;
-    max-height: 11in !important;
-    overflow: hidden !important;
-    background: #fff !important;
-    border: 0 !important;
-    border-radius: 0 !important;
-    box-shadow: none !important;
-   }
+  /* Restore section headers */
+  #vista-previa-impresion .song-sheet-section > div > header {
+   display: -webkit-flex !important;
+   display: flex !important;
+   position: absolute !important;
+   background: white !important;
+  }
 
-   /* Restore flex layout inside the sheet content area */
-   #vista-previa-impresion .song-sheet-page > div {
-    display: flex !important;
-    flex-direction: column !important;
-    height: 100% !important;
-    overflow: hidden !important;
-    background: #fff !important;
-   }
+  /* Restore flex layout for header metadata row */
+  #vista-previa-impresion .song-sheet-page > div > header > div {
+   display: -webkit-flex !important;
+   display: flex !important;
+  }
 
-   /* Restore header and main inside song sheet */
-   #vista-previa-impresion .song-sheet-page > div > header {
-    display: block !important;
-    flex-shrink: 0 !important;
-   }
+  /* Restore metadata grid */
+  #vista-previa-impresion .song-sheet-page > div > header dl {
+   display: grid !important;
+  }
 
-   #vista-previa-impresion .song-sheet-page > div > main {
-    display: block !important;
-    flex: 1 !important;
-    min-height: 0 !important;
-    overflow: hidden !important;
-   }
+  /* Restore song map pills row */
+  #vista-previa-impresion .song-sheet-page > div > header .flex.flex-wrap {
+   display: -webkit-flex !important;
+   display: flex !important;
+  }
 
-   /* Restore columns layout */
-   #vista-previa-impresion .song-sheet-columns {
-    height: 100% !important;
-    column-fill: auto !important;
-   }
-
-   /* Restore section visibility */
-   #vista-previa-impresion .song-sheet-section {
-    display: block !important;
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-    background: transparent !important;
-   }
-
-   /* Restore section card styling */
-   #vista-previa-impresion .song-sheet-section > div {
-    display: block !important;
-    position: relative !important;
-    border: 1px solid rgba(212, 212, 216, 0.9) !important;
-    border-radius: 1.28em !important;
-    background: white !important;
-    overflow: visible !important;
-   }
-
-   /* Restore section headers */
-   #vista-previa-impresion .song-sheet-section > div > header {
-    display: flex !important;
-    position: absolute !important;
-    background: white !important;
-   }
-
-   /* Restore flex layout for header metadata row */
-   #vista-previa-impresion .song-sheet-page > div > header > div {
-    display: flex !important;
-   }
-
-   /* Restore metadata grid */
-   #vista-previa-impresion .song-sheet-page > div > header dl {
-    display: grid !important;
-   }
-
-   /* Restore song map pills row */
-   #vista-previa-impresion .song-sheet-page > div > header .flex.flex-wrap {
-    display: flex !important;
-   }
+  /* Ensure chords print in color on iOS */
+  #vista-previa-impresion .text-blue-600 {
+   color: #2563eb !important;
+   -webkit-print-color-adjust: exact !important;
+   print-color-adjust: exact !important;
+  }
 }
 </style>
 
