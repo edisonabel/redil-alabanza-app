@@ -117,12 +117,13 @@ if (requestedSongId) {
 </Layout>
 
 <style is:global>
+/* iOS Safari does NOT support @page size — only margin */
 @page {
-  size: letter portrait;
   margin: 0;
 }
 
 @media print {
+  /* ── Document root: shrink-wrap, don't force height ── */
   html,
   body {
     margin: 0 !important;
@@ -131,7 +132,7 @@ if (requestedSongId) {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
     width: 100% !important;
-    height: 11in !important;
+    height: auto !important;
     max-height: 11in !important;
     overflow: hidden !important;
   }
@@ -139,12 +140,13 @@ if (requestedSongId) {
   body.app-shell {
     display: block !important;
     min-height: 0 !important;
-    height: 11in !important;
+    height: auto !important;
     max-height: 11in !important;
     width: 100% !important;
     overflow: hidden !important;
   }
 
+  /* Hide everything except what we need */
   body > * {
     display: none !important;
   }
@@ -152,26 +154,23 @@ if (requestedSongId) {
   body > main.app-safe-main {
     display: block !important;
     min-height: 0 !important;
-    height: 11in !important;
+    height: auto !important;
     max-height: 11in !important;
     padding: 0 !important;
     overflow: hidden !important;
     background: #fff !important;
-    page-break-inside: avoid !important;
-    -webkit-column-break-inside: avoid !important;
-    break-inside: avoid !important;
   }
 
   body > main.app-safe-main > * {
     display: none !important;
   }
 
-  /* Show the workspace container */
+  /* Container that wraps ChordProPrintWorkspace */
   body > main.app-safe-main > div:last-of-type {
     display: block !important;
     position: static !important;
     width: 100% !important;
-    height: 11in !important;
+    height: auto !important;
     max-height: 11in !important;
     min-height: 0 !important;
     overflow: hidden !important;
@@ -183,23 +182,19 @@ if (requestedSongId) {
     display: none !important;
   }
 
-  /* ── Print target container: MUST be exactly 1 page ── */
+  /* ── Print target container ── */
   #vista-previa-impresion {
     display: block !important;
     position: static !important;
     margin: 0 !important;
     padding: 0 !important;
     width: 100% !important;
-    height: 11in !important;
+    height: auto !important;
     max-height: 11in !important;
     overflow: hidden !important;
-    page-break-inside: avoid !important;
-    -webkit-column-break-inside: avoid !important;
-    break-inside: avoid !important;
-    page-break-after: avoid !important;
   }
 
-  /* Strip ALL React inline styles from wrapper divs (6 levels deep to cover full tree) */
+  /* Strip React wrappers (6 levels deep) — shrink-wrap, clip at 11in */
   #vista-previa-impresion > *,
   #vista-previa-impresion > * > *,
   #vista-previa-impresion > * > * > *,
@@ -211,7 +206,7 @@ if (requestedSongId) {
     transform: none !important;
     -webkit-transform: none !important;
     width: 100% !important;
-    height: 11in !important;
+    height: auto !important;
     max-width: none !important;
     max-height: 11in !important;
     min-width: 0 !important;
@@ -225,10 +220,9 @@ if (requestedSongId) {
     padding: 0 !important;
     margin: 0 !important;
     background: transparent !important;
-    page-break-inside: avoid !important;
   }
 
-  /* The actual sheet page */
+  /* ── The ONE element that defines the page: exactly 11in ── */
   #vista-previa-impresion #chordpro-print-sheet {
     display: block !important;
     width: 100% !important;
@@ -257,7 +251,7 @@ if (requestedSongId) {
     display: flex !important;
     -webkit-flex-direction: column !important;
     flex-direction: column !important;
-    height: 100% !important;
+    height: 11in !important;
     max-height: 11in !important;
     overflow: hidden !important;
     background: #fff !important;
@@ -265,9 +259,11 @@ if (requestedSongId) {
 
   #vista-previa-impresion .song-sheet-page > div > header {
     display: block !important;
+    height: auto !important;
+    max-height: none !important;
     -webkit-flex-shrink: 0 !important;
     flex-shrink: 0 !important;
-    overflow: hidden !important;
+    overflow: visible !important;
   }
 
   #vista-previa-impresion .song-sheet-page > div > main {
@@ -278,39 +274,47 @@ if (requestedSongId) {
     overflow: hidden !important;
   }
 
-  /* Columns — critical for iOS */
+  /* Columns — preserve column-count, critical for iOS */
   #vista-previa-impresion .song-sheet-columns {
     height: 100% !important;
+    max-height: none !important;
     -webkit-column-fill: auto !important;
     column-fill: auto !important;
-    overflow: hidden !important;
+    overflow: visible !important;
   }
 
   #vista-previa-impresion .song-sheet-section {
     display: block !important;
+    height: auto !important;
+    max-height: none !important;
     -webkit-column-break-inside: avoid !important;
-    page-break-inside: avoid !important;
     break-inside: avoid !important;
     background: transparent !important;
-    overflow: hidden !important;
+    overflow: visible !important;
   }
 
   #vista-previa-impresion .song-sheet-section > div {
     display: block !important;
+    height: auto !important;
+    max-height: none !important;
     position: relative !important;
     border: 1px solid rgba(212, 212, 216, 0.9) !important;
     border-radius: 1.28em !important;
     background: white !important;
-    overflow: hidden !important;
+    overflow: visible !important;
   }
 
   #vista-previa-impresion .song-sheet-section > div > header {
     display: -webkit-flex !important;
     display: flex !important;
+    height: auto !important;
+    max-height: none !important;
     position: absolute !important;
     background: white !important;
+    overflow: visible !important;
   }
 
+  /* Header elements inside the sheet need natural height */
   #vista-previa-impresion .song-sheet-page > div > header > div {
     display: -webkit-flex !important;
     display: flex !important;

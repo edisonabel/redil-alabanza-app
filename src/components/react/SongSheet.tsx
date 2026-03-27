@@ -59,7 +59,6 @@ const DISPLAY_FONT_FAMILY = "'adineue', ui-sans-serif, system-ui, sans-serif";
 const BODY_FONT_FAMILY = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace';
 const SONG_SHEET_PRINT_CSS = `
   @page {
-    size: letter portrait;
     margin: 0;
   }
 
@@ -71,7 +70,7 @@ const SONG_SHEET_PRINT_CSS = `
       background: #ffffff !important;
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
-      height: 11in !important;
+      height: auto !important;
       max-height: 11in !important;
       overflow: hidden !important;
     }
@@ -82,10 +81,6 @@ const SONG_SHEET_PRINT_CSS = `
       height: 11in !important;
       max-height: 11in !important;
       overflow: hidden !important;
-      page-break-inside: avoid !important;
-      -webkit-column-break-inside: avoid !important;
-      break-inside: avoid !important;
-      page-break-after: avoid !important;
     }
 
     .song-sheet-columns {
@@ -96,14 +91,13 @@ const SONG_SHEET_PRINT_CSS = `
       -webkit-column-fill: auto !important;
       column-fill: auto !important;
       height: 100% !important;
-      overflow: hidden !important;
+      overflow: visible !important;
     }
 
     .song-sheet-section {
-      page-break-inside: avoid !important;
       -webkit-column-break-inside: avoid !important;
       break-inside: avoid !important;
-      overflow: hidden !important;
+      overflow: visible !important;
     }
 
     .text-blue-600 {
