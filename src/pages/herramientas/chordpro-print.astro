@@ -1,0 +1,301 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import ChordProPrintWorkspace from '../../components/react/ChordProPrintWorkspace';
+import { supabase } from '../../lib/supabase';
+
+const requestedSongId = Astro.url.searchParams.get('song')?.trim() || '';
+let initialSong: {
+  id: string;
+  titulo: string;
+  artista: string;
+  tono: string;
+  capo: string;
+  tempo: string;
+  time: string;
+  chordpro: string;
+} | null = null;
+
+const resolveInitialChordPro = async (rawValue: unknown) => {
+  const value = String(rawValue || '').trim();
+  if (!value) return '';
+
+  const looksLikeRemoteText =
+    /^https?:\/\//i.test(value) &&
+    /\.(txt|pro|cho|chordpro)(\?.*)?$/i.test(value);
+
+  if (!looksLikeRemoteText) return value;
+
+  try {
+    const response = await fetch(value);
+    if (!response.ok) return value;
+    return (await response.text()).trim() || value;
+  } catch {
+    return value;
+  }
+};
+
+if (requestedSongId) {
+  try {
+    const { data: songRow } = await supabase
+      .from('canciones')
+      .select('id, titulo, cantante, tonalidad, bpm, chordpro')
+      .eq('id', requestedSongId)
+      .maybeSingle();
+
+    if (songRow) {
+      const chordproContent = await resolveInitialChordPro(songRow.chordpro);
+      initialSong = {
+        id: String(songRow.id ?? requestedSongId),
+        titulo: String(songRow.titulo || ''),
+        artista: String(songRow.cantante || ''),
+        tono: String(songRow.tonalidad || ''),
+        capo: '',
+        tempo: String(songRow.bpm || ''),
+        time: '',
+        chordpro: chordproContent,
+      };
+    }
+  } catch (error) {
+    console.error('ChordPro print workspace preload failed:', error);
+  }
+}
+---
+
+<Layout>
+  <div class="mx-auto w-full max-w-[1880px] px-4 pb-3 pt-4 print:hidden lg:px-6 xl:px-8">
+    <div class="flex flex-wrap items-center gap-3">
+      <a
+        href="/repertorio"
+        aria-label="Volver a repertorio"
+        title="Volver a repertorio"
+        class="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-600 shadow-sm transition hover:bg-zinc-50 hover:text-zinc-950 sm:w-auto sm:gap-2 sm:px-4"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="m15 18-6-6 6-6"></path>
+        </svg>
+        <span class="hidden sm:inline text-sm font-bold">Volver a repertorio</span>
+      </a>
+
+      <div class="flex min-w-0 items-center gap-3">
+        <h1 class="text-[clamp(1.65rem,2vw,2.65rem)] font-black tracking-[-0.05em] text-zinc-950 dark:text-white">
+          Hoja lista para imprimir
+        </h1>
+      </div>
+    </div>
+  </div>
+
+  {initialSong ? (
+    <div style="width: 100%; height: 100vh; min-height: 100vh;">
+      <ChordProPrintWorkspace
+        client:only="react"
+        initialChordProText={initialSong.chordpro}
+        initialTitle={initialSong.titulo}
+        initialArtist={initialSong.artista}
+        initialMetadata={{
+          tone: initialSong.tono,
+          capo: initialSong.capo,
+          tempo: initialSong.tempo,
+          time: initialSong.time,
+        }}
+      />
+    </div>
+  ) : (
+    <section class="mx-auto max-w-2xl px-4 py-16 text-center">
+      <p class="text-sm font-black uppercase tracking-[0.2em] text-zinc-400">ChordPro</p>
+      <h1 class="mt-3 text-4xl font-black tracking-tight text-zinc-950">No encontramos la cancion</h1>
+      <p class="mt-3 text-base text-zinc-500">
+        Esta vista necesita un `song` valido para cargar la hoja de impresion.
+      </p>
+      <a
+        href="/repertorio"
+        class="mt-6 inline-flex items-center justify-center rounded-2xl bg-zinc-950 px-5 py-3 text-sm font-bold text-white transition hover:bg-zinc-800"
+      >
+        Ir a repertorio
+      </a>
+    </section>
+  )}
+</Layout>
+
+<style is:global>
+@page {
+  size: letter portrait;
+  margin: 0;
+}
+
+@media print {
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body.app-shell {
+    display: block !important;
+    min-height: 0 !important;
+    height: auto !important;
+    width: auto !important;
+    overflow: visible !important;
+  }
+
+  body > * {
+    display: none !important;
+  }
+
+  body > main.app-safe-main {
+    display: block !important;
+    min-height: 0 !important;
+    height: auto !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  body > main.app-safe-main > * {
+    display: none !important;
+  }
+
+  /* Show the workspace container (direct child of main that holds ChordProPrintWorkspace) */
+  body > main.app-safe-main > div:last-of-type {
+    display: block !important;
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* The print:hidden aside (sidebar) is already hidden by Tailwind's print:hidden */
+
+  /* Force all wrapper divs inside the preview section to be visible and unstyled for print */
+  #vista-previa-impresion {
+    display: block !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 8.5in !important;
+    height: 11in !important;
+    max-width: 8.5in !important;
+    max-height: 11in !important;
+    overflow: hidden !important;
+  }
+
+  /* Strip React inline styles (transform, fixed pixel sizes) from all wrappers */
+  #vista-previa-impresion > *,
+  #vista-previa-impresion > * > *,
+  #vista-previa-impresion > * > * > *,
+  #vista-previa-impresion > * > * > * > * {
+    display: block !important;
+    position: static !important;
+    transform: none !important;
+    width: auto !important;
+    height: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+  }
+
+  /* The actual sheet page needs proper print sizing */
+  #vista-previa-impresion #chordpro-print-sheet {
+    display: block !important;
+    width: 8.5in !important;
+    height: 11in !important;
+    max-width: 8.5in !important;
+    max-height: 11in !important;
+    overflow: hidden !important;
+    background: #fff !important;
+  }
+
+  #vista-previa-impresion .song-sheet-page {
+    display: block !important;
+    width: 8.5in !important;
+    height: 11in !important;
+    max-width: 8.5in !important;
+    max-height: 11in !important;
+    overflow: hidden !important;
+    background: #fff !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  #vista-previa-impresion .song-sheet-page > div {
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100% !important;
+    overflow: hidden !important;
+    background: #fff !important;
+  }
+
+  #vista-previa-impresion .song-sheet-page > div > header {
+    display: block !important;
+    flex-shrink: 0 !important;
+  }
+
+  #vista-previa-impresion .song-sheet-page > div > main {
+    display: block !important;
+    flex: 1 !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  #vista-previa-impresion .song-sheet-columns {
+    height: 100% !important;
+    column-fill: auto !important;
+  }
+
+  #vista-previa-impresion .song-sheet-section {
+    display: block !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    background: transparent !important;
+  }
+
+  #vista-previa-impresion .song-sheet-section > div {
+    display: block !important;
+    position: relative !important;
+    border: 1px solid rgba(212, 212, 216, 0.9) !important;
+    border-radius: 1.28em !important;
+    background: white !important;
+    overflow: visible !important;
+  }
+
+  #vista-previa-impresion .song-sheet-section > div > header {
+    display: flex !important;
+    position: absolute !important;
+    background: white !important;
+  }
+
+  #vista-previa-impresion .song-sheet-page > div > header > div {
+    display: flex !important;
+  }
+
+  #vista-previa-impresion .song-sheet-page > div > header dl {
+    display: grid !important;
+  }
+
+  #vista-previa-impresion .song-sheet-page > div > header .flex.flex-wrap {
+    display: flex !important;
+  }
+}
+</style>

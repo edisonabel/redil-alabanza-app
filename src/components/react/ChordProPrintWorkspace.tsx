@@ -1,0 +1,549 @@
+import { useEffect, useMemo, useState } from 'react';
+import ChordProPreview from './ChordProPreview';
+import type {
+  SongSheetLayoutOptions,
+  SongSheetMetadata,
+  SongSheetRenderMode,
+} from './SongSheet';
+
+type ChordProPrintWorkspaceProps = {
+  initialChordProText: string;
+  initialTitle: string;
+  initialArtist?: string;
+  initialMetadata?: SongSheetMetadata;
+};
+
+const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const CAPO_OPTIONS = [0, 3, 5, 7, 10];
+const FLAT_TO_SHARP: Record<string, string> = {
+  Db: 'C#',
+  Eb: 'D#',
+  Gb: 'F#',
+  Ab: 'G#',
+  Bb: 'A#',
+};
+const NOTE_BUTTON_ROWS = [
+  ['C', 'C#', 'D', 'D#', 'E', 'F'],
+  ['F#', 'G', 'G#', 'A', 'A#', 'B'],
+];
+const CHORD_TOKEN_RE =
+  /^[A-G](?:#|b)?(?:[a-z0-9+#/()\-]*)?(?:\/[A-G](?:#|b)?(?:[a-z0-9+#/()\-]*)?)?$/i;
+
+const groupButtonBase =
+  'inline-flex min-h-10 items-center justify-center rounded-2xl border px-4 py-2.5 text-sm font-bold transition-all';
+
+const readIsDarkTheme = () => {
+  if (typeof document === 'undefined') return false;
+  return document.documentElement.classList.contains('dark');
+};
+
+const getOptionButtonClass = (active: boolean, isDarkTheme: boolean) =>
+  [
+    groupButtonBase,
+    isDarkTheme
+      ? active
+        ? 'border-sky-400 bg-sky-500/15 text-sky-200 shadow-[0_12px_28px_rgba(14,165,233,0.16)]'
+        : 'border-white/10 bg-white/5 text-zinc-300 hover:border-white/20 hover:bg-white/8 hover:text-white'
+      : active
+        ? 'border-sky-500/70 bg-sky-500/12 text-sky-700 shadow-[0_16px_32px_rgba(14,165,233,0.14)]'
+        : 'border-zinc-200 bg-white/88 text-zinc-700 hover:border-zinc-300 hover:bg-white hover:text-zinc-950',
+  ].join(' ');
+
+const getToggleClass = (active: boolean, isDarkTheme: boolean) =>
+  [
+    'inline-flex h-7 w-12 items-center rounded-full border transition-colors',
+    active
+      ? isDarkTheme
+        ? 'justify-end border-sky-400/60 bg-sky-500/20'
+        : 'justify-end border-sky-500/40 bg-sky-500/15'
+      : isDarkTheme
+        ? 'justify-start border-white/10 bg-white/5'
+        : 'justify-start border-zinc-200 bg-zinc-100/90',
+  ].join(' ');
+
+const getNoteIndex = (value: string) => NOTES.indexOf(value);
+
+const normalizeNote = (value: string | number | null | undefined) => {
+  const safeValue = String(value ?? '').trim();
+  if (!safeValue) return '';
+  if (FLAT_TO_SHARP[safeValue]) return FLAT_TO_SHARP[safeValue];
+  return NOTES.includes(safeValue) ? safeValue : safeValue;
+};
+
+const transposeChord = (chord: string, steps: number) => {
+  const match = chord.match(/^([A-G][#b]?)(.*)$/);
+  if (!match) return chord;
+
+  let root = match[1];
+  const modifier = match[2];
+
+  if (FLAT_TO_SHARP[root]) root = FLAT_TO_SHARP[root];
+
+  const currentIndex = getNoteIndex(root);
+  if (currentIndex === -1) return chord;
+
+  let nextIndex = (currentIndex + steps) % 12;
+  if (nextIndex < 0) nextIndex += 12;
+
+  return `${NOTES[nextIndex]}${modifier}`;
+};
+
+const isTransposableChordToken = (value: string) => {
+  const safeValue = String(value || '').trim();
+  if (!safeValue || safeValue.includes(' ')) return false;
+  return CHORD_TOKEN_RE.test(safeValue);
+};
+
+const transposeChordProText = (text: string, steps: number) => {
+  if (!steps) return text;
+
+  return String(text || '').replace(/\[(.*?)\]/g, (_, chord) => {
+    const safeChord = String(chord || '').trim();
+    if (!isTransposableChordToken(safeChord)) {
+      return `[${safeChord}]`;
+    }
+
+    return `[${transposeChord(safeChord, steps)}]`;
+  });
+};
+
+const getSignedSemitoneDelta = (from: string, to: string) => {
+  const fromIndex = getNoteIndex(normalizeNote(from));
+  const toIndex = getNoteIndex(normalizeNote(to));
+  if (fromIndex === -1 || toIndex === -1) return 0;
+
+  let diff = toIndex - fromIndex;
+  if (diff > 6) diff -= 12;
+  if (diff < -6) diff += 12;
+  return diff;
+};
+
+const getShiftedTone = (tone: string, steps: number) => {
+  const normalizedTone = normalizeNote(tone);
+  const toneIndex = getNoteIndex(normalizedTone);
+  if (toneIndex === -1) return '';
+
+  let shiftedIndex = (toneIndex + steps) % 12;
+  if (shiftedIndex < 0) shiftedIndex += 12;
+  return NOTES[shiftedIndex];
+};
+
+const formatDelta = (steps: number) => {
+  if (steps === 0) return 'Original';
+  return steps > 0 ? `+${steps}` : String(steps);
+};
+
+const formatTransposeSummary = (steps: number) => {
+  if (steps === 0) return 'Tono original';
+  const absSteps = Math.abs(steps);
+  const suffix = absSteps === 1 ? 'tono' : 'tonos';
+  return `${steps > 0 ? '+' : '-'}${absSteps} ${suffix}`;
+};
+
+export default function ChordProPrintWorkspace({
+  initialChordProText,
+  initialTitle,
+  initialArtist = '',
+  initialMetadata,
+}: ChordProPrintWorkspaceProps) {
+  const originalTone = normalizeNote(initialMetadata?.tone);
+  const [isDarkTheme, setIsDarkTheme] = useState(() => readIsDarkTheme());
+  const [title, setTitle] = useState(initialTitle || '');
+  const [artist, setArtist] = useState(initialArtist || '');
+  const [targetTone, setTargetTone] = useState(originalTone || 'C');
+  const [selectedCapo, setSelectedCapo] = useState(0);
+  const [previewZoom, setPreviewZoom] = useState(1);
+  const [sheetOptions, setSheetOptions] = useState<Required<SongSheetLayoutOptions>>({
+    renderMode: 'chords-lyrics',
+    columnCount: 2,
+    density: 'complete',
+    showSongMap: true,
+    showSectionDividers: true,
+  });
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+
+    const safeTitle = title.trim() || 'SIN TITULO';
+    const safeArtist = artist.trim();
+    document.title = safeArtist ? `${safeTitle} - ${safeArtist}` : safeTitle;
+  }, [artist, title]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const syncTheme = () => {
+      setIsDarkTheme(readIsDarkTheme());
+    };
+
+    syncTheme();
+
+    window.addEventListener('redil:theme-changed', syncTheme as EventListener);
+    document.addEventListener('astro:after-swap', syncTheme);
+
+    return () => {
+      window.removeEventListener('redil:theme-changed', syncTheme as EventListener);
+      document.removeEventListener('astro:after-swap', syncTheme);
+    };
+  }, []);
+
+  const semitoneDelta = useMemo(
+    () => getSignedSemitoneDelta(originalTone, targetTone),
+    [originalTone, targetTone]
+  );
+
+  const displayedTone = useMemo(
+    () => getShiftedTone(targetTone, -selectedCapo),
+    [selectedCapo, targetTone]
+  );
+
+  const playbackSemitoneDelta = useMemo(
+    () => semitoneDelta - selectedCapo,
+    [selectedCapo, semitoneDelta]
+  );
+
+  const transposedChordProText = useMemo(
+    () => transposeChordProText(initialChordProText, playbackSemitoneDelta),
+    [initialChordProText, playbackSemitoneDelta]
+  );
+
+  const previewMetadata = useMemo(
+    () => ({
+      tone: targetTone || originalTone || '',
+      capo: selectedCapo > 0
+        ? `${selectedCapo}${displayedTone ? ` (${displayedTone})` : ''}`
+        : '0',
+      tempo: initialMetadata?.tempo ?? '',
+      time: initialMetadata?.time ?? '',
+    }),
+    [displayedTone, initialMetadata?.tempo, initialMetadata?.time, originalTone, selectedCapo, targetTone]
+  );
+
+  const setRenderMode = (renderMode: SongSheetRenderMode) => {
+    setSheetOptions((current) => ({ ...current, renderMode }));
+  };
+
+  const handlePrint = () => {
+    if (typeof window === 'undefined') return;
+
+    window.requestAnimationFrame(() => {
+      window.focus();
+      window.print();
+    });
+  };
+
+  const zoomLabel = `${Math.round(previewZoom * 100)}%`;
+
+  const sidebarShellClasses = isDarkTheme
+    ? 'border-white/10 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.18),_transparent_28%),linear-gradient(180deg,_rgba(9,9,11,0.98),_rgba(15,23,42,0.96))] text-white shadow-[0_30px_80px_rgba(2,6,23,0.35)]'
+    : 'border-zinc-200/80 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.12),_transparent_26%),linear-gradient(180deg,_rgba(255,255,255,0.98),_rgba(248,250,252,0.98))] text-zinc-950 shadow-[0_30px_80px_rgba(148,163,184,0.16)]';
+  const eyebrowTextClasses = isDarkTheme ? 'text-zinc-400' : 'text-slate-500';
+  const titleTextClasses = isDarkTheme ? 'text-white' : 'text-slate-950';
+  const bodyTextClasses = isDarkTheme ? 'text-zinc-400' : 'text-slate-600';
+  const fieldClasses = isDarkTheme
+    ? 'border-white/10 bg-white/5 text-white placeholder:text-zinc-500 focus:border-sky-400/60 focus:bg-white/8'
+    : 'border-zinc-200 bg-white/88 text-zinc-950 placeholder:text-zinc-400 focus:border-sky-500/60 focus:bg-white';
+  const metricCardClasses = isDarkTheme
+    ? 'border-white/10 bg-white/5'
+    : 'border-zinc-200 bg-white/84 shadow-[0_10px_28px_rgba(148,163,184,0.08)]';
+  const metricLabelClasses = isDarkTheme ? 'text-zinc-500' : 'text-slate-400';
+  const metricValueClasses = isDarkTheme ? 'text-white' : 'text-slate-950';
+  const metricHintClasses = isDarkTheme ? 'text-zinc-400' : 'text-slate-500';
+  const structurePanelClasses = isDarkTheme
+    ? 'border-white/10 bg-white/5'
+    : 'border-zinc-200 bg-white/80 shadow-[0_10px_28px_rgba(148,163,184,0.08)]';
+  const sectionTitleClasses = isDarkTheme ? 'text-white' : 'text-slate-950';
+  const sectionBodyClasses = isDarkTheme ? 'text-zinc-400' : 'text-slate-500';
+
+  return (
+    <div className="mx-auto flex w-full max-w-[1880px] flex-col gap-4 px-4 pb-4 lg:flex-row lg:items-start lg:px-6 xl:px-8 print:block print:max-w-none print:px-0 print:py-0">
+      <aside
+        className={[
+          'w-full shrink-0 rounded-[2rem] border p-4 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2.75rem)] lg:w-[340px] lg:overflow-auto xl:w-[360px] 2xl:w-[390px] print:hidden',
+          sidebarShellClasses,
+        ].join(' ')}
+      >
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h1 className={['text-[1.45rem] font-black tracking-[-0.04em]', titleTextClasses].join(' ')}>
+            Configura tu impresion
+          </h1>
+          <span
+            className={[
+              'inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em]',
+              isDarkTheme
+                ? 'border-white/10 bg-white/5 text-zinc-300'
+                : 'border-zinc-200 bg-white/88 text-slate-500',
+            ].join(' ')}
+          >
+            Carta
+          </span>
+        </div>
+
+        <div className="space-y-4">
+          <section className="space-y-3">
+            <h2 className={['text-xs font-black uppercase tracking-[0.18em]', eyebrowTextClasses].join(' ')}>
+              Cancion
+            </h2>
+            <div className="space-y-3">
+              <input
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder="Nombre de la cancion"
+                className={['w-full rounded-2xl border px-4 py-3 text-sm font-semibold outline-none transition', fieldClasses].join(' ')}
+              />
+              <input
+                value={artist}
+                onChange={(event) => setArtist(event.target.value)}
+                placeholder="Artista"
+                className={['w-full rounded-2xl border px-4 py-3 text-sm font-semibold outline-none transition', fieldClasses].join(' ')}
+              />
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className={['rounded-2xl border px-4 py-3', metricCardClasses].join(' ')}>
+                  <p className={['text-[11px] font-black uppercase tracking-[0.18em]', metricLabelClasses].join(' ')}>
+                    Tono base
+                  </p>
+                  <p className={['mt-1 text-[1.55rem] font-black leading-none', metricValueClasses].join(' ')}>
+                    {originalTone || '--'}
+                  </p>
+                </div>
+                <div className={['rounded-2xl border px-4 py-3', metricCardClasses].join(' ')}>
+                  <p className={['text-[11px] font-black uppercase tracking-[0.18em]', metricLabelClasses].join(' ')}>
+                    BPM
+                  </p>
+                  <p className={['mt-1 text-[1.55rem] font-black leading-none', metricValueClasses].join(' ')}>
+                    {String(initialMetadata?.tempo ?? '--') || '--'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className={['text-xs font-black uppercase tracking-[0.18em]', eyebrowTextClasses].join(' ')}>
+                Transponer
+              </h2>
+              <span className={['text-xs font-bold uppercase tracking-[0.14em]', isDarkTheme ? 'text-sky-300' : 'text-sky-600'].join(' ')}>
+                {formatTransposeSummary(semitoneDelta)}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {NOTE_BUTTON_ROWS.map((row, rowIndex) => (
+                <div key={`tone-row-${rowIndex}`} className="grid grid-cols-6 gap-2">
+                  {row.map((note) => (
+                    <button
+                      key={note}
+                      type="button"
+                      className={getOptionButtonClass(targetTone === note, isDarkTheme)}
+                      onClick={() => setTargetTone(note)}
+                    >
+                      {note}
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className={['text-xs font-black uppercase tracking-[0.18em]', eyebrowTextClasses].join(' ')}>
+                Capo
+              </h2>
+              <span className={['text-xs font-bold uppercase tracking-[0.14em]', isDarkTheme ? 'text-sky-300' : 'text-sky-600'].join(' ')}>
+                {selectedCapo > 0 ? `${selectedCapo} / ${displayedTone || '--'}` : 'Sin capo'}
+              </span>
+            </div>
+            <div className="grid grid-cols-5 gap-2">
+              {CAPO_OPTIONS.map((fret) => (
+                <button
+                  key={fret}
+                  type="button"
+                  className={getOptionButtonClass(selectedCapo === fret, isDarkTheme)}
+                  onClick={() => setSelectedCapo(fret)}
+                >
+                  {fret === 0 ? 'Ø' : fret}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className={['text-xs font-black uppercase tracking-[0.18em]', eyebrowTextClasses].join(' ')}>
+              Salida
+            </h2>
+            <div className="grid grid-cols-1 gap-3">
+              <button
+                type="button"
+                className={getOptionButtonClass(sheetOptions.renderMode === 'chords-lyrics', isDarkTheme)}
+                onClick={() => setRenderMode('chords-lyrics')}
+              >
+                Acordes + letra
+              </button>
+              <button
+                type="button"
+                className={getOptionButtonClass(sheetOptions.renderMode === 'lyrics-only', isDarkTheme)}
+                onClick={() => setRenderMode('lyrics-only')}
+              >
+                Solo letra
+              </button>
+              <button
+                type="button"
+                className={getOptionButtonClass(sheetOptions.renderMode === 'chords-only', isDarkTheme)}
+                onClick={() => setRenderMode('chords-only')}
+              >
+                Solo acordes
+              </button>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className={['text-xs font-black uppercase tracking-[0.18em]', eyebrowTextClasses].join(' ')}>
+              Formato
+            </h2>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                className={getOptionButtonClass(sheetOptions.columnCount === 2, isDarkTheme)}
+                onClick={() => setSheetOptions((current) => ({ ...current, columnCount: 2 }))}
+              >
+                2 columnas
+              </button>
+              <button
+                type="button"
+                className={getOptionButtonClass(sheetOptions.columnCount === 1, isDarkTheme)}
+                onClick={() => setSheetOptions((current) => ({ ...current, columnCount: 1 }))}
+              >
+                1 columna
+              </button>
+              <button
+                type="button"
+                className={getOptionButtonClass(sheetOptions.density === 'complete', isDarkTheme)}
+                onClick={() => setSheetOptions((current) => ({ ...current, density: 'complete' }))}
+              >
+                Completo
+              </button>
+              <button
+                type="button"
+                className={getOptionButtonClass(sheetOptions.density === 'condensed', isDarkTheme)}
+                onClick={() => setSheetOptions((current) => ({ ...current, density: 'condensed' }))}
+              >
+                Condensado
+              </button>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className={['text-xs font-black uppercase tracking-[0.18em]', eyebrowTextClasses].join(' ')}>
+              Extras
+            </h2>
+            <div className={['space-y-3 rounded-[1.5rem] border p-4', structurePanelClasses].join(' ')}>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-3 text-left"
+                onClick={() =>
+                  setSheetOptions((current) => ({ ...current, showSongMap: !current.showSongMap }))
+                }
+              >
+                <div>
+                  <p className={['text-sm font-bold', sectionTitleClasses].join(' ')}>Mapa de cancion</p>
+                  <p className={['text-xs', sectionBodyClasses].join(' ')}>
+                    Pildoras superiores con el orden de las secciones.
+                  </p>
+                </div>
+                <span className={getToggleClass(sheetOptions.showSongMap, isDarkTheme)}>
+                  <span className="m-1 h-4 w-4 rounded-full bg-white shadow-sm" />
+                </span>
+              </button>
+
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-3 text-left"
+                onClick={() =>
+                  setSheetOptions((current) => ({
+                    ...current,
+                    showSectionDividers: !current.showSectionDividers,
+                  }))
+                }
+              >
+                <div>
+                  <p className={['text-sm font-bold', sectionTitleClasses].join(' ')}>
+                    Separacion de seccion
+                  </p>
+                  <p className={['text-xs', sectionBodyClasses].join(' ')}>
+                    Linea guia despues del marcador de cada bloque.
+                  </p>
+                </div>
+                <span className={getToggleClass(sheetOptions.showSectionDividers, isDarkTheme)}>
+                  <span className="m-1 h-4 w-4 rounded-full bg-white shadow-sm" />
+                </span>
+              </button>
+            </div>
+          </section>
+        </div>
+
+        <button
+          type="button"
+          onClick={handlePrint}
+          className={[
+            'mt-6 inline-flex w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-black transition',
+            isDarkTheme
+              ? 'bg-sky-500 text-slate-950 hover:bg-sky-400'
+              : 'bg-sky-500 text-white shadow-[0_18px_32px_rgba(14,165,233,0.24)] hover:bg-sky-600',
+          ].join(' ')}
+        >
+          Imprimir PDF
+        </button>
+      </aside>
+
+      <div className="min-w-0 flex-1 lg:min-h-[calc(100dvh-3rem)]">
+        <div className="relative mb-3 flex items-center justify-center print:hidden">
+          <p className="text-center text-sm font-black uppercase tracking-[0.22em] text-zinc-400">
+            Vista previa
+          </p>
+          <div
+            className={[
+              'absolute right-0 inline-flex items-center gap-1 rounded-full border px-2 py-1 shadow-sm',
+              isDarkTheme
+                ? 'border-white/10 bg-white/5'
+                : 'border-zinc-200 bg-white/90',
+            ].join(' ')}
+          >
+            <button
+              type="button"
+              aria-label="Reducir vista previa"
+              className={getOptionButtonClass(false, isDarkTheme).replace('min-h-10', 'min-h-8').replace('rounded-2xl', 'rounded-full').replace('px-4 py-2.5', 'h-8 w-8 px-0 py-0')}
+              onClick={() => setPreviewZoom((current) => Math.max(0.7, Number((current - 0.08).toFixed(2))))}
+            >
+              -
+            </button>
+            <span className={['min-w-[3rem] text-center text-xs font-black uppercase tracking-[0.12em]', isDarkTheme ? 'text-zinc-300' : 'text-zinc-600'].join(' ')}>
+              {zoomLabel}
+            </span>
+            <button
+              type="button"
+              aria-label="Ampliar vista previa"
+              className={getOptionButtonClass(false, isDarkTheme).replace('min-h-10', 'min-h-8').replace('rounded-2xl', 'rounded-full').replace('px-4 py-2.5', 'h-8 w-8 px-0 py-0')}
+              onClick={() => setPreviewZoom((current) => Math.min(1.35, Number((current + 0.08).toFixed(2))))}
+            >
+              +
+            </button>
+          </div>
+        </div>
+
+        <section id="vista-previa-impresion" className="w-full min-w-0 print:mx-0 print:max-w-none">
+          <ChordProPreview
+            chordProText={transposedChordProText}
+            title={title}
+            artist={artist}
+            metadata={previewMetadata}
+            sheetOptions={sheetOptions}
+            zoomMultiplier={previewZoom}
+            className="w-full min-h-[26rem] sm:min-h-[32rem] lg:h-[calc(100dvh-5.9rem)] xl:h-[calc(100dvh-5.5rem)]"
+          />
+        </section>
+      </div>
+    </div>
+  );
+}

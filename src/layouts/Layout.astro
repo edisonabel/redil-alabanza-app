@@ -69,7 +69,8 @@ const hexToRgbString = (hex) => {
 
 const pathname = new URL(Astro.request.url).pathname;
 const isAdminRepertorioView = pathname === '/admin';
-const showBottomNav = !isAdminRepertorioView;
+const isChordProPrintView = pathname === '/herramientas/chordpro-print';
+const showBottomNav = !isAdminRepertorioView && !isChordProPrintView;
 const brandingAccessToken = Astro.cookies.get('sb-access-token')?.value || '';
 const shouldBustBrandingCache =
   Astro.cookies.has('branding_cache_bust') ||
@@ -449,7 +450,7 @@ const themeColors = brandingData;
   )}
 </head>
 <body transition:animate="none" data-admin-route={isAdminRepertorioView ? 'true' : 'false'} class="app-shell bg-background text-content min-h-screen min-h-[100dvh] w-full flex flex-col">
- {pathname !== '/' && user && !isAdminRepertorioView && (
+ {pathname !== '/' && user && !isAdminRepertorioView && !isChordProPrintView && (
   <div
    class="fixed right-4 md:right-6 z-[61] pointer-events-none"
    style="top: calc(env(safe-area-inset-top) + 0.75rem);"

@@ -1156,6 +1156,18 @@ export default function EnsayoHub({
                           Tu voz: {currentUserAssignedTrackName}
                         </span>
                       )}
+                      {song?.id && (
+                        <a
+                          href={`/herramientas/chordpro-print?song=${encodeURIComponent(String(song.id))}`}
+                          onClick={(event) => event.stopPropagation()}
+                          className="ui-pressable-soft inline-flex h-8 shrink-0 items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 transition-all hover:bg-zinc-100 hover:text-zinc-700 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                          title="Imprimir hoja de la canción"
+                          aria-label={`Imprimir ${song?.title || 'canción'}`}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
+                          Imprimir
+                        </a>
+                      )}
                     </div>
                   </div>
 

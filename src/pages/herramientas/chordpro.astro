@@ -1,5 +1,64 @@
 ---
 import Layout from '../../layouts/Layout.astro';
+import { ChordProPreview } from '../../components/react/ChordProPreview';
+import { supabase } from '../../lib/supabase';
+
+const requestedSongId = Astro.url.searchParams.get('song')?.trim() || '';
+let initialSong: {
+  id: string;
+  titulo: string;
+  artista: string;
+  tono: string;
+  capo: string;
+  tempo: string;
+  time: string;
+  chordpro: string;
+} | null = null;
+
+const resolveInitialChordPro = async (rawValue: unknown) => {
+  const value = String(rawValue || '').trim();
+  if (!value) return '';
+
+  const looksLikeRemoteText =
+    /^https?:\/\//i.test(value) &&
+    /\.(txt|pro|cho|chordpro)(\?.*)?$/i.test(value);
+
+  if (!looksLikeRemoteText) return value;
+
+  try {
+    const response = await fetch(value);
+    if (!response.ok) return value;
+    return (await response.text()).trim() || value;
+  } catch {
+    return value;
+  }
+};
+
+if (requestedSongId) {
+  try {
+    const { data: songRow } = await supabase
+      .from('canciones')
+      .select('id, titulo, cantante, tonalidad, bpm, chordpro')
+      .eq('id', requestedSongId)
+      .maybeSingle();
+
+    if (songRow) {
+      const chordproContent = await resolveInitialChordPro(songRow.chordpro);
+      initialSong = {
+        id: String(songRow.id ?? requestedSongId),
+        titulo: String(songRow.titulo || ''),
+        artista: String(songRow.cantante || ''),
+        tono: String(songRow.tonalidad || ''),
+        capo: '',
+        tempo: String(songRow.bpm || ''),
+        time: '',
+        chordpro: chordproContent,
+      };
+    }
+  } catch (error) {
+    console.error('ChordPro tool song preload failed:', error);
+  }
+}
 ---
 
 <Layout>
@@ -35,12 +94,14 @@ import Layout from '../../layouts/Layout.astro';
  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
  <!-- Metadatos para Impresión y Auto-Formatear -->
  <div class="col-span-1 lg:col-span-2">
- <div class="grid grid-cols-1 lg:grid-cols-5 gap-3 mb-2">
- <input type="text" id="print-titulo" placeholder="Título" class="p-3 bg- border border-neutral-200 rounded-xl $2text-white font-bold w-full focus:outline-none focus:border-blue-500">
- <input type="text" id="print-artista" placeholder="Artista (Opcional)" class="p-3 bg- border border-neutral-200 rounded-xl $2text-white w-full focus:outline-none focus:border-blue-500">
- <input type="text" id="print-tono" placeholder="Tono (Ej: G)" class="p-3 bg- border border-neutral-200 rounded-xl $2text-white w-full focus:outline-none focus:border-blue-500">
+ <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-3 mb-2">
+ <input type="text" id="print-titulo" placeholder="Título" value={initialSong?.titulo || ''} class="p-3 bg- border border-neutral-200 rounded-xl $2text-white font-bold w-full focus:outline-none focus:border-blue-500">
+ <input type="text" id="print-artista" placeholder="Artista (Opcional)" value={initialSong?.artista || ''} class="p-3 bg- border border-neutral-200 rounded-xl $2text-white w-full focus:outline-none focus:border-blue-500">
+ <input type="text" id="print-tono" placeholder="Tono (Ej: G)" value={initialSong?.tono || ''} class="p-3 bg- border border-neutral-200 rounded-xl $2text-white w-full focus:outline-none focus:border-blue-500">
+ <input type="text" id="print-capo" placeholder="Capo (Ej: 0)" value={initialSong?.capo || ''} class="p-3 bg- border border-neutral-200 rounded-xl $2text-white w-full focus:outline-none focus:border-blue-500">
+ <input type="text" id="print-time" placeholder="Time (Ej: 4/4)" value={initialSong?.time || ''} class="p-3 bg- border border-neutral-200 rounded-xl $2text-white w-full focus:outline-none focus:border-blue-500">
  <div class="relative w-full">
- <input type="text" id="print-bpm" placeholder="BPM (Ej: 162)" class="p-3 bg- border border-neutral-200 rounded-xl $2text-white w-full pr-12 focus:outline-none focus:border-blue-500">
+ <input type="text" id="print-bpm" placeholder="BPM (Ej: 162)" value={initialSong?.tempo || ''} class="p-3 bg- border border-neutral-200 rounded-xl $2text-white w-full pr-12 focus:outline-none focus:border-blue-500">
  <button id="btn-metronomo" class="absolute right-2 top-2 p-1.5 bg- hover:bg-green-600 rounded-lg transition-colors $2text-white" title="Activar Metrónomo">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
  </button>
@@ -56,7 +117,7 @@ import Layout from '../../layouts/Layout.astro';
  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
  <div class="flex flex-col h-full">
  <label class="mb-2 font-medium text-neutral-700 flex-shrink-0">1. Pega tu letra original aquí:</label>
- <textarea id="input-chordpro" class="w-full h-[500px] p-4 bg-neutral-50 border border-neutral-300 rounded-xl text-neutral-900 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none" placeholder="Ejemplo:&#10;G&#10;Dios es bueno..."></textarea>
+ <textarea id="input-chordpro" class="w-full h-[500px] p-4 bg-neutral-50 border border-neutral-300 rounded-xl text-neutral-900 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none" placeholder="Ejemplo:&#10;G&#10;Dios es bueno...">{initialSong?.chordpro || ''}</textarea>
  </div>
  <div class="flex flex-col h-full">
  <label class="mb-2 font-medium text-neutral-700 flex-shrink-0">2. Resultado transpuesto (Listo para copiar):</label>
@@ -85,6 +146,29 @@ import Layout from '../../layouts/Layout.astro';
  </div>
  </div>
 
+ <section id="vista-previa-impresion" class="mx-auto mt-10 w-full max-w-[10.5in] px-4 pb-16 print:mt-0 print:max-w-none print:px-0 print:pb-0">
+ <div class="mb-4 print:hidden">
+ <h2 class="text-2xl font-extrabold tracking-tight text-neutral-900">Vista previa de impresion</h2>
+ <p class="mt-1 text-sm text-neutral-500">La hoja se encoge automaticamente para caber en una sola pagina.</p>
+ </div>
+ <ChordProPreview
+ client:only="react"
+ domSync={true}
+ chordProText=""
+ title=""
+ metadata={{ tone: '', capo: '', tempo: '', time: '' }}
+ selectors={{
+ inputText: '#input-chordpro',
+ outputText: '#output-chordpro',
+ title: '#print-titulo',
+ tone: '#print-tono',
+ capo: '#print-capo',
+ tempo: '#print-bpm',
+ time: '#print-time',
+ }}
+ />
+ </section>
+
  <!-- Contenedor Modo Atril -->
  <div id="stage-mode-container" class="hidden fixed inset-0 bg-black text-white z-[9999] overflow-y-auto px-4 py-8 sm:p-12 font-sans">
  <button id="btn-cerrar-atril" class="fixed top-4 right-4 bg-/20 hover:bg-red-600 text-red-500 hover:$2text-white p-2 rounded-full transition-all backdrop-blur-md">
@@ -98,8 +182,193 @@ import Layout from '../../layouts/Layout.astro';
 </Layout>
 
 <style is:global>
+@page {
+ size: letter portrait;
+ margin: 0;
+}
+
 @media print {
- .print\:hidden { display: none !important; }
+ html,
+ body {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #fff !important;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+ }
+
+  body.app-shell {
+   display: block !important;
+   min-height: 0 !important;
+   height: auto !important;
+   width: auto !important;
+   overflow: visible !important;
+  }
+
+  body > * {
+   display: none !important;
+  }
+
+  body > main.app-safe-main {
+   display: block !important;
+   min-height: 0 !important;
+   height: auto !important;
+   padding: 0 !important;
+   overflow: visible !important;
+   background: #fff !important;
+  }
+
+  body > main.app-safe-main > * {
+   display: none !important;
+  }
+
+  .print\:hidden { display: none !important; }
+  .no-print { display: none !important; }
+
+  #vista-previa-impresion .song-sheet-page > div > header {
+   display: block !important;
+ }
+
+ #vista-previa-impresion .song-sheet-section > header {
+ display: flex !important;
+ }
+ body > div[style*='safe-area-inset-top'] {
+ display: none !important;
+ }
+
+   #vista-previa-impresion {
+    display: block !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 8.5in !important;
+    height: 11in !important;
+    max-width: 8.5in !important;
+    max-height: 11in !important;
+    overflow: hidden !important;
+    break-after: avoid-page !important;
+    page-break-after: avoid !important;
+   }
+
+   /* Force all wrapper divs inside the preview to be visible and unstyled for print */
+   #vista-previa-impresion > *,
+   #vista-previa-impresion > * > *,
+   #vista-previa-impresion > * > * > *,
+   #vista-previa-impresion > * > * > * > * {
+    display: block !important;
+    position: static !important;
+    transform: none !important;
+    width: auto !important;
+    height: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+   }
+
+   /* The actual sheet page needs proper print sizing */
+   #vista-previa-impresion #chordpro-print-sheet {
+    display: block !important;
+    width: 8.5in !important;
+    height: 11in !important;
+    max-width: 8.5in !important;
+    max-height: 11in !important;
+    overflow: hidden !important;
+    background: #fff !important;
+   }
+
+   /* Restore proper styling inside the song sheet content */
+   #vista-previa-impresion .song-sheet-page {
+    display: block !important;
+    width: 8.5in !important;
+    height: 11in !important;
+    max-width: 8.5in !important;
+    max-height: 11in !important;
+    overflow: hidden !important;
+    background: #fff !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+   }
+
+   /* Restore flex layout inside the sheet content area */
+   #vista-previa-impresion .song-sheet-page > div {
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100% !important;
+    overflow: hidden !important;
+    background: #fff !important;
+   }
+
+   /* Restore header and main inside song sheet */
+   #vista-previa-impresion .song-sheet-page > div > header {
+    display: block !important;
+    flex-shrink: 0 !important;
+   }
+
+   #vista-previa-impresion .song-sheet-page > div > main {
+    display: block !important;
+    flex: 1 !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+   }
+
+   /* Restore columns layout */
+   #vista-previa-impresion .song-sheet-columns {
+    height: 100% !important;
+    column-fill: auto !important;
+   }
+
+   /* Restore section visibility */
+   #vista-previa-impresion .song-sheet-section {
+    display: block !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    background: transparent !important;
+   }
+
+   /* Restore section card styling */
+   #vista-previa-impresion .song-sheet-section > div {
+    display: block !important;
+    position: relative !important;
+    border: 1px solid rgba(212, 212, 216, 0.9) !important;
+    border-radius: 1.28em !important;
+    background: white !important;
+    overflow: visible !important;
+   }
+
+   /* Restore section headers */
+   #vista-previa-impresion .song-sheet-section > div > header {
+    display: flex !important;
+    position: absolute !important;
+    background: white !important;
+   }
+
+   /* Restore flex layout for header metadata row */
+   #vista-previa-impresion .song-sheet-page > div > header > div {
+    display: flex !important;
+   }
+
+   /* Restore metadata grid */
+   #vista-previa-impresion .song-sheet-page > div > header dl {
+    display: grid !important;
+   }
+
+   /* Restore song map pills row */
+   #vista-previa-impresion .song-sheet-page > div > header .flex.flex-wrap {
+    display: flex !important;
+   }
 }
 </style>
 
@@ -126,9 +395,21 @@ import Layout from '../../layouts/Layout.astro';
  const btnReset = document.getElementById('btn-reset');
  const btnCopiar = document.getElementById('btn-copiar');
  const btnAuto = document.getElementById('btn-autoconvertir');
+ const inputTitulo = document.getElementById('print-titulo') as HTMLInputElement | null;
+ const inputArtista = document.getElementById('print-artista') as HTMLInputElement | null;
  
  let pasosActuales = 0;
  let textoEnMemoria = '';
+
+ function buildPrintDocumentTitle() {
+ const titulo = inputTitulo?.value.trim() || 'SIN TITULO';
+ const artista = inputArtista?.value.trim() || '';
+ return artista ? `${titulo} - ${artista}` : titulo;
+ }
+
+ function syncPrintDocumentTitle() {
+ document.title = buildPrintDocumentTitle();
+ }
 
  // Regex avanzado: Soporta C2, D/F#, Gsus4, Cmaj7, etc.
  function esLineaDeAcordes(linea: string) {
@@ -190,6 +471,8 @@ import Layout from '../../layouts/Layout.astro';
  return resultado.join('\n');
  }
 
+ (window as typeof window & { autoConvertirAChordPro?: (text: string) => string }).autoConvertirAChordPro = autoConvertirAChordPro;
+
  function transponerAcorde(acorde: string, pasos: number) {
  // Regex atrapa raiz y modificador. Ej: (C#)(m7)
  const match = acorde.match(/^([A-G][#b]?)(.*)$/);
@@ -213,9 +496,13 @@ import Layout from '../../layouts/Layout.astro';
  function procesarTexto() {
  if (!input || !output) return;
  const texto = textoEnMemoria || input.value;
+ const notificarPreview = () => {
+ output.dispatchEvent(new Event('input', { bubbles: true }));
+ };
  
  if (pasosActuales === 0) {
  output.value = texto;
+ notificarPreview();
  return;
  }
  
@@ -224,6 +511,7 @@ import Layout from '../../layouts/Layout.astro';
  output.value = texto.replace(regex, (match, p1) => {
  return '[' + transponerAcorde(p1, pasosActuales) + ']';
  });
+ notificarPreview();
  }
 
  if (btnSubir) {
@@ -264,6 +552,16 @@ import Layout from '../../layouts/Layout.astro';
  });
  }
 
+ if (input && input.value.trim() !== '') {
+ procesarTexto();
+ }
+
+ syncPrintDocumentTitle();
+ inputTitulo?.addEventListener('input', syncPrintDocumentTitle);
+ inputArtista?.addEventListener('input', syncPrintDocumentTitle);
+ inputTitulo?.addEventListener('change', syncPrintDocumentTitle);
+ inputArtista?.addEventListener('change', syncPrintDocumentTitle);
+
  // Lógica de copiado
  if (btnCopiar && output) {
  btnCopiar.addEventListener('click', async (e) => {
@@ -288,15 +586,42 @@ import Layout from '../../layouts/Layout.astro';
  }
 
  document.getElementById('btn-imprimir')?.addEventListener('click', () => {
+ const fieldsToSync = [
+ document.getElementById('input-chordpro'),
+ document.getElementById('output-chordpro'),
+ document.getElementById('print-titulo'),
+ document.getElementById('print-artista'),
+ document.getElementById('print-tono'),
+ document.getElementById('print-capo'),
+ document.getElementById('print-bpm'),
+ document.getElementById('print-time'),
+ ];
+
+ fieldsToSync.forEach((field) => {
+ field?.dispatchEvent(new Event('input', { bubbles: true }));
+ field?.dispatchEvent(new Event('change', { bubbles: true }));
+ });
+
+ syncPrintDocumentTitle();
+
+ window.setTimeout(() => {
+ window.print();
+ }, 140);
+ return;
+
  const inputTitulo = document.getElementById('print-titulo') as HTMLInputElement;
  const inputArtista = document.getElementById('print-artista') as HTMLInputElement;
  const inputTono = document.getElementById('print-tono') as HTMLInputElement;
+ const inputCapo = document.getElementById('print-capo') as HTMLInputElement;
  const inputBpm = document.getElementById('print-bpm') as HTMLInputElement;
+ const inputTime = document.getElementById('print-time') as HTMLInputElement;
  
  const titulo = inputTitulo?.value.trim() || 'SIN TÍTULO';
  const artista = inputArtista?.value.trim() || '';
  const tono = inputTono?.value.trim() || '';
+ const capo = inputCapo?.value.trim() || '';
  const bpm = inputBpm?.value.trim() || '';
+ const time = inputTime?.value.trim() || '';
  
  const outputBox = (document.getElementById('output-chordpro') as HTMLTextAreaElement)?.value;
  const inputBox = (document.getElementById('input-chordpro') as HTMLTextAreaElement)?.value;
@@ -443,8 +768,10 @@ import Layout from '../../layouts/Layout.astro';
  ${artista ? `<h2>${artista}</h2>` : ''}
  </div>
  <div class="header-right">
- ${tono ? `<div>Tonalidad de ${tono}</div>` : ''}
- ${bpm ? `<div>${bpm}</div>` : ''}
+ ${tono ? `<div>Tono: ${tono}</div>` : ''}
+ ${capo ? `<div>Capo: ${capo}</div>` : ''}
+ ${bpm ? `<div>Tempo: ${bpm}</div>` : ''}
+ ${time ? `<div>Time: ${time}</div>` : ''}
  </div>
  </header>
  <main>${bodyHtml}</main>
