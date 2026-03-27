@@ -131,15 +131,18 @@ if (requestedSongId) {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
     width: 100% !important;
-    height: auto !important;
+    height: 11in !important;
+    max-height: 11in !important;
+    overflow: hidden !important;
   }
 
   body.app-shell {
     display: block !important;
     min-height: 0 !important;
-    height: auto !important;
+    height: 11in !important;
+    max-height: 11in !important;
     width: 100% !important;
-    overflow: visible !important;
+    overflow: hidden !important;
   }
 
   body > * {
@@ -149,24 +152,29 @@ if (requestedSongId) {
   body > main.app-safe-main {
     display: block !important;
     min-height: 0 !important;
-    height: auto !important;
+    height: 11in !important;
+    max-height: 11in !important;
     padding: 0 !important;
-    overflow: visible !important;
+    overflow: hidden !important;
     background: #fff !important;
+    page-break-inside: avoid !important;
+    -webkit-column-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
   body > main.app-safe-main > * {
     display: none !important;
   }
 
-  /* Show the workspace container (direct child of main that holds ChordProPrintWorkspace) */
+  /* Show the workspace container */
   body > main.app-safe-main > div:last-of-type {
     display: block !important;
     position: static !important;
     width: 100% !important;
-    height: auto !important;
+    height: 11in !important;
+    max-height: 11in !important;
     min-height: 0 !important;
-    overflow: visible !important;
+    overflow: hidden !important;
     padding: 0 !important;
     margin: 0 !important;
   }
@@ -175,35 +183,40 @@ if (requestedSongId) {
     display: none !important;
   }
 
-  /* ── Print target container ── */
+  /* ── Print target container: MUST be exactly 1 page ── */
   #vista-previa-impresion {
     display: block !important;
     position: static !important;
     margin: 0 !important;
     padding: 0 !important;
     width: 100% !important;
-    height: auto !important;
-    max-width: none !important;
-    max-height: none !important;
-    overflow: visible !important;
+    height: 11in !important;
+    max-height: 11in !important;
+    overflow: hidden !important;
+    page-break-inside: avoid !important;
+    -webkit-column-break-inside: avoid !important;
+    break-inside: avoid !important;
+    page-break-after: avoid !important;
   }
 
-  /* Strip React inline styles (transform, scale, fixed pixel sizes) from all wrappers */
+  /* Strip ALL React inline styles from wrapper divs (6 levels deep to cover full tree) */
   #vista-previa-impresion > *,
   #vista-previa-impresion > * > *,
   #vista-previa-impresion > * > * > *,
-  #vista-previa-impresion > * > * > * > * {
+  #vista-previa-impresion > * > * > * > *,
+  #vista-previa-impresion > * > * > * > * > *,
+  #vista-previa-impresion > * > * > * > * > * > * {
     display: block !important;
     position: static !important;
     transform: none !important;
     -webkit-transform: none !important;
-    width: auto !important;
-    height: auto !important;
+    width: 100% !important;
+    height: 11in !important;
     max-width: none !important;
-    max-height: none !important;
+    max-height: 11in !important;
     min-width: 0 !important;
     min-height: 0 !important;
-    overflow: visible !important;
+    overflow: hidden !important;
     opacity: 1 !important;
     visibility: visible !important;
     border: 0 !important;
@@ -212,9 +225,10 @@ if (requestedSongId) {
     padding: 0 !important;
     margin: 0 !important;
     background: transparent !important;
+    page-break-inside: avoid !important;
   }
 
-  /* The actual sheet page needs proper print sizing */
+  /* The actual sheet page */
   #vista-previa-impresion #chordpro-print-sheet {
     display: block !important;
     width: 100% !important;
@@ -244,6 +258,7 @@ if (requestedSongId) {
     -webkit-flex-direction: column !important;
     flex-direction: column !important;
     height: 100% !important;
+    max-height: 11in !important;
     overflow: hidden !important;
     background: #fff !important;
   }
@@ -252,6 +267,7 @@ if (requestedSongId) {
     display: block !important;
     -webkit-flex-shrink: 0 !important;
     flex-shrink: 0 !important;
+    overflow: hidden !important;
   }
 
   #vista-previa-impresion .song-sheet-page > div > main {
@@ -262,11 +278,12 @@ if (requestedSongId) {
     overflow: hidden !important;
   }
 
-  /* Restore columns layout — critical for iOS */
+  /* Columns — critical for iOS */
   #vista-previa-impresion .song-sheet-columns {
     height: 100% !important;
     -webkit-column-fill: auto !important;
     column-fill: auto !important;
+    overflow: hidden !important;
   }
 
   #vista-previa-impresion .song-sheet-section {
@@ -275,6 +292,7 @@ if (requestedSongId) {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
     background: transparent !important;
+    overflow: hidden !important;
   }
 
   #vista-previa-impresion .song-sheet-section > div {
@@ -283,7 +301,7 @@ if (requestedSongId) {
     border: 1px solid rgba(212, 212, 216, 0.9) !important;
     border-radius: 1.28em !important;
     background: white !important;
-    overflow: visible !important;
+    overflow: hidden !important;
   }
 
   #vista-previa-impresion .song-sheet-section > div > header {
@@ -296,15 +314,24 @@ if (requestedSongId) {
   #vista-previa-impresion .song-sheet-page > div > header > div {
     display: -webkit-flex !important;
     display: flex !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
   }
 
   #vista-previa-impresion .song-sheet-page > div > header dl {
     display: grid !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
   }
 
   #vista-previa-impresion .song-sheet-page > div > header .flex.flex-wrap {
     display: -webkit-flex !important;
     display: flex !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
   }
 
   /* Ensure chords print in color on iOS */
