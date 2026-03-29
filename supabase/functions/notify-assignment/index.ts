@@ -18,7 +18,8 @@ const isExpiredPushError = (error: unknown) => {
 const configureWebPush = () => {
   const vapidPublicKey = Deno.env.get("VAPID_PUBLIC_KEY") ?? Deno.env.get("PUBLIC_VAPID_KEY") ?? "";
   const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY") ?? Deno.env.get("PRIVATE_VAPID_KEY") ?? "";
-  const vapidSubject = Deno.env.get("VAPID_SUBJECT") ?? "";
+  const rawVapidSubject = Deno.env.get("VAPID_SUBJECT") ?? Deno.env.get("VAPID_EMAIL") ?? "";
+  const vapidSubject = rawVapidSubject.includes(":") ? rawVapidSubject : (rawVapidSubject ? `mailto:${rawVapidSubject}` : "");
 
   if (!vapidPublicKey || !vapidPrivateKey || !vapidSubject) {
     return false;

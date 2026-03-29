@@ -19,7 +19,12 @@ const resendFrom = readEnv('RESEND_FROM') || 'Worship App <onboarding@resend.dev
 const siteUrl = readEnv('PUBLIC_SITE_URL', 'SITE_URL', 'URL') || 'https://alabanzaredilestadio.com';
 const vapidPublicKey = readEnv('VAPID_PUBLIC_KEY', 'PUBLIC_VAPID_KEY');
 const vapidPrivateKey = readEnv('VAPID_PRIVATE_KEY', 'PRIVATE_VAPID_KEY');
-const vapidSubject = readEnv('VAPID_SUBJECT');
+const normalizeVapidSubject = (value = '') => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return '';
+  return normalized.includes(':') ? normalized : `mailto:${normalized}`;
+};
+const vapidSubject = normalizeVapidSubject(readEnv('VAPID_SUBJECT', 'VAPID_EMAIL'));
 
 let cachedServiceRoleClient = null;
 let webPushConfigured = false;

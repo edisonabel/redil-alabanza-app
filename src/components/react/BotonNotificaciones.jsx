@@ -1,5 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { useEffect, useMemo, useState } from 'react';
 
 const PUSH_SW_PATH = '/push-sw.js';
 const PUSH_SW_SCOPE = '/push-notifications/';
@@ -47,12 +46,27 @@ async function waitForServiceWorkerActivation(registration) {
   return registration;
 }
 
+async function savePushSubscription(subscriptionJson) {
+  const response = await fetch('/api/push-subscription', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify(subscriptionJson),
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload?.detail || payload?.error || `HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export default function BotonNotificaciones({
   userId,
   className = '',
   compact = false,
 }) {
-  console.log('DEBUG PUSH: userId recibido =', userId);
   const [isReady, setIsReady] = useState(false);
   const [isSupported, setIsSupported] = useState(true);
   const [isSubscribed, setIsSubscribed] = useState(false);
@@ -92,10 +106,14 @@ export default function BotonNotificaciones({
         const isIOS =
           /iphone|ipad|ipod/.test(userAgent) ||
           (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1);
-        const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+        const standalone =
+          window.matchMedia('(display-mode: standalone)').matches ||
+          window.navigator.standalone === true;
 
         const registration = await navigator.serviceWorker.getRegistration(PUSH_SW_SCOPE);
-        const subscription = registration ? await registration.pushManager.getSubscription() : null;
+        const subscription = registration
+          ? await registration.pushManager.getSubscription()
+          : null;
 
         if (!active) return;
 
@@ -157,7 +175,7 @@ export default function BotonNotificaciones({
         setStatusMessage(
           permission === 'denied'
             ? 'El navegador bloqueó las notificaciones.'
-            : 'Permiso no concedido.'
+            : 'Permiso no concedido.',
         );
         return;
       }
@@ -175,104 +193,29 @@ export default function BotonNotificaciones({
       }
 
       if (!userId) {
-        console.error('Error crítico: userId no fue proporcionado al componente.');
         setStatusMessage('Error de sesión');
         return;
       }
 
       const subscriptionJson = JSON.parse(JSON.stringify(subscription));
-      const subscriptionEndpoint = subscriptionJson?.endpoint || '';
 
-      if (!subscriptionEndpoint) {
+      if (!subscriptionJson?.endpoint) {
         console.error('Push: la suscripción no incluye endpoint válido', subscriptionJson);
         setStatusMessage('No se pudo preparar la suscripción del dispositivo.');
         return;
       }
 
-      let saveError = null;
-
-      const { error: upsertError } = await supabase
-        .from('suscripciones_push')
-        .upsert(
-          [
-            {
-              user_id: userId,
-              endpoint: subscriptionEndpoint,
-              suscripcion: subscriptionJson,
-            },
-          ],
-          {
-            onConflict: 'endpoint',
-          }
-        );
-
-      if (!upsertError) {
-        saveError = null;
-      } else {
-        const missingModernColumns = ['endpoint', 'updated_at'].some((columnName) => (
-          String(upsertError?.message || '').toLowerCase().includes(columnName)
-        ));
-
-        if (!missingModernColumns) {
-          saveError = upsertError;
-        } else {
-          const { data: existingRows, error: existingError } = await supabase
-            .from('suscripciones_push')
-            .select('id, suscripcion')
-            .eq('user_id', userId);
-
-          if (existingError) {
-            console.error('Push: no se pudo verificar suscripciones existentes', existingError);
-            setStatusMessage('No se pudo validar tu suscripción actual. Revisa tu conexión.');
-            return;
-          }
-
-          const existingMatch = (existingRows || []).find((row) => {
-            const savedEndpoint = row?.suscripcion?.endpoint;
-            return typeof savedEndpoint === 'string' && savedEndpoint === subscriptionEndpoint;
-          });
-
-          if (existingMatch?.id) {
-            const { error } = await supabase
-              .from('suscripciones_push')
-              .update({
-                suscripcion: subscriptionJson,
-              })
-              .eq('id', existingMatch.id);
-            saveError = error;
-          } else {
-            const { error } = await supabase
-              .from('suscripciones_push')
-              .insert([
-                {
-                  user_id: userId,
-                  suscripcion: subscriptionJson,
-                },
-              ]);
-            saveError = error;
-          }
-        }
-      }
-
-      if (saveError) {
-        console.error('Push: no se pudo guardar la suscripción en Supabase', saveError);
-        const saveMessage = String(saveError?.message || '').toLowerCase();
-        if (saveMessage.includes('permission') || saveMessage.includes('row-level') || saveMessage.includes('rls')) {
-          setStatusMessage('La suscripción fue creada, pero tu sesión no tiene permiso para guardarla.');
-        } else if (saveMessage.includes('network') || saveMessage.includes('fetch') || saveMessage.includes('failed')) {
-          setStatusMessage('No se pudo guardar por un problema de red. Intenta nuevamente.');
-        } else {
-          setStatusMessage('La suscripción no se pudo guardar.');
-        }
-        return;
-      }
+      await savePushSubscription(subscriptionJson);
 
       setIsSubscribed(true);
       setStatusMessage('Las notificaciones quedaron activadas en este dispositivo.');
     } catch (error) {
       console.error('Push: error activando notificaciones', error);
       const errorMessage = String(error?.message || '').toLowerCase();
-      if (errorMessage.includes('permission') || permissionState === 'denied') {
+
+      if (errorMessage.includes('no autenticado') || errorMessage.includes('sesión') || errorMessage.includes('sesion')) {
+        setStatusMessage('Tu sesión expiró. Vuelve a iniciar sesión e intenta de nuevo.');
+      } else if (errorMessage.includes('permission') || permissionState === 'denied') {
         setStatusMessage('El navegador bloqueó las notificaciones. Revisa los permisos del sitio.');
       } else if (errorMessage.includes('network') || errorMessage.includes('fetch') || errorMessage.includes('failed')) {
         setStatusMessage('Hubo un problema de red activando las notificaciones.');
@@ -355,7 +298,7 @@ export default function BotonNotificaciones({
       {errorState === 'bloqueado_ios' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-2xl border border-border bg-surface p-6 shadow-2xl">
-            <h3 className="text-lg font-bold text-content">🛡️ Notificaciones Bloqueadas</h3>
+            <h3 className="text-lg font-bold text-content">Notificaciones Bloqueadas</h3>
             <p className="mt-2 text-sm text-content-muted">
               Parece que las notificaciones están desactivadas en los ajustes de tu iPhone. Para recibirlas, sigue estos pasos:
             </p>
