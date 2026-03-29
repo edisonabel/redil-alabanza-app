@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { audioSessionService } from '../../services/AudioSessionService';
 import { metronomeService } from '../../services/MetronomeEngine';
 import { screenWakeLockService } from '../../services/ScreenWakeLockService';
+import { isLikelyAudioSourceUrl, resolvePreferredAudioUrl } from '../../lib/audio-playback.js';
 const FONT_PRESETS = {
   grande: {
     section: 'text-[0.78rem] sm:text-[0.82rem] tracking-[0.3em]',
@@ -157,11 +158,10 @@ const formatSeconds = (value) => {
   const seconds = total % 60;
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 };
-const AUDIO_SOURCE_EXT_RE = /\.(mp3|wav|m4a|aac|ogg|flac)(\?.*)?$/i;
 const isAudioSourceUrl = (value = '') => {
   const source = String(value || '').trim();
   if (!source) return false;
-  return AUDIO_SOURCE_EXT_RE.test(source);
+  return isLikelyAudioSourceUrl(source);
 };
 const normalizePlaybackSourceEntry = (entry, index, fallbackKind = 'sequence') => {
   if (!entry) return null;
@@ -551,6 +551,12 @@ export default function ModoEnsayoCompacto({
     playbackSources.find((source) => source.id === selectedPlaybackSourceId) || playbackSources[0] || null
   ), [playbackSources, selectedPlaybackSourceId]);
   const activePlaybackUrl = activePlaybackSource?.url || '';
+  const processedActivePlaybackUrl = useMemo(() => (
+    resolvePreferredAudioUrl(activePlaybackUrl, {
+      origin: typeof window !== 'undefined' ? window.location.origin : '',
+    })
+  ), [activePlaybackUrl]);
+  const shouldUseTrackWebAudio = panValue !== 0;
   const currentSongMarkers = useMemo(() => (
     Array.isArray(currentSong?.sectionMarkers)
       ? (() => {
@@ -605,7 +611,7 @@ export default function ModoEnsayoCompacto({
         })()
       : []
   ), [currentSections, currentSong?.duration, currentSong?.sectionMarkers, currentSongKey]);
-  const hasAudio = typeof activePlaybackUrl === 'string' && activePlaybackUrl.trim() !== '';
+  const hasAudio = typeof processedActivePlaybackUrl === 'string' && processedActivePlaybackUrl.trim() !== '';
   const markerBySectionIndex = useMemo(() => {
     const map = new Map();
     currentSongMarkers.forEach((marker) => {
@@ -787,15 +793,29 @@ export default function ModoEnsayoCompacto({
 
     trackGainFadeFrameRef.current = window.requestAnimationFrame(animateVolume);
   }, [cancelTrackGainFade]);
+  const disconnectTrackWebAudio = React.useCallback(() => {
+    const audioElement = audioRef.current;
+    if (audioElement) {
+      delete audioElement.dataset.webaudioConnected;
+    }
+
+    trackSourceRef.current = null;
+    trackGainRef.current = null;
+    trackPanRef.current = null;
+
+    const ctx = audioCtxRef.current;
+    audioCtxRef.current = null;
+    if (ctx && ctx.state !== 'closed') {
+      try { ctx.close(); } catch {}
+    }
+  }, []);
   const ensureWebAudioConnected = React.useCallback(async () => {
     const audioElement = audioRef.current;
     if (!audioElement || typeof window === 'undefined') return;
+    if (!shouldUseTrackWebAudio) return;
     if (audioElement.dataset.webaudioConnected === 'true') return;
 
-    // Limpiar contexto anterior si existe
-    if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
-      try { audioCtxRef.current.close(); } catch {}
-    }
+    disconnectTrackWebAudio();
 
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextClass) return;
@@ -824,7 +844,7 @@ export default function ModoEnsayoCompacto({
     if (panNode.pan) {
       panNode.pan.setTargetAtTime(panValue, ctx.currentTime, 0.05);
     }
-  }, [panValue]);
+  }, [disconnectTrackWebAudio, panValue, shouldUseTrackWebAudio]);
   const stopMetronome = React.useCallback(() => {
     metronomeService.stop();
     setIsMetronomeOn(false);
@@ -835,10 +855,6 @@ export default function ModoEnsayoCompacto({
       stopMetronome();
       return;
     }
-    await ensureWebAudioConnected();
-    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-      await audioCtxRef.current.resume();
-    }
     await metronomeService.start({
       tempo: currentSongBpm,
       beatsPerMeasure: 1,
@@ -847,7 +863,7 @@ export default function ModoEnsayoCompacto({
       resetCycle: true,
     });
     setIsMetronomeOn(true);
-  }, [currentSongBpm, ensureWebAudioConnected, isMetronomeOn, stopMetronome]);
+  }, [currentSongBpm, isMetronomeOn, stopMetronome]);
   useEffect(() => {
     const audioElement = audioRef.current;
     if (!audioElement) return undefined;
@@ -857,9 +873,11 @@ export default function ModoEnsayoCompacto({
       {
         audioElement,
         onPlay: async () => {
-          await ensureWebAudioConnected();
-          if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-            await audioCtxRef.current.resume();
+          if (shouldUseTrackWebAudio) {
+            await ensureWebAudioConnected();
+            if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+              await audioCtxRef.current.resume();
+            }
           }
           await audioElement.play();
         },
@@ -869,7 +887,21 @@ export default function ModoEnsayoCompacto({
       },
       30
     );
-  }, [activePlaybackUrl, ensureWebAudioConnected]);
+  }, [ensureWebAudioConnected, processedActivePlaybackUrl, shouldUseTrackWebAudio]);
+  useEffect(() => {
+    if (shouldUseTrackWebAudio) return;
+    disconnectTrackWebAudio();
+    setTrackGainImmediate(isMetronomeOn ? TRACK_DUCKED_GAIN : TRACK_DEFAULT_GAIN);
+  }, [disconnectTrackWebAudio, isMetronomeOn, setTrackGainImmediate, shouldUseTrackWebAudio]);
+  useEffect(() => {
+    audioSessionService.setMetadata({
+      title: currentSong?.title || 'Ensayo',
+      artist: currentSong?.artist || contextTitle || 'ALABANZA App',
+    });
+    return () => {
+      audioSessionService.resetMetadata();
+    };
+  }, [contextTitle, currentSong?.artist, currentSong?.id, currentSong?.title]);
   useEffect(() => {
     // Solo actualiza el panner si Web Audio ya está conectado (requiere CORS en R2)
     const panner = trackPanRef.current;
@@ -1167,7 +1199,7 @@ export default function ModoEnsayoCompacto({
     window.requestAnimationFrame(() => {
       syncAudioMetrics(audioElement);
     });
-  }, [activePlaybackUrl, hasAudio]);
+  }, [hasAudio, processedActivePlaybackUrl]);
   useEffect(() => {
     if (!pendingPlaybackResumeRef.current || !audioReady || !audioRef.current) return;
     pendingPlaybackResumeRef.current = false;
@@ -1325,11 +1357,12 @@ export default function ModoEnsayoCompacto({
   return (
     <div className="ensayo-mobile-shell relative flex h-screen w-full flex-col overflow-hidden bg-white text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
       <audio
-        key={`${currentSongKey}-${selectedPlaybackSourceId}-${activePlaybackUrl || 'no-audio'}`}
+        key={`${currentSongKey}-${selectedPlaybackSourceId}-${processedActivePlaybackUrl || activePlaybackUrl || 'no-audio'}`}
         ref={audioRef}
-        src={hasAudio ? activePlaybackUrl : undefined}
+        src={hasAudio ? (processedActivePlaybackUrl || activePlaybackUrl) : undefined}
         crossOrigin="anonymous"
         preload="metadata"
+        playsInline
         onLoadedMetadata={(event) => syncAudioMetrics(event.currentTarget)}
         onLoadedData={(event) => syncAudioMetrics(event.currentTarget)}
         onDurationChange={(event) => syncAudioMetrics(event.currentTarget)}

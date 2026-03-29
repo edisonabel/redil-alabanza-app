@@ -20,6 +20,11 @@ import {
 import { supabase } from '../../lib/supabase';
 import { audioSessionService } from '../../services/AudioSessionService';
 import { screenWakeLockService } from '../../services/ScreenWakeLockService';
+import {
+  isLikelyAudioSourceUrl,
+  resolvePreferredAudioUrl,
+  shouldPreferNativeBackgroundPlayback,
+} from '../../lib/audio-playback.js';
 
 // ── ID3v2 APIC (Cover Art) Extractor ──────────────────────────
 const coverArtCache = new Map();
@@ -213,8 +218,7 @@ const formatTime = (secs) => {
 };
 
 // ── Playback Sources: Extracción de secuencias ──
-const AUDIO_SOURCE_EXT_RE = /\.(mp3|wav|m4a|aac|ogg|flac)(\?.*)?$/i;
-const isAudioSourceUrl = (v = '') => AUDIO_SOURCE_EXT_RE.test(String(v || '').trim());
+const isAudioSourceUrl = (v = '') => isLikelyAudioSourceUrl(String(v || '').trim());
 
 const normalizePlaybackSourceEntry = (entry, index, fallbackKind = 'sequence') => {
   if (!entry) return null;
@@ -328,6 +332,13 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
     [playbackSources, selectedSourceId]
   );
   const activeSourceUrl = activeSource?.url || activeSong?.mp3 || '';
+  const processedActiveSourceUrl = useMemo(() => (
+    resolvePreferredAudioUrl(activeSourceUrl, {
+      origin: typeof window !== 'undefined' ? window.location.origin : '',
+    })
+  ), [activeSourceUrl]);
+  const prefersNativeBackgroundPlayback = useMemo(() => shouldPreferNativeBackgroundPlayback(), []);
+  const shouldUseTrackWebAudio = panValue !== 0 || !prefersNativeBackgroundPlayback;
 
   // Marcadores filtrados (solo válidos)
   const markers = useMemo(() => {
@@ -491,7 +502,10 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
           if (song?.isPrayer) { downloadedCount += 2; return; }
           const safeKey = song.key ? song.key.replace('#', 'Sharp').replace('b', 'Flat') : null;
           const padUrl = safeKey ? `${PAD_BASE_URL}/Pad_${safeKey}.mp3` : null;
-          const urlsToCache = [song.mp3, padUrl].filter(Boolean);
+          const audioUrl = resolvePreferredAudioUrl(song?.mp3, {
+            origin: typeof window !== 'undefined' ? window.location.origin : '',
+          });
+          const urlsToCache = [audioUrl || song?.mp3, padUrl].filter(Boolean);
           await Promise.all(urlsToCache.map(cacheOne));
         }));
         setDownloadStatus((prev) => ({ ...prev, active: false, done: true }));
@@ -522,7 +536,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
 
     let cancelled = false;
     Promise.all([
-      resolveLocalResource(activeSourceUrl),
+      resolveLocalResource(processedActiveSourceUrl || activeSourceUrl),
       resolveLocalResource(currentPadUrl),
     ]).then(([audioSrc, padSrc]) => {
       if (cancelled) {
@@ -536,7 +550,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
     });
 
     return () => { cancelled = true; };
-  }, [activeSourceUrl, currentPadUrl]);
+  }, [activeSourceUrl, currentPadUrl, processedActiveSourceUrl]);
 
   // Calcular sección activa basada en tiempo (usa visualMarkers)
   const activeSectionIdx = visualMarkers.length > 0
@@ -722,15 +736,30 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
   }, [padVolume, isPadActive, activePadChannel, padBridging]);
 
   // ── Web Audio API: Lazy init en primer play (para Split Track) ──
+  const disconnectTrackWebAudio = useCallback(() => {
+    const audioElement = audioRef.current;
+    if (audioElement) {
+      delete audioElement.dataset.webaudioConnected;
+    }
+
+    trackSourceRef.current = null;
+    trackGainRef.current = null;
+    trackPanRef.current = null;
+    analyserRef.current = null;
+
+    const ctx = audioCtxRef.current;
+    audioCtxRef.current = null;
+    if (ctx && ctx.state !== 'closed') {
+      try { ctx.close(); } catch {}
+    }
+  }, []);
   const ensureWebAudioConnected = useCallback(async () => {
     const audioElement = audioRef.current;
     if (!audioElement || typeof window === 'undefined') return;
+    if (!shouldUseTrackWebAudio) return;
     if (audioElement.dataset.webaudioConnected === 'true') return;
 
-    // Limpiar contexto anterior si existe
-    if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
-      try { audioCtxRef.current.close(); } catch {}
-    }
+    disconnectTrackWebAudio();
 
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextClass) return;
@@ -761,7 +790,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
     if (panNode.pan) {
       panNode.pan.setTargetAtTime(panValue, ctx.currentTime, 0.05);
     }
-  }, [panValue]);
+  }, [disconnectTrackWebAudio, panValue, shouldUseTrackWebAudio]);
   useEffect(() => {
     const audioElement = audioRef.current;
     if (!audioElement) return undefined;
@@ -771,9 +800,11 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
       {
         audioElement,
         onPlay: async () => {
-          await ensureWebAudioConnected();
-          if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-            await audioCtxRef.current.resume();
+          if (shouldUseTrackWebAudio) {
+            await ensureWebAudioConnected();
+            if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+              await audioCtxRef.current.resume();
+            }
           }
           await audioElement.play();
         },
@@ -783,7 +814,24 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
       },
       40
     );
-  }, [activeSourceUrl, ensureWebAudioConnected]);
+  }, [ensureWebAudioConnected, processedActiveSourceUrl, shouldUseTrackWebAudio]);
+  useEffect(() => {
+    if (shouldUseTrackWebAudio) return;
+    disconnectTrackWebAudio();
+  }, [disconnectTrackWebAudio, shouldUseTrackWebAudio]);
+  useEffect(() => () => {
+    disconnectTrackWebAudio();
+  }, [disconnectTrackWebAudio]);
+  useEffect(() => {
+    audioSessionService.setMetadata({
+      title: activeSong?.title || 'Setlist',
+      artist: activeSong?.artist || contextTitle || 'ALABANZA App',
+      artwork: activeCover ? [{ src: activeCover }] : undefined,
+    });
+    return () => {
+      audioSessionService.resetMetadata();
+    };
+  }, [activeCover, activeSong?.artist, activeSong?.id, activeSong?.title, contextTitle]);
 
   // ── Efecto de Paneo: actualiza panner sin reconectar ──
   useEffect(() => {
@@ -798,7 +846,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
 
   const handleTogglePlay = useCallback(async () => {
     const audio = audioRef.current;
-    if (!audio || !activeSourceUrl) return;
+    if (!audio || !(processedActiveSourceUrl || activeSourceUrl)) return;
     if (audio.paused) {
       try {
         await ensureWebAudioConnected();
@@ -810,7 +858,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
     } else {
       audio.pause();
     }
-  }, [activeSong, ensureWebAudioConnected]);
+  }, [activeSourceUrl, ensureWebAudioConnected, processedActiveSourceUrl]);
 
   // ── Auto-Transición Continua: avance ininterrumpido de setlist ──
   const autoTransitionRef = useRef(false);
@@ -904,13 +952,14 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
       }}
     >
       {/* Audio elements */}
-      {activeSourceUrl && (
+      {(processedActiveSourceUrl || activeSourceUrl) && (
         <audio
-          key={`live-${activeSong?.id || activeSongIndex}-${selectedSourceId}`}
+          key={`live-${activeSong?.id || activeSongIndex}-${selectedSourceId}-${processedActiveSourceUrl || activeSourceUrl || 'no-audio'}`}
           ref={audioRef}
-          src={resolvedAudioSrc || activeSourceUrl}
+          src={resolvedAudioSrc || processedActiveSourceUrl || activeSourceUrl}
           crossOrigin="anonymous"
           preload="auto"
+          playsInline
           onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
           onTimeUpdate={(e) => {
             const audio = e.currentTarget;
@@ -1550,7 +1599,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
             <button
               type="button"
               onClick={handleTogglePlay}
-              disabled={!activeSourceUrl}
+              disabled={!(processedActiveSourceUrl || activeSourceUrl)}
               className="flex h-16 w-16 items-center justify-center rounded-full bg-brand text-white shadow-[0_0_32px_rgba(59,130,246,0.5)] transition-all hover:scale-105 hover:bg-brand/90 disabled:opacity-30 disabled:shadow-none"
               aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
             >

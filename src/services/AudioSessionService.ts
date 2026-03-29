@@ -20,6 +20,19 @@ type NavigatorWithMediaSession = Navigator & {
   };
 };
 
+type MediaSessionArtwork = {
+  src: string;
+  sizes?: string;
+  type?: string;
+};
+
+type MediaSessionMetadataPayload = {
+  title?: string;
+  artist?: string;
+  album?: string;
+  artwork?: MediaSessionArtwork[];
+};
+
 const AUDIO_SESSION_TITLE = 'ALABANZA App';
 const AUDIO_SESSION_ARTIST = 'Modo Director';
 
@@ -201,6 +214,33 @@ class AudioSessionService {
     }
   }
 
+  setMetadata(metadata: MediaSessionMetadataPayload = {}) {
+    const mediaSession = (navigator as NavigatorWithMediaSession).mediaSession;
+    if (!mediaSession || typeof window === 'undefined' || !('MediaMetadata' in window)) return;
+
+    const safeArtwork = Array.isArray(metadata.artwork)
+      ? metadata.artwork.filter((item) => item?.src)
+      : undefined;
+
+    try {
+      mediaSession.metadata = new MediaMetadata({
+        title: String(metadata.title || AUDIO_SESSION_TITLE).trim() || AUDIO_SESSION_TITLE,
+        artist: String(metadata.artist || AUDIO_SESSION_ARTIST).trim() || AUDIO_SESSION_ARTIST,
+        album: String(metadata.album || '').trim() || undefined,
+        artwork: safeArtwork,
+      });
+    } catch {
+      // no-op
+    }
+  }
+
+  resetMetadata() {
+    this.setMetadata({
+      title: AUDIO_SESSION_TITLE,
+      artist: AUDIO_SESSION_ARTIST,
+    });
+  }
+
   private installActivationCapture() {
     if (this.activationCaptureInstalled) return;
 
@@ -289,16 +329,7 @@ class AudioSessionService {
     const mediaSession = (navigator as NavigatorWithMediaSession).mediaSession;
     if (!mediaSession) return;
 
-    if (typeof window !== 'undefined' && 'MediaMetadata' in window) {
-      try {
-        mediaSession.metadata = new MediaMetadata({
-          title: AUDIO_SESSION_TITLE,
-          artist: AUDIO_SESSION_ARTIST,
-        });
-      } catch {
-        // no-op
-      }
-    }
+    this.resetMetadata();
 
     this.safeSetActionHandler('play', () => {
       void this.resumeActiveController();

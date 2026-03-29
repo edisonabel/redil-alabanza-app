@@ -24,7 +24,7 @@
           </button>
         </div>
 
-        <audio id="mp3Audio" class="hidden" preload="metadata" crossorigin="anonymous"></audio>
+        <audio id="mp3Audio" class="hidden" preload="auto" crossorigin="anonymous" playsinline webkit-playsinline="true"></audio>
 
         <div class="mt-4 rounded-2xl border border-border bg-background/70 p-4 md:p-5">
           <div class="flex items-center gap-3">
@@ -71,6 +71,11 @@
 
 <script>
   import { audioSessionService } from '../services/AudioSessionService';
+  import {
+    buildPlaybackSourceCandidates,
+    extractDriveFileId,
+    shouldPreferNativeBackgroundPlayback,
+  } from '../lib/audio-playback.js';
 
   (() => {
     if (window.__REDIL_PRO_PLAYER_READY__) return;
@@ -144,6 +149,8 @@
       return;
     }
 
+    const prefersNativeBackgroundPlayback = shouldPreferNativeBackgroundPlayback();
+
     audioSessionService.install();
     audioSessionService.registerPrimaryAudio(
       'pro-player-global',
@@ -191,86 +198,8 @@
 
     const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-    const normalizeExternalUrl = (rawUrl) => {
-      if (!rawUrl) return '';
-      let normalized = String(rawUrl).trim();
-      if (!normalized) return '';
-
-      if (normalized.startsWith('www.')) {
-        normalized = `https://${normalized}`;
-      } else if (normalized.startsWith('//')) {
-        normalized = `https:${normalized}`;
-      } else if (/^\/(uc|open|file)\b/i.test(normalized)) {
-        normalized = `https://drive.google.com${normalized}`;
-      }
-
-      try {
-        const parsed = new URL(normalized, window.location.origin);
-        return parsed.href;
-      } catch {
-        return '';
-      }
-    };
-
-    const extractDriveFileId = (rawUrl) => {
-      const value = String(rawUrl || '').trim();
-      if (!value) return '';
-      return (
-        value.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)?.[1] ||
-        value.match(/[?&]id=([a-zA-Z0-9_-]+)/)?.[1] ||
-        value.match(/\/d\/([a-zA-Z0-9_-]+)/)?.[1] ||
-        ''
-      );
-    };
-
-    const toDriveDirectDownloadUrl = (rawUrl) => {
-      const fileId = extractDriveFileId(rawUrl);
-      if (!fileId) return rawUrl;
-      return `https://drive.google.com/uc?export=download&id=${fileId}`;
-    };
-
-    const getDriveStreamUrl = (rawUrl) => {
-      const fileId = extractDriveFileId(rawUrl);
-      if (!fileId) return rawUrl;
-      return `https://docs.google.com/uc?export=open&id=${fileId}`;
-    };
-
-    const toAudioApiUrl = (rawUrl) => {
-      const normalized = normalizeExternalUrl(rawUrl);
-      if (!normalized) return '';
-
-      try {
-        const parsed = new URL(normalized, window.location.origin);
-        if (parsed.pathname === '/api/audio' && parsed.searchParams.get('id')) {
-          return parsed.href;
-        }
-      } catch {
-        // no-op
-      }
-
-      const fileId = extractDriveFileId(normalized);
-      if (!fileId) return normalized;
-      return `${window.location.origin}/api/audio?id=${encodeURIComponent(fileId)}`;
-    };
-
-    const isDriveAudioUrl = (rawUrl) => {
-      const value = String(rawUrl || '').toLowerCase();
-      return (
-        value.includes('drive.google.com') ||
-        value.includes('docs.google.com') ||
-        value.includes('drive.usercontent.google.com')
-      );
-    };
-
     const buildSourceCandidates = (rawUrl) => {
-      const normalized = normalizeExternalUrl(rawUrl);
-      if (!normalized) return [];
-      if (!isDriveAudioUrl(normalized)) return [normalized];
-
-      const directDownload = toDriveDirectDownloadUrl(normalized);
-      const streamUrl = getDriveStreamUrl(normalized);
-      const proxyUrl = toAudioApiUrl(normalized);
-      return [...new Set([proxyUrl, streamUrl, directDownload, normalized].filter(Boolean))];
+      return buildPlaybackSourceCandidates(rawUrl, { origin: window.location.origin });
     };
 
     const setSource = (index) => {
@@ -328,6 +257,7 @@
     };
 
     const setupWaveform = async () => {
+      if (prefersNativeBackgroundPlayback) return;
       if (waveAnalyser && waveData) return;
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
@@ -567,6 +497,7 @@
       audio.pause();
       audio.removeAttribute('src');
       audio.load();
+      audioSessionService.resetMetadata();
 
       sourceCandidates = [];
       sourceIndex = 0;
@@ -592,6 +523,10 @@
       titleEl.textContent = title || 'Cancion';
       artistEl.textContent = String(artist || '').trim() || 'Artista no especificado';
       setArtworkFromSource(url, title, artist || '');
+      audioSessionService.setMetadata({
+        title: title || 'Cancion',
+        artist: String(artist || '').trim() || 'Artista no especificado',
+      });
 
       statusEl.textContent = 'Cargando audio...';
       setPlayButtonState(false);
