@@ -117,13 +117,19 @@ if (requestedSongId) {
 </Layout>
 
 <style is:global>
-/* iOS Safari does NOT support @page size — only margin */
 @page {
   margin: 0;
+  size: 8.5in 11in;
+}
+
+@supports (-webkit-touch-callout: none) {
+  @page {
+    margin: 0;
+    size: auto;
+  }
 }
 
 @media print {
-  /* ── Document root: shrink-wrap, don't force height ── */
   html,
   body {
     margin: 0 !important;
@@ -146,7 +152,6 @@ if (requestedSongId) {
     overflow: hidden !important;
   }
 
-  /* Hide everything except what we need */
   body > * {
     display: none !important;
   }
@@ -165,7 +170,6 @@ if (requestedSongId) {
     display: none !important;
   }
 
-  /* Container that wraps ChordProPrintWorkspace */
   body > main.app-safe-main > div:last-of-type {
     display: block !important;
     position: static !important;
@@ -182,7 +186,6 @@ if (requestedSongId) {
     display: none !important;
   }
 
-  /* ── Print target container ── */
   #vista-previa-impresion {
     display: block !important;
     position: static !important;
@@ -194,7 +197,6 @@ if (requestedSongId) {
     overflow: hidden !important;
   }
 
-  /* Strip React wrappers (6 levels deep) — shrink-wrap, clip at 11in */
   #vista-previa-impresion > *,
   #vista-previa-impresion > * > *,
   #vista-previa-impresion > * > * > *,
@@ -222,7 +224,6 @@ if (requestedSongId) {
     background: transparent !important;
   }
 
-  /* ── The ONE element that defines the page: exactly 11in ── */
   #vista-previa-impresion #chordpro-print-sheet {
     display: block !important;
     width: 100% !important;
@@ -274,7 +275,6 @@ if (requestedSongId) {
     overflow: hidden !important;
   }
 
-  /* Columns — preserve column-count, critical for iOS */
   #vista-previa-impresion .song-sheet-columns {
     height: 100% !important;
     max-height: none !important;
@@ -314,7 +314,6 @@ if (requestedSongId) {
     overflow: visible !important;
   }
 
-  /* Header elements inside the sheet need natural height */
   #vista-previa-impresion .song-sheet-page > div > header > div {
     display: -webkit-flex !important;
     display: flex !important;
@@ -338,11 +337,16 @@ if (requestedSongId) {
     overflow: visible !important;
   }
 
-  /* Ensure chords print in color on iOS */
   #vista-previa-impresion .text-blue-600 {
     color: #2563eb !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+  }
+
+  @media print and (-webkit-min-device-pixel-ratio: 1) {
+    #vista-previa-impresion {
+      transform: scale(0.98);
+    }
   }
 }
 </style>

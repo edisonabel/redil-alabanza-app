@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import SongSheet, { type SongSheetLayoutOptions, type SongSheetMetadata } from './SongSheet';
-import { parseChordProToBlocks } from '../../utils/parseChordProToBlocks';
+import { parseChordProSemantic } from '../../utils/parseChordProSemantic';
+import { resolveSongSheetSemanticBlocks } from '../../utils/resolveSongSheetSemanticBlocks';
 
 type ChordProPreviewSelectors = {
   inputText?: string;
@@ -116,6 +117,7 @@ const readDomState = (
   return {
     chordProText: tryAutoConvertChordText(nextText),
     title: readFieldValue(selectors.title).trim() || fallback.title,
+    artist: fallback.artist,
     metadata: {
       tone: readFieldValue(selectors.tone).trim() || String(fallback.metadata.tone ?? ''),
       capo: readFieldValue(selectors.capo).trim() || String(fallback.metadata.capo ?? ''),
@@ -265,10 +267,25 @@ export function ChordProPreview({
     };
   }, [pageHeightPx, pageWidthPx, zoomMultiplier]);
 
-  const blocks = useMemo(
-    () => parseChordProToBlocks(liveState.chordProText),
-    [liveState.chordProText]
-  );
+  const resolvedStyleMode =
+    sheetOptions?.styleMode ||
+    (sheetOptions?.density === 'condensed' ? 'condensado' : 'completo');
+  const semanticResolutionMode = resolvedStyleMode === 'condensado' ? 'condensed' : 'complete';
+  const previewData = useMemo(() => {
+    const semanticNodes = parseChordProSemantic(liveState.chordProText);
+    const semanticBlocks = resolveSongSheetSemanticBlocks(semanticNodes, {
+      mode: semanticResolutionMode,
+    });
+    const collapseMap = Object.fromEntries(
+      semanticBlocks.map((block) => [block.id, Boolean(block.isCollapsed)])
+    );
+
+    return {
+      blocks: semanticBlocks,
+      collapseMap,
+    };
+  }, [liveState.chordProText, semanticResolutionMode]);
+  const blocks = previewData.blocks;
 
   const scaledWidth = Math.max(pageWidthPx * previewScale, 1);
   const scaledHeight = Math.max(pageHeightPx * previewScale, 1);
@@ -313,6 +330,7 @@ export function ChordProPreview({
                   artist={liveState.artist}
                   metadata={liveState.metadata}
                   options={sheetOptions}
+                  precomputedCollapseMap={previewData.collapseMap}
                   pageHeightPx={pageHeightPx}
                   pageWidthPx={pageWidthPx}
                   framed={false}

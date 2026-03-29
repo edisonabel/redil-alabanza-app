@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import ChordProPreview from './ChordProPreview';
 import type {
+  SongSheetDensity,
   SongSheetLayoutOptions,
   SongSheetMetadata,
   SongSheetRenderMode,
 } from './SongSheet';
+import { parseChordProSemantic } from '../../utils/parseChordProSemantic';
+import { resolveSongSheetSemanticBlocks } from '../../utils/resolveSongSheetSemanticBlocks';
+import { inferChordProTone } from '../../utils/inferChordProTone';
 
 type ChordProPrintWorkspaceProps = {
   initialChordProText: string;
@@ -146,11 +150,20 @@ export default function ChordProPrintWorkspace({
   initialArtist = '',
   initialMetadata,
 }: ChordProPrintWorkspaceProps) {
-  const originalTone = normalizeNote(initialMetadata?.tone);
+  const explicitOriginalTone = normalizeNote(initialMetadata?.tone);
+  const inferredOriginalTone = useMemo(() => {
+    if (explicitOriginalTone) return '';
+    const semanticNodes = parseChordProSemantic(initialChordProText);
+    const semanticBlocks = resolveSongSheetSemanticBlocks(semanticNodes, {
+      mode: 'complete',
+    });
+    return inferChordProTone(semanticBlocks);
+  }, [explicitOriginalTone, initialChordProText]);
+  const originalTone = explicitOriginalTone || inferredOriginalTone;
   const [isDarkTheme, setIsDarkTheme] = useState(() => readIsDarkTheme());
   const [title, setTitle] = useState(initialTitle || '');
   const [artist, setArtist] = useState(initialArtist || '');
-  const [targetTone, setTargetTone] = useState(originalTone || 'C');
+  const [targetTone, setTargetTone] = useState(originalTone || '');
   const [selectedCapo, setSelectedCapo] = useState(0);
   const [previewZoom, setPreviewZoom] = useState(1);
   const [sheetOptions, setSheetOptions] = useState<Required<SongSheetLayoutOptions>>({
@@ -186,6 +199,28 @@ export default function ChordProPrintWorkspace({
       window.removeEventListener('redil:theme-changed', syncTheme as EventListener);
       document.removeEventListener('astro:after-swap', syncTheme);
     };
+  }, []);
+
+  useEffect(() => {
+    setSheetOptions((current) => {
+      const needsCondensedSingleColumn = current.columnCount === 1 && current.density !== 'condensed';
+      const needsSectionDividers = !current.showSectionDividers;
+
+      if (!needsCondensedSingleColumn && !needsSectionDividers) {
+        return current;
+      }
+
+      return {
+        ...current,
+        showSectionDividers: true,
+        ...(needsCondensedSingleColumn
+          ? {
+              density: 'condensed',
+              styleMode: 'condensado' as const,
+            }
+          : {}),
+      };
+    });
   }, []);
 
   const semitoneDelta = useMemo(
@@ -224,6 +259,32 @@ export default function ChordProPrintWorkspace({
     setSheetOptions((current) => ({ ...current, renderMode }));
   };
 
+  const setDensityMode = (density: SongSheetDensity) => {
+    setSheetOptions((current) => ({
+      ...current,
+      density,
+      styleMode: density === 'condensed' ? 'condensado' : 'completo',
+    }));
+  };
+
+  const setColumnCountMode = (columnCount: 1 | 2) => {
+    setSheetOptions((current) => {
+      if (columnCount === 1) {
+        return {
+          ...current,
+          columnCount,
+          density: 'condensed',
+          styleMode: 'condensado',
+        };
+      }
+
+      return {
+        ...current,
+        columnCount,
+      };
+    });
+  };
+
   const handlePrint = () => {
     if (typeof window === 'undefined') return;
 
@@ -234,6 +295,7 @@ export default function ChordProPrintWorkspace({
   };
 
   const zoomLabel = `${Math.round(previewZoom * 100)}%`;
+  const completeModeDisabled = sheetOptions.columnCount === 1;
 
   const sidebarShellClasses = isDarkTheme
     ? 'border-white/10 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.18),_transparent_28%),linear-gradient(180deg,_rgba(9,9,11,0.98),_rgba(15,23,42,0.96))] text-white shadow-[0_30px_80px_rgba(2,6,23,0.35)]'
@@ -407,28 +469,40 @@ export default function ChordProPrintWorkspace({
               <button
                 type="button"
                 className={getOptionButtonClass(sheetOptions.columnCount === 2, isDarkTheme)}
-                onClick={() => setSheetOptions((current) => ({ ...current, columnCount: 2 }))}
+                onClick={() => setColumnCountMode(2)}
               >
                 2 columnas
               </button>
               <button
                 type="button"
                 className={getOptionButtonClass(sheetOptions.columnCount === 1, isDarkTheme)}
-                onClick={() => setSheetOptions((current) => ({ ...current, columnCount: 1 }))}
+                onClick={() => setColumnCountMode(1)}
               >
                 1 columna
               </button>
               <button
                 type="button"
-                className={getOptionButtonClass(sheetOptions.density === 'complete', isDarkTheme)}
-                onClick={() => setSheetOptions((current) => ({ ...current, density: 'complete' }))}
+                disabled={completeModeDisabled}
+                title={completeModeDisabled ? '1 columna solo funciona en condensado' : undefined}
+                className={[
+                  getOptionButtonClass(sheetOptions.density === 'complete', isDarkTheme),
+                  completeModeDisabled
+                    ? isDarkTheme
+                      ? 'cursor-not-allowed opacity-45 saturate-50'
+                      : 'cursor-not-allowed opacity-50'
+                    : '',
+                ].join(' ')}
+                onClick={() => {
+                  if (completeModeDisabled) return;
+                  setDensityMode('complete');
+                }}
               >
                 Completo
               </button>
               <button
                 type="button"
                 className={getOptionButtonClass(sheetOptions.density === 'condensed', isDarkTheme)}
-                onClick={() => setSheetOptions((current) => ({ ...current, density: 'condensed' }))}
+                onClick={() => setDensityMode('condensed')}
               >
                 Condensado
               </button>
@@ -454,29 +528,6 @@ export default function ChordProPrintWorkspace({
                   </p>
                 </div>
                 <span className={getToggleClass(sheetOptions.showSongMap, isDarkTheme)}>
-                  <span className="m-1 h-4 w-4 rounded-full bg-white shadow-sm" />
-                </span>
-              </button>
-
-              <button
-                type="button"
-                className="flex w-full items-center justify-between gap-3 text-left"
-                onClick={() =>
-                  setSheetOptions((current) => ({
-                    ...current,
-                    showSectionDividers: !current.showSectionDividers,
-                  }))
-                }
-              >
-                <div>
-                  <p className={['text-sm font-bold', sectionTitleClasses].join(' ')}>
-                    Separacion de seccion
-                  </p>
-                  <p className={['text-xs', sectionBodyClasses].join(' ')}>
-                    Linea guia despues del marcador de cada bloque.
-                  </p>
-                </div>
-                <span className={getToggleClass(sheetOptions.showSectionDividers, isDarkTheme)}>
                   <span className="m-1 h-4 w-4 rounded-full bg-white shadow-sm" />
                 </span>
               </button>

@@ -249,6 +249,8 @@ const normalizeFold = (value = '') => (
     .trim()
 );
 
+const escapeRegExp = (value = '') => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const toCompactToken = (value = '') => normalizeFold(value).replace(/\s+/g, '');
 const isChordSymbol = (value = '') => PURE_CHORD_RE.test(String(value || '').trim());
 
 const normalizeLineEndings = (value = '') => (
@@ -266,11 +268,26 @@ const formatExplicitTitle = (value = '') => (
 
 const resolveSectionKindFromLabel = (value = ''): SectionKind | null => {
   const normalized = normalizeFold(value);
-  const entry = Object.entries(SECTION_CONFIG).find(([, config]) => (
-    config.aliases.some((alias) => normalized.startsWith(alias))
+  const aliasEntry = Object.entries(SECTION_CONFIG).find(([, config]) => (
+    config.aliases.some((alias) => {
+      const normalizedAlias = normalizeFold(alias);
+      return normalized === normalizedAlias || normalized.startsWith(`${normalizedAlias} `);
+    })
   ));
 
-  return (entry?.[0] as SectionKind | undefined) || null;
+  if (aliasEntry) {
+    return aliasEntry[0] as SectionKind;
+  }
+
+  const compact = toCompactToken(value);
+  const markerEntry = Object.entries(SECTION_CONFIG).find(([, config]) => {
+    const compactMarker = toCompactToken(config.marker);
+    if (!compactMarker) return false;
+
+    return new RegExp(`^${escapeRegExp(compactMarker)}(?:\\d+)?$`, 'i').test(compact);
+  });
+
+  return (markerEntry?.[0] as SectionKind | undefined) || null;
 };
 
 const parseSectionLabel = (rawLabel = '', fallbackKind: SectionKind | null = null): SectionDescriptor | null => {
@@ -385,10 +402,13 @@ const parseBracketSection = (line = ''): { section: SectionDescriptor; inlineTex
   if (!match) return null;
 
   const header = String(match[1] || '').trim();
-  if (!header || isChordSymbol(header)) return null;
+  if (!header) return null;
 
   const descriptor = parseSectionLabel(header);
-  if (!descriptor) return null;
+  if (!descriptor) {
+    if (isChordSymbol(header)) return null;
+    return null;
+  }
 
   return {
     section: descriptor,
