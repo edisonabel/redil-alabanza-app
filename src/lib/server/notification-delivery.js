@@ -38,6 +38,18 @@ const escapeHtml = (value = '') =>
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
 
+const normalizeMultilineText = (value = '') =>
+  String(value || '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
+
+const escapeAndPreserveInlineText = (value = '') =>
+  escapeHtml(value).replace(/\n/g, '<br />');
+
+const DETAIL_LINE_PATTERN = /^[A-Za-z][^:\n]{0,31}:\s+.+$/;
+
+const isDetailLine = (value = '') => DETAIL_LINE_PATTERN.test(String(value || '').trim());
+
 const toAbsoluteUrl = (value = '') => {
   const safeValue = String(value || '').trim();
   if (!safeValue) return '';
@@ -49,6 +61,74 @@ const toAbsoluteUrl = (value = '') => {
   }
 };
 
+const buildEmailPreheader = ({ title = '', body = '' } = {}) =>
+  normalizeMultilineText([title, body].filter(Boolean).join(' - ')).slice(0, 140);
+
+const renderEmailBodySections = (body = '') => {
+  const normalizedBody = normalizeMultilineText(body);
+  if (!normalizedBody) return '';
+
+  const sections = normalizedBody
+    .split(/\n\s*\n/g)
+    .map((section) => section.trim())
+    .filter(Boolean);
+
+  return sections
+    .map((section) => {
+      const lines = section
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      if (!lines.length) return '';
+
+      if (lines.every(isDetailLine)) {
+        const rows = lines
+          .map((line) => {
+            const separatorIndex = line.indexOf(':');
+            const label = line.slice(0, separatorIndex).trim();
+            const value = line.slice(separatorIndex + 1).trim();
+
+            return `
+              <tr>
+                <td style="padding:0 0 10px 0;font-size:12px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#7dd3fc;">
+                  ${escapeHtml(label)}
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 14px 0;font-size:17px;line-height:1.45;color:#f8fafc;font-weight:600;">
+                  ${escapeAndPreserveInlineText(value)}
+                </td>
+              </tr>
+            `;
+          })
+          .join('');
+
+        return `
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 18px;border-collapse:collapse;border:1px solid rgba(125,211,252,0.18);border-radius:18px;background:#0b1220;">
+            <tr>
+              <td style="padding:18px 18px 8px 18px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
+                  ${rows}
+                </table>
+              </td>
+            </tr>
+          </table>
+        `;
+      }
+
+      const paragraphHtml = escapeAndPreserveInlineText(lines.join('\n'));
+      return `
+        <div style="margin:0 0 18px;padding:18px 18px 16px;border-radius:18px;background:#111c30;border:1px solid rgba(148,163,184,0.16);">
+          <p style="margin:0;font-size:16px;line-height:1.75;color:#dbe7f5;">
+            ${paragraphHtml}
+          </p>
+        </div>
+      `;
+    })
+    .join('');
+};
+
 const renderNotificationEmailHtml = ({
   title = '',
   body = '',
@@ -56,13 +136,26 @@ const renderNotificationEmailHtml = ({
   ctaLabel = 'Abrir app',
 } = {}) => {
   const safeTitle = escapeHtml(title);
-  const safeBody = escapeHtml(body);
   const safeCtaLabel = escapeHtml(ctaLabel || 'Abrir app');
   const absoluteCtaUrl = toAbsoluteUrl(ctaUrl);
+  const absoluteLogoUrl = toAbsoluteUrl('/LOGO REDIL LIGHT.png') || toAbsoluteUrl('/icon-192.png');
+  const preheader = escapeHtml(buildEmailPreheader({ title, body }));
+  const bodySections = renderEmailBodySections(body);
+  const logoMarkup = absoluteLogoUrl
+    ? `
+      <div style="display:inline-block;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.08);">
+        <img src="${absoluteLogoUrl}" alt="Alabanza Redil" width="28" height="28" style="display:block;width:28px;height:28px;object-fit:contain;" />
+      </div>
+    `
+    : `
+      <div style="display:inline-block;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.08);font-size:12px;font-weight:800;letter-spacing:0.2em;color:#f8fafc;">
+        AR
+      </div>
+    `;
   const ctaMarkup = absoluteCtaUrl
     ? `
-      <div style="margin-top:24px;">
-        <a href="${absoluteCtaUrl}" style="display:inline-block;padding:12px 18px;border-radius:12px;background:#0ea5e9;color:#ffffff;text-decoration:none;font-weight:700;">
+      <div style="margin-top:8px;">
+        <a href="${absoluteCtaUrl}" style="display:inline-block;padding:14px 22px;border-radius:14px;background:#0ea5e9;color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;box-shadow:0 14px 28px rgba(14,165,233,0.28);">
           ${safeCtaLabel}
         </a>
       </div>
@@ -70,20 +163,45 @@ const renderNotificationEmailHtml = ({
     : '';
 
   return `
-    <div style="margin:0;padding:24px;background:#0f172a;font-family:Arial,sans-serif;color:#e5eefb;">
-      <div style="max-width:560px;margin:0 auto;padding:28px;border:1px solid rgba(148,163,184,0.2);border-radius:20px;background:#111827;">
-        <p style="margin:0 0 10px;font-size:11px;letter-spacing:0.22em;font-weight:700;text-transform:uppercase;color:#67e8f9;">
-          Alabanza Redil
-        </p>
-        <h1 style="margin:0 0 12px;font-size:26px;line-height:1.2;color:#ffffff;">
-          ${safeTitle}
-        </h1>
-        <p style="margin:0;font-size:15px;line-height:1.65;color:#cbd5e1;">
-          ${safeBody}
-        </p>
-        ${ctaMarkup}
-      </div>
-    </div>
+    <!doctype html>
+    <html lang="es">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>${safeTitle}</title>
+      </head>
+      <body style="margin:0;padding:0;background:#081120;font-family:Arial,sans-serif;color:#e5eefb;">
+        <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">
+          ${preheader}
+        </div>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#081120;">
+          <tr>
+            <td style="padding:24px 14px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;margin:0 auto;border-collapse:collapse;">
+                <tr>
+                  <td style="padding:32px 28px;border-radius:28px;background:linear-gradient(180deg,#101b32 0%,#0b1220 100%);border:1px solid rgba(148,163,184,0.18);box-shadow:0 28px 60px rgba(2,8,23,0.45);">
+                    <div style="margin:0 0 18px;">
+                      ${logoMarkup}
+                    </div>
+                    <p style="margin:0 0 12px;font-size:11px;font-weight:800;letter-spacing:0.24em;text-transform:uppercase;color:#67e8f9;">
+                      Alabanza Redil
+                    </p>
+                    <h1 style="margin:0 0 18px;font-size:34px;line-height:1.15;color:#ffffff;">
+                      ${safeTitle}
+                    </h1>
+                    ${bodySections}
+                    ${ctaMarkup}
+                    <div style="margin-top:24px;padding-top:18px;border-top:1px solid rgba(148,163,184,0.14);font-size:13px;line-height:1.6;color:#94a3b8;">
+                      Ministerio de Alabanza Redil
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
   `;
 };
 
