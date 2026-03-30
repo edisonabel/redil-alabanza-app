@@ -300,20 +300,27 @@ const getScaledTotalHeight = (
   getColumnGapHeight(blocks.length, scaleFactor) +
   getChromeHeight(options) * scaleFactor * options.columnCount;
 
+const getRawBlocksHeight = (blocks: PdfPreparedBlock[], scaleFactor: number) =>
+  blocks.reduce((total, block) => total + block.estimatedHeight * scaleFactor, 0) +
+  getColumnGapHeight(blocks.length, scaleFactor);
+
 const resolveInitialScaleFactor = (
   blocks: PdfPreparedBlock[],
   options: ChordProPdfSheetOptions
 ) => {
   const columnCount = options.columnCount;
-  const availableAt1 = getAvailableColumnHeight(options, 1);
-  const totalCapacity = availableAt1 * columnCount;
-  const baseTotalHeight = getScaledTotalHeight(blocks, options, 1);
+  // Total height available specifically for Blocks (excludes header/footer/page padding)
+  const availableBlocksCapacity = getAvailableColumnHeight(options, 1) * columnCount;
+  // Total height requested by the Blocks themselves
+  const requestedBlocksHeight = getRawBlocksHeight(blocks, 1);
 
-  if (!baseTotalHeight || baseTotalHeight <= totalCapacity) {
+  if (!requestedBlocksHeight || requestedBlocksHeight <= availableBlocksCapacity) {
     return 1;
   }
 
-  return clamp((totalCapacity / baseTotalHeight) * SCALE_SAFETY, MIN_SCALE_FACTOR, 1);
+  // Calculate the theoretically perfect scale factor, then apply a tiny safety margin
+  const exactScale = availableBlocksCapacity / requestedBlocksHeight;
+  return clamp(exactScale * 0.98, MIN_SCALE_FACTOR, 1);
 };
 
 const distributeBlocksSingleColumn = (blocks: PdfPreparedBlock[]) => [blocks];
