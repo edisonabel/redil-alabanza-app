@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createElement } from 'react';
 import ChordProPreview from './ChordProPreview';
 import type {
   SongSheetDensity,
@@ -315,6 +316,10 @@ export default function ChordProPrintWorkspace({
 
     const targetName = 'chordpro-pdf-preview';
     const previewWindow = window.open('', targetName);
+    const isIOS =
+      /iPad|iPhone|iPod/.test(window.navigator.userAgent) ||
+      (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1);
+
     if (previewWindow && !previewWindow.closed) {
       previewWindow.document.title = 'Generando PDF...';
       previewWindow.document.body.innerHTML = `
@@ -328,31 +333,91 @@ export default function ChordProPrintWorkspace({
       `;
     }
 
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = '/api/chordpro-print-pdf';
-    form.target = previewWindow && !previewWindow.closed ? targetName : '_self';
-    form.style.display = 'none';
-
-    const payloadField = document.createElement('input');
-    payloadField.type = 'hidden';
-    payloadField.name = 'payload';
-    payloadField.value = JSON.stringify(payload);
-    form.appendChild(payloadField);
-
-    document.body.appendChild(form);
-
     setIsGeneratingPdf(true);
     if (pdfFeedbackTimeoutRef.current !== null) {
       window.clearTimeout(pdfFeedbackTimeoutRef.current);
     }
-    pdfFeedbackTimeoutRef.current = window.setTimeout(() => {
-      setIsGeneratingPdf(false);
-      pdfFeedbackTimeoutRef.current = null;
-    }, 4000);
+    void (async () => {
+      try {
+        const [{ pdf }, { default: ChordProPdfFile }] = await Promise.all([
+          import('@react-pdf/renderer'),
+          import('../pdf/ChordProPdfFile'),
+        ]);
 
-    form.submit();
-    form.remove();
+        const pdfInstance = pdf(createElement(ChordProPdfFile, { payload }));
+        const blob = await pdfInstance.toBlob();
+        const file = new File([blob], payload.fileName, { type: 'application/pdf' });
+        const objectUrl = URL.createObjectURL(blob);
+
+        const canShareFile =
+          typeof navigator !== 'undefined' &&
+          typeof navigator.share === 'function' &&
+          (typeof navigator.canShare !== 'function' || navigator.canShare({ files: [file] }));
+
+        if (isIOS && canShareFile) {
+          try {
+            await navigator.share({
+              title: payload.title || 'ChordPro PDF',
+              files: [file],
+            });
+            if (previewWindow && !previewWindow.closed) {
+              previewWindow.close();
+            }
+            window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+          } catch (shareError) {
+            if ((shareError as Error)?.name === 'AbortError') {
+              if (previewWindow && !previewWindow.closed) {
+                previewWindow.location.href = objectUrl;
+              } else {
+                window.open(objectUrl, '_blank');
+              }
+            } else {
+              throw shareError;
+            }
+          }
+        } else if (isIOS) {
+          if (previewWindow && !previewWindow.closed) {
+            previewWindow.location.href = objectUrl;
+          } else {
+            window.open(objectUrl, '_blank');
+          }
+          window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+        } else {
+          if (previewWindow && !previewWindow.closed) {
+            previewWindow.close();
+          }
+          const link = document.createElement('a');
+          link.href = objectUrl;
+          link.download = payload.fileName;
+          link.rel = 'noopener';
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+        }
+      } catch (error) {
+        console.error('ChordPro client PDF generation failed:', error);
+
+        const errorMessage =
+          error instanceof Error ? error.message : 'No se pudo generar el PDF.';
+
+        if (previewWindow && !previewWindow.closed) {
+          previewWindow.document.title = 'Error al generar PDF';
+          previewWindow.document.body.innerHTML = `
+            <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:Segoe UI,Arial,sans-serif;background:#0f172a;color:#f8fafc;">
+              <div style="max-width:34rem;padding:2rem;">
+                <p style="margin:0 0 0.75rem;font-size:0.8rem;font-weight:800;letter-spacing:0.18em;text-transform:uppercase;color:#93c5fd;">ChordPro</p>
+                <h1 style="margin:0 0 0.75rem;font-size:1.6rem;font-weight:900;">No se pudo generar el PDF</h1>
+                <p style="margin:0;font-size:0.95rem;line-height:1.65;color:#cbd5e1;">${errorMessage}</p>
+              </div>
+            </div>
+          `;
+        }
+      } finally {
+        setIsGeneratingPdf(false);
+        pdfFeedbackTimeoutRef.current = null;
+      }
+    })();
   };
 
   const zoomLabel = `${Math.round(previewZoom * 100)}%`;
