@@ -223,7 +223,7 @@ export default function ChordProPdfDocument({
       {payload ? (
         <div
           id="chordpro-pdf-sheet"
-          className="mx-auto h-[11in] w-[8.5in] overflow-hidden bg-white print:overflow-visible print:max-w-none print:w-auto print:h-auto"
+          className="mx-auto h-[11in] w-[8.5in] overflow-hidden bg-white print:overflow-hidden print:w-[8.5in] print:max-w-[8.5in] print:h-[11in]"
         >
           <SongSheet
             blocks={previewData.blocks}

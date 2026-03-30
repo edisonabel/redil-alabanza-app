@@ -108,10 +108,8 @@ const SONG_SHEET_PRINT_CSS = `
       background: #ffffff !important;
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
-      height: 11in !important;
-      max-height: none !important;
-      overflow: visible !important;
-      -webkit-text-size-adjust: 100% !important;
+      width: 100% !important;
+      height: 100% !important;
     }
 
     .song-sheet-page {
@@ -120,9 +118,7 @@ const SONG_SHEET_PRINT_CSS = `
       height: 11in !important;
       max-height: 11in !important;
       overflow: hidden !important;
-      page-break-after: avoid !important;
-      page-break-inside: avoid !important;
-      break-inside: avoid !important;
+      page-break-after: always !important;
     }
 
     .song-sheet-columns {
@@ -133,7 +129,7 @@ const SONG_SHEET_PRINT_CSS = `
       -webkit-column-fill: auto !important;
       column-fill: auto !important;
       height: 100% !important;
-      overflow: visible !important;
+      overflow: hidden !important;
     }
 
     .song-sheet-single-column {
@@ -1027,59 +1023,59 @@ export default function SongSheet({
   };
   const densityClasses = resolvedOptions.density === 'condensed'
     ? {
-        framePadding: isSingleCol ? 'px-5 py-3.5' : 'px-6 py-5',
-        headerPadding: isSingleCol ? 'pb-0.5' : 'pb-1.5',
-        artistMargin: 'mt-0.35',
-        artistSize: isSingleCol ? 'text-[0.7em]' : 'text-[0.74em]',
-        mapMargin: isSingleCol ? 'mt-0.8' : 'mt-1.05',
-        mapGap: 'gap-[0.45em]',
-        mainPadding: isSingleCol ? 'pt-1.5' : 'pt-3',
-        sectionMargin: isSingleCol ? 'mb-1.5' : 'mb-3',
-        collapsedSectionMargin: isSingleCol ? 'mb-1' : 'mb-2',
-        sectionHeaderMargin: 'mb-0.5',
-        linesGap: 'space-y-0',
-        titleSize: isSingleCol ? 'text-[1.5em]' : 'text-[1.9em]',
-        metaSize: isSingleCol ? 'text-[0.6em]' : 'text-[0.64em]',
-        sectionTitleSize: isSingleCol ? 'text-[0.88em]' : 'text-[0.92em]',
-        sectionCardPadding: isSingleCol ? 'px-3 pb-2.5 pt-[0.88rem]' : 'px-3.5 pb-3.5 pt-[1.05rem]',
-        collapsedCardPadding: isSingleCol ? 'px-3 py-2.5' : 'px-3.5 py-3',
-        compactChordCardPadding: isSingleCol ? 'px-3 pb-2 pt-[0.8rem]' : 'px-3.5 pb-2.4 pt-[0.92rem]',
-        sectionCardRadius: 'rounded-[1.15em]',
-      }
+      framePadding: isSingleCol ? 'px-5 py-3.5' : 'px-6 py-5',
+      headerPadding: isSingleCol ? 'pb-0.5' : 'pb-1.5',
+      artistMargin: 'mt-0.35',
+      artistSize: isSingleCol ? 'text-[0.7em]' : 'text-[0.74em]',
+      mapMargin: isSingleCol ? 'mt-0.8' : 'mt-1.05',
+      mapGap: 'gap-[0.45em]',
+      mainPadding: isSingleCol ? 'pt-1.5' : 'pt-3',
+      sectionMargin: isSingleCol ? 'mb-1.5' : 'mb-3',
+      collapsedSectionMargin: isSingleCol ? 'mb-1' : 'mb-2',
+      sectionHeaderMargin: 'mb-0.5',
+      linesGap: 'space-y-0',
+      titleSize: isSingleCol ? 'text-[1.5em]' : 'text-[1.9em]',
+      metaSize: isSingleCol ? 'text-[0.6em]' : 'text-[0.64em]',
+      sectionTitleSize: isSingleCol ? 'text-[0.88em]' : 'text-[0.92em]',
+      sectionCardPadding: isSingleCol ? 'px-3 pb-2.5 pt-[0.88rem]' : 'px-3.5 pb-3.5 pt-[1.05rem]',
+      collapsedCardPadding: isSingleCol ? 'px-3 py-2.5' : 'px-3.5 py-3',
+      compactChordCardPadding: isSingleCol ? 'px-3 pb-2 pt-[0.8rem]' : 'px-3.5 pb-2.4 pt-[0.92rem]',
+      sectionCardRadius: 'rounded-[1.15em]',
+    }
     : {
-        framePadding: isSingleCol ? 'px-5 py-5' : 'px-7 py-6',
-        headerPadding: isSingleCol ? 'pb-1.5' : 'pb-1.85',
-        artistMargin: 'mt-0.4',
-        artistSize: isSingleCol ? 'text-[0.72em]' : 'text-[0.78em]',
-        mapMargin: isSingleCol ? 'mt-0.85' : 'mt-1.15',
-        mapGap: isSingleCol ? 'gap-[0.5em]' : 'gap-[0.6em]',
-        mainPadding: isSingleCol ? 'pt-2.5' : 'pt-3.5',
-        sectionMargin: isSingleCol ? 'mb-2.5' : 'mb-4',
-        collapsedSectionMargin: isSingleCol ? 'mb-1.5' : 'mb-2.5',
-        sectionHeaderMargin: isSingleCol ? 'mb-0.5' : 'mb-1',
-        linesGap: isSingleCol ? 'space-y-0' : 'space-y-0.5',
-        titleSize: isSingleCol ? 'text-[1.6em]' : 'text-[2.08em]',
-        metaSize: isSingleCol ? 'text-[0.62em]' : 'text-[0.67em]',
-        sectionTitleSize: isSingleCol ? 'text-[0.9em]' : 'text-[0.96em]',
-        sectionCardPadding: isSingleCol ? 'px-3.5 pb-3.5 pt-[1rem]' : 'px-4 pb-4 pt-[1.18rem]',
-        collapsedCardPadding: isSingleCol ? 'px-3.5 py-3' : 'px-4 py-3.5',
-        compactChordCardPadding: isSingleCol ? 'px-3.5 pb-2.5 pt-[0.88rem]' : 'px-4 pb-2.8 pt-[0.98rem]',
-        sectionCardRadius: 'rounded-[1.28em]',
-      };
+      framePadding: isSingleCol ? 'px-5 py-5' : 'px-7 py-6',
+      headerPadding: isSingleCol ? 'pb-1.5' : 'pb-1.85',
+      artistMargin: 'mt-0.4',
+      artistSize: isSingleCol ? 'text-[0.72em]' : 'text-[0.78em]',
+      mapMargin: isSingleCol ? 'mt-0.85' : 'mt-1.15',
+      mapGap: isSingleCol ? 'gap-[0.5em]' : 'gap-[0.6em]',
+      mainPadding: isSingleCol ? 'pt-2.5' : 'pt-3.5',
+      sectionMargin: isSingleCol ? 'mb-2.5' : 'mb-4',
+      collapsedSectionMargin: isSingleCol ? 'mb-1.5' : 'mb-2.5',
+      sectionHeaderMargin: isSingleCol ? 'mb-0.5' : 'mb-1',
+      linesGap: isSingleCol ? 'space-y-0' : 'space-y-0.5',
+      titleSize: isSingleCol ? 'text-[1.6em]' : 'text-[2.08em]',
+      metaSize: isSingleCol ? 'text-[0.62em]' : 'text-[0.67em]',
+      sectionTitleSize: isSingleCol ? 'text-[0.9em]' : 'text-[0.96em]',
+      sectionCardPadding: isSingleCol ? 'px-3.5 pb-3.5 pt-[1rem]' : 'px-4 pb-4 pt-[1.18rem]',
+      collapsedCardPadding: isSingleCol ? 'px-3.5 py-3' : 'px-4 py-3.5',
+      compactChordCardPadding: isSingleCol ? 'px-3.5 pb-2.5 pt-[0.88rem]' : 'px-4 pb-2.8 pt-[0.98rem]',
+      sectionCardRadius: 'rounded-[1.28em]',
+    };
   const frameClasses = framed
     ? 'song-sheet-page relative mx-auto overflow-hidden rounded-[20px] border border-zinc-300 bg-white text-zinc-950 shadow-[0_20px_60px_rgba(15,23,42,0.12)] print:h-[11in] print:w-[8.5in] print:max-h-none print:max-w-none print:overflow-hidden print:rounded-none print:border-0 print:shadow-none print:[-webkit-print-color-adjust:exact] print:[print-color-adjust:exact]'
     : 'song-sheet-page relative mx-auto h-full overflow-hidden bg-white text-zinc-950 print:h-[11in] print:w-[8.5in] print:max-h-none print:max-w-none print:overflow-hidden print:[-webkit-print-color-adjust:exact] print:[print-color-adjust:exact]';
   const frameStyle: CSSProperties = framed
     ? {
-        width: '100%',
-        maxWidth: `${pageWidthPx}px`,
-        height: `${pageHeightPx}px`,
-        maxHeight: `${pageHeightPx}px`,
-      }
+      width: '100%',
+      maxWidth: `${pageWidthPx}px`,
+      height: `${pageHeightPx}px`,
+      maxHeight: `${pageHeightPx}px`,
+    }
     : {
-        width: '100%',
-        height: '100%',
-      };
+      width: '100%',
+      height: '100%',
+    };
 
   const columnStyle = {
     '--song-sheet-column-count': String(resolvedOptions.columnCount),

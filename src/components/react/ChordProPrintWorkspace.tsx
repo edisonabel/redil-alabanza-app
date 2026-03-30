@@ -12,6 +12,14 @@ import { inferChordProTone } from '../../utils/inferChordProTone';
 import { buildChordProPdfFileName } from '../../lib/chordproPdfPayload';
 import { createChordProPdfBrowserToken } from '../../lib/chordproPdfBrowserStore';
 
+const isIOSDevice = () => {
+  if (typeof window === 'undefined') return false;
+  return (
+    /iPad|iPhone|iPod/.test(window.navigator.userAgent) ||
+    (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1)
+  );
+};
+
 type ChordProPrintWorkspaceProps = {
   initialChordProText: string;
   initialTitle: string;
@@ -227,9 +235,9 @@ export default function ChordProPrintWorkspace({
         showSectionDividers: true,
         ...(needsCondensedSingleColumn
           ? {
-              density: 'condensed',
-              styleMode: 'condensado' as const,
-            }
+            density: 'condensed',
+            styleMode: 'condensado' as const,
+          }
           : {}),
       };
     });
@@ -297,7 +305,7 @@ export default function ChordProPrintWorkspace({
     });
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
     const payload = {
@@ -314,10 +322,33 @@ export default function ChordProPrintWorkspace({
       fileName: `${buildChordProPdfFileName(title, artist)}.pdf`,
     };
 
-    const isIOS =
-      /iPad|iPhone|iPod/.test(window.navigator.userAgent) ||
-      (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1);
     const targetName = 'chordpro-pdf-preview';
+
+    if (isIOSDevice()) {
+      setIsGeneratingPdf(true);
+      try {
+        const [{ pdf }, { default: ChordProPdfFile }] = await Promise.all([
+          import('@react-pdf/renderer'),
+          import('../pdf/ChordProPdfFile'),
+        ]);
+
+        const blob = await pdf(<ChordProPdfFile payload={payload as any} />).toBlob();
+        const blobUrl = URL.createObjectURL(blob);
+
+        window.location.href = blobUrl;
+
+        setTimeout(() => {
+          URL.revokeObjectURL(blobUrl);
+        }, 15000);
+      } catch (error) {
+        console.error('ChordPro iOS PDF generation failed:', error);
+        alert('Hubo un error al generar el PDF para imprimir.');
+      } finally {
+        setIsGeneratingPdf(false);
+      }
+      return;
+    }
+
     const previewWindow = window.open('', targetName);
 
     if (previewWindow && !previewWindow.closed) {
@@ -338,12 +369,10 @@ export default function ChordProPrintWorkspace({
       window.clearTimeout(pdfFeedbackTimeoutRef.current);
     }
     try {
-      const clientToken = createChordProPdfBrowserToken(payload);
+      const clientToken = createChordProPdfBrowserToken(payload as any);
       const renderUrl = new URL('/render/chordpro-print-pdf', window.location.origin);
       renderUrl.searchParams.set('clientToken', clientToken);
-      if (!isIOS) {
-        renderUrl.searchParams.set('autoprint', '1');
-      }
+      renderUrl.searchParams.set('autoprint', '1');
 
       if (previewWindow && !previewWindow.closed) {
         previewWindow.location.href = renderUrl.toString();
@@ -361,9 +390,9 @@ export default function ChordProPrintWorkspace({
         previewWindow.document.body.innerHTML = `
           <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:Segoe UI,Arial,sans-serif;background:#0f172a;color:#f8fafc;">
             <div style="max-width:34rem;padding:2rem;">
-              <p style="margin:0 0 0.75rem;font-size:0.8rem;font-weight:800;letter-spacing:0.18em;text-transform:uppercase;color:#93c5fd;">ChordPro</p>
-              <h1 style="margin:0 0 0.75rem;font-size:1.6rem;font-weight:900;">No se pudo abrir la hoja</h1>
-              <p style="margin:0;font-size:0.95rem;line-height:1.65;color:#cbd5e1;">${errorMessage}</p>
+               <p style="margin:0 0 0.75rem;font-size:0.8rem;font-weight:800;letter-spacing:0.18em;text-transform:uppercase;color:#93c5fd;">ChordPro</p>
+               <h1 style="margin:0 0 0.75rem;font-size:1.6rem;font-weight:900;">No se pudo abrir la hoja</h1>
+               <p style="margin:0;font-size:0.95rem;line-height:1.65;color:#cbd5e1;">${errorMessage}</p>
             </div>
           </div>
         `;
