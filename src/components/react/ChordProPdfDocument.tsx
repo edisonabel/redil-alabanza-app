@@ -46,6 +46,9 @@ export default function ChordProPdfDocument({
     readResolvedPayload(initialPayload, clientToken)
   );
   const [isReady, setIsReady] = useState(false);
+  const [isWaitingForPayload, setIsWaitingForPayload] = useState(
+    () => !initialPayload && Boolean(clientToken)
+  );
   const hasTriggeredPrintRef = useRef(false);
   const semanticResolutionMode =
     payload?.sheetOptions.styleMode === 'condensado' ? 'condensed' : 'complete';
@@ -53,16 +56,64 @@ export default function ChordProPdfDocument({
   useEffect(() => {
     if (initialPayload) {
       setPayload(initialPayload);
+      setIsWaitingForPayload(false);
       return;
     }
 
     if (!clientToken) {
       setPayload(null);
+      setIsWaitingForPayload(false);
       return;
     }
 
-    const nextPayload = readChordProPdfBrowserToken(clientToken);
-    setPayload(nextPayload);
+    let cancelled = false;
+    let timeoutId: number | null = null;
+    let pollId: number | null = null;
+
+    setIsWaitingForPayload(true);
+
+    const syncPayload = () => {
+      const nextPayload = readChordProPdfBrowserToken(clientToken);
+      if (!nextPayload) return false;
+
+      if (cancelled) return true;
+      setPayload(nextPayload);
+      setIsWaitingForPayload(false);
+      return true;
+    };
+
+    if (syncPayload()) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    pollId = window.setInterval(() => {
+      if (syncPayload() && pollId !== null) {
+        window.clearInterval(pollId);
+        pollId = null;
+      }
+    }, 120);
+
+    timeoutId = window.setTimeout(() => {
+      if (cancelled) return;
+      if (pollId !== null) {
+        window.clearInterval(pollId);
+        pollId = null;
+      }
+      setPayload(null);
+      setIsWaitingForPayload(false);
+    }, 4000);
+
+    return () => {
+      cancelled = true;
+      if (pollId !== null) {
+        window.clearInterval(pollId);
+      }
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
   }, [clientToken, initialPayload]);
 
   const previewData = useMemo(() => {
@@ -172,7 +223,7 @@ export default function ChordProPdfDocument({
       {payload ? (
         <div
           id="chordpro-pdf-sheet"
-          className="mx-auto h-[11in] w-[8.5in] overflow-hidden bg-white"
+          className="mx-auto h-[11in] w-[8.5in] overflow-hidden bg-white print:overflow-visible print:max-w-none print:w-auto print:h-auto"
         >
           <SongSheet
             blocks={previewData.blocks}
@@ -187,14 +238,22 @@ export default function ChordProPdfDocument({
             className="h-full"
           />
         </div>
+      ) : isWaitingForPayload ? (
+        <div className="flex min-h-screen items-center justify-center bg-white px-8 text-center">
+          <div className="max-w-xl">
+            <p className="text-xs font-black uppercase tracking-[0.24em] text-zinc-400">
+              Preparando hoja
+            </p>
+          </div>
+        </div>
       ) : (
         <div className="flex min-h-screen items-center justify-center bg-white px-8 text-center">
           <div className="max-w-xl">
             <h1 className="text-2xl font-black tracking-[-0.04em] text-zinc-900">
-              Documento no disponible
+              No pudimos abrir esta hoja
             </h1>
             <p className="mt-3 text-sm leading-6 text-zinc-500">
-              El documento temporal ya no existe o no pudo prepararse para impresion.
+              Vuelve a intentarlo desde la ventana principal para regenerarla.
             </p>
           </div>
         </div>

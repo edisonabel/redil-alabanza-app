@@ -1,15 +1,15 @@
 ---
-import '../../styles/global.css';
-import ChordProPdfDocument from '../../components/react/ChordProPdfDocument';
-import { readChordProPdfPayloadToken } from '../../lib/chordproPdfPayloadStore';
+import "../../styles/global.css";
+import ChordProPdfDocument from "../../components/react/ChordProPdfDocument";
+import { readChordProPdfPayloadToken } from "../../lib/chordproPdfPayloadStore";
 
 export const prerender = false;
 
-const token = Astro.url.searchParams.get('token')?.trim() || '';
-const clientToken = Astro.url.searchParams.get('clientToken')?.trim() || '';
+const token = Astro.url.searchParams.get("token")?.trim() || "";
+const clientToken = Astro.url.searchParams.get("clientToken")?.trim() || "";
 const autoPrint =
-  Astro.url.searchParams.get('autoprint')?.trim() === '1' ||
-  Astro.url.searchParams.get('autoprint')?.trim() === 'true';
+  Astro.url.searchParams.get("autoprint")?.trim() === "1" ||
+  Astro.url.searchParams.get("autoprint")?.trim() === "true";
 const payload = token ? await readChordProPdfPayloadToken(token) : null;
 
 if (!payload && !clientToken) {
@@ -17,27 +17,29 @@ if (!payload && !clientToken) {
 }
 ---
 
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{payload?.title ? `${payload.title} PDF` : 'ChordPro PDF'}</title>
+    <title>{payload?.title ? `${payload.title} PDF` : "ChordPro PDF"}</title>
   </head>
   <body>
-    {payload || clientToken ? (
-      <ChordProPdfDocument
-        client:load
-        payload={payload}
-        clientToken={clientToken}
-        autoPrint={autoPrint}
-      />
-    ) : (
-      <div class="pdf-error-state">
-        <h1>PDF no disponible</h1>
-        <p>El documento solicitado ya no existe o no pudo prepararse.</p>
-      </div>
-    )}
+    {
+      payload || clientToken ? (
+        <ChordProPdfDocument
+          client:load
+          payload={payload}
+          clientToken={clientToken}
+          autoPrint={autoPrint}
+        />
+      ) : (
+        <div class="pdf-error-state">
+          <h1>No pudimos abrir esta hoja</h1>
+          <p>Vuelve a intentarlo desde la ventana principal.</p>
+        </div>
+      )
+    }
   </body>
 </html>
 
@@ -57,7 +59,8 @@ if (!payload && !clientToken) {
     color: #000000;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    overflow: hidden;
+    overflow: visible;
+    -webkit-text-size-adjust: 100%;
   }
 
   body {

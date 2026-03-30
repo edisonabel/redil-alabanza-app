@@ -108,9 +108,10 @@ const SONG_SHEET_PRINT_CSS = `
       background: #ffffff !important;
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
-      height: auto !important;
-      max-height: 11in !important;
-      overflow: hidden !important;
+      height: 11in !important;
+      max-height: none !important;
+      overflow: visible !important;
+      -webkit-text-size-adjust: 100% !important;
     }
 
     .song-sheet-page {
@@ -119,6 +120,9 @@ const SONG_SHEET_PRINT_CSS = `
       height: 11in !important;
       max-height: 11in !important;
       overflow: hidden !important;
+      page-break-after: avoid !important;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
     }
 
     .song-sheet-columns {
