@@ -14,6 +14,12 @@ const readEnv = (...keys) => {
 const rawSupabaseUrl = readEnv('SUPABASE_URL', 'PUBLIC_SUPABASE_URL');
 const supabaseUrl = rawSupabaseUrl.replace(/\/$/, '');
 const supabaseServiceRoleKey = readEnv('SUPABASE_SERVICE_ROLE_KEY');
+const supabaseFunctionAuthKey = readEnv(
+  'SUPABASE_ANON_KEY',
+  'PUBLIC_SUPABASE_ANON_KEY',
+  'SUPABASE_PUBLISHABLE_KEY',
+  'PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+);
 const notificationFunctionSecret = readEnv('NOTIFICATION_FUNCTION_SECRET') || supabaseServiceRoleKey;
 const resendApiKey = readEnv('RESEND_API_KEY');
 const resendFrom = readEnv('RESEND_FROM') || 'Worship App <onboarding@resend.dev>';
@@ -173,8 +179,6 @@ const ensureWebPushConfigured = () => {
   return true;
 };
 
-const looksLikeJwt = (value = '') => String(value || '').split('.').length === 3;
-
 const buildInternalFunctionHeaders = () => {
   if (!notificationFunctionSecret) {
     throw new Error('Falta el secreto interno para invocar funciones de notificaciones de Supabase.');
@@ -185,8 +189,9 @@ const buildInternalFunctionHeaders = () => {
     'x-notification-secret': notificationFunctionSecret,
   };
 
-  if (looksLikeJwt(supabaseServiceRoleKey)) {
-    headers.authorization = `Bearer ${supabaseServiceRoleKey}`;
+  if (supabaseFunctionAuthKey) {
+    headers.apikey = supabaseFunctionAuthKey;
+    headers.authorization = `Bearer ${supabaseFunctionAuthKey}`;
   }
 
   return headers;
