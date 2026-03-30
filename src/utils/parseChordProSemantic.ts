@@ -401,9 +401,12 @@ const parseBracketSection = (
   const header = String(match[1] || '').trim();
   if (!header) return null;
 
+  if (isChordSymbol(header)) {
+    return null;
+  }
+
   const descriptor = parseSectionLabel(header);
   if (!descriptor) {
-    if (isChordSymbol(header)) return null;
     return null;
   }
 
