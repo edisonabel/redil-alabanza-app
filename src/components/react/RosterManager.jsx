@@ -4,6 +4,39 @@ import { getAssignmentProfileId, getVisibleVoiceAssignments, normalizeRosterAssi
 
 const MAX_VOZ_SLOTS = 4;
 
+const notifyAssignmentRecipients = async ({ eventoId, perfilIds }) => {
+    const uniquePerfilIds = [...new Set((perfilIds || []).map((value) => String(value || '').trim()).filter(Boolean))];
+    if (!eventoId || uniquePerfilIds.length === 0) {
+        return { ok: true, requested: 0, delivered: 0, skipped: true };
+    }
+
+    try {
+        const response = await fetch('/api/notify-assignment', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'content-type': 'application/json'
+            },
+            body: JSON.stringify({
+                evento_id: eventoId,
+                perfil_ids: uniquePerfilIds
+            })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        return {
+            ok: response.ok && payload?.ok !== false,
+            status: response.status,
+            ...payload
+        };
+    } catch (error) {
+        return {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        };
+    }
+};
+
 export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr, evEstadoStr, esAcustico = false, isStrictModerator, dbData, onRosterChange }) {
     const [asignaciones, setAsignaciones] = useState(dbData?.asignaciones || []);
     const [roles, setRoles] = useState([]);
@@ -70,6 +103,12 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                 },
             }));
         }
+    };
+
+    const warnNotificationFailure = (result) => {
+        if (result?.ok || result?.skipped) return;
+        console.error('Assignment notification warning:', result);
+        alert('La asignación se guardó, pero falló el envío automático de correo o push.');
     };
 
     useEffect(() => {
@@ -206,7 +245,11 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
             if (!error) {
                 setPickerOpen(false);
                 setPickerSlotIndex(null);
-                await fetchCurrentRoster();
+                const [_, notifyResult] = await Promise.all([
+                    fetchCurrentRoster(),
+                    notifyAssignmentRecipients({ eventoId: evId, perfilIds: [perfilId] })
+                ]);
+                warnNotificationFailure(notifyResult);
             } else {
                 alert('Error: ' + error.message);
             }
@@ -243,6 +286,14 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
             }
         }
 
+        const existingAssignmentForRole = normalizedAssignments.find((assignment) => assignment.rol_id === saveRolId);
+        if (existingAssignmentForRole && getAssignmentProfileId(existingAssignmentForRole) === perfilId) {
+            setPickerLoading(false);
+            setPickerOpen(false);
+            setPickerSlotIndex(null);
+            return;
+        }
+
         // Clean first
         await supabase.from('asignaciones').delete()
             .eq('evento_id', evId)
@@ -259,7 +310,11 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         if (!error) {
             setPickerOpen(false);
             setPickerSlotIndex(null);
-            await fetchCurrentRoster();
+            const [_, notifyResult] = await Promise.all([
+                fetchCurrentRoster(),
+                notifyAssignmentRecipients({ eventoId: evId, perfilIds: [perfilId] })
+            ]);
+            warnNotificationFailure(notifyResult);
         } else {
             alert('Error: ' + error.message);
         }
@@ -309,11 +364,32 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                 rol_id: item.rol_maestro
             }));
 
+            const currentAssignmentKeys = new Set(
+                normalizedAssignments
+                    .map((assignment) => {
+                        const profileId = getAssignmentProfileId(assignment);
+                        return profileId ? `${profileId}:${assignment.rol_id}` : null;
+                    })
+                    .filter(Boolean)
+            );
+
+            const newlyAssignedPerfilIds = [
+                ...new Set(
+                    bulkPayload
+                        .filter((item) => !currentAssignmentKeys.has(`${item.perfil_id}:${item.rol_id}`))
+                        .map((item) => item.perfil_id)
+                )
+            ];
+
             const { error: insError } = await supabase.from('asignaciones').insert(bulkPayload);
             if (insError) throw insError;
 
             setEquipoPickerOpen(false);
-            await fetchCurrentRoster();
+            const [_, notifyResult] = await Promise.all([
+                fetchCurrentRoster(),
+                notifyAssignmentRecipients({ eventoId: evId, perfilIds: newlyAssignedPerfilIds })
+            ]);
+            warnNotificationFailure(notifyResult);
             alert('Equipo cargado correctamente.');
         } catch (err) {
             alert('Error aplicando equipo: ' + err.message);
@@ -587,6 +663,4 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         </div>
     );
 }
-
-
 

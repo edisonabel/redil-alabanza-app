@@ -112,20 +112,28 @@ const renderNotificationEmailHtml = ({
     : "";
 
   return `
-    <div style="margin:0;padding:24px;background:#0f172a;font-family:Arial,sans-serif;color:#e5eefb;">
-      <div style="max-width:560px;margin:0 auto;padding:28px;border:1px solid rgba(148,163,184,0.2);border-radius:20px;background:#111827;">
-        <p style="margin:0 0 10px;font-size:11px;letter-spacing:0.22em;font-weight:700;text-transform:uppercase;color:#67e8f9;">
-          Alabanza Redil
-        </p>
-        <h1 style="margin:0 0 12px;font-size:26px;line-height:1.2;color:#ffffff;">
-          ${safeTitle}
-        </h1>
-        <p style="margin:0;font-size:15px;line-height:1.65;color:#cbd5e1;">
-          ${safeBody}
-        </p>
-        ${ctaMarkup}
-      </div>
-    </div>
+    <!doctype html>
+    <html lang="es">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>${safeTitle}</title>
+      </head>
+      <body style="margin:0;padding:24px;background:#0f172a;font-family:Arial,sans-serif;color:#e5eefb;">
+        <div style="max-width:560px;margin:0 auto;padding:28px;border:1px solid rgba(148,163,184,0.2);border-radius:20px;background:#111827;">
+          <p style="margin:0 0 10px;font-size:11px;letter-spacing:0.22em;font-weight:700;text-transform:uppercase;color:#67e8f9;">
+            Alabanza Redil
+          </p>
+          <h1 style="margin:0 0 12px;font-size:26px;line-height:1.2;color:#ffffff;">
+            ${safeTitle}
+          </h1>
+          <p style="margin:0;font-size:15px;line-height:1.65;color:#cbd5e1;">
+            ${safeBody}
+          </p>
+          ${ctaMarkup}
+        </div>
+      </body>
+    </html>
   `;
 };
 
@@ -231,9 +239,10 @@ serve(async (req) => {
       );
     }
 
+    const resendFrom = (Deno.env.get("RESEND_FROM") ?? "").trim() || "Worship App <onboarding@resend.dev>";
     const resend = new Resend(resendApiKey);
     const { data, error } = await resend.emails.send({
-      from: "Worship App <onboarding@resend.dev>",
+      from: resendFrom,
       to: [email],
       subject: titulo,
       html: renderNotificationEmailHtml({
