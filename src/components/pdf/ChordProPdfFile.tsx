@@ -2,11 +2,9 @@ import React from 'react';
 import { Document, Font, Page, StyleSheet, Text, View } from '@react-pdf/renderer';
 import type { ChordProPdfPayload } from '../../lib/chordproPdfPayload';
 import {
-  distributePdfBlocks,
-  getPdfSongMap,
-  getPreparedPdfBlocks,
+  getPdfLayoutPlan,
+  type PdfPreparedBlock,
 } from '../../lib/chordproPdfLayout';
-import type { PdfPreparedBlock } from '../../lib/chordproPdfLayout';
 
 Font.register({
   family: 'Adineue',
@@ -17,145 +15,149 @@ Font.register({
   ],
 });
 
-const styles = StyleSheet.create({
-  page: {
-    paddingTop: 18,
-    paddingBottom: 16,
-    paddingHorizontal: 18,
-    backgroundColor: '#ffffff',
-    color: '#111827',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 14,
-  },
-  titleWrap: {
-    flex: 1,
-  },
-  title: {
-    fontFamily: 'Adineue',
-    fontSize: 19,
-    lineHeight: 1.02,
-    fontWeight: 700,
-  },
-  artist: {
-    marginTop: 3,
-    fontFamily: 'Adineue',
-    fontSize: 9,
-    color: '#6B7280',
-  },
-  metaGrid: {
-    width: 92,
-    gap: 6,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 4,
-  },
-  metaLabel: {
-    fontFamily: 'Adineue',
-    fontSize: 7,
-    color: '#6B7280',
-    fontWeight: 700,
-  },
-  metaValue: {
-    fontFamily: 'Courier-Bold',
-    fontSize: 8,
-    color: '#111827',
-  },
-  songMap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  songMapPill: {
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    alignSelf: 'flex-start',
-  },
-  songMapLabel: {
-    fontFamily: 'Adineue',
-    fontSize: 7,
-    color: '#ffffff',
-    fontWeight: 700,
-  },
-  columns: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  column: {
-    flex: 1,
-    gap: 8,
-  },
-  collapsedSection: {
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#FAFAFA',
-  },
-  collapsedTitle: {
-    fontFamily: 'Adineue',
-    fontSize: 9,
-    fontWeight: 700,
-  },
-  sectionWrap: {
-    borderWidth: 1,
-    borderColor: '#D4D4D8',
-    borderRadius: 8,
-    padding: 10,
-    backgroundColor: '#ffffff',
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
-  },
-  sectionPill: {
-    borderRadius: 6,
-    paddingHorizontal: 5,
-    paddingVertical: 3,
-    alignSelf: 'flex-start',
-  },
-  sectionPillLabel: {
-    fontFamily: 'Adineue',
-    fontSize: 7,
-    color: '#ffffff',
-    fontWeight: 700,
-  },
-  sectionTitle: {
-    fontFamily: 'Adineue',
-    fontSize: 9,
-    fontWeight: 700,
-  },
-  lineWrap: {
-    marginBottom: 2,
-  },
-  chordsText: {
-    fontFamily: 'Courier',
-    fontSize: 8,
-    lineHeight: 1.22,
-    color: '#2563EB',
-    fontWeight: 700,
-  },
-  lyricsText: {
-    fontFamily: 'Courier',
-    fontSize: 9,
-    lineHeight: 1.22,
-    color: '#111827',
-  },
-});
+const scaled = (value: number, scaleFactor: number, min = 0) =>
+  Math.max(min, Number((value * scaleFactor).toFixed(2)));
+
+const createStyles = (scaleFactor: number) =>
+  StyleSheet.create({
+    page: {
+      paddingTop: scaled(18, scaleFactor, 10),
+      paddingBottom: scaled(16, scaleFactor, 9),
+      paddingHorizontal: scaled(18, scaleFactor, 10),
+      backgroundColor: '#ffffff',
+      color: '#111827',
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: scaled(14, scaleFactor, 8),
+    },
+    titleWrap: {
+      flex: 1,
+    },
+    title: {
+      fontFamily: 'Adineue',
+      fontSize: scaled(19, scaleFactor, 12),
+      lineHeight: 1.02,
+      fontWeight: 700,
+    },
+    artist: {
+      marginTop: scaled(3, scaleFactor, 1),
+      fontFamily: 'Adineue',
+      fontSize: scaled(9, scaleFactor, 6.5),
+      color: '#6B7280',
+    },
+    metaGrid: {
+      width: scaled(92, scaleFactor, 62),
+      gap: scaled(6, scaleFactor, 3),
+    },
+    metaRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      gap: scaled(4, scaleFactor, 2),
+    },
+    metaLabel: {
+      fontFamily: 'Adineue',
+      fontSize: scaled(7, scaleFactor, 5.5),
+      color: '#6B7280',
+      fontWeight: 700,
+    },
+    metaValue: {
+      fontFamily: 'Courier-Bold',
+      fontSize: scaled(8, scaleFactor, 6),
+      color: '#111827',
+    },
+    songMap: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: scaled(4, scaleFactor, 2),
+      marginTop: scaled(8, scaleFactor, 4),
+      marginBottom: scaled(8, scaleFactor, 4),
+    },
+    songMapPill: {
+      borderRadius: scaled(6, scaleFactor, 4),
+      paddingHorizontal: scaled(6, scaleFactor, 3.5),
+      paddingVertical: scaled(3, scaleFactor, 1.5),
+      alignSelf: 'flex-start',
+    },
+    songMapLabel: {
+      fontFamily: 'Adineue',
+      fontSize: scaled(7, scaleFactor, 5.5),
+      color: '#ffffff',
+      fontWeight: 700,
+    },
+    columns: {
+      flexDirection: 'row',
+      gap: scaled(12, scaleFactor, 7),
+    },
+    column: {
+      flex: 1,
+      gap: scaled(8, scaleFactor, 4),
+    },
+    collapsedSection: {
+      borderWidth: 1,
+      borderColor: '#E5E7EB',
+      borderRadius: scaled(8, scaleFactor, 5),
+      paddingHorizontal: scaled(9, scaleFactor, 5),
+      paddingVertical: scaled(7, scaleFactor, 4),
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: scaled(6, scaleFactor, 3),
+      backgroundColor: '#FAFAFA',
+    },
+    collapsedTitle: {
+      fontFamily: 'Adineue',
+      fontSize: scaled(9, scaleFactor, 6.5),
+      fontWeight: 700,
+    },
+    sectionWrap: {
+      borderWidth: 1,
+      borderColor: '#D4D4D8',
+      borderRadius: scaled(8, scaleFactor, 5),
+      padding: scaled(10, scaleFactor, 6),
+      backgroundColor: '#ffffff',
+    },
+    sectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: scaled(6, scaleFactor, 3),
+      marginBottom: scaled(8, scaleFactor, 4),
+    },
+    sectionPill: {
+      borderRadius: scaled(6, scaleFactor, 4),
+      paddingHorizontal: scaled(5, scaleFactor, 3),
+      paddingVertical: scaled(3, scaleFactor, 1.5),
+      alignSelf: 'flex-start',
+    },
+    sectionPillLabel: {
+      fontFamily: 'Adineue',
+      fontSize: scaled(7, scaleFactor, 5.5),
+      color: '#ffffff',
+      fontWeight: 700,
+    },
+    sectionTitle: {
+      fontFamily: 'Adineue',
+      fontSize: scaled(9, scaleFactor, 6.5),
+      fontWeight: 700,
+    },
+    lineWrap: {
+      marginBottom: scaled(2, scaleFactor, 1),
+    },
+    chordsText: {
+      fontFamily: 'Courier',
+      fontSize: scaled(8, scaleFactor, 5.8),
+      lineHeight: 1.22,
+      color: '#2563EB',
+      fontWeight: 700,
+    },
+    lyricsText: {
+      fontFamily: 'Courier',
+      fontSize: scaled(9, scaleFactor, 6.2),
+      lineHeight: 1.22,
+      color: '#111827',
+    },
+  });
 
 const buildMetaItems = (payload: ChordProPdfPayload) => [
   { label: 'Tono', value: String(payload.metadata.tone || '--') || '--' },
@@ -165,7 +167,7 @@ const buildMetaItems = (payload: ChordProPdfPayload) => [
 ];
 
 const renderLine = (
-  block: PdfPreparedBlock,
+  styles: ReturnType<typeof createStyles>,
   line: PdfPreparedBlock['pdfLines'][number],
   renderMode: ChordProPdfPayload['sheetOptions']['renderMode'],
   key: string
@@ -247,6 +249,7 @@ const renderLine = (
 };
 
 const renderBlock = (
+  styles: ReturnType<typeof createStyles>,
   block: PdfPreparedBlock,
   renderMode: ChordProPdfPayload['sheetOptions']['renderMode']
 ) => {
@@ -270,17 +273,16 @@ const renderBlock = (
         <Text style={[styles.sectionTitle, { color: block.colors.text }]}>{block.fullTitle}</Text>
       </View>
       {block.pdfLines.map((line, lineIndex) =>
-        renderLine(block, line, renderMode, `${block.id}-${lineIndex}`)
+        renderLine(styles, line, renderMode, `${block.id}-${lineIndex}`)
       )}
     </View>
   );
 };
 
 export default function ChordProPdfFile({ payload }: { payload: ChordProPdfPayload }) {
-  const preparedBlocks = getPreparedPdfBlocks(payload);
-  const songMap = getPdfSongMap(preparedBlocks, payload.sheetOptions.showSongMap);
-  const columns = distributePdfBlocks(preparedBlocks, payload.sheetOptions);
+  const layoutPlan = getPdfLayoutPlan(payload);
   const metaItems = buildMetaItems(payload);
+  const styles = createStyles(layoutPlan.scaleFactor);
 
   return (
     <Document title={payload.title || 'ChordPro PDF'} author={payload.artist || 'Alabanza'}>
@@ -289,10 +291,12 @@ export default function ChordProPdfFile({ payload }: { payload: ChordProPdfPaylo
           <View style={styles.titleWrap}>
             <Text style={styles.title}>{payload.title || 'SIN TITULO'}</Text>
             {payload.artist ? <Text style={styles.artist}>{payload.artist}</Text> : null}
-            {songMap.length > 0 ? (
+            {layoutPlan.songMap.length > 0 ? (
               <View style={styles.songMap}>
-                {songMap.map((marker, index) => {
-                  const block = preparedBlocks.find((item) => item.typeMarker === marker) || preparedBlocks[index];
+                {layoutPlan.songMap.map((marker, index) => {
+                  const block =
+                    layoutPlan.preparedBlocks.find((item) => item.typeMarker === marker) ||
+                    layoutPlan.preparedBlocks[index];
                   const color = block?.colors.bg || '#475569';
                   return (
                     <View key={`${marker}-${index}`} style={[styles.songMapPill, { backgroundColor: color }]}>
@@ -315,9 +319,9 @@ export default function ChordProPdfFile({ payload }: { payload: ChordProPdfPaylo
         </View>
 
         <View style={styles.columns}>
-          {columns.map((columnBlocks, columnIndex) => (
+          {layoutPlan.columns.map((columnBlocks, columnIndex) => (
             <View key={`column-${columnIndex}`} style={styles.column}>
-              {columnBlocks.map((block) => renderBlock(block, payload.sheetOptions.renderMode))}
+              {columnBlocks.map((block) => renderBlock(styles, block, payload.sheetOptions.renderMode))}
             </View>
           ))}
         </View>

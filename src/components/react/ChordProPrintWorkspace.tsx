@@ -32,6 +32,7 @@ const NOTE_BUTTON_ROWS = [
   ['C', 'C#', 'D', 'D#', 'E', 'F'],
   ['F#', 'G', 'G#', 'A', 'A#', 'B'],
 ];
+const PDF_GENERATION_TIMEOUT_MS = 15_000;
 const CHORD_TOKEN_RE =
   /^[A-G](?:#|b)?(?:[a-z0-9+#/()\-]*)?(?:\/[A-G](?:#|b)?(?:[a-z0-9+#/()\-]*)?)?$/i;
 
@@ -145,6 +146,24 @@ const formatTransposeSummary = (steps: number) => {
   const suffix = absSteps === 1 ? 'tono' : 'tonos';
   return `${steps > 0 ? '+' : '-'}${absSteps} ${suffix}`;
 };
+
+const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, errorMessage: string) =>
+  new Promise<T>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      reject(new Error(errorMessage));
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        window.clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timeoutId);
+        reject(error);
+      }
+    );
+  });
 
 export default function ChordProPrintWorkspace({
   initialChordProText,
@@ -338,6 +357,9 @@ export default function ChordProPrintWorkspace({
       window.clearTimeout(pdfFeedbackTimeoutRef.current);
     }
     void (async () => {
+      let objectUrl: string | null = null;
+      let shouldKeepObjectUrlAlive = false;
+
       try {
         const [{ pdf }, { default: ChordProPdfFile }] = await Promise.all([
           import('@react-pdf/renderer'),
@@ -345,9 +367,15 @@ export default function ChordProPrintWorkspace({
         ]);
 
         const pdfInstance = pdf(createElement(ChordProPdfFile, { payload }));
-        const blob = await pdfInstance.toBlob();
+        const blob = await withTimeout(
+          pdfInstance.toBlob(),
+          PDF_GENERATION_TIMEOUT_MS,
+          isIOS
+            ? 'El iPhone tardo demasiado generando el PDF. Intenta cerrar otras pestanas o usar una version mas compacta.'
+            : 'La generacion del PDF tardo demasiado. Intenta nuevamente.'
+        );
         const file = new File([blob], payload.fileName, { type: 'application/pdf' });
-        const objectUrl = URL.createObjectURL(blob);
+        objectUrl = URL.createObjectURL(blob);
 
         const canShareFile =
           typeof navigator !== 'undefined' &&
@@ -363,7 +391,7 @@ export default function ChordProPrintWorkspace({
             if (previewWindow && !previewWindow.closed) {
               previewWindow.close();
             }
-            window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+            shouldKeepObjectUrlAlive = true;
           } catch (shareError) {
             if ((shareError as Error)?.name === 'AbortError') {
               if (previewWindow && !previewWindow.closed) {
@@ -371,6 +399,7 @@ export default function ChordProPrintWorkspace({
               } else {
                 window.open(objectUrl, '_blank');
               }
+              shouldKeepObjectUrlAlive = true;
             } else {
               throw shareError;
             }
@@ -381,7 +410,7 @@ export default function ChordProPrintWorkspace({
           } else {
             window.open(objectUrl, '_blank');
           }
-          window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+          shouldKeepObjectUrlAlive = true;
         } else {
           if (previewWindow && !previewWindow.closed) {
             previewWindow.close();
@@ -393,7 +422,7 @@ export default function ChordProPrintWorkspace({
           document.body.appendChild(link);
           link.click();
           link.remove();
-          window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+          shouldKeepObjectUrlAlive = true;
         }
       } catch (error) {
         console.error('ChordPro client PDF generation failed:', error);
@@ -414,6 +443,15 @@ export default function ChordProPrintWorkspace({
           `;
         }
       } finally {
+        if (objectUrl) {
+          if (shouldKeepObjectUrlAlive) {
+            window.setTimeout(() => {
+              URL.revokeObjectURL(objectUrl as string);
+            }, 60_000);
+          } else {
+            URL.revokeObjectURL(objectUrl);
+          }
+        }
         setIsGeneratingPdf(false);
         pdfFeedbackTimeoutRef.current = null;
       }

@@ -16,9 +16,23 @@ export type PdfPreparedBlock = ResolvedSemanticSongSheetBlock & {
   colors: PdfSectionColors;
 };
 
+export type PdfLayoutPlan = {
+  preparedBlocks: PdfPreparedBlock[];
+  songMap: string[];
+  columns: PdfPreparedBlock[][];
+  scaleFactor: number;
+  availableColumnHeight: number;
+  columnHeights: number[];
+};
+
 type LinePackingProfile = {
   maxPackableLineWidth: number;
   maxPackedRowWidth: number;
+};
+
+type PdfColumnSplit = {
+  columns: PdfPreparedBlock[][];
+  heights: number[];
 };
 
 const LINE_PACKING_GAP_SPACES = 3;
@@ -26,12 +40,18 @@ const CONDENSED_LINE_PACKING_PROFILE: LinePackingProfile = {
   maxPackableLineWidth: 38,
   maxPackedRowWidth: 80,
 };
-const COLUMN_HEIGHT_PT = 648;
-const PAGE_PADDING_TOP_PT = 20;
+
+const PAGE_HEIGHT_PT = 792;
+const PAGE_PADDING_TOP_PT = 18;
+const PAGE_PADDING_BOTTOM_PT = 16;
 const PAGE_HEADER_HEIGHT_PT = 86;
 const PAGE_MAP_HEIGHT_PT = 20;
 const PAGE_MAP_GAP_PT = 10;
 const PAGE_BOTTOM_BUFFER_PT = 14;
+const COLUMN_BLOCK_GAP_PT = 8;
+const SCALE_SAFETY = 0.95;
+const MIN_SCALE_FACTOR = 0.62;
+const SCALE_RETRY_LIMIT = 8;
 
 const SECTION_COLOR_MAP: Record<string, PdfSectionColors> = {
   verse: { bg: '#3B82F6', text: '#3B82F6', border: '#BFDBFE' },
@@ -41,6 +61,9 @@ const SECTION_COLOR_MAP: Record<string, PdfSectionColors> = {
   neutral: { bg: '#6B7280', text: '#6B7280', border: '#D1D5DB' },
   default: { bg: '#475569', text: '#475569', border: '#CBD5E1' },
 };
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
 
 const hasLyricWords = (value = '') => /[\p{L}\p{N}]/u.test(String(value || '').trim());
 
@@ -225,7 +248,10 @@ const estimateLineHeight = (line: ParsedChordLine, options: ChordProPdfSheetOpti
   return chordGuide ? (shouldRenderLyricsRow ? 22 : 11) : 11;
 };
 
-const estimateBlockHeight = (block: ResolvedSemanticSongSheetBlock, options: ChordProPdfSheetOptions) => {
+const estimateBlockHeight = (
+  block: ResolvedSemanticSongSheetBlock,
+  options: ChordProPdfSheetOptions
+) => {
   if (block.isCollapsed) {
     return options.columnCount === 1 ? 22 : 24;
   }
@@ -247,6 +273,165 @@ const estimateBlockHeight = (block: ResolvedSemanticSongSheetBlock, options: Cho
 
 const resolveSemanticMode = (payload: ChordProPdfPayload) =>
   payload.sheetOptions.styleMode === 'condensado' ? 'condensed' : 'complete';
+
+const getChromeHeight = (options: ChordProPdfSheetOptions) =>
+  PAGE_PADDING_TOP_PT +
+  PAGE_PADDING_BOTTOM_PT +
+  PAGE_HEADER_HEIGHT_PT +
+  (options.showSongMap ? PAGE_MAP_HEIGHT_PT + PAGE_MAP_GAP_PT : 0) +
+  PAGE_BOTTOM_BUFFER_PT;
+
+const getAvailableColumnHeight = (options: ChordProPdfSheetOptions, scaleFactor: number) =>
+  PAGE_HEIGHT_PT - getChromeHeight(options) * scaleFactor;
+
+const getColumnGapHeight = (blockCount: number, scaleFactor: number) =>
+  Math.max(0, blockCount - 1) * COLUMN_BLOCK_GAP_PT * scaleFactor;
+
+const getScaledColumnHeight = (blocks: PdfPreparedBlock[], scaleFactor: number) =>
+  blocks.reduce((total, block) => total + block.estimatedHeight * scaleFactor, 0) +
+  getColumnGapHeight(blocks.length, scaleFactor);
+
+const getScaledTotalHeight = (
+  blocks: PdfPreparedBlock[],
+  options: ChordProPdfSheetOptions,
+  scaleFactor: number
+) =>
+  blocks.reduce((total, block) => total + block.estimatedHeight * scaleFactor, 0) +
+  getColumnGapHeight(blocks.length, scaleFactor) +
+  getChromeHeight(options) * scaleFactor * options.columnCount;
+
+const resolveInitialScaleFactor = (
+  blocks: PdfPreparedBlock[],
+  options: ChordProPdfSheetOptions
+) => {
+  const columnCount = options.columnCount;
+  const totalCapacity = PAGE_HEIGHT_PT * columnCount;
+  const baseTotalHeight = getScaledTotalHeight(blocks, options, 1);
+
+  if (!baseTotalHeight || baseTotalHeight <= totalCapacity) {
+    return 1;
+  }
+
+  return clamp((totalCapacity / baseTotalHeight) * SCALE_SAFETY, MIN_SCALE_FACTOR, 1);
+};
+
+const distributeBlocksSingleColumn = (blocks: PdfPreparedBlock[]) => [blocks];
+
+const distributeBlocksTwoColumns = (
+  blocks: PdfPreparedBlock[],
+  availableColumnHeight: number,
+  scaleFactor: number
+): PdfColumnSplit => {
+  if (blocks.length <= 1) {
+    return {
+      columns: [blocks, []],
+      heights: [getScaledColumnHeight(blocks, scaleFactor), 0],
+    };
+  }
+
+  let bestSplitIndex = 1;
+  let bestPenalty = Number.POSITIVE_INFINITY;
+  let bestHeights: [number, number] = [0, 0];
+
+  for (let splitIndex = 1; splitIndex < blocks.length; splitIndex += 1) {
+    const left = blocks.slice(0, splitIndex);
+    const right = blocks.slice(splitIndex);
+    const leftHeight = getScaledColumnHeight(left, scaleFactor);
+    const rightHeight = getScaledColumnHeight(right, scaleFactor);
+    const overflowPenalty =
+      Math.max(0, leftHeight - availableColumnHeight) * 1000 +
+      Math.max(0, rightHeight - availableColumnHeight) * 1000;
+    const balancePenalty = Math.abs(leftHeight - rightHeight);
+    const penalty = overflowPenalty + balancePenalty;
+
+    if (penalty < bestPenalty) {
+      bestPenalty = penalty;
+      bestSplitIndex = splitIndex;
+      bestHeights = [leftHeight, rightHeight];
+    }
+  }
+
+  return {
+    columns: [blocks.slice(0, bestSplitIndex), blocks.slice(bestSplitIndex)],
+    heights: bestHeights,
+  };
+};
+
+const resolveColumnsAndScale = (
+  blocks: PdfPreparedBlock[],
+  options: ChordProPdfSheetOptions
+) => {
+  let scaleFactor = resolveInitialScaleFactor(blocks, options);
+  let bestColumns = options.columnCount === 1 ? [blocks] : [blocks, []];
+  let bestHeights =
+    options.columnCount === 1
+      ? [getScaledColumnHeight(blocks, scaleFactor)]
+      : [getScaledColumnHeight(blocks, scaleFactor), 0];
+  let bestOverflow = Number.POSITIVE_INFINITY;
+  let bestScale = scaleFactor;
+
+  for (let attempt = 0; attempt < SCALE_RETRY_LIMIT; attempt += 1) {
+    const availableColumnHeight = getAvailableColumnHeight(options, scaleFactor);
+
+    const columns =
+      options.columnCount === 1
+        ? distributeBlocksSingleColumn(blocks)
+        : ((): PdfPreparedBlock[][] => {
+            const split = distributeBlocksTwoColumns(
+              blocks,
+              availableColumnHeight,
+              scaleFactor
+            );
+
+            bestHeights = split.heights;
+            return split.columns;
+          })();
+
+    const columnHeights = columns.map((columnBlocks) =>
+      getScaledColumnHeight(columnBlocks, scaleFactor)
+    );
+    const overflow = columnHeights.reduce(
+      (total, height) => total + Math.max(0, height - availableColumnHeight),
+      0
+    );
+
+    if (overflow < bestOverflow) {
+      bestOverflow = overflow;
+      bestColumns = columns;
+      bestHeights = columnHeights;
+      bestScale = scaleFactor;
+    }
+
+    if (overflow <= 0) {
+      return {
+        columns,
+        scaleFactor,
+        availableColumnHeight,
+        columnHeights,
+      };
+    }
+
+    const tallestColumn = Math.max(...columnHeights, 1);
+    const nextScale = clamp(
+      scaleFactor * (availableColumnHeight / tallestColumn) * 0.985,
+      MIN_SCALE_FACTOR,
+      scaleFactor - 0.01
+    );
+
+    if (nextScale >= scaleFactor) {
+      scaleFactor = clamp(scaleFactor - 0.02, MIN_SCALE_FACTOR, 1);
+    } else {
+      scaleFactor = nextScale;
+    }
+  }
+
+  return {
+    columns: bestColumns,
+    scaleFactor: bestScale,
+    availableColumnHeight: getAvailableColumnHeight(options, bestScale),
+    columnHeights: bestHeights,
+  };
+};
 
 export const getPreparedPdfBlocks = (payload: ChordProPdfPayload): PdfPreparedBlock[] => {
   const semanticNodes = parseChordProSemantic(payload.chordProText);
@@ -273,32 +458,35 @@ export const getPdfSongMap = (blocks: PdfPreparedBlock[], showSongMap: boolean) 
 
 export const distributePdfBlocks = (
   blocks: PdfPreparedBlock[],
-  options: ChordProPdfSheetOptions
+  options: ChordProPdfSheetOptions,
+  scaleFactor = 1
 ) => {
   if (options.columnCount === 1) {
     return [blocks];
   }
 
-  const availableHeight =
-    COLUMN_HEIGHT_PT -
-    PAGE_PADDING_TOP_PT -
-    PAGE_HEADER_HEIGHT_PT -
-    (options.showSongMap ? PAGE_MAP_HEIGHT_PT + PAGE_MAP_GAP_PT : 0) -
-    PAGE_BOTTOM_BUFFER_PT;
+  const availableColumnHeight = getAvailableColumnHeight(options, scaleFactor);
+  const split = distributeBlocksTwoColumns(blocks, availableColumnHeight, scaleFactor);
 
-  const columns: PdfPreparedBlock[][] = [[], []];
-  const heights = [0, 0];
-  let columnIndex = 0;
+  return split.columns;
+};
 
-  for (const block of blocks) {
-    const nextHeight = heights[columnIndex] + block.estimatedHeight;
-    if (columnIndex === 0 && columns[0].length > 0 && nextHeight > availableHeight) {
-      columnIndex = 1;
-    }
+export const getPdfLayoutPlan = (payload: ChordProPdfPayload): PdfLayoutPlan => {
+  const preparedBlocks = getPreparedPdfBlocks(payload);
+  const songMap = getPdfSongMap(preparedBlocks, payload.sheetOptions.showSongMap);
+  const {
+    columns,
+    scaleFactor,
+    availableColumnHeight,
+    columnHeights,
+  } = resolveColumnsAndScale(preparedBlocks, payload.sheetOptions);
 
-    columns[columnIndex].push(block);
-    heights[columnIndex] += block.estimatedHeight;
-  }
-
-  return columns;
+  return {
+    preparedBlocks,
+    songMap,
+    columns,
+    scaleFactor,
+    availableColumnHeight,
+    columnHeights,
+  };
 };
