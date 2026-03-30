@@ -6,9 +6,13 @@ import { readChordProPdfPayloadToken } from '../../lib/chordproPdfPayloadStore';
 export const prerender = false;
 
 const token = Astro.url.searchParams.get('token')?.trim() || '';
+const clientToken = Astro.url.searchParams.get('clientToken')?.trim() || '';
+const autoPrint =
+  Astro.url.searchParams.get('autoprint')?.trim() === '1' ||
+  Astro.url.searchParams.get('autoprint')?.trim() === 'true';
 const payload = token ? await readChordProPdfPayloadToken(token) : null;
 
-if (!payload) {
+if (!payload && !clientToken) {
   Astro.response.status = 404;
 }
 ---
@@ -21,8 +25,13 @@ if (!payload) {
     <title>{payload?.title ? `${payload.title} PDF` : 'ChordPro PDF'}</title>
   </head>
   <body>
-    {payload ? (
-      <ChordProPdfDocument client:load payload={payload} />
+    {payload || clientToken ? (
+      <ChordProPdfDocument
+        client:load
+        payload={payload}
+        clientToken={clientToken}
+        autoPrint={autoPrint}
+      />
     ) : (
       <div class="pdf-error-state">
         <h1>PDF no disponible</h1>
