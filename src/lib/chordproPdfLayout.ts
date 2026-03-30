@@ -305,7 +305,8 @@ const resolveInitialScaleFactor = (
   options: ChordProPdfSheetOptions
 ) => {
   const columnCount = options.columnCount;
-  const totalCapacity = PAGE_HEIGHT_PT * columnCount;
+  const availableAt1 = getAvailableColumnHeight(options, 1);
+  const totalCapacity = availableAt1 * columnCount;
   const baseTotalHeight = getScaledTotalHeight(blocks, options, 1);
 
   if (!baseTotalHeight || baseTotalHeight <= totalCapacity) {
@@ -333,16 +334,20 @@ const distributeBlocksTwoColumns = (
   let bestPenalty = Number.POSITIVE_INFINITY;
   let bestHeights: [number, number] = [0, 0];
 
-  for (let splitIndex = 1; splitIndex < blocks.length; splitIndex += 1) {
+  for (let splitIndex = 1; splitIndex <= blocks.length; splitIndex += 1) {
     const left = blocks.slice(0, splitIndex);
     const right = blocks.slice(splitIndex);
     const leftHeight = getScaledColumnHeight(left, scaleFactor);
     const rightHeight = getScaledColumnHeight(right, scaleFactor);
+    
     const overflowPenalty =
-      Math.max(0, leftHeight - availableColumnHeight) * 1000 +
-      Math.max(0, rightHeight - availableColumnHeight) * 1000;
-    const balancePenalty = Math.abs(leftHeight - rightHeight);
-    const penalty = overflowPenalty + balancePenalty;
+      Math.max(0, leftHeight - availableColumnHeight) * 10000 +
+      Math.max(0, rightHeight - availableColumnHeight) * 10000;
+      
+    // Primary goal: emulate HTML column-fill: auto to maximize use of page height
+    const fillAutoPenalty = Math.max(0, availableColumnHeight - leftHeight);
+    
+    const penalty = overflowPenalty + fillAutoPenalty;
 
     if (penalty < bestPenalty) {
       bestPenalty = penalty;
