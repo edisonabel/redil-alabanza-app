@@ -333,16 +333,22 @@ export default function ChordProPrintWorkspace({
         ]);
 
         const blob = await pdf(<ChordProPdfFile payload={payload as any} />).toBlob();
-        const blobUrl = URL.createObjectURL(blob);
+        const file = new File([blob], payload.fileName, { type: 'application/pdf' });
 
-        window.location.href = blobUrl;
-
-        setTimeout(() => {
-          URL.revokeObjectURL(blobUrl);
-        }, 15000);
-      } catch (error) {
-        console.error('ChordPro iOS PDF generation failed:', error);
-        alert('Hubo un error al generar el PDF para imprimir.');
+        if (typeof navigator.share === 'function' && navigator.canShare?.({ files: [file] })) {
+          await navigator.share({ files: [file], title: payload.title || 'ChordPro PDF' });
+        } else {
+          const blobUrl = URL.createObjectURL(blob);
+          window.open(blobUrl, '_blank');
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+        }
+      } catch (error: any) {
+        if (error?.name === 'AbortError') {
+          // User cancelled the share sheet — not an error
+        } else {
+          console.error('ChordPro iOS PDF generation failed:', error);
+          alert('Hubo un error al generar el PDF para imprimir.');
+        }
       } finally {
         setIsGeneratingPdf(false);
       }
