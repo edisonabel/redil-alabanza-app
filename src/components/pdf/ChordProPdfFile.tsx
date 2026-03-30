@@ -117,7 +117,7 @@ const createStyles = (scaleFactor: number) =>
       borderRadius: scaled(8, scaleFactor, 5),
       paddingHorizontal: scaled(10, scaleFactor, 6),
       paddingBottom: scaled(10, scaleFactor, 6),
-      paddingTop: scaled(14, scaleFactor, 8),
+      paddingTop: scaled(12, scaleFactor, 7),
       backgroundColor: '#ffffff',
     },
     sectionHeader: {
@@ -125,7 +125,11 @@ const createStyles = (scaleFactor: number) =>
       alignItems: 'center',
       gap: scaled(6, scaleFactor, 3),
       marginBottom: scaled(6, scaleFactor, 3),
-      marginTop: scaled(-20, scaleFactor, -13),
+      marginTop: scaled(-20, scaleFactor, -12),
+      backgroundColor: '#ffffff',
+      paddingHorizontal: scaled(4, scaleFactor, 2.5),
+      marginLeft: scaled(-2, scaleFactor, -1),
+      alignSelf: 'flex-start',
     },
     sectionPill: {
       borderRadius: scaled(6, scaleFactor, 4),
