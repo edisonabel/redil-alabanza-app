@@ -1,0 +1,71 @@
+---
+import '../../styles/global.css';
+import ChordProPdfDocument from '../../components/react/ChordProPdfDocument';
+import { readChordProPdfPayloadToken } from '../../lib/chordproPdfPayloadStore';
+
+export const prerender = false;
+
+const token = Astro.url.searchParams.get('token')?.trim() || '';
+const payload = token ? await readChordProPdfPayloadToken(token) : null;
+
+if (!payload) {
+  Astro.response.status = 404;
+}
+---
+
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{payload?.title ? `${payload.title} PDF` : 'ChordPro PDF'}</title>
+  </head>
+  <body>
+    {payload ? (
+      <ChordProPdfDocument client:load payload={payload} />
+    ) : (
+      <div class="pdf-error-state">
+        <h1>PDF no disponible</h1>
+        <p>El documento solicitado ya no existe o no pudo prepararse.</p>
+      </div>
+    )}
+  </body>
+</html>
+
+<style is:global>
+  @page {
+    size: 8.5in 11in;
+    margin: 0;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100%;
+    background: #ffffff;
+    color: #000000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    overflow: hidden;
+  }
+
+  body {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+  }
+
+  .pdf-error-state {
+    min-height: 100vh;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    text-align: center;
+    font-family: var(--font-ui, "Segoe UI", Arial, sans-serif);
+  }
+</style>

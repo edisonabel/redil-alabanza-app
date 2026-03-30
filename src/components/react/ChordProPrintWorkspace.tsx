@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import ChordProPreview from './ChordProPreview';
 import type {
   SongSheetDensity,
@@ -9,6 +9,7 @@ import type {
 import { parseChordProSemantic } from '../../utils/parseChordProSemantic';
 import { resolveSongSheetSemanticBlocks } from '../../utils/resolveSongSheetSemanticBlocks';
 import { inferChordProTone } from '../../utils/inferChordProTone';
+import { buildChordProPdfFileName } from '../../lib/chordproPdfPayload';
 
 type ChordProPrintWorkspaceProps = {
   initialChordProText: string;
@@ -166,6 +167,8 @@ export default function ChordProPrintWorkspace({
   const [targetTone, setTargetTone] = useState(originalTone || '');
   const [selectedCapo, setSelectedCapo] = useState(0);
   const [previewZoom, setPreviewZoom] = useState(1);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const pdfFeedbackTimeoutRef = useRef<number | null>(null);
   const [sheetOptions, setSheetOptions] = useState<Required<SongSheetLayoutOptions>>({
     renderMode: 'chords-lyrics',
     columnCount: 2,
@@ -182,6 +185,14 @@ export default function ChordProPrintWorkspace({
     const safeArtist = artist.trim();
     document.title = safeArtist ? `${safeTitle} - ${safeArtist}` : safeTitle;
   }, [artist, title]);
+
+  useEffect(() => {
+    return () => {
+      if (pdfFeedbackTimeoutRef.current !== null && typeof window !== 'undefined') {
+        window.clearTimeout(pdfFeedbackTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -286,12 +297,62 @@ export default function ChordProPrintWorkspace({
   };
 
   const handlePrint = () => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
-    window.requestAnimationFrame(() => {
-      window.focus();
-      window.print();
-    });
+    const payload = {
+      chordProText: transposedChordProText,
+      title: title.trim(),
+      artist: artist.trim(),
+      metadata: {
+        tone: String(previewMetadata.tone ?? ''),
+        capo: String(previewMetadata.capo ?? ''),
+        tempo: String(previewMetadata.tempo ?? ''),
+        time: String(previewMetadata.time ?? ''),
+      },
+      sheetOptions,
+      fileName: `${buildChordProPdfFileName(title, artist)}.pdf`,
+    };
+
+    const targetName = 'chordpro-pdf-preview';
+    const previewWindow = window.open('', targetName);
+    if (previewWindow && !previewWindow.closed) {
+      previewWindow.document.title = 'Generando PDF...';
+      previewWindow.document.body.innerHTML = `
+        <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:Segoe UI,Arial,sans-serif;background:#ffffff;color:#111827;">
+          <div style="text-align:center;max-width:28rem;padding:2rem;">
+            <p style="margin:0 0 0.75rem;font-size:0.8rem;font-weight:800;letter-spacing:0.18em;text-transform:uppercase;color:#64748b;">ChordPro</p>
+            <h1 style="margin:0 0 0.5rem;font-size:1.5rem;font-weight:900;">Generando PDF</h1>
+            <p style="margin:0;font-size:0.95rem;line-height:1.55;color:#475569;">Estamos preparando el archivo exacto para imprimir.</p>
+          </div>
+        </div>
+      `;
+    }
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/api/chordpro-print-pdf';
+    form.target = previewWindow && !previewWindow.closed ? targetName : '_self';
+    form.style.display = 'none';
+
+    const payloadField = document.createElement('input');
+    payloadField.type = 'hidden';
+    payloadField.name = 'payload';
+    payloadField.value = JSON.stringify(payload);
+    form.appendChild(payloadField);
+
+    document.body.appendChild(form);
+
+    setIsGeneratingPdf(true);
+    if (pdfFeedbackTimeoutRef.current !== null) {
+      window.clearTimeout(pdfFeedbackTimeoutRef.current);
+    }
+    pdfFeedbackTimeoutRef.current = window.setTimeout(() => {
+      setIsGeneratingPdf(false);
+      pdfFeedbackTimeoutRef.current = null;
+    }, 4000);
+
+    form.submit();
+    form.remove();
   };
 
   const zoomLabel = `${Math.round(previewZoom * 100)}%`;
@@ -538,14 +599,16 @@ export default function ChordProPrintWorkspace({
         <button
           type="button"
           onClick={handlePrint}
+          disabled={isGeneratingPdf}
           className={[
             'mt-6 inline-flex w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-black transition',
             isDarkTheme
               ? 'bg-sky-500 text-slate-950 hover:bg-sky-400'
               : 'bg-sky-500 text-white shadow-[0_18px_32px_rgba(14,165,233,0.24)] hover:bg-sky-600',
+            isGeneratingPdf ? 'cursor-wait opacity-90' : '',
           ].join(' ')}
         >
-          Imprimir PDF
+          {isGeneratingPdf ? 'Generando PDF...' : 'Imprimir PDF'}
         </button>
       </aside>
 
