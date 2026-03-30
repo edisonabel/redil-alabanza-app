@@ -34,12 +34,6 @@ const getInternalFunctionSecret = () =>
   (Deno.env.get("NOTIFICATION_FUNCTION_SECRET") ?? "").trim() ||
   (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
 
-const getFunctionAuthKey = () =>
-  (Deno.env.get("SUPABASE_ANON_KEY") ?? "").trim() ||
-  (Deno.env.get("PUBLIC_SUPABASE_ANON_KEY") ?? "").trim() ||
-  (Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "").trim() ||
-  (Deno.env.get("PUBLIC_SUPABASE_PUBLISHABLE_KEY") ?? "").trim();
-
 const jsonResponse = (payload: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify({ executed: true, ...payload }), {
     status,
@@ -129,12 +123,6 @@ serve(async (req) => {
         headers: {
           "Content-Type": "application/json",
           [INTERNAL_SECRET_HEADER]: getInternalFunctionSecret(),
-          ...(getFunctionAuthKey()
-            ? {
-                apikey: getFunctionAuthKey(),
-                Authorization: `Bearer ${getFunctionAuthKey()}`,
-              }
-            : {}),
         },
         body: JSON.stringify({
           perfil_id: perfilId,
