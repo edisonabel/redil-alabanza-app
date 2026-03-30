@@ -1,12 +1,5 @@
 import React from 'react';
-import {
-  Document,
-  Font,
-  Page,
-  StyleSheet,
-  Text,
-  View,
-} from '@react-pdf/renderer';
+import { Document, Font, Page, StyleSheet, Text, View } from '@react-pdf/renderer';
 import type { ChordProPdfPayload } from '../../lib/chordproPdfPayload';
 import {
   distributePdfBlocks,
@@ -18,9 +11,9 @@ import type { PdfPreparedBlock } from '../../lib/chordproPdfLayout';
 Font.register({
   family: 'Adineue',
   fonts: [
-    { src: '/fonts/redil/adineuePRO-Light.woff2', fontWeight: 300 },
-    { src: '/fonts/redil/adineuePRO-Regular.woff2', fontWeight: 400 },
-    { src: '/fonts/redil/adineuePRO-Bold.woff2', fontWeight: 700 },
+    { src: '/fonts/redil/adineue-PRO-KZ-Light.ttf', fontWeight: 300 },
+    { src: '/fonts/redil/adineuePRO-Regular.ttf', fontWeight: 400 },
+    { src: '/fonts/redil/adineue-PRO-Bold.ttf', fontWeight: 700 },
   ],
 });
 
@@ -31,7 +24,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     backgroundColor: '#ffffff',
     color: '#111827',
-    fontFamily: 'Courier',
   },
   header: {
     flexDirection: 'row',
@@ -41,19 +33,17 @@ const styles = StyleSheet.create({
   },
   titleWrap: {
     flex: 1,
-    minWidth: 0,
   },
   title: {
     fontFamily: 'Adineue',
     fontSize: 19,
     lineHeight: 1.02,
     fontWeight: 700,
-    letterSpacing: -0.4,
   },
   artist: {
     marginTop: 3,
     fontFamily: 'Adineue',
-    fontSize: 7,
+    fontSize: 9,
     color: '#6B7280',
   },
   metaGrid: {
@@ -68,14 +58,12 @@ const styles = StyleSheet.create({
   metaLabel: {
     fontFamily: 'Adineue',
     fontSize: 7,
-    fontWeight: 700,
-    textTransform: 'uppercase',
     color: '#6B7280',
+    fontWeight: 700,
   },
   metaValue: {
-    fontFamily: 'Courier',
-    fontSize: 7,
-    fontWeight: 700,
+    fontFamily: 'Courier-Bold',
+    fontSize: 8,
     color: '#111827',
   },
   songMap: {
@@ -86,20 +74,20 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   songMapPill: {
-    borderRadius: 999,
-    paddingHorizontal: 7,
+    borderRadius: 6,
+    paddingHorizontal: 6,
     paddingVertical: 3,
+    alignSelf: 'flex-start',
   },
   songMapLabel: {
     fontFamily: 'Adineue',
     fontSize: 7,
-    fontWeight: 700,
     color: '#ffffff',
+    fontWeight: 700,
   },
   columns: {
     flexDirection: 'row',
     gap: 12,
-    minHeight: 0,
   },
   column: {
     flex: 1,
@@ -108,7 +96,7 @@ const styles = StyleSheet.create({
   collapsedSection: {
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    borderRadius: 14,
+    borderRadius: 8,
     paddingHorizontal: 9,
     paddingVertical: 7,
     flexDirection: 'row',
@@ -122,35 +110,29 @@ const styles = StyleSheet.create({
     fontWeight: 700,
   },
   sectionWrap: {
-    position: 'relative',
     borderWidth: 1,
     borderColor: '#D4D4D8',
-    borderRadius: 16,
-    paddingHorizontal: 10,
-    paddingBottom: 10,
-    paddingTop: 14,
+    borderRadius: 8,
+    padding: 10,
     backgroundColor: '#ffffff',
   },
   sectionHeader: {
-    position: 'absolute',
-    top: -8,
-    left: 8,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 3,
-    backgroundColor: '#ffffff',
+    marginBottom: 8,
   },
   sectionPill: {
-    borderRadius: 999,
+    borderRadius: 6,
     paddingHorizontal: 5,
     paddingVertical: 3,
+    alignSelf: 'flex-start',
   },
   sectionPillLabel: {
     fontFamily: 'Adineue',
     fontSize: 7,
-    fontWeight: 700,
     color: '#ffffff',
+    fontWeight: 700,
   },
   sectionTitle: {
     fontFamily: 'Adineue',
@@ -176,10 +158,10 @@ const styles = StyleSheet.create({
 });
 
 const buildMetaItems = (payload: ChordProPdfPayload) => [
-  { label: 'Tono', value: String(payload.metadata.tone || '—') || '—' },
-  { label: 'Capo', value: String(payload.metadata.capo || '—') || '—' },
-  { label: 'Tempo', value: String(payload.metadata.tempo || '—') || '—' },
-  { label: 'Time', value: String(payload.metadata.time || '—') || '—' },
+  { label: 'Tono', value: String(payload.metadata.tone || '--') || '--' },
+  { label: 'Capo', value: String(payload.metadata.capo || '--') || '--' },
+  { label: 'Tempo', value: String(payload.metadata.tempo || '--') || '--' },
+  { label: 'Time', value: String(payload.metadata.time || '--') || '--' },
 ];
 
 const renderLine = (
