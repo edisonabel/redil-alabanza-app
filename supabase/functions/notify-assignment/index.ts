@@ -8,6 +8,7 @@ interface WebhookPayload {
 }
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
+const INTERNAL_SECRET_HEADER = "x-notification-secret";
 
 const isExpiredPushError = (error: unknown) => {
   const statusCode = typeof error === "object" && error && "statusCode" in error ? Number(error.statusCode) : NaN;
@@ -29,6 +30,36 @@ const configureWebPush = () => {
   return true;
 };
 
+const getInternalFunctionSecret = () =>
+  (Deno.env.get("NOTIFICATION_FUNCTION_SECRET") ?? "").trim() ||
+  (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
+
+const jsonResponse = (payload: Record<string, unknown>, status = 200) =>
+  new Response(JSON.stringify({ executed: true, ...payload }), {
+    status,
+    headers: JSON_HEADERS,
+  });
+
+const authorizeInternalRequest = (req: Request) => {
+  const expectedSecret = getInternalFunctionSecret();
+  if (!expectedSecret) {
+    return jsonResponse(
+      {
+        error: "Missing internal notification secret",
+        required: ["NOTIFICATION_FUNCTION_SECRET or SUPABASE_SERVICE_ROLE_KEY"],
+      },
+      500,
+    );
+  }
+
+  const receivedSecret = (req.headers.get(INTERNAL_SECRET_HEADER) ?? "").trim();
+  if (!receivedSecret || receivedSecret !== expectedSecret) {
+    return jsonResponse({ error: "Unauthorized internal request" }, 401);
+  }
+
+  return null;
+};
+
 const writeAudit = async (
   supabase: ReturnType<typeof createClient>,
   row: Record<string, unknown>,
@@ -46,30 +77,26 @@ const writeAudit = async (
 serve(async (req) => {
   try {
     if (req.method !== "POST") {
-      return new Response(JSON.stringify({ error: "Method not allowed" }), {
-        status: 405,
-        headers: JSON_HEADERS,
-      });
+      return jsonResponse({ error: "Method not allowed" }, 405);
+    }
+
+    const unauthorizedResponse = authorizeInternalRequest(req);
+    if (unauthorizedResponse) {
+      return unauthorizedResponse;
     }
 
     const payload = (await req.json()) as WebhookPayload;
     const perfilId = String(payload?.perfil_id || "").trim();
 
     if (!perfilId) {
-      return new Response(JSON.stringify({ error: "perfil_id is required" }), {
-        status: 400,
-        headers: JSON_HEADERS,
-      });
+      return jsonResponse({ error: "perfil_id is required" }, 400);
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
     if (!supabaseUrl || !supabaseServiceKey) {
-      return new Response(JSON.stringify({ error: "Missing Supabase env vars" }), {
-        status: 500,
-        headers: JSON_HEADERS,
-      });
+      return jsonResponse({ error: "Missing Supabase env vars" }, 500);
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -81,10 +108,7 @@ serve(async (req) => {
       .maybeSingle();
 
     if (musicoError || !musico) {
-      return new Response(JSON.stringify({ error: "Musico no encontrado" }), {
-        status: 404,
-        headers: JSON_HEADERS,
-      });
+      return jsonResponse({ error: "Musico no encontrado" }, 404);
     }
 
     const title = "Nueva asignacion de servicio";
@@ -98,7 +122,7 @@ serve(async (req) => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${supabaseServiceKey}`,
+          [INTERNAL_SECRET_HEADER]: getInternalFunctionSecret(),
         },
         body: JSON.stringify({
           perfil_id: perfilId,
@@ -253,8 +277,8 @@ serve(async (req) => {
       });
     }
 
-    return new Response(
-      JSON.stringify({
+    return jsonResponse(
+      {
         success: true,
         perfil_id: perfilId,
         email: {
@@ -262,21 +286,15 @@ serve(async (req) => {
           error: emailError,
         },
         push,
-      }),
-      {
-        status: 200,
-        headers: JSON_HEADERS,
       },
+      200,
     );
   } catch (error) {
-    return new Response(
-      JSON.stringify({
-        error: error instanceof Error ? error.message : String(error),
-      }),
+    return jsonResponse(
       {
-        status: 400,
-        headers: JSON_HEADERS,
+        error: error instanceof Error ? error.message : String(error),
       },
+      400,
     );
   }
 });

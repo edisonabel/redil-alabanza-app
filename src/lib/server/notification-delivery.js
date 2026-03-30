@@ -14,6 +14,7 @@ const readEnv = (...keys) => {
 const rawSupabaseUrl = readEnv('SUPABASE_URL', 'PUBLIC_SUPABASE_URL');
 const supabaseUrl = rawSupabaseUrl.replace(/\/$/, '');
 const supabaseServiceRoleKey = readEnv('SUPABASE_SERVICE_ROLE_KEY');
+const notificationFunctionSecret = readEnv('NOTIFICATION_FUNCTION_SECRET') || supabaseServiceRoleKey;
 const resendApiKey = readEnv('RESEND_API_KEY');
 const resendFrom = readEnv('RESEND_FROM') || 'Worship App <onboarding@resend.dev>';
 const siteUrl = readEnv('PUBLIC_SITE_URL', 'SITE_URL', 'URL') || 'https://alabanzaredilestadio.com';
@@ -172,6 +173,25 @@ const ensureWebPushConfigured = () => {
   return true;
 };
 
+const looksLikeJwt = (value = '') => String(value || '').split('.').length === 3;
+
+const buildInternalFunctionHeaders = () => {
+  if (!notificationFunctionSecret) {
+    throw new Error('Falta el secreto interno para invocar funciones de notificaciones de Supabase.');
+  }
+
+  const headers = {
+    'content-type': 'application/json',
+    'x-notification-secret': notificationFunctionSecret,
+  };
+
+  if (looksLikeJwt(supabaseServiceRoleKey)) {
+    headers.authorization = `Bearer ${supabaseServiceRoleKey}`;
+  }
+
+  return headers;
+};
+
 export async function listNotificationRecipients({ excludeUserIds = [] } = {}) {
   const client = getServiceRoleClient();
   const excluded = new Set(
@@ -253,10 +273,7 @@ const sendEmailWithSupabaseFunction = async ({ perfilId, title, body, source, ur
 
   const response = await fetch(`${supabaseUrl}/functions/v1/send-notification-email`, {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${supabaseServiceRoleKey}`,
-    },
+    headers: buildInternalFunctionHeaders(),
     body: JSON.stringify({
       perfil_id: perfilId,
       titulo: title,
@@ -267,13 +284,28 @@ const sendEmailWithSupabaseFunction = async ({ perfilId, title, body, source, ur
     }),
   });
 
-  const jsonPayload = await response.json().catch(() => null);
+  const rawPayload = await response.text();
+  let jsonPayload = null;
+
+  if (rawPayload) {
+    try {
+      jsonPayload = JSON.parse(rawPayload);
+    } catch {
+      jsonPayload = null;
+    }
+  }
+
   if (!response.ok) {
-    throw new Error(
+    const error = new Error(
       jsonPayload?.error ||
       jsonPayload?.message ||
+      rawPayload ||
       `Supabase email function responded ${response.status}`,
     );
+    error.status = response.status;
+    error.functionHandled = Boolean(jsonPayload?.executed);
+    error.functionAudited = Boolean(jsonPayload?.audited);
+    throw error;
   }
 
   return {
@@ -405,14 +437,20 @@ export async function sendEmailNotifications({
           recipient,
           provider: resendApiKey ? 'resend-api' : 'supabase-edge-function',
           errorMessage: error instanceof Error ? error.message : String(error || 'email-send-failed'),
+          functionHandled: Boolean(error?.functionHandled),
+          functionAudited: Boolean(error?.functionAudited),
         };
       }
     }),
   );
 
-  if (resendApiKey) {
+  const auditResults = resendApiKey
+    ? results
+    : results.filter((result) => result.status !== 'sent' && !result.functionAudited);
+
+  if (auditResults.length > 0) {
     await writeDeliveryAuditRows(
-      results.map((result) => buildAuditRow({
+      auditResults.map((result) => buildAuditRow({
         channel: 'email',
         status: result.status,
         recipient: result.recipient,

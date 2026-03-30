@@ -21,6 +21,37 @@ type WebhookPayload = {
 } & NotificationRow;
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
+const INTERNAL_SECRET_HEADER = "x-notification-secret";
+
+const getInternalFunctionSecret = () =>
+  (Deno.env.get("NOTIFICATION_FUNCTION_SECRET") ?? "").trim() ||
+  (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
+
+const jsonResponse = (payload: Record<string, unknown>, status = 200) =>
+  new Response(JSON.stringify({ executed: true, ...payload }), {
+    status,
+    headers: JSON_HEADERS,
+  });
+
+const authorizeInternalRequest = (req: Request) => {
+  const expectedSecret = getInternalFunctionSecret();
+  if (!expectedSecret) {
+    return jsonResponse(
+      {
+        error: "Missing internal notification secret",
+        required: ["NOTIFICATION_FUNCTION_SECRET or SUPABASE_SERVICE_ROLE_KEY"],
+      },
+      500,
+    );
+  }
+
+  const receivedSecret = (req.headers.get(INTERNAL_SECRET_HEADER) ?? "").trim();
+  if (!receivedSecret || receivedSecret !== expectedSecret) {
+    return jsonResponse({ error: "Unauthorized internal request" }, 401);
+  }
+
+  return null;
+};
 
 const getNotificationFromPayload = (payload: WebhookPayload): NotificationRow => {
   if (payload?.record && typeof payload.record === "object") return payload.record;
@@ -114,10 +145,12 @@ const writeAudit = async (
 
 serve(async (req) => {
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: JSON_HEADERS,
-    });
+    return jsonResponse({ error: "Method not allowed" }, 405);
+  }
+
+  const unauthorizedResponse = authorizeInternalRequest(req);
+  if (unauthorizedResponse) {
+    return unauthorizedResponse;
   }
 
   try {
@@ -126,12 +159,12 @@ serve(async (req) => {
     const resendApiKey = Deno.env.get("RESEND_API_KEY") ?? "";
 
     if (!supabaseUrl || !supabaseServiceRoleKey || !resendApiKey) {
-      return new Response(
-        JSON.stringify({
+      return jsonResponse(
+        {
           error: "Missing required env secrets",
           required: ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "RESEND_API_KEY"],
-        }),
-        { status: 500, headers: JSON_HEADERS },
+        },
+        500,
       );
     }
 
@@ -146,12 +179,12 @@ serve(async (req) => {
     const ctaLabel = notification?.cta_label?.trim() ?? "Abrir app";
 
     if (!perfilId || !titulo || !contenido) {
-      return new Response(
-        JSON.stringify({
+      return jsonResponse(
+        {
           error: "Invalid payload: perfil_id, titulo and contenido are required",
           received: { perfil_id: perfilId, titulo, contenido },
-        }),
-        { status: 400, headers: JSON_HEADERS },
+        },
+        400,
       );
     }
 
@@ -165,10 +198,7 @@ serve(async (req) => {
 
     if (perfilError) {
       console.error("Error fetching perfil:", perfilError);
-      return new Response(JSON.stringify({ error: "Error fetching perfil" }), {
-        status: 500,
-        headers: JSON_HEADERS,
-      });
+      return jsonResponse({ error: "Error fetching perfil" }, 500);
     }
 
     const email = (perfil?.email ?? "").trim();
@@ -190,13 +220,14 @@ serve(async (req) => {
         },
       });
 
-      return new Response(
-        JSON.stringify({
+      return jsonResponse(
+        {
           error: "Perfil has no valid email assigned",
           perfil_id: perfilId,
           email,
-        }),
-        { status: 422, headers: JSON_HEADERS },
+          audited: true,
+        },
+        422,
       );
     }
 
@@ -231,10 +262,7 @@ serve(async (req) => {
           cta_label: ctaLabel,
         },
       });
-      return new Response(JSON.stringify({ error: "Failed to send email", details: error }), {
-        status: 502,
-        headers: JSON_HEADERS,
-      });
+      return jsonResponse({ error: "Failed to send email", details: error, audited: true }, 502);
     }
 
     await writeAudit(supabase, {
@@ -254,24 +282,25 @@ serve(async (req) => {
       },
     });
 
-    return new Response(
-      JSON.stringify({
+    return jsonResponse(
+      {
         ok: true,
+        audited: true,
         notification_id: notification?.id ?? null,
         perfil_id: perfilId,
         sent_to: email,
         resend_id: data?.id ?? null,
-      }),
-      { status: 200, headers: JSON_HEADERS },
+      },
+      200,
     );
   } catch (err) {
     console.error("Unhandled send-notification-email error:", err);
-    return new Response(
-      JSON.stringify({
+    return jsonResponse(
+      {
         error: "Unhandled error",
         message: err instanceof Error ? err.message : String(err),
-      }),
-      { status: 500, headers: JSON_HEADERS },
+      },
+      500,
     );
   }
 });

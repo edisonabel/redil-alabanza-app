@@ -1,0 +1,5 @@
+[functions.send-notification-email]
+verify_jwt = false
+
+[functions.notify-assignment]
+verify_jwt = false
