@@ -111,6 +111,54 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         alert('La asignación se guardó, pero falló el envío automático de correo o push.');
     };
 
+    const loadBlockedProfilesForEvent = async (profileIds = []) => {
+        const uniqueProfileIds = [...new Set(
+            (profileIds || [])
+                .map((value) => String(value || '').trim())
+                .filter(Boolean)
+        )];
+
+        if (!uniqueProfileIds.length || !evFechaStr) {
+            return { blockedIds: new Set(), blockedNames: [], error: null };
+        }
+
+        const { data: absencesData, error: absencesError } = await supabase
+            .from('ausencias')
+            .select('perfil_id')
+            .in('perfil_id', uniqueProfileIds)
+            .lte('fecha_inicio', evFechaStr)
+            .gte('fecha_fin', evFechaStr);
+
+        if (absencesError) {
+            return { blockedIds: new Set(), blockedNames: [], error: absencesError };
+        }
+
+        const blockedIds = new Set(
+            (absencesData || [])
+                .map((row) => String(row?.perfil_id || '').trim())
+                .filter(Boolean)
+        );
+
+        if (blockedIds.size === 0) {
+            return { blockedIds, blockedNames: [], error: null };
+        }
+
+        const { data: profilesData, error: profilesError } = await supabase
+            .from('perfiles')
+            .select('id, nombre')
+            .in('id', [...blockedIds]);
+
+        const blockedNames = (profilesData || [])
+            .map((profile) => String(profile?.nombre || '').trim())
+            .filter(Boolean);
+
+        return {
+            blockedIds,
+            blockedNames,
+            error: profilesError || null,
+        };
+    };
+
     useEffect(() => {
         if (!dbData?.asignaciones || effectiveRoles.length === 0) return;
         setAsignaciones(
@@ -218,6 +266,13 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         const voiceRoleIds = effectiveRoles
             .filter((rol) => String(rol.codigo || '').startsWith('voz_'))
             .map((rol) => rol.id);
+        const blockedProfile = pickerList.find((profile) => profile.id === perfilId && profile.ausente);
+
+        if (blockedProfile) {
+            alert(`${blockedProfile.nombre} tiene una ausencia registrada para la fecha de este evento y no puede ser asignado.`);
+            setPickerLoading(false);
+            return;
+        }
 
         if (isVoicePool) {
             const existingVoiceAssignments = normalizedAssignments.filter((a) => voiceRoleIds.includes(a.rol_id));
@@ -356,13 +411,30 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                 return;
             }
 
-            await supabase.from('asignaciones').delete().eq('evento_id', evId);
+            const { blockedIds, blockedNames, error: blockedError } = await loadBlockedProfilesForEvent(
+                blueprint.map((item) => item.perfil_id)
+            );
 
-            const bulkPayload = blueprint.map(item => ({
+            if (blockedError) throw blockedError;
+
+            const bulkPayload = blueprint
+                .filter((item) => !blockedIds.has(String(item?.perfil_id || '').trim()))
+                .map(item => ({
                 evento_id: evId,
                 perfil_id: item.perfil_id,
                 rol_id: item.rol_maestro
-            }));
+                }));
+
+            if (bulkPayload.length === 0) {
+                const blockedLabel = blockedNames.length > 0
+                    ? blockedNames.join(', ')
+                    : 'las personas de esta plantilla';
+                alert(`No se puede aplicar esta plantilla porque ${blockedLabel} tiene ausencias registradas para la fecha del evento.`);
+                setEquipoLoading(false);
+                return;
+            }
+
+            await supabase.from('asignaciones').delete().eq('evento_id', evId);
 
             const currentAssignmentKeys = new Set(
                 normalizedAssignments
@@ -390,7 +462,14 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                 notifyAssignmentRecipients({ eventoId: evId, perfilIds: newlyAssignedPerfilIds })
             ]);
             warnNotificationFailure(notifyResult);
-            alert('Equipo cargado correctamente.');
+            if (blockedIds.size > 0) {
+                const blockedLabel = blockedNames.length > 0
+                    ? ` Se omitieron por ausencia: ${blockedNames.join(', ')}.`
+                    : ' Se omitieron integrantes con ausencia registrada.';
+                alert(`Equipo cargado correctamente.${blockedLabel}`);
+            } else {
+                alert('Equipo cargado correctamente.');
+            }
         } catch (err) {
             alert('Error aplicando equipo: ' + err.message);
         }
@@ -663,4 +742,3 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         </div>
     );
 }
-

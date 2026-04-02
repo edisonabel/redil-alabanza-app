@@ -102,7 +102,7 @@ const userId = Astro.locals.user?.id ?? null;
  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-orange-500"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
  Mis Ausencias / Fechas Bloqueadas
  </h3>
- <p class="text-xs text-content-muted mb-6">Informa a tu l&iacute;der de alabanza los d&iacute;as que no estar&aacute;s disponible (viajes, trabajo, etc.).</p>
+ <p class="text-xs text-content-muted mb-4">Registra los dias en los que no estaras disponible. Debes bloquear con minimo 7 dias de anticipacion.</p>
 
  <form id="form-ausencia" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8 bg-background p-4 rounded-xl border border-border opacity-50 pointer-events-none transition-opacity">
  <div class="space-y-1.5">
@@ -121,6 +121,7 @@ const userId = Astro.locals.user?.id ?? null;
  </div>
  </div>
  </form>
+ <p class="text-[11px] text-content-muted mb-6">Si ya estabas asignado en ese rango, el sistema te retirara automaticamente y avisara al liderazgo del servicio para buscar reemplazo.</p>
 
  <div class="space-y-3" id="ausencias-list">
  <div class="py-6 text-center border-2 border-dashed border-border rounded-xl">
@@ -638,6 +639,32 @@ const avatarPreviewText = document.getElementById('avatar-preview-text');
  const inputInicio = document.getElementById('ausencia-inicio') as HTMLInputElement;
  const inputFin = document.getElementById('ausencia-fin') as HTMLInputElement;
  const inputMotivo = document.getElementById('ausencia-motivo') as HTMLInputElement;
+ const absenceDateFormatter = new Intl.DateTimeFormat('en-CA', {
+ timeZone: 'America/Bogota',
+ year: 'numeric',
+ month: '2-digit',
+ day: '2-digit',
+ });
+ const addDaysToDateOnly = (dateOnly: string, amount: number) => {
+ const anchor = new Date(`${dateOnly}T12:00:00Z`);
+ anchor.setUTCDate(anchor.getUTCDate() + amount);
+ return anchor.toISOString().slice(0, 10);
+ };
+ const absenceMinStartDate = addDaysToDateOnly(absenceDateFormatter.format(new Date()), 7);
+ const syncAbsenceDateConstraints = () => {
+ const nextMinEndDate = inputInicio?.value && inputInicio.value > absenceMinStartDate
+ ? inputInicio.value
+ : absenceMinStartDate;
+ if (inputInicio) inputInicio.min = absenceMinStartDate;
+ if (inputFin) inputFin.min = nextMinEndDate;
+ if (inputFin?.value && inputFin.value < nextMinEndDate) {
+ inputFin.value = nextMinEndDate;
+ }
+ };
+
+ syncAbsenceDateConstraints();
+ on(inputInicio, 'input', syncAbsenceDateConstraints);
+ on(inputInicio, 'change', syncAbsenceDateConstraints);
 
  on(formAusencia, 'submit', async (e: Event) => {
  e.preventDefault();
@@ -652,20 +679,49 @@ const avatarPreviewText = document.getElementById('avatar-preview-text');
  const userId = currentUserId || auth.user?.id;
  if (!userId) throw new Error("No session");
 
- const { error } = await supabase
- .from('ausencias')
- .insert({
- perfil_id: userId,
+ const response = await fetch('/api/absences', {
+ method: 'POST',
+ credentials: 'same-origin',
+ headers: {
+ 'content-type': 'application/json'
+ },
+ body: JSON.stringify({
  fecha_inicio: inputInicio.value,
  fecha_fin: inputFin.value,
  motivo: inputMotivo.value || null
+ })
  });
+ const payload = await response.json().catch(() => ({}));
+ if (!response.ok || payload?.ok === false) {
+ throw new Error(payload?.error || 'No se pudo registrar la ausencia.');
+ }
 
- if (error) throw error;
+ const result = payload?.result || {};
+ const summaryMessages = ['Ausencia registrada correctamente.'];
+ const removedAssignments = Number(result?.removedAssignments || 0);
+ const leadersNotified = Number(result?.leadersNotified || 0);
+ const eventsWithoutLeader = Number(result?.eventsWithoutLeader || 0);
+
+ if (removedAssignments > 0) {
+ const label = removedAssignments === 1 ? 'servicio' : 'servicios';
+ summaryMessages.push(`Te retiramos de ${removedAssignments} ${label}.`);
+ }
+
+ if (leadersNotified > 0) {
+ const label = leadersNotified === 1 ? 'lider' : 'lideres';
+ summaryMessages.push(`Avisamos a ${leadersNotified} ${label}.`);
+ }
+
+ if (eventsWithoutLeader > 0) {
+ const label = eventsWithoutLeader === 1 ? 'servicio' : 'servicios';
+ summaryMessages.push(`Hay ${eventsWithoutLeader} ${label} sin liderazgo asignado para avisar.`);
+ }
+
+ alert(summaryMessages.join(' '));
  
  // Recargar pÃ¡gina para actualizar lista
  window.location.reload();
- } catch (err) {
+} catch (err) {
  console.error('Error insertando ausencia:', err);
  alert("Hubo un error al registrar la ausencia. Verifica las fechas.");
  btnSaveAusencia.textContent = originalBtnText;
@@ -885,7 +941,7 @@ const avatarPreviewText = document.getElementById('avatar-preview-text');
  .from('ausencias')
 	.select('id, fecha_inicio, fecha_fin, motivo')
  .eq('perfil_id', currentUserId)
- .gte('fecha_fin', new Date().toISOString().split('T')[0])
+ .gte('fecha_fin', absenceDateFormatter.format(new Date()))
  .order('fecha_inicio', { ascending: true });
 
  if (ausenciasListEl && !ausenciasError) {
