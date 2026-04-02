@@ -1,4 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
+import {
+  enqueueAssignmentNotifications,
+  getAssignmentNotificationDelayMinutes,
+} from '../../lib/server/assignment-notification-queue.js';
 
 export const prerender = false;
 
@@ -19,10 +23,6 @@ const supabaseServiceRoleKey =
   import.meta.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   '';
-const notificationFunctionSecret =
-  import.meta.env.NOTIFICATION_FUNCTION_SECRET ||
-  process.env.NOTIFICATION_FUNCTION_SECRET ||
-  supabaseServiceRoleKey;
 
 const authClient = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
@@ -51,7 +51,7 @@ const getErrorMessage = (error) => {
 
 const isUuid = (value) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    String(value || '').trim()
+    String(value || '').trim(),
   );
 
 const normalizePerfilIds = (payload) => {
@@ -95,47 +95,17 @@ const canManageAssignments = async ({ userId, eventoId }) => {
   return (roles || []).some((role) => moderatorRoleCodes.has(String(role?.codigo || '')));
 };
 
-const invokeNotifyAssignment = async (perfilId) => {
-  const response = await fetch(`${supabaseUrl}/functions/v1/notify-assignment`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-notification-secret': notificationFunctionSecret,
-    },
-    body: JSON.stringify({
-      perfil_id: perfilId,
-    }),
-  });
-
-  const rawText = await response.text();
-  let parsedBody = null;
-
-  if (rawText) {
-    try {
-      parsedBody = JSON.parse(rawText);
-    } catch {
-      parsedBody = { raw: rawText };
-    }
-  }
-
-  return {
-    ok: response.ok,
-    status: response.status,
-    body: parsedBody,
-  };
-};
-
 export async function POST({ request, cookies }) {
   try {
-    if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey || !notificationFunctionSecret) {
+    if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
       return new Response(
         JSON.stringify({
-          error: 'Faltan variables de entorno para procesar notificaciones de asignación.',
+          error: 'Faltan variables de entorno para programar notificaciones de asignacion.',
         }),
         {
           status: 500,
           headers: jsonHeaders,
-        }
+        },
       );
     }
 
@@ -153,7 +123,7 @@ export async function POST({ request, cookies }) {
     } = await authClient.auth.getUser(token);
 
     if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Sesión inválida.' }), {
+      return new Response(JSON.stringify({ error: 'Sesion invalida.' }), {
         status: 401,
         headers: jsonHeaders,
       });
@@ -164,7 +134,7 @@ export async function POST({ request, cookies }) {
     const perfilIds = normalizePerfilIds(payload);
 
     if (!isUuid(eventoId)) {
-      return new Response(JSON.stringify({ error: 'evento_id es obligatorio y debe ser un UUID válido.' }), {
+      return new Response(JSON.stringify({ error: 'evento_id es obligatorio y debe ser un UUID valido.' }), {
         status: 400,
         headers: jsonHeaders,
       });
@@ -172,57 +142,40 @@ export async function POST({ request, cookies }) {
 
     if (perfilIds.length === 0 || perfilIds.some((perfilId) => !isUuid(perfilId))) {
       return new Response(
-        JSON.stringify({ error: 'Debes enviar al menos un perfil_id válido.' }),
+        JSON.stringify({ error: 'Debes enviar al menos un perfil_id valido.' }),
         {
           status: 400,
           headers: jsonHeaders,
-        }
+        },
       );
     }
 
     const allowed = await canManageAssignments({ userId: user.id, eventoId });
     if (!allowed) {
-      return new Response(JSON.stringify({ error: 'No tienes permisos para notificar asignaciones en este evento.' }), {
+      return new Response(JSON.stringify({ error: 'No tienes permisos para programar asignaciones en este evento.' }), {
         status: 403,
         headers: jsonHeaders,
       });
     }
 
-    const settled = await Promise.allSettled(perfilIds.map((perfilId) => invokeNotifyAssignment(perfilId)));
-
-    const results = settled.map((result, index) => {
-      const perfilId = perfilIds[index];
-      if (result.status === 'fulfilled') {
-        return {
-          perfil_id: perfilId,
-          ok: result.value.ok,
-          status: result.value.status,
-          body: result.value.body,
-        };
-      }
-
-      return {
-        perfil_id: perfilId,
-        ok: false,
-        status: 500,
-        error: getErrorMessage(result.reason),
-      };
+    const queueResult = await enqueueAssignmentNotifications({
+      eventId: eventoId,
+      profileIds: perfilIds,
     });
-
-    const failed = results.filter((result) => !result.ok);
 
     return new Response(
       JSON.stringify({
-        ok: failed.length === 0,
+        ok: true,
         requested: perfilIds.length,
-        delivered: results.length - failed.length,
-        failed: failed.length,
-        results,
+        queued: queueResult.queued,
+        delay_minutes: getAssignmentNotificationDelayMinutes(),
+        scheduled_for: queueResult.scheduledFor,
+        rows: queueResult.rows,
       }),
       {
-        status: failed.length === 0 ? 200 : 207,
+        status: 200,
         headers: jsonHeaders,
-      }
+      },
     );
   } catch (error) {
     console.error('notify-assignment API route error:', error);
@@ -233,7 +186,7 @@ export async function POST({ request, cookies }) {
       {
         status: 500,
         headers: jsonHeaders,
-      }
+      },
     );
   }
 }

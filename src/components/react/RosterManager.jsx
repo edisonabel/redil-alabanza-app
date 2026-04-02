@@ -7,7 +7,7 @@ const MAX_VOZ_SLOTS = 4;
 const notifyAssignmentRecipients = async ({ eventoId, perfilIds }) => {
     const uniquePerfilIds = [...new Set((perfilIds || []).map((value) => String(value || '').trim()).filter(Boolean))];
     if (!eventoId || uniquePerfilIds.length === 0) {
-        return { ok: true, requested: 0, delivered: 0, skipped: true };
+        return { ok: true, requested: 0, queued: 0, skipped: true };
     }
 
     try {
@@ -108,7 +108,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
     const warnNotificationFailure = (result) => {
         if (result?.ok || result?.skipped) return;
         console.error('Assignment notification warning:', result);
-        alert('La asignación se guardó, pero falló el envío automático de correo o push.');
+        alert('La asignacion se guardo, pero no se pudo programar la notificacion automatica.');
     };
 
     const loadBlockedProfilesForEvent = async (profileIds = []) => {
@@ -524,12 +524,28 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                         </div>
                     )}
                     {!isStrictModerator && (
-                        <button type="button" onClick={(e) => { e.stopPropagation(); handleRemove(asig.id, asig.rol_id); }} className="btn-remove-roster absolute -top-1.5 -left-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full p-1.5 shadow-md z-20 opacity-0 group-hover:opacity-100 transition-opacity" title="Remover">
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleRemove(asig.id, asig.rol_id); }}
+                            className="btn-remove-roster absolute -top-1.5 -left-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full p-1.5 shadow-md z-20 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                            title="Remover"
+                            aria-label={`Quitar a ${p.nombre} de ${rolMatch.nombre}`}
+                        >
                             <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
                         </button>
                     )}
                 </div>
                 <span className="text-[11px] font-semibold text-content capitalize max-w-[60px] truncate text-center leading-none tracking-tight">{displayName}</span>
+                {!isStrictModerator && (
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); handleRemove(asig.id, asig.rol_id); }}
+                        className="sm:hidden mt-0.5 inline-flex items-center rounded-full border border-red-500/35 bg-red-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-red-400"
+                        aria-label={`Quitar a ${p.nombre} de ${rolMatch.nombre}`}
+                    >
+                        Quitar
+                    </button>
+                )}
             </div>
         );
     };

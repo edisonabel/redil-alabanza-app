@@ -176,6 +176,81 @@ const fetchLeadershipAssignments = async ({ serviceRoleClient, eventIds = [], ex
   });
 };
 
+const fetchVoiceAssignmentRows = async ({ serviceRoleClient, eventIds = [] }) => {
+  if (!eventIds.length) return [];
+
+  const { data, error } = await serviceRoleClient
+    .from('playlist_voice_assignments')
+    .select('id, evento_id, assignments')
+    .in('evento_id', eventIds);
+
+  if (error) throw error;
+  return data || [];
+};
+
+const removeUserFromVoiceAssignments = async ({ serviceRoleClient, eventIds = [], userId = '' }) => {
+  const safeUserId = normalizeText(userId);
+  if (!eventIds.length || !safeUserId) {
+    return {
+      rowsUpdated: 0,
+      songAssignmentsRemoved: 0,
+    };
+  }
+
+  const voiceAssignmentRows = await fetchVoiceAssignmentRows({ serviceRoleClient, eventIds });
+  let rowsUpdated = 0;
+  let songAssignmentsRemoved = 0;
+
+  for (const row of voiceAssignmentRows) {
+    const currentAssignments =
+      row?.assignments && typeof row.assignments === 'object' && !Array.isArray(row.assignments)
+        ? row.assignments
+        : {};
+
+    let rowChanged = false;
+    const nextAssignments = {};
+
+    for (const [songId, songAssignments] of Object.entries(currentAssignments)) {
+      if (!songAssignments || typeof songAssignments !== 'object' || Array.isArray(songAssignments)) {
+        nextAssignments[songId] = songAssignments;
+        continue;
+      }
+
+      if (!Object.prototype.hasOwnProperty.call(songAssignments, safeUserId)) {
+        nextAssignments[songId] = songAssignments;
+        continue;
+      }
+
+      rowChanged = true;
+      songAssignmentsRemoved += 1;
+
+      const nextSongAssignments = { ...songAssignments };
+      delete nextSongAssignments[safeUserId];
+
+      if (Object.keys(nextSongAssignments).length > 0) {
+        nextAssignments[songId] = nextSongAssignments;
+      }
+    }
+
+    if (!rowChanged) continue;
+
+    const { error } = await serviceRoleClient
+      .from('playlist_voice_assignments')
+      .update({
+        assignments: nextAssignments,
+      })
+      .eq('id', row.id);
+
+    if (error) throw error;
+    rowsUpdated += 1;
+  }
+
+  return {
+    rowsUpdated,
+    songAssignmentsRemoved,
+  };
+};
+
 const groupAssignmentsByEvent = ({ events = [], assignments = [], leadershipRows = [] }) => {
   const eventById = new Map((events || []).map((event) => [normalizeText(event?.id), event]));
   const grouped = new Map();
@@ -353,6 +428,115 @@ export const validateAbsencePayload = ({ fechaInicio = '', fechaFin = '' }) => {
   };
 };
 
+const releaseAssignmentsDuringAbsence = async ({
+  serviceRoleClient,
+  userId,
+  absenceOwner,
+  fechaInicio,
+  fechaFin,
+  motivo = '',
+  notifyLeadership = true,
+}) => {
+  const events = await fetchEventsInWindow({
+    serviceRoleClient,
+    startDateOnly: fechaInicio,
+    endDateOnly: fechaFin,
+  });
+
+  const eventIds = events.map((event) => normalizeText(event?.id)).filter(Boolean);
+  if (!eventIds.length) {
+    return {
+      removedAssignments: 0,
+      affectedEvents: 0,
+      leadersNotified: 0,
+      eventsWithoutLeader: 0,
+      notifications: [],
+      notificationErrors: [],
+      affectedServices: [],
+      cleanedVoiceAssignmentRows: 0,
+      cleanedVoiceSlots: 0,
+    };
+  }
+
+  const conflictingAssignments = await fetchConflictingAssignments({
+    serviceRoleClient,
+    userId,
+    eventIds,
+  });
+
+  const leadershipRows = conflictingAssignments.length
+    ? await fetchLeadershipAssignments({
+      serviceRoleClient,
+      eventIds: [...new Set(conflictingAssignments.map((row) => normalizeText(row?.evento_id)).filter(Boolean))],
+      excludedProfileId: userId,
+    })
+    : [];
+
+  const groupedEvents = conflictingAssignments.length
+    ? groupAssignmentsByEvent({
+      events,
+      assignments: conflictingAssignments,
+      leadershipRows,
+    })
+    : [];
+
+  const assignmentIds = groupedEvents.flatMap((eventContext) => eventContext.assignmentIds);
+  if (assignmentIds.length > 0) {
+    const { error: deleteError } = await serviceRoleClient
+      .from('asignaciones')
+      .delete()
+      .in('id', assignmentIds);
+
+    if (deleteError) throw deleteError;
+  }
+
+  const voiceAssignmentCleanup = await removeUserFromVoiceAssignments({
+    serviceRoleClient,
+    eventIds,
+    userId,
+  });
+
+  let notificationResults = [];
+  let notificationErrors = [];
+
+  if (notifyLeadership && groupedEvents.length > 0) {
+    try {
+      notificationResults = await notifyLeadershipAboutReleasedAssignments({
+        absenceOwner,
+        motivo,
+        groupedEvents,
+      });
+    } catch (error) {
+      notificationErrors = [error instanceof Error ? error.message : String(error || 'notification-failed')];
+    }
+  }
+
+  return {
+    removedAssignments: assignmentIds.length,
+    affectedEvents: groupedEvents.length,
+    leadersNotified: notificationResults.reduce(
+      (total, item) => total + Number(item?.recipients || 0),
+      0,
+    ),
+    eventsWithoutLeader: notificationResults.filter((item) => !item.notified).length,
+    notifications: notificationResults,
+    notificationErrors,
+    affectedServices: groupedEvents.map((eventContext) => ({
+      event_id: eventContext.eventId,
+      titulo: normalizeText(eventContext?.event?.titulo) || 'Servicio',
+      fecha_hora: eventContext?.event?.fecha_hora || null,
+      released_roles: eventContext.releasedRoleNames,
+      leaders: eventContext.leaderRecipients.map((recipient) => ({
+        id: recipient.id,
+        name: recipient.name,
+        email: recipient.email,
+      })),
+    })),
+    cleanedVoiceAssignmentRows: voiceAssignmentCleanup.rowsUpdated,
+    cleanedVoiceSlots: voiceAssignmentCleanup.songAssignmentsRemoved,
+  };
+};
+
 export const createAbsenceAndReleaseAssignments = async ({
   userId,
   fechaInicio,
@@ -401,57 +585,17 @@ export const createAbsenceAndReleaseAssignments = async ({
 
   if (insertError) throw insertError;
 
-  let groupedEvents = [];
-  let assignmentIds = [];
+  let releaseResult = null;
 
   try {
-    const events = await fetchEventsInWindow({
-      serviceRoleClient,
-      startDateOnly: validation.fechaInicio,
-      endDateOnly: validation.fechaFin,
-    });
-
-    const eventIds = events.map((event) => normalizeText(event?.id)).filter(Boolean);
-    const conflictingAssignments = await fetchConflictingAssignments({
+    releaseResult = await releaseAssignmentsDuringAbsence({
       serviceRoleClient,
       userId,
-      eventIds,
+      absenceOwner,
+      fechaInicio: validation.fechaInicio,
+      fechaFin: validation.fechaFin,
+      motivo: safeMotivo,
     });
-
-    if (!conflictingAssignments.length) {
-      return {
-        absence: insertedAbsence,
-        removedAssignments: 0,
-        affectedEvents: 0,
-        leadersNotified: 0,
-        eventsWithoutLeader: 0,
-        policy: validation.policy,
-        notifications: [],
-        notificationErrors: [],
-      };
-    }
-
-    const leadershipRows = await fetchLeadershipAssignments({
-      serviceRoleClient,
-      eventIds: [...new Set(conflictingAssignments.map((row) => normalizeText(row?.evento_id)).filter(Boolean))],
-      excludedProfileId: userId,
-    });
-
-    groupedEvents = groupAssignmentsByEvent({
-      events,
-      assignments: conflictingAssignments,
-      leadershipRows,
-    });
-
-    assignmentIds = groupedEvents.flatMap((eventContext) => eventContext.assignmentIds);
-    if (assignmentIds.length > 0) {
-      const { error: deleteError } = await serviceRoleClient
-        .from('asignaciones')
-        .delete()
-        .in('id', assignmentIds);
-
-      if (deleteError) throw deleteError;
-    }
   } catch (error) {
     await serviceRoleClient
       .from('ausencias')
@@ -461,41 +605,78 @@ export const createAbsenceAndReleaseAssignments = async ({
     throw error;
   }
 
-  let notificationResults = [];
-  let notificationErrors = [];
+  return {
+    absence: insertedAbsence,
+    removedAssignments: Number(releaseResult?.removedAssignments || 0),
+    affectedEvents: Number(releaseResult?.affectedEvents || 0),
+    leadersNotified: Number(releaseResult?.leadersNotified || 0),
+    eventsWithoutLeader: Number(releaseResult?.eventsWithoutLeader || 0),
+    policy: validation.policy,
+    notifications: releaseResult?.notifications || [],
+    notificationErrors: releaseResult?.notificationErrors || [],
+    affectedServices: releaseResult?.affectedServices || [],
+    cleanedVoiceAssignmentRows: Number(releaseResult?.cleanedVoiceAssignmentRows || 0),
+    cleanedVoiceSlots: Number(releaseResult?.cleanedVoiceSlots || 0),
+  };
+};
 
-  try {
-    notificationResults = await notifyLeadershipAboutReleasedAssignments({
+export const reconcileFutureAbsencesForUser = async ({ userId }) => {
+  const safeUserId = normalizeText(userId);
+  if (!safeUserId) {
+    const error = new Error('Usuario invalido.');
+    error.status = 400;
+    throw error;
+  }
+
+  const policy = buildAbsencePolicy();
+  const serviceRoleClient = getServiceRoleClient();
+  const absenceOwner = await fetchAbsenceOwnerProfile({ serviceRoleClient, userId: safeUserId });
+
+  const { data: futureAbsences, error } = await serviceRoleClient
+    .from('ausencias')
+    .select('id, fecha_inicio, fecha_fin, motivo')
+    .eq('perfil_id', safeUserId)
+    .gte('fecha_fin', policy.todayDateOnly)
+    .order('fecha_inicio', { ascending: true });
+
+  if (error) throw error;
+
+  const aggregated = {
+    processedAbsences: 0,
+    removedAssignments: 0,
+    affectedEvents: 0,
+    leadersNotified: 0,
+    eventsWithoutLeader: 0,
+    cleanedVoiceAssignmentRows: 0,
+    cleanedVoiceSlots: 0,
+    notifications: [],
+    notificationErrors: [],
+  };
+
+  for (const absence of futureAbsences || []) {
+    const releaseResult = await releaseAssignmentsDuringAbsence({
+      serviceRoleClient,
+      userId: safeUserId,
       absenceOwner,
-      motivo: safeMotivo,
-      groupedEvents,
+      fechaInicio: normalizeText(absence?.fecha_inicio),
+      fechaFin: normalizeText(absence?.fecha_fin),
+      motivo: normalizeText(absence?.motivo),
+      notifyLeadership: true,
     });
-  } catch (error) {
-    notificationErrors = [error instanceof Error ? error.message : String(error || 'notification-failed')];
+
+    aggregated.processedAbsences += 1;
+    aggregated.removedAssignments += Number(releaseResult?.removedAssignments || 0);
+    aggregated.affectedEvents += Number(releaseResult?.affectedEvents || 0);
+    aggregated.leadersNotified += Number(releaseResult?.leadersNotified || 0);
+    aggregated.eventsWithoutLeader += Number(releaseResult?.eventsWithoutLeader || 0);
+    aggregated.cleanedVoiceAssignmentRows += Number(releaseResult?.cleanedVoiceAssignmentRows || 0);
+    aggregated.cleanedVoiceSlots += Number(releaseResult?.cleanedVoiceSlots || 0);
+    aggregated.notifications.push(...(releaseResult?.notifications || []));
+    aggregated.notificationErrors.push(...(releaseResult?.notificationErrors || []));
   }
 
   return {
-    absence: insertedAbsence,
-    removedAssignments: assignmentIds.length,
-    affectedEvents: groupedEvents.length,
-    leadersNotified: notificationResults.reduce(
-      (total, item) => total + Number(item?.recipients || 0),
-      0,
-    ),
-    eventsWithoutLeader: notificationResults.filter((item) => !item.notified).length,
-    policy: validation.policy,
-    notifications: notificationResults,
-    notificationErrors,
-    affectedServices: groupedEvents.map((eventContext) => ({
-      event_id: eventContext.eventId,
-      titulo: normalizeText(eventContext?.event?.titulo) || 'Servicio',
-      fecha_hora: eventContext?.event?.fecha_hora || null,
-      released_roles: eventContext.releasedRoleNames,
-      leaders: eventContext.leaderRecipients.map((recipient) => ({
-        id: recipient.id,
-        name: recipient.name,
-        email: recipient.email,
-      })),
-    })),
+    policy,
+    ...aggregated,
   };
 };

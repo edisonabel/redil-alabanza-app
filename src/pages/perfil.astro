@@ -651,20 +651,20 @@ const avatarPreviewText = document.getElementById('avatar-preview-text');
  return anchor.toISOString().slice(0, 10);
  };
  const absenceMinStartDate = addDaysToDateOnly(absenceDateFormatter.format(new Date()), 7);
- const syncAbsenceDateConstraints = () => {
+ const syncAbsenceDateConstraints = ({ forceResetEnd = false } = {}) => {
  const nextMinEndDate = inputInicio?.value && inputInicio.value > absenceMinStartDate
  ? inputInicio.value
  : absenceMinStartDate;
  if (inputInicio) inputInicio.min = absenceMinStartDate;
  if (inputFin) inputFin.min = nextMinEndDate;
- if (inputFin?.value && inputFin.value < nextMinEndDate) {
+ if (inputFin && (forceResetEnd || !inputFin.value || inputFin.value < nextMinEndDate)) {
  inputFin.value = nextMinEndDate;
  }
  };
 
- syncAbsenceDateConstraints();
- on(inputInicio, 'input', syncAbsenceDateConstraints);
- on(inputInicio, 'change', syncAbsenceDateConstraints);
+ syncAbsenceDateConstraints({ forceResetEnd: true });
+ on(inputInicio, 'input', () => syncAbsenceDateConstraints({ forceResetEnd: true }));
+ on(inputInicio, 'change', () => syncAbsenceDateConstraints({ forceResetEnd: true }));
 
  on(formAusencia, 'submit', async (e: Event) => {
  e.preventDefault();
@@ -723,7 +723,7 @@ const avatarPreviewText = document.getElementById('avatar-preview-text');
  window.location.reload();
 } catch (err) {
  console.error('Error insertando ausencia:', err);
- alert("Hubo un error al registrar la ausencia. Verifica las fechas.");
+ alert(err instanceof Error ? err.message : 'Hubo un error al registrar la ausencia. Verifica las fechas.');
  btnSaveAusencia.textContent = originalBtnText;
  btnSaveAusencia.disabled = false;
  }
@@ -977,6 +977,38 @@ const avatarPreviewText = document.getElementById('avatar-preview-text');
  `;
  ausenciasListEl.appendChild(div);
  });
+ }
+
+ if (futureAusencias.length > 0) {
+ try {
+ const reconcileResponse = await fetch('/api/absences/reconcile', {
+ method: 'POST',
+ credentials: 'same-origin',
+ });
+ const reconcilePayload = await reconcileResponse.json().catch(() => ({}));
+
+ if (reconcileResponse.ok && reconcilePayload?.ok) {
+ const removedAssignments = Number(reconcilePayload?.result?.removedAssignments || 0);
+ const cleanedVoiceSlots = Number(reconcilePayload?.result?.cleanedVoiceSlots || 0);
+
+ if (removedAssignments > 0 || cleanedVoiceSlots > 0) {
+ const fixes = [];
+ if (removedAssignments > 0) {
+ const label = removedAssignments === 1 ? 'servicio' : 'servicios';
+ fixes.push(`${removedAssignments} ${label}`);
+ }
+ if (cleanedVoiceSlots > 0) {
+ const label = cleanedVoiceSlots === 1 ? 'asignacion vocal' : 'asignaciones vocales';
+ fixes.push(`${cleanedVoiceSlots} ${label}`);
+ }
+ alert(`Corregimos automaticamente conflictos viejos con tus ausencias: ${fixes.join(' y ')}.`);
+ }
+ } else if (reconcilePayload?.error) {
+ console.warn('Absence reconciliation warning:', reconcilePayload.error);
+ }
+ } catch (reconcileError) {
+ console.warn('Absence reconciliation request failed:', reconcileError);
+ }
  }
  }
  };
