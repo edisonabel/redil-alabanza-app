@@ -392,27 +392,174 @@ const parseChordProLine = (line) => {
   return segments.length > 0 ? segments : [{ chord: '', lyric: line }];
 };
 /* ── Word-group builder: splits segments into per-word tokens ── */
-const segmentsToWordGroups = (segments) => {
-  const groups = [];
-  segments.forEach((seg) => {
-    const lyric = seg.lyric || '';
-    const tokens = lyric.split(/(\s+)/);
-    let chordAssigned = !seg.chord;
-    tokens.forEach((token) => {
-      if (token.length === 0) return;
-      const isSpace = /^\s+$/.test(token);
-      if (!isSpace && !chordAssigned) {
-        groups.push({ text: token, chord: seg.chord, isSpace: false });
-        chordAssigned = true;
-      } else {
-        groups.push({ text: token, chord: null, isSpace });
-      }
-    });
-    if (!chordAssigned) {
-      groups.push({ text: '\u200B', chord: seg.chord, isSpace: false });
-    }
+const estimateLyricCarrierWidth = (text = '') => {
+  const visibleText = String(text || '').replace(/\u200B/g, '').trim();
+  if (!visibleText) return 0;
+  return Math.max(1.6, visibleText.length * 0.66);
+};
+
+const estimateChordCarrierWidth = (chord = '') => {
+  const visibleChord = formatChordAccidentals(chord).trim();
+  if (!visibleChord) return 0;
+  return Math.max(2.6, visibleChord.length * 0.86 + 0.9);
+};
+
+const buildRenderableChordOffsets = (entries = []) => {
+  let lastChordEnd = -1;
+  return entries.map((entry) => {
+    const chordWidth = estimateChordCarrierWidth(entry.chord);
+    const startOffset = Math.max(0, Number(entry.offset) || 0);
+    const renderOffset = lastChordEnd >= 0 && startOffset < lastChordEnd + 1
+      ? lastChordEnd + 1
+      : startOffset;
+
+    lastChordEnd = renderOffset + chordWidth;
+
+    return {
+      ...entry,
+      chordWidth,
+      renderOffset,
+    };
   });
+};
+
+const segmentsToWordGroups = (segments) => {
+  const plainText = segments.map((seg) => seg.lyric || '').join('');
+  const chordEntries = [];
+  let lyricCursor = 0;
+  segments.forEach((seg) => {
+    if (seg.chord) {
+      chordEntries.push({
+        chord: seg.chord,
+        position: lyricCursor,
+      });
+    }
+    lyricCursor += (seg.lyric || '').length;
+  });
+
+  const groups = [];
+  const tokenRegex = /\s*\S+/g;
+  let chordCursor = 0;
+  let match;
+  let lastWordEnd = 0;
+
+  while ((match = tokenRegex.exec(plainText)) !== null) {
+    const text = match[0];
+    const start = match.index;
+    const end = start + text.length;
+    lastWordEnd = end;
+
+    const rawGroupChords = [];
+    while (chordCursor < chordEntries.length && chordEntries[chordCursor].position < end) {
+      if (chordEntries[chordCursor].position >= start) {
+        rawGroupChords.push({
+          chord: chordEntries[chordCursor].chord,
+          offset: chordEntries[chordCursor].position - start,
+        });
+      }
+      chordCursor += 1;
+    }
+
+    const groupChords = buildRenderableChordOffsets(rawGroupChords);
+    const chordSpanWidth = groupChords.length
+      ? Math.max(...groupChords.map((entry) => entry.renderOffset + entry.chordWidth))
+      : 0;
+
+    groups.push({
+      text,
+      chords: groupChords,
+      isChordOnly: false,
+      reserveWidthCh: Math.max(estimateLyricCarrierWidth(text), chordSpanWidth),
+    });
+  }
+
+  if (chordCursor < chordEntries.length) {
+    const trailingChords = buildRenderableChordOffsets(
+      chordEntries.slice(chordCursor).map((entry) => ({
+        chord: entry.chord,
+        offset: Math.max(0, entry.position - lastWordEnd),
+      }))
+    );
+
+    groups.push({
+      text: '\u200B',
+      chords: trailingChords,
+      isChordOnly: true,
+      reserveWidthCh: trailingChords.length
+        ? Math.max(...trailingChords.map((entry) => entry.renderOffset + entry.chordWidth))
+        : 0,
+    });
+  }
+
   return groups;
+};
+
+const estimateRenderableChordWidth = (chord = '') => {
+  const parts = splitChordDisplayParts(chord);
+  if (!parts) return 0;
+
+  let width = 1;
+
+  if (parts.accidental) width += 0.42;
+  if (parts.suffix) width += Math.max(0.62, parts.suffix.length * 0.42);
+
+  if (parts.bass) {
+    width += 0.34; // slash
+    width += 0.92; // bass root
+    if (parts.bass.accidental) width += 0.38;
+    if (parts.bass.suffix) width += Math.max(0.48, parts.bass.suffix.length * 0.38);
+  }
+
+  return width;
+};
+
+const buildChordOverlayRuns = (segments = []) => {
+  const groupedChords = [];
+  let lyricCursor = 0;
+
+  segments.forEach((segment) => {
+    if (segment.chord) {
+      groupedChords.push({
+        chord: segment.chord,
+        position: lyricCursor,
+      });
+    }
+    lyricCursor += (segment.lyric || '').length;
+  });
+
+  const runs = [];
+  const localGap = 0.35;
+
+  groupedChords.forEach((item) => {
+    const itemWidth = estimateRenderableChordWidth(item.chord);
+    const lastRun = runs[runs.length - 1];
+
+    if (!lastRun) {
+      runs.push({
+        startPosition: item.position,
+        renderedWidth: itemWidth,
+        chords: [item],
+      });
+      return;
+    }
+
+    const runEnd = lastRun.startPosition + lastRun.renderedWidth;
+    const overlapsRun = item.position < runEnd + localGap;
+
+    if (overlapsRun) {
+      lastRun.chords.push(item);
+      lastRun.renderedWidth += localGap + itemWidth;
+      return;
+    }
+
+    runs.push({
+      startPosition: item.position,
+      renderedWidth: itemWidth,
+      chords: [item],
+    });
+  });
+
+  return runs;
 };
 
 const buildChordOverlayLine = (line) => {
@@ -433,9 +580,9 @@ const buildChordOverlayLine = (line) => {
     };
   }
   return {
-    mode: 'segments',
-    segments,
-    wordGroups: segmentsToWordGroups(segments),
+    mode: 'overlay',
+    text: lyricLine,
+    chordRuns: buildChordOverlayRuns(segments),
   };
 };
 export default function ModoEnsayoCompacto({
@@ -1701,31 +1848,39 @@ export default function ModoEnsayoCompacto({
                               ))}
                             </div>
                           )}
-                          {renderedLine.mode === 'segments' && (
-                            <p className={`text-zinc-900 dark:text-zinc-50 ${fontPreset.lyric}`}>
-                              {renderedLine.wordGroups.map((g, i) => {
-                                if (g.isSpace) {
-                                  return <React.Fragment key={`${section.name}-${lineIndex}-ws-${i}`}>{g.text}</React.Fragment>;
-                                }
-                                return (
+                          {renderedLine.mode === 'overlay' && (
+                            <div className="overflow-x-auto">
+                              <div
+                                className={`relative inline-block min-w-full text-zinc-900 dark:text-zinc-50 ${fontPreset.lyric}`}
+                                style={{ paddingTop: '1.3em', lineHeight: '1.3' }}
+                              >
+                                {renderedLine.chordRuns.map((run, runIndex) => (
                                   <span
-                                    key={`${section.name}-${lineIndex}-wg-${i}`}
-                                    className="relative inline-block align-bottom"
-                                    style={{ paddingTop: '1.3em', lineHeight: '1.3' }}
+                                    key={`${section.name}-${lineIndex}-overlay-run-${runIndex}`}
+                                    className="pointer-events-none absolute top-0 whitespace-nowrap"
+                                    style={{ left: `${run.startPosition}ch` }}
                                   >
-                                    {g.chord && (
-                                      <span className="pointer-events-none absolute left-0 top-0 whitespace-nowrap">
-                                        <ChordDisplay
-                                          chord={g.chord}
-                                          sizeClass={`font-mono ${fontPreset.chord}`}
-                                        />
+                                    {run.chords.length === 1 ? (
+                                      <ChordDisplay
+                                        chord={run.chords[0].chord}
+                                        sizeClass={`font-mono ${fontPreset.chord}`}
+                                      />
+                                    ) : (
+                                      <span className="inline-flex items-start gap-[0.35ch] whitespace-nowrap">
+                                        {run.chords.map((entry, chordIndex) => (
+                                          <ChordDisplay
+                                            key={`${section.name}-${lineIndex}-overlay-run-${runIndex}-chord-${chordIndex}`}
+                                            chord={entry.chord}
+                                            sizeClass={`font-mono ${fontPreset.chord}`}
+                                          />
+                                        ))}
                                       </span>
                                     )}
-                                    {g.text}
                                   </span>
-                                );
-                              })}
-                            </p>
+                                ))}
+                                <span className="whitespace-pre">{renderedLine.text}</span>
+                              </div>
+                            </div>
                           )}
                         </div>
                       );

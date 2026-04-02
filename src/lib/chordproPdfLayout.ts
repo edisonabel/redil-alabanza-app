@@ -95,9 +95,36 @@ const groupLineChords = (line: ParsedChordLine) => {
     }));
 };
 
+const buildRenderableChords = (line: ParsedChordLine) => {
+  const groupedChords = groupLineChords(line);
+  if (groupedChords.length === 0) return [];
+
+  const lyrics = String(line?.lyrics || '');
+  if (!lyrics.trim()) {
+    return groupedChords.map((item) => ({
+      ...item,
+      renderPosition: item.position,
+    }));
+  }
+
+  let minimumStart = 0;
+  return groupedChords.map((item, index) => {
+    const renderPosition = index === 0
+      ? Math.max(0, item.position)
+      : Math.max(item.position, minimumStart);
+
+    minimumStart = renderPosition + item.text.length + 1;
+
+    return {
+      ...item,
+      renderPosition,
+    };
+  });
+};
+
 const buildChordGuide = (line: ParsedChordLine): string => {
   const lyrics = String(line?.lyrics || '');
-  const groupedChords = groupLineChords(line);
+  const groupedChords = buildRenderableChords(line);
 
   if (groupedChords.length === 0) return '';
 
@@ -114,7 +141,7 @@ const buildChordGuide = (line: ParsedChordLine): string => {
   }
 
   const totalLength = groupedChords.reduce(
-    (maxLength, item) => Math.max(maxLength, item.position + item.text.length),
+    (maxLength, item) => Math.max(maxLength, item.renderPosition + item.text.length),
     lyrics.length
   );
 
@@ -122,7 +149,7 @@ const buildChordGuide = (line: ParsedChordLine): string => {
 
   for (const item of groupedChords) {
     for (let index = 0; index < item.text.length; index += 1) {
-      buffer[item.position + index] = item.text[index];
+      buffer[item.renderPosition + index] = item.text[index];
     }
   }
 
