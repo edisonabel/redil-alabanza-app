@@ -143,13 +143,17 @@ const renderNotificationEmailHtml = ({
   const bodySections = renderEmailBodySections(body);
   const logoMarkup = absoluteLogoUrl
     ? `
-      <div style="display:inline-block;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.08);">
-        <img src="${absoluteLogoUrl}" alt="Alabanza Redil" width="28" height="28" style="display:block;width:28px;height:28px;object-fit:contain;" />
+      <div style="display:inline-block;padding:8px;border-radius:18px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.08);box-shadow:0 10px 24px rgba(2,8,23,0.24);">
+        <div style="display:flex;align-items:center;justify-content:center;padding:8px 10px;border-radius:14px;background:#ffffff;">
+          <img src="${absoluteLogoUrl}" alt="Alabanza Redil" width="32" height="32" style="display:block;width:32px;height:32px;object-fit:contain;" />
+        </div>
       </div>
     `
     : `
-      <div style="display:inline-block;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.08);font-size:12px;font-weight:800;letter-spacing:0.2em;color:#f8fafc;">
-        AR
+      <div style="display:inline-block;padding:8px;border-radius:18px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.08);box-shadow:0 10px 24px rgba(2,8,23,0.24);">
+        <div style="display:flex;align-items:center;justify-content:center;padding:8px 10px;border-radius:14px;background:#ffffff;font-size:12px;font-weight:800;letter-spacing:0.2em;color:#0f172a;">
+          AR
+        </div>
       </div>
     `;
   const ctaMarkup = absoluteCtaUrl
