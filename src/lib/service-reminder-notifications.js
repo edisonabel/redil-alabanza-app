@@ -10,11 +10,11 @@ const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 const REMINDER_CONFIG = {
-  '15d': { label: '15 dias', subject: 'Faltan 15 días para tu servicio 🙌' },
-  '10d': { label: '10 dias', subject: 'Faltan 10 días para tu servicio 🎶' },
-  '7d': { label: '7 dias', subject: 'Falta 1 semana para tu servicio 🙏' },
-  'thursday': { label: 'jueves', subject: 'Hoy tienes ensayo 🎵' },
-  'saturday_night': { label: 'sabado en la noche', subject: 'Mañana servimos al Señor 🤍' },
+  '15d': { label: '15 dias', subject: 'Faltan 15 d\u00EDas para tu servicio \u{1F64C}' },
+  '10d': { label: '10 dias', subject: 'Faltan 10 d\u00EDas para tu servicio \u{1F3B6}' },
+  '7d': { label: '7 dias', subject: 'Falta 1 semana para tu servicio \u{1F64F}' },
+  'thursday': { label: 'jueves', subject: 'Hoy tienes ensayo \u{1F3B5}' },
+  'saturday_night': { label: 'sabado en la noche', subject: 'Ma\u00F1ana servimos al Se\u00F1or \u{1F90D}' },
 };
 
 const localDateFormatter = new Intl.DateTimeFormat('es-CO', {
@@ -150,9 +150,9 @@ const buildReminderContent = ({
         body: [
           greeting,
           details,
-          'Ya faltan 15 días, así que este es un buen momento para dejar definido el repertorio o setlist.',
+          'Ya faltan 15 d\u00EDas, as\u00ED que este es un buen momento para dejar definido el repertorio o setlist.',
           'Escoger las canciones con tiempo ayuda a que todo el equipo pueda prepararse mejor.',
-          'Gracias por tu disposición para servir.',
+          'Gracias por tu disposici\u00F3n para servir.',
           'Bendiciones.',
         ].join('\n\n'),
         url: '/programacion',
@@ -166,11 +166,11 @@ const buildReminderContent = ({
           body: [
             greeting,
             details,
-            'Las canciones ya están cargadas en el sistema.',
-            'Recuerda ensayar y ponerte al día con el repertorio.',
-            'Puedes practicar aquí:',
+            'Las canciones ya est\u00E1n cargadas en el sistema.',
+            'Recuerda ensayar y ponerte al d\u00EDa con el repertorio.',
+            'Puedes practicar aqu\u00ED:',
             'Modo ensayo disponible para este servicio.',
-            'Prepararte con tiempo también es una manera de servir con amor a tus hermanos.',
+            'Prepararte con tiempo tambi\u00E9n es una manera de servir con amor a tus hermanos.',
             'Bendiciones.',
           ].join('\n\n'),
           url: '',
@@ -181,9 +181,9 @@ const buildReminderContent = ({
           body: [
             greeting,
             details,
-            'Aún estamos a buen tiempo para definir el repertorio.',
-            'Recuerda escoger las canciones con anticipación para que tus compañeros puedan practicar y llegar preparados al ensayo.',
-            'Gracias por servir con orden y consideración.',
+            'A\u00FAn estamos a buen tiempo para definir el repertorio.',
+            'Recuerda escoger las canciones con anticipaci\u00F3n para que tus compa\u00F1eros puedan practicar y llegar preparados al ensayo.',
+            'Gracias por servir con orden y consideraci\u00F3n.',
             'Bendiciones.',
           ].join('\n\n'),
           url: '/programacion',
@@ -199,9 +199,9 @@ const buildReminderContent = ({
             details,
             'Ya estamos a una semana del servicio.',
             'Recuerda ensayar y prepararte bien.',
-            'Puedes practicar aquí:',
+            'Puedes practicar aqu\u00ED:',
             'Modo ensayo disponible para este servicio.',
-            'Ensayar con tiempo también es una forma de amar y respetar a tu hermano.',
+            'Ensayar con tiempo tambi\u00E9n es una forma de amar y respetar a tu hermano.',
             'Bendiciones.',
           ].join('\n\n'),
           url: '',
@@ -213,7 +213,7 @@ const buildReminderContent = ({
             greeting,
             details,
             'Ya estamos a una semana del servicio.',
-            'Recuerda ensayar, prepararte bien y llegar con disposición para servir al Señor y a la iglesia.',
+            'Recuerda ensayar, prepararte bien y llegar con disposici\u00F3n para servir al Se\u00F1or y a la iglesia.',
             'Bendiciones.',
           ].join('\n\n'),
           url: '/programacion',
@@ -222,13 +222,13 @@ const buildReminderContent = ({
 
     case 'thursday':
       return {
-        title: REMINDER_CONFIG['thursday'].subject,
+        title: REMINDER_CONFIG.thursday.subject,
         body: [
           greeting,
           'Te recuerdo que hoy tienes ensayo en la iglesia.',
-          'Voces: 6:30 p. m.\nMúsicos: 7:00 p. m.',
+          'Voces: 6:30 p. m.\nM\u00FAsicos: 7:00 p. m.',
           'Las voces pueden llegar antes para calentar y organizarse.',
-          'Los músicos a las 7:00 p. m. para montar y ensayar con el equipo.',
+          'Los m\u00FAsicos a las 7:00 p. m. para montar y ensayar con el equipo.',
           'Nos vemos esta noche, Dios mediante.',
           'Bendiciones.',
         ].join('\n\n'),
@@ -238,14 +238,14 @@ const buildReminderContent = ({
 
     case 'saturday_night':
       return {
-        title: REMINDER_CONFIG['saturday_night'].subject,
+        title: REMINDER_CONFIG.saturday_night.subject,
         body: [
           greeting,
-          'Solo paso para recordarte que mañana tienes servicio.',
+          'Solo paso para recordarte que ma\u00F1ana tienes servicio.',
           details,
-          'Procura descansar bien esta noche, guardar energías y preparar tu corazón para servir al Señor.',
+          'Procura descansar bien esta noche, guardar energ\u00EDas y preparar tu coraz\u00F3n para servir al Se\u00F1or.',
           'Toma un momento para orar y encomendar el servicio a Dios.',
-          'Nos vemos mañana, Dios mediante.',
+          'Nos vemos ma\u00F1ana, Dios mediante.',
           'Bendiciones.',
         ].join('\n\n'),
         url: '/programacion',

@@ -1,6 +1,8 @@
 const getText = (value) => (typeof value === 'string' ? value.trim() : '');
 
-const THEME_SEPARATORS = [' • ', ' | ', ' — ', ' - '];
+const BULLET_SEPARATOR = ` \u2022 `;
+const EM_DASH_SEPARATOR = ` \u2014 `;
+const THEME_SEPARATORS = [BULLET_SEPARATOR, ' | ', EM_DASH_SEPARATOR, ' - '];
 
 export const splitTemaPredicacion = (rawTema = '', fallbackTitle = '') => {
   const temaValue = getText(rawTema);
@@ -51,6 +53,6 @@ export const buildEventHeadline = (eventLike = {}, fallbackTitle = '') => {
   const { theme, preacher } = getEventThemeAndPreacher(eventLike, fallbackTitle);
   const fallbackValue = getText(fallbackTitle) || getText(eventLike?.titulo) || 'Servicio';
 
-  if (theme && preacher) return `${theme} • ${preacher}`;
+  if (theme && preacher) return `${theme}${BULLET_SEPARATOR}${preacher}`;
   return theme || preacher || fallbackValue;
 };

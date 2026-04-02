@@ -9,7 +9,7 @@
 
 BEGIN;
 
-DO $$
+DO $do$
 BEGIN
   IF NOT EXISTS (
     SELECT 1
@@ -26,8 +26,16 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'Enable the Vault extension before applying migration 020.';
   END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_extension
+    WHERE extname = 'pg_cron'
+  ) THEN
+    RAISE EXCEPTION 'Enable the pg_cron extension before applying migration 020.';
+  END IF;
 END;
-$$;
+$do$;
 
 CREATE OR REPLACE FUNCTION public.enqueue_service_reminder_request(
   p_scope text,
@@ -106,7 +114,7 @@ BEGIN
 END;
 $function$;
 
-DO $$
+DO $do$
 DECLARE
   v_daily_job_id bigint;
   v_saturday_job_id bigint;
@@ -124,7 +132,7 @@ BEGIN
   PERFORM cron.schedule(
     'aviso-diario-recordatorios-servicio',
     '15 12 * * *',
-    $$SELECT public.notificar_recordatorios_servicio_matutinos();$$
+    'SELECT public.notificar_recordatorios_servicio_matutinos();'
   );
 
   SELECT jobid
@@ -140,9 +148,9 @@ BEGIN
   PERFORM cron.schedule(
     'aviso-sabado-noche-servicio',
     '0 1 * * 0',
-    $$SELECT public.notificar_recordatorios_servicio_sabado_noche();$$
+    'SELECT public.notificar_recordatorios_servicio_sabado_noche();'
   );
 END;
-$$;
+$do$;
 
 COMMIT;
