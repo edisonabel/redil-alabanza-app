@@ -4,6 +4,19 @@ import { getAssignmentProfileId, getVisibleVoiceAssignments, normalizeRosterAssi
 
 const MAX_VOZ_SLOTS = 4;
 
+const normalizeEventDateString = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.slice(0, 10);
+
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return '';
+
+    const offset = parsed.getTimezoneOffset() * 60000;
+    return new Date(parsed.getTime() - offset).toISOString().slice(0, 10);
+};
+
 const notifyAssignmentRecipients = async ({ eventoId, perfilIds }) => {
     const uniquePerfilIds = [...new Set((perfilIds || []).map((value) => String(value || '').trim()).filter(Boolean))];
     if (!eventoId || uniquePerfilIds.length === 0) {
@@ -111,6 +124,28 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         alert('La asignacion se guardo, pero no se pudo programar la notificacion automatica.');
     };
 
+    const resolveEventDateStr = async () => {
+        const normalizedDate = normalizeEventDateString(evFechaStr);
+        if (normalizedDate) return normalizedDate;
+
+        if (!evId || evId.startsWith('virtual|')) {
+            return '';
+        }
+
+        const { data, error } = await supabase
+            .from('eventos')
+            .select('fecha_hora')
+            .eq('id', evId)
+            .single();
+
+        if (error) {
+            console.error('No se pudo resolver la fecha del evento para validar ausencias.', error);
+            return '';
+        }
+
+        return normalizeEventDateString(data?.fecha_hora);
+    };
+
     const loadBlockedProfilesForEvent = async (profileIds = []) => {
         const uniqueProfileIds = [...new Set(
             (profileIds || [])
@@ -118,7 +153,9 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                 .filter(Boolean)
         )];
 
-        if (!uniqueProfileIds.length || !evFechaStr) {
+        const eventDateStr = await resolveEventDateStr();
+
+        if (!uniqueProfileIds.length || !eventDateStr) {
             return { blockedIds: new Set(), blockedNames: [], error: null };
         }
 
@@ -126,8 +163,8 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
             .from('ausencias')
             .select('perfil_id')
             .in('perfil_id', uniqueProfileIds)
-            .lte('fecha_inicio', evFechaStr)
-            .gte('fecha_fin', evFechaStr);
+            .lte('fecha_inicio', eventDateStr)
+            .gte('fecha_fin', eventDateStr);
 
         if (absencesError) {
             return { blockedIds: new Set(), blockedNames: [], error: absencesError };
@@ -219,6 +256,13 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         setPickerLoading(true);
         setPickerList([]);
 
+        const eventDateStr = await resolveEventDateStr();
+        if (!eventDateStr) {
+            setPickerLoading(false);
+            alert('No se pudo determinar la fecha del evento. Cierra y vuelve a abrir el modal antes de asignar equipo.');
+            return;
+        }
+
         const isVoicePool = rId === '_voz_pool';
         const voiceRoles = effectiveRoles.filter((rol) => String(rol.codigo || '').startsWith('voz_'));
         const voiceRoleIds = voiceRoles.map((rol) => rol.id);
@@ -238,8 +282,8 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
             supabase
                 .from('ausencias')
                 .select('perfil_id, motivo')
-                .lte('fecha_inicio', evFechaStr)
-                .gte('fecha_fin', evFechaStr)
+                .lte('fecha_inicio', eventDateStr)
+                .gte('fecha_fin', eventDateStr)
         ]);
 
         setPickerLoading(false);
@@ -266,10 +310,39 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         const voiceRoleIds = effectiveRoles
             .filter((rol) => String(rol.codigo || '').startsWith('voz_'))
             .map((rol) => rol.id);
-        const blockedProfile = pickerList.find((profile) => profile.id === perfilId && profile.ausente);
+        const eventDateStr = await resolveEventDateStr();
 
-        if (blockedProfile) {
-            alert(`${blockedProfile.nombre} tiene una ausencia registrada para la fecha de este evento y no puede ser asignado.`);
+        if (!eventDateStr) {
+            alert('No se pudo validar la fecha del evento. Cierra y vuelve a abrir el modal antes de asignar.');
+            setPickerLoading(false);
+            return;
+        }
+
+        const [blockedCheck, blockedProfile] = await Promise.all([
+            supabase
+                .from('ausencias')
+                .select('perfil_id, motivo')
+                .eq('perfil_id', perfilId)
+                .lte('fecha_inicio', eventDateStr)
+                .gte('fecha_fin', eventDateStr)
+                .maybeSingle(),
+            Promise.resolve(pickerList.find((profile) => profile.id === perfilId && profile.ausente))
+        ]);
+
+        const blockedReason = blockedCheck.data?.motivo || blockedProfile?.ausenteMotivo || '';
+
+        if (blockedCheck.error) {
+            alert(`No se pudo validar si la persona está ausente: ${blockedCheck.error.message}`);
+            setPickerLoading(false);
+            return;
+        }
+
+        if (blockedCheck.data || blockedProfile) {
+            const blockedName = blockedProfile?.nombre || pickerList.find((profile) => profile.id === perfilId)?.nombre || 'Esta persona';
+            const blockedMessage = blockedReason
+                ? `${blockedName} tiene una ausencia registrada para la fecha de este evento (${blockedReason}) y no puede ser asignado.`
+                : `${blockedName} tiene una ausencia registrada para la fecha de este evento y no puede ser asignado.`;
+            alert(blockedMessage);
             setPickerLoading(false);
             return;
         }

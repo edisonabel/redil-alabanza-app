@@ -83,7 +83,8 @@ export default function ModalEvento() {
                 setTitulo(data.titulo || '');
 
                 try {
-                    const d = new Date(data.fecha);
+                    const eventDateSource = data.fecha_hora || data.fecha;
+                    const d = new Date(eventDateSource);
                     const offset = d.getTimezoneOffset() * 60000;
                     const localISOTime = (new Date(d.getTime() - offset)).toISOString().slice(0, 16);
                     const [fDate, fTime] = localISOTime.split('T');
