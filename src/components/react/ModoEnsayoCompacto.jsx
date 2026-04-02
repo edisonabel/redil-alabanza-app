@@ -392,27 +392,33 @@ const parseChordProLine = (line) => {
   return segments.length > 0 ? segments : [{ chord: '', lyric: line }];
 };
 /* ── Word-group builder: splits segments into per-word tokens ── */
-const segmentsToWordGroups = (segments) => {
-  const groups = [];
-  segments.forEach((seg) => {
-    const lyric = seg.lyric || '';
-    const tokens = lyric.split(/(\s+)/);
-    let chordAssigned = !seg.chord;
-    tokens.forEach((token) => {
-      if (token.length === 0) return;
-      const isSpace = /^\s+$/.test(token);
-      if (!isSpace && !chordAssigned) {
-        groups.push({ text: token, chord: seg.chord, isSpace: false });
-        chordAssigned = true;
-      } else {
-        groups.push({ text: token, chord: null, isSpace });
-      }
-    });
-    if (!chordAssigned) {
-      groups.push({ text: '\u200B', chord: seg.chord, isSpace: false });
+const COMPACT_CHORD_MIN_GAP_PX = 6;
+
+const buildOverlayRenderParts = (segments = []) => {
+  const parts = [];
+  const chordAnchors = [];
+  let anchorIndex = 0;
+  let lyricCursor = 0;
+
+  segments.forEach((segment) => {
+    if (segment.chord) {
+      const id = `overlay-anchor-${anchorIndex}`;
+      chordAnchors.push({
+        id,
+        chord: segment.chord,
+        position: lyricCursor,
+      });
+      parts.push({ type: 'anchor', id });
+      anchorIndex += 1;
+    }
+
+    if (segment.lyric) {
+      parts.push({ type: 'text', text: segment.lyric });
+      lyricCursor += segment.lyric.length;
     }
   });
-  return groups;
+
+  return { parts, chordAnchors };
 };
 
 const buildChordOverlayLine = (line) => {
@@ -432,12 +438,160 @@ const buildChordOverlayLine = (line) => {
       chords: segments.map((segment) => segment.chord).filter(Boolean),
     };
   }
+  const { parts, chordAnchors } = buildOverlayRenderParts(segments);
+
   return {
-    mode: 'segments',
-    segments,
-    wordGroups: segmentsToWordGroups(segments),
+    mode: 'overlay',
+    text: lyricLine,
+    parts,
+    chordAnchors,
   };
 };
+
+function ChordOverlayLine({ renderedLine, fontPreset, lineKey }) {
+  const lineRef = useRef(null);
+  const anchorRefs = useRef(new Map());
+  const measureRefs = useRef(new Map());
+  const [resolvedChords, setResolvedChords] = useState([]);
+
+  useEffect(() => {
+    const measureOverlay = () => {
+      if (!lineRef.current || !renderedLine?.chordAnchors?.length) {
+        setResolvedChords([]);
+        return;
+      }
+
+      const nextResolved = [];
+      let lastEnd = -Infinity;
+
+      renderedLine.chordAnchors.forEach((anchor) => {
+        const anchorNode = anchorRefs.current.get(anchor.id);
+        const measureNode = measureRefs.current.get(anchor.id);
+        if (!anchorNode || !measureNode) return;
+
+        const width = measureNode.getBoundingClientRect().width;
+        let left = anchorNode.offsetLeft;
+
+        if (left < lastEnd + COMPACT_CHORD_MIN_GAP_PX) {
+          left = lastEnd + COMPACT_CHORD_MIN_GAP_PX;
+        }
+
+        nextResolved.push({
+          ...anchor,
+          left,
+          width,
+        });
+        lastEnd = left + width;
+      });
+
+      setResolvedChords((previous) => {
+        if (
+          previous.length === nextResolved.length &&
+          previous.every((item, index) => (
+            item.id === nextResolved[index]?.id &&
+            Math.abs(item.left - nextResolved[index]?.left) < 0.5 &&
+            Math.abs(item.width - nextResolved[index]?.width) < 0.5
+          ))
+        ) {
+          return previous;
+        }
+        return nextResolved;
+      });
+    };
+
+    let frameId = requestAnimationFrame(measureOverlay);
+    const handleResize = () => {
+      cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(measureOverlay);
+    };
+
+    let resizeObserver = null;
+    if (typeof ResizeObserver !== 'undefined' && lineRef.current) {
+      resizeObserver = new ResizeObserver(handleResize);
+      resizeObserver.observe(lineRef.current);
+    }
+
+    window.addEventListener('resize', handleResize);
+    return () => {
+      cancelAnimationFrame(frameId);
+      window.removeEventListener('resize', handleResize);
+      resizeObserver?.disconnect();
+    };
+  }, [lineKey, renderedLine, fontPreset.chord]);
+
+  return (
+    <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div
+        ref={lineRef}
+        className={`relative inline-block min-w-full text-zinc-900 dark:text-zinc-50 ${fontPreset.lyric}`}
+        style={{ paddingTop: '1.3em', lineHeight: '1.3' }}
+      >
+        <div className="pointer-events-none absolute left-0 top-0 whitespace-nowrap">
+          {resolvedChords.map((chord) => (
+            <span
+              key={`${lineKey}-visible-${chord.id}`}
+              className="absolute top-0 whitespace-nowrap"
+              style={{ left: `${chord.left}px` }}
+            >
+              <ChordDisplay
+                chord={chord.chord}
+                sizeClass={`font-mono ${fontPreset.chord}`}
+              />
+            </span>
+          ))}
+        </div>
+
+        <div className="pointer-events-none absolute left-0 top-0 opacity-0" aria-hidden="true">
+          {renderedLine.chordAnchors.map((anchor) => (
+            <span
+              key={`${lineKey}-measure-${anchor.id}`}
+              ref={(node) => {
+                if (node) {
+                  measureRefs.current.set(anchor.id, node);
+                } else {
+                  measureRefs.current.delete(anchor.id);
+                }
+              }}
+              className="absolute left-0 top-0 whitespace-nowrap"
+            >
+              <ChordDisplay
+                chord={anchor.chord}
+                sizeClass={`font-mono ${fontPreset.chord}`}
+              />
+            </span>
+          ))}
+        </div>
+
+        <span className="whitespace-pre">
+          {renderedLine.parts.map((part, index) => {
+            if (part.type === 'anchor') {
+              return (
+                <span
+                  key={`${lineKey}-anchor-${part.id}-${index}`}
+                  ref={(node) => {
+                    if (node) {
+                      anchorRefs.current.set(part.id, node);
+                    } else {
+                      anchorRefs.current.delete(part.id);
+                    }
+                  }}
+                  className="inline-block h-0 w-0 overflow-visible align-baseline"
+                  aria-hidden="true"
+                />
+              );
+            }
+
+            return (
+              <React.Fragment key={`${lineKey}-text-${index}`}>
+                {part.text}
+              </React.Fragment>
+            );
+          })}
+        </span>
+      </div>
+    </div>
+  );
+}
 export default function ModoEnsayoCompacto({
   song,
   contextTitle = '',
@@ -1701,31 +1855,12 @@ export default function ModoEnsayoCompacto({
                               ))}
                             </div>
                           )}
-                          {renderedLine.mode === 'segments' && (
-                            <p className={`text-zinc-900 dark:text-zinc-50 ${fontPreset.lyric}`}>
-                              {renderedLine.wordGroups.map((g, i) => {
-                                if (g.isSpace) {
-                                  return <React.Fragment key={`${section.name}-${lineIndex}-ws-${i}`}>{g.text}</React.Fragment>;
-                                }
-                                return (
-                                  <span
-                                    key={`${section.name}-${lineIndex}-wg-${i}`}
-                                    className="relative inline-block align-bottom"
-                                    style={{ paddingTop: '1.3em', lineHeight: '1.3' }}
-                                  >
-                                    {g.chord && (
-                                      <span className="pointer-events-none absolute left-0 top-0 whitespace-nowrap">
-                                        <ChordDisplay
-                                          chord={g.chord}
-                                          sizeClass={`font-mono ${fontPreset.chord}`}
-                                        />
-                                      </span>
-                                    )}
-                                    {g.text}
-                                  </span>
-                                );
-                              })}
-                            </p>
+                          {renderedLine.mode === 'overlay' && (
+                            <ChordOverlayLine
+                              renderedLine={renderedLine}
+                              fontPreset={fontPreset}
+                              lineKey={`${section.name}-${lineIndex}`}
+                            />
                           )}
                         </div>
                       );
