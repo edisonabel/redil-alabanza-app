@@ -4,12 +4,44 @@ const initialForm = {
   title: '',
   body: '',
   url: '',
+  mode: 'multicanal',
 };
+
+const DELIVERY_MODES = [
+  {
+    value: 'multicanal',
+    label: 'Multicanal',
+    description: 'Campanita, correo y push',
+    badge: 'Envio multicanal habilitado',
+  },
+  {
+    value: 'push',
+    label: 'Solo push',
+    description: 'Solo notificaciones push',
+    badge: 'Solo push',
+  },
+  {
+    value: 'email',
+    label: 'Solo correo',
+    description: 'Solo correo electronico',
+    badge: 'Solo correo',
+  },
+  {
+    value: 'in_app',
+    label: 'Solo campanita',
+    description: 'Solo alerta interna',
+    badge: 'Solo campanita',
+  },
+];
 
 export default function PanelAdminPush({ isAdmin = false }) {
   const [form, setForm] = useState(initialForm);
   const [isSending, setIsSending] = useState(false);
   const [feedback, setFeedback] = useState(null);
+  const selectedMode = useMemo(
+    () => DELIVERY_MODES.find((option) => option.value === form.mode) || DELIVERY_MODES[0],
+    [form.mode],
+  );
 
   const canSubmit = useMemo(() => {
     return Boolean(form.title.trim() && form.body.trim() && !isSending);
@@ -42,6 +74,7 @@ export default function PanelAdminPush({ isAdmin = false }) {
           title: form.title.trim(),
           body: form.body.trim(),
           url: form.url.trim() || undefined,
+          mode: form.mode,
         }),
       });
 
@@ -59,7 +92,7 @@ export default function PanelAdminPush({ isAdmin = false }) {
       setFeedback({
         type: 'success',
         title: 'Alerta enviada',
-        message: `Se procesaron ${result?.recipients ?? 0} destinatarios entre campanita, correo y push.`,
+        message: `Se procesaron ${result?.recipients ?? 0} destinatarios en modo ${selectedMode.label.toLowerCase()}.`,
         meta: result,
       });
       setForm(initialForm);
@@ -92,7 +125,7 @@ export default function PanelAdminPush({ isAdmin = false }) {
 
         <div className="inline-flex items-center gap-2 rounded-2xl border border-action/25 bg-action/10 px-3 py-2 text-xs font-semibold text-action">
           <span className="inline-flex h-2.5 w-2.5 rounded-full bg-action" aria-hidden="true"></span>
-          Envio multicanal habilitado
+          {selectedMode.badge}
         </div>
       </div>
 
@@ -139,6 +172,40 @@ export default function PanelAdminPush({ isAdmin = false }) {
               className="h-12 w-full rounded-2xl border border-border bg-background px-4 text-sm text-content outline-none transition focus:border-action focus:ring-2 focus:ring-action/15"
             />
           </label>
+
+          <div className="block">
+            <span className="mb-2 block text-xs font-bold uppercase tracking-[0.18em] text-content-muted">
+              Modo de envio
+            </span>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {DELIVERY_MODES.map((option) => {
+                const isSelected = form.mode === option.value;
+                return (
+                  <label
+                    key={option.value}
+                    className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition ${
+                      isSelected
+                        ? 'border-action bg-action/10 shadow-[0_12px_24px_rgba(14,165,233,0.12)]'
+                        : 'border-border bg-background hover:border-action/35'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="mode"
+                      value={option.value}
+                      checked={isSelected}
+                      onChange={handleChange}
+                      className="mt-1 h-4 w-4 accent-[var(--color-action,#2563eb)]"
+                    />
+                    <span>
+                      <span className="block text-sm font-bold text-content">{option.label}</span>
+                      <span className="block text-xs leading-relaxed text-content-muted">{option.description}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         <div className="flex flex-col gap-4">
@@ -155,7 +222,7 @@ export default function PanelAdminPush({ isAdmin = false }) {
               <div>
                 <p className="text-sm font-bold text-content">Resumen del envio</p>
                 <p className="text-xs text-content-muted">
-                  Se crea la alerta interna y luego se intenta entregar por correo y push usando la misma base de destinatarios.
+                  El sistema usa la misma base de destinatarios, pero solo dispara los canales que escojas abajo.
                 </p>
               </div>
             </div>
@@ -213,6 +280,9 @@ export default function PanelAdminPush({ isAdmin = false }) {
                     </div>
                     <div className="rounded-xl border border-border bg-surface px-3 py-2">
                       Destinatarios: <span className="text-content">{feedback.meta.recipients ?? 0}</span>
+                    </div>
+                    <div className="rounded-xl border border-border bg-surface px-3 py-2 col-span-2">
+                      Modo: <span className="text-content">{feedback.meta.mode_label ?? 'Multicanal'}</span>
                     </div>
                   </div>
                 )}

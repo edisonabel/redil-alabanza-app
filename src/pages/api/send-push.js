@@ -44,6 +44,45 @@ const jsonHeaders = {
   'content-type': 'application/json',
 };
 
+const DELIVERY_MODES = {
+  multicanal: {
+    inApp: true,
+    email: true,
+    push: true,
+    label: 'Multicanal',
+  },
+  push: {
+    inApp: false,
+    email: false,
+    push: true,
+    label: 'Solo push',
+  },
+  email: {
+    inApp: false,
+    email: true,
+    push: false,
+    label: 'Solo correo',
+  },
+  in_app: {
+    inApp: true,
+    email: false,
+    push: false,
+    label: 'Solo campanita',
+  },
+};
+
+const emptyNotificationSummary = (overrides = {}) => ({
+  inserted: 0,
+  attempted: 0,
+  sent: 0,
+  failed: 0,
+  skipped: 0,
+  attemptedUsers: 0,
+  uniqueSubscriptions: 0,
+  deleted: 0,
+  ...overrides,
+});
+
 const getErrorMessage = (error) => {
   if (error instanceof Error) return error.message;
   return String(error || 'Error desconocido');
@@ -65,7 +104,7 @@ export async function POST({ request, cookies }) {
     } = await authClient.auth.getUser(token);
 
     if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Sesión inválida.' }), {
+      return new Response(JSON.stringify({ error: 'Sesion invalida.' }), {
         status: 401,
         headers: jsonHeaders,
       });
@@ -88,6 +127,8 @@ export async function POST({ request, cookies }) {
     const title = typeof payload?.title === 'string' ? payload.title.trim() : '';
     const body = typeof payload?.body === 'string' ? payload.body.trim() : '';
     const targetUrl = typeof payload?.url === 'string' && payload.url.trim() ? payload.url.trim() : '/';
+    const requestedMode = typeof payload?.mode === 'string' ? payload.mode.trim().toLowerCase() : 'multicanal';
+    const deliveryMode = DELIVERY_MODES[requestedMode] || DELIVERY_MODES.multicanal;
 
     if (!title || !body) {
       return new Response(JSON.stringify({ error: 'Debes enviar title y body en el JSON.' }), {
@@ -99,41 +140,49 @@ export async function POST({ request, cookies }) {
     const recipients = await listNotificationRecipients();
 
     if (recipients.length === 0) {
-      return new Response(JSON.stringify({ error: 'No hay destinatarios válidos para esta alerta.' }), {
+      return new Response(JSON.stringify({ error: 'No hay destinatarios validos para esta alerta.' }), {
         status: 422,
         headers: jsonHeaders,
       });
     }
 
     const [inApp, email, push] = await Promise.all([
-      insertInAppNotifications({
-        recipients,
-        title,
-        body,
-        type: 'recordatorio',
-        source: 'admin_alert',
-      }),
-      sendEmailNotifications({
-        recipients,
-        title,
-        body,
-        url: targetUrl,
-        ctaLabel: 'Abrir alerta',
-        source: 'admin_alert',
-      }),
-      sendPushNotifications({
-        recipients,
-        title,
-        body,
-        url: targetUrl,
-        source: 'admin_alert',
-      }),
+      deliveryMode.inApp
+        ? insertInAppNotifications({
+          recipients,
+          title,
+          body,
+          type: 'recordatorio',
+          source: 'admin_alert',
+        })
+        : Promise.resolve(emptyNotificationSummary()),
+      deliveryMode.email
+        ? sendEmailNotifications({
+          recipients,
+          title,
+          body,
+          url: targetUrl,
+          ctaLabel: 'Abrir alerta',
+          source: 'admin_alert',
+        })
+        : Promise.resolve(emptyNotificationSummary({ provider: 'email-disabled' })),
+      deliveryMode.push
+        ? sendPushNotifications({
+          recipients,
+          title,
+          body,
+          url: targetUrl,
+          source: 'admin_alert',
+        })
+        : Promise.resolve(emptyNotificationSummary({ provider: 'push-disabled' })),
     ]);
 
     return new Response(
       JSON.stringify({
         ok: true,
         recipients: recipients.length,
+        mode: requestedMode,
+        mode_label: deliveryMode.label,
         inApp,
         email,
         push,
@@ -141,7 +190,7 @@ export async function POST({ request, cookies }) {
       {
         status: 200,
         headers: jsonHeaders,
-      }
+      },
     );
   } catch (error) {
     console.error('send-push endpoint error:', error);
@@ -152,7 +201,7 @@ export async function POST({ request, cookies }) {
       {
         status: 500,
         headers: jsonHeaders,
-      }
+      },
     );
   }
 }

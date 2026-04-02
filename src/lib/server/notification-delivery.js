@@ -29,6 +29,8 @@ const vapidSubject = normalizeVapidSubject(readEnv('VAPID_SUBJECT', 'VAPID_EMAIL
 
 let cachedServiceRoleClient = null;
 let webPushConfigured = false;
+const EMAIL_BATCH_SIZE = 4;
+const EMAIL_BATCH_DELAY_MS = 900;
 
 const escapeHtml = (value = '') =>
   String(value || '')
@@ -42,6 +44,8 @@ const normalizeMultilineText = (value = '') =>
   String(value || '')
     .replace(/\r\n?/g, '\n')
     .trim();
+
+const wait = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const escapeAndPreserveInlineText = (value = '') =>
   escapeHtml(value).replace(/\n/g, '<br />');
@@ -512,30 +516,13 @@ export async function sendEmailNotifications({
       })
   );
 
-  const results = await Promise.all(
-    safeRecipients.map(async (recipient) => {
-      try {
-        if (resendApiKey) {
-          const result = await sendEmailWithResendApi({
-            email: recipient.email,
-            title,
-            html: htmlFor(recipient),
-          });
-
-          return {
-            status: 'sent',
-            recipient,
-            ...result,
-          };
-        }
-
-        const result = await sendEmailWithSupabaseFunction({
-          perfilId: recipient.id,
+  const sendRecipientEmail = async (recipient) => {
+    try {
+      if (resendApiKey) {
+        const result = await sendEmailWithResendApi({
+          email: recipient.email,
           title,
-          body,
-          source,
-          url,
-          ctaLabel,
+          html: htmlFor(recipient),
         });
 
         return {
@@ -543,18 +530,49 @@ export async function sendEmailNotifications({
           recipient,
           ...result,
         };
-      } catch (error) {
-        return {
-          status: 'failed',
-          recipient,
-          provider: resendApiKey ? 'resend-api' : 'supabase-edge-function',
-          errorMessage: error instanceof Error ? error.message : String(error || 'email-send-failed'),
-          functionHandled: Boolean(error?.functionHandled),
-          functionAudited: Boolean(error?.functionAudited),
-        };
       }
-    }),
-  );
+
+      const result = await sendEmailWithSupabaseFunction({
+        perfilId: recipient.id,
+        title,
+        body,
+        source,
+        url,
+        ctaLabel,
+      });
+
+      return {
+        status: 'sent',
+        recipient,
+        ...result,
+      };
+    } catch (error) {
+      return {
+        status: 'failed',
+        recipient,
+        provider: resendApiKey ? 'resend-api' : 'supabase-edge-function',
+        errorMessage: error instanceof Error ? error.message : String(error || 'email-send-failed'),
+        functionHandled: Boolean(error?.functionHandled),
+        functionAudited: Boolean(error?.functionAudited),
+      };
+    }
+  };
+
+  const results = [];
+  for (let index = 0; index < safeRecipients.length; index += EMAIL_BATCH_SIZE) {
+    const batch = safeRecipients.slice(index, index + EMAIL_BATCH_SIZE);
+    const batchResults = await Promise.all(
+      batch.map(async (recipient) => {
+        return sendRecipientEmail(recipient);
+      }),
+    );
+
+    results.push(...batchResults);
+
+    if (index + EMAIL_BATCH_SIZE < safeRecipients.length) {
+      await wait(EMAIL_BATCH_DELAY_MS);
+    }
+  }
 
   const auditResults = resendApiKey
     ? results
