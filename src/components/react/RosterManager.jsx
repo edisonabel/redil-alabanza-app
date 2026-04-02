@@ -146,6 +146,54 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         return normalizeEventDateString(data?.fecha_hora);
     };
 
+    const fetchBlockedProfilesForEvent = async (profileIds = []) => {
+        const uniqueProfileIds = [...new Set(
+            (profileIds || [])
+                .map((value) => String(value || '').trim())
+                .filter(Boolean)
+        )];
+
+        if (!uniqueProfileIds.length || !evId || evId.startsWith('virtual|')) {
+            return { blockedProfiles: [], eventDate: normalizeEventDateString(evFechaStr), error: null };
+        }
+
+        try {
+            const response = await fetch('/api/assignment-availability', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'content-type': 'application/json',
+                },
+                body: JSON.stringify({
+                    evento_id: evId,
+                    perfil_ids: uniqueProfileIds,
+                    event_date: normalizeEventDateString(evFechaStr),
+                }),
+            });
+
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.ok === false) {
+                return {
+                    blockedProfiles: [],
+                    eventDate: '',
+                    error: new Error(payload?.error || 'No se pudo validar la disponibilidad del equipo.'),
+                };
+            }
+
+            return {
+                blockedProfiles: Array.isArray(payload?.blocked_profiles) ? payload.blocked_profiles : [],
+                eventDate: normalizeEventDateString(payload?.event_date),
+                error: null,
+            };
+        } catch (error) {
+            return {
+                blockedProfiles: [],
+                eventDate: '',
+                error: error instanceof Error ? error : new Error(String(error || 'Error desconocido')),
+            };
+        }
+    };
+
     const loadBlockedProfilesForEvent = async (profileIds = []) => {
         const uniqueProfileIds = [...new Set(
             (profileIds || [])
@@ -153,25 +201,21 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                 .filter(Boolean)
         )];
 
-        const eventDateStr = await resolveEventDateStr();
-
-        if (!uniqueProfileIds.length || !eventDateStr) {
+        if (!uniqueProfileIds.length) {
             return { blockedIds: new Set(), blockedNames: [], error: null };
         }
 
-        const { data: absencesData, error: absencesError } = await supabase
-            .from('ausencias')
-            .select('perfil_id')
-            .in('perfil_id', uniqueProfileIds)
-            .lte('fecha_inicio', eventDateStr)
-            .gte('fecha_fin', eventDateStr);
+        const { blockedProfiles, eventDate, error: blockedProfilesError } = await fetchBlockedProfilesForEvent(uniqueProfileIds);
+        if (blockedProfilesError) {
+            return { blockedIds: new Set(), blockedNames: [], error: blockedProfilesError };
+        }
 
-        if (absencesError) {
-            return { blockedIds: new Set(), blockedNames: [], error: absencesError };
+        if (!eventDate) {
+            return { blockedIds: new Set(), blockedNames: [], error: null };
         }
 
         const blockedIds = new Set(
-            (absencesData || [])
+            (blockedProfiles || [])
                 .map((row) => String(row?.perfil_id || '').trim())
                 .filter(Boolean)
         );
@@ -267,36 +311,48 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         const voiceRoles = effectiveRoles.filter((rol) => String(rol.codigo || '').startsWith('voz_'));
         const voiceRoleIds = voiceRoles.map((rol) => rol.id);
 
-        const [perfilesRoles, ausenciasResp] = await Promise.all([
-            isVoicePool
-                ? supabase
-                    .from('perfil_roles')
-                    .select('rol_id, perfiles!inner(*)')
-                    .in('rol_id', voiceRoleIds)
-                : supabase
-                    .from('perfil_roles')
-                    .select('rol_id, perfiles!inner(*)')
-                    .eq('rol_id', rId),
-
-            // Consulta B: Ausencias que choquen con la fecha del evento
-            supabase
-                .from('ausencias')
-                .select('perfil_id, motivo')
-                .lte('fecha_inicio', eventDateStr)
-                .gte('fecha_fin', eventDateStr)
-        ]);
+        const perfilesRoles = isVoicePool
+            ? await supabase
+                .from('perfil_roles')
+                .select('rol_id, perfiles!inner(*)')
+                .in('rol_id', voiceRoleIds)
+            : await supabase
+                .from('perfil_roles')
+                .select('rol_id, perfiles!inner(*)')
+                .eq('rol_id', rId);
 
         setPickerLoading(false);
-        if (!perfilesRoles.error && perfilesRoles.data) {
+        if (perfilesRoles.error) {
+            alert(`No se pudo cargar la lista del equipo: ${perfilesRoles.error.message}`);
+            return;
+        }
+
+        if (perfilesRoles.data) {
+            const candidateProfileIds = perfilesRoles.data
+                .map((row) => String(row?.perfiles?.id || '').trim())
+                .filter(Boolean);
+            const blockedProfilesResp = await fetchBlockedProfilesForEvent(candidateProfileIds);
+
+            if (blockedProfilesResp?.error) {
+                alert(`No se pudo validar la disponibilidad del equipo: ${blockedProfilesResp.error.message}`);
+                return;
+            }
+
+            const blockedByProfileId = new Map(
+                (blockedProfilesResp?.blockedProfiles || []).map((row) => [
+                    String(row?.perfil_id || '').trim(),
+                    String(row?.motivo || '').trim(),
+                ])
+            );
             const mappedList = perfilesRoles.data.map(d => {
                 const p = d.perfiles;
-                const ausencia = ausenciasResp.data?.find(a => a.perfil_id === p.id);
+                const ausenciaMotivo = blockedByProfileId.get(String(p?.id || '').trim()) || '';
                 return {
                     ...p,
                     realRolId: d.rol_id,
                     realRolNombre: effectiveRoles.find(rol => rol.id === d.rol_id)?.nombre || rName,
-                    ausente: Boolean(ausencia),
-                    ausenteMotivo: ausencia?.motivo || ''
+                    ausente: blockedByProfileId.has(String(p?.id || '').trim()),
+                    ausenteMotivo: ausenciaMotivo
                 };
             });
             setPickerList(mappedList);
@@ -318,26 +374,21 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
             return;
         }
 
-        const [blockedCheck, blockedProfile] = await Promise.all([
-            supabase
-                .from('ausencias')
-                .select('perfil_id, motivo')
-                .eq('perfil_id', perfilId)
-                .lte('fecha_inicio', eventDateStr)
-                .gte('fecha_fin', eventDateStr)
-                .maybeSingle(),
+        const [blockedResp, blockedProfile] = await Promise.all([
+            fetchBlockedProfilesForEvent([perfilId]),
             Promise.resolve(pickerList.find((profile) => profile.id === perfilId && profile.ausente))
         ]);
 
-        const blockedReason = blockedCheck.data?.motivo || blockedProfile?.ausenteMotivo || '';
-
-        if (blockedCheck.error) {
-            alert(`No se pudo validar si la persona está ausente: ${blockedCheck.error.message}`);
+        if (blockedResp.error) {
+            alert(`No se pudo validar si la persona está ausente: ${blockedResp.error.message}`);
             setPickerLoading(false);
             return;
         }
 
-        if (blockedCheck.data || blockedProfile) {
+        const blockedRow = (blockedResp.blockedProfiles || [])[0] || null;
+        const blockedReason = blockedRow?.motivo || blockedProfile?.ausenteMotivo || '';
+
+        if (blockedRow || blockedProfile) {
             const blockedName = blockedProfile?.nombre || pickerList.find((profile) => profile.id === perfilId)?.nombre || 'Esta persona';
             const blockedMessage = blockedReason
                 ? `${blockedName} tiene una ausencia registrada para la fecha de este evento (${blockedReason}) y no puede ser asignado.`
