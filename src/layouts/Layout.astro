@@ -97,14 +97,19 @@ const themeColors = brandingData;
  <script is:inline>
   (() => {
     const syncStandaloneAppState = () => {
+      const root = document.documentElement;
       const isStandalone =
         window.matchMedia('(display-mode: standalone)').matches ||
         window.navigator.standalone === true;
-      document.documentElement.dataset.standaloneApp = isStandalone ? 'true' : 'false';
+      root.dataset.standaloneApp = isStandalone ? 'true' : 'false';
+      const bootSplashDismissed = root.dataset.bootSplashDismissed === 'true';
+      root.classList.toggle('app-boot-active', isStandalone && !bootSplashDismissed);
     };
 
+    window.__REDIL_SYNC_STANDALONE_APP_STATE__ = syncStandaloneAppState;
     syncStandaloneAppState();
     window.addEventListener('resize', syncStandaloneAppState);
+    window.addEventListener('pageshow', syncStandaloneAppState);
     document.addEventListener('astro:page-load', syncStandaloneAppState);
 
     const originalAddEventListener = document.addEventListener.bind(document);
@@ -368,6 +373,16 @@ const themeColors = brandingData;
       background-color: rgb(var(--bg-background));
     }
 
+    html[data-standalone-app='true'].app-boot-active,
+    html[data-standalone-app='true'].app-boot-active body {
+      background-color: #ffffff;
+    }
+
+    html[data-standalone-app='true'].app-boot-active body {
+      background-image: none;
+      color-scheme: light;
+    }
+
     html[data-admin-route='true'],
     html[data-admin-route='true'] body,
     body[data-admin-route='true'] {
@@ -390,6 +405,73 @@ const themeColors = brandingData;
 
     @media print {
       body { background-image: none !important; }
+    }
+
+    #standalone-boot-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: clamp(1.5rem, 4vw, 2.5rem);
+      background:
+        radial-gradient(circle at top, rgba(193, 39, 45, 0.12), transparent 42%),
+        linear-gradient(180deg, #ffffff 0%, #f7f7f8 100%);
+      pointer-events: none;
+    }
+
+    html[data-standalone-app='true'].app-boot-active #standalone-boot-splash {
+      display: flex;
+    }
+
+    .standalone-boot-splash__card {
+      display: flex;
+      min-width: min(100%, 17rem);
+      flex-direction: column;
+      align-items: center;
+      gap: 0.9rem;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      border-radius: 1.75rem;
+      background: rgba(255, 255, 255, 0.96);
+      padding: 1.4rem 1.3rem 1.2rem;
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
+      text-align: center;
+    }
+
+    .standalone-boot-splash__logo {
+      width: min(100%, 11.5rem);
+      height: auto;
+      object-fit: contain;
+      filter: drop-shadow(0 16px 24px rgba(15, 23, 42, 0.08));
+    }
+
+    .standalone-boot-splash__spinner {
+      width: 1.65rem;
+      height: 1.65rem;
+      border-radius: 9999px;
+      border: 2px solid rgba(193, 39, 45, 0.18);
+      border-top-color: rgba(193, 39, 45, 0.9);
+      animation: standalone-boot-splash-spin 0.72s linear infinite;
+    }
+
+    .standalone-boot-splash__label {
+      color: #1f2937;
+      font-size: 0.96rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    .standalone-boot-splash__hint {
+      color: #6b7280;
+      font-size: 0.78rem;
+      line-height: 1.4;
+    }
+
+    @keyframes standalone-boot-splash-spin {
+      to {
+        transform: rotate(360deg);
+      }
     }
 
     @keyframes app-page-premium-in {
@@ -454,6 +536,14 @@ const themeColors = brandingData;
   )}
 </head>
 <body transition:animate="none" data-admin-route={isAdminRepertorioView ? 'true' : 'false'} class="app-shell bg-background text-content min-h-screen min-h-[100dvh] w-full flex flex-col">
+ <div id="standalone-boot-splash" aria-hidden="true">
+  <div class="standalone-boot-splash__card">
+   <img class="standalone-boot-splash__logo" src="/LOGO%20REDIL.png" alt="Redil Alabanza" loading="eager" decoding="async" />
+   <span class="standalone-boot-splash__spinner" aria-hidden="true"></span>
+   <p class="standalone-boot-splash__label">Abriendo la app</p>
+   <p class="standalone-boot-splash__hint">Preparando tu espacio de trabajo...</p>
+  </div>
+ </div>
  {pathname !== '/' && user && !isAdminRepertorioView && !isChordProPrintView && (
   <div
    class="fixed right-4 md:right-6 z-[61] pointer-events-none"
@@ -580,7 +670,48 @@ const themeColors = brandingData;
         window.location.assign('/login');
       }
     }
-  });
+ });
+ </script>
+
+ <script is:inline>
+  (() => {
+    if (window.__REDIL_BOOT_SPLASH_INITIALIZED__) return;
+    window.__REDIL_BOOT_SPLASH_INITIALIZED__ = true;
+
+    const root = document.documentElement;
+    const syncStandaloneAppState = window.__REDIL_SYNC_STANDALONE_APP_STATE__ || (() => {});
+    let dismissTimer = 0;
+
+    const dismissSplash = () => {
+      root.dataset.bootSplashDismissed = 'true';
+      root.classList.remove('app-boot-active');
+      syncStandaloneAppState();
+    };
+
+    const scheduleDismiss = () => {
+      const isStandalone =
+        root.dataset.standaloneApp === 'true' ||
+        window.matchMedia('(display-mode: standalone)').matches ||
+        window.navigator.standalone === true;
+
+      if (!isStandalone) {
+        dismissSplash();
+        return;
+      }
+
+      window.clearTimeout(dismissTimer);
+      dismissTimer = window.setTimeout(dismissSplash, 320);
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', scheduleDismiss, { once: true });
+    } else {
+      scheduleDismiss();
+    }
+
+    document.addEventListener('astro:page-load', scheduleDismiss);
+    window.addEventListener('pageshow', scheduleDismiss);
+  })();
  </script>
 
  <script is:inline>
