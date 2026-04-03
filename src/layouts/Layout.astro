@@ -468,6 +468,22 @@ const themeColors = brandingData;
       line-height: 1.4;
     }
 
+    #layout-notification-bell {
+      transition:
+        opacity 0.18s ease,
+        transform 0.18s ease,
+        visibility 0.18s ease;
+    }
+
+    @media (max-width: 767px) {
+      html[data-mobile-modal-open='true'] #layout-notification-bell {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transform: translate3d(0, -0.4rem, 0) scale(0.96);
+      }
+    }
+
     @keyframes standalone-boot-splash-spin {
       to {
         transform: rotate(360deg);
@@ -546,6 +562,7 @@ const themeColors = brandingData;
  </div>
  {pathname !== '/' && user && !isAdminRepertorioView && !isChordProPrintView && (
   <div
+   id="layout-notification-bell"
    class="fixed right-4 md:right-6 z-[61] pointer-events-none"
    style="top: calc(env(safe-area-inset-top) + 0.75rem);"
   >
@@ -671,6 +688,61 @@ const themeColors = brandingData;
       }
     }
  });
+ </script>
+
+ <script is:inline>
+  (() => {
+    if (window.__REDIL_MOBILE_MODAL_GUARD_INITIALIZED__) return;
+    window.__REDIL_MOBILE_MODAL_GUARD_INITIALIZED__ = true;
+
+    const root = document.documentElement;
+    const modalSelector = [
+      '[data-ui-modal="true"]:not([aria-hidden="true"])',
+      '[aria-modal="true"]:not([aria-hidden="true"])',
+      'dialog[open]',
+    ].join(',');
+
+    let observer = null;
+    let rafId = 0;
+
+    const syncModalState = () => {
+      rafId = 0;
+      const hasOpenModal = Boolean(document.querySelector(modalSelector));
+      root.dataset.mobileModalOpen = hasOpenModal ? 'true' : 'false';
+    };
+
+    const scheduleSync = () => {
+      if (rafId) return;
+      rafId = window.requestAnimationFrame(syncModalState);
+    };
+
+    const startObserver = () => {
+      if (!document.body) return;
+      if (!observer) {
+        observer = new MutationObserver(scheduleSync);
+      }
+
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['aria-hidden', 'aria-modal', 'class', 'data-ui-modal', 'hidden', 'open', 'style'],
+      });
+
+      scheduleSync();
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', startObserver, { once: true });
+    } else {
+      startObserver();
+    }
+
+    document.addEventListener('astro:after-swap', scheduleSync);
+    document.addEventListener('astro:page-load', scheduleSync);
+    window.addEventListener('pageshow', scheduleSync);
+    window.addEventListener('resize', scheduleSync);
+  })();
  </script>
 
  <script is:inline>

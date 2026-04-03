@@ -191,7 +191,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
     };
 
     return (
-        <div className={`fixed inset-0 z-[70] min-h-[100dvh] bg-overlay/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 pt-6 pb-[calc(104px+env(safe-area-inset-bottom))] lg:items-center lg:p-6 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
+        <div role="dialog" aria-modal="true" aria-hidden={isOpen ? 'false' : 'true'} data-ui-modal="true" className={`fixed inset-0 z-[70] min-h-[100dvh] bg-overlay/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 pt-6 pb-[calc(104px+env(safe-area-inset-bottom))] lg:items-center lg:p-6 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
             <div className={`bg-surface border border-border rounded-[24px] md:rounded-3xl w-full max-w-2xl lg:max-w-[1180px] xl:max-w-[1260px] max-h-[calc(100dvh-132px-env(safe-area-inset-bottom))] lg:max-h-[calc(100dvh-96px)] shadow-2xl flex flex-col overflow-hidden transition-transform duration-300 my-auto lg:my-0 ${isOpen ? 'scale-100' : 'scale-95'}`}>
                 {/* Header */}
                 <div className="p-6 border-b border-border flex justify-between items-start bg-background shrink-0 lg:px-5 lg:py-4">

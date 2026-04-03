@@ -181,7 +181,7 @@ export default function ModalSerie({ sessionUser }) {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[85] bg-overlay/60 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity animate-in fade-in">
+        <div role="dialog" aria-modal="true" data-ui-modal="true" className="fixed inset-0 z-[85] bg-overlay/60 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity animate-in fade-in">
             <div className="bg-surface border border-border rounded-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
                 <div className="p-6 border-b border-border flex justify-between items-center bg-background sticky top-0 z-10">
                     <h2 className="text-xl font-bold text-content flex items-center gap-2">
