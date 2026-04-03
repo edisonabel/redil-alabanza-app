@@ -96,6 +96,8 @@ const themeColors = brandingData;
 
  <script is:inline>
   (() => {
+    window.__REDIL_BOOT_SPLASH_STARTED_AT__ = window.__REDIL_BOOT_SPLASH_STARTED_AT__ || Date.now();
+
     const syncStandaloneAppState = () => {
       const root = document.documentElement;
       const isStandalone =
@@ -375,12 +377,12 @@ const themeColors = brandingData;
 
     html[data-standalone-app='true'].app-boot-active,
     html[data-standalone-app='true'].app-boot-active body {
-      background-color: #ffffff;
+      background-color: #020617;
     }
 
     html[data-standalone-app='true'].app-boot-active body {
       background-image: none;
-      color-scheme: light;
+      color-scheme: dark;
     }
 
     html[data-admin-route='true'],
@@ -416,55 +418,52 @@ const themeColors = brandingData;
       justify-content: center;
       padding: clamp(1.5rem, 4vw, 2.5rem);
       background:
-        radial-gradient(circle at top, rgba(193, 39, 45, 0.12), transparent 42%),
-        linear-gradient(180deg, #ffffff 0%, #f7f7f8 100%);
+        radial-gradient(circle at top, rgba(59, 130, 246, 0.18), transparent 42%),
+        linear-gradient(180deg, #030712 0%, #020617 100%);
       pointer-events: none;
     }
 
     html[data-standalone-app='true'].app-boot-active #standalone-boot-splash {
       display: flex;
+      pointer-events: auto;
     }
 
     .standalone-boot-splash__card {
       display: flex;
-      min-width: min(100%, 17rem);
+      width: min(100%, 18rem);
       flex-direction: column;
       align-items: center;
-      gap: 0.9rem;
-      border: 1px solid rgba(15, 23, 42, 0.08);
-      border-radius: 1.75rem;
-      background: rgba(255, 255, 255, 0.96);
-      padding: 1.4rem 1.3rem 1.2rem;
-      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
+      gap: 1rem;
+      padding: 1.25rem 1rem;
       text-align: center;
     }
 
     .standalone-boot-splash__logo {
-      width: min(100%, 11.5rem);
+      width: min(100%, 13.5rem);
       height: auto;
       object-fit: contain;
-      filter: drop-shadow(0 16px 24px rgba(15, 23, 42, 0.08));
+      filter: drop-shadow(0 18px 30px rgba(59, 130, 246, 0.12));
     }
 
     .standalone-boot-splash__spinner {
-      width: 1.65rem;
-      height: 1.65rem;
+      width: 1.75rem;
+      height: 1.75rem;
       border-radius: 9999px;
-      border: 2px solid rgba(193, 39, 45, 0.18);
-      border-top-color: rgba(193, 39, 45, 0.9);
-      animation: standalone-boot-splash-spin 0.72s linear infinite;
+      border: 2px solid rgba(255, 255, 255, 0.12);
+      border-top-color: #60a5fa;
+      animation: standalone-boot-splash-spin 0.78s linear infinite;
     }
 
     .standalone-boot-splash__label {
-      color: #1f2937;
-      font-size: 0.96rem;
+      color: rgba(255, 255, 255, 0.92);
+      font-size: 0.94rem;
       font-weight: 700;
-      letter-spacing: 0.01em;
+      letter-spacing: 0.02em;
     }
 
     .standalone-boot-splash__hint {
-      color: #6b7280;
-      font-size: 0.78rem;
+      color: rgba(255, 255, 255, 0.58);
+      font-size: 0.75rem;
       line-height: 1.4;
     }
 
@@ -554,10 +553,10 @@ const themeColors = brandingData;
 <body transition:animate="none" data-admin-route={isAdminRepertorioView ? 'true' : 'false'} class="app-shell bg-background text-content min-h-screen min-h-[100dvh] w-full flex flex-col">
  <div id="standalone-boot-splash" aria-hidden="true">
   <div class="standalone-boot-splash__card">
-   <img class="standalone-boot-splash__logo" src="/LOGO%20REDIL.png" alt="Redil Alabanza" loading="eager" decoding="async" />
+   <img class="standalone-boot-splash__logo" src="/LOGO%20REDIL%20LIGHT.png" alt="Redil Alabanza" loading="eager" decoding="async" />
    <span class="standalone-boot-splash__spinner" aria-hidden="true"></span>
-   <p class="standalone-boot-splash__label">Abriendo la app</p>
-   <p class="standalone-boot-splash__hint">Preparando tu espacio de trabajo...</p>
+   <p class="standalone-boot-splash__label">Cargando app</p>
+   <p class="standalone-boot-splash__hint">Preparando tu espacio de trabajo</p>
   </div>
  </div>
  {pathname !== '/' && user && !isAdminRepertorioView && !isChordProPrintView && (
@@ -752,6 +751,7 @@ const themeColors = brandingData;
 
     const root = document.documentElement;
     const syncStandaloneAppState = window.__REDIL_SYNC_STANDALONE_APP_STATE__ || (() => {});
+    const MIN_BOOT_SPLASH_MS = 980;
     let dismissTimer = 0;
 
     const dismissSplash = () => {
@@ -772,7 +772,10 @@ const themeColors = brandingData;
       }
 
       window.clearTimeout(dismissTimer);
-      dismissTimer = window.setTimeout(dismissSplash, 320);
+      const startedAt = window.__REDIL_BOOT_SPLASH_STARTED_AT__ || Date.now();
+      const elapsed = Date.now() - startedAt;
+      const wait = Math.max(0, MIN_BOOT_SPLASH_MS - elapsed);
+      dismissTimer = window.setTimeout(dismissSplash, wait);
     };
 
     if (document.readyState === 'loading') {

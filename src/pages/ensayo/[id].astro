@@ -669,6 +669,7 @@ const themeColors = await getBrandingConfig({ accessToken: tokenCookie.value });
 const resolvedColorTokens = {
   brand: hexToRgbString(themeColors?.brand || '#14b8a6'),
   action: hexToRgbString(themeColors?.action || themeColors?.brand || '#14b8a6'),
+  rehearsalAccent: hexToRgbString(themeColors?.info || '#3b82f6'),
   danger: hexToRgbString(themeColors?.danger || '#ef4444'),
   success: hexToRgbString(themeColors?.success || '#22c55e'),
   warning: hexToRgbString(themeColors?.warning || '#f59e0b'),
@@ -716,6 +717,7 @@ const resolvedColorTokens = {
           --text-muted: 100 116 139;
           --color-brand: ${resolvedColorTokens.brand};
           --color-action: ${resolvedColorTokens.action};
+          --ensayo-loading-accent: ${resolvedColorTokens.rehearsalAccent};
           --color-danger: ${resolvedColorTokens.danger};
           --color-success: ${resolvedColorTokens.success};
           --color-warning: ${resolvedColorTokens.warning};
@@ -752,7 +754,7 @@ const resolvedColorTokens = {
           justify-content: center;
           padding: 24px;
           background:
-            radial-gradient(circle at top, rgba(var(--color-brand), 0.16), transparent 44%),
+            radial-gradient(circle at top, rgba(var(--ensayo-loading-accent), 0.18), transparent 44%),
             linear-gradient(180deg, rgba(var(--bg-background), 0.96), rgba(var(--bg-background), 0.98));
           opacity: 0;
           visibility: hidden;
@@ -772,7 +774,7 @@ const resolvedColorTokens = {
           border-radius: 28px;
           border: 1px solid rgba(var(--border-base), 0.9);
           background:
-            radial-gradient(circle at top, rgba(var(--color-brand), 0.16), transparent 48%),
+            radial-gradient(circle at top, rgba(var(--ensayo-loading-accent), 0.16), transparent 48%),
             rgba(var(--bg-surface), 0.96);
           padding: 28px 24px;
           box-shadow: 0 28px 80px rgba(15, 23, 42, 0.14);
@@ -784,9 +786,9 @@ const resolvedColorTokens = {
           gap: 10px;
           padding: 10px 14px;
           border-radius: 999px;
-          border: 1px solid rgba(var(--color-brand), 0.22);
-          background: rgba(var(--color-brand), 0.1);
-          color: rgba(var(--color-brand), 1);
+          border: 1px solid rgba(var(--ensayo-loading-accent), 0.22);
+          background: rgba(var(--ensayo-loading-accent), 0.1);
+          color: rgba(var(--ensayo-loading-accent), 1);
           font-size: 12px;
           font-weight: 800;
           letter-spacing: 0.12em;
@@ -804,8 +806,8 @@ const resolvedColorTokens = {
           height: 44px;
           margin-top: 18px;
           border-radius: 999px;
-          border: 3px solid rgba(var(--color-brand), 0.2);
-          border-top-color: rgba(var(--color-brand), 1);
+          border: 3px solid rgba(var(--ensayo-loading-accent), 0.2);
+          border-top-color: rgba(var(--ensayo-loading-accent), 1);
           animation: ensayo-loading-spin 0.9s linear infinite;
         }
 

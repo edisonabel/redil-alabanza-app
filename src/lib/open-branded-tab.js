@@ -35,7 +35,7 @@ const buildLoadingDocument = ({ url, title, subtitle, badge }) => {
   const faviconIco = new URL(`/favicon.ico?v=${iconVersion}`, origin).toString();
   const iconPng = new URL('/icon-192.png', origin).toString();
 
-  const brand = readThemeColor('--color-brand', '#14b8a6');
+  const brand = readThemeColor('--color-info', '#3b82f6');
   const surface = readThemeColor('--bg-surface', '#ffffff');
   const border = readThemeColor('--border-base', '#e2e8f0');
   const content = readThemeColor('--text-base', '#0f172a');

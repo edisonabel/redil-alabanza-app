@@ -28,8 +28,8 @@ export default defineConfig({
       name: 'Repertorio Alabanza Redil',
       short_name: 'Redil Alabanza',
       description: 'Administración de canciones, tonos y recursos.',
-      theme_color: '#ffffff',
-      background_color: '#ffffff',
+      theme_color: '#020617',
+      background_color: '#020617',
       display: 'standalone',
       icons: [
         { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
