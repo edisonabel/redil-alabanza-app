@@ -6,6 +6,7 @@ import ProPlayerGlobal from '../../components/ProPlayerGlobal.astro';
 import VocesModalGlobal from '../../components/VocesModalGlobal.astro';
 import { getBrandingConfig } from '../../lib/branding';
 import { buildEventHeadline, getEventThemeAndPreacher } from '../../lib/event-display.js';
+import { buildEventDateSlug, isUuidLike, parseEventDateSlug } from '../../lib/event-slug.js';
 import { isPredicadorColumnMissingError, withPredicadorFallbackRow } from '../../lib/predicador-compat.js';
 
 const MOCK_CANCION_ENSAYO = {
@@ -58,6 +59,9 @@ const LEADING_CHORD_SECTION_RE = new RegExp(`^\\[(${CHORD_BODY_PATTERN})\\|`, 'i
 const BROKEN_INLINE_CHORD_RE = new RegExp(`\\[(${CHORD_BODY_PATTERN})\\s*\\|\\s*`, 'gi');
 
 const { id = 'demo' } = Astro.params;
+const routeId = String(id || 'demo').trim();
+const routeIsDemo = routeId === 'demo';
+const routeIsUuid = isUuidLike(routeId);
 const tokenCookie = Astro.cookies.get('sb-access-token');
 if (!tokenCookie) {
   return Astro.redirect('/login');
@@ -440,27 +444,58 @@ if (user?.id) {
   }
 }
 
-if (id !== 'demo') {
-  const fetchEventRow = (includePredicador = true) =>
-    supabaseSSR
-      .from('eventos')
-      .select(includePredicador
-        ? 'id, titulo, tema_predicacion, predicador, fecha_hora, hora_fin'
-        : 'id, titulo, tema_predicacion, fecha_hora, hora_fin')
-      .eq('id', id)
-      .maybeSingle();
+const EVENT_SELECT_WITH_PREACHER = 'id, titulo, tema_predicacion, predicador, fecha_hora, hora_fin';
+const EVENT_SELECT_BASE = 'id, titulo, tema_predicacion, fecha_hora, hora_fin';
 
-  let { data: eventRow, error: eventError } = await fetchEventRow(true);
+const fetchEventBySlug = async (slugValue, includePredicador = true) => {
+  const parsedSlug = parseEventDateSlug(slugValue);
+  if (!parsedSlug) {
+    return { data: null, error: null, multipleMatches: false };
+  }
+
+  const { data, error } = await supabaseSSR
+    .from('eventos')
+    .select(includePredicador ? EVENT_SELECT_WITH_PREACHER : EVENT_SELECT_BASE)
+    .gte('fecha_hora', parsedSlug.startIso)
+    .lt('fecha_hora', parsedSlug.endIso)
+    .order('fecha_hora', { ascending: true })
+    .limit(2);
+
+  return {
+    data: Array.isArray(data) ? data[0] || null : null,
+    error,
+    multipleMatches: Array.isArray(data) && data.length > 1,
+  };
+};
+
+if (!routeIsDemo) {
+  const fetchEventRow = async (includePredicador = true) => {
+    if (routeIsUuid) {
+      const { data, error } = await supabaseSSR
+        .from('eventos')
+        .select(includePredicador ? EVENT_SELECT_WITH_PREACHER : EVENT_SELECT_BASE)
+        .eq('id', routeId)
+        .maybeSingle();
+
+      return { data, error, multipleMatches: false };
+    }
+
+    return fetchEventBySlug(routeId, includePredicador);
+  };
+
+  let { data: eventRow, error: eventError, multipleMatches } = await fetchEventRow(true);
 
   if (isPredicadorColumnMissingError(eventError)) {
     const fallbackEventResp = await fetchEventRow(false);
     if (!fallbackEventResp.error) {
       eventRow = withPredicadorFallbackRow(fallbackEventResp.data || null);
       eventError = null;
+      multipleMatches = fallbackEventResp.multipleMatches;
       console.warn('Ensayo evento query: usando fallback sin columna predicador.');
     } else {
       eventRow = fallbackEventResp.data;
       eventError = fallbackEventResp.error;
+      multipleMatches = fallbackEventResp.multipleMatches;
     }
   } else {
     eventRow = withPredicadorFallbackRow(eventRow || null);
@@ -472,7 +507,26 @@ if (id !== 'demo') {
 
   eventData = eventRow || null;
 
+  if (multipleMatches) {
+    console.warn('Ensayo slug query: multiple events found for slug, using first match.', routeId);
+  }
+
   if (eventData?.id) {
+    if (routeIsUuid) {
+      const canonicalSlug = buildEventDateSlug(eventData.fecha_hora);
+
+      if (canonicalSlug) {
+        const canonicalLookup = await fetchEventBySlug(canonicalSlug, false);
+        const canonicalEventId = String(canonicalLookup.data?.id || '').trim();
+
+        if (!canonicalLookup.multipleMatches && canonicalEventId === String(eventData.id).trim()) {
+          const redirectUrl = new URL(`/ensayo/${canonicalSlug}`, Astro.url);
+          redirectUrl.search = Astro.url.search;
+          return Astro.redirect(redirectUrl.toString());
+        }
+      }
+    }
+
     const { data: rosterRows, error: rosterError } = await supabaseSSR
       .from('asignaciones')
       .select('perfil_id, roles(codigo, nombre), perfiles(id, nombre, email, avatar_url)')
@@ -552,18 +606,18 @@ if (id !== 'demo') {
       let playlistItems = [];
       let playlistItemsError = null;
 
-        const playlistQueryWithMarkers = await supabaseSSR
-          .from('playlist_canciones')
-          .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, categoria, voz, mp3, voces, link_voces, link_secuencias, chordpro, section_markers)')
-          .eq('playlist_id', playlistRow.id)
-          .order('orden', { ascending: true });
+      const playlistQueryWithMarkers = await supabaseSSR
+        .from('playlist_canciones')
+        .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, categoria, voz, mp3, voces, link_voces, link_secuencias, chordpro, section_markers)')
+        .eq('playlist_id', playlistRow.id)
+        .order('orden', { ascending: true });
 
       if (playlistQueryWithMarkers.error) {
-          const playlistQueryFallback = await supabaseSSR
-            .from('playlist_canciones')
-            .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, categoria, voz, mp3, voces, link_voces, link_secuencias, chordpro)')
-            .eq('playlist_id', playlistRow.id)
-            .order('orden', { ascending: true });
+        const playlistQueryFallback = await supabaseSSR
+          .from('playlist_canciones')
+          .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, categoria, voz, mp3, voces, link_voces, link_secuencias, chordpro)')
+          .eq('playlist_id', playlistRow.id)
+          .order('orden', { ascending: true });
 
         playlistItems = playlistQueryFallback.data || [];
         playlistItemsError = playlistQueryFallback.error;
@@ -591,11 +645,11 @@ if (id !== 'demo') {
 const rehearsalSongs =
   playlistSongs.length > 0
     ? playlistSongs
-    : id === 'demo'
+    : routeIsDemo
       ? [MOCK_CANCION_ENSAYO]
       : [
           createFallbackSong({
-            songId: `fallback-${id}`,
+            songId: `fallback-${routeId}`,
             title: getEventThemeAndPreacher(eventData || {}, 'Setlist pendiente').theme || 'Setlist pendiente',
             message: eventData?.id
               ? 'Este servicio todav\u00eda no tiene canciones listas para el modo ensayo.'
@@ -635,8 +689,15 @@ const resolvedColorTokens = {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content={pageDescription} />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <script is:inline>
+      window.__REDIL_ENSAYO_LOADING_STARTED_AT__ = Date.now();
+      document.documentElement.classList.add('ensayo-loading');
+    </script>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=20260403" />
+    <link rel="shortcut icon" href="/favicon.ico?v=20260403" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260403" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png?v=20260403" />
+    <link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg?v=20260403" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -681,6 +742,111 @@ const resolvedColorTokens = {
           margin: 0;
           background: rgb(var(--bg-background));
         }
+
+        #ensayo-page-loading {
+          position: fixed;
+          inset: 0;
+          z-index: 90;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 24px;
+          background:
+            radial-gradient(circle at top, rgba(var(--color-brand), 0.16), transparent 44%),
+            linear-gradient(180deg, rgba(var(--bg-background), 0.96), rgba(var(--bg-background), 0.98));
+          opacity: 0;
+          visibility: hidden;
+          pointer-events: none;
+          transition: opacity 220ms ease, visibility 220ms ease;
+          backdrop-filter: blur(12px);
+        }
+
+        .ensayo-loading #ensayo-page-loading {
+          opacity: 1;
+          visibility: visible;
+          pointer-events: auto;
+        }
+
+        .ensayo-loading-card {
+          width: min(100%, 420px);
+          border-radius: 28px;
+          border: 1px solid rgba(var(--border-base), 0.9);
+          background:
+            radial-gradient(circle at top, rgba(var(--color-brand), 0.16), transparent 48%),
+            rgba(var(--bg-surface), 0.96);
+          padding: 28px 24px;
+          box-shadow: 0 28px 80px rgba(15, 23, 42, 0.14);
+        }
+
+        .ensayo-loading-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px 14px;
+          border-radius: 999px;
+          border: 1px solid rgba(var(--color-brand), 0.22);
+          background: rgba(var(--color-brand), 0.1);
+          color: rgba(var(--color-brand), 1);
+          font-size: 12px;
+          font-weight: 800;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+        }
+
+        .ensayo-loading-chip img {
+          width: 20px;
+          height: 20px;
+          border-radius: 6px;
+        }
+
+        .ensayo-loading-spinner {
+          width: 44px;
+          height: 44px;
+          margin-top: 18px;
+          border-radius: 999px;
+          border: 3px solid rgba(var(--color-brand), 0.2);
+          border-top-color: rgba(var(--color-brand), 1);
+          animation: ensayo-loading-spin 0.9s linear infinite;
+        }
+
+        .ensayo-loading-title {
+          margin: 18px 0 8px;
+          font-size: clamp(1.45rem, 4vw, 2rem);
+          line-height: 1.04;
+          letter-spacing: -0.04em;
+          font-weight: 900;
+          color: rgb(var(--text-base));
+        }
+
+        .ensayo-loading-copy {
+          margin: 0;
+          color: rgb(var(--text-muted));
+          line-height: 1.55;
+        }
+
+        .ensayo-loading-context {
+          margin-top: 18px;
+          padding-top: 14px;
+          border-top: 1px solid rgba(var(--border-base), 0.85);
+          color: rgb(var(--text-muted));
+          font-size: 12px;
+          line-height: 1.5;
+        }
+
+        .ensayo-loading-context strong {
+          display: block;
+          margin-bottom: 6px;
+          color: rgb(var(--text-base));
+          font-size: 11px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        @keyframes ensayo-loading-spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
       `}
     />
     <script is:inline>
@@ -697,6 +863,21 @@ const resolvedColorTokens = {
     </script>
   </head>
   <body class="min-h-screen overflow-hidden bg-white dark:bg-zinc-950">
+    <div id="ensayo-page-loading" aria-hidden="true">
+      <section class="ensayo-loading-card" aria-live="polite">
+        <div class="ensayo-loading-chip">
+          <img src="/icon-192.png" alt="" />
+          <span>Modo Ensayo</span>
+        </div>
+        <div class="ensayo-loading-spinner" aria-hidden="true"></div>
+        <h1 class="ensayo-loading-title">Abriendo ensayo...</h1>
+        <p class="ensayo-loading-copy">Preparando setlist, acordes y recursos para esta vista.</p>
+        <div class="ensayo-loading-context">
+          <strong>Servicio</strong>
+          {buildEventHeadline(eventData || {}, contextTitle)}
+        </div>
+      </section>
+    </div>
     <EnsayoHub
       client:load
       playlist={rehearsalSongs}
@@ -711,5 +892,26 @@ const resolvedColorTokens = {
     />
     <ProPlayerGlobal />
     <VocesModalGlobal />
+    <script is:inline>
+      (() => {
+        const finish = () => {
+          const startedAt = window.__REDIL_ENSAYO_LOADING_STARTED_AT__ || Date.now();
+          const elapsed = Date.now() - startedAt;
+          const wait = Math.max(0, 180 - elapsed);
+
+          window.setTimeout(() => {
+            document.documentElement.classList.remove('ensayo-loading');
+          }, wait);
+        };
+
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+          window.requestAnimationFrame(finish);
+        } else {
+          document.addEventListener('DOMContentLoaded', () => window.requestAnimationFrame(finish), { once: true });
+        }
+
+        window.addEventListener('pageshow', finish, { once: true });
+      })();
+    </script>
   </body>
 </html>

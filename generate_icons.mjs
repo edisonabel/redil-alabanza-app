@@ -38,6 +38,11 @@ async function generateIcons() {
             console.log(`Generado ${filename} con fondo blanco y padding.`);
         };
 
+        // 16x16 y 32x32 para tabs y favicons clasicos
+        await generateIcon(16, 2, 'favicon-16.png');
+        await generateIcon(32, 4, 'favicon-32.png');
+        await generateIcon(64, 8, 'favicon-64.png');
+
         // 192x192 (Android) - aprox 12% padding (24px por lado)
         await generateIcon(192, 24, 'icon-192.png');
 

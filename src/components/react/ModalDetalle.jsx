@@ -12,6 +12,7 @@ import musicNoteIcon from '@iconify-icons/mdi/music-note';
 import { supabase } from '../../lib/supabase';
 import { normalizeRosterAssignments } from '../../lib/roster-utils';
 import { getEventThemeAndPreacher } from '../../lib/event-display.js';
+import { openBrandedTab } from '../../lib/open-branded-tab.js';
 
 const getRoleBadgeIcon = (role) => {
     const codigo = String(role?.codigo || '').toLowerCase();
@@ -176,6 +177,19 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
         window.location.href = `/repertorio?seleccionar_para=${eventoId}`;
     };
 
+    const handleOpenRehearsal = (event) => {
+        event.preventDefault();
+        const safeDetailLine = [temaPrincipal || titulo, fechaFormat].filter(Boolean).join(' / ');
+        const detailLine = [temaPrincipal || titulo, fechaFormat].filter(Boolean).join(' · ');
+
+        openBrandedTab({
+            url: rehearsalHref,
+            title: 'Abriendo ensayo...',
+            subtitle: safeDetailLine || 'Preparando setlist, acordes y recursos.',
+            badge: 'Modo Ensayo',
+        });
+    };
+
     return (
         <div className={`fixed inset-0 z-[70] min-h-[100dvh] bg-overlay/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 pt-6 pb-[calc(104px+env(safe-area-inset-bottom))] lg:items-center lg:p-6 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
             <div className={`bg-surface border border-border rounded-[24px] md:rounded-3xl w-full max-w-2xl lg:max-w-[1180px] xl:max-w-[1260px] max-h-[calc(100dvh-132px-env(safe-area-inset-bottom))] lg:max-h-[calc(100dvh-96px)] shadow-2xl flex flex-col overflow-hidden transition-transform duration-300 my-auto lg:my-0 ${isOpen ? 'scale-100' : 'scale-95'}`}>
@@ -275,7 +289,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                             ) : (
                                 <div className="flex flex-col">
                                     <div className="flex flex-col items-center justify-center w-full gap-2.5 mb-6 lg:mb-4">
-                                        <a href={rehearsalHref} target="_blank" rel="noopener noreferrer" className="group relative inline-flex w-full items-center justify-center gap-3 px-8 py-3 overflow-hidden rounded-xl bg-action text-white font-bold text-sm sm:text-base tracking-wide shadow-lg hover:bg-action/90 hover:-translate-y-0.5 transition-all duration-300 lg:px-6 lg:py-2.5">
+                                        <a href={rehearsalHref} target="_blank" rel="noopener noreferrer" onClick={handleOpenRehearsal} className="group relative inline-flex w-full items-center justify-center gap-3 px-8 py-3 overflow-hidden rounded-xl bg-action text-white font-bold text-sm sm:text-base tracking-wide shadow-lg hover:bg-action/90 hover:-translate-y-0.5 transition-all duration-300 lg:px-6 lg:py-2.5">
                                             <div className="absolute inset-0 bg-white/15 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-in-out"></div>
                                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" className="shrink-0 relative z-10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                                             <span className="relative z-10">Entrar a Modo Ensayo</span>

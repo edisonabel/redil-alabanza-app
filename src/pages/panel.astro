@@ -401,7 +401,7 @@ const operationalEvents = eventos
       missingMp3Count: missingMp3Songs.length,
       conflictingAbsences,
       programacionHref: `/programacion?ver_evento=${evento.id}`,
-      ensayoHref: playlist?.id && setlistSongs.length > 0 ? `/ensayo/${playlist.id}` : '',
+      ensayoHref: setlistSongs.length > 0 ? `/ensayo/${evento.id}` : '',
       repertorioHref: `/repertorio?seleccionar_para=${evento.id}`,
     };
   })
