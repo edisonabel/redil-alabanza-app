@@ -392,33 +392,68 @@ const parseChordProLine = (line) => {
   return segments.length > 0 ? segments : [{ chord: '', lyric: line }];
 };
 /* ── Word-group builder: splits segments into per-word tokens ── */
-const COMPACT_CHORD_MIN_GAP_PX = 6;
-
-const buildOverlayRenderParts = (segments = []) => {
-  const parts = [];
-  const chordAnchors = [];
-  let anchorIndex = 0;
-  let lyricCursor = 0;
-
-  segments.forEach((segment) => {
-    if (segment.chord) {
-      const id = `overlay-anchor-${anchorIndex}`;
-      chordAnchors.push({
-        id,
-        chord: segment.chord,
-        position: lyricCursor,
-      });
-      parts.push({ type: 'anchor', id });
-      anchorIndex += 1;
-    }
-
-    if (segment.lyric) {
-      parts.push({ type: 'text', text: segment.lyric });
-      lyricCursor += segment.lyric.length;
+const buildWordGroups = (segments) => {
+  // Step 1: classify each segment.
+  // Whitespace-only (or empty) lyric → standalone chord-only token, not added to text.
+  // Lyric with real text → chord-lyric item (chord marks position 0 of this lyric chunk).
+  const classified = [];
+  segments.forEach((seg) => {
+    const lyric = seg.lyric || '';
+    const chord = seg.chord || '';
+    if (!lyric.trim()) {
+      if (chord) classified.push({ type: 'chord-only', name: chord });
+    } else {
+      classified.push({ type: 'chord-lyric', chord: chord || null, lyric });
     }
   });
 
-  return { parts, chordAnchors };
+  // Step 2: process in order. Consecutive chord-lyric items are merged into one
+  // text group so mid-word chord splits (e.g. "ado[F#m7]remos") are kept intact.
+  const result = [];
+  let i = 0;
+  while (i < classified.length) {
+    if (classified[i].type === 'chord-only') {
+      result.push({ type: 'chord-only', name: classified[i].name });
+      i++;
+      continue;
+    }
+    // Collect consecutive chord-lyric items
+    let groupText = '';
+    const groupChords = [];
+    while (i < classified.length && classified[i].type === 'chord-lyric') {
+      if (classified[i].chord) groupChords.push({ name: classified[i].chord, pos: groupText.length });
+      groupText += classified[i].lyric;
+      i++;
+    }
+    // Build word list from the merged text
+    const words = [];
+    const wordRegex = /\S+/g;
+    let m;
+    while ((m = wordRegex.exec(groupText)) !== null) {
+      words.push({ type: 'word', word: m[0], start: m.index, end: m.index + m[0].length, chords: [] });
+    }
+    // Assign each chord to the word that contains its position.
+    // Chords that fall in whitespace become chord-only tokens inserted before the next word.
+    const insertBefore = new Map(); // wordIndex → [chord names]
+    groupChords.forEach((c) => {
+      const inIdx = words.findIndex((w) => c.pos >= w.start && c.pos < w.end);
+      if (inIdx >= 0) {
+        words[inIdx].chords.push({ name: c.name, charOffset: c.pos - words[inIdx].start });
+        return;
+      }
+      const nextIdx = words.findIndex((w) => w.start > c.pos);
+      const key = nextIdx >= 0 ? nextIdx : words.length;
+      if (!insertBefore.has(key)) insertBefore.set(key, []);
+      insertBefore.get(key).push(c.name);
+    });
+    // Emit words with inline chord-only tokens at the right positions
+    words.forEach((w, idx) => {
+      (insertBefore.get(idx) || []).forEach((name) => result.push({ type: 'chord-only', name }));
+      result.push(w);
+    });
+    (insertBefore.get(words.length) || []).forEach((name) => result.push({ type: 'chord-only', name }));
+  }
+  return result;
 };
 
 const buildChordOverlayLine = (line) => {
@@ -438,171 +473,68 @@ const buildChordOverlayLine = (line) => {
       chords: segments.map((segment) => segment.chord).filter(Boolean),
     };
   }
-  const { parts, chordAnchors } = buildOverlayRenderParts(segments);
-
-  return {
-    mode: 'overlay',
-    text: lyricLine,
-    parts,
-    chordAnchors,
-  };
+  const wordGroups = buildWordGroups(segments);
+  return { mode: 'overlay', wordGroups };
 };
 
 function ChordOverlayLine({ renderedLine, fontPreset, lineKey }) {
-  const lineRef = useRef(null);
-  const anchorRefs = useRef(new Map());
-  const measureRefs = useRef(new Map());
-  const [resolvedChords, setResolvedChords] = useState([]);
-
-  useEffect(() => {
-    const measureOverlay = () => {
-      if (!lineRef.current || !renderedLine?.chordAnchors?.length) {
-        setResolvedChords([]);
-        return;
-      }
-
-      const style = getComputedStyle(lineRef.current);
-      const paddingTopPx = parseFloat(style.paddingTop) || 0;
-      const lineHeightPx = parseFloat(style.lineHeight) || 1;
-
-      // Agrupar anchors por fila visual usando floor sobre offsetTop
-      // offsetTop del anchor (align-baseline, h-0) apunta a la BASELINE del texto,
-      // que está aproximadamente a (paddingTopPx + rowIndex * lineHeightPx + lineHeightPx/2).
-      // Math.floor((offsetTop - paddingTopPx) / lineHeightPx) da el rowIndex correcto.
-      const rowMap = new Map(); // rowIndex → [{anchor, anchorNode}]
-      renderedLine.chordAnchors.forEach((anchor) => {
-        const anchorNode = anchorRefs.current.get(anchor.id);
-        if (!anchorNode) return;
-        const rowIndex = lineHeightPx > 0
-          ? Math.floor((anchorNode.offsetTop - paddingTopPx) / lineHeightPx)
-          : 0;
-        if (!rowMap.has(rowIndex)) rowMap.set(rowIndex, []);
-        rowMap.get(rowIndex).push({ anchor, anchorNode });
-      });
-
-      const nextResolved = [];
-      rowMap.forEach((rowAnchors, rowIndex) => {
-        // El acorde se posiciona al INICIO del área reservada para esa fila
-        const top = Math.max(0, rowIndex * lineHeightPx);
-        let lastEnd = -Infinity;
-        rowAnchors.forEach(({ anchor, anchorNode }) => {
-          const measureNode = measureRefs.current.get(anchor.id);
-          if (!measureNode) return;
-          const width = measureNode.getBoundingClientRect().width;
-          let left = anchorNode.offsetLeft;
-          if (left < lastEnd + COMPACT_CHORD_MIN_GAP_PX) {
-            left = lastEnd + COMPACT_CHORD_MIN_GAP_PX;
-          }
-          nextResolved.push({ ...anchor, left, top, width });
-          lastEnd = left + width;
-        });
-      });
-      nextResolved.sort((a, b) => a.top - b.top || a.left - b.left);
-
-      setResolvedChords((previous) => {
-        if (
-          previous.length === nextResolved.length &&
-          previous.every((item, index) => (
-            item.id === nextResolved[index]?.id &&
-            Math.abs(item.left - nextResolved[index]?.left) < 0.5 &&
-            Math.abs(item.width - nextResolved[index]?.width) < 0.5
-          ))
-        ) {
-          return previous;
-        }
-        return nextResolved;
-      });
-    };
-
-    let frameId = requestAnimationFrame(measureOverlay);
-    const handleResize = () => {
-      cancelAnimationFrame(frameId);
-      frameId = requestAnimationFrame(measureOverlay);
-    };
-
-    let resizeObserver = null;
-    if (typeof ResizeObserver !== 'undefined' && lineRef.current) {
-      resizeObserver = new ResizeObserver(handleResize);
-      resizeObserver.observe(lineRef.current);
-    }
-
-    window.addEventListener('resize', handleResize);
-    return () => {
-      cancelAnimationFrame(frameId);
-      window.removeEventListener('resize', handleResize);
-      resizeObserver?.disconnect();
-    };
-  }, [lineKey, renderedLine, fontPreset.chord]);
-
   return (
     <div className="overflow-visible">
       <div
-        ref={lineRef}
-        className={`relative block w-full text-zinc-900 dark:text-zinc-50 ${fontPreset.lyric}`}
-        style={{ paddingTop: '1.3em', lineHeight: '1.3' }}
+        className={`block w-full text-zinc-900 dark:text-zinc-50 ${fontPreset.lyric}`}
+        style={{ lineHeight: '1.3' }}
       >
-        <div className="pointer-events-none absolute left-0 top-0 w-full">
-          {resolvedChords.map((chord) => (
-            <span
-              key={`${lineKey}-visible-${chord.id}`}
-              className="absolute whitespace-nowrap"
-              style={{ left: `${chord.left}px`, top: `${chord.top}px` }}
-            >
-              <ChordDisplay
-                chord={chord.chord}
-                sizeClass={`font-mono ${fontPreset.chord}`}
-              />
-            </span>
-          ))}
-        </div>
-
-        <div className="pointer-events-none absolute left-0 top-0 opacity-0" aria-hidden="true">
-          {renderedLine.chordAnchors.map((anchor) => (
-            <span
-              key={`${lineKey}-measure-${anchor.id}`}
-              ref={(node) => {
-                if (node) {
-                  measureRefs.current.set(anchor.id, node);
-                } else {
-                  measureRefs.current.delete(anchor.id);
-                }
-              }}
-              className="absolute left-0 top-0 whitespace-nowrap"
-            >
-              <ChordDisplay
-                chord={anchor.chord}
-                sizeClass={`font-mono ${fontPreset.chord}`}
-              />
-            </span>
-          ))}
-        </div>
-
-        <span className="whitespace-pre-wrap break-words">
-          {renderedLine.parts.map((part, index) => {
-            if (part.type === 'anchor') {
-              return (
-                <span
-                  key={`${lineKey}-anchor-${part.id}-${index}`}
-                  ref={(node) => {
-                    if (node) {
-                      anchorRefs.current.set(part.id, node);
-                    } else {
-                      anchorRefs.current.delete(part.id);
-                    }
-                  }}
-                  className="inline-block h-0 w-0 overflow-visible align-baseline"
-                  aria-hidden="true"
-                />
-              );
-            }
-
+        {renderedLine.wordGroups.map((token, i) => {
+          if (token.type === 'chord-only') {
             return (
-              <React.Fragment key={`${lineKey}-text-${index}`}>
-                {part.text}
+              <React.Fragment key={`${lineKey}-co-${i}`}>
+                {i > 0 && ' '}
+                <span
+                  className="inline-block relative align-top"
+                  style={{ paddingTop: '1.3em', lineHeight: '1.3', minWidth: `${token.name.length + 0.5}ch` }}
+                >
+                  <span className="pointer-events-none absolute top-0 left-0 h-0 overflow-visible whitespace-nowrap">
+                    <ChordDisplay chord={token.name} sizeClass={`font-mono ${fontPreset.chord}`} />
+                  </span>
+                  {'\u00A0'}
+                </span>
               </React.Fragment>
             );
-          })}
-        </span>
+          }
+
+          // type === 'word'
+          return (
+            <React.Fragment key={`${lineKey}-wg-${i}`}>
+              {i > 0 && ' '}
+              <span
+                className="inline-block relative align-top"
+                style={{ paddingTop: '1.3em', lineHeight: '1.3' }}
+              >
+                {token.chords.length > 0 && (
+                  <span className="pointer-events-none absolute top-0 left-0 w-full h-0 overflow-visible">
+                    {token.chords.map((c, j) => (
+                      <span
+                        key={`${lineKey}-chord-${i}-${j}`}
+                        className="absolute top-0 whitespace-nowrap"
+                        style={{
+                          left: token.word.length > 1
+                            ? `${(c.charOffset / token.word.length) * 100}%`
+                            : '0%',
+                        }}
+                      >
+                        <ChordDisplay
+                          chord={c.name}
+                          sizeClass={`font-mono ${fontPreset.chord}`}
+                        />
+                      </span>
+                    ))}
+                  </span>
+                )}
+                {token.word}
+              </span>
+            </React.Fragment>
+          );
+        })}
       </div>
     </div>
   );
