@@ -192,23 +192,87 @@ const buildSectionShortLabel = (sectionName = '', kind = 'default', occurrence =
 // Un patrón SVG de onda de audio genérico pero estilizado
 const OndaAudioPattern = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='60' viewBox='0 0 100 60'%3E%3Cpath fill='%23ffffff' opacity='0.4' d='M0 30 C 5 10, 10 50, 15 30 S 25 10, 30 30 S 40 50, 45 30 S 55 10, 60 30 S 70 50, 75 30 S 85 10, 90 30 S 98 50, 100 30 V 60 H 0 Z'/%3E%3Cpath fill='%23ffffff' opacity='0.2' d='M0 30 C 5 20, 10 40, 15 30 S 25 20, 30 30 S 40 40, 45 30 S 55 20, 60 30 S 70 40, 75 30 S 85 20, 90 30 S 98 40, 100 30 V 60 H 0 Z'/%3E%3C/svg%3E")`;
 
-// ── Pad Ambiental: normalización de tonalidad ──
-const FLAT_TO_SHARP_PAD = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
-const LATIN_TO_AMERICAN_PAD = {
-  Do: 'C', 'Do#': 'C#', Reb: 'C#', Re: 'D', 'Re#': 'D#', Mib: 'D#',
-  Mi: 'E', Fa: 'F', 'Fa#': 'F#', Solb: 'F#', Sol: 'G', 'Sol#': 'G#',
-  Lab: 'G#', La: 'A', 'La#': 'A#', Sib: 'A#', Si: 'B',
-};
-const normalizeKeyForPad = (rawKey = '') => {
-  const src = String(rawKey || '').trim().replace(/\u266F/g, '#').replace(/\u266D/g, 'b').replace(/\s+/g, '');
-  if (!src || src === '-') return null;
-  if (LATIN_TO_AMERICAN_PAD[src]) return LATIN_TO_AMERICAN_PAD[src];
-  const upper = src.charAt(0).toUpperCase() + src.slice(1);
-  const m = upper.match(/^([A-G][#b]?)/);
-  if (!m) return null;
-  return FLAT_TO_SHARP_PAD[m[1]] || m[1];
-};
+// ── Pad Ambiental: Omnisphere (Mayor + Relativo Menor) ──
 const PAD_BASE_URL = 'https://pub-4faa87e319a345c38e4f3be570797088.r2.dev/pads';
+
+// Mapeo de raíces latinas → americano (sin 'm' de menor)
+const LATIN_ROOTS_PAD = {
+  Do: 'C', 'Do#': 'C#', Dob: 'B',
+  Re: 'D', 'Re#': 'D#', Reb: 'C#',
+  Mi: 'E', 'Mi#': 'F', Mib: 'D#',
+  Fa: 'F', 'Fa#': 'F#', Fab: 'E',
+  Sol: 'G', 'Sol#': 'G#', Solb: 'F#',
+  La: 'A', 'La#': 'A#', Lab: 'G#',
+  Si: 'B', 'Si#': 'C', Sib: 'A#',
+};
+const FLAT_TO_SHARP_PAD = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
+const VALID_CHROMATIC = new Set(['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']);
+
+// Archivos exactos en R2 (mayor → filename; menor apunta al archivo de su relativo mayor)
+const OMNISPHERE_PAD_FILES = {
+  'C':   'PAD OMNISPHERE C Y Am.mp3',
+  'C#':  'PAD OMNISPHERE C# Y A#m.mp3',
+  'D':   'PAD OMNISPHERE D Y Bm.mp3',
+  'D#':  'PAD OMNISPHERE D# Y Cm.mp3',
+  'E':   'PAD OMNISPHERE E Y C#m .mp3',
+  'F':   'PAD OMNISPHERE F Y Dm .mp3',
+  'F#':  'PAD OMNISPHERE F# Y D#m .mp3',
+  'G':   'PAD OMNISPHERE G Y Em .mp3',
+  'G#':  'PAD OMNISPHERE G# Y Fm.mp3',
+  'A':   'PAD OMNISPHERE A Y F#m .mp3',
+  'A#':  'PAD OMNISPHERE A# Y Gm .mp3',
+  'B':   'PAD OMNISPHERE B Y G#m.mp3',
+  // Menores → usan el archivo del relativo mayor
+  'Am':  'PAD OMNISPHERE C Y Am.mp3',
+  'A#m': 'PAD OMNISPHERE C# Y A#m.mp3',
+  'Bm':  'PAD OMNISPHERE D Y Bm.mp3',
+  'Cm':  'PAD OMNISPHERE D# Y Cm.mp3',
+  'C#m': 'PAD OMNISPHERE E Y C#m .mp3',
+  'Dm':  'PAD OMNISPHERE F Y Dm .mp3',
+  'D#m': 'PAD OMNISPHERE F# Y D#m .mp3',
+  'Em':  'PAD OMNISPHERE G Y Em .mp3',
+  'Fm':  'PAD OMNISPHERE G# Y Fm.mp3',
+  'F#m': 'PAD OMNISPHERE A Y F#m .mp3',
+  'Gm':  'PAD OMNISPHERE A# Y Gm .mp3',
+  'G#m': 'PAD OMNISPHERE B Y G#m.mp3',
+};
+
+// Parsea tonalidad (latín o americano, mayor o menor) → clave normalizada para OMNISPHERE_PAD_FILES
+const normalizeKeyForPad = (rawKey = '') => {
+  const src = String(rawKey || '').trim()
+    .replace(/\u266F/g, '#').replace(/\u266D/g, 'b').replace(/\s+/g, '');
+  if (!src || src === '-') return null;
+
+  // Detectar si termina en 'm' (menor) — verificar que la parte anterior sea una nota válida
+  let rootStr = src;
+  let isMinor = false;
+  if (src.endsWith('m') && src.length > 1) {
+    const possibleRoot = src.slice(0, -1);
+    if (LATIN_ROOTS_PAD[possibleRoot] || VALID_CHROMATIC.has(possibleRoot) || FLAT_TO_SHARP_PAD[possibleRoot]) {
+      rootStr = possibleRoot;
+      isMinor = true;
+    }
+  }
+
+  // Resolver raíz a americano sharp
+  let american = LATIN_ROOTS_PAD[rootStr];
+  if (!american) {
+    const upper = rootStr.charAt(0).toUpperCase() + rootStr.slice(1);
+    american = FLAT_TO_SHARP_PAD[upper] || (VALID_CHROMATIC.has(upper) ? upper : null);
+  }
+  if (!american) return null;
+
+  return isMinor ? `${american}m` : american;
+};
+
+// Genera URL completa del pad OMNISPHERE dado un key raw
+const getPadUrl = (rawKey) => {
+  const key = normalizeKeyForPad(rawKey);
+  if (!key) return null;
+  const filename = OMNISPHERE_PAD_FILES[key];
+  if (!filename) return null;
+  return `${PAD_BASE_URL}/${encodeURIComponent(filename)}`;
+};
 
 const formatTime = (secs) => {
   if (!Number.isFinite(secs) || secs < 0) return '0:00';
@@ -306,6 +370,8 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
   const trackPanRef = useRef(null);
   const analyserRef = useRef(null);
   const silenceStartRef = useRef(null); // timestamp cuando empezó el silencio
+  const silenceDataBufferRef = useRef(null);
+  const resolvedPadSrcRef = useRef(null);
   const timelineRef = useRef(null);
   const syncChannelRef = useRef(null);
   const syncDataRef = useRef({ songId: null, sectionIndex: 0, time: 0 });
@@ -448,18 +514,17 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
   const playheadPercent = timelineDuration > 0 ? (currentTime / timelineDuration) * 100 : 0;
 
   // ── Pad Ambiental: URL basada en tonalidad ──
-  const currentPadUrl = useMemo(() => {
-    const key = normalizeKeyForPad(activeSong?.originalKey || activeSong?.key);
-    if (!key) return null;
-    const safeKey = key.replace('#', 'Sharp').replace('b', 'Flat');
-    return `${PAD_BASE_URL}/Pad_${safeKey}.mp3`;
-  }, [activeSong?.originalKey, activeSong?.key]);
+  const currentPadUrl = useMemo(() =>
+    getPadUrl(activeSong?.originalKey || activeSong?.key),
+    [activeSong?.originalKey, activeSong?.key]
+  );
 
-  // Extraer cover art de todos los MP3s al montar
+  // Extraer cover art de todos los MP3s al montar (diferido 3s para no competir con audio)
   useEffect(() => {
     let cancelled = false;
-    const extract = async () => {
+    const timer = setTimeout(async () => {
       for (const song of playlist) {
+        if (cancelled) return;
         if (!song?.mp3 || coverArts[song.mp3]) continue;
         const url = await extractCoverArt(song.mp3);
         if (cancelled) return;
@@ -467,10 +532,25 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
           setCoverArts((prev) => ({ ...prev, [song.mp3]: url }));
         }
       }
-    };
-    extract();
-    return () => { cancelled = true; };
+    }, 3000);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [playlist]);
+
+  // ── Efecto: Limpiar cache de pads viejos (Pad_X.mp3) al montar ──
+  useEffect(() => {
+    const purgeOldPadCache = async () => {
+      try {
+        const cache = await caches.open('repertorio-offline-cache-v1');
+        const keys = await cache.keys();
+        for (const req of keys) {
+          if (/\/pads\/Pad_[^/]+\.mp3/.test(req.url)) {
+            await cache.delete(req);
+          }
+        }
+      } catch (_) {}
+    };
+    purgeOldPadCache();
+  }, []);
 
   // ── Efecto: Descargador Silencioso (Background Auto-Cache) ──
   useEffect(() => {
@@ -498,16 +578,15 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
           setDownloadStatus((prev) => ({ ...prev, progress: downloadedCount }));
         };
 
-        await Promise.all(playlist.map(async (song) => {
-          if (song?.isPrayer) { downloadedCount += 2; return; }
-          const safeKey = song.key ? song.key.replace('#', 'Sharp').replace('b', 'Flat') : null;
-          const padUrl = safeKey ? `${PAD_BASE_URL}/Pad_${safeKey}.mp3` : null;
+        for (const song of playlist) {
+          if (song?.isPrayer) { downloadedCount += 2; continue; }
+          const padUrl = getPadUrl(song?.originalKey || song?.key);
           const audioUrl = resolvePreferredAudioUrl(song?.mp3, {
             origin: typeof window !== 'undefined' ? window.location.origin : '',
           });
-          const urlsToCache = [audioUrl || song?.mp3, padUrl].filter(Boolean);
-          await Promise.all(urlsToCache.map(cacheOne));
-        }));
+          if (audioUrl || song?.mp3) await cacheOne(audioUrl || song.mp3);
+          if (padUrl) await cacheOne(padUrl);
+        }
         setDownloadStatus((prev) => ({ ...prev, active: false, done: true }));
       } catch (error) {
         console.error('[AutoCache] Error fatal:', error);
@@ -551,6 +630,15 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
 
     return () => { cancelled = true; };
   }, [activeSourceUrl, currentPadUrl, processedActiveSourceUrl]);
+
+  // Cuando cambia la canción (y por ende currentPadUrl), resetear el ref inmediatamente
+  // para que el crossfade no use la URL del pad de la canción anterior
+  useEffect(() => {
+    resolvedPadSrcRef.current = null;
+  }, [currentPadUrl]);
+
+  // Mantener ref de resolvedPadSrc sincronizado (sin re-disparar crossfade)
+  useEffect(() => { resolvedPadSrcRef.current = resolvedPadSrc; }, [resolvedPadSrc]);
 
   // Calcular sección activa basada en tiempo (usa visualMarkers)
   const activeSectionIdx = visualMarkers.length > 0
@@ -693,8 +781,8 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
       return;
     }
 
-    const fadeTime = 4000;
-    const steps = 20;
+    const fadeTime = 5000;
+    const steps = 25;
     const stepTime = fadeTime / steps;
     const volStep = padVolume / steps;
 
@@ -723,10 +811,10 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
       fadeOutPad._fadeInterval = interval;
     };
 
-    const padSrc = resolvedPadSrc || currentPadUrl;
+    const padSrc = resolvedPadSrcRef.current || currentPadUrl;
     if (activePadChannel === 'A') crossfade(padA, padB, padSrc);
     else crossfade(padB, padA, padSrc);
-  }, [currentPadUrl, isPadActive, activePadChannel, resolvedPadSrc]);
+  }, [currentPadUrl, isPadActive, activePadChannel]);
 
   // Pad: slider de volumen directo
   useEffect(() => {
@@ -742,10 +830,16 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
       delete audioElement.dataset.webaudioConnected;
     }
 
-    trackSourceRef.current = null;
+    // Desconectar nodos pero NO destruir el source node (createMediaElementSource solo puede llamarse 1 vez)
+    try { trackSourceRef.current?.disconnect(); } catch {}
+    try { trackGainRef.current?.disconnect(); } catch {}
+    try { trackPanRef.current?.disconnect(); } catch {}
+    try { analyserRef.current?.disconnect(); } catch {}
+
     trackGainRef.current = null;
     trackPanRef.current = null;
     analyserRef.current = null;
+    // trackSourceRef.current se preserva intencionalmente
 
     const ctx = audioCtxRef.current;
     audioCtxRef.current = null;
@@ -759,15 +853,20 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
     if (!shouldUseTrackWebAudio) return;
     if (audioElement.dataset.webaudioConnected === 'true') return;
 
-    disconnectTrackWebAudio();
-
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextClass) return;
 
-    const ctx = new AudioContextClass();
-    audioCtxRef.current = ctx;
+    // Reusar contexto si está vivo, o crear uno nuevo
+    let ctx = audioCtxRef.current;
+    if (!ctx || ctx.state === 'closed') {
+      ctx = new AudioContextClass();
+      audioCtxRef.current = ctx;
+      // El source node anterior queda invalidado con el contexto cerrado
+      trackSourceRef.current = null;
+    }
 
-    const source = ctx.createMediaElementSource(audioElement);
+    // createMediaElementSource solo puede llamarse 1 vez por elemento
+    const source = trackSourceRef.current || ctx.createMediaElementSource(audioElement);
     const gainNode = ctx.createGain();
     const panNode = ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createPanner();
     const analyser = ctx.createAnalyser();
@@ -821,6 +920,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
   }, [disconnectTrackWebAudio, shouldUseTrackWebAudio]);
   useEffect(() => () => {
     disconnectTrackWebAudio();
+    trackSourceRef.current = null;
   }, [disconnectTrackWebAudio]);
   useEffect(() => {
     audioSessionService.setMetadata({
@@ -866,9 +966,17 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
   const handleNext = useCallback(() => {
     if (activeSongIndex >= playlist.length - 1) return;
     autoTransitionRef.current = true;
+
+    // Crossfade del pad si el tono cambia
+    const nextSong = playlist[activeSongIndex + 1];
+    const currentPad = getPadUrl(playlist[activeSongIndex]?.originalKey || playlist[activeSongIndex]?.key);
+    const nextPad = getPadUrl(nextSong?.originalKey || nextSong?.key);
+    if (nextPad && currentPad !== nextPad) {
+      setActivePadChannel(prev => prev === 'A' ? 'B' : 'A');
+    }
+
     setActiveSongIndex((i) => i + 1);
     setCurrentTime(0);
-    // Delay corto para que el DOM cargue el nuevo src
     setTimeout(async () => {
       const audio = audioRef.current;
       if (!audio) return;
@@ -881,7 +989,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
       } catch {}
       autoTransitionRef.current = false;
     }, 150);
-  }, [activeSongIndex, playlist.length, ensureWebAudioConnected]);
+  }, [activeSongIndex, playlist, ensureWebAudioConnected]);
 
   const handlePrev = useCallback(() => {
     if (currentTime > 3 && audioRef.current) {
@@ -952,11 +1060,9 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
       }}
     >
       {/* Audio elements */}
-      {(processedActiveSourceUrl || activeSourceUrl) && (
-        <audio
-          key={`live-${activeSong?.id || activeSongIndex}-${selectedSourceId}-${processedActiveSourceUrl || activeSourceUrl || 'no-audio'}`}
+      <audio
           ref={audioRef}
-          src={resolvedAudioSrc || processedActiveSourceUrl || activeSourceUrl}
+          src={resolvedAudioSrc || processedActiveSourceUrl || activeSourceUrl || ''}
           crossOrigin="anonymous"
           preload="auto"
           playsInline
@@ -970,7 +1076,10 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
             // ── Detección de silencio (último 30% de la pista) ──
             if (analyserRef.current && dur > 0 && time > dur * 0.7 && !audio.paused) {
               const analyser = analyserRef.current;
-              const data = new Uint8Array(analyser.fftSize);
+              if (!silenceDataBufferRef.current || silenceDataBufferRef.current.length !== analyser.fftSize) {
+                silenceDataBufferRef.current = new Uint8Array(analyser.fftSize);
+              }
+              const data = silenceDataBufferRef.current;
               analyser.getByteTimeDomainData(data);
               // Calcular RMS (nivel de volumen real)
               let sum = 0;
@@ -1033,9 +1142,9 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
 
               // Verificar si la siguiente canción tiene otra tonalidad
               const nextSong = playlist[activeSongIndex + 1];
-              const currentKey = normalizeKeyForPad(activeSong?.originalKey || activeSong?.key);
-              const nextKey = normalizeKeyForPad(nextSong?.originalKey || nextSong?.key);
-              const keyChanges = currentKey !== nextKey && nextKey;
+              const currentPad = getPadUrl(activeSong?.originalKey || activeSong?.key);
+              const nextPad = getPadUrl(nextSong?.originalKey || nextSong?.key);
+              const keyChanges = nextPad && currentPad !== nextPad;
 
               // Cambiar canción
               setActiveSongIndex(prev => prev + 1);
@@ -1045,7 +1154,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
                 setActivePadChannel(prev => prev === 'A' ? 'B' : 'A');
               }
 
-              // Gap de 5 segundos — el pad llena el silencio
+              // Play inmediato de la siguiente canción
               setTimeout(async () => {
                 const audio = audioRef.current;
                 if (!audio) return;
@@ -1057,13 +1166,11 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
                   await audio.play();
                 } catch {}
                 autoTransitionRef.current = false;
-                // Bajar el pad bridge después de 1s (suaviza la vuelta)
-                setTimeout(() => setPadBridging(false), 1000);
-              }, 5000);
+                setTimeout(() => setPadBridging(false), 500);
+              }, 150);
             }
           }}
         />
-      )}
       {/* Pad Ambiental: Dual A/B para crossfade */}
       <audio ref={padAudioRefA} loop preload="auto" />
       <audio ref={padAudioRefB} loop preload="auto" />

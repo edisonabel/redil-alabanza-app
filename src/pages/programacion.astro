@@ -22,6 +22,7 @@ let ssrRoles = [];
 let ssrEventos = [];
 let queryError = null;
 let ssrAdmin = false;
+let ssrCanEditTema = false;
 let ssrHasMoreEventos = false;
 
 if (token) {
@@ -36,6 +37,7 @@ if (token) {
 
   const rolesPromise = supabase.from('roles').select('*').order('nombre');
   const perfilPromise = supabase.from('perfiles').select('is_admin').eq('id', ssrUser.id).single();
+  const canEditTemaPromise = supabase.rpc('has_sermon_edit_role');
   const eventosPromise = perfilPromise.then(({ data: perfil }) => {
     const isAdmin = perfil?.is_admin || false;
 
@@ -72,10 +74,12 @@ if (token) {
     { data: perfil, error: perfilError },
     { data: eventosDb, error: err },
     { count: moreEventosCount, error: moreEventosError },
-  ] = await Promise.all([rolesPromise, perfilPromise, eventosPromise, moreEventosPromise]);
+    { data: hasSermonRole },
+  ] = await Promise.all([rolesPromise, perfilPromise, eventosPromise, moreEventosPromise, canEditTemaPromise]);
 
   ssrRoles = globalRoles || [];
   ssrAdmin = perfil?.is_admin || false;
+  ssrCanEditTema = ssrAdmin || (hasSermonRole === true);
   ssrHasMoreEventos = (moreEventosCount || 0) > 0;
   queryError = err || perfilError || rolesError || moreEventosError;
   
@@ -115,13 +119,14 @@ if (token) {
       </div>
     </header>
 
-    <CalendarioGrid 
-        client:load 
-        initialEvents={ssrEventos} 
-        sessionUser={ssrUser} 
-        initialRoles={ssrRoles} 
+    <CalendarioGrid
+        client:load
+        initialEvents={ssrEventos}
+        sessionUser={ssrUser}
+        initialRoles={ssrRoles}
         ssrError={queryError?.message || null}
         isAdmin={ssrAdmin}
+        canEditTema={ssrCanEditTema}
         initialLoadUntil={initialFetchLimit.toISOString()}
         hasMoreInitialEvents={ssrHasMoreEventos}
     />

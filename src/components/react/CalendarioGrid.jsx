@@ -64,6 +64,7 @@ export default function CalendarioGrid({
     initialRoles,
     ssrError,
     isAdmin,
+    canEditTema = false,
     initialLoadUntil,
     hasMoreInitialEvents = false,
 }) {
@@ -114,6 +115,41 @@ export default function CalendarioGrid({
     // UI Modals
     const [deleteConfirmTarget, setDeleteConfirmTarget] = useState(null);
     const [isDeleting, setIsDeleting] = useState(false);
+
+    // Mini-modal: editar tema de predicación (pastor / audiovisuales)
+    const [temaModal, setTemaModal] = useState(null); // { eventoId, tema, predicador }
+    const [temaSaving, setTemaSaving] = useState(false);
+    const [temaError, setTemaError] = useState(null);
+
+    const openTemaModal = useCallback((eventoId, tema, predicador) => {
+        setTemaModal({ eventoId, tema: tema || '', predicador: predicador || '' });
+        setTemaError(null);
+    }, []);
+
+    const closeTemaModal = useCallback(() => {
+        setTemaModal(null);
+        setTemaError(null);
+    }, []);
+
+    const saveTema = useCallback(async () => {
+        if (!temaModal) return;
+        setTemaSaving(true);
+        setTemaError(null);
+        const { error } = await supabase.rpc('update_evento_tema', {
+            p_evento_id:  temaModal.eventoId,
+            p_tema:       temaModal.tema || null,
+            p_predicador: temaModal.predicador || null,
+        });
+        setTemaSaving(false);
+        if (error) { setTemaError(error.message); return; }
+        // Actualizar localmente el evento en la lista
+        setEventos(prev => prev.map(ev =>
+            ev.id === temaModal.eventoId
+                ? { ...ev, tema_predicacion: temaModal.tema || null, predicador: temaModal.predicador || null }
+                : ev
+        ));
+        closeTemaModal();
+    }, [temaModal, closeTemaModal]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return undefined;
@@ -601,6 +637,22 @@ export default function CalendarioGrid({
                                     )}
                                 </div>
                             </div>
+                            {!canManage && canEditTema && (
+                                <button
+                                    className="ml-auto shrink-0 p-1.5 md:p-2 text-content-muted hover:text-content hover:bg-background/80 dark:text-white/80 dark:hover:text-white dark:hover:bg-white/10 rounded-lg transition-colors"
+                                    title="Editar Tema de Predicación"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        openTemaModal(
+                                            cardData.id,
+                                            cardData.dbData?.tema_predicacion || '',
+                                            cardData.dbData?.predicador || ''
+                                        );
+                                    }}
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" className="md:w-3.5 md:h-3.5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
+                                </button>
+                            )}
                             {canManage && (
                                 <button
                                     className="ml-auto shrink-0 p-1.5 md:p-2 text-content-muted hover:text-content hover:bg-background/80 dark:text-white/80 dark:hover:text-white dark:hover:bg-white/10 md:bg-transparent rounded-lg transition-colors"
@@ -1188,6 +1240,66 @@ export default function CalendarioGrid({
                     100% { opacity: 0; transform: translateX(20px); }
                 }
             `}</style>
+
+            {/* ── Mini-modal: Editar Tema de Predicación ── */}
+            {temaModal && (
+                <div
+                    className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+                    onClick={closeTemaModal}
+                >
+                    <div
+                        className="w-full max-w-md rounded-2xl bg-surface border border-border shadow-2xl p-6 flex flex-col gap-4"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <h2 className="text-base font-black text-content tracking-tight">Tema de Predicación</h2>
+
+                        <div className="flex flex-col gap-3">
+                            <div className="flex flex-col gap-1.5">
+                                <label className="text-xs font-bold text-content-muted uppercase tracking-widest">Tema</label>
+                                <input
+                                    type="text"
+                                    className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm text-content placeholder:text-content-muted focus:outline-none focus:ring-2 focus:ring-brand/50"
+                                    placeholder="Ej: Proverbios 3:5-6"
+                                    value={temaModal.tema}
+                                    onChange={e => setTemaModal(prev => ({ ...prev, tema: e.target.value }))}
+                                    autoFocus
+                                />
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                                <label className="text-xs font-bold text-content-muted uppercase tracking-widest">Predicador</label>
+                                <input
+                                    type="text"
+                                    className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm text-content placeholder:text-content-muted focus:outline-none focus:ring-2 focus:ring-brand/50"
+                                    placeholder="Ej: P. Ronald"
+                                    value={temaModal.predicador}
+                                    onChange={e => setTemaModal(prev => ({ ...prev, predicador: e.target.value }))}
+                                />
+                            </div>
+                        </div>
+
+                        {temaError && (
+                            <p className="text-xs font-semibold text-red-500">{temaError}</p>
+                        )}
+
+                        <div className="flex gap-2 justify-end pt-1">
+                            <button
+                                onClick={closeTemaModal}
+                                className="px-4 py-2 rounded-xl text-sm font-bold text-content-muted hover:bg-background/80 transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={saveTema}
+                                disabled={temaSaving}
+                                className="px-5 py-2 rounded-xl text-sm font-black bg-brand text-white hover:bg-brand/90 transition-colors disabled:opacity-50 flex items-center gap-2"
+                            >
+                                {temaSaving && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                                Guardar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
