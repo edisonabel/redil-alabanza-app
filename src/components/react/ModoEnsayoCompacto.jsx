@@ -461,28 +461,43 @@ function ChordOverlayLine({ renderedLine, fontPreset, lineKey }) {
         return;
       }
 
-      const nextResolved = [];
-      let lastEnd = -Infinity;
+      const style = getComputedStyle(lineRef.current);
+      const paddingTopPx = parseFloat(style.paddingTop) || 0;
+      const lineHeightPx = parseFloat(style.lineHeight) || 1;
 
+      // Agrupar anchors por fila visual usando floor sobre offsetTop
+      // offsetTop del anchor (align-baseline, h-0) apunta a la BASELINE del texto,
+      // que está aproximadamente a (paddingTopPx + rowIndex * lineHeightPx + lineHeightPx/2).
+      // Math.floor((offsetTop - paddingTopPx) / lineHeightPx) da el rowIndex correcto.
+      const rowMap = new Map(); // rowIndex → [{anchor, anchorNode}]
       renderedLine.chordAnchors.forEach((anchor) => {
         const anchorNode = anchorRefs.current.get(anchor.id);
-        const measureNode = measureRefs.current.get(anchor.id);
-        if (!anchorNode || !measureNode) return;
-
-        const width = measureNode.getBoundingClientRect().width;
-        let left = anchorNode.offsetLeft;
-
-        if (left < lastEnd + COMPACT_CHORD_MIN_GAP_PX) {
-          left = lastEnd + COMPACT_CHORD_MIN_GAP_PX;
-        }
-
-        nextResolved.push({
-          ...anchor,
-          left,
-          width,
-        });
-        lastEnd = left + width;
+        if (!anchorNode) return;
+        const rowIndex = lineHeightPx > 0
+          ? Math.floor((anchorNode.offsetTop - paddingTopPx) / lineHeightPx)
+          : 0;
+        if (!rowMap.has(rowIndex)) rowMap.set(rowIndex, []);
+        rowMap.get(rowIndex).push({ anchor, anchorNode });
       });
+
+      const nextResolved = [];
+      rowMap.forEach((rowAnchors, rowIndex) => {
+        // El acorde se posiciona al INICIO del área reservada para esa fila
+        const top = Math.max(0, rowIndex * lineHeightPx);
+        let lastEnd = -Infinity;
+        rowAnchors.forEach(({ anchor, anchorNode }) => {
+          const measureNode = measureRefs.current.get(anchor.id);
+          if (!measureNode) return;
+          const width = measureNode.getBoundingClientRect().width;
+          let left = anchorNode.offsetLeft;
+          if (left < lastEnd + COMPACT_CHORD_MIN_GAP_PX) {
+            left = lastEnd + COMPACT_CHORD_MIN_GAP_PX;
+          }
+          nextResolved.push({ ...anchor, left, top, width });
+          lastEnd = left + width;
+        });
+      });
+      nextResolved.sort((a, b) => a.top - b.top || a.left - b.left);
 
       setResolvedChords((previous) => {
         if (
@@ -520,18 +535,18 @@ function ChordOverlayLine({ renderedLine, fontPreset, lineKey }) {
   }, [lineKey, renderedLine, fontPreset.chord]);
 
   return (
-    <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="overflow-visible">
       <div
         ref={lineRef}
-        className={`relative inline-block min-w-full text-zinc-900 dark:text-zinc-50 ${fontPreset.lyric}`}
+        className={`relative block w-full text-zinc-900 dark:text-zinc-50 ${fontPreset.lyric}`}
         style={{ paddingTop: '1.3em', lineHeight: '1.3' }}
       >
-        <div className="pointer-events-none absolute left-0 top-0 whitespace-nowrap">
+        <div className="pointer-events-none absolute left-0 top-0 w-full">
           {resolvedChords.map((chord) => (
             <span
               key={`${lineKey}-visible-${chord.id}`}
-              className="absolute top-0 whitespace-nowrap"
-              style={{ left: `${chord.left}px` }}
+              className="absolute whitespace-nowrap"
+              style={{ left: `${chord.left}px`, top: `${chord.top}px` }}
             >
               <ChordDisplay
                 chord={chord.chord}
@@ -562,7 +577,7 @@ function ChordOverlayLine({ renderedLine, fontPreset, lineKey }) {
           ))}
         </div>
 
-        <span className="whitespace-pre">
+        <span className="whitespace-pre-wrap break-words">
           {renderedLine.parts.map((part, index) => {
             if (part.type === 'anchor') {
               return (
