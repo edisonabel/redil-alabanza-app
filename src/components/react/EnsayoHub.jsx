@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Clock3, GripVertical, ListMusic, Mic2, Play, Plus, RadioReceiver, X, Zap } from 'lucide-react';
+import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Clock3, ExternalLink, GripVertical, ListMusic, Mic2, Play, Plus, RadioReceiver, X, Zap } from 'lucide-react';
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
 import EnsayoPersonalView from './EnsayoPersonalView.jsx';
 import ModoLiveDirector from './ModoLiveDirector.jsx';
@@ -362,6 +362,7 @@ export default function EnsayoHub({
   contextTitle = 'Modo Ensayo',
   eventMeta = null,
   initialSongId = null,
+  monitorUrl = '',
   playlistId = null,
   canEdit = false,
   userId = '',
@@ -891,6 +892,7 @@ export default function EnsayoHub({
   const serviceDuration = formatServiceDuration(eventMeta?.fecha_hora, eventMeta?.hora_fin);
   const displayContextTitle = String(eventMeta?.display_theme || contextTitle || '').trim() || 'Modo Ensayo';
   const displayContextPreacher = String(eventMeta?.display_preacher || eventMeta?.predicador || '').trim();
+  const hasMonitorUrl = typeof monitorUrl === 'string' && monitorUrl.trim() !== '';
 
   return (
     <div className="flex h-screen w-full flex-col bg-white text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
@@ -1276,6 +1278,19 @@ export default function EnsayoHub({
               <RadioReceiver className={`h-4 w-4 ${isSyncReceiver ? 'animate-pulse' : ''}`} />
               <span className="hidden sm:inline">RECIBIR LIVE</span>
             </button>
+            {hasMonitorUrl && (
+              <button
+                type="button"
+                onClick={() => {
+                  window.open(monitorUrl, '_blank', 'noopener,noreferrer');
+                }}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-500 shadow-sm transition-all hover:bg-zinc-100 hover:text-zinc-900 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+                title="Abrir confidence monitor en otra pantalla"
+                aria-label="Abrir confidence monitor en otra pantalla"
+              >
+                <ExternalLink className="h-4 w-4" />
+              </button>
+            )}
             <button
               type="button"
               onClick={() => { stopMetronome(); stopQueue(); setIsLiveMode(true); }}

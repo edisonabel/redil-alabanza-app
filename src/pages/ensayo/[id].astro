@@ -258,7 +258,13 @@ const parseChordProSections = (rawChordpro = '', fallbackTitle = 'Letra') => {
     const line = rawLine.trimEnd();
     const trimmed = line.trim();
 
-    if (!trimmed) continue;
+    if (!trimmed) {
+      // Preservar líneas en blanco como boundary de frase para cue splitting.
+      if (currentSection.lines.length > 0) {
+        currentSection.lines.push('');
+      }
+      continue;
+    }
 
     const inlineSectionMatch = trimmed.match(SECTION_LABEL_RE);
     if (inlineSectionMatch && isLikelySectionHeader(inlineSectionMatch[1])) {
@@ -658,6 +664,7 @@ const rehearsalSongs =
         ];
 
 const initialSongId = Astro.url.searchParams.get('song') || null;
+const monitorUrl = new URL(`/monitor/${routeId}`, Astro.url).toString();
 const { theme: contextTheme, preacher: contextPreacher } = getEventThemeAndPreacher(eventData || {}, 'Modo Ensayo');
 const contextTitle = contextTheme || 'Modo Ensayo';
 const pageTitle = `${buildEventHeadline(eventData || {}, 'Modo Ensayo')} | Modo Ensayo`;
@@ -886,6 +893,7 @@ const resolvedColorTokens = {
       contextTitle={contextTitle}
       eventMeta={eventData ? { ...eventData, display_theme: contextTheme, display_preacher: contextPreacher } : null}
       initialSongId={initialSongId}
+      monitorUrl={monitorUrl}
       playlistId={playlistDbId}
       canEdit={canEditSetlist}
       userId={user.id}

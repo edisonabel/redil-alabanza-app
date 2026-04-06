@@ -25,6 +25,13 @@ import {
   resolvePreferredAudioUrl,
   shouldPreferNativeBackgroundPlayback,
 } from '../../lib/audio-playback.js';
+import {
+  buildSectionShortLabel,
+  getSectionKind,
+  normalizeSectionLabel,
+  SECTION_VISUALS,
+  toRgba,
+} from '../../utils/sectionVisuals';
 
 // ── ID3v2 APIC (Cover Art) Extractor ──────────────────────────
 const coverArtCache = new Map();
@@ -141,54 +148,6 @@ const extractCoverArt = async (mp3Url) => {
 };
 
 // ── Section visuals (shared with ModoEnsayoCompacto) ──
-const normalizeSectionLabel = (value = '') => String(value || '').trim().toLowerCase();
-const stripAccents = (value = '') => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-const toRgba = (rgb = [161, 161, 170], alpha = 1) => `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
-
-const SECTION_VISUALS = {
-  intro:      { short: 'I',  rgb: [34, 211, 238] },
-  verse:      { short: 'V',  rgb: [99, 102, 241] },
-  prechorus:  { short: 'Pr', rgb: [234, 179, 8] },
-  chorus:     { short: 'C',  rgb: [249, 115, 22] },
-  interlude:  { short: 'It', rgb: [239, 68, 68] },
-  bridge:     { short: 'P',  rgb: [236, 72, 153] },
-  refrain:    { short: 'Rf', rgb: [34, 197, 94] },
-  outro:      { short: 'F',  rgb: [14, 165, 233] },
-  vamp:       { short: 'Vp', rgb: [248, 113, 113] },
-  default:    { short: 'S',  rgb: [148, 163, 184] },
-};
-
-const getSectionKind = (sectionName = '') => {
-  const normalized = normalizeSectionLabel(stripAccents(sectionName));
-  if (normalized.includes('pre coro') || normalized.includes('pre-coro') || normalized.includes('prechorus') || normalized.includes('pre chorus')) return 'prechorus';
-  if (normalized.includes('verso') || normalized.includes('verse')) return 'verse';
-  if (normalized.includes('coro') || normalized.includes('chorus')) return 'chorus';
-  if (normalized.includes('interludio') || normalized.includes('interlude') || normalized.includes('instrumental')) return 'interlude';
-  if (normalized.includes('puente') || normalized.includes('bridge')) return 'bridge';
-  if (normalized.includes('refran') || normalized.includes('refrain') || normalized.includes('tag')) return 'refrain';
-  if (normalized.includes('outro') || normalized.includes('final') || normalized.includes('ending') || normalized.includes('fin')) return 'outro';
-  if (normalized.includes('vamp')) return 'vamp';
-  if (normalized.includes('intro') || normalized.includes('entrada')) return 'intro';
-  return 'default';
-};
-
-const buildSectionShortLabel = (sectionName = '', kind = 'default', occurrence = 1) => {
-  const source = stripAccents(sectionName);
-  const explicitNumber = source.match(/(\d+)/)?.[1];
-  const fallbackNumber = explicitNumber || occurrence;
-  if (kind === 'verse') return `V${fallbackNumber}`;
-  if (kind === 'intro') return 'I';
-  if (kind === 'prechorus') return 'Pr';
-  if (kind === 'chorus') return 'C';
-  if (kind === 'interlude') return 'It';
-  if (kind === 'bridge') return 'P';
-  if (kind === 'refrain') return 'Rf';
-  if (kind === 'outro') return 'F';
-  if (kind === 'vamp') return 'Vp';
-  const compact = source.replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase();
-  return compact || `S${fallbackNumber}`;
-};
-
 // Un patrón SVG de onda de audio genérico pero estilizado
 const OndaAudioPattern = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='60' viewBox='0 0 100 60'%3E%3Cpath fill='%23ffffff' opacity='0.4' d='M0 30 C 5 10, 10 50, 15 30 S 25 10, 30 30 S 40 50, 45 30 S 55 10, 60 30 S 70 50, 75 30 S 85 10, 90 30 S 98 50, 100 30 V 60 H 0 Z'/%3E%3Cpath fill='%23ffffff' opacity='0.2' d='M0 30 C 5 20, 10 40, 15 30 S 25 20, 30 30 S 40 40, 45 30 S 55 20, 60 30 S 70 40, 75 30 S 85 20, 90 30 S 98 40, 100 30 V 60 H 0 Z'/%3E%3C/svg%3E")`;
 
@@ -374,7 +333,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
   const resolvedPadSrcRef = useRef(null);
   const timelineRef = useRef(null);
   const syncChannelRef = useRef(null);
-  const syncDataRef = useRef({ songId: null, sectionIndex: 0, time: 0 });
+  const syncDataRef = useRef({ songId: null, sectionIndex: 0, time: 0, isPlaying: false });
   const hasAutoDownloadedRef = useRef(false);
   const [downloadStatus, setDownloadStatus] = useState({ active: false, progress: 0, total: 0, done: false });
   const [resolvedAudioSrc, setResolvedAudioSrc] = useState(null);
@@ -506,7 +465,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
         visual,
         shortLabel,
         displayName,
-        body: realSection?.body || '',
+        body: realSection?.lines?.[0] || '',
       };
     });
   }, [activeSong, timelineDuration]);
@@ -695,9 +654,12 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
     syncDataRef.current = {
       songId: activeSong.id,
       sectionIndex: anticipatedSectionIndex,
-      time: anticipatedTime,
+      // La seccion puede anticiparse para compensar latencia, pero el reloj debe ser real
+      // para no adelantar el cue interno dentro del confidence monitor.
+      time: currentTime,
+      isPlaying,
     };
-  }, [activeSong, currentTime, visualMarkers]);
+  }, [activeSong, currentTime, visualMarkers, isPlaying]);
 
   // ── Heartbeat: emite cada 1.5s leyendo de la ref (sin flooding) ──
   useEffect(() => {
@@ -711,6 +673,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
         songId: String(activeSong.id || ''),
         sectionIndex: activeSectionIdx,
         currentTime,
+        isPlaying,
       },
     }).catch(e => console.warn('[LiveSync] Error:', e));
 
@@ -725,6 +688,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
           songId: String(data.songId),
           sectionIndex: data.sectionIndex,
           currentTime: data.time,
+          isPlaying: data.isPlaying,
         },
       }).catch(err => console.warn('[LiveSync] Error:', err));
     }, 1500);
@@ -733,6 +697,21 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
   }, [activeSong]); // SOLO depende de la canción
 
   // Cargar canción cuando cambia (no pausar si es auto-transición)
+  useEffect(() => {
+    if (!syncChannelRef.current || !activeSong) return;
+
+    syncChannelRef.current.send({
+      type: 'broadcast',
+      event: 'SECTION_CHANGE',
+      payload: {
+        songId: String(activeSong.id || ''),
+        sectionIndex: activeSectionIdx,
+        currentTime,
+        isPlaying,
+      },
+    }).catch((error) => console.warn('[LiveSync] Error play/pause:', error));
+  }, [activeSong, activeSectionIdx, isPlaying]);
+
   useEffect(() => {
     silenceStartRef.current = null; // Reset detector de silencio
     const audio = audioRef.current;

@@ -5,6 +5,14 @@ import { audioSessionService } from '../../services/AudioSessionService';
 import { metronomeService } from '../../services/MetronomeEngine';
 import { screenWakeLockService } from '../../services/ScreenWakeLockService';
 import { isLikelyAudioSourceUrl, resolvePreferredAudioUrl } from '../../lib/audio-playback.js';
+import { buildWordGroups, parseChordProLine } from '../../utils/chordProLineUtils';
+import {
+  buildSectionShortLabel,
+  getSectionKind,
+  normalizeSectionLabel,
+  SECTION_VISUALS,
+  toRgba,
+} from '../../utils/sectionVisuals';
 const FONT_PRESETS = {
   grande: {
     section: 'text-[0.78rem] sm:text-[0.82rem] tracking-[0.3em]',
@@ -46,50 +54,6 @@ const LATIN_TO_AMERICAN = {
   Sib: 'A#',
   Si: 'B',
   Dob: 'B',
-};
-const normalizeSectionLabel = (value = '') => String(value || '').trim().toLowerCase();
-const stripAccents = (value = '') => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-const toRgba = (rgb = [161, 161, 170], alpha = 1) => `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
-const SECTION_VISUALS = {
-  intro: { short: 'I', rgb: [34, 211, 238] },
-  verse: { short: 'V', rgb: [99, 102, 241] },
-  prechorus: { short: 'Pr', rgb: [234, 179, 8] },
-  chorus: { short: 'C', rgb: [249, 115, 22] },
-  interlude: { short: 'It', rgb: [239, 68, 68] },
-  bridge: { short: 'P', rgb: [236, 72, 153] },
-  refrain: { short: 'Rf', rgb: [34, 197, 94] },
-  outro: { short: 'F', rgb: [14, 165, 233] },
-  vamp: { short: 'Vp', rgb: [248, 113, 113] },
-  default: { short: 'S', rgb: [148, 163, 184] },
-};
-const getSectionKind = (sectionName = '') => {
-  const normalized = normalizeSectionLabel(stripAccents(sectionName));
-  if (normalized.includes('pre coro') || normalized.includes('pre-coro') || normalized.includes('prechorus') || normalized.includes('pre chorus')) return 'prechorus';
-  if (normalized.includes('verso') || normalized.includes('verse')) return 'verse';
-  if (normalized.includes('coro') || normalized.includes('chorus')) return 'chorus';
-  if (normalized.includes('interludio') || normalized.includes('interlude') || normalized.includes('instrumental')) return 'interlude';
-  if (normalized.includes('puente') || normalized.includes('bridge')) return 'bridge';
-  if (normalized.includes('refran') || normalized.includes('refrain') || normalized.includes('tag')) return 'refrain';
-  if (normalized.includes('outro') || normalized.includes('final') || normalized.includes('ending') || normalized.includes('fin')) return 'outro';
-  if (normalized.includes('vamp')) return 'vamp';
-  if (normalized.includes('intro') || normalized.includes('entrada')) return 'intro';
-  return 'default';
-};
-const buildSectionShortLabel = (sectionName = '', kind = 'default', occurrence = 1) => {
-  const source = stripAccents(sectionName);
-  const explicitNumber = source.match(/(\d+)/)?.[1];
-  const fallbackNumber = explicitNumber || occurrence;
-  if (kind === 'verse') return `V${fallbackNumber}`;
-  if (kind === 'intro') return 'I';
-  if (kind === 'prechorus') return 'Pr';
-  if (kind === 'chorus') return 'C';
-  if (kind === 'interlude') return 'It';
-  if (kind === 'bridge') return 'P';
-  if (kind === 'refrain') return 'Rf';
-  if (kind === 'outro') return 'F';
-  if (kind === 'vamp') return 'Vp';
-  const compact = source.replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase();
-  return compact || `S${fallbackNumber}`;
 };
 const repairMarkerTimeline = (markers = [], durationHint = 0) => {
   if (!Array.isArray(markers) || markers.length < 2) return Array.isArray(markers) ? markers : [];
@@ -370,29 +334,8 @@ const transposeChordProLine = (line, steps = 0) => {
   if (!line || !steps) return line;
   return String(line).replace(/\[([^\]]+)\]/g, (_match, chord) => `[${transposeChordToken(chord, steps)}]`);
 };
-const parseChordProLine = (line) => {
-  if (!line) return [];
-  const segments = [];
-  const regex = /\[([^\]]+)\]/g;
-  let currentChord = '';
-  let lastIndex = 0;
-  let match;
-  while ((match = regex.exec(line)) !== null) {
-    const lyric = line.slice(lastIndex, match.index);
-    if (lyric || currentChord) {
-      segments.push({ chord: currentChord, lyric });
-    }
-    currentChord = match[1].trim();
-    lastIndex = match.index + match[0].length;
-  }
-  const tail = line.slice(lastIndex);
-  if (tail || currentChord) {
-    segments.push({ chord: currentChord, lyric: tail });
-  }
-  return segments.length > 0 ? segments : [{ chord: '', lyric: line }];
-};
 /* ── Word-group builder: splits segments into per-word tokens ── */
-const buildWordGroups = (segments) => {
+const buildWordGroupsLegacy = (segments) => {
   // Step 1: classify each segment.
   // Whitespace-only (or empty) lyric → standalone chord-only token, not added to text.
   // Lyric with real text → chord-lyric item (chord marks position 0 of this lyric chunk).
