@@ -375,8 +375,9 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
       let anticipation = 0;
       if (index > 0 && cue?.estimatedStartSec != null) {
         const previousCue = track.cues[index - 1];
-        // 550ms es el margen preferido para que los músicos ajusten visualmente
-        const defaultAnticipation = 0.55;
+        // 150ms exactos para compensar latencia de red sin que el salto
+        // visual se sienta desfasado cuando se configuran los marcadores con alta precisión.
+        const defaultAnticipation = 0.15;
 
         // Limitar la anticipación a un 40% de la duración del cue anterior
         // para no solapar los saltos en la pantalla si los cues son rapidísimos

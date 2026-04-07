@@ -328,28 +328,36 @@ const buildChordGuide = (line: ParsedChordLine): string => {
 
   if (groupedChords.length === 0) return '';
 
-  if (!lyrics.trim()) {
-    return groupedChords.reduce((output, item, index) => {
-      if (index === 0) return item.text;
+  // Como podemos desplazar acordes hacia la derecha e insertar guiones
+  // reservamos un buffer de espacios bastante grande por si acaso.
+  const estMaxLen = lyrics.length + groupedChords.reduce((sum, item) => sum + item.text.length + 2, 0) + 10;
+  const buffer = Array.from({ length: Math.max(estMaxLen, 1) }, () => ' ');
 
-      const previous = groupedChords[index - 1];
-      const originalGap = Math.max(0, item.position - previous.position);
-      const gapSize = Math.max(2, originalGap);
-
-      return `${output}${' '.repeat(gapSize)}${item.text}`;
-    }, '');
-  }
-
-  const totalLength = groupedChords.reduce((maxLength, item) => (
-    Math.max(maxLength, item.position + item.text.length)
-  ), lyrics.length);
-
-  const buffer = Array.from({ length: Math.max(totalLength, 1) }, () => ' ');
+  let cursor = 0;
 
   for (const item of groupedChords) {
-    for (let index = 0; index < item.text.length; index += 1) {
-      buffer[item.position + index] = item.text[index];
+    let startPos = item.position;
+
+    // Si la posición objetivo está ocupada porque el acorde anterior 
+    // tenía texto muy largo o cayeron casi juntos en el texto original:
+    if (startPos < cursor) {
+      startPos = cursor;
+
+      // Añadimos un guión visual para indicar que es un grupo de 
+      // acordes de paso rápido o que comparten pulso.
+      if (startPos > 0) {
+        buffer[startPos] = '-';
+        startPos += 1;
+      }
     }
+
+    for (let index = 0; index < item.text.length; index += 1) {
+      buffer[startPos + index] = item.text[index];
+    }
+
+    // Avanzamos el cursor y exigimos un mínimo de 1 espacio en blanco real 
+    // al final para que el siguiente acorde se lea claramente.
+    cursor = startPos + item.text.length + 1;
   }
 
   return buffer.join('').trimEnd();

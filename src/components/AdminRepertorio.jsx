@@ -730,13 +730,13 @@ export default function AdminRepertorio() {
     try {
       setLoading(true);
       const { data: { session }, error } = await supabase.auth.getSession();
-      
+
       if (error || !session) {
         setSessionUser(null);
         setLoading(false);
         return;
       }
-      
+
       setSessionUser(session.user);
       await cargarCanciones();
     } catch (err) {
@@ -1137,15 +1137,15 @@ export default function AdminRepertorio() {
     }
 
     if (esChordPro) {
-        return (
-          <div className="inline-flex w-full min-w-[17rem] flex-nowrap items-center justify-center gap-2 py-0.5 px-1.5">
-            <label
-              className={`cursor-pointer group inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-action transition-all shadow-sm whitespace-nowrap hover:bg-surface ${valorTexto ? 'border-brand/30 bg-brand/10 text-brand' : ''}`}
-              title={valorTexto ? 'ChordPro cargado. Puedes reemplazarlo.' : undefined}
-            >
-              <UploadCloud className="w-4 h-4" />
-              <span className="text-xs font-semibold text-content group-hover:text-action transition-colors">
-                {valorTexto ? 'Reemplazar TXT' : 'Subir TXT'}
+      return (
+        <div className="inline-flex w-full min-w-[17rem] flex-nowrap items-center justify-center gap-2 py-0.5 px-1.5">
+          <label
+            className={`cursor-pointer group inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-action transition-all shadow-sm whitespace-nowrap hover:bg-surface ${valorTexto ? 'border-brand/30 bg-brand/10 text-brand' : ''}`}
+            title={valorTexto ? 'ChordPro cargado. Puedes reemplazarlo.' : undefined}
+          >
+            <UploadCloud className="w-4 h-4" />
+            <span className="text-xs font-semibold text-content group-hover:text-action transition-colors">
+              {valorTexto ? 'Reemplazar TXT' : 'Subir TXT'}
             </span>
             <input
               type="file"
@@ -1155,15 +1155,15 @@ export default function AdminRepertorio() {
             />
           </label>
 
-            <button
-              type="button"
-              onClick={() => abrirEditorChordpro(cancion)}
-              className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-all shadow-sm ${valorTexto ? 'border-brand/30 bg-brand/10 text-brand hover:bg-brand/15' : 'border-border bg-surface text-content hover:bg-background'}`}
-            >
-              <PencilLine className="w-3.5 h-3.5" />
-              {valorTexto ? 'Editar' : 'Pegar'}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => abrirEditorChordpro(cancion)}
+            className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-all shadow-sm ${valorTexto ? 'border-brand/30 bg-brand/10 text-brand hover:bg-brand/15' : 'border-border bg-surface text-content hover:bg-background'}`}
+          >
+            <PencilLine className="w-3.5 h-3.5" />
+            {valorTexto ? 'Editar' : 'Pegar'}
+          </button>
+        </div>
       );
     }
 
@@ -1417,11 +1417,10 @@ export default function AdminRepertorio() {
         Nueva
       </button>
 
-      <span className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold md:text-xs ${
-        cancionesPendientesChordpro.length > 0
+      <span className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold md:text-xs ${cancionesPendientesChordpro.length > 0
           ? 'border-amber-500/25 bg-amber-500/10 text-amber-600'
           : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600'
-      }`}>
+        }`}>
         <span className="inline-flex min-w-[1.65rem] items-center justify-center rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-black">
           {cancionesPendientesChordpro.length}
         </span>
@@ -1447,8 +1446,8 @@ export default function AdminRepertorio() {
         <p className="text-content-muted max-w-md mb-8">
           Debe iniciar sesion para gestionar el repertorio. Las politicas de seguridad (RLS) bloquean el acceso anonimo a esta seccion.
         </p>
-        <a 
-          href="/login" 
+        <a
+          href="/login"
           className="inline-flex items-center justify-center px-6 py-3 bg-action hover:bg-action/90 text-white font-semibold rounded-xl shadow-sm transition-all"
         >
           Ir a Iniciar Sesion
@@ -1560,27 +1559,27 @@ export default function AdminRepertorio() {
             <div ref={tableScrollRef} className="admin-table-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-background/90 pb-[calc(env(safe-area-inset-bottom)+2.45rem)]">
               <table className="relative w-max min-w-full border-separate border-spacing-0 bg-surface text-left">
                 <thead className="admin-table-head">
-                <tr className="admin-table-head-row text-xs uppercase tracking-wider text-content-muted font-bold divide-x divide-border">
-                  {/* Fijas */}
-                  <th className="admin-head-cell admin-head-cell-primary overflow-hidden border-r border-border px-0 py-0 text-center min-w-[14rem] max-w-[14rem]">
-                    <div className="h-full w-full truncate px-4 py-3 text-left">Titulo / Cantante</div>
-                  </th>
-                  {/* Metadata */}
-                  <th className="admin-head-cell px-4 py-3 min-w-[6rem]">Tonalidad</th>
-                  <th className="admin-head-cell px-4 py-3 min-w-[5rem]">BPM</th>
-                  <th className="admin-head-cell px-4 py-3 min-w-[8rem]">Categoria</th>
-                  <th className="admin-head-cell px-4 py-3 min-w-[8rem]">Voz</th>
-                  <th className="admin-head-cell px-4 py-3 min-w-[8rem]">Tema</th>
-                  <th className="admin-head-cell px-4 py-3 min-w-[6rem]">Estado</th>
-                  <th className="admin-head-cell px-4 py-3 min-w-[10rem]">Youtube (URL)</th>
-                  {/* Archivos R2 */}
-                  <th className="admin-head-cell px-4 py-3 text-center min-w-[8rem]">MP3</th>
-                  <th className="admin-head-cell px-4 py-3 text-center min-w-[8rem]">Acordes</th>
-                  <th className="admin-head-cell px-4 py-3 text-center min-w-[8rem]">Letras</th>
-                  <th className="admin-head-cell px-4 py-3 text-center min-w-[8rem]">Voces</th>
-                  <th className="admin-head-cell px-4 py-3 text-center min-w-[8rem]">Secuencias</th>
-                  <th className="admin-head-cell px-4 py-3 text-center min-w-[17rem]">ChordPro</th>
-                </tr>
+                  <tr className="admin-table-head-row text-xs uppercase tracking-wider text-content-muted font-bold divide-x divide-border">
+                    {/* Fijas */}
+                    <th className="admin-head-cell admin-head-cell-primary overflow-hidden border-r border-border px-0 py-0 text-center min-w-[14rem] max-w-[14rem]">
+                      <div className="h-full w-full truncate px-4 py-3 text-left">Titulo / Cantante</div>
+                    </th>
+                    {/* Metadata */}
+                    <th className="admin-head-cell px-4 py-3 min-w-[6rem]">Tonalidad</th>
+                    <th className="admin-head-cell px-4 py-3 min-w-[5rem]">BPM</th>
+                    <th className="admin-head-cell px-4 py-3 min-w-[8rem]">Categoria</th>
+                    <th className="admin-head-cell px-4 py-3 min-w-[8rem]">Voz</th>
+                    <th className="admin-head-cell px-4 py-3 min-w-[8rem]">Tema</th>
+                    <th className="admin-head-cell px-4 py-3 min-w-[6rem]">Estado</th>
+                    <th className="admin-head-cell px-4 py-3 min-w-[10rem]">Youtube (URL)</th>
+                    {/* Archivos R2 */}
+                    <th className="admin-head-cell px-4 py-3 text-center min-w-[8rem]">MP3</th>
+                    <th className="admin-head-cell px-4 py-3 text-center min-w-[8rem]">Acordes</th>
+                    <th className="admin-head-cell px-4 py-3 text-center min-w-[8rem]">Letras</th>
+                    <th className="admin-head-cell px-4 py-3 text-center min-w-[8rem]">Voces</th>
+                    <th className="admin-head-cell px-4 py-3 text-center min-w-[8rem]">Secuencias</th>
+                    <th className="admin-head-cell px-4 py-3 text-center min-w-[17rem]">ChordPro</th>
+                  </tr>
                 </thead>
                 <tbody className="text-sm">
                   {canciones.map((cancion) => (
@@ -1610,7 +1609,7 @@ export default function AdminRepertorio() {
                           </div>
                         </div>
                       </td>
-                      
+
                       {/* Metadata */}
                       <td className="p-0 align-top">
                         <EditableCell cancionId={cancion.id} campoBd="tonalidad" valorInicial={cancion.tonalidad} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_tonalidad`]} anchoClases="min-w-[6rem] max-w-[6rem]" />
@@ -1757,269 +1756,268 @@ export default function AdminRepertorio() {
 
             <div className="min-h-0 flex-1 overflow-hidden p-3 md:p-4">
               <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[minmax(16rem,1fr)_minmax(16rem,1fr)] gap-3 md:gap-4 lg:grid-cols-[minmax(0,1.24fr)_minmax(24rem,1.1fr)] xl:grid-cols-[minmax(0,1.18fr)_minmax(26rem,1.16fr)] lg:grid-rows-1">
-              {editorChordproCargando ? (
-                <div className="flex min-h-0 h-full overflow-hidden rounded-xl border border-border bg-background">
-                  <div className="flex h-full w-full items-center justify-center px-4">
-                  <div className="flex items-center gap-3 text-sm font-medium text-content-muted">
-                    <Loader2 className="h-5 w-5 animate-spin text-brand" />
-                    Cargando contenido ChordPro...
-                  </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex min-h-0 h-full overflow-hidden rounded-xl border border-border bg-background">
-                  <textarea
-                    value={editorChordproValor}
-                    onChange={(e) => setEditorChordproValor(e.target.value)}
-                    placeholder="[Verso 1]\n[C]Texto con acordes..."
-                    spellCheck={false}
-                    className="editor-column-scroll h-full min-h-0 w-full resize-none overflow-y-auto border-0 bg-transparent px-3 py-3 text-[13px] leading-6 text-content font-mono outline-none focus:border-transparent focus:ring-0"
-                  />
-                </div>
-              )}
-              <section id="admin-markers-panel" className="flex min-h-0 h-full flex-col overflow-hidden rounded-xl border border-border bg-background/70 p-3">
-                <audio
-                  id="admin-chordpro-audio"
-                  src={editorChordproCancion?.mp3 || ''}
-                  preload="metadata"
-                  className="hidden"
-                />
-                <div className="sticky top-0 z-10 -mx-3 border-b border-border bg-background/95 px-3 pb-3 pt-0 backdrop-blur">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-                    <h3 className="text-[11px] font-bold uppercase tracking-[0.18em] text-content">Markers de ensayo</h3>
-                    <span className="inline-flex min-h-[24px] items-center rounded-full border border-border bg-surface px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-content-muted">
-                      {totalMarkersEditor} items
-                    </span>
-                  </div>
-
-                  {editorSectionMarkers.length > 0 && (
-                    <div className="admin-chip-scroll mt-2 flex gap-1.5 overflow-x-auto pb-1">
-                      {editorSectionMarkers.map((marker, index) => (
-                        <button
-                          key={`jump-${marker.id || `${marker.sectionName}-${index}`}`}
-                          type="button"
-                          onClick={() => {
-                            const element = document.getElementById(`marker-card-${index}`);
-                            if (element) element.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-                          }}
-                          className="inline-flex min-h-[28px] shrink-0 items-center rounded-full border border-border bg-surface px-2.5 py-1 text-[10px] font-semibold text-content-muted transition-colors hover:border-brand/30 hover:text-content"
-                        >
-                          {marker.sectionName}
-                        </button>
-                      ))}
+                {editorChordproCargando ? (
+                  <div className="flex min-h-0 h-full overflow-hidden rounded-xl border border-border bg-background">
+                    <div className="flex h-full w-full items-center justify-center px-4">
+                      <div className="flex items-center gap-3 text-sm font-medium text-content-muted">
+                        <Loader2 className="h-5 w-5 animate-spin text-brand" />
+                        Cargando contenido ChordPro...
+                      </div>
                     </div>
-                  )}
+                  </div>
+                ) : (
+                  <div className="flex min-h-0 h-full overflow-hidden rounded-xl border border-border bg-background">
+                    <textarea
+                      value={editorChordproValor}
+                      onChange={(e) => setEditorChordproValor(e.target.value)}
+                      placeholder="[Verso 1]\n[C]Texto con acordes..."
+                      spellCheck={false}
+                      className="editor-column-scroll h-full min-h-0 w-full resize-none overflow-y-auto border-0 bg-transparent px-3 py-3 text-[13px] leading-6 text-content font-mono outline-none focus:border-transparent focus:ring-0"
+                    />
+                  </div>
+                )}
+                <section id="admin-markers-panel" className="flex min-h-0 h-full flex-col overflow-hidden rounded-xl border border-border bg-background/70 p-3">
+                  <audio
+                    id="admin-chordpro-audio"
+                    src={editorChordproCancion?.mp3 || ''}
+                    preload="metadata"
+                    className="hidden"
+                  />
+                  <div className="sticky top-0 z-10 -mx-3 border-b border-border bg-background/95 px-3 pb-3 pt-0 backdrop-blur">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                      <h3 className="text-[11px] font-bold uppercase tracking-[0.18em] text-content">Markers de ensayo</h3>
+                      <span className="inline-flex min-h-[24px] items-center rounded-full border border-border bg-surface px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-content-muted">
+                        {totalMarkersEditor} items
+                      </span>
+                    </div>
 
-                  <div className="mt-2 rounded-xl border border-border bg-surface px-2.5 py-2">
-                    {editorChordproCancion?.mp3 ? (
-                      <>
-                        <div className="flex items-center gap-2.5">
+                    {editorSectionMarkers.length > 0 && (
+                      <div className="admin-chip-scroll mt-2 flex gap-1.5 overflow-x-auto pb-1">
+                        {editorSectionMarkers.map((marker, index) => (
+                          <button
+                            key={`jump-${marker.id || `${marker.sectionName}-${index}`}`}
+                            type="button"
+                            onClick={() => {
+                              const element = document.getElementById(`marker-card-${index}`);
+                              if (element) element.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                            }}
+                            className="inline-flex min-h-[28px] shrink-0 items-center rounded-full border border-border bg-surface px-2.5 py-1 text-[10px] font-semibold text-content-muted transition-colors hover:border-brand/30 hover:text-content"
+                          >
+                            {marker.sectionName}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="mt-2 rounded-xl border border-border bg-surface px-2.5 py-2">
+                      {editorChordproCancion?.mp3 ? (
+                        <>
+                          <div className="flex items-center gap-2.5">
+                            <button
+                              type="button"
+                              onClick={toggleEditorAudioPlayback}
+                              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-action text-white transition-colors hover:bg-action/90"
+                              aria-label={editorAudioPlaying ? 'Pausar audio' : 'Reproducir audio'}
+                            >
+                              {editorAudioPlaying ? <Pause className="w-4 h-4" /> : <Play className="ml-0.5 w-4 h-4" />}
+                            </button>
+
+                            <div className="min-w-0 flex-1">
+                              <div className="mb-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.12em] text-content-muted">
+                                <span>{formatMarkerTime(editorAudioCurrentTime)}</span>
+                                <span>{formatMarkerTime(editorAudioDuration)}</span>
+                              </div>
+                              <input
+                                type="range"
+                                min="0"
+                                max={Math.max(editorAudioDuration, 1)}
+                                step="0.1"
+                                value={Math.min(editorAudioCurrentTime, Math.max(editorAudioDuration, 1))}
+                                onChange={(e) => handleEditorAudioSeek(e.target.value)}
+                                className="admin-marker-range w-full"
+                                style={{ '--range-progress': `${editorAudioProgress}%` }}
+                                aria-label="Posicion del audio de ensayo"
+                              />
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-xs text-content-muted">
+                          Esta cancion aun no tiene MP3 cargado. Puedes dejar los tiempos manualmente en formato <code>mm:ss</code>.
+                        </p>
+                      )}
+                    </div>
+
+                    {editorChordproCancion?.mp3 && editorSectionMarkers.length > 0 && (
+                      <div className="mt-2 rounded-xl border border-border bg-surface/80 px-2.5 py-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <button
                             type="button"
-                            onClick={toggleEditorAudioPlayback}
-                            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-action text-white transition-colors hover:bg-action/90"
-                            aria-label={editorAudioPlaying ? 'Pausar audio' : 'Reproducir audio'}
+                            onClick={autoDetectMarkers}
+                            disabled={isAutoDetecting}
+                            className="inline-flex min-h-[34px] items-center justify-center gap-2 rounded-lg bg-action px-3 py-2 text-[11px] font-bold uppercase tracking-[0.12em] text-white transition-colors hover:bg-action/90 disabled:cursor-wait disabled:bg-zinc-700 disabled:text-zinc-300"
                           >
-                            {editorAudioPlaying ? <Pause className="w-4 h-4" /> : <Play className="ml-0.5 w-4 h-4" />}
+                            {isAutoDetecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                            {isAutoDetecting ? 'Analizando audio...' : 'Auto-detectar tiempos'}
                           </button>
 
-                          <div className="min-w-0 flex-1">
-                            <div className="mb-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.12em] text-content-muted">
-                              <span>{formatMarkerTime(editorAudioCurrentTime)}</span>
-                              <span>{formatMarkerTime(editorAudioDuration)}</span>
-                            </div>
-                            <input
-                              type="range"
-                              min="0"
-                              max={Math.max(editorAudioDuration, 1)}
-                              step="0.1"
-                              value={Math.min(editorAudioCurrentTime, Math.max(editorAudioDuration, 1))}
-                              onChange={(e) => handleEditorAudioSeek(e.target.value)}
-                              className="admin-marker-range w-full"
-                              style={{ '--range-progress': `${editorAudioProgress}%` }}
-                              aria-label="Posicion del audio de ensayo"
-                            />
-                          </div>
+                          {autoDetectError ? (
+                            <span className="text-xs font-medium text-red-400">{autoDetectError}</span>
+                          ) : autoDetectResult ? (
+                            <span className="text-xs font-medium text-emerald-400">
+                              {autoDetectResult.fallback === 'uniform'
+                                ? `Distribucion uniforme aplicada (${autoDetectResult.language})`
+                                : `${autoDetectResult.matched} detectados${autoDetectResult.hybrid > 0 ? `, ${autoDetectResult.hybrid} hibridos` : ''}${autoDetectResult.interpolated > 0 ? `, ${autoDetectResult.interpolated} interpolados` : ''}${autoDetectResult.failed > 0 ? `, ${autoDetectResult.failed} sin match` : ''}${autoDetectResult.cueMarkersDetected > 0 ? `, ${autoDetectResult.cueMarkersDetected} cues` : ''} (${autoDetectResult.language})`}
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-content-muted">
+                              Usa Whisper para sugerir tiempos y revisa los markers amarillos o rojos antes de guardar.
+                            </span>
+                          )}
                         </div>
-                      </>
-                    ) : (
-                      <p className="text-xs text-content-muted">
-                        Esta cancion aun no tiene MP3 cargado. Puedes dejar los tiempos manualmente en formato <code>mm:ss</code>.
-                      </p>
+                      </div>
                     )}
                   </div>
 
-                  {editorChordproCancion?.mp3 && editorSectionMarkers.length > 0 && (
-                    <div className="mt-2 rounded-xl border border-border bg-surface/80 px-2.5 py-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={autoDetectMarkers}
-                          disabled={isAutoDetecting}
-                          className="inline-flex min-h-[34px] items-center justify-center gap-2 rounded-lg bg-action px-3 py-2 text-[11px] font-bold uppercase tracking-[0.12em] text-white transition-colors hover:bg-action/90 disabled:cursor-wait disabled:bg-zinc-700 disabled:text-zinc-300"
-                        >
-                          {isAutoDetecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                          {isAutoDetecting ? 'Analizando audio...' : 'Auto-detectar tiempos'}
-                        </button>
+                  <div className="editor-column-scroll mt-3 min-h-0 flex-1 space-y-2.5 overflow-y-scroll pr-1">
+                    {editorSectionMarkers.length > 0 ? editorSectionMarkers.map((marker, index) => {
+                      const cueDraft = cueDraftsEditor[index] || { cueCount: 1, cuePreview: [] };
+                      const cueTransitionCount = Math.max(0, cueDraft.cueCount - 1);
 
-                        {autoDetectError ? (
-                          <span className="text-xs font-medium text-red-400">{autoDetectError}</span>
-                        ) : autoDetectResult ? (
-                          <span className="text-xs font-medium text-emerald-400">
-                            {autoDetectResult.fallback === 'uniform'
-                              ? `Distribucion uniforme aplicada (${autoDetectResult.language})`
-                              : `${autoDetectResult.matched} detectados${autoDetectResult.hybrid > 0 ? `, ${autoDetectResult.hybrid} hibridos` : ''}${autoDetectResult.interpolated > 0 ? `, ${autoDetectResult.interpolated} interpolados` : ''}${autoDetectResult.failed > 0 ? `, ${autoDetectResult.failed} sin match` : ''}${autoDetectResult.cueMarkersDetected > 0 ? `, ${autoDetectResult.cueMarkersDetected} cues` : ''} (${autoDetectResult.language})`}
-                          </span>
-                        ) : (
-                          <span className="text-[11px] text-content-muted">
-                            Usa Whisper para sugerir tiempos y revisa los markers amarillos o rojos antes de guardar.
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="editor-column-scroll mt-3 min-h-0 flex-1 space-y-2.5 overflow-y-scroll pr-1">
-                  {editorSectionMarkers.length > 0 ? editorSectionMarkers.map((marker, index) => {
-                    const cueDraft = cueDraftsEditor[index] || { cueCount: 1, cuePreview: [] };
-                    const cueTransitionCount = Math.max(0, cueDraft.cueCount - 1);
-
-                    return (
-                      <div id={`marker-card-${index}`} key={marker.id || `${marker.sectionName}-${index}`} className="rounded-xl border border-border bg-surface px-2.5 py-2 scroll-mt-36">
-                        <div className="grid grid-cols-[minmax(6.75rem,0.9fr)_4.75rem_minmax(0,1fr)_auto_auto] items-center gap-1.5">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-content">{marker.sectionName}</p>
-                            {marker._autoDetected && (
-                              <span className={`mt-1 inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
-                              marker._method === 'whisper-match' && marker._confidence > 0.7
-                                ? 'bg-emerald-950/70 text-emerald-400'
-                                : marker._method === 'whisper-match' && marker._confidence > 0.4
-                                  ? 'bg-yellow-950/70 text-yellow-400'
-                                  : marker._method === 'hybrid-structure'
-                                    ? 'bg-sky-950/70 text-sky-300'
-                                    : marker._method === 'interpolated' || marker._method === 'uniform'
-                                    ? 'bg-yellow-950/70 text-yellow-400'
-                                    : 'bg-red-950/70 text-red-400'
-                            }`}>
-                              {marker._method === 'whisper-match'
-                                ? `IA ${Math.round((marker._confidence || 0) * 100)}%`
-                                : marker._method === 'hybrid-structure'
-                                  ? 'Hibrido'
-                                : marker._method === 'interpolated'
-                                  ? 'Interpolado'
-                                  : marker._method === 'uniform'
-                                      ? 'Uniforme'
-                                      : 'Sin match'}
-                              </span>
-                            )}
-                          </div>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={marker.startSec == null ? '' : formatMarkerTime(marker.startSec)}
-                            onChange={(e) => {
-                              const nextValue = parseMarkerTime(e.target.value);
-                              actualizarEditorSectionMarker(index, {
-                                startSec: nextValue,
-                                cueMarkers: normalizeCueMarkerTimes(marker?.cueMarkers, nextValue),
-                              });
-                            }}
-                            placeholder="00:00"
-                            className="h-9 w-[4.75rem] rounded-lg border border-border bg-background px-2.5 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
-                          />
-                          <input
-                            type="text"
-                            value={marker.note || ''}
-                            onChange={(e) => {
-                              actualizarEditorSectionMarker(index, { note: e.target.value });
-                            }}
-                            placeholder="Nota de seccion"
-                            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              actualizarEditorSectionMarker(index, { startSec: null, cueMarkers: [] });
-                            }}
-                            className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-surface px-2.5 text-[11px] font-bold text-content-muted transition-colors hover:bg-background hover:text-content"
-                          >
-                            Limpiar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => capturarMarkerActual(index)}
-                            disabled={!editorChordproCancion?.mp3}
-                            className="inline-flex h-9 items-center justify-center rounded-lg border border-brand/25 bg-brand/10 px-2.5 text-[11px] font-bold text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted"
-                          >
-                            <span className="sm:hidden">Marcar</span>
-                            <span className="hidden sm:inline">Marcar ahora</span>
-                          </button>
-                        </div>
-
-                        {cueDraft.cueCount > 1 && (
-                          <div className="mt-2 rounded-lg border border-border/80 bg-background/60 p-2.5">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="min-w-0">
-                                <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-content-muted">
-                                  Cue markers
-                                </p>
-                                <p className="text-[11px] text-content-muted">
-                                  {cueDraft.cueCount} cues detectados. Marca {cueTransitionCount} cambio{cueTransitionCount === 1 ? '' : 's'} interno{cueTransitionCount === 1 ? '' : 's'} para esta seccion.
-                                </p>
-                              </div>
-
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => capturarCueMarkerActual(index)}
-                                  disabled={!editorChordproCancion?.mp3 || marker.startSec == null}
-                                  className="inline-flex h-8 items-center justify-center rounded-lg border border-brand/20 bg-brand/10 px-2.5 text-[10px] font-bold uppercase tracking-[0.1em] text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted"
-                                >
-                                  Cue ahora
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => limpiarCueMarkers(index)}
-                                  disabled={!Array.isArray(marker?.cueMarkers) || marker.cueMarkers.length === 0}
-                                  className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-surface px-2.5 text-[10px] font-bold uppercase tracking-[0.1em] text-content-muted transition-colors hover:bg-background hover:text-content disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  Limpiar cues
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="mt-2 grid gap-2">
-                              <CueMarkersInput
-                                value={marker.cueMarkers}
-                                sectionStartSec={marker.startSec}
-                                onCommit={(nextCueMarkers) => actualizarEditorSectionMarker(index, { cueMarkers: nextCueMarkers })}
-                                placeholder={cueTransitionCount > 1 ? 'Ej: 01:12, 01:18' : 'Ej: 01:12'}
-                              />
-
-                              {cueDraft.cuePreview.length > 0 && (
-                                <p className="text-[11px] text-content-muted">
-                                  {cueDraft.cuePreview.map((preview, previewIndex) => (
-                                    <span key={`${marker.sectionKey || marker.id}-cue-preview-${previewIndex}`}>
-                                      {previewIndex > 0 ? ' | ' : ''}
-                                      <span className="font-semibold text-content">{`Cue ${previewIndex + 1}`}</span>
-                                      {`: ${preview}`}
-                                    </span>
-                                  ))}
-                                </p>
+                      return (
+                        <div id={`marker-card-${index}`} key={marker.id || `${marker.sectionName}-${index}`} className="rounded-xl border border-border bg-surface px-2.5 py-2 scroll-mt-36">
+                          <div className="grid grid-cols-[minmax(6.75rem,0.9fr)_4.75rem_minmax(0,1fr)_auto_auto] items-center gap-1.5">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-content">{marker.sectionName}</p>
+                              {marker._autoDetected && (
+                                <span className={`mt-1 inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${marker._method === 'whisper-match' && marker._confidence > 0.7
+                                    ? 'bg-emerald-950/70 text-emerald-400'
+                                    : marker._method === 'whisper-match' && marker._confidence > 0.4
+                                      ? 'bg-yellow-950/70 text-yellow-400'
+                                      : marker._method === 'hybrid-structure'
+                                        ? 'bg-sky-950/70 text-sky-300'
+                                        : marker._method === 'interpolated' || marker._method === 'uniform'
+                                          ? 'bg-yellow-950/70 text-yellow-400'
+                                          : 'bg-red-950/70 text-red-400'
+                                  }`}>
+                                  {marker._method === 'whisper-match'
+                                    ? `IA ${Math.round((marker._confidence || 0) * 100)}%`
+                                    : marker._method === 'hybrid-structure'
+                                      ? 'Hibrido'
+                                      : marker._method === 'interpolated'
+                                        ? 'Interpolado'
+                                        : marker._method === 'uniform'
+                                          ? 'Uniforme'
+                                          : 'Sin match'}
+                                </span>
                               )}
                             </div>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={marker.startSec == null ? '' : formatMarkerTime(marker.startSec)}
+                              onChange={(e) => {
+                                const nextValue = parseMarkerTime(e.target.value);
+                                actualizarEditorSectionMarker(index, {
+                                  startSec: nextValue,
+                                  cueMarkers: normalizeCueMarkerTimes(marker?.cueMarkers, nextValue),
+                                });
+                              }}
+                              placeholder="00:00"
+                              className="h-9 w-[4.75rem] rounded-lg border border-border bg-background px-2.5 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                            />
+                            <input
+                              type="text"
+                              value={marker.note || ''}
+                              onChange={(e) => {
+                                actualizarEditorSectionMarker(index, { note: e.target.value });
+                              }}
+                              placeholder="Nota de seccion"
+                              className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                actualizarEditorSectionMarker(index, { startSec: null, cueMarkers: [] });
+                              }}
+                              className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-surface px-2.5 text-[11px] font-bold text-content-muted transition-colors hover:bg-background hover:text-content"
+                            >
+                              Limpiar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => capturarMarkerActual(index)}
+                              disabled={!editorChordproCancion?.mp3}
+                              className="inline-flex h-9 items-center justify-center rounded-lg border border-brand/25 bg-brand/10 px-2.5 text-[11px] font-bold text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted"
+                            >
+                              <span className="sm:hidden">Marcar</span>
+                              <span className="hidden sm:inline">Marcar ahora</span>
+                            </button>
                           </div>
-                        )}
+
+                          {cueDraft.cueCount > 1 && (
+                            <div className="mt-2 rounded-lg border border-border/80 bg-background/60 p-2.5">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-content-muted">
+                                    Cue markers
+                                  </p>
+                                  <p className="text-[11px] text-content-muted">
+                                    Esta seccion tiene {cueDraft.cueCount} lineas. El Tiempo 1 es el inicio de la seccion; ingresa {cueTransitionCount === 1 ? 'el' : 'los'} {cueTransitionCount} cambio{cueTransitionCount === 1 ? '' : 's'} interno{cueTransitionCount === 1 ? '' : 's'} restante{cueTransitionCount === 1 ? '' : 's'}.
+                                  </p>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => capturarCueMarkerActual(index)}
+                                    disabled={!editorChordproCancion?.mp3 || marker.startSec == null}
+                                    className="inline-flex h-8 items-center justify-center rounded-lg border border-brand/20 bg-brand/10 px-2.5 text-[10px] font-bold uppercase tracking-[0.1em] text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted"
+                                  >
+                                    Cue ahora
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => limpiarCueMarkers(index)}
+                                    disabled={!Array.isArray(marker?.cueMarkers) || marker.cueMarkers.length === 0}
+                                    className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-surface px-2.5 text-[10px] font-bold uppercase tracking-[0.1em] text-content-muted transition-colors hover:bg-background hover:text-content disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Limpiar cues
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="mt-2 grid gap-2">
+                                <CueMarkersInput
+                                  value={marker.cueMarkers}
+                                  sectionStartSec={marker.startSec}
+                                  onCommit={(nextCueMarkers) => actualizarEditorSectionMarker(index, { cueMarkers: nextCueMarkers })}
+                                  placeholder={cueTransitionCount > 1 ? 'Ej: 01:12, 01:18' : 'Ej: 01:12'}
+                                />
+
+                                {cueDraft.cuePreview.length > 0 && (
+                                  <p className="text-[11px] text-content-muted">
+                                    {cueDraft.cuePreview.map((preview, previewIndex) => (
+                                      <span key={`${marker.sectionKey || marker.id}-cue-preview-${previewIndex}`}>
+                                        {previewIndex > 0 ? ' | ' : ''}
+                                        <span className="font-semibold text-content">{`Cue ${previewIndex + 1}`}</span>
+                                        {`: ${preview}`}
+                                      </span>
+                                    ))}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }) : (
+                      <div className="rounded-xl border border-dashed border-border bg-surface px-4 py-4 text-sm text-content-muted">
+                        Aun no hay secciones parseadas. Agrega encabezados como <code>[Verso 1]</code> o <code>[Coro]</code> para preparar markers.
                       </div>
-                    );
-                  }) : (
-                    <div className="rounded-xl border border-dashed border-border bg-surface px-4 py-4 text-sm text-content-muted">
-                      Aun no hay secciones parseadas. Agrega encabezados como <code>[Verso 1]</code> o <code>[Coro]</code> para preparar markers.
-                    </div>
-                  )}
-                </div>
-              </section>
+                    )}
+                  </div>
+                </section>
               </div>
             </div>
 
