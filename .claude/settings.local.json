@@ -4,7 +4,8 @@
       "Bash(npx astro:*)",
       "Bash(grep -rn 'CREATE TABLE' C:/Users/edici/OneDrive/Documentos/ALABANZA/ --include=*.sql)",
       "Bash(grep -rn \"ALTER TABLE.*eventos\\\\|ALTER TABLE public.eventos\" C:/Users/edici/OneDrive/Documentos/ALABANZA/ --include=*.sql)",
-      "mcp__Claude_Preview__preview_start"
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npx tsc:*)"
     ]
   }
 }

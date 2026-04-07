@@ -12,24 +12,26 @@ const rawSupabaseUrl =
   process.env.PUBLIC_SUPABASE_URL ||
   '';
 const supabaseUrl = rawSupabaseUrl.replace(/\/$/, '');
-const supabaseAnonKey =
-  import.meta.env.SUPABASE_ANON_KEY ||
-  process.env.SUPABASE_ANON_KEY ||
-  import.meta.env.PUBLIC_SUPABASE_ANON_KEY ||
-  process.env.PUBLIC_SUPABASE_ANON_KEY ||
+const supabaseServiceRoleKey =
+  import.meta.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
   '';
 const openAiApiKey =
   import.meta.env.OPENAI_API_KEY ||
   process.env.OPENAI_API_KEY ||
   '';
+const whisperModel =
+  import.meta.env.OPENAI_WHISPER_MODEL ||
+  process.env.OPENAI_WHISPER_MODEL ||
+  'whisper-1';
 
-const authClient = supabaseUrl && supabaseAnonKey
-  ? createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-    })
+const authClient = supabaseUrl && supabaseServiceRoleKey
+  ? createClient(supabaseUrl, supabaseServiceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  })
   : null;
 
 const DRIVE_HOSTS = new Set([
@@ -153,7 +155,7 @@ const estimateSectionStructureWeight = (section: SectionPayload) => {
     default: 1,
   } as const;
 
-  const kindBonus = kindBonusMap[kind] || 1;
+  const kindBonus = kindBonusMap[kind as keyof typeof kindBonusMap] || 1;
   const base =
     0.8 +
     lyricLines.length * 0.7 +
@@ -164,40 +166,60 @@ const estimateSectionStructureWeight = (section: SectionPayload) => {
   return Math.max(base * kindBonus, 0.8);
 };
 
-const levenshteinSimilarity = (left: string, right: string) => {
-  if (!left && !right) return 1;
-  if (!left || !right) return 0;
+const levenshteinSimilarity = (() => {
+  let buffer = new Int32Array(0);
 
-  const a = normalizeText(left);
-  const b = normalizeText(right);
-  if (!a && !b) return 1;
-  if (!a || !b) return 0;
-  if (a === b) return 1;
+  return (left: string, right: string) => {
+    if (!left && !right) return 1;
+    if (!left || !right) return 0;
 
-  const matrix: number[][] = Array.from({ length: a.length + 1 }, () =>
-    Array.from({ length: b.length + 1 }, () => 0));
+    const a = normalizeText(left);
+    const b = normalizeText(right);
+    if (!a && !b) return 1;
+    if (!a || !b) return 0;
+    if (a === b) return 1;
 
-  for (let i = 0; i <= a.length; i += 1) matrix[i][0] = i;
-  for (let j = 0; j <= b.length; j += 1) matrix[0][j] = j;
-
-  for (let i = 1; i <= a.length; i += 1) {
-    for (let j = 1; j <= b.length; j += 1) {
-      const substitutionCost = a[i - 1] === b[j - 1] ? 0 : 1;
-      matrix[i][j] = Math.min(
-        matrix[i - 1][j] + 1,
-        matrix[i][j - 1] + 1,
-        matrix[i - 1][j - 1] + substitutionCost,
-      );
+    const rows = a.length + 1;
+    const cols = b.length + 1;
+    const needed = rows * cols;
+    if (buffer.length < needed) {
+      buffer = new Int32Array(needed * 2);
     }
-  }
 
-  return 1 - (matrix[a.length][b.length] / Math.max(a.length, b.length));
-};
+    for (let i = 0; i < rows; i += 1) buffer[i * cols] = i;
+    for (let j = 0; j < cols; j += 1) buffer[j] = j;
+
+    for (let i = 1; i < rows; i += 1) {
+      for (let j = 1; j < cols; j += 1) {
+        const substitutionCost = a[i - 1] === b[j - 1] ? 0 : 1;
+        buffer[i * cols + j] = Math.min(
+          buffer[(i - 1) * cols + j] + 1,
+          buffer[i * cols + (j - 1)] + 1,
+          buffer[(i - 1) * cols + (j - 1)] + substitutionCost,
+        );
+      }
+    }
+
+    return 1 - (buffer[a.length * cols + b.length] / Math.max(a.length, b.length));
+  };
+})();
 
 const detectLanguage = (sections: SectionPayload[]) => {
-  const allText = normalizeText(sections.map((section) => section.firstLine || '').join(' '));
-  const spanishWords = ['el', 'la', 'los', 'las', 'de', 'en', 'que', 'por', 'es', 'tu', 'mi', 'su', 'para', 'con', 'se', 'te', 'me'];
-  const englishWords = ['the', 'and', 'is', 'in', 'to', 'of', 'my', 'your', 'for', 'with', 'you', 'are', 'we'];
+  const allLines = sections.flatMap((section) => [
+    section.firstLine || '',
+    ...(Array.isArray(section.lines) ? section.lines.map((line) => stripChords(line)) : []),
+  ]);
+  const allText = normalizeText(allLines.join(' '));
+  const spanishWords = [
+    'el', 'la', 'los', 'las', 'de', 'en', 'que', 'por', 'es', 'tu', 'mi', 'su', 'para',
+    'con', 'se', 'te', 'me', 'un', 'una', 'al', 'del', 'mas', 'pero', 'cuando', 'porque',
+    'todo', 'eres', 'señor', 'dios', 'santo', 'jesus', 'gloria', 'aleluya',
+  ];
+  const englishWords = [
+    'the', 'and', 'is', 'in', 'to', 'of', 'my', 'your', 'for', 'with', 'you', 'are', 'we',
+    'he', 'she', 'his', 'her', 'our', 'all', 'will', 'that', 'have', 'lord', 'god', 'holy',
+    'jesus', 'glory', 'hallelujah',
+  ];
 
   const countTokens = (dictionary: string[]) =>
     dictionary.reduce((count, token) => (
@@ -320,7 +342,25 @@ const extractConfirmationUrl = (html = '', baseUrl = '') => {
   return confirmedUrl.href;
 };
 
-const fetchAudioResponse = async (url: string, cookieHeader = '', depth = 0): Promise<Response> => {
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+const AUDIO_DOWNLOAD_TIMEOUT_MS = 60_000;
+
+const isAudioContentType = (contentType: string) => {
+  const ct = contentType.toLowerCase();
+  return (
+    ct.includes('audio/') ||
+    ct.includes('application/octet-stream') ||
+    ct.includes('video/') ||
+    ct.includes('application/ogg')
+  );
+};
+
+const fetchAudioResponse = async (
+  url: string,
+  cookieHeader = '',
+  depth = 0,
+  signal?: AbortSignal,
+): Promise<Response> => {
   const response = await fetch(url, {
     method: 'GET',
     headers: {
@@ -328,6 +368,7 @@ const fetchAudioResponse = async (url: string, cookieHeader = '', depth = 0): Pr
       ...(cookieHeader ? { cookie: cookieHeader } : {}),
     },
     redirect: 'follow',
+    signal,
   });
 
   if (!response.ok) {
@@ -353,7 +394,21 @@ const fetchAudioResponse = async (url: string, cookieHeader = '', depth = 0): Pr
     .filter(Boolean)
     .join('; ');
 
-  return fetchAudioResponse(confirmUrl, nextCookieHeader, depth + 1);
+  return fetchAudioResponse(confirmUrl, nextCookieHeader, depth + 1, signal);
+};
+
+const validateAudioResponse = (response: Response) => {
+  const contentLength = response.headers.get('content-length');
+  if (contentLength) {
+    const bytes = Number(contentLength);
+    if (Number.isFinite(bytes) && bytes > MAX_AUDIO_BYTES) {
+      throw new Error(`Audio excede 25MB (limite actual de la API).`);
+    }
+  }
+  const contentType = (response.headers.get('content-type') || '').toLowerCase();
+  if (contentType && !contentType.includes('text/html') && !isAudioContentType(contentType)) {
+    throw new Error(`Tipo de contenido inesperado: ${contentType.split(';')[0].trim()}`);
+  }
 };
 
 const downloadAudioBlob = async (rawUrl: string, requestUrl: URL) => {
@@ -366,28 +421,32 @@ const downloadAudioBlob = async (rawUrl: string, requestUrl: URL) => {
   const parsedUrl = new URL(targetUrl);
   const maybeDriveId = extractGoogleDriveId(targetUrl);
 
-  if (DRIVE_HOSTS.has(parsedUrl.hostname.toLowerCase()) && maybeDriveId) {
-    let lastError: Error | null = null;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), AUDIO_DOWNLOAD_TIMEOUT_MS);
 
-    for (const candidate of buildDriveCandidates(maybeDriveId)) {
-      try {
-        const response = await fetchAudioResponse(candidate);
-        return response.blob();
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error || 'Error descargando Google Drive.'));
+  try {
+    if (DRIVE_HOSTS.has(parsedUrl.hostname.toLowerCase()) && maybeDriveId) {
+      let lastError: Error | null = null;
+
+      for (const candidate of buildDriveCandidates(maybeDriveId)) {
+        try {
+          const response = await fetchAudioResponse(candidate, '', 0, controller.signal);
+          validateAudioResponse(response);
+          return await response.blob();
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error || 'Error descargando Google Drive.'));
+        }
       }
+
+      throw lastError || new Error('No se pudo descargar el audio desde Google Drive.');
     }
 
-    throw lastError || new Error('No se pudo descargar el audio desde Google Drive.');
+    const response = await fetchAudioResponse(targetUrl, '', 0, controller.signal);
+    validateAudioResponse(response);
+    return await response.blob();
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  const response = await fetchAudioResponse(targetUrl);
-  const contentType = (response.headers.get('content-type') || '').toLowerCase();
-  if (contentType.includes('text/html')) {
-    throw new Error('La URL del MP3 devolvio HTML en vez de audio.');
-  }
-
-  return response.blob();
 };
 
 const findPhraseMatchesInTranscript = (
@@ -583,11 +642,11 @@ const buildCueMarkersForSection = ({
     );
     const relaxedCandidates = directCandidates.length === 0 && previousSamePhraseStart != null
       ? findPhraseMatchesInTranscript(
-          transcriptWords,
-          cuePhrase,
-          Math.max(lastCueStart + MIN_SECTION_PROGRESS_SEC, previousSamePhraseStart + 1),
-          sectionEndCap,
-        )
+        transcriptWords,
+        cuePhrase,
+        Math.max(lastCueStart + MIN_SECTION_PROGRESS_SEC, previousSamePhraseStart + 1),
+        sectionEndCap,
+      )
       : [];
     const match = selectPhraseMatch(
       directCandidates.length > 0 ? directCandidates : relaxedCandidates,
@@ -662,7 +721,7 @@ const fillMarkerGapWithStructure = ({
 
 export const POST: APIRoute = async ({ request, cookies }) => {
   try {
-    if (!authClient || !supabaseUrl || !supabaseAnonKey) {
+    if (!authClient || !supabaseUrl) {
       return jsonResponse({ error: 'Faltan variables de entorno de Supabase.' }, 500);
     }
 
@@ -682,15 +741,15 @@ export const POST: APIRoute = async ({ request, cookies }) => {
 
     const body = await request.json().catch(() => ({}));
     const mp3Url = String(body?.mp3Url || '').trim();
-    const sections = (Array.isArray(body?.sections) ? body.sections : [])
-      .map((section) => ({
+    const sections: SectionPayload[] = (Array.isArray(body?.sections) ? body.sections : [])
+      .map((section: any) => ({
         name: String(section?.name || '').trim(),
         firstLine: String(section?.firstLine || '').trim(),
         lines: Array.isArray(section?.lines)
-          ? section.lines.map((line) => String(line || ''))
+          ? section.lines.map((line: any) => String(line || ''))
           : [],
       }))
-      .filter((section) => section.name);
+      .filter((section: any) => section.name);
 
     if (!mp3Url) {
       return jsonResponse({ error: 'Se requiere mp3Url.' }, 400);
@@ -705,53 +764,81 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     }
 
     const audioBlob = await downloadAudioBlob(mp3Url, new URL(request.url));
-    if (audioBlob.size > 25 * 1024 * 1024) {
+    // Comprobación de seguridad si Content-Length no estaba disponible en la descarga
+    if (audioBlob.size > MAX_AUDIO_BYTES) {
       return jsonResponse({ error: 'Audio excede 25MB (limite actual de la API).' }, 413);
     }
 
     const language = detectLanguage(sections);
     const formData = new FormData();
     formData.append('file', audioBlob, 'audio.mp3');
-    formData.append('model', 'whisper-1');
+    formData.append('model', whisperModel);
     formData.append('response_format', 'verbose_json');
     formData.append('timestamp_granularities[]', 'word');
+    formData.append('timestamp_granularities[]', 'segment');
     formData.append('language', language);
 
-    const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${openAiApiKey}`,
-      },
-      body: formData,
-    });
+    const promptText = sections
+      .flatMap((section) => (Array.isArray(section.lines) ? section.lines.map(stripChords) : []))
+      .filter((line) => line.trim().length > 0)
+      .join(' ')
+      .slice(0, 1000);
 
-    if (!whisperResponse.ok) {
-      const detail = await whisperResponse.text().catch(() => '');
-      return jsonResponse({
-        error: `Error de Whisper API: ${whisperResponse.status}`,
-        detail: detail.slice(0, 240),
-      }, 502);
+    if (promptText) {
+      formData.append('prompt', promptText);
+    }
+    formData.append('temperature', '0.2');
+
+    const WHISPER_TIMEOUT_MS = 120_000;
+    const RETRYABLE_STATUSES = new Set([429, 503]);
+    let whisperResponse: Response | null = null;
+    let lastWhisperStatus = 0;
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+      }
+      const whisperController = new AbortController();
+      const whisperTimeoutId = setTimeout(() => whisperController.abort(), WHISPER_TIMEOUT_MS);
+      try {
+        whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${openAiApiKey}` },
+          body: formData,
+          signal: whisperController.signal,
+        });
+      } finally {
+        clearTimeout(whisperTimeoutId);
+      }
+      lastWhisperStatus = whisperResponse.status;
+      if (whisperResponse.ok || !RETRYABLE_STATUSES.has(lastWhisperStatus)) break;
+    }
+
+    if (!whisperResponse || !whisperResponse.ok) {
+      const detail = await whisperResponse?.text().catch(() => '') ?? '';
+      console.error('[auto-markers] Whisper error:', lastWhisperStatus, detail.slice(0, 500));
+      return jsonResponse({ error: `Error de Whisper API: ${lastWhisperStatus}` }, 502);
     }
 
     const transcript = await whisperResponse.json() as TranscriptResponse;
     const transcriptWords = Array.isArray(transcript.words)
       ? transcript.words.filter((word) => (
-          typeof word?.word === 'string' &&
-          Number.isFinite(Number(word?.start)) &&
-          Number.isFinite(Number(word?.end))
-        )).map((word) => ({
-          word: String(word.word || '').trim(),
-          start: Number(word.start),
-          end: Number(word.end),
-        }))
+        typeof word?.word === 'string' &&
+        Number.isFinite(Number(word?.start)) &&
+        Number.isFinite(Number(word?.end))
+      )).map((word) => ({
+        word: String(word.word || '').trim(),
+        start: Number(word.start),
+        end: Number(word.end),
+      }))
       : [];
 
     const transcriptPreview = String(transcript.text || '').slice(0, 200);
     const durationSec = Number(transcript.duration) > 0
       ? Math.round(Number(transcript.duration))
       : (transcriptWords[transcriptWords.length - 1]?.end
-          ? Math.round(transcriptWords[transcriptWords.length - 1].end)
-          : null);
+        ? Math.round(transcriptWords[transcriptWords.length - 1].end)
+        : null);
 
     if (transcriptWords.length === 0) {
       return jsonResponse({
@@ -775,7 +862,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     const phraseLastMatchedStart = new Map<string, number>();
     const totalSections = sections.length;
     let lastStartSec = 0;
-    const suggestedMarkers: SuggestedMarker[] = sections.map((section, index) => {
+    const suggestedMarkers: SuggestedMarker[] = sections.map((section: any, index: number) => {
       const cleanFirstLine = stripChords(section.firstLine || '');
 
       if (!cleanFirstLine) {
@@ -803,10 +890,10 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       const directCandidates = findPhraseMatchesInTranscript(transcriptWords, cleanFirstLine, searchStartSec);
       const relaxedCandidates = directCandidates.length === 0 && previousSamePhraseStart != null
         ? findPhraseMatchesInTranscript(
-            transcriptWords,
-            cleanFirstLine,
-            Math.max(lastStartSec + MIN_SECTION_PROGRESS_SEC, previousSamePhraseStart + 1),
-          )
+          transcriptWords,
+          cleanFirstLine,
+          Math.max(lastStartSec + MIN_SECTION_PROGRESS_SEC, previousSamePhraseStart + 1),
+        )
         : [];
       const match = selectPhraseMatch(
         directCandidates.length > 0 ? directCandidates : relaxedCandidates,

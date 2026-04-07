@@ -245,10 +245,10 @@ const splitChordDisplayParts = (value = '') => {
     suffix,
     bass: bassRoot
       ? {
-          root: bassRoot,
-          accidental: bassAccidental,
-          suffix: bassSuffix,
-        }
+        root: bassRoot,
+        accidental: bassAccidental,
+        suffix: bassSuffix,
+      }
       : null,
   };
 };
@@ -454,16 +454,11 @@ function ChordOverlayLine({ renderedLine, fontPreset, lineKey }) {
                 style={{ paddingTop: '1.3em', lineHeight: '1.3' }}
               >
                 {token.chords.length > 0 && (
-                  <span className="pointer-events-none absolute top-0 left-0 w-full h-0 overflow-visible">
+                  <span className="pointer-events-none absolute top-0 flex w-max h-0 overflow-visible" style={{ left: '50%', transform: 'translateX(-50%)', gap: '0.4em' }}>
                     {token.chords.map((c, j) => (
                       <span
                         key={`${lineKey}-chord-${i}-${j}`}
-                        className="absolute top-0 whitespace-nowrap"
-                        style={{
-                          left: token.word.length > 1
-                            ? `${(c.charOffset / token.word.length) * 100}%`
-                            : '0%',
-                        }}
+                        className="whitespace-nowrap"
                       >
                         <ChordDisplay
                           chord={c.name}
@@ -539,7 +534,7 @@ export default function ModoEnsayoCompacto({
     } else if (syncRole === 'musico') {
       setSyncRole('local');
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [globalSyncMode]);
 
   const currentSong = song;
@@ -604,8 +599,8 @@ export default function ModoEnsayoCompacto({
   const currentSongMarkers = useMemo(() => (
     Array.isArray(currentSong?.sectionMarkers)
       ? (() => {
-          let nextSectionSearchIndex = 0;
-          const mappedMarkers = currentSong.sectionMarkers
+        let nextSectionSearchIndex = 0;
+        const mappedMarkers = currentSong.sectionMarkers
           .filter((marker) => Number.isFinite(Number(marker?.startSec)))
           .map((marker, index) => ({
             id: marker?.id || `${currentSongKey}-marker-${index}`,
@@ -651,8 +646,8 @@ export default function ModoEnsayoCompacto({
               sectionIndex,
             };
           });
-          return repairMarkerTimeline(mappedMarkers, Math.max(0, currentSong?.duration || 0));
-        })()
+        return repairMarkerTimeline(mappedMarkers, Math.max(0, currentSong?.duration || 0));
+      })()
       : []
   ), [currentSections, currentSong?.duration, currentSong?.sectionMarkers, currentSongKey]);
   const hasAudio = typeof processedActivePlaybackUrl === 'string' && processedActivePlaybackUrl.trim() !== '';
@@ -692,10 +687,10 @@ export default function ModoEnsayoCompacto({
   }, [audioCurrentTime, currentSongMarkers, hasAudio, timelineDuration]);
   const activeSectionByAudioIndex = activeMarkerIndex >= 0
     ? (
-        Number.isInteger(currentSongMarkers[activeMarkerIndex]?.sectionIndex)
-          ? currentSongMarkers[activeMarkerIndex].sectionIndex
-          : Math.min(activeMarkerIndex, currentSections.length - 1)
-      )
+      Number.isInteger(currentSongMarkers[activeMarkerIndex]?.sectionIndex)
+        ? currentSongMarkers[activeMarkerIndex].sectionIndex
+        : Math.min(activeMarkerIndex, currentSections.length - 1)
+    )
     : -1;
   const playbackMarkers = useMemo(() => (
     currentSongMarkers.map((marker, markerIndex) => ({
@@ -850,7 +845,7 @@ export default function ModoEnsayoCompacto({
     const ctx = audioCtxRef.current;
     audioCtxRef.current = null;
     if (ctx && ctx.state !== 'closed') {
-      try { ctx.close(); } catch {}
+      try { ctx.close(); } catch { }
     }
   }, []);
   const ensureWebAudioConnected = React.useCallback(async () => {
@@ -1109,19 +1104,19 @@ export default function ModoEnsayoCompacto({
   useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return undefined;
-      const handleScroll = () => {
-        const currentTop = scroller.scrollTop;
-        if (isLandscapeCompact) {
-          if (currentTop < lastScrollTop.current - 8) {
-            setHeaderHidden(false);
-          } else if (currentTop > lastScrollTop.current + 8) {
-            setHeaderHidden(true);
-          }
-        } else {
-          // Portrait: header always visible — safe zone for notch / dynamic island
+    const handleScroll = () => {
+      const currentTop = scroller.scrollTop;
+      if (isLandscapeCompact) {
+        if (currentTop < lastScrollTop.current - 8) {
           setHeaderHidden(false);
+        } else if (currentTop > lastScrollTop.current + 8) {
+          setHeaderHidden(true);
         }
-        lastScrollTop.current = currentTop;
+      } else {
+        // Portrait: header always visible — safe zone for notch / dynamic island
+        setHeaderHidden(false);
+      }
+      lastScrollTop.current = currentTop;
       let nextSectionIndex = 0;
       sectionRefs.current.forEach((node, index) => {
         if (!node) return;
@@ -1446,9 +1441,8 @@ export default function ModoEnsayoCompacto({
       />
       <header
         ref={headerRef}
-        className={`absolute inset-x-0 top-0 z-30 border-b border-zinc-200/70 bg-white/92 backdrop-blur-xl dark:border-white/8 dark:bg-zinc-950/96 transition-transform duration-300 ${
-          headerHidden ? '-translate-y-full' : 'translate-y-0'
-        }`}
+        className={`absolute inset-x-0 top-0 z-30 border-b border-zinc-200/70 bg-white/92 backdrop-blur-xl dark:border-white/8 dark:bg-zinc-950/96 transition-transform duration-300 ${headerHidden ? '-translate-y-full' : 'translate-y-0'
+          }`}
       >
         <div
           className="ensayo-header-top flex items-center justify-between gap-3 pb-1 pt-[calc(env(safe-area-inset-top)+0.45rem)]"
@@ -1498,13 +1492,12 @@ export default function ModoEnsayoCompacto({
             <button
               type="button"
               onClick={() => setSyncRole(prev => prev === 'local' ? 'director' : prev === 'director' ? 'musico' : 'local')}
-              className={`ensayo-control-chip flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border transition-all ${
-                syncRole === 'director'
-                  ? 'border-brand bg-brand text-white shadow-[0_8px_18px_rgba(59,130,246,0.3)]'
-                  : syncRole === 'musico'
+              className={`ensayo-control-chip flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border transition-all ${syncRole === 'director'
+                ? 'border-brand bg-brand text-white shadow-[0_8px_18px_rgba(59,130,246,0.3)]'
+                : syncRole === 'musico'
                   ? 'border-emerald-500 bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
                   : 'border-zinc-200 bg-white text-zinc-400 hover:bg-zinc-50 dark:border-white/10 dark:bg-zinc-900 dark:hover:bg-zinc-800'
-              }`}
+                }`}
               aria-label="Modo de Sincronización"
               title={syncRole === 'local' ? 'Desconectado' : syncRole === 'director' ? 'Modo Director (Enviando)' : 'Modo Músico (Recibiendo)'}
             >
@@ -1514,26 +1507,24 @@ export default function ModoEnsayoCompacto({
               type="button"
               onClick={handleToggleMetronome}
               disabled={!currentSongBpm}
-              className={`ensayo-control-chip ensayo-bpm-chip relative inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl border bg-white text-zinc-900 shadow-sm transition-colors dark:bg-zinc-900 dark:text-zinc-50 ${
-                currentSongBpm
-                  ? 'border-zinc-200 hover:bg-zinc-100 dark:border-white/10 dark:hover:bg-zinc-800'
-                  : 'cursor-not-allowed border-zinc-200/70 text-zinc-400 dark:border-white/10 dark:text-zinc-500'
-              } ${isMetronomeOn ? 'beat-active' : ''}`}
+              className={`ensayo-control-chip ensayo-bpm-chip relative inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl border bg-white text-zinc-900 shadow-sm transition-colors dark:bg-zinc-900 dark:text-zinc-50 ${currentSongBpm
+                ? 'border-zinc-200 hover:bg-zinc-100 dark:border-white/10 dark:hover:bg-zinc-800'
+                : 'cursor-not-allowed border-zinc-200/70 text-zinc-400 dark:border-white/10 dark:text-zinc-500'
+                } ${isMetronomeOn ? 'beat-active' : ''}`}
               style={isMetronomeOn && currentSongBpm ? { '--bpm-duration': `${60 / currentSongBpm}s` } : undefined}
               aria-label={isMetronomeOn ? `Detener metr\u00F3nomo ${currentSongBpm} BPM` : `Activar metr\u00F3nomo ${currentSongBpm || 0} BPM`}
               title={currentSongBpm ? `${currentSongBpm} BPM` : 'Sin BPM'}
-              >
-                <span className={`relative z-[1] font-black leading-none ${String(currentSongBpm || '--').length > 2 ? 'text-[11px]' : 'text-sm'}`}>
-                  {currentSongBpm || '--'}
-                </span>
+            >
+              <span className={`relative z-[1] font-black leading-none ${String(currentSongBpm || '--').length > 2 ? 'text-[11px]' : 'text-sm'}`}>
+                {currentSongBpm || '--'}
+              </span>
             </button>
             <div ref={optionsMenuRef} className="relative shrink-0">
               <button
                 type="button"
                 onClick={() => setShowOptionsMenu((prev) => !prev)}
-                className={`ensayo-control-chip flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-900 shadow-sm transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800 ${
-                  showOptionsMenu ? 'ring-2 ring-brand/20 border-brand/30' : ''
-                }`}
+                className={`ensayo-control-chip flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-900 shadow-sm transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800 ${showOptionsMenu ? 'ring-2 ring-brand/20 border-brand/30' : ''
+                  }`}
                 aria-label="Opciones de ensayo"
                 aria-expanded={showOptionsMenu}
                 title="Opciones"
@@ -1556,11 +1547,10 @@ export default function ModoEnsayoCompacto({
                               key={`transpose-option-${option.steps}-${optionIndex}`}
                               type="button"
                               onClick={() => setTransposeSteps(option.steps)}
-                              className={`rounded-[0.9rem] border px-2 py-3.5 text-center text-base font-black leading-none transition-all ${
-                                active
-                                  ? 'border-brand bg-brand text-white shadow-[0_8px_20px_rgba(59,130,246,0.32)]'
-                                  : 'border-zinc-200 bg-white text-zinc-900 hover:border-zinc-300 hover:bg-zinc-50 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800'
-                              }`}
+                              className={`rounded-[0.9rem] border px-2 py-3.5 text-center text-base font-black leading-none transition-all ${active
+                                ? 'border-brand bg-brand text-white shadow-[0_8px_20px_rgba(59,130,246,0.32)]'
+                                : 'border-zinc-200 bg-white text-zinc-900 hover:border-zinc-300 hover:bg-zinc-50 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800'
+                                }`}
                               aria-pressed={active}
                             >
                               {option.label}
@@ -1583,13 +1573,11 @@ export default function ModoEnsayoCompacto({
                             key={size}
                             type="button"
                             onClick={() => setFontScale(size)}
-                            className={`rounded-[0.9rem] border px-3 py-2.5 text-center font-black leading-none transition-all ${
-                              size === 'grande' ? 'text-sm' : 'text-base'
-                            } ${
-                              active
+                            className={`rounded-[0.9rem] border px-3 py-2.5 text-center font-black leading-none transition-all ${size === 'grande' ? 'text-sm' : 'text-base'
+                              } ${active
                                 ? 'border-brand bg-brand text-white shadow-[0_8px_20px_rgba(59,130,246,0.32)]'
                                 : 'border-zinc-200 bg-white text-zinc-900 hover:bg-zinc-50 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800'
-                            }`}
+                              }`}
                             aria-pressed={active}
                           >
                             {size === 'grande' ? 'Grande' : 'Enorme'}
@@ -1619,7 +1607,7 @@ export default function ModoEnsayoCompacto({
                   key={`${currentSong.id || 'song'}-${section.name}-${index}`}
                   type="button"
                   onClick={() => selectSection(index, { seekAudio: true, scrollBehavior: 'smooth' })}
-                    className="ensayo-section-chip shrink-0 rounded-full border bg-white text-[11px] font-black uppercase tracking-[0.02em] transition-all dark:bg-zinc-950"
+                  className="ensayo-section-chip shrink-0 rounded-full border bg-white text-[11px] font-black uppercase tracking-[0.02em] transition-all dark:bg-zinc-950"
                   style={{
                     minWidth: '2.45rem',
                     height: '2.45rem',
@@ -1661,13 +1649,11 @@ export default function ModoEnsayoCompacto({
                   sectionRefs.current[sectionIndex] = node;
                 }}
                 open={!isCollapsed}
-                className={`relative inline-block w-full break-inside-avoid-column self-start overflow-visible rounded-[1.02rem] border border-zinc-200/90 px-3.5 pb-3.5 pt-4 shadow-sm transition-all ${
-                  sectionIndex === 0 ? 'mt-2 mb-5 xl:mt-3 xl:mb-6' : 'mb-5 xl:mb-6'
-                } dark:border-white/10 ${
-                  isActiveSection
+                className={`relative inline-block w-full break-inside-avoid-column self-start overflow-visible rounded-[1.02rem] border border-zinc-200/90 px-3.5 pb-3.5 pt-4 shadow-sm transition-all ${sectionIndex === 0 ? 'mt-2 mb-5 xl:mt-3 xl:mb-6' : 'mb-5 xl:mb-6'
+                  } dark:border-white/10 ${isActiveSection
                     ? 'bg-white/96 dark:bg-zinc-900'
                     : 'border-zinc-200 bg-white/92 dark:border-white/10 dark:bg-zinc-900/88'
-                }`}
+                  }`}
                 style={isActiveSection ? {
                   borderColor: toRgba(visual.rgb, 0.58),
                   backgroundColor: toRgba(visual.rgb, 0.035),
@@ -1710,9 +1696,8 @@ export default function ModoEnsayoCompacto({
                   <div className="flex min-w-0 items-center gap-2 rounded-full pl-2" style={headerBgStyle}>
                     {section.note && (
                       <span
-                        className={`max-w-[10rem] truncate rounded-full bg-white px-2 py-[0.18rem] text-[13px] font-medium tracking-[0.08em] dark:bg-zinc-950 ${
-                          isActiveSection ? '' : 'text-zinc-400 dark:text-zinc-500'
-                        }`}
+                        className={`max-w-[10rem] truncate rounded-full bg-white px-2 py-[0.18rem] text-[13px] font-medium tracking-[0.08em] dark:bg-zinc-950 ${isActiveSection ? '' : 'text-zinc-400 dark:text-zinc-500'
+                          }`}
                         style={isActiveSection ? { color: toRgba(visual.rgb, 0.92) } : undefined}
                       >
                         {section.note}
@@ -1788,11 +1773,10 @@ export default function ModoEnsayoCompacto({
                       key={`playback-source-${source.id}`}
                       type="button"
                       onClick={() => handleSelectPlaybackSource(source.id)}
-                      className={`shrink-0 rounded-full border px-3.5 py-2 text-sm font-bold transition-colors ${
-                        active
-                          ? 'border-brand bg-brand text-white shadow-[0_8px_18px_rgba(59,130,246,0.24)]'
-                          : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-800'
-                      }`}
+                      className={`shrink-0 rounded-full border px-3.5 py-2 text-sm font-bold transition-colors ${active
+                        ? 'border-brand bg-brand text-white shadow-[0_8px_18px_rgba(59,130,246,0.24)]'
+                        : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-800'
+                        }`}
                       aria-pressed={active}
                     >
                       {source.label}
@@ -1846,11 +1830,10 @@ export default function ModoEnsayoCompacto({
                     <button
                       type="button"
                       onClick={() => setIsPadActive(!isPadActive)}
-                      className={`rounded-full px-3 py-1 text-xs font-bold transition-all ${
-                        isPadActive
-                          ? 'bg-brand text-white shadow-sm'
-                          : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
-                      }`}
+                      className={`rounded-full px-3 py-1 text-xs font-bold transition-all ${isPadActive
+                        ? 'bg-brand text-white shadow-sm'
+                        : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
+                        }`}
                     >
                       {isPadActive ? 'Pad ON' : 'Pad OFF'}
                     </button>
@@ -1936,11 +1919,10 @@ export default function ModoEnsayoCompacto({
             <button
               type="button"
               onClick={() => setLoopState((prev) => ((prev + 1) % 3))}
-              className={`ensayo-footer-icon relative flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors ${
-                loopState
-                  ? 'border-brand/35 bg-brand/10 text-brand'
-                  : 'border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
-              }`}
+              className={`ensayo-footer-icon relative flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors ${loopState
+                ? 'border-brand/35 bg-brand/10 text-brand'
+                : 'border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                }`}
               aria-label={loopState === 0 ? 'Loop apagado' : loopState === 1 ? 'Repetir todo' : 'Repetir seccion'}
               title={loopState === 0 ? 'Loop apagado' : loopState === 1 ? 'Repetir todo' : 'Repetir seccion'}
             >
@@ -1954,11 +1936,10 @@ export default function ModoEnsayoCompacto({
             <button
               type="button"
               onClick={() => setShowPlaybackOptions((prev) => !prev)}
-              className={`ensayo-footer-icon flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors ${
-                showPlaybackOptions
-                  ? 'border-brand/35 bg-brand/10 text-brand'
-                  : 'border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
-              }`}
+              className={`ensayo-footer-icon flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors ${showPlaybackOptions
+                ? 'border-brand/35 bg-brand/10 text-brand'
+                : 'border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                }`}
               aria-label="Abrir fuentes de reproduccion"
               title="Fuentes de reproduccion"
               aria-expanded={showPlaybackOptions}

@@ -10,7 +10,6 @@ const FONT_SIZES = {
   large: { lyrics: 60, chords: 44, next: 32, countdown: 72 },
 };
 
-const CUE_SWITCH_HYSTERESIS_SEC = 0.18;
 
 const DEFAULT_SETTINGS = {
   showChords: true,
@@ -122,6 +121,9 @@ function MonitorChordDisplay({ chord, fontSize, color }) {
         color,
         fontFamily: '"SF Mono","Cascadia Code","Fira Code","Consolas",monospace',
         whiteSpace: 'nowrap',
+        backgroundColor: 'rgba(10, 10, 10, 0.7)',
+        paddingRight: '0.15em',
+        borderRadius: '3px',
       }}
     >
       {formatChordAccidentals(chord)}
@@ -252,22 +254,17 @@ function MonitorChordOverlayLine({
                     pointerEvents: 'none',
                     position: 'absolute',
                     top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: 0,
-                    overflow: 'visible',
+                    left: '50%', // Centrar dinámicamente todo el bloque de acordes
+                    transform: 'translateX(-50%)',
+                    display: 'flex', // Layout flex para evitar solapamiento visual
+                    gap: '0.4em',    // Pequeño espacio para que no colapsen
+                    width: 'max-content',
                   }}
                 >
                   {token.chords.map((descriptor, chordIndex) => (
                     <span
                       key={`${lineKey}-ch-${index}-${chordIndex}`}
                       style={{
-                        position: 'absolute',
-                        top: 0,
-                        left:
-                          token.word.length > 1
-                            ? `${Math.max(0, Math.min((descriptor.charOffset / token.word.length) * 100, 92))}%`
-                            : '0%',
                         whiteSpace: 'nowrap',
                       }}
                     >
@@ -374,10 +371,27 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
 
     for (let index = track.cues.length - 1; index >= 0; index -= 1) {
       const cue = track.cues[index];
+
+      let anticipation = 0;
+      if (index > 0 && cue?.estimatedStartSec != null) {
+        const previousCue = track.cues[index - 1];
+        // 550ms es el margen preferido para que los músicos ajusten visualmente
+        const defaultAnticipation = 0.55;
+
+        // Limitar la anticipación a un 40% de la duración del cue anterior
+        // para no solapar los saltos en la pantalla si los cues son rapidísimos
+        const maxAnticipation = previousCue?.estimatedStartSec != null
+          ? Math.max(0, (cue.estimatedStartSec - previousCue.estimatedStartSec) * 0.40)
+          : defaultAnticipation;
+
+        anticipation = Math.min(defaultAnticipation, maxAnticipation);
+      }
+
       const switchAt =
         cue?.estimatedStartSec != null
-          ? cue.estimatedStartSec + (index === 0 ? 0 : CUE_SWITCH_HYSTERESIS_SEC)
+          ? cue.estimatedStartSec - anticipation
           : null;
+
       if (switchAt != null && time >= switchAt) {
         return index;
       }
@@ -594,7 +608,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
 
       if (event.key === ' ') {
         event.preventDefault();
-        document.documentElement.requestFullscreen?.().catch(() => {});
+        document.documentElement.requestFullscreen?.().catch(() => { });
         return;
       }
 
@@ -1091,9 +1105,9 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                     marginBottom: nextCue?.totalCuesInSection > 1 ? 12 : 0,
                     lineHeight: 1.04,
                   }}
-                  >
-                    {nextCueTitle}
-                  </div>
+                >
+                  {nextCueTitle}
+                </div>
 
                 {settings.showChords && nextCuePrimaryChord && (
                   <div
@@ -1179,38 +1193,38 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                       maxWidth: '100%',
                     }}
                   >
-                {nextCuePreviewLines.length > 0 ? (
-                  nextCuePreviewLines.map((line, index) => (
-                    <div
-                      key={`${nextCue?.id || nextCueTitle}-preview-line-${index}`}
-                      style={{
-                        fontSize:
-                          index === 0
-                            ? (viewport.width >= 1400 ? 34 : viewport.width >= 1180 ? 31 : 28)
-                            : (viewport.width >= 1400 ? 24 : viewport.width >= 1180 ? 22 : 19),
-                        lineHeight: index === 0 ? 1.05 : 1.1,
-                        fontWeight: index === 0 ? 760 : 620,
-                        opacity: index === 0 ? 0.98 : 0.76,
-                        wordBreak: 'break-word',
-                        overflow: 'hidden',
-                        display: '-webkit-box',
-                        WebkitLineClamp: index === 0 ? 2 : 2,
-                        WebkitBoxOrient: 'vertical',
-                      }}
-                    >
-                      {line}
-                    </div>
-                  ))
-                ) : (
-                  <div style={{ fontSize: 24, opacity: 0.58 }}>
-                    Esperando el siguiente cue…
+                    {nextCuePreviewLines.length > 0 ? (
+                      nextCuePreviewLines.map((line, index) => (
+                        <div
+                          key={`${nextCue?.id || nextCueTitle}-preview-line-${index}`}
+                          style={{
+                            fontSize:
+                              index === 0
+                                ? (viewport.width >= 1400 ? 34 : viewport.width >= 1180 ? 31 : 28)
+                                : (viewport.width >= 1400 ? 24 : viewport.width >= 1180 ? 22 : 19),
+                            lineHeight: index === 0 ? 1.05 : 1.1,
+                            fontWeight: index === 0 ? 760 : 620,
+                            opacity: index === 0 ? 0.98 : 0.76,
+                            wordBreak: 'break-word',
+                            overflow: 'hidden',
+                            display: '-webkit-box',
+                            WebkitLineClamp: index === 0 ? 2 : 2,
+                            WebkitBoxOrient: 'vertical',
+                          }}
+                        >
+                          {line}
+                        </div>
+                      ))
+                    ) : (
+                      <div style={{ fontSize: 24, opacity: 0.58 }}>
+                        Esperando el siguiente cue…
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </div>
         )}
       </div>
 
