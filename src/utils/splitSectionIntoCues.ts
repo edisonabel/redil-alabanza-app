@@ -2,8 +2,8 @@ import type { DisplayCue, DisplaySection, DisplayTrack } from '../types/confiden
 import { parseChordProLine } from './chordProLineUtils';
 import { buildSectionShortLabel, getSectionKind, SECTION_VISUALS } from './sectionVisuals';
 
-const MAX_LINES_PER_CUE = 4;
-const PREFERRED_LINES = 3;
+const MAX_LINES_PER_CUE = 2;
+const PREFERRED_LINES = 2;
 
 const trimEdgeBlankLines = (lines: string[] = []) => {
   let start = 0;
@@ -376,10 +376,10 @@ export function buildDisplayTrack(song: {
     const markerTiming =
       startSec != null && endSec != null
         ? {
-            startSec,
-            endSec,
-            cueMarkers: Array.isArray(marker?.cueMarkers) ? marker.cueMarkers : [],
-          }
+          startSec,
+          endSec,
+          cueMarkers: Array.isArray(marker?.cueMarkers) ? marker.cueMarkers : [],
+        }
         : null;
 
     const visual = SECTION_VISUALS[kind] || SECTION_VISUALS.default;
