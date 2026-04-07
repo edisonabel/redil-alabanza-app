@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { buildWordGroups } from '../../utils/chordProLineUtils';
 import { buildDisplayTrack } from '../../utils/splitSectionIntoCues';
 import { toRgba } from '../../utils/sectionVisuals';
 
@@ -55,6 +56,26 @@ const buildCuePreviewLines = (cue, maxLines = 2) => {
   return [];
 };
 
+const extractCueChordTokens = (cue, max = 4) => {
+  if (!cue || !Array.isArray(cue.rawLines)) return [];
+
+  const seen = new Set();
+  const result = [];
+
+  for (const rawLine of cue.rawLines) {
+    const matches = String(rawLine || '').matchAll(/\[([^\]]+)\]/g);
+    for (const match of matches) {
+      const chord = String(match?.[1] || '').trim();
+      if (!chord || seen.has(chord)) continue;
+      seen.add(chord);
+      result.push(chord);
+      if (result.length >= max) return result;
+    }
+  }
+
+  return result;
+};
+
 const getLongestCueLineLength = (cue) => {
   if (!cue) return 0;
 
@@ -74,13 +95,199 @@ const getReadableStageWidthCap = ({
 }) => {
   if (!availableWidth) return 0;
 
-  const baseRatio = hasSidePreview ? 0.84 : 0.9;
-  const lineBonus = cueLineCount <= 2 ? 0.05 : cueLineCount === 3 ? 0.025 : 0;
-  const longLinePenalty = longestLineLength >= 44 ? 0.08 : longestLineLength >= 36 ? 0.04 : 0;
-  const safeRatio = Math.max(0.76, Math.min(baseRatio + lineBonus - longLinePenalty, 0.94));
+  const baseRatio = hasSidePreview ? 0.89 : 0.94;
+  const lineBonus = cueLineCount <= 2 ? 0.02 : cueLineCount === 3 ? 0.01 : 0;
+  const longLinePenalty = longestLineLength >= 56 ? 0.03 : longestLineLength >= 44 ? 0.015 : 0;
+  const safeRatio = Math.max(0.88, Math.min(baseRatio + lineBonus - longLinePenalty, 0.96));
 
   return availableWidth * safeRatio;
 };
+
+const formatChordAccidentals = (value = '') =>
+  String(value || '')
+    .replace(/#/g, '\u266F')
+    .replace(/b/g, '\u266D');
+
+function MonitorChordDisplay({ chord, fontSize, color }) {
+  if (!chord) return null;
+
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        fontSize,
+        fontWeight: 900,
+        lineHeight: 1,
+        letterSpacing: 0.4,
+        color,
+        fontFamily: '"SF Mono","Cascadia Code","Fira Code","Consolas",monospace',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {formatChordAccidentals(chord)}
+    </span>
+  );
+}
+
+function MonitorChordOverlayLine({
+  segments,
+  lineKey,
+  lyricFontSize,
+  chordFontSize,
+  chordColor,
+  lyricColor,
+  lineHeight,
+}) {
+  const lyricText = segments.map((segment) => segment.lyric || '').join('');
+  const hasChord = segments.some((segment) => Boolean(segment.chord));
+  const hasVisibleLyric = lyricText.trim().length > 0;
+
+  if (!hasChord) {
+    return (
+      <div
+        style={{
+          fontSize: lyricFontSize,
+          fontWeight: 700,
+          lineHeight,
+          color: lyricColor,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {lyricText}
+      </div>
+    );
+  }
+
+  if (!hasVisibleLyric) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          gap: Math.max(14, Math.round(chordFontSize * 0.34)),
+          alignItems: 'center',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {segments
+          .map((segment) => segment.chord)
+          .filter(Boolean)
+          .map((chord, index) => (
+            <MonitorChordDisplay
+              key={`${lineKey}-instrumental-${index}`}
+              chord={chord}
+              fontSize={chordFontSize}
+              color={chordColor}
+            />
+          ))}
+      </div>
+    );
+  }
+
+  const wordGroups = buildWordGroups(segments);
+  const chordLaneHeight = Math.max(chordFontSize + 6, Math.round(lyricFontSize * 0.62));
+
+  return (
+    <div
+      style={{
+        display: 'block',
+        fontSize: lyricFontSize,
+        fontWeight: 700,
+        lineHeight,
+        color: lyricColor,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {wordGroups.map((token, index) => {
+        if (token.type === 'chord-only') {
+          return (
+            <React.Fragment key={`${lineKey}-co-${index}`}>
+              {index > 0 && ' '}
+              <span
+                style={{
+                  display: 'inline-block',
+                  position: 'relative',
+                  verticalAlign: 'top',
+                  paddingTop: chordLaneHeight,
+                  minWidth: Math.max(
+                    Math.round(formatChordAccidentals(token.name).length * chordFontSize * 0.64),
+                    Math.round(chordFontSize * 0.95),
+                  ),
+                  lineHeight,
+                }}
+              >
+                <span
+                  style={{
+                    pointerEvents: 'none',
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    height: 0,
+                    overflow: 'visible',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <MonitorChordDisplay chord={token.name} fontSize={chordFontSize} color={chordColor} />
+                </span>
+                {'\u00A0'}
+              </span>
+            </React.Fragment>
+          );
+        }
+
+        return (
+          <React.Fragment key={`${lineKey}-wg-${index}`}>
+            {index > 0 && ' '}
+            <span
+              style={{
+                display: 'inline-block',
+                position: 'relative',
+                verticalAlign: 'top',
+                paddingTop: chordLaneHeight,
+                lineHeight,
+              }}
+            >
+              {token.chords.length > 0 && (
+                <span
+                  style={{
+                    pointerEvents: 'none',
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: 0,
+                    overflow: 'visible',
+                  }}
+                >
+                  {token.chords.map((descriptor, chordIndex) => (
+                    <span
+                      key={`${lineKey}-ch-${index}-${chordIndex}`}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left:
+                          token.word.length > 1
+                            ? `${Math.max(0, Math.min((descriptor.charOffset / token.word.length) * 100, 92))}%`
+                            : '0%',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <MonitorChordDisplay
+                        chord={descriptor.name}
+                        fontSize={chordFontSize}
+                        color={chordColor}
+                      />
+                    </span>
+                  ))}
+                </span>
+              )}
+              {token.word}
+            </span>
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle = '' }) {
   const timeline = useMemo(() => {
@@ -105,6 +312,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     height: typeof window !== 'undefined' ? window.innerHeight : 0,
   }));
   const [heroScale, setHeroScale] = useState(1);
+  const [previewScale, setPreviewScale] = useState(1);
 
   const activeTrackIndexRef = useRef(0);
   const activeCueIndexRef = useRef(0);
@@ -118,6 +326,8 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
   const lastCountdownRef = useRef(null);
   const mainStageRef = useRef(null);
   const mainContentRef = useRef(null);
+  const previewStageRef = useRef(null);
+  const previewContentRef = useRef(null);
 
   useEffect(() => {
     activeTrackIndexRef.current = activeTrackIndex;
@@ -159,16 +369,6 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
       : null;
   }, [activeCue, activeTrack]);
 
-  useEffect(() => {
-    if (!activeCue) {
-      setActiveSectionIndex(0);
-      return;
-    }
-    if (activeCue.sectionIndex !== activeSectionIndex) {
-      setActiveSectionIndex(activeCue.sectionIndex);
-    }
-  }, [activeCue, activeSectionIndex]);
-
   const findCueAtTime = useCallback((time, track) => {
     if (!track || !Array.isArray(track.cues) || track.cues.length === 0) return 0;
 
@@ -186,19 +386,31 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     return 0;
   }, []);
 
+  const syncDisplayState = useCallback((trackIndex, cueIndex, fallbackSectionIndex = 0) => {
+    const track = timeline.tracks[trackIndex] || null;
+    if (!track) return null;
+
+    const nextCueIndex = Math.max(0, Math.min(cueIndex, Math.max(track.cues.length - 1, 0)));
+    const cue = track.cues[nextCueIndex] || null;
+    const nextSectionIndex = cue?.sectionIndex ?? fallbackSectionIndex;
+
+    activeTrackIndexRef.current = trackIndex;
+    activeCueIndexRef.current = nextCueIndex;
+
+    setActiveTrackIndex((current) => (current === trackIndex ? current : trackIndex));
+    setActiveCueIndex((current) => (current === nextCueIndex ? current : nextCueIndex));
+    setActiveSectionIndex((current) => (current === nextSectionIndex ? current : nextSectionIndex));
+
+    return cue;
+  }, [timeline.tracks]);
+
   const moveToCue = useCallback((trackIndex, cueIndex) => {
     const track = timeline.tracks[trackIndex] || null;
     if (!track) return;
 
     const nextCueIndex = Math.max(0, Math.min(cueIndex, Math.max(track.cues.length - 1, 0)));
-    const cue = track.cues[nextCueIndex] || null;
-
-    activeTrackIndexRef.current = trackIndex;
-    activeCueIndexRef.current = nextCueIndex;
-    setActiveTrackIndex(trackIndex);
-    setActiveCueIndex(nextCueIndex);
-    setActiveSectionIndex(cue?.sectionIndex ?? 0);
-  }, [timeline.tracks]);
+    syncDisplayState(trackIndex, nextCueIndex, track.cues[nextCueIndex]?.sectionIndex ?? 0);
+  }, [syncDisplayState, timeline.tracks]);
 
   useEffect(() => {
     const loop = () => {
@@ -215,10 +427,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
 
         const nextCueIndex = findCueAtTime(interpolatedTimeRef.current, track);
         if (nextCueIndex !== activeCueIndexRef.current) {
-          const cue = track.cues[nextCueIndex] || null;
-          activeCueIndexRef.current = nextCueIndex;
-          setActiveCueIndex(nextCueIndex);
-          setActiveSectionIndex(cue?.sectionIndex ?? 0);
+          syncDisplayState(trackIndex, nextCueIndex, track.cues[nextCueIndex]?.sectionIndex ?? 0);
         }
 
         const cue = track.cues[nextCueIndex] || null;
@@ -245,7 +454,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [findCueAtTime, timeline.tracks]);
+  }, [findCueAtTime, syncDisplayState, timeline.tracks]);
 
   useEffect(() => {
     const channel = supabase.channel('ensayo-live-sync', {
@@ -315,16 +524,11 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
 
           if (track && typeof payload.currentTime === 'number' && hasCueTiming) {
             const cueIndex = findCueAtTime(payload.currentTime, track);
-            const cue = track.cues[cueIndex] || null;
-            activeCueIndexRef.current = cueIndex;
-            setActiveCueIndex(cueIndex);
-            setActiveSectionIndex(cue?.sectionIndex ?? payload.sectionIndex);
+            syncDisplayState(resolvedTrackIndex, cueIndex, payload.sectionIndex);
           } else if (section && (typeof payload.currentTime !== 'number' || !hasCueTiming)) {
-            setActiveSectionIndex(payload.sectionIndex);
-            activeCueIndexRef.current = section.startCueIndex;
-            setActiveCueIndex(section.startCueIndex);
+            syncDisplayState(resolvedTrackIndex, section.startCueIndex, payload.sectionIndex);
           } else if (typeof payload.currentTime !== 'number') {
-            setActiveSectionIndex(payload.sectionIndex);
+            setActiveSectionIndex((current) => (current === payload.sectionIndex ? current : payload.sectionIndex));
           }
         }
       })
@@ -337,7 +541,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [findCueAtTime, timeline.tracks]);
+  }, [findCueAtTime, syncDisplayState, timeline.tracks]);
 
   useEffect(() => {
     const check = setInterval(() => {
@@ -445,12 +649,17 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
   const showLegacyBottomPreview = false;
   const nextCuePreviewLines = buildCuePreviewLines(
     nextCue,
-    viewport.width >= 1180 ? 3 : viewport.width >= 860 ? 2 : 1,
+    viewport.width >= 980 ? 2 : 1,
   );
+  const nextCueChordTokens = useMemo(() => extractCueChordTokens(nextCue, 4), [nextCue]);
+  const nextCuePrimaryChord = nextCueChordTokens[0] || null;
   const nextCueTitle = nextSectionLabel || nextCue?.sectionLabel || 'Sigue';
   const mainTransformOrigin = 'center center';
+  const bottomPreviewHeight = showBottomPreview
+    ? Math.min(Math.max(Math.round(viewport.height * 0.17), 132), Math.round(viewport.height * 0.24))
+    : 0;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const stage = mainStageRef.current;
     const content = mainContentRef.current;
     if (!stage || !content) {
@@ -460,36 +669,38 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
 
     let frameId = 0;
 
-    const measure = () => {
-      cancelAnimationFrame(frameId);
-      frameId = requestAnimationFrame(() => {
-        const availableWidth = stage.clientWidth;
-        const availableHeight = stage.clientHeight;
-        const naturalWidth = content.scrollWidth;
-        const naturalHeight = content.scrollHeight;
-        const readableWidth = getReadableStageWidthCap({
-          availableWidth,
-          cueLineCount,
-          longestLineLength: longestCueLineLength,
-          hasSidePreview: false,
-        });
-
-        if (!availableWidth || !availableHeight || !naturalWidth || !naturalHeight) {
-          setHeroScale(1);
-          return;
-        }
-
-        const widthScale = (readableWidth || availableWidth) / naturalWidth;
-        const heightScale = availableHeight / naturalHeight;
-        const nextScale = Math.max(0.72, Math.min(widthScale, heightScale, 2.4));
-
-        setHeroScale((current) => (Math.abs(current - nextScale) > 0.02 ? nextScale : current));
+    const computeScale = () => {
+      const availableWidth = stage.clientWidth;
+      const availableHeight = stage.clientHeight;
+      const naturalWidth = content.scrollWidth;
+      const naturalHeight = content.scrollHeight;
+      const readableWidth = getReadableStageWidthCap({
+        availableWidth,
+        cueLineCount,
+        longestLineLength: longestCueLineLength,
+        hasSidePreview: false,
       });
+
+      if (!availableWidth || !availableHeight || !naturalWidth || !naturalHeight) {
+        setHeroScale(1);
+        return;
+      }
+
+      const widthScale = (readableWidth || availableWidth) / naturalWidth;
+      const heightScale = availableHeight / naturalHeight;
+      const nextScale = Math.max(0.72, Math.min(widthScale, heightScale, 2.4));
+
+      setHeroScale((current) => (Math.abs(current - nextScale) > 0.02 ? nextScale : current));
     };
 
-    measure();
+    const scheduleMeasure = () => {
+      cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(computeScale);
+    };
 
-    const resizeObserver = new ResizeObserver(measure);
+    computeScale();
+
+    const resizeObserver = new ResizeObserver(scheduleMeasure);
     resizeObserver.observe(stage);
     resizeObserver.observe(content);
 
@@ -508,6 +719,59 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     showBottomPreview,
     displayFontScale.lyrics,
     displayFontScale.chords,
+    viewport.width,
+    viewport.height,
+  ]);
+
+  useLayoutEffect(() => {
+    const stage = previewStageRef.current;
+    const content = previewContentRef.current;
+
+    if (!showBottomPreview || !stage || !content) {
+      setPreviewScale(1);
+      return undefined;
+    }
+
+    let frameId = 0;
+
+    const computeScale = () => {
+      const availableWidth = stage.clientWidth;
+      const availableHeight = stage.clientHeight;
+      const naturalWidth = content.scrollWidth;
+      const naturalHeight = content.scrollHeight;
+
+      if (!availableWidth || !availableHeight || !naturalWidth || !naturalHeight) {
+        setPreviewScale(1);
+        return;
+      }
+
+      const widthScale = (availableWidth * 0.99) / naturalWidth;
+      const heightScale = (availableHeight * 0.97) / naturalHeight;
+      const nextScale = Math.max(0.92, Math.min(widthScale, heightScale, 1.7));
+
+      setPreviewScale((current) => (Math.abs(current - nextScale) > 0.02 ? nextScale : current));
+    };
+
+    const scheduleMeasure = () => {
+      cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(computeScale);
+    };
+
+    computeScale();
+
+    const resizeObserver = new ResizeObserver(scheduleMeasure);
+    resizeObserver.observe(stage);
+    resizeObserver.observe(content);
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      resizeObserver.disconnect();
+    };
+  }, [
+    nextCue?.id,
+    nextCueTitle,
+    nextCuePreviewLines,
+    showBottomPreview,
     viewport.width,
     viewport.height,
   ]);
@@ -679,7 +943,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
             flexDirection: 'column',
             justifyContent: 'center',
             alignItems: 'center',
-            paddingBottom: showBottomPreview ? 12 : 0,
+            paddingBottom: showBottomPreview ? 6 : 0,
             overflow: 'hidden',
             flex: 1,
           }}
@@ -698,8 +962,11 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
           {activeCue && (
             <div
               style={{
-                transform: `scale(${heroScale})`,
+                transform: `translateZ(0) scale(${heroScale})`,
                 transformOrigin: mainTransformOrigin,
+                transition: 'transform 170ms cubic-bezier(0.22, 1, 0.36, 1)',
+                willChange: 'transform',
+                backfaceVisibility: 'hidden',
                 width: 'fit-content',
                 maxWidth: '100%',
               }}
@@ -716,37 +983,19 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                 {activeCue.type === 'lyrics' &&
                   activeCue.lines.map((segments, lineIndex) => (
                     <div key={`${activeCue.id}-line-${lineIndex}`} style={{ marginBottom: 10 }}>
-                      {settings.showChords && segments.some((segment) => segment.chord) && (
-                        <div
-                          style={{
-                            fontSize: displayFontScale.chords,
-                            fontWeight: 900,
-                            color: toRgba(activeCue.sectionColor, 0.86),
-                            letterSpacing: 1,
-                            lineHeight: 1.06,
-                            marginBottom: 2,
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {segments.map((segment, index) => (
-                            <span key={`${activeCue.id}-chord-${lineIndex}-${index}`} style={{ marginRight: 18 }}>
-                              {segment.chord || '\u00A0'}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-
-                      <div
-                        style={{
-                          fontSize: displayFontScale.lyrics,
-                          fontWeight: 700,
-                          lineHeight: cueLineCount <= 2 ? 1.12 : 1.18,
-                          wordBreak: 'break-word',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {segments.map((segment) => segment.lyric).join('')}
-                      </div>
+                      <MonitorChordOverlayLine
+                        segments={
+                          settings.showChords
+                            ? segments
+                            : segments.map((segment) => ({ ...segment, chord: '' }))
+                        }
+                        lineKey={`${activeCue.id}-line-${lineIndex}`}
+                        lyricFontSize={displayFontScale.lyrics}
+                        chordFontSize={displayFontScale.chords}
+                        chordColor={toRgba(activeCue.sectionColor, 0.86)}
+                        lyricColor="#f0f0f0"
+                        lineHeight={cueLineCount <= 2 ? 1.12 : 1.18}
+                      />
                     </div>
                   ))}
 
@@ -791,7 +1040,8 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
             style={{
               display: 'flex',
               justifyContent: 'center',
-              paddingTop: 6,
+              paddingTop: 4,
+              width: '100%',
             }}
           >
             <div
@@ -799,18 +1049,21 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                 border: '1px solid rgba(255,255,255,0.08)',
                 background: 'linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02))',
                 borderRadius: 20,
-                padding: viewport.width >= 1180 ? '16px 22px 18px' : '14px 18px 16px',
+                padding: viewport.width >= 1180 ? '12px 20px 14px' : '12px 16px 14px',
                 boxShadow: '0 18px 44px rgba(0,0,0,0.16)',
-                width: 'min(1160px, 100%)',
+                width: '100%',
+                minHeight: bottomPreviewHeight,
+                maxHeight: Math.max(bottomPreviewHeight, 132),
                 display: 'flex',
                 flexDirection: viewport.width >= 900 ? 'row' : 'column',
                 alignItems: viewport.width >= 900 ? 'stretch' : 'flex-start',
-                gap: viewport.width >= 900 ? 22 : 12,
+                gap: viewport.width >= 900 ? 22 : 10,
+                overflow: 'hidden',
               }}
             >
               <div
                 style={{
-                  width: viewport.width >= 900 ? 220 : '100%',
+                  width: viewport.width >= 1180 ? 248 : viewport.width >= 900 ? 224 : '100%',
                   flexShrink: 0,
                   display: 'flex',
                   flexDirection: 'column',
@@ -832,18 +1085,49 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
 
                 <div
                   style={{
-                    fontSize: viewport.width >= 1180 ? 28 : 24,
+                    fontSize: viewport.width >= 1400 ? 34 : viewport.width >= 1180 ? 31 : 27,
                     fontWeight: 800,
                     color: nextCue ? toRgba(nextCue.sectionColor, 0.96) : '#f0f0f0',
                     marginBottom: nextCue?.totalCuesInSection > 1 ? 12 : 0,
                     lineHeight: 1.04,
                   }}
-                >
-                  {nextCueTitle}
-                </div>
+                  >
+                    {nextCueTitle}
+                  </div>
+
+                {settings.showChords && nextCuePrimaryChord && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 10,
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        minWidth: viewport.width >= 1180 ? 168 : 148,
+                        padding: viewport.width >= 1180 ? '10px 20px' : '9px 18px',
+                        borderRadius: 18,
+                        background: toRgba(nextCue?.sectionColor || activeCue?.sectionColor || [249, 115, 22], 0.18),
+                        border: `1px solid ${toRgba(nextCue?.sectionColor || activeCue?.sectionColor || [249, 115, 22], 0.28)}`,
+                        boxShadow: `inset 0 1px 0 ${toRgba(nextCue?.sectionColor || activeCue?.sectionColor || [249, 115, 22], 0.1)}`,
+                      }}
+                    >
+                      <MonitorChordDisplay
+                        chord={nextCuePrimaryChord}
+                        fontSize={viewport.width >= 1180 ? 44 : 40}
+                        color={toRgba(nextCue?.sectionColor || activeCue?.sectionColor || [249, 115, 22], 0.98)}
+                      />
+                    </span>
+                  </div>
+                )}
 
                 {nextCue?.totalCuesInSection > 1 && (
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
                     {Array.from({ length: nextCue.totalCuesInSection }, (_, index) => (
                       <span
                         key={`${nextCue.id}-preview-dot-${index}`}
@@ -862,30 +1146,71 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                 )}
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, flex: 1 }}>
+              <div
+                ref={previewStageRef}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  gap: 8,
+                  minWidth: 0,
+                  flex: 1,
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    transform: `translateZ(0) scale(${previewScale})`,
+                    transformOrigin: 'left center',
+                    transition: 'transform 170ms cubic-bezier(0.22, 1, 0.36, 1)',
+                    willChange: 'transform',
+                    width: 'fit-content',
+                    maxWidth: '100%',
+                  }}
+                >
+                  <div
+                    ref={previewContentRef}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8,
+                      minWidth: 0,
+                      width: 'fit-content',
+                      maxWidth: '100%',
+                    }}
+                  >
                 {nextCuePreviewLines.length > 0 ? (
                   nextCuePreviewLines.map((line, index) => (
                     <div
                       key={`${nextCue?.id || nextCueTitle}-preview-line-${index}`}
                       style={{
-                        fontSize: index === 0 ? (viewport.width >= 1180 ? 30 : 26) : 22,
-                        lineHeight: 1.14,
-                        fontWeight: index === 0 ? 700 : 600,
-                        opacity: index === 0 ? 0.96 : 0.7,
+                        fontSize:
+                          index === 0
+                            ? (viewport.width >= 1400 ? 34 : viewport.width >= 1180 ? 31 : 28)
+                            : (viewport.width >= 1400 ? 24 : viewport.width >= 1180 ? 22 : 19),
+                        lineHeight: index === 0 ? 1.05 : 1.1,
+                        fontWeight: index === 0 ? 760 : 620,
+                        opacity: index === 0 ? 0.98 : 0.76,
                         wordBreak: 'break-word',
+                        overflow: 'hidden',
+                        display: '-webkit-box',
+                        WebkitLineClamp: index === 0 ? 2 : 2,
+                        WebkitBoxOrient: 'vertical',
                       }}
                     >
                       {line}
                     </div>
                   ))
                 ) : (
-                  <div style={{ fontSize: 20, opacity: 0.58 }}>
+                  <div style={{ fontSize: 24, opacity: 0.58 }}>
                     Esperando el siguiente cue…
                   </div>
                 )}
               </div>
             </div>
           </div>
+        </div>
+      </div>
         )}
       </div>
 

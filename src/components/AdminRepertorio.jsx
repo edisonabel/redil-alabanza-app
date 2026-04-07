@@ -2,7 +2,8 @@
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { audioSessionService } from '../services/AudioSessionService';
-import { CheckCircle, UploadCloud, Loader2, Plus, PencilLine, X, Save, Pause, Play, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CheckCircle, UploadCloud, Loader2, Plus, PencilLine, X, Save, Pause, Play, ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
+import { splitSectionIntoCues } from '../utils/splitSectionIntoCues';
 
 const { useRef } = React;
 
@@ -270,6 +271,34 @@ const parseMarkerTime = (rawValue) => {
   return null;
 };
 
+const normalizeCueMarkerTimes = (rawCueMarkers = [], sectionStartSec = null) => {
+  const sectionFloor = Number.isFinite(Number(sectionStartSec)) ? Number(sectionStartSec) : null;
+  const normalizedTimes = (Array.isArray(rawCueMarkers) ? rawCueMarkers : [])
+    .map((marker) => {
+      if (typeof marker === 'number') return marker;
+      if (typeof marker?.startSec === 'number') return marker.startSec;
+      if (typeof marker?.time === 'number') return marker.time;
+      return Number(marker);
+    })
+    .filter((value) => Number.isFinite(value))
+    .map((value) => Math.max(0, Math.round(Number(value))))
+    .filter((value) => (sectionFloor == null ? true : value > sectionFloor))
+    .sort((left, right) => left - right);
+
+  return [...new Set(normalizedTimes)];
+};
+
+const formatCueMarkersValue = (cueMarkers = []) =>
+  normalizeCueMarkerTimes(cueMarkers).map((value) => formatMarkerTime(value)).join(', ');
+
+const parseCueMarkersText = (rawValue = '', sectionStartSec = null) =>
+  normalizeCueMarkerTimes(
+    String(rawValue || '')
+      .split(/[,;\n]+/)
+      .map((item) => parseMarkerTime(item)),
+    sectionStartSec,
+  );
+
 const normalizeSectionMarkers = (sections = [], rawMarkers = []) => {
   const markerGroups = (Array.isArray(rawMarkers) ? rawMarkers : [])
     .filter(Boolean)
@@ -305,8 +334,44 @@ const normalizeSectionMarkers = (sections = [], rawMarkers = []) => {
       sectionKey: `${slugBase}__${sectionOccurrence}`,
       startSec: Number.isFinite(startSec) ? Math.max(0, Math.round(startSec)) : null,
       note: String(existingMarker?.note || section?.note || '').trim(),
+      cueMarkers: normalizeCueMarkerTimes(existingMarker?.cueMarkers, Number.isFinite(startSec) ? startSec : null),
+      _autoDetected: Boolean(existingMarker?._autoDetected),
+      _confidence: Number.isFinite(Number(existingMarker?._confidence)) ? Number(existingMarker._confidence) : 0,
+      _method: String(existingMarker?._method || '').trim(),
     };
   });
+};
+
+const stripChordsFromLine = (line = '') => (
+  String(line || '')
+    .replace(/\[([^\]]+)\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+);
+
+const getFirstMeaningfulSectionLine = (section) => {
+  const lines = Array.isArray(section?.lines) ? section.lines : [];
+  const firstLyricLine = lines.find((line) => stripChordsFromLine(line).length > 0);
+  if (firstLyricLine) return firstLyricLine;
+
+  return lines.find((line) => String(line || '').trim()) || '';
+};
+
+const buildUniformAutoDetectedMarkers = (markers = [], totalDurationSec = 0) => {
+  const markerCount = Array.isArray(markers) ? markers.length : 0;
+  const safeDuration = Number(totalDurationSec);
+  if (markerCount === 0 || !Number.isFinite(safeDuration) || safeDuration <= 0) {
+    return Array.isArray(markers) ? markers : [];
+  }
+
+  const divisor = Math.max(markerCount, 1);
+  return markers.map((marker, index) => ({
+    ...marker,
+    startSec: Math.max(0, Math.round((safeDuration * index) / divisor)),
+    _autoDetected: true,
+    _confidence: 0.25,
+    _method: 'uniform',
+  }));
 };
 
 const areTimesClose = (left, right, precision = 0.25) => (
@@ -348,6 +413,29 @@ const EditableCell = ({ cancionId, campoBd, valorInicial, onSave, isSaving, anch
   );
 };
 
+const CueMarkersInput = ({ value = [], sectionStartSec = null, onCommit, placeholder = '' }) => {
+  const [draft, setDraft] = useState(formatCueMarkersValue(value));
+
+  useEffect(() => {
+    setDraft(formatCueMarkersValue(value));
+  }, [value]);
+
+  const commit = () => {
+    onCommit(parseCueMarkersText(draft, sectionStartSec));
+  };
+
+  return (
+    <input
+      type="text"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      placeholder={placeholder}
+      className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+    />
+  );
+};
+
 export default function AdminRepertorio() {
   const [canciones, setCanciones] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -364,6 +452,9 @@ export default function AdminRepertorio() {
   const [editorChordproAviso, setEditorChordproAviso] = useState('');
   const [guardandoChordpro, setGuardandoChordpro] = useState(false);
   const [sectionMarkersDisponibles, setSectionMarkersDisponibles] = useState(true);
+  const [isAutoDetecting, setIsAutoDetecting] = useState(false);
+  const [autoDetectError, setAutoDetectError] = useState(null);
+  const [autoDetectResult, setAutoDetectResult] = useState(null);
   const [editorAudioCurrentTime, setEditorAudioCurrentTime] = useState(0);
   const [editorAudioDuration, setEditorAudioDuration] = useState(0);
   const [editorAudioPlaying, setEditorAudioPlaying] = useState(false);
@@ -410,6 +501,18 @@ export default function AdminRepertorio() {
   }, [editorChordproValor]);
 
   const seccionesEditorChordpro = useMemo(() => parseChordProSections(editorChordproValor), [editorChordproValor]);
+  const cueDraftsEditor = useMemo(() => (
+    seccionesEditorChordpro.map((section, index) => {
+      const cues = splitSectionIntoCues('editor-draft', index, section, null, 1);
+      return {
+        cueCount: cues.length,
+        cuePreview: cues
+          .map((cue) => cue.rawLines.map(stripChordsFromLine).filter(Boolean).join(' / '))
+          .filter(Boolean)
+          .slice(0, 3),
+      };
+    })
+  ), [seccionesEditorChordpro]);
 
   const cancionesPendientesChordpro = useMemo(() => (
     canciones.filter((cancion) => {
@@ -433,6 +536,18 @@ export default function AdminRepertorio() {
     if (!editorChordproAbierto) return;
     setEditorSectionMarkers((prev) => normalizeSectionMarkers(seccionesEditorChordpro, prev));
   }, [editorChordproAbierto, seccionesEditorChordpro]);
+
+  useEffect(() => {
+    if (!editorChordproAbierto) {
+      setIsAutoDetecting(false);
+      setAutoDetectError(null);
+      setAutoDetectResult(null);
+      return;
+    }
+
+    setAutoDetectError(null);
+    setAutoDetectResult(null);
+  }, [editorChordproAbierto, editorChordproCancion?.id]);
 
   useEffect(() => {
     const scrollEl = tableScrollRef.current;
@@ -883,6 +998,9 @@ export default function AdminRepertorio() {
     setEditorChordproAbierto(true);
     setEditorChordproCargando(true);
     setEditorChordproAviso('');
+    setIsAutoDetecting(false);
+    setAutoDetectError(null);
+    setAutoDetectResult(null);
 
     if (isRemoteChordProTextUrl(rawChordpro)) {
       try {
@@ -931,6 +1049,9 @@ export default function AdminRepertorio() {
     setEditorSectionMarkers([]);
     setEditorChordproCargando(false);
     setEditorChordproAviso('');
+    setIsAutoDetecting(false);
+    setAutoDetectError(null);
+    setAutoDetectResult(null);
     setEditorAudioCurrentTime(0);
     setEditorAudioDuration(0);
     setEditorAudioPlaying(false);
@@ -1147,6 +1268,136 @@ export default function AdminRepertorio() {
     setEditorSectionMarkers((prev) => prev.map((item, itemIndex) => (
       itemIndex === markerIndex ? { ...item, ...patch } : item
     )));
+  };
+
+  const capturarCueMarkerActual = (markerIndex) => {
+    setEditorSectionMarkers((prev) => prev.map((item, itemIndex) => {
+      if (itemIndex !== markerIndex) return item;
+
+      return {
+        ...item,
+        cueMarkers: normalizeCueMarkerTimes(
+          [...(Array.isArray(item?.cueMarkers) ? item.cueMarkers : []), Math.round(editorAudioCurrentTimeRef.current)],
+          item?.startSec ?? null,
+        ),
+      };
+    }));
+  };
+
+  const limpiarCueMarkers = (markerIndex) => {
+    setEditorSectionMarkers((prev) => prev.map((item, itemIndex) => (
+      itemIndex === markerIndex
+        ? { ...item, cueMarkers: [] }
+        : item
+    )));
+  };
+
+  const autoDetectMarkers = async () => {
+    if (!editorChordproCancion?.mp3) {
+      setAutoDetectError('Esta cancion no tiene MP3 cargado.');
+      return;
+    }
+
+    const currentSections = parseChordProSections(editorChordproValor);
+    if (currentSections.length === 0) {
+      setAutoDetectError('Agrega encabezados como [Verso 1] o [Coro] antes de auto-detectar.');
+      return;
+    }
+
+    setIsAutoDetecting(true);
+    setAutoDetectError(null);
+    setAutoDetectResult(null);
+
+    try {
+      const sectionsPayload = currentSections.map((section) => ({
+        name: section.name,
+        firstLine: getFirstMeaningfulSectionLine(section),
+        lines: Array.isArray(section?.lines) ? section.lines : [],
+      }));
+
+      const response = await fetch('/api/auto-markers', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          mp3Url: editorChordproCancion.mp3,
+          sections: sectionsPayload,
+        }),
+      });
+
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result?.error) {
+        setAutoDetectError(result?.error || 'No se pudieron detectar markers automaticamente.');
+        return;
+      }
+
+      if (result?.fallback === 'uniform') {
+        const fallbackDuration = Number(result?.durationSec) > 0
+          ? Number(result.durationSec)
+          : editorAudioDurationRef.current;
+
+        if (!(fallbackDuration > 0)) {
+          setAutoDetectError('La IA no detecto palabras y no se pudo estimar la duracion para repartir secciones.');
+          return;
+        }
+
+        setEditorSectionMarkers((prev) => buildUniformAutoDetectedMarkers(
+          normalizeSectionMarkers(currentSections, prev),
+          fallbackDuration,
+        ));
+        setAutoDetectResult({
+          total: currentSections.length,
+          matched: 0,
+          interpolated: currentSections.length,
+          failed: 0,
+          cueMarkersDetected: 0,
+          language: String(result?.language || 'es').toUpperCase(),
+          fallback: 'uniform',
+        });
+        return;
+      }
+
+      if (Array.isArray(result?.markers)) {
+        setEditorSectionMarkers((prev) => {
+          const updated = normalizeSectionMarkers(currentSections, prev);
+          result.markers.forEach((suggested, index) => {
+            if (index >= updated.length || suggested?.startSec == null) return;
+
+            updated[index] = {
+              ...updated[index],
+              startSec: suggested.startSec,
+              cueMarkers: normalizeCueMarkerTimes(suggested?.cueMarkers, suggested.startSec),
+              _autoDetected: true,
+              _confidence: Number(suggested?.confidence) || 0,
+              _method: String(suggested?.method || 'whisper-match'),
+            };
+          });
+          return updated;
+        });
+
+        setAutoDetectResult({
+          total: result.markers.length,
+          matched: result.markers.filter((marker) => marker?.method === 'whisper-match').length,
+          interpolated: result.markers.filter((marker) => marker?.method === 'interpolated').length,
+          hybrid: result.markers.filter((marker) => marker?.method === 'hybrid-structure').length,
+          failed: result.markers.filter((marker) => marker?.method === 'no-match' || marker?.method === 'no-lyrics').length,
+          cueMarkersDetected: result.markers.reduce(
+            (sum, marker) => sum + (Array.isArray(marker?.cueMarkers) ? marker.cueMarkers.length : 0),
+            0,
+          ),
+          language: String(result?.language || 'es').toUpperCase(),
+          fallback: null,
+        });
+        return;
+      }
+
+      setAutoDetectError('La IA no devolvio markers utilizables.');
+    } catch (error) {
+      setAutoDetectError(`Error de red: ${error?.message || 'desconocido'}`);
+    } finally {
+      setIsAutoDetecting(false);
+    }
   };
 
   const editorAudioProgress = editorAudioDuration > 0
@@ -1597,54 +1848,172 @@ export default function AdminRepertorio() {
                       </p>
                     )}
                   </div>
+
+                  {editorChordproCancion?.mp3 && editorSectionMarkers.length > 0 && (
+                    <div className="mt-2 rounded-xl border border-border bg-surface/80 px-2.5 py-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={autoDetectMarkers}
+                          disabled={isAutoDetecting}
+                          className="inline-flex min-h-[34px] items-center justify-center gap-2 rounded-lg bg-action px-3 py-2 text-[11px] font-bold uppercase tracking-[0.12em] text-white transition-colors hover:bg-action/90 disabled:cursor-wait disabled:bg-zinc-700 disabled:text-zinc-300"
+                        >
+                          {isAutoDetecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                          {isAutoDetecting ? 'Analizando audio...' : 'Auto-detectar tiempos'}
+                        </button>
+
+                        {autoDetectError ? (
+                          <span className="text-xs font-medium text-red-400">{autoDetectError}</span>
+                        ) : autoDetectResult ? (
+                          <span className="text-xs font-medium text-emerald-400">
+                            {autoDetectResult.fallback === 'uniform'
+                              ? `Distribucion uniforme aplicada (${autoDetectResult.language})`
+                              : `${autoDetectResult.matched} detectados${autoDetectResult.hybrid > 0 ? `, ${autoDetectResult.hybrid} hibridos` : ''}${autoDetectResult.interpolated > 0 ? `, ${autoDetectResult.interpolated} interpolados` : ''}${autoDetectResult.failed > 0 ? `, ${autoDetectResult.failed} sin match` : ''}${autoDetectResult.cueMarkersDetected > 0 ? `, ${autoDetectResult.cueMarkersDetected} cues` : ''} (${autoDetectResult.language})`}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-content-muted">
+                            Usa Whisper para sugerir tiempos y revisa los markers amarillos o rojos antes de guardar.
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="editor-column-scroll mt-3 min-h-0 flex-1 space-y-2.5 overflow-y-scroll pr-1">
-                  {editorSectionMarkers.length > 0 ? editorSectionMarkers.map((marker, index) => (
-                    <div id={`marker-card-${index}`} key={marker.id || `${marker.sectionName}-${index}`} className="rounded-xl border border-border bg-surface px-2.5 py-2 scroll-mt-36">
-                      <div className="grid grid-cols-[minmax(6.75rem,0.9fr)_4.75rem_minmax(0,1fr)_auto_auto] items-center gap-1.5">
-                        <p className="truncate text-sm font-semibold text-content">{marker.sectionName}</p>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={marker.startSec == null ? '' : formatMarkerTime(marker.startSec)}
-                          onChange={(e) => {
-                            const nextValue = parseMarkerTime(e.target.value);
-                            actualizarEditorSectionMarker(index, { startSec: nextValue });
-                          }}
-                          placeholder="00:00"
-                          className="h-9 w-[4.75rem] rounded-lg border border-border bg-background px-2.5 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
-                        />
-                        <input
-                          type="text"
-                          value={marker.note || ''}
-                          onChange={(e) => {
-                            actualizarEditorSectionMarker(index, { note: e.target.value });
-                          }}
-                          placeholder="Nota de seccion"
-                          className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            actualizarEditorSectionMarker(index, { startSec: null });
-                          }}
-                          className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-surface px-2.5 text-[11px] font-bold text-content-muted transition-colors hover:bg-background hover:text-content"
-                        >
-                          Limpiar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => capturarMarkerActual(index)}
-                          disabled={!editorChordproCancion?.mp3}
-                          className="inline-flex h-9 items-center justify-center rounded-lg border border-brand/25 bg-brand/10 px-2.5 text-[11px] font-bold text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted"
-                        >
-                          <span className="sm:hidden">Marcar</span>
-                          <span className="hidden sm:inline">Marcar ahora</span>
-                        </button>
+                  {editorSectionMarkers.length > 0 ? editorSectionMarkers.map((marker, index) => {
+                    const cueDraft = cueDraftsEditor[index] || { cueCount: 1, cuePreview: [] };
+                    const cueTransitionCount = Math.max(0, cueDraft.cueCount - 1);
+
+                    return (
+                      <div id={`marker-card-${index}`} key={marker.id || `${marker.sectionName}-${index}`} className="rounded-xl border border-border bg-surface px-2.5 py-2 scroll-mt-36">
+                        <div className="grid grid-cols-[minmax(6.75rem,0.9fr)_4.75rem_minmax(0,1fr)_auto_auto] items-center gap-1.5">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-content">{marker.sectionName}</p>
+                            {marker._autoDetected && (
+                              <span className={`mt-1 inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
+                              marker._method === 'whisper-match' && marker._confidence > 0.7
+                                ? 'bg-emerald-950/70 text-emerald-400'
+                                : marker._method === 'whisper-match' && marker._confidence > 0.4
+                                  ? 'bg-yellow-950/70 text-yellow-400'
+                                  : marker._method === 'hybrid-structure'
+                                    ? 'bg-sky-950/70 text-sky-300'
+                                    : marker._method === 'interpolated' || marker._method === 'uniform'
+                                    ? 'bg-yellow-950/70 text-yellow-400'
+                                    : 'bg-red-950/70 text-red-400'
+                            }`}>
+                              {marker._method === 'whisper-match'
+                                ? `IA ${Math.round((marker._confidence || 0) * 100)}%`
+                                : marker._method === 'hybrid-structure'
+                                  ? 'Hibrido'
+                                : marker._method === 'interpolated'
+                                  ? 'Interpolado'
+                                  : marker._method === 'uniform'
+                                      ? 'Uniforme'
+                                      : 'Sin match'}
+                              </span>
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={marker.startSec == null ? '' : formatMarkerTime(marker.startSec)}
+                            onChange={(e) => {
+                              const nextValue = parseMarkerTime(e.target.value);
+                              actualizarEditorSectionMarker(index, {
+                                startSec: nextValue,
+                                cueMarkers: normalizeCueMarkerTimes(marker?.cueMarkers, nextValue),
+                              });
+                            }}
+                            placeholder="00:00"
+                            className="h-9 w-[4.75rem] rounded-lg border border-border bg-background px-2.5 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                          />
+                          <input
+                            type="text"
+                            value={marker.note || ''}
+                            onChange={(e) => {
+                              actualizarEditorSectionMarker(index, { note: e.target.value });
+                            }}
+                            placeholder="Nota de seccion"
+                            className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              actualizarEditorSectionMarker(index, { startSec: null, cueMarkers: [] });
+                            }}
+                            className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-surface px-2.5 text-[11px] font-bold text-content-muted transition-colors hover:bg-background hover:text-content"
+                          >
+                            Limpiar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => capturarMarkerActual(index)}
+                            disabled={!editorChordproCancion?.mp3}
+                            className="inline-flex h-9 items-center justify-center rounded-lg border border-brand/25 bg-brand/10 px-2.5 text-[11px] font-bold text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted"
+                          >
+                            <span className="sm:hidden">Marcar</span>
+                            <span className="hidden sm:inline">Marcar ahora</span>
+                          </button>
+                        </div>
+
+                        {cueDraft.cueCount > 1 && (
+                          <div className="mt-2 rounded-lg border border-border/80 bg-background/60 p-2.5">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-content-muted">
+                                  Cue markers
+                                </p>
+                                <p className="text-[11px] text-content-muted">
+                                  {cueDraft.cueCount} cues detectados. Marca {cueTransitionCount} cambio{cueTransitionCount === 1 ? '' : 's'} interno{cueTransitionCount === 1 ? '' : 's'} para esta seccion.
+                                </p>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => capturarCueMarkerActual(index)}
+                                  disabled={!editorChordproCancion?.mp3 || marker.startSec == null}
+                                  className="inline-flex h-8 items-center justify-center rounded-lg border border-brand/20 bg-brand/10 px-2.5 text-[10px] font-bold uppercase tracking-[0.1em] text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted"
+                                >
+                                  Cue ahora
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => limpiarCueMarkers(index)}
+                                  disabled={!Array.isArray(marker?.cueMarkers) || marker.cueMarkers.length === 0}
+                                  className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-surface px-2.5 text-[10px] font-bold uppercase tracking-[0.1em] text-content-muted transition-colors hover:bg-background hover:text-content disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  Limpiar cues
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="mt-2 grid gap-2">
+                              <CueMarkersInput
+                                value={marker.cueMarkers}
+                                sectionStartSec={marker.startSec}
+                                onCommit={(nextCueMarkers) => actualizarEditorSectionMarker(index, { cueMarkers: nextCueMarkers })}
+                                placeholder={cueTransitionCount > 1 ? 'Ej: 01:12, 01:18' : 'Ej: 01:12'}
+                              />
+
+                              {cueDraft.cuePreview.length > 0 && (
+                                <p className="text-[11px] text-content-muted">
+                                  {cueDraft.cuePreview.map((preview, previewIndex) => (
+                                    <span key={`${marker.sectionKey || marker.id}-cue-preview-${previewIndex}`}>
+                                      {previewIndex > 0 ? ' | ' : ''}
+                                      <span className="font-semibold text-content">{`Cue ${previewIndex + 1}`}</span>
+                                      {`: ${preview}`}
+                                    </span>
+                                  ))}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )) : (
+                    );
+                  }) : (
                     <div className="rounded-xl border border-dashed border-border bg-surface px-4 py-4 text-sm text-content-muted">
                       Aun no hay secciones parseadas. Agrega encabezados como <code>[Verso 1]</code> o <code>[Coro]</code> para preparar markers.
                     </div>

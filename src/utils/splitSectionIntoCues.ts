@@ -58,9 +58,44 @@ function estimateCueWeight(lines: string[] = []) {
   return Math.max(contentWeight + Math.max(0, lines.length - 1) * 0.2, 0.75);
 }
 
+function normalizeExplicitCueAnchors(
+  rawCueMarkers: Array<number | { startSec?: number; time?: number }> = [],
+  marker?: { startSec: number; endSec: number } | null,
+  cueCount = 0,
+) {
+  if (!marker || !Number.isFinite(marker.startSec) || !Number.isFinite(marker.endSec) || cueCount <= 1) {
+    return [];
+  }
+
+  const normalized = (Array.isArray(rawCueMarkers) ? rawCueMarkers : [])
+    .map((entry) => {
+      if (typeof entry === 'number') return entry;
+      if (typeof entry?.startSec === 'number') return entry.startSec;
+      if (typeof entry?.time === 'number') return entry.time;
+      return Number.NaN;
+    })
+    .filter((value) => Number.isFinite(value))
+    .map((value) => Number(value))
+    .filter((value) => value > marker.startSec && value < marker.endSec)
+    .sort((left, right) => left - right)
+    .filter((value, index, source) => index === 0 || Math.abs(value - source[index - 1]) >= 0.75);
+
+  if (normalized.length === 0) return [];
+
+  if (normalized.length >= cueCount && Math.abs(normalized[0] - marker.startSec) <= 1) {
+    return normalized.slice(1, cueCount);
+  }
+
+  return normalized.slice(0, Math.max(0, cueCount - 1));
+}
+
 function buildCueTimingWindows(
   rawCueGroups: string[][],
-  marker?: { startSec: number; endSec: number } | null,
+  marker?: {
+    startSec: number;
+    endSec: number;
+    cueMarkers?: Array<number | { startSec?: number; time?: number }>;
+  } | null,
 ) {
   const hasTiming =
     marker &&
@@ -78,6 +113,63 @@ function buildCueTimingWindows(
   }
 
   const cueWeights = rawCueGroups.map((group) => estimateCueWeight(group));
+  const explicitAnchors = normalizeExplicitCueAnchors(marker?.cueMarkers, marker, rawCueGroups.length);
+
+  if (explicitAnchors.length > 0) {
+    const fixedStarts = [marker.startSec, ...explicitAnchors].slice(0, rawCueGroups.length);
+    const explicitWindowCount = Math.max(0, fixedStarts.length - 1);
+    const explicitWindows = [];
+
+    for (let index = 0; index < explicitWindowCount; index += 1) {
+      explicitWindows.push({
+        startSec: fixedStarts[index],
+        endSec: fixedStarts[index + 1],
+      });
+    }
+
+    if (explicitWindowCount >= rawCueGroups.length) {
+      return explicitWindows.slice(0, rawCueGroups.length);
+    }
+
+    const tailStart = fixedStarts[fixedStarts.length - 1] ?? marker.startSec;
+    const tailGroups = rawCueGroups.slice(explicitWindowCount);
+    const tailWeights = cueWeights.slice(explicitWindowCount);
+    const tailDuration = Math.max(0, marker.endSec - tailStart);
+    const tailWeightTotal = tailWeights.reduce((sum, weight) => sum + weight, 0);
+
+    if (tailGroups.length === 0) {
+      return explicitWindows;
+    }
+
+    if (tailDuration <= 0 || !Number.isFinite(tailWeightTotal) || tailWeightTotal <= 0) {
+      const equalDuration = tailGroups.length > 0 ? tailDuration / tailGroups.length : 0;
+      let cursor = tailStart;
+      return [
+        ...explicitWindows,
+        ...tailGroups.map((_, index) => {
+          const startSec = cursor;
+          const endSec = index === tailGroups.length - 1 ? marker.endSec : cursor + equalDuration;
+          cursor = endSec;
+          return { startSec, endSec };
+        }),
+      ];
+    }
+
+    let cursor = tailStart;
+    const tailWindows = tailGroups.map((_, index) => {
+      const startSec = cursor;
+      const sliceDuration =
+        index === tailGroups.length - 1
+          ? marker.endSec - cursor
+          : tailDuration * (tailWeights[index] / tailWeightTotal);
+      const endSec = index === tailGroups.length - 1 ? marker.endSec : cursor + sliceDuration;
+      cursor = endSec;
+      return { startSec, endSec };
+    });
+
+    return [...explicitWindows, ...tailWindows];
+  }
+
   const totalWeight = cueWeights.reduce((sum, weight) => sum + weight, 0);
 
   if (!Number.isFinite(totalWeight) || totalWeight <= 0) {
@@ -136,7 +228,11 @@ export function splitSectionIntoCues(
   songId: string,
   sectionIndex: number,
   section: { name: string; note?: string; lines: string[] },
-  marker?: { startSec: number; endSec: number } | null,
+  marker?: {
+    startSec: number;
+    endSec: number;
+    cueMarkers?: Array<number | { startSec?: number; time?: number }>;
+  } | null,
   occurrence = 1,
 ): DisplayCue[] {
   const kind = getSectionKind(section.name);
@@ -248,7 +344,12 @@ export function buildDisplayTrack(song: {
   key: string;
   bpm?: number;
   sections: Array<{ name: string; note?: string; lines: string[] }>;
-  sectionMarkers?: Array<{ startSec?: number; endSec?: number; sectionName?: string }>;
+  sectionMarkers?: Array<{
+    startSec?: number;
+    endSec?: number;
+    sectionName?: string;
+    cueMarkers?: Array<number | { startSec?: number; time?: number }>;
+  }>;
   duration?: number;
 }): DisplayTrack {
   const sections = Array.isArray(song?.sections) ? song.sections : [];
@@ -277,6 +378,7 @@ export function buildDisplayTrack(song: {
         ? {
             startSec,
             endSec,
+            cueMarkers: Array.isArray(marker?.cueMarkers) ? marker.cueMarkers : [],
           }
         : null;
 
