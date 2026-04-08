@@ -508,8 +508,7 @@ export default function AdminRepertorio() {
         cueCount: cues.length,
         cuePreview: cues
           .map((cue) => cue.rawLines.map(stripChordsFromLine).filter(Boolean).join(' / '))
-          .filter(Boolean)
-          .slice(0, 3),
+          .filter(Boolean),
       };
     })
   ), [seccionesEditorChordpro]);
@@ -1418,8 +1417,8 @@ export default function AdminRepertorio() {
       </button>
 
       <span className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold md:text-xs ${cancionesPendientesChordpro.length > 0
-          ? 'border-amber-500/25 bg-amber-500/10 text-amber-600'
-          : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600'
+        ? 'border-amber-500/25 bg-amber-500/10 text-amber-600'
+        : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600'
         }`}>
         <span className="inline-flex min-w-[1.65rem] items-center justify-center rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-black">
           {cancionesPendientesChordpro.length}
@@ -1891,14 +1890,14 @@ export default function AdminRepertorio() {
                               <p className="truncate text-sm font-semibold text-content">{marker.sectionName}</p>
                               {marker._autoDetected && (
                                 <span className={`mt-1 inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${marker._method === 'whisper-match' && marker._confidence > 0.7
-                                    ? 'bg-emerald-950/70 text-emerald-400'
-                                    : marker._method === 'whisper-match' && marker._confidence > 0.4
-                                      ? 'bg-yellow-950/70 text-yellow-400'
-                                      : marker._method === 'hybrid-structure'
-                                        ? 'bg-sky-950/70 text-sky-300'
-                                        : marker._method === 'interpolated' || marker._method === 'uniform'
-                                          ? 'bg-yellow-950/70 text-yellow-400'
-                                          : 'bg-red-950/70 text-red-400'
+                                  ? 'bg-emerald-950/70 text-emerald-400'
+                                  : marker._method === 'whisper-match' && marker._confidence > 0.4
+                                    ? 'bg-yellow-950/70 text-yellow-400'
+                                    : marker._method === 'hybrid-structure'
+                                      ? 'bg-sky-950/70 text-sky-300'
+                                      : marker._method === 'interpolated' || marker._method === 'uniform'
+                                        ? 'bg-yellow-950/70 text-yellow-400'
+                                        : 'bg-red-950/70 text-red-400'
                                   }`}>
                                   {marker._method === 'whisper-match'
                                     ? `IA ${Math.round((marker._confidence || 0) * 100)}%`
@@ -1963,7 +1962,7 @@ export default function AdminRepertorio() {
                                     Cue markers
                                   </p>
                                   <p className="text-[11px] text-content-muted">
-                                    Esta seccion tiene {cueDraft.cueCount} lineas. El Tiempo 1 es el inicio de la seccion; ingresa {cueTransitionCount === 1 ? 'el' : 'los'} {cueTransitionCount} cambio{cueTransitionCount === 1 ? '' : 's'} interno{cueTransitionCount === 1 ? '' : 's'} restante{cueTransitionCount === 1 ? '' : 's'}.
+                                    Esta seccion se divide en {cueDraft.cueCount} pantallas (cues). La pantalla 1 usa el tiempo de inicio; ingresa {cueTransitionCount === 1 ? 'el tiempo para la pantalla restante' : `los tiempos para las ${cueTransitionCount} pantallas restantes`}.
                                   </p>
                                 </div>
 
