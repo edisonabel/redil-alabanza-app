@@ -27,6 +27,8 @@ export interface DisplaySection {
   cueCount: number;
   startSec: number | null;
   endSec: number | null;
+  trustedEndSec: number | null;
+  estimatedEndSec: number | null;
 }
 
 export interface DisplayTrack {
@@ -35,9 +37,12 @@ export interface DisplayTrack {
   artist: string;
   key: string;
   bpm: number | null;
+  audioUrl: string;
   cues: DisplayCue[];
   sections: DisplaySection[];
   totalDurationSec: number | null;
+  trustedTotalDurationSec: number | null;
+  estimatedTotalDurationSec: number | null;
 }
 
 export interface DisplayTimeline {

@@ -1185,6 +1185,10 @@ export default function AdminRepertorio() {
     );
   };
 
+  const construirLiveDirectorUrl = (cancionId) => (
+    `/herramientas/live-director-preview?song=${encodeURIComponent(String(cancionId || ''))}`
+  );
+
   const desplazarTablaHorizontalmente = (delta) => {
     const scrollEl = tableScrollRef.current;
     if (!scrollEl) return;
@@ -1577,6 +1581,7 @@ export default function AdminRepertorio() {
                     <th className="admin-head-cell px-4 py-3 text-center min-w-[8rem]">Letras</th>
                     <th className="admin-head-cell px-4 py-3 text-center min-w-[8rem]">Voces</th>
                     <th className="admin-head-cell px-4 py-3 text-center min-w-[8rem]">Secuencias</th>
+                    <th className="admin-head-cell px-4 py-3 text-center min-w-[9rem]">Live Director</th>
                     <th className="admin-head-cell px-4 py-3 text-center min-w-[17rem]">ChordPro</th>
                   </tr>
                 </thead>
@@ -1638,6 +1643,18 @@ export default function AdminRepertorio() {
                       <td className="p-0.5 align-middle">{renderizarCeldaArchivo(cancion, 'link_letras')}</td>
                       <td className="p-0.5 align-middle">{renderizarCeldaArchivo(cancion, 'link_voces')}</td>
                       <td className="p-0.5 align-middle">{renderizarCeldaArchivo(cancion, 'link_secuencias')}</td>
+                      <td className="p-0.5 align-middle">
+                        <div className="flex h-full min-w-[9rem] items-center justify-center px-2 py-1.5">
+                          <a
+                            href={construirLiveDirectorUrl(cancion.id)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex min-h-[34px] items-center justify-center rounded-lg border border-brand/20 bg-brand/10 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.12em] text-brand transition-colors hover:bg-brand/15"
+                          >
+                            Live Director
+                          </a>
+                        </div>
+                      </td>
                       <td className="p-0.5 align-middle">{renderizarCeldaArchivo(cancion, 'chordpro')}</td>
                     </tr>
                   ))}

@@ -343,6 +343,7 @@ export function buildDisplayTrack(song: {
   artist: string;
   key: string;
   bpm?: number;
+  mp3?: string;
   sections: Array<{ name: string; note?: string; lines: string[] }>;
   sectionMarkers?: Array<{
     startSec?: number;
@@ -351,12 +352,19 @@ export function buildDisplayTrack(song: {
     cueMarkers?: Array<number | { startSec?: number; time?: number }>;
   }>;
   duration?: number;
+  actualDurationSec?: number | null;
 }): DisplayTrack {
   const sections = Array.isArray(song?.sections) ? song.sections : [];
   const markers = Array.isArray(song?.sectionMarkers) ? song.sectionMarkers : [];
   const kindCounts = new Map<string, number>();
   const allCues: DisplayCue[] = [];
   const displaySections: DisplaySection[] = [];
+  const estimatedTotalDurationSec = Number.isFinite(Number(song?.duration))
+    ? Number(song.duration)
+    : null;
+  const trustedTotalDurationSec = Number.isFinite(Number(song?.actualDurationSec))
+    ? Number(song.actualDurationSec)
+    : null;
 
   sections.forEach((section, idx) => {
     const kind = getSectionKind(section.name);
@@ -366,18 +374,29 @@ export function buildDisplayTrack(song: {
     const marker = markers[idx];
     const nextMarker = markers[idx + 1];
     const startSec = Number.isFinite(Number(marker?.startSec)) ? Number(marker?.startSec) : null;
-    const endSec = Number.isFinite(Number(marker?.endSec))
+    const explicitEndSec = Number.isFinite(Number(marker?.endSec))
       ? Number(marker?.endSec)
       : Number.isFinite(Number(nextMarker?.startSec))
         ? Number(nextMarker?.startSec)
-        : Number.isFinite(Number(song?.duration))
-          ? Number(song.duration)
+        : null;
+    const trustedEndSec =
+      explicitEndSec != null
+        ? explicitEndSec
+        : idx === sections.length - 1 && trustedTotalDurationSec != null
+          ? trustedTotalDurationSec
           : null;
+    const estimatedEndSec =
+      explicitEndSec != null
+        ? explicitEndSec
+        : idx === sections.length - 1 && estimatedTotalDurationSec != null
+          ? estimatedTotalDurationSec
+          : null;
+    const cueTimingEndSec = trustedEndSec ?? estimatedEndSec;
     const markerTiming =
-      startSec != null && endSec != null
+      startSec != null && cueTimingEndSec != null
         ? {
           startSec,
-          endSec,
+          endSec: cueTimingEndSec,
           cueMarkers: Array.isArray(marker?.cueMarkers) ? marker.cueMarkers : [],
         }
         : null;
@@ -397,7 +416,9 @@ export function buildDisplayTrack(song: {
       startCueIndex,
       cueCount: cues.length,
       startSec: markerTiming?.startSec ?? null,
-      endSec: markerTiming?.endSec ?? null,
+      endSec: trustedEndSec,
+      trustedEndSec,
+      estimatedEndSec,
     });
   });
 
@@ -407,8 +428,11 @@ export function buildDisplayTrack(song: {
     artist: song.artist,
     key: song.key,
     bpm: song.bpm || null,
+    audioUrl: song?.mp3 || '',
     cues: allCues,
     sections: displaySections,
-    totalDurationSec: song.duration || null,
+    totalDurationSec: trustedTotalDurationSec ?? estimatedTotalDurationSec,
+    trustedTotalDurationSec,
+    estimatedTotalDurationSec,
   };
 }

@@ -20,6 +20,13 @@ const DEFAULT_SETTINGS = {
   fontSize: 'standard',
 };
 
+const SYNC_ANTICIPATION_SEC = 0.5;
+const SYNC_DRIFT_SOFT_SEC = 0.18;
+const SYNC_DRIFT_HARD_SEC = 0.75;
+const SYNC_SECTION_SNAP_DRIFT_SEC = 0.32;
+const MAX_SERVER_LOOKAHEAD_SEC = 2.2;
+const MAX_FRAME_DELTA_SEC = 0.12;
+
 const stripChordMarkup = (line = '') =>
   String(line || '')
     .replace(/\[([^\]]+)\]/g, '')
@@ -29,6 +36,14 @@ const stripChordMarkup = (line = '') =>
 const formatBpmLabel = (value) => {
   const bpm = Number(value);
   return Number.isFinite(bpm) && bpm > 0 ? `${Math.round(bpm)} BPM` : null;
+};
+
+const resolveTrustedSectionEnd = (section) => {
+  const directValue = Number(section?.trustedEndSec);
+  if (Number.isFinite(directValue)) return directValue;
+
+  const fallbackValue = Number(section?.endSec);
+  return Number.isFinite(fallbackValue) ? fallbackValue : null;
 };
 
 const buildCuePreviewLines = (cue, maxLines = 2) => {
@@ -287,16 +302,6 @@ function MonitorChordOverlayLine({
 }
 
 export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle = '' }) {
-  const timeline = useMemo(() => {
-    const tracks = (songs || []).map((song) => buildDisplayTrack(song));
-    return {
-      eventId,
-      eventTitle,
-      tracks,
-      totalCues: tracks.reduce((sum, track) => sum + track.cues.length, 0),
-    };
-  }, [songs, eventId, eventTitle]);
-
   const [activeTrackIndex, setActiveTrackIndex] = useState(0);
   const [activeSectionIndex, setActiveSectionIndex] = useState(0);
   const [activeCueIndex, setActiveCueIndex] = useState(0);
@@ -304,6 +309,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [showSettings, setShowSettings] = useState(false);
   const [sectionTimeRemaining, setSectionTimeRemaining] = useState(null);
+  const [runtimeTrackDurations, setRuntimeTrackDurations] = useState({});
   const [viewport, setViewport] = useState(() => ({
     width: typeof window !== 'undefined' ? window.innerWidth : 0,
     height: typeof window !== 'undefined' ? window.innerHeight : 0,
@@ -311,28 +317,58 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
   const [heroScale, setHeroScale] = useState(1);
   const [previewScale, setPreviewScale] = useState(1);
 
+  const timeline = useMemo(() => {
+    const tracks = (songs || []).map((song) =>
+      buildDisplayTrack({
+        ...song,
+        actualDurationSec: runtimeTrackDurations[String(song?.id ?? '')] ?? null,
+      }),
+    );
+    return {
+      eventId,
+      eventTitle,
+      tracks,
+      totalCues: tracks.reduce((sum, track) => sum + track.cues.length, 0),
+    };
+  }, [eventId, eventTitle, runtimeTrackDurations, songs]);
+
   const activeTrackIndexRef = useRef(0);
+  const activeSectionIndexRef = useRef(0);
   const activeCueIndexRef = useRef(0);
   const lastServerTimeRef = useRef(0);
   const lastReceiveTimestampRef = useRef(0);
   const lastPayloadSongIdRef = useRef('');
-  const remotePlaybackRateRef = useRef(1);
+  const remoteIsPlayingRef = useRef(false);
   const lastHeartbeatAtRef = useRef(0);
   const interpolatedTimeRef = useRef(0);
+  const smoothedDisplayTimeRef = useRef(0);
+  const lastAppliedDisplayTimeRef = useRef(0);
+  const lastFrameTimestampRef = useRef(0);
   const rafRef = useRef(null);
   const lastCountdownRef = useRef(null);
+  const lastCountdownContextRef = useRef('');
   const mainStageRef = useRef(null);
   const mainContentRef = useRef(null);
   const previewStageRef = useRef(null);
   const previewContentRef = useRef(null);
+  const pendingDurationLoadsRef = useRef(new Map());
+  const runtimeTrackDurationsRef = useRef({});
 
   useEffect(() => {
     activeTrackIndexRef.current = activeTrackIndex;
   }, [activeTrackIndex]);
 
   useEffect(() => {
+    activeSectionIndexRef.current = activeSectionIndex;
+  }, [activeSectionIndex]);
+
+  useEffect(() => {
     activeCueIndexRef.current = activeCueIndex;
   }, [activeCueIndex]);
+
+  useEffect(() => {
+    runtimeTrackDurationsRef.current = runtimeTrackDurations;
+  }, [runtimeTrackDurations]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -345,6 +381,59 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     handleResize();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const loadRuntimeTrackDuration = useCallback((track) => {
+    const songId = String(track?.songId || '');
+    const audioUrl = String(track?.audioUrl || '').trim();
+
+    if (!songId || !audioUrl) return;
+    if (runtimeTrackDurationsRef.current[songId] != null) return;
+    if (pendingDurationLoadsRef.current.has(songId)) return;
+
+    const probe = new Audio();
+    probe.preload = 'metadata';
+
+    const cleanup = () => {
+      probe.removeEventListener('loadedmetadata', onLoadedMetadata);
+      probe.removeEventListener('error', onLoadError);
+      probe.src = '';
+      pendingDurationLoadsRef.current.delete(songId);
+    };
+
+    const onLoadedMetadata = () => {
+      const resolvedDuration = Number(probe.duration);
+      if (Number.isFinite(resolvedDuration) && resolvedDuration > 1) {
+        setRuntimeTrackDurations((current) => {
+          if (current[songId] != null) return current;
+          return {
+            ...current,
+            [songId]: resolvedDuration,
+          };
+        });
+      }
+      cleanup();
+    };
+
+    const onLoadError = () => {
+      cleanup();
+    };
+
+    pendingDurationLoadsRef.current.set(songId, cleanup);
+    probe.addEventListener('loadedmetadata', onLoadedMetadata);
+    probe.addEventListener('error', onLoadError);
+    probe.src = audioUrl;
+    probe.load();
+  }, []);
+
+  useEffect(() => {
+    loadRuntimeTrackDuration(timeline.tracks[activeTrackIndex]);
+    loadRuntimeTrackDuration(timeline.tracks[activeTrackIndex + 1]);
+  }, [activeTrackIndex, loadRuntimeTrackDuration, timeline.tracks]);
+
+  useEffect(() => () => {
+    pendingDurationLoadsRef.current.forEach((cleanup) => cleanup?.());
+    pendingDurationLoadsRef.current.clear();
   }, []);
 
   useEffect(() => {
@@ -377,12 +466,12 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
         const previousCue = track.cues[index - 1];
         // 150ms exactos para compensar latencia de red sin que el salto
         // visual se sienta desfasado cuando se configuran los marcadores con alta precisión.
-        const defaultAnticipation = 0.15;
+        const defaultAnticipation = SYNC_ANTICIPATION_SEC;
 
         // Limitar la anticipación a un 40% de la duración del cue anterior
         // para no solapar los saltos en la pantalla si los cues son rapidísimos
         const maxAnticipation = previousCue?.estimatedStartSec != null
-          ? Math.max(0, (cue.estimatedStartSec - previousCue.estimatedStartSec) * 0.40)
+          ? Math.max(0, (cue.estimatedStartSec - previousCue.estimatedStartSec) * 0.45)
           : defaultAnticipation;
 
         anticipation = Math.min(defaultAnticipation, maxAnticipation);
@@ -411,6 +500,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
 
     activeTrackIndexRef.current = trackIndex;
     activeCueIndexRef.current = nextCueIndex;
+    activeSectionIndexRef.current = nextSectionIndex;
 
     setActiveTrackIndex((current) => (current === trackIndex ? current : trackIndex));
     setActiveCueIndex((current) => (current === nextCueIndex ? current : nextCueIndex));
@@ -427,37 +517,93 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     syncDisplayState(trackIndex, nextCueIndex, track.cues[nextCueIndex]?.sectionIndex ?? 0);
   }, [syncDisplayState, timeline.tracks]);
 
+  const getAuthoritativeRemoteTime = useCallback((now = performance.now()) => {
+    if (lastReceiveTimestampRef.current <= 0) {
+      return lastServerTimeRef.current;
+    }
+
+    if (!remoteIsPlayingRef.current) {
+      return lastServerTimeRef.current;
+    }
+
+    const elapsed = Math.max(0, (now - lastReceiveTimestampRef.current) / 1000);
+    return lastServerTimeRef.current + Math.min(elapsed, MAX_SERVER_LOOKAHEAD_SEC);
+  }, []);
+
   useEffect(() => {
     const loop = () => {
+      const now = performance.now();
       const trackIndex = activeTrackIndexRef.current;
       const track = timeline.tracks[trackIndex] || null;
+      const previousFrameTimestamp = lastFrameTimestampRef.current || now;
+      const frameDelta = Math.min(
+        Math.max(0, (now - previousFrameTimestamp) / 1000),
+        MAX_FRAME_DELTA_SEC,
+      );
+      lastFrameTimestampRef.current = now;
 
       if (track && lastReceiveTimestampRef.current > 0) {
-        const elapsed = (performance.now() - lastReceiveTimestampRef.current) / 1000;
-        const interpolationWindow = remotePlaybackRateRef.current > 0
-          ? Math.min(elapsed, 2.2)
-          : 0;
-        interpolatedTimeRef.current =
-          lastServerTimeRef.current + interpolationWindow * remotePlaybackRateRef.current;
+        const authoritativeTime = getAuthoritativeRemoteTime(now);
+        let nextDisplayTime = smoothedDisplayTimeRef.current;
 
-        const nextCueIndex = findCueAtTime(interpolatedTimeRef.current, track);
+        if (!Number.isFinite(nextDisplayTime) || nextDisplayTime <= 0) {
+          nextDisplayTime = authoritativeTime;
+        } else if (remoteIsPlayingRef.current) {
+          const projectedForward = nextDisplayTime + frameDelta;
+          const driftAfterForward = authoritativeTime - projectedForward;
+
+          if (Math.abs(driftAfterForward) >= SYNC_DRIFT_HARD_SEC) {
+            nextDisplayTime = authoritativeTime;
+          } else if (driftAfterForward > SYNC_DRIFT_SOFT_SEC) {
+            nextDisplayTime = projectedForward + Math.min(driftAfterForward * 0.35, 0.08);
+          } else if (driftAfterForward < -SYNC_DRIFT_SOFT_SEC) {
+            nextDisplayTime = nextDisplayTime;
+          } else {
+            nextDisplayTime = projectedForward;
+          }
+
+          nextDisplayTime = Math.max(nextDisplayTime, lastAppliedDisplayTimeRef.current);
+        } else {
+          nextDisplayTime = authoritativeTime;
+        }
+
+        smoothedDisplayTimeRef.current = nextDisplayTime;
+        lastAppliedDisplayTimeRef.current = nextDisplayTime;
+        interpolatedTimeRef.current = nextDisplayTime;
+
+        const nextCueIndex = findCueAtTime(nextDisplayTime, track);
         if (nextCueIndex !== activeCueIndexRef.current) {
           syncDisplayState(trackIndex, nextCueIndex, track.cues[nextCueIndex]?.sectionIndex ?? 0);
         }
 
         const cue = track.cues[nextCueIndex] || null;
         const section = cue ? track.sections[cue.sectionIndex] : null;
-        if (section?.endSec != null) {
-          const nextValue = Math.max(0, section.endSec - interpolatedTimeRef.current);
-          if (lastCountdownRef.current == null || Math.abs(lastCountdownRef.current - nextValue) > 0.1) {
-            lastCountdownRef.current = nextValue;
-            setSectionTimeRemaining(nextValue);
+        const trustedSectionEnd = resolveTrustedSectionEnd(section);
+
+        if (trustedSectionEnd != null) {
+          const countdownContext = `${track.songId}:${cue?.sectionIndex ?? -1}`;
+          if (lastCountdownContextRef.current !== countdownContext) {
+            lastCountdownContextRef.current = countdownContext;
+            lastCountdownRef.current = null;
+          }
+
+          const remainingSeconds = Math.max(0, trustedSectionEnd - nextDisplayTime);
+          const visibleCountdown = Math.ceil(remainingSeconds);
+          const stableCountdown = remoteIsPlayingRef.current && lastCountdownRef.current != null
+            ? Math.min(lastCountdownRef.current, visibleCountdown)
+            : visibleCountdown;
+
+          if (lastCountdownRef.current !== stableCountdown) {
+            lastCountdownRef.current = stableCountdown;
+            setSectionTimeRemaining(stableCountdown);
           }
         } else if (lastCountdownRef.current !== null) {
+          lastCountdownContextRef.current = '';
           lastCountdownRef.current = null;
           setSectionTimeRemaining(null);
         }
       } else if (lastCountdownRef.current !== null) {
+        lastCountdownContextRef.current = '';
         lastCountdownRef.current = null;
         setSectionTimeRemaining(null);
       }
@@ -469,7 +615,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [findCueAtTime, syncDisplayState, timeline.tracks]);
+  }, [findCueAtTime, getAuthoritativeRemoteTime, syncDisplayState, timeline.tracks]);
 
   useEffect(() => {
     const channel = supabase.channel('ensayo-live-sync', {
@@ -483,40 +629,43 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
         lastHeartbeatAtRef.current = Date.now();
         setConnectionStatus('connected');
 
+        const nextSongId = String(payload.songId);
+        const songChanged = nextSongId !== String(lastPayloadSongIdRef.current);
+        const receiveTimestamp = performance.now();
+        const incomingIsPlaying =
+          typeof payload.isPlaying === 'boolean' ? payload.isPlaying : remoteIsPlayingRef.current;
+
         if (typeof payload.currentTime === 'number') {
-          const receiveTimestamp = performance.now();
-          const isSameSong = String(payload.songId) === String(lastPayloadSongIdRef.current);
-          const hadPreviousPacket = lastReceiveTimestampRef.current > 0 && isSameSong;
-          const previousServerTime = lastServerTimeRef.current;
-          const previousReceiveTimestamp = lastReceiveTimestampRef.current;
+          const currentDisplayTime =
+            smoothedDisplayTimeRef.current || interpolatedTimeRef.current || payload.currentTime;
+          const drift = payload.currentTime - currentDisplayTime;
+          const sectionJump =
+            typeof payload.sectionIndex === 'number' &&
+            payload.sectionIndex !== activeSectionIndexRef.current;
+          const shouldSnapImmediately =
+            songChanged ||
+            lastReceiveTimestampRef.current <= 0 ||
+            !incomingIsPlaying ||
+            Math.abs(drift) >= SYNC_DRIFT_HARD_SEC ||
+            (sectionJump && Math.abs(drift) >= SYNC_SECTION_SNAP_DRIFT_SEC);
 
-          if (typeof payload.isPlaying === 'boolean') {
-            remotePlaybackRateRef.current = payload.isPlaying ? 1 : 0;
-          } else if (hadPreviousPacket) {
-            const elapsedWallTime = (receiveTimestamp - previousReceiveTimestamp) / 1000;
-            const elapsedServerTime = payload.currentTime - previousServerTime;
-
-            if (elapsedWallTime > 0.15) {
-              if (Math.abs(elapsedServerTime) <= 0.08) {
-                remotePlaybackRateRef.current = 0;
-              } else {
-                remotePlaybackRateRef.current = Math.max(
-                  0,
-                  Math.min(elapsedServerTime / elapsedWallTime, 1.15),
-                );
-              }
-            }
-          } else {
-            remotePlaybackRateRef.current = 1;
-          }
-
-          lastPayloadSongIdRef.current = String(payload.songId);
+          remoteIsPlayingRef.current = incomingIsPlaying;
+          lastPayloadSongIdRef.current = nextSongId;
           lastServerTimeRef.current = payload.currentTime;
           lastReceiveTimestampRef.current = receiveTimestamp;
+          if (shouldSnapImmediately) {
+            smoothedDisplayTimeRef.current = payload.currentTime;
+            lastAppliedDisplayTimeRef.current = payload.currentTime;
+            interpolatedTimeRef.current = payload.currentTime;
+            lastFrameTimestampRef.current = receiveTimestamp;
+          }
+        } else {
+          remoteIsPlayingRef.current = incomingIsPlaying;
+          lastPayloadSongIdRef.current = nextSongId;
         }
 
         const matchedTrackIndex = timeline.tracks.findIndex(
-          (track) => String(track.songId) === String(payload.songId),
+          (track) => String(track.songId) === nextSongId,
         );
 
         let resolvedTrackIndex = activeTrackIndexRef.current;
@@ -543,6 +692,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
           } else if (section && (typeof payload.currentTime !== 'number' || !hasCueTiming)) {
             syncDisplayState(resolvedTrackIndex, section.startCueIndex, payload.sectionIndex);
           } else if (typeof payload.currentTime !== 'number') {
+            activeSectionIndexRef.current = payload.sectionIndex;
             setActiveSectionIndex((current) => (current === payload.sectionIndex ? current : payload.sectionIndex));
           }
         }
@@ -1324,7 +1474,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
               animation: sectionTimeRemaining < 5 ? 'confidence-pulse 1s infinite' : 'none',
             }}
           >
-            {Math.ceil(sectionTimeRemaining)}s
+            {sectionTimeRemaining}s
           </div>
         )}
       </div>

@@ -70,7 +70,8 @@ const hexToRgbString = (hex) => {
 const pathname = new URL(Astro.request.url).pathname;
 const isAdminRepertorioView = pathname === '/admin';
 const isChordProPrintView = pathname === '/herramientas/chordpro-print';
-const showBottomNav = !isAdminRepertorioView && !isChordProPrintView;
+const isLiveDirectorPreviewView = pathname === '/herramientas/live-director-preview';
+const showBottomNav = !isAdminRepertorioView && !isChordProPrintView && !isLiveDirectorPreviewView;
 const brandingAccessToken = Astro.cookies.get('sb-access-token')?.value || '';
 const shouldBustBrandingCache =
   Astro.cookies.has('branding_cache_bust') ||
@@ -559,7 +560,7 @@ const themeColors = brandingData;
    <p class="standalone-boot-splash__hint">Preparando tu espacio de trabajo</p>
   </div>
  </div>
- {pathname !== '/' && user && !isAdminRepertorioView && !isChordProPrintView && (
+{pathname !== '/' && user && !isAdminRepertorioView && !isChordProPrintView && !isLiveDirectorPreviewView && (
   <div
    id="layout-notification-bell"
    class="fixed right-4 md:right-6 z-[61] pointer-events-none"

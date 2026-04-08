@@ -1,0 +1,101 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import LiveDirectorView from '../../components/react/LiveDirectorView';
+import { supabase } from '../../lib/supabase';
+import {
+  buildLiveDirectorSectionsFromMarkers,
+  normalizePersistedLiveDirectorSession,
+} from '../../utils/liveDirectorSongSession';
+
+const requestedSong = Astro.url.searchParams.get('song')?.trim() || '';
+
+let songRecord: {
+  id: string;
+  titulo: string;
+  cantante: string;
+  tonalidad: string;
+  bpm: number;
+  sections: ReturnType<typeof buildLiveDirectorSectionsFromMarkers>;
+  session: ReturnType<typeof normalizePersistedLiveDirectorSession>;
+} | null = null;
+
+const fetchSongByRequest = async (lookupValue: string) => {
+  if (!lookupValue) {
+    return null;
+  }
+
+  const selectWithSession =
+    'id, titulo, cantante, tonalidad, bpm, section_markers, multitrack_session';
+  const selectFallback =
+    'id, titulo, cantante, tonalidad, bpm, section_markers';
+
+  const runSelect = async (selectClause: string, byTitle = false, partialTitle = false) => {
+    let query = supabase.from('canciones').select(selectClause);
+
+    if (byTitle) {
+      query = query.ilike('titulo', partialTitle ? `%${lookupValue}%` : lookupValue).limit(1);
+    } else {
+      query = query.eq('id', lookupValue);
+    }
+
+    return query.maybeSingle();
+  };
+
+  const tryStrategies = async (selectClause: string) => {
+    const byId = await runSelect(selectClause, false);
+    if (byId.data) return byId.data;
+
+    const exactTitle = await runSelect(selectClause, true, false);
+    if (exactTitle.data) return exactTitle.data;
+
+    const partialTitle = await runSelect(selectClause, true, true);
+    return partialTitle.data || null;
+  };
+
+  const withSessionResult = await tryStrategies(selectWithSession).catch(() => null);
+  if (withSessionResult) {
+    return withSessionResult;
+  }
+
+  return tryStrategies(selectFallback).catch(() => null);
+};
+
+if (requestedSong) {
+  try {
+    const row = await fetchSongByRequest(requestedSong);
+
+    if (row) {
+      const rawSession = 'multitrack_session' in row ? row.multitrack_session : null;
+      songRecord = {
+        id: String(row.id || ''),
+        titulo: String(row.titulo || ''),
+        cantante: String(row.cantante || ''),
+        tonalidad: String(row.tonalidad || ''),
+        bpm: Number.isFinite(Number(row.bpm)) ? Number(row.bpm) : 0,
+        sections: buildLiveDirectorSectionsFromMarkers(row.section_markers),
+        session: normalizePersistedLiveDirectorSession(rawSession, {
+          songId: String(row.id || ''),
+          songTitle: String(row.titulo || ''),
+        }),
+      };
+    }
+  } catch (error) {
+    console.error('Live Director preview preload failed:', error);
+  }
+}
+---
+
+<Layout>
+  <LiveDirectorView
+    client:load
+    songId={songRecord?.id || ''}
+    songTitle={songRecord?.titulo || ''}
+    songKey={songRecord?.tonalidad || ''}
+    title={songRecord?.cantante ? `Live Director - ${songRecord.cantante}` : 'Live Director'}
+    subtitle={songRecord?.titulo || 'Select a Song'}
+    bpm={songRecord?.bpm || 81}
+    sections={songRecord?.sections || undefined}
+    initialSession={songRecord?.session || undefined}
+    requiresSongContext={true}
+  />
+</Layout>
