@@ -1288,7 +1288,20 @@ export default function ModoEnsayoCompacto({
   useEffect(() => {
     if (!remotePayload || syncRole !== 'musico') return;
 
-    const { songId, sectionIndex, currentTime: directorTime } = remotePayload;
+    const {
+      songId,
+      sectionIndex,
+      currentTime,
+      currentTimeRaw,
+      sectionOffsetSeconds,
+    } = remotePayload;
+    const offsetSeconds = Number.isFinite(Number(sectionOffsetSeconds)) ? Number(sectionOffsetSeconds) : 0;
+    const directorTime =
+      typeof currentTime === 'number'
+        ? currentTime
+        : typeof currentTimeRaw === 'number'
+          ? Math.max(0, currentTimeRaw - offsetSeconds)
+          : null;
 
     if (String(songId) === String(currentSongKey)) {
       // Mover la barra de progreso al tiempo del Director

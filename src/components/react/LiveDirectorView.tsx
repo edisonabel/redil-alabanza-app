@@ -1126,7 +1126,7 @@ export function LiveDirectorView({
     onPlaybackSnapshot({
       songId,
       sectionIndex: activeSectionIndex,
-      currentTime: Math.max(0, currentTime + sectionOffsetSeconds),
+      currentTime: Math.max(0, currentTime - sectionOffsetSeconds),
       currentTimeRaw: currentTime,
       sectionOffsetSeconds,
       isPlaying,

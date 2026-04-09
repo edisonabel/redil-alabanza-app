@@ -635,10 +635,20 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
         const incomingIsPlaying =
           typeof payload.isPlaying === 'boolean' ? payload.isPlaying : remoteIsPlayingRef.current;
 
-        if (typeof payload.currentTime === 'number') {
+        const offsetSeconds = Number.isFinite(Number(payload.sectionOffsetSeconds))
+          ? Number(payload.sectionOffsetSeconds)
+          : 0;
+        const resolvedCurrentTime =
+          typeof payload.currentTime === 'number'
+            ? payload.currentTime
+            : typeof payload.currentTimeRaw === 'number'
+              ? Math.max(0, payload.currentTimeRaw - offsetSeconds)
+              : null;
+
+        if (typeof resolvedCurrentTime === 'number') {
           const currentDisplayTime =
-            smoothedDisplayTimeRef.current || interpolatedTimeRef.current || payload.currentTime;
-          const drift = payload.currentTime - currentDisplayTime;
+            smoothedDisplayTimeRef.current || interpolatedTimeRef.current || resolvedCurrentTime;
+          const drift = resolvedCurrentTime - currentDisplayTime;
           const sectionJump =
             typeof payload.sectionIndex === 'number' &&
             payload.sectionIndex !== activeSectionIndexRef.current;
@@ -651,12 +661,12 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
 
           remoteIsPlayingRef.current = incomingIsPlaying;
           lastPayloadSongIdRef.current = nextSongId;
-          lastServerTimeRef.current = payload.currentTime;
+          lastServerTimeRef.current = resolvedCurrentTime;
           lastReceiveTimestampRef.current = receiveTimestamp;
           if (shouldSnapImmediately) {
-            smoothedDisplayTimeRef.current = payload.currentTime;
-            lastAppliedDisplayTimeRef.current = payload.currentTime;
-            interpolatedTimeRef.current = payload.currentTime;
+            smoothedDisplayTimeRef.current = resolvedCurrentTime;
+            lastAppliedDisplayTimeRef.current = resolvedCurrentTime;
+            interpolatedTimeRef.current = resolvedCurrentTime;
             lastFrameTimestampRef.current = receiveTimestamp;
           }
         } else {
@@ -686,12 +696,12 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
             ),
           );
 
-          if (track && typeof payload.currentTime === 'number' && hasCueTiming) {
-            const cueIndex = findCueAtTime(payload.currentTime, track);
+          if (track && typeof resolvedCurrentTime === 'number' && hasCueTiming) {
+            const cueIndex = findCueAtTime(resolvedCurrentTime, track);
             syncDisplayState(resolvedTrackIndex, cueIndex, payload.sectionIndex);
-          } else if (section && (typeof payload.currentTime !== 'number' || !hasCueTiming)) {
+          } else if (section && (typeof resolvedCurrentTime !== 'number' || !hasCueTiming)) {
             syncDisplayState(resolvedTrackIndex, section.startCueIndex, payload.sectionIndex);
-          } else if (typeof payload.currentTime !== 'number') {
+          } else if (typeof resolvedCurrentTime !== 'number') {
             activeSectionIndexRef.current = payload.sectionIndex;
             setActiveSectionIndex((current) => (current === payload.sectionIndex ? current : payload.sectionIndex));
           }
