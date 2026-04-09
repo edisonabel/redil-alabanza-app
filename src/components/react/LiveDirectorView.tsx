@@ -1261,6 +1261,10 @@ export function LiveDirectorView({
     };
   }, [replaceOwnedObjectUrls]);
 
+  const trackSignature = useMemo(() => (
+    activeTracks.map(track => `${track.id}:${track.url}`).join('|')
+  ), [activeTracks]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -1309,7 +1313,8 @@ export function LiveDirectorView({
       cancelled = true;
       stop();
     };
-  }, [activeTracks, hasResolvedEngineFlag, initialize, reloadKey, stop, useStreamingEngine]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trackSignature, hasResolvedEngineFlag, initialize, reloadKey, stop, useStreamingEngine]);
 
   useEffect(() => {
     setMasterVolume(masterVolume);
