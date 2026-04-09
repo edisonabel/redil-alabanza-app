@@ -602,6 +602,7 @@ export function LiveDirectorView({
     useStreamingEngine,
   });
   const [isPortrait, setIsPortrait] = useState(false);
+  const [isCompactLandscape, setIsCompactLandscape] = useState(false);
   const [manualSession, setManualSession] = useState<LiveDirectorResolvedSession | null>(
     initialSession ? toResolvedSession(initialSession) : null,
   );
@@ -896,7 +897,9 @@ export function LiveDirectorView({
     }
 
     const updateOrientationState = () => {
-      setIsPortrait(window.innerHeight > window.innerWidth);
+      const portrait = window.innerHeight > window.innerWidth;
+      setIsPortrait(portrait);
+      setIsCompactLandscape(!portrait && window.innerHeight <= 500);
     };
 
     updateOrientationState();
@@ -1429,12 +1432,39 @@ export function LiveDirectorView({
   const shellClassName = ['fixed inset-0 overflow-hidden bg-[#202223] text-white', className]
     .filter(Boolean)
     .join(' ');
+  const shellContentStyle = useMemo(
+    () =>
+      ({
+        height: '100dvh',
+        minHeight: '100dvh',
+        maxHeight: '100dvh',
+        paddingTop: `max(env(safe-area-inset-top), ${isCompactLandscape ? '0.45rem' : '0.7rem'})`,
+        paddingRight: `max(env(safe-area-inset-right), ${isCompactLandscape ? '0.55rem' : '1rem'})`,
+        paddingBottom: `max(env(safe-area-inset-bottom), ${isCompactLandscape ? '0.55rem' : '1rem'})`,
+        paddingLeft: `max(env(safe-area-inset-left), ${isCompactLandscape ? '0.55rem' : '1rem'})`,
+        gap: isCompactLandscape ? '0.75rem' : '1rem',
+        ['--ld-control-height' as string]: isCompactLandscape ? '4.35rem' : '5.15rem',
+        ['--ld-summary-row-height' as string]: isCompactLandscape ? '7.3rem' : '8.9rem',
+        ['--ld-sections-row-height' as string]: isCompactLandscape ? '10.9rem' : '12.4rem',
+      }) as CSSProperties,
+    [isCompactLandscape],
+  );
+  const overlayPaddingStyle = useMemo(
+    () =>
+      ({
+        paddingTop: `max(env(safe-area-inset-top), ${isCompactLandscape ? '1rem' : '2rem'})`,
+        paddingRight: `max(env(safe-area-inset-right), ${isCompactLandscape ? '1rem' : '2rem'})`,
+        paddingBottom: `max(env(safe-area-inset-bottom), ${isCompactLandscape ? '1rem' : '2rem'})`,
+        paddingLeft: `max(env(safe-area-inset-left), ${isCompactLandscape ? '1rem' : '2rem'})`,
+      }) as CSSProperties,
+    [isCompactLandscape],
+  );
 
   if (isPortrait) {
     return (
       <div className={shellClassName}>
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(86,207,255,0.12),_transparent_34%),linear-gradient(180deg,#232628_0%,#17191b_100%)]" />
-        <div className="relative flex h-full items-center justify-center p-8">
+        <div className="relative flex h-full items-center justify-center" style={overlayPaddingStyle}>
           <div className="max-w-md rounded-[2rem] border border-white/10 bg-black/30 px-8 py-10 text-center shadow-[0_32px_80px_rgba(0,0,0,0.32)] backdrop-blur-xl">
             <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[1.75rem] border border-cyan-300/20 bg-cyan-300/8 text-cyan-100 shadow-[0_0_26px_rgba(92,207,230,0.18)]">
               <Smartphone className="h-10 w-10 rotate-90" />
@@ -1454,7 +1484,7 @@ export function LiveDirectorView({
     return (
       <div className={shellClassName}>
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(93,214,240,0.08),_transparent_24%),linear-gradient(180deg,#232526_0%,#222425_46%,#202224_100%)]" />
-        <div className="relative flex h-full items-center justify-center p-8">
+        <div className="relative flex h-full items-center justify-center" style={overlayPaddingStyle}>
           <div className="max-w-2xl rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(17,19,21,0.94),rgba(13,15,16,0.94))] px-8 py-9 text-center shadow-[0_32px_80px_rgba(0,0,0,0.32)] backdrop-blur-xl">
             <p className="text-[0.8rem] font-black uppercase tracking-[0.3em] text-cyan-100/62">Song Required</p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white">
@@ -1481,11 +1511,11 @@ export function LiveDirectorView({
   return (
     <div className={shellClassName}>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(93,214,240,0.08),_transparent_24%),linear-gradient(180deg,#232526_0%,#222425_46%,#202224_100%)]" />
-      <div className="relative flex h-full flex-col gap-4 px-4 pb-4 pt-[max(env(safe-area-inset-top),0.7rem)]">
-        <div className="hide-scrollbar -mx-1 shrink-0 overflow-x-auto pb-1">
+      <div className="relative flex h-full flex-col overflow-hidden" style={shellContentStyle}>
+        <div className={`hide-scrollbar -mx-1 shrink-0 overflow-x-auto ${isCompactLandscape ? 'pb-0.5' : 'pb-1'}`}>
           <header className="grid min-w-[58rem] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 px-1">
             <div className="flex items-stretch gap-2.5">
-              <div className="flex w-[4.6rem] shrink-0 flex-col items-center justify-center gap-1 rounded-[1.45rem] border border-white/8 bg-black/16 px-2 py-3 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+              <div className={`flex ${isCompactLandscape ? 'w-[4.15rem] rounded-[1.25rem] py-2.5' : 'w-[4.6rem] rounded-[1.45rem] py-3'} shrink-0 flex-col items-center justify-center gap-1 border border-white/8 bg-black/16 px-2 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]`}>
                 <span className="text-[2.05rem] font-light leading-none tracking-tight text-white/92">
                   {displayBpm || '--'}
                 </span>
@@ -1495,7 +1525,7 @@ export function LiveDirectorView({
                 </span>
               </div>
 
-              <div className={`${CONTROL_CARD} h-[5.15rem] w-[9.25rem] flex-col px-4 py-3`}>
+              <div className={`${CONTROL_CARD} h-[var(--ld-control-height)] ${isCompactLandscape ? 'w-[8.45rem] px-3.5 py-2.5' : 'w-[9.25rem] px-4 py-3'} flex-col`}>
                 <span className="text-[2.65rem] font-light leading-none tracking-tight text-white">
                   {formatClock(currentTime)}
                 </span>
@@ -1508,7 +1538,7 @@ export function LiveDirectorView({
                 <button
                   type="button"
                   onClick={() => setIsPadActive((previous) => !previous)}
-                  className={`${CONTROL_CARD} h-[5.15rem] w-[5.8rem] flex-col px-3 text-[0.84rem] font-semibold tracking-[0.18em] ${
+                  className={`${CONTROL_CARD} h-[var(--ld-control-height)] ${isCompactLandscape ? 'w-[5.15rem]' : 'w-[5.8rem]'} flex-col px-3 text-[0.84rem] font-semibold tracking-[0.18em] ${
                     isPadActive
                       ? 'border-[#43c477]/40 bg-[#43c477]/10 text-[#8af7b1]'
                       : 'text-[#43c477]'
@@ -1530,7 +1560,7 @@ export function LiveDirectorView({
                   void seekTo(Math.max(0, currentTime - 4));
                 }}
                 disabled={!hasTrackSession}
-                className={`${CONTROL_CARD} h-[5.15rem] w-[6.1rem] gap-2 text-white/78 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
+                className={`${CONTROL_CARD} h-[var(--ld-control-height)] ${isCompactLandscape ? 'w-[5.55rem]' : 'w-[6.1rem]'} gap-2 text-white/78 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
                 aria-label="Rewind four seconds"
               >
                 <RotateCcw className="h-6 w-6" />
@@ -1543,14 +1573,14 @@ export function LiveDirectorView({
                   void play();
                 }}
                 disabled={!isReady}
-                className={`${CONTROL_CARD} h-[5.15rem] w-[8rem] gap-3 text-[#43c477] hover:text-[#4fe487] disabled:cursor-not-allowed disabled:text-white/24`}
+                className={`${CONTROL_CARD} h-[var(--ld-control-height)] ${isCompactLandscape ? 'w-[7.15rem]' : 'w-[8rem]'} gap-3 text-[#43c477] hover:text-[#4fe487] disabled:cursor-not-allowed disabled:text-white/24`}
                 aria-label="Play"
               >
                 <Play className="ml-1 h-8 w-8" />
                 <span className="text-[1.1rem] font-semibold tracking-[0.18em]">PLAY</span>
               </button>
 
-              <div className="grid h-[5.15rem] w-[7.6rem] grid-cols-2 gap-2.5">
+              <div className={`grid h-[var(--ld-control-height)] ${isCompactLandscape ? 'w-[6.9rem]' : 'w-[7.6rem]'} grid-cols-2 gap-2.5`}>
                 <button
                   type="button"
                   onClick={pause}
@@ -1573,7 +1603,7 @@ export function LiveDirectorView({
             </div>
 
             <div className="flex items-stretch justify-end gap-2.5">
-              <div className="flex h-[5.15rem] w-[14.75rem] items-center rounded-[1.45rem] border border-white/8 bg-[linear-gradient(180deg,rgba(26,27,29,0.96),rgba(17,18,20,0.96))] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_24px_40px_rgba(0,0,0,0.25)]">
+              <div className={`flex h-[var(--ld-control-height)] ${isCompactLandscape ? 'w-[13.4rem] rounded-[1.25rem]' : 'w-[14.75rem] rounded-[1.45rem]'} items-center border border-white/8 bg-[linear-gradient(180deg,rgba(26,27,29,0.96),rgba(17,18,20,0.96))] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_24px_40px_rgba(0,0,0,0.25)]`}>
                 <div className="grid h-full w-full grid-cols-[3.1rem_3.1rem_1fr_1fr] gap-2">
                   <button
                     type="button"
@@ -1632,7 +1662,7 @@ export function LiveDirectorView({
               <button
                 type="button"
                 onClick={() => setShowLoadPanel(true)}
-                className={`${CONTROL_CARD} h-[5.15rem] w-[5.35rem] text-[1.02rem] font-semibold tracking-[0.18em] text-white/70 hover:text-white`}
+                className={`${CONTROL_CARD} h-[var(--ld-control-height)] ${isCompactLandscape ? 'w-[4.95rem]' : 'w-[5.35rem]'} text-[1.02rem] font-semibold tracking-[0.18em] text-white/70 hover:text-white`}
                 title="Cargar o reemplazar la sesión multitrack"
                 aria-label="Cargar o reemplazar la sesión multitrack"
               >
@@ -1646,12 +1676,15 @@ export function LiveDirectorView({
         </div>
 
         <section
-          className={`grid min-h-0 shrink-0 gap-4 ${
-            showSectionsPanel ? 'grid-rows-[8.9rem_12.4rem]' : 'grid-rows-[8.9rem]'
-          }`}
+          className={`grid min-h-0 shrink-0 ${isCompactLandscape ? 'gap-3' : 'gap-4'}`}
+          style={{
+            gridTemplateRows: showSectionsPanel
+              ? 'var(--ld-summary-row-height) var(--ld-sections-row-height)'
+              : 'var(--ld-summary-row-height)',
+          }}
         >
-          <div className="overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.96),rgba(27,29,30,0.96))] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-            <div className="flex h-full items-stretch gap-4">
+          <div className={`overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.96),rgba(27,29,30,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-3 py-3' : 'px-4 py-4'}`}>
+            <div className={`flex h-full items-stretch ${isCompactLandscape ? 'gap-3' : 'gap-4'}`}>
               <button
                 type="button"
                 onClick={() => {
@@ -1662,10 +1695,10 @@ export function LiveDirectorView({
 
                   setShowLoadPanel(true);
                 }}
-                className="ui-pressable-card group flex w-[15rem] shrink-0 flex-col overflow-hidden rounded-[1.55rem] border border-white/10 bg-[linear-gradient(180deg,rgba(35,37,39,0.98),rgba(24,26,28,0.98))] p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200 hover:border-white/20"
+                className={`ui-pressable-card group flex shrink-0 flex-col overflow-hidden rounded-[1.55rem] border border-white/10 bg-[linear-gradient(180deg,rgba(35,37,39,0.98),rgba(24,26,28,0.98))] text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200 hover:border-white/20 ${isCompactLandscape ? 'w-[13.4rem] p-2.5' : 'w-[15rem] p-3'}`}
                 aria-label={hasTrackSession ? `Jump to start of ${currentSessionLabel}` : 'Open song loader'}
               >
-                <div className="relative h-[5.35rem] overflow-hidden rounded-[1.15rem] border border-white/10 bg-black/30">
+                <div className={`relative overflow-hidden rounded-[1.15rem] border border-white/10 bg-black/30 ${isCompactLandscape ? 'h-[4.35rem]' : 'h-[5.35rem]'}`}>
                   {songCoverArtUrl ? (
                     <img
                       src={songCoverArtUrl}
@@ -1680,7 +1713,7 @@ export function LiveDirectorView({
                   <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_35%,rgba(0,0,0,0.22)_100%)]" />
                 </div>
 
-                <div className="mt-3 flex items-center gap-3">
+                <div className={`flex items-center ${isCompactLandscape ? 'mt-2.5 gap-2.5' : 'mt-3 gap-3'}`}>
                   <div
                     className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-all ${
                       isPlaying
@@ -1699,8 +1732,8 @@ export function LiveDirectorView({
                 </div>
               </button>
 
-              <div className="min-w-0 flex-1 rounded-[1.65rem] border border-white/8 bg-black/16 px-5 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-                <div className="flex h-full flex-col justify-between gap-4">
+              <div className={`min-w-0 flex-1 rounded-[1.65rem] border border-white/8 bg-black/16 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-4 py-3' : 'px-5 py-4'}`}>
+                <div className={`flex h-full flex-col justify-between ${isCompactLandscape ? 'gap-3' : 'gap-4'}`}>
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <p className="text-[0.7rem] font-black uppercase tracking-[0.28em] text-white/34">
@@ -1822,7 +1855,7 @@ export function LiveDirectorView({
           </div>
 
           {showSectionsPanel && (
-            <div className="relative overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(29,30,32,0.98),rgba(23,24,26,0.98))] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+            <div className={`relative overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(29,30,32,0.98),rgba(23,24,26,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-3 py-3' : 'px-4 py-4'}`}>
               <div className="mb-3 flex items-center justify-between px-1">
                 <div>
                   <p className="text-[0.72rem] font-black uppercase tracking-[0.28em] text-white/36">Sections Lane</p>
@@ -1964,14 +1997,14 @@ export function LiveDirectorView({
             </div>
           )}
         </section>
-        <section className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_7.25rem_8rem] gap-4">
+        <section className={`grid min-h-0 flex-1 ${isCompactLandscape ? 'grid-cols-[minmax(0,1fr)_6.4rem_7.2rem] gap-3' : 'grid-cols-[minmax(0,1fr)_7.25rem_8rem] gap-4'}`}>
           <div
             ref={mixerScrollRef}
             onPointerDown={handleMixerPointerDown}
             onPointerMove={handleMixerPointerMove}
             onPointerUp={handleMixerPointerUp}
             onPointerCancel={handleMixerPointerUp}
-            className="hide-scrollbar grid min-h-0 gap-3 overflow-x-auto overflow-y-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] px-3 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+            className={`hide-scrollbar grid min-h-0 gap-3 overflow-x-auto overflow-y-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-2.5 py-3' : 'px-3 py-4'}`}
             style={{
               gridTemplateColumns: `repeat(${Math.max(1, mixerView.length)}, minmax(8.5rem, 1fr))`,
               touchAction: 'pan-x pinch-zoom',
