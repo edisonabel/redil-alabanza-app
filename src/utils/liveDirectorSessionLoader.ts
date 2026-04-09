@@ -99,12 +99,12 @@ const inferTrackGroup = (filename: string): StemAliasGroup | null => {
 
   let bestMatch: { group: StemAliasGroup; score: number } | null = null;
 
-  STEM_ALIAS_GROUPS.forEach((group) => {
-    group.aliases.forEach((alias) => {
+  for (const group of STEM_ALIAS_GROUPS) {
+    for (const alias of group.aliases) {
       const normalizedAlias = normalizeName(alias);
 
       if (!normalizedAlias || !normalizedName.includes(normalizedAlias)) {
-        return;
+        continue;
       }
 
       const exactScore = normalizedName === normalizedAlias ? 1000 : 0;
@@ -117,8 +117,8 @@ const inferTrackGroup = (filename: string): StemAliasGroup | null => {
       if (!bestMatch || score > bestMatch.score) {
         bestMatch = { group, score };
       }
-    });
-  });
+    }
+  }
 
   if (bestMatch) {
     return bestMatch.group;
@@ -161,11 +161,22 @@ export function inferStemTracksFromFiles(
     'Stem Folder';
 
   files.forEach((file) => {
-    const group = inferTrackGroup(file.name);
+    let group = inferTrackGroup(file.name);
 
     if (!group) {
-      unmatchedFiles.push(file.name);
-      return;
+      const cleanName = normalizeName(file.name) || file.name.replace(/\.[^.]+$/, '');
+      const defaultId = cleanName.replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'track';
+      const label = cleanName
+        .split(' ')
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ') || 'Track';
+
+      group = {
+        id: `custom-${defaultId}`.substring(0, 32),
+        label: label.substring(0, 32),
+        defaultVolume: 0.72,
+        aliases: [],
+      };
     }
 
     const duplicateCount = (duplicates.get(group.id) || 0) + 1;

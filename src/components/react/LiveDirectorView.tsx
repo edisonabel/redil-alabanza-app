@@ -744,6 +744,7 @@ export function LiveDirectorView({
   const [loopEnabled, setLoopEnabled] = useState(false);
   const [surfaceView, setSurfaceView] = useState<SurfaceView>('mix');
   const [showOffsetModal, setShowOffsetModal] = useState(false);
+  const offsetModalInitialValueRef = useRef<number | null>(null);
   const [isPadActive, setIsPadActive] = useState(false);
   const [internalPadVolumeState, setInternalPadVolumeState] = useState(0.34);
   const [songCoverArtUrl, setSongCoverArtUrl] = useState<string | null>(null);
@@ -1380,9 +1381,8 @@ export function LiveDirectorView({
     return savedSession;
   }, [applyManualSession, hasPersistedSongContext, sectionOffsetSeconds, songId]);
 
-  const saveSectionOffset = useCallback(async (nextOffset: number) => {
+  const updateSectionOffsetLocally = useCallback((nextOffset: number) => {
     const safeOffset = Math.round(nextOffset * 4) / 4;
-
     setManualSession((previous) => (
       previous
         ? {
@@ -1391,10 +1391,14 @@ export function LiveDirectorView({
         }
         : previous
     ));
+  }, []);
 
+  const commitSectionOffset = useCallback(async () => {
     if (!hasPersistedSongContext || !manualSession) {
       return;
     }
+
+    const safeOffset = Number(manualSession.sectionOffsetSeconds) || 0;
 
     try {
       setBusyMessage('Guardando desplazamiento de secciones...');
@@ -1420,6 +1424,87 @@ export function LiveDirectorView({
       setBusyMessage(null);
     }
   }, [hasPersistedSongContext, manualSession, songId]);
+
+  const commitMixerStateSilent = useCallback(async () => {
+    if (!hasPersistedSongContext || !manualSession || !activeTracks.length) {
+      return;
+    }
+
+    // Capture the immediate scope values to avoid racing
+    const currentVolumes = trackVolumes;
+    const currentMutes = mutedTrackIds;
+
+    const nextTracks = manualSession.tracks.map((track) => ({
+      ...track,
+      volume: currentVolumes[track.id] ?? track.volume,
+      isMuted: currentMutes.has(track.id),
+    }));
+
+    setManualSession((previous) => (
+      previous ? { ...previous, tracks: nextTracks } : previous
+    ));
+
+    try {
+      await saveLiveDirectorSongSession({
+        songId,
+        session: {
+          mode: manualSession.mode,
+          tracks: nextTracks.map(({ id, name, url, volume, isMuted, sourceFileName }) => ({
+            id, name, url, volume, isMuted, sourceFileName
+          })),
+          unmatchedFiles: manualSession.unmatchedFiles || [],
+          sectionOffsetSeconds: Number(manualSession.sectionOffsetSeconds) || 0,
+        },
+      });
+    } catch (error) {
+      console.warn('[LiveDirectorView] Silent mixer autosave failed.', error);
+    }
+  }, [hasPersistedSongContext, manualSession, songId, activeTracks.length, trackVolumes, mutedTrackIds]);
+
+  const mixerAutosaveTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!hasPersistedSongContext || !manualSession) return;
+
+    const isDirty = manualSession.tracks.some(
+      (t) => (trackVolumes[t.id] !== undefined && trackVolumes[t.id] !== t.volume) ||
+        (mutedTrackIds.has(t.id) !== t.isMuted)
+    );
+
+    if (isDirty) {
+      if (mixerAutosaveTimerRef.current !== null) {
+        window.clearTimeout(mixerAutosaveTimerRef.current);
+      }
+      mixerAutosaveTimerRef.current = window.setTimeout(() => {
+        void commitMixerStateSilent();
+      }, 1500);
+    }
+
+    return () => {
+      if (mixerAutosaveTimerRef.current !== null) {
+        window.clearTimeout(mixerAutosaveTimerRef.current);
+      }
+    };
+  }, [trackVolumes, mutedTrackIds, manualSession, commitMixerStateSilent, hasPersistedSongContext]);
+
+  const handleOpenOffsetModal = useCallback(() => {
+    offsetModalInitialValueRef.current = Number.isFinite(Number(manualSession?.sectionOffsetSeconds))
+      ? Number(manualSession?.sectionOffsetSeconds)
+      : 0;
+    setShowOffsetModal(true);
+  }, [manualSession?.sectionOffsetSeconds]);
+
+  const handleCloseOffsetModal = useCallback(() => {
+    setShowOffsetModal(false);
+    const currentOffset = Number.isFinite(Number(manualSession?.sectionOffsetSeconds))
+      ? Number(manualSession?.sectionOffsetSeconds)
+      : 0;
+
+    if (offsetModalInitialValueRef.current !== null && offsetModalInitialValueRef.current !== currentOffset) {
+      void commitSectionOffset();
+    }
+    offsetModalInitialValueRef.current = null;
+  }, [commitSectionOffset, manualSession?.sectionOffsetSeconds]);
 
   const handleSequenceFileSelection = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -2242,7 +2327,13 @@ export function LiveDirectorView({
               </div>
               <button
                 type="button"
-                onClick={() => setShowOffsetModal((previous) => !previous)}
+                onClick={() => {
+                  if (showOffsetModal) {
+                    handleCloseOffsetModal();
+                  } else {
+                    handleOpenOffsetModal();
+                  }
+                }}
                 className="ui-pressable-soft absolute right-4 top-4 z-30 flex h-10 w-10 items-center justify-center rounded-[1rem] border border-white/10 bg-black/46 text-white/68 backdrop-blur-xl transition-all hover:text-white"
                 aria-label="Abrir ajuste de desfase"
                 title="Ajustar desfase de secciones"
@@ -2261,7 +2352,7 @@ export function LiveDirectorView({
                     </div>
                     <button
                       type="button"
-                      onClick={() => setShowOffsetModal(false)}
+                      onClick={handleCloseOffsetModal}
                       className="ui-pressable-soft flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/26 text-white/58 hover:text-white"
                       aria-label="Cerrar ajuste de desfase"
                     >
@@ -2272,7 +2363,7 @@ export function LiveDirectorView({
                     <button
                       type="button"
                       onClick={() => {
-                        void saveSectionOffset(sectionOffsetSeconds - 0.25);
+                        updateSectionOffsetLocally(sectionOffsetSeconds - 0.25);
                       }}
                       className="ui-pressable-soft flex h-10 items-center justify-center rounded-[0.95rem] border border-white/10 bg-black/28 text-[0.88rem] font-black text-white/76"
                       aria-label="Mover secciones antes"
@@ -2282,7 +2373,7 @@ export function LiveDirectorView({
                     <button
                       type="button"
                       onClick={() => {
-                        void saveSectionOffset(0);
+                        updateSectionOffsetLocally(0);
                       }}
                       className="ui-pressable-soft flex h-10 items-center justify-center rounded-[0.95rem] border border-white/10 bg-black/28 text-[0.66rem] font-black uppercase tracking-[0.14em] text-white/68"
                     >
@@ -2291,7 +2382,7 @@ export function LiveDirectorView({
                     <button
                       type="button"
                       onClick={() => {
-                        void saveSectionOffset(sectionOffsetSeconds + 0.25);
+                        updateSectionOffsetLocally(sectionOffsetSeconds + 0.25);
                       }}
                       className="ui-pressable-soft flex h-10 items-center justify-center rounded-[0.95rem] border border-white/10 bg-black/28 text-[0.88rem] font-black text-white/76"
                       aria-label="Mover secciones despues"

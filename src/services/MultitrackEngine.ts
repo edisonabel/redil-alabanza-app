@@ -986,11 +986,31 @@ export class MultitrackEngine {
   }
 
   private getTrackPan(track: TrackData): number {
-    const normalizedId = String(track.id || '')
-      .trim()
-      .toLowerCase();
+    const normalizedId = String(track.id || '').trim().toLowerCase();
+    const normalizedName = String(track.name || '').trim().toLowerCase();
 
-    if (normalizedId === 'click' || normalizedId.startsWith('click-')) {
+    const isPanLeft = (str: string) => {
+      if (!str) return false;
+      return (
+        str === 'click' ||
+        str.startsWith('click-') ||
+        str.endsWith('-click') ||
+        str === 'clcik' ||
+        str === 'cue' ||
+        str === 'cues' ||
+        str.startsWith('cue-') ||
+        str.startsWith('cues-') ||
+        str === 'guia' ||
+        str === 'guía' ||
+        str === 'guide' ||
+        str.startsWith('guide-') ||
+        str === 'metro' ||
+        str === 'metronomo' ||
+        str === 'metrónomo'
+      );
+    };
+
+    if (isPanLeft(normalizedId) || isPanLeft(normalizedName)) {
       return -1;
     }
 
