@@ -111,10 +111,8 @@ const buildLegacySequenceSession = (song) => {
   };
 };
 
-const buildQueueSongs = (songs, activeIndex) =>
+const buildQueueSongs = (songs) =>
   songs
-    .filter((_, index) => index !== activeIndex)
-    .slice(0, 6)
     .map((song) => ({
       id: resolveSongId(song),
       title: String(song?.title || song?.titulo || 'Cancion').trim() || 'Cancion',
@@ -164,8 +162,8 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
     [activeSong?.sectionMarkers],
   );
   const queueSongs = useMemo(
-    () => buildQueueSongs(ensayoSongs, safeActiveSongIndex),
-    [ensayoSongs, safeActiveSongIndex],
+    () => buildQueueSongs(ensayoSongs),
+    [ensayoSongs],
   );
   const operationalChips = useMemo(() => {
     const offlineValue = downloadStatus.active
@@ -290,8 +288,22 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
       config: { broadcast: { self: false } },
     });
 
+    channel.on('broadcast', { event: 'DIRECTOR_CLAIMED' }, () => {
+      alert('Otro dispositivo ha tomado el control remoto del Modo Director. Has sido desconectado para evitar conflictos.');
+      if (typeof onExit === 'function') {
+        onExit();
+      }
+    });
+
     channel.subscribe((status) => {
       setSyncConnected(status === 'SUBSCRIBED');
+      if (status === 'SUBSCRIBED') {
+        channel.send({
+          type: 'broadcast',
+          event: 'DIRECTOR_CLAIMED',
+          payload: { timestamp: Date.now() },
+        }).catch((error) => console.warn('[ModoEnsayoDirector] Failed to claim director lock.', error));
+      }
     });
 
     syncChannelRef.current = channel;

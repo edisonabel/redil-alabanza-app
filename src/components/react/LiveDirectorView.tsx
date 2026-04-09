@@ -291,9 +291,9 @@ const extractCoverArtFromMp3 = async (mp3Url: string): Promise<string | null> =>
       const frameSize =
         majorVersion >= 4
           ? ((view.getUint8(offset + 4) & 0x7f) << 21) |
-            ((view.getUint8(offset + 5) & 0x7f) << 14) |
-            ((view.getUint8(offset + 6) & 0x7f) << 7) |
-            (view.getUint8(offset + 7) & 0x7f)
+          ((view.getUint8(offset + 5) & 0x7f) << 14) |
+          ((view.getUint8(offset + 6) & 0x7f) << 7) |
+          (view.getUint8(offset + 7) & 0x7f)
           : view.getUint32(offset + 4);
 
       if (frameSize <= 0 || frameSize > tagEnd - offset) {
@@ -489,23 +489,20 @@ const ChannelStrip = memo(function ChannelStrip({
 
   return (
     <div
-      className={`relative flex h-full min-w-0 flex-col items-center rounded-[1.75rem] border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] transition-all duration-200 ${
-        ultraCompact ? 'px-0.5 pb-0.5 pt-0.5' : compact ? 'px-1 pb-1 pt-0.5' : 'px-3.5 pb-4 pt-3'
-      } ${dimmed ? 'opacity-45' : 'opacity-100'}`}
+      className={`relative flex h-full min-w-0 flex-col items-center rounded-[1.75rem] border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] transition-all duration-200 ${ultraCompact ? 'px-0.5 pb-0.5 pt-0.5' : compact ? 'px-1 pb-1 pt-0.5' : 'px-3.5 pb-4 pt-3'
+        } ${dimmed ? 'opacity-45' : 'opacity-100'}`}
     >
-      <div className={`flex w-full items-center justify-between ${ultraCompact ? 'mb-0.5 gap-1' : compact ? 'mb-0.5 gap-1.5' : 'mb-2 gap-1.5'}`}>
+      <div className={`flex w-full max-w-[8.5rem] items-center justify-between ${ultraCompact ? 'mb-0.5 gap-1' : compact ? 'mb-0.5 gap-1.5' : 'mb-2 gap-1.5'}`}>
         <button
           type="button"
           onClick={onSolo}
           disabled={disabled}
           aria-label={`Solo ${label}`}
-          className={`ui-pressable-soft flex items-center justify-center rounded-full border font-black tracking-[0.18em] transition-all duration-150 ${
-            ultraCompact ? 'h-5 w-5 text-[0.5rem]' : compact ? 'h-6 w-6 text-[0.58rem]' : 'h-10 w-10 text-[0.76rem]'
-          } ${
-            soloed
+          className={`ui-pressable-soft flex items-center justify-center rounded-full border font-black tracking-[0.18em] transition-all duration-150 ${ultraCompact ? 'h-5 w-5 text-[0.5rem]' : compact ? 'h-6 w-6 text-[0.58rem]' : 'h-10 w-10 text-[0.76rem]'
+            } ${soloed
               ? 'border-cyan-300/60 bg-cyan-300/16 text-cyan-100 shadow-[0_0_18px_rgba(103,210,242,0.24)]'
               : 'border-white/8 bg-black/32 text-white/65 hover:border-white/14 hover:text-white'
-          }`}
+            }`}
         >
           S
         </button>
@@ -514,13 +511,11 @@ const ChannelStrip = memo(function ChannelStrip({
           onClick={onMute}
           disabled={disabled}
           aria-label={`${muted ? 'Unmute' : 'Mute'} ${label}`}
-          className={`ui-pressable-soft flex items-center justify-center rounded-full border font-black tracking-[0.18em] transition-all duration-150 ${
-            ultraCompact ? 'h-5 min-w-5 px-1 text-[0.5rem]' : compact ? 'h-6 min-w-6 px-1.5 text-[0.58rem]' : 'h-10 min-w-10 px-3 text-[0.72rem]'
-          } ${
-            muted
+          className={`ui-pressable-soft flex items-center justify-center rounded-full border font-black tracking-[0.18em] transition-all duration-150 ${ultraCompact ? 'h-5 min-w-5 px-1 text-[0.5rem]' : compact ? 'h-6 min-w-6 px-1.5 text-[0.58rem]' : 'h-10 min-w-10 px-3 text-[0.72rem]'
+            } ${muted
               ? 'border-rose-300/55 bg-rose-400/16 text-rose-100 shadow-[0_0_18px_rgba(251,113,133,0.22)]'
               : 'border-white/8 bg-black/28 text-white/52 hover:border-white/14 hover:text-white'
-          }`}
+            }`}
         >
           M
         </button>
@@ -613,17 +608,15 @@ const EnsayoQueueCard = memo(function EnsayoQueueCard({
     <button
       type="button"
       onClick={onClick}
-      className={`ui-pressable-card group relative flex shrink-0 overflow-hidden rounded-[1.15rem] border text-left transition-all duration-200 ${
-        ultraCompact
-          ? 'h-[4.7rem] p-1.25'
-          : compact
-            ? 'h-[5.1rem] p-1.5'
-            : 'h-[5.55rem] p-1.75'
-      } ${
-        active
-          ? 'border-cyan-300/34 shadow-[0_0_18px_rgba(129,221,245,0.14)]'
+      className={`ui-pressable-card group relative flex shrink-0 overflow-hidden rounded-[1.15rem] border text-left transition-all duration-200 ${ultraCompact
+        ? 'h-[4.7rem] p-1.25'
+        : compact
+          ? 'h-[5.1rem] p-1.5'
+          : 'h-[5.55rem] p-1.75'
+        } ${active
+          ? 'border-white/80'
           : 'border-white/8 hover:border-white/14'
-      }`}
+        }`}
       style={{
         width: ultraCompact ? '9.15rem' : compact ? '10rem' : '10.95rem',
         background:
@@ -641,19 +634,20 @@ const EnsayoQueueCard = memo(function EnsayoQueueCard({
       </div>
 
       <div className="relative z-10 mt-auto min-w-0">
-        <p className={`truncate font-semibold leading-tight text-white drop-shadow-[0_3px_10px_rgba(0,0,0,0.52)] ${
-          ultraCompact ? 'text-[0.68rem]' : compact ? 'text-[0.76rem]' : 'text-[0.9rem]'
-        }`}>
+        <p className={`truncate font-semibold leading-tight text-white drop-shadow-[0_3px_10px_rgba(0,0,0,0.52)] ${ultraCompact ? 'text-[0.68rem]' : compact ? 'text-[0.76rem]' : 'text-[0.9rem]'
+          }`}>
           {song.title}
         </p>
         {song.subtitle ? (
-          <p className={`truncate text-white/70 ${
-            ultraCompact ? 'mt-0.5 text-[0.5rem]' : compact ? 'mt-0.5 text-[0.56rem]' : 'mt-0.5 text-[0.64rem]'
-          }`}>
+          <p className={`truncate text-white/70 ${ultraCompact ? 'mt-0.5 text-[0.5rem]' : compact ? 'mt-0.5 text-[0.56rem]' : 'mt-0.5 text-[0.64rem]'
+            }`}>
             {song.subtitle}
           </p>
         ) : null}
       </div>
+      {active && (
+        <div className="pointer-events-none absolute inset-0 z-20 rounded-[1.15rem] shadow-[inset_0_0_24px_rgba(255,255,255,0.45)]" />
+      )}
     </button>
   );
 });
@@ -686,6 +680,14 @@ export function LiveDirectorView({
   const sequenceFileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const sectionsLaneScrollRef = useRef<HTMLDivElement | null>(null);
+  const sectionsDragStateRef = useRef<DragScrollState>({
+    active: false,
+    pointerId: null,
+    startX: 0,
+    startScrollLeft: 0,
+  });
+  const isUserScrollingSectionsRef = useRef(false);
+  const resumeSectionsAutoScrollTimeoutRef = useRef<number | null>(null);
   const mixerScrollRef = useRef<HTMLDivElement | null>(null);
   const mixerDragStateRef = useRef<DragScrollState>({
     active: false,
@@ -771,8 +773,8 @@ export function LiveDirectorView({
       isUltraCompactLandscape
         ? `${scaleRem(5.15, 4.45)} ${scaleRem(5.45, 4.65)}`
         : isCompactLandscape
-        ? `${scaleRem(6.25, 5.35)} ${scaleRem(6.95, 5.9)}`
-        : '7.25rem 8rem',
+          ? `${scaleRem(6.25, 5.35)} ${scaleRem(6.95, 5.9)}`
+          : '7.25rem 8rem',
     [isCompactLandscape, isUltraCompactLandscape, scaleRem],
   );
 
@@ -811,38 +813,35 @@ export function LiveDirectorView({
     () => (isEnsayoMode ? queueSongs.slice(0, 6) : []),
     [isEnsayoMode, queueSongs],
   );
-  const ensayoSlotSongs = useMemo(
-    () =>
-      isEnsayoMode
-        ? [
-            {
-              id: songId || '__current-song__',
-              title: songCardTitle,
-              subtitle: songCardMeta,
-              mp3: songMp3,
-            },
-            ...ensayoQueueSongs,
-          ].slice(0, 6)
-        : [],
-    [ensayoQueueSongs, isEnsayoMode, songCardMeta, songCardTitle, songId, songMp3],
-  );
+  const ensayoSlotSongs = useMemo(() => {
+    if (!isEnsayoMode) return [];
+    if (queueSongs && queueSongs.length > 0) return queueSongs;
+    return [
+      {
+        id: songId || '__current-song__',
+        title: songCardTitle,
+        subtitle: songCardMeta,
+        mp3: songMp3,
+      },
+    ];
+  }, [isEnsayoMode, queueSongs, songId, songCardTitle, songCardMeta, songMp3]);
   const ensayoOperationalChips = useMemo<LiveDirectorOperationalChip[]>(
     () =>
       isEnsayoMode
         ? [
-            ...operationalChips,
-            ...(operationalChips.some((chip) => chip.id === 'buffer')
-              ? []
-              : [
-                  {
-                    id: 'buffer',
-                    label: 'Buffer',
-                    value: isReady ? 'Listo' : 'Cargando',
-                    tone: isReady ? ('success' as const) : ('neutral' as const),
-                    active: isReady,
-                  },
-                ]),
-          ]
+          ...operationalChips,
+          ...(operationalChips.some((chip) => chip.id === 'buffer')
+            ? []
+            : [
+              {
+                id: 'buffer',
+                label: 'Buffer',
+                value: isReady ? 'Listo' : 'Cargando',
+                tone: isReady ? ('success' as const) : ('neutral' as const),
+                active: isReady,
+              },
+            ]),
+        ]
         : [],
     [isEnsayoMode, isReady, operationalChips],
   );
@@ -964,12 +963,12 @@ export function LiveDirectorView({
       activeTracks.length > 0
         ? activeTracks
         : MIXER_TRACKS.map((track) => ({
-            id: track.id,
-            name: track.label,
-            url: '',
-            volume: track.defaultVolume,
-            isMuted: false,
-          }));
+          id: track.id,
+          name: track.label,
+          url: '',
+          volume: track.defaultVolume,
+          isMuted: false,
+        }));
 
     const resolvedMixerTracks = sourceTracks.map((track, index) => {
       const meta = buildMixerTrackMeta(track, index);
@@ -1043,6 +1042,10 @@ export function LiveDirectorView({
   useEffect(() => {
     if (!showSectionsPanel) {
       setShowOffsetModal(false);
+      return;
+    }
+
+    if (isUserScrollingSectionsRef.current) {
       return;
     }
 
@@ -1351,7 +1354,7 @@ export function LiveDirectorView({
       throw new Error('No hay una cancion seleccionada para guardar esta sesion.');
     }
 
-      setBusyMessage('Guardando sesion multitrack...');
+    setBusyMessage('Guardando sesion multitrack...');
 
     const savedSession = await saveLiveDirectorSongSession({
       songId,
@@ -1383,9 +1386,9 @@ export function LiveDirectorView({
     setManualSession((previous) => (
       previous
         ? {
-            ...previous,
-            sectionOffsetSeconds: safeOffset,
-          }
+          ...previous,
+          sectionOffsetSeconds: safeOffset,
+        }
         : previous
     ));
 
@@ -1681,17 +1684,95 @@ export function LiveDirectorView({
     endMixerDrag(event.pointerId);
   }, [endMixerDrag]);
 
+  const triggerUserScrollSections = useCallback(() => {
+    isUserScrollingSectionsRef.current = true;
+    if (resumeSectionsAutoScrollTimeoutRef.current) {
+      window.clearTimeout(resumeSectionsAutoScrollTimeoutRef.current);
+    }
+    resumeSectionsAutoScrollTimeoutRef.current = window.setTimeout(() => {
+      isUserScrollingSectionsRef.current = false;
+    }, 3500);
+  }, []);
+
+  const endSectionsDrag = useCallback((pointerId?: number) => {
+    const container = sectionsLaneScrollRef.current;
+    const dragState = sectionsDragStateRef.current;
+
+    if (!dragState.active) {
+      return;
+    }
+
+    if (typeof pointerId === 'number' && dragState.pointerId !== pointerId) {
+      return;
+    }
+
+    if (container && dragState.pointerId !== null) {
+      try {
+        container.releasePointerCapture(dragState.pointerId);
+      } catch {
+        // no-op
+      }
+    }
+
+    sectionsDragStateRef.current = {
+      active: false,
+      pointerId: null,
+      startX: 0,
+      startScrollLeft: 0,
+    };
+    triggerUserScrollSections();
+  }, [triggerUserScrollSections]);
+
+  const handleSectionsPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const container = sectionsLaneScrollRef.current;
+    if (!container) return;
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (shouldIgnoreDragScrollTarget(event.target)) return;
+
+    triggerUserScrollSections();
+
+    sectionsDragStateRef.current = {
+      active: true,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startScrollLeft: container.scrollLeft,
+    };
+
+    try {
+      container.setPointerCapture(event.pointerId);
+    } catch {
+      // no-op
+    }
+  }, [triggerUserScrollSections]);
+
+  const handleSectionsPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const container = sectionsLaneScrollRef.current;
+    const dragState = sectionsDragStateRef.current;
+
+    if (!container || !dragState.active || dragState.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - dragState.startX;
+    if (Math.abs(deltaX) < 2) return;
+
+    container.scrollLeft = dragState.startScrollLeft - deltaX;
+    event.preventDefault();
+  }, []);
+
+  const handleSectionsPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    endSectionsDrag(event.pointerId);
+  }, [endSectionsDrag]);
+
   const readyStateLabel = !hasTrackSession
     ? 'Sin sesion'
     : busyMessage
       ? 'Preparando'
-    : isInitializingSession
-      ? 'Cargando'
-    : loadError
-        ? 'Error'
-      : isReady
-          ? (isPlaying ? 'En marcha' : 'Armado')
-          : 'En espera';
+      : isInitializingSession
+        ? 'Cargando'
+        : loadError
+          ? 'Error'
+          : isReady
+            ? (isPlaying ? 'En marcha' : 'Armado')
+            : 'En espera';
 
   const shellClassName = ['fixed inset-0 overflow-hidden bg-[#202223] text-white', className]
     .filter(Boolean)
@@ -1811,11 +1892,10 @@ export function LiveDirectorView({
                 <button
                   type="button"
                   onClick={() => setIsPadActive((previous) => !previous)}
-                  className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-1 text-[0.62rem]' : isCompactLandscape ? 'h-10 px-2 text-[0.84rem]' : 'h-[var(--ld-control-height)] px-3 text-[0.84rem]'} flex-col font-semibold tracking-[0.18em] ${
-                    isPadActive
-                      ? 'border-[#43c477]/40 bg-[#43c477]/10 text-[#8af7b1]'
-                      : 'text-[#43c477]'
-                  }`}
+                  className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-1 text-[0.62rem]' : isCompactLandscape ? 'h-10 px-2 text-[0.84rem]' : 'h-[var(--ld-control-height)] px-3 text-[0.84rem]'} flex-col font-semibold tracking-[0.18em] ${isPadActive
+                    ? 'border-[#43c477]/40 bg-[#43c477]/10 text-[#8af7b1]'
+                    : 'text-[#43c477]'
+                    }`}
                   style={{ width: scaleRem(isUltraCompactLandscape ? 3.75 : isCompactLandscape ? 5.15 : 5.8, 3.1) }}
                   aria-label={isPadActive ? `Stop pad for ${songKey}` : `Play pad for ${songKey}`}
                 >
@@ -1886,13 +1966,12 @@ export function LiveDirectorView({
                   {ensayoOperationalChips.map((chip) => (
                     <div
                       key={chip.id}
-                      className={`rounded-full border ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : 'px-2 py-1'} ${
-                        chip.active
-                          ? chip.tone === 'info'
-                            ? 'border-cyan-300/28 bg-cyan-300/10 text-cyan-50'
-                            : 'border-[#43c477]/28 bg-[#43c477]/10 text-[#8af7b1]'
-                          : 'border-white/8 bg-black/18 text-white/72'
-                      }`}
+                      className={`rounded-full border ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : 'px-2 py-1'} ${chip.active
+                        ? chip.tone === 'info'
+                          ? 'border-cyan-300/28 bg-cyan-300/10 text-cyan-50'
+                          : 'border-[#43c477]/28 bg-[#43c477]/10 text-[#8af7b1]'
+                        : 'border-white/8 bg-black/18 text-white/72'
+                        }`}
                     >
                       <p className={`${isUltraCompactLandscape ? 'text-[0.44rem]' : 'text-[0.52rem]'} font-black uppercase tracking-[0.18em] text-white/40`}>
                         {chip.label}
@@ -1934,18 +2013,18 @@ export function LiveDirectorView({
           <div className={`overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.96),rgba(27,29,30,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isUltraCompactLandscape ? 'px-1.5 py-1' : isCompactLandscape ? 'px-2 py-1.5' : 'px-4 py-4'}`}>
             {isEnsayoMode ? (
               <div className="flex h-full items-center">
-                <div className="hide-scrollbar -mx-0.5 overflow-x-auto overflow-y-hidden">
-                  <div className={`flex ${isUltraCompactLandscape ? 'gap-1 px-0.5' : 'gap-1.5 px-0.5'}`}>
+                <div className="hide-scrollbar -mx-0.5 -my-4 overflow-x-auto overflow-y-hidden">
+                  <div className={`flex py-4 ${isUltraCompactLandscape ? 'gap-1 px-0.5' : 'gap-1.5 px-0.5'}`}>
                     {ensayoSlotSongs.map((queueSong, index) => (
                       <EnsayoQueueCard
                         key={queueSong.id}
                         song={queueSong}
-                        coverUrl={index === 0 ? songCoverArtUrl : queueSongCoverArtMap[queueSong.id]}
-                        active={index === 0 || queueSong.id === activeQueueSongId}
+                        coverUrl={queueSong.id === activeQueueSongId ? songCoverArtUrl : queueSongCoverArtMap[queueSong.id]}
+                        active={queueSong.id === activeQueueSongId}
                         compact={isCompactLandscape}
                         ultraCompact={isUltraCompactLandscape}
                         onClick={() => {
-                          if (index === 0) {
+                          if (queueSong.id === activeQueueSongId) {
                             void seekTo(0);
                             return;
                           }
@@ -1958,182 +2037,195 @@ export function LiveDirectorView({
                 </div>
               </div>
             ) : (
-            <div className={`flex h-full items-stretch ${isUltraCompactLandscape ? 'gap-1.5' : isCompactLandscape ? 'gap-2' : 'gap-4'}`}>
-              <button
-                type="button"
-                onClick={() => {
-                  if (hasTrackSession) {
-                    void seekTo(0);
-                    return;
-                  }
+              <div className={`flex h-full items-stretch ${isUltraCompactLandscape ? 'gap-1.5' : isCompactLandscape ? 'gap-2' : 'gap-4'}`}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (hasTrackSession) {
+                      void seekTo(0);
+                      return;
+                    }
 
-                  setShowLoadPanel(true);
-                }}
-                className={`ui-pressable-card group relative flex shrink-0 overflow-hidden rounded-[1.35rem] border border-white/10 bg-[linear-gradient(180deg,rgba(35,37,39,0.98),rgba(24,26,28,0.98))] text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200 hover:border-white/20 ${isUltraCompactLandscape ? 'p-1' : isCompactLandscape ? 'p-1.5' : 'p-3'}`}
-                style={{ width: scaleRem(isUltraCompactLandscape ? 11.6 : isCompactLandscape ? 13.4 : 15, 9.8) }}
-                aria-label={hasTrackSession ? `Jump to start of ${currentSessionLabel}` : 'Open song loader'}
-              >
-                <div className="absolute inset-0 overflow-hidden rounded-[1.05rem]">
-                  {songCoverArtUrl ? (
-                    <img
-                      src={songCoverArtUrl}
-                      alt={`Portada de ${songCardTitle}`}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(129,221,245,0.16),_transparent_34%),linear-gradient(180deg,rgba(52,57,60,0.94),rgba(20,22,24,0.98))] text-white/52">
-                      <ListMusic className={isUltraCompactLandscape ? 'h-4 w-4' : isCompactLandscape ? 'h-5 w-5' : 'h-8 w-8'} />
+                    setShowLoadPanel(true);
+                  }}
+                  className={`ui-pressable-card group relative flex shrink-0 overflow-hidden rounded-[1.35rem] border border-white/10 bg-[linear-gradient(180deg,rgba(35,37,39,0.98),rgba(24,26,28,0.98))] text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200 hover:border-white/20 ${isUltraCompactLandscape ? 'p-1' : isCompactLandscape ? 'p-1.5' : 'p-3'}`}
+                  style={{ width: scaleRem(isUltraCompactLandscape ? 11.6 : isCompactLandscape ? 13.4 : 15, 9.8) }}
+                  aria-label={hasTrackSession ? `Jump to start of ${currentSessionLabel}` : 'Open song loader'}
+                >
+                  <div className="absolute inset-0 overflow-hidden rounded-[1.05rem]">
+                    {songCoverArtUrl ? (
+                      <img
+                        src={songCoverArtUrl}
+                        alt={`Portada de ${songCardTitle}`}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(129,221,245,0.16),_transparent_34%),linear-gradient(180deg,rgba(52,57,60,0.94),rgba(20,22,24,0.98))] text-white/52">
+                        <ListMusic className={isUltraCompactLandscape ? 'h-4 w-4' : isCompactLandscape ? 'h-5 w-5' : 'h-8 w-8'} />
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.06)_0%,rgba(0,0,0,0.08)_22%,rgba(0,0,0,0.18)_44%,rgba(0,0,0,0.7)_78%,rgba(0,0,0,0.92)_100%)]" />
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.06),_transparent_34%)]" />
+                  </div>
+
+                  <div className={`relative z-10 mt-auto flex items-end ${isUltraCompactLandscape ? 'min-h-[3.7rem] gap-1' : isCompactLandscape ? 'min-h-[4.85rem] gap-1.5' : 'min-h-[6.1rem] gap-3'}`}>
+                    <div
+                      className={`flex shrink-0 items-center justify-center rounded-full border transition-all ${isUltraCompactLandscape ? 'h-5 w-5' : isCompactLandscape ? 'h-6 w-6' : 'h-10 w-10'
+                        } ${isPlaying
+                          ? 'border-[#43c477]/65 bg-[#43c477]/12 text-[#63e88f] shadow-[0_0_18px_rgba(67,196,119,0.2)]'
+                          : 'border-white/10 bg-black/28 text-white/72'
+                        }`}
+                    >
+                      {isPlaying ? <Pause className={`${isUltraCompactLandscape ? 'h-3 w-3' : 'h-3.5 w-3.5'}`} /> : <Play className={`ml-0.5 ${isUltraCompactLandscape ? 'h-3 w-3' : 'h-3.5 w-3.5'}`} />}
                     </div>
-                  )}
-                  <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.06)_0%,rgba(0,0,0,0.08)_22%,rgba(0,0,0,0.18)_44%,rgba(0,0,0,0.7)_78%,rgba(0,0,0,0.92)_100%)]" />
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.06),_transparent_34%)]" />
-                </div>
-
-                <div className={`relative z-10 mt-auto flex items-end ${isUltraCompactLandscape ? 'min-h-[3.7rem] gap-1' : isCompactLandscape ? 'min-h-[4.85rem] gap-1.5' : 'min-h-[6.1rem] gap-3'}`}>
-                  <div
-                    className={`flex shrink-0 items-center justify-center rounded-full border transition-all ${
-                      isUltraCompactLandscape ? 'h-5 w-5' : isCompactLandscape ? 'h-6 w-6' : 'h-10 w-10'
-                    } ${
-                      isPlaying
-                        ? 'border-[#43c477]/65 bg-[#43c477]/12 text-[#63e88f] shadow-[0_0_18px_rgba(67,196,119,0.2)]'
-                        : 'border-white/10 bg-black/28 text-white/72'
-                    }`}
-                  >
-                    {isPlaying ? <Pause className={`${isUltraCompactLandscape ? 'h-3 w-3' : 'h-3.5 w-3.5'}`} /> : <Play className={`ml-0.5 ${isUltraCompactLandscape ? 'h-3 w-3' : 'h-3.5 w-3.5'}`} />}
+                    <div className="min-w-0 pb-0.5">
+                      <h2 className={`truncate font-semibold tracking-tight text-white drop-shadow-[0_3px_12px_rgba(0,0,0,0.5)] ${isUltraCompactLandscape ? 'text-[0.82rem]' : isCompactLandscape ? 'text-sm' : 'text-[1.2rem]'}`}>
+                        {songCardTitle}
+                      </h2>
+                      <p className={`truncate text-white/74 drop-shadow-[0_3px_12px_rgba(0,0,0,0.5)] ${isUltraCompactLandscape ? 'text-[0.56rem]' : isCompactLandscape ? 'text-[0.65rem]' : 'mt-0.5 text-[0.72rem]'}`}>{songCardMeta}</p>
+                    </div>
                   </div>
-                  <div className="min-w-0 pb-0.5">
-                    <h2 className={`truncate font-semibold tracking-tight text-white drop-shadow-[0_3px_12px_rgba(0,0,0,0.5)] ${isUltraCompactLandscape ? 'text-[0.82rem]' : isCompactLandscape ? 'text-sm' : 'text-[1.2rem]'}`}>
-                      {songCardTitle}
-                    </h2>
-                    <p className={`truncate text-white/74 drop-shadow-[0_3px_12px_rgba(0,0,0,0.5)] ${isUltraCompactLandscape ? 'text-[0.56rem]' : isCompactLandscape ? 'text-[0.65rem]' : 'mt-0.5 text-[0.72rem]'}`}>{songCardMeta}</p>
-                  </div>
-                </div>
-              </button>
+                </button>
 
-              <div className={`min-w-0 flex-1 rounded-[1.5rem] border border-white/8 bg-black/16 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isUltraCompactLandscape ? 'px-2 py-1.5' : isCompactLandscape ? 'px-3 py-2' : 'px-5 py-4'}`}>
-                <div className={`flex h-full flex-col justify-between ${isUltraCompactLandscape ? 'gap-1.5' : isCompactLandscape ? 'gap-2' : 'gap-4'}`}>
-                  {isEnsayoMode ? null : (
-                    <>
-                      <div className={`flex ${isUltraCompactLandscape ? 'items-center gap-2' : isCompactLandscape ? 'items-center gap-3' : 'items-start justify-between gap-4'}`}>
-                        <div className="min-w-0">
-                          <p className={`${isUltraCompactLandscape ? 'text-[0.52rem]' : 'text-[0.7rem]'} font-black uppercase tracking-[0.24em] text-white/34`}>
-                            {performerLabel ? `Live Director · ${performerLabel}` : 'Live Director'}
-                          </p>
-                          <h1 className={`truncate font-semibold tracking-tight text-white ${isUltraCompactLandscape ? 'mt-0.5 text-[0.92rem]' : isCompactLandscape ? 'mt-1 text-sm' : 'mt-2 text-[1.35rem]'}`}>
-                            {currentSessionLabel}
-                          </h1>
-                          <p className={`text-white/54 ${isUltraCompactLandscape ? 'mt-0.5 text-[0.58rem]' : isCompactLandscape ? 'mt-0.5 text-[0.68rem]' : 'mt-1 text-[0.92rem]'}`}>{songSupportMeta}</p>
-                        </div>
-
-                        <div className={`flex shrink-0 ${isUltraCompactLandscape ? 'items-center gap-1' : isCompactLandscape ? 'items-center gap-1.5' : 'items-start gap-2'}`}>
-                          <div className={`rounded-full border border-white/8 bg-black/18 ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'}`}>
-                            <p className={`${isUltraCompactLandscape ? 'text-[0.5rem]' : 'text-[0.68rem]'} font-black uppercase tracking-[0.18em] text-white/46`}>
-                              {surfaceBadgeLabel}
+                <div className={`min-w-0 flex-1 rounded-[1.5rem] border border-white/8 bg-black/16 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isUltraCompactLandscape ? 'px-2 py-1.5' : isCompactLandscape ? 'px-3 py-2' : 'px-5 py-4'}`}>
+                  <div className={`flex h-full flex-col justify-between ${isUltraCompactLandscape ? 'gap-1.5' : isCompactLandscape ? 'gap-2' : 'gap-4'}`}>
+                    {isEnsayoMode ? null : (
+                      <>
+                        <div className={`flex ${isUltraCompactLandscape ? 'items-center gap-2' : isCompactLandscape ? 'items-center gap-3' : 'items-start justify-between gap-4'}`}>
+                          <div className="min-w-0">
+                            <p className={`${isUltraCompactLandscape ? 'text-[0.52rem]' : 'text-[0.7rem]'} font-black uppercase tracking-[0.24em] text-white/34`}>
+                              {performerLabel ? `Live Director · ${performerLabel}` : 'Live Director'}
                             </p>
+                            <h1 className={`truncate font-semibold tracking-tight text-white ${isUltraCompactLandscape ? 'mt-0.5 text-[0.92rem]' : isCompactLandscape ? 'mt-1 text-sm' : 'mt-2 text-[1.35rem]'}`}>
+                              {currentSessionLabel}
+                            </h1>
+                            <p className={`text-white/54 ${isUltraCompactLandscape ? 'mt-0.5 text-[0.58rem]' : isCompactLandscape ? 'mt-0.5 text-[0.68rem]' : 'mt-1 text-[0.92rem]'}`}>{songSupportMeta}</p>
                           </div>
-                          <button
-                            type="button"
-                            onClick={handleEngineToggle}
-                            className={`ui-pressable-soft rounded-full border ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'} text-left transition-all ${
-                              useStreamingEngine
+
+                          <div className={`flex shrink-0 ${isUltraCompactLandscape ? 'items-center gap-1' : isCompactLandscape ? 'items-center gap-1.5' : 'items-start gap-2'}`}>
+                            <div className={`rounded-full border border-white/8 bg-black/18 ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'}`}>
+                              <p className={`${isUltraCompactLandscape ? 'text-[0.5rem]' : 'text-[0.68rem]'} font-black uppercase tracking-[0.18em] text-white/46`}>
+                                {surfaceBadgeLabel}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleEngineToggle}
+                              className={`ui-pressable-soft rounded-full border ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'} text-left transition-all ${useStreamingEngine
                                 ? 'border-cyan-300/34 bg-cyan-300/10 text-cyan-50 shadow-[0_0_18px_rgba(129,221,245,0.14)]'
                                 : 'border-white/8 bg-black/18 text-white/76 hover:text-white'
-                            }`}
-                            aria-label={`Cambiar motor. Motor actual: ${currentEngineLabel}`}
-                            title={`Motor activo: ${currentEngineLabel}. Pulsa para cambiar.`}
-                          >
-                            <p className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : 'text-[0.6rem]'} font-black uppercase tracking-[0.18em] text-white/38`}>
-                              Motor
-                            </p>
-                            <p className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.62rem]' : isCompactLandscape ? 'mt-0.5 text-[0.74rem]' : 'mt-1 text-[0.92rem]'} font-semibold text-inherit`}>{currentEngineLabel}</p>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setShowDiagnostics((previous) => !previous)}
-                            className={`ui-pressable-soft rounded-full border ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'} text-left transition-all ${
-                              showDiagnostics
+                                }`}
+                              aria-label={`Cambiar motor. Motor actual: ${currentEngineLabel}`}
+                              title={`Motor activo: ${currentEngineLabel}. Pulsa para cambiar.`}
+                            >
+                              <p className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : 'text-[0.6rem]'} font-black uppercase tracking-[0.18em] text-white/38`}>
+                                Motor
+                              </p>
+                              <p className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.62rem]' : isCompactLandscape ? 'mt-0.5 text-[0.74rem]' : 'mt-1 text-[0.92rem]'} font-semibold text-inherit`}>{currentEngineLabel}</p>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setShowDiagnostics((previous) => !previous)}
+                              className={`ui-pressable-soft rounded-full border ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'} text-left transition-all ${showDiagnostics
                                 ? 'border-cyan-300/34 bg-cyan-300/10 text-cyan-50 shadow-[0_0_18px_rgba(129,221,245,0.14)]'
                                 : 'border-white/8 bg-black/18 text-white/72 hover:text-white'
-                            }`}
-                            aria-label={`${showDiagnostics ? 'Ocultar' : 'Mostrar'} diagnostico de memoria`}
-                            title="Mostrar u ocultar diagnostico de memoria y carga"
-                          >
-                            <p className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : 'text-[0.6rem]'} font-black uppercase tracking-[0.18em] text-white/38`}>
-                              RAM
-                            </p>
-                            <p className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.62rem]' : isCompactLandscape ? 'mt-0.5 text-[0.74rem]' : 'mt-1 text-[0.92rem]'} font-semibold text-inherit`}>
-                              {showDiagnostics ? 'Activa' : 'Oculta'}
-                            </p>
-                          </button>
-                          <div className={`rounded-[1.1rem] border border-white/8 bg-black/18 text-right ${isUltraCompactLandscape ? 'px-1.5 py-1' : isCompactLandscape ? 'px-2 py-1.5' : 'px-3 py-2'}`}>
-                            <p className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : 'text-[0.62rem]'} font-black uppercase tracking-[0.2em] text-white/36`}>
-                              Estado
-                            </p>
-                            <p className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.66rem]' : isCompactLandscape ? 'mt-0.5 text-[0.78rem]' : 'mt-1 text-[0.98rem]'} font-semibold ${isReady ? 'text-[#43c477]' : 'text-white/58'}`}>
-                              {readyStateLabel}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className={`flex ${isUltraCompactLandscape ? 'items-center gap-1.5' : isCompactLandscape ? 'items-center gap-2' : 'items-end gap-4'}`}>
-                        <div className="min-w-0 flex-1">
-                          <div className={`flex items-center justify-between font-semibold uppercase tracking-[0.18em] text-white/46 ${isUltraCompactLandscape ? 'mb-0.5 text-[0.56rem]' : isCompactLandscape ? 'mb-1 text-[0.72rem]' : 'mb-2 text-[0.72rem]'}`}>
-                            <span>{hasTrackSession ? `${activeTracks.length} pistas` : 'Sin sesion'}</span>
-                            <span>{formatCompact(currentTime)} / {formatCompact(totalDuration)}</span>
-                          </div>
-                          <div className={`${isUltraCompactLandscape ? 'h-1' : isCompactLandscape ? 'h-1.5' : 'h-2.5'} rounded-full bg-black/30`}>
-                            <div
-                              className="h-full rounded-full bg-[linear-gradient(90deg,#43c477_0%,#81ddf5_100%)] shadow-[0_0_14px_rgba(67,196,119,0.16)] transition-[width] duration-200"
-                              style={{ width: `${Math.max(hasTrackSession ? progressPercent : 0, hasTrackSession ? 4 : 0)}%` }}
-                            />
-                          </div>
-                          {showDiagnostics && (
-                            <div className={`grid grid-cols-4 gap-2 ${isCompactLandscape ? 'mt-2' : 'mt-3'}`}>
-                              {diagnosticsCards.map((card) => (
-                                <div
-                                  key={card.label}
-                                  className="rounded-[1rem] border border-white/8 bg-black/20 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]"
-                                >
-                                  <p className="text-[0.58rem] font-black uppercase tracking-[0.22em] text-white/34">
-                                    {card.label}
-                                  </p>
-                                  <p className="mt-1 text-[0.88rem] font-semibold text-white/78">{card.value}</p>
-                                </div>
-                              ))}
+                                }`}
+                              aria-label={`${showDiagnostics ? 'Ocultar' : 'Mostrar'} diagnostico de memoria`}
+                              title="Mostrar u ocultar diagnostico de memoria y carga"
+                            >
+                              <p className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : 'text-[0.6rem]'} font-black uppercase tracking-[0.18em] text-white/38`}>
+                                RAM
+                              </p>
+                              <p className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.62rem]' : isCompactLandscape ? 'mt-0.5 text-[0.74rem]' : 'mt-1 text-[0.92rem]'} font-semibold text-inherit`}>
+                                {showDiagnostics ? 'Activa' : 'Oculta'}
+                              </p>
+                            </button>
+                            <div className={`rounded-[1.1rem] border border-white/8 bg-black/18 text-right ${isUltraCompactLandscape ? 'px-1.5 py-1' : isCompactLandscape ? 'px-2 py-1.5' : 'px-3 py-2'}`}>
+                              <p className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : 'text-[0.62rem]'} font-black uppercase tracking-[0.2em] text-white/36`}>
+                                Estado
+                              </p>
+                              <p className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.66rem]' : isCompactLandscape ? 'mt-0.5 text-[0.78rem]' : 'mt-1 text-[0.98rem]'} font-semibold ${isReady ? 'text-[#43c477]' : 'text-white/58'}`}>
+                                {readyStateLabel}
+                              </p>
                             </div>
-                          )}
+                          </div>
                         </div>
-                        <div className={`grid grid-cols-2 ${isUltraCompactLandscape ? 'gap-1' : isCompactLandscape ? 'gap-1.5' : 'gap-2'}`}>
-                          <button
-                            type="button"
-                            onClick={() => setSurfaceView('mix')}
-                            className={`ui-pressable-soft min-w-[5.5rem] rounded-[1rem] border ${isUltraCompactLandscape ? 'px-1.5 py-1 text-[0.56rem]' : isCompactLandscape ? 'px-2 py-1.5 text-[0.64rem]' : 'px-3 py-2 text-[0.7rem]'} font-black uppercase tracking-[0.18em] transition-all ${
-                              surfaceView === 'mix'
+
+                        <div className={`flex ${isUltraCompactLandscape ? 'items-center gap-1.5' : isCompactLandscape ? 'items-center gap-2' : 'items-end gap-4'}`}>
+                          <div className="min-w-0 flex-1">
+                            <div className={`flex items-center justify-between font-semibold uppercase tracking-[0.18em] text-white/46 ${isUltraCompactLandscape ? 'mb-0.5 text-[0.56rem]' : isCompactLandscape ? 'mb-1 text-[0.72rem]' : 'mb-2 text-[0.72rem]'}`}>
+                              <span>{hasTrackSession ? `${activeTracks.length} pistas` : 'Sin sesion'}</span>
+                              <span>{formatCompact(currentTime)} / {formatCompact(totalDuration)}</span>
+                            </div>
+                            <div className={`${isUltraCompactLandscape ? 'h-1' : isCompactLandscape ? 'h-1.5' : 'h-2.5'} rounded-full bg-black/30`}>
+                              <div
+                                className="h-full rounded-full bg-[linear-gradient(90deg,#43c477_0%,#81ddf5_100%)] shadow-[0_0_14px_rgba(67,196,119,0.16)] transition-[width] duration-200"
+                                style={{ width: `${Math.max(hasTrackSession ? progressPercent : 0, hasTrackSession ? 4 : 0)}%` }}
+                              />
+                            </div>
+                            {resolvedSections.length > 0 && (
+                              <div className={`flex w-full overflow-hidden ${isUltraCompactLandscape ? 'h-[2px] mt-0.5 rounded-[1px]' : isCompactLandscape ? 'h-[3px] mt-1 rounded-[2px]' : 'h-1 mt-1.5 rounded-full'} opacity-[0.62]`}>
+                                {resolvedSections.map((sec) => {
+                                  const duration = sec.endTime - sec.startTime;
+                                  const widthPercent = totalDuration > 0 ? (duration / totalDuration) * 100 : 0;
+                                  return (
+                                    <div
+                                      key={`minimap-${sec.id}`}
+                                      className="h-full border-r border-[#181a1c] last:border-0"
+                                      style={{
+                                        width: `${widthPercent}%`,
+                                        backgroundColor: sec.accent,
+                                      }}
+                                      title={sec.name}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {showDiagnostics && (
+                              <div className={`grid grid-cols-4 gap-2 ${isCompactLandscape ? 'mt-2' : 'mt-3'}`}>
+                                {diagnosticsCards.map((card) => (
+                                  <div
+                                    key={card.label}
+                                    className="rounded-[1rem] border border-white/8 bg-black/20 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]"
+                                  >
+                                    <p className="text-[0.58rem] font-black uppercase tracking-[0.22em] text-white/34">
+                                      {card.label}
+                                    </p>
+                                    <p className="mt-1 text-[0.88rem] font-semibold text-white/78">{card.value}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <div className={`grid grid-cols-2 ${isUltraCompactLandscape ? 'gap-1' : isCompactLandscape ? 'gap-1.5' : 'gap-2'}`}>
+                            <button
+                              type="button"
+                              onClick={() => setSurfaceView('mix')}
+                              className={`ui-pressable-soft min-w-[5.5rem] rounded-[1rem] border ${isUltraCompactLandscape ? 'px-1.5 py-1 text-[0.56rem]' : isCompactLandscape ? 'px-2 py-1.5 text-[0.64rem]' : 'px-3 py-2 text-[0.7rem]'} font-black uppercase tracking-[0.18em] transition-all ${surfaceView === 'mix'
                                 ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50'
                                 : 'border-white/8 bg-black/18 text-white/58'
-                            }`}
-                          >
-                            Mezcla
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setSurfaceView('sections')}
-                            className={`ui-pressable-soft min-w-[5.5rem] rounded-[1rem] border ${isUltraCompactLandscape ? 'px-1.5 py-1 text-[0.56rem]' : isCompactLandscape ? 'px-2 py-1.5 text-[0.64rem]' : 'px-3 py-2 text-[0.7rem]'} font-black uppercase tracking-[0.18em] transition-all ${
-                              surfaceView === 'sections'
+                                }`}
+                            >
+                              Mezcla
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSurfaceView('sections')}
+                              className={`ui-pressable-soft min-w-[5.5rem] rounded-[1rem] border ${isUltraCompactLandscape ? 'px-1.5 py-1 text-[0.56rem]' : isCompactLandscape ? 'px-2 py-1.5 text-[0.64rem]' : 'px-3 py-2 text-[0.7rem]'} font-black uppercase tracking-[0.18em] transition-all ${surfaceView === 'sections'
                                 ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50'
                                 : 'border-white/8 bg-black/18 text-white/58'
-                            }`}
-                          >
-                            Secciones
-                          </button>
+                                }`}
+                            >
+                              Secciones
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    </>
-                  )}
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </div>)}
+              </div>)}
           </div>
         </section>
         <section
@@ -2142,7 +2234,7 @@ export function LiveDirectorView({
         >
           {showSectionsPanel ? (
             <div className="relative min-h-0 overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(29,30,32,0.98),rgba(23,24,26,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-              <div className="absolute left-4 top-4 z-30 flex items-center gap-3 rounded-full border border-white/10 bg-black/48 px-3 py-2 backdrop-blur-xl">
+              <div className="absolute left-4 top-4 z-40 flex items-center gap-3 rounded-full border border-white/10 bg-black/48 px-3 py-2 backdrop-blur-xl">
                 <span className="text-[0.68rem] font-black uppercase tracking-[0.28em] text-white/38">Secciones</span>
                 <span className="text-[0.8rem] font-semibold text-white/78">
                   {activeSection?.name || 'Linea de tiempo'}
@@ -2218,7 +2310,17 @@ export function LiveDirectorView({
                 />
                 <div
                   ref={sectionsLaneScrollRef}
+                  onPointerDown={handleSectionsPointerDown}
+                  onPointerMove={handleSectionsPointerMove}
+                  onPointerUp={handleSectionsPointerUp}
+                  onPointerCancel={handleSectionsPointerUp}
+                  onWheel={triggerUserScrollSections}
                   className="hide-scrollbar relative h-full overflow-x-auto overflow-y-hidden"
+                  style={{
+                    touchAction: 'pan-x pinch-zoom',
+                    overscrollBehaviorX: 'contain',
+                    WebkitOverflowScrolling: 'touch',
+                  }}
                 >
                   <div
                     className="relative flex h-full min-h-0 items-stretch gap-[14px] py-4"
@@ -2381,13 +2483,11 @@ export function LiveDirectorView({
                 <button
                   type="button"
                   onClick={() => setSurfaceView('mix')}
-                  className={`ui-pressable-soft flex flex-col items-center justify-center gap-1 rounded-[1.2rem] border transition-all ${
-                    isUltraCompactLandscape ? 'h-[2.6rem] w-full rounded-[1rem] gap-0.5' : isCompactLandscape ? 'h-[3.15rem] w-full' : 'h-16'
-                  } ${
-                    surfaceView === 'mix'
+                  className={`ui-pressable-soft flex flex-col items-center justify-center gap-1 rounded-[1.2rem] border transition-all ${isUltraCompactLandscape ? 'h-[2.6rem] w-full rounded-[1rem] gap-0.5' : isCompactLandscape ? 'h-[3.15rem] w-full' : 'h-16'
+                    } ${surfaceView === 'mix'
                       ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50 shadow-[0_0_20px_rgba(129,221,245,0.14)]'
                       : 'border-white/8 bg-black/24 text-white/62'
-                  }`}
+                    }`}
                 >
                   <SlidersVertical className={isUltraCompactLandscape ? 'h-2.75 w-2.75' : isCompactLandscape ? 'h-3.25 w-3.25' : 'h-6 w-6'} />
                   {!isCompactLandscape && <span className="text-[0.66rem] font-black uppercase tracking-[0.18em]">Mezcla</span>}
@@ -2395,13 +2495,11 @@ export function LiveDirectorView({
                 <button
                   type="button"
                   onClick={() => setSurfaceView('sections')}
-                  className={`ui-pressable-soft flex flex-col items-center justify-center gap-1 rounded-[1.2rem] border transition-all ${
-                    isUltraCompactLandscape ? 'h-[2.6rem] w-full rounded-[1rem] gap-0.5' : isCompactLandscape ? 'h-[3.15rem] w-full' : 'h-16'
-                  } ${
-                    surfaceView === 'sections'
+                  className={`ui-pressable-soft flex flex-col items-center justify-center gap-1 rounded-[1.2rem] border transition-all ${isUltraCompactLandscape ? 'h-[2.6rem] w-full rounded-[1rem] gap-0.5' : isCompactLandscape ? 'h-[3.15rem] w-full' : 'h-16'
+                    } ${surfaceView === 'sections'
                       ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50 shadow-[0_0_20px_rgba(129,221,245,0.14)]'
                       : 'border-white/8 bg-black/24 text-white/62'
-                  }`}
+                    }`}
                 >
                   <ListMusic className={isUltraCompactLandscape ? 'h-2.75 w-2.75' : isCompactLandscape ? 'h-3.25 w-3.25' : 'h-6 w-6'} />
                   {!isCompactLandscape && <span className="text-[0.6rem] font-black uppercase tracking-[0.16em]">Secciones</span>}
@@ -2434,11 +2532,10 @@ export function LiveDirectorView({
                 type="button"
                 onClick={handleLoopIn}
                 disabled={!hasTrackSession}
-                className={`ui-pressable-soft rounded-[1.2rem] border px-2 text-center ${isUltraCompactLandscape ? 'h-[3.25rem] w-full rounded-[1rem] text-[0.48rem]' : isCompactLandscape ? 'h-[4.2rem] w-full text-[0.54rem]' : 'text-[0.78rem] py-5'} font-semibold tracking-[0.18em] leading-[1.1] ${
-                  loopEnabled
-                    ? 'border-[#43c477]/50 bg-[#43c477]/14 text-[#9effc4]'
-                    : 'border-white/8 bg-black/24 text-white/62'
-                }`}
+                className={`ui-pressable-soft rounded-[1.2rem] border px-2 text-center ${isUltraCompactLandscape ? 'h-[3.25rem] w-full rounded-[1rem] text-[0.48rem]' : isCompactLandscape ? 'h-[4.2rem] w-full text-[0.54rem]' : 'text-[0.78rem] py-5'} font-semibold tracking-[0.18em] leading-[1.1] ${loopEnabled
+                  ? 'border-[#43c477]/50 bg-[#43c477]/14 text-[#9effc4]'
+                  : 'border-white/8 bg-black/24 text-white/62'
+                  }`}
               >
                 BUCLE
                 <br />
@@ -2534,11 +2631,10 @@ export function LiveDirectorView({
                 <button
                   type="button"
                   onClick={() => setLoaderMode('sequence')}
-                  className={`flex w-full items-center gap-3 rounded-[1.2rem] border text-left transition-all ${
-                    loaderMode === 'sequence'
-                      ? 'border-cyan-300/38 bg-cyan-300/12 text-white'
-                      : 'border-white/8 bg-white/[0.02] text-white/68'
-                  } ${isCompactLandscape ? 'px-3 py-3' : 'mb-3 px-4 py-4'}`}
+                  className={`flex w-full items-center gap-3 rounded-[1.2rem] border text-left transition-all ${loaderMode === 'sequence'
+                    ? 'border-cyan-300/38 bg-cyan-300/12 text-white'
+                    : 'border-white/8 bg-white/[0.02] text-white/68'
+                    } ${isCompactLandscape ? 'px-3 py-3' : 'mb-3 px-4 py-4'}`}
                 >
                   <Upload className="h-5 w-5" />
                   <div>
@@ -2550,11 +2646,10 @@ export function LiveDirectorView({
                 <button
                   type="button"
                   onClick={() => setLoaderMode('folder')}
-                  className={`flex w-full items-center gap-3 rounded-[1.2rem] border text-left transition-all ${
-                    loaderMode === 'folder'
-                      ? 'border-cyan-300/38 bg-cyan-300/12 text-white'
-                      : 'border-white/8 bg-white/[0.02] text-white/68'
-                  } ${isCompactLandscape ? 'px-3 py-3' : 'px-4 py-4'}`}
+                  className={`flex w-full items-center gap-3 rounded-[1.2rem] border text-left transition-all ${loaderMode === 'folder'
+                    ? 'border-cyan-300/38 bg-cyan-300/12 text-white'
+                    : 'border-white/8 bg-white/[0.02] text-white/68'
+                    } ${isCompactLandscape ? 'px-3 py-3' : 'px-4 py-4'}`}
                 >
                   <FolderOpen className="h-5 w-5" />
                   <div>

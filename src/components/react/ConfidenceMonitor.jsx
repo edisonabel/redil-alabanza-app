@@ -20,7 +20,7 @@ const DEFAULT_SETTINGS = {
   fontSize: 'standard',
 };
 
-const SYNC_ANTICIPATION_SEC = 0.5;
+const SYNC_ANTICIPATION_SEC = 0.85;
 const SYNC_DRIFT_SOFT_SEC = 0.18;
 const SYNC_DRIFT_HARD_SEC = 0.75;
 const SYNC_SECTION_SNAP_DRIFT_SEC = 0.32;
@@ -353,6 +353,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
   const previewContentRef = useRef(null);
   const pendingDurationLoadsRef = useRef(new Map());
   const runtimeTrackDurationsRef = useRef({});
+  const timelineRef = useRef(timeline);
 
   useEffect(() => {
     activeTrackIndexRef.current = activeTrackIndex;
@@ -369,6 +370,10 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
   useEffect(() => {
     runtimeTrackDurationsRef.current = runtimeTrackDurations;
   }, [runtimeTrackDurations]);
+
+  useEffect(() => {
+    timelineRef.current = timeline;
+  }, [timeline]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -471,7 +476,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
         // Limitar la anticipación a un 40% de la duración del cue anterior
         // para no solapar los saltos en la pantalla si los cues son rapidísimos
         const maxAnticipation = previousCue?.estimatedStartSec != null
-          ? Math.max(0, (cue.estimatedStartSec - previousCue.estimatedStartSec) * 0.45)
+          ? Math.max(0, (cue.estimatedStartSec - previousCue.estimatedStartSec) * 0.6)
           : defaultAnticipation;
 
         anticipation = Math.min(defaultAnticipation, maxAnticipation);
@@ -491,7 +496,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
   }, []);
 
   const syncDisplayState = useCallback((trackIndex, cueIndex, fallbackSectionIndex = 0) => {
-    const track = timeline.tracks[trackIndex] || null;
+    const track = timelineRef.current.tracks[trackIndex] || null;
     if (!track) return null;
 
     const nextCueIndex = Math.max(0, Math.min(cueIndex, Math.max(track.cues.length - 1, 0)));
@@ -507,15 +512,15 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     setActiveSectionIndex((current) => (current === nextSectionIndex ? current : nextSectionIndex));
 
     return cue;
-  }, [timeline.tracks]);
+  }, []);
 
   const moveToCue = useCallback((trackIndex, cueIndex) => {
-    const track = timeline.tracks[trackIndex] || null;
+    const track = timelineRef.current.tracks[trackIndex] || null;
     if (!track) return;
 
     const nextCueIndex = Math.max(0, Math.min(cueIndex, Math.max(track.cues.length - 1, 0)));
     syncDisplayState(trackIndex, nextCueIndex, track.cues[nextCueIndex]?.sectionIndex ?? 0);
-  }, [syncDisplayState, timeline.tracks]);
+  }, [syncDisplayState]);
 
   const getAuthoritativeRemoteTime = useCallback((now = performance.now()) => {
     if (lastReceiveTimestampRef.current <= 0) {
@@ -534,7 +539,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     const loop = () => {
       const now = performance.now();
       const trackIndex = activeTrackIndexRef.current;
-      const track = timeline.tracks[trackIndex] || null;
+      const track = timelineRef.current.tracks[trackIndex] || null;
       const previousFrameTimestamp = lastFrameTimestampRef.current || now;
       const frameDelta = Math.min(
         Math.max(0, (now - previousFrameTimestamp) / 1000),
@@ -615,7 +620,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [findCueAtTime, getAuthoritativeRemoteTime, syncDisplayState, timeline.tracks]);
+  }, [findCueAtTime, getAuthoritativeRemoteTime, syncDisplayState]);
 
   useEffect(() => {
     const channel = supabase.channel('ensayo-live-sync', {
@@ -674,7 +679,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
           lastPayloadSongIdRef.current = nextSongId;
         }
 
-        const matchedTrackIndex = timeline.tracks.findIndex(
+        const matchedTrackIndex = timelineRef.current.tracks.findIndex(
           (track) => String(track.songId) === nextSongId,
         );
 
@@ -688,7 +693,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
         }
 
         if (typeof payload.sectionIndex === 'number') {
-          const track = timeline.tracks[resolvedTrackIndex] || null;
+          const track = timelineRef.current.tracks[resolvedTrackIndex] || null;
           const section = track?.sections[payload.sectionIndex] || null;
           const hasCueTiming = Boolean(
             track?.cues?.some(
@@ -698,7 +703,13 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
 
           if (track && typeof resolvedCurrentTime === 'number' && hasCueTiming) {
             const cueIndex = findCueAtTime(resolvedCurrentTime, track);
-            syncDisplayState(resolvedTrackIndex, cueIndex, payload.sectionIndex);
+            const derivedSectionIndex =
+              cueIndex >= 0
+                ? Number.isFinite(Number(track.cues[cueIndex]?.sectionIndex))
+                  ? Number(track.cues[cueIndex]?.sectionIndex)
+                  : payload.sectionIndex
+                : payload.sectionIndex;
+            syncDisplayState(resolvedTrackIndex, cueIndex, derivedSectionIndex);
           } else if (section && (typeof resolvedCurrentTime !== 'number' || !hasCueTiming)) {
             syncDisplayState(resolvedTrackIndex, section.startCueIndex, payload.sectionIndex);
           } else if (typeof resolvedCurrentTime !== 'number') {
@@ -716,7 +727,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [findCueAtTime, syncDisplayState, timeline.tracks]);
+  }, [findCueAtTime, syncDisplayState]);
 
   useEffect(() => {
     const check = setInterval(() => {
@@ -1139,7 +1150,6 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
               style={{
                 transform: `translateZ(0) scale(${heroScale})`,
                 transformOrigin: mainTransformOrigin,
-                transition: 'transform 170ms cubic-bezier(0.22, 1, 0.36, 1)',
                 willChange: 'transform',
                 backfaceVisibility: 'hidden',
                 width: 'fit-content',
@@ -1337,7 +1347,6 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                   style={{
                     transform: `translateZ(0) scale(${previewScale})`,
                     transformOrigin: 'left center',
-                    transition: 'transform 170ms cubic-bezier(0.22, 1, 0.36, 1)',
                     willChange: 'transform',
                     width: 'fit-content',
                     maxWidth: '100%',
