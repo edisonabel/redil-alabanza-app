@@ -614,6 +614,7 @@ export function LiveDirectorView({
   });
   const [isPortrait, setIsPortrait] = useState(false);
   const [isCompactLandscape, setIsCompactLandscape] = useState(false);
+  const [isUltraCompactLandscape, setIsUltraCompactLandscape] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [manualSession, setManualSession] = useState<LiveDirectorResolvedSession | null>(
@@ -644,7 +645,7 @@ export function LiveDirectorView({
       return 1;
     }
 
-    return clamp(viewportHeight / 430, 0.72, 1);
+    return clamp(viewportHeight / 450, 0.58, 1);
   }, [isPortrait, viewportHeight]);
   const scaleRem = useCallback(
     (baseRem: number, minRem: number, maxRem = baseRem) =>
@@ -654,10 +655,12 @@ export function LiveDirectorView({
   const headerMinWidth = useMemo(() => scaleRem(58, 45), [scaleRem]);
   const mixerLayoutColumns = useMemo(
     () =>
-      isCompactLandscape
+      isUltraCompactLandscape
+        ? `${scaleRem(5.15, 4.45)} ${scaleRem(5.45, 4.65)}`
+        : isCompactLandscape
         ? `${scaleRem(6.25, 5.35)} ${scaleRem(6.95, 5.9)}`
         : '7.25rem 8rem',
-    [isCompactLandscape, scaleRem],
+    [isCompactLandscape, isUltraCompactLandscape, scaleRem],
   );
 
   const activeTracks = useMemo(
@@ -947,6 +950,7 @@ export function LiveDirectorView({
       setViewportWidth(nextViewportWidth);
       setIsPortrait(portrait);
       setIsCompactLandscape(!portrait && nextViewportHeight <= 560);
+      setIsUltraCompactLandscape(!portrait && nextViewportHeight <= 450);
     };
 
     updateOrientationState();
@@ -1487,16 +1491,16 @@ export function LiveDirectorView({
         height: '100dvh',
         minHeight: '100dvh',
         maxHeight: '100dvh',
-        paddingTop: `max(env(safe-area-inset-top), ${scaleRem(isCompactLandscape ? 0.6 : 0.8, 0.45)})`,
-        paddingRight: `max(env(safe-area-inset-right), ${scaleRem(isCompactLandscape ? 0.75 : 1, 0.55)})`,
-        paddingBottom: `max(env(safe-area-inset-bottom), ${scaleRem(isCompactLandscape ? 0.75 : 1, 0.55)})`,
-        paddingLeft: `max(env(safe-area-inset-left), ${scaleRem(isCompactLandscape ? 0.75 : 1, 0.55)})`,
-        gap: scaleRem(isCompactLandscape ? 0.6 : 1, 0.5),
-        ['--ld-control-height' as string]: scaleRem(isCompactLandscape ? 4.2 : 5.15, 3.2),
-        ['--ld-summary-row-height' as string]: scaleRem(isCompactLandscape ? 5.4 : 8.9, 4.6),
-        ['--ld-sections-row-height' as string]: scaleRem(isCompactLandscape ? 10.9 : 12.4, 8.5),
+        paddingTop: `max(env(safe-area-inset-top), ${scaleRem(isUltraCompactLandscape ? 0.22 : isCompactLandscape ? 0.6 : 0.8, 0.18)})`,
+        paddingRight: `max(env(safe-area-inset-right), ${scaleRem(isUltraCompactLandscape ? 0.3 : isCompactLandscape ? 0.75 : 1, 0.22)})`,
+        paddingBottom: `max(env(safe-area-inset-bottom), ${scaleRem(isUltraCompactLandscape ? 0.25 : isCompactLandscape ? 0.75 : 1, 0.2)})`,
+        paddingLeft: `max(env(safe-area-inset-left), ${scaleRem(isUltraCompactLandscape ? 0.3 : isCompactLandscape ? 0.75 : 1, 0.22)})`,
+        gap: scaleRem(isUltraCompactLandscape ? 0.12 : isCompactLandscape ? 0.6 : 1, 0.08),
+        ['--ld-control-height' as string]: scaleRem(isUltraCompactLandscape ? 2.95 : isCompactLandscape ? 4.2 : 5.15, 2.35),
+        ['--ld-summary-row-height' as string]: scaleRem(isUltraCompactLandscape ? 3.95 : isCompactLandscape ? 5.4 : 8.9, 3.2),
+        ['--ld-sections-row-height' as string]: scaleRem(isUltraCompactLandscape ? 8.6 : isCompactLandscape ? 10.9 : 12.4, 6.4),
       }) as CSSProperties,
-    [isCompactLandscape, scaleRem],
+    [isCompactLandscape, isUltraCompactLandscape, scaleRem],
   );
   const overlayPaddingStyle = useMemo(
     () =>
@@ -1561,33 +1565,33 @@ export function LiveDirectorView({
     <div className={shellClassName}>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(93,214,240,0.08),_transparent_24%),linear-gradient(180deg,#232526_0%,#222425_46%,#202224_100%)]" />
       <div className="relative flex h-[100dvh] flex-col overflow-hidden" style={shellContentStyle}>
-        <div className={`hide-scrollbar -mx-1 shrink-0 overflow-x-auto ${isCompactLandscape ? 'pb-0' : 'pb-1'}`}>
+        <div className={`hide-scrollbar -mx-1 shrink-0 overflow-x-auto ${isUltraCompactLandscape ? 'pb-0' : isCompactLandscape ? 'pb-0' : 'pb-1'}`}>
           <header
-            className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-center ${isCompactLandscape ? 'gap-2 px-0.5' : 'gap-2.5 px-1'}`}
+            className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-center ${isUltraCompactLandscape ? 'gap-1 px-0' : isCompactLandscape ? 'gap-2 px-0.5' : 'gap-2.5 px-1'}`}
             style={{ minWidth: headerMinWidth }}
           >
-            <div className={`flex items-stretch ${isCompactLandscape ? 'gap-2' : 'gap-2.5'}`}>
+            <div className={`flex items-stretch ${isUltraCompactLandscape ? 'gap-1' : isCompactLandscape ? 'gap-2' : 'gap-2.5'}`}>
               <div
-                className={`flex ${isCompactLandscape ? 'rounded-[1rem] py-1' : 'rounded-[1.45rem] py-3'} shrink-0 flex-col items-center justify-center gap-0.5 border border-white/8 bg-black/16 px-2 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]`}
-                style={{ width: scaleRem(isCompactLandscape ? 4.15 : 4.6, 3.55) }}
+                className={`flex ${isUltraCompactLandscape ? 'rounded-[0.8rem] px-1 py-0.5' : isCompactLandscape ? 'rounded-[1rem] py-1' : 'rounded-[1.45rem] py-3'} shrink-0 flex-col items-center justify-center gap-0.5 border border-white/8 bg-black/16 ${isUltraCompactLandscape ? '' : 'px-2'} text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]`}
+                style={{ width: scaleRem(isUltraCompactLandscape ? 2.95 : isCompactLandscape ? 4.15 : 4.6, 2.45) }}
               >
-                <span className={`font-light leading-none tracking-tight text-white/92 ${isCompactLandscape ? 'text-[1.65rem]' : 'text-[2.05rem]'}`}>
+                <span className={`font-light leading-none tracking-tight text-white/92 ${isUltraCompactLandscape ? 'text-[1.12rem]' : isCompactLandscape ? 'text-[1.65rem]' : 'text-[2.05rem]'}`}>
                   {displayBpm || '--'}
                 </span>
                 <div className="h-px w-full bg-white/18" />
-                <span className="text-[0.6rem] font-black uppercase tracking-[0.24em] text-white/56">
+                <span className={`${isUltraCompactLandscape ? 'text-[0.42rem]' : 'text-[0.6rem]'} font-black uppercase tracking-[0.24em] text-white/56`}>
                   {displayBpm ? 'BPM' : 'NO BPM'}
                 </span>
               </div>
 
               <div
-                className={`${CONTROL_CARD} ${isCompactLandscape ? 'h-10 px-2 py-1' : 'h-[var(--ld-control-height)] px-4 py-3'} flex-col`}
-                style={{ width: scaleRem(isCompactLandscape ? 8.45 : 9.25, 6.85) }}
+                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-1.5 py-0.5' : isCompactLandscape ? 'h-10 px-2 py-1' : 'h-[var(--ld-control-height)] px-4 py-3'} flex-col`}
+                style={{ width: scaleRem(isUltraCompactLandscape ? 6.25 : isCompactLandscape ? 8.45 : 9.25, 5.1) }}
               >
-                <span className={`font-light leading-none tracking-tight text-white ${isCompactLandscape ? 'text-[2.05rem]' : 'text-[2.65rem]'}`}>
+                <span className={`font-light leading-none tracking-tight text-white ${isUltraCompactLandscape ? 'text-[1.45rem]' : isCompactLandscape ? 'text-[2.05rem]' : 'text-[2.65rem]'}`}>
                   {formatClock(currentTime)}
                 </span>
-                <span className={`font-medium tabular-nums text-white/58 ${isCompactLandscape ? 'text-[0.8rem]' : 'mt-1 text-[0.96rem]'}`}>
+                <span className={`font-medium tabular-nums text-white/58 ${isUltraCompactLandscape ? 'text-[0.58rem]' : isCompactLandscape ? 'text-[0.8rem]' : 'mt-1 text-[0.96rem]'}`}>
                   {formatCompact(currentTime)} / {formatCompact(totalDuration)}
                 </span>
               </div>
@@ -1596,35 +1600,35 @@ export function LiveDirectorView({
                 <button
                   type="button"
                   onClick={() => setIsPadActive((previous) => !previous)}
-                  className={`${CONTROL_CARD} ${isCompactLandscape ? 'h-10 px-2' : 'h-[var(--ld-control-height)] px-3'} flex-col text-[0.84rem] font-semibold tracking-[0.18em] ${
+                  className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-1 text-[0.62rem]' : isCompactLandscape ? 'h-10 px-2 text-[0.84rem]' : 'h-[var(--ld-control-height)] px-3 text-[0.84rem]'} flex-col font-semibold tracking-[0.18em] ${
                     isPadActive
                       ? 'border-[#43c477]/40 bg-[#43c477]/10 text-[#8af7b1]'
                       : 'text-[#43c477]'
                   }`}
-                  style={{ width: scaleRem(isCompactLandscape ? 5.15 : 5.8, 4.35) }}
+                  style={{ width: scaleRem(isUltraCompactLandscape ? 3.75 : isCompactLandscape ? 5.15 : 5.8, 3.1) }}
                   aria-label={isPadActive ? `Stop pad for ${songKey}` : `Play pad for ${songKey}`}
                 >
                   <span>PAD</span>
-                  <span className="mt-1 text-[0.66rem] tracking-[0.22em] text-white/46">
+                  <span className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.5rem]' : 'mt-1 text-[0.66rem]'} tracking-[0.22em] text-white/46`}>
                     {isPadActive ? 'ON' : (songKey || 'ARM')}
                   </span>
                 </button>
               )}
             </div>
 
-            <div className={`flex min-w-0 items-center justify-center ${isCompactLandscape ? 'gap-2 px-0.5' : 'gap-2.5 px-1'}`}>
+            <div className={`flex min-w-0 items-center justify-center ${isUltraCompactLandscape ? 'gap-1 px-0' : isCompactLandscape ? 'gap-2 px-0.5' : 'gap-2.5 px-1'}`}>
               <button
                 type="button"
                 onClick={() => {
                   void seekTo(Math.max(0, currentTime - 4));
                 }}
                 disabled={!hasTrackSession}
-                className={`${CONTROL_CARD} ${isCompactLandscape ? 'h-10 gap-1' : 'h-[var(--ld-control-height)] gap-2'} text-white/78 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
-                style={{ width: scaleRem(isCompactLandscape ? 5.55 : 6.1, 4.7) }}
+                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] gap-1' : isCompactLandscape ? 'h-10 gap-1' : 'h-[var(--ld-control-height)] gap-2'} text-white/78 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
+                style={{ width: scaleRem(isUltraCompactLandscape ? 4.15 : isCompactLandscape ? 5.55 : 6.1, 3.45) }}
                 aria-label="Rewind four seconds"
               >
-                <RotateCcw className={`${isCompactLandscape ? 'h-5 w-5' : 'h-6 w-6'}`} />
-                <span className={`${isCompactLandscape ? 'text-[0.92rem]' : 'text-[1.05rem]'} font-semibold`}>-4s</span>
+                <RotateCcw className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-5 w-5' : 'h-6 w-6'}`} />
+                <span className={`${isUltraCompactLandscape ? 'text-[0.72rem]' : isCompactLandscape ? 'text-[0.92rem]' : 'text-[1.05rem]'} font-semibold`}>-4s</span>
               </button>
 
               <button
@@ -1633,17 +1637,17 @@ export function LiveDirectorView({
                   void play();
                 }}
                 disabled={!isReady}
-                className={`${CONTROL_CARD} ${isCompactLandscape ? 'h-10 gap-1.5' : 'h-[var(--ld-control-height)] gap-3'} text-[#43c477] hover:text-[#4fe487] disabled:cursor-not-allowed disabled:text-white/24`}
-                style={{ width: scaleRem(isCompactLandscape ? 7.15 : 8, 5.9) }}
+                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] gap-1' : isCompactLandscape ? 'h-10 gap-1.5' : 'h-[var(--ld-control-height)] gap-3'} text-[#43c477] hover:text-[#4fe487] disabled:cursor-not-allowed disabled:text-white/24`}
+                style={{ width: scaleRem(isUltraCompactLandscape ? 5.2 : isCompactLandscape ? 7.15 : 8, 4.25) }}
                 aria-label="Play"
               >
-                <Play className={`ml-0.5 ${isCompactLandscape ? 'h-6 w-6' : 'h-8 w-8'}`} />
-                <span className={`${isCompactLandscape ? 'text-[0.95rem]' : 'text-[1.1rem]'} font-semibold tracking-[0.18em]`}>PLAY</span>
+                <Play className={`ml-0.5 ${isUltraCompactLandscape ? 'h-[1.125rem] w-[1.125rem]' : isCompactLandscape ? 'h-6 w-6' : 'h-8 w-8'}`} />
+                <span className={`${isUltraCompactLandscape ? 'text-[0.74rem]' : isCompactLandscape ? 'text-[0.95rem]' : 'text-[1.1rem]'} font-semibold tracking-[0.15em]`}>PLAY</span>
               </button>
 
               <div
-                className={`grid ${isCompactLandscape ? 'h-10 gap-1' : 'h-[var(--ld-control-height)] gap-2.5'} grid-cols-2`}
-                style={{ width: scaleRem(isCompactLandscape ? 6.9 : 7.6, 5.8) }}
+                className={`grid ${isUltraCompactLandscape ? 'h-[2.95rem] gap-1' : isCompactLandscape ? 'h-10 gap-1' : 'h-[var(--ld-control-height)] gap-2.5'} grid-cols-2`}
+                style={{ width: scaleRem(isUltraCompactLandscape ? 4.4 : isCompactLandscape ? 6.9 : 7.6, 3.65) }}
               >
                 <button
                   type="button"
@@ -1652,7 +1656,7 @@ export function LiveDirectorView({
                   className={`${CONTROL_CARD} h-full gap-2 text-white/74 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
                   aria-label="Pause"
                 >
-                    <Pause className={`${isCompactLandscape ? 'h-5 w-5' : 'h-7 w-7'}`} />
+                    <Pause className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-5 w-5' : 'h-7 w-7'}`} />
                 </button>
                 <button
                   type="button"
@@ -1661,17 +1665,17 @@ export function LiveDirectorView({
                   className={`${CONTROL_CARD} h-full gap-2 text-white/74 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
                   aria-label="Stop"
                 >
-                    <Square className={`${isCompactLandscape ? 'h-5 w-5' : 'h-6 w-6'}`} />
+                    <Square className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-5 w-5' : 'h-6 w-6'}`} />
                 </button>
               </div>
             </div>
 
-            <div className={`flex items-stretch justify-end ${isCompactLandscape ? 'gap-2' : 'gap-2.5'}`}>
+            <div className={`flex items-stretch justify-end ${isUltraCompactLandscape ? 'gap-1' : isCompactLandscape ? 'gap-2' : 'gap-2.5'}`}>
               <div
-                className={`flex ${isCompactLandscape ? 'h-10 rounded-[1rem] px-1 py-1' : 'h-[var(--ld-control-height)] rounded-[1.45rem] px-2 py-2'} items-center border border-white/8 bg-[linear-gradient(180deg,rgba(26,27,29,0.96),rgba(17,18,20,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_24px_40px_rgba(0,0,0,0.25)]`}
-                style={{ width: scaleRem(isCompactLandscape ? 13.4 : 14.75, 10.8) }}
+                className={`flex ${isUltraCompactLandscape ? 'h-[2.95rem] rounded-[0.85rem] px-1 py-0.5' : isCompactLandscape ? 'h-10 rounded-[1rem] px-1 py-1' : 'h-[var(--ld-control-height)] rounded-[1.45rem] px-2 py-2'} items-center border border-white/8 bg-[linear-gradient(180deg,rgba(26,27,29,0.96),rgba(17,18,20,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_24px_40px_rgba(0,0,0,0.25)]`}
+                style={{ width: scaleRem(isUltraCompactLandscape ? 9.4 : isCompactLandscape ? 13.4 : 14.75, 7.7) }}
               >
-                <div className="grid h-full w-full grid-cols-[3.1rem_3.1rem_1fr_1fr] gap-2">
+                <div className={`grid h-full w-full ${isUltraCompactLandscape ? 'grid-cols-[2rem_2rem_1fr_1fr] gap-1' : 'grid-cols-[3.1rem_3.1rem_1fr_1fr] gap-2'}`}>
                   <button
                     type="button"
                     onClick={() => handleLoopMarker('a')}
@@ -1683,8 +1687,8 @@ export function LiveDirectorView({
                     }`}
                     aria-label="Punto A, inicio del loop"
                   >
-                    <span className="block text-[0.62rem] font-black tracking-[0.22em]">A</span>
-                    <span className="mt-1 block text-[0.92rem] font-semibold tabular-nums">{formatCompact(loopPointA)}</span>
+                    <span className={`${isUltraCompactLandscape ? 'text-[0.42rem]' : 'text-[0.62rem]'} block font-black tracking-[0.2em]`}>A</span>
+                    <span className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.62rem]' : 'mt-1 text-[0.92rem]'} block font-semibold tabular-nums`}>{formatCompact(loopPointA)}</span>
                   </button>
                   <button
                     type="button"
@@ -1697,8 +1701,8 @@ export function LiveDirectorView({
                     }`}
                     aria-label="Punto B, final del loop"
                   >
-                    <span className="block text-[0.62rem] font-black tracking-[0.22em]">B</span>
-                    <span className="mt-1 block text-[0.92rem] font-semibold tabular-nums">{formatCompact(loopPointB)}</span>
+                    <span className={`${isUltraCompactLandscape ? 'text-[0.42rem]' : 'text-[0.62rem]'} block font-black tracking-[0.2em]`}>B</span>
+                    <span className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.62rem]' : 'mt-1 text-[0.92rem]'} block font-semibold tabular-nums`}>{formatCompact(loopPointB)}</span>
                   </button>
                   <button
                     type="button"
@@ -1711,8 +1715,8 @@ export function LiveDirectorView({
                     }`}
                     aria-label="Activar loop entre A y B"
                   >
-                    <Repeat className="h-5 w-5" />
-                    <span className="text-[0.84rem] font-semibold tracking-[0.16em]">IN</span>
+                    <Repeat className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : 'h-5 w-5'}`} />
+                    <span className={`${isUltraCompactLandscape ? 'text-[0.62rem]' : 'text-[0.84rem]'} font-semibold tracking-[0.14em]`}>IN</span>
                   </button>
                   <button
                     type="button"
@@ -1721,7 +1725,7 @@ export function LiveDirectorView({
                     className="ui-pressable-soft flex items-center justify-center gap-2 rounded-[1.05rem] border border-white/8 bg-black/20 text-white/72 transition-all hover:text-white disabled:cursor-not-allowed disabled:text-white/28"
                     aria-label="Salir del loop A-B"
                   >
-                    <span className="text-[0.84rem] font-semibold tracking-[0.16em]">OUT</span>
+                    <span className={`${isUltraCompactLandscape ? 'text-[0.62rem]' : 'text-[0.84rem]'} font-semibold tracking-[0.14em]`}>OUT</span>
                   </button>
                 </div>
               </div>
@@ -1729,23 +1733,23 @@ export function LiveDirectorView({
               <button
                 type="button"
                 onClick={() => setShowLoadPanel(true)}
-                className={`${CONTROL_CARD} ${isCompactLandscape ? 'h-10' : 'h-[var(--ld-control-height)]'} text-[1.02rem] font-semibold tracking-[0.18em] text-white/70 hover:text-white`}
-                style={{ width: scaleRem(isCompactLandscape ? 4.95 : 5.35, 4.2) }}
+                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem]' : isCompactLandscape ? 'h-10' : 'h-[var(--ld-control-height)]'} text-[1.02rem] font-semibold tracking-[0.18em] text-white/70 hover:text-white`}
+                style={{ width: scaleRem(isUltraCompactLandscape ? 3.55 : isCompactLandscape ? 4.95 : 5.35, 2.95) }}
                 title="Cargar o reemplazar la sesión multitrack"
                 aria-label="Cargar o reemplazar la sesión multitrack"
               >
                 <div className="flex flex-col items-center gap-1">
-                  <Upload className="h-5 w-5" />
-                  <span className="text-[0.88rem]">LOAD</span>
+                  <Upload className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : 'h-5 w-5'}`} />
+                  <span className={`${isUltraCompactLandscape ? 'text-[0.62rem]' : 'text-[0.88rem]'}`}>LOAD</span>
                 </div>
               </button>
             </div>
           </header>
         </div>
 
-        <section className={`min-h-[5rem] flex-1 overflow-y-auto ${isCompactLandscape ? 'pr-0.5' : ''}`}>
-          <div className={`overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.96),rgba(27,29,30,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'min-h-[5rem] px-2 py-1.5' : 'px-4 py-4'}`}>
-            <div className={`flex h-full items-stretch ${isCompactLandscape ? 'gap-2' : 'gap-4'}`}>
+        <section className={`shrink-0 overflow-hidden ${isUltraCompactLandscape ? 'pr-0 pb-0' : isCompactLandscape ? 'pr-0.5' : ''}`}>
+          <div className={`overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.96),rgba(27,29,30,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isUltraCompactLandscape ? 'px-1.5 py-1' : isCompactLandscape ? 'px-2 py-1.5' : 'px-4 py-4'}`}>
+            <div className={`flex h-full items-stretch ${isUltraCompactLandscape ? 'gap-1.5' : isCompactLandscape ? 'gap-2' : 'gap-4'}`}>
               <button
                 type="button"
                 onClick={() => {
@@ -1756,11 +1760,11 @@ export function LiveDirectorView({
 
                   setShowLoadPanel(true);
                 }}
-                className={`ui-pressable-card group flex shrink-0 flex-col overflow-hidden rounded-[1.35rem] border border-white/10 bg-[linear-gradient(180deg,rgba(35,37,39,0.98),rgba(24,26,28,0.98))] text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200 hover:border-white/20 ${isCompactLandscape ? 'p-1.5' : 'p-3'}`}
-                style={{ width: scaleRem(isCompactLandscape ? 13.4 : 15, 11.25) }}
+                className={`ui-pressable-card group flex shrink-0 flex-col overflow-hidden rounded-[1.35rem] border border-white/10 bg-[linear-gradient(180deg,rgba(35,37,39,0.98),rgba(24,26,28,0.98))] text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200 hover:border-white/20 ${isUltraCompactLandscape ? 'p-1' : isCompactLandscape ? 'p-1.5' : 'p-3'}`}
+                style={{ width: scaleRem(isUltraCompactLandscape ? 11.6 : isCompactLandscape ? 13.4 : 15, 9.8) }}
                 aria-label={hasTrackSession ? `Jump to start of ${currentSessionLabel}` : 'Open song loader'}
               >
-                <div className={`relative overflow-hidden rounded-[1rem] border border-white/10 bg-black/30 ${isCompactLandscape ? 'h-10' : 'h-[5.35rem]'}`}>
+                <div className={`relative overflow-hidden rounded-[1rem] border border-white/10 bg-black/30 ${isUltraCompactLandscape ? 'h-8' : isCompactLandscape ? 'h-10' : 'h-[5.35rem]'}`}>
                   {songCoverArtUrl ? (
                     <img
                       src={songCoverArtUrl}
@@ -1769,56 +1773,56 @@ export function LiveDirectorView({
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(129,221,245,0.16),_transparent_34%),linear-gradient(180deg,rgba(52,57,60,0.94),rgba(20,22,24,0.98))] text-white/52">
-                      <ListMusic className={isCompactLandscape ? 'h-5 w-5' : 'h-8 w-8'} />
+                      <ListMusic className={isUltraCompactLandscape ? 'h-4 w-4' : isCompactLandscape ? 'h-5 w-5' : 'h-8 w-8'} />
                     </div>
                   )}
                   <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_35%,rgba(0,0,0,0.22)_100%)]" />
                 </div>
 
-                <div className={`flex items-center ${isCompactLandscape ? 'mt-1 gap-1.5' : 'mt-3 gap-3'}`}>
+                <div className={`flex items-center ${isUltraCompactLandscape ? 'mt-1 gap-1' : isCompactLandscape ? 'mt-1 gap-1.5' : 'mt-3 gap-3'}`}>
                   <div
                     className={`flex shrink-0 items-center justify-center rounded-full border transition-all ${
-                      isCompactLandscape ? 'h-6 w-6' : 'h-10 w-10'
+                      isUltraCompactLandscape ? 'h-5 w-5' : isCompactLandscape ? 'h-6 w-6' : 'h-10 w-10'
                     } ${
                       isPlaying
                         ? 'border-[#43c477]/65 bg-[#43c477]/12 text-[#63e88f] shadow-[0_0_18px_rgba(67,196,119,0.2)]'
                         : 'border-white/10 bg-black/28 text-white/72'
                     }`}
                   >
-                    {isPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="ml-0.5 h-3.5 w-3.5" />}
+                    {isPlaying ? <Pause className={`${isUltraCompactLandscape ? 'h-3 w-3' : 'h-3.5 w-3.5'}`} /> : <Play className={`ml-0.5 ${isUltraCompactLandscape ? 'h-3 w-3' : 'h-3.5 w-3.5'}`} />}
                   </div>
                   <div className="min-w-0">
-                    <h2 className={`truncate font-semibold tracking-tight text-white ${isCompactLandscape ? 'text-sm' : 'text-[1.2rem]'}`}>
+                    <h2 className={`truncate font-semibold tracking-tight text-white ${isUltraCompactLandscape ? 'text-[0.82rem]' : isCompactLandscape ? 'text-sm' : 'text-[1.2rem]'}`}>
                       {songCardTitle}
                     </h2>
-                    <p className={`truncate text-white/56 ${isCompactLandscape ? 'text-[0.65rem]' : 'mt-0.5 text-[0.72rem]'}`}>{songCardMeta}</p>
+                    <p className={`truncate text-white/56 ${isUltraCompactLandscape ? 'text-[0.56rem]' : isCompactLandscape ? 'text-[0.65rem]' : 'mt-0.5 text-[0.72rem]'}`}>{songCardMeta}</p>
                   </div>
                 </div>
               </button>
 
-              <div className={`min-w-0 flex-1 rounded-[1.5rem] border border-white/8 bg-black/16 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-3 py-2' : 'px-5 py-4'}`}>
-                <div className={`flex h-full flex-col justify-between ${isCompactLandscape ? 'gap-2' : 'gap-4'}`}>
-                  <div className={`flex ${isCompactLandscape ? 'items-center gap-3' : 'items-start justify-between gap-4'}`}>
+              <div className={`min-w-0 flex-1 rounded-[1.5rem] border border-white/8 bg-black/16 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isUltraCompactLandscape ? 'px-2 py-1.5' : isCompactLandscape ? 'px-3 py-2' : 'px-5 py-4'}`}>
+                <div className={`flex h-full flex-col justify-between ${isUltraCompactLandscape ? 'gap-1.5' : isCompactLandscape ? 'gap-2' : 'gap-4'}`}>
+                  <div className={`flex ${isUltraCompactLandscape ? 'items-center gap-2' : isCompactLandscape ? 'items-center gap-3' : 'items-start justify-between gap-4'}`}>
                     <div className="min-w-0">
-                      <p className="text-[0.7rem] font-black uppercase tracking-[0.28em] text-white/34">
+                      <p className={`${isUltraCompactLandscape ? 'text-[0.52rem]' : 'text-[0.7rem]'} font-black uppercase tracking-[0.24em] text-white/34`}>
                         {performerLabel ? `Live Director · ${performerLabel}` : 'Live Director'}
                       </p>
-                      <h1 className={`truncate font-semibold tracking-tight text-white ${isCompactLandscape ? 'mt-1 text-sm' : 'mt-2 text-[1.35rem]'}`}>
+                      <h1 className={`truncate font-semibold tracking-tight text-white ${isUltraCompactLandscape ? 'mt-0.5 text-[0.92rem]' : isCompactLandscape ? 'mt-1 text-sm' : 'mt-2 text-[1.35rem]'}`}>
                         {currentSessionLabel}
                       </h1>
-                      <p className={`text-white/54 ${isCompactLandscape ? 'mt-0.5 text-[0.68rem]' : 'mt-1 text-[0.92rem]'}`}>{songSupportMeta}</p>
+                      <p className={`text-white/54 ${isUltraCompactLandscape ? 'mt-0.5 text-[0.58rem]' : isCompactLandscape ? 'mt-0.5 text-[0.68rem]' : 'mt-1 text-[0.92rem]'}`}>{songSupportMeta}</p>
                     </div>
 
-                    <div className={`flex shrink-0 ${isCompactLandscape ? 'items-center gap-1.5' : 'items-start gap-2'}`}>
-                      <div className={`rounded-full border border-white/8 bg-black/18 ${isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'}`}>
-                        <p className="text-[0.68rem] font-black uppercase tracking-[0.22em] text-white/46">
+                    <div className={`flex shrink-0 ${isUltraCompactLandscape ? 'items-center gap-1' : isCompactLandscape ? 'items-center gap-1.5' : 'items-start gap-2'}`}>
+                      <div className={`rounded-full border border-white/8 bg-black/18 ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'}`}>
+                        <p className={`${isUltraCompactLandscape ? 'text-[0.5rem]' : 'text-[0.68rem]'} font-black uppercase tracking-[0.18em] text-white/46`}>
                           {surfaceBadgeLabel}
                         </p>
                       </div>
                       <button
                         type="button"
                         onClick={handleEngineToggle}
-                        className={`ui-pressable-soft rounded-full border ${isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'} text-left transition-all ${
+                        className={`ui-pressable-soft rounded-full border ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'} text-left transition-all ${
                           useStreamingEngine
                             ? 'border-cyan-300/34 bg-cyan-300/10 text-cyan-50 shadow-[0_0_18px_rgba(129,221,245,0.14)]'
                             : 'border-white/8 bg-black/18 text-white/76 hover:text-white'
@@ -1826,15 +1830,15 @@ export function LiveDirectorView({
                         aria-label={`Switch engine. Current engine: ${currentEngineLabel}`}
                         title={`Motor activo: ${currentEngineLabel}. Pulsa para cambiar.`}
                       >
-                        <p className="text-[0.6rem] font-black uppercase tracking-[0.22em] text-white/38">
+                        <p className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : 'text-[0.6rem]'} font-black uppercase tracking-[0.18em] text-white/38`}>
                           Engine
                         </p>
-                        <p className={`${isCompactLandscape ? 'mt-0.5 text-[0.74rem]' : 'mt-1 text-[0.92rem]'} font-semibold text-inherit`}>{currentEngineLabel}</p>
+                        <p className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.62rem]' : isCompactLandscape ? 'mt-0.5 text-[0.74rem]' : 'mt-1 text-[0.92rem]'} font-semibold text-inherit`}>{currentEngineLabel}</p>
                       </button>
                       <button
                         type="button"
                         onClick={() => setShowDiagnostics((previous) => !previous)}
-                        className={`ui-pressable-soft rounded-full border ${isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'} text-left transition-all ${
+                        className={`ui-pressable-soft rounded-full border ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'} text-left transition-all ${
                           showDiagnostics
                             ? 'border-cyan-300/34 bg-cyan-300/10 text-cyan-50 shadow-[0_0_18px_rgba(129,221,245,0.14)]'
                             : 'border-white/8 bg-black/18 text-white/72 hover:text-white'
@@ -1842,31 +1846,31 @@ export function LiveDirectorView({
                         aria-label={`${showDiagnostics ? 'Hide' : 'Show'} memory diagnostics`}
                         title="Mostrar u ocultar diagnostico de memoria y carga"
                       >
-                        <p className="text-[0.6rem] font-black uppercase tracking-[0.22em] text-white/38">
+                        <p className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : 'text-[0.6rem]'} font-black uppercase tracking-[0.18em] text-white/38`}>
                           RAM
                         </p>
-                        <p className={`${isCompactLandscape ? 'mt-0.5 text-[0.74rem]' : 'mt-1 text-[0.92rem]'} font-semibold text-inherit`}>
+                        <p className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.62rem]' : isCompactLandscape ? 'mt-0.5 text-[0.74rem]' : 'mt-1 text-[0.92rem]'} font-semibold text-inherit`}>
                           {showDiagnostics ? 'On' : 'Off'}
                         </p>
                       </button>
-                      <div className={`rounded-[1.1rem] border border-white/8 bg-black/18 text-right ${isCompactLandscape ? 'px-2 py-1.5' : 'px-3 py-2'}`}>
-                        <p className="text-[0.62rem] font-black uppercase tracking-[0.24em] text-white/36">
+                      <div className={`rounded-[1.1rem] border border-white/8 bg-black/18 text-right ${isUltraCompactLandscape ? 'px-1.5 py-1' : isCompactLandscape ? 'px-2 py-1.5' : 'px-3 py-2'}`}>
+                        <p className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : 'text-[0.62rem]'} font-black uppercase tracking-[0.2em] text-white/36`}>
                           Ready
                         </p>
-                        <p className={`${isCompactLandscape ? 'mt-0.5 text-[0.78rem]' : 'mt-1 text-[0.98rem]'} font-semibold ${isReady ? 'text-[#43c477]' : 'text-white/58'}`}>
+                        <p className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.66rem]' : isCompactLandscape ? 'mt-0.5 text-[0.78rem]' : 'mt-1 text-[0.98rem]'} font-semibold ${isReady ? 'text-[#43c477]' : 'text-white/58'}`}>
                           {readyStateLabel}
                         </p>
                       </div>
                     </div>
                   </div>
 
-                  <div className={`flex ${isCompactLandscape ? 'items-center gap-2' : 'items-end gap-4'}`}>
+                  <div className={`flex ${isUltraCompactLandscape ? 'items-center gap-1.5' : isCompactLandscape ? 'items-center gap-2' : 'items-end gap-4'}`}>
                     <div className="min-w-0 flex-1">
-                      <div className={`flex items-center justify-between text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-white/46 ${isCompactLandscape ? 'mb-1' : 'mb-2'}`}>
+                      <div className={`flex items-center justify-between font-semibold uppercase tracking-[0.18em] text-white/46 ${isUltraCompactLandscape ? 'mb-0.5 text-[0.56rem]' : isCompactLandscape ? 'mb-1 text-[0.72rem]' : 'mb-2 text-[0.72rem]'}`}>
                         <span>{hasTrackSession ? `${activeTracks.length} tracks` : 'No session'}</span>
                         <span>{formatCompact(currentTime)} / {formatCompact(totalDuration)}</span>
                       </div>
-                      <div className={`${isCompactLandscape ? 'h-1.5' : 'h-2.5'} rounded-full bg-black/30`}>
+                      <div className={`${isUltraCompactLandscape ? 'h-1' : isCompactLandscape ? 'h-1.5' : 'h-2.5'} rounded-full bg-black/30`}>
                         <div
                           className="h-full rounded-full bg-[linear-gradient(90deg,#43c477_0%,#81ddf5_100%)] shadow-[0_0_14px_rgba(67,196,119,0.16)] transition-[width] duration-200"
                           style={{ width: `${Math.max(hasTrackSession ? progressPercent : 0, hasTrackSession ? 4 : 0)}%` }}
@@ -1888,11 +1892,11 @@ export function LiveDirectorView({
                         </div>
                       )}
                     </div>
-                    <div className={`grid grid-cols-2 ${isCompactLandscape ? 'gap-1.5' : 'gap-2'}`}>
+                    <div className={`grid grid-cols-2 ${isUltraCompactLandscape ? 'gap-1' : isCompactLandscape ? 'gap-1.5' : 'gap-2'}`}>
                       <button
                         type="button"
                         onClick={() => setSurfaceView('mix')}
-                        className={`ui-pressable-soft min-w-[5.5rem] rounded-[1rem] border ${isCompactLandscape ? 'px-2 py-1.5 text-[0.64rem]' : 'px-3 py-2 text-[0.7rem]'} font-black uppercase tracking-[0.18em] transition-all ${
+                        className={`ui-pressable-soft min-w-[5.5rem] rounded-[1rem] border ${isUltraCompactLandscape ? 'px-1.5 py-1 text-[0.56rem]' : isCompactLandscape ? 'px-2 py-1.5 text-[0.64rem]' : 'px-3 py-2 text-[0.7rem]'} font-black uppercase tracking-[0.18em] transition-all ${
                           surfaceView === 'mix'
                             ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50'
                             : 'border-white/8 bg-black/18 text-white/58'
@@ -1903,7 +1907,7 @@ export function LiveDirectorView({
                       <button
                         type="button"
                         onClick={() => setSurfaceView('sections')}
-                        className={`ui-pressable-soft min-w-[5.5rem] rounded-[1rem] border ${isCompactLandscape ? 'px-2 py-1.5 text-[0.64rem]' : 'px-3 py-2 text-[0.7rem]'} font-black uppercase tracking-[0.18em] transition-all ${
+                        className={`ui-pressable-soft min-w-[5.5rem] rounded-[1rem] border ${isUltraCompactLandscape ? 'px-1.5 py-1 text-[0.56rem]' : isCompactLandscape ? 'px-2 py-1.5 text-[0.64rem]' : 'px-3 py-2 text-[0.7rem]'} font-black uppercase tracking-[0.18em] transition-all ${
                           surfaceView === 'sections'
                             ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50'
                             : 'border-white/8 bg-black/18 text-white/58'
@@ -1919,7 +1923,7 @@ export function LiveDirectorView({
           </div>
         </section>
         <section
-          className={`grid shrink-0 min-h-0 ${isCompactLandscape ? 'max-h-[58dvh] gap-1.5' : 'gap-4'}`}
+          className={`grid min-h-0 flex-1 ${isUltraCompactLandscape ? 'gap-0.5' : isCompactLandscape ? 'gap-1.5' : 'gap-4'}`}
           style={{ gridTemplateColumns: `minmax(0,1fr) ${mixerLayoutColumns}` }}
         >
           {showSectionsPanel ? (
