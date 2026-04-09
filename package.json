@@ -25,6 +25,7 @@
     "driver.js": "^1.4.0",
     "framer-motion": "^12.35.0",
     "lucide-react": "^0.577.0",
+    "mp4box": "^2.3.0",
     "papaparse": "^5.5.3",
     "pg": "^8.19.0",
     "puppeteer": "^24.40.0",

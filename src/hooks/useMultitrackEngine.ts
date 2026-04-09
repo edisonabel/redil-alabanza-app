@@ -1,14 +1,23 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MultitrackEngine, type TrackData } from '../services/MultitrackEngine';
+import { StreamingMultitrackEngine } from '../services/StreamingMultitrackEngine';
 
 type TrackVolumesState = Record<string, number>;
+type TrackLevelsState = Record<string, number>;
 const UI_UPDATE_INTERVAL_MS = 1000 / 24;
+type EngineKind = 'buffer' | 'streaming';
+type EngineInstance = MultitrackEngine | StreamingMultitrackEngine;
+
+type UseMultitrackEngineOptions = {
+  useStreamingEngine?: boolean;
+};
 
 type UseMultitrackEngineReturn = {
   isPlaying: boolean;
   currentTime: number;
   isReady: boolean;
   trackVolumes: TrackVolumesState;
+  trackLevels: TrackLevelsState;
   initialize: (tracks: TrackData[]) => Promise<void>;
   play: () => Promise<void>;
   pause: () => void;
@@ -37,18 +46,61 @@ const buildTrackVolumes = (tracks: TrackData[]): TrackVolumesState => {
   }, {});
 };
 
-export function useMultitrackEngine(): UseMultitrackEngineReturn {
-  const engineRef = useRef<MultitrackEngine | null>(null);
+const buildTrackLevels = (tracks: TrackData[]): TrackLevelsState => {
+  return tracks.reduce<TrackLevelsState>((levels, track) => {
+    levels[track.id] = 0;
+    return levels;
+  }, {});
+};
+
+const cloneTracks = (tracks: TrackData[]): TrackData[] => (
+  tracks.map((track) => ({
+    id: track.id,
+    name: track.name,
+    url: track.url,
+    volume: clampVolume(track.volume),
+    isMuted: Boolean(track.isMuted),
+    sourceFileName: track.sourceFileName,
+  }))
+);
+
+export function useMultitrackEngine(
+  options: UseMultitrackEngineOptions = {},
+): UseMultitrackEngineReturn {
+  const requestedEngineKind: EngineKind = options.useStreamingEngine ? 'streaming' : 'buffer';
+  const engineRef = useRef<EngineInstance | null>(null);
+  const engineKindRef = useRef<EngineKind>(requestedEngineKind);
   const frameRef = useRef<number | null>(null);
   const currentTimeRef = useRef(0);
+  const trackLevelsRef = useRef<TrackLevelsState>({});
   const lastUiUpdateRef = useRef(0);
+  const initializationTokenRef = useRef(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [isReady, setIsReady] = useState(false);
   const [trackVolumes, setTrackVolumes] = useState<TrackVolumesState>({});
+  const [trackLevels, setTrackLevels] = useState<TrackLevelsState>({});
+
+  const teardownEngine = useCallback((engine: EngineInstance | null) => {
+    if (!engine) {
+      return;
+    }
+
+    try {
+      engine.onEnded = null;
+    } catch {
+      // no-op
+    }
+
+    try {
+      engine.dispose();
+    } catch {
+      // no-op
+    }
+  }, []);
 
   const getEngine = useCallback(() => {
-    if (engineRef.current) {
+    if (engineRef.current && engineKindRef.current === requestedEngineKind) {
       return engineRef.current;
     }
 
@@ -56,9 +108,21 @@ export function useMultitrackEngine(): UseMultitrackEngineReturn {
       throw new Error('useMultitrackEngine requires a browser environment.');
     }
 
-    engineRef.current = new MultitrackEngine();
+    teardownEngine(engineRef.current);
+    engineKindRef.current = requestedEngineKind;
+    engineRef.current =
+      requestedEngineKind === 'streaming'
+        ? new StreamingMultitrackEngine()
+        : new MultitrackEngine();
+    engineRef.current.onEnded = () => {
+      setIsPlaying(false);
+      currentTimeRef.current = 0;
+      setCurrentTime(0);
+      trackLevelsRef.current = buildTrackLevels(engineRef.current?.getTracks() || []);
+      setTrackLevels(trackLevelsRef.current);
+    };
     return engineRef.current;
-  }, []);
+  }, [requestedEngineKind, teardownEngine]);
 
   const commitCurrentTime = useCallback((nextTime: number) => {
     currentTimeRef.current = nextTime;
@@ -67,21 +131,71 @@ export function useMultitrackEngine(): UseMultitrackEngineReturn {
     });
   }, []);
 
+  const commitTrackLevels = useCallback((nextLevels: TrackLevelsState) => {
+    const nextKeys = Object.keys(nextLevels);
+    const previousLevels = trackLevelsRef.current;
+    const previousKeys = Object.keys(previousLevels);
+
+    let hasMeaningfulChange = nextKeys.length !== previousKeys.length;
+
+    if (!hasMeaningfulChange) {
+      for (let index = 0; index < nextKeys.length; index += 1) {
+        const key = nextKeys[index];
+        if (Math.abs((previousLevels[key] ?? 0) - (nextLevels[key] ?? 0)) >= 0.018) {
+          hasMeaningfulChange = true;
+          break;
+        }
+      }
+    }
+
+    if (!hasMeaningfulChange) {
+      return;
+    }
+
+    const nextSnapshot: TrackLevelsState = {};
+
+    for (let index = 0; index < nextKeys.length; index += 1) {
+      const key = nextKeys[index];
+      const value = nextLevels[key];
+      nextSnapshot[key] = Number.isFinite(value) && value > 0 ? Math.min(1, value) : 0;
+    }
+
+    trackLevelsRef.current = nextSnapshot;
+    startTransition(() => {
+      setTrackLevels(nextSnapshot);
+    });
+  }, []);
+
   const initialize = useCallback(async (tracks: TrackData[]) => {
+    const initializationToken = ++initializationTokenRef.current;
+    const nextTracks = cloneTracks(tracks);
     const engine = getEngine();
 
     setIsReady(false);
-    engine.stop();
     setIsPlaying(false);
     currentTimeRef.current = 0;
     setCurrentTime(0);
+    trackLevelsRef.current = {};
+    setTrackLevels({});
 
     try {
-      const loadedTracks = await engine.loadTracks(tracks);
+      const loadedTracks = await engine.loadTracks(nextTracks);
+      if (initializationToken !== initializationTokenRef.current || engine !== engineRef.current) {
+        return;
+      }
+
       setTrackVolumes(buildTrackVolumes(loadedTracks));
+      trackLevelsRef.current = buildTrackLevels(loadedTracks);
+      setTrackLevels(trackLevelsRef.current);
       setIsReady(true);
     } catch (error) {
+      if (initializationToken !== initializationTokenRef.current || engine !== engineRef.current) {
+        return;
+      }
+
       setIsReady(false);
+      trackLevelsRef.current = {};
+      setTrackLevels({});
       throw error;
     }
   }, [getEngine]);
@@ -91,29 +205,48 @@ export function useMultitrackEngine(): UseMultitrackEngineReturn {
       return;
     }
 
-    const engine = getEngine();
+    const engine = engineRef.current;
+    if (!engine) {
+      return;
+    }
+
     await engine.play();
     setIsPlaying(engine.getIsPlaying());
     commitCurrentTime(engine.getCurrentTime());
-  }, [commitCurrentTime, getEngine, isReady]);
+    commitTrackLevels(engine.getTrackMeterLevels());
+  }, [commitCurrentTime, commitTrackLevels, isReady]);
 
   const pause = useCallback(() => {
-    const engine = getEngine();
+    const engine = engineRef.current;
+    if (!engine) {
+      return;
+    }
+
     engine.pause();
     setIsPlaying(false);
     commitCurrentTime(engine.getCurrentTime());
-  }, [commitCurrentTime, getEngine]);
+    commitTrackLevels(buildTrackLevels(engine.getTracks()));
+  }, [commitCurrentTime, commitTrackLevels]);
 
   const stop = useCallback(() => {
-    const engine = getEngine();
+    const engine = engineRef.current;
+    if (!engine) {
+      return;
+    }
+
     engine.stop();
     setIsPlaying(false);
     currentTimeRef.current = 0;
     setCurrentTime(0);
-  }, [getEngine]);
+    commitTrackLevels(buildTrackLevels(engine.getTracks()));
+  }, [commitTrackLevels]);
 
   const setVolume = useCallback((trackId: string, volume: number) => {
-    const engine = getEngine();
+    const engine = engineRef.current;
+    if (!engine) {
+      return;
+    }
+
     const safeVolume = clampVolume(volume);
 
     engine.setTrackVolume(trackId, safeVolume);
@@ -121,59 +254,96 @@ export function useMultitrackEngine(): UseMultitrackEngineReturn {
       ...previousVolumes,
       [trackId]: safeVolume,
     }));
-  }, [getEngine]);
+  }, []);
 
   const toggleMute = useCallback((trackId: string) => {
-    const engine = getEngine();
+    const engine = engineRef.current;
+    if (!engine) {
+      return;
+    }
+
     engine.toggleTrackMute(trackId);
-  }, [getEngine]);
+  }, []);
 
   const setMasterVolume = useCallback((volume: number) => {
-    const engine = getEngine();
+    const engine = engineRef.current;
+    if (!engine) {
+      return;
+    }
+
     engine.setMasterVolume(volume);
-  }, [getEngine]);
+  }, []);
 
   const toggleLoop = useCallback(() => {
-    const engine = getEngine();
+    const engine = engineRef.current;
+    if (!engine) {
+      return;
+    }
+
     engine.toggleLoop();
-  }, [getEngine]);
+  }, []);
 
   const setLoopPoints = useCallback((startInSeconds: number, endInSeconds: number) => {
-    const engine = getEngine();
+    const engine = engineRef.current;
+    if (!engine) {
+      return;
+    }
+
     engine.setLoopPoints(startInSeconds, endInSeconds);
-  }, [getEngine]);
+  }, []);
 
   const seekTo = useCallback(async (timeInSeconds: number) => {
-    const engine = getEngine();
+    const engine = engineRef.current;
+    if (!engine) {
+      return;
+    }
+
     await engine.seekTo(timeInSeconds);
     commitCurrentTime(engine.getCurrentTime());
     setIsPlaying(engine.getIsPlaying());
-  }, [commitCurrentTime, getEngine]);
+    commitTrackLevels(engine.getTrackMeterLevels());
+  }, [commitCurrentTime, commitTrackLevels]);
 
   const soloTrack = useCallback((trackId: string) => {
-    const engine = getEngine();
+    const engine = engineRef.current;
+    if (!engine) {
+      return;
+    }
+
     engine.soloTrack(trackId);
-  }, [getEngine]);
+  }, []);
 
   useEffect(() => {
-    const engine = getEngine();
-
-    engine.onEnded = () => {
-      setIsPlaying(false);
-      currentTimeRef.current = 0;
-      setCurrentTime(0);
-    };
-
     return () => {
       if (frameRef.current !== null) {
         window.cancelAnimationFrame(frameRef.current);
         frameRef.current = null;
       }
 
-      engine.onEnded = null;
-      engine.stop();
+      teardownEngine(engineRef.current);
+      engineRef.current = null;
     };
-  }, [getEngine]);
+  }, [teardownEngine]);
+
+  useEffect(() => {
+    initializationTokenRef.current += 1;
+
+    if (frameRef.current !== null) {
+      window.cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+
+    teardownEngine(engineRef.current);
+    engineRef.current = null;
+    engineKindRef.current = requestedEngineKind;
+    setIsReady(false);
+    setIsPlaying(false);
+    currentTimeRef.current = 0;
+    setCurrentTime(0);
+    trackLevelsRef.current = {};
+    setTrackLevels({});
+    lastUiUpdateRef.current = 0;
+  }, [requestedEngineKind, teardownEngine]);
 
   useEffect(() => {
     if (!isPlaying) {
@@ -198,12 +368,13 @@ export function useMultitrackEngine(): UseMultitrackEngineReturn {
       }
 
       const nextTime = engine.getCurrentTime();
-      if (
-        frameTime - lastUiUpdateRef.current >= UI_UPDATE_INTERVAL_MS &&
-        Math.abs(nextTime - currentTimeRef.current) >= 0.01
-      ) {
+      if (frameTime - lastUiUpdateRef.current >= UI_UPDATE_INTERVAL_MS) {
         lastUiUpdateRef.current = frameTime;
-        commitCurrentTime(nextTime);
+        if (Math.abs(nextTime - currentTimeRef.current) >= 0.01) {
+          commitCurrentTime(nextTime);
+        }
+
+        commitTrackLevels(engine.getTrackMeterLevels());
       }
 
       frameRef.current = window.requestAnimationFrame(updateCurrentTime);
@@ -218,7 +389,7 @@ export function useMultitrackEngine(): UseMultitrackEngineReturn {
         frameRef.current = null;
       }
     };
-  }, [commitCurrentTime, isPlaying]);
+  }, [commitCurrentTime, commitTrackLevels, isPlaying]);
 
   return useMemo(
     () => ({
@@ -226,6 +397,7 @@ export function useMultitrackEngine(): UseMultitrackEngineReturn {
       currentTime,
       isReady,
       trackVolumes,
+      trackLevels,
       initialize,
       play,
       pause,
@@ -253,6 +425,7 @@ export function useMultitrackEngine(): UseMultitrackEngineReturn {
       stop,
       toggleLoop,
       toggleMute,
+      trackLevels,
       trackVolumes,
     ],
   );

@@ -4,7 +4,6 @@
   ListMusic,
   Pause,
   Play,
-  Plus,
   Repeat,
   RotateCcw,
   SlidersVertical,
@@ -52,6 +51,13 @@ type SectionVisual = SongStructure & {
   border: string;
 };
 
+type SectionLaneSegment = {
+  section: LiveDirectorSectionVisual;
+  waveBars: number[];
+  widthPx: number;
+  leftPx: number;
+};
+
 type SurfaceView = 'mix' | 'sections';
 
 type LiveDirectorViewProps = {
@@ -75,6 +81,7 @@ type ChannelStripProps = {
   shortLabel: string;
   accent: string;
   volume: number;
+  level: number;
   muted: boolean;
   soloed: boolean;
   dimmed: boolean;
@@ -86,6 +93,7 @@ type ChannelStripProps = {
 
 type MixerTrackView = MixerTrackMeta & {
   volume: number;
+  level: number;
   muted: boolean;
   soloed: boolean;
   dimmed: boolean;
@@ -112,15 +120,16 @@ const DEFAULT_SECTIONS: SectionVisual[] = [
   { id: 'tag', name: 'Tag', shortLabel: 'T', startTime: 20, endTime: 24, accent: '#68d2f2', surface: 'rgba(30, 37, 43, 0.92)', border: 'rgba(104, 210, 242, 0.22)' },
 ];
 
+const SECTION_LANE_PIXELS_PER_SECOND = 20;
+const SECTION_LANE_MIN_WIDTH_PX = 118;
+const SECTION_LANE_GAP_PX = 14;
+const SECTION_LANE_PLAYHEAD_OFFSET_PX = 92;
+
 const CONTROL_CARD =
   'ui-pressable-soft flex items-center justify-center rounded-[1.55rem] border border-white/8 bg-[linear-gradient(180deg,rgba(26,27,29,0.96),rgba(17,18,20,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_24px_40px_rgba(0,0,0,0.25)] transition-all duration-200';
 
 const GENERIC_TRACK_ACCENTS = ['#81ddf5', '#7ed8e7', '#9f7cff', '#43c477', '#c98bff', '#73d1f8'];
 const TRACK_META_BY_ID = new Map(MIXER_TRACKS.map((track) => [track.id, track]));
-const CURRENT_SONG_BACKGROUND =
-  'radial-gradient(circle at 16% 18%, rgba(255,255,255,0.16), transparent 30%), linear-gradient(126deg, #3b463f 0%, #202526 38%, #14181a 100%)';
-const NEXT_SLOT_BACKGROUND =
-  'linear-gradient(140deg, rgba(93,214,240,0.12), transparent 38%), linear-gradient(180deg, rgba(33,35,37,0.96), rgba(21,22,24,0.98))';
 const coverArtCache = new Map<string, string | null>();
 
 const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value));
@@ -327,16 +336,21 @@ const toResolvedSession = (
 
 function FaderThumb({
   accent,
+  level = 0,
   muted = false,
   className = '',
   style,
 }: {
   accent: string;
+  level?: number;
   muted?: boolean;
   className?: string;
   style?: CSSProperties;
 }) {
   const highlightColor = muted ? 'rgba(161, 169, 181, 0.62)' : accent;
+  const lineOpacity = muted ? 0.34 : 0.36 + level * 0.64;
+  const lineScale = 0.78 + level * 0.34;
+  const lineGlow = muted ? '0 0 0 transparent' : `0 0 ${12 + level * 14}px currentColor`;
 
   return (
     <div
@@ -349,10 +363,13 @@ function FaderThumb({
       <div className="absolute right-3 top-3 bottom-3 w-px rounded-full bg-white/10" />
       <div className="absolute inset-2 rounded-[0.82rem] border border-white/4 bg-[repeating-linear-gradient(180deg,rgba(255,255,255,0.045)_0px,rgba(255,255,255,0.045)_2px,transparent_2px,transparent_5px)]" />
       <div
-        className="absolute inset-x-3 top-1/2 h-[2px] -translate-y-1/2 rounded-full shadow-[0_0_14px_currentColor]"
+        className="absolute inset-x-3 top-1/2 h-[2px] -translate-y-1/2 rounded-full transition-[opacity,transform,box-shadow] duration-100"
         style={{
           backgroundColor: highlightColor,
           color: highlightColor,
+          opacity: lineOpacity,
+          transform: `translateY(-50%) scaleX(${lineScale})`,
+          boxShadow: lineGlow,
         }}
       />
     </div>
@@ -365,6 +382,7 @@ const ChannelStrip = memo(function ChannelStrip({
   shortLabel,
   accent,
   volume,
+  level,
   muted,
   soloed,
   dimmed,
@@ -375,14 +393,16 @@ const ChannelStrip = memo(function ChannelStrip({
 }: ChannelStripProps) {
   const levelBottom = `${10 + volume * 78}%`;
   const knobGlow = muted ? 'rgba(120, 128, 140, 0.15)' : `${accent}30`;
+  const meterHeightPercent = Math.max(0, level * 82);
+  const meterOpacity = muted ? 0.18 : 0.24 + level * 0.76;
 
   return (
     <div
-      className={`relative flex h-full min-w-0 flex-col items-center rounded-[1.75rem] border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] px-2.5 pb-4 pt-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] transition-all duration-200 ${
+      className={`relative flex h-full min-w-0 flex-col items-center rounded-[1.75rem] border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] px-3.5 pb-4 pt-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] transition-all duration-200 ${
         dimmed ? 'opacity-45' : 'opacity-100'
       }`}
     >
-      <div className="mb-2 flex w-full items-center justify-between gap-1">
+      <div className="mb-2 flex w-full items-center justify-between gap-2">
         <button
           type="button"
           onClick={onSolo}
@@ -412,7 +432,7 @@ const ChannelStrip = memo(function ChannelStrip({
       </div>
 
       <div className="relative flex w-full flex-1 items-center justify-center">
-        <div className="relative h-full w-full max-w-[5.6rem]">
+        <div className="relative h-full w-full max-w-[7.6rem]">
           <div className="absolute left-1/2 top-[4.5%] bottom-[6.5%] w-[0.72rem] -translate-x-1/2 rounded-full bg-[#040506] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]" />
           {Array.from({ length: 8 }).map((_, index) => (
             <div
@@ -422,17 +442,19 @@ const ChannelStrip = memo(function ChannelStrip({
             />
           ))}
           <div
-            className="absolute left-1/2 bottom-[10%] w-[0.32rem] -translate-x-1/2 rounded-full shadow-[0_0_14px_rgba(103,210,242,0.16)] transition-[height,opacity] duration-150"
+            className="absolute left-1/2 bottom-[10%] w-[0.32rem] -translate-x-1/2 rounded-full shadow-[0_0_14px_rgba(103,210,242,0.16)] transition-[height,opacity,box-shadow] duration-100"
             style={{
-              height: `${Math.max(8, volume * 78)}%`,
+              height: `${meterHeightPercent}%`,
               backgroundColor: muted ? 'rgba(136, 144, 158, 0.42)' : accent,
-              opacity: muted ? 0.22 : 0.92,
+              opacity: meterOpacity,
+              boxShadow: muted ? '0 0 0 transparent' : `0 0 ${10 + level * 18}px ${accent}38`,
             }}
           />
           <FaderThumb
             accent={accent}
+            level={level}
             muted={muted}
-            className="h-[4.35rem] w-full max-w-[5.95rem] transition-[bottom,box-shadow,opacity,transform] duration-150"
+            className="h-[4.35rem] w-full max-w-[7.9rem] transition-[bottom,box-shadow,opacity,transform] duration-150"
             style={{
               bottom: `calc(${levelBottom} - 1.75rem)`,
               boxShadow: muted
@@ -468,6 +490,7 @@ const ChannelStrip = memo(function ChannelStrip({
   previousProps.shortLabel === nextProps.shortLabel &&
   previousProps.accent === nextProps.accent &&
   previousProps.volume === nextProps.volume &&
+  previousProps.level === nextProps.level &&
   previousProps.muted === nextProps.muted &&
   previousProps.soloed === nextProps.soloed &&
   previousProps.dimmed === nextProps.dimmed &&
@@ -488,6 +511,16 @@ export function LiveDirectorView({
   initialSession = null,
   requiresSongContext = false,
 }: LiveDirectorViewProps) {
+  const hasProvidedTracks = Boolean(tracks && tracks.length > 0);
+  const hasPersistedSongContext = Boolean(songId);
+  const isSongBoundView = requiresSongContext || hasPersistedSongContext;
+  const sequenceFileInputRef = useRef<HTMLInputElement | null>(null);
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const sectionsLaneScrollRef = useRef<HTMLDivElement | null>(null);
+  const padAudioRef = useRef<HTMLAudioElement | null>(null);
+  const ownedObjectUrlsRef = useRef<string[]>([]);
+  const [useStreamingEngine, setUseStreamingEngine] = useState(false);
+  const [hasResolvedEngineFlag, setHasResolvedEngineFlag] = useState(false);
   const {
     currentTime,
     initialize,
@@ -501,18 +534,13 @@ export function LiveDirectorView({
     setVolume,
     soloTrack,
     stop,
+    trackLevels,
     toggleLoop,
     toggleMute,
     trackVolumes,
-  } = useMultitrackEngine();
-
-  const hasProvidedTracks = Boolean(tracks && tracks.length > 0);
-  const hasPersistedSongContext = Boolean(songId);
-  const isSongBoundView = requiresSongContext || hasPersistedSongContext;
-  const sequenceFileInputRef = useRef<HTMLInputElement | null>(null);
-  const folderInputRef = useRef<HTMLInputElement | null>(null);
-  const padAudioRef = useRef<HTMLAudioElement | null>(null);
-  const ownedObjectUrlsRef = useRef<string[]>([]);
+  } = useMultitrackEngine({
+    useStreamingEngine,
+  });
   const [isPortrait, setIsPortrait] = useState(false);
   const [manualSession, setManualSession] = useState<LiveDirectorResolvedSession | null>(
     initialSession ? toResolvedSession(initialSession) : null,
@@ -536,6 +564,7 @@ export function LiveDirectorView({
   const [surfaceView, setSurfaceView] = useState<SurfaceView>('mix');
   const [isPadActive, setIsPadActive] = useState(false);
   const [songCoverArtUrl, setSongCoverArtUrl] = useState<string | null>(null);
+  const currentEngineLabel = useStreamingEngine ? 'Stream' : 'Buffer';
 
   const activeTracks = useMemo(
     () => (hasProvidedTracks ? tracks || [] : manualSession?.tracks || []),
@@ -556,9 +585,14 @@ export function LiveDirectorView({
   const displayBpm = Number.isFinite(Number(bpm)) ? Math.max(0, Math.round(Number(bpm))) : 0;
   const resolvedPadUrl = useMemo(() => getPadUrlForSongKey(songKey), [songKey]);
   const songCardTitle = songTitle || currentSessionLabel;
-  const songCardMeta = songKey
-    ? `${songKey} · ${sessionModeLabel}`
-    : sessionModeLabel;
+  const performerLabel = title?.replace(/^Live Director\s*-\s*/i, '').trim() || '';
+  const songCardMeta = [performerLabel, songKey].filter(Boolean).join(' · ') || sessionModeLabel;
+  const songSupportMeta = hasTrackSession
+    ? sessionModeLabel
+    : hasPersistedSongContext
+      ? 'Carga una sesion real para esta cancion'
+      : 'Abre esta superficie desde repertorio';
+  const surfaceBadgeLabel = showSectionsPanel ? 'Sections' : 'Mix';
   const sectionOffsetSeconds = Number.isFinite(Number(manualSession?.sectionOffsetSeconds))
     ? Number(manualSession?.sectionOffsetSeconds)
     : 0;
@@ -575,10 +609,37 @@ export function LiveDirectorView({
     () => resolvedSections.reduce((maxTime, section) => Math.max(maxTime, section.endTime), 0),
     [resolvedSections],
   );
-  const sectionsWithWaveBars = useMemo(
-    () => resolvedSections.map((section, index) => ({ section, waveBars: buildWaveBars(index + 1) })),
+  const sectionLaneSegments = useMemo<SectionLaneSegment[]>(
+    () => {
+      let cursor = 0;
+
+      return resolvedSections.map((section, index) => {
+        const duration = Math.max(0.25, section.endTime - section.startTime);
+        const widthPx = Math.max(
+          SECTION_LANE_MIN_WIDTH_PX,
+          Math.round(duration * SECTION_LANE_PIXELS_PER_SECOND),
+        );
+        const segment = {
+          section,
+          waveBars: buildWaveBars(index + 1),
+          widthPx,
+          leftPx: cursor,
+        };
+
+        cursor += widthPx + SECTION_LANE_GAP_PX;
+        return segment;
+      });
+    },
     [resolvedSections],
   );
+  const sectionLaneContentWidth = useMemo(() => {
+    if (sectionLaneSegments.length === 0) {
+      return SECTION_LANE_PLAYHEAD_OFFSET_PX * 2;
+    }
+
+    const lastSegment = sectionLaneSegments[sectionLaneSegments.length - 1];
+    return lastSegment.leftPx + lastSegment.widthPx + SECTION_LANE_PLAYHEAD_OFFSET_PX * 2;
+  }, [sectionLaneSegments]);
 
   const progressPercent = totalDuration > 0 ? clamp(currentTime / totalDuration, 0, 1) * 100 : 0;
 
@@ -598,6 +659,35 @@ export function LiveDirectorView({
     return 0;
   }, [currentTime, resolvedSections, totalDuration]);
 
+  const sectionLaneProgressPx = useMemo(() => {
+    if (sectionLaneSegments.length === 0) {
+      return 0;
+    }
+
+    const activeSegment = sectionLaneSegments[activeSectionIndex] || sectionLaneSegments[0];
+
+    if (currentTime <= activeSegment.section.startTime) {
+      return activeSegment.leftPx;
+    }
+
+    if (currentTime >= totalDuration) {
+      const lastSegment = sectionLaneSegments[sectionLaneSegments.length - 1];
+      return lastSegment.leftPx + lastSegment.widthPx;
+    }
+
+    const sectionDuration = Math.max(
+      0.001,
+      activeSegment.section.endTime - activeSegment.section.startTime,
+    );
+    const progressWithinSection = clamp(
+      (currentTime - activeSegment.section.startTime) / sectionDuration,
+      0,
+      1,
+    );
+
+    return activeSegment.leftPx + activeSegment.widthPx * progressWithinSection;
+  }, [activeSectionIndex, currentTime, sectionLaneSegments, totalDuration]);
+
   const mixerView = useMemo<MixerTrackView[]>(() => {
     const sourceTracks =
       activeTracks.length > 0
@@ -616,13 +706,14 @@ export function LiveDirectorView({
       return {
         ...meta,
         volume: trackVolumes[track.id] ?? track.volume ?? meta.defaultVolume,
+        level: trackLevels[track.id] ?? 0,
         muted: mutedTrackIds.has(track.id),
         soloed: soloTrackId === track.id,
         dimmed: Boolean(soloTrackId && soloTrackId !== track.id),
         disabled: activeTracks.length === 0,
       };
     });
-  }, [activeTracks, mutedTrackIds, soloTrackId, trackVolumes]);
+  }, [activeTracks, mutedTrackIds, soloTrackId, trackLevels, trackVolumes]);
 
   const replaceOwnedObjectUrls = useCallback((nextObjectUrls: string[]) => {
     ownedObjectUrlsRef.current.forEach((objectUrl) => {
@@ -640,6 +731,29 @@ export function LiveDirectorView({
     setUnmatchedFiles(initialSession.unmatchedFiles || []);
     setShowLoadPanel(false);
   }, [hasProvidedTracks, initialSession]);
+
+  useEffect(() => {
+    if (!showSectionsPanel) {
+      return;
+    }
+
+    const scrollContainer = sectionsLaneScrollRef.current;
+    if (!scrollContainer) {
+      return;
+    }
+
+    const maxScrollLeft = Math.max(0, scrollContainer.scrollWidth - scrollContainer.clientWidth);
+    const targetScrollLeft = clamp(sectionLaneProgressPx, 0, maxScrollLeft);
+
+    if (Math.abs(scrollContainer.scrollLeft - targetScrollLeft) <= 1) {
+      return;
+    }
+
+    scrollContainer.scrollTo({
+      left: targetScrollLeft,
+      behavior: 'auto',
+    });
+  }, [sectionLaneProgressPx, showSectionsPanel]);
 
   useEffect(() => {
     let cancelled = false;
@@ -737,6 +851,32 @@ export function LiveDirectorView({
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    setUseStreamingEngine(new URLSearchParams(window.location.search).get('engine') === 'streaming');
+    setHasResolvedEngineFlag(true);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !hasResolvedEngineFlag) {
+      return;
+    }
+
+    const nextUrl = new URL(window.location.href);
+
+    if (useStreamingEngine) {
+      nextUrl.searchParams.set('engine', 'streaming');
+    } else {
+      nextUrl.searchParams.delete('engine');
+    }
+
+    const nextHref = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
+    window.history.replaceState(window.history.state, '', nextHref);
+  }, [hasResolvedEngineFlag, useStreamingEngine]);
+
+  useEffect(() => {
     return () => {
       replaceOwnedObjectUrls([]);
     };
@@ -746,6 +886,10 @@ export function LiveDirectorView({
     let cancelled = false;
 
     const setup = async () => {
+      if (!hasResolvedEngineFlag) {
+        return;
+      }
+
       if (activeTracks.length === 0) {
         setIsInitializingSession(false);
         setBusyMessage(null);
@@ -755,7 +899,7 @@ export function LiveDirectorView({
 
       setLoadError(null);
       setIsInitializingSession(true);
-      setBusyMessage('Loading Audio Buffers...');
+      setBusyMessage(useStreamingEngine ? 'Starting streaming engine...' : 'Loading audio buffers...');
       setMutedTrackIds(new Set(activeTracks.filter((track) => track.isMuted).map((track) => track.id)));
       setSoloTrackId(null);
 
@@ -786,7 +930,7 @@ export function LiveDirectorView({
       cancelled = true;
       stop();
     };
-  }, [activeTracks, initialize, reloadKey, stop]);
+  }, [activeTracks, hasResolvedEngineFlag, initialize, reloadKey, stop, useStreamingEngine]);
 
   useEffect(() => {
     setLoopPoints(loopPointA, loopPointB);
@@ -1097,6 +1241,13 @@ export function LiveDirectorView({
     setSoloTrackId((previous) => (previous === trackId ? null : trackId));
   };
 
+  const handleEngineToggle = useCallback(() => {
+    setLoadError(null);
+    setBusyMessage(null);
+    setIsInitializingSession(false);
+    setUseStreamingEngine((previous) => !previous);
+  }, []);
+
   const readyStateLabel = !hasTrackSession
     ? 'No Session'
     : busyMessage
@@ -1166,191 +1317,175 @@ export function LiveDirectorView({
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(93,214,240,0.08),_transparent_24%),linear-gradient(180deg,#232526_0%,#222425_46%,#202224_100%)]" />
       <div className="relative flex h-full flex-col gap-4 px-4 pb-4 pt-[max(env(safe-area-inset-top),0.7rem)]">
         <div className="hide-scrollbar -mx-1 shrink-0 overflow-x-auto pb-1">
-        <header className="grid min-w-[66rem] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-1">
-          <div className="flex items-stretch gap-3">
-            <div className="flex w-[4.85rem] shrink-0 flex-col items-center justify-center gap-1 rounded-[1.65rem] border border-white/8 bg-black/16 px-2 py-3 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-              <span className="text-[2.1rem] font-light leading-none tracking-tight text-white/92">
-                {displayBpm || '--'}
-              </span>
-              <div className="h-px w-full bg-white/18" />
-              <span className="text-[0.72rem] font-black uppercase tracking-[0.28em] text-white/56">
-                {displayBpm ? 'BPM' : 'No BPM'}
-              </span>
-            </div>
-
-            <div className={`${CONTROL_CARD} h-[5.55rem] w-[10.4rem] flex-col px-4 py-3`}>
-              <span className="text-[3rem] font-light leading-none tracking-tight text-white">{formatClock(currentTime)}</span>
-              <span className="mt-1 text-[1rem] font-medium tabular-nums text-white/58">
-                {formatCompact(currentTime)} / {formatCompact(totalDuration)}
-              </span>
-            </div>
-
-            {resolvedPadUrl && (
-              <button
-                type="button"
-                onClick={() => setIsPadActive((previous) => !previous)}
-                className={`${CONTROL_CARD} h-[5.55rem] w-[6.2rem] flex-col px-3 text-[0.88rem] font-semibold tracking-[0.18em] ${
-                  isPadActive
-                    ? 'border-[#43c477]/40 bg-[#43c477]/10 text-[#8af7b1]'
-                    : 'text-[#43c477]'
-                }`}
-                aria-label={isPadActive ? `Stop pad for ${songKey}` : `Play pad for ${songKey}`}
-              >
-                <span>PAD</span>
-                <span className="mt-1 text-[0.66rem] tracking-[0.22em] text-white/46">
-                  {isPadActive ? 'ON' : (songKey || 'ARM')}
+          <header className="grid min-w-[58rem] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 px-1">
+            <div className="flex items-stretch gap-2.5">
+              <div className="flex w-[4.6rem] shrink-0 flex-col items-center justify-center gap-1 rounded-[1.45rem] border border-white/8 bg-black/16 px-2 py-3 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+                <span className="text-[2.05rem] font-light leading-none tracking-tight text-white/92">
+                  {displayBpm || '--'}
                 </span>
-              </button>
-            )}
-          </div>
+                <div className="h-px w-full bg-white/18" />
+                <span className="text-[0.68rem] font-black uppercase tracking-[0.28em] text-white/56">
+                  {displayBpm ? 'BPM' : 'NO BPM'}
+                </span>
+              </div>
 
-          <div className="flex min-w-0 items-center justify-center gap-3 px-1">
-            <button
-              type="button"
-              onClick={() => {
-                void seekTo(Math.max(0, currentTime - 4));
-              }}
-              className={`${CONTROL_CARD} h-[5.55rem] w-[7.1rem] gap-2 text-white/78 hover:text-white`}
-              aria-label="Rewind four seconds"
-            >
-              <RotateCcw className="h-6 w-6" />
-              <span className="text-[1.15rem] font-semibold">-4s</span>
-            </button>
+              <div className={`${CONTROL_CARD} h-[5.15rem] w-[9.25rem] flex-col px-4 py-3`}>
+                <span className="text-[2.65rem] font-light leading-none tracking-tight text-white">
+                  {formatClock(currentTime)}
+                </span>
+                <span className="mt-1 text-[0.96rem] font-medium tabular-nums text-white/58">
+                  {formatCompact(currentTime)} / {formatCompact(totalDuration)}
+                </span>
+              </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                void play();
-              }}
-              disabled={!isReady}
-              className={`${CONTROL_CARD} h-[5.55rem] w-[9rem] gap-3 text-[#43c477] hover:text-[#4fe487] disabled:cursor-not-allowed disabled:text-white/24`}
-              aria-label="Play"
-            >
-              <Play className="ml-1 h-9 w-9" />
-              <span className="text-[1.25rem] font-semibold tracking-[0.18em]">PLAY</span>
-            </button>
-
-            <div className="grid h-[5.55rem] w-[9.5rem] grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={pause}
-                disabled={!isReady}
-                className={`${CONTROL_CARD} h-full gap-2 text-white/74 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
-                aria-label="Pause"
-              >
-                <Pause className="h-8 w-8" />
-              </button>
-              <button
-                type="button"
-                onClick={stop}
-                disabled={!isReady}
-                className={`${CONTROL_CARD} h-full gap-2 text-white/74 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
-                aria-label="Stop"
-              >
-                <Square className="h-7 w-7" />
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-stretch justify-end gap-3">
-            <div className="flex h-[5.55rem] w-[17.1rem] items-center rounded-[1.55rem] border border-white/8 bg-[linear-gradient(180deg,rgba(26,27,29,0.96),rgba(17,18,20,0.96))] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_24px_40px_rgba(0,0,0,0.25)]">
-              <div className="grid h-full w-full grid-cols-[3.3rem_3.3rem_1fr_1fr] gap-2">
+              {resolvedPadUrl && (
                 <button
                   type="button"
-                  onClick={() => handleLoopMarker('a')}
-                className={`ui-pressable-soft rounded-[1.15rem] border px-2 text-left transition-all ${
-                  loopEnabled
-                    ? 'border-cyan-300/40 bg-cyan-300/12 text-cyan-50'
-                    : 'border-white/8 bg-black/20 text-white/72'
-                }`}
-                  title="Punto A: marca el inicio del loop"
-                  aria-label="Punto A, inicio del loop"
-                >
-                  <span className="block text-[0.64rem] font-black tracking-[0.22em]">A</span>
-                  <span className="mt-1 block text-[0.95rem] font-semibold tabular-nums">{formatCompact(loopPointA)}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleLoopMarker('b')}
-                className={`ui-pressable-soft rounded-[1.15rem] border px-2 text-left transition-all ${
-                  loopEnabled
-                    ? 'border-fuchsia-300/40 bg-fuchsia-300/12 text-fuchsia-50'
-                    : 'border-white/8 bg-black/20 text-white/72'
-                }`}
-                  title="Punto B: marca el final del loop"
-                  aria-label="Punto B, final del loop"
-                >
-                  <span className="block text-[0.64rem] font-black tracking-[0.22em]">B</span>
-                  <span className="mt-1 block text-[0.95rem] font-semibold tabular-nums">{formatCompact(loopPointB)}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleLoopIn}
-                  className={`ui-pressable-soft flex items-center justify-center gap-2 rounded-[1.15rem] border transition-all ${
-                    loopEnabled
-                      ? 'border-[#43c477]/55 bg-[#43c477]/14 text-[#8af7b1] shadow-[0_0_20px_rgba(67,196,119,0.18)]'
-                      : 'border-white/8 bg-black/20 text-white/76'
+                  onClick={() => setIsPadActive((previous) => !previous)}
+                  className={`${CONTROL_CARD} h-[5.15rem] w-[5.8rem] flex-col px-3 text-[0.84rem] font-semibold tracking-[0.18em] ${
+                    isPadActive
+                      ? 'border-[#43c477]/40 bg-[#43c477]/10 text-[#8af7b1]'
+                      : 'text-[#43c477]'
                   }`}
-                  title="Activa el loop entre A y B"
-                  aria-label="Activar loop entre A y B"
+                  aria-label={isPadActive ? `Stop pad for ${songKey}` : `Play pad for ${songKey}`}
                 >
-                  <Repeat className="h-5 w-5" />
-                  <span className="text-[0.88rem] font-semibold tracking-[0.18em]">IN</span>
+                  <span>PAD</span>
+                  <span className="mt-1 text-[0.66rem] tracking-[0.22em] text-white/46">
+                    {isPadActive ? 'ON' : (songKey || 'ARM')}
+                  </span>
+                </button>
+              )}
+            </div>
+
+            <div className="flex min-w-0 items-center justify-center gap-2.5 px-1">
+              <button
+                type="button"
+                onClick={() => {
+                  void seekTo(Math.max(0, currentTime - 4));
+                }}
+                disabled={!hasTrackSession}
+                className={`${CONTROL_CARD} h-[5.15rem] w-[6.1rem] gap-2 text-white/78 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
+                aria-label="Rewind four seconds"
+              >
+                <RotateCcw className="h-6 w-6" />
+                <span className="text-[1.05rem] font-semibold">-4s</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  void play();
+                }}
+                disabled={!isReady}
+                className={`${CONTROL_CARD} h-[5.15rem] w-[8rem] gap-3 text-[#43c477] hover:text-[#4fe487] disabled:cursor-not-allowed disabled:text-white/24`}
+                aria-label="Play"
+              >
+                <Play className="ml-1 h-8 w-8" />
+                <span className="text-[1.1rem] font-semibold tracking-[0.18em]">PLAY</span>
+              </button>
+
+              <div className="grid h-[5.15rem] w-[7.6rem] grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={pause}
+                  disabled={!isReady}
+                  className={`${CONTROL_CARD} h-full gap-2 text-white/74 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
+                  aria-label="Pause"
+                >
+                  <Pause className="h-7 w-7" />
                 </button>
                 <button
                   type="button"
-                  onClick={handleLoopOut}
-                  className="ui-pressable-soft flex items-center justify-center gap-2 rounded-[1.15rem] border border-white/8 bg-black/20 text-white/72 transition-all hover:text-white"
-                  title="Salir del loop A-B"
-                  aria-label="Salir del loop A-B"
+                  onClick={stop}
+                  disabled={!isReady}
+                  className={`${CONTROL_CARD} h-full gap-2 text-white/74 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
+                  aria-label="Stop"
                 >
-                  <span className="text-[0.88rem] font-semibold tracking-[0.18em]">OUT</span>
+                  <Square className="h-6 w-6" />
                 </button>
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowLoadPanel(true)}
-              className={`${CONTROL_CARD} h-[5.55rem] w-[5.8rem] text-[1.1rem] font-semibold tracking-[0.18em] text-white/70 hover:text-white`}
-              title="Cargar o reemplazar la sesión multitrack"
-              aria-label="Cargar o reemplazar la sesión multitrack"
-            >
-              <div className="flex flex-col items-center gap-1">
-                <Upload className="h-5 w-5" />
-                <span className="text-[0.92rem]">CARGAR</span>
+            <div className="flex items-stretch justify-end gap-2.5">
+              <div className="flex h-[5.15rem] w-[14.75rem] items-center rounded-[1.45rem] border border-white/8 bg-[linear-gradient(180deg,rgba(26,27,29,0.96),rgba(17,18,20,0.96))] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_24px_40px_rgba(0,0,0,0.25)]">
+                <div className="grid h-full w-full grid-cols-[3.1rem_3.1rem_1fr_1fr] gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleLoopMarker('a')}
+                    disabled={!hasTrackSession}
+                    className={`ui-pressable-soft rounded-[1.05rem] border px-2 text-left transition-all disabled:cursor-not-allowed disabled:text-white/28 ${
+                      loopEnabled
+                        ? 'border-cyan-300/40 bg-cyan-300/12 text-cyan-50'
+                        : 'border-white/8 bg-black/20 text-white/72'
+                    }`}
+                    aria-label="Punto A, inicio del loop"
+                  >
+                    <span className="block text-[0.62rem] font-black tracking-[0.22em]">A</span>
+                    <span className="mt-1 block text-[0.92rem] font-semibold tabular-nums">{formatCompact(loopPointA)}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleLoopMarker('b')}
+                    disabled={!hasTrackSession}
+                    className={`ui-pressable-soft rounded-[1.05rem] border px-2 text-left transition-all disabled:cursor-not-allowed disabled:text-white/28 ${
+                      loopEnabled
+                        ? 'border-fuchsia-300/40 bg-fuchsia-300/12 text-fuchsia-50'
+                        : 'border-white/8 bg-black/20 text-white/72'
+                    }`}
+                    aria-label="Punto B, final del loop"
+                  >
+                    <span className="block text-[0.62rem] font-black tracking-[0.22em]">B</span>
+                    <span className="mt-1 block text-[0.92rem] font-semibold tabular-nums">{formatCompact(loopPointB)}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLoopIn}
+                    disabled={!hasTrackSession}
+                    className={`ui-pressable-soft flex items-center justify-center gap-2 rounded-[1.05rem] border transition-all disabled:cursor-not-allowed disabled:text-white/28 ${
+                      loopEnabled
+                        ? 'border-[#43c477]/55 bg-[#43c477]/14 text-[#8af7b1] shadow-[0_0_20px_rgba(67,196,119,0.18)]'
+                        : 'border-white/8 bg-black/20 text-white/76'
+                    }`}
+                    aria-label="Activar loop entre A y B"
+                  >
+                    <Repeat className="h-5 w-5" />
+                    <span className="text-[0.84rem] font-semibold tracking-[0.16em]">IN</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLoopOut}
+                    disabled={!hasTrackSession}
+                    className="ui-pressable-soft flex items-center justify-center gap-2 rounded-[1.05rem] border border-white/8 bg-black/20 text-white/72 transition-all hover:text-white disabled:cursor-not-allowed disabled:text-white/28"
+                    aria-label="Salir del loop A-B"
+                  >
+                    <span className="text-[0.84rem] font-semibold tracking-[0.16em]">OUT</span>
+                  </button>
+                </div>
               </div>
-            </button>
-          </div>
-        </header>
+
+              <button
+                type="button"
+                onClick={() => setShowLoadPanel(true)}
+                className={`${CONTROL_CARD} h-[5.15rem] w-[5.35rem] text-[1.02rem] font-semibold tracking-[0.18em] text-white/70 hover:text-white`}
+                title="Cargar o reemplazar la sesión multitrack"
+                aria-label="Cargar o reemplazar la sesión multitrack"
+              >
+                <div className="flex flex-col items-center gap-1">
+                  <Upload className="h-5 w-5" />
+                  <span className="text-[0.88rem]">LOAD</span>
+                </div>
+              </button>
+            </div>
+          </header>
         </div>
 
         <section
           className={`grid min-h-0 shrink-0 gap-4 ${
-            showSectionsPanel ? 'grid-rows-[10.5rem_12.4rem]' : 'grid-rows-[10.5rem]'
+            showSectionsPanel ? 'grid-rows-[8.9rem_12.4rem]' : 'grid-rows-[8.9rem]'
           }`}
         >
           <div className="overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.96),rgba(27,29,30,0.96))] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-            <div className="mb-2 flex items-center justify-between px-1">
-              <div>
-                <p className="text-[0.72rem] font-black uppercase tracking-[0.28em] text-white/36">{title}</p>
-                <h1 className="mt-1 text-[1.35rem] font-semibold tracking-tight text-white">{currentSessionLabel}</h1>
-              </div>
-              <div className="flex items-center gap-2 text-right">
-                <div className="rounded-full border border-white/8 bg-black/18 px-3 py-1">
-                  <p className="text-[0.7rem] font-black uppercase tracking-[0.24em] text-white/44">
-                    {showSectionsPanel ? 'Sections' : 'Mix'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[0.72rem] font-black uppercase tracking-[0.28em] text-white/36">Ready State</p>
-                  <p className={`mt-1 text-[1rem] font-semibold ${isReady ? 'text-[#43c477]' : 'text-white/58'}`}>
-                    {readyStateLabel}
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div className="hide-scrollbar flex h-[calc(100%-2.5rem)] gap-4 overflow-x-auto">
+            <div className="flex h-full items-stretch gap-4">
               <button
                 type="button"
                 onClick={() => {
@@ -1361,84 +1496,126 @@ export function LiveDirectorView({
 
                   setShowLoadPanel(true);
                 }}
-                className="ui-pressable-card group relative flex min-w-[16rem] w-[16.75rem] shrink-0 flex-col overflow-hidden rounded-[1.7rem] border border-white/12 bg-[linear-gradient(180deg,rgba(37,39,41,0.98),rgba(26,28,30,0.98))] px-4 py-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200 hover:border-white/20"
+                className="ui-pressable-card group flex w-[15rem] shrink-0 flex-col overflow-hidden rounded-[1.55rem] border border-white/10 bg-[linear-gradient(180deg,rgba(35,37,39,0.98),rgba(24,26,28,0.98))] p-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200 hover:border-white/20"
                 aria-label={hasTrackSession ? `Jump to start of ${currentSessionLabel}` : 'Open song loader'}
               >
-                <div className="relative h-full">
-                  <div className="absolute inset-0 rounded-[1.45rem] opacity-50" style={{ backgroundImage: CURRENT_SONG_BACKGROUND }} />
-                  <div className="relative flex h-full flex-col">
-                    <div className="relative h-[5.7rem] overflow-hidden rounded-[1.25rem] border border-white/10 bg-black/28">
-                      {songCoverArtUrl ? (
-                        <img
-                          src={songCoverArtUrl}
-                          alt={`Portada de ${songCardTitle}`}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(129,221,245,0.18),_transparent_34%),linear-gradient(180deg,rgba(56,62,65,0.92),rgba(21,24,26,0.96))] text-white/52">
-                          <ListMusic className="h-9 w-9" />
-                        </div>
-                      )}
-                      <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.18)_100%)]" />
-                      <div
-                        className={`absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full border text-white shadow-[0_12px_20px_rgba(0,0,0,0.24)] transition-all duration-200 ${
-                          isPlaying
-                            ? 'border-[#43c477] bg-[#232a24] text-[#43c477] shadow-[0_0_18px_rgba(67,196,119,0.25)]'
-                            : 'border-white/12 bg-black/38 text-white/80'
-                        }`}
-                      >
-                        <Play className="ml-1 h-5 w-5" />
-                      </div>
+                <div className="relative h-[5.35rem] overflow-hidden rounded-[1.15rem] border border-white/10 bg-black/30">
+                  {songCoverArtUrl ? (
+                    <img
+                      src={songCoverArtUrl}
+                      alt={`Portada de ${songCardTitle}`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(129,221,245,0.16),_transparent_34%),linear-gradient(180deg,rgba(52,57,60,0.94),rgba(20,22,24,0.98))] text-white/52">
+                      <ListMusic className="h-8 w-8" />
                     </div>
+                  )}
+                  <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_35%,rgba(0,0,0,0.22)_100%)]" />
+                </div>
 
-                    <div className="mt-3 flex flex-1 flex-col justify-between">
-                      <div>
-                        <p className="text-[0.68rem] font-black uppercase tracking-[0.28em] text-white/42">Current Song</p>
-                        <h2 className="mt-1 truncate text-[1.28rem] font-semibold tracking-tight text-white">{songCardTitle}</h2>
-                        <p className="mt-1 text-[0.85rem] text-white/56">{songCardMeta}</p>
-                      </div>
-
-                      <div className="mt-3">
-                        <div className="mb-2 flex items-center justify-between text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-white/48">
-                          <span>{readyStateLabel}</span>
-                          <span>{formatCompact(currentTime)}</span>
-                        </div>
-                        <div className="h-2 rounded-full bg-black/28">
-                          <div
-                            className="h-full rounded-full bg-[linear-gradient(90deg,#43c477_0%,#81ddf5_100%)] shadow-[0_0_16px_rgba(67,196,119,0.18)] transition-[width] duration-200"
-                            style={{ width: `${Math.max(hasTrackSession ? progressPercent : 0, hasTrackSession ? 5 : 0)}%` }}
-                          />
-                        </div>
-                      </div>
-                    </div>
+                <div className="mt-3 flex items-center gap-3">
+                  <div
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-all ${
+                      isPlaying
+                        ? 'border-[#43c477]/65 bg-[#43c477]/12 text-[#63e88f] shadow-[0_0_18px_rgba(67,196,119,0.2)]'
+                        : 'border-white/10 bg-black/28 text-white/72'
+                    }`}
+                  >
+                    {isPlaying ? <Pause className="h-4.5 w-4.5" /> : <Play className="ml-0.5 h-4.5 w-4.5" />}
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="truncate text-[1.2rem] font-semibold tracking-tight text-white">
+                      {songCardTitle}
+                    </h2>
+                    <p className="mt-0.5 truncate text-[0.8rem] text-white/56">{songCardMeta}</p>
                   </div>
                 </div>
               </button>
 
-              <div
-                className="relative flex min-w-[18rem] w-[22rem] shrink-0 flex-col overflow-hidden rounded-[1.7rem] border border-dashed border-white/10 px-5 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
-                style={{ backgroundImage: NEXT_SLOT_BACKGROUND }}
-              >
-                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),transparent_35%,rgba(0,0,0,0.18)_100%)]" />
-                <div className="relative flex h-full flex-col justify-between">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-[0.72rem] font-black uppercase tracking-[0.28em] text-white/36">Next Slot</p>
-                      <h3 className="mt-3 text-[1.45rem] font-semibold tracking-tight text-white/86">Add next song</h3>
-                      <p className="mt-2 max-w-[15rem] text-[0.95rem] text-white/50">
-                        Dejamos la cola lista para cuando conectemos el cambio de cancion real.
+              <div className="min-w-0 flex-1 rounded-[1.65rem] border border-white/8 bg-black/16 px-5 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+                <div className="flex h-full flex-col justify-between gap-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="text-[0.7rem] font-black uppercase tracking-[0.28em] text-white/34">
+                        {performerLabel ? `Live Director · ${performerLabel}` : 'Live Director'}
                       </p>
+                      <h1 className="mt-2 truncate text-[1.35rem] font-semibold tracking-tight text-white">
+                        {currentSessionLabel}
+                      </h1>
+                      <p className="mt-1 text-[0.92rem] text-white/54">{songSupportMeta}</p>
                     </div>
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-black/22 text-white/52">
-                      <Plus className="h-5 w-5" />
+
+                    <div className="flex shrink-0 items-start gap-2">
+                      <div className="rounded-full border border-white/8 bg-black/18 px-3 py-1.5">
+                        <p className="text-[0.68rem] font-black uppercase tracking-[0.22em] text-white/46">
+                          {surfaceBadgeLabel}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleEngineToggle}
+                        className={`ui-pressable-soft rounded-full border px-3 py-1.5 text-left transition-all ${
+                          useStreamingEngine
+                            ? 'border-cyan-300/34 bg-cyan-300/10 text-cyan-50 shadow-[0_0_18px_rgba(129,221,245,0.14)]'
+                            : 'border-white/8 bg-black/18 text-white/76 hover:text-white'
+                        }`}
+                        aria-label={`Switch engine. Current engine: ${currentEngineLabel}`}
+                        title={`Motor activo: ${currentEngineLabel}. Pulsa para cambiar.`}
+                      >
+                        <p className="text-[0.6rem] font-black uppercase tracking-[0.22em] text-white/38">
+                          Engine
+                        </p>
+                        <p className="mt-1 text-[0.92rem] font-semibold text-inherit">{currentEngineLabel}</p>
+                      </button>
+                      <div className="rounded-[1.1rem] border border-white/8 bg-black/18 px-3 py-2 text-right">
+                        <p className="text-[0.62rem] font-black uppercase tracking-[0.24em] text-white/36">
+                          Ready
+                        </p>
+                        <p className={`mt-1 text-[0.98rem] font-semibold ${isReady ? 'text-[#43c477]' : 'text-white/58'}`}>
+                          {readyStateLabel}
+                        </p>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="rounded-[1.1rem] border border-white/8 bg-black/16 px-4 py-3">
-                    <p className="text-[0.72rem] font-black uppercase tracking-[0.24em] text-white/34">Queue</p>
-                    <p className="mt-2 text-sm leading-relaxed text-white/54">
-                      No llenamos esta franja con canciones ficticias; aqui vivira solo la siguiente cancion cuando activemos la cola.
-                    </p>
+                  <div className="flex items-end gap-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-2 flex items-center justify-between text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-white/46">
+                        <span>{hasTrackSession ? `${activeTracks.length} tracks` : 'No session'}</span>
+                        <span>{formatCompact(currentTime)} / {formatCompact(totalDuration)}</span>
+                      </div>
+                      <div className="h-2.5 rounded-full bg-black/30">
+                        <div
+                          className="h-full rounded-full bg-[linear-gradient(90deg,#43c477_0%,#81ddf5_100%)] shadow-[0_0_14px_rgba(67,196,119,0.16)] transition-[width] duration-200"
+                          style={{ width: `${Math.max(hasTrackSession ? progressPercent : 0, hasTrackSession ? 4 : 0)}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSurfaceView('mix')}
+                        className={`ui-pressable-soft min-w-[5.5rem] rounded-[1rem] border px-3 py-2 text-[0.7rem] font-black uppercase tracking-[0.18em] transition-all ${
+                          surfaceView === 'mix'
+                            ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50'
+                            : 'border-white/8 bg-black/18 text-white/58'
+                        }`}
+                      >
+                        Mix
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSurfaceView('sections')}
+                        className={`ui-pressable-soft min-w-[5.5rem] rounded-[1rem] border px-3 py-2 text-[0.7rem] font-black uppercase tracking-[0.18em] transition-all ${
+                          surfaceView === 'sections'
+                            ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50'
+                            : 'border-white/8 bg-black/18 text-white/58'
+                        }`}
+                      >
+                        Sections
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1450,7 +1627,7 @@ export function LiveDirectorView({
               <div className="mb-3 flex items-center justify-between px-1">
                 <div>
                   <p className="text-[0.72rem] font-black uppercase tracking-[0.28em] text-white/36">Sections Lane</p>
-                  <p className="mt-1 text-sm text-white/54">Waveform blocks stay hidden until you ask for them.</p>
+                  <p className="mt-1 text-sm text-white/54">Scrollable timeline with section widths driven by real duration.</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex items-center gap-1 rounded-full border border-white/10 bg-black/18 p-1">
@@ -1497,62 +1674,93 @@ export function LiveDirectorView({
                   </button>
                 </div>
               </div>
-              <div
-                className="absolute bottom-4 top-4 z-30 w-[4px] -translate-x-1/2 bg-white shadow-[0_0_18px_rgba(255,255,255,0.68)]"
-                style={{ left: `calc(1rem + ${progressPercent}% * ((100% - 2rem) / 100))` }}
-              />
-              <div className="relative flex h-full gap-3">
-                {sectionsWithWaveBars.map(({ section, waveBars }, index) => {
-                  const sectionWidth = totalDuration > 0 ? ((section.endTime - section.startTime) / totalDuration) * 100 : 0;
-                  const isActive = index === activeSectionIndex;
+              <div className="relative overflow-hidden rounded-[1.65rem] border border-white/7 bg-black/16">
+                <div className="pointer-events-none absolute inset-y-0 left-0 z-20 w-16 bg-[linear-gradient(90deg,rgba(23,24,26,0.96),rgba(23,24,26,0))]" />
+                <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-16 bg-[linear-gradient(270deg,rgba(23,24,26,0.96),rgba(23,24,26,0))]" />
+                <div
+                  className="pointer-events-none absolute bottom-3 top-3 z-30 w-[4px] -translate-x-1/2 rounded-full bg-white shadow-[0_0_18px_rgba(255,255,255,0.68)]"
+                  style={{ left: `${SECTION_LANE_PLAYHEAD_OFFSET_PX}px` }}
+                />
+                <div
+                  ref={sectionsLaneScrollRef}
+                  className="hide-scrollbar relative overflow-x-auto overflow-y-hidden"
+                >
+                  <div
+                    className="relative flex h-[8.35rem] items-stretch gap-[14px] py-3"
+                    style={{
+                      width: `${sectionLaneContentWidth}px`,
+                      paddingLeft: `${SECTION_LANE_PLAYHEAD_OFFSET_PX}px`,
+                      paddingRight: `${SECTION_LANE_PLAYHEAD_OFFSET_PX}px`,
+                    }}
+                  >
+                    {sectionLaneSegments.map(({ section, waveBars, widthPx, leftPx }, index) => {
+                      const isActive = index === activeSectionIndex;
 
-                  return (
-                    <button
-                      key={section.id}
-                      type="button"
-                      onClick={() => {
-                        void seekTo(section.startTime);
-                      }}
-                      className="relative h-full rounded-[1.55rem] border text-left transition-all duration-200"
-                      style={{
-                        width: `${sectionWidth}%`,
-                        background: `linear-gradient(180deg, ${section.surface}, rgba(20,20,22,0.96))`,
-                        borderColor: isActive ? section.accent : section.border,
-                        boxShadow: isActive ? `0 0 22px ${section.accent}20` : 'none',
-                      }}
-                    >
-                      <div className="absolute inset-0 rounded-[1.5rem] bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.03)_0px,rgba(255,255,255,0.03)_2px,transparent_2px,transparent_26px)]" />
-                      <div className="absolute left-5 right-5 top-1/2 flex h-[42%] -translate-y-1/2 items-end gap-[3px]">
-                        {waveBars.map((height, barIndex) => (
-                          <span
-                            key={`${section.id}-bar-${barIndex}`}
-                            className="flex-1 rounded-full bg-white/70"
-                            style={{
-                              height: `${height}%`,
-                              opacity: isActive ? 0.94 : 0.68,
-                            }}
-                          />
-                        ))}
-                      </div>
-                      <div className="absolute left-5 top-4 flex items-center gap-3">
-                        <span
-                          className="flex h-10 min-w-10 items-center justify-center rounded-full border px-2 text-[0.9rem] font-black tracking-[0.16em]"
+                      return (
+                        <button
+                          key={section.id}
+                          type="button"
+                          onClick={() => {
+                            void seekTo(section.startTime);
+                          }}
+                          className="relative h-full shrink-0 rounded-[1.55rem] border text-left transition-all duration-200"
                           style={{
-                            borderColor: `${section.accent}90`,
-                            color: section.accent,
-                            backgroundColor: `${section.accent}1c`,
+                            width: `${widthPx}px`,
+                            background: `linear-gradient(180deg, ${section.surface}, rgba(20,20,22,0.96))`,
+                            borderColor: isActive ? section.accent : section.border,
+                            boxShadow: isActive ? `0 0 22px ${section.accent}20` : 'none',
                           }}
                         >
-                          {section.shortLabel}
-                        </span>
-                        <span className="text-[0.95rem] font-semibold text-white/88">{section.name}</span>
-                      </div>
-                      <span className="absolute bottom-4 left-5 text-[0.78rem] font-medium tabular-nums text-white/46">
-                        {formatCompact(section.startTime)}
-                      </span>
-                    </button>
-                  );
-                })}
+                          <div className="absolute inset-0 rounded-[1.5rem] bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.03)_0px,rgba(255,255,255,0.03)_2px,transparent_2px,transparent_20px)]" />
+                          <div
+                            className="absolute inset-y-0 left-0 w-px bg-white/12"
+                            style={{ opacity: isActive ? 0.52 : 0.2 }}
+                          />
+                          <div className="absolute left-4 right-4 top-1/2 flex h-[44%] -translate-y-1/2 items-end gap-[2px]">
+                            {waveBars.map((height, barIndex) => (
+                              <span
+                                key={`${section.id}-bar-${barIndex}`}
+                                className="flex-1 rounded-full bg-white/72"
+                                style={{
+                                  height: `${height}%`,
+                                  opacity: isActive ? 0.96 : 0.7,
+                                }}
+                              />
+                            ))}
+                          </div>
+                          <div className="absolute left-4 top-3 flex items-center gap-3">
+                            <span
+                              className="flex h-10 min-w-10 items-center justify-center rounded-full border px-2 text-[0.88rem] font-black tracking-[0.16em]"
+                              style={{
+                                borderColor: `${section.accent}90`,
+                                color: section.accent,
+                                backgroundColor: `${section.accent}1c`,
+                              }}
+                            >
+                              {section.shortLabel}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="truncate text-[1rem] font-semibold text-white/88">{section.name}</p>
+                              <p className="mt-0.5 text-[0.72rem] uppercase tracking-[0.18em] text-white/42">
+                                {formatCompact(section.startTime)} · {Math.max(0, Math.round(section.endTime - section.startTime))}s
+                              </p>
+                            </div>
+                          </div>
+                          <div
+                            className="pointer-events-none absolute inset-y-4 rounded-[1.2rem] border border-white/0 transition-all duration-150"
+                            style={{
+                              left: `${Math.max(0, sectionLaneProgressPx - leftPx - 1)}px`,
+                              width: '2px',
+                              backgroundColor: isActive ? `${section.accent}cc` : 'transparent',
+                              boxShadow: isActive ? `0 0 14px ${section.accent}66` : 'none',
+                              opacity: isActive ? 1 : 0,
+                            }}
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -1560,7 +1768,7 @@ export function LiveDirectorView({
         <section className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_7.25rem_8rem] gap-4">
           <div
             className="hide-scrollbar grid min-h-0 gap-3 overflow-x-auto overflow-y-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] px-3 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
-            style={{ gridTemplateColumns: `repeat(${Math.max(1, mixerView.length)}, minmax(4.5rem, 1fr))` }}
+            style={{ gridTemplateColumns: `repeat(${Math.max(1, mixerView.length)}, minmax(8.5rem, 1fr))` }}
           >
             {mixerView.map((track) => {
               return (
@@ -1571,6 +1779,7 @@ export function LiveDirectorView({
                   shortLabel={track.shortLabel}
                   accent={track.accent}
                   volume={track.volume}
+                  level={track.level}
                   muted={track.muted}
                   soloed={track.soloed}
                   dimmed={track.dimmed}
@@ -1614,14 +1823,6 @@ export function LiveDirectorView({
                 >
                   <ListMusic className="h-6 w-6" />
                   <span className="text-[0.6rem] font-black uppercase tracking-[0.16em]">Sections</span>
-                </button>
-                <button
-                  type="button"
-                  disabled
-                  className="rounded-[1.2rem] border border-white/8 bg-black/18 px-3 py-4 text-center text-white/28"
-                >
-                  <span className="block text-[0.76rem] font-black uppercase tracking-[0.2em]">Pad</span>
-                  <span className="mt-1 block text-[0.6rem] font-semibold uppercase tracking-[0.16em]">Soon</span>
                 </button>
               </div>
               <button

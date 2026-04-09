@@ -35,6 +35,8 @@ export interface TrackData {
   sourceFileName?: string;
   audioBuffer?: AudioBuffer;
   gainNode?: GainNode;
+  analyserNode?: AnalyserNode;
+  meterData?: Float32Array;
   panNode?: StereoPannerNode;
   sourceNode?: AudioBufferSourceNode;
   mediaElement?: HTMLAudioElement;
@@ -119,6 +121,17 @@ export class MultitrackEngine {
     return this.tracks;
   }
 
+  getTrackMeterLevels(): Record<string, number> {
+    const levels: Record<string, number> = {};
+
+    for (let index = 0; index < this.tracks.length; index += 1) {
+      const track = this.tracks[index];
+      levels[track.id] = this.readTrackMeterLevel(track);
+    }
+
+    return levels;
+  }
+
   getIsPlaying(): boolean {
     return this.isPlaying;
   }
@@ -173,6 +186,24 @@ export class MultitrackEngine {
     this.startTime = 0;
     this.pauseTime = 0;
     this.stopAllPlayback(true);
+  }
+
+  dispose(): void {
+    this.stop();
+    this.stopMediaMonitor();
+    this.cleanupTrackResources(this.tracks);
+    this.tracks = [];
+    this.soloTrackId = null;
+
+    try {
+      this.masterGain.disconnect();
+    } catch {
+      // no-op
+    }
+
+    void this.context.close().catch(() => {
+      // no-op
+    });
   }
 
   async seekTo(timeInSeconds: number): Promise<void> {
@@ -283,14 +314,18 @@ export class MultitrackEngine {
       const audioData = await response.arrayBuffer();
       const audioBuffer = await this.context.decodeAudioData(audioData.slice(0));
       const gainNode = this.context.createGain();
+      const analyserNode = this.createTrackAnalyser();
       const panNode = this.context.createStereoPanner();
 
       panNode.connect(gainNode);
-      gainNode.connect(this.masterGain);
+      gainNode.connect(analyserNode);
+      analyserNode.connect(this.masterGain);
 
       track.volume = this.clampVolume(track.volume);
       track.audioBuffer = audioBuffer;
       track.gainNode = gainNode;
+      track.analyserNode = analyserNode;
+      track.meterData = new Float32Array(analyserNode.fftSize);
       track.panNode = panNode;
       track.sourceNode = undefined;
       track.mediaElement = undefined;
@@ -315,17 +350,21 @@ export class MultitrackEngine {
         try {
           const mediaElement = await this.createMediaElement(track);
           const gainNode = this.context.createGain();
+          const analyserNode = this.createTrackAnalyser();
           const panNode = this.context.createStereoPanner();
           const mediaSourceNode = this.context.createMediaElementSource(mediaElement);
 
           mediaSourceNode.connect(panNode);
           panNode.connect(gainNode);
-          gainNode.connect(this.masterGain);
+          gainNode.connect(analyserNode);
+          analyserNode.connect(this.masterGain);
 
           track.volume = this.clampVolume(track.volume);
           track.audioBuffer = undefined;
           track.sourceNode = undefined;
           track.gainNode = gainNode;
+          track.analyserNode = analyserNode;
+          track.meterData = new Float32Array(analyserNode.fftSize);
           track.panNode = panNode;
           track.mediaElement = mediaElement;
           track.mediaSourceNode = mediaSourceNode;
@@ -734,6 +773,14 @@ export class MultitrackEngine {
       }
     }
 
+    if (track.analyserNode) {
+      try {
+        track.analyserNode.disconnect();
+      } catch {
+        // no-op
+      }
+    }
+
     if (track.panNode) {
       try {
         track.panNode.disconnect();
@@ -744,6 +791,8 @@ export class MultitrackEngine {
 
     track.audioBuffer = undefined;
     track.gainNode = undefined;
+    track.analyserNode = undefined;
+    track.meterData = undefined;
     track.panNode = undefined;
     track.sourceNode = undefined;
     track.mediaElement = undefined;
@@ -828,6 +877,40 @@ export class MultitrackEngine {
     }
 
     track.panNode.pan.value = this.getTrackPan(track);
+  }
+
+  private createTrackAnalyser(): AnalyserNode {
+    const analyserNode = this.context.createAnalyser();
+    analyserNode.fftSize = 256;
+    analyserNode.smoothingTimeConstant = 0.72;
+    return analyserNode;
+  }
+
+  private readTrackMeterLevel(track: TrackData): number {
+    if (!this.isPlaying || !track.analyserNode || !track.meterData) {
+      return 0;
+    }
+
+    if (track.isMuted || (this.soloTrackId !== null && this.soloTrackId !== track.id)) {
+      return 0;
+    }
+
+    track.analyserNode.getFloatTimeDomainData(track.meterData as Float32Array<ArrayBuffer>);
+
+    let peak = 0;
+
+    for (let index = 0; index < track.meterData.length; index += 1) {
+      const sample = Math.abs(track.meterData[index]);
+      if (sample > peak) {
+        peak = sample;
+      }
+    }
+
+    if (peak <= 0.00075) {
+      return 0;
+    }
+
+    return Math.min(1, Math.sqrt(peak) * 1.14);
   }
 
   private findTrack(trackId: string): TrackData | undefined {
