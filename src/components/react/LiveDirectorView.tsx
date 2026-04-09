@@ -141,6 +141,10 @@ const SECTION_LANE_PIXELS_PER_SECOND = 20;
 const SECTION_LANE_MIN_WIDTH_PX = 118;
 const SECTION_LANE_GAP_PX = 14;
 const SECTION_LANE_PLAYHEAD_OFFSET_PX = 92;
+const SECTION_WAVE_BAR_WIDTH_PX = 6;
+const SECTION_WAVE_BAR_GAP_PX = 4;
+const SECTION_WAVE_BAR_INSET_PX = 16;
+const SECTION_WAVE_BAR_MIN_COUNT = 7;
 
 const CONTROL_CARD =
   'ui-pressable-soft flex items-center justify-center rounded-[1.55rem] border border-white/8 bg-[linear-gradient(180deg,rgba(26,27,29,0.96),rgba(17,18,20,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_24px_40px_rgba(0,0,0,0.25)] transition-all duration-200';
@@ -452,7 +456,7 @@ const ChannelStrip = memo(function ChannelStrip({
   return (
     <div
       className={`relative flex h-full min-w-0 flex-col items-center rounded-[1.75rem] border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] transition-all duration-200 ${
-        compact ? 'px-2 pb-2 pt-1.5' : 'px-3.5 pb-4 pt-3'
+        compact ? 'px-2 pb-3 pt-1' : 'px-3.5 pb-4 pt-3'
       } ${dimmed ? 'opacity-45' : 'opacity-100'}`}
     >
       <div className={`flex w-full items-center justify-between gap-1.5 ${compact ? 'mb-1' : 'mb-2'}`}>
@@ -709,9 +713,17 @@ export function LiveDirectorView({
           SECTION_LANE_MIN_WIDTH_PX,
           Math.round(duration * SECTION_LANE_PIXELS_PER_SECOND),
         );
+        const innerWaveWidth = Math.max(
+          SECTION_WAVE_BAR_WIDTH_PX,
+          widthPx - SECTION_WAVE_BAR_INSET_PX * 2,
+        );
+        const waveBarCount = Math.max(
+          SECTION_WAVE_BAR_MIN_COUNT,
+          Math.floor((innerWaveWidth + SECTION_WAVE_BAR_GAP_PX) / (SECTION_WAVE_BAR_WIDTH_PX + SECTION_WAVE_BAR_GAP_PX)),
+        );
         const segment = {
           section,
-          waveBars: buildWaveBars(index + 1),
+          waveBars: buildWaveBars(index + 1, waveBarCount),
           widthPx,
           leftPx: cursor,
         };
@@ -757,6 +769,7 @@ export function LiveDirectorView({
 
     return 0;
   }, [currentTime, resolvedSections, totalDuration]);
+  const activeSection = resolvedSections[activeSectionIndex] || resolvedSections[0] || null;
 
   const sectionLaneProgressPx = useMemo(() => {
     if (sectionLaneSegments.length === 0) {
@@ -1478,9 +1491,9 @@ export function LiveDirectorView({
         paddingRight: `max(env(safe-area-inset-right), ${scaleRem(isCompactLandscape ? 0.75 : 1, 0.55)})`,
         paddingBottom: `max(env(safe-area-inset-bottom), ${scaleRem(isCompactLandscape ? 0.75 : 1, 0.55)})`,
         paddingLeft: `max(env(safe-area-inset-left), ${scaleRem(isCompactLandscape ? 0.75 : 1, 0.55)})`,
-        gap: scaleRem(isCompactLandscape ? 0.82 : 1, 0.68),
-        ['--ld-control-height' as string]: scaleRem(5.15, 3.6),
-        ['--ld-summary-row-height' as string]: scaleRem(isCompactLandscape ? 7.25 : 8.9, 5.8),
+        gap: scaleRem(isCompactLandscape ? 0.6 : 1, 0.5),
+        ['--ld-control-height' as string]: scaleRem(isCompactLandscape ? 4.2 : 5.15, 3.2),
+        ['--ld-summary-row-height' as string]: scaleRem(isCompactLandscape ? 5.4 : 8.9, 4.6),
         ['--ld-sections-row-height' as string]: scaleRem(isCompactLandscape ? 10.9 : 12.4, 8.5),
       }) as CSSProperties,
     [isCompactLandscape, scaleRem],
@@ -1555,26 +1568,26 @@ export function LiveDirectorView({
           >
             <div className="flex items-stretch gap-2.5">
               <div
-                className={`flex ${isCompactLandscape ? 'rounded-[1.25rem] py-2.5' : 'rounded-[1.45rem] py-3'} shrink-0 flex-col items-center justify-center gap-1 border border-white/8 bg-black/16 px-2 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]`}
+                className={`flex ${isCompactLandscape ? 'rounded-[1.1rem] py-1.5' : 'rounded-[1.45rem] py-3'} shrink-0 flex-col items-center justify-center gap-0.5 border border-white/8 bg-black/16 px-2 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]`}
                 style={{ width: scaleRem(isCompactLandscape ? 4.15 : 4.6, 3.55) }}
               >
-                <span className="text-[2.05rem] font-light leading-none tracking-tight text-white/92">
+                <span className={`font-light leading-none tracking-tight text-white/92 ${isCompactLandscape ? 'text-[1.65rem]' : 'text-[2.05rem]'}`}>
                   {displayBpm || '--'}
                 </span>
                 <div className="h-px w-full bg-white/18" />
-                <span className="text-[0.68rem] font-black uppercase tracking-[0.28em] text-white/56">
+                <span className="text-[0.6rem] font-black uppercase tracking-[0.24em] text-white/56">
                   {displayBpm ? 'BPM' : 'NO BPM'}
                 </span>
               </div>
 
               <div
-                className={`${CONTROL_CARD} h-[var(--ld-control-height)] ${isCompactLandscape ? 'px-3.5 py-2.5' : 'px-4 py-3'} flex-col`}
+                className={`${CONTROL_CARD} h-[var(--ld-control-height)] ${isCompactLandscape ? 'px-3 py-1.5' : 'px-4 py-3'} flex-col`}
                 style={{ width: scaleRem(isCompactLandscape ? 8.45 : 9.25, 6.85) }}
               >
-                <span className="text-[2.65rem] font-light leading-none tracking-tight text-white">
+                <span className={`font-light leading-none tracking-tight text-white ${isCompactLandscape ? 'text-[2.05rem]' : 'text-[2.65rem]'}`}>
                   {formatClock(currentTime)}
                 </span>
-                <span className="mt-1 text-[0.96rem] font-medium tabular-nums text-white/58">
+                <span className={`font-medium tabular-nums text-white/58 ${isCompactLandscape ? 'text-[0.8rem]' : 'mt-1 text-[0.96rem]'}`}>
                   {formatCompact(currentTime)} / {formatCompact(totalDuration)}
                 </span>
               </div>
@@ -1730,15 +1743,8 @@ export function LiveDirectorView({
           </header>
         </div>
 
-        <section
-          className={`grid min-h-0 shrink-0 ${isCompactLandscape ? 'gap-3' : 'gap-4'}`}
-          style={{
-            gridTemplateRows: showSectionsPanel
-              ? 'var(--ld-summary-row-height) var(--ld-sections-row-height)'
-              : 'var(--ld-summary-row-height)',
-          }}
-        >
-          <div className={`overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.96),rgba(27,29,30,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-3 py-3' : 'px-4 py-4'}`}>
+        <section className="shrink-0">
+          <div className={`overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.96),rgba(27,29,30,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-2.5 py-1.5' : 'px-4 py-4'}`}>
             <div className={`flex h-full items-stretch ${isCompactLandscape ? 'gap-3' : 'gap-4'}`}>
               <button
                 type="button"
@@ -1750,11 +1756,11 @@ export function LiveDirectorView({
 
                   setShowLoadPanel(true);
                 }}
-                className={`ui-pressable-card group flex shrink-0 flex-col overflow-hidden rounded-[1.55rem] border border-white/10 bg-[linear-gradient(180deg,rgba(35,37,39,0.98),rgba(24,26,28,0.98))] text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200 hover:border-white/20 ${isCompactLandscape ? 'p-2.5' : 'p-3'}`}
+                className={`ui-pressable-card group flex shrink-0 flex-col overflow-hidden rounded-[1.55rem] border border-white/10 bg-[linear-gradient(180deg,rgba(35,37,39,0.98),rgba(24,26,28,0.98))] text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200 hover:border-white/20 ${isCompactLandscape ? 'p-1.5' : 'p-3'}`}
                 style={{ width: scaleRem(isCompactLandscape ? 13.4 : 15, 11.25) }}
                 aria-label={hasTrackSession ? `Jump to start of ${currentSessionLabel}` : 'Open song loader'}
               >
-                <div className={`relative overflow-hidden rounded-[1.15rem] border border-white/10 bg-black/30 ${isCompactLandscape ? 'h-[4.35rem]' : 'h-[5.35rem]'}`}>
+                <div className={`relative overflow-hidden rounded-[1.15rem] border border-white/10 bg-black/30 ${isCompactLandscape ? 'h-[2.6rem]' : 'h-[5.35rem]'}`}>
                   {songCoverArtUrl ? (
                     <img
                       src={songCoverArtUrl}
@@ -1763,27 +1769,29 @@ export function LiveDirectorView({
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(129,221,245,0.16),_transparent_34%),linear-gradient(180deg,rgba(52,57,60,0.94),rgba(20,22,24,0.98))] text-white/52">
-                      <ListMusic className="h-8 w-8" />
+                      <ListMusic className={isCompactLandscape ? 'h-5 w-5' : 'h-8 w-8'} />
                     </div>
                   )}
                   <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_35%,rgba(0,0,0,0.22)_100%)]" />
                 </div>
 
-                <div className={`flex items-center ${isCompactLandscape ? 'mt-2.5 gap-2.5' : 'mt-3 gap-3'}`}>
+                <div className={`flex items-center ${isCompactLandscape ? 'mt-1.5 gap-2' : 'mt-3 gap-3'}`}>
                   <div
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-all ${
+                    className={`flex shrink-0 items-center justify-center rounded-full border transition-all ${
+                      isCompactLandscape ? 'h-7 w-7' : 'h-10 w-10'
+                    } ${
                       isPlaying
                         ? 'border-[#43c477]/65 bg-[#43c477]/12 text-[#63e88f] shadow-[0_0_18px_rgba(67,196,119,0.2)]'
                         : 'border-white/10 bg-black/28 text-white/72'
                     }`}
                   >
-                    {isPlaying ? <Pause className="h-4.5 w-4.5" /> : <Play className="ml-0.5 h-4.5 w-4.5" />}
+                    {isPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="ml-0.5 h-3.5 w-3.5" />}
                   </div>
                   <div className="min-w-0">
-                    <h2 className="truncate text-[1.2rem] font-semibold tracking-tight text-white">
+                    <h2 className={`truncate font-semibold tracking-tight text-white ${isCompactLandscape ? 'text-[1rem]' : 'text-[1.2rem]'}`}>
                       {songCardTitle}
                     </h2>
-                    <p className="mt-0.5 truncate text-[0.8rem] text-white/56">{songCardMeta}</p>
+                    <p className="mt-0.5 truncate text-[0.72rem] text-white/56">{songCardMeta}</p>
                   </div>
                 </div>
               </button>
@@ -1909,60 +1917,64 @@ export function LiveDirectorView({
               </div>
             </div>
           </div>
-
-          {showSectionsPanel && (
-            <div className={`relative overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(29,30,32,0.98),rgba(23,24,26,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-3 py-3' : 'px-4 py-4'}`}>
-              <div className="mb-3 flex items-center justify-between px-1">
-                <div>
-                  <p className="text-[0.72rem] font-black uppercase tracking-[0.28em] text-white/36">Sections Lane</p>
-                  <p className="mt-1 text-sm text-white/54">Scrollable timeline with section widths driven by real duration.</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1 rounded-full border border-white/10 bg-black/18 p-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void saveSectionOffset(sectionOffsetSeconds - 0.25);
-                      }}
-                      className="ui-pressable-soft h-8 min-w-8 rounded-full border border-white/10 bg-black/22 px-2 text-sm font-black text-white/72"
-                      aria-label="Shift sections earlier"
-                    >
-                      -
-                    </button>
-                    <div className="min-w-[5.2rem] px-2 text-center text-[0.68rem] font-black uppercase tracking-[0.18em] text-white/54">
-                      {sectionOffsetSeconds >= 0 ? '+' : ''}
-                      {sectionOffsetSeconds.toFixed(2)}s
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void saveSectionOffset(sectionOffsetSeconds + 0.25);
-                      }}
-                      className="ui-pressable-soft h-8 min-w-8 rounded-full border border-white/10 bg-black/22 px-2 text-sm font-black text-white/72"
-                      aria-label="Shift sections later"
-                    >
-                      +
-                    </button>
+        </section>
+        <section
+          className={`grid min-h-0 flex-1 ${isCompactLandscape ? 'gap-3' : 'gap-4'}`}
+          style={{ gridTemplateColumns: `minmax(0,1fr) ${mixerLayoutColumns}` }}
+        >
+          {showSectionsPanel ? (
+            <div className="relative min-h-0 overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(29,30,32,0.98),rgba(23,24,26,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+              <div className="absolute left-4 top-4 z-30 flex items-center gap-3 rounded-full border border-white/10 bg-black/34 px-3 py-2 backdrop-blur-xl">
+                <span className="text-[0.68rem] font-black uppercase tracking-[0.28em] text-white/38">Sections</span>
+                <span className="text-[0.8rem] font-semibold text-white/78">
+                  {activeSection?.name || 'Timeline'}
+                </span>
+              </div>
+              <div className="absolute right-4 top-4 z-30 flex items-center gap-2">
+                <div className="flex items-center gap-1 rounded-full border border-white/10 bg-black/30 p-1 backdrop-blur-xl">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void saveSectionOffset(sectionOffsetSeconds - 0.25);
+                    }}
+                    className="ui-pressable-soft h-8 min-w-8 rounded-full border border-white/10 bg-black/20 px-2 text-sm font-black text-white/72"
+                    aria-label="Shift sections earlier"
+                  >
+                    -
+                  </button>
+                  <div className="min-w-[5.2rem] px-2 text-center text-[0.68rem] font-black uppercase tracking-[0.18em] text-white/58">
+                    {sectionOffsetSeconds >= 0 ? '+' : ''}
+                    {sectionOffsetSeconds.toFixed(2)}s
                   </div>
                   <button
                     type="button"
                     onClick={() => {
-                      void saveSectionOffset(0);
+                      void saveSectionOffset(sectionOffsetSeconds + 0.25);
                     }}
-                    className="ui-pressable-soft rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-[0.72rem] font-black uppercase tracking-[0.22em] text-white/60"
+                    className="ui-pressable-soft h-8 min-w-8 rounded-full border border-white/10 bg-black/20 px-2 text-sm font-black text-white/72"
+                    aria-label="Shift sections later"
                   >
-                    Reset
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSurfaceView('mix')}
-                    className="ui-pressable-soft rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-[0.72rem] font-black uppercase tracking-[0.22em] text-white/60"
-                  >
-                    Hide
+                    +
                   </button>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void saveSectionOffset(0);
+                  }}
+                  className="ui-pressable-soft rounded-full border border-white/10 bg-black/28 px-3 py-2 text-[0.68rem] font-black uppercase tracking-[0.22em] text-white/60 backdrop-blur-xl"
+                >
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSurfaceView('mix')}
+                  className="ui-pressable-soft rounded-full border border-white/10 bg-black/28 px-3 py-2 text-[0.68rem] font-black uppercase tracking-[0.22em] text-white/60 backdrop-blur-xl"
+                >
+                  Mix
+                </button>
               </div>
-              <div className="relative overflow-hidden rounded-[1.65rem] border border-white/7 bg-black/16">
+              <div className="relative h-full overflow-hidden bg-black/12">
                 <div className="pointer-events-none absolute inset-y-0 left-0 z-20 w-16 bg-[linear-gradient(90deg,rgba(23,24,26,0.96),rgba(23,24,26,0))]" />
                 <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-16 bg-[linear-gradient(270deg,rgba(23,24,26,0.96),rgba(23,24,26,0))]" />
                 <div
@@ -1971,10 +1983,10 @@ export function LiveDirectorView({
                 />
                 <div
                   ref={sectionsLaneScrollRef}
-                  className="hide-scrollbar relative overflow-x-auto overflow-y-hidden"
+                  className="hide-scrollbar relative h-full overflow-x-auto overflow-y-hidden"
                 >
                   <div
-                    className="relative flex h-[8.35rem] items-stretch gap-[14px] py-3"
+                    className="relative flex h-full min-h-0 items-stretch gap-[14px] py-4"
                     style={{
                       width: `${sectionLaneContentWidth}px`,
                       paddingLeft: `${SECTION_LANE_PLAYHEAD_OFFSET_PX}px`,
@@ -2004,19 +2016,23 @@ export function LiveDirectorView({
                             className="absolute inset-y-0 left-0 w-px bg-white/12"
                             style={{ opacity: isActive ? 0.52 : 0.2 }}
                           />
-                          <div className="absolute left-4 right-4 top-1/2 flex h-[44%] -translate-y-1/2 items-end gap-[2px]">
+                          <div
+                            className="absolute left-4 right-4 top-1/2 flex h-[44%] -translate-y-1/2 items-end justify-between"
+                            style={{ gap: `${SECTION_WAVE_BAR_GAP_PX}px` }}
+                          >
                             {waveBars.map((height, barIndex) => (
                               <span
                                 key={`${section.id}-bar-${barIndex}`}
-                                className="flex-1 rounded-full bg-white/72"
+                                className="shrink-0 rounded-full bg-white/72"
                                 style={{
+                                  width: `${SECTION_WAVE_BAR_WIDTH_PX}px`,
                                   height: `${height}%`,
                                   opacity: isActive ? 0.96 : 0.7,
                                 }}
                               />
                             ))}
                           </div>
-                          <div className="absolute left-4 top-3 flex items-center gap-3">
+                          <div className="absolute left-4 top-20 flex items-center gap-3">
                             <span
                               className="flex h-10 min-w-10 items-center justify-center rounded-full border px-2 text-[0.88rem] font-black tracking-[0.16em]"
                               style={{
@@ -2051,48 +2067,44 @@ export function LiveDirectorView({
                 </div>
               </div>
             </div>
+          ) : (
+            <div
+              ref={mixerScrollRef}
+              onPointerDown={handleMixerPointerDown}
+              onPointerMove={handleMixerPointerMove}
+              onPointerUp={handleMixerPointerUp}
+              onPointerCancel={handleMixerPointerUp}
+              className={`hide-scrollbar grid min-h-0 gap-3 overflow-x-auto overflow-y-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-2 py-2' : 'px-3 py-4'}`}
+              style={{
+                gridTemplateColumns: `repeat(${Math.max(1, mixerView.length)}, minmax(${isCompactLandscape ? '5.5rem' : '8.5rem'}, 1fr))`,
+                touchAction: 'pan-x pinch-zoom',
+                overscrollBehaviorX: 'contain',
+                WebkitOverflowScrolling: 'touch',
+              }}
+            >
+              {mixerView.map((track) => {
+                return (
+                  <ChannelStrip
+                    key={track.id}
+                    id={track.id}
+                    label={track.label}
+                    shortLabel={track.shortLabel}
+                    accent={track.accent}
+                    volume={track.volume}
+                    level={track.level}
+                    muted={track.muted}
+                    soloed={track.soloed}
+                    dimmed={track.dimmed}
+                    disabled={track.disabled}
+                    compact={isCompactLandscape}
+                    onVolumeChange={(nextVolume) => setVolume(track.id, nextVolume)}
+                    onMute={() => handleMuteTrack(track.id)}
+                    onSolo={() => handleSoloTrack(track.id)}
+                  />
+                );
+              })}
+            </div>
           )}
-        </section>
-        <section
-          className={`grid min-h-0 flex-1 ${isCompactLandscape ? 'gap-3' : 'gap-4'}`}
-          style={{ gridTemplateColumns: `minmax(0,1fr) ${mixerLayoutColumns}` }}
-        >
-          <div
-            ref={mixerScrollRef}
-            onPointerDown={handleMixerPointerDown}
-            onPointerMove={handleMixerPointerMove}
-            onPointerUp={handleMixerPointerUp}
-            onPointerCancel={handleMixerPointerUp}
-            className={`hide-scrollbar grid min-h-0 gap-3 overflow-x-auto overflow-y-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-2 py-2' : 'px-3 py-4'}`}
-            style={{
-              gridTemplateColumns: `repeat(${Math.max(1, mixerView.length)}, minmax(${isCompactLandscape ? '5.5rem' : '8.5rem'}, 1fr))`,
-              touchAction: 'pan-x pinch-zoom',
-              overscrollBehaviorX: 'contain',
-              WebkitOverflowScrolling: 'touch',
-            }}
-          >
-            {mixerView.map((track) => {
-              return (
-                <ChannelStrip
-                  key={track.id}
-                  id={track.id}
-                  label={track.label}
-                  shortLabel={track.shortLabel}
-                  accent={track.accent}
-                  volume={track.volume}
-                  level={track.level}
-                  muted={track.muted}
-                  soloed={track.soloed}
-                  dimmed={track.dimmed}
-                  disabled={track.disabled}
-                  compact={isCompactLandscape}
-                  onVolumeChange={(nextVolume) => setVolume(track.id, nextVolume)}
-                  onMute={() => handleMuteTrack(track.id)}
-                  onSolo={() => handleSoloTrack(track.id)}
-                />
-              );
-            })}
-          </div>
 
           <div className={`rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-2 py-2' : 'px-3 py-4'}`}>
             <div className={`flex h-full flex-col ${isCompactLandscape ? 'gap-2' : 'gap-4'}`}>
@@ -2184,7 +2196,7 @@ export function LiveDirectorView({
           </div>
 
           <div className={`rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-2 py-2' : 'px-3 py-4'}`}>
-            <div className={`relative flex h-full flex-col items-center rounded-[1.75rem] border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] ${isCompactLandscape ? 'px-2 pb-2 pt-1.5' : 'px-3 pb-4 pt-3'}`}>
+            <div className={`relative flex h-full flex-col items-center rounded-[1.75rem] border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] ${isCompactLandscape ? 'px-2 pb-3 pt-1' : 'px-3 pb-4 pt-3'}`}>
               <div className={`flex items-center justify-center rounded-full border border-white/8 bg-black/28 text-white/62 ${isCompactLandscape ? 'mb-1.5 h-7 w-7' : 'mb-3 h-11 w-11'}`}>
                 <span className={`font-black tracking-[0.18em] ${isCompactLandscape ? 'text-[0.65rem]' : 'text-[0.82rem]'}`}>M</span>
               </div>
@@ -2525,4 +2537,3 @@ export function LiveDirectorView({
 }
 
 export default LiveDirectorView;
-
