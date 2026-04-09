@@ -456,17 +456,17 @@ const ChannelStrip = memo(function ChannelStrip({
   return (
     <div
       className={`relative flex h-full min-w-0 flex-col items-center rounded-[1.75rem] border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] transition-all duration-200 ${
-        compact ? 'px-2 pb-3 pt-1' : 'px-3.5 pb-4 pt-3'
+        compact ? 'px-1 pb-1 pt-0.5' : 'px-3.5 pb-4 pt-3'
       } ${dimmed ? 'opacity-45' : 'opacity-100'}`}
     >
-      <div className={`flex w-full items-center justify-between gap-1.5 ${compact ? 'mb-1' : 'mb-2'}`}>
+      <div className={`flex w-full items-center justify-between gap-1.5 ${compact ? 'mb-0.5' : 'mb-2'}`}>
         <button
           type="button"
           onClick={onSolo}
           disabled={disabled}
           aria-label={`Solo ${label}`}
           className={`ui-pressable-soft flex items-center justify-center rounded-full border font-black tracking-[0.18em] transition-all duration-150 ${
-            compact ? 'h-7 w-7 text-[0.62rem]' : 'h-10 w-10 text-[0.76rem]'
+            compact ? 'h-6 w-6 text-[0.58rem]' : 'h-10 w-10 text-[0.76rem]'
           } ${
             soloed
               ? 'border-cyan-300/60 bg-cyan-300/16 text-cyan-100 shadow-[0_0_18px_rgba(103,210,242,0.24)]'
@@ -481,7 +481,7 @@ const ChannelStrip = memo(function ChannelStrip({
           disabled={disabled}
           aria-label={`${muted ? 'Unmute' : 'Mute'} ${label}`}
           className={`ui-pressable-soft flex items-center justify-center rounded-full border font-black tracking-[0.18em] transition-all duration-150 ${
-            compact ? 'h-7 min-w-7 px-2 text-[0.62rem]' : 'h-10 min-w-10 px-3 text-[0.72rem]'
+            compact ? 'h-6 min-w-6 px-1.5 text-[0.58rem]' : 'h-10 min-w-10 px-3 text-[0.72rem]'
           } ${
             muted
               ? 'border-rose-300/55 bg-rose-400/16 text-rose-100 shadow-[0_0_18px_rgba(251,113,133,0.22)]'
@@ -494,7 +494,7 @@ const ChannelStrip = memo(function ChannelStrip({
 
       <div className="relative flex w-full flex-1 items-center justify-center">
         <div className="relative h-full w-full max-w-[7.6rem]">
-          <div className="absolute left-1/2 top-[4.5%] bottom-[6.5%] w-[0.72rem] -translate-x-1/2 rounded-full bg-[#040506] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]" />
+          <div className={`absolute left-1/2 -translate-x-1/2 rounded-full bg-[#040506] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] ${compact ? 'top-[7%] bottom-[11%] w-[0.56rem]' : 'top-[4.5%] bottom-[6.5%] w-[0.72rem]'}`} />
           {Array.from({ length: 8 }).map((_, index) => (
             <div
               key={`${id}-mark-${index}`}
@@ -515,9 +515,9 @@ const ChannelStrip = memo(function ChannelStrip({
             accent={accent}
             level={level}
             muted={muted}
-            className={`${compact ? 'h-[2.9rem]' : 'h-[4.35rem]'} w-full max-w-[7.9rem] transition-[bottom,box-shadow,opacity,transform] duration-150`}
+            className={`${compact ? 'h-[2.2rem]' : 'h-[4.35rem]'} w-full ${compact ? 'max-w-[5.6rem]' : 'max-w-[7.9rem]'} transition-[bottom,box-shadow,opacity,transform] duration-150`}
             style={{
-              bottom: `calc(${levelBottom} - ${compact ? '1.45rem' : '1.75rem'})`,
+              bottom: `calc(${levelBottom} - ${compact ? '1.1rem' : '1.75rem'})`,
               boxShadow: muted
                 ? '0 12px 20px rgba(0,0,0,0.24)'
                 : `0 14px 24px rgba(0,0,0,0.35), 0 0 20px ${knobGlow}`,
@@ -534,14 +534,14 @@ const ChannelStrip = memo(function ChannelStrip({
             disabled={disabled}
             onChange={(event) => onVolumeChange(Number(event.target.value))}
             aria-label={`Volume for ${label}`}
-            className="absolute left-1/2 top-1/2 h-12 w-[18rem] -translate-x-1/2 -translate-y-1/2 -rotate-90 cursor-pointer opacity-0"
+            className={`absolute left-1/2 top-1/2 h-10 -translate-x-1/2 -translate-y-1/2 -rotate-90 cursor-pointer opacity-0 ${compact ? 'w-40' : 'w-[18rem]'}`}
           />
         </div>
       </div>
 
-      <div className={`text-center ${compact ? 'mt-1' : 'mt-4'}`}>
+      <div className={`text-center ${compact ? 'mt-0.5' : 'mt-4'}`}>
         {!compact && <p className="text-[0.62rem] font-black uppercase tracking-[0.3em] text-white/28">{shortLabel}</p>}
-        <p className={`leading-tight text-white/88 ${compact ? 'text-[0.82rem] font-semibold' : 'mt-1 text-[1.03rem] font-semibold'}`}>{label}</p>
+        <p className={`leading-tight text-white/88 ${compact ? 'text-[9px] font-semibold' : 'mt-1 text-[1.03rem] font-semibold'}`}>{label}</p>
       </div>
     </div>
   );
@@ -1560,15 +1560,15 @@ export function LiveDirectorView({
   return (
     <div className={shellClassName}>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(93,214,240,0.08),_transparent_24%),linear-gradient(180deg,#232526_0%,#222425_46%,#202224_100%)]" />
-      <div className="relative flex h-full flex-col overflow-hidden" style={shellContentStyle}>
-        <div className={`hide-scrollbar -mx-1 shrink-0 overflow-x-auto ${isCompactLandscape ? 'pb-0.5' : 'pb-1'}`}>
+      <div className="relative flex h-[100dvh] flex-col overflow-hidden" style={shellContentStyle}>
+        <div className={`hide-scrollbar -mx-1 shrink-0 overflow-x-auto ${isCompactLandscape ? 'pb-0' : 'pb-1'}`}>
           <header
-            className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 px-1"
+            className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-center ${isCompactLandscape ? 'gap-2 px-0.5' : 'gap-2.5 px-1'}`}
             style={{ minWidth: headerMinWidth }}
           >
-            <div className="flex items-stretch gap-2.5">
+            <div className={`flex items-stretch ${isCompactLandscape ? 'gap-2' : 'gap-2.5'}`}>
               <div
-                className={`flex ${isCompactLandscape ? 'rounded-[1.1rem] py-1.5' : 'rounded-[1.45rem] py-3'} shrink-0 flex-col items-center justify-center gap-0.5 border border-white/8 bg-black/16 px-2 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]`}
+                className={`flex ${isCompactLandscape ? 'rounded-[1rem] py-1' : 'rounded-[1.45rem] py-3'} shrink-0 flex-col items-center justify-center gap-0.5 border border-white/8 bg-black/16 px-2 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]`}
                 style={{ width: scaleRem(isCompactLandscape ? 4.15 : 4.6, 3.55) }}
               >
                 <span className={`font-light leading-none tracking-tight text-white/92 ${isCompactLandscape ? 'text-[1.65rem]' : 'text-[2.05rem]'}`}>
@@ -1581,7 +1581,7 @@ export function LiveDirectorView({
               </div>
 
               <div
-                className={`${CONTROL_CARD} h-[var(--ld-control-height)] ${isCompactLandscape ? 'px-3 py-1.5' : 'px-4 py-3'} flex-col`}
+                className={`${CONTROL_CARD} ${isCompactLandscape ? 'h-10 px-2 py-1' : 'h-[var(--ld-control-height)] px-4 py-3'} flex-col`}
                 style={{ width: scaleRem(isCompactLandscape ? 8.45 : 9.25, 6.85) }}
               >
                 <span className={`font-light leading-none tracking-tight text-white ${isCompactLandscape ? 'text-[2.05rem]' : 'text-[2.65rem]'}`}>
@@ -1596,7 +1596,7 @@ export function LiveDirectorView({
                 <button
                   type="button"
                   onClick={() => setIsPadActive((previous) => !previous)}
-                  className={`${CONTROL_CARD} h-[var(--ld-control-height)] flex-col px-3 text-[0.84rem] font-semibold tracking-[0.18em] ${
+                  className={`${CONTROL_CARD} ${isCompactLandscape ? 'h-10 px-2' : 'h-[var(--ld-control-height)] px-3'} flex-col text-[0.84rem] font-semibold tracking-[0.18em] ${
                     isPadActive
                       ? 'border-[#43c477]/40 bg-[#43c477]/10 text-[#8af7b1]'
                       : 'text-[#43c477]'
@@ -1612,19 +1612,19 @@ export function LiveDirectorView({
               )}
             </div>
 
-            <div className="flex min-w-0 items-center justify-center gap-2.5 px-1">
+            <div className={`flex min-w-0 items-center justify-center ${isCompactLandscape ? 'gap-2 px-0.5' : 'gap-2.5 px-1'}`}>
               <button
                 type="button"
                 onClick={() => {
                   void seekTo(Math.max(0, currentTime - 4));
                 }}
                 disabled={!hasTrackSession}
-                className={`${CONTROL_CARD} h-[var(--ld-control-height)] gap-2 text-white/78 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
+                className={`${CONTROL_CARD} ${isCompactLandscape ? 'h-10 gap-1' : 'h-[var(--ld-control-height)] gap-2'} text-white/78 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
                 style={{ width: scaleRem(isCompactLandscape ? 5.55 : 6.1, 4.7) }}
                 aria-label="Rewind four seconds"
               >
-                <RotateCcw className="h-6 w-6" />
-                <span className="text-[1.05rem] font-semibold">-4s</span>
+                <RotateCcw className={`${isCompactLandscape ? 'h-5 w-5' : 'h-6 w-6'}`} />
+                <span className={`${isCompactLandscape ? 'text-[0.92rem]' : 'text-[1.05rem]'} font-semibold`}>-4s</span>
               </button>
 
               <button
@@ -1633,16 +1633,16 @@ export function LiveDirectorView({
                   void play();
                 }}
                 disabled={!isReady}
-                className={`${CONTROL_CARD} h-[var(--ld-control-height)] gap-3 text-[#43c477] hover:text-[#4fe487] disabled:cursor-not-allowed disabled:text-white/24`}
+                className={`${CONTROL_CARD} ${isCompactLandscape ? 'h-10 gap-1.5' : 'h-[var(--ld-control-height)] gap-3'} text-[#43c477] hover:text-[#4fe487] disabled:cursor-not-allowed disabled:text-white/24`}
                 style={{ width: scaleRem(isCompactLandscape ? 7.15 : 8, 5.9) }}
                 aria-label="Play"
               >
-                <Play className="ml-1 h-8 w-8" />
-                <span className="text-[1.1rem] font-semibold tracking-[0.18em]">PLAY</span>
+                <Play className={`ml-0.5 ${isCompactLandscape ? 'h-6 w-6' : 'h-8 w-8'}`} />
+                <span className={`${isCompactLandscape ? 'text-[0.95rem]' : 'text-[1.1rem]'} font-semibold tracking-[0.18em]`}>PLAY</span>
               </button>
 
               <div
-                className="grid h-[var(--ld-control-height)] grid-cols-2 gap-2.5"
+                className={`grid ${isCompactLandscape ? 'h-10 gap-1' : 'h-[var(--ld-control-height)] gap-2.5'} grid-cols-2`}
                 style={{ width: scaleRem(isCompactLandscape ? 6.9 : 7.6, 5.8) }}
               >
                 <button
@@ -1652,7 +1652,7 @@ export function LiveDirectorView({
                   className={`${CONTROL_CARD} h-full gap-2 text-white/74 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
                   aria-label="Pause"
                 >
-                  <Pause className="h-7 w-7" />
+                    <Pause className={`${isCompactLandscape ? 'h-5 w-5' : 'h-7 w-7'}`} />
                 </button>
                 <button
                   type="button"
@@ -1661,14 +1661,14 @@ export function LiveDirectorView({
                   className={`${CONTROL_CARD} h-full gap-2 text-white/74 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
                   aria-label="Stop"
                 >
-                  <Square className="h-6 w-6" />
+                    <Square className={`${isCompactLandscape ? 'h-5 w-5' : 'h-6 w-6'}`} />
                 </button>
               </div>
             </div>
 
-            <div className="flex items-stretch justify-end gap-2.5">
+            <div className={`flex items-stretch justify-end ${isCompactLandscape ? 'gap-2' : 'gap-2.5'}`}>
               <div
-                className={`flex h-[var(--ld-control-height)] ${isCompactLandscape ? 'rounded-[1.25rem]' : 'rounded-[1.45rem]'} items-center border border-white/8 bg-[linear-gradient(180deg,rgba(26,27,29,0.96),rgba(17,18,20,0.96))] px-2 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_24px_40px_rgba(0,0,0,0.25)]`}
+                className={`flex ${isCompactLandscape ? 'h-10 rounded-[1rem] px-1 py-1' : 'h-[var(--ld-control-height)] rounded-[1.45rem] px-2 py-2'} items-center border border-white/8 bg-[linear-gradient(180deg,rgba(26,27,29,0.96),rgba(17,18,20,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_24px_40px_rgba(0,0,0,0.25)]`}
                 style={{ width: scaleRem(isCompactLandscape ? 13.4 : 14.75, 10.8) }}
               >
                 <div className="grid h-full w-full grid-cols-[3.1rem_3.1rem_1fr_1fr] gap-2">
@@ -1729,7 +1729,7 @@ export function LiveDirectorView({
               <button
                 type="button"
                 onClick={() => setShowLoadPanel(true)}
-                className={`${CONTROL_CARD} h-[var(--ld-control-height)] text-[1.02rem] font-semibold tracking-[0.18em] text-white/70 hover:text-white`}
+                className={`${CONTROL_CARD} ${isCompactLandscape ? 'h-10' : 'h-[var(--ld-control-height)]'} text-[1.02rem] font-semibold tracking-[0.18em] text-white/70 hover:text-white`}
                 style={{ width: scaleRem(isCompactLandscape ? 4.95 : 5.35, 4.2) }}
                 title="Cargar o reemplazar la sesión multitrack"
                 aria-label="Cargar o reemplazar la sesión multitrack"
@@ -1743,9 +1743,9 @@ export function LiveDirectorView({
           </header>
         </div>
 
-        <section className="shrink-0">
-          <div className={`overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.96),rgba(27,29,30,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-2.5 py-1.5' : 'px-4 py-4'}`}>
-            <div className={`flex h-full items-stretch ${isCompactLandscape ? 'gap-3' : 'gap-4'}`}>
+        <section className={`min-h-[5rem] flex-1 overflow-y-auto ${isCompactLandscape ? 'pr-0.5' : ''}`}>
+          <div className={`overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.96),rgba(27,29,30,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'min-h-[5rem] px-2 py-1.5' : 'px-4 py-4'}`}>
+            <div className={`flex h-full items-stretch ${isCompactLandscape ? 'gap-2' : 'gap-4'}`}>
               <button
                 type="button"
                 onClick={() => {
@@ -1756,11 +1756,11 @@ export function LiveDirectorView({
 
                   setShowLoadPanel(true);
                 }}
-                className={`ui-pressable-card group flex shrink-0 flex-col overflow-hidden rounded-[1.55rem] border border-white/10 bg-[linear-gradient(180deg,rgba(35,37,39,0.98),rgba(24,26,28,0.98))] text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200 hover:border-white/20 ${isCompactLandscape ? 'p-1.5' : 'p-3'}`}
+                className={`ui-pressable-card group flex shrink-0 flex-col overflow-hidden rounded-[1.35rem] border border-white/10 bg-[linear-gradient(180deg,rgba(35,37,39,0.98),rgba(24,26,28,0.98))] text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200 hover:border-white/20 ${isCompactLandscape ? 'p-1.5' : 'p-3'}`}
                 style={{ width: scaleRem(isCompactLandscape ? 13.4 : 15, 11.25) }}
                 aria-label={hasTrackSession ? `Jump to start of ${currentSessionLabel}` : 'Open song loader'}
               >
-                <div className={`relative overflow-hidden rounded-[1.15rem] border border-white/10 bg-black/30 ${isCompactLandscape ? 'h-[2.6rem]' : 'h-[5.35rem]'}`}>
+                <div className={`relative overflow-hidden rounded-[1rem] border border-white/10 bg-black/30 ${isCompactLandscape ? 'h-10' : 'h-[5.35rem]'}`}>
                   {songCoverArtUrl ? (
                     <img
                       src={songCoverArtUrl}
@@ -1775,10 +1775,10 @@ export function LiveDirectorView({
                   <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_35%,rgba(0,0,0,0.22)_100%)]" />
                 </div>
 
-                <div className={`flex items-center ${isCompactLandscape ? 'mt-1.5 gap-2' : 'mt-3 gap-3'}`}>
+                <div className={`flex items-center ${isCompactLandscape ? 'mt-1 gap-1.5' : 'mt-3 gap-3'}`}>
                   <div
                     className={`flex shrink-0 items-center justify-center rounded-full border transition-all ${
-                      isCompactLandscape ? 'h-7 w-7' : 'h-10 w-10'
+                      isCompactLandscape ? 'h-6 w-6' : 'h-10 w-10'
                     } ${
                       isPlaying
                         ? 'border-[#43c477]/65 bg-[#43c477]/12 text-[#63e88f] shadow-[0_0_18px_rgba(67,196,119,0.2)]'
@@ -1788,29 +1788,29 @@ export function LiveDirectorView({
                     {isPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="ml-0.5 h-3.5 w-3.5" />}
                   </div>
                   <div className="min-w-0">
-                    <h2 className={`truncate font-semibold tracking-tight text-white ${isCompactLandscape ? 'text-[1rem]' : 'text-[1.2rem]'}`}>
+                    <h2 className={`truncate font-semibold tracking-tight text-white ${isCompactLandscape ? 'text-sm' : 'text-[1.2rem]'}`}>
                       {songCardTitle}
                     </h2>
-                    <p className="mt-0.5 truncate text-[0.72rem] text-white/56">{songCardMeta}</p>
+                    <p className={`truncate text-white/56 ${isCompactLandscape ? 'text-[0.65rem]' : 'mt-0.5 text-[0.72rem]'}`}>{songCardMeta}</p>
                   </div>
                 </div>
               </button>
 
-              <div className={`min-w-0 flex-1 rounded-[1.65rem] border border-white/8 bg-black/16 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-4 py-3' : 'px-5 py-4'}`}>
-                <div className={`flex h-full flex-col justify-between ${isCompactLandscape ? 'gap-3' : 'gap-4'}`}>
-                  <div className="flex items-start justify-between gap-4">
+              <div className={`min-w-0 flex-1 rounded-[1.5rem] border border-white/8 bg-black/16 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-3 py-2' : 'px-5 py-4'}`}>
+                <div className={`flex h-full flex-col justify-between ${isCompactLandscape ? 'gap-2' : 'gap-4'}`}>
+                  <div className={`flex ${isCompactLandscape ? 'items-center gap-3' : 'items-start justify-between gap-4'}`}>
                     <div className="min-w-0">
                       <p className="text-[0.7rem] font-black uppercase tracking-[0.28em] text-white/34">
                         {performerLabel ? `Live Director · ${performerLabel}` : 'Live Director'}
                       </p>
-                      <h1 className="mt-2 truncate text-[1.35rem] font-semibold tracking-tight text-white">
+                      <h1 className={`truncate font-semibold tracking-tight text-white ${isCompactLandscape ? 'mt-1 text-sm' : 'mt-2 text-[1.35rem]'}`}>
                         {currentSessionLabel}
                       </h1>
-                      <p className="mt-1 text-[0.92rem] text-white/54">{songSupportMeta}</p>
+                      <p className={`text-white/54 ${isCompactLandscape ? 'mt-0.5 text-[0.68rem]' : 'mt-1 text-[0.92rem]'}`}>{songSupportMeta}</p>
                     </div>
 
-                    <div className="flex shrink-0 items-start gap-2">
-                      <div className="rounded-full border border-white/8 bg-black/18 px-3 py-1.5">
+                    <div className={`flex shrink-0 ${isCompactLandscape ? 'items-center gap-1.5' : 'items-start gap-2'}`}>
+                      <div className={`rounded-full border border-white/8 bg-black/18 ${isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'}`}>
                         <p className="text-[0.68rem] font-black uppercase tracking-[0.22em] text-white/46">
                           {surfaceBadgeLabel}
                         </p>
@@ -1818,7 +1818,7 @@ export function LiveDirectorView({
                       <button
                         type="button"
                         onClick={handleEngineToggle}
-                        className={`ui-pressable-soft rounded-full border px-3 py-1.5 text-left transition-all ${
+                        className={`ui-pressable-soft rounded-full border ${isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'} text-left transition-all ${
                           useStreamingEngine
                             ? 'border-cyan-300/34 bg-cyan-300/10 text-cyan-50 shadow-[0_0_18px_rgba(129,221,245,0.14)]'
                             : 'border-white/8 bg-black/18 text-white/76 hover:text-white'
@@ -1829,12 +1829,12 @@ export function LiveDirectorView({
                         <p className="text-[0.6rem] font-black uppercase tracking-[0.22em] text-white/38">
                           Engine
                         </p>
-                        <p className="mt-1 text-[0.92rem] font-semibold text-inherit">{currentEngineLabel}</p>
+                        <p className={`${isCompactLandscape ? 'mt-0.5 text-[0.74rem]' : 'mt-1 text-[0.92rem]'} font-semibold text-inherit`}>{currentEngineLabel}</p>
                       </button>
                       <button
                         type="button"
                         onClick={() => setShowDiagnostics((previous) => !previous)}
-                        className={`ui-pressable-soft rounded-full border px-3 py-1.5 text-left transition-all ${
+                        className={`ui-pressable-soft rounded-full border ${isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'} text-left transition-all ${
                           showDiagnostics
                             ? 'border-cyan-300/34 bg-cyan-300/10 text-cyan-50 shadow-[0_0_18px_rgba(129,221,245,0.14)]'
                             : 'border-white/8 bg-black/18 text-white/72 hover:text-white'
@@ -1845,35 +1845,35 @@ export function LiveDirectorView({
                         <p className="text-[0.6rem] font-black uppercase tracking-[0.22em] text-white/38">
                           RAM
                         </p>
-                        <p className="mt-1 text-[0.92rem] font-semibold text-inherit">
+                        <p className={`${isCompactLandscape ? 'mt-0.5 text-[0.74rem]' : 'mt-1 text-[0.92rem]'} font-semibold text-inherit`}>
                           {showDiagnostics ? 'On' : 'Off'}
                         </p>
                       </button>
-                      <div className="rounded-[1.1rem] border border-white/8 bg-black/18 px-3 py-2 text-right">
+                      <div className={`rounded-[1.1rem] border border-white/8 bg-black/18 text-right ${isCompactLandscape ? 'px-2 py-1.5' : 'px-3 py-2'}`}>
                         <p className="text-[0.62rem] font-black uppercase tracking-[0.24em] text-white/36">
                           Ready
                         </p>
-                        <p className={`mt-1 text-[0.98rem] font-semibold ${isReady ? 'text-[#43c477]' : 'text-white/58'}`}>
+                        <p className={`${isCompactLandscape ? 'mt-0.5 text-[0.78rem]' : 'mt-1 text-[0.98rem]'} font-semibold ${isReady ? 'text-[#43c477]' : 'text-white/58'}`}>
                           {readyStateLabel}
                         </p>
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-end gap-4">
+                  <div className={`flex ${isCompactLandscape ? 'items-center gap-2' : 'items-end gap-4'}`}>
                     <div className="min-w-0 flex-1">
-                      <div className="mb-2 flex items-center justify-between text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-white/46">
+                      <div className={`flex items-center justify-between text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-white/46 ${isCompactLandscape ? 'mb-1' : 'mb-2'}`}>
                         <span>{hasTrackSession ? `${activeTracks.length} tracks` : 'No session'}</span>
                         <span>{formatCompact(currentTime)} / {formatCompact(totalDuration)}</span>
                       </div>
-                      <div className="h-2.5 rounded-full bg-black/30">
+                      <div className={`${isCompactLandscape ? 'h-1.5' : 'h-2.5'} rounded-full bg-black/30`}>
                         <div
                           className="h-full rounded-full bg-[linear-gradient(90deg,#43c477_0%,#81ddf5_100%)] shadow-[0_0_14px_rgba(67,196,119,0.16)] transition-[width] duration-200"
                           style={{ width: `${Math.max(hasTrackSession ? progressPercent : 0, hasTrackSession ? 4 : 0)}%` }}
                         />
                       </div>
                       {showDiagnostics && (
-                        <div className="mt-3 grid grid-cols-4 gap-2">
+                        <div className={`grid grid-cols-4 gap-2 ${isCompactLandscape ? 'mt-2' : 'mt-3'}`}>
                           {diagnosticsCards.map((card) => (
                             <div
                               key={card.label}
@@ -1888,11 +1888,11 @@ export function LiveDirectorView({
                         </div>
                       )}
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className={`grid grid-cols-2 ${isCompactLandscape ? 'gap-1.5' : 'gap-2'}`}>
                       <button
                         type="button"
                         onClick={() => setSurfaceView('mix')}
-                        className={`ui-pressable-soft min-w-[5.5rem] rounded-[1rem] border px-3 py-2 text-[0.7rem] font-black uppercase tracking-[0.18em] transition-all ${
+                        className={`ui-pressable-soft min-w-[5.5rem] rounded-[1rem] border ${isCompactLandscape ? 'px-2 py-1.5 text-[0.64rem]' : 'px-3 py-2 text-[0.7rem]'} font-black uppercase tracking-[0.18em] transition-all ${
                           surfaceView === 'mix'
                             ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50'
                             : 'border-white/8 bg-black/18 text-white/58'
@@ -1903,7 +1903,7 @@ export function LiveDirectorView({
                       <button
                         type="button"
                         onClick={() => setSurfaceView('sections')}
-                        className={`ui-pressable-soft min-w-[5.5rem] rounded-[1rem] border px-3 py-2 text-[0.7rem] font-black uppercase tracking-[0.18em] transition-all ${
+                        className={`ui-pressable-soft min-w-[5.5rem] rounded-[1rem] border ${isCompactLandscape ? 'px-2 py-1.5 text-[0.64rem]' : 'px-3 py-2 text-[0.7rem]'} font-black uppercase tracking-[0.18em] transition-all ${
                           surfaceView === 'sections'
                             ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50'
                             : 'border-white/8 bg-black/18 text-white/58'
@@ -1919,7 +1919,7 @@ export function LiveDirectorView({
           </div>
         </section>
         <section
-          className={`grid min-h-0 flex-1 ${isCompactLandscape ? 'gap-3' : 'gap-4'}`}
+          className={`grid shrink-0 min-h-0 ${isCompactLandscape ? 'max-h-[58dvh] gap-1.5' : 'gap-4'}`}
           style={{ gridTemplateColumns: `minmax(0,1fr) ${mixerLayoutColumns}` }}
         >
           {showSectionsPanel ? (
@@ -2074,9 +2074,9 @@ export function LiveDirectorView({
               onPointerMove={handleMixerPointerMove}
               onPointerUp={handleMixerPointerUp}
               onPointerCancel={handleMixerPointerUp}
-              className={`hide-scrollbar grid min-h-0 gap-3 overflow-x-auto overflow-y-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-2 py-2' : 'px-3 py-4'}`}
+              className={`hide-scrollbar grid min-h-0 ${isCompactLandscape ? 'gap-1.5' : 'gap-3'} overflow-x-auto overflow-y-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-1 py-0.5' : 'px-3 py-4'}`}
               style={{
-                gridTemplateColumns: `repeat(${Math.max(1, mixerView.length)}, minmax(${isCompactLandscape ? '5.5rem' : '8.5rem'}, 1fr))`,
+                gridTemplateColumns: `repeat(${Math.max(1, mixerView.length)}, minmax(${isCompactLandscape ? '4.75rem' : '8.5rem'}, 1fr))`,
                 touchAction: 'pan-x pinch-zoom',
                 overscrollBehaviorX: 'contain',
                 WebkitOverflowScrolling: 'touch',
@@ -2106,8 +2106,8 @@ export function LiveDirectorView({
             </div>
           )}
 
-          <div className={`rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-2 py-2' : 'px-3 py-4'}`}>
-            <div className={`flex h-full flex-col ${isCompactLandscape ? 'gap-2' : 'gap-4'}`}>
+          <div className={`rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-1 py-0.5' : 'px-3 py-4'}`}>
+            <div className={`flex h-full flex-col ${isCompactLandscape ? 'gap-1.5' : 'gap-4'}`}>
               {!isCompactLandscape && (
                 <div className="flex items-center justify-center gap-1 pt-1 text-white/42">
                   <span className="h-1.5 w-1.5 rounded-full bg-current" />
@@ -2120,28 +2120,28 @@ export function LiveDirectorView({
                   type="button"
                   onClick={() => setSurfaceView('mix')}
                   className={`ui-pressable-soft flex flex-col items-center justify-center gap-1 rounded-[1.2rem] border transition-all ${
-                    isCompactLandscape ? 'h-10' : 'h-16'
+                    isCompactLandscape ? 'h-8' : 'h-16'
                   } ${
                     surfaceView === 'mix'
                       ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50 shadow-[0_0_20px_rgba(129,221,245,0.14)]'
                       : 'border-white/8 bg-black/24 text-white/62'
                   }`}
                 >
-                  <SlidersVertical className={isCompactLandscape ? 'h-4 w-4' : 'h-6 w-6'} />
+                  <SlidersVertical className={isCompactLandscape ? 'h-3.5 w-3.5' : 'h-6 w-6'} />
                   {!isCompactLandscape && <span className="text-[0.66rem] font-black uppercase tracking-[0.18em]">Mix</span>}
                 </button>
                 <button
                   type="button"
                   onClick={() => setSurfaceView('sections')}
                   className={`ui-pressable-soft flex flex-col items-center justify-center gap-1 rounded-[1.2rem] border transition-all ${
-                    isCompactLandscape ? 'h-10' : 'h-16'
+                    isCompactLandscape ? 'h-8' : 'h-16'
                   } ${
                     surfaceView === 'sections'
                       ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50 shadow-[0_0_20px_rgba(129,221,245,0.14)]'
                       : 'border-white/8 bg-black/24 text-white/62'
                   }`}
                 >
-                  <ListMusic className={isCompactLandscape ? 'h-4 w-4' : 'h-6 w-6'} />
+                  <ListMusic className={isCompactLandscape ? 'h-3.5 w-3.5' : 'h-6 w-6'} />
                   {!isCompactLandscape && <span className="text-[0.6rem] font-black uppercase tracking-[0.16em]">Sections</span>}
                 </button>
               </div>
@@ -2162,7 +2162,7 @@ export function LiveDirectorView({
                   setMutedTrackIds(nextMuteAll ? new Set(activeTracks.map((track) => track.id)) : new Set());
                 }}
                 disabled={!hasTrackSession}
-                className={`ui-pressable-soft rounded-[1.35rem] border border-white/8 bg-black/24 px-3 text-center text-[0.78rem] font-semibold tracking-[0.2em] text-white/62 ${isCompactLandscape ? 'py-2' : 'py-5'}`}
+                className={`ui-pressable-soft rounded-[1.2rem] border border-white/8 bg-black/24 px-2 text-center ${isCompactLandscape ? 'text-[0.62rem] py-1.5' : 'text-[0.78rem] py-5'} font-semibold tracking-[0.2em] text-white/62`}
               >
                 MUTE
                 <br />
@@ -2172,7 +2172,7 @@ export function LiveDirectorView({
                 type="button"
                 onClick={handleLoopIn}
                 disabled={!hasTrackSession}
-                className={`ui-pressable-soft rounded-[1.35rem] border px-3 text-center text-[0.78rem] font-semibold tracking-[0.2em] ${isCompactLandscape ? 'py-2' : 'py-5'} ${
+                className={`ui-pressable-soft rounded-[1.2rem] border px-2 text-center ${isCompactLandscape ? 'text-[0.62rem] py-1.5' : 'text-[0.78rem] py-5'} font-semibold tracking-[0.2em] ${
                   loopEnabled
                     ? 'border-[#43c477]/50 bg-[#43c477]/14 text-[#9effc4]'
                     : 'border-white/8 bg-black/24 text-white/62'
@@ -2186,7 +2186,7 @@ export function LiveDirectorView({
                 type="button"
                 onClick={handleLoopOut}
                 disabled={!hasTrackSession}
-                className={`ui-pressable-soft rounded-[1.35rem] border border-white/8 bg-black/24 px-3 text-center text-[0.78rem] font-semibold tracking-[0.2em] text-white/62 ${isCompactLandscape ? 'py-2' : 'py-5'}`}
+                className={`ui-pressable-soft rounded-[1.2rem] border border-white/8 bg-black/24 px-2 text-center ${isCompactLandscape ? 'text-[0.62rem] py-1.5' : 'text-[0.78rem] py-5'} font-semibold tracking-[0.2em] text-white/62`}
               >
                 LOOP
                 <br />
@@ -2195,15 +2195,15 @@ export function LiveDirectorView({
             </div>
           </div>
 
-          <div className={`rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-2 py-2' : 'px-3 py-4'}`}>
-            <div className={`relative flex h-full flex-col items-center rounded-[1.75rem] border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] ${isCompactLandscape ? 'px-2 pb-3 pt-1' : 'px-3 pb-4 pt-3'}`}>
-              <div className={`flex items-center justify-center rounded-full border border-white/8 bg-black/28 text-white/62 ${isCompactLandscape ? 'mb-1.5 h-7 w-7' : 'mb-3 h-11 w-11'}`}>
+          <div className={`rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isCompactLandscape ? 'px-1 py-0.5' : 'px-3 py-4'}`}>
+            <div className={`relative flex h-full flex-col items-center rounded-[1.75rem] border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] ${isCompactLandscape ? 'px-1 pb-1 pt-0.5' : 'px-3 pb-4 pt-3'}`}>
+              <div className={`flex items-center justify-center rounded-full border border-white/8 bg-black/28 text-white/62 ${isCompactLandscape ? 'mb-1 h-6 w-6' : 'mb-3 h-11 w-11'}`}>
                 <span className={`font-black tracking-[0.18em] ${isCompactLandscape ? 'text-[0.65rem]' : 'text-[0.82rem]'}`}>M</span>
               </div>
 
               <div className="relative flex w-full flex-1 items-center justify-center">
-                <div className="relative h-full w-full max-w-[5.8rem]">
-                  <div className="absolute left-1/2 top-[5%] bottom-[7%] w-[0.72rem] -translate-x-1/2 rounded-full bg-[#050607]" />
+                <div className={`relative h-full w-full ${isCompactLandscape ? 'max-w-[4.75rem]' : 'max-w-[5.8rem]'}`}>
+                  <div className={`absolute left-1/2 -translate-x-1/2 rounded-full bg-[#050607] ${isCompactLandscape ? 'top-[7%] bottom-[10%] w-[0.56rem]' : 'top-[5%] bottom-[7%] w-[0.72rem]'}`} />
                   {Array.from({ length: 7 }).map((_, index) => (
                     <div
                       key={`master-mark-${index}`}
@@ -2213,9 +2213,9 @@ export function LiveDirectorView({
                   ))}
                   <FaderThumb
                     accent="#81ddf5"
-                    className={`${isCompactLandscape ? 'h-[2.9rem]' : 'h-[4.35rem]'} w-full max-w-[6.1rem] transition-[bottom,box-shadow] duration-150`}
+                    className={`${isCompactLandscape ? 'h-[2.2rem]' : 'h-[4.35rem]'} w-full ${isCompactLandscape ? 'max-w-[4.95rem]' : 'max-w-[6.1rem]'} transition-[bottom,box-shadow] duration-150`}
                     style={{
-                      bottom: `calc(${10 + masterVolume * 78}% - ${isCompactLandscape ? '1.45rem' : '1.75rem'})`,
+                      bottom: `calc(${10 + masterVolume * 78}% - ${isCompactLandscape ? '1.1rem' : '1.75rem'})`,
                       boxShadow: '0 14px 24px rgba(0,0,0,0.35), 0 0 20px rgba(115,209,248,0.18)',
                     }}
                   />
@@ -2228,7 +2228,7 @@ export function LiveDirectorView({
                     disabled={!hasTrackSession}
                     onChange={(event) => setMasterVolumeState(Number(event.target.value))}
                     aria-label="Master volume"
-                    className="absolute left-1/2 top-1/2 h-12 w-[18rem] -translate-x-1/2 -translate-y-1/2 -rotate-90 cursor-pointer opacity-0"
+                    className={`absolute left-1/2 top-1/2 h-10 -translate-x-1/2 -translate-y-1/2 -rotate-90 cursor-pointer opacity-0 ${isCompactLandscape ? 'w-40' : 'w-[18rem]'}`}
                   />
                 </div>
               </div>
