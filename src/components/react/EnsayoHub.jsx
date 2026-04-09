@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Clock3, ExternalLink, GripVertical, ListMusic, Mic2, Play, Plus, RadioReceiver, X, Zap } from 'lucide-react';
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
 import EnsayoPersonalView from './EnsayoPersonalView.jsx';
-import ModoLiveDirector from './ModoLiveDirector.jsx';
+import ModoEnsayoDirector from './ModoEnsayoDirector.jsx';
 import { supabase } from '../../lib/supabase';
 import { metronomeService } from '../../services/MetronomeEngine';
 
@@ -875,7 +875,7 @@ export default function EnsayoHub({
 
   if (isLiveMode) {
     return (
-      <ModoLiveDirector
+      <ModoEnsayoDirector
         playlist={songs}
         contextTitle={contextTitle}
         onExit={() => {

@@ -425,6 +425,7 @@ const buildSongFromRow = async (songRow, orderIndex = 0) => {
     mp3: songRow?.mp3 || '',
     linkVoces: songRow?.voces || songRow?.link_voces || '',
     linkSecuencias: songRow?.link_secuencias || '',
+    multitrackSession: songRow?.multitrack_session || null,
     sectionMarkers: rawSectionMarkers,
     duration: estimateDuration(sections),
     sections,
@@ -614,14 +615,14 @@ if (!routeIsDemo) {
 
       const playlistQueryWithMarkers = await supabaseSSR
         .from('playlist_canciones')
-        .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, categoria, voz, mp3, voces, link_voces, link_secuencias, chordpro, section_markers)')
+        .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, categoria, voz, mp3, voces, link_voces, link_secuencias, chordpro, section_markers, multitrack_session)')
         .eq('playlist_id', playlistRow.id)
         .order('orden', { ascending: true });
 
       if (playlistQueryWithMarkers.error) {
         const playlistQueryFallback = await supabaseSSR
           .from('playlist_canciones')
-          .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, categoria, voz, mp3, voces, link_voces, link_secuencias, chordpro)')
+          .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, categoria, voz, mp3, voces, link_voces, link_secuencias, chordpro, multitrack_session)')
           .eq('playlist_id', playlistRow.id)
           .order('orden', { ascending: true });
 
