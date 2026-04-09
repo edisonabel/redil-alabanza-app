@@ -15,6 +15,7 @@ let songRecord: {
   cantante: string;
   tonalidad: string;
   bpm: number;
+  mp3: string;
   sections: ReturnType<typeof buildLiveDirectorSectionsFromMarkers>;
   session: ReturnType<typeof normalizePersistedLiveDirectorSession>;
 } | null = null;
@@ -25,9 +26,9 @@ const fetchSongByRequest = async (lookupValue: string) => {
   }
 
   const selectWithSession =
-    'id, titulo, cantante, tonalidad, bpm, section_markers, multitrack_session';
+    'id, titulo, cantante, tonalidad, bpm, mp3, section_markers, multitrack_session';
   const selectFallback =
-    'id, titulo, cantante, tonalidad, bpm, section_markers';
+    'id, titulo, cantante, tonalidad, bpm, mp3, section_markers';
 
   const runSelect = async (selectClause: string, byTitle = false, partialTitle = false) => {
     let query = supabase.from('canciones').select(selectClause);
@@ -72,6 +73,7 @@ if (requestedSong) {
         cantante: String(row.cantante || ''),
         tonalidad: String(row.tonalidad || ''),
         bpm: Number.isFinite(Number(row.bpm)) ? Number(row.bpm) : 0,
+        mp3: String(row.mp3 || ''),
         sections: buildLiveDirectorSectionsFromMarkers(row.section_markers),
         session: normalizePersistedLiveDirectorSession(rawSession, {
           songId: String(row.id || ''),
@@ -90,6 +92,7 @@ if (requestedSong) {
     client:load
     songId={songRecord?.id || ''}
     songTitle={songRecord?.titulo || ''}
+    songMp3={songRecord?.mp3 || ''}
     songKey={songRecord?.tonalidad || ''}
     title={songRecord?.cantante ? `Live Director - ${songRecord.cantante}` : 'Live Director'}
     subtitle={songRecord?.titulo || 'Select a Song'}

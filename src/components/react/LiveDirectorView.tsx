@@ -63,6 +63,7 @@ type LiveDirectorViewProps = {
   className?: string;
   songId?: string;
   songTitle?: string;
+  songMp3?: string;
   songKey?: string;
   initialSession?: LiveDirectorPersistedSession | null;
   requiresSongContext?: boolean;
@@ -120,6 +121,7 @@ const CURRENT_SONG_BACKGROUND =
   'radial-gradient(circle at 16% 18%, rgba(255,255,255,0.16), transparent 30%), linear-gradient(126deg, #3b463f 0%, #202526 38%, #14181a 100%)';
 const NEXT_SLOT_BACKGROUND =
   'linear-gradient(140deg, rgba(93,214,240,0.12), transparent 38%), linear-gradient(180deg, rgba(33,35,37,0.96), rgba(21,22,24,0.98))';
+const coverArtCache = new Map<string, string | null>();
 
 const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 
@@ -135,6 +137,121 @@ const formatCompact = (timeInSeconds: number) => {
   const minutes = Math.floor(safeValue / 60);
   const seconds = safeValue % 60;
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
+};
+
+const extractCoverArtFromMp3 = async (mp3Url: string): Promise<string | null> => {
+  if (!mp3Url) {
+    return null;
+  }
+
+  if (coverArtCache.has(mp3Url)) {
+    return coverArtCache.get(mp3Url) || null;
+  }
+
+  try {
+    const response = await fetch(mp3Url, {
+      headers: { Range: 'bytes=0-524287' },
+      mode: 'cors',
+    });
+
+    if (!response.ok) {
+      coverArtCache.set(mp3Url, null);
+      return null;
+    }
+
+    const buffer = await response.arrayBuffer();
+    const view = new DataView(buffer);
+
+    if (view.getUint8(0) !== 0x49 || view.getUint8(1) !== 0x44 || view.getUint8(2) !== 0x33) {
+      coverArtCache.set(mp3Url, null);
+      return null;
+    }
+
+    const majorVersion = view.getUint8(3);
+    const tagSize =
+      ((view.getUint8(6) & 0x7f) << 21) |
+      ((view.getUint8(7) & 0x7f) << 14) |
+      ((view.getUint8(8) & 0x7f) << 7) |
+      (view.getUint8(9) & 0x7f);
+
+    const tagEnd = Math.min(10 + tagSize, buffer.byteLength);
+    let offset = 10;
+    const flags = view.getUint8(5);
+
+    if (flags & 0x40 && offset + 4 < tagEnd) {
+      offset += view.getUint32(offset);
+    }
+
+    while (offset + 10 < tagEnd) {
+      const frameId = String.fromCharCode(
+        view.getUint8(offset),
+        view.getUint8(offset + 1),
+        view.getUint8(offset + 2),
+        view.getUint8(offset + 3),
+      );
+
+      const frameSize =
+        majorVersion >= 4
+          ? ((view.getUint8(offset + 4) & 0x7f) << 21) |
+            ((view.getUint8(offset + 5) & 0x7f) << 14) |
+            ((view.getUint8(offset + 6) & 0x7f) << 7) |
+            (view.getUint8(offset + 7) & 0x7f)
+          : view.getUint32(offset + 4);
+
+      if (frameSize <= 0 || frameSize > tagEnd - offset) {
+        break;
+      }
+
+      if (frameId === 'APIC') {
+        const frameData = new Uint8Array(buffer, offset + 10, frameSize);
+        const encoding = frameData[0];
+        let position = 1;
+        let mimeType = '';
+
+        while (position < frameData.length && frameData[position] !== 0) {
+          mimeType += String.fromCharCode(frameData[position]);
+          position += 1;
+        }
+
+        position += 1;
+        position += 1;
+
+        if (encoding === 0 || encoding === 3) {
+          while (position < frameData.length && frameData[position] !== 0) {
+            position += 1;
+          }
+          position += 1;
+        } else {
+          while (
+            position + 1 < frameData.length &&
+            !(frameData[position] === 0 && frameData[position + 1] === 0)
+          ) {
+            position += 2;
+          }
+          position += 2;
+        }
+
+        const imageData = frameData.slice(position);
+        if (imageData.length < 100) {
+          break;
+        }
+
+        const blob = new Blob([imageData], { type: mimeType || 'image/jpeg' });
+        const blobUrl = URL.createObjectURL(blob);
+        coverArtCache.set(mp3Url, blobUrl);
+        return blobUrl;
+      }
+
+      offset += 10 + frameSize;
+    }
+
+    coverArtCache.set(mp3Url, null);
+    return null;
+  } catch (error) {
+    console.warn('[LiveDirectorView] Could not extract cover art.', error);
+    coverArtCache.set(mp3Url, null);
+    return null;
+  }
 };
 
 const buildWaveBars = (seed: number, count = 24) =>
@@ -366,6 +483,7 @@ export function LiveDirectorView({
   className = '',
   songId = '',
   songTitle = '',
+  songMp3 = '',
   songKey = '',
   initialSession = null,
   requiresSongContext = false,
@@ -417,6 +535,7 @@ export function LiveDirectorView({
   const [loopEnabled, setLoopEnabled] = useState(false);
   const [surfaceView, setSurfaceView] = useState<SurfaceView>('mix');
   const [isPadActive, setIsPadActive] = useState(false);
+  const [songCoverArtUrl, setSongCoverArtUrl] = useState<string | null>(null);
 
   const activeTracks = useMemo(
     () => (hasProvidedTracks ? tracks || [] : manualSession?.tracks || []),
@@ -433,14 +552,13 @@ export function LiveDirectorView({
     : inferredSessionMode === 'folder'
       ? `${activeTracks.length} stem${activeTracks.length === 1 ? '' : 's'}`
       : 'Single sequence';
-  const sessionSurfaceCopy = !hasTrackSession
-    ? 'Load a sequence or stems to arm this song.'
-    : inferredSessionMode === 'folder'
-      ? `${activeTracks.length} channels ready for the mixer.`
-      : 'Stereo playback ready for this song.';
   const showSectionsPanel = surfaceView === 'sections';
   const displayBpm = Number.isFinite(Number(bpm)) ? Math.max(0, Math.round(Number(bpm))) : 0;
   const resolvedPadUrl = useMemo(() => getPadUrlForSongKey(songKey), [songKey]);
+  const songCardTitle = songTitle || currentSessionLabel;
+  const songCardMeta = songKey
+    ? `${songKey} · ${sessionModeLabel}`
+    : sessionModeLabel;
   const sectionOffsetSeconds = Number.isFinite(Number(manualSession?.sectionOffsetSeconds))
     ? Number(manualSession?.sectionOffsetSeconds)
     : 0;
@@ -522,6 +640,27 @@ export function LiveDirectorView({
     setUnmatchedFiles(initialSession.unmatchedFiles || []);
     setShowLoadPanel(false);
   }, [hasProvidedTracks, initialSession]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!songMp3) {
+      setSongCoverArtUrl(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void extractCoverArtFromMp3(songMp3).then((coverUrl) => {
+      if (!cancelled) {
+        setSongCoverArtUrl(coverUrl);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [songMp3]);
 
   const applyManualSession = useCallback((session: LiveDirectorResolvedSession) => {
     stop();
@@ -1005,14 +1144,14 @@ export function LiveDirectorView({
               Live Director solo se abre desde una cancion real de la base de datos.
             </h2>
             <p className="mt-4 text-lg leading-relaxed text-white/62">
-              Esta superficie no acepta cargas sueltas. Abrela desde <span className="font-semibold text-white/84">Admin Repertorio</span> en la fila de la cancion que quieras preparar.
+              Esta superficie no acepta cargas sueltas. Abrela desde <span className="font-semibold text-white/84">Repertorio</span> en la fila de la cancion que quieras preparar.
             </p>
             <div className="mt-6 rounded-[1.4rem] border border-white/8 bg-black/24 px-5 py-4 text-left">
               <p className="text-[0.74rem] font-black uppercase tracking-[0.24em] text-white/40">Flujo correcto</p>
               <p className="mt-2 text-sm leading-relaxed text-white/60">
-                1. Ve a <span className="font-semibold text-white/80">Admin Repertorio</span>.
+                1. Ve a <span className="font-semibold text-white/80">Repertorio</span>.
                 2. Busca la cancion.
-                3. Pulsa <span className="font-semibold text-white/80">Live Director</span>.
+                3. Pulsa <span className="font-semibold text-white/80">Multitrack</span>.
                 4. Desde ahi sube la secuencia o los stems y quedaran guardados bajo esa cancion.
               </p>
             </div>
@@ -1026,7 +1165,8 @@ export function LiveDirectorView({
     <div className={shellClassName}>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(93,214,240,0.08),_transparent_24%),linear-gradient(180deg,#232526_0%,#222425_46%,#202224_100%)]" />
       <div className="relative flex h-full flex-col gap-4 px-4 pb-4 pt-[max(env(safe-area-inset-top),0.7rem)]">
-        <header className="grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
+        <div className="hide-scrollbar -mx-1 shrink-0 overflow-x-auto pb-1">
+        <header className="grid min-w-[66rem] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-1">
           <div className="flex items-stretch gap-3">
             <div className="flex w-[4.85rem] shrink-0 flex-col items-center justify-center gap-1 rounded-[1.65rem] border border-white/8 bg-black/16 px-2 py-3 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
               <span className="text-[2.1rem] font-light leading-none tracking-tight text-white/92">
@@ -1118,11 +1258,13 @@ export function LiveDirectorView({
                 <button
                   type="button"
                   onClick={() => handleLoopMarker('a')}
-                  className={`ui-pressable-soft rounded-[1.15rem] border px-2 text-left transition-all ${
-                    loopEnabled
-                      ? 'border-cyan-300/40 bg-cyan-300/12 text-cyan-50'
-                      : 'border-white/8 bg-black/20 text-white/72'
-                  }`}
+                className={`ui-pressable-soft rounded-[1.15rem] border px-2 text-left transition-all ${
+                  loopEnabled
+                    ? 'border-cyan-300/40 bg-cyan-300/12 text-cyan-50'
+                    : 'border-white/8 bg-black/20 text-white/72'
+                }`}
+                  title="Punto A: marca el inicio del loop"
+                  aria-label="Punto A, inicio del loop"
                 >
                   <span className="block text-[0.64rem] font-black tracking-[0.22em]">A</span>
                   <span className="mt-1 block text-[0.95rem] font-semibold tabular-nums">{formatCompact(loopPointA)}</span>
@@ -1130,11 +1272,13 @@ export function LiveDirectorView({
                 <button
                   type="button"
                   onClick={() => handleLoopMarker('b')}
-                  className={`ui-pressable-soft rounded-[1.15rem] border px-2 text-left transition-all ${
-                    loopEnabled
-                      ? 'border-fuchsia-300/40 bg-fuchsia-300/12 text-fuchsia-50'
-                      : 'border-white/8 bg-black/20 text-white/72'
-                  }`}
+                className={`ui-pressable-soft rounded-[1.15rem] border px-2 text-left transition-all ${
+                  loopEnabled
+                    ? 'border-fuchsia-300/40 bg-fuchsia-300/12 text-fuchsia-50'
+                    : 'border-white/8 bg-black/20 text-white/72'
+                }`}
+                  title="Punto B: marca el final del loop"
+                  aria-label="Punto B, final del loop"
                 >
                   <span className="block text-[0.64rem] font-black tracking-[0.22em]">B</span>
                   <span className="mt-1 block text-[0.95rem] font-semibold tabular-nums">{formatCompact(loopPointB)}</span>
@@ -1147,6 +1291,8 @@ export function LiveDirectorView({
                       ? 'border-[#43c477]/55 bg-[#43c477]/14 text-[#8af7b1] shadow-[0_0_20px_rgba(67,196,119,0.18)]'
                       : 'border-white/8 bg-black/20 text-white/76'
                   }`}
+                  title="Activa el loop entre A y B"
+                  aria-label="Activar loop entre A y B"
                 >
                   <Repeat className="h-5 w-5" />
                   <span className="text-[0.88rem] font-semibold tracking-[0.18em]">IN</span>
@@ -1155,6 +1301,8 @@ export function LiveDirectorView({
                   type="button"
                   onClick={handleLoopOut}
                   className="ui-pressable-soft flex items-center justify-center gap-2 rounded-[1.15rem] border border-white/8 bg-black/20 text-white/72 transition-all hover:text-white"
+                  title="Salir del loop A-B"
+                  aria-label="Salir del loop A-B"
                 >
                   <span className="text-[0.88rem] font-semibold tracking-[0.18em]">OUT</span>
                 </button>
@@ -1165,12 +1313,17 @@ export function LiveDirectorView({
               type="button"
               onClick={() => setShowLoadPanel(true)}
               className={`${CONTROL_CARD} h-[5.55rem] w-[5.8rem] text-[1.1rem] font-semibold tracking-[0.18em] text-white/70 hover:text-white`}
-              aria-label="Open session loader"
+              title="Cargar o reemplazar la sesión multitrack"
+              aria-label="Cargar o reemplazar la sesión multitrack"
             >
-              LOAD
+              <div className="flex flex-col items-center gap-1">
+                <Upload className="h-5 w-5" />
+                <span className="text-[0.92rem]">CARGAR</span>
+              </div>
             </button>
           </div>
         </header>
+        </div>
 
         <section
           className={`grid min-h-0 shrink-0 gap-4 ${
@@ -1208,42 +1361,54 @@ export function LiveDirectorView({
 
                   setShowLoadPanel(true);
                 }}
-                className="ui-pressable-card group relative flex min-w-[27rem] flex-[1.55] shrink-0 flex-col overflow-hidden rounded-[1.7rem] border border-white/12 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200 hover:border-white/20"
+                className="ui-pressable-card group relative flex min-w-[16rem] w-[16.75rem] shrink-0 flex-col overflow-hidden rounded-[1.7rem] border border-white/12 bg-[linear-gradient(180deg,rgba(37,39,41,0.98),rgba(26,28,30,0.98))] px-4 py-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200 hover:border-white/20"
                 aria-label={hasTrackSession ? `Jump to start of ${currentSessionLabel}` : 'Open song loader'}
               >
-                <div
-                  className="relative h-full w-full px-5 py-4"
-                  style={{ backgroundImage: CURRENT_SONG_BACKGROUND }}
-                >
-                  <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),transparent_30%,rgba(0,0,0,0.18)_100%)]" />
-                  <div className="relative flex h-full flex-col justify-between">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-[0.72rem] font-black uppercase tracking-[0.28em] text-white/44">Current Song</p>
-                        <h2 className="mt-3 text-[2rem] font-semibold tracking-tight text-white">{currentSessionLabel}</h2>
-                        <p className="mt-2 text-[0.98rem] text-white/62">{sessionSurfaceCopy}</p>
-                      </div>
+                <div className="relative h-full">
+                  <div className="absolute inset-0 rounded-[1.45rem] opacity-50" style={{ backgroundImage: CURRENT_SONG_BACKGROUND }} />
+                  <div className="relative flex h-full flex-col">
+                    <div className="relative h-[5.7rem] overflow-hidden rounded-[1.25rem] border border-white/10 bg-black/28">
+                      {songCoverArtUrl ? (
+                        <img
+                          src={songCoverArtUrl}
+                          alt={`Portada de ${songCardTitle}`}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(129,221,245,0.18),_transparent_34%),linear-gradient(180deg,rgba(56,62,65,0.92),rgba(21,24,26,0.96))] text-white/52">
+                          <ListMusic className="h-9 w-9" />
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.18)_100%)]" />
                       <div
-                        className={`flex h-12 w-12 items-center justify-center rounded-full border text-white shadow-[0_12px_20px_rgba(0,0,0,0.24)] transition-all duration-200 ${
+                        className={`absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full border text-white shadow-[0_12px_20px_rgba(0,0,0,0.24)] transition-all duration-200 ${
                           isPlaying
                             ? 'border-[#43c477] bg-[#232a24] text-[#43c477] shadow-[0_0_18px_rgba(67,196,119,0.25)]'
                             : 'border-white/12 bg-black/38 text-white/80'
                         }`}
                       >
-                        <Play className="ml-1 h-6 w-6" />
+                        <Play className="ml-1 h-5 w-5" />
                       </div>
                     </div>
 
-                    <div>
-                      <div className="mb-3 flex items-center justify-between text-[0.82rem] font-semibold uppercase tracking-[0.18em] text-white/54">
-                        <span>{sessionModeLabel}</span>
-                        <span>{readyStateLabel}</span>
+                    <div className="mt-3 flex flex-1 flex-col justify-between">
+                      <div>
+                        <p className="text-[0.68rem] font-black uppercase tracking-[0.28em] text-white/42">Current Song</p>
+                        <h2 className="mt-1 truncate text-[1.28rem] font-semibold tracking-tight text-white">{songCardTitle}</h2>
+                        <p className="mt-1 text-[0.85rem] text-white/56">{songCardMeta}</p>
                       </div>
-                      <div className="h-2 rounded-full bg-black/28">
-                        <div
-                          className="h-full rounded-full bg-[linear-gradient(90deg,#43c477_0%,#81ddf5_100%)] shadow-[0_0_16px_rgba(67,196,119,0.18)] transition-[width] duration-200"
-                          style={{ width: `${Math.max(hasTrackSession ? progressPercent : 0, hasTrackSession ? 5 : 0)}%` }}
-                        />
+
+                      <div className="mt-3">
+                        <div className="mb-2 flex items-center justify-between text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-white/48">
+                          <span>{readyStateLabel}</span>
+                          <span>{formatCompact(currentTime)}</span>
+                        </div>
+                        <div className="h-2 rounded-full bg-black/28">
+                          <div
+                            className="h-full rounded-full bg-[linear-gradient(90deg,#43c477_0%,#81ddf5_100%)] shadow-[0_0_16px_rgba(67,196,119,0.18)] transition-[width] duration-200"
+                            style={{ width: `${Math.max(hasTrackSession ? progressPercent : 0, hasTrackSession ? 5 : 0)}%` }}
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1394,8 +1559,8 @@ export function LiveDirectorView({
         </section>
         <section className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_7.25rem_8rem] gap-4">
           <div
-            className="grid min-h-0 gap-3 overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] px-3 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
-            style={{ gridTemplateColumns: `repeat(${Math.max(1, mixerView.length)}, minmax(0, 1fr))` }}
+            className="hide-scrollbar grid min-h-0 gap-3 overflow-x-auto overflow-y-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] px-3 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+            style={{ gridTemplateColumns: `repeat(${Math.max(1, mixerView.length)}, minmax(4.5rem, 1fr))` }}
           >
             {mixerView.map((track) => {
               return (

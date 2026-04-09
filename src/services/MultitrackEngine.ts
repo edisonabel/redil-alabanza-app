@@ -18,7 +18,11 @@ type PlayableMediaTrack = {
 };
 
 const STREAMING_TRACK_THRESHOLD = 6;
-const MEDIA_MONITOR_INTERVAL_MS = 120;
+const MOBILE_BUFFER_TRACK_LIMIT = 12;
+const AUDIO_BUFFER_LOAD_BATCH_SIZE = 4;
+const MEDIA_MONITOR_INTERVAL_FAST_MS = 120;
+const MEDIA_MONITOR_INTERVAL_MEDIUM_MS = 180;
+const MEDIA_MONITOR_INTERVAL_SLOW_MS = 250;
 const MEDIA_SYNC_TOLERANCE_SECONDS = 0.12;
 const MEDIA_LOOP_EPSILON_SECONDS = 0.05;
 
@@ -185,7 +189,7 @@ export class MultitrackEngine {
   getCurrentTime(): number {
     if (this.mode === 'media') {
       if (this.isPlaying) {
-        const primaryMediaTrack = this.getPlayableMediaTracks(0)[0];
+        const primaryMediaTrack = this.getPrimaryPlayableMediaTrack(0);
         if (primaryMediaTrack) {
           return this.clampTime(primaryMediaTrack.mediaElement.currentTime);
         }
@@ -242,52 +246,65 @@ export class MultitrackEngine {
   }
 
   private shouldUseMediaMode(trackList: TrackData[]): boolean {
+    if (this.isMobileDevice()) {
+      return trackList.length > MOBILE_BUFFER_TRACK_LIMIT;
+    }
+
     return trackList.length >= STREAMING_TRACK_THRESHOLD;
   }
 
   private async loadTracksWithAudioBuffers(trackList: TrackData[]): Promise<TrackData[]> {
     const loadedTracks: TrackData[] = [];
 
-    for (const track of trackList) {
-      console.log(`[MultitrackEngine] Fetching "${track.name}" from ${track.url}`);
+    for (let index = 0; index < trackList.length; index += AUDIO_BUFFER_LOAD_BATCH_SIZE) {
+      const batch = trackList.slice(index, index + AUDIO_BUFFER_LOAD_BATCH_SIZE);
+      const loadedBatch = await Promise.all(
+        batch.map(async (track) => this.loadTrackWithAudioBuffer(track)),
+      );
 
-      try {
-        const response = await fetch(track.url);
-
-        if (!response.ok) {
-          throw new Error(
-            `Failed to fetch "${track.name}" (${response.status} ${response.statusText}).`,
-          );
-        }
-
-        const audioData = await response.arrayBuffer();
-        const audioBuffer = await this.context.decodeAudioData(audioData.slice(0));
-        const gainNode = this.context.createGain();
-        const panNode = this.context.createStereoPanner();
-
-        panNode.connect(gainNode);
-        gainNode.connect(this.masterGain);
-
-        track.volume = this.clampVolume(track.volume);
-        track.audioBuffer = audioBuffer;
-        track.gainNode = gainNode;
-        track.panNode = panNode;
-        track.sourceNode = undefined;
-        track.mediaElement = undefined;
-        track.mediaSourceNode = undefined;
-        track.durationSeconds = audioBuffer.duration;
-        this.syncTrackPan(track);
-        this.syncTrackGain(track);
-
-        console.log(`[MultitrackEngine] Loaded "${track.name}" successfully.`);
-        loadedTracks.push(track);
-      } catch (error) {
-        console.error(`[MultitrackEngine] Error loading "${track.name}".`, error);
-        throw error;
-      }
+      loadedTracks.push(...loadedBatch);
     }
 
     return loadedTracks;
+  }
+
+  private async loadTrackWithAudioBuffer(track: TrackData): Promise<TrackData> {
+    console.log(`[MultitrackEngine] Fetching "${track.name}" from ${track.url}`);
+
+    try {
+      const response = await fetch(track.url);
+
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch "${track.name}" (${response.status} ${response.statusText}).`,
+        );
+      }
+
+      const audioData = await response.arrayBuffer();
+      const audioBuffer = await this.context.decodeAudioData(audioData.slice(0));
+      const gainNode = this.context.createGain();
+      const panNode = this.context.createStereoPanner();
+
+      panNode.connect(gainNode);
+      gainNode.connect(this.masterGain);
+
+      track.volume = this.clampVolume(track.volume);
+      track.audioBuffer = audioBuffer;
+      track.gainNode = gainNode;
+      track.panNode = panNode;
+      track.sourceNode = undefined;
+      track.mediaElement = undefined;
+      track.mediaSourceNode = undefined;
+      track.durationSeconds = audioBuffer.duration;
+      this.syncTrackPan(track);
+      this.syncTrackGain(track);
+
+      console.log(`[MultitrackEngine] Loaded "${track.name}" successfully.`);
+      return track;
+    } catch (error) {
+      console.error(`[MultitrackEngine] Error loading "${track.name}".`, error);
+      throw error;
+    }
   }
 
   private async loadTracksWithMediaElements(trackList: TrackData[]): Promise<TrackData[]> {
@@ -476,6 +493,8 @@ export class MultitrackEngine {
     }
 
     this.stopMediaMonitor();
+    const mediaMonitorIntervalMs = this.getMediaMonitorInterval(this.tracks.length);
+
     this.mediaMonitorId = window.setInterval(() => {
       if (!this.isPlaying || this.mode !== 'media' || playbackSessionId !== this.playbackSessionId) {
         return;
@@ -486,10 +505,10 @@ export class MultitrackEngine {
         return;
       }
 
-      const primaryTrack = playableTracks[0];
+      const primaryTrack = this.getPrimaryPlayableMediaTrack(0) || playableTracks[0];
       const primaryTime = primaryTrack.mediaElement.currentTime;
 
-      playableTracks.forEach(({ mediaElement, duration }) => {
+      playableTracks.forEach(({ mediaElement, gainNode, duration }) => {
         if (this.isLooping) {
           const loopStart = this.clampOffsetForDuration(this.loopStartTime, duration);
           const loopEnd =
@@ -510,11 +529,15 @@ export class MultitrackEngine {
           return;
         }
 
+        if (gainNode.gain.value === 0) {
+          return;
+        }
+
         if (Math.abs(mediaElement.currentTime - primaryTime) > MEDIA_SYNC_TOLERANCE_SECONDS) {
           mediaElement.currentTime = this.clampOffsetForDuration(primaryTime, duration);
         }
       });
-    }, MEDIA_MONITOR_INTERVAL_MS);
+    }, mediaMonitorIntervalMs);
   }
 
   private stopMediaMonitor(): void {
@@ -739,12 +762,64 @@ export class MultitrackEngine {
       return;
     }
 
-    if (this.soloTrackId && track.id !== this.soloTrackId) {
-      track.gainNode.gain.value = 0;
-      return;
+    const nextGain =
+      this.soloTrackId && track.id !== this.soloTrackId
+        ? 0
+        : track.isMuted
+          ? 0
+          : this.clampVolume(track.volume);
+
+    track.gainNode.gain.value = nextGain;
+
+    if (
+      nextGain > 0 &&
+      this.mode === 'media' &&
+      this.isPlaying &&
+      track.mediaElement
+    ) {
+      const primaryTrack = this.getPrimaryPlayableMediaTrack(0);
+
+      if (primaryTrack && primaryTrack.mediaElement !== track.mediaElement) {
+        const duration = Number.isFinite(track.durationSeconds) ? Number(track.durationSeconds) : 0;
+        const targetTime = this.clampOffsetForDuration(primaryTrack.mediaElement.currentTime, duration);
+
+        if (Math.abs(track.mediaElement.currentTime - targetTime) > MEDIA_SYNC_TOLERANCE_SECONDS) {
+          track.mediaElement.currentTime = targetTime;
+        }
+      }
+    }
+  }
+
+  private isMobileDevice(): boolean {
+    if (typeof navigator === 'undefined') {
+      return false;
     }
 
-    track.gainNode.gain.value = track.isMuted ? 0 : this.clampVolume(track.volume);
+    const userAgent = navigator.userAgent || '';
+    const isTouchMac = /Macintosh/i.test(userAgent) && navigator.maxTouchPoints > 1;
+
+    return (
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(userAgent) ||
+      isTouchMac
+    );
+  }
+
+  private getMediaMonitorInterval(trackCount: number): number {
+    if (trackCount >= 16) {
+      return MEDIA_MONITOR_INTERVAL_SLOW_MS;
+    }
+
+    if (trackCount >= 9) {
+      return MEDIA_MONITOR_INTERVAL_MEDIUM_MS;
+    }
+
+    return MEDIA_MONITOR_INTERVAL_FAST_MS;
+  }
+
+  private getPrimaryPlayableMediaTrack(offset: number): PlayableMediaTrack | undefined {
+    const playableTracks = this.getPlayableMediaTracks(offset);
+
+    return playableTracks.find(({ gainNode }) => gainNode.gain.value > 0) || playableTracks[0];
   }
 
   private syncTrackPan(track: TrackData): void {

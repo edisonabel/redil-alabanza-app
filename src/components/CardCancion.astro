@@ -226,10 +226,16 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
       </a>
       )}
 
-      {hasMultitrackSession && String(cancionId || '').trim() !== '' && (
+      {String(cancionId || '').trim() !== '' && (
       <a
         href={`/herramientas/live-director-preview?song=${encodeURIComponent(String(cancionId || ''))}`}
-        class="h-9 rounded-xl border border-cyan-300/30 bg-cyan-300/10 shadow-sm inline-flex items-center gap-1.5 px-3 text-[12px] font-bold text-cyan-700 hover:bg-cyan-300/16 transition-all active:scale-95 dark:border-cyan-300/20 dark:bg-cyan-300/10 dark:text-cyan-200 dark:hover:bg-cyan-300/14">
+        class:list={[
+          "h-9 rounded-xl shadow-sm inline-flex items-center gap-1.5 px-3 text-[12px] font-bold transition-all active:scale-95",
+          hasMultitrackSession
+            ? "border border-cyan-300/30 bg-cyan-300/10 text-cyan-700 hover:bg-cyan-300/16 dark:border-cyan-300/20 dark:bg-cyan-300/10 dark:text-cyan-200 dark:hover:bg-cyan-300/14"
+            : "border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100",
+        ]}
+        title={hasMultitrackSession ? 'Abrir sesión multitrack' : 'Preparar sesión multitrack'}>
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M8 9h8"></path><path d="M8 13h5"></path><path d="M17 17v.01"></path></svg>
         Multitrack
       </a>
