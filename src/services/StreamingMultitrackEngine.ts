@@ -6,6 +6,19 @@ type WindowWithWebkitAudio = Window & typeof globalThis & {
   webkitAudioContext?: typeof AudioContext;
 };
 
+type NavigatorWithDeviceMemory = Navigator & {
+  deviceMemory?: number;
+};
+
+type PerformanceMemoryLike = {
+  usedJSHeapSize?: number;
+  jsHeapSizeLimit?: number;
+};
+
+type PerformanceWithMemory = Performance & {
+  memory?: PerformanceMemoryLike;
+};
+
 type TrackContainer = 'adts' | 'm4a' | 'custom';
 type SharedOrRegularBuffer = SharedArrayBuffer | ArrayBuffer;
 
@@ -161,6 +174,28 @@ const AAC_FRAME_SIZE = 1024;
 const MP4_EXTRACTION_SAMPLE_BATCH_SIZE = 16;
 const DECODER_SPECIFIC_INFO_TAG = 0x05;
 
+const readBrowserMemorySnapshot = () => {
+  if (typeof window === 'undefined') {
+    return {
+      browserHeapUsedBytes: null,
+      browserHeapLimitBytes: null,
+      deviceMemoryGb: null,
+    };
+  }
+
+  const performanceWithMemory = window.performance as PerformanceWithMemory;
+  const navigatorWithDeviceMemory = navigator as NavigatorWithDeviceMemory;
+  const heapUsed = performanceWithMemory.memory?.usedJSHeapSize;
+  const heapLimit = performanceWithMemory.memory?.jsHeapSizeLimit;
+  const deviceMemory = navigatorWithDeviceMemory.deviceMemory;
+
+  return {
+    browserHeapUsedBytes: Number.isFinite(heapUsed) ? Number(heapUsed) : null,
+    browserHeapLimitBytes: Number.isFinite(heapLimit) ? Number(heapLimit) : null,
+    deviceMemoryGb: Number.isFinite(deviceMemory) ? Number(deviceMemory) : null,
+  };
+};
+
 export class StreamingMultitrackEngine {
   public readonly context: AudioContext;
   public readonly masterGain: GainNode;
@@ -278,6 +313,35 @@ export class StreamingMultitrackEngine {
 
   getTrackMeterLevels(): Record<string, number> {
     return this.trackMeterLevels;
+  }
+
+  getDiagnostics(): {
+    engineMode: 'buffer' | 'media' | 'streaming';
+    trackCount: number;
+    estimatedAudioMemoryBytes: number;
+    browserHeapUsedBytes: number | null;
+    browserHeapLimitBytes: number | null;
+    deviceMemoryGb: number | null;
+  } {
+    let estimatedAudioMemoryBytes = 0;
+
+    for (let index = 0; index < this.trackStates.length; index += 1) {
+      const trackState = this.trackStates[index];
+      estimatedAudioMemoryBytes += trackState.ringBuffer.sampleStorage.byteLength;
+      estimatedAudioMemoryBytes += trackState.ringBuffer.indexStorage.byteLength;
+      estimatedAudioMemoryBytes += trackState.decodeScratch.byteLength;
+
+      for (let channelIndex = 0; channelIndex < trackState.channelScratch.length; channelIndex += 1) {
+        estimatedAudioMemoryBytes += trackState.channelScratch[channelIndex].byteLength;
+      }
+    }
+
+    return {
+      engineMode: 'streaming',
+      trackCount: this.tracks.length,
+      estimatedAudioMemoryBytes,
+      ...readBrowserMemorySnapshot(),
+    };
   }
 
   async initialize(trackDefinitions: StreamingTrackDefinition[]): Promise<void> {

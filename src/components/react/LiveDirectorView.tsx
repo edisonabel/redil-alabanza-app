@@ -12,7 +12,7 @@
   Upload,
   X,
 } from 'lucide-react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { useMultitrackEngine } from '../../hooks/useMultitrackEngine';
 import type { SongStructure, TrackData } from '../../services/MultitrackEngine';
 import {
@@ -56,6 +56,13 @@ type SectionLaneSegment = {
   waveBars: number[];
   widthPx: number;
   leftPx: number;
+};
+
+type DragScrollState = {
+  active: boolean;
+  pointerId: number | null;
+  startX: number;
+  startScrollLeft: number;
 };
 
 type SurfaceView = 'mix' | 'sections';
@@ -103,12 +110,21 @@ type MixerTrackView = MixerTrackMeta & {
 const MIXER_TRACKS: MixerTrackMeta[] = [
   { id: 'click', label: 'Click', shortLabel: 'CLK', accent: '#5ccfe6', defaultVolume: 0.34 },
   { id: 'guide', label: 'Guide', shortLabel: 'GDE', accent: '#73d1f8', defaultVolume: 0.72 },
+  { id: 'cues', label: 'Cues', shortLabel: 'CUE', accent: '#95b7ff', defaultVolume: 0.62 },
   { id: 'drums', label: 'Drums', shortLabel: 'DRM', accent: '#66d4f0', defaultVolume: 0.83 },
+  { id: 'percussion', label: 'Percussion', shortLabel: 'PRC', accent: '#80d7e6', defaultVolume: 0.72 },
   { id: 'bass', label: 'Bass', shortLabel: 'BSS', accent: '#7bd8ef', defaultVolume: 0.76 },
+  { id: 'synth-bass', label: 'Synth Bass', shortLabel: 'SB', accent: '#73dfe9', defaultVolume: 0.7 },
   { id: 'acoustic-gtr', label: 'Acoustic Gtr', shortLabel: 'AG', accent: '#6ed0eb', defaultVolume: 0.69 },
-  { id: 'electric-gtr-1', label: 'Electric Gtr 1', shortLabel: 'EG 1', accent: '#77d9f4', defaultVolume: 0.63 },
-  { id: 'electric-gtr-2', label: 'Electric Gtr 2', shortLabel: 'EG 2', accent: '#70d1f0', defaultVolume: 0.6 },
+  { id: 'electric-gtr', label: 'Electric Gtr', shortLabel: 'EG', accent: '#77d9f4', defaultVolume: 0.63 },
   { id: 'keys', label: 'Keys', shortLabel: 'KEY', accent: '#81ddf5', defaultVolume: 0.74 },
+  { id: 'piano', label: 'Piano', shortLabel: 'PNO', accent: '#8be1fb', defaultVolume: 0.72 },
+  { id: 'organ', label: 'Organ', shortLabel: 'ORG', accent: '#7ed8e7', defaultVolume: 0.68 },
+  { id: 'pad', label: 'Pad', shortLabel: 'PAD', accent: '#99c6ff', defaultVolume: 0.66 },
+  { id: 'strings', label: 'Strings', shortLabel: 'STR', accent: '#a992ff', defaultVolume: 0.66 },
+  { id: 'synth', label: 'Synth', shortLabel: 'SYN', accent: '#8fe1ff', defaultVolume: 0.68 },
+  { id: 'background-vocals', label: 'Background Vocals', shortLabel: 'BGV', accent: '#f29fd3', defaultVolume: 0.78 },
+  { id: 'choir', label: 'Choir', shortLabel: 'CHR', accent: '#ffb2d0', defaultVolume: 0.76 },
 ];
 
 const DEFAULT_SECTIONS: SectionVisual[] = [
@@ -146,6 +162,41 @@ const formatCompact = (timeInSeconds: number) => {
   const minutes = Math.floor(safeValue / 60);
   const seconds = safeValue % 60;
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
+};
+
+const formatMemoryValue = (bytes: number | null) => {
+  if (!Number.isFinite(bytes) || bytes === null || bytes <= 0) {
+    return 'n/a';
+  }
+
+  const megaBytes = bytes / (1024 * 1024);
+
+  if (megaBytes >= 100) {
+    return `${Math.round(megaBytes)} MB`;
+  }
+
+  if (megaBytes >= 10) {
+    return `${megaBytes.toFixed(1)} MB`;
+  }
+
+  return `${megaBytes.toFixed(2)} MB`;
+};
+
+const formatDeviceMemoryValue = (gigabytes: number | null) => {
+  if (!Number.isFinite(gigabytes) || gigabytes === null || gigabytes <= 0) {
+    return 'n/a';
+  }
+
+  return `${gigabytes} GB`;
+};
+
+const shouldIgnoreDragScrollTarget = (target: EventTarget | null) => {
+  return target instanceof Element &&
+    Boolean(
+      target.closest(
+        'button, input, a, label, textarea, select, [role="button"], [role="slider"], [data-no-drag-scroll="true"]',
+      ),
+    );
 };
 
 const extractCoverArtFromMp3 = async (mp3Url: string): Promise<string | null> => {
@@ -517,12 +568,21 @@ export function LiveDirectorView({
   const sequenceFileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const sectionsLaneScrollRef = useRef<HTMLDivElement | null>(null);
+  const mixerScrollRef = useRef<HTMLDivElement | null>(null);
+  const mixerDragStateRef = useRef<DragScrollState>({
+    active: false,
+    pointerId: null,
+    startX: 0,
+    startScrollLeft: 0,
+  });
   const padAudioRef = useRef<HTMLAudioElement | null>(null);
   const ownedObjectUrlsRef = useRef<string[]>([]);
   const [useStreamingEngine, setUseStreamingEngine] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [hasResolvedEngineFlag, setHasResolvedEngineFlag] = useState(false);
   const {
     currentTime,
+    diagnostics,
     initialize,
     isPlaying,
     isReady,
@@ -642,6 +702,15 @@ export function LiveDirectorView({
   }, [sectionLaneSegments]);
 
   const progressPercent = totalDuration > 0 ? clamp(currentTime / totalDuration, 0, 1) * 100 : 0;
+  const diagnosticsCards = useMemo(
+    () => [
+      { label: 'Heap', value: formatMemoryValue(diagnostics?.browserHeapUsedBytes ?? null) },
+      { label: 'Audio Est.', value: formatMemoryValue(diagnostics?.estimatedAudioMemoryBytes ?? null) },
+      { label: 'Tracks', value: diagnostics ? String(diagnostics.trackCount) : 'n/a' },
+      { label: 'Device', value: formatDeviceMemoryValue(diagnostics?.deviceMemoryGb ?? null) },
+    ],
+    [diagnostics],
+  );
 
   const activeSectionIndex = useMemo(() => {
     const nextIndex = resolvedSections.findIndex(
@@ -714,6 +783,16 @@ export function LiveDirectorView({
       };
     });
   }, [activeTracks, mutedTrackIds, soloTrackId, trackLevels, trackVolumes]);
+
+  const mappedTrackDetails = useMemo(
+    () =>
+      activeTracks.map((track) => ({
+        id: track.id,
+        trackName: track.name,
+        sourceFileName: track.sourceFileName || track.name,
+      })),
+    [activeTracks],
+  );
 
   const replaceOwnedObjectUrls = useCallback((nextObjectUrls: string[]) => {
     ownedObjectUrlsRef.current.forEach((objectUrl) => {
@@ -790,7 +869,7 @@ export function LiveDirectorView({
   const clearManualSession = useCallback(async () => {
     stop();
     setLoadError(null);
-    setBusyMessage(hasPersistedSongContext ? 'Removing saved session...' : null);
+    setBusyMessage(hasPersistedSongContext ? 'Removing session and deleting R2 files...' : null);
 
     try {
       if (hasPersistedSongContext) {
@@ -855,7 +934,9 @@ export function LiveDirectorView({
       return;
     }
 
-    setUseStreamingEngine(new URLSearchParams(window.location.search).get('engine') === 'streaming');
+    const searchParams = new URLSearchParams(window.location.search);
+    setUseStreamingEngine(searchParams.get('engine') === 'streaming');
+    setShowDiagnostics(searchParams.get('debug') === '1');
     setHasResolvedEngineFlag(true);
   }, []);
 
@@ -872,9 +953,15 @@ export function LiveDirectorView({
       nextUrl.searchParams.delete('engine');
     }
 
+    if (showDiagnostics) {
+      nextUrl.searchParams.set('debug', '1');
+    } else {
+      nextUrl.searchParams.delete('debug');
+    }
+
     const nextHref = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
     window.history.replaceState(window.history.state, '', nextHref);
-  }, [hasResolvedEngineFlag, useStreamingEngine]);
+  }, [hasResolvedEngineFlag, showDiagnostics, useStreamingEngine]);
 
   useEffect(() => {
     return () => {
@@ -1248,6 +1335,85 @@ export function LiveDirectorView({
     setUseStreamingEngine((previous) => !previous);
   }, []);
 
+  const endMixerDrag = useCallback((pointerId?: number) => {
+    const container = mixerScrollRef.current;
+    const dragState = mixerDragStateRef.current;
+
+    if (!dragState.active) {
+      return;
+    }
+
+    if (typeof pointerId === 'number' && dragState.pointerId !== pointerId) {
+      return;
+    }
+
+    if (container && dragState.pointerId !== null) {
+      try {
+        container.releasePointerCapture(dragState.pointerId);
+      } catch {
+        // no-op
+      }
+    }
+
+    mixerDragStateRef.current = {
+      active: false,
+      pointerId: null,
+      startX: 0,
+      startScrollLeft: 0,
+    };
+  }, []);
+
+  const handleMixerPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const container = mixerScrollRef.current;
+
+    if (!container) {
+      return;
+    }
+
+    if (event.pointerType === 'mouse' && event.button !== 0) {
+      return;
+    }
+
+    if (shouldIgnoreDragScrollTarget(event.target)) {
+      return;
+    }
+
+    mixerDragStateRef.current = {
+      active: true,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startScrollLeft: container.scrollLeft,
+    };
+
+    try {
+      container.setPointerCapture(event.pointerId);
+    } catch {
+      // no-op
+    }
+  }, []);
+
+  const handleMixerPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const container = mixerScrollRef.current;
+    const dragState = mixerDragStateRef.current;
+
+    if (!container || !dragState.active || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const deltaX = event.clientX - dragState.startX;
+
+    if (Math.abs(deltaX) < 2) {
+      return;
+    }
+
+    container.scrollLeft = dragState.startScrollLeft - deltaX;
+    event.preventDefault();
+  }, []);
+
+  const handleMixerPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    endMixerDrag(event.pointerId);
+  }, [endMixerDrag]);
+
   const readyStateLabel = !hasTrackSession
     ? 'No Session'
     : busyMessage
@@ -1568,6 +1734,24 @@ export function LiveDirectorView({
                         </p>
                         <p className="mt-1 text-[0.92rem] font-semibold text-inherit">{currentEngineLabel}</p>
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowDiagnostics((previous) => !previous)}
+                        className={`ui-pressable-soft rounded-full border px-3 py-1.5 text-left transition-all ${
+                          showDiagnostics
+                            ? 'border-cyan-300/34 bg-cyan-300/10 text-cyan-50 shadow-[0_0_18px_rgba(129,221,245,0.14)]'
+                            : 'border-white/8 bg-black/18 text-white/72 hover:text-white'
+                        }`}
+                        aria-label={`${showDiagnostics ? 'Hide' : 'Show'} memory diagnostics`}
+                        title="Mostrar u ocultar diagnostico de memoria y carga"
+                      >
+                        <p className="text-[0.6rem] font-black uppercase tracking-[0.22em] text-white/38">
+                          RAM
+                        </p>
+                        <p className="mt-1 text-[0.92rem] font-semibold text-inherit">
+                          {showDiagnostics ? 'On' : 'Off'}
+                        </p>
+                      </button>
                       <div className="rounded-[1.1rem] border border-white/8 bg-black/18 px-3 py-2 text-right">
                         <p className="text-[0.62rem] font-black uppercase tracking-[0.24em] text-white/36">
                           Ready
@@ -1591,6 +1775,21 @@ export function LiveDirectorView({
                           style={{ width: `${Math.max(hasTrackSession ? progressPercent : 0, hasTrackSession ? 4 : 0)}%` }}
                         />
                       </div>
+                      {showDiagnostics && (
+                        <div className="mt-3 grid grid-cols-4 gap-2">
+                          {diagnosticsCards.map((card) => (
+                            <div
+                              key={card.label}
+                              className="rounded-[1rem] border border-white/8 bg-black/20 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]"
+                            >
+                              <p className="text-[0.58rem] font-black uppercase tracking-[0.22em] text-white/34">
+                                {card.label}
+                              </p>
+                              <p className="mt-1 text-[0.88rem] font-semibold text-white/78">{card.value}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <button
@@ -1767,8 +1966,18 @@ export function LiveDirectorView({
         </section>
         <section className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_7.25rem_8rem] gap-4">
           <div
+            ref={mixerScrollRef}
+            onPointerDown={handleMixerPointerDown}
+            onPointerMove={handleMixerPointerMove}
+            onPointerUp={handleMixerPointerUp}
+            onPointerCancel={handleMixerPointerUp}
             className="hide-scrollbar grid min-h-0 gap-3 overflow-x-auto overflow-y-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] px-3 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
-            style={{ gridTemplateColumns: `repeat(${Math.max(1, mixerView.length)}, minmax(8.5rem, 1fr))` }}
+            style={{
+              gridTemplateColumns: `repeat(${Math.max(1, mixerView.length)}, minmax(8.5rem, 1fr))`,
+              touchAction: 'pan-x pinch-zoom',
+              overscrollBehaviorX: 'contain',
+              WebkitOverflowScrolling: 'touch',
+            }}
           >
             {mixerView.map((track) => {
               return (
@@ -2043,7 +2252,7 @@ export function LiveDirectorView({
                   </div>
                 )}
 
-                <div className="mt-6 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
+                <div className="mt-6 grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-4">
                   <div className="rounded-[1.3rem] border border-white/8 bg-black/24 p-4">
                     <p className="text-[0.74rem] font-black uppercase tracking-[0.22em] text-white/38">Session State</p>
                     <p className="mt-3 text-lg font-semibold text-white">{hasTrackSession ? currentSessionLabel : 'No session loaded yet'}</p>
@@ -2054,26 +2263,90 @@ export function LiveDirectorView({
                           ? 'Esta sesion quedara guardada bajo la cancion seleccionada, no como un upload global.'
                           : 'Carga una pista estereo o una carpeta para inicializar el mezclador.'}
                     </p>
+                    {hasTrackSession && (
+                      <div className="mt-4 rounded-[1rem] border border-emerald-300/14 bg-emerald-300/6 px-3 py-3">
+                        <p className="text-[0.68rem] font-black uppercase tracking-[0.2em] text-emerald-100/64">
+                          Clear Session
+                        </p>
+                        <p className="mt-2 text-sm leading-relaxed text-white/58">
+                          Al limpiar esta sesion se borra el registro en Supabase y tambien los archivos asociados en R2.
+                        </p>
+                      </div>
+                    )}
                   </div>
                   <div className="rounded-[1.3rem] border border-white/8 bg-black/24 p-4">
-                    <p className="text-[0.74rem] font-black uppercase tracking-[0.22em] text-white/38">Inference Notes</p>
-                    <p className="mt-3 text-sm leading-relaxed text-white/54">
-                      {unmatchedFiles.length > 0
-                        ? `Quedaron ${unmatchedFiles.length} archivo(s) sin mapear: ${unmatchedFiles.slice(0, 4).join(', ')}${unmatchedFiles.length > 4 ? '...' : ''}`
-                        : 'Cuando un nombre no coincide con un stem conocido, el archivo no se carga hasta que definamos una regla o un manifest.'}
-                    </p>
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-[0.74rem] font-black uppercase tracking-[0.22em] text-white/38">Detection Report</p>
+                        <p className="mt-2 text-sm text-white/52">
+                          Lista exacta de lo que entro al mixer y de lo que quedo fuera.
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[0.68rem] font-black uppercase tracking-[0.18em] text-white/34">Mapped</p>
+                        <p className="mt-1 text-lg font-semibold text-white">{mappedTrackDetails.length}</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-[minmax(0,1fr)_minmax(0,0.88fr)] gap-4">
+                      <div className="rounded-[1rem] border border-white/8 bg-black/24 p-3">
+                        <p className="text-[0.66rem] font-black uppercase tracking-[0.18em] text-white/38">Mapped Tracks</p>
+                        <div className="mt-3 max-h-44 space-y-2 overflow-y-auto pr-1">
+                          {mappedTrackDetails.length > 0 ? (
+                            mappedTrackDetails.map((track) => (
+                              <div
+                                key={`mapped-${track.id}-${track.sourceFileName}`}
+                                className="rounded-[0.9rem] border border-white/6 bg-white/[0.03] px-3 py-2"
+                              >
+                                <p className="truncate text-sm font-semibold text-white/88">{track.sourceFileName}</p>
+                                <p className="mt-1 text-[0.72rem] uppercase tracking-[0.16em] text-cyan-100/56">
+                                  {track.trackName}
+                                </p>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-sm leading-relaxed text-white/48">
+                              Todavia no hay archivos mapeados en esta sesion.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded-[1rem] border border-white/8 bg-black/24 p-3">
+                        <p className="text-[0.66rem] font-black uppercase tracking-[0.18em] text-white/38">Unmatched Files</p>
+                        <div className="mt-3 max-h-44 space-y-2 overflow-y-auto pr-1">
+                          {unmatchedFiles.length > 0 ? (
+                            unmatchedFiles.map((fileName) => (
+                              <div
+                                key={`unmatched-${fileName}`}
+                                className="rounded-[0.9rem] border border-amber-200/10 bg-amber-200/[0.04] px-3 py-2"
+                              >
+                                <p className="truncate text-sm font-semibold text-white/82">{fileName}</p>
+                                <p className="mt-1 text-[0.72rem] uppercase tracking-[0.16em] text-amber-100/44">
+                                  No mapped rule yet
+                                </p>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-sm leading-relaxed text-white/48">
+                              Todo lo detectado entro al mixer.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
                 {hasTrackSession && (
                   <div className="mt-6 flex items-center justify-between rounded-[1.2rem] border border-white/8 bg-black/20 px-4 py-3">
-                    <p className="text-sm text-white/58">La sesion actual ya esta preparada. Puedes cerrar este panel o reemplazarla.</p>
+                    <p className="text-sm text-white/58">La sesion actual ya esta preparada. Puedes cerrarla, reemplazarla o limpiarla junto con sus archivos en R2.</p>
                     <button
                       type="button"
                       onClick={clearManualSession}
                       className="ui-pressable-soft rounded-[0.9rem] border border-white/10 bg-white/6 px-4 py-2 text-xs font-semibold tracking-[0.16em] text-white/82"
                     >
-                      CLEAR SESSION
+                      CLEAR SESSION + R2
                     </button>
                   </div>
                 )}

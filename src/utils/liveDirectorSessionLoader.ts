@@ -34,27 +34,45 @@ const AUDIO_FILE_PATTERN = /\.(mp3|wav|m4a|aac|ogg|flac|aif|aiff|caf)$/i;
 const STEM_ALIAS_GROUPS: StemAliasGroup[] = [
   { id: 'click', label: 'Click', defaultVolume: 0.34, aliases: ['click', 'clic', 'metro', 'metronome', 'cue click'] },
   { id: 'guide', label: 'Guide', defaultVolume: 0.72, aliases: ['guide', 'guia', 'guia vocal', 'vocal guide', 'vox guide'] },
-  { id: 'drums', label: 'Drums', defaultVolume: 0.83, aliases: ['drums', 'drum', 'bateria', 'perc', 'percussion'] },
+  { id: 'cues', label: 'Cues', defaultVolume: 0.62, aliases: ['cues', 'cue', 'count in', 'countin'] },
+  { id: 'drums', label: 'Drums', defaultVolume: 0.83, aliases: ['drums', 'drum', 'bateria', 'kit'] },
+  { id: 'percussion', label: 'Percussion', defaultVolume: 0.72, aliases: ['percussion', 'perc', 'shaker', 'loop perc'] },
   { id: 'bass', label: 'Bass', defaultVolume: 0.76, aliases: ['bass', 'bajo'] },
+  { id: 'synth-bass', label: 'Synth Bass', defaultVolume: 0.7, aliases: ['synth bass', 'sub bass', '808 bass'] },
   {
     id: 'acoustic-gtr',
     label: 'Acoustic Gtr',
     defaultVolume: 0.69,
-    aliases: ['acoustic', 'acoustic gtr', 'acoustic guitar', 'guitarra acustica', 'guitarra acustica 1', 'ag'],
+    aliases: ['acoustic', 'acoustic 1', 'acoustic 2', 'acoustic gtr', 'acoustic guitar', 'guitarra acustica', 'guitarra acustica 1', 'guitarra acustica 2', 'ag'],
   },
   {
-    id: 'electric-gtr-1',
-    label: 'Electric Gtr 1',
+    id: 'electric-gtr',
+    label: 'Electric Gtr',
     defaultVolume: 0.63,
-    aliases: ['electric gtr 1', 'electric guitar 1', 'electric 1', 'eg1', 'eg 1', 'gtr 1', 'guitar 1', 'lead gtr'],
+    aliases: [
+      'electric',
+      'electric 1',
+      'electric 2',
+      'electric 3',
+      'electric 4',
+      'electric 5',
+      'electric gtr',
+      'electric guitar',
+      'guitarra electrica',
+      'lead gtr',
+      'rhythm gtr',
+      'eg',
+      'gtr',
+    ],
   },
-  {
-    id: 'electric-gtr-2',
-    label: 'Electric Gtr 2',
-    defaultVolume: 0.6,
-    aliases: ['electric gtr 2', 'electric guitar 2', 'electric 2', 'eg2', 'eg 2', 'gtr 2', 'guitar 2', 'rhythm gtr'],
-  },
-  { id: 'keys', label: 'Keys', defaultVolume: 0.74, aliases: ['keys', 'key', 'teclas', 'piano', 'pad', 'pads', 'synth'] },
+  { id: 'keys', label: 'Keys', defaultVolume: 0.74, aliases: ['keys', 'key', 'teclas', 'teclado'] },
+  { id: 'piano', label: 'Piano', defaultVolume: 0.72, aliases: ['piano'] },
+  { id: 'organ', label: 'Organ', defaultVolume: 0.68, aliases: ['organ', 'hammond'] },
+  { id: 'pad', label: 'Pad', defaultVolume: 0.66, aliases: ['pad', 'pads'] },
+  { id: 'strings', label: 'Strings', defaultVolume: 0.66, aliases: ['strings', 'string'] },
+  { id: 'synth', label: 'Synth', defaultVolume: 0.68, aliases: ['synth', 'synthesizer', 'lead synth'] },
+  { id: 'background-vocals', label: 'Background Vocals', defaultVolume: 0.78, aliases: ['background vocals', 'background vocal', 'bgv', 'backing vocals', 'vocals bg'] },
+  { id: 'choir', label: 'Choir', defaultVolume: 0.76, aliases: ['choir', 'coro', 'coros'] },
   { id: 'sequence', label: 'Sequence', defaultVolume: 0.84, aliases: ['sequence', 'secuencia', 'playback', 'stereo', 'mix', 'full mix', 'main mix', 'lr'] },
 ];
 
@@ -106,14 +124,12 @@ const inferTrackGroup = (filename: string): StemAliasGroup | null => {
     return bestMatch.group;
   }
 
-  if (normalizedName.includes('gtr') || normalizedName.includes('guitar')) {
-    if (normalizedName.includes('2')) {
-      return STEM_ALIAS_GROUPS.find((group) => group.id === 'electric-gtr-2') ?? null;
-    }
-
-    if (normalizedName.includes('1')) {
-      return STEM_ALIAS_GROUPS.find((group) => group.id === 'electric-gtr-1') ?? null;
-    }
+  if (
+    normalizedName.includes('electric') ||
+    normalizedName.includes('gtr') ||
+    normalizedName.includes('guitar')
+  ) {
+    return STEM_ALIAS_GROUPS.find((group) => group.id === 'electric-gtr') ?? null;
   }
 
   return null;

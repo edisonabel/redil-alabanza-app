@@ -2,6 +2,19 @@ type WindowWithWebkitAudio = Window & typeof globalThis & {
   webkitAudioContext?: typeof AudioContext;
 };
 
+type NavigatorWithDeviceMemory = Navigator & {
+  deviceMemory?: number;
+};
+
+type PerformanceMemoryLike = {
+  usedJSHeapSize?: number;
+  jsHeapSizeLimit?: number;
+};
+
+type PerformanceWithMemory = Performance & {
+  memory?: PerformanceMemoryLike;
+};
+
 type EngineMode = 'buffer' | 'media';
 
 type PlayableBufferTrack = {
@@ -25,6 +38,28 @@ const MEDIA_MONITOR_INTERVAL_MEDIUM_MS = 180;
 const MEDIA_MONITOR_INTERVAL_SLOW_MS = 250;
 const MEDIA_SYNC_TOLERANCE_SECONDS = 0.12;
 const MEDIA_LOOP_EPSILON_SECONDS = 0.05;
+
+const readBrowserMemorySnapshot = () => {
+  if (typeof window === 'undefined') {
+    return {
+      browserHeapUsedBytes: null,
+      browserHeapLimitBytes: null,
+      deviceMemoryGb: null,
+    };
+  }
+
+  const performanceWithMemory = window.performance as PerformanceWithMemory;
+  const navigatorWithDeviceMemory = navigator as NavigatorWithDeviceMemory;
+  const heapUsed = performanceWithMemory.memory?.usedJSHeapSize;
+  const heapLimit = performanceWithMemory.memory?.jsHeapSizeLimit;
+  const deviceMemory = navigatorWithDeviceMemory.deviceMemory;
+
+  return {
+    browserHeapUsedBytes: Number.isFinite(heapUsed) ? Number(heapUsed) : null,
+    browserHeapLimitBytes: Number.isFinite(heapLimit) ? Number(heapLimit) : null,
+    deviceMemoryGb: Number.isFinite(deviceMemory) ? Number(deviceMemory) : null,
+  };
+};
 
 export interface TrackData {
   id: string;
@@ -130,6 +165,39 @@ export class MultitrackEngine {
     }
 
     return levels;
+  }
+
+  getDiagnostics(): {
+    engineMode: 'buffer' | 'media' | 'streaming';
+    trackCount: number;
+    estimatedAudioMemoryBytes: number;
+    browserHeapUsedBytes: number | null;
+    browserHeapLimitBytes: number | null;
+    deviceMemoryGb: number | null;
+  } {
+    let estimatedAudioMemoryBytes = 0;
+
+    for (let index = 0; index < this.tracks.length; index += 1) {
+      const track = this.tracks[index];
+
+      if (track.audioBuffer) {
+        estimatedAudioMemoryBytes +=
+          track.audioBuffer.length *
+          track.audioBuffer.numberOfChannels *
+          Float32Array.BYTES_PER_ELEMENT;
+      }
+
+      if (track.meterData) {
+        estimatedAudioMemoryBytes += track.meterData.byteLength;
+      }
+    }
+
+    return {
+      engineMode: this.mode,
+      trackCount: this.tracks.length,
+      estimatedAudioMemoryBytes,
+      ...readBrowserMemorySnapshot(),
+    };
   }
 
   getIsPlaying(): boolean {

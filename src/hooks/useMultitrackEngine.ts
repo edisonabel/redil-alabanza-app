@@ -5,8 +5,10 @@ import { StreamingMultitrackEngine } from '../services/StreamingMultitrackEngine
 type TrackVolumesState = Record<string, number>;
 type TrackLevelsState = Record<string, number>;
 const UI_UPDATE_INTERVAL_MS = 1000 / 24;
+const DIAGNOSTICS_UPDATE_INTERVAL_MS = 1000;
 type EngineKind = 'buffer' | 'streaming';
 type EngineInstance = MultitrackEngine | StreamingMultitrackEngine;
+type EngineDiagnostics = ReturnType<MultitrackEngine['getDiagnostics']>;
 
 type UseMultitrackEngineOptions = {
   useStreamingEngine?: boolean;
@@ -18,6 +20,7 @@ type UseMultitrackEngineReturn = {
   isReady: boolean;
   trackVolumes: TrackVolumesState;
   trackLevels: TrackLevelsState;
+  diagnostics: EngineDiagnostics | null;
   initialize: (tracks: TrackData[]) => Promise<void>;
   play: () => Promise<void>;
   pause: () => void;
@@ -71,8 +74,10 @@ export function useMultitrackEngine(
   const engineRef = useRef<EngineInstance | null>(null);
   const engineKindRef = useRef<EngineKind>(requestedEngineKind);
   const frameRef = useRef<number | null>(null);
+  const diagnosticsIntervalRef = useRef<number | null>(null);
   const currentTimeRef = useRef(0);
   const trackLevelsRef = useRef<TrackLevelsState>({});
+  const diagnosticsRef = useRef<EngineDiagnostics | null>(null);
   const lastUiUpdateRef = useRef(0);
   const initializationTokenRef = useRef(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -80,6 +85,7 @@ export function useMultitrackEngine(
   const [isReady, setIsReady] = useState(false);
   const [trackVolumes, setTrackVolumes] = useState<TrackVolumesState>({});
   const [trackLevels, setTrackLevels] = useState<TrackLevelsState>({});
+  const [diagnostics, setDiagnostics] = useState<EngineDiagnostics | null>(null);
 
   const teardownEngine = useCallback((engine: EngineInstance | null) => {
     if (!engine) {
@@ -166,6 +172,28 @@ export function useMultitrackEngine(
     });
   }, []);
 
+  const commitDiagnostics = useCallback((nextDiagnostics: EngineDiagnostics | null) => {
+    const previousDiagnostics = diagnosticsRef.current;
+
+    if (
+      previousDiagnostics &&
+      nextDiagnostics &&
+      previousDiagnostics.engineMode === nextDiagnostics.engineMode &&
+      previousDiagnostics.trackCount === nextDiagnostics.trackCount &&
+      previousDiagnostics.estimatedAudioMemoryBytes === nextDiagnostics.estimatedAudioMemoryBytes &&
+      previousDiagnostics.browserHeapUsedBytes === nextDiagnostics.browserHeapUsedBytes &&
+      previousDiagnostics.browserHeapLimitBytes === nextDiagnostics.browserHeapLimitBytes &&
+      previousDiagnostics.deviceMemoryGb === nextDiagnostics.deviceMemoryGb
+    ) {
+      return;
+    }
+
+    diagnosticsRef.current = nextDiagnostics;
+    startTransition(() => {
+      setDiagnostics(nextDiagnostics);
+    });
+  }, []);
+
   const initialize = useCallback(async (tracks: TrackData[]) => {
     const initializationToken = ++initializationTokenRef.current;
     const nextTracks = cloneTracks(tracks);
@@ -187,6 +215,7 @@ export function useMultitrackEngine(
       setTrackVolumes(buildTrackVolumes(loadedTracks));
       trackLevelsRef.current = buildTrackLevels(loadedTracks);
       setTrackLevels(trackLevelsRef.current);
+      commitDiagnostics(engine.getDiagnostics());
       setIsReady(true);
     } catch (error) {
       if (initializationToken !== initializationTokenRef.current || engine !== engineRef.current) {
@@ -196,9 +225,10 @@ export function useMultitrackEngine(
       setIsReady(false);
       trackLevelsRef.current = {};
       setTrackLevels({});
+      commitDiagnostics(null);
       throw error;
     }
-  }, [getEngine]);
+  }, [commitDiagnostics, getEngine]);
 
   const play = useCallback(async () => {
     if (!isReady) {
@@ -214,7 +244,8 @@ export function useMultitrackEngine(
     setIsPlaying(engine.getIsPlaying());
     commitCurrentTime(engine.getCurrentTime());
     commitTrackLevels(engine.getTrackMeterLevels());
-  }, [commitCurrentTime, commitTrackLevels, isReady]);
+    commitDiagnostics(engine.getDiagnostics());
+  }, [commitCurrentTime, commitDiagnostics, commitTrackLevels, isReady]);
 
   const pause = useCallback(() => {
     const engine = engineRef.current;
@@ -226,7 +257,8 @@ export function useMultitrackEngine(
     setIsPlaying(false);
     commitCurrentTime(engine.getCurrentTime());
     commitTrackLevels(buildTrackLevels(engine.getTracks()));
-  }, [commitCurrentTime, commitTrackLevels]);
+    commitDiagnostics(engine.getDiagnostics());
+  }, [commitCurrentTime, commitDiagnostics, commitTrackLevels]);
 
   const stop = useCallback(() => {
     const engine = engineRef.current;
@@ -239,7 +271,8 @@ export function useMultitrackEngine(
     currentTimeRef.current = 0;
     setCurrentTime(0);
     commitTrackLevels(buildTrackLevels(engine.getTracks()));
-  }, [commitTrackLevels]);
+    commitDiagnostics(engine.getDiagnostics());
+  }, [commitDiagnostics, commitTrackLevels]);
 
   const setVolume = useCallback((trackId: string, volume: number) => {
     const engine = engineRef.current;
@@ -302,7 +335,8 @@ export function useMultitrackEngine(
     commitCurrentTime(engine.getCurrentTime());
     setIsPlaying(engine.getIsPlaying());
     commitTrackLevels(engine.getTrackMeterLevels());
-  }, [commitCurrentTime, commitTrackLevels]);
+    commitDiagnostics(engine.getDiagnostics());
+  }, [commitCurrentTime, commitDiagnostics, commitTrackLevels]);
 
   const soloTrack = useCallback((trackId: string) => {
     const engine = engineRef.current;
@@ -318,6 +352,11 @@ export function useMultitrackEngine(
       if (frameRef.current !== null) {
         window.cancelAnimationFrame(frameRef.current);
         frameRef.current = null;
+      }
+
+      if (diagnosticsIntervalRef.current !== null) {
+        window.clearInterval(diagnosticsIntervalRef.current);
+        diagnosticsIntervalRef.current = null;
       }
 
       teardownEngine(engineRef.current);
@@ -342,8 +381,31 @@ export function useMultitrackEngine(
     setCurrentTime(0);
     trackLevelsRef.current = {};
     setTrackLevels({});
+    diagnosticsRef.current = null;
+    setDiagnostics(null);
     lastUiUpdateRef.current = 0;
   }, [requestedEngineKind, teardownEngine]);
+
+  useEffect(() => {
+    const updateDiagnostics = () => {
+      const engine = engineRef.current;
+      if (!engine) {
+        return;
+      }
+
+      commitDiagnostics(engine.getDiagnostics());
+    };
+
+    updateDiagnostics();
+    diagnosticsIntervalRef.current = window.setInterval(updateDiagnostics, DIAGNOSTICS_UPDATE_INTERVAL_MS);
+
+    return () => {
+      if (diagnosticsIntervalRef.current !== null) {
+        window.clearInterval(diagnosticsIntervalRef.current);
+        diagnosticsIntervalRef.current = null;
+      }
+    };
+  }, [commitDiagnostics]);
 
   useEffect(() => {
     if (!isPlaying) {
@@ -398,6 +460,7 @@ export function useMultitrackEngine(
       isReady,
       trackVolumes,
       trackLevels,
+      diagnostics,
       initialize,
       play,
       pause,
@@ -412,6 +475,7 @@ export function useMultitrackEngine(
     }),
     [
       currentTime,
+      diagnostics,
       initialize,
       isPlaying,
       isReady,
