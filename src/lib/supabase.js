@@ -4,7 +4,7 @@ const rawUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_U
 const supabaseUrl = rawUrl.replace(/\/$/, '');
 const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY || '';
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
-const AUTH_STORAGE_KEY_REGEX = /supabase\.auth\.token/i;
+const AUTH_STORAGE_KEY_REGEX = /(supabase\.auth\.token|sb-.*-auth-token)/i;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('Supabase credentials missing. Please check your .env file.');
@@ -12,17 +12,22 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 const isBrowser = () => typeof window !== 'undefined' && typeof document !== 'undefined';
 
-const getSecureCookieSuffix = () =>
-  isBrowser() && window.location.protocol === 'https:' ? '; Secure' : '';
+const getCookieOptionsString = () =>
+  isBrowser() && window.location.protocol === 'https:'
+    ? '; path=/; max-age=' + COOKIE_MAX_AGE + '; SameSite=Lax; Secure'
+    : '; path=/; max-age=' + COOKIE_MAX_AGE;
 
 const setAuthCookie = (name, value) => {
   if (!isBrowser() || !name || !value) return;
-  document.cookie = `${name}=${value}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax${getSecureCookieSuffix()}`;
+  document.cookie = `${name}=${value}${getCookieOptionsString()}`;
 };
 
 const clearAuthCookie = (name) => {
   if (!isBrowser() || !name) return;
-  document.cookie = `${name}=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=Lax${getSecureCookieSuffix()}`;
+  const expiredFlags = isBrowser() && window.location.protocol === 'https:'
+    ? '; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=Lax; Secure'
+    : '; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 UTC';
+  document.cookie = `${name}=${expiredFlags}`;
 };
 
 const syncAuthCookiesFromValue = (rawValue) => {

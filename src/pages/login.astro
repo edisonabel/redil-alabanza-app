@@ -1,703 +1,1123 @@
 ﻿---
-import Layout from '../layouts/Layout.astro';
+import Layout from "../layouts/Layout.astro";
 ---
 
 <Layout>
- <div class="max-w-md mx-auto mt-10 px-4 w-full">
- <div class="flex justify-center mb-5">
-  <img src="/LOGO%20REDIL%20LIGHT.png" alt="Logo Redil" class="w-[96px] h-auto dark:hidden" />
-  <img src="/LOGO%20REDIL.png" alt="Logo Redil" class="hidden w-[96px] h-auto dark:block" />
- </div>
- <div class="bg-surface border border-border rounded-2xl p-8 shadow-xl [0_0_30px_rgba(0,0,0,0.5)]">
- <h1 class="text-3xl font-extrabold text-content mb-2 text-center">Acceso al Sistema</h1>
- <p class="text-content-muted text-center mb-8">Ingresa tus credenciales para ver la agenda</p>
+  <div class="max-w-md mx-auto mt-10 px-4 w-full">
+    <div class="flex justify-center mb-5">
+      <img
+        src="/LOGO%20REDIL%20LIGHT.png"
+        alt="Logo Redil"
+        class="w-[96px] h-auto dark:hidden"
+      />
+      <img
+        src="/LOGO%20REDIL.png"
+        alt="Logo Redil"
+        class="hidden w-[96px] h-auto dark:block"
+      />
+    </div>
+    <div
+      class="bg-surface border border-border rounded-2xl p-8 shadow-xl [0_0_30px_rgba(0,0,0,0.5)]"
+    >
+      <h1 class="text-3xl font-extrabold text-content mb-2 text-center">
+        Acceso al Sistema
+      </h1>
+      <p class="text-content-muted text-center mb-8">
+        Ingresa tus credenciales para ver la agenda
+      </p>
 
- <form id="login-form" class="flex flex-col gap-5">
- <!-- Pestañas (Tabs) -->
- <div class="flex p-1 bg-background rounded-xl mb-2">
- <button type="button" id="tab-login" class="flex-1 py-2 text-sm font-ui-strong rounded-lg bg-surface text-content shadow-sm transition-all">Iniciar Sesión</button>
- <button type="button" id="tab-register" class="flex-1 py-2 text-sm font-ui-strong rounded-lg text-content-muted hover:text-content transition-all">Registrarse</button>
- </div>
- 
- <!-- Campos Exclusivos de Registro (Ocultos por defecto) -->
- <div id="register-fields-top" class="hidden flex-col gap-5">
- <div>
- <label for="accesscode" class="block text-sm font-semibold text-content mb-2">Código de Registro <span class="text-danger">*</span></label>
- <input type="text" id="accesscode" class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted font-mono tracking-widest uppercase" placeholder="Ej: CLAVE123">
- <p class="text-[11px] text-content-muted mt-1.5 ml-1">Requerido para unirse a la plataforma.</p>
- </div>
- <div>
- <label for="fullname" class="block text-sm font-semibold text-content mb-2">Nombre Completo <span class="text-danger">*</span></label>
- <input type="text" id="fullname" class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted" placeholder="Ej: Juan Pérez">
- </div>
- </div>
+      <form id="login-form" class="flex flex-col gap-5">
+        <!-- Pestañas (Tabs) -->
+        <div class="flex p-1 bg-background rounded-xl mb-2">
+          <button
+            type="button"
+            id="tab-login"
+            class="flex-1 py-2 text-sm font-ui-strong rounded-lg bg-surface text-content shadow-sm transition-all"
+            >Iniciar Sesión</button
+          >
+          <button
+            type="button"
+            id="tab-register"
+            class="flex-1 py-2 text-sm font-ui-strong rounded-lg text-content-muted hover:text-content transition-all"
+            >Registrarse</button
+          >
+        </div>
 
- <div id="register-fields-middle" class="hidden flex-col gap-5">
- <div>
- <label for="telefono" class="block text-sm font-semibold text-content mb-2">Teléfono / WhatsApp <span class="text-danger">*</span></label>
- <input type="tel" id="telefono" class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted" placeholder="Ej: +123456789">
- </div>
- </div>
+        <!-- Campos Exclusivos de Registro (Ocultos por defecto) -->
+        <div id="register-fields-top" class="hidden flex-col gap-5">
+          <div>
+            <label
+              for="accesscode"
+              class="block text-sm font-semibold text-content mb-2"
+              >Código de Registro <span class="text-danger">*</span></label
+            >
+            <input
+              type="text"
+              id="accesscode"
+              class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted font-mono tracking-widest uppercase"
+              placeholder="Ej: CLAVE123"
+            />
+            <p class="text-[11px] text-content-muted mt-1.5 ml-1">
+              Requerido para unirse a la plataforma.
+            </p>
+          </div>
+          <div>
+            <label
+              for="fullname"
+              class="block text-sm font-semibold text-content mb-2"
+              >Nombre Completo <span class="text-danger">*</span></label
+            >
+            <input
+              type="text"
+              id="fullname"
+              class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted"
+              placeholder="Ej: Juan Pérez"
+            />
+          </div>
+        </div>
 
- <div id="register-fields-bottom" class="hidden flex-col gap-5">
- <hr class="my-6 border-zinc-200 dark:border-zinc-700" />
- <div>
- <label for="fecha-nacimiento" class="block text-sm font-semibold text-content mb-2">Fecha de nacimiento <span class="text-danger">*</span></label>
- <input type="date" id="fecha-nacimiento" class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all" />
- <p class="text-sm text-gray-500 mt-1.5">Esto es para recordar tu cumpleaños</p>
- </div>
- <div>
- <label class="block text-sm font-semibold text-content mb-2">Rol / Instrumento <span class="text-content-muted font-normal text-xs ml-1">(Puedes elegir varios)</span></label>
- <div id="register-roles-grid" class="grid grid-cols-2 gap-2 p-3 border border-border rounded-xl bg-background">
- <div class="col-span-2 text-center text-xs text-content-muted py-2 flex items-center justify-center gap-2"><div class="w-4 h-4 border-2 border-action border-t-transparent rounded-full animate-spin"></div>Cargando roles...</div>
- </div>
- </div>
- <div class="bg-info/10 text-info border border-info/20 rounded-xl px-4 py-4 dark:bg-info/10 dark:text-info dark:border-info/20 flex items-start gap-3">
- <div class="mt-0.5 text-info dark:text-info shrink-0">
- <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
- </div>
- <div class="space-y-1">
- <p class="text-sm font-bold leading-snug">Usa una foto de cerca (Retrato)</p>
- <p class="text-sm leading-snug">Ampl&iacute;a la imagen hasta que <strong class="font-bold">tu rostro llene el c&iacute;rculo</strong>. No uses fotos de cuerpo entero ni grupales.</p>
- </div>
- </div>
- <div class="flex flex-col items-center justify-center gap-3 mb-1 mt-1">
- <div class="relative">
-  <div id="avatar-preview-shell" class="w-24 h-24 rounded-full bg-zinc-100 border-2 border-dashed border-zinc-300 flex items-center justify-center overflow-hidden dark:bg-zinc-800 dark:border-zinc-600 transition-all">
-  <img id="avatar-preview-image" src="" alt="Preview" class="hidden w-full h-full object-cover" />
-  <span id="avatar-preview-placeholder" class="text-zinc-400 text-xs text-center px-2 dark:text-zinc-300">Sin foto</span>
+        <div id="register-fields-middle" class="hidden flex-col gap-5">
+          <div>
+            <label
+              for="telefono"
+              class="block text-sm font-semibold text-content mb-2"
+              >Teléfono / WhatsApp <span class="text-danger">*</span></label
+            >
+            <input
+              type="tel"
+              id="telefono"
+              class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted"
+              placeholder="Ej: +123456789"
+            />
+          </div>
+        </div>
+
+        <div id="register-fields-bottom" class="hidden flex-col gap-5">
+          <hr class="my-6 border-zinc-200 dark:border-zinc-700" />
+          <div>
+            <label
+              for="fecha-nacimiento"
+              class="block text-sm font-semibold text-content mb-2"
+              >Fecha de nacimiento <span class="text-danger">*</span></label
+            >
+            <input
+              type="date"
+              id="fecha-nacimiento"
+              class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all"
+            />
+            <p class="text-sm text-gray-500 mt-1.5">
+              Esto es para recordar tu cumpleaños
+            </p>
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-content mb-2"
+              >Rol / Instrumento <span
+                class="text-content-muted font-normal text-xs ml-1"
+                >(Puedes elegir varios)</span
+              ></label
+            >
+            <div
+              id="register-roles-grid"
+              class="grid grid-cols-2 gap-2 p-3 border border-border rounded-xl bg-background"
+            >
+              <div
+                class="col-span-2 text-center text-xs text-content-muted py-2 flex items-center justify-center gap-2"
+              >
+                <div
+                  class="w-4 h-4 border-2 border-action border-t-transparent rounded-full animate-spin"
+                >
+                </div>Cargando roles...
+              </div>
+            </div>
+          </div>
+          <div
+            class="bg-info/10 text-info border border-info/20 rounded-xl px-4 py-4 dark:bg-info/10 dark:text-info dark:border-info/20 flex items-start gap-3"
+          >
+            <div class="mt-0.5 text-info dark:text-info shrink-0">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                ><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"
+                ></path><path d="M12 8h.01"></path></svg
+              >
+            </div>
+            <div class="space-y-1">
+              <p class="text-sm font-bold leading-snug">
+                Usa una foto de cerca (Retrato)
+              </p>
+              <p class="text-sm leading-snug">
+                Ampl&iacute;a la imagen hasta que <strong class="font-bold"
+                  >tu rostro llene el c&iacute;rculo</strong
+                >. No uses fotos de cuerpo entero ni grupales.
+              </p>
+            </div>
+          </div>
+          <div
+            class="flex flex-col items-center justify-center gap-3 mb-1 mt-1"
+          >
+            <div class="relative">
+              <div
+                id="avatar-preview-shell"
+                class="w-24 h-24 rounded-full bg-zinc-100 border-2 border-dashed border-zinc-300 flex items-center justify-center overflow-hidden dark:bg-zinc-800 dark:border-zinc-600 transition-all"
+              >
+                <img
+                  id="avatar-preview-image"
+                  src=""
+                  alt="Preview"
+                  class="hidden w-full h-full object-cover"
+                />
+                <span
+                  id="avatar-preview-placeholder"
+                  class="text-zinc-400 text-xs text-center px-2 dark:text-zinc-300"
+                  >Sin foto</span
+                >
+              </div>
+              <!-- Overlay de estado de foto -->
+              <div
+                id="avatar-status-overlay"
+                class="hidden absolute inset-0 rounded-full flex items-center justify-center bg-zinc-950/60 backdrop-blur-sm"
+              >
+                <div
+                  id="avatar-status-spinner"
+                  class="w-7 h-7 border-3 border-white/20 border-t-white rounded-full animate-spin"
+                >
+                </div>
+                <svg
+                  id="avatar-status-check"
+                  class="hidden w-8 h-8 text-green-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  ><path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2.5"
+                    d="M5 13l4 4L19 7"></path></svg
+                >
+                <svg
+                  id="avatar-status-error"
+                  class="hidden w-8 h-8 text-red-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  ><path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2.5"
+                    d="M6 18L18 6M6 6l12 12"></path></svg
+                >
+              </div>
+            </div>
+            <div class="flex flex-col items-center gap-1.5">
+              <label
+                id="avatar-select-label"
+                class="cursor-pointer bg-zinc-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-800 transition dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                Seleccionar Foto
+                <input
+                  type="file"
+                  id="avatar-file"
+                  accept="image/*"
+                  class="hidden"
+                />
+              </label>
+              <p
+                id="avatar-status-text"
+                class="text-xs text-content-muted text-center max-w-[200px] hidden"
+              >
+              </p>
+              <button
+                type="button"
+                id="avatar-skip-btn"
+                class="hidden text-xs text-brand font-semibold hover:underline transition-colors"
+              >
+                Continuar sin foto →
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Campos Comunes -->
+        <div>
+          <label
+            for="email"
+            class="block text-sm font-semibold text-content mb-2"
+            >Correo Electrónico <span class="text-danger">*</span></label
+          >
+          <input
+            type="email"
+            id="email"
+            required
+            class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted"
+            placeholder="tu@correo.com"
+          />
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <label
+              for="password"
+              class="block text-sm font-semibold text-content"
+              >Contraseña <span class="text-danger">*</span></label
+            >
+            <button
+              type="button"
+              id="btn-forgot-password"
+              class="text-xs text-brand hover:underline font-medium transition-colors"
+              >¿Olvidaste tu contraseña?</button
+            >
+          </div>
+          <input
+            type="password"
+            id="password"
+            required
+            class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted"
+            placeholder="••••••••"
+          />
+          <p
+            class="text-[11px] text-content-muted mt-1.5 ml-1"
+            id="password-hint"
+          >
+            Mínimo 6 caracteres.
+          </p>
+        </div>
+
+        <div class="flex items-center gap-2 mt-1">
+          <input
+            type="checkbox"
+            id="remember-me"
+            class="w-4 h-4 text-brand bg-background border-border rounded focus:ring-brand focus:ring-2 transition-colors cursor-pointer"
+            checked
+          />
+          <label
+            for="remember-me"
+            class="text-sm text-content-muted cursor-pointer select-none"
+            >Mantener Sesión iniciada</label
+          >
+        </div>
+
+        <div
+          id="error-message"
+          class="hidden text-danger text-sm font-medium bg-danger/10 border border-danger/30 p-3 rounded-xl text-center mt-2"
+        >
+        </div>
+        <div
+          id="success-message"
+          class="hidden text-success text-sm font-medium bg-success/10 border border-success/30 p-3 rounded-xl text-center mt-2"
+        >
+        </div>
+
+        <div class="flex flex-col gap-3 mt-2">
+          <button
+            type="submit"
+            id="btn-submit"
+            class="w-full py-4 bg-action hover:bg-action/80 text-white font-ui-strong rounded-xl active:scale-95 transition-all shadow-lg"
+          >
+            Iniciar Sesión
+          </button>
+        </div>
+      </form>
+    </div>
   </div>
-  <!-- Overlay de estado de foto -->
-  <div id="avatar-status-overlay" class="hidden absolute inset-0 rounded-full flex items-center justify-center bg-zinc-950/60 backdrop-blur-sm">
-   <div id="avatar-status-spinner" class="w-7 h-7 border-3 border-white/20 border-t-white rounded-full animate-spin"></div>
-   <svg id="avatar-status-check" class="hidden w-8 h-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
-   <svg id="avatar-status-error" class="hidden w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
-  </div>
- </div>
- <div class="flex flex-col items-center gap-1.5">
-  <label id="avatar-select-label" class="cursor-pointer bg-zinc-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-800 transition dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">
-  Seleccionar Foto
-  <input type="file" id="avatar-file" accept="image/*" class="hidden" />
-  </label>
-  <p id="avatar-status-text" class="text-xs text-content-muted text-center max-w-[200px] hidden"></p>
-  <button type="button" id="avatar-skip-btn" class="hidden text-xs text-brand font-semibold hover:underline transition-colors">
-  Continuar sin foto →
-  </button>
- </div>
- </div>
- </div>
-
- <!-- Campos Comunes -->
- <div>
- <label for="email" class="block text-sm font-semibold text-content mb-2">Correo Electrónico <span class="text-danger">*</span></label>
- <input type="email" id="email" required class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted " placeholder="tu@correo.com">
- </div>
- 
- <div>
- <div class="flex items-center justify-between mb-2">
-   <label for="password" class="block text-sm font-semibold text-content">Contraseña <span class="text-danger">*</span></label>
-   <button type="button" id="btn-forgot-password" class="text-xs text-brand hover:underline font-medium transition-colors">¿Olvidaste tu contraseña?</button>
- </div>
- <input type="password" id="password" required class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted " placeholder="••••••••">
- <p class="text-[11px] text-content-muted mt-1.5 ml-1" id="password-hint">Mínimo 6 caracteres.</p>
- </div>
- 
- <div class="flex items-center gap-2 mt-1">
- <input type="checkbox" id="remember-me" class="w-4 h-4 text-brand bg-background border-border rounded focus:ring-brand focus:ring-2 transition-colors cursor-pointer" checked>
- <label for="remember-me" class="text-sm text-content-muted cursor-pointer select-none">Mantener Sesión iniciada</label>
- </div>
-
- <div id="error-message" class="hidden text-danger text-sm font-medium bg-danger/10 border border-danger/30 p-3 rounded-xl text-center mt-2"></div>
- <div id="success-message" class="hidden text-success text-sm font-medium bg-success/10 border border-success/30 p-3 rounded-xl text-center mt-2"></div>
-
- <div class="flex flex-col gap-3 mt-2">
- <button type="submit" id="btn-submit" class="w-full py-4 bg-action hover:bg-action/80 text-white font-ui-strong rounded-xl active:scale-95 transition-all shadow-lg">
- Iniciar Sesión
- </button>
- </div>
- </form>
- </div>
- </div>
 </Layout>
 
-<div id="registro-exitoso-modal" class="hidden fixed inset-0 z-50 items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-sm transition-opacity">
- <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 max-w-sm w-full shadow-2xl text-center transform scale-100 transition-transform">
- <div class="w-20 h-20 bg-action/10 rounded-full flex items-center justify-center mx-auto mb-6">
- <svg class="w-10 h-10 text-action" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
- <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
- </svg>
- </div>
- <h3 class="text-2xl font-bold text-white mb-2">¡Casi listos!</h3>
- <p class="text-zinc-400 text-sm mb-8 leading-relaxed">
- Hemos enviado un enlace de confirmación a <span id="registro-exitoso-email" class="text-white font-medium"></span>.<br /><br />
- Revisa tu bandeja de entrada (o la carpeta de Spam) para activar tu cuenta.
- </p>
- <div class="flex flex-col gap-3">
- <a
- href="https://mail.google.com/"
- target="_blank"
- rel="noopener noreferrer"
- class="w-full bg-action hover:bg-action/90 text-white font-semibold py-3 px-4 rounded-xl transition-colors flex justify-center items-center gap-2"
- >
- Abrir Gmail
- </a>
- <button
- type="button"
- id="registro-exitoso-close"
- class="w-full bg-transparent hover:bg-slate-800 text-slate-300 font-medium py-3 px-4 rounded-xl transition-colors"
- >
- Volver al inicio
- </button>
- </div>
- </div>
+<div
+  id="registro-exitoso-modal"
+  class="hidden fixed inset-0 z-50 items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-sm transition-opacity"
+>
+  <div
+    class="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 max-w-sm w-full shadow-2xl text-center transform scale-100 transition-transform"
+  >
+    <div
+      class="w-20 h-20 bg-action/10 rounded-full flex items-center justify-center mx-auto mb-6"
+    >
+      <svg
+        class="w-10 h-10 text-action"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+        ></path>
+      </svg>
+    </div>
+    <h3 class="text-2xl font-bold text-white mb-2">¡Casi listos!</h3>
+    <p class="text-zinc-400 text-sm mb-8 leading-relaxed">
+      Hemos enviado un enlace de confirmación a <span
+        id="registro-exitoso-email"
+        class="text-white font-medium"></span>.<br /><br />
+      Revisa tu bandeja de entrada (o la carpeta de Spam) para activar tu cuenta.
+    </p>
+    <div class="flex flex-col gap-3">
+      <a
+        href="https://mail.google.com/"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="w-full bg-action hover:bg-action/90 text-white font-semibold py-3 px-4 rounded-xl transition-colors flex justify-center items-center gap-2"
+      >
+        Abrir Gmail
+      </a>
+      <button
+        type="button"
+        id="registro-exitoso-close"
+        class="w-full bg-transparent hover:bg-slate-800 text-slate-300 font-medium py-3 px-4 rounded-xl transition-colors"
+      >
+        Volver al inicio
+      </button>
+    </div>
+  </div>
 </div>
 
- <script>
- import { supabase } from '../lib/supabase';
+<script>
+  import { supabase } from "../lib/supabase";
 
- document.addEventListener('DOMContentLoaded', async () => {
-  // Removido loop infinito de auto-sincronizaciÃ³n. El usuario debe hacer logout manual o login.
+  document.addEventListener("DOMContentLoaded", async () => {
+    // Removido loop infinito de auto-sincronizaciÃ³n. El usuario debe hacer logout manual o login.
 
-  const form = document.getElementById('login-form');
- const emailInput = document.getElementById('email') as HTMLInputElement;
-const passwordInput = document.getElementById('password') as HTMLInputElement;
-const fullnameInput = document.getElementById('fullname') as HTMLInputElement;
-const telefonoInput = document.getElementById('telefono') as HTMLInputElement;
-const fechaNacimientoInput = document.getElementById('fecha-nacimiento') as HTMLInputElement;
-const accessCodeInput = document.getElementById('accesscode') as HTMLInputElement;
-const avatarInput = document.getElementById('avatar-file') as HTMLInputElement;
-const avatarPreviewImage = document.getElementById('avatar-preview-image') as HTMLImageElement;
-const avatarPreviewPlaceholder = document.getElementById('avatar-preview-placeholder') as HTMLSpanElement;
-const rememberMeCheckbox = document.getElementById('remember-me') as HTMLInputElement;
- 
- const errorMessage = document.getElementById('error-message');
- const successMessage = document.getElementById('success-message');
- const btnSubmit = document.getElementById('btn-submit');
- 
- const tabLogin = document.getElementById('tab-login');
- const tabRegister = document.getElementById('tab-register');
- const registerFieldsTop = document.getElementById('register-fields-top');
- const registerFieldsMiddle = document.getElementById('register-fields-middle');
- const registerFieldsBottom = document.getElementById('register-fields-bottom');
- const passwordHint = document.getElementById('password-hint');
- const registerRolesGrid = document.getElementById('register-roles-grid');
- const registroExitosoModal = document.getElementById('registro-exitoso-modal');
- const registroExitosoEmail = document.getElementById('registro-exitoso-email');
- const registroExitosoClose = document.getElementById('registro-exitoso-close');
+    const form = document.getElementById("login-form");
+    const emailInput = document.getElementById("email") as HTMLInputElement;
+    const passwordInput = document.getElementById(
+      "password",
+    ) as HTMLInputElement;
+    const fullnameInput = document.getElementById(
+      "fullname",
+    ) as HTMLInputElement;
+    const telefonoInput = document.getElementById(
+      "telefono",
+    ) as HTMLInputElement;
+    const fechaNacimientoInput = document.getElementById(
+      "fecha-nacimiento",
+    ) as HTMLInputElement;
+    const accessCodeInput = document.getElementById(
+      "accesscode",
+    ) as HTMLInputElement;
+    const avatarInput = document.getElementById(
+      "avatar-file",
+    ) as HTMLInputElement;
+    const avatarPreviewImage = document.getElementById(
+      "avatar-preview-image",
+    ) as HTMLImageElement;
+    const avatarPreviewPlaceholder = document.getElementById(
+      "avatar-preview-placeholder",
+    ) as HTMLSpanElement;
+    const rememberMeCheckbox = document.getElementById(
+      "remember-me",
+    ) as HTMLInputElement;
 
- let isLoginMode = true;
- let rolesLoaded = false;
- let avatarFile: File | null = null;
- let previewUrl: string | null = null;
- let avatarProcessing = false;
- let registroExitoso = false;
- let avatarUploadAttempts = 0;
+    const errorMessage = document.getElementById("error-message");
+    const successMessage = document.getElementById("success-message");
+    const btnSubmit = document.getElementById("btn-submit");
 
- // UI helpers para overlay de avatar
- const avatarOverlay = document.getElementById('avatar-status-overlay');
- const avatarSpinner = document.getElementById('avatar-status-spinner');
- const avatarCheck = document.getElementById('avatar-status-check');
- const avatarError = document.getElementById('avatar-status-error');
- const avatarStatusText = document.getElementById('avatar-status-text');
- const avatarSkipBtn = document.getElementById('avatar-skip-btn');
- const avatarSelectLabel = document.getElementById('avatar-select-label');
+    const tabLogin = document.getElementById("tab-login");
+    const tabRegister = document.getElementById("tab-register");
+    const registerFieldsTop = document.getElementById("register-fields-top");
+    const registerFieldsMiddle = document.getElementById(
+      "register-fields-middle",
+    );
+    const registerFieldsBottom = document.getElementById(
+      "register-fields-bottom",
+    );
+    const passwordHint = document.getElementById("password-hint");
+    const registerRolesGrid = document.getElementById("register-roles-grid");
+    const registroExitosoModal = document.getElementById(
+      "registro-exitoso-modal",
+    );
+    const registroExitosoEmail = document.getElementById(
+      "registro-exitoso-email",
+    );
+    const registroExitosoClose = document.getElementById(
+      "registro-exitoso-close",
+    );
 
- const showAvatarState = (state: 'loading' | 'success' | 'error', msg?: string) => {
-  if (!avatarOverlay) return;
-  avatarOverlay.classList.remove('hidden');
-  avatarOverlay.classList.add('flex');
-  avatarSpinner?.classList.toggle('hidden', state !== 'loading');
-  avatarCheck?.classList.toggle('hidden', state !== 'success');
-  avatarError?.classList.toggle('hidden', state !== 'error');
-  if (avatarStatusText && msg) {
-   avatarStatusText.textContent = msg;
-   avatarStatusText.classList.remove('hidden');
-  }
-  if (state === 'success') {
-   setTimeout(() => {
-    avatarOverlay.classList.add('hidden');
-    avatarOverlay.classList.remove('flex');
-    avatarStatusText?.classList.add('hidden');
-   }, 1500);
-  }
- };
+    let isLoginMode = true;
+    let rolesLoaded = false;
+    let avatarFile: File | null = null;
+    let previewUrl: string | null = null;
+    let avatarProcessing = false;
+    let registroExitoso = false;
+    let avatarUploadAttempts = 0;
 
- const hideAvatarState = () => {
-  avatarOverlay?.classList.add('hidden');
-  avatarOverlay?.classList.remove('flex');
-  avatarStatusText?.classList.add('hidden');
- };
+    // UI helpers para overlay de avatar
+    const avatarOverlay = document.getElementById("avatar-status-overlay");
+    const avatarSpinner = document.getElementById("avatar-status-spinner");
+    const avatarCheck = document.getElementById("avatar-status-check");
+    const avatarError = document.getElementById("avatar-status-error");
+    const avatarStatusText = document.getElementById("avatar-status-text");
+    const avatarSkipBtn = document.getElementById("avatar-skip-btn");
+    const avatarSelectLabel = document.getElementById("avatar-select-label");
 
- const resetAvatarPreview = () => {
- if (previewUrl) {
- URL.revokeObjectURL(previewUrl);
- previewUrl = null;
- }
- avatarFile = null;
- if (avatarInput) avatarInput.value = '';
- if (avatarPreviewImage) {
- avatarPreviewImage.src = '';
- avatarPreviewImage.classList.add('hidden');
- }
- avatarPreviewPlaceholder?.classList.remove('hidden');
- hideAvatarState();
- };
-
- // Detectar soporte WebP (Android viejo no lo soporta)
- const supportsWebP = (): Promise<boolean> => {
-  return new Promise((resolve) => {
-   const canvas = document.createElement('canvas');
-   canvas.width = 1;
-   canvas.height = 1;
-   canvas.toBlob((blob) => resolve(!!blob), 'image/webp', 0.5);
-  });
- };
-
- const optimizarImagen = (file: File): Promise<File> => {
-  return new Promise((resolve, reject) => {
-   // Timeout de 15s para dispositivos lentos
-   const timeout = setTimeout(() => {
-    reject(new Error('El procesamiento tardó demasiado. Intenta con una foto más pequeña.'));
-   }, 15000);
-
-   // Usar createObjectURL en vez de readAsDataURL (menos RAM)
-   const objectUrl = URL.createObjectURL(file);
-   const img = new Image();
-   img.onerror = () => {
-    clearTimeout(timeout);
-    URL.revokeObjectURL(objectUrl);
-    reject(new Error('La imagen seleccionada no es válida.'));
-   };
-   img.onload = async () => {
-    try {
-     const canvas = document.createElement('canvas');
-     const MAX_SIZE = 500;
-     let { width, height } = img;
-     if (width > height) {
-      if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
-     } else if (height > MAX_SIZE) {
-      width *= MAX_SIZE / height; height = MAX_SIZE;
-     }
-     canvas.width = Math.round(width);
-     canvas.height = Math.round(height);
-     const ctx = canvas.getContext('2d');
-     if (!ctx) { throw new Error('No se pudo preparar el optimizador de imagen.'); }
-     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-     URL.revokeObjectURL(objectUrl);
-
-     // Intentar WebP, fallback a JPEG si no soporta
-     const useWebP = await supportsWebP();
-     const mimeType = useWebP ? 'image/webp' : 'image/jpeg';
-     const ext = useWebP ? 'webp' : 'jpg';
-
-     canvas.toBlob((blob) => {
-      clearTimeout(timeout);
-      if (!blob) {
-       reject(new Error('No se pudo comprimir la imagen.'));
-       return;
+    const showAvatarState = (
+      state: "loading" | "success" | "error",
+      msg?: string,
+    ) => {
+      if (!avatarOverlay) return;
+      avatarOverlay.classList.remove("hidden");
+      avatarOverlay.classList.add("flex");
+      avatarSpinner?.classList.toggle("hidden", state !== "loading");
+      avatarCheck?.classList.toggle("hidden", state !== "success");
+      avatarError?.classList.toggle("hidden", state !== "error");
+      if (avatarStatusText && msg) {
+        avatarStatusText.textContent = msg;
+        avatarStatusText.classList.remove("hidden");
       }
-      resolve(new File([blob], `avatar_${Date.now()}.${ext}`, { type: mimeType }));
-     }, mimeType, 0.8);
-    } catch (err) {
-     clearTimeout(timeout);
-     URL.revokeObjectURL(objectUrl);
-     reject(err);
-    }
-   };
-   img.src = objectUrl;
-  });
- };
+      if (state === "success") {
+        setTimeout(() => {
+          avatarOverlay.classList.add("hidden");
+          avatarOverlay.classList.remove("flex");
+          avatarStatusText?.classList.add("hidden");
+        }, 1500);
+      }
+    };
 
- const handleAvatarChange = (e: Event) => {
-  const target = e.target as HTMLInputElement;
-  const file = target.files?.[0];
-  if (!file) { resetAvatarPreview(); return; }
-  // Reset input para poder seleccionar la misma foto de nuevo
-  target.value = '';
-  // Abrir cropper modal
-  const openCropper = (window as any).__loginOpenCropper;
-  if (openCropper) {
-   openCropper(file);
-  } else {
-   // Fallback si cropper no cargó
-   avatarFile = file;
-   if (previewUrl) URL.revokeObjectURL(previewUrl);
-   previewUrl = URL.createObjectURL(file);
-   if (avatarPreviewImage) { avatarPreviewImage.src = previewUrl; avatarPreviewImage.classList.remove('hidden'); }
-   avatarPreviewPlaceholder?.classList.add('hidden');
-   showAvatarState('success', 'Foto lista');
-  }
- };
+    const hideAvatarState = () => {
+      avatarOverlay?.classList.add("hidden");
+      avatarOverlay?.classList.remove("flex");
+      avatarStatusText?.classList.add("hidden");
+    };
 
- // Recibir foto recortada del modal Cropper
- document.addEventListener('avatar-cropped', (e: any) => {
-  const croppedFile: File = e.detail?.file;
-  if (!croppedFile) return;
-  avatarFile = croppedFile;
-  avatarUploadAttempts = 0;
-  avatarSkipBtn?.classList.add('hidden');
-  // Actualizar preview con la foto recortada
-  if (previewUrl) URL.revokeObjectURL(previewUrl);
-  previewUrl = URL.createObjectURL(croppedFile);
-  if (avatarPreviewImage) { avatarPreviewImage.src = previewUrl; avatarPreviewImage.classList.remove('hidden'); }
-  avatarPreviewPlaceholder?.classList.add('hidden');
-  showAvatarState('success', 'Foto lista ✓');
- });
+    const resetAvatarPreview = () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        previewUrl = null;
+      }
+      avatarFile = null;
+      if (avatarInput) avatarInput.value = "";
+      if (avatarPreviewImage) {
+        avatarPreviewImage.src = "";
+        avatarPreviewImage.classList.add("hidden");
+      }
+      avatarPreviewPlaceholder?.classList.remove("hidden");
+      hideAvatarState();
+    };
 
- // Permitir continuar sin foto
- avatarSkipBtn?.addEventListener('click', () => {
-  avatarFile = null;
-  hideAvatarState();
-  avatarSkipBtn?.classList.add('hidden');
-  if (avatarSelectLabel) avatarSelectLabel.textContent = 'Intentar otra foto';
-  showSuccess('Puedes continuar sin foto. Tu líder te la asignará después.');
- });
+    // Detectar soporte WebP (Android viejo no lo soporta)
+    const supportsWebP = (): Promise<boolean> => {
+      return new Promise((resolve) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 1;
+        canvas.height = 1;
+        canvas.toBlob((blob) => resolve(!!blob), "image/webp", 0.5);
+      });
+    };
 
- const loadRoles = async () => {
- try {
- const { data, error } = await supabase.from('roles').select('id, nombre').order('nombre');
- if (error) throw error;
- if (data && registerRolesGrid) {
- registerRolesGrid.innerHTML = data.map(r => `
+    const optimizarImagen = (file: File): Promise<File> => {
+      return new Promise((resolve, reject) => {
+        // Timeout de 15s para dispositivos lentos
+        const timeout = setTimeout(() => {
+          reject(
+            new Error(
+              "El procesamiento tardó demasiado. Intenta con una foto más pequeña.",
+            ),
+          );
+        }, 15000);
+
+        // Usar createObjectURL en vez de readAsDataURL (menos RAM)
+        const objectUrl = URL.createObjectURL(file);
+        const img = new Image();
+        img.onerror = () => {
+          clearTimeout(timeout);
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error("La imagen seleccionada no es válida."));
+        };
+        img.onload = async () => {
+          try {
+            const canvas = document.createElement("canvas");
+            const MAX_SIZE = 500;
+            let { width, height } = img;
+            if (width > height) {
+              if (width > MAX_SIZE) {
+                height *= MAX_SIZE / width;
+                width = MAX_SIZE;
+              }
+            } else if (height > MAX_SIZE) {
+              width *= MAX_SIZE / height;
+              height = MAX_SIZE;
+            }
+            canvas.width = Math.round(width);
+            canvas.height = Math.round(height);
+            const ctx = canvas.getContext("2d");
+            if (!ctx) {
+              throw new Error("No se pudo preparar el optimizador de imagen.");
+            }
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            URL.revokeObjectURL(objectUrl);
+
+            // Intentar WebP, fallback a JPEG si no soporta
+            const useWebP = await supportsWebP();
+            const mimeType = useWebP ? "image/webp" : "image/jpeg";
+            const ext = useWebP ? "webp" : "jpg";
+
+            canvas.toBlob(
+              (blob) => {
+                clearTimeout(timeout);
+                if (!blob) {
+                  reject(new Error("No se pudo comprimir la imagen."));
+                  return;
+                }
+                resolve(
+                  new File([blob], `avatar_${Date.now()}.${ext}`, {
+                    type: mimeType,
+                  }),
+                );
+              },
+              mimeType,
+              0.8,
+            );
+          } catch (err) {
+            clearTimeout(timeout);
+            URL.revokeObjectURL(objectUrl);
+            reject(err);
+          }
+        };
+        img.src = objectUrl;
+      });
+    };
+
+    const handleAvatarChange = (e: Event) => {
+      const target = e.target as HTMLInputElement;
+      const file = target.files?.[0];
+      if (!file) {
+        resetAvatarPreview();
+        return;
+      }
+      // Reset input para poder seleccionar la misma foto de nuevo
+      target.value = "";
+      // Abrir cropper modal
+      const openCropper = (window as any).__loginOpenCropper;
+      if (openCropper) {
+        openCropper(file);
+      } else {
+        // Fallback si cropper no cargó
+        avatarFile = file;
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        previewUrl = URL.createObjectURL(file);
+        if (avatarPreviewImage) {
+          avatarPreviewImage.src = previewUrl;
+          avatarPreviewImage.classList.remove("hidden");
+        }
+        avatarPreviewPlaceholder?.classList.add("hidden");
+        showAvatarState("success", "Foto lista");
+      }
+    };
+
+    // Recibir foto recortada del modal Cropper
+    document.addEventListener("avatar-cropped", (e: any) => {
+      const croppedFile: File = e.detail?.file;
+      if (!croppedFile) return;
+      avatarFile = croppedFile;
+      avatarUploadAttempts = 0;
+      avatarSkipBtn?.classList.add("hidden");
+      // Actualizar preview con la foto recortada
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      previewUrl = URL.createObjectURL(croppedFile);
+      if (avatarPreviewImage) {
+        avatarPreviewImage.src = previewUrl;
+        avatarPreviewImage.classList.remove("hidden");
+      }
+      avatarPreviewPlaceholder?.classList.add("hidden");
+      showAvatarState("success", "Foto lista ✓");
+    });
+
+    // Permitir continuar sin foto
+    avatarSkipBtn?.addEventListener("click", () => {
+      avatarFile = null;
+      hideAvatarState();
+      avatarSkipBtn?.classList.add("hidden");
+      if (avatarSelectLabel)
+        avatarSelectLabel.textContent = "Intentar otra foto";
+      showSuccess(
+        "Puedes continuar sin foto. Tu líder te la asignará después.",
+      );
+    });
+
+    const loadRoles = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("roles")
+          .select("id, nombre")
+          .order("nombre");
+        if (error) throw error;
+        if (data && registerRolesGrid) {
+          registerRolesGrid.innerHTML = data
+            .map(
+              (r) => `
  <label class="flex items-center gap-2 p-2 rounded-lg border border-transparent hover:bg-surface hover:border-border transition-colors cursor-pointer text-sm text-content-muted">
  <input type="checkbox" name="register_role" value="${r.id}" class="w-4 h-4 text-brand rounded border-border focus:ring-brand cursor-pointer">
  <span class="truncate">${r.nombre}</span>
  </label>
- `).join('');
- }
- } catch (err) {
- console.error('Error cargando roles:', err);
- if (registerRolesGrid) registerRolesGrid.innerHTML = '<div class="col-span-2 text-center text-xs text-danger py-2">Error cargando roles</div>';
- }
- };
+ `,
+            )
+            .join("");
+        }
+      } catch (err) {
+        console.error("Error cargando roles:", err);
+        if (registerRolesGrid)
+          registerRolesGrid.innerHTML =
+            '<div class="col-span-2 text-center text-xs text-danger py-2">Error cargando roles</div>';
+      }
+    };
 
- // --- Tab Switching Logic ---
- const btnForgotPassword = document.getElementById('btn-forgot-password');
- btnForgotPassword?.addEventListener('click', async () => {
-   const email = (document.getElementById('email') as HTMLInputElement).value.trim();
-   if (!email) {
-     showError('Ingresa tu correo electrónico primero.');
-     return;
-   }
-   btnForgotPassword.setAttribute('disabled', 'true');
-   (btnForgotPassword as HTMLButtonElement).textContent = 'Enviando…';
-   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-     redirectTo: `${window.location.origin}/reset-password`,
-   });
-   (btnForgotPassword as HTMLButtonElement).removeAttribute('disabled');
-   (btnForgotPassword as HTMLButtonElement).textContent = '¿Olvidaste tu contraseña?';
-   if (error) {
-     showError('Error: ' + error.message);
-   } else {
-     showSuccess('✅ Correo enviado. Revisa tu bandeja de entrada y sigue el enlace.');
-   }
- });
-
- const setLoginMode = () => {
- isLoginMode = true;
- tabLogin?.classList.add('bg-surface', 'text-content', 'shadow-sm');
- tabLogin?.classList.remove('text-content-muted', 'hover:text-content');
-
- tabRegister?.classList.remove('bg-surface', 'text-content', 'shadow-sm');
- tabRegister?.classList.add('text-content-muted', 'hover:text-content');
-
- registerFieldsTop?.classList.add('hidden');
- registerFieldsTop?.classList.remove('flex');
- registerFieldsMiddle?.classList.add('hidden');
- registerFieldsMiddle?.classList.remove('flex');
- registerFieldsBottom?.classList.add('hidden');
- registerFieldsBottom?.classList.remove('flex');
- passwordHint?.classList.add('hidden');
- 
-fullnameInput.required = false;
-telefonoInput.required = false;
-fechaNacimientoInput.required = false;
-accessCodeInput.required = false;
-accessCodeInput.value = ''; // limpiar por si acaso
- 
- btnForgotPassword?.classList.remove('hidden');
- if (btnSubmit) btnSubmit.textContent = 'Iniciar Sesión';
- hideMessages();
- };
-
- const setRegisterMode = () => {
- isLoginMode = false;
- tabRegister?.classList.add('bg-surface', 'text-content', 'shadow-sm');
- tabRegister?.classList.remove('text-content-muted', 'hover:text-content');
- 
- tabLogin?.classList.remove('bg-surface', 'text-content', 'shadow-sm');
- tabLogin?.classList.add('text-content-muted', 'hover:text-content');
-
- registerFieldsTop?.classList.remove('hidden');
- registerFieldsTop?.classList.add('flex');
- registerFieldsMiddle?.classList.remove('hidden');
- registerFieldsMiddle?.classList.add('flex');
- registerFieldsBottom?.classList.remove('hidden');
- registerFieldsBottom?.classList.add('flex');
- passwordHint?.classList.remove('hidden');
-
-fullnameInput.required = true;
-telefonoInput.required = true;
-fechaNacimientoInput.required = true;
-accessCodeInput.required = true;
-
- btnForgotPassword?.classList.add('hidden');
- if (btnSubmit) btnSubmit.textContent = 'Crear Cuenta';
- hideMessages();
-
- if (!rolesLoaded) {
- rolesLoaded = true;
- loadRoles();
- }
- };
-
- tabLogin?.addEventListener('click', setLoginMode);
- tabRegister?.addEventListener('click', setRegisterMode);
- avatarInput?.addEventListener('change', handleAvatarChange);
-
- // --- UI Helpers ---
- const showError = (msg: string) => {
- if (errorMessage) {
- errorMessage.textContent = msg;
- errorMessage.classList.remove('hidden');
- if (successMessage) successMessage.classList.add('hidden');
- }
- };
-
- const showSuccess = (msg: string) => {
- if (successMessage) {
- successMessage.textContent = msg;
- successMessage.classList.remove('hidden');
- if (errorMessage) errorMessage.classList.add('hidden');
- }
- }
-
- const hideMessages = () => {
- if (errorMessage) errorMessage.classList.add('hidden');
- if (successMessage) successMessage.classList.add('hidden');
- };
-
- const openRegistroExitosoModal = (email: string) => {
- registroExitoso = true;
- if (registroExitosoEmail) registroExitosoEmail.textContent = email;
- registroExitosoModal?.classList.remove('hidden');
- registroExitosoModal?.classList.add('flex');
- document.body.classList.add('overflow-hidden');
- };
-
- const closeRegistroExitosoModal = () => {
- registroExitoso = false;
- registroExitosoModal?.classList.add('hidden');
- registroExitosoModal?.classList.remove('flex');
- document.body.classList.remove('overflow-hidden');
- window.location.href = '/';
- };
-
- // --- Submit Logic ---
- form?.addEventListener('submit', async (e) => {
- e.preventDefault();
- hideMessages();
- 
- const email = emailInput.value;
- const password = passwordInput.value;
-
- if (!email || !password) return;
-
- if(btnSubmit) {
- btnSubmit.innerHTML = '<span class="flex items-center justify-center gap-2"><div class="w-4 h-4 rounded-full border-2 border-white/20 border-t-white animate-spin"></div> Procesando...</span>';
- (btnSubmit as HTMLButtonElement).disabled = true;
- }
-
- try {
- if (isLoginMode) {
- // Logic for Login
- const { data, error } = await supabase.auth.signInWithPassword({
- email,
- password,
- });
-
- if (data.session) {
-   try {
-     const maxAge = 60 * 60 * 24 * 365; // 1 año
-     const secureFlag = window.location.protocol === 'https:' ? '; Secure' : '';
-     // InyecciÃ³n robusta de cookies nativas para acceso del servidor (SSR)
-     document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax${secureFlag}`;
-     document.cookie = `sb-refresh-token=${data.session.refresh_token}; path=/; max-age=${maxAge}; SameSite=Lax${secureFlag}`;
-     
-     // Retraso obligatorio para que el navegador guarde la cookie fÃ­sicamente
-     setTimeout(() => {
-       window.location.href = '/';
-     }, 400);
-
-   } catch (cookieError) {
-     console.error("[Seguridad Login] Error crÃ­tico al inyectar cookie nativa:", cookieError);
-     showError("Hubo un problema sincronizando tu Sesión de forma segura. Por favor, intenta usar otro navegador o borra el historial.");
-     if (btnSubmit) {
-       btnSubmit.innerHTML = 'Iniciar Sesión';
-       (btnSubmit as HTMLButtonElement).disabled = false;
-     }
-   }
- }
- 
- } else {
- // Logic for Registration
-const fullName = fullnameInput.value;
-const telefono = telefonoInput.value;
-const fechaNacimiento = fechaNacimientoInput.value;
-const accessCode = accessCodeInput.value?.trim().toUpperCase();
-let avatarUrl = '';
-let uploadedAvatarPath = '';
-
- // SECRET CODE VALIDATION (server-side)
- const verifyRes = await fetch('/api/verify-access-code', {
-   method: 'POST',
-   headers: { 'Content-Type': 'application/json' },
-   body: JSON.stringify({ code: accessCode }),
- });
- const verifyData = await verifyRes.json();
- if (!verifyData.valid) {
-   throw new Error("El Código de Acceso es incorrecto. Contacta a tu líder si no lo tienes.");
- }
-
-if (!fullName || !telefono || !fechaNacimiento) throw new Error("Nombre, Teléfono y Fecha de nacimiento son obligatorios para el registro.");
-
- if (avatarProcessing) {
-  showError('Estamos optimizando tu foto. Espera un momento e intenta de nuevo.');
-  if (btnSubmit) { btnSubmit.textContent = 'Crear Cuenta'; (btnSubmit as HTMLButtonElement).disabled = false; }
-  return;
- }
-
- // Subir foto con reintentos (hasta 3 intentos)
- if (avatarFile) {
-  const safeFileName = avatarFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const avatarPath = `registro/${Date.now()}-${safeFileName}`;
-  let uploadSuccess = false;
-
-  for (let attempt = 1; attempt <= 3; attempt++) {
-   try {
-    const { data: uploadData, error: uploadError } = await supabase.storage.from('avatars').upload(avatarPath, avatarFile, {
-     cacheControl: '3600',
-     upsert: false
+    // --- Tab Switching Logic ---
+    const btnForgotPassword = document.getElementById("btn-forgot-password");
+    btnForgotPassword?.addEventListener("click", async () => {
+      const email = (
+        document.getElementById("email") as HTMLInputElement
+      ).value.trim();
+      if (!email) {
+        showError("Ingresa tu correo electrónico primero.");
+        return;
+      }
+      btnForgotPassword.setAttribute("disabled", "true");
+      (btnForgotPassword as HTMLButtonElement).textContent = "Enviando…";
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      (btnForgotPassword as HTMLButtonElement).removeAttribute("disabled");
+      (btnForgotPassword as HTMLButtonElement).textContent =
+        "¿Olvidaste tu contraseña?";
+      if (error) {
+        showError("Error: " + error.message);
+      } else {
+        showSuccess(
+          "✅ Correo enviado. Revisa tu bandeja de entrada y sigue el enlace.",
+        );
+      }
     });
-    if (uploadError) throw uploadError;
-    uploadedAvatarPath = uploadData?.path || avatarPath;
-    const { data: publicAvatar } = supabase.storage.from('avatars').getPublicUrl(uploadedAvatarPath);
-    avatarUrl = String(publicAvatar?.publicUrl || '').trim();
-    if (!avatarUrl) throw new Error('URL pública vacía');
-    uploadSuccess = true;
-    break;
-   } catch (uploadErr: any) {
-    console.warn(`[Upload] Intento ${attempt}/3 falló:`, uploadErr);
-    if (attempt < 3) {
-     showSuccess(`Reintentando subir foto (${attempt + 1}/3)...`);
-     await new Promise(r => setTimeout(r, 1500));
-    }
-   }
-  }
 
-  if (!uploadSuccess) {
-   // Después de 3 intentos, registrar sin foto
-   console.warn('[Upload] 3 intentos fallidos, continuando sin foto');
-   avatarUrl = '';
-   uploadedAvatarPath = '';
-   showSuccess('No se pudo subir la foto. Tu líder te la asignará después.');
-   await new Promise(r => setTimeout(r, 800));
-  }
- }
+    const setLoginMode = () => {
+      isLoginMode = true;
+      tabLogin?.classList.add("bg-surface", "text-content", "shadow-sm");
+      tabLogin?.classList.remove("text-content-muted", "hover:text-content");
 
- const selectedRoles = Array.from(document.querySelectorAll('input[name="register_role"]:checked')).map(cb => (cb as HTMLInputElement).value);
+      tabRegister?.classList.remove("bg-surface", "text-content", "shadow-sm");
+      tabRegister?.classList.add("text-content-muted", "hover:text-content");
 
- const { data, error } = await supabase.auth.signUp({
- email,
- password,
- options: {
-data: {
-full_name: fullName,
-telefono: telefono,
-fecha_nacimiento: fechaNacimiento,
-avatar_url: avatarUrl,
-roles: selectedRoles
-}
- }
- });
+      registerFieldsTop?.classList.add("hidden");
+      registerFieldsTop?.classList.remove("flex");
+      registerFieldsMiddle?.classList.add("hidden");
+      registerFieldsMiddle?.classList.remove("flex");
+      registerFieldsBottom?.classList.add("hidden");
+      registerFieldsBottom?.classList.remove("flex");
+      passwordHint?.classList.add("hidden");
 
- if (error) {
-  if (uploadedAvatarPath) {
-   try {
-    await supabase.storage.from('avatars').remove([uploadedAvatarPath]);
-   } catch (cleanupError) {
-    console.warn('No se pudo limpiar el avatar subido tras fallo de registro:', cleanupError);
-   }
-  }
-  throw error;
- }
- if (data.user && !data.session) {
-  resetAvatarPreview();
-  passwordInput.value = '';
-  openRegistroExitosoModal(email);
- } else {
-  showSuccess('Registro exitoso. Si el sistema te lo permite, ya puedes iniciar Sesión.');
-  setLoginMode();
-  resetAvatarPreview();
-  passwordInput.value = '';
- }
- }
- } catch(err: any) {
-  showError(err.message || 'Ocurrió un error inesperado');
- } finally {
- if(btnSubmit) {
- btnSubmit.textContent = isLoginMode ? 'Iniciar Sesión' : 'Crear Cuenta';
- (btnSubmit as HTMLButtonElement).disabled = false;
- }
- }
- });
+      fullnameInput.required = false;
+      telefonoInput.required = false;
+      fechaNacimientoInput.required = false;
+      accessCodeInput.required = false;
+      accessCodeInput.value = ""; // limpiar por si acaso
 
- window.addEventListener('beforeunload', () => {
- if (previewUrl) {
-  URL.revokeObjectURL(previewUrl);
- }
- });
+      btnForgotPassword?.classList.remove("hidden");
+      if (btnSubmit) btnSubmit.textContent = "Iniciar Sesión";
+      hideMessages();
+    };
 
- registroExitosoClose?.addEventListener('click', closeRegistroExitosoModal);
+    const setRegisterMode = () => {
+      isLoginMode = false;
+      tabRegister?.classList.add("bg-surface", "text-content", "shadow-sm");
+      tabRegister?.classList.remove("text-content-muted", "hover:text-content");
 
- document.addEventListener('keydown', (event) => {
- if (event.key === 'Escape' && registroExitoso) {
-  closeRegistroExitosoModal();
- }
- });
+      tabLogin?.classList.remove("bg-surface", "text-content", "shadow-sm");
+      tabLogin?.classList.add("text-content-muted", "hover:text-content");
 
- });
+      registerFieldsTop?.classList.remove("hidden");
+      registerFieldsTop?.classList.add("flex");
+      registerFieldsMiddle?.classList.remove("hidden");
+      registerFieldsMiddle?.classList.add("flex");
+      registerFieldsBottom?.classList.remove("hidden");
+      registerFieldsBottom?.classList.add("flex");
+      passwordHint?.classList.remove("hidden");
+
+      fullnameInput.required = true;
+      telefonoInput.required = true;
+      fechaNacimientoInput.required = true;
+      accessCodeInput.required = true;
+
+      btnForgotPassword?.classList.add("hidden");
+      if (btnSubmit) btnSubmit.textContent = "Crear Cuenta";
+      hideMessages();
+
+      if (!rolesLoaded) {
+        rolesLoaded = true;
+        loadRoles();
+      }
+    };
+
+    tabLogin?.addEventListener("click", setLoginMode);
+    tabRegister?.addEventListener("click", setRegisterMode);
+    avatarInput?.addEventListener("change", handleAvatarChange);
+
+    // --- UI Helpers ---
+    const showError = (msg: string) => {
+      if (errorMessage) {
+        errorMessage.textContent = msg;
+        errorMessage.classList.remove("hidden");
+        if (successMessage) successMessage.classList.add("hidden");
+      }
+    };
+
+    const showSuccess = (msg: string) => {
+      if (successMessage) {
+        successMessage.textContent = msg;
+        successMessage.classList.remove("hidden");
+        if (errorMessage) errorMessage.classList.add("hidden");
+      }
+    };
+
+    const hideMessages = () => {
+      if (errorMessage) errorMessage.classList.add("hidden");
+      if (successMessage) successMessage.classList.add("hidden");
+    };
+
+    const openRegistroExitosoModal = (email: string) => {
+      registroExitoso = true;
+      if (registroExitosoEmail) registroExitosoEmail.textContent = email;
+      registroExitosoModal?.classList.remove("hidden");
+      registroExitosoModal?.classList.add("flex");
+      document.body.classList.add("overflow-hidden");
+    };
+
+    const closeRegistroExitosoModal = () => {
+      registroExitoso = false;
+      registroExitosoModal?.classList.add("hidden");
+      registroExitosoModal?.classList.remove("flex");
+      document.body.classList.remove("overflow-hidden");
+      window.location.href = "/";
+    };
+
+    // --- Submit Logic ---
+    form?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideMessages();
+
+      const email = emailInput.value;
+      const password = passwordInput.value;
+
+      if (!email || !password) return;
+
+      if (btnSubmit) {
+        btnSubmit.innerHTML =
+          '<span class="flex items-center justify-center gap-2"><div class="w-4 h-4 rounded-full border-2 border-white/20 border-t-white animate-spin"></div> Procesando...</span>';
+        (btnSubmit as HTMLButtonElement).disabled = true;
+      }
+
+      try {
+        if (isLoginMode) {
+          // Logic for Login
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
+
+          if (data.session) {
+            try {
+              const maxAge = 60 * 60 * 24 * 365; // 1 año
+              const cookieFlags =
+                window.location.protocol === "https:"
+                  ? `; path=/; max-age=${maxAge}; SameSite=Lax; Secure`
+                  : `; path=/; max-age=${maxAge}`;
+              // Inyección robusta de cookies nativas para acceso del servidor (SSR)
+              document.cookie = `sb-access-token=${data.session.access_token}${cookieFlags}`;
+              document.cookie = `sb-refresh-token=${data.session.refresh_token}${cookieFlags}`;
+
+              // Retraso obligatorio para que el navegador guarde la cookie fÃ­sicamente
+              setTimeout(() => {
+                window.location.href = "/";
+              }, 400);
+            } catch (cookieError) {
+              console.error(
+                "[Seguridad Login] Error crÃ­tico al inyectar cookie nativa:",
+                cookieError,
+              );
+              showError(
+                "Hubo un problema sincronizando tu Sesión de forma segura. Por favor, intenta usar otro navegador o borra el historial.",
+              );
+              if (btnSubmit) {
+                btnSubmit.innerHTML = "Iniciar Sesión";
+                (btnSubmit as HTMLButtonElement).disabled = false;
+              }
+            }
+          }
+        } else {
+          // Logic for Registration
+          const fullName = fullnameInput.value;
+          const telefono = telefonoInput.value;
+          const fechaNacimiento = fechaNacimientoInput.value;
+          const accessCode = accessCodeInput.value?.trim().toUpperCase();
+          let avatarUrl = "";
+          let uploadedAvatarPath = "";
+
+          // SECRET CODE VALIDATION (server-side)
+          const verifyRes = await fetch("/api/verify-access-code", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code: accessCode }),
+          });
+          const verifyData = await verifyRes.json();
+          if (!verifyData.valid) {
+            throw new Error(
+              "El Código de Acceso es incorrecto. Contacta a tu líder si no lo tienes.",
+            );
+          }
+
+          if (!fullName || !telefono || !fechaNacimiento)
+            throw new Error(
+              "Nombre, Teléfono y Fecha de nacimiento son obligatorios para el registro.",
+            );
+
+          if (avatarProcessing) {
+            showError(
+              "Estamos optimizando tu foto. Espera un momento e intenta de nuevo.",
+            );
+            if (btnSubmit) {
+              btnSubmit.textContent = "Crear Cuenta";
+              (btnSubmit as HTMLButtonElement).disabled = false;
+            }
+            return;
+          }
+
+          // Subir foto con reintentos (hasta 3 intentos)
+          if (avatarFile) {
+            const safeFileName = avatarFile.name.replace(
+              /[^a-zA-Z0-9._-]/g,
+              "_",
+            );
+            const avatarPath = `registro/${Date.now()}-${safeFileName}`;
+            let uploadSuccess = false;
+
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              try {
+                const { data: uploadData, error: uploadError } =
+                  await supabase.storage
+                    .from("avatars")
+                    .upload(avatarPath, avatarFile, {
+                      cacheControl: "3600",
+                      upsert: false,
+                    });
+                if (uploadError) throw uploadError;
+                uploadedAvatarPath = uploadData?.path || avatarPath;
+                const { data: publicAvatar } = supabase.storage
+                  .from("avatars")
+                  .getPublicUrl(uploadedAvatarPath);
+                avatarUrl = String(publicAvatar?.publicUrl || "").trim();
+                if (!avatarUrl) throw new Error("URL pública vacía");
+                uploadSuccess = true;
+                break;
+              } catch (uploadErr: any) {
+                console.warn(`[Upload] Intento ${attempt}/3 falló:`, uploadErr);
+                if (attempt < 3) {
+                  showSuccess(`Reintentando subir foto (${attempt + 1}/3)...`);
+                  await new Promise((r) => setTimeout(r, 1500));
+                }
+              }
+            }
+
+            if (!uploadSuccess) {
+              // Después de 3 intentos, registrar sin foto
+              console.warn(
+                "[Upload] 3 intentos fallidos, continuando sin foto",
+              );
+              avatarUrl = "";
+              uploadedAvatarPath = "";
+              showSuccess(
+                "No se pudo subir la foto. Tu líder te la asignará después.",
+              );
+              await new Promise((r) => setTimeout(r, 800));
+            }
+          }
+
+          const selectedRoles = Array.from(
+            document.querySelectorAll('input[name="register_role"]:checked'),
+          ).map((cb) => (cb as HTMLInputElement).value);
+
+          const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+              data: {
+                full_name: fullName,
+                telefono: telefono,
+                fecha_nacimiento: fechaNacimiento,
+                avatar_url: avatarUrl,
+                roles: selectedRoles,
+              },
+            },
+          });
+
+          if (error) {
+            if (uploadedAvatarPath) {
+              try {
+                await supabase.storage
+                  .from("avatars")
+                  .remove([uploadedAvatarPath]);
+              } catch (cleanupError) {
+                console.warn(
+                  "No se pudo limpiar el avatar subido tras fallo de registro:",
+                  cleanupError,
+                );
+              }
+            }
+            throw error;
+          }
+          if (data.user && !data.session) {
+            resetAvatarPreview();
+            passwordInput.value = "";
+            openRegistroExitosoModal(email);
+          } else {
+            showSuccess(
+              "Registro exitoso. Si el sistema te lo permite, ya puedes iniciar Sesión.",
+            );
+            setLoginMode();
+            resetAvatarPreview();
+            passwordInput.value = "";
+          }
+        }
+      } catch (err: any) {
+        showError(err.message || "Ocurrió un error inesperado");
+      } finally {
+        if (btnSubmit) {
+          btnSubmit.textContent = isLoginMode
+            ? "Iniciar Sesión"
+            : "Crear Cuenta";
+          (btnSubmit as HTMLButtonElement).disabled = false;
+        }
+      }
+    });
+
+    window.addEventListener("beforeunload", () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    });
+
+    registroExitosoClose?.addEventListener("click", closeRegistroExitosoModal);
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && registroExitoso) {
+        closeRegistroExitosoModal();
+      }
+    });
+  });
 </script>
 
 <!-- Cropper.js CDN -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css" integrity="sha512-hvNR0F/e2J7zPPfLC9auFe3/SE0yG4aJCOd/qxew74NN7eyiSKjr7xJJMu1Jy2wf7FXITpWS1E/RY8yzuXN7VA==" crossorigin="anonymous" />
-<script is:inline src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js" integrity="sha512-9KkIqdfN7ipEW6B6k+Aq20PV31bjODg4AA52W+tYtAE0jE0kMx49bjJ3FgvS56wzmyfMUHbQ4Km2b7l9+Y/+Eg==" crossorigin="anonymous"></script>
+<link
+  rel="stylesheet"
+  href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css"
+  integrity="sha512-hvNR0F/e2J7zPPfLC9auFe3/SE0yG4aJCOd/qxew74NN7eyiSKjr7xJJMu1Jy2wf7FXITpWS1E/RY8yzuXN7VA=="
+  crossorigin="anonymous"
+/>
+<script
+  is:inline
+  src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"
+  integrity="sha512-9KkIqdfN7ipEW6B6k+Aq20PV31bjODg4AA52W+tYtAE0jE0kMx49bjJ3FgvS56wzmyfMUHbQ4Km2b7l9+Y/+Eg=="
+  crossorigin="anonymous"></script>
 
 <!-- Modal Cropper Foto de Perfil -->
-<div id="login-cropper-modal" class="fixed inset-0 z-[200] bg-black/80 hidden items-center justify-center p-4 backdrop-blur-sm transition-opacity opacity-0 duration-300">
-  <div id="login-cropper-content" class="bg-surface rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl scale-95 transition-transform duration-300">
-    <div class="px-6 py-4 border-b border-border flex justify-between items-center">
+<div
+  id="login-cropper-modal"
+  class="fixed inset-0 z-[200] bg-black/80 hidden items-center justify-center p-4 backdrop-blur-sm transition-opacity opacity-0 duration-300"
+>
+  <div
+    id="login-cropper-content"
+    class="bg-surface rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl scale-95 transition-transform duration-300"
+  >
+    <div
+      class="px-6 py-4 border-b border-border flex justify-between items-center"
+    >
       <h3 class="text-lg font-bold text-content">Ajustar Foto de Perfil</h3>
-      <button id="login-btn-close-cropper" class="text-content-muted hover:text-content transition-colors">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      <button
+        id="login-btn-close-cropper"
+        class="text-content-muted hover:text-content transition-colors"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          ><line x1="18" y1="6" x2="6" y2="18"></line><line
+            x1="6"
+            y1="6"
+            x2="18"
+            y2="18"></line></svg
+        >
       </button>
     </div>
-    <div class="px-6 py-4 bg-info/10 text-info border-b border-info/20 flex items-start gap-3">
-      <svg class="mt-0.5 shrink-0" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+    <div
+      class="px-6 py-4 bg-info/10 text-info border-b border-info/20 flex items-start gap-3"
+    >
+      <svg
+        class="mt-0.5 shrink-0"
+        xmlns="http://www.w3.org/2000/svg"
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        ><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"
+        ></path><path d="M12 8h.01"></path></svg
+      >
       <div class="space-y-1">
-        <p class="text-sm font-bold leading-snug">Usa una foto de cerca (Retrato)</p>
-        <p class="text-sm leading-snug">Amplia la imagen hasta que <strong>tu rostro llene el círculo</strong>. No uses fotos de cuerpo entero ni grupales.</p>
+        <p class="text-sm font-bold leading-snug">
+          Usa una foto de cerca (Retrato)
+        </p>
+        <p class="text-sm leading-snug">
+          Amplia la imagen hasta que <strong>tu rostro llene el círculo</strong
+          >. No uses fotos de cuerpo entero ni grupales.
+        </p>
       </div>
     </div>
-    <div class="p-6 bg-background aspect-square flex items-center justify-center relative">
+    <div
+      class="p-6 bg-background aspect-square flex items-center justify-center relative"
+    >
       <div class="w-full h-full max-h-[60vh] relative z-10">
-        <img id="login-cropper-image" src="" alt="Imagen a recortar" class="max-w-full hidden" />
+        <img
+          id="login-cropper-image"
+          src=""
+          alt="Imagen a recortar"
+          class="max-w-full hidden"
+        />
       </div>
     </div>
-    <div class="px-6 py-4 border-t border-border flex justify-end gap-3 bg-background">
-      <button id="login-btn-cancel-cropper" class="px-5 py-2.5 rounded-xl font-bold text-sm text-content-muted hover:bg-neutral/20 transition-colors">Cancelar</button>
-      <button id="login-btn-save-cropper" class="px-5 py-2.5 rounded-xl font-bold text-sm bg-action hover:bg-action/80 text-white shadow-md transition-all flex items-center gap-2">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+    <div
+      class="px-6 py-4 border-t border-border flex justify-end gap-3 bg-background"
+    >
+      <button
+        id="login-btn-cancel-cropper"
+        class="px-5 py-2.5 rounded-xl font-bold text-sm text-content-muted hover:bg-neutral/20 transition-colors"
+        >Cancelar</button
+      >
+      <button
+        id="login-btn-save-cropper"
+        class="px-5 py-2.5 rounded-xl font-bold text-sm bg-action hover:bg-action/80 text-white shadow-md transition-all flex items-center gap-2"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          ><polyline points="20 6 9 17 4 12"></polyline></svg
+        >
         Guardar Foto
       </button>
     </div>
@@ -712,94 +1132,128 @@ roles: selectedRoles
 </style>
 
 <script is:inline>
-(function() {
-  var cropperInstance = null;
+  (function () {
+    var cropperInstance = null;
 
-  var modal = document.getElementById('login-cropper-modal');
-  var content = document.getElementById('login-cropper-content');
-  var cropperImage = document.getElementById('login-cropper-image');
-  var btnClose = document.getElementById('login-btn-close-cropper');
-  var btnCancel = document.getElementById('login-btn-cancel-cropper');
-  var btnSave = document.getElementById('login-btn-save-cropper');
+    var modal = document.getElementById("login-cropper-modal");
+    var content = document.getElementById("login-cropper-content");
+    var cropperImage = document.getElementById("login-cropper-image");
+    var btnClose = document.getElementById("login-btn-close-cropper");
+    var btnCancel = document.getElementById("login-btn-cancel-cropper");
+    var btnSave = document.getElementById("login-btn-save-cropper");
 
-  function openCropper(file) {
-    var objectUrl = URL.createObjectURL(file);
-    cropperImage.src = objectUrl;
-    cropperImage.classList.remove('hidden');
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
-    setTimeout(function() {
-      modal.classList.remove('opacity-0');
-      content.classList.remove('scale-95');
-      if (cropperInstance) { cropperInstance.destroy(); }
-      var CropperJS = window.Cropper;
-      if (CropperJS) {
-        cropperInstance = new CropperJS(cropperImage, {
-          aspectRatio: 1,
-          viewMode: 1,
-          dragMode: 'move',
-          autoCropArea: 1,
-          restore: false,
-          guides: false,
-          center: false,
-          highlight: false,
-          cropBoxMovable: true,
-          cropBoxResizable: true,
-          toggleDragModeOnDblclick: false,
-        });
-      }
-    }, 10);
-  }
-
-  function closeCropper() {
-    modal.classList.add('opacity-0');
-    content.classList.add('scale-95');
-    setTimeout(function() {
-      modal.classList.add('hidden');
-      modal.classList.remove('flex');
-      if (cropperInstance) { cropperInstance.destroy(); cropperInstance = null; }
-      if (cropperImage) { cropperImage.src = ''; cropperImage.classList.add('hidden'); }
-    }, 300);
-  }
-
-  btnClose && btnClose.addEventListener('click', closeCropper);
-  btnCancel && btnCancel.addEventListener('click', closeCropper);
-  modal && modal.addEventListener('click', function(e) { if (e.target === modal) closeCropper(); });
-
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape' && !modal.classList.contains('hidden')) closeCropper();
-  });
-
-  btnSave && btnSave.addEventListener('click', async function() {
-    if (!cropperInstance) return;
-    var originalHTML = btnSave.innerHTML;
-    btnSave.innerHTML = '<svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Procesando...';
-    btnSave.disabled = true;
-    try {
-      var canvas = cropperInstance.getCroppedCanvas({ width: 400, height: 400, imageSmoothingEnabled: true, imageSmoothingQuality: 'high' });
-      // Intentar WebP, fallback a JPEG
-      var mimeType = 'image/webp';
-      var ext = 'webp';
-      var testCanvas = document.createElement('canvas'); testCanvas.width=1; testCanvas.height=1;
-      var supportsWebP = testCanvas.toDataURL('image/webp').indexOf('data:image/webp') === 0;
-      if (!supportsWebP) { mimeType = 'image/jpeg'; ext = 'jpg'; }
-      var blob = await new Promise(function(resolve) { canvas.toBlob(resolve, mimeType, 0.9); });
-      if (!blob) throw new Error('No se pudo generar el recorte.');
-      var croppedFile = new File([blob], 'avatar_' + Date.now() + '.' + ext, { type: mimeType });
-      // Disparar evento para que el script de login recoja el archivo
-      document.dispatchEvent(new CustomEvent('avatar-cropped', { detail: { file: croppedFile } }));
-      closeCropper();
-    } catch(err) {
-      console.error('[Cropper]', err);
-      alert('No se pudo procesar la foto. Intenta de nuevo.');
-    } finally {
-      btnSave.innerHTML = originalHTML;
-      btnSave.disabled = false;
+    function openCropper(file) {
+      var objectUrl = URL.createObjectURL(file);
+      cropperImage.src = objectUrl;
+      cropperImage.classList.remove("hidden");
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+      setTimeout(function () {
+        modal.classList.remove("opacity-0");
+        content.classList.remove("scale-95");
+        if (cropperInstance) {
+          cropperInstance.destroy();
+        }
+        var CropperJS = window.Cropper;
+        if (CropperJS) {
+          cropperInstance = new CropperJS(cropperImage, {
+            aspectRatio: 1,
+            viewMode: 1,
+            dragMode: "move",
+            autoCropArea: 1,
+            restore: false,
+            guides: false,
+            center: false,
+            highlight: false,
+            cropBoxMovable: true,
+            cropBoxResizable: true,
+            toggleDragModeOnDblclick: false,
+          });
+        }
+      }, 10);
     }
-  });
 
-  // Exponer función para que el script de login abra el modal
-  window.__loginOpenCropper = openCropper;
-})();
+    function closeCropper() {
+      modal.classList.add("opacity-0");
+      content.classList.add("scale-95");
+      setTimeout(function () {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+        if (cropperInstance) {
+          cropperInstance.destroy();
+          cropperInstance = null;
+        }
+        if (cropperImage) {
+          cropperImage.src = "";
+          cropperImage.classList.add("hidden");
+        }
+      }, 300);
+    }
+
+    btnClose && btnClose.addEventListener("click", closeCropper);
+    btnCancel && btnCancel.addEventListener("click", closeCropper);
+    modal &&
+      modal.addEventListener("click", function (e) {
+        if (e.target === modal) closeCropper();
+      });
+
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && !modal.classList.contains("hidden"))
+        closeCropper();
+    });
+
+    btnSave &&
+      btnSave.addEventListener("click", async function () {
+        if (!cropperInstance) return;
+        var originalHTML = btnSave.innerHTML;
+        btnSave.innerHTML =
+          '<svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Procesando...';
+        btnSave.disabled = true;
+        try {
+          var canvas = cropperInstance.getCroppedCanvas({
+            width: 400,
+            height: 400,
+            imageSmoothingEnabled: true,
+            imageSmoothingQuality: "high",
+          });
+          // Intentar WebP, fallback a JPEG
+          var mimeType = "image/webp";
+          var ext = "webp";
+          var testCanvas = document.createElement("canvas");
+          testCanvas.width = 1;
+          testCanvas.height = 1;
+          var supportsWebP =
+            testCanvas.toDataURL("image/webp").indexOf("data:image/webp") === 0;
+          if (!supportsWebP) {
+            mimeType = "image/jpeg";
+            ext = "jpg";
+          }
+          var blob = await new Promise(function (resolve) {
+            canvas.toBlob(resolve, mimeType, 0.9);
+          });
+          if (!blob) throw new Error("No se pudo generar el recorte.");
+          var croppedFile = new File(
+            [blob],
+            "avatar_" + Date.now() + "." + ext,
+            { type: mimeType },
+          );
+          // Disparar evento para que el script de login recoja el archivo
+          document.dispatchEvent(
+            new CustomEvent("avatar-cropped", {
+              detail: { file: croppedFile },
+            }),
+          );
+          closeCropper();
+        } catch (err) {
+          console.error("[Cropper]", err);
+          alert("No se pudo procesar la foto. Intenta de nuevo.");
+        } finally {
+          btnSave.innerHTML = originalHTML;
+          btnSave.disabled = false;
+        }
+      });
+
+    // Exponer función para que el script de login abra el modal
+    window.__loginOpenCropper = openCropper;
+  })();
 </script>
-

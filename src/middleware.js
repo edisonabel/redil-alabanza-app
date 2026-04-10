@@ -18,20 +18,20 @@ const protectedRoutes = ['/', '/admin', '/programacion', '/repertorio', '/perfil
 const staticAssetRegex = /\.(png|ico|svg|webmanifest|css|js|txt|map|woff2?|ttf|eot|json)$/i;
 
 const setAuthCookies = (cookies, session, isSecure) => {
-  cookies.set('sb-access-token', session.access_token, {
+  const options = {
     path: '/',
-    sameSite: 'lax',
-    secure: isSecure,
     maxAge: COOKIE_MAX_AGE,
-  });
+  };
+
+  if (isSecure) {
+    options.sameSite = 'lax';
+    options.secure = true;
+  }
+
+  cookies.set('sb-access-token', session.access_token, options);
 
   if (session.refresh_token) {
-    cookies.set('sb-refresh-token', session.refresh_token, {
-      path: '/',
-      sameSite: 'lax',
-      secure: isSecure,
-      maxAge: COOKIE_MAX_AGE,
-    });
+    cookies.set('sb-refresh-token', session.refresh_token, options);
   }
 };
 
