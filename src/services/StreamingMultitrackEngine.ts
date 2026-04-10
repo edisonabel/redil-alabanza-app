@@ -284,7 +284,10 @@ export class StreamingMultitrackEngine {
     this.masterGain.connect(this.context.destination);
   }
 
-  async loadTracks(trackList: TrackData[]): Promise<TrackData[]> {
+  async loadTracks(
+    trackList: TrackData[],
+    options?: { onProgress?: (loaded: number, total: number) => void },
+  ): Promise<TrackData[]> {
     const normalizedTracks = trackList.map((track) => ({
       ...track,
       volume: this.clampVolume(track.volume),
@@ -302,7 +305,19 @@ export class StreamingMultitrackEngine {
       return levels;
     }, {});
 
-    await this.initialize(normalizedTracks.map((track) => this.buildStreamingTrackDefinition(track)));
+    const onProgress = options?.onProgress;
+    if (onProgress) {
+      try {
+        onProgress(0, normalizedTracks.length);
+      } catch {
+        // ignore progress callback errors
+      }
+    }
+
+    await this.initialize(
+      normalizedTracks.map((track) => this.buildStreamingTrackDefinition(track)),
+      onProgress,
+    );
     this.setMasterVolume(this.masterGain.gain.value);
     return this.tracks;
   }
@@ -344,7 +359,10 @@ export class StreamingMultitrackEngine {
     };
   }
 
-  async initialize(trackDefinitions: StreamingTrackDefinition[]): Promise<void> {
+  async initialize(
+    trackDefinitions: StreamingTrackDefinition[],
+    onProgress?: (loaded: number, total: number) => void,
+  ): Promise<void> {
     this.ensureWebCodecsSupport();
 
     if (!this.context.audioWorklet) {
@@ -369,7 +387,34 @@ export class StreamingMultitrackEngine {
       this.startTrackPipeline(trackState);
     });
 
-    await Promise.all(this.trackStates.map((trackState) => trackState.ready.promise));
+    const total = this.trackStates.length;
+    let completed = 0;
+    const reportProgress = () => {
+      completed += 1;
+      if (onProgress) {
+        try {
+          onProgress(completed, total);
+        } catch {
+          // ignore progress callback errors
+        }
+      }
+    };
+
+    await Promise.all(
+      this.trackStates.map((trackState) =>
+        trackState.ready.promise.then(
+          () => {
+            reportProgress();
+          },
+          (error) => {
+            // count as completed-with-error so progress doesn't stall;
+            // the rejection still propagates via Promise.all below
+            reportProgress();
+            throw error;
+          },
+        ),
+      ),
+    );
   }
 
   async play(): Promise<void> {

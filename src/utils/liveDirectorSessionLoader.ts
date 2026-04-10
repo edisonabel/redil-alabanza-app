@@ -141,6 +141,7 @@ const buildTrack = (id: string, name: string, url: string, volume: number): Trac
   url,
   volume,
   isMuted: false,
+  enabled: true,
 });
 
 export function inferStemTracksFromFiles(

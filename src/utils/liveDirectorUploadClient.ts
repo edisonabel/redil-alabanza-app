@@ -32,21 +32,110 @@ export async function requestLiveDirectorUploadTarget(params: {
   return readJsonResponse(response);
 }
 
+export type UploadProgressEvent = {
+  loaded: number;
+  total: number;
+  percent: number;
+};
+
+export type UploadFileOptions = {
+  onProgress?: (event: UploadProgressEvent) => void;
+  signal?: AbortSignal;
+};
+
 export async function uploadFileToLiveDirectorTarget(
   file: File,
   target: LiveDirectorUploadTarget,
+  options?: UploadFileOptions,
 ): Promise<void> {
-  const response = await fetch(target.presignedUrl, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': file.type || 'application/octet-stream',
-    },
-    body: file,
-  });
+  const onProgress = options?.onProgress;
+  const signal = options?.signal;
 
-  if (!response.ok) {
-    throw new Error(`No se pudo subir "${file.name}" a R2.`);
+  // Camino moderno (sin progreso): mantener fetch para máxima compatibilidad.
+  if (!onProgress) {
+    const response = await fetch(target.presignedUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+      },
+      body: file,
+      signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`No se pudo subir "${file.name}" a R2.`);
+    }
+    return;
   }
+
+  // Camino con progreso: XHR es la única forma de obtener upload progress en navegador.
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', target.presignedUrl, true);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+
+    let aborted = false;
+    const onAbort = () => {
+      aborted = true;
+      try {
+        xhr.abort();
+      } catch {
+        // ignore
+      }
+      reject(new DOMException('Upload aborted', 'AbortError'));
+    };
+
+    if (signal) {
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    if (xhr.upload) {
+      xhr.upload.onprogress = (evt) => {
+        if (!evt.lengthComputable) {
+          return;
+        }
+        try {
+          onProgress({
+            loaded: evt.loaded,
+            total: evt.total,
+            percent: evt.total > 0 ? evt.loaded / evt.total : 0,
+          });
+        } catch {
+          // ignore progress callback errors
+        }
+      };
+    }
+
+    xhr.onload = () => {
+      if (signal) {
+        signal.removeEventListener('abort', onAbort);
+      }
+      if (aborted) {
+        return;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        reject(new Error(`No se pudo subir "${file.name}" a R2.`));
+      }
+    };
+
+    xhr.onerror = () => {
+      if (signal) {
+        signal.removeEventListener('abort', onAbort);
+      }
+      if (aborted) {
+        return;
+      }
+      reject(new Error(`No se pudo subir "${file.name}" a R2.`));
+    };
+
+    xhr.send(file);
+  });
 }
 
 export async function saveLiveDirectorSongSession(params: {

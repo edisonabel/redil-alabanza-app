@@ -9,6 +9,7 @@ import {
 import { getPadUrlForSongKey } from '../../utils/padAudio';
 
 const CACHE_NAME = 'repertorio-offline-cache-v1';
+const NEXT_SONG_PREWARM_CONCURRENCY = 2;
 const AUDIO_SOURCE_URL_RE = /^(https?:\/\/|\/).+\.(mp3|wav|m4a|aac|ogg)(\?.*)?$/i;
 
 const resolveSongId = (song) => String(song?.id || '').trim();
@@ -111,6 +112,60 @@ const buildLegacySequenceSession = (song) => {
   };
 };
 
+const resolveSongSession = (song, sessionOverride = null) => {
+  const songId = resolveSongId(song);
+  const songTitle = String(song?.title || song?.titulo || '').trim();
+
+  return normalizePersistedLiveDirectorSession(sessionOverride || song?.multitrackSession || null, {
+    songId,
+    songTitle,
+  }) || buildLegacySequenceSession(song);
+};
+
+const buildSongCacheUrls = (song, sessionOverride = null) => {
+  if (!song) return [];
+
+  const audioUrl = typeof song?.mp3 === 'string' ? song.mp3.trim() : '';
+  const padUrl = getPadUrlForSongKey(song?.originalKey || song?.key);
+  const session = resolveSongSession(song, sessionOverride);
+  const sessionUrls = Array.isArray(session?.tracks)
+    ? session.tracks.map((track) => String(track?.url || '').trim()).filter(Boolean)
+    : [];
+
+  return Array.from(new Set([audioUrl, padUrl, ...sessionUrls].filter(Boolean)));
+};
+
+const cacheUrlIfNeeded = async (cache, url) => {
+  const cached = await cache.match(url);
+  if (cached) {
+    return;
+  }
+
+  const response = await fetch(url);
+  if (response.ok) {
+    await cache.put(url, response.clone());
+  }
+};
+
+const warmUrlsWithConcurrency = async (urls, worker, limit = NEXT_SONG_PREWARM_CONCURRENCY) => {
+  if (!Array.isArray(urls) || urls.length === 0) {
+    return;
+  }
+
+  const safeLimit = Math.max(1, Math.min(limit, urls.length));
+  let nextIndex = 0;
+
+  const runners = new Array(safeLimit).fill(null).map(async () => {
+    while (nextIndex < urls.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      await worker(urls[currentIndex], currentIndex);
+    }
+  });
+
+  await Promise.all(runners);
+};
+
 const buildQueueSongs = (songs) =>
   songs
     .map((song) => ({
@@ -146,6 +201,8 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
   });
   const syncChannelRef = useRef(null);
   const autoCacheStartedRef = useRef(false);
+  const prewarmedSongIdsRef = useRef(new Set());
+  const prewarmInFlightUrlsRef = useRef(new Set());
 
   const safeActiveSongIndex = Math.max(0, Math.min(activeSongIndex, Math.max(ensayoSongs.length - 1, 0)));
   const activeSong = ensayoSongs[safeActiveSongIndex] || null;
@@ -154,11 +211,7 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
     ? sessionOverrides[activeSongId] || activeSong?.multitrackSession || null
     : null;
   const activeSongSession = useMemo(
-    () =>
-      normalizePersistedLiveDirectorSession(activeSongSessionSource, {
-        songId: activeSongId,
-        songTitle: String(activeSong?.title || '').trim(),
-      }) || buildLegacySequenceSession(activeSong),
+    () => resolveSongSession(activeSong, activeSongSessionSource),
     [activeSong, activeSongId, activeSongSessionSource],
   );
   const activeSongSections = useMemo(
@@ -220,20 +273,7 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
     const cacheSetlist = async () => {
       const audiosToCache = Array.from(
         new Set(
-          ensayoSongs.flatMap((song) => {
-            const audioUrl = typeof song?.mp3 === 'string' ? song.mp3.trim() : '';
-            const padUrl = getPadUrlForSongKey(song?.originalKey || song?.key);
-            const persistedSession =
-              normalizePersistedLiveDirectorSession(song?.multitrackSession || null, {
-                songId: resolveSongId(song),
-                songTitle: String(song?.title || '').trim(),
-              }) || buildLegacySequenceSession(song);
-            const sessionUrls = Array.isArray(persistedSession?.tracks)
-              ? persistedSession.tracks.map((track) => String(track?.url || '').trim()).filter(Boolean)
-              : [];
-
-            return [audioUrl, padUrl, ...sessionUrls].filter(Boolean);
-          }),
+          ensayoSongs.flatMap((song) => buildSongCacheUrls(song)),
         ),
       );
 
@@ -253,16 +293,10 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
             return;
           }
 
-          const cached = await cache.match(url);
-          if (!cached) {
-            try {
-              const response = await fetch(url);
-              if (response.ok) {
-                await cache.put(url, response.clone());
-              }
-            } catch (error) {
-              console.warn('[ModoEnsayoDirector] No se pudo cachear recurso.', url, error);
-            }
+          try {
+            await cacheUrlIfNeeded(cache, url);
+          } catch (error) {
+            console.warn('[ModoEnsayoDirector] No se pudo cachear recurso.', url, error);
           }
 
           progress += 1;
@@ -286,6 +320,70 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
       cancelled = true;
     };
   }, [ensayoSongs]);
+
+  useEffect(() => {
+    if (
+      ensayoSongs.length === 0 ||
+      typeof window === 'undefined' ||
+      !('caches' in window)
+    ) {
+      return;
+    }
+
+    const nextSong = ensayoSongs[safeActiveSongIndex + 1];
+    const nextSongId = resolveSongId(nextSong);
+
+    if (!nextSong || !nextSongId || prewarmedSongIdsRef.current.has(nextSongId)) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const prewarmNextSong = async () => {
+      const urls = buildSongCacheUrls(nextSong, sessionOverrides[nextSongId]);
+      if (urls.length === 0) {
+        prewarmedSongIdsRef.current.add(nextSongId);
+        return;
+      }
+
+      try {
+        const cache = await window.caches.open(CACHE_NAME);
+        const urlsToWarm = urls.filter((url) => !prewarmInFlightUrlsRef.current.has(url));
+
+        if (urlsToWarm.length === 0) {
+          return;
+        }
+
+        urlsToWarm.forEach((url) => prewarmInFlightUrlsRef.current.add(url));
+
+        await warmUrlsWithConcurrency(
+          urlsToWarm,
+          async (url) => {
+            try {
+              await cacheUrlIfNeeded(cache, url);
+            } catch (error) {
+              console.warn('[ModoEnsayoDirector] No se pudo precalentar la siguiente cancion.', url, error);
+            } finally {
+              prewarmInFlightUrlsRef.current.delete(url);
+            }
+          },
+          NEXT_SONG_PREWARM_CONCURRENCY,
+        );
+
+        if (!cancelled) {
+          prewarmedSongIdsRef.current.add(nextSongId);
+        }
+      } catch (error) {
+        console.warn('[ModoEnsayoDirector] Fallo el prewarm de la siguiente cancion.', error);
+      }
+    };
+
+    void prewarmNextSong();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ensayoSongs, safeActiveSongIndex, sessionOverrides]);
 
   useEffect(() => {
     const channel = supabase.channel('ensayo-live-sync', {

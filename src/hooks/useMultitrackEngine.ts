@@ -4,8 +4,10 @@ import { StreamingMultitrackEngine } from '../services/StreamingMultitrackEngine
 
 type TrackVolumesState = Record<string, number>;
 type TrackLevelsState = Record<string, number>;
+type LoadProgressState = { loaded: number; total: number } | null;
 const UI_UPDATE_INTERVAL_MS = 1000 / 24;
 const DIAGNOSTICS_UPDATE_INTERVAL_MS = 1000;
+const STREAMING_AUTO_ROUTE_DISABLED_SESSION_KEY = 'live-director:disable-streaming-auto-route';
 type EngineKind = 'buffer' | 'streaming';
 type EngineInstance = MultitrackEngine | StreamingMultitrackEngine;
 type EngineDiagnostics = ReturnType<MultitrackEngine['getDiagnostics']>;
@@ -19,6 +21,7 @@ type UseMultitrackEngineReturn = {
   currentTime: number;
   duration: number;
   isReady: boolean;
+  loadProgress: LoadProgressState;
   trackVolumes: TrackVolumesState;
   trackLevels: TrackLevelsState;
   diagnostics: EngineDiagnostics | null;
@@ -68,6 +71,44 @@ const cloneTracks = (tracks: TrackData[]): TrackData[] => (
   }))
 );
 
+const readStreamingAutoRouteDisabled = () => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    return window.sessionStorage.getItem(STREAMING_AUTO_ROUTE_DISABLED_SESSION_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+
+const persistStreamingAutoRouteDisabled = (disabled: boolean) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    if (disabled) {
+      window.sessionStorage.setItem(STREAMING_AUTO_ROUTE_DISABLED_SESSION_KEY, '1');
+    } else {
+      window.sessionStorage.removeItem(STREAMING_AUTO_ROUTE_DISABLED_SESSION_KEY);
+    }
+  } catch {
+    // no-op
+  }
+};
+
+const isUnsupportedStreamingConfigError = (error: unknown) => {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+
+  return (
+    message.includes('unsupported configuration') ||
+    message.includes('isconfigsupported') ||
+    message.includes('audiodecoder does not support codec')
+  );
+};
+
 export function useMultitrackEngine(
   options: UseMultitrackEngineOptions = {},
 ): UseMultitrackEngineReturn {
@@ -82,13 +123,35 @@ export function useMultitrackEngine(
   const diagnosticsRef = useRef<EngineDiagnostics | null>(null);
   const lastUiUpdateRef = useRef(0);
   const initializationTokenRef = useRef(0);
+  const streamingAutoRouteDisabledRef = useRef(readStreamingAutoRouteDisabled());
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isReady, setIsReady] = useState(false);
+  const [loadProgress, setLoadProgress] = useState<LoadProgressState>(null);
+  const loadProgressRef = useRef<LoadProgressState>(null);
   const [trackVolumes, setTrackVolumes] = useState<TrackVolumesState>({});
   const [trackLevels, setTrackLevels] = useState<TrackLevelsState>({});
   const [diagnostics, setDiagnostics] = useState<EngineDiagnostics | null>(null);
+
+  const commitLoadProgress = useCallback((next: LoadProgressState) => {
+    const previous = loadProgressRef.current;
+    if (previous === next) {
+      return;
+    }
+    if (
+      previous &&
+      next &&
+      previous.loaded === next.loaded &&
+      previous.total === next.total
+    ) {
+      return;
+    }
+    loadProgressRef.current = next;
+    startTransition(() => {
+      setLoadProgress(next);
+    });
+  }, []);
 
   const teardownEngine = useCallback((engine: EngineInstance | null) => {
     if (!engine) {
@@ -227,7 +290,7 @@ export function useMultitrackEngine(
         }
       });
 
-      if (isAllAacFamily) {
+      if (isAllAacFamily && !streamingAutoRouteDisabledRef.current) {
         targetKind = 'streaming';
         console.log('[useMultitrackEngine] Auto-routed to Streaming Engine (AAC family detected).');
       }
@@ -243,9 +306,17 @@ export function useMultitrackEngine(
     setDuration(0);
     trackLevelsRef.current = {};
     setTrackLevels({});
+    commitLoadProgress({ loaded: 0, total: nextTracks.length });
+
+    const handleProgress = (loaded: number, total: number) => {
+      if (initializationToken !== initializationTokenRef.current) {
+        return;
+      }
+      commitLoadProgress({ loaded, total });
+    };
 
     try {
-      const loadedTracks = await engine.loadTracks(nextTracks);
+      const loadedTracks = await engine.loadTracks(nextTracks, { onProgress: handleProgress });
       if (initializationToken !== initializationTokenRef.current || engine !== engineRef.current) {
         return;
       }
@@ -255,6 +326,7 @@ export function useMultitrackEngine(
       setTrackLevels(trackLevelsRef.current);
       commitDuration(engine.getDuration());
       commitDiagnostics(engine.getDiagnostics());
+      commitLoadProgress(null);
       setIsReady(true);
     } catch (error) {
       if (initializationToken !== initializationTokenRef.current || engine !== engineRef.current) {
@@ -264,6 +336,14 @@ export function useMultitrackEngine(
       const isAutoRoutedToStreaming = targetKind === 'streaming' && requestedEngineKind === 'buffer';
 
       if (isAutoRoutedToStreaming) {
+        if (isUnsupportedStreamingConfigError(error)) {
+          streamingAutoRouteDisabledRef.current = true;
+          persistStreamingAutoRouteDisabled(true);
+          console.warn(
+            '[useMultitrackEngine] Auto-routing to streaming was disabled for this session after an unsupported decoder configuration.',
+          );
+        }
+
         console.warn(
           '[useMultitrackEngine] Streaming engine failed decoding or crashed. Gracefully falling back to RAM buffer mode.',
           error,
@@ -271,7 +351,10 @@ export function useMultitrackEngine(
 
         try {
           const fallbackEngine = getEngine('buffer');
-          const fallbackLoadedTracks = await fallbackEngine.loadTracks(nextTracks);
+          commitLoadProgress({ loaded: 0, total: nextTracks.length });
+          const fallbackLoadedTracks = await fallbackEngine.loadTracks(nextTracks, {
+            onProgress: handleProgress,
+          });
 
           if (initializationToken !== initializationTokenRef.current || fallbackEngine !== engineRef.current) {
             return;
@@ -282,6 +365,7 @@ export function useMultitrackEngine(
           setTrackLevels(trackLevelsRef.current);
           commitDuration(fallbackEngine.getDuration());
           commitDiagnostics(fallbackEngine.getDiagnostics());
+          commitLoadProgress(null);
           setIsReady(true);
           return;
         } catch (fallbackError) {
@@ -294,9 +378,10 @@ export function useMultitrackEngine(
       trackLevelsRef.current = {};
       setTrackLevels({});
       commitDiagnostics(null);
+      commitLoadProgress(null);
       throw error;
     }
-  }, [commitDiagnostics, commitDuration, getEngine, requestedEngineKind]);
+  }, [commitDiagnostics, commitDuration, commitLoadProgress, getEngine, requestedEngineKind]);
 
   const play = useCallback(async () => {
     if (!isReady) {
@@ -457,6 +542,8 @@ export function useMultitrackEngine(
     setTrackLevels({});
     diagnosticsRef.current = null;
     setDiagnostics(null);
+    loadProgressRef.current = null;
+    setLoadProgress(null);
     lastUiUpdateRef.current = 0;
   }, [requestedEngineKind, teardownEngine]);
 
@@ -538,6 +625,7 @@ export function useMultitrackEngine(
       currentTime,
       duration,
       isReady,
+      loadProgress,
       trackVolumes,
       trackLevels,
       diagnostics,
@@ -560,6 +648,7 @@ export function useMultitrackEngine(
       initialize,
       isPlaying,
       isReady,
+      loadProgress,
       pause,
       play,
       seekTo,

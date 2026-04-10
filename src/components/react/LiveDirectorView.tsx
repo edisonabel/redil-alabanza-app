@@ -182,6 +182,7 @@ const SECTION_WAVE_BAR_INSET_PX = 16;
 const SECTION_WAVE_BAR_MIN_COUNT = 7;
 const SECTION_TRANSITION_FADE_OUT_MS = 170;
 const SECTION_TRANSITION_FADE_IN_MS = 180;
+const SEQUENCE_FILE_ACCEPT = '.aac,.m4a,audio/aac,audio/mp4,audio/x-m4a,audio/*';
 
 const CONTROL_CARD =
   'ui-pressable-soft flex items-center justify-center rounded-[1.55rem] border border-white/8 bg-[linear-gradient(180deg,rgba(26,27,29,0.96),rgba(17,18,20,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_24px_40px_rgba(0,0,0,0.25)] transition-all duration-200';
@@ -419,6 +420,8 @@ const toResolvedSession = (
     url: track.url,
     volume: track.volume,
     isMuted: track.isMuted,
+    enabled: track.enabled !== false,
+    sourceFileName: track.sourceFileName,
   })),
   objectUrls: [],
   unmatchedFiles: session.unmatchedFiles || [],
@@ -682,6 +685,7 @@ export function LiveDirectorView({
   const hasProvidedTracks = Boolean(tracks && tracks.length > 0);
   const hasPersistedSongContext = Boolean(songId);
   const isSongBoundView = requiresSongContext || hasPersistedSongContext;
+  const canLoadManualSession = !hasProvidedTracks && (!requiresSongContext || hasPersistedSongContext);
   const sequenceFileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const sectionsLaneScrollRef = useRef<HTMLDivElement | null>(null);
@@ -735,6 +739,7 @@ export function LiveDirectorView({
     toggleLoop,
     toggleMute,
     trackVolumes,
+    loadProgress,
   } = useMultitrackEngine({
     useStreamingEngine,
   });
@@ -750,9 +755,7 @@ export function LiveDirectorView({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [isInitializingSession, setIsInitializingSession] = useState(false);
-  const [showLoadPanel, setShowLoadPanel] = useState(
-    mode !== 'ensayo' && !hasProvidedTracks && !initialSession && (!requiresSongContext || hasPersistedSongContext),
-  );
+  const [showLoadPanel, setShowLoadPanel] = useState(canLoadManualSession && !initialSession);
   const [loaderMode, setLoaderMode] = useState<'sequence' | 'folder'>('sequence');
   const [unmatchedFiles, setUnmatchedFiles] = useState<string[]>([]);
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
@@ -762,6 +765,7 @@ export function LiveDirectorView({
   const [loopEnabled, setLoopEnabled] = useState(false);
   const [surfaceView, setSurfaceView] = useState<SurfaceView>('mix');
   const [showOffsetModal, setShowOffsetModal] = useState(false);
+  const [showTrackLoadModal, setShowTrackLoadModal] = useState(false);
   const offsetModalInitialValueRef = useRef<number | null>(null);
   const [isPadActive, setIsPadActive] = useState(false);
   const [internalPadVolumeState, setInternalPadVolumeState] = useState(0.34);
@@ -797,21 +801,29 @@ export function LiveDirectorView({
     [isCompactLandscape, isUltraCompactLandscape, scaleRem],
   );
 
-  const activeTracks = useMemo(
+  const sessionTracks = useMemo(
     () => (hasProvidedTracks ? tracks || [] : manualSession?.tracks || []),
     [hasProvidedTracks, manualSession?.tracks, tracks],
   );
 
+  const activeTracks = useMemo(
+    () => sessionTracks.filter((track) => track.enabled !== false),
+    [sessionTracks],
+  );
+
+  const hasSessionTracks = sessionTracks.length > 0;
   const hasTrackSession = activeTracks.length > 0;
   const currentSessionLabel = hasProvidedTracks
     ? subtitle
     : manualSession?.sessionLabel || songTitle || 'Sin sesion cargada';
-  const inferredSessionMode = manualSession?.mode || (activeTracks.length > 1 ? 'folder' : 'sequence');
-  const sessionModeLabel = !hasTrackSession
+  const inferredSessionMode = manualSession?.mode || (sessionTracks.length > 1 ? 'folder' : 'sequence');
+  const sessionModeLabel = !hasSessionTracks
     ? 'Sin preparar'
     : inferredSessionMode === 'folder'
-      ? `${activeTracks.length} stem${activeTracks.length === 1 ? '' : 's'}`
+      ? `${activeTracks.length} stem${activeTracks.length === 1 ? '' : 's'} activo${activeTracks.length === 1 ? '' : 's'}`
       : 'Secuencia unica';
+  const canToggleTrackLoad = !hasProvidedTracks && manualSession?.mode === 'folder' && sessionTracks.length > 1;
+  const useWideTrackLoadModal = !isPortrait;
   const showSectionsPanel = surfaceView === 'sections';
   const displayBpm = Number.isFinite(Number(bpm)) ? Math.max(0, Math.round(Number(bpm))) : 0;
   const resolvedPadUrl = useMemo(() => getPadUrlForSongKey(songKey), [songKey]);
@@ -822,8 +834,10 @@ export function LiveDirectorView({
   const songCardMeta = isEnsayoMode
     ? [subtitle, songKey].filter(Boolean).join(' · ') || sessionModeLabel
     : [performerLabel, songKey].filter(Boolean).join(' · ') || sessionModeLabel;
-  const songSupportMeta = hasTrackSession
-    ? sessionModeLabel
+  const songSupportMeta = hasSessionTracks
+    ? inferredSessionMode === 'folder' && activeTracks.length !== sessionTracks.length
+      ? `${activeTracks.length} de ${sessionTracks.length} pistas activas`
+      : sessionModeLabel
     : hasPersistedSongContext
       ? 'Carga una sesion real para esta cancion'
       : 'Abre esta superficie desde repertorio';
@@ -1078,12 +1092,13 @@ export function LiveDirectorView({
 
   const mappedTrackDetails = useMemo(
     () =>
-      activeTracks.map((track) => ({
+      sessionTracks.map((track) => ({
         id: track.id,
         trackName: track.name,
         sourceFileName: track.sourceFileName || track.name,
+        enabled: track.enabled !== false,
       })),
-    [activeTracks],
+    [sessionTracks],
   );
 
   const replaceOwnedObjectUrls = useCallback((nextObjectUrls: string[]) => {
@@ -1105,12 +1120,18 @@ export function LiveDirectorView({
       return;
     }
 
-    if (isSongBoundView) {
+    if (isSongBoundView || !requiresSongContext) {
       setManualSession(null);
       setUnmatchedFiles([]);
-      setShowLoadPanel(!isEnsayoMode && hasPersistedSongContext);
+      setShowLoadPanel(canLoadManualSession);
     }
-  }, [hasPersistedSongContext, hasProvidedTracks, initialSession, isEnsayoMode, isSongBoundView]);
+  }, [canLoadManualSession, hasProvidedTracks, initialSession, isSongBoundView, requiresSongContext, songId]);
+
+  useEffect(() => {
+    if (!canToggleTrackLoad) {
+      setShowTrackLoadModal(false);
+    }
+  }, [canToggleTrackLoad]);
 
   useEffect(() => {
     if (!showSectionsPanel) {
@@ -1370,6 +1391,16 @@ export function LiveDirectorView({
   const trackSignature = useMemo(() => (
     activeTracks.map(track => `${track.id}:${track.url}`).join('|')
   ), [activeTracks]);
+
+  useEffect(() => {
+    if (!isInitializingSession) {
+      return;
+    }
+    if (loadProgress && loadProgress.total > 0) {
+      const label = useStreamingEngine ? 'Preparando motor' : 'Cargando audio';
+      setBusyMessage(`${label} ${loadProgress.loaded}/${loadProgress.total}...`);
+    }
+  }, [isInitializingSession, loadProgress, useStreamingEngine]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1682,6 +1713,7 @@ export function LiveDirectorView({
           url: track.url,
           volume: track.volume,
           isMuted: track.isMuted,
+          enabled: track.enabled !== false,
           sourceFileName: track.sourceFileName,
         })),
         unmatchedFiles: payload.unmatchedFiles || [],
@@ -1728,6 +1760,7 @@ export function LiveDirectorView({
             url: track.url,
             volume: track.volume,
             isMuted: track.isMuted,
+            enabled: track.enabled !== false,
             sourceFileName: track.sourceFileName,
           })),
           unmatchedFiles: manualSession.unmatchedFiles || [],
@@ -1743,8 +1776,8 @@ export function LiveDirectorView({
     }
   }, [applyManualSession, hasPersistedSongContext, manualSession, onSessionPersisted, songId]);
 
-  const commitMixerStateSilent = useCallback(async () => {
-    if (!hasPersistedSongContext || !manualSession || !activeTracks.length) {
+  const commitMixerStateSilent = useCallback(async (tracksOverride?: TrackData[]) => {
+    if (!hasPersistedSongContext || !manualSession) {
       return;
     }
 
@@ -1752,7 +1785,8 @@ export function LiveDirectorView({
     const currentVolumes = trackVolumes;
     const currentMutes = mutedTrackIds;
 
-    const nextTracks = manualSession.tracks.map((track) => ({
+    const sourceTracks = tracksOverride || manualSession.tracks;
+    const nextTracks = sourceTracks.map((track) => ({
       ...track,
       volume: currentVolumes[track.id] ?? track.volume,
       isMuted: currentMutes.has(track.id),
@@ -1767,8 +1801,8 @@ export function LiveDirectorView({
         songId,
         session: {
           mode: manualSession.mode,
-          tracks: nextTracks.map(({ id, name, url, volume, isMuted, sourceFileName }) => ({
-            id, name, url, volume, isMuted, sourceFileName
+          tracks: nextTracks.map(({ id, name, url, volume, isMuted, enabled, sourceFileName }) => ({
+            id, name, url, volume, isMuted, enabled, sourceFileName
           })),
           unmatchedFiles: manualSession.unmatchedFiles || [],
           sectionOffsetSeconds: Number(manualSession.sectionOffsetSeconds) || 0,
@@ -1778,7 +1812,7 @@ export function LiveDirectorView({
     } catch (error) {
       console.warn('[LiveDirectorView] Silent mixer autosave failed.', error);
     }
-  }, [hasPersistedSongContext, manualSession, songId, activeTracks.length, onSessionPersisted, trackVolumes, mutedTrackIds]);
+  }, [hasPersistedSongContext, manualSession, songId, onSessionPersisted, trackVolumes, mutedTrackIds]);
 
   const mixerAutosaveTimerRef = useRef<number | null>(null);
 
@@ -1805,6 +1839,31 @@ export function LiveDirectorView({
       }
     };
   }, [trackVolumes, mutedTrackIds, manualSession, commitMixerStateSilent, hasPersistedSongContext]);
+
+  const handleToggleTrackEnabled = useCallback((trackId: string) => {
+    if (!manualSession || manualSession.mode !== 'folder' || manualSession.tracks.length <= 1) {
+      return;
+    }
+
+    const nextTracks = manualSession.tracks.map((track) => (
+      track.id === trackId
+        ? { ...track, enabled: track.enabled === false ? true : false }
+        : track
+    ));
+
+    const hasAnyEnabledTrack = nextTracks.some((track) => track.enabled !== false);
+    if (!hasAnyEnabledTrack) {
+      return;
+    }
+
+    setManualSession((previous) => (
+      previous ? { ...previous, tracks: nextTracks } : previous
+    ));
+
+    if (hasPersistedSongContext) {
+      void commitMixerStateSilent(nextTracks);
+    }
+  }, [commitMixerStateSilent, hasPersistedSongContext, manualSession]);
 
   const handleOpenOffsetModal = useCallback(() => {
     offsetModalInitialValueRef.current = Number.isFinite(Number(manualSession?.sectionOffsetSeconds))
@@ -1882,35 +1941,77 @@ export function LiveDirectorView({
       });
 
       if (hasPersistedSongContext) {
-        setBusyMessage(`Inspecting ${files.length} files...`);
+        setBusyMessage(`Inspeccionando ${files.length} archivos...`);
         const inference = inferStemTracksFromFiles(files);
         console.info('[LiveDirectorView] Stem inference completed.', {
           matchedFiles: inference.matchedFiles.length,
           unmatchedFiles: inference.unmatchedFiles.length,
         });
-        setBusyMessage(`Uploading ${inference.matchedFiles.length} stems...`);
 
-        const uploadedTracks = await Promise.all(
-          inference.matchedFiles.map(async (matchedFile) => {
-            const uploadTarget = await requestLiveDirectorUploadTarget({
-              songId,
-              fileName: `${matchedFile.trackId}-${matchedFile.file.name}`,
-              fileType: matchedFile.file.type,
-              kind: 'stems',
-            });
+        const total = inference.matchedFiles.length;
+        let completed = 0;
+        setBusyMessage(`Subiendo 0/${total} stems...`);
 
-            await uploadFileToLiveDirectorTarget(matchedFile.file, uploadTarget);
+        const UPLOAD_CONCURRENCY = 3;
+        const uploadedTracks: Array<{
+          id: string;
+          name: string;
+          url: string;
+          volume: number;
+          isMuted: boolean;
+          sourceFileName: string;
+        }> = new Array(total);
 
-            return {
-              id: matchedFile.trackId,
-              name: matchedFile.trackName,
-              url: uploadTarget.publicUrl,
-              volume: matchedFile.defaultVolume,
-              isMuted: false,
-              sourceFileName: matchedFile.file.name,
-            };
-          }),
-        );
+        let nextIndex = 0;
+        let firstError: unknown = null;
+
+        const runners = new Array(Math.min(UPLOAD_CONCURRENCY, Math.max(1, total)))
+          .fill(null)
+          .map(async () => {
+            while (true) {
+              if (firstError) {
+                return;
+              }
+              const currentIndex = nextIndex++;
+              if (currentIndex >= total) {
+                return;
+              }
+              const matchedFile = inference.matchedFiles[currentIndex];
+              try {
+                const uploadTarget = await requestLiveDirectorUploadTarget({
+                  songId,
+                  fileName: `${matchedFile.trackId}-${matchedFile.file.name}`,
+                  fileType: matchedFile.file.type,
+                  kind: 'stems',
+                });
+
+                await uploadFileToLiveDirectorTarget(matchedFile.file, uploadTarget);
+
+                uploadedTracks[currentIndex] = {
+                  id: matchedFile.trackId,
+                  name: matchedFile.trackName,
+                  url: uploadTarget.publicUrl,
+                  volume: matchedFile.defaultVolume,
+                  isMuted: false,
+                  sourceFileName: matchedFile.file.name,
+                };
+
+                completed += 1;
+                setBusyMessage(`Subiendo ${completed}/${total} stems...`);
+              } catch (error) {
+                if (!firstError) {
+                  firstError = error;
+                }
+                return;
+              }
+            }
+          });
+
+        await Promise.all(runners);
+
+        if (firstError) {
+          throw firstError;
+        }
 
         console.info('[LiveDirectorView] Stem upload completed.', {
           uploadedTracks: uploadedTracks.length,
@@ -2312,6 +2413,21 @@ export function LiveDirectorView({
                   <span>PAD</span>
                   <span className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.5rem]' : 'mt-1 text-[0.66rem]'} tracking-[0.22em] text-white/46`}>
                     {isPadActive ? 'ACT' : (songKey || 'LISTO')}
+                  </span>
+                </button>
+              )}
+              {canToggleTrackLoad && (
+                <button
+                  type="button"
+                  onClick={() => setShowTrackLoadModal(true)}
+                  className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-1.5 text-[0.58rem]' : isCompactLandscape ? 'h-10 px-2 text-[0.74rem]' : 'h-[var(--ld-control-height)] px-3 text-[0.76rem]'} flex-col font-semibold tracking-[0.16em] text-cyan-50`}
+                  style={{ width: scaleRem(isUltraCompactLandscape ? 2.85 : isCompactLandscape ? 3.9 : 4.35, 2.4) }}
+                  aria-label="Abrir carga selectiva de stems"
+                  title="Elegir qué stems se cargan"
+                >
+                  <SlidersVertical className={`${isUltraCompactLandscape ? 'h-3 w-3' : isCompactLandscape ? 'h-4 w-4' : 'h-5 w-5'}`} />
+                  <span className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.46rem]' : 'mt-1 text-[0.58rem]'} tracking-[0.18em] text-white/46`}>
+                    STEMS
                   </span>
                 </button>
               )}
@@ -3050,16 +3166,14 @@ export function LiveDirectorView({
                   Elige una pista unica o una carpeta multitrack.
                 </p>
               </div>
-              {hasTrackSession && (
-                <button
-                  type="button"
-                  onClick={() => setShowLoadPanel(false)}
-                  className="ui-pressable-soft flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-black/28 text-white/64 hover:text-white"
-                  aria-label="Cerrar cargador de sesion"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setShowLoadPanel(false)}
+                className="ui-pressable-soft flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-black/28 text-white/64 hover:text-white"
+                aria-label="Cerrar cargador de sesion"
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
 
             <div className={`mt-4 grid ${isCompactLandscape ? 'grid-cols-1 gap-3' : 'grid-cols-[15rem_minmax(0,1fr)] gap-6'}`}>
@@ -3132,15 +3246,19 @@ export function LiveDirectorView({
                   <div className={`rounded-[1.2rem] border border-white/8 bg-black/24 ${isCompactLandscape ? 'p-3' : 'p-4'}`}>
                     <p className="text-[0.68rem] font-black uppercase tracking-[0.2em] text-white/38">Sesion</p>
                     <p className={`font-semibold text-white ${isCompactLandscape ? 'mt-2 text-sm' : 'mt-3 text-lg'}`}>
-                      {hasTrackSession ? currentSessionLabel : 'Sin sesion'}
+                      {hasSessionTracks ? currentSessionLabel : 'Sin sesion'}
                     </p>
                     <p className={`text-white/54 ${isCompactLandscape ? 'mt-1 text-[0.78rem]' : 'mt-2 text-sm'}`}>
-                      {hasTrackSession ? `${activeTracks.length} pista(s)` : 'Aun no hay audio cargado.'}
+                      {hasSessionTracks
+                        ? canToggleTrackLoad && activeTracks.length !== sessionTracks.length
+                          ? `${activeTracks.length} activas de ${sessionTracks.length}`
+                          : `${activeTracks.length} pista(s)`
+                        : 'Aun no hay audio cargado.'}
                     </p>
                   </div>
                   <div className={`rounded-[1.2rem] border border-white/8 bg-black/24 text-center ${isCompactLandscape ? 'p-3' : 'p-4'}`}>
                     <p className="text-[0.68rem] font-black uppercase tracking-[0.2em] text-white/38">Cargadas</p>
-                    <p className={`font-semibold text-white ${isCompactLandscape ? 'mt-2 text-xl' : 'mt-3 text-3xl'}`}>{mappedTrackDetails.length}</p>
+                    <p className={`font-semibold text-white ${isCompactLandscape ? 'mt-2 text-xl' : 'mt-3 text-3xl'}`}>{activeTracks.length}</p>
                   </div>
                   <div className={`rounded-[1.2rem] border border-white/8 bg-black/24 text-center ${isCompactLandscape ? 'p-3' : 'p-4'}`}>
                     <p className="text-[0.68rem] font-black uppercase tracking-[0.2em] text-white/38">Sin mapa</p>
@@ -3157,12 +3275,23 @@ export function LiveDirectorView({
                           mappedTrackDetails.map((track) => (
                             <div
                               key={`mapped-${track.id}-${track.sourceFileName}`}
-                              className="rounded-[0.9rem] border border-white/6 bg-white/[0.03] px-3 py-2"
+                              className={`rounded-[0.9rem] border px-3 py-2 transition-all ${track.enabled
+                                ? 'border-white/6 bg-white/[0.03]'
+                                : 'border-white/5 bg-white/[0.018] opacity-65'
+                                }`}
                             >
                               <p className="truncate text-sm font-semibold text-white/88">{track.sourceFileName}</p>
-                              <p className="mt-1 text-[0.72rem] uppercase tracking-[0.16em] text-cyan-100/56">
-                                {track.trackName}
-                              </p>
+                              <div className="mt-1 flex items-center justify-between gap-3">
+                                <p className={`min-w-0 truncate text-[0.72rem] uppercase tracking-[0.16em] ${track.enabled ? 'text-cyan-100/56' : 'text-white/34'}`}>
+                                  {track.trackName}
+                                </p>
+                                <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[0.54rem] font-black uppercase tracking-[0.18em] ${track.enabled
+                                  ? 'border-emerald-300/14 bg-emerald-300/[0.07] text-emerald-100/72'
+                                  : 'border-white/8 bg-black/20 text-white/46'
+                                  }`}>
+                                  {track.enabled ? 'Activa' : 'Omitida'}
+                                </span>
+                              </div>
                             </div>
                           ))
                         ) : (
@@ -3194,7 +3323,7 @@ export function LiveDirectorView({
                   </div>
                 )}
 
-                {hasTrackSession && (
+                {hasSessionTracks && (
                   <div className={`mt-4 flex items-center justify-between rounded-[1.2rem] border border-white/8 bg-black/20 ${isCompactLandscape ? 'gap-2 px-3 py-2' : 'px-4 py-3'}`}>
                     <p className={`text-white/58 ${isCompactLandscape ? 'text-[0.76rem]' : 'text-sm'}`}>Borra la sesion y limpia sus archivos de R2.</p>
                     <button
@@ -3217,7 +3346,7 @@ export function LiveDirectorView({
           <input
             ref={sequenceFileInputRef}
             type="file"
-            accept="audio/*"
+            accept={SEQUENCE_FILE_ACCEPT}
             onChange={handleSequenceFileSelection}
             className="hidden"
           />
@@ -3229,6 +3358,88 @@ export function LiveDirectorView({
             className="hidden"
           />
         </>
+      )}
+
+      {showTrackLoadModal && canToggleTrackLoad && (
+        <div className="absolute inset-0 z-[58] flex items-center justify-center bg-black/44 px-4 py-4 backdrop-blur-[10px]">
+          <div className={`w-full rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,22,0.98),rgba(13,15,17,0.98))] shadow-[0_32px_64px_rgba(0,0,0,0.38)] ${useWideTrackLoadModal ? 'max-w-[44rem] p-4' : 'max-w-[34rem] p-5'}`}>
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[0.7rem] font-black uppercase tracking-[0.22em] text-cyan-100/56">Carga selectiva</p>
+                <h3 className={`font-semibold text-white ${useWideTrackLoadModal ? 'mt-1 text-[0.96rem] leading-tight' : 'mt-1.5 text-[1.2rem]'}`}>
+                  {currentSessionLabel}
+                </h3>
+                <p className={`text-white/54 ${useWideTrackLoadModal ? 'mt-1 text-[0.74rem]' : 'mt-1.5 text-sm'}`}>
+                  Desactiva stems que no vas a usar para que no se descarguen.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTrackLoadModal(false)}
+                className="ui-pressable-soft flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/26 text-white/58 hover:text-white"
+                aria-label="Cerrar configuracion de carga"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className={`mt-4 flex items-center justify-between gap-3 rounded-[1rem] border border-white/8 bg-black/24 ${useWideTrackLoadModal ? 'px-3 py-2' : 'px-3 py-2.5'}`}>
+              <div>
+                <p className="text-[0.6rem] font-black uppercase tracking-[0.18em] text-white/36">Resumen</p>
+                <p className={`${useWideTrackLoadModal ? 'mt-0.5 text-[0.92rem]' : 'mt-1 text-sm'} font-semibold text-white/88`}>{activeTracks.length} de {sessionTracks.length} activos</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const nextTracks = manualSession?.tracks.map((track) => ({ ...track, enabled: true })) || [];
+                  if (nextTracks.length === 0) {
+                    return;
+                  }
+                  setManualSession((previous) => (
+                    previous ? { ...previous, tracks: nextTracks } : previous
+                  ));
+                  if (hasPersistedSongContext) {
+                    void commitMixerStateSilent(nextTracks);
+                  }
+                }}
+                className={`ui-pressable-soft rounded-full border border-white/10 bg-white/[0.05] font-black uppercase tracking-[0.18em] text-white/76 ${useWideTrackLoadModal ? 'px-3 py-1.5 text-[0.58rem]' : 'px-3 py-2 text-[0.62rem]'}`}
+              >
+                Activar todo
+              </button>
+            </div>
+
+            <div className={`mt-4 overflow-y-auto pr-1 ${useWideTrackLoadModal ? 'max-h-[56dvh]' : 'max-h-[52dvh]'}`}>
+              <div className={`grid ${useWideTrackLoadModal ? 'grid-cols-2 gap-2' : 'grid-cols-1 gap-2'}`}>
+              {mappedTrackDetails.map((track) => (
+                <button
+                  key={`toggle-track-load-${track.id}`}
+                  type="button"
+                  onClick={() => handleToggleTrackEnabled(track.id)}
+                  className={`w-full rounded-[1rem] border text-left transition-all ${useWideTrackLoadModal ? 'px-3 py-2.5' : 'px-3 py-3'} ${track.enabled
+                    ? 'border-white/8 bg-white/[0.035]'
+                    : 'border-white/6 bg-black/20 opacity-72'
+                    }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className={`truncate font-semibold text-white/88 ${useWideTrackLoadModal ? 'text-[0.9rem]' : 'text-sm'}`}>{track.sourceFileName}</p>
+                      <p className={`uppercase tracking-[0.16em] ${useWideTrackLoadModal ? 'mt-0.5 text-[0.62rem]' : 'mt-1 text-[0.7rem]'} ${track.enabled ? 'text-cyan-100/56' : 'text-white/34'}`}>
+                        {track.trackName}
+                      </p>
+                    </div>
+                    <span className={`shrink-0 rounded-full border font-black uppercase tracking-[0.18em] ${useWideTrackLoadModal ? 'px-2.5 py-1 text-[0.52rem]' : 'px-3 py-1.5 text-[0.58rem]'} ${track.enabled
+                      ? 'border-emerald-300/18 bg-emerald-300/[0.09] text-emerald-100/84'
+                      : 'border-white/10 bg-black/26 text-white/54'
+                      }`}>
+                      {track.enabled ? 'Activa' : 'Omitida'}
+                    </span>
+                  </div>
+                </button>
+              ))}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       <audio ref={padAudioRefA} preload="none" className="hidden" />

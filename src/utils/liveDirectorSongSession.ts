@@ -6,6 +6,7 @@ export type LiveDirectorPersistedTrack = {
   url: string;
   volume: number;
   isMuted: boolean;
+  enabled?: boolean;
   sourceFileName?: string;
 };
 
@@ -131,6 +132,7 @@ export const normalizePersistedLiveDirectorSession = (
             url,
             volume: Number.isFinite(Number(candidate.volume)) ? Number(candidate.volume) : 1,
             isMuted: Boolean(candidate.isMuted),
+            enabled: candidate.enabled !== false,
             sourceFileName: String(candidate.sourceFileName || '').trim() || undefined,
           };
         })

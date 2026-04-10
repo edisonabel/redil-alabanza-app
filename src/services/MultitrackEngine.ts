@@ -17,6 +17,64 @@ type PerformanceWithMemory = Performance & {
 
 type EngineMode = 'buffer' | 'media';
 
+export type LoadProgressCallback = (loaded: number, total: number) => void;
+
+export type LoadTracksOptions = {
+  onProgress?: LoadProgressCallback;
+};
+
+const runWithConcurrency = async <T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>,
+  onItemDone?: () => void,
+): Promise<R[]> => {
+  const total = items.length;
+  if (total === 0) {
+    return [];
+  }
+
+  const safeLimit = Math.max(1, Math.min(limit, total));
+  const results: R[] = new Array(total);
+  let nextIndex = 0;
+  let firstError: unknown = null;
+
+  const runners = new Array(safeLimit).fill(null).map(async () => {
+    while (true) {
+      if (firstError) {
+        return;
+      }
+      const currentIndex = nextIndex++;
+      if (currentIndex >= total) {
+        return;
+      }
+      try {
+        results[currentIndex] = await worker(items[currentIndex], currentIndex);
+        if (onItemDone) {
+          try {
+            onItemDone();
+          } catch {
+            // ignore progress callback errors
+          }
+        }
+      } catch (error) {
+        if (!firstError) {
+          firstError = error;
+        }
+        return;
+      }
+    }
+  });
+
+  await Promise.all(runners);
+
+  if (firstError) {
+    throw firstError;
+  }
+
+  return results;
+};
+
 type PlayableBufferTrack = {
   track: TrackData;
   audioBuffer: AudioBuffer;
@@ -33,11 +91,47 @@ type PlayableMediaTrack = {
 const STREAMING_TRACK_THRESHOLD = 6;
 const MOBILE_BUFFER_TRACK_LIMIT = 12;
 const AUDIO_BUFFER_LOAD_BATCH_SIZE = 4;
+const TRACK_FETCH_TIMEOUT_MS = 20_000;
+const TRACK_DECODE_TIMEOUT_MS = 12_000;
+const MEDIA_METADATA_TIMEOUT_MS = 12_000;
 const MEDIA_MONITOR_INTERVAL_FAST_MS = 120;
 const MEDIA_MONITOR_INTERVAL_MEDIUM_MS = 180;
 const MEDIA_MONITOR_INTERVAL_SLOW_MS = 250;
 const MEDIA_SYNC_TOLERANCE_SECONDS = 0.12;
 const MEDIA_LOOP_EPSILON_SECONDS = 0.05;
+
+const isAbortError = (error: unknown) =>
+  (error instanceof DOMException && error.name === 'AbortError') ||
+  (error instanceof Error && error.name === 'AbortError');
+
+const withTimeout = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+  onTimeout?: () => void,
+): Promise<T> => {
+  let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutId = globalThis.setTimeout(() => {
+          try {
+            onTimeout?.();
+          } catch {
+            // no-op
+          }
+          reject(new Error(timeoutMessage));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== null) {
+      globalThis.clearTimeout(timeoutId);
+    }
+  }
+};
 
 const readBrowserMemorySnapshot = () => {
   if (typeof window === 'undefined') {
@@ -67,6 +161,7 @@ export interface TrackData {
   url: string;
   volume: number;
   isMuted: boolean;
+  enabled?: boolean;
   sourceFileName?: string;
   audioBuffer?: AudioBuffer;
   gainNode?: GainNode;
@@ -101,6 +196,7 @@ export class MultitrackEngine {
   private loopStartTime = 0;
   private loopEndTime = 0;
   private mediaMonitorId: number | null = null;
+  private readonly activeLoadControllers = new Set<AbortController>();
 
   constructor() {
     if (typeof window === 'undefined') {
@@ -124,19 +220,29 @@ export class MultitrackEngine {
     this.masterGain.connect(this.context.destination);
   }
 
-  async loadTracks(trackList: TrackData[]): Promise<TrackData[]> {
+  async loadTracks(trackList: TrackData[], options?: LoadTracksOptions): Promise<TrackData[]> {
     console.log(`[MultitrackEngine] Loading ${trackList.length} track(s).`);
 
     this.stop();
+    this.abortPendingLoads();
     this.cleanupTrackResources([...this.tracks, ...trackList]);
     this.mode = this.shouldUseMediaMode(trackList) ? 'media' : 'buffer';
     console.log(`[MultitrackEngine] Using ${this.mode} mode.`);
 
+    const onProgress = options?.onProgress;
+    if (onProgress) {
+      try {
+        onProgress(0, trackList.length);
+      } catch {
+        // ignore progress callback errors
+      }
+    }
+
     try {
       const loadedTracks =
         this.mode === 'media'
-          ? await this.loadTracksWithMediaElements(trackList)
-          : await this.loadTracksWithAudioBuffers(trackList);
+          ? await this.loadTracksWithMediaElements(trackList, onProgress)
+          : await this.loadTracksWithAudioBuffers(trackList, onProgress);
 
       if (this.soloTrackId && !loadedTracks.some((track) => track.id === this.soloTrackId)) {
         this.soloTrackId = null;
@@ -147,6 +253,7 @@ export class MultitrackEngine {
       console.log(`[MultitrackEngine] Loaded ${loadedTracks.length} track(s) successfully.`);
       return loadedTracks;
     } catch (error) {
+      this.abortPendingLoads();
       console.error('[MultitrackEngine] Failed to load tracks.', error);
       throw error;
     }
@@ -259,6 +366,7 @@ export class MultitrackEngine {
   dispose(): void {
     this.stop();
     this.stopMediaMonitor();
+    this.abortPendingLoads();
     this.cleanupTrackResources(this.tracks);
     this.tracks = [];
     this.soloTrackId = null;
@@ -361,21 +469,44 @@ export class MultitrackEngine {
     return trackList.length >= STREAMING_TRACK_THRESHOLD;
   }
 
-  private async loadTracksWithAudioBuffers(trackList: TrackData[]): Promise<TrackData[]> {
-    console.log(`[MultitrackEngine] Initiating concurrent safe loads for ${trackList.length} tracks.`);
-
-    const loadedBatch = await Promise.all(
-      trackList.map(async (track) => this.loadTrackWithAudioBuffer(track)),
+  private async loadTracksWithAudioBuffers(
+    trackList: TrackData[],
+    onProgress?: LoadProgressCallback,
+  ): Promise<TrackData[]> {
+    const total = trackList.length;
+    console.log(
+      `[MultitrackEngine] Initiating bounded concurrent loads for ${total} tracks (limit ${AUDIO_BUFFER_LOAD_BATCH_SIZE}).`,
     );
 
-    return loadedBatch;
+    let completed = 0;
+    return runWithConcurrency(
+      trackList,
+      AUDIO_BUFFER_LOAD_BATCH_SIZE,
+      async (track) => this.loadTrackWithAudioBuffer(track),
+      () => {
+        completed += 1;
+        if (onProgress) {
+          try {
+            onProgress(completed, total);
+          } catch {
+            // ignore progress callback errors
+          }
+        }
+      },
+    );
   }
 
   private async loadTrackWithAudioBuffer(track: TrackData): Promise<TrackData> {
     console.log(`[MultitrackEngine] Fetching "${track.name}" from ${track.url}`);
+    const controller = this.createLoadAbortController();
 
     try {
-      const response = await fetch(track.url);
+      const response = await withTimeout(
+        fetch(track.url, { signal: controller.signal }),
+        TRACK_FETCH_TIMEOUT_MS,
+        `Timed out fetching "${track.name}".`,
+        () => controller.abort(),
+      );
 
       if (!response.ok) {
         throw new Error(
@@ -383,8 +514,17 @@ export class MultitrackEngine {
         );
       }
 
-      const audioData = await response.arrayBuffer();
-      const audioBuffer = await this.context.decodeAudioData(audioData.slice(0));
+      const audioData = await withTimeout(
+        response.arrayBuffer(),
+        TRACK_FETCH_TIMEOUT_MS,
+        `Timed out downloading "${track.name}".`,
+        () => controller.abort(),
+      );
+      const audioBuffer = await withTimeout(
+        this.context.decodeAudioData(audioData.slice(0)),
+        TRACK_DECODE_TIMEOUT_MS,
+        `Timed out decoding "${track.name}".`,
+      );
       const gainNode = this.context.createGain();
       const analyserNode = this.createTrackAnalyser();
       const panNode = this.context.createStereoPanner();
@@ -409,14 +549,27 @@ export class MultitrackEngine {
       console.log(`[MultitrackEngine] Loaded "${track.name}" successfully.`);
       return track;
     } catch (error) {
+      if (isAbortError(error)) {
+        throw new Error(`Loading "${track.name}" was cancelled before completion.`);
+      }
       console.error(`[MultitrackEngine] Error loading "${track.name}".`, error);
       throw error;
+    } finally {
+      this.releaseLoadAbortController(controller);
     }
   }
 
-  private async loadTracksWithMediaElements(trackList: TrackData[]): Promise<TrackData[]> {
-    return Promise.all(
-      trackList.map(async (track) => {
+  private async loadTracksWithMediaElements(
+    trackList: TrackData[],
+    onProgress?: LoadProgressCallback,
+  ): Promise<TrackData[]> {
+    const total = trackList.length;
+    let completed = 0;
+
+    return runWithConcurrency(
+      trackList,
+      AUDIO_BUFFER_LOAD_BATCH_SIZE,
+      async (track) => {
         console.log(`[MultitrackEngine] Preparing streaming track "${track.name}" from ${track.url}`);
 
         try {
@@ -450,40 +603,91 @@ export class MultitrackEngine {
           console.error(`[MultitrackEngine] Error preparing "${track.name}".`, error);
           throw error;
         }
-      }),
+      },
+      () => {
+        completed += 1;
+        if (onProgress) {
+          try {
+            onProgress(completed, total);
+          } catch {
+            // ignore progress callback errors
+          }
+        }
+      },
     );
   }
 
   private createMediaElement(track: TrackData): Promise<HTMLAudioElement> {
-    return new Promise((resolve, reject) => {
-      const mediaElement = new Audio();
-      mediaElement.src = track.url;
-      mediaElement.crossOrigin = 'anonymous';
-      mediaElement.preload = 'auto';
+    const mediaElement = new Audio();
+    mediaElement.src = track.url;
+    mediaElement.crossOrigin = 'anonymous';
+    mediaElement.preload = 'auto';
 
-      const cleanup = () => {
-        mediaElement.removeEventListener('loadedmetadata', handleLoadedMetadata);
-        mediaElement.removeEventListener('error', handleError);
-      };
+    const releaseMediaElement = () => {
+      try {
+        mediaElement.pause();
+      } catch {
+        // no-op
+      }
 
-      const handleLoadedMetadata = () => {
-        cleanup();
-        resolve(mediaElement);
-      };
+      try {
+        mediaElement.removeAttribute('src');
+        mediaElement.load();
+      } catch {
+        // no-op
+      }
+    };
 
-      const handleError = () => {
-        cleanup();
-        reject(
-          new Error(
-            `Failed to load metadata for "${track.name}". The browser could not prepare the media element.`,
-          ),
-        );
-      };
+    return withTimeout(
+      new Promise((resolve, reject) => {
+        const cleanup = () => {
+          mediaElement.removeEventListener('loadedmetadata', handleLoadedMetadata);
+          mediaElement.removeEventListener('error', handleError);
+        };
 
-      mediaElement.addEventListener('loadedmetadata', handleLoadedMetadata);
-      mediaElement.addEventListener('error', handleError);
-      mediaElement.load();
+        const handleLoadedMetadata = () => {
+          cleanup();
+          resolve(mediaElement);
+        };
+
+        const handleError = () => {
+          cleanup();
+          reject(
+            new Error(
+              `Failed to load metadata for "${track.name}". The browser could not prepare the media element.`,
+            ),
+          );
+        };
+
+        mediaElement.addEventListener('loadedmetadata', handleLoadedMetadata);
+        mediaElement.addEventListener('error', handleError);
+        mediaElement.load();
+      }),
+      MEDIA_METADATA_TIMEOUT_MS,
+      `Timed out preparing "${track.name}" for streaming playback.`,
+      releaseMediaElement,
+    );
+  }
+
+  private createLoadAbortController(): AbortController {
+    const controller = new AbortController();
+    this.activeLoadControllers.add(controller);
+    return controller;
+  }
+
+  private releaseLoadAbortController(controller: AbortController): void {
+    this.activeLoadControllers.delete(controller);
+  }
+
+  private abortPendingLoads(): void {
+    this.activeLoadControllers.forEach((controller) => {
+      try {
+        controller.abort();
+      } catch {
+        // no-op
+      }
     });
+    this.activeLoadControllers.clear();
   }
 
   private async playBufferTracks(): Promise<void> {
