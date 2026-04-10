@@ -345,6 +345,11 @@ export class MultitrackEngine {
   }
 
   private shouldUseMediaMode(trackList: TrackData[]): boolean {
+    if (trackList.length === 1) {
+      console.log('[MultitrackEngine] Single track detected. Optimizing with fast Media mode.');
+      return true;
+    }
+
     if (this.isMobileDevice()) {
       return trackList.length > MOBILE_BUFFER_TRACK_LIMIT;
     }

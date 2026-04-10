@@ -105,8 +105,8 @@ export function useMultitrackEngine(
     }
   }, []);
 
-  const getEngine = useCallback(() => {
-    if (engineRef.current && engineKindRef.current === requestedEngineKind) {
+  const getEngine = useCallback((targetKind: EngineKind) => {
+    if (engineRef.current && engineKindRef.current === targetKind) {
       return engineRef.current;
     }
 
@@ -115,9 +115,9 @@ export function useMultitrackEngine(
     }
 
     teardownEngine(engineRef.current);
-    engineKindRef.current = requestedEngineKind;
+    engineKindRef.current = targetKind;
     engineRef.current =
-      requestedEngineKind === 'streaming'
+      targetKind === 'streaming'
         ? new StreamingMultitrackEngine()
         : new MultitrackEngine();
     engineRef.current.onEnded = () => {
@@ -128,7 +128,7 @@ export function useMultitrackEngine(
       setTrackLevels(trackLevelsRef.current);
     };
     return engineRef.current;
-  }, [requestedEngineKind, teardownEngine]);
+  }, [teardownEngine]);
 
   const commitCurrentTime = useCallback((nextTime: number) => {
     currentTimeRef.current = nextTime;
@@ -197,7 +197,26 @@ export function useMultitrackEngine(
   const initialize = useCallback(async (tracks: TrackData[]) => {
     const initializationToken = ++initializationTokenRef.current;
     const nextTracks = cloneTracks(tracks);
-    const engine = getEngine();
+
+    let targetKind = requestedEngineKind;
+    if (targetKind === 'buffer' && nextTracks.length > 0) {
+      const isAllAacFamily = nextTracks.every((t) => {
+        try {
+          const path = new URL(t.url, window.location.origin).pathname;
+          const lower = path.toLowerCase();
+          return lower.endsWith('.m4a') || lower.endsWith('.mp4') || lower.endsWith('.aac');
+        } catch {
+          return false;
+        }
+      });
+
+      if (isAllAacFamily) {
+        targetKind = 'streaming';
+        console.log('[useMultitrackEngine] Auto-routed to Streaming Engine (AAC family detected).');
+      }
+    }
+
+    const engine = getEngine(targetKind);
 
     setIsReady(false);
     setIsPlaying(false);
@@ -222,13 +241,41 @@ export function useMultitrackEngine(
         return;
       }
 
+      const isAutoRoutedToStreaming = targetKind === 'streaming' && requestedEngineKind === 'buffer';
+
+      if (isAutoRoutedToStreaming) {
+        console.warn(
+          '[useMultitrackEngine] Streaming engine failed decoding or crashed. Gracefully falling back to RAM buffer mode.',
+          error,
+        );
+
+        try {
+          const fallbackEngine = getEngine('buffer');
+          const fallbackLoadedTracks = await fallbackEngine.loadTracks(nextTracks);
+
+          if (initializationToken !== initializationTokenRef.current || fallbackEngine !== engineRef.current) {
+            return;
+          }
+
+          setTrackVolumes(buildTrackVolumes(fallbackLoadedTracks));
+          trackLevelsRef.current = buildTrackLevels(fallbackLoadedTracks);
+          setTrackLevels(trackLevelsRef.current);
+          commitDiagnostics(fallbackEngine.getDiagnostics());
+          setIsReady(true);
+          return;
+        } catch (fallbackError) {
+          console.error('[useMultitrackEngine] Fallback buffer mode also failed.', fallbackError);
+          error = fallbackError;
+        }
+      }
+
       setIsReady(false);
       trackLevelsRef.current = {};
       setTrackLevels({});
       commitDiagnostics(null);
       throw error;
     }
-  }, [commitDiagnostics, getEngine]);
+  }, [commitDiagnostics, getEngine, requestedEngineKind]);
 
   const play = useCallback(async () => {
     if (!isReady) {
