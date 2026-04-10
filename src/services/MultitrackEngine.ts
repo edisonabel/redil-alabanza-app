@@ -304,6 +304,10 @@ export class MultitrackEngine {
     return this.clampTime(this.pauseTime);
   }
 
+  getDuration(): number {
+    return this.getLongestTrackDuration();
+  }
+
   setTrackVolume(trackId: string, volume: number): void {
     const track = this.findTrack(trackId);
 

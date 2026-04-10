@@ -435,6 +435,13 @@ export class StreamingMultitrackEngine {
     return Math.max(0, this.pauseTime);
   }
 
+  getDuration(): number {
+    return this.tracks.reduce((maxDuration, track) => {
+      const trackDuration = Number.isFinite(track.durationSeconds) ? Number(track.durationSeconds) : 0;
+      return Math.max(maxDuration, trackDuration);
+    }, 0);
+  }
+
   async seekTo(timeInSeconds: number): Promise<void> {
     if (!Number.isFinite(timeInSeconds)) {
       return;

@@ -173,11 +173,14 @@ const DEFAULT_SECTIONS: SectionVisual[] = [
 const SECTION_LANE_PIXELS_PER_SECOND = 20;
 const SECTION_LANE_MIN_WIDTH_PX = 118;
 const SECTION_LANE_GAP_PX = 14;
-const SECTION_LANE_PLAYHEAD_OFFSET_PX = 92;
+const SECTION_LANE_PLAYHEAD_MIN_OFFSET_PX = 92;
+const SECTION_LANE_PLAYHEAD_MAX_OFFSET_PX = 360;
 const SECTION_WAVE_BAR_WIDTH_PX = 6;
 const SECTION_WAVE_BAR_GAP_PX = 4;
 const SECTION_WAVE_BAR_INSET_PX = 16;
 const SECTION_WAVE_BAR_MIN_COUNT = 7;
+const SECTION_TRANSITION_FADE_OUT_MS = 170;
+const SECTION_TRANSITION_FADE_IN_MS = 180;
 
 const CONTROL_CARD =
   'ui-pressable-soft flex items-center justify-center rounded-[1.55rem] border border-white/8 bg-[linear-gradient(180deg,rgba(26,27,29,0.96),rgba(17,18,20,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_24px_40px_rgba(0,0,0,0.25)] transition-all duration-200';
@@ -695,13 +698,25 @@ export function LiveDirectorView({
     startX: 0,
     startScrollLeft: 0,
   });
-  const padAudioRef = useRef<HTMLAudioElement | null>(null);
+  const padAudioRefA = useRef<HTMLAudioElement | null>(null);
+  const padAudioRefB = useRef<HTMLAudioElement | null>(null);
+  const activePadChannelRef = useRef<'A' | 'B'>('A');
+  const padFadeTargetRefA = useRef(0);
+  const padFadeTargetRefB = useRef(0);
+  const padFadeFrameRef = useRef<number | null>(null);
   const ownedObjectUrlsRef = useRef<string[]>([]);
+  const masterVolumeRef = useRef(0.82);
+  const appliedMasterVolumeRef = useRef(0.82);
+  const masterVolumeFadeFrameRef = useRef<number | null>(null);
+  const masterVolumeFadeResolveRef = useRef<(() => void) | null>(null);
+  const sectionTransitionTokenRef = useRef(0);
+  const isSectionTransitioningRef = useRef(false);
   const [useStreamingEngine, setUseStreamingEngine] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [hasResolvedEngineFlag, setHasResolvedEngineFlag] = useState(false);
   const {
     currentTime,
+    duration: playbackDuration,
     diagnostics,
     initialize,
     isPlaying,
@@ -726,6 +741,7 @@ export function LiveDirectorView({
   const [isUltraCompactLandscape, setIsUltraCompactLandscape] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
+  const [sectionsLaneViewportWidth, setSectionsLaneViewportWidth] = useState(0);
   const [manualSession, setManualSession] = useState<LiveDirectorResolvedSession | null>(
     initialSession ? toResolvedSession(initialSession) : null,
   );
@@ -858,10 +874,43 @@ export function LiveDirectorView({
     [sectionOffsetSeconds, sections],
   );
 
-  const totalDuration = useMemo(
+  const sectionTimelineDuration = useMemo(
     () => resolvedSections.reduce((maxTime, section) => Math.max(maxTime, section.endTime), 0),
     [resolvedSections],
   );
+  const playbackTimelineDuration = useMemo(
+    () => Math.max(sectionTimelineDuration, hasTrackSession ? playbackDuration : 0, hasTrackSession ? currentTime : 0),
+    [currentTime, hasTrackSession, playbackDuration, sectionTimelineDuration],
+  );
+  const sectionTimelineTailDuration = Math.max(0, playbackTimelineDuration - sectionTimelineDuration);
+  const sectionLaneTailWidthPx = Math.max(
+    0,
+    Math.ceil(sectionTimelineTailDuration * SECTION_LANE_PIXELS_PER_SECOND),
+  );
+  const sectionLanePlayheadOffsetPx = useMemo(() => {
+    if (sectionsLaneViewportWidth <= 0) {
+      return SECTION_LANE_PLAYHEAD_MIN_OFFSET_PX;
+    }
+
+    const targetRatio = isUltraCompactLandscape ? 0.22 : isCompactLandscape ? 0.25 : 0.31;
+    return Math.round(
+      clamp(
+        sectionsLaneViewportWidth * targetRatio,
+        SECTION_LANE_PLAYHEAD_MIN_OFFSET_PX,
+        Math.min(SECTION_LANE_PLAYHEAD_MAX_OFFSET_PX, sectionsLaneViewportWidth * 0.45),
+      ),
+    );
+  }, [isCompactLandscape, isUltraCompactLandscape, sectionsLaneViewportWidth]);
+  const sectionLaneTrailingPaddingPx = useMemo(() => {
+    if (sectionsLaneViewportWidth <= 0) {
+      return SECTION_LANE_PLAYHEAD_MIN_OFFSET_PX;
+    }
+
+    return Math.max(
+      SECTION_LANE_PLAYHEAD_MIN_OFFSET_PX,
+      Math.ceil(sectionsLaneViewportWidth - sectionLanePlayheadOffsetPx),
+    );
+  }, [sectionLanePlayheadOffsetPx, sectionsLaneViewportWidth]);
   const sectionLaneSegments = useMemo<SectionLaneSegment[]>(
     () => {
       let cursor = 0;
@@ -894,15 +943,22 @@ export function LiveDirectorView({
     [resolvedSections],
   );
   const sectionLaneContentWidth = useMemo(() => {
+    const contentTrackWidth =
+      sectionLaneSegments.length > 0
+        ? (() => {
+          const lastSegment = sectionLaneSegments[sectionLaneSegments.length - 1];
+          return lastSegment.leftPx + lastSegment.widthPx + sectionLaneTailWidthPx;
+        })()
+        : sectionLaneTailWidthPx;
+
     if (sectionLaneSegments.length === 0) {
-      return SECTION_LANE_PLAYHEAD_OFFSET_PX * 2;
+      return sectionLanePlayheadOffsetPx + sectionLaneTrailingPaddingPx + contentTrackWidth;
     }
 
-    const lastSegment = sectionLaneSegments[sectionLaneSegments.length - 1];
-    return lastSegment.leftPx + lastSegment.widthPx + SECTION_LANE_PLAYHEAD_OFFSET_PX * 2;
-  }, [sectionLaneSegments]);
+    return sectionLanePlayheadOffsetPx + sectionLaneTrailingPaddingPx + contentTrackWidth;
+  }, [sectionLanePlayheadOffsetPx, sectionLaneSegments, sectionLaneTailWidthPx, sectionLaneTrailingPaddingPx]);
 
-  const progressPercent = totalDuration > 0 ? clamp(currentTime / totalDuration, 0, 1) * 100 : 0;
+  const progressPercent = playbackTimelineDuration > 0 ? clamp(currentTime / playbackTimelineDuration, 0, 1) * 100 : 0;
   const diagnosticsCards = useMemo(
     () => [
       { label: 'Heap', value: formatMemoryValue(diagnostics?.browserHeapUsedBytes ?? null) },
@@ -922,17 +978,17 @@ export function LiveDirectorView({
       return nextIndex;
     }
 
-    if (currentTime >= totalDuration && resolvedSections.length > 0) {
+    if (currentTime >= sectionTimelineDuration && resolvedSections.length > 0) {
       return resolvedSections.length - 1;
     }
 
     return 0;
-  }, [currentTime, resolvedSections, totalDuration]);
+  }, [currentTime, resolvedSections, sectionTimelineDuration]);
   const activeSection = resolvedSections[activeSectionIndex] || resolvedSections[0] || null;
 
   const sectionLaneProgressPx = useMemo(() => {
     if (sectionLaneSegments.length === 0) {
-      return 0;
+      return Math.max(0, currentTime) * SECTION_LANE_PIXELS_PER_SECOND;
     }
 
     const activeSegment = sectionLaneSegments[activeSectionIndex] || sectionLaneSegments[0];
@@ -941,9 +997,13 @@ export function LiveDirectorView({
       return activeSegment.leftPx;
     }
 
-    if (currentTime >= totalDuration) {
+    if (currentTime >= sectionTimelineDuration) {
       const lastSegment = sectionLaneSegments[sectionLaneSegments.length - 1];
-      return lastSegment.leftPx + lastSegment.widthPx;
+      const overflowDuration = Math.max(
+        0,
+        Math.min(currentTime, playbackTimelineDuration) - sectionTimelineDuration,
+      );
+      return lastSegment.leftPx + lastSegment.widthPx + overflowDuration * SECTION_LANE_PIXELS_PER_SECOND;
     }
 
     const sectionDuration = Math.max(
@@ -957,7 +1017,7 @@ export function LiveDirectorView({
     );
 
     return activeSegment.leftPx + activeSegment.widthPx * progressWithinSection;
-  }, [activeSectionIndex, currentTime, sectionLaneSegments, totalDuration]);
+  }, [activeSectionIndex, currentTime, playbackTimelineDuration, sectionLaneSegments, sectionTimelineDuration]);
 
   const mixerView = useMemo<MixerTrackView[]>(() => {
     const sourceTracks =
@@ -986,7 +1046,7 @@ export function LiveDirectorView({
     });
 
     if (isEnsayoMode && resolvedPadUrl) {
-      resolvedMixerTracks.push({
+      const padTrack = {
         id: '__internal-pad__',
         label: 'Pad Int.',
         shortLabel: 'PAD',
@@ -998,7 +1058,17 @@ export function LiveDirectorView({
         soloed: false,
         dimmed: false,
         disabled: false,
-      });
+      };
+
+      const clickIdx = resolvedMixerTracks.findIndex((t) => t.id.toLowerCase().includes('click') || t.id.toLowerCase().includes('metro'));
+      const guiaIdx = resolvedMixerTracks.findIndex((t) => t.id.toLowerCase().includes('guia') || t.id.toLowerCase().includes('guide'));
+
+      const insertIdx = Math.max(clickIdx, guiaIdx);
+      if (insertIdx !== -1) {
+        resolvedMixerTracks.splice(insertIdx + 1, 0, padTrack);
+      } else {
+        resolvedMixerTracks.push(padTrack);
+      }
     }
 
     return resolvedMixerTracks;
@@ -1042,6 +1112,40 @@ export function LiveDirectorView({
 
   useEffect(() => {
     if (!showSectionsPanel) {
+      setSectionsLaneViewportWidth(0);
+      return;
+    }
+
+    const scrollContainer = sectionsLaneScrollRef.current;
+    if (!scrollContainer) {
+      return;
+    }
+
+    const updateViewportWidth = () => {
+      setSectionsLaneViewportWidth(scrollContainer.clientWidth || 0);
+    };
+
+    updateViewportWidth();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateViewportWidth, { passive: true });
+      return () => {
+        window.removeEventListener('resize', updateViewportWidth);
+      };
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateViewportWidth();
+    });
+
+    resizeObserver.observe(scrollContainer);
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [showSectionsPanel]);
+
+  useEffect(() => {
+    if (!showSectionsPanel) {
       setShowOffsetModal(false);
       return;
     }
@@ -1066,7 +1170,7 @@ export function LiveDirectorView({
       left: targetScrollLeft,
       behavior: 'auto',
     });
-  }, [sectionLaneProgressPx, showSectionsPanel]);
+  }, [sectionLaneContentWidth, sectionLaneProgressPx, showSectionsPanel]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1316,38 +1420,242 @@ export function LiveDirectorView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackSignature, hasResolvedEngineFlag, initialize, reloadKey, stop, useStreamingEngine]);
 
-  useEffect(() => {
-    setMasterVolume(masterVolume);
-  }, [masterVolume, setMasterVolume]);
+  const stopMasterVolumeFade = useCallback(() => {
+    if (masterVolumeFadeFrameRef.current !== null) {
+      window.cancelAnimationFrame(masterVolumeFadeFrameRef.current);
+      masterVolumeFadeFrameRef.current = null;
+    }
+
+    if (masterVolumeFadeResolveRef.current) {
+      const resolveFade = masterVolumeFadeResolveRef.current;
+      masterVolumeFadeResolveRef.current = null;
+      resolveFade();
+    }
+  }, []);
+
+  const applyMasterVolume = useCallback((nextVolume: number) => {
+    const safeVolume = clamp(nextVolume, 0, 1);
+    appliedMasterVolumeRef.current = safeVolume;
+    setMasterVolume(safeVolume);
+  }, [setMasterVolume]);
+
+  const fadeMasterVolume = useCallback((targetVolume: number, durationMs: number, transitionToken: number) => (
+    new Promise<void>((resolve) => {
+      stopMasterVolumeFade();
+
+      const safeTarget = clamp(targetVolume, 0, 1);
+      const startVolume = appliedMasterVolumeRef.current;
+
+      if (durationMs <= 0 || Math.abs(startVolume - safeTarget) < 0.001) {
+        applyMasterVolume(safeTarget);
+        resolve();
+        return;
+      }
+
+      let startTime: number | null = null;
+
+      const complete = () => {
+        if (masterVolumeFadeResolveRef.current === complete) {
+          masterVolumeFadeResolveRef.current = null;
+        }
+        masterVolumeFadeFrameRef.current = null;
+        resolve();
+      };
+
+      const animate = (frameTime: number) => {
+        if (sectionTransitionTokenRef.current !== transitionToken) {
+          complete();
+          return;
+        }
+
+        if (startTime === null) {
+          startTime = frameTime;
+        }
+
+        const progress = clamp((frameTime - startTime) / durationMs, 0, 1);
+        const easedProgress = progress < 0.5
+          ? 4 * progress * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+        applyMasterVolume(startVolume + (safeTarget - startVolume) * easedProgress);
+
+        if (progress >= 1) {
+          complete();
+          return;
+        }
+
+        masterVolumeFadeFrameRef.current = window.requestAnimationFrame(animate);
+      };
+
+      masterVolumeFadeResolveRef.current = complete;
+      masterVolumeFadeFrameRef.current = window.requestAnimationFrame(animate);
+    })
+  ), [applyMasterVolume, stopMasterVolumeFade]);
 
   useEffect(() => {
-    const padElement = padAudioRef.current;
-    if (!padElement) {
+    masterVolumeRef.current = masterVolume;
+
+    if (!isSectionTransitioningRef.current) {
+      stopMasterVolumeFade();
+      applyMasterVolume(masterVolume);
+    }
+  }, [applyMasterVolume, masterVolume, stopMasterVolumeFade]);
+
+  useEffect(() => () => {
+    sectionTransitionTokenRef.current += 1;
+    isSectionTransitioningRef.current = false;
+    stopMasterVolumeFade();
+  }, [stopMasterVolumeFade]);
+
+  const handleSectionSeek = useCallback(async (nextTime: number) => {
+    if (!hasTrackSession) {
+      return;
+    }
+
+    const safeTargetTime = Math.max(0, nextTime);
+    if (!isReady || !isPlaying) {
+      await seekTo(safeTargetTime);
+      return;
+    }
+
+    if (Math.abs(currentTime - safeTargetTime) < 0.05) {
+      return;
+    }
+
+    const transitionToken = sectionTransitionTokenRef.current + 1;
+    sectionTransitionTokenRef.current = transitionToken;
+    isSectionTransitioningRef.current = true;
+
+    try {
+      await fadeMasterVolume(0, SECTION_TRANSITION_FADE_OUT_MS, transitionToken);
+      if (sectionTransitionTokenRef.current !== transitionToken) {
+        return;
+      }
+
+      await seekTo(safeTargetTime);
+      if (sectionTransitionTokenRef.current !== transitionToken) {
+        return;
+      }
+
+      await fadeMasterVolume(masterVolumeRef.current, SECTION_TRANSITION_FADE_IN_MS, transitionToken);
+    } finally {
+      if (sectionTransitionTokenRef.current === transitionToken) {
+        isSectionTransitioningRef.current = false;
+        applyMasterVolume(masterVolumeRef.current);
+      }
+    }
+  }, [applyMasterVolume, currentTime, fadeMasterVolume, hasTrackSession, isPlaying, isReady, seekTo]);
+
+  useEffect(() => {
+    const padA = padAudioRefA.current;
+    const padB = padAudioRefB.current;
+    if (!padA || !padB) {
       return;
     }
 
     if (!resolvedPadUrl) {
-      padElement.pause();
-      padElement.removeAttribute('src');
-      padElement.load();
+      padFadeTargetRefA.current = 0;
+      padFadeTargetRefB.current = 0;
       setIsPadActive(false);
       return;
     }
 
-    padElement.src = resolvedPadUrl;
-    padElement.loop = true;
-    padElement.volume = resolvedInternalPadVolume;
+    const activePad = activePadChannelRef.current === 'A' ? padA : padB;
 
-    if (!isPadActive) {
-      padElement.pause();
-      padElement.currentTime = 0;
-      return;
+    if (!activePad.src || !activePad.src.includes(resolvedPadUrl)) {
+      const previousChannel = activePadChannelRef.current;
+      const nextChannel = previousChannel === 'A' ? 'B' : 'A';
+      activePadChannelRef.current = nextChannel;
+
+      const nextPad = nextChannel === 'A' ? padA : padB;
+      const oldPad = previousChannel === 'A' ? padA : padB;
+
+      nextPad.src = resolvedPadUrl;
+      nextPad.loop = true;
+      nextPad.volume = 0;
+
+      if (isPadActive) {
+        nextPad.play().catch((error) => {
+          console.warn('[LiveDirectorView] Pad autoplay blocked.', error);
+          setIsPadActive(false);
+        });
+      }
+
+      if (oldPad === padA) {
+        padFadeTargetRefA.current = 0;
+        padFadeTargetRefB.current = isPadActive ? resolvedInternalPadVolume : 0;
+      } else {
+        padFadeTargetRefB.current = 0;
+        padFadeTargetRefA.current = isPadActive ? resolvedInternalPadVolume : 0;
+      }
+    } else {
+      if (activePadChannelRef.current === 'A') {
+        padFadeTargetRefA.current = isPadActive ? resolvedInternalPadVolume : 0;
+        padFadeTargetRefB.current = 0;
+      } else {
+        padFadeTargetRefB.current = isPadActive ? resolvedInternalPadVolume : 0;
+        padFadeTargetRefA.current = 0;
+      }
+
+      if (isPadActive && activePad.paused) {
+        activePad.play().catch((error) => {
+          console.warn('[LiveDirectorView] Pad autoplay blocked.', error);
+          setIsPadActive(false);
+        });
+      }
     }
 
-    void padElement.play().catch((error) => {
-      console.warn('[LiveDirectorView] Pad autoplay blocked.', error);
-      setIsPadActive(false);
-    });
+    if (padFadeFrameRef.current !== null) {
+      window.cancelAnimationFrame(padFadeFrameRef.current);
+    }
+
+    let lastTime = performance.now();
+    const FADE_DURATION_MS = 5000;
+
+    const animateFade = (time: number) => {
+      const deltaMs = time - lastTime;
+      lastTime = time;
+
+      let volA = padA.volume;
+      let volB = padB.volume;
+      const targetA = padFadeTargetRefA.current;
+      const targetB = padFadeTargetRefB.current;
+
+      const deltaVol = (1.0 / FADE_DURATION_MS) * deltaMs;
+
+      if (Math.abs(volA - targetA) < 0.001) {
+        padA.volume = targetA;
+        if (targetA === 0 && !padA.paused) padA.pause();
+      } else if (volA < targetA) {
+        padA.volume = Math.min(targetA, volA + deltaVol);
+      } else {
+        padA.volume = Math.max(targetA, volA - deltaVol);
+      }
+
+      if (Math.abs(volB - targetB) < 0.001) {
+        padB.volume = targetB;
+        if (targetB === 0 && !padB.paused) padB.pause();
+      } else if (volB < targetB) {
+        padB.volume = Math.min(targetB, volB + deltaVol);
+      } else {
+        padB.volume = Math.max(targetB, volB - deltaVol);
+      }
+
+      if (Math.abs(padA.volume - targetA) >= 0.001 || Math.abs(padB.volume - targetB) >= 0.001) {
+        padFadeFrameRef.current = window.requestAnimationFrame(animateFade);
+      } else {
+        padFadeFrameRef.current = null;
+      }
+    };
+
+    padFadeFrameRef.current = window.requestAnimationFrame(animateFade);
+
+    return () => {
+      if (padFadeFrameRef.current !== null) {
+        window.cancelAnimationFrame(padFadeFrameRef.current);
+        padFadeFrameRef.current = null;
+      }
+    };
   }, [isPadActive, resolvedInternalPadVolume, resolvedPadUrl]);
 
   const persistSongSession = useCallback(async (payload: {
@@ -1623,21 +1931,27 @@ export function LiveDirectorView({
     }
 
     if (resolvedSections.length === 0) {
-      void seekTo(0);
+      void handleSectionSeek(0);
+      return;
+    }
+
+    const currentSection = resolvedSections[activeSectionIndex];
+    if (currentSection && (currentTime - currentSection.startTime > 2.5)) {
+      void handleSectionSeek(currentSection.startTime);
       return;
     }
 
     const targetIndex = Math.max(0, activeSectionIndex - 1);
     const targetSection = resolvedSections[targetIndex];
-    void seekTo(targetSection?.startTime ?? 0);
+    void handleSectionSeek(targetSection?.startTime ?? 0);
   };
 
   const handleLoopIn = () => {
     if (activeSection) {
       setLoopPoints(activeSection.startTime, activeSection.endTime);
     } else {
-      const safeStart = clamp(currentTime, 0, totalDuration);
-      setLoopPoints(safeStart, Math.min(totalDuration, safeStart + 8));
+      const safeStart = clamp(currentTime, 0, playbackTimelineDuration);
+      setLoopPoints(safeStart, Math.min(playbackTimelineDuration, safeStart + 8));
     }
     if (!loopEnabled) {
       toggleLoop();
@@ -1687,12 +2001,12 @@ export function LiveDirectorView({
 
   const handleInternalPadVolumeChange = useCallback((nextVolume: number) => {
     const safeValue = clamp(nextVolume, 0, 1);
-    if (typeof onInternalPadVolumeChange === 'function') {
-      onInternalPadVolumeChange(safeValue);
-      return;
-    }
 
     setInternalPadVolumeState(safeValue);
+
+    if (typeof onInternalPadVolumeChange === 'function') {
+      onInternalPadVolumeChange(safeValue);
+    }
   }, [onInternalPadVolumeChange]);
 
   const endMixerDrag = useCallback((pointerId?: number) => {
@@ -1974,7 +2288,7 @@ export function LiveDirectorView({
                   {formatClock(currentTime)}
                 </span>
                 <span className={`font-medium tabular-nums text-white/58 ${isUltraCompactLandscape ? 'text-[0.58rem]' : isCompactLandscape ? 'text-[0.8rem]' : 'mt-1 text-[0.96rem]'}`}>
-                  {formatCompact(currentTime)} / {formatCompact(totalDuration)}
+                  {formatCompact(currentTime)} / {formatCompact(playbackTimelineDuration)}
                 </span>
               </div>
 
@@ -2245,7 +2559,7 @@ export function LiveDirectorView({
                           <div className="min-w-0 flex-1">
                             <div className={`flex items-center justify-between font-semibold uppercase tracking-[0.18em] text-white/46 ${isUltraCompactLandscape ? 'mb-0.5 text-[0.56rem]' : isCompactLandscape ? 'mb-1 text-[0.72rem]' : 'mb-2 text-[0.72rem]'}`}>
                               <span>{hasTrackSession ? `${activeTracks.length} pistas` : 'Sin sesion'}</span>
-                              <span>{formatCompact(currentTime)} / {formatCompact(totalDuration)}</span>
+                              <span>{formatCompact(currentTime)} / {formatCompact(playbackTimelineDuration)}</span>
                             </div>
                             <div className={`${isUltraCompactLandscape ? 'h-1' : isCompactLandscape ? 'h-1.5' : 'h-2.5'} rounded-full bg-black/30`}>
                               <div
@@ -2253,11 +2567,11 @@ export function LiveDirectorView({
                                 style={{ width: `${Math.max(hasTrackSession ? progressPercent : 0, hasTrackSession ? 4 : 0)}%` }}
                               />
                             </div>
-                            {resolvedSections.length > 0 && (
+                            {(resolvedSections.length > 0 || sectionTimelineTailDuration > 0) && (
                               <div className={`flex w-full overflow-hidden ${isUltraCompactLandscape ? 'h-[2px] mt-0.5 rounded-[1px]' : isCompactLandscape ? 'h-[3px] mt-1 rounded-[2px]' : 'h-1 mt-1.5 rounded-full'} opacity-[0.62]`}>
                                 {resolvedSections.map((sec) => {
                                   const duration = sec.endTime - sec.startTime;
-                                  const widthPercent = totalDuration > 0 ? (duration / totalDuration) * 100 : 0;
+                                  const widthPercent = playbackTimelineDuration > 0 ? (duration / playbackTimelineDuration) * 100 : 0;
                                   return (
                                     <div
                                       key={`minimap-${sec.id}`}
@@ -2270,6 +2584,15 @@ export function LiveDirectorView({
                                     />
                                   );
                                 })}
+                                {sectionTimelineTailDuration > 0 && (
+                                  <div
+                                    className="h-full bg-white/14"
+                                    style={{
+                                      width: `${playbackTimelineDuration > 0 ? (sectionTimelineTailDuration / playbackTimelineDuration) * 100 : 0}%`,
+                                    }}
+                                    title="Audio sin seccion marcada"
+                                  />
+                                )}
                               </div>
                             )}
                             {showDiagnostics && (
@@ -2402,7 +2725,7 @@ export function LiveDirectorView({
                 <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-16 bg-[linear-gradient(270deg,rgba(23,24,26,0.96),rgba(23,24,26,0))]" />
                 <div
                   className="pointer-events-none absolute bottom-3 top-3 z-30 w-[4px] -translate-x-1/2 rounded-full bg-white shadow-[0_0_18px_rgba(255,255,255,0.68)]"
-                  style={{ left: `${SECTION_LANE_PLAYHEAD_OFFSET_PX}px` }}
+                  style={{ left: `${sectionLanePlayheadOffsetPx}px` }}
                 />
                 <div
                   ref={sectionsLaneScrollRef}
@@ -2418,14 +2741,14 @@ export function LiveDirectorView({
                     WebkitOverflowScrolling: 'touch',
                   }}
                 >
-                  <div
-                    className="relative flex h-full min-h-0 items-stretch gap-[14px] py-4"
-                    style={{
-                      width: `${sectionLaneContentWidth}px`,
-                      paddingLeft: `${SECTION_LANE_PLAYHEAD_OFFSET_PX}px`,
-                      paddingRight: `${SECTION_LANE_PLAYHEAD_OFFSET_PX}px`,
-                    }}
-                  >
+                    <div
+                      className="relative flex h-full min-h-0 items-stretch gap-[14px] py-4"
+                      style={{
+                        width: `${sectionLaneContentWidth}px`,
+                        paddingLeft: `${sectionLanePlayheadOffsetPx}px`,
+                        paddingRight: `${sectionLaneTrailingPaddingPx}px`,
+                      }}
+                    >
                     {sectionLaneSegments.map(({ section, waveBars, widthPx, leftPx }, index) => {
                       const isActive = index === activeSectionIndex;
 
@@ -2434,7 +2757,7 @@ export function LiveDirectorView({
                           key={section.id}
                           type="button"
                           onClick={() => {
-                            void seekTo(section.startTime);
+                            void handleSectionSeek(section.startTime);
                           }}
                           className="relative h-full shrink-0 rounded-[1.55rem] border text-left transition-all duration-200"
                           style={{
@@ -2487,7 +2810,7 @@ export function LiveDirectorView({
                           <div
                             className="pointer-events-none absolute inset-y-4 rounded-[1.2rem] border border-white/0 transition-all duration-150"
                             style={{
-                              left: `${Math.max(0, sectionLaneProgressPx - leftPx - 1)}px`,
+                              left: `${clamp(sectionLaneProgressPx - leftPx - 1, 0, Math.max(0, widthPx - 2))}px`,
                               width: '2px',
                               backgroundColor: isActive ? `${section.accent}cc` : 'transparent',
                               boxShadow: isActive ? `0 0 14px ${section.accent}66` : 'none',
@@ -2497,6 +2820,17 @@ export function LiveDirectorView({
                         </button>
                       );
                     })}
+                    {sectionLaneTailWidthPx > 0 && (
+                      <div
+                        aria-hidden="true"
+                        className="relative h-full shrink-0 rounded-[1.55rem] border border-dashed border-white/8 bg-[linear-gradient(180deg,rgba(29,31,33,0.92),rgba(19,20,22,0.96))]"
+                        style={{ width: `${sectionLaneTailWidthPx}px` }}
+                        title="Audio sin seccion marcada"
+                      >
+                        <div className="absolute inset-0 rounded-[1.5rem] bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.025)_0px,rgba(255,255,255,0.025)_2px,transparent_2px,transparent_20px)]" />
+                        <div className="absolute inset-0 rounded-[1.5rem] bg-black/12" />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2891,7 +3225,8 @@ export function LiveDirectorView({
         </>
       )}
 
-      <audio ref={padAudioRef} preload="none" className="hidden" />
+      <audio ref={padAudioRefA} preload="none" className="hidden" />
+      <audio ref={padAudioRefB} preload="none" className="hidden" />
 
       {busyMessage && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/26 backdrop-blur-[8px]">

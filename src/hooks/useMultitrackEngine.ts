@@ -17,6 +17,7 @@ type UseMultitrackEngineOptions = {
 type UseMultitrackEngineReturn = {
   isPlaying: boolean;
   currentTime: number;
+  duration: number;
   isReady: boolean;
   trackVolumes: TrackVolumesState;
   trackLevels: TrackLevelsState;
@@ -76,12 +77,14 @@ export function useMultitrackEngine(
   const frameRef = useRef<number | null>(null);
   const diagnosticsIntervalRef = useRef<number | null>(null);
   const currentTimeRef = useRef(0);
+  const durationRef = useRef(0);
   const trackLevelsRef = useRef<TrackLevelsState>({});
   const diagnosticsRef = useRef<EngineDiagnostics | null>(null);
   const lastUiUpdateRef = useRef(0);
   const initializationTokenRef = useRef(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
   const [isReady, setIsReady] = useState(false);
   const [trackVolumes, setTrackVolumes] = useState<TrackVolumesState>({});
   const [trackLevels, setTrackLevels] = useState<TrackLevelsState>({});
@@ -105,6 +108,26 @@ export function useMultitrackEngine(
     }
   }, []);
 
+  const commitCurrentTime = useCallback((nextTime: number) => {
+    currentTimeRef.current = nextTime;
+    startTransition(() => {
+      setCurrentTime(nextTime);
+    });
+  }, []);
+
+  const commitDuration = useCallback((nextDuration: number) => {
+    const safeDuration = Number.isFinite(nextDuration) && nextDuration > 0 ? nextDuration : 0;
+
+    if (Math.abs(safeDuration - durationRef.current) < 0.01) {
+      return;
+    }
+
+    durationRef.current = safeDuration;
+    startTransition(() => {
+      setDuration(safeDuration);
+    });
+  }, []);
+
   const getEngine = useCallback((targetKind: EngineKind) => {
     if (engineRef.current && engineKindRef.current === targetKind) {
       return engineRef.current;
@@ -124,18 +147,12 @@ export function useMultitrackEngine(
       setIsPlaying(false);
       currentTimeRef.current = 0;
       setCurrentTime(0);
+      commitDuration(Math.max(durationRef.current, engineRef.current?.getDuration() ?? 0));
       trackLevelsRef.current = buildTrackLevels(engineRef.current?.getTracks() || []);
       setTrackLevels(trackLevelsRef.current);
     };
     return engineRef.current;
-  }, [teardownEngine]);
-
-  const commitCurrentTime = useCallback((nextTime: number) => {
-    currentTimeRef.current = nextTime;
-    startTransition(() => {
-      setCurrentTime(nextTime);
-    });
-  }, []);
+  }, [commitDuration, teardownEngine]);
 
   const commitTrackLevels = useCallback((nextLevels: TrackLevelsState) => {
     const nextKeys = Object.keys(nextLevels);
@@ -222,6 +239,8 @@ export function useMultitrackEngine(
     setIsPlaying(false);
     currentTimeRef.current = 0;
     setCurrentTime(0);
+    durationRef.current = 0;
+    setDuration(0);
     trackLevelsRef.current = {};
     setTrackLevels({});
 
@@ -234,6 +253,7 @@ export function useMultitrackEngine(
       setTrackVolumes(buildTrackVolumes(loadedTracks));
       trackLevelsRef.current = buildTrackLevels(loadedTracks);
       setTrackLevels(trackLevelsRef.current);
+      commitDuration(engine.getDuration());
       commitDiagnostics(engine.getDiagnostics());
       setIsReady(true);
     } catch (error) {
@@ -260,6 +280,7 @@ export function useMultitrackEngine(
           setTrackVolumes(buildTrackVolumes(fallbackLoadedTracks));
           trackLevelsRef.current = buildTrackLevels(fallbackLoadedTracks);
           setTrackLevels(trackLevelsRef.current);
+          commitDuration(fallbackEngine.getDuration());
           commitDiagnostics(fallbackEngine.getDiagnostics());
           setIsReady(true);
           return;
@@ -275,7 +296,7 @@ export function useMultitrackEngine(
       commitDiagnostics(null);
       throw error;
     }
-  }, [commitDiagnostics, getEngine, requestedEngineKind]);
+  }, [commitDiagnostics, commitDuration, getEngine, requestedEngineKind]);
 
   const play = useCallback(async () => {
     if (!isReady) {
@@ -290,9 +311,10 @@ export function useMultitrackEngine(
     await engine.play();
     setIsPlaying(engine.getIsPlaying());
     commitCurrentTime(engine.getCurrentTime());
+    commitDuration(Math.max(durationRef.current, engine.getDuration(), engine.getCurrentTime()));
     commitTrackLevels(engine.getTrackMeterLevels());
     commitDiagnostics(engine.getDiagnostics());
-  }, [commitCurrentTime, commitDiagnostics, commitTrackLevels, isReady]);
+  }, [commitCurrentTime, commitDiagnostics, commitDuration, commitTrackLevels, isReady]);
 
   const pause = useCallback(() => {
     const engine = engineRef.current;
@@ -303,9 +325,10 @@ export function useMultitrackEngine(
     engine.pause();
     setIsPlaying(false);
     commitCurrentTime(engine.getCurrentTime());
+    commitDuration(Math.max(durationRef.current, engine.getDuration(), engine.getCurrentTime()));
     commitTrackLevels(buildTrackLevels(engine.getTracks()));
     commitDiagnostics(engine.getDiagnostics());
-  }, [commitCurrentTime, commitDiagnostics, commitTrackLevels]);
+  }, [commitCurrentTime, commitDiagnostics, commitDuration, commitTrackLevels]);
 
   const stop = useCallback(() => {
     const engine = engineRef.current;
@@ -317,9 +340,10 @@ export function useMultitrackEngine(
     setIsPlaying(false);
     currentTimeRef.current = 0;
     setCurrentTime(0);
+    commitDuration(Math.max(durationRef.current, engine.getDuration()));
     commitTrackLevels(buildTrackLevels(engine.getTracks()));
     commitDiagnostics(engine.getDiagnostics());
-  }, [commitDiagnostics, commitTrackLevels]);
+  }, [commitDiagnostics, commitDuration, commitTrackLevels]);
 
   const setVolume = useCallback((trackId: string, volume: number) => {
     const engine = engineRef.current;
@@ -381,9 +405,10 @@ export function useMultitrackEngine(
     await engine.seekTo(timeInSeconds);
     commitCurrentTime(engine.getCurrentTime());
     setIsPlaying(engine.getIsPlaying());
+    commitDuration(Math.max(durationRef.current, engine.getDuration(), engine.getCurrentTime()));
     commitTrackLevels(engine.getTrackMeterLevels());
     commitDiagnostics(engine.getDiagnostics());
-  }, [commitCurrentTime, commitDiagnostics, commitTrackLevels]);
+  }, [commitCurrentTime, commitDiagnostics, commitDuration, commitTrackLevels]);
 
   const soloTrack = useCallback((trackId: string) => {
     const engine = engineRef.current;
@@ -426,6 +451,8 @@ export function useMultitrackEngine(
     setIsPlaying(false);
     currentTimeRef.current = 0;
     setCurrentTime(0);
+    durationRef.current = 0;
+    setDuration(0);
     trackLevelsRef.current = {};
     setTrackLevels({});
     diagnosticsRef.current = null;
@@ -483,6 +510,11 @@ export function useMultitrackEngine(
           commitCurrentTime(nextTime);
         }
 
+        const nextDuration = Math.max(durationRef.current, engine.getDuration(), nextTime);
+        if (Math.abs(nextDuration - durationRef.current) >= 0.01) {
+          commitDuration(nextDuration);
+        }
+
         commitTrackLevels(engine.getTrackMeterLevels());
       }
 
@@ -498,12 +530,13 @@ export function useMultitrackEngine(
         frameRef.current = null;
       }
     };
-  }, [commitCurrentTime, commitTrackLevels, isPlaying]);
+  }, [commitCurrentTime, commitDuration, commitTrackLevels, isPlaying]);
 
   return useMemo(
     () => ({
       isPlaying,
       currentTime,
+      duration,
       isReady,
       trackVolumes,
       trackLevels,
@@ -522,6 +555,7 @@ export function useMultitrackEngine(
     }),
     [
       currentTime,
+      duration,
       diagnostics,
       initialize,
       isPlaying,
