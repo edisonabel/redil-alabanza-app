@@ -358,18 +358,13 @@ export class MultitrackEngine {
   }
 
   private async loadTracksWithAudioBuffers(trackList: TrackData[]): Promise<TrackData[]> {
-    const loadedTracks: TrackData[] = [];
+    console.log(`[MultitrackEngine] Initiating concurrent safe loads for ${trackList.length} tracks.`);
 
-    for (let index = 0; index < trackList.length; index += AUDIO_BUFFER_LOAD_BATCH_SIZE) {
-      const batch = trackList.slice(index, index + AUDIO_BUFFER_LOAD_BATCH_SIZE);
-      const loadedBatch = await Promise.all(
-        batch.map(async (track) => this.loadTrackWithAudioBuffer(track)),
-      );
+    const loadedBatch = await Promise.all(
+      trackList.map(async (track) => this.loadTrackWithAudioBuffer(track)),
+    );
 
-      loadedTracks.push(...loadedBatch);
-    }
-
-    return loadedTracks;
+    return loadedBatch;
   }
 
   private async loadTrackWithAudioBuffer(track: TrackData): Promise<TrackData> {
