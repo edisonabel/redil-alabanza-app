@@ -135,6 +135,7 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
   const [downloadStatus, setDownloadStatus] = useState({ active: false, progress: 0, total: 0, done: false });
   const [padVolume, setPadVolume] = useState(0.42);
   const [syncConnected, setSyncConnected] = useState(false);
+  const [sessionOverrides, setSessionOverrides] = useState({});
   const playbackSnapshotRef = useRef({
     songId: '',
     sectionIndex: 0,
@@ -149,13 +150,16 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
   const safeActiveSongIndex = Math.max(0, Math.min(activeSongIndex, Math.max(ensayoSongs.length - 1, 0)));
   const activeSong = ensayoSongs[safeActiveSongIndex] || null;
   const activeSongId = resolveSongId(activeSong);
+  const activeSongSessionSource = activeSongId
+    ? sessionOverrides[activeSongId] || activeSong?.multitrackSession || null
+    : null;
   const activeSongSession = useMemo(
     () =>
-      normalizePersistedLiveDirectorSession(activeSong?.multitrackSession || null, {
+      normalizePersistedLiveDirectorSession(activeSongSessionSource, {
         songId: activeSongId,
         songTitle: String(activeSong?.title || '').trim(),
       }) || buildLegacySequenceSession(activeSong),
-    [activeSong, activeSongId],
+    [activeSong, activeSongId, activeSongSessionSource],
   );
   const activeSongSections = useMemo(
     () => buildLiveDirectorSectionsFromMarkers(activeSong?.sectionMarkers || []) || undefined,
@@ -358,6 +362,18 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
     }
   }, [ensayoSongs]);
 
+  const handleSessionPersisted = useCallback((session) => {
+    const songId = String(session?.songId || '').trim();
+    if (!songId) {
+      return;
+    }
+
+    setSessionOverrides((previous) => ({
+      ...previous,
+      [songId]: session,
+    }));
+  }, []);
+
   if (!activeSong) {
     return (
       <div className="flex h-[100dvh] items-center justify-center bg-[#202223] text-white">
@@ -383,6 +399,7 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
       internalPadVolume={padVolume}
       onInternalPadVolumeChange={setPadVolume}
       onPlaybackSnapshot={handlePlaybackSnapshot}
+      onSessionPersisted={handleSessionPersisted}
       title={`Modo Ensayo - ${contextTitle}`}
       bpm={Number(activeSong?.bpm || 0)}
     />

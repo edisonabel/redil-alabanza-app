@@ -112,6 +112,7 @@ type LiveDirectorViewProps = {
   internalPadVolume?: number;
   onInternalPadVolumeChange?: (volume: number) => void;
   onPlaybackSnapshot?: (snapshot: LiveDirectorPlaybackSnapshot) => void;
+  onSessionPersisted?: (session: LiveDirectorPersistedSession) => void;
 };
 
 type ChannelStripProps = {
@@ -676,6 +677,7 @@ export function LiveDirectorView({
   internalPadVolume,
   onInternalPadVolumeChange,
   onPlaybackSnapshot,
+  onSessionPersisted,
 }: LiveDirectorViewProps) {
   const hasProvidedTracks = Boolean(tracks && tracks.length > 0);
   const hasPersistedSongContext = Boolean(songId);
@@ -1690,9 +1692,10 @@ export function LiveDirectorView({
     });
 
     applyManualSession(toResolvedSession(savedSession));
+    onSessionPersisted?.(savedSession);
     setBusyMessage(null);
     return savedSession;
-  }, [applyManualSession, hasPersistedSongContext, sectionOffsetSeconds, songId]);
+  }, [applyManualSession, hasPersistedSongContext, onSessionPersisted, sectionOffsetSeconds, songId]);
 
   const updateSectionOffsetLocally = useCallback((nextOffset: number) => {
     const safeOffset = Math.round(nextOffset * 4) / 4;
@@ -1715,7 +1718,7 @@ export function LiveDirectorView({
 
     try {
       setBusyMessage('Guardando desplazamiento de secciones...');
-      await saveLiveDirectorSongSession({
+      const savedSession = await saveLiveDirectorSongSession({
         songId,
         session: {
           mode: manualSession.mode,
@@ -1731,12 +1734,14 @@ export function LiveDirectorView({
           sectionOffsetSeconds: safeOffset,
         },
       });
+      applyManualSession(toResolvedSession(savedSession));
+      onSessionPersisted?.(savedSession);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : 'No se pudo guardar el offset de secciones.');
     } finally {
       setBusyMessage(null);
     }
-  }, [hasPersistedSongContext, manualSession, songId]);
+  }, [applyManualSession, hasPersistedSongContext, manualSession, onSessionPersisted, songId]);
 
   const commitMixerStateSilent = useCallback(async () => {
     if (!hasPersistedSongContext || !manualSession || !activeTracks.length) {
@@ -1758,7 +1763,7 @@ export function LiveDirectorView({
     ));
 
     try {
-      await saveLiveDirectorSongSession({
+      const savedSession = await saveLiveDirectorSongSession({
         songId,
         session: {
           mode: manualSession.mode,
@@ -1769,10 +1774,11 @@ export function LiveDirectorView({
           sectionOffsetSeconds: Number(manualSession.sectionOffsetSeconds) || 0,
         },
       });
+      onSessionPersisted?.(savedSession);
     } catch (error) {
       console.warn('[LiveDirectorView] Silent mixer autosave failed.', error);
     }
-  }, [hasPersistedSongContext, manualSession, songId, activeTracks.length, trackVolumes, mutedTrackIds]);
+  }, [hasPersistedSongContext, manualSession, songId, activeTracks.length, onSessionPersisted, trackVolumes, mutedTrackIds]);
 
   const mixerAutosaveTimerRef = useRef<number | null>(null);
 
