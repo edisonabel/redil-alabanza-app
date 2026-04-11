@@ -71,7 +71,9 @@ const pathname = new URL(Astro.request.url).pathname;
 const isAdminRepertorioView = pathname === '/admin';
 const isChordProPrintView = pathname === '/herramientas/chordpro-print';
 const isLiveDirectorPreviewView = pathname === '/herramientas/live-director-preview';
-const showBottomNav = !isAdminRepertorioView && !isChordProPrintView && !isLiveDirectorPreviewView;
+const isAuthView = pathname === '/login' || pathname === '/reset-password';
+const showBottomNav = !isAdminRepertorioView && !isChordProPrintView && !isLiveDirectorPreviewView && !isAuthView;
+const showGlobalRuntimeIslands = !isAuthView;
 const brandingAccessToken = Astro.cookies.get('sb-access-token')?.value || '';
 const shouldBustBrandingCache =
   Astro.cookies.has('branding_cache_bust') ||
@@ -583,9 +585,9 @@ const themeColors = brandingData;
  <slot />
  </main>
 
- <ProPlayerGlobal />
- <VocesModalGlobal />
- <EnsayoGlobal />
+ {showGlobalRuntimeIslands && <ProPlayerGlobal />}
+ {showGlobalRuntimeIslands && <VocesModalGlobal />}
+ {showGlobalRuntimeIslands && <EnsayoGlobal />}
 
  <!-- Barra de navegacion fija mobile-first -->
  {showBottomNav && <BottomNav />}
@@ -599,14 +601,16 @@ const themeColors = brandingData;
   </div>
  </div>
 
- <script>
-  import { audioSessionService } from '../services/AudioSessionService';
+ {showGlobalRuntimeIslands && (
+  <script>
+   import { audioSessionService } from '../services/AudioSessionService';
 
-  if (!window.__REDIL_AUDIO_SESSION_BOOTSTRAPPED__) {
-    window.__REDIL_AUDIO_SESSION_BOOTSTRAPPED__ = true;
-    audioSessionService.install();
-  }
- </script>
+   if (!window.__REDIL_AUDIO_SESSION_BOOTSTRAPPED__) {
+     window.__REDIL_AUDIO_SESSION_BOOTSTRAPPED__ = true;
+     audioSessionService.install();
+   }
+  </script>
+ )}
 
  <script>
   import { supabase } from '../lib/supabase';

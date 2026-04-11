@@ -8,6 +8,7 @@ type LoadProgressState = { loaded: number; total: number } | null;
 const UI_UPDATE_INTERVAL_MS = 1000 / 24;
 const DIAGNOSTICS_UPDATE_INTERVAL_MS = 1000;
 const STREAMING_AUTO_ROUTE_DISABLED_SESSION_KEY = 'live-director:disable-streaming-auto-route';
+const AUTO_STREAMING_TRACK_THRESHOLD = 6;
 type EngineKind = 'buffer' | 'streaming';
 type EngineInstance = MultitrackEngine | StreamingMultitrackEngine;
 type EngineDiagnostics = ReturnType<MultitrackEngine['getDiagnostics']>;
@@ -279,7 +280,7 @@ export function useMultitrackEngine(
     const nextTracks = cloneTracks(tracks);
 
     let targetKind = requestedEngineKind;
-    if (targetKind === 'buffer' && nextTracks.length > 0) {
+    if (targetKind === 'buffer' && nextTracks.length >= AUTO_STREAMING_TRACK_THRESHOLD) {
       const isAllAacFamily = nextTracks.every((t) => {
         try {
           const path = new URL(t.url, window.location.origin).pathname;
@@ -292,7 +293,7 @@ export function useMultitrackEngine(
 
       if (isAllAacFamily && !streamingAutoRouteDisabledRef.current) {
         targetKind = 'streaming';
-        console.log('[useMultitrackEngine] Auto-routed to Streaming Engine (AAC family detected).');
+        console.log('[useMultitrackEngine] Auto-routed to Streaming Engine (large AAC session detected).');
       }
     }
 

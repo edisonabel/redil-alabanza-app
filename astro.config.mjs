@@ -53,6 +53,9 @@ export default defineConfig({
 
   vite: {
     plugins: [tailwindcss()],
+    optimizeDeps: {
+      exclude: ['@supabase/supabase-js', 'lucide-react'],
+    },
     resolve: {
       alias: [
         {

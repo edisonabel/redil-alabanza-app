@@ -1,0 +1,39 @@
+
+> alabanza@0.0.1 dev
+> astro dev
+
+[2m18:00:31[22m [34m[@astrojs/netlify][39m Enabling sessions with Netlify Blobs
+[2m18:00:32[22m [34m[vite][39m Environment loaded
+[2m18:00:32[22m [34m[vite][39m Middleware loaded. Emulating features: aiGateway, blobs, edgeFunctions, functions, geolocation, headers, images, redirects, static.
+[2m18:00:32[22m [34m[vite][39m 💭 Linking this project to a Netlify site lets you deploy your site, use any environment variables defined on your team and site and much more. Run npx netlify init to get started.
+[2m18:00:32[22m [34m[types][39m Generated [2m2ms[22m
+[2m18:00:32[22m [34m[content][39m Syncing content
+[2m18:00:32[22m [34m[content][39m Synced content
+
+[42m[1m astro [22m[49m [32mv5.18.0[39m [2mready in[22m 3058 [2mms[22m
+
+[2m┃[22m Local    [36mhttp://localhost:4321/[39m
+[2m┃[22m Network  [2muse --host to expose[22m
+
+[2m18:00:32[22m [32mwatching for file changes...[39m
+
+[43m[30m update [39m[49m [33m▶ New version of Astro available: 6.1.5[39m
+  Run [36mnpx @astrojs/upgrade[39m to update
+
+[2m18:00:42[22m [34m[200][39m / [2m3411ms[22m
+[2m18:00:47[22m [34m[200][39m /perfil [2m900ms[22m
+[2m18:00:48[22m [34m[200][39m /perfil [2m589ms[22m
+[2m18:00:51[22m [34m[200][39m /perfil [2m757ms[22m
+[2m18:00:51[22m [34m[200][39m /configuracion [2m983ms[22m
+[2m18:00:53[22m [34m[200][39m [34mPOST[39m /api/absences/reconcile [2m1405ms[22m
+[2m18:00:53[22m [34m[200][39m [34mPOST[39m /api/auth/logout [2m1ms[22m
+[2m18:00:53[22m [34m[200][39m /login [2m203ms[22m
+[2m18:00:53[22m [34m[200][39m /login [2m200ms[22m
+[2m18:00:58[22m [34m[200][39m / [2m1847ms[22m
+[2m18:01:29[22m [33m[302][39m /ensayo/a100b64c-2201-4251-a532-14441ce5f4ee [2m3487ms[22m
+[2m18:01:33[22m [34m[200][39m /ensayo/12-abril-2026 [2m3992ms[22m
+[2m18:02:05[22m [33m[302][39m /ensayo/a100b64c-2201-4251-a532-14441ce5f4ee [2m3638ms[22m
+[2m18:02:09[22m [34m[200][39m /ensayo/12-abril-2026 [2m4104ms[22m
+[2m18:02:14[22m [34m[200][39m /monitor/12-abril-2026 [2m1119ms[22m
+[2m18:02:57[22m [34m[200][39m /monitor/12-abril-2026 [2m1349ms[22m
+[2m18:03:32[22m [34m[200][39m /monitor/12-abril-2026 [2m1496ms[22m

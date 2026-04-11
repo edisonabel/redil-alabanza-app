@@ -858,25 +858,15 @@ export function LiveDirectorView({
       },
     ];
   }, [isEnsayoMode, queueSongs, songId, songCardTitle, songCardMeta, songMp3]);
-  const ensayoOperationalChips = useMemo<LiveDirectorOperationalChip[]>(
+  const headerOperationalChips = useMemo<LiveDirectorOperationalChip[]>(
     () =>
       isEnsayoMode
-        ? [
-          ...operationalChips,
-          ...(operationalChips.some((chip) => chip.id === 'buffer')
-            ? []
-            : [
-              {
-                id: 'buffer',
-                label: 'Buffer',
-                value: isReady ? 'Listo' : 'Cargando',
-                tone: isReady ? ('success' as const) : ('neutral' as const),
-                active: isReady,
-              },
-            ]),
-        ]
+        ? operationalChips.filter((chip) => (
+          (chip.id === 'sync' && chip.active) ||
+          (chip.id === 'offline' && chip.value.includes('/'))
+        ))
         : [],
-    [isEnsayoMode, isReady, operationalChips],
+    [isEnsayoMode, operationalChips],
   );
   const sectionOffsetSeconds = Number.isFinite(Number(manualSession?.sectionOffsetSeconds))
     ? Number(manualSession?.sectionOffsetSeconds)
@@ -1649,29 +1639,29 @@ export function LiveDirectorView({
       const deltaMs = time - lastTime;
       lastTime = time;
 
-      let volA = padA.volume;
-      let volB = padB.volume;
-      const targetA = padFadeTargetRefA.current;
-      const targetB = padFadeTargetRefB.current;
+      let volA = clamp(padA.volume, 0, 1);
+      let volB = clamp(padB.volume, 0, 1);
+      const targetA = clamp(padFadeTargetRefA.current, 0, 1);
+      const targetB = clamp(padFadeTargetRefB.current, 0, 1);
 
       const deltaVol = (1.0 / FADE_DURATION_MS) * deltaMs;
 
       if (Math.abs(volA - targetA) < 0.001) {
-        padA.volume = targetA;
+        padA.volume = clamp(targetA, 0, 1);
         if (targetA === 0 && !padA.paused) padA.pause();
       } else if (volA < targetA) {
-        padA.volume = Math.min(targetA, volA + deltaVol);
+        padA.volume = clamp(Math.min(targetA, volA + deltaVol), 0, 1);
       } else {
-        padA.volume = Math.max(targetA, volA - deltaVol);
+        padA.volume = clamp(Math.max(targetA, volA - deltaVol), 0, 1);
       }
 
       if (Math.abs(volB - targetB) < 0.001) {
-        padB.volume = targetB;
+        padB.volume = clamp(targetB, 0, 1);
         if (targetB === 0 && !padB.paused) padB.pause();
       } else if (volB < targetB) {
-        padB.volume = Math.min(targetB, volB + deltaVol);
+        padB.volume = clamp(Math.min(targetB, volB + deltaVol), 0, 1);
       } else {
-        padB.volume = Math.max(targetB, volB - deltaVol);
+        padB.volume = clamp(Math.max(targetB, volB - deltaVol), 0, 1);
       }
 
       if (Math.abs(padA.volume - targetA) >= 0.001 || Math.abs(padB.volume - targetB) >= 0.001) {
@@ -2421,7 +2411,7 @@ export function LiveDirectorView({
                   type="button"
                   onClick={() => setShowTrackLoadModal(true)}
                   className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-1.5 text-[0.58rem]' : isCompactLandscape ? 'h-10 px-2 text-[0.74rem]' : 'h-[var(--ld-control-height)] px-3 text-[0.76rem]'} flex-col font-semibold tracking-[0.16em] text-cyan-50`}
-                  style={{ width: scaleRem(isUltraCompactLandscape ? 2.85 : isCompactLandscape ? 3.9 : 4.35, 2.4) }}
+                  style={{ width: scaleRem(isUltraCompactLandscape ? 3.65 : isCompactLandscape ? 5.05 : 5.7, 3.1) }}
                   aria-label="Abrir carga selectiva de stems"
                   title="Elegir qué stems se cargan"
                 >
@@ -2430,6 +2420,28 @@ export function LiveDirectorView({
                     STEMS
                   </span>
                 </button>
+              )}
+              {isEnsayoMode && headerOperationalChips.length > 0 && (
+                <div className={`flex items-center ${isUltraCompactLandscape ? 'gap-1' : 'gap-1.5'}`}>
+                  {headerOperationalChips.map((chip) => (
+                    <div
+                      key={chip.id}
+                      className={`rounded-full border ${isUltraCompactLandscape ? 'px-1.5 py-1' : isCompactLandscape ? 'px-2 py-1.5' : 'px-3 py-2'} ${chip.tone === 'info'
+                        ? 'border-cyan-300/24 bg-cyan-300/8 text-cyan-50'
+                        : 'border-white/10 bg-black/16 text-white/80'
+                        }`}
+                    >
+                      <div className={`flex items-center ${isUltraCompactLandscape ? 'gap-1' : 'gap-1.5'}`}>
+                        <span className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : 'text-[0.56rem]'} font-black uppercase tracking-[0.18em] text-white/38`}>
+                          {chip.label}
+                        </span>
+                        <span className={`${isUltraCompactLandscape ? 'text-[0.62rem]' : isCompactLandscape ? 'text-[0.72rem]' : 'text-[0.82rem]'} font-semibold text-inherit`}>
+                          {chip.value}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
 
@@ -2487,28 +2499,6 @@ export function LiveDirectorView({
             </div>
 
             <div className={`flex items-stretch justify-end ${isUltraCompactLandscape ? 'gap-2' : isCompactLandscape ? 'gap-2.5' : 'gap-3'}`}>
-              {isEnsayoMode && ensayoOperationalChips.length > 0 && (
-                <div className={`flex items-center ${isUltraCompactLandscape ? 'gap-1' : 'gap-1.5'}`}>
-                  {ensayoOperationalChips.map((chip) => (
-                    <div
-                      key={chip.id}
-                      className={`rounded-full border ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : 'px-2 py-1'} ${chip.active
-                        ? chip.tone === 'info'
-                          ? 'border-cyan-300/28 bg-cyan-300/10 text-cyan-50'
-                          : 'border-[#43c477]/28 bg-[#43c477]/10 text-[#8af7b1]'
-                        : 'border-white/8 bg-black/18 text-white/72'
-                        }`}
-                    >
-                      <p className={`${isUltraCompactLandscape ? 'text-[0.44rem]' : 'text-[0.52rem]'} font-black uppercase tracking-[0.18em] text-white/40`}>
-                        {chip.label}
-                      </p>
-                      <p className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.58rem]' : 'mt-0.5 text-[0.68rem]'} font-semibold`}>
-                        {chip.value}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
               <button
                 type="button"
                 onClick={handlePreviousSection}

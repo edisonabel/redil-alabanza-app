@@ -10,6 +10,7 @@ import { getPadUrlForSongKey } from '../../utils/padAudio';
 
 const CACHE_NAME = 'repertorio-offline-cache-v1';
 const NEXT_SONG_PREWARM_CONCURRENCY = 2;
+const ENABLE_AUTO_OFFLINE_CACHE = false;
 const AUDIO_SOURCE_URL_RE = /^(https?:\/\/|\/).+\.(mp3|wav|m4a|aac|ogg)(\?.*)?$/i;
 
 const resolveSongId = (song) => String(song?.id || '').trim();
@@ -223,20 +224,7 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
     [ensayoSongs],
   );
   const operationalChips = useMemo(() => {
-    const offlineValue = downloadStatus.active
-      ? `${downloadStatus.progress}/${downloadStatus.total}`
-      : downloadStatus.done
-        ? 'Listo'
-        : 'Pend.';
-
-    return [
-      {
-        id: 'offline',
-        label: 'Offline',
-        value: offlineValue,
-        tone: downloadStatus.done ? 'success' : 'neutral',
-        active: downloadStatus.done,
-      },
+    const chips = [
       {
         id: 'sync',
         label: 'Sync',
@@ -245,6 +233,18 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
         active: syncConnected,
       },
     ];
+
+    if (ENABLE_AUTO_OFFLINE_CACHE && downloadStatus.active) {
+      chips.unshift({
+        id: 'offline',
+        label: 'Cache',
+        value: `${downloadStatus.progress}/${downloadStatus.total}`,
+        tone: 'neutral',
+        active: false,
+      });
+    }
+
+    return chips;
   }, [downloadStatus.active, downloadStatus.done, downloadStatus.progress, downloadStatus.total, syncConnected]);
 
   useEffect(() => {
@@ -263,6 +263,10 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
   }, [ensayoSongs.length]);
 
   useEffect(() => {
+    if (!ENABLE_AUTO_OFFLINE_CACHE) {
+      return;
+    }
+
     if (ensayoSongs.length === 0 || autoCacheStartedRef.current || typeof window === 'undefined' || !('caches' in window)) {
       return;
     }
