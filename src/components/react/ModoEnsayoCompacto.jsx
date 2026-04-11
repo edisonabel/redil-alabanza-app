@@ -503,6 +503,12 @@ export default function ModoEnsayoCompacto({
   const [remotePayload, setRemotePayload] = useState(null);
   const [panValue, setPanValue] = useState(0);
   const syncChannelRef = useRef(null);
+  const syncSnapshotRef = useRef({
+    songId: '',
+    sectionIndex: 0,
+    currentTime: 0,
+    isPlaying: false,
+  });
   const audioRef = useRef(null);
   const headerRef = useRef(null);
   const scrollRef = useRef(null);
@@ -701,6 +707,33 @@ export default function ModoEnsayoCompacto({
     }))
   ), [activeMarkerIndex, currentSongMarkers, timelineDuration]);
   const activeSectionIndex = activeSectionByAudioIndex >= 0 ? activeSectionByAudioIndex : activeSectionManualIndex;
+  useEffect(() => {
+    syncSnapshotRef.current = {
+      songId: String(currentSongKey || ''),
+      sectionIndex: activeSectionIndex,
+      currentTime: Math.max(0, audioCurrentTime),
+      isPlaying,
+    };
+  }, [activeSectionIndex, audioCurrentTime, currentSongKey, isPlaying]);
+
+  const pushSyncSnapshot = useCallback((snapshotOverride = null) => {
+    if (syncRole !== 'director' || !syncChannelRef.current) return;
+
+    const snapshot = snapshotOverride || syncSnapshotRef.current;
+    if (!snapshot?.songId) return;
+
+    syncChannelRef.current.send({
+      type: 'broadcast',
+      event: 'SECTION_CHANGE',
+      payload: {
+        songId: String(snapshot.songId),
+        sectionIndex: Number.isFinite(Number(snapshot.sectionIndex)) ? Number(snapshot.sectionIndex) : 0,
+        currentTime: Math.max(0, Number(snapshot.currentTime) || 0),
+        currentTimeRaw: Math.max(0, Number(snapshot.currentTime) || 0),
+        isPlaying: Boolean(snapshot.isPlaying),
+      },
+    }).catch((error) => console.warn('[LiveSync] Error enviando snapshot:', error));
+  }, [syncRole]);
   const playbackSectionStrip = useMemo(() => (
     currentSections.map((section, index) => {
       const marker = markerBySectionIndex.get(index) || null;
@@ -1264,13 +1297,34 @@ export default function ModoEnsayoCompacto({
     }).subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         console.log(`[LiveSync] Conectado como ${syncRole}`);
+        if (syncRole === 'director') {
+          pushSyncSnapshot();
+        }
       }
     });
     syncChannelRef.current = channel;
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [syncRole]);
+  }, [pushSyncSnapshot, syncRole]);
+  useEffect(() => {
+    if (syncRole !== 'director' || !syncChannelRef.current) return undefined;
+
+    pushSyncSnapshot({
+      songId: currentSongKey,
+      sectionIndex: activeSectionIndex,
+      currentTime: syncSnapshotRef.current.currentTime,
+      isPlaying,
+    });
+
+    const heartbeat = window.setInterval(() => {
+      pushSyncSnapshot();
+    }, 700);
+
+    return () => {
+      window.clearInterval(heartbeat);
+    };
+  }, [activeSectionIndex, currentSongKey, isPlaying, pushSyncSnapshot, syncRole]);
   useEffect(() => {
     if (syncRole !== 'director' || !syncChannelRef.current) return;
     console.log('[LiveSync] Emitiendo cambio de sección:', activeSectionIndex);

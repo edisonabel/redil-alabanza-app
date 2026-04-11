@@ -637,8 +637,6 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
         const nextSongId = String(payload.songId);
         const songChanged = nextSongId !== String(lastPayloadSongIdRef.current);
         const receiveTimestamp = performance.now();
-        const incomingIsPlaying =
-          typeof payload.isPlaying === 'boolean' ? payload.isPlaying : remoteIsPlayingRef.current;
 
         const offsetSeconds = Number.isFinite(Number(payload.sectionOffsetSeconds))
           ? Number(payload.sectionOffsetSeconds)
@@ -649,6 +647,14 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
             : typeof payload.currentTimeRaw === 'number'
               ? Math.max(0, payload.currentTimeRaw - offsetSeconds)
               : null;
+        const previousServerTime = lastServerTimeRef.current;
+        const advancedWhileMarkedPaused =
+          typeof resolvedCurrentTime === 'number' &&
+          resolvedCurrentTime > previousServerTime + 0.35;
+        const incomingIsPlaying =
+          typeof payload.isPlaying === 'boolean'
+            ? (payload.isPlaying || advancedWhileMarkedPaused)
+            : remoteIsPlayingRef.current || advancedWhileMarkedPaused;
 
         if (typeof resolvedCurrentTime === 'number') {
           const currentDisplayTime =
