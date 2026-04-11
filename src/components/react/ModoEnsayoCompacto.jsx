@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ChevronDown, Pause, Play, Radio, RadioReceiver, Repeat, Repeat1, SlidersHorizontal } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { audioSessionService } from '../../services/AudioSessionService';
