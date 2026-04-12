@@ -766,6 +766,7 @@ export function LiveDirectorView({
   const [surfaceView, setSurfaceView] = useState<SurfaceView>('mix');
   const [showOffsetModal, setShowOffsetModal] = useState(false);
   const [showTrackLoadModal, setShowTrackLoadModal] = useState(false);
+  const [pendingEnabledMap, setPendingEnabledMap] = useState<Record<string, boolean> | null>(null);
   const offsetModalInitialValueRef = useRef<number | null>(null);
   const [isPadActive, setIsPadActive] = useState(false);
   const [internalPadVolumeState, setInternalPadVolumeState] = useState(0.34);
@@ -1855,6 +1856,24 @@ export function LiveDirectorView({
     }
   }, [commitMixerStateSilent, hasPersistedSongContext, manualSession]);
 
+  const handleCloseTrackLoadModal = useCallback(() => {
+    if (pendingEnabledMap && manualSession) {
+      const nextTracks = manualSession.tracks.map((track) => ({
+        ...track,
+        enabled: pendingEnabledMap[track.id] !== false,
+      }));
+      const hasAnyEnabled = nextTracks.some((t) => t.enabled !== false);
+      if (hasAnyEnabled) {
+        setManualSession((prev) => prev ? { ...prev, tracks: nextTracks } : prev);
+        if (hasPersistedSongContext) {
+          void commitMixerStateSilent(nextTracks);
+        }
+      }
+    }
+    setPendingEnabledMap(null);
+    setShowTrackLoadModal(false);
+  }, [pendingEnabledMap, manualSession, hasPersistedSongContext, commitMixerStateSilent]);
+
   const handleOpenOffsetModal = useCallback(() => {
     offsetModalInitialValueRef.current = Number.isFinite(Number(manualSession?.sectionOffsetSeconds))
       ? Number(manualSession?.sectionOffsetSeconds)
@@ -2409,7 +2428,12 @@ export function LiveDirectorView({
               {canToggleTrackLoad && (
                 <button
                   type="button"
-                  onClick={() => setShowTrackLoadModal(true)}
+                  onClick={() => {
+                    const initial: Record<string, boolean> = {};
+                    (manualSession?.tracks || []).forEach((t) => { initial[t.id] = t.enabled !== false; });
+                    setPendingEnabledMap(initial);
+                    setShowTrackLoadModal(true);
+                  }}
                   className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-1.5 text-[0.58rem]' : isCompactLandscape ? 'h-10 px-2 text-[0.74rem]' : 'h-[var(--ld-control-height)] px-3 text-[0.76rem]'} flex-col font-semibold tracking-[0.16em] text-cyan-50`}
                   style={{ width: scaleRem(isUltraCompactLandscape ? 3.65 : isCompactLandscape ? 5.05 : 5.7, 3.1) }}
                   aria-label="Abrir carga selectiva de stems"
@@ -3365,7 +3389,7 @@ export function LiveDirectorView({
               </div>
               <button
                 type="button"
-                onClick={() => setShowTrackLoadModal(false)}
+                onClick={handleCloseTrackLoadModal}
                 className="ui-pressable-soft flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/26 text-white/58 hover:text-white"
                 aria-label="Cerrar configuracion de carga"
               >
@@ -3376,21 +3400,15 @@ export function LiveDirectorView({
             <div className={`mt-4 flex items-center justify-between gap-3 rounded-[1rem] border border-white/8 bg-black/24 ${useWideTrackLoadModal ? 'px-3 py-2' : 'px-3 py-2.5'}`}>
               <div>
                 <p className="text-[0.6rem] font-black uppercase tracking-[0.18em] text-white/36">Resumen</p>
-                <p className={`${useWideTrackLoadModal ? 'mt-0.5 text-[0.92rem]' : 'mt-1 text-sm'} font-semibold text-white/88`}>{activeTracks.length} de {sessionTracks.length} activos</p>
+                <p className={`${useWideTrackLoadModal ? 'mt-0.5 text-[0.92rem]' : 'mt-1 text-sm'} font-semibold text-white/88`}>{pendingEnabledMap ? Object.values(pendingEnabledMap).filter(Boolean).length : activeTracks.length} de {sessionTracks.length} activos</p>
               </div>
               <button
                 type="button"
                 onClick={() => {
-                  const nextTracks = manualSession?.tracks.map((track) => ({ ...track, enabled: true })) || [];
-                  if (nextTracks.length === 0) {
-                    return;
-                  }
-                  setManualSession((previous) => (
-                    previous ? { ...previous, tracks: nextTracks } : previous
-                  ));
-                  if (hasPersistedSongContext) {
-                    void commitMixerStateSilent(nextTracks);
-                  }
+                  if (!pendingEnabledMap) return;
+                  const nextMap: Record<string, boolean> = {};
+                  Object.keys(pendingEnabledMap).forEach((id) => { nextMap[id] = true; });
+                  setPendingEnabledMap(nextMap);
                 }}
                 className={`ui-pressable-soft rounded-full border border-white/10 bg-white/[0.05] font-black uppercase tracking-[0.18em] text-white/76 ${useWideTrackLoadModal ? 'px-3 py-1.5 text-[0.58rem]' : 'px-3 py-2 text-[0.62rem]'}`}
               >
@@ -3400,32 +3418,40 @@ export function LiveDirectorView({
 
             <div className={`mt-4 overflow-y-auto pr-1 ${useWideTrackLoadModal ? 'max-h-[56dvh]' : 'max-h-[52dvh]'}`}>
               <div className={`grid ${useWideTrackLoadModal ? 'grid-cols-2 gap-2' : 'grid-cols-1 gap-2'}`}>
-              {mappedTrackDetails.map((track) => (
-                <button
-                  key={`toggle-track-load-${track.id}`}
-                  type="button"
-                  onClick={() => handleToggleTrackEnabled(track.id)}
-                  className={`w-full rounded-[1rem] border text-left transition-all ${useWideTrackLoadModal ? 'px-3 py-2.5' : 'px-3 py-3'} ${track.enabled
-                    ? 'border-white/8 bg-white/[0.035]'
-                    : 'border-white/6 bg-black/20 opacity-72'
-                    }`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className={`truncate font-semibold text-white/88 ${useWideTrackLoadModal ? 'text-[0.9rem]' : 'text-sm'}`}>{track.sourceFileName}</p>
-                      <p className={`uppercase tracking-[0.16em] ${useWideTrackLoadModal ? 'mt-0.5 text-[0.62rem]' : 'mt-1 text-[0.7rem]'} ${track.enabled ? 'text-cyan-100/56' : 'text-white/34'}`}>
-                        {track.trackName}
-                      </p>
+              {mappedTrackDetails.map((track) => {
+                const pendingEnabled = pendingEnabledMap ? (pendingEnabledMap[track.id] !== false) : track.enabled;
+                return (
+                  <button
+                    key={`toggle-track-load-${track.id}`}
+                    type="button"
+                    onClick={() => {
+                      if (!pendingEnabledMap) return;
+                      const next = { ...pendingEnabledMap, [track.id]: !pendingEnabledMap[track.id] };
+                      const hasAny = Object.values(next).some(Boolean);
+                      if (hasAny) setPendingEnabledMap(next);
+                    }}
+                    className={`w-full rounded-[1rem] border text-left transition-all ${useWideTrackLoadModal ? 'px-3 py-2.5' : 'px-3 py-3'} ${pendingEnabled
+                      ? 'border-white/8 bg-white/[0.035]'
+                      : 'border-white/6 bg-black/20 opacity-72'
+                      }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className={`truncate font-semibold text-white/88 ${useWideTrackLoadModal ? 'text-[0.9rem]' : 'text-sm'}`}>{track.sourceFileName}</p>
+                        <p className={`uppercase tracking-[0.16em] ${useWideTrackLoadModal ? 'mt-0.5 text-[0.62rem]' : 'mt-1 text-[0.7rem]'} ${pendingEnabled ? 'text-cyan-100/56' : 'text-white/34'}`}>
+                          {track.trackName}
+                        </p>
+                      </div>
+                      <span className={`shrink-0 rounded-full border font-black uppercase tracking-[0.18em] ${useWideTrackLoadModal ? 'px-2.5 py-1 text-[0.52rem]' : 'px-3 py-1.5 text-[0.58rem]'} ${pendingEnabled
+                        ? 'border-emerald-300/18 bg-emerald-300/[0.09] text-emerald-100/84'
+                        : 'border-white/10 bg-black/26 text-white/54'
+                        }`}>
+                        {pendingEnabled ? 'Activa' : 'Omitida'}
+                      </span>
                     </div>
-                    <span className={`shrink-0 rounded-full border font-black uppercase tracking-[0.18em] ${useWideTrackLoadModal ? 'px-2.5 py-1 text-[0.52rem]' : 'px-3 py-1.5 text-[0.58rem]'} ${track.enabled
-                      ? 'border-emerald-300/18 bg-emerald-300/[0.09] text-emerald-100/84'
-                      : 'border-white/10 bg-black/26 text-white/54'
-                      }`}>
-                      {track.enabled ? 'Activa' : 'Omitida'}
-                    </span>
-                  </div>
-                </button>
-              ))}
+                  </button>
+                );
+              })}
               </div>
             </div>
           </div>
