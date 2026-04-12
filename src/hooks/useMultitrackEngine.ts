@@ -1,6 +1,7 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MultitrackEngine, type TrackData } from '../services/MultitrackEngine';
 import { StreamingMultitrackEngine } from '../services/StreamingMultitrackEngine';
+import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
 
 type TrackVolumesState = Record<string, number>;
 type TrackLevelsState = Record<string, number>;
@@ -31,6 +32,7 @@ type UseMultitrackEngineReturn = {
   pause: () => void;
   stop: () => void;
   setVolume: (trackId: string, volume: number) => void;
+  setTrackOutputRoute: (trackId: string, outputRoute: TrackOutputRoute) => void;
   toggleMute: (trackId: string) => void;
   setMasterVolume: (volume: number) => void;
   toggleLoop: () => void;
@@ -69,6 +71,7 @@ const cloneTracks = (tracks: TrackData[]): TrackData[] => (
     volume: clampVolume(track.volume),
     isMuted: Boolean(track.isMuted),
     sourceFileName: track.sourceFileName,
+    outputRoute: track.outputRoute,
   }))
 );
 
@@ -446,6 +449,15 @@ export function useMultitrackEngine(
     }));
   }, []);
 
+  const setTrackOutputRoute = useCallback((trackId: string, outputRoute: TrackOutputRoute) => {
+    const engine = engineRef.current;
+    if (!engine) {
+      return;
+    }
+
+    engine.setTrackOutputRoute(trackId, outputRoute);
+  }, []);
+
   const toggleMute = useCallback((trackId: string) => {
     const engine = engineRef.current;
     if (!engine) {
@@ -635,6 +647,7 @@ export function useMultitrackEngine(
       pause,
       stop,
       setVolume,
+      setTrackOutputRoute,
       toggleMute,
       setMasterVolume,
       toggleLoop,
@@ -655,6 +668,7 @@ export function useMultitrackEngine(
       seekTo,
       setLoopPoints,
       setMasterVolume,
+      setTrackOutputRoute,
       setVolume,
       soloTrack,
       stop,

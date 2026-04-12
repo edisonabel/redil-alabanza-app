@@ -1,4 +1,6 @@
 import { buildSectionShortLabel, getSectionKind, SECTION_VISUALS, toRgba } from './sectionVisuals';
+import type { TrackOutputRoute } from './liveDirectorTrackRouting';
+import { resolveTrackOutputRoute } from './liveDirectorTrackRouting';
 
 export type LiveDirectorPersistedTrack = {
   id: string;
@@ -8,6 +10,7 @@ export type LiveDirectorPersistedTrack = {
   isMuted: boolean;
   enabled?: boolean;
   sourceFileName?: string;
+  outputRoute?: TrackOutputRoute;
 };
 
 export type LiveDirectorPersistedSession = {
@@ -134,6 +137,11 @@ export const normalizePersistedLiveDirectorSession = (
             isMuted: Boolean(candidate.isMuted),
             enabled: candidate.enabled !== false,
             sourceFileName: String(candidate.sourceFileName || '').trim() || undefined,
+            outputRoute: resolveTrackOutputRoute({
+              id,
+              name,
+              outputRoute: candidate.outputRoute,
+            }),
           };
         })
         .filter((track): track is LiveDirectorPersistedTrack => track !== null)

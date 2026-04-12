@@ -1,3 +1,6 @@
+import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
+import { resolveTrackOutputRoute } from '../utils/liveDirectorTrackRouting';
+
 type WindowWithWebkitAudio = Window & typeof globalThis & {
   webkitAudioContext?: typeof AudioContext;
 };
@@ -163,11 +166,14 @@ export interface TrackData {
   isMuted: boolean;
   enabled?: boolean;
   sourceFileName?: string;
+  outputRoute?: TrackOutputRoute;
   audioBuffer?: AudioBuffer;
+  inputNode?: GainNode;
   gainNode?: GainNode;
   analyserNode?: AnalyserNode;
   meterData?: Float32Array;
-  panNode?: StereoPannerNode;
+  routeSplitterNode?: ChannelSplitterNode;
+  routeMergerNode?: ChannelMergerNode;
   sourceNode?: AudioBufferSourceNode;
   mediaElement?: HTMLAudioElement;
   mediaSourceNode?: MediaElementAudioSourceNode;
@@ -428,6 +434,18 @@ export class MultitrackEngine {
     this.syncTrackGain(track);
   }
 
+  setTrackOutputRoute(trackId: string, outputRoute: TrackOutputRoute): void {
+    const track = this.findTrack(trackId);
+
+    if (!track) {
+      console.warn(`[MultitrackEngine] Track "${trackId}" not found for output routing.`);
+      return;
+    }
+
+    track.outputRoute = outputRoute;
+    this.syncTrackOutputRoute(track);
+  }
+
   toggleTrackMute(trackId: string): void {
     const track = this.findTrack(trackId);
 
@@ -525,25 +543,29 @@ export class MultitrackEngine {
         TRACK_DECODE_TIMEOUT_MS,
         `Timed out decoding "${track.name}".`,
       );
+      const inputNode = this.context.createGain();
       const gainNode = this.context.createGain();
       const analyserNode = this.createTrackAnalyser();
-      const panNode = this.context.createStereoPanner();
+      const routeSplitterNode = this.context.createChannelSplitter(2);
+      const routeMergerNode = this.context.createChannelMerger(2);
 
-      panNode.connect(gainNode);
+      routeMergerNode.connect(gainNode);
       gainNode.connect(analyserNode);
       analyserNode.connect(this.masterGain);
 
       track.volume = this.clampVolume(track.volume);
       track.audioBuffer = audioBuffer;
+      track.inputNode = inputNode;
       track.gainNode = gainNode;
       track.analyserNode = analyserNode;
       track.meterData = new Float32Array(analyserNode.fftSize);
-      track.panNode = panNode;
+      track.routeSplitterNode = routeSplitterNode;
+      track.routeMergerNode = routeMergerNode;
       track.sourceNode = undefined;
       track.mediaElement = undefined;
       track.mediaSourceNode = undefined;
       track.durationSeconds = audioBuffer.duration;
-      this.syncTrackPan(track);
+      this.syncTrackOutputRoute(track);
       this.syncTrackGain(track);
 
       console.log(`[MultitrackEngine] Loaded "${track.name}" successfully.`);
@@ -574,27 +596,31 @@ export class MultitrackEngine {
 
         try {
           const mediaElement = await this.createMediaElement(track);
+          const inputNode = this.context.createGain();
           const gainNode = this.context.createGain();
           const analyserNode = this.createTrackAnalyser();
-          const panNode = this.context.createStereoPanner();
+          const routeSplitterNode = this.context.createChannelSplitter(2);
+          const routeMergerNode = this.context.createChannelMerger(2);
           const mediaSourceNode = this.context.createMediaElementSource(mediaElement);
 
-          mediaSourceNode.connect(panNode);
-          panNode.connect(gainNode);
+          mediaSourceNode.connect(inputNode);
+          routeMergerNode.connect(gainNode);
           gainNode.connect(analyserNode);
           analyserNode.connect(this.masterGain);
 
           track.volume = this.clampVolume(track.volume);
           track.audioBuffer = undefined;
           track.sourceNode = undefined;
+          track.inputNode = inputNode;
           track.gainNode = gainNode;
           track.analyserNode = analyserNode;
           track.meterData = new Float32Array(analyserNode.fftSize);
-          track.panNode = panNode;
+          track.routeSplitterNode = routeSplitterNode;
+          track.routeMergerNode = routeMergerNode;
           track.mediaElement = mediaElement;
           track.mediaSourceNode = mediaSourceNode;
           track.durationSeconds = Number.isFinite(mediaElement.duration) ? mediaElement.duration : 0;
-          this.syncTrackPan(track);
+          this.syncTrackOutputRoute(track);
           this.syncTrackGain(track);
 
           console.log(`[MultitrackEngine] Ready "${track.name}" successfully.`);
@@ -713,7 +739,7 @@ export class MultitrackEngine {
     playableTracks.forEach(({ track, audioBuffer, gainNode }) => {
       const sourceNode = this.context.createBufferSource();
       sourceNode.buffer = audioBuffer;
-      sourceNode.connect(track.panNode || gainNode);
+      sourceNode.connect(track.inputNode || gainNode);
       this.applyLoopStateToSourceNode(track, sourceNode);
       sourceNode.onended = () => {
         if (track.sourceNode === sourceNode) {
@@ -1057,19 +1083,37 @@ export class MultitrackEngine {
       }
     }
 
-    if (track.panNode) {
+    if (track.inputNode) {
       try {
-        track.panNode.disconnect();
+        track.inputNode.disconnect();
+      } catch {
+        // no-op
+      }
+    }
+
+    if (track.routeSplitterNode) {
+      try {
+        track.routeSplitterNode.disconnect();
+      } catch {
+        // no-op
+      }
+    }
+
+    if (track.routeMergerNode) {
+      try {
+        track.routeMergerNode.disconnect();
       } catch {
         // no-op
       }
     }
 
     track.audioBuffer = undefined;
+    track.inputNode = undefined;
     track.gainNode = undefined;
     track.analyserNode = undefined;
     track.meterData = undefined;
-    track.panNode = undefined;
+    track.routeSplitterNode = undefined;
+    track.routeMergerNode = undefined;
     track.sourceNode = undefined;
     track.mediaElement = undefined;
     track.mediaSourceNode = undefined;
@@ -1147,12 +1191,42 @@ export class MultitrackEngine {
     return playableTracks.find(({ gainNode }) => gainNode.gain.value > 0) || playableTracks[0];
   }
 
-  private syncTrackPan(track: TrackData): void {
-    if (!track.panNode) {
+  private syncTrackOutputRoute(track: TrackData): void {
+    const inputNode = track.inputNode;
+    const gainNode = track.gainNode;
+
+    if (!inputNode || !gainNode) {
       return;
     }
 
-    track.panNode.pan.value = this.getTrackPan(track);
+    const routeSplitterNode = track.routeSplitterNode;
+    const routeMergerNode = track.routeMergerNode;
+    const outputRoute = resolveTrackOutputRoute(track);
+
+    track.outputRoute = outputRoute;
+
+    try {
+      inputNode.disconnect();
+    } catch {
+      // no-op
+    }
+
+    if (routeSplitterNode) {
+      try {
+        routeSplitterNode.disconnect();
+      } catch {
+        // no-op
+      }
+    }
+
+    if (outputRoute === 'stereo' || !routeSplitterNode || !routeMergerNode) {
+      inputNode.connect(gainNode);
+      return;
+    }
+
+    const targetChannel = outputRoute === 'right' ? 1 : 0;
+    inputNode.connect(routeSplitterNode);
+    routeSplitterNode.connect(routeMergerNode, 0, targetChannel);
   }
 
   private createTrackAnalyser(): AnalyserNode {

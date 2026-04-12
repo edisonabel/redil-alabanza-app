@@ -1,6 +1,8 @@
 import { AudioRingBuffer } from './AudioRingBuffer';
 import type { TrackData } from './MultitrackEngine';
 import * as MP4Box from 'mp4box';
+import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
+import { normalizeTrackOutputRoute, resolveTrackOutputRoute } from '../utils/liveDirectorTrackRouting';
 
 type WindowWithWebkitAudio = Window & typeof globalThis & {
   webkitAudioContext?: typeof AudioContext;
@@ -57,6 +59,12 @@ type WorkletTrackMuteMessage = {
   muted: boolean;
 };
 
+type WorkletTrackOutputRouteMessage = {
+  type: 'track-output-route';
+  trackIndex: number;
+  outputRoute: TrackOutputRoute;
+};
+
 type WorkletFlushBuffersMessage = {
   type: 'FLUSH_BUFFERS';
 };
@@ -72,6 +80,7 @@ type WorkletMessage =
   | WorkletTransportMessage
   | WorkletTrackVolumeMessage
   | WorkletTrackMuteMessage
+  | WorkletTrackOutputRouteMessage
   | WorkletFlushBuffersMessage;
 
 type WorkletInboundMessage = WorkletTrackLevelsMessage;
@@ -111,6 +120,7 @@ export interface StreamingTrackDefinition {
   demuxerFactory?: (track: NormalizedTrackDefinition) => EncodedAudioChunkDemuxer;
   initialVolume?: number;
   initiallyMuted?: boolean;
+  initialOutputRoute?: TrackOutputRoute;
 }
 
 export interface StreamingMultitrackEngineOptions {
@@ -136,6 +146,7 @@ type NormalizedTrackDefinition = {
   demuxerFactory?: (track: NormalizedTrackDefinition) => EncodedAudioChunkDemuxer;
   initialVolume: number;
   initiallyMuted: boolean;
+  initialOutputRoute: TrackOutputRoute;
 };
 
 type TrackRuntime = {
@@ -154,6 +165,7 @@ type TrackRuntime = {
   decoderConfig: AudioDecoderConfig;
   muted: boolean;
   volume: number;
+  outputRoute: TrackOutputRoute;
   decodeScratch: Float32Array;
   channelScratch: Float32Array[];
   readyResolved: boolean;
@@ -292,6 +304,7 @@ export class StreamingMultitrackEngine {
       ...track,
       volume: this.clampVolume(track.volume),
       isMuted: Boolean(track.isMuted),
+      outputRoute: resolveTrackOutputRoute(track),
     }));
 
     this.transportPlaying = false;
@@ -531,6 +544,23 @@ export class StreamingMultitrackEngine {
     }
   }
 
+  setTrackOutputRoute(trackIdOrIndex: string | number, outputRoute: TrackOutputRoute): void {
+    const trackState = this.getTrackState(trackIdOrIndex);
+    const nextOutputRoute = normalizeTrackOutputRoute(outputRoute) || 'stereo';
+
+    trackState.outputRoute = nextOutputRoute;
+    if (this.tracks[trackState.index]) {
+      this.tracks[trackState.index].outputRoute = nextOutputRoute;
+    }
+    if (this.workletNode) {
+      this.workletNode.port.postMessage({
+        type: 'track-output-route',
+        trackIndex: trackState.index,
+        outputRoute: nextOutputRoute,
+      });
+    }
+  }
+
   toggleTrackMute(trackIdOrIndex: string | number): void {
     const trackState = this.getTrackState(trackIdOrIndex);
 
@@ -621,6 +651,7 @@ export class StreamingMultitrackEngine {
       demuxerFactory: trackDefinition.demuxerFactory,
       initialVolume: this.clampVolume(trackDefinition.initialVolume ?? 1),
       initiallyMuted: Boolean(trackDefinition.initiallyMuted),
+      initialOutputRoute: normalizeTrackOutputRoute(trackDefinition.initialOutputRoute) || 'stereo',
     };
   }
 
@@ -667,6 +698,7 @@ export class StreamingMultitrackEngine {
       decoderConfig,
       muted: trackDefinition.initiallyMuted,
       volume: trackDefinition.initialVolume,
+      outputRoute: trackDefinition.initialOutputRoute,
       decodeScratch: new Float32Array(AAC_FRAME_SIZE),
       channelScratch: [],
       readyResolved: false,
@@ -693,6 +725,7 @@ export class StreamingMultitrackEngine {
       url: track.url,
       initialVolume: track.volume,
       initiallyMuted: track.isMuted,
+      initialOutputRoute: resolveTrackOutputRoute(track),
     };
   }
 
@@ -733,6 +766,11 @@ export class StreamingMultitrackEngine {
       type: 'track-mute',
       trackIndex: trackState.index,
       muted: trackState.muted,
+    });
+    this.postWorkletMessage({
+      type: 'track-output-route',
+      trackIndex: trackState.index,
+      outputRoute: trackState.outputRoute,
     });
   }
 
@@ -892,6 +930,15 @@ export class StreamingMultitrackEngine {
     }
 
     if (channelCount <= 1) {
+      audioData.copyTo(trackState.decodeScratch, {
+        planeIndex: 0,
+        frameCount,
+        format: 'f32-planar',
+      });
+      return trackState.decodeScratch;
+    }
+
+    if (trackState.outputRoute !== 'stereo') {
       audioData.copyTo(trackState.decodeScratch, {
         planeIndex: 0,
         frameCount,

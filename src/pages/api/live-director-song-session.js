@@ -4,6 +4,7 @@ import {
   buildLiveDirectorSongFolder,
   normalizePersistedLiveDirectorSession,
 } from '../../utils/liveDirectorSongSession.ts';
+import { resolveTrackOutputRoute } from '../../utils/liveDirectorTrackRouting.ts';
 
 const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY;
@@ -92,7 +93,9 @@ const normalizeIncomingTracks = (rawTracks) => {
         url,
         volume: Number.isFinite(Number(track.volume)) ? Number(track.volume) : 1,
         isMuted: Boolean(track.isMuted),
+        enabled: track.enabled !== false,
         sourceFileName: String(track.sourceFileName || '').trim() || undefined,
+        outputRoute: resolveTrackOutputRoute({ id, name, outputRoute: track.outputRoute }),
       };
     })
     .filter(Boolean);

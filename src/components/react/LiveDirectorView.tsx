@@ -32,6 +32,12 @@ import {
   saveLiveDirectorSongSession,
   uploadFileToLiveDirectorTarget,
 } from '../../utils/liveDirectorUploadClient';
+import {
+  isGuideRoutingTrack,
+  resolveTrackOutputRoute,
+  toggleGuideTrackOutputRoute,
+  type TrackOutputRoute,
+} from '../../utils/liveDirectorTrackRouting';
 import { getPadUrlForSongKey } from '../../utils/padAudio';
 
 type MixerTrackMeta = {
@@ -126,11 +132,14 @@ type ChannelStripProps = {
   soloed: boolean;
   dimmed: boolean;
   disabled: boolean;
+  outputRoute?: TrackOutputRoute;
+  showRouteFlip?: boolean;
   compact?: boolean;
   ultraCompact?: boolean;
   onVolumeChange: (volume: number) => void;
   onMute: () => void;
   onSolo: () => void;
+  onToggleOutputRoute?: () => void;
 };
 
 type MixerTrackView = MixerTrackMeta & {
@@ -140,6 +149,8 @@ type MixerTrackView = MixerTrackMeta & {
   soloed: boolean;
   dimmed: boolean;
   disabled: boolean;
+  outputRoute: TrackOutputRoute;
+  showRouteFlip: boolean;
 };
 
 const MIXER_TRACKS: MixerTrackMeta[] = [
@@ -409,6 +420,15 @@ const buildMixerTrackMeta = (
   };
 };
 
+const buildTrackOutputRouteMap = (
+  tracks: Array<Pick<TrackData, 'id' | 'name' | 'outputRoute'>>,
+): Record<string, TrackOutputRoute> => (
+  tracks.reduce<Record<string, TrackOutputRoute>>((routes, track) => {
+    routes[track.id] = resolveTrackOutputRoute(track);
+    return routes;
+  }, {})
+);
+
 const toResolvedSession = (
   session: LiveDirectorPersistedSession,
 ): LiveDirectorResolvedSession => ({
@@ -422,6 +442,7 @@ const toResolvedSession = (
     isMuted: track.isMuted,
     enabled: track.enabled !== false,
     sourceFileName: track.sourceFileName,
+    outputRoute: resolveTrackOutputRoute(track),
   })),
   objectUrls: [],
   unmatchedFiles: session.unmatchedFiles || [],
@@ -483,11 +504,14 @@ const ChannelStrip = memo(function ChannelStrip({
   soloed,
   dimmed,
   disabled,
+  outputRoute = 'stereo',
+  showRouteFlip = false,
   compact = false,
   ultraCompact = false,
   onVolumeChange,
   onMute,
   onSolo,
+  onToggleOutputRoute,
 }: ChannelStripProps) {
   const levelBottom = `${10 + volume * 78}%`;
   const knobGlow = muted ? 'rgba(120, 128, 140, 0.15)' : `${accent}30`;
@@ -513,6 +537,25 @@ const ChannelStrip = memo(function ChannelStrip({
         >
           S
         </button>
+        {showRouteFlip ? (
+          <button
+            type="button"
+            onClick={onToggleOutputRoute}
+            disabled={disabled}
+            aria-pressed={outputRoute === 'right'}
+            aria-label={`Cambiar salida de ${label} hacia ${outputRoute === 'right' ? 'izquierda' : 'derecha'}`}
+            className={`ui-pressable-soft flex items-center justify-center rounded-full border font-black tracking-[0.16em] transition-all duration-150 ${ultraCompact ? 'h-5 min-w-[2rem] px-1.5 text-[0.42rem]' : compact ? 'h-6 min-w-[2.4rem] px-1.75 text-[0.5rem]' : 'h-10 min-w-[3.5rem] px-3 text-[0.62rem]'
+              } ${outputRoute === 'right'
+                ? 'border-amber-300/55 bg-amber-300/14 text-amber-100 shadow-[0_0_16px_rgba(251,191,36,0.18)]'
+                : 'border-cyan-300/55 bg-cyan-300/14 text-cyan-100 shadow-[0_0_16px_rgba(103,210,242,0.18)]'
+              }`}
+            title={`Salida absoluta ${outputRoute === 'right' ? 'R' : 'L'}`}
+          >
+            <span className={outputRoute === 'left' ? 'text-white' : 'text-white/36'}>L</span>
+            <span className="mx-1 text-white/22">|</span>
+            <span className={outputRoute === 'right' ? 'text-white' : 'text-white/36'}>R</span>
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={onMute}
@@ -592,6 +635,8 @@ const ChannelStrip = memo(function ChannelStrip({
   previousProps.soloed === nextProps.soloed &&
   previousProps.dimmed === nextProps.dimmed &&
   previousProps.disabled === nextProps.disabled &&
+  previousProps.outputRoute === nextProps.outputRoute &&
+  previousProps.showRouteFlip === nextProps.showRouteFlip &&
   previousProps.compact === nextProps.compact &&
   previousProps.ultraCompact === nextProps.ultraCompact
 ));
@@ -732,6 +777,7 @@ export function LiveDirectorView({
     seekTo,
     setLoopPoints,
     setMasterVolume,
+    setTrackOutputRoute,
     setVolume,
     soloTrack,
     stop,
@@ -760,6 +806,7 @@ export function LiveDirectorView({
   const [unmatchedFiles, setUnmatchedFiles] = useState<string[]>([]);
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
   const [mutedTrackIds, setMutedTrackIds] = useState<Set<string>>(new Set());
+  const [trackOutputRoutes, setTrackOutputRoutes] = useState<Record<string, TrackOutputRoute>>({});
   const [soloTrackId, setSoloTrackId] = useState<string | null>(null);
   const [masterVolume, setMasterVolumeState] = useState(0.82);
   const [loopEnabled, setLoopEnabled] = useState(false);
@@ -807,9 +854,29 @@ export function LiveDirectorView({
     [hasProvidedTracks, manualSession?.tracks, tracks],
   );
 
+  const trackRouteSeedSignature = useMemo(
+    () => sessionTracks
+      .map((track) => `${track.id}:${track.name}:${resolveTrackOutputRoute(track)}`)
+      .join('|'),
+    [sessionTracks],
+  );
+
+  const seededTrackOutputRoutes = useMemo(
+    () => buildTrackOutputRouteMap(sessionTracks),
+    [trackRouteSeedSignature],
+  );
+
   const activeTracks = useMemo(
     () => sessionTracks.filter((track) => track.enabled !== false),
     [sessionTracks],
+  );
+
+  const activeEngineTracks = useMemo(
+    () => activeTracks.map((track) => ({
+      ...track,
+      outputRoute: trackOutputRoutes[track.id] ?? resolveTrackOutputRoute(track),
+    })),
+    [activeTracks, trackOutputRoutes],
   );
 
   const hasSessionTracks = sessionTracks.length > 0;
@@ -1040,6 +1107,8 @@ export function LiveDirectorView({
 
     const resolvedMixerTracks = sourceTracks.map((track, index) => {
       const meta = buildMixerTrackMeta(track, index);
+      const outputRoute = trackOutputRoutes[track.id] ?? resolveTrackOutputRoute(track);
+      const showRouteFlip = isGuideRoutingTrack(track);
 
       return {
         ...meta,
@@ -1049,6 +1118,8 @@ export function LiveDirectorView({
         soloed: soloTrackId === track.id,
         dimmed: Boolean(soloTrackId && soloTrackId !== track.id),
         disabled: activeTracks.length === 0,
+        outputRoute,
+        showRouteFlip,
       };
     });
 
@@ -1065,6 +1136,8 @@ export function LiveDirectorView({
         soloed: false,
         dimmed: false,
         disabled: false,
+        outputRoute: 'stereo',
+        showRouteFlip: false,
       };
 
       const clickIdx = resolvedMixerTracks.findIndex((t) => t.id.toLowerCase().includes('click') || t.id.toLowerCase().includes('metro'));
@@ -1079,7 +1152,7 @@ export function LiveDirectorView({
     }
 
     return resolvedMixerTracks;
-  }, [activeTracks, isEnsayoMode, isPadActive, mutedTrackIds, resolvedInternalPadVolume, resolvedPadUrl, soloTrackId, trackLevels, trackVolumes]);
+  }, [activeTracks, isEnsayoMode, isPadActive, mutedTrackIds, resolvedInternalPadVolume, resolvedPadUrl, soloTrackId, trackLevels, trackOutputRoutes, trackVolumes]);
 
   const mappedTrackDetails = useMemo(
     () =>
@@ -1098,6 +1171,10 @@ export function LiveDirectorView({
     });
     ownedObjectUrlsRef.current = nextObjectUrls;
   }, []);
+
+  useEffect(() => {
+    setTrackOutputRoutes(seededTrackOutputRoutes);
+  }, [seededTrackOutputRoutes]);
 
   useEffect(() => {
     if (hasProvidedTracks) {
@@ -1415,14 +1492,14 @@ export function LiveDirectorView({
       setSoloTrackId(null);
 
       try {
-        await initialize(activeTracks);
+        await initialize(activeEngineTracks);
         if (cancelled) {
           return;
         }
 
         setIsInitializingSession(false);
         setBusyMessage(null);
-        console.log(`[LiveDirectorView] Initialized ${activeTracks.length} track(s).`);
+        console.log(`[LiveDirectorView] Initialized ${activeEngineTracks.length} track(s).`);
       } catch (error) {
         if (cancelled) {
           return;
@@ -1706,6 +1783,7 @@ export function LiveDirectorView({
           isMuted: track.isMuted,
           enabled: track.enabled !== false,
           sourceFileName: track.sourceFileName,
+          outputRoute: resolveTrackOutputRoute(track),
         })),
         unmatchedFiles: payload.unmatchedFiles || [],
         sectionOffsetSeconds: Number.isFinite(Number(payload.sectionOffsetSeconds))
@@ -1753,6 +1831,7 @@ export function LiveDirectorView({
             isMuted: track.isMuted,
             enabled: track.enabled !== false,
             sourceFileName: track.sourceFileName,
+            outputRoute: resolveTrackOutputRoute(track),
           })),
           unmatchedFiles: manualSession.unmatchedFiles || [],
           sectionOffsetSeconds: safeOffset,
@@ -1792,8 +1871,15 @@ export function LiveDirectorView({
         songId,
         session: {
           mode: manualSession.mode,
-          tracks: nextTracks.map(({ id, name, url, volume, isMuted, enabled, sourceFileName }) => ({
-            id, name, url, volume, isMuted, enabled, sourceFileName
+          tracks: nextTracks.map(({ id, name, url, volume, isMuted, enabled, sourceFileName, outputRoute }) => ({
+            id,
+            name,
+            url,
+            volume,
+            isMuted,
+            enabled,
+            sourceFileName,
+            outputRoute: resolveTrackOutputRoute({ id, name, outputRoute }),
           })),
           unmatchedFiles: manualSession.unmatchedFiles || [],
           sectionOffsetSeconds: Number(manualSession.sectionOffsetSeconds) || 0,
@@ -2107,6 +2193,49 @@ export function LiveDirectorView({
     soloTrack(trackId);
     setSoloTrackId((previous) => (previous === trackId ? null : trackId));
   };
+
+  const handleToggleGuideTrackRoute = useCallback((trackId: string) => {
+    if (!hasTrackSession) {
+      return;
+    }
+
+    const sourceTracks = hasProvidedTracks ? sessionTracks : manualSession?.tracks || [];
+    const targetTrack = sourceTracks.find((track) => track.id === trackId);
+
+    if (!targetTrack || !isGuideRoutingTrack(targetTrack)) {
+      return;
+    }
+
+    const currentOutputRoute = trackOutputRoutes[trackId] ?? resolveTrackOutputRoute(targetTrack);
+    const nextOutputRoute = toggleGuideTrackOutputRoute({
+      ...targetTrack,
+      outputRoute: currentOutputRoute,
+    });
+
+    setTrackOutputRoutes((previous) => ({
+      ...previous,
+      [trackId]: nextOutputRoute,
+    }));
+    setTrackOutputRoute(trackId, nextOutputRoute);
+
+    if (!manualSession) {
+      return;
+    }
+
+    const nextTracks = manualSession.tracks.map((track) => (
+      track.id === trackId
+        ? { ...track, outputRoute: nextOutputRoute }
+        : track
+    ));
+
+    setManualSession((previous) => (
+      previous ? { ...previous, tracks: nextTracks } : previous
+    ));
+
+    if (hasPersistedSongContext) {
+      void commitMixerStateSilent(nextTracks);
+    }
+  }, [commitMixerStateSilent, hasPersistedSongContext, hasProvidedTracks, hasTrackSession, manualSession, sessionTracks, setTrackOutputRoute, trackOutputRoutes]);
 
   const handleEngineToggle = useCallback(() => {
     setLoadError(null);
@@ -3001,6 +3130,8 @@ export function LiveDirectorView({
                     soloed={track.soloed}
                     dimmed={track.dimmed}
                     disabled={track.disabled}
+                    outputRoute={track.outputRoute}
+                    showRouteFlip={track.showRouteFlip}
                     compact={isCompactLandscape}
                     ultraCompact={isUltraCompactLandscape}
                     onVolumeChange={(nextVolume) => {
@@ -3029,6 +3160,11 @@ export function LiveDirectorView({
                       }
 
                       handleSoloTrack(track.id);
+                    }}
+                    onToggleOutputRoute={() => {
+                      if (!isInternalPadTrack) {
+                        handleToggleGuideTrackRoute(track.id);
+                      }
                     }}
                   />
                 );

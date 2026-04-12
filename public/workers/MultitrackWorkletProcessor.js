@@ -36,6 +36,10 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         trackIndex: message.trackIndex,
         volume: 1,
         isMuted: false,
+        outputRoute:
+          message.outputRoute === 'left' || message.outputRoute === 'right'
+            ? message.outputRoute
+            : 'stereo',
         capacity: message.capacity,
         sampleRate: message.sampleRate,
         channelCount: message.channelCount,
@@ -64,6 +68,10 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
               : index,
           volume: typeof track.volume === 'number' ? track.volume : 1,
           isMuted: !!track.isMuted,
+          outputRoute:
+            track.outputRoute === 'left' || track.outputRoute === 'right'
+              ? track.outputRoute
+              : 'stereo',
           capacity: track.capacity,
           sampleRate: track.sampleRate,
           channelCount: track.channelCount,
@@ -91,6 +99,11 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
     if (type === 'track-mute') {
       this.setTrackMuteByIndex(message.trackIndex, message.muted);
+      return;
+    }
+
+    if (type === 'track-output-route') {
+      this.setTrackOutputRouteByIndex(message.trackIndex, message.outputRoute);
       return;
     }
 
@@ -171,6 +184,10 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         trackIndex,
         volume: this.clampVolume(config.volume),
         isMuted: !!config.isMuted,
+        outputRoute:
+          config.outputRoute === 'left' || config.outputRoute === 'right'
+            ? config.outputRoute
+            : 'stereo',
         capacity,
         indexCapacity: capacity * 2,
         usesSharedMemory,
@@ -197,6 +214,10 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       );
       track.isMuted =
         typeof config.isMuted === 'boolean' ? config.isMuted : track.isMuted;
+      track.outputRoute =
+        config.outputRoute === 'left' || config.outputRoute === 'right'
+          ? config.outputRoute
+          : track.outputRoute;
       track.capacity = capacity;
       track.indexCapacity = capacity * 2;
       track.usesSharedMemory = usesSharedMemory;
@@ -271,6 +292,17 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
 
     track.isMuted = !!muted;
+  }
+
+  setTrackOutputRouteByIndex(trackIndex, outputRoute) {
+    const track = this.getTrackByIndex(trackIndex);
+
+    if (!track) {
+      return;
+    }
+
+    track.outputRoute =
+      outputRoute === 'left' || outputRoute === 'right' ? outputRoute : 'stereo';
   }
 
   appendTrackChunk(trackIndex, pcmBuffer, frameCount) {
@@ -410,6 +442,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     } else if (outputChannelCount === 2) {
       const left = output[0];
       const right = output[1];
+      const outputRoute = track.outputRoute || 'stereo';
 
       for (let frameIndex = 0; frameIndex < framesToRead; frameIndex += 1) {
         const sample = samples[this.toSampleIndex(nextReadIndex, track.capacity)] * volume;
@@ -417,8 +450,14 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         if (absoluteSample > peakSample) {
           peakSample = absoluteSample;
         }
-        left[frameIndex] += sample;
-        right[frameIndex] += sample;
+        if (outputRoute === 'right') {
+          right[frameIndex] += sample;
+        } else if (outputRoute === 'left') {
+          left[frameIndex] += sample;
+        } else {
+          left[frameIndex] += sample;
+          right[frameIndex] += sample;
+        }
         nextReadIndex = this.advanceIndex(nextReadIndex, 1, track.indexCapacity);
       }
     } else {
@@ -483,6 +522,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     } else if (outputChannelCount === 2) {
       const left = output[0];
       const right = output[1];
+      const outputRoute = track.outputRoute || 'stereo';
 
       for (let frameIndex = 0; frameIndex < framesToRead; frameIndex += 1) {
         const sample = samples[this.toSampleIndex(nextReadIndex, track.capacity)] * volume;
@@ -490,8 +530,14 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         if (absoluteSample > peakSample) {
           peakSample = absoluteSample;
         }
-        left[frameIndex] += sample;
-        right[frameIndex] += sample;
+        if (outputRoute === 'right') {
+          right[frameIndex] += sample;
+        } else if (outputRoute === 'left') {
+          left[frameIndex] += sample;
+        } else {
+          left[frameIndex] += sample;
+          right[frameIndex] += sample;
+        }
         nextReadIndex = this.advanceIndex(nextReadIndex, 1, track.indexCapacity);
       }
     } else {
