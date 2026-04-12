@@ -18,6 +18,48 @@ const DEFAULT_SETTINGS = {
   showSectionMap: true,
   showSongInfo: true,
   fontSize: 'standard',
+  capoFret: 0,
+};
+
+const SETTINGS_STORAGE_KEY = 'confidence_monitor_settings';
+
+const loadSettings = () => {
+  try {
+    const stored = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!stored) return DEFAULT_SETTINGS;
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(stored) };
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+};
+
+const CAPO_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const CAPO_FLAT_MAP = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
+
+const transposeNoteForCapo = (note, fret) => {
+  const n = CAPO_FLAT_MAP[note] || note;
+  const idx = CAPO_NOTES.indexOf(n);
+  if (idx === -1) return note;
+  return CAPO_NOTES[((idx - fret) % 12 + 12) % 12];
+};
+
+const transposeChordForCapo = (chord, fret) => {
+  if (!fret || !chord) return chord;
+  const slashIdx = chord.indexOf('/');
+  const transposeToken = (token) => {
+    const m = token.match(/^([A-G][#b]?)(.*)/);
+    if (!m) return token;
+    return transposeNoteForCapo(m[1], fret) + m[2];
+  };
+  if (slashIdx > 0) {
+    return transposeToken(chord.slice(0, slashIdx)) + '/' + transposeToken(chord.slice(slashIdx + 1));
+  }
+  return transposeToken(chord);
+};
+
+const transposeLineForCapo = (line, fret) => {
+  if (!fret) return line;
+  return String(line || '').replace(/\[([^\]]+)\]/g, (_, chord) => `[${transposeChordForCapo(chord, fret)}]`);
 };
 
 const SYNC_ANTICIPATION_SEC = 0.85;
@@ -306,7 +348,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
   const [activeSectionIndex, setActiveSectionIndex] = useState(0);
   const [activeCueIndex, setActiveCueIndex] = useState(0);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
-  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState(loadSettings);
   const [showSettings, setShowSettings] = useState(false);
   const [sectionTimeRemaining, setSectionTimeRemaining] = useState(null);
   const [runtimeTrackDurations, setRuntimeTrackDurations] = useState({});
@@ -801,6 +843,10 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
   }, [moveToCue, showSettings, timeline.tracks.length]);
 
   useEffect(() => {
+    try { localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings)); } catch {}
+  }, [settings]);
+
+  useEffect(() => {
     let wakeLock = null;
 
     const requestWakeLock = async () => {
@@ -970,8 +1016,19 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
 
   const isMobile = Math.min(viewport.width, viewport.height) < 500;
 
+  const longPressRef = React.useRef(null);
+  const onTouchStart = React.useCallback(() => {
+    longPressRef.current = setTimeout(() => setShowSettings(true), 800);
+  }, []);
+  const onTouchEnd = React.useCallback(() => {
+    clearTimeout(longPressRef.current);
+  }, []);
+
   return (
     <div
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+      onTouchMove={onTouchEnd}
       style={{
         width: '100vw',
         height: '100dvh',
@@ -1181,7 +1238,10 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                       <MonitorChordOverlayLine
                         segments={
                           settings.showChords
-                            ? segments
+                            ? segments.map((segment) => ({
+                                ...segment,
+                                chord: transposeChordForCapo(segment.chord, settings.capoFret),
+                              }))
                             : segments.map((segment) => ({ ...segment, chord: '' }))
                         }
                         lineKey={`${activeCue.id}-line-${lineIndex}`}
@@ -1215,7 +1275,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                         lineHeight: 1.2,
                       }}
                     >
-                      {activeCue.rawLines.join('   ')}
+                      {activeCue.rawLines.map((l) => transposeLineForCapo(l, settings.capoFret)).join('   ')}
                     </div>
                   </div>
                 )}
@@ -1362,7 +1422,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                       }}
                     >
                       <MonitorChordDisplay
-                        chord={nextCuePrimaryChord}
+                        chord={transposeChordForCapo(nextCuePrimaryChord, settings.capoFret)}
                         fontSize={viewport.width >= 1180 ? 44 : 40}
                         color={toRgba(nextCue?.sectionColor || activeCue?.sectionColor || [249, 115, 22], 0.98)}
                       />
@@ -1640,6 +1700,34 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
               <span>{label}</span>
             </label>
           ))}
+
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: 1, textTransform: 'uppercase', opacity: 0.45, marginBottom: 10, textAlign: 'center' }}>
+              Capo (solo este dispositivo)
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[0, 1, 2, 3, 4, 5, 6, 7].map((fret) => (
+                <button
+                  key={fret}
+                  type="button"
+                  onClick={() => setSettings((c) => ({ ...c, capoFret: fret }))}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 8,
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontWeight: 800,
+                    fontSize: 14,
+                    background: settings.capoFret === fret ? '#f0f0f0' : 'rgba(255,255,255,0.1)',
+                    color: settings.capoFret === fret ? '#0a0a0a' : '#f0f0f0',
+                  }}
+                >
+                  {fret === 0 ? 'Ø' : fret}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <button
             type="button"
