@@ -968,6 +968,8 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     viewport.height,
   ]);
 
+  const isMobile = Math.min(viewport.width, viewport.height) < 500;
+
   return (
     <div
       style={{
@@ -993,12 +995,12 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
       {settings.showSongInfo && (
         <div
           style={{
-            height: 40,
+            height: isMobile ? 32 : 40,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '0 20px',
-            fontSize: 16,
+            padding: isMobile ? '0 12px' : '0 20px',
+            fontSize: isMobile ? 13 : 16,
             fontWeight: 600,
             opacity: 0.76,
             borderBottom: '1px solid rgba(255,255,255,0.08)',
@@ -1016,7 +1018,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
             <span
               style={{
                 opacity: 0.45,
-                fontSize: 13,
+                fontSize: isMobile ? 11 : 13,
                 fontWeight: 700,
                 letterSpacing: 0.8,
                 textTransform: 'uppercase',
@@ -1040,10 +1042,10 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
             {activeTrack?.key && activeTrack.key !== '-' && (
               <span
                 style={{
-                  padding: '2px 8px',
+                  padding: isMobile ? '2px 6px' : '2px 8px',
                   borderRadius: 4,
                   background: 'rgba(255,255,255,0.1)',
-                  fontSize: 14,
+                  fontSize: isMobile ? 11 : 14,
                 }}
               >
                 {activeTrack.key}
@@ -1052,16 +1054,16 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
             {bpmLabel && (
               <span
                 style={{
-                  padding: '2px 8px',
+                  padding: isMobile ? '2px 6px' : '2px 8px',
                   borderRadius: 4,
                   background: 'rgba(255,255,255,0.1)',
-                  fontSize: 14,
+                  fontSize: isMobile ? 11 : 14,
                 }}
               >
                 {bpmLabel}
               </span>
             )}
-            <span style={{ fontSize: 14, opacity: 0.55 }}>
+            <span style={{ fontSize: isMobile ? 11 : 14, opacity: 0.55 }}>
               {timeline.tracks.length > 0 ? `${activeTrackIndex + 1}/${timeline.tracks.length}` : '0/0'}
             </span>
           </div>
@@ -1071,20 +1073,20 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
       {activeCue && (
         <div
           style={{
-            height: 52,
+            height: isMobile ? 28 : 52,
             display: 'flex',
             alignItems: 'center',
-            gap: 12,
-            padding: '0 20px',
+            gap: isMobile ? 8 : 12,
+            padding: isMobile ? '0 10px' : '0 20px',
           }}
         >
           <span
             style={{
               display: 'inline-block',
-              padding: '4px 14px',
+              padding: isMobile ? '3px 10px' : '4px 14px',
               borderRadius: 6,
               fontWeight: 900,
-              fontSize: 18,
+              fontSize: isMobile ? 13 : 18,
               textTransform: 'uppercase',
               letterSpacing: 1,
               background: toRgba(activeCue.sectionColor, 0.22),
@@ -1093,9 +1095,11 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
           >
             {activeCue.sectionShortLabel}
           </span>
-          <span style={{ fontSize: 15, opacity: 0.55, fontWeight: 600 }}>
-            {activeCue.sectionLabel}
-          </span>
+          {!isMobile && (
+            <span style={{ fontSize: 15, opacity: 0.55, fontWeight: 600 }}>
+              {activeCue.sectionLabel}
+            </span>
+          )}
           {activeCue.totalCuesInSection > 1 && (
             <div style={{ display: 'flex', gap: 6, marginLeft: 8 }}>
               {Array.from({ length: activeCue.totalCuesInSection }, (_, index) => (
@@ -1122,7 +1126,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
           flex: 1,
           display: 'flex',
           flexDirection: 'column',
-          padding: '0 24px 10px',
+          padding: isMobile ? '0 10px 6px' : '0 24px 10px',
           transition: 'opacity 300ms ease',
           minHeight: 0,
         }}
@@ -1226,7 +1230,56 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
           )}
         </div>
 
-        {showBottomPreview && (
+        {showBottomPreview && isMobile && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '0 8px',
+              height: 32,
+              flexShrink: 0,
+              borderTop: '1px solid rgba(255,255,255,0.07)',
+              overflow: 'hidden',
+            }}
+          >
+            <span style={{ fontSize: 8, fontWeight: 900, letterSpacing: 1, textTransform: 'uppercase', opacity: 0.32, flexShrink: 0 }}>
+              Sigue
+            </span>
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 800,
+                color: nextCue ? toRgba(nextCue.sectionColor, 0.9) : '#f0f0f0',
+                flexShrink: 0,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {nextCueTitle}
+            </span>
+            {nextCuePreviewLines[0] && (
+              <>
+                <span style={{ opacity: 0.2, flexShrink: 0, fontSize: 10 }}>›</span>
+                <span
+                  style={{
+                    fontSize: 17,
+                    fontWeight: 500,
+                    opacity: 0.72,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    flex: 1,
+                    minWidth: 0,
+                  }}
+                >
+                  {nextCuePreviewLines[0]}
+                </span>
+              </>
+            )}
+          </div>
+        )}
+
+        {showBottomPreview && !isMobile && (
           <div
             style={{
               display: 'flex',
@@ -1384,7 +1437,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                             wordBreak: 'break-word',
                             overflow: 'hidden',
                             display: '-webkit-box',
-                            WebkitLineClamp: index === 0 ? 2 : 2,
+                            WebkitLineClamp: 2,
                             WebkitBoxOrient: 'vertical',
                           }}
                         >
@@ -1448,7 +1501,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
 
       <div
         style={{
-          height: 64,
+          height: isMobile ? 44 : 64,
           display: 'flex',
           alignItems: 'center',
           borderTop: '1px solid rgba(255,255,255,0.08)',
@@ -1457,18 +1510,18 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
         }}
       >
         {settings.showSectionMap && activeTrack && (
-          <div style={{ flex: 1, display: 'flex', height: 42, padding: '0 6px', gap: 4 }}>
+          <div style={{ flex: 1, display: 'flex', height: isMobile ? 28 : 42, padding: '0 6px', gap: isMobile ? 3 : 4 }}>
             {activeTrack.sections.map((section, index) => (
               <div
                 key={`${activeTrack.songId}-section-${section.index}`}
                 style={{
                   flex: 1,
                   minWidth: 0,
-                  borderRadius: 6,
+                  borderRadius: isMobile ? 4 : 6,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontSize: 13,
+                  fontSize: isMobile ? 10 : 13,
                   fontWeight: 800,
                   background:
                     index === activeSectionIndex
@@ -1490,9 +1543,9 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
         {settings.showCountdown && sectionTimeRemaining != null && (
           <div
             style={{
-              width: 120,
+              width: isMobile ? 76 : 120,
               textAlign: 'center',
-              fontSize: Math.min(fontScale.countdown, 38),
+              fontSize: isMobile ? Math.min(fontScale.countdown, 24) : Math.min(fontScale.countdown, 38),
               fontWeight: 900,
               fontVariantNumeric: 'tabular-nums',
               color: sectionTimeRemaining < 5 ? '#ef4444' : '#f0f0f0',

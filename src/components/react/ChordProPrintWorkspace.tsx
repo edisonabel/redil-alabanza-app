@@ -28,7 +28,9 @@ type ChordProPrintWorkspaceProps = {
 };
 
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-const CAPO_OPTIONS = [0, 3, 5, 7, 10];
+const CAPO_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7];
+const OPEN_SHAPE_ROOTS = new Set(['C', 'D', 'E', 'G', 'A']);
+const OPEN_MINOR_ROOTS = new Set(['A', 'D', 'E']);
 const FLAT_TO_SHARP: Record<string, string> = {
   Db: 'C#',
   Eb: 'D#',
@@ -142,6 +144,41 @@ const getShiftedTone = (tone: string, steps: number) => {
   return NOTES[shiftedIndex];
 };
 
+const scoreCapoChord = (chord: string) => {
+  const rootMatch = chord.match(/^([A-G][#b]?)/);
+  if (!rootMatch) return 0;
+  let root = rootMatch[1];
+  if (FLAT_TO_SHARP[root]) root = FLAT_TO_SHARP[root];
+  const afterRoot = chord.slice(rootMatch[0].length);
+  const bassIdx = afterRoot.indexOf('/');
+  const suffix = (bassIdx >= 0 ? afterRoot.slice(0, bassIdx) : afterRoot).toLowerCase();
+  const bassRaw = bassIdx >= 0 ? afterRoot.slice(bassIdx + 1) : '';
+  let score = 0;
+  if (OPEN_SHAPE_ROOTS.has(root)) score += 3.2;
+  else if (root === 'F' || root === 'B') score -= 2.2;
+  else score -= 0.8;
+  if (root.includes('#')) score -= 3.4;
+  if (suffix.startsWith('m') && OPEN_MINOR_ROOTS.has(root)) score += 0.9;
+  if (bassRaw) {
+    let bassRoot = (bassRaw.match(/^([A-G][#b]?)/) || [])[1] || '';
+    if (FLAT_TO_SHARP[bassRoot]) bassRoot = FLAT_TO_SHARP[bassRoot];
+    if (OPEN_SHAPE_ROOTS.has(bassRoot)) score += 0.8;
+    else score -= 0.4;
+    if (bassRoot.includes('#')) score -= 1.4;
+  }
+  return score;
+};
+
+const scoreCapoKey = (key: string) => {
+  let norm = String(key || '').trim();
+  if (!norm || norm === '-') return 0;
+  if (FLAT_TO_SHARP[norm]) norm = FLAT_TO_SHARP[norm];
+  if (OPEN_SHAPE_ROOTS.has(norm)) return 4.5;
+  if (norm === 'F' || norm === 'B') return -2.2;
+  if (norm.includes('#')) return -4.2;
+  return -0.6;
+};
+
 const formatDelta = (steps: number) => {
   if (steps === 0) return 'Original';
   return steps > 0 ? `+${steps}` : String(steps);
@@ -247,6 +284,44 @@ export default function ChordProPrintWorkspace({
     () => getSignedSemitoneDelta(originalTone, targetTone),
     [originalTone, targetTone]
   );
+
+  const songChordTokens = useMemo(() => {
+    const tokens: string[] = [];
+    const seen = new Set<string>();
+    String(initialChordProText || '').replace(/\[([^\]]+)\]/g, (_, chord) => {
+      const safe = String(chord || '').trim();
+      if (isTransposableChordToken(safe) && !seen.has(safe)) {
+        seen.add(safe);
+        tokens.push(safe);
+      }
+      return '';
+    });
+    return tokens;
+  }, [initialChordProText]);
+
+  const capoScores = useMemo(() => {
+    const base = targetTone || originalTone;
+    return CAPO_OPTIONS.map((fret) => {
+      const shapeKey = fret > 0 ? getShiftedTone(base, -fret) : base;
+      const steps = semitoneDelta - fret;
+      const score = songChordTokens.reduce(
+        (total, token) => total + scoreCapoChord(transposeChord(token, steps)),
+        0
+      ) + scoreCapoKey(shapeKey);
+      return { fret, shapeKey, score };
+    });
+  }, [targetTone, originalTone, songChordTokens, semitoneDelta]);
+
+  const recommendedCapo = useMemo(() => {
+    const candidates = capoScores.filter((o) => o.fret > 0 && songChordTokens.length > 0);
+    if (candidates.length === 0) return null;
+    return candidates.reduce((best, option) => {
+      if (!best) return option;
+      if (option.score > best.score + 0.01) return option;
+      if (Math.abs(option.score - best.score) <= 0.01 && option.fret < best.fret) return option;
+      return best;
+    }, null as (typeof candidates)[0] | null);
+  }, [capoScores, songChordTokens]);
 
   const displayedTone = useMemo(
     () => getShiftedTone(targetTone, -selectedCapo),
@@ -533,17 +608,26 @@ export default function ChordProPrintWorkspace({
                 {selectedCapo > 0 ? `${selectedCapo} / ${displayedTone || '--'}` : 'Sin capo'}
               </span>
             </div>
-            <div className="grid grid-cols-5 gap-2">
-              {CAPO_OPTIONS.map((fret) => (
-                <button
-                  key={fret}
-                  type="button"
-                  className={getOptionButtonClass(selectedCapo === fret, isDarkTheme)}
-                  onClick={() => setSelectedCapo(fret)}
-                >
-                  {fret === 0 ? 'Ø' : fret}
-                </button>
-              ))}
+            <div className="grid grid-cols-8 gap-1.5">
+              {CAPO_OPTIONS.map((fret) => {
+                const isRec = recommendedCapo?.fret === fret;
+                return (
+                  <div key={fret} className="relative flex flex-col items-center gap-0.5">
+                    <button
+                      type="button"
+                      className={getOptionButtonClass(selectedCapo === fret, isDarkTheme)}
+                      onClick={() => setSelectedCapo(fret)}
+                    >
+                      {fret === 0 ? 'Ø' : fret}
+                    </button>
+                    {isRec && (
+                      <span className={['text-[9px] font-black uppercase tracking-wide', isDarkTheme ? 'text-emerald-400' : 'text-emerald-600'].join(' ')}>
+                        ★
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </section>
 

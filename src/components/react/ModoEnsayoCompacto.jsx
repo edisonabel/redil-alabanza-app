@@ -31,6 +31,9 @@ const FONT_SCALE_SEQUENCE = ['grande', 'enorme'];
 const SHARP_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_TO_SHARP = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
 const TRANSPOSE_OPTIONS = [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6];
+const CAPO_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7];
+const OPEN_SHAPE_ROOTS = new Set(['C', 'D', 'E', 'G', 'A']);
+const OPEN_MINOR_ROOTS = new Set(['A', 'D', 'E']);
 const TRACK_DEFAULT_GAIN = 1;
 const TRACK_DUCKED_GAIN = 0.38;
 const TRACK_DUCK_IN_DURATION_MS = 3200;
@@ -334,6 +337,67 @@ const transposeChordProLine = (line, steps = 0) => {
   if (!line || !steps) return line;
   return String(line).replace(/\[([^\]]+)\]/g, (_match, chord) => `[${transposeChordToken(chord, steps)}]`);
 };
+const extractChordTokensFromSections = (sections = []) => {
+  if (!Array.isArray(sections)) return [];
+  return sections.flatMap((section) => (
+    Array.isArray(section?.lines)
+      ? section.lines.flatMap((line) => (
+        parseChordProLine(line)
+          .map((segment) => segment?.chord)
+          .filter(Boolean)
+      ))
+      : []
+  ));
+};
+const normalizeChordRoot = (root = '', accidental = '') => (
+  FLAT_TO_SHARP[`${root}${accidental}`] || `${root}${accidental}`
+);
+const scoreCapoShapeChord = (chord = '') => {
+  const parts = splitChordDisplayParts(chord);
+  if (!parts) return 0;
+
+  const root = normalizeChordRoot(parts.root, parts.accidental);
+  const suffix = String(parts.suffix || '').toLowerCase();
+  let score = 0;
+
+  if (OPEN_SHAPE_ROOTS.has(root)) {
+    score += 3.2;
+  } else if (root === 'F' || root === 'B') {
+    score -= 2.2;
+  } else {
+    score -= 0.8;
+  }
+
+  if (root.includes('#')) {
+    score -= 3.4;
+  }
+
+  if ((suffix === 'm' || suffix.startsWith('m')) && OPEN_MINOR_ROOTS.has(root)) {
+    score += 0.9;
+  }
+
+  if (parts.bass) {
+    const bassRoot = normalizeChordRoot(parts.bass.root, parts.bass.accidental);
+    if (OPEN_SHAPE_ROOTS.has(bassRoot)) {
+      score += 0.8;
+    } else {
+      score -= 0.4;
+    }
+    if (bassRoot.includes('#')) {
+      score -= 1.4;
+    }
+  }
+
+  return score;
+};
+const scoreCapoPlayableKey = (key = '') => {
+  const normalizedKey = String(key || '').trim();
+  if (!normalizedKey || normalizedKey === '-') return 0;
+  if (OPEN_SHAPE_ROOTS.has(normalizedKey)) return 4.5;
+  if (normalizedKey === 'F' || normalizedKey === 'B') return -2.2;
+  if (normalizedKey.includes('#')) return -4.2;
+  return -0.6;
+};
 /* ── Word-group builder: splits segments into per-word tokens ── */
 const buildWordGroupsLegacy = (segments) => {
   // Step 1: classify each segment.
@@ -493,6 +557,7 @@ export default function ModoEnsayoCompacto({
   const [audioDuration, setAudioDuration] = useState(0);
   const [audioReady, setAudioReady] = useState(false);
   const [transposeSteps, setTransposeSteps] = useState(0);
+  const [capoFret, setCapoFret] = useState(0);
   const [isMetronomeOn, setIsMetronomeOn] = useState(false);
   const [loopState, setLoopState] = useState(0);
   const [isLandscapeCompact, setIsLandscapeCompact] = useState(false);
@@ -548,12 +613,40 @@ export default function ModoEnsayoCompacto({
   const currentSongBpm = Number.isFinite(Number(currentSong?.bpm)) ? Math.max(0, Math.round(Number(currentSong.bpm))) : 0;
   const originalSongKey = normalizeKeyToAmerican(currentSong?.originalKey || currentSong?.key || '-');
   const currentSongDisplayKey = useMemo(() => transposeChordToken(originalSongKey, transposeSteps), [originalSongKey, transposeSteps]);
+  const capoShapeKey = useMemo(() => (
+    capoFret > 0 ? transposeChordToken(currentSongDisplayKey, -capoFret) : currentSongDisplayKey
+  ), [capoFret, currentSongDisplayKey]);
+  const displayTransposeSteps = transposeSteps - capoFret;
+  const songChordTokens = useMemo(() => extractChordTokensFromSections(currentSong?.sections || []), [currentSong?.sections]);
   const transposeKeyOptions = useMemo(() => (
     TRANSPOSE_OPTIONS.map((steps) => ({
       steps,
       label: transposeChordToken(originalSongKey, steps),
     }))
   ), [originalSongKey]);
+  const capoOptions = useMemo(() => (
+    CAPO_OPTIONS.map((fret) => {
+      const shapeKey = fret > 0 ? transposeChordToken(currentSongDisplayKey, -fret) : currentSongDisplayKey;
+      const score = songChordTokens.reduce((total, token) => (
+        total + scoreCapoShapeChord(transposeChordToken(token, transposeSteps - fret))
+      ), 0) + scoreCapoPlayableKey(shapeKey);
+      return {
+        fret,
+        shapeKey,
+        score,
+      };
+    })
+  ), [currentSongDisplayKey, songChordTokens, transposeSteps]);
+  const recommendedCapoOption = useMemo(() => {
+    const candidates = capoOptions.filter((option) => option.fret > 0 && option.shapeKey !== '-' && songChordTokens.length > 0);
+    if (candidates.length === 0) return null;
+    return candidates.reduce((bestOption, option) => {
+      if (!bestOption) return option;
+      if (option.score > bestOption.score + 0.01) return option;
+      if (Math.abs(option.score - bestOption.score) <= 0.01 && option.fret < bestOption.fret) return option;
+      return bestOption;
+    }, null);
+  }, [capoOptions, songChordTokens]);
   const activePadUrl = useMemo(() => {
     if (!currentSongDisplayKey || currentSongDisplayKey === '-') return null;
     const safeKey = currentSongDisplayKey.replace('#', 'Sharp').replace('b', 'Flat');
@@ -563,10 +656,10 @@ export default function ModoEnsayoCompacto({
     (currentSong?.sections || []).map((section) => ({
       ...section,
       lines: Array.isArray(section?.lines)
-        ? section.lines.map((line) => transposeChordProLine(line, transposeSteps))
+        ? section.lines.map((line) => transposeChordProLine(line, displayTransposeSteps))
         : [],
     }))
-  ), [currentSong?.sections, transposeSteps]);
+  ), [currentSong?.sections, displayTransposeSteps]);
   const sectionMapItems = useMemo(() => {
     const kindOccurrences = new Map();
     return currentSections.map((section, index) => {
@@ -1047,6 +1140,7 @@ export default function ModoEnsayoCompacto({
       audioRef.current.currentTime = 0;
     }
     setTransposeSteps(0);
+    setCapoFret(0);
     setLoopState(0);
     setShowOptionsMenu(false);
     setShowPlaybackOptions(false);
@@ -1599,14 +1693,19 @@ export default function ModoEnsayoCompacto({
                 <SlidersHorizontal className="h-4.5 w-4.5" />
               </button>
               {showOptionsMenu && (
-                <div className="absolute right-0 top-[calc(100%+0.55rem)] z-50 w-[15rem] rounded-[1.35rem] border border-zinc-200/85 bg-white/96 p-3.5 shadow-[0_18px_50px_rgba(15,23,42,0.22)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/96 flex flex-col gap-4">
+                <div className="absolute right-0 top-[calc(100%+0.55rem)] z-50 flex max-h-[min(30rem,calc(100vh-6rem))] w-[16.25rem] flex-col gap-3 overflow-y-auto rounded-[1.35rem] border border-zinc-200/85 bg-white/96 p-3 shadow-[0_18px_50px_rgba(15,23,42,0.22)] backdrop-blur-xl [scrollbar-width:none] dark:border-white/10 dark:bg-zinc-950/96 [&::-webkit-scrollbar]:hidden">
                   {/* Tono */}
                   {originalSongKey !== '-' && (
                     <div>
-                      <p className="mb-2 px-1 text-[0.72rem] font-black uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
-                        Tonalidad
-                      </p>
-                      <div className="grid grid-cols-3 gap-1.5">
+                      <div className="mb-2 flex items-center justify-between gap-2 px-1">
+                        <p className="text-[0.72rem] font-black uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+                          Tonalidad
+                        </p>
+                        <span className="rounded-full border border-zinc-200/80 bg-zinc-100/80 px-2 py-1 text-[0.72rem] font-black leading-none text-zinc-700 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-200">
+                          {formatChordAccidentals(currentSongDisplayKey)}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1.5">
                         {transposeKeyOptions.map((option, optionIndex) => {
                           const active = option.steps === transposeSteps;
                           return (
@@ -1614,13 +1713,13 @@ export default function ModoEnsayoCompacto({
                               key={`transpose-option-${option.steps}-${optionIndex}`}
                               type="button"
                               onClick={() => setTransposeSteps(option.steps)}
-                              className={`rounded-[0.9rem] border px-2 py-3.5 text-center text-base font-black leading-none transition-all ${active
+                              className={`rounded-[0.85rem] border px-2 py-2.5 text-center text-sm font-black leading-none transition-all ${active
                                 ? 'border-brand bg-brand text-white shadow-[0_8px_20px_rgba(59,130,246,0.32)]'
                                 : 'border-zinc-200 bg-white text-zinc-900 hover:border-zinc-300 hover:bg-zinc-50 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800'
                                 }`}
                               aria-pressed={active}
                             >
-                              {option.label}
+                              {formatChordAccidentals(option.label)}
                             </button>
                           );
                         })}
@@ -1628,6 +1727,62 @@ export default function ModoEnsayoCompacto({
                     </div>
                   )}
                   {/* Tamaño */}
+                  {originalSongKey !== '-' && songChordTokens.length > 0 && (
+                    <div>
+                      <div className="mb-2 flex items-start justify-between gap-2 px-1">
+                        <div className="min-w-0">
+                          <p className="text-[0.72rem] font-black uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+                            Capo
+                          </p>
+                          <p className="mt-1 text-[0.68rem] font-semibold leading-tight text-zinc-500 dark:text-zinc-400">
+                            {capoFret > 0
+                              ? `Suena ${formatChordAccidentals(currentSongDisplayKey)} · Tocas ${formatChordAccidentals(capoShapeKey)}`
+                              : `Sin capo · Tocas ${formatChordAccidentals(currentSongDisplayKey)}`}
+                          </p>
+                        </div>
+                        {recommendedCapoOption && (
+                          <span className="shrink-0 rounded-full border border-amber-300/70 bg-amber-400/12 px-2 py-1 text-[0.62rem] font-black uppercase tracking-[0.12em] text-amber-700 dark:border-amber-400/30 dark:bg-amber-400/12 dark:text-amber-200">
+                            Sug {recommendedCapoOption.fret}
+                          </span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {capoOptions.map((option) => {
+                          const active = option.fret === capoFret;
+                          const suggested = option.fret > 0 && option.fret === recommendedCapoOption?.fret;
+                          return (
+                            <button
+                              key={`capo-option-${option.fret}`}
+                              type="button"
+                              onClick={() => setCapoFret(option.fret)}
+                              className={`relative flex min-h-[3.7rem] flex-col items-start justify-between rounded-[0.95rem] border px-2.5 py-2 text-left transition-all ${active
+                                ? 'border-brand bg-brand text-white shadow-[0_8px_20px_rgba(59,130,246,0.32)]'
+                                : suggested
+                                  ? 'border-amber-300/70 bg-amber-400/10 text-zinc-900 shadow-[0_8px_18px_rgba(245,158,11,0.16)] dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-zinc-50'
+                                  : 'border-zinc-200 bg-white text-zinc-900 hover:border-zinc-300 hover:bg-zinc-50 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800'
+                                }`}
+                              aria-pressed={active}
+                              title={option.fret === 0 ? 'Sin capo' : `Capo ${option.fret}`}
+                            >
+                              <div className="flex w-full items-center justify-between gap-2">
+                                <span className={`text-[0.62rem] font-black uppercase tracking-[0.18em] ${active ? 'text-white/80' : 'text-zinc-500 dark:text-zinc-400'}`}>
+                                  {option.fret === 0 ? 'Off' : `C${option.fret}`}
+                                </span>
+                                {suggested && !active && (
+                                  <span className="rounded-full bg-amber-500/14 px-1.5 py-0.5 text-[0.5rem] font-black uppercase tracking-[0.08em] text-amber-700 dark:text-amber-200">
+                                    Sug
+                                  </span>
+                                )}
+                              </div>
+                              <span className={`text-lg font-black leading-none ${active ? 'text-white' : ''}`}>
+                                {formatChordAccidentals(option.shapeKey)}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                   <div>
                     <p className="mb-2 px-1 text-[0.72rem] font-black uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
                       Tamaño de texto
