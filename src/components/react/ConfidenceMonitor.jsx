@@ -1016,19 +1016,8 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
 
   const isMobile = Math.min(viewport.width, viewport.height) < 500;
 
-  const longPressRef = React.useRef(null);
-  const onTouchStart = React.useCallback(() => {
-    longPressRef.current = setTimeout(() => setShowSettings(true), 800);
-  }, []);
-  const onTouchEnd = React.useCallback(() => {
-    clearTimeout(longPressRef.current);
-  }, []);
-
   return (
     <div
-      onTouchStart={onTouchStart}
-      onTouchEnd={onTouchEnd}
-      onTouchMove={onTouchEnd}
       style={{
         width: '100vw',
         height: '100dvh',
@@ -1123,6 +1112,30 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
             <span style={{ fontSize: isMobile ? 11 : 14, opacity: 0.55 }}>
               {timeline.tracks.length > 0 ? `${activeTrackIndex + 1}/${timeline.tracks.length}` : '0/0'}
             </span>
+            {isMobile && (
+              <button
+                type="button"
+                onClick={() => setShowSettings(true)}
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: 4,
+                  border: 'none',
+                  background: settings.capoFret > 0 ? 'rgba(99,102,241,0.35)' : 'rgba(255,255,255,0.08)',
+                  color: settings.capoFret > 0 ? '#a5b4fc' : 'rgba(255,255,255,0.5)',
+                  fontSize: 11,
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  lineHeight: 1,
+                }}
+              >
+                {settings.capoFret > 0 ? `C${settings.capoFret}` : '⚙'}
+              </button>
+            )}
           </div>
         </div>
       )}
