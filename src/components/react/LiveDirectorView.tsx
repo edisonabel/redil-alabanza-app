@@ -12,7 +12,7 @@
   Upload,
   X,
 } from 'lucide-react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { useMultitrackEngine } from '../../hooks/useMultitrackEngine';
 import type { SongStructure, TrackData } from '../../services/MultitrackEngine';
 import {
@@ -95,6 +95,16 @@ type LiveDirectorPlaybackSnapshot = {
   currentTimeRaw?: number;
   sectionOffsetSeconds?: number;
   isPlaying: boolean;
+};
+
+type LiveDirectorSessionSavePayload = Omit<
+  LiveDirectorPersistedSession,
+  'folder' | 'manifestUrl' | 'updatedAt' | 'songId' | 'songTitle' | 'version'
+>;
+
+type PendingLiveDirectorSessionSave = {
+  songId: string;
+  payload: LiveDirectorSessionSavePayload;
 };
 
 type LiveDirectorViewProps = {
@@ -249,6 +259,15 @@ const shouldIgnoreDragScrollTarget = (target: EventTarget | null) => {
     Boolean(
       target.closest(
         'button, input, a, label, textarea, select, [role="button"], [role="slider"], [data-no-drag-scroll="true"]',
+      ),
+    );
+};
+
+const shouldIgnoreKeyboardShortcutTarget = (target: EventTarget | null) => {
+  return target instanceof Element &&
+    Boolean(
+      target.closest(
+        'input, textarea, select, button, a, [contenteditable="true"], [role="textbox"], [data-live-director-shortcuts="off"]',
       ),
     );
 };
@@ -517,20 +536,167 @@ const ChannelStrip = memo(function ChannelStrip({
   const knobGlow = muted ? 'rgba(120, 128, 140, 0.15)' : `${accent}30`;
   const meterHeightPercent = Math.max(0, level * 82);
   const meterOpacity = muted ? 0.18 : 0.24 + level * 0.76;
+  const shellRadiusClass = ultraCompact ? 'rounded-[0.75rem]' : compact ? 'rounded-[0.85rem]' : 'rounded-[1.2rem]';
+  const shellPaddingClass = ultraCompact ? 'px-0.75 pb-0.75 pt-0.85' : compact ? 'px-1.25 pb-1.25 pt-0.95' : 'px-3.5 pb-4 pt-3';
+  const topControlsClass = showRouteFlip
+    ? ultraCompact
+      ? 'mb-1 grid w-full max-w-[9.35rem] grid-cols-[minmax(0,1fr)_minmax(2.25rem,1fr)_minmax(0,1fr)] items-center gap-1.5 px-0.25'
+      : compact
+        ? 'mb-1.5 grid w-full max-w-[10.5rem] grid-cols-[minmax(0,1fr)_minmax(2.5rem,1fr)_minmax(0,1fr)] items-center gap-2 px-0.25'
+        : 'mb-2 flex w-full max-w-[8.5rem] items-center justify-between gap-1.5'
+    : ultraCompact
+      ? 'mb-1 grid w-full max-w-[6.35rem] grid-cols-2 items-center gap-1.5 px-0.25'
+      : compact
+        ? 'mb-1.5 grid w-full max-w-[7.25rem] grid-cols-2 items-center gap-2 px-0.25'
+        : 'mb-2 flex w-full max-w-[8.5rem] items-center justify-between gap-1.5';
+  const topButtonRadiusClass = ultraCompact ? 'rounded-[0.95rem]' : compact ? 'rounded-[1.05rem]' : 'rounded-full';
+  const sideButtonSizeClass = ultraCompact
+    ? 'min-h-[1.75rem] min-w-[1.75rem] w-full text-[0.45rem] tracking-[0.14em]'
+    : compact
+      ? 'min-h-[2rem] min-w-[2rem] w-full text-[0.5rem] tracking-[0.15em]'
+      : 'h-10 w-10 text-[0.76rem] tracking-[0.18em]';
+  const routeButtonSizeClass = ultraCompact
+    ? 'min-h-[1.75rem] min-w-[2.25rem] w-full px-0.5 text-[0.5rem] tracking-[0.12em]'
+    : compact
+      ? 'min-h-[2rem] min-w-[2.5rem] w-full px-1 text-[0.56rem] tracking-[0.13em]'
+      : 'h-10 min-w-[3.5rem] px-3 text-[0.62rem] tracking-[0.16em]';
+  const routeDividerSpacingClass = ultraCompact ? 'mx-0.5' : compact ? 'mx-0.75' : 'mx-1';
+  const stripViewportWidthClass = ultraCompact ? 'max-w-[6.5rem]' : compact ? 'max-w-[7.2rem]' : 'max-w-[7.6rem]';
+  const stripThumbWidthClass = ultraCompact ? 'max-w-[6.15rem]' : compact ? 'max-w-[7.05rem]' : 'max-w-[7.9rem]';
+  const stripSliderWidthClass = ultraCompact ? 'top-[8%] bottom-[12%] w-[5.15rem]' : compact ? 'top-[7%] bottom-[11%] w-[5.95rem]' : 'top-[4.5%] bottom-[6.5%] w-[6rem]';
+  const sliderSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const draggingPointerIdRef = useRef<number | null>(null);
+
+  const updateVolumeFromClientY = useCallback((clientY: number) => {
+    if (disabled) {
+      return;
+    }
+
+    const sliderSurface = sliderSurfaceRef.current;
+    if (!sliderSurface) {
+      return;
+    }
+
+    const bounds = sliderSurface.getBoundingClientRect();
+    if (bounds.height <= 0) {
+      return;
+    }
+
+    const nextVolume = clamp(1 - ((clientY - bounds.top) / bounds.height), 0, 1);
+    onVolumeChange(Math.round(nextVolume * 100) / 100);
+  }, [disabled, onVolumeChange]);
+
+  const finishSliderDrag = useCallback((pointerId?: number, target?: HTMLDivElement | null) => {
+    if (
+      typeof pointerId === 'number' &&
+      draggingPointerIdRef.current !== null &&
+      draggingPointerIdRef.current !== pointerId
+    ) {
+      return;
+    }
+
+    const sliderSurface = target || sliderSurfaceRef.current;
+    const activePointerId = draggingPointerIdRef.current;
+    draggingPointerIdRef.current = null;
+
+    if (sliderSurface && activePointerId !== null) {
+      try {
+        sliderSurface.releasePointerCapture(activePointerId);
+      } catch {
+        // no-op
+      }
+    }
+  }, []);
+
+  const handleSliderPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (disabled) {
+      return;
+    }
+
+    if (event.pointerType === 'mouse' && event.button !== 0) {
+      return;
+    }
+
+    draggingPointerIdRef.current = event.pointerId;
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // no-op
+    }
+
+    updateVolumeFromClientY(event.clientY);
+    event.preventDefault();
+    event.stopPropagation();
+  }, [disabled, updateVolumeFromClientY]);
+
+  const handleSliderPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (draggingPointerIdRef.current !== event.pointerId) {
+      return;
+    }
+
+    updateVolumeFromClientY(event.clientY);
+    event.preventDefault();
+    event.stopPropagation();
+  }, [updateVolumeFromClientY]);
+
+  const handleSliderPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (draggingPointerIdRef.current !== event.pointerId) {
+      return;
+    }
+
+    updateVolumeFromClientY(event.clientY);
+    finishSliderDrag(event.pointerId, event.currentTarget);
+    event.preventDefault();
+    event.stopPropagation();
+  }, [finishSliderDrag, updateVolumeFromClientY]);
+
+  const handleSliderPointerCancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (draggingPointerIdRef.current !== event.pointerId) {
+      return;
+    }
+
+    finishSliderDrag(event.pointerId, event.currentTarget);
+    event.preventDefault();
+    event.stopPropagation();
+  }, [finishSliderDrag]);
+
+  const handleSliderKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (disabled) {
+      return;
+    }
+
+    let nextVolume: number | null = null;
+
+    if (event.key === 'ArrowUp' || event.key === 'ArrowRight') {
+      nextVolume = clamp(volume + 0.02, 0, 1);
+    } else if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') {
+      nextVolume = clamp(volume - 0.02, 0, 1);
+    } else if (event.key === 'Home') {
+      nextVolume = 0;
+    } else if (event.key === 'End') {
+      nextVolume = 1;
+    }
+
+    if (nextVolume === null) {
+      return;
+    }
+
+    onVolumeChange(Math.round(nextVolume * 100) / 100);
+    event.preventDefault();
+    event.stopPropagation();
+  }, [disabled, onVolumeChange, volume]);
 
   return (
     <div
-      className={`relative flex h-full min-w-0 flex-col items-center rounded-[1.75rem] border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] transition-all duration-200 ${ultraCompact ? 'px-0.5 pb-0.5 pt-0.5' : compact ? 'px-1 pb-1 pt-0.5' : 'px-3.5 pb-4 pt-3'
-        } ${dimmed ? 'opacity-45' : 'opacity-100'}`}
+      className={`relative flex h-full min-w-0 flex-col items-center border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] transition-all duration-200 ${shellRadiusClass} ${shellPaddingClass} ${dimmed ? 'opacity-45' : 'opacity-100'}`}
     >
-      <div className={`flex w-full max-w-[8.5rem] items-center justify-between ${ultraCompact ? 'mb-0.5 gap-1' : compact ? 'mb-0.5 gap-1.5' : 'mb-2 gap-1.5'}`}>
+      <div className={topControlsClass}>
         <button
           type="button"
           onClick={onSolo}
           disabled={disabled}
           aria-label={`Solo ${label}`}
-          className={`ui-pressable-soft flex items-center justify-center rounded-full border font-black tracking-[0.18em] transition-all duration-150 ${ultraCompact ? 'h-5 w-5 text-[0.5rem]' : compact ? 'h-6 w-6 text-[0.58rem]' : 'h-10 w-10 text-[0.76rem]'
-            } ${soloed
+          className={`ui-pressable-soft flex items-center justify-center border font-black transition-all duration-150 ${topButtonRadiusClass} ${sideButtonSizeClass} ${soloed
               ? 'border-cyan-300/60 bg-cyan-300/16 text-cyan-100 shadow-[0_0_18px_rgba(103,210,242,0.24)]'
               : 'border-white/8 bg-black/32 text-white/65 hover:border-white/14 hover:text-white'
             }`}
@@ -544,15 +710,14 @@ const ChannelStrip = memo(function ChannelStrip({
             disabled={disabled}
             aria-pressed={outputRoute === 'right'}
             aria-label={`Cambiar salida de ${label} hacia ${outputRoute === 'right' ? 'izquierda' : 'derecha'}`}
-            className={`ui-pressable-soft flex items-center justify-center rounded-full border font-black tracking-[0.16em] transition-all duration-150 ${ultraCompact ? 'h-5 min-w-[2rem] px-1.5 text-[0.42rem]' : compact ? 'h-6 min-w-[2.4rem] px-1.75 text-[0.5rem]' : 'h-10 min-w-[3.5rem] px-3 text-[0.62rem]'
-              } ${outputRoute === 'right'
+            className={`ui-pressable-soft flex items-center justify-center border font-black transition-all duration-150 ${topButtonRadiusClass} ${routeButtonSizeClass} ${outputRoute === 'right'
                 ? 'border-amber-300/55 bg-amber-300/14 text-amber-100 shadow-[0_0_16px_rgba(251,191,36,0.18)]'
                 : 'border-cyan-300/55 bg-cyan-300/14 text-cyan-100 shadow-[0_0_16px_rgba(103,210,242,0.18)]'
               }`}
             title={`Salida absoluta ${outputRoute === 'right' ? 'R' : 'L'}`}
           >
             <span className={outputRoute === 'left' ? 'text-white' : 'text-white/36'}>L</span>
-            <span className="mx-1 text-white/22">|</span>
+            <span className={`${routeDividerSpacingClass} text-white/22`}>|</span>
             <span className={outputRoute === 'right' ? 'text-white' : 'text-white/36'}>R</span>
           </button>
         ) : null}
@@ -561,8 +726,7 @@ const ChannelStrip = memo(function ChannelStrip({
           onClick={onMute}
           disabled={disabled}
           aria-label={`${muted ? 'Unmute' : 'Mute'} ${label}`}
-          className={`ui-pressable-soft flex items-center justify-center rounded-full border font-black tracking-[0.18em] transition-all duration-150 ${ultraCompact ? 'h-5 min-w-5 px-1 text-[0.5rem]' : compact ? 'h-6 min-w-6 px-1.5 text-[0.58rem]' : 'h-10 min-w-10 px-3 text-[0.72rem]'
-            } ${muted
+          className={`ui-pressable-soft flex items-center justify-center border font-black transition-all duration-150 ${topButtonRadiusClass} ${sideButtonSizeClass} ${muted
               ? 'border-rose-300/55 bg-rose-400/16 text-rose-100 shadow-[0_0_18px_rgba(251,113,133,0.22)]'
               : 'border-white/8 bg-black/28 text-white/52 hover:border-white/14 hover:text-white'
             }`}
@@ -572,7 +736,7 @@ const ChannelStrip = memo(function ChannelStrip({
       </div>
 
       <div className="relative flex w-full flex-1 items-center justify-center">
-        <div className="relative h-full w-full max-w-[7.6rem]">
+        <div className={`relative h-full w-full ${stripViewportWidthClass}`}>
           <div className={`absolute left-1/2 -translate-x-1/2 rounded-full bg-[#040506] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)] ${ultraCompact ? 'top-[8%] bottom-[12%] w-[0.5rem]' : compact ? 'top-[7%] bottom-[11%] w-[0.56rem]' : 'top-[4.5%] bottom-[6.5%] w-[0.72rem]'}`} />
           {Array.from({ length: 8 }).map((_, index) => (
             <div
@@ -594,7 +758,7 @@ const ChannelStrip = memo(function ChannelStrip({
             accent={accent}
             level={level}
             muted={muted}
-            className={`${ultraCompact ? 'h-[1.85rem]' : compact ? 'h-[2.2rem]' : 'h-[4.35rem]'} w-full ${ultraCompact ? 'max-w-[4.85rem]' : compact ? 'max-w-[5.6rem]' : 'max-w-[7.9rem]'} transition-[bottom,box-shadow,opacity,transform] duration-150`}
+            className={`${ultraCompact ? 'h-[1.85rem]' : compact ? 'h-[2.2rem]' : 'h-[4.35rem]'} w-full ${stripThumbWidthClass} transition-[bottom,box-shadow,opacity,transform] duration-150`}
             style={{
               bottom: `calc(${levelBottom} - ${ultraCompact ? '0.92rem' : compact ? '1.1rem' : '1.75rem'})`,
               boxShadow: muted
@@ -604,23 +768,32 @@ const ChannelStrip = memo(function ChannelStrip({
             }}
           />
 
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={volume}
-            disabled={disabled}
-            onChange={(event) => onVolumeChange(Number(event.target.value))}
+          <div
+            ref={sliderSurfaceRef}
+            role="slider"
+            tabIndex={disabled ? -1 : 0}
             aria-label={`Volume for ${label}`}
-            className={`absolute left-1/2 top-1/2 h-10 -translate-x-1/2 -translate-y-1/2 -rotate-90 cursor-pointer opacity-0 ${ultraCompact ? 'w-32' : compact ? 'w-40' : 'w-[18rem]'}`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(volume * 100)}
+            aria-valuetext={`${Math.round(volume * 100)}%`}
+            aria-orientation="vertical"
+            data-no-drag-scroll="true"
+            onPointerDown={handleSliderPointerDown}
+            onPointerMove={handleSliderPointerMove}
+            onPointerUp={handleSliderPointerUp}
+            onPointerCancel={handleSliderPointerCancel}
+            onLostPointerCapture={() => finishSliderDrag()}
+            onKeyDown={handleSliderKeyDown}
+            className={`absolute left-1/2 -translate-x-1/2 rounded-[1rem] ${disabled ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'} ${stripSliderWidthClass}`}
+            style={{ touchAction: 'none' }}
           />
         </div>
       </div>
 
       <div className={`text-center ${ultraCompact ? 'mt-0' : compact ? 'mt-0.5' : 'mt-4'}`}>
         {!compact && <p className="text-[0.62rem] font-black uppercase tracking-[0.3em] text-white/28">{shortLabel}</p>}
-        <p className={`leading-tight text-white/88 ${ultraCompact ? 'text-[8px] font-semibold' : compact ? 'text-[9px] font-semibold' : 'mt-1 text-[1.03rem] font-semibold'}`}>{label}</p>
+        <p className={`leading-tight text-white/88 ${ultraCompact ? 'text-[10px] font-semibold' : compact ? 'text-[11px] font-semibold' : 'mt-1 text-[1.03rem] font-semibold'}`}>{label}</p>
       </div>
     </div>
   );
@@ -762,6 +935,9 @@ export function LiveDirectorView({
   const masterVolumeFadeResolveRef = useRef<(() => void) | null>(null);
   const sectionTransitionTokenRef = useRef(0);
   const isSectionTransitioningRef = useRef(false);
+  const sessionSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingSilentSessionSaveRef = useRef<PendingLiveDirectorSessionSave | null>(null);
+  const isFlushingSilentSessionSaveRef = useRef(false);
   const [useStreamingEngine, setUseStreamingEngine] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [hasResolvedEngineFlag, setHasResolvedEngineFlag] = useState(false);
@@ -1182,18 +1358,24 @@ export function LiveDirectorView({
     }
 
     if (initialSession) {
-      setManualSession(toResolvedSession(initialSession));
+      const resolvedSession = toResolvedSession(initialSession);
+      replaceOwnedObjectUrls([]);
+      setLoadError(null);
+      setManualSession(resolvedSession);
       setUnmatchedFiles(initialSession.unmatchedFiles || []);
       setShowLoadPanel(false);
       return;
     }
 
     if (isSongBoundView || !requiresSongContext) {
+      replaceOwnedObjectUrls([]);
       setManualSession(null);
       setUnmatchedFiles([]);
+      setMutedTrackIds(new Set());
+      setSoloTrackId(null);
       setShowLoadPanel(canLoadManualSession);
     }
-  }, [canLoadManualSession, hasProvidedTracks, initialSession, isSongBoundView, requiresSongContext, songId]);
+  }, [canLoadManualSession, hasProvidedTracks, initialSession, isSongBoundView, replaceOwnedObjectUrls, requiresSongContext, songId]);
 
   useEffect(() => {
     if (!canToggleTrackLoad) {
@@ -1332,16 +1514,105 @@ export function LiveDirectorView({
     });
   }, [activeSectionIndex, currentTime, isPlaying, onPlaybackSnapshot, sectionOffsetSeconds, songId]);
 
-  const applyManualSession = useCallback((session: LiveDirectorResolvedSession) => {
-    stop();
+  const syncManualSessionState = useCallback((session: LiveDirectorResolvedSession) => {
     setLoadError(null);
     setUnmatchedFiles(session.unmatchedFiles);
+    setManualSession(session);
+  }, []);
+
+  const applyManualSession = useCallback((session: LiveDirectorResolvedSession) => {
+    stop();
     setMutedTrackIds(new Set(session.tracks.filter((track) => track.isMuted).map((track) => track.id)));
     setSoloTrackId(null);
     setShowLoadPanel(false);
     replaceOwnedObjectUrls(session.objectUrls);
-    setManualSession(session);
-  }, [replaceOwnedObjectUrls, stop]);
+    syncManualSessionState(session);
+    setReloadKey((previous) => previous + 1);
+  }, [replaceOwnedObjectUrls, stop, syncManualSessionState]);
+
+  const enqueueSessionSave = useCallback(<T,>(task: () => Promise<T>) => {
+    const queuedTask = sessionSaveQueueRef.current
+      .catch(() => undefined)
+      .then(task);
+
+    sessionSaveQueueRef.current = queuedTask.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    return queuedTask;
+  }, []);
+
+  const buildSessionSavePayload = useCallback((params?: {
+    mode?: 'sequence' | 'folder';
+    tracks?: Array<TrackData & { sourceFileName?: string }>;
+    unmatchedFiles?: string[];
+    sectionOffsetSeconds?: number;
+  }): LiveDirectorSessionSavePayload | null => {
+    const mode = params?.mode ?? manualSession?.mode;
+    const tracksToPersist = params?.tracks ?? manualSession?.tracks;
+
+    if (!mode || !tracksToPersist) {
+      return null;
+    }
+
+    return {
+      mode,
+      tracks: tracksToPersist.map((track) => ({
+        id: track.id,
+        name: track.name,
+        url: track.url,
+        volume: track.volume,
+        isMuted: track.isMuted,
+        enabled: track.enabled !== false,
+        sourceFileName: track.sourceFileName,
+        outputRoute: resolveTrackOutputRoute(track),
+      })),
+      unmatchedFiles: params?.unmatchedFiles ?? (manualSession?.unmatchedFiles || []),
+      sectionOffsetSeconds: Number.isFinite(Number(params?.sectionOffsetSeconds))
+        ? Number(params?.sectionOffsetSeconds)
+        : Number(manualSession?.sectionOffsetSeconds) || 0,
+    };
+  }, [manualSession]);
+
+  const flushSilentSessionSaveQueue = useCallback(async () => {
+    if (!hasPersistedSongContext || isFlushingSilentSessionSaveRef.current) {
+      return;
+    }
+
+    isFlushingSilentSessionSaveRef.current = true;
+
+    try {
+      while (pendingSilentSessionSaveRef.current) {
+        const nextPendingSave = pendingSilentSessionSaveRef.current;
+        pendingSilentSessionSaveRef.current = null;
+
+        try {
+          const savedSession = await enqueueSessionSave(() => saveLiveDirectorSongSession({
+            songId: nextPendingSave.songId,
+            session: nextPendingSave.payload,
+          }));
+          onSessionPersisted?.(savedSession);
+        } catch (error) {
+          console.warn('[LiveDirectorView] Silent mixer autosave failed.', error);
+        }
+      }
+    } finally {
+      isFlushingSilentSessionSaveRef.current = false;
+    }
+  }, [enqueueSessionSave, hasPersistedSongContext, onSessionPersisted, songId]);
+
+  const queueSilentSessionSave = useCallback((payload: LiveDirectorSessionSavePayload | null) => {
+    if (!hasPersistedSongContext || !payload) {
+      return;
+    }
+
+    pendingSilentSessionSaveRef.current = {
+      songId,
+      payload,
+    };
+    void flushSilentSessionSaveQueue();
+  }, [flushSilentSessionSaveQueue, hasPersistedSongContext, songId]);
 
   const clearManualSession = useCallback(async () => {
     stop();
@@ -1455,6 +1726,15 @@ export function LiveDirectorView({
       replaceOwnedObjectUrls([]);
     };
   }, [replaceOwnedObjectUrls]);
+
+  useEffect(() => {
+    return () => {
+      if (resumeSectionsAutoScrollTimeoutRef.current !== null) {
+        window.clearTimeout(resumeSectionsAutoScrollTimeoutRef.current);
+        resumeSectionsAutoScrollTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const trackSignature = useMemo(() => (
     activeTracks.map(track => `${track.id}:${track.url}`).join('|')
@@ -1654,60 +1934,62 @@ export function LiveDirectorView({
       return;
     }
 
+    if (padFadeFrameRef.current !== null) {
+      window.cancelAnimationFrame(padFadeFrameRef.current);
+      padFadeFrameRef.current = null;
+    }
+
     if (!resolvedPadUrl) {
       padFadeTargetRefA.current = 0;
       padFadeTargetRefB.current = 0;
-      setIsPadActive(false);
-      return;
-    }
-
-    const activePad = activePadChannelRef.current === 'A' ? padA : padB;
-
-    if (!activePad.src || !activePad.src.includes(resolvedPadUrl)) {
-      const previousChannel = activePadChannelRef.current;
-      const nextChannel = previousChannel === 'A' ? 'B' : 'A';
-      activePadChannelRef.current = nextChannel;
-
-      const nextPad = nextChannel === 'A' ? padA : padB;
-      const oldPad = previousChannel === 'A' ? padA : padB;
-
-      nextPad.src = resolvedPadUrl;
-      nextPad.loop = true;
-      nextPad.volume = 0;
-
       if (isPadActive) {
-        nextPad.play().catch((error) => {
-          console.warn('[LiveDirectorView] Pad autoplay blocked.', error);
-          setIsPadActive(false);
-        });
-      }
-
-      if (oldPad === padA) {
-        padFadeTargetRefA.current = 0;
-        padFadeTargetRefB.current = isPadActive ? resolvedInternalPadVolume : 0;
-      } else {
-        padFadeTargetRefB.current = 0;
-        padFadeTargetRefA.current = isPadActive ? resolvedInternalPadVolume : 0;
+        setIsPadActive(false);
       }
     } else {
-      if (activePadChannelRef.current === 'A') {
-        padFadeTargetRefA.current = isPadActive ? resolvedInternalPadVolume : 0;
-        padFadeTargetRefB.current = 0;
+      const activePad = activePadChannelRef.current === 'A' ? padA : padB;
+
+      if (!activePad.src || !activePad.src.includes(resolvedPadUrl)) {
+        const previousChannel = activePadChannelRef.current;
+        const nextChannel = previousChannel === 'A' ? 'B' : 'A';
+        activePadChannelRef.current = nextChannel;
+
+        const nextPad = nextChannel === 'A' ? padA : padB;
+        const oldPad = previousChannel === 'A' ? padA : padB;
+
+        nextPad.src = resolvedPadUrl;
+        nextPad.loop = true;
+        nextPad.volume = 0;
+
+        if (isPadActive) {
+          nextPad.play().catch((error) => {
+            console.warn('[LiveDirectorView] Pad autoplay blocked.', error);
+            setIsPadActive(false);
+          });
+        }
+
+        if (oldPad === padA) {
+          padFadeTargetRefA.current = 0;
+          padFadeTargetRefB.current = isPadActive ? resolvedInternalPadVolume : 0;
+        } else {
+          padFadeTargetRefB.current = 0;
+          padFadeTargetRefA.current = isPadActive ? resolvedInternalPadVolume : 0;
+        }
       } else {
-        padFadeTargetRefB.current = isPadActive ? resolvedInternalPadVolume : 0;
-        padFadeTargetRefA.current = 0;
-      }
+        if (activePadChannelRef.current === 'A') {
+          padFadeTargetRefA.current = isPadActive ? resolvedInternalPadVolume : 0;
+          padFadeTargetRefB.current = 0;
+        } else {
+          padFadeTargetRefB.current = isPadActive ? resolvedInternalPadVolume : 0;
+          padFadeTargetRefA.current = 0;
+        }
 
-      if (isPadActive && activePad.paused) {
-        activePad.play().catch((error) => {
-          console.warn('[LiveDirectorView] Pad autoplay blocked.', error);
-          setIsPadActive(false);
-        });
+        if (isPadActive && activePad.paused) {
+          activePad.play().catch((error) => {
+            console.warn('[LiveDirectorView] Pad autoplay blocked.', error);
+            setIsPadActive(false);
+          });
+        }
       }
-    }
-
-    if (padFadeFrameRef.current !== null) {
-      window.cancelAnimationFrame(padFadeFrameRef.current);
     }
 
     let lastTime = performance.now();
@@ -1770,33 +2052,32 @@ export function LiveDirectorView({
     }
 
     setBusyMessage('Guardando sesion multitrack...');
-
-    const savedSession = await saveLiveDirectorSongSession({
-      songId,
-      session: {
+    try {
+      const sessionPayload = buildSessionSavePayload({
         mode: payload.mode,
-        tracks: payload.tracks.map((track) => ({
-          id: track.id,
-          name: track.name,
-          url: track.url,
-          volume: track.volume,
-          isMuted: track.isMuted,
-          enabled: track.enabled !== false,
-          sourceFileName: track.sourceFileName,
-          outputRoute: resolveTrackOutputRoute(track),
-        })),
+        tracks: payload.tracks,
         unmatchedFiles: payload.unmatchedFiles || [],
         sectionOffsetSeconds: Number.isFinite(Number(payload.sectionOffsetSeconds))
           ? Number(payload.sectionOffsetSeconds)
           : sectionOffsetSeconds,
-      },
-    });
+      });
 
-    applyManualSession(toResolvedSession(savedSession));
-    onSessionPersisted?.(savedSession);
-    setBusyMessage(null);
-    return savedSession;
-  }, [applyManualSession, hasPersistedSongContext, onSessionPersisted, sectionOffsetSeconds, songId]);
+      if (!sessionPayload) {
+        throw new Error('No se pudo preparar la sesion para guardarla.');
+      }
+
+      const savedSession = await enqueueSessionSave(() => saveLiveDirectorSongSession({
+        songId,
+        session: sessionPayload,
+      }));
+
+      applyManualSession(toResolvedSession(savedSession));
+      onSessionPersisted?.(savedSession);
+      return savedSession;
+    } finally {
+      setBusyMessage(null);
+    }
+  }, [applyManualSession, buildSessionSavePayload, enqueueSessionSave, hasPersistedSongContext, onSessionPersisted, sectionOffsetSeconds, songId]);
 
   const updateSectionOffsetLocally = useCallback((nextOffset: number) => {
     const safeOffset = Math.round(nextOffset * 4) / 4;
@@ -1816,42 +2097,42 @@ export function LiveDirectorView({
     }
 
     const safeOffset = Number(manualSession.sectionOffsetSeconds) || 0;
+    const syncedTracks = manualSession.tracks.map((track) => ({
+      ...track,
+      volume: trackVolumes[track.id] ?? track.volume,
+      isMuted: mutedTrackIds.has(track.id),
+      outputRoute: trackOutputRoutes[track.id] ?? resolveTrackOutputRoute(track),
+    }));
+    const sessionPayload = buildSessionSavePayload({
+      mode: manualSession.mode,
+      tracks: syncedTracks,
+      unmatchedFiles: manualSession.unmatchedFiles || [],
+      sectionOffsetSeconds: safeOffset,
+    });
 
     try {
       setBusyMessage('Guardando desplazamiento de secciones...');
-      const savedSession = await saveLiveDirectorSongSession({
+      if (!sessionPayload) {
+        throw new Error('No se pudo preparar el guardado del desfase.');
+      }
+      const savedSession = await enqueueSessionSave(() => saveLiveDirectorSongSession({
         songId,
-        session: {
-          mode: manualSession.mode,
-          tracks: manualSession.tracks.map((track) => ({
-            id: track.id,
-            name: track.name,
-            url: track.url,
-            volume: track.volume,
-            isMuted: track.isMuted,
-            enabled: track.enabled !== false,
-            sourceFileName: track.sourceFileName,
-            outputRoute: resolveTrackOutputRoute(track),
-          })),
-          unmatchedFiles: manualSession.unmatchedFiles || [],
-          sectionOffsetSeconds: safeOffset,
-        },
-      });
-      applyManualSession(toResolvedSession(savedSession));
+        session: sessionPayload,
+      }));
+      syncManualSessionState(toResolvedSession(savedSession));
       onSessionPersisted?.(savedSession);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : 'No se pudo guardar el offset de secciones.');
     } finally {
       setBusyMessage(null);
     }
-  }, [applyManualSession, hasPersistedSongContext, manualSession, onSessionPersisted, songId]);
+  }, [buildSessionSavePayload, enqueueSessionSave, hasPersistedSongContext, manualSession, mutedTrackIds, onSessionPersisted, songId, syncManualSessionState, trackOutputRoutes, trackVolumes]);
 
-  const commitMixerStateSilent = useCallback(async (tracksOverride?: TrackData[]) => {
+  const commitMixerStateSilent = useCallback((tracksOverride?: TrackData[]) => {
     if (!hasPersistedSongContext || !manualSession) {
       return;
     }
 
-    // Capture the immediate scope values to avoid racing
     const currentVolumes = trackVolumes;
     const currentMutes = mutedTrackIds;
 
@@ -1860,45 +2141,30 @@ export function LiveDirectorView({
       ...track,
       volume: currentVolumes[track.id] ?? track.volume,
       isMuted: currentMutes.has(track.id),
+      outputRoute: trackOutputRoutes[track.id] ?? resolveTrackOutputRoute(track),
     }));
 
     setManualSession((previous) => (
       previous ? { ...previous, tracks: nextTracks } : previous
     ));
 
-    try {
-      const savedSession = await saveLiveDirectorSongSession({
-        songId,
-        session: {
-          mode: manualSession.mode,
-          tracks: nextTracks.map(({ id, name, url, volume, isMuted, enabled, sourceFileName, outputRoute }) => ({
-            id,
-            name,
-            url,
-            volume,
-            isMuted,
-            enabled,
-            sourceFileName,
-            outputRoute: resolveTrackOutputRoute({ id, name, outputRoute }),
-          })),
-          unmatchedFiles: manualSession.unmatchedFiles || [],
-          sectionOffsetSeconds: Number(manualSession.sectionOffsetSeconds) || 0,
-        },
-      });
-      onSessionPersisted?.(savedSession);
-    } catch (error) {
-      console.warn('[LiveDirectorView] Silent mixer autosave failed.', error);
-    }
-  }, [hasPersistedSongContext, manualSession, songId, onSessionPersisted, trackVolumes, mutedTrackIds]);
+    queueSilentSessionSave(buildSessionSavePayload({
+      mode: manualSession.mode,
+      tracks: nextTracks,
+      unmatchedFiles: manualSession.unmatchedFiles || [],
+      sectionOffsetSeconds: Number(manualSession.sectionOffsetSeconds) || 0,
+    }));
+  }, [buildSessionSavePayload, hasPersistedSongContext, manualSession, mutedTrackIds, queueSilentSessionSave, trackOutputRoutes, trackVolumes]);
 
   const mixerAutosaveTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!hasPersistedSongContext || !manualSession) return;
+    if (!hasPersistedSongContext || !manualSession || isInitializingSession) return;
 
     const isDirty = manualSession.tracks.some(
       (t) => (trackVolumes[t.id] !== undefined && trackVolumes[t.id] !== t.volume) ||
-        (mutedTrackIds.has(t.id) !== t.isMuted)
+        (mutedTrackIds.has(t.id) !== t.isMuted) ||
+        ((trackOutputRoutes[t.id] ?? resolveTrackOutputRoute(t)) !== resolveTrackOutputRoute(t))
     );
 
     if (isDirty) {
@@ -1906,8 +2172,8 @@ export function LiveDirectorView({
         window.clearTimeout(mixerAutosaveTimerRef.current);
       }
       mixerAutosaveTimerRef.current = window.setTimeout(() => {
-        void commitMixerStateSilent();
-      }, 1500);
+        commitMixerStateSilent();
+      }, 900);
     }
 
     return () => {
@@ -1915,7 +2181,7 @@ export function LiveDirectorView({
         window.clearTimeout(mixerAutosaveTimerRef.current);
       }
     };
-  }, [trackVolumes, mutedTrackIds, manualSession, commitMixerStateSilent, hasPersistedSongContext]);
+  }, [trackOutputRoutes, trackVolumes, mutedTrackIds, manualSession, commitMixerStateSilent, hasPersistedSongContext, isInitializingSession]);
 
   const handleToggleTrackEnabled = useCallback((trackId: string) => {
     if (!manualSession || manualSession.mode !== 'folder' || manualSession.tracks.length <= 1) {
@@ -2244,6 +2510,44 @@ export function LiveDirectorView({
     setUseStreamingEngine((previous) => !previous);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey) {
+        return;
+      }
+
+      if (showLoadPanel || showTrackLoadModal || shouldIgnoreKeyboardShortcutTarget(event.target)) {
+        return;
+      }
+
+      if (event.code !== 'Space' && event.key !== ' ') {
+        return;
+      }
+
+      if (!isReady) {
+        return;
+      }
+
+      event.preventDefault();
+
+      if (isPlaying) {
+        pause();
+        return;
+      }
+
+      void play();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isPlaying, isReady, pause, play, showLoadPanel, showTrackLoadModal]);
+
   const handleInternalPadVolumeChange = useCallback((nextVolume: number) => {
     const safeValue = clamp(nextVolume, 0, 1);
 
@@ -2545,7 +2849,7 @@ export function LiveDirectorView({
                     ? 'border-[#43c477]/40 bg-[#43c477]/10 text-[#8af7b1]'
                     : 'text-[#43c477]'
                     }`}
-                  style={{ width: scaleRem(isUltraCompactLandscape ? 3.75 : isCompactLandscape ? 5.15 : 5.8, 3.1) }}
+                  style={{ width: scaleRem(isUltraCompactLandscape ? 4.75 : isCompactLandscape ? 6.15 : 6.8, 4.1) }}
                   aria-label={isPadActive ? `Stop pad for ${songKey}` : `Play pad for ${songKey}`}
                 >
                   <span>PAD</span>
@@ -2564,7 +2868,7 @@ export function LiveDirectorView({
                     setShowTrackLoadModal(true);
                   }}
                   className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-1.5 text-[0.58rem]' : isCompactLandscape ? 'h-10 px-2 text-[0.74rem]' : 'h-[var(--ld-control-height)] px-3 text-[0.76rem]'} flex-col font-semibold tracking-[0.16em] text-cyan-50`}
-                  style={{ width: scaleRem(isUltraCompactLandscape ? 3.65 : isCompactLandscape ? 5.05 : 5.7, 3.1) }}
+                  style={{ width: scaleRem(isUltraCompactLandscape ? 4.65 : isCompactLandscape ? 6.05 : 6.7, 4.1) }}
                   aria-label="Abrir carga selectiva de stems"
                   title="Elegir qué stems se cargan"
                 >
@@ -2606,7 +2910,7 @@ export function LiveDirectorView({
                 }}
                 disabled={!hasTrackSession}
                 className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3' : isCompactLandscape ? 'h-10 px-3.5' : 'h-[var(--ld-control-height)] px-4'} justify-center text-white/78 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
-                style={{ width: scaleRem(isUltraCompactLandscape ? 3.8 : isCompactLandscape ? 4.75 : 5.15, 3.2) }}
+                style={{ width: scaleRem(isUltraCompactLandscape ? 4.3 : isCompactLandscape ? 5.25 : 5.65, 3.7) }}
                 aria-label="Retroceder cuatro segundos"
                 title="Retroceder cuatro segundos"
               >
@@ -2625,9 +2929,10 @@ export function LiveDirectorView({
                 }}
                 disabled={!isReady}
                 className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3.5' : isCompactLandscape ? 'h-10 px-4' : 'h-[var(--ld-control-height)] px-4.5'} justify-center text-[#43c477] hover:text-[#4fe487] disabled:cursor-not-allowed disabled:text-white/24`}
-                style={{ width: scaleRem(isUltraCompactLandscape ? 4.2 : isCompactLandscape ? 5.55 : 6.1, 3.55) }}
+                style={{ width: scaleRem(isUltraCompactLandscape ? 5.2 : isCompactLandscape ? 6.8 : 7.5, 4.5) }}
                 aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
-                title={isPlaying ? 'Pausar' : 'Reproducir'}
+                aria-keyshortcuts="Space"
+                title={isPlaying ? 'Pausar · Espacio' : 'Reproducir · Espacio'}
               >
                 {isPlaying ? (
                   <Pause className={`${isUltraCompactLandscape ? 'h-[1.125rem] w-[1.125rem]' : isCompactLandscape ? 'h-6 w-6' : 'h-8 w-8'}`} />
@@ -2643,7 +2948,7 @@ export function LiveDirectorView({
                 }}
                 disabled={!hasTrackSession}
                 className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3' : isCompactLandscape ? 'h-10 px-3.5' : 'h-[var(--ld-control-height)] px-4'} justify-center text-white/74 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
-                style={{ width: scaleRem(isUltraCompactLandscape ? 3.95 : isCompactLandscape ? 4.95 : 5.35, 3.35) }}
+                style={{ width: scaleRem(isUltraCompactLandscape ? 4.45 : isCompactLandscape ? 5.45 : 5.85, 3.85) }}
                 aria-label="Volver al inicio"
                 title="Volver al inicio"
               >
@@ -3109,7 +3414,7 @@ export function LiveDirectorView({
               onPointerCancel={handleMixerPointerUp}
               className={`hide-scrollbar grid min-h-0 ${isUltraCompactLandscape ? 'gap-1' : isCompactLandscape ? 'gap-1.5' : 'gap-3'} overflow-x-auto overflow-y-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isUltraCompactLandscape ? 'px-0.5 py-0.5' : isCompactLandscape ? 'px-1 py-0.5' : 'px-3 py-4'}`}
               style={{
-                gridTemplateColumns: `repeat(${Math.max(1, mixerView.length)}, minmax(${isUltraCompactLandscape ? '4.55rem' : isCompactLandscape ? '4.75rem' : '8.5rem'}, 1fr))`,
+                gridTemplateColumns: `repeat(${Math.max(1, mixerView.length)}, minmax(${isUltraCompactLandscape ? '6.7rem' : isCompactLandscape ? '7.45rem' : '8.5rem'}, 1fr))`,
                 touchAction: 'pan-x pinch-zoom',
                 overscrollBehaviorX: 'contain',
                 WebkitOverflowScrolling: 'touch',
@@ -3257,13 +3562,13 @@ export function LiveDirectorView({
           </div>
 
           <div className={`rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isUltraCompactLandscape ? 'px-0.5 py-0.5' : isCompactLandscape ? 'px-1 py-0.5' : 'px-3 py-4'}`}>
-            <div className={`relative flex h-full flex-col items-center rounded-[1.75rem] border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] ${isUltraCompactLandscape ? 'px-0.5 pb-0.5 pt-0.5' : isCompactLandscape ? 'px-1 pb-1 pt-0.5' : 'px-3 pb-4 pt-3'}`}>
-              <div className={`flex items-center justify-center rounded-full border border-white/8 bg-black/28 text-white/62 ${isUltraCompactLandscape ? 'mb-0.5 h-5 w-5' : isCompactLandscape ? 'mb-1 h-6 w-6' : 'mb-3 h-11 w-11'}`}>
+            <div className={`relative flex h-full flex-col items-center border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] ${isUltraCompactLandscape ? 'rounded-[1.18rem] px-0.75 pb-0.75 pt-0.85' : isCompactLandscape ? 'rounded-[1.38rem] px-1.25 pb-1.25 pt-0.95' : 'rounded-[1.75rem] px-3 pb-4 pt-3'}`}>
+              <div className={`flex items-center justify-center border border-white/8 bg-black/28 text-white/62 ${isUltraCompactLandscape ? 'mb-1 min-h-[2.5rem] min-w-[2.5rem] rounded-[0.95rem]' : isCompactLandscape ? 'mb-1.5 min-h-[2.75rem] min-w-[2.75rem] rounded-[1.05rem]' : 'mb-3 h-11 w-11 rounded-full'}`}>
                 <span className={`font-black tracking-[0.18em] ${isUltraCompactLandscape ? 'text-[0.54rem]' : isCompactLandscape ? 'text-[0.65rem]' : 'text-[0.82rem]'}`}>M</span>
               </div>
 
               <div className="relative flex w-full flex-1 items-center justify-center">
-                <div className={`relative h-full w-full ${isUltraCompactLandscape ? 'max-w-[4.45rem]' : isCompactLandscape ? 'max-w-[4.75rem]' : 'max-w-[5.8rem]'}`}>
+                <div className={`relative h-full w-full ${isUltraCompactLandscape ? 'max-w-[5.2rem]' : isCompactLandscape ? 'max-w-[5.95rem]' : 'max-w-[5.8rem]'}`}>
                   <div className={`absolute left-1/2 -translate-x-1/2 rounded-full bg-[#050607] ${isUltraCompactLandscape ? 'top-[8%] bottom-[12%] w-[0.5rem]' : isCompactLandscape ? 'top-[7%] bottom-[10%] w-[0.56rem]' : 'top-[5%] bottom-[7%] w-[0.72rem]'}`} />
                   {Array.from({ length: 7 }).map((_, index) => (
                     <div
@@ -3274,7 +3579,7 @@ export function LiveDirectorView({
                   ))}
                   <FaderThumb
                     accent="#81ddf5"
-                    className={`${isUltraCompactLandscape ? 'h-[1.85rem]' : isCompactLandscape ? 'h-[2.2rem]' : 'h-[4.35rem]'} w-full ${isUltraCompactLandscape ? 'max-w-[4.7rem]' : isCompactLandscape ? 'max-w-[4.95rem]' : 'max-w-[6.1rem]'} transition-[bottom,box-shadow] duration-150`}
+                    className={`${isUltraCompactLandscape ? 'h-[1.85rem]' : isCompactLandscape ? 'h-[2.2rem]' : 'h-[4.35rem]'} w-full ${isUltraCompactLandscape ? 'max-w-[5.1rem]' : isCompactLandscape ? 'max-w-[5.85rem]' : 'max-w-[6.1rem]'} transition-[bottom,box-shadow] duration-150`}
                     style={{
                       bottom: `calc(${10 + masterVolume * 78}% - ${isUltraCompactLandscape ? '0.92rem' : isCompactLandscape ? '1.1rem' : '1.75rem'})`,
                       boxShadow: '0 14px 24px rgba(0,0,0,0.35), 0 0 20px rgba(115,209,248,0.18)',

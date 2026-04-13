@@ -96,6 +96,9 @@ input[type='submit'] {
   --press-transition-easing: cubic-bezier(0.22, 1, 0.36, 1);
   --press-focus-ring: 2px solid rgb(var(--color-action) / 0.34);
   -webkit-tap-highlight-color: rgb(var(--color-action) / 0.16);
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
   translate: 0 0;
   scale: 1;
   transform-origin: center;
