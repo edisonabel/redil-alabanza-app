@@ -43,6 +43,20 @@ export default defineConfig({
       navigateFallbackDenylist: [/^\/.*$/],
       globPatterns: ['**/*.{js,css,svg,png,jpg,jpeg,webp,avif,ico,txt,webmanifest}'],
       runtimeCaching: [
+        // R2 audio: Range Requests para streaming multitrack + pads
+        {
+          urlPattern: ({ url }) => url.hostname === 'pub-4faa87e319a345c38e4f3be570797088.r2.dev',
+          handler: 'CacheFirst',
+          options: {
+            cacheName: 'r2-audio-cache',
+            rangeRequests: true,
+            cacheableResponse: { statuses: [0, 200] },
+            expiration: {
+              maxEntries: 50,
+              maxAgeSeconds: 7 * 24 * 60 * 60,
+            },
+          },
+        },
         {
           urlPattern: ({ url }) => url.origin.includes('supabase.co'),
           handler: 'NetworkOnly'
