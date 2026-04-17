@@ -231,15 +231,43 @@ const hashTrackId = (trackId: string) => {
   return hash;
 };
 
+const getGuideMeterProfile = (trackId: string) => {
+  const normalizedId = trackId.toLowerCase();
+
+  if (normalizedId.includes('click') || normalizedId.includes('metro')) {
+    return { floor: 0.08, range: 0.86, pulseRate: 3.7, textureRate: 13.8, transient: 0.9 };
+  }
+
+  if (normalizedId.includes('drum') || normalizedId.includes('perc')) {
+    return { floor: 0.1, range: 0.82, pulseRate: 4.6, textureRate: 15.4, transient: 0.7 };
+  }
+
+  if (normalizedId.includes('bass')) {
+    return { floor: 0.11, range: 0.66, pulseRate: 2.15, textureRate: 8.4, transient: 0.45 };
+  }
+
+  if (normalizedId.includes('pad') || normalizedId.includes('string') || normalizedId.includes('organ')) {
+    return { floor: 0.16, range: 0.42, pulseRate: 1.35, textureRate: 3.6, transient: 0.08 };
+  }
+
+  if (normalizedId.includes('guide') || normalizedId.includes('cue') || normalizedId.includes('vocal')) {
+    return { floor: 0.09, range: 0.74, pulseRate: 3.15, textureRate: 10.6, transient: 0.52 };
+  }
+
+  return { floor: 0.08, range: 0.68, pulseRate: 2.75, textureRate: 9.2, transient: 0.36 };
+};
+
 const buildFallbackMeterLevel = (trackId: string, timeInSeconds: number, volume: number) => {
   const seed = hashTrackId(trackId);
+  const profile = getGuideMeterProfile(trackId);
   const pulse =
-    Math.abs(Math.sin(timeInSeconds * (5.7 + (seed % 7) * 0.18) + seed * 0.07)) * 0.64 +
-    Math.abs(Math.sin(timeInSeconds * (11.2 + (seed % 5) * 0.24) + seed * 0.13)) * 0.36;
-  const shapedPulse = Math.pow(clamp(pulse), 1.35);
+    Math.abs(Math.sin(timeInSeconds * (profile.pulseRate + (seed % 7) * 0.11) + seed * 0.07)) * 0.58 +
+    Math.abs(Math.sin(timeInSeconds * (profile.textureRate + (seed % 5) * 0.19) + seed * 0.13)) * 0.3 +
+    Math.pow(Math.max(0, Math.sin(timeInSeconds * (profile.pulseRate * 1.9) + seed * 0.17)), 8) * profile.transient;
+  const shapedPulse = Math.pow(clamp(pulse), 1.18);
   const volumeWeight = clamp(volume, 0.18, 1);
 
-  return clamp((0.1 + shapedPulse * 0.82) * volumeWeight, 0.05, 0.94);
+  return clamp((profile.floor + shapedPulse * profile.range) * volumeWeight, 0.04, 0.96);
 };
 
 const formatClock = (timeInSeconds: number) => {
@@ -984,6 +1012,8 @@ export function LiveDirectorView({
   const padFadeTargetRefA = useRef(0);
   const padFadeTargetRefB = useRef(0);
   const padFadeFrameRef = useRef<number | null>(null);
+  const guideMeterFrameRef = useRef<number | null>(null);
+  const guideMeterStartedAtRef = useRef(0);
   const ownedObjectUrlsRef = useRef<string[]>([]);
   const masterVolumeRef = useRef(0.82);
   const appliedMasterVolumeRef = useRef(0.82);
@@ -1027,6 +1057,7 @@ export function LiveDirectorView({
   const [isNativeIosShell, setIsNativeIosShell] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
+  const [guideMeterClock, setGuideMeterClock] = useState(0);
   const [sectionsLaneViewportWidth, setSectionsLaneViewportWidth] = useState(0);
   const [manualSession, setManualSession] = useState<LiveDirectorResolvedSession | null>(
     initialSession ? toResolvedSession(initialSession) : null,
@@ -1326,11 +1357,7 @@ export function LiveDirectorView({
     return activeSegment.leftPx + activeSegment.widthPx * progressWithinSection;
   }, [activeSectionIndex, currentTime, playbackTimelineDuration, sectionLaneSegments, sectionTimelineDuration]);
 
-  const hasAudibleMeterLevel = useMemo(
-    () => Object.values(trackLevels).some((level) => Number.isFinite(level) && level > 0.018),
-    [trackLevels],
-  );
-  const shouldUseFallbackMeters = isPlaying && hasTrackSession && !hasAudibleMeterLevel;
+  const visualMeterTime = guideMeterClock + currentTime * 0.37;
 
   const mixerView = useMemo<MixerTrackView[]>(() => {
     const sourceTracks =
@@ -1351,15 +1378,18 @@ export function LiveDirectorView({
       const volume = trackVolumes[track.id] ?? track.volume ?? meta.defaultVolume;
       const muted = mutedTrackIds.has(track.id);
       const dimmed = Boolean(soloTrackId && soloTrackId !== track.id);
-      const rawLevel = trackLevels[track.id] ?? 0;
-      const fallbackLevel = shouldUseFallbackMeters && !muted && !dimmed
-        ? buildFallbackMeterLevel(track.id, currentTime, volume)
+      const rawLevel = clamp(trackLevels[track.id] ?? 0);
+      const guideLevel = isPlaying && hasTrackSession && !muted && !dimmed
+        ? buildFallbackMeterLevel(track.id, visualMeterTime, volume)
         : 0;
+      const visualLevel = guideLevel > 0
+        ? Math.max(guideLevel, rawLevel * 0.72)
+        : rawLevel;
 
       return {
         ...meta,
         volume,
-        level: muted || dimmed ? 0 : Math.max(rawLevel, fallbackLevel),
+        level: muted || dimmed ? 0 : visualLevel,
         muted,
         soloed: soloTrackId === track.id,
         dimmed,
@@ -1377,7 +1407,7 @@ export function LiveDirectorView({
         accent: '#43c477',
         defaultVolume: resolvedInternalPadVolume,
         volume: resolvedInternalPadVolume,
-        level: isPadActive ? Math.max(0.12, resolvedInternalPadVolume * 0.55) : 0,
+        level: isPadActive ? buildFallbackMeterLevel('__internal-pad__', visualMeterTime, resolvedInternalPadVolume) : 0,
         muted: !isPadActive || resolvedInternalPadVolume <= 0.001,
         soloed: false,
         dimmed: false,
@@ -1398,7 +1428,7 @@ export function LiveDirectorView({
     }
 
     return resolvedMixerTracks;
-  }, [activeTracks, currentTime, isEnsayoMode, isPadActive, mutedTrackIds, resolvedInternalPadVolume, resolvedPadUrl, shouldUseFallbackMeters, soloTrackId, trackLevels, trackOutputRoutes, trackVolumes]);
+  }, [activeTracks, hasTrackSession, isEnsayoMode, isPadActive, isPlaying, mutedTrackIds, resolvedInternalPadVolume, resolvedPadUrl, soloTrackId, trackLevels, trackOutputRoutes, trackVolumes, visualMeterTime]);
 
   const mappedTrackDetails = useMemo(
     () =>
@@ -1583,6 +1613,54 @@ export function LiveDirectorView({
       isPlaying,
     });
   }, [activeSectionIndex, currentTime, isPlaying, onPlaybackSnapshot, sectionOffsetSeconds, songId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (!isPlaying || !hasTrackSession) {
+      if (guideMeterFrameRef.current !== null) {
+        window.cancelAnimationFrame(guideMeterFrameRef.current);
+        guideMeterFrameRef.current = null;
+      }
+
+      guideMeterStartedAtRef.current = 0;
+      setGuideMeterClock(0);
+      return;
+    }
+
+    let cancelled = false;
+    let lastCommitAt = 0;
+    const updateIntervalMs = 1000 / 30;
+
+    const tick = (frameTime: number) => {
+      if (cancelled) {
+        return;
+      }
+
+      if (guideMeterStartedAtRef.current === 0) {
+        guideMeterStartedAtRef.current = frameTime;
+      }
+
+      if (frameTime - lastCommitAt >= updateIntervalMs) {
+        lastCommitAt = frameTime;
+        setGuideMeterClock((frameTime - guideMeterStartedAtRef.current) / 1000);
+      }
+
+      guideMeterFrameRef.current = window.requestAnimationFrame(tick);
+    };
+
+    guideMeterFrameRef.current = window.requestAnimationFrame(tick);
+
+    return () => {
+      cancelled = true;
+      if (guideMeterFrameRef.current !== null) {
+        window.cancelAnimationFrame(guideMeterFrameRef.current);
+        guideMeterFrameRef.current = null;
+      }
+    };
+  }, [hasTrackSession, isPlaying]);
 
   const syncManualSessionState = useCallback((session: LiveDirectorResolvedSession) => {
     setLoadError(null);
