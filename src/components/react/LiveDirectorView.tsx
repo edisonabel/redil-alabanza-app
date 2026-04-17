@@ -14,6 +14,7 @@
 } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { useMultitrackEngine } from '../../hooks/useMultitrackEngine';
+import { useNativeIOSMultitrackEngine } from '../../hooks/useNativeIOSMultitrackEngine';
 import type { SongStructure, TrackData } from '../../services/MultitrackEngine';
 import {
   createSequenceSessionFromFile,
@@ -72,6 +73,7 @@ type DragScrollState = {
 
 type SurfaceView = 'mix' | 'sections';
 type LiveDirectorMode = 'director' | 'ensayo';
+type LiveDirectorEngineSurface = 'web' | 'ios-native';
 
 type LiveDirectorQueueSong = {
   id: string;
@@ -130,6 +132,8 @@ type LiveDirectorViewProps = {
   initialSession?: LiveDirectorPersistedSession | null;
   requiresSongContext?: boolean;
   mode?: LiveDirectorMode;
+  engineSurface?: LiveDirectorEngineSurface;
+  maxWebActiveTracks?: number;
   queueSongs?: LiveDirectorQueueSong[];
   activeQueueSongId?: string;
   onSelectQueueSong?: (songId: string) => void;
@@ -139,6 +143,8 @@ type LiveDirectorViewProps = {
   onPlaybackSnapshot?: (snapshot: LiveDirectorPlaybackSnapshot) => void;
   onSessionPersisted?: (session: LiveDirectorPersistedSession) => void;
 };
+
+const WEB_ENGINE_MAX_ACTIVE_TRACKS = 9;
 
 type ChannelStripProps = {
   id: string;
@@ -903,6 +909,8 @@ export function LiveDirectorView({
   initialSession = null,
   requiresSongContext = false,
   mode = 'director',
+  engineSurface = 'web',
+  maxWebActiveTracks = WEB_ENGINE_MAX_ACTIVE_TRACKS,
   queueSongs = [],
   activeQueueSongId = '',
   onSelectQueueSong,
@@ -953,6 +961,14 @@ export function LiveDirectorView({
   const [useStreamingEngine, setUseStreamingEngine] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [hasResolvedEngineFlag, setHasResolvedEngineFlag] = useState(false);
+  const isIOSNativeEngineSurface = engineSurface === 'ios-native';
+  const webMultitrackEngine = useMultitrackEngine({
+    useStreamingEngine,
+  });
+  const nativeIOSMultitrackEngine = useNativeIOSMultitrackEngine();
+  const selectedMultitrackEngine = isIOSNativeEngineSurface
+    ? nativeIOSMultitrackEngine
+    : webMultitrackEngine;
   const {
     currentTime,
     duration: playbackDuration,
@@ -974,9 +990,7 @@ export function LiveDirectorView({
     toggleMute,
     trackVolumes,
     loadProgress,
-  } = useMultitrackEngine({
-    useStreamingEngine,
-  });
+  } = selectedMultitrackEngine;
   const [isPortrait, setIsPortrait] = useState(false);
   const [isCompactLandscape, setIsCompactLandscape] = useState(false);
   const [isUltraCompactLandscape, setIsUltraCompactLandscape] = useState(false);
@@ -1008,7 +1022,7 @@ export function LiveDirectorView({
   const [internalPadVolumeState, setInternalPadVolumeState] = useState(0.34);
   const [songCoverArtUrl, setSongCoverArtUrl] = useState<string | null>(null);
   const [queueSongCoverArtMap, setQueueSongCoverArtMap] = useState<Record<string, string | null>>({});
-  const currentEngineLabel = useStreamingEngine ? 'Flujo' : 'Buffer';
+  const currentEngineLabel = isIOSNativeEngineSurface ? 'Apple' : useStreamingEngine ? 'Flujo' : 'Buffer';
   const isEnsayoMode = mode === 'ensayo';
   const resolvedInternalPadVolume = clamp(
     Number.isFinite(Number(internalPadVolume)) ? Number(internalPadVolume) : internalPadVolumeState,
@@ -1055,10 +1069,28 @@ export function LiveDirectorView({
     [trackRouteSeedSignature],
   );
 
-  const activeTracks = useMemo(
+  const webActiveTrackLimit = useMemo(() => {
+    if (isIOSNativeEngineSurface) {
+      return Number.POSITIVE_INFINITY;
+    }
+
+    const parsedLimit = Math.floor(Number(maxWebActiveTracks));
+    return Number.isFinite(parsedLimit) && parsedLimit > 0
+      ? parsedLimit
+      : WEB_ENGINE_MAX_ACTIVE_TRACKS;
+  }, [isIOSNativeEngineSurface, maxWebActiveTracks]);
+
+  const enabledSessionTracks = useMemo(
     () => sessionTracks.filter((track) => track.enabled !== false),
     [sessionTracks],
   );
+
+  const activeTracks = useMemo(
+    () => enabledSessionTracks.slice(0, webActiveTrackLimit),
+    [enabledSessionTracks, webActiveTrackLimit],
+  );
+
+  const isWebTrackLimitExceeded = enabledSessionTracks.length > activeTracks.length;
 
   const activeEngineTracks = useMemo(
     () => activeTracks.map((track) => ({
@@ -1092,7 +1124,9 @@ export function LiveDirectorView({
     ? [subtitle, songKey].filter(Boolean).join(' · ') || sessionModeLabel
     : [performerLabel, songKey].filter(Boolean).join(' · ') || sessionModeLabel;
   const songSupportMeta = hasSessionTracks
-    ? inferredSessionMode === 'folder' && activeTracks.length !== sessionTracks.length
+    ? isWebTrackLimitExceeded
+      ? `${activeTracks.length} de ${enabledSessionTracks.length} pistas activas (limite web)`
+      : inferredSessionMode === 'folder' && activeTracks.length !== sessionTracks.length
       ? `${activeTracks.length} de ${sessionTracks.length} pistas activas`
       : sessionModeLabel
     : hasPersistedSongContext
@@ -1725,13 +1759,17 @@ export function LiveDirectorView({
     }
 
     const searchParams = new URLSearchParams(window.location.search);
-    setUseStreamingEngine(searchParams.get('engine') === 'streaming');
+    setUseStreamingEngine(!isIOSNativeEngineSurface && searchParams.get('engine') === 'streaming');
     setShowDiagnostics(searchParams.get('debug') === '1');
     setHasResolvedEngineFlag(true);
-  }, []);
+  }, [isIOSNativeEngineSurface]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !hasResolvedEngineFlag) {
+      return;
+    }
+
+    if (isIOSNativeEngineSurface) {
       return;
     }
 
@@ -1751,7 +1789,7 @@ export function LiveDirectorView({
 
     const nextHref = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
     window.history.replaceState(window.history.state, '', nextHref);
-  }, [hasResolvedEngineFlag, showDiagnostics, useStreamingEngine]);
+  }, [hasResolvedEngineFlag, isIOSNativeEngineSurface, showDiagnostics, useStreamingEngine]);
 
   useEffect(() => {
     return () => {
@@ -1777,10 +1815,10 @@ export function LiveDirectorView({
       return;
     }
     if (loadProgress && loadProgress.total > 0) {
-      const label = useStreamingEngine ? 'Preparando motor' : 'Cargando audio';
+      const label = isIOSNativeEngineSurface ? 'Preparando motor Apple' : useStreamingEngine ? 'Preparando motor' : 'Cargando audio';
       setBusyMessage(`${label} ${loadProgress.loaded}/${loadProgress.total}...`);
     }
-  }, [isInitializingSession, loadProgress, useStreamingEngine]);
+  }, [isIOSNativeEngineSurface, isInitializingSession, loadProgress, useStreamingEngine]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1799,7 +1837,7 @@ export function LiveDirectorView({
 
       setLoadError(null);
       setIsInitializingSession(true);
-      setBusyMessage(useStreamingEngine ? 'Iniciando motor en flujo...' : 'Cargando buffers de audio...');
+      setBusyMessage(isIOSNativeEngineSurface ? 'Iniciando motor Apple...' : useStreamingEngine ? 'Iniciando motor en flujo...' : 'Cargando buffers de audio...');
       setMutedTrackIds(new Set(activeTracks.filter((track) => track.isMuted).map((track) => track.id)));
       setSoloTrackId(null);
 
@@ -1831,7 +1869,7 @@ export function LiveDirectorView({
       stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trackSignature, hasResolvedEngineFlag, initialize, reloadKey, stop, useStreamingEngine]);
+  }, [trackSignature, hasResolvedEngineFlag, initialize, isIOSNativeEngineSurface, reloadKey, stop, useStreamingEngine]);
 
   const stopMasterVolumeFade = useCallback(() => {
     if (masterVolumeFadeFrameRef.current !== null) {
@@ -2242,10 +2280,19 @@ export function LiveDirectorView({
 
   const handleCloseTrackLoadModal = useCallback(() => {
     if (pendingEnabledMap && manualSession) {
-      const nextTracks = manualSession.tracks.map((track) => ({
-        ...track,
-        enabled: pendingEnabledMap[track.id] !== false,
-      }));
+      let enabledCount = 0;
+      const nextTracks = manualSession.tracks.map((track) => {
+        const wantsEnabled = pendingEnabledMap[track.id] !== false;
+        const canEnable = isIOSNativeEngineSurface || !wantsEnabled || enabledCount < webActiveTrackLimit;
+        const enabled = wantsEnabled && canEnable;
+        if (enabled) {
+          enabledCount += 1;
+        }
+        return {
+          ...track,
+          enabled,
+        };
+      });
       const hasAnyEnabled = nextTracks.some((t) => t.enabled !== false);
       if (hasAnyEnabled) {
         setManualSession((prev) => prev ? { ...prev, tracks: nextTracks } : prev);
@@ -2256,7 +2303,7 @@ export function LiveDirectorView({
     }
     setPendingEnabledMap(null);
     setShowTrackLoadModal(false);
-  }, [pendingEnabledMap, manualSession, hasPersistedSongContext, commitMixerStateSilent]);
+  }, [pendingEnabledMap, manualSession, isIOSNativeEngineSurface, webActiveTrackLimit, hasPersistedSongContext, commitMixerStateSilent]);
 
   const handleOpenOffsetModal = useCallback(() => {
     offsetModalInitialValueRef.current = Number.isFinite(Number(manualSession?.sectionOffsetSeconds))
@@ -2536,11 +2583,15 @@ export function LiveDirectorView({
   }, [commitMixerStateSilent, hasPersistedSongContext, hasProvidedTracks, hasTrackSession, manualSession, sessionTracks, setTrackOutputRoute, trackOutputRoutes]);
 
   const handleEngineToggle = useCallback(() => {
+    if (isIOSNativeEngineSurface) {
+      return;
+    }
+
     setLoadError(null);
     setBusyMessage(null);
     setIsInitializingSession(false);
     setUseStreamingEngine((previous) => !previous);
-  }, []);
+  }, [isIOSNativeEngineSurface]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -2746,6 +2797,13 @@ export function LiveDirectorView({
   const handleSectionsPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     endSectionsDrag(event.pointerId);
   }, [endSectionsDrag]);
+
+  const pendingEnabledCount = pendingEnabledMap
+    ? Object.values(pendingEnabledMap).filter(Boolean).length
+    : activeTracks.length;
+  const pendingEffectiveEnabledCount = isIOSNativeEngineSurface
+    ? pendingEnabledCount
+    : Math.min(pendingEnabledCount, webActiveTrackLimit);
 
   const readyStateLabel = !hasTrackSession
     ? 'Sin sesion'
@@ -3133,12 +3191,15 @@ export function LiveDirectorView({
                             <button
                               type="button"
                               onClick={handleEngineToggle}
+                              disabled={isIOSNativeEngineSurface}
                               className={`ui-pressable-soft rounded-full border ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'} text-left transition-all ${useStreamingEngine
                                 ? 'border-cyan-300/34 bg-cyan-300/10 text-cyan-50 shadow-[0_0_18px_rgba(129,221,245,0.14)]'
-                                : 'border-white/8 bg-black/18 text-white/76 hover:text-white'
+                                : isIOSNativeEngineSurface
+                                  ? 'border-emerald-300/30 bg-emerald-300/10 text-emerald-50 shadow-[0_0_18px_rgba(67,196,119,0.12)]'
+                                  : 'border-white/8 bg-black/18 text-white/76 hover:text-white'
                                 }`}
                               aria-label={`Cambiar motor. Motor actual: ${currentEngineLabel}`}
-                              title={`Motor activo: ${currentEngineLabel}. Pulsa para cambiar.`}
+                              title={isIOSNativeEngineSurface ? 'Motor Apple nativo activo para app iOS.' : `Motor activo: ${currentEngineLabel}. Pulsa para cambiar.`}
                             >
                               <p className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : 'text-[0.6rem]'} font-black uppercase tracking-[0.18em] text-white/38`}>
                                 Motor
@@ -3889,14 +3950,23 @@ export function LiveDirectorView({
             <div className={`mt-4 flex items-center justify-between gap-3 rounded-[1rem] border border-white/8 bg-black/24 ${useWideTrackLoadModal ? 'px-3 py-2' : 'px-3 py-2.5'}`}>
               <div>
                 <p className="text-[0.6rem] font-black uppercase tracking-[0.18em] text-white/36">Resumen</p>
-                <p className={`${useWideTrackLoadModal ? 'mt-0.5 text-[0.92rem]' : 'mt-1 text-sm'} font-semibold text-white/88`}>{pendingEnabledMap ? Object.values(pendingEnabledMap).filter(Boolean).length : activeTracks.length} de {sessionTracks.length} activos</p>
+                <p className={`${useWideTrackLoadModal ? 'mt-0.5 text-[0.92rem]' : 'mt-1 text-sm'} font-semibold text-white/88`}>
+                  {pendingEffectiveEnabledCount} de {sessionTracks.length} activos{isWebTrackLimitExceeded || (!isIOSNativeEngineSurface && pendingEnabledCount > pendingEffectiveEnabledCount) ? ' (limite web)' : ''}
+                </p>
               </div>
               <button
                 type="button"
                 onClick={() => {
                   if (!pendingEnabledMap) return;
                   const nextMap: Record<string, boolean> = {};
-                  Object.keys(pendingEnabledMap).forEach((id) => { nextMap[id] = true; });
+                  let enabledCount = 0;
+                  sessionTracks.forEach((track) => {
+                    const canEnable = isIOSNativeEngineSurface || enabledCount < webActiveTrackLimit;
+                    nextMap[track.id] = canEnable;
+                    if (canEnable) {
+                      enabledCount += 1;
+                    }
+                  });
                   setPendingEnabledMap(nextMap);
                 }}
                 className={`ui-pressable-soft rounded-full border border-white/10 bg-white/[0.05] font-black uppercase tracking-[0.18em] text-white/76 ${useWideTrackLoadModal ? 'px-3 py-1.5 text-[0.58rem]' : 'px-3 py-2 text-[0.62rem]'}`}
@@ -3915,6 +3985,9 @@ export function LiveDirectorView({
                     type="button"
                     onClick={() => {
                       if (!pendingEnabledMap) return;
+                      const isEnabling = pendingEnabledMap[track.id] === false;
+                      const enabledCount = Object.values(pendingEnabledMap).filter(Boolean).length;
+                      if (!isIOSNativeEngineSurface && isEnabling && enabledCount >= webActiveTrackLimit) return;
                       const next = { ...pendingEnabledMap, [track.id]: !pendingEnabledMap[track.id] };
                       const hasAny = Object.values(next).some(Boolean);
                       if (hasAny) setPendingEnabledMap(next);

@@ -1,7 +1,6 @@
 ---
 import Layout from '../../layouts/Layout.astro';
 import LiveDirectorView from '../../components/react/LiveDirectorView';
-import LiveDirectorNativeRouteGate from '../../components/react/LiveDirectorNativeRouteGate';
 import { supabase } from '../../lib/supabase';
 import {
   buildLiveDirectorSectionsFromMarkers,
@@ -83,13 +82,12 @@ if (requestedSong) {
       };
     }
   } catch (error) {
-    console.error('Live Director preview preload failed:', error);
+    console.error('Live Director iOS preload failed:', error);
   }
 }
 ---
 
 <Layout>
-  <LiveDirectorNativeRouteGate client:load />
   <LiveDirectorView
     client:load
     songId={songRecord?.id || ''}
@@ -102,5 +100,6 @@ if (requestedSong) {
     sections={songRecord?.sections || undefined}
     initialSession={songRecord?.session || undefined}
     requiresSongContext={true}
+    engineSurface="ios-native"
   />
 </Layout>

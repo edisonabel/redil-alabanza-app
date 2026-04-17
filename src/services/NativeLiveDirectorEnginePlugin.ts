@@ -1,0 +1,53 @@
+import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
+import type { TrackData } from './MultitrackEngine';
+import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
+
+export type NativeLiveDirectorEngineState = {
+  isPlaying: boolean;
+  currentTime: number;
+  duration: number;
+  trackLevels: Record<string, number>;
+  engineMode: 'ios-native';
+};
+
+export type NativeLiveDirectorEngineLoadResult = {
+  duration: number;
+  tracks: TrackData[];
+};
+
+export type NativeLiveDirectorLoadProgress = {
+  loaded: number;
+  total: number;
+};
+
+export interface NativeLiveDirectorEnginePlugin {
+  load(options: { tracks: TrackData[] }): Promise<NativeLiveDirectorEngineLoadResult>;
+  play(): Promise<NativeLiveDirectorEngineState>;
+  pause(): Promise<NativeLiveDirectorEngineState>;
+  stop(): Promise<NativeLiveDirectorEngineState>;
+  seekTo(options: { time: number }): Promise<NativeLiveDirectorEngineState>;
+  setTrackVolume(options: { trackId: string; volume: number }): Promise<void>;
+  setTrackOutputRoute(options: { trackId: string; outputRoute: TrackOutputRoute }): Promise<void>;
+  toggleMute(options: { trackId: string }): Promise<{ muted: boolean }>;
+  soloTrack(options: { trackId: string }): Promise<{ soloTrackId: string | null }>;
+  setMasterVolume(options: { volume: number }): Promise<void>;
+  getState(): Promise<NativeLiveDirectorEngineState>;
+  addListener(
+    eventName: 'state',
+    listenerFunc: (state: NativeLiveDirectorEngineState) => void,
+  ): Promise<PluginListenerHandle>;
+  addListener(
+    eventName: 'loadProgress',
+    listenerFunc: (progress: NativeLiveDirectorLoadProgress) => void,
+  ): Promise<PluginListenerHandle>;
+}
+
+export const NativeLiveDirectorEngine = registerPlugin<NativeLiveDirectorEnginePlugin>(
+  'NativeLiveDirectorEngine',
+);
+
+export const isNativeLiveDirectorEngineAvailable = () => (
+  Capacitor.isNativePlatform() &&
+  Capacitor.getPlatform() === 'ios' &&
+  Capacitor.isPluginAvailable('NativeLiveDirectorEngine')
+);

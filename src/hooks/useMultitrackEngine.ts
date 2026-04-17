@@ -13,13 +13,21 @@ const STREAMING_AUTO_ROUTE_DISABLED_SESSION_KEY = 'live-director:disable-streami
 const AUTO_STREAMING_TRACK_THRESHOLD = 6;
 type EngineKind = 'buffer' | 'streaming';
 type EngineInstance = MultitrackEngine | StreamingMultitrackEngine;
-type EngineDiagnostics = ReturnType<MultitrackEngine['getDiagnostics']>;
+export type LiveDirectorEngineDiagnostics = {
+  engineMode: 'buffer' | 'media' | 'streaming' | 'ios-native';
+  trackCount: number;
+  estimatedAudioMemoryBytes: number;
+  browserHeapUsedBytes: number | null;
+  browserHeapLimitBytes: number | null;
+  deviceMemoryGb: number | null;
+};
+type EngineDiagnostics = LiveDirectorEngineDiagnostics;
 
 type UseMultitrackEngineOptions = {
   useStreamingEngine?: boolean;
 };
 
-type UseMultitrackEngineReturn = {
+export type UseMultitrackEngineReturn = {
   isPlaying: boolean;
   currentTime: number;
   duration: number;
