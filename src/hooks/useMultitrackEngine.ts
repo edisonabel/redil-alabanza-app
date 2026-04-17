@@ -8,6 +8,7 @@ type TrackLevelsState = Record<string, number>;
 type LoadProgressState = { loaded: number; total: number } | null;
 const UI_UPDATE_INTERVAL_MS = 1000 / 24;
 const DIAGNOSTICS_UPDATE_INTERVAL_MS = 1000;
+const TRACK_LEVEL_UPDATE_THRESHOLD = 0.006;
 const STREAMING_AUTO_ROUTE_DISABLED_SESSION_KEY = 'live-director:disable-streaming-auto-route';
 const AUTO_STREAMING_TRACK_THRESHOLD = 6;
 type EngineKind = 'buffer' | 'streaming';
@@ -231,7 +232,7 @@ export function useMultitrackEngine(
     if (!hasMeaningfulChange) {
       for (let index = 0; index < nextKeys.length; index += 1) {
         const key = nextKeys[index];
-        if (Math.abs((previousLevels[key] ?? 0) - (nextLevels[key] ?? 0)) >= 0.018) {
+        if (Math.abs((previousLevels[key] ?? 0) - (nextLevels[key] ?? 0)) >= TRACK_LEVEL_UPDATE_THRESHOLD) {
           hasMeaningfulChange = true;
           break;
         }

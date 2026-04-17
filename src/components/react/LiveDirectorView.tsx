@@ -223,28 +223,6 @@ const coverArtCache = new Map<string, string | null>();
 
 const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 
-const hashTrackId = (trackId: string) => {
-  let hash = 0;
-  for (let index = 0; index < trackId.length; index += 1) {
-    hash = (hash * 31 + trackId.charCodeAt(index)) % 997;
-  }
-  return hash;
-};
-
-const buildFallbackMeterLevel = (trackId: string, timeInSeconds: number, volume: number) => {
-  const safeVolume = clamp(volume);
-  if (safeVolume <= 0.001) {
-    return 0;
-  }
-
-  const seed = hashTrackId(trackId);
-  const slowLift = 0.94 + Math.sin(timeInSeconds * (1.35 + (seed % 5) * 0.08) + seed * 0.05) * 0.06;
-  const shimmer = 0.96 + Math.sin(timeInSeconds * (4.2 + (seed % 7) * 0.07) + seed * 0.11) * 0.04;
-  const volumeCurve = Math.pow(safeVolume, 0.86);
-
-  return clamp(volumeCurve * slowLift * shimmer, 0.02, 0.92);
-};
-
 const formatClock = (timeInSeconds: number) => {
   const safeValue = Math.max(0, Math.floor(timeInSeconds));
   const minutes = Math.floor(safeValue / 60);
@@ -962,8 +940,6 @@ export function LiveDirectorView({
   const padFadeTargetRefA = useRef(0);
   const padFadeTargetRefB = useRef(0);
   const padFadeFrameRef = useRef<number | null>(null);
-  const guideMeterFrameRef = useRef<number | null>(null);
-  const guideMeterStartedAtRef = useRef(0);
   const ownedObjectUrlsRef = useRef<string[]>([]);
   const masterVolumeRef = useRef(0.82);
   const appliedMasterVolumeRef = useRef(0.82);
@@ -1007,7 +983,6 @@ export function LiveDirectorView({
   const [isNativeIosShell, setIsNativeIosShell] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
-  const [guideMeterClock, setGuideMeterClock] = useState(0);
   const [sectionsLaneViewportWidth, setSectionsLaneViewportWidth] = useState(0);
   const [manualSession, setManualSession] = useState<LiveDirectorResolvedSession | null>(
     initialSession ? toResolvedSession(initialSession) : null,
@@ -1307,8 +1282,6 @@ export function LiveDirectorView({
     return activeSegment.leftPx + activeSegment.widthPx * progressWithinSection;
   }, [activeSectionIndex, currentTime, playbackTimelineDuration, sectionLaneSegments, sectionTimelineDuration]);
 
-  const visualMeterTime = guideMeterClock + currentTime * 0.37;
-
   const mixerView = useMemo<MixerTrackView[]>(() => {
     const sourceTracks =
       activeTracks.length > 0
@@ -1329,16 +1302,11 @@ export function LiveDirectorView({
       const muted = mutedTrackIds.has(track.id);
       const dimmed = Boolean(soloTrackId && soloTrackId !== track.id);
       const rawLevel = clamp(trackLevels[track.id] ?? 0);
-      const hasLiveMeterLevel = rawLevel > 0.018;
-      const guideLevel = isPlaying && hasTrackSession && !hasLiveMeterLevel && !muted && !dimmed
-        ? buildFallbackMeterLevel(track.id, visualMeterTime, volume)
-        : 0;
-      const visualLevel = hasLiveMeterLevel ? rawLevel : guideLevel;
 
       return {
         ...meta,
         volume,
-        level: muted || dimmed ? 0 : visualLevel,
+        level: muted || dimmed ? 0 : rawLevel,
         muted,
         soloed: soloTrackId === track.id,
         dimmed,
@@ -1356,7 +1324,7 @@ export function LiveDirectorView({
         accent: '#43c477',
         defaultVolume: resolvedInternalPadVolume,
         volume: resolvedInternalPadVolume,
-        level: isPadActive ? buildFallbackMeterLevel('__internal-pad__', visualMeterTime, resolvedInternalPadVolume) : 0,
+        level: 0,
         muted: !isPadActive || resolvedInternalPadVolume <= 0.001,
         soloed: false,
         dimmed: false,
@@ -1377,7 +1345,7 @@ export function LiveDirectorView({
     }
 
     return resolvedMixerTracks;
-  }, [activeTracks, hasTrackSession, isEnsayoMode, isPadActive, isPlaying, mutedTrackIds, resolvedInternalPadVolume, resolvedPadUrl, soloTrackId, trackLevels, trackOutputRoutes, trackVolumes, visualMeterTime]);
+  }, [activeTracks, isEnsayoMode, isPadActive, mutedTrackIds, resolvedInternalPadVolume, resolvedPadUrl, soloTrackId, trackLevels, trackOutputRoutes, trackVolumes]);
 
   const mappedTrackDetails = useMemo(
     () =>
@@ -1562,54 +1530,6 @@ export function LiveDirectorView({
       isPlaying,
     });
   }, [activeSectionIndex, currentTime, isPlaying, onPlaybackSnapshot, sectionOffsetSeconds, songId]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    if (!isPlaying || !hasTrackSession) {
-      if (guideMeterFrameRef.current !== null) {
-        window.cancelAnimationFrame(guideMeterFrameRef.current);
-        guideMeterFrameRef.current = null;
-      }
-
-      guideMeterStartedAtRef.current = 0;
-      setGuideMeterClock(0);
-      return;
-    }
-
-    let cancelled = false;
-    let lastCommitAt = 0;
-    const updateIntervalMs = 1000 / 30;
-
-    const tick = (frameTime: number) => {
-      if (cancelled) {
-        return;
-      }
-
-      if (guideMeterStartedAtRef.current === 0) {
-        guideMeterStartedAtRef.current = frameTime;
-      }
-
-      if (frameTime - lastCommitAt >= updateIntervalMs) {
-        lastCommitAt = frameTime;
-        setGuideMeterClock((frameTime - guideMeterStartedAtRef.current) / 1000);
-      }
-
-      guideMeterFrameRef.current = window.requestAnimationFrame(tick);
-    };
-
-    guideMeterFrameRef.current = window.requestAnimationFrame(tick);
-
-    return () => {
-      cancelled = true;
-      if (guideMeterFrameRef.current !== null) {
-        window.cancelAnimationFrame(guideMeterFrameRef.current);
-        guideMeterFrameRef.current = null;
-      }
-    };
-  }, [hasTrackSession, isPlaying]);
 
   const syncManualSessionState = useCallback((session: LiveDirectorResolvedSession) => {
     setLoadError(null);
