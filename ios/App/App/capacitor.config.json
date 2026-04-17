@@ -1,0 +1,12 @@
+{
+	"appId": "com.edisonabel.redilalabanza",
+	"appName": "Redil Alabanza",
+	"webDir": "dist",
+	"server": {
+		"url": "https://alabanzaredilestadio.com",
+		"cleartext": false
+	},
+	"packageClassList": [
+		"App.NativeLiveDirectorEnginePlugin"
+	]
+}
