@@ -70,6 +70,11 @@ html[data-native-app='true'] #dashboard-scroll-root {
   height: calc(100dvh - 80px - var(--app-safe-top-offset));
 }
 
+html[data-live-director-active='true'] nav[data-bottom-nav='true'],
+html[data-live-director-active='true'] #layout-notification-bell {
+  display: none !important;
+}
+
 button,
 [role='button'],
 input[type='button'],

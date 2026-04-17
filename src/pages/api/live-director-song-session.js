@@ -162,6 +162,37 @@ const fetchSongRow = async (songId) => {
   return fallback.data ? { ...fallback.data, multitrack_session: null } : null;
 };
 
+export const GET = async ({ request, cookies }) => {
+  try {
+    await requireAuthenticatedUser(cookies);
+
+    const url = new URL(request.url);
+    const songId = String(url.searchParams.get('songId') || '').trim();
+
+    if (!songId) {
+      return jsonResponse({ error: 'Se requiere songId.' }, 400);
+    }
+
+    const songRow = await fetchSongRow(songId);
+
+    if (!songRow) {
+      return jsonResponse({ error: 'La cancion solicitada no existe.' }, 404);
+    }
+
+    const session = normalizePersistedLiveDirectorSession(songRow.multitrack_session, {
+      songId,
+      songTitle: String(songRow.titulo || ''),
+    });
+
+    return jsonResponse({ session });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error interno del servidor.';
+    const status = message.startsWith('No autorizado') ? 401 : 500;
+    console.error('Live Director session fetch error:', error);
+    return jsonResponse({ error: message }, status);
+  }
+};
+
 export const POST = async ({ request, cookies }) => {
   try {
     await requireAuthenticatedUser(cookies);

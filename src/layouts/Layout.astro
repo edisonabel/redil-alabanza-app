@@ -70,9 +70,9 @@ const hexToRgbString = (hex) => {
 const pathname = new URL(Astro.request.url).pathname;
 const isAdminRepertorioView = pathname === '/admin';
 const isChordProPrintView = pathname === '/herramientas/chordpro-print';
-const isLiveDirectorPreviewView = pathname === '/herramientas/live-director-preview';
+const isLiveDirectorShellView = pathname === '/herramientas/live-director-preview' || pathname === '/herramientas/live-director-ios';
 const isAuthView = pathname === '/login' || pathname === '/reset-password';
-const showBottomNav = !isAdminRepertorioView && !isChordProPrintView && !isLiveDirectorPreviewView && !isAuthView;
+const showBottomNav = !isAdminRepertorioView && !isChordProPrintView && !isLiveDirectorShellView && !isAuthView;
 const showGlobalRuntimeIslands = !isAuthView;
 const brandingAccessToken = Astro.cookies.get('sb-access-token')?.value || '';
 const shouldBustBrandingCache =
@@ -571,7 +571,7 @@ const themeColors = brandingData;
    <p class="standalone-boot-splash__hint">Preparando tu espacio de trabajo</p>
   </div>
  </div>
-{pathname !== '/' && user && !isAdminRepertorioView && !isChordProPrintView && !isLiveDirectorPreviewView && (
+{pathname !== '/' && user && !isAdminRepertorioView && !isChordProPrintView && !isLiveDirectorShellView && (
   <div
    id="layout-notification-bell"
    class="fixed right-4 md:right-6 z-[61] pointer-events-none"

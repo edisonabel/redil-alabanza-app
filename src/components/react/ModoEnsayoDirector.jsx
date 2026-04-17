@@ -6,6 +6,7 @@ import {
   buildLiveDirectorSectionsFromMarkers,
   normalizePersistedLiveDirectorSession,
 } from '../../utils/liveDirectorSongSession';
+import { fetchLiveDirectorSongSession } from '../../utils/liveDirectorUploadClient';
 import { getPadUrlForSongKey } from '../../utils/padAudio';
 
 const CACHE_NAME = 'repertorio-offline-cache-v1';
@@ -136,6 +137,40 @@ const buildSongCacheUrls = (song, sessionOverride = null) => {
   return Array.from(new Set([audioUrl, padUrl, ...sessionUrls].filter(Boolean)));
 };
 
+const buildSessionTrackSignature = (session) => (
+  Array.isArray(session?.tracks)
+    ? session.tracks
+      .map((track) => [
+        String(track?.id || '').trim(),
+        String(track?.url || '').trim(),
+        track?.enabled !== false ? '1' : '0',
+        Number.isFinite(Number(track?.volume)) ? Number(track.volume).toFixed(4) : '1',
+        track?.isMuted ? '1' : '0',
+        String(track?.outputRoute || '').trim(),
+      ].join(':'))
+      .join('|')
+    : ''
+);
+
+const shouldUseFetchedSession = (currentSession, fetchedSession) => {
+  if (!fetchedSession?.tracks?.length) {
+    return false;
+  }
+
+  if (!currentSession?.tracks?.length) {
+    return true;
+  }
+
+  const currentUpdatedAt = String(currentSession?.updatedAt || '').trim();
+  const fetchedUpdatedAt = String(fetchedSession?.updatedAt || '').trim();
+
+  if (currentUpdatedAt && fetchedUpdatedAt && currentUpdatedAt === fetchedUpdatedAt) {
+    return false;
+  }
+
+  return buildSessionTrackSignature(currentSession) !== buildSessionTrackSignature(fetchedSession);
+};
+
 const cacheUrlIfNeeded = async (cache, url) => {
   const cached = await cache.match(url);
   if (cached) {
@@ -246,6 +281,45 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
 
     return chips;
   }, [downloadStatus.active, downloadStatus.done, downloadStatus.progress, downloadStatus.total, syncConnected]);
+
+  useEffect(() => {
+    if (!activeSongId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const refreshPersistedSession = async () => {
+      try {
+        const fetchedSession = await fetchLiveDirectorSongSession(activeSongId);
+        if (cancelled || !fetchedSession?.tracks?.length) {
+          return;
+        }
+
+        setSessionOverrides((previous) => {
+          const currentSession = previous[activeSongId] || activeSong?.multitrackSession || null;
+          if (!shouldUseFetchedSession(currentSession, fetchedSession)) {
+            return previous;
+          }
+
+          return {
+            ...previous,
+            [activeSongId]: fetchedSession,
+          };
+        });
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('[ModoEnsayoDirector] No se pudo refrescar la sesion multitrack guardada.', error);
+        }
+      }
+    };
+
+    void refreshPersistedSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSong?.multitrackSession, activeSongId]);
 
   useEffect(() => {
     screenWakeLockService.setRequested('modo-ensayo-director', true);

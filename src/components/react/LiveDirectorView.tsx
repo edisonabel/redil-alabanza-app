@@ -1405,6 +1405,24 @@ export function LiveDirectorView({
   }, [seededTrackOutputRoutes]);
 
   useEffect(() => {
+    if (typeof document === 'undefined') {
+      return undefined;
+    }
+
+    const root = document.documentElement;
+    const previousValue = root.getAttribute('data-live-director-active');
+    root.setAttribute('data-live-director-active', 'true');
+
+    return () => {
+      if (previousValue === null) {
+        root.removeAttribute('data-live-director-active');
+      } else {
+        root.setAttribute('data-live-director-active', previousValue);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (hasProvidedTracks) {
       return;
     }
@@ -2818,7 +2836,7 @@ export function LiveDirectorView({
             ? (isPlaying ? 'En marcha' : 'Armado')
             : 'En espera';
 
-  const shellClassName = ['fixed inset-0 overflow-hidden bg-[#202223] text-white', className]
+  const shellClassName = ['fixed inset-0 z-[70] overflow-hidden bg-[#202223] text-white', className]
     .filter(Boolean)
     .join(' ');
   const shellContentStyle = useMemo(

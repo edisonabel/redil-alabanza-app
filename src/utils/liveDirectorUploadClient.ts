@@ -151,6 +151,16 @@ export async function saveLiveDirectorSongSession(params: {
   return readJsonResponse(response);
 }
 
+export async function fetchLiveDirectorSongSession(
+  songId: string,
+): Promise<LiveDirectorPersistedSession | null> {
+  const params = new URLSearchParams({ songId });
+  const response = await fetch(`/api/live-director-song-session?${params.toString()}`);
+  const payload = await readJsonResponse(response);
+
+  return payload?.session || null;
+}
+
 export async function deleteLiveDirectorSongSession(songId: string): Promise<void> {
   const response = await fetch('/api/live-director-song-session', {
     method: 'DELETE',
