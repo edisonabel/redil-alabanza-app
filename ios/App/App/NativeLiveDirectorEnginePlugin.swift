@@ -1,3 +1,4 @@
+import Accelerate
 import AVFoundation
 import Capacitor
 import CryptoKit
@@ -34,6 +35,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         var isMuted: Bool
         var outputRoute: String
         let duration: Double
+        var scheduledUntilFrame: AVAudioFramePosition = 0
 
         init(
             id: String,
@@ -62,6 +64,10 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private let engineQueue = DispatchQueue(label: "redil.live-director.native-engine")
     private let meterQueue = DispatchQueue(label: "redil.live-director.native-meters")
     private let meterLock = NSLock()
+    private let scheduledSegmentDurationSeconds: Double = 18
+    private let scheduledSegmentLookaheadSeconds: Double = 36
+    private let meterTapBufferFrameCount: AVAudioFrameCount = 2048
+    private let playerPrepareFrameCount: AVAudioFrameCount = 4096
     private var engine = AVAudioEngine()
     private var tracks: [NativeTrack] = []
     private var trackLevels: [String: Double] = [:]
@@ -72,6 +78,8 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private var masterVolume: Float = 1
     private var soloTrackId: String?
     private var stateTimer: DispatchSourceTimer?
+    private var playbackGeneration = 0
+    private var lastSegmentMaintenanceWallTime: CFTimeInterval = 0
 
     @objc public override func load() {
         super.load()
@@ -297,6 +305,8 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                 self.tracks = nextTracks
                 self.duration = nextTracks.map(\.duration).max() ?? 0
                 self.seekOffset = 0
+                self.playbackGeneration += 1
+                self.lastSegmentMaintenanceWallTime = 0
                 self.trackLevels = nextTracks.reduce(into: [String: Double]()) { levels, track in
                     levels[track.id] = 0
                 }
@@ -325,23 +335,24 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         }
 
         configureAudioSession()
+        playbackGeneration += 1
+        let currentGeneration = playbackGeneration
+        lastSegmentMaintenanceWallTime = 0
 
         tracks.forEach { track in
             track.player.stop()
             let startFrame = AVAudioFramePosition(max(0, seekOffset) * track.file.processingFormat.sampleRate)
-            let remainingFrames = max(0, track.file.length - startFrame)
-            if remainingFrames > 0 {
-                track.player.scheduleSegment(
-                    track.file,
-                    startingFrame: startFrame,
-                    frameCount: AVAudioFrameCount(remainingFrames),
-                    at: nil,
-                    completionHandler: nil
-                )
-            }
+            track.scheduledUntilFrame = min(max(0, startFrame), track.file.length)
+            scheduleTrackSegmentsUntil(
+                track,
+                targetTime: seekOffset + scheduledSegmentLookaheadSeconds,
+                generation: currentGeneration
+            )
+            track.player.prepare(withFrameCount: playerPrepareFrameCount)
         }
 
         if !engine.isRunning {
+            engine.prepare()
             try engine.start()
         }
 
@@ -351,6 +362,52 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         playStartWallTime = CACurrentMediaTime() + startDelay - seekOffset
         isPlaying = true
         startStateTimer()
+    }
+
+    private func scheduleTrackSegmentsUntil(
+        _ track: NativeTrack,
+        targetTime: Double,
+        generation: Int
+    ) {
+        guard generation == playbackGeneration else { return }
+
+        let sampleRate = track.file.processingFormat.sampleRate
+        guard sampleRate > 0 else { return }
+
+        let targetFrame = min(
+            track.file.length,
+            AVAudioFramePosition(max(0, targetTime) * sampleRate)
+        )
+        let maxSegmentFrames = max(
+            1,
+            AVAudioFramePosition(scheduledSegmentDurationSeconds * sampleRate)
+        )
+
+        while track.scheduledUntilFrame < targetFrame {
+            let startFrame = track.scheduledUntilFrame
+            let remainingFrames = track.file.length - startFrame
+            if remainingFrames <= 0 {
+                break
+            }
+
+            let nextFrameCount = min(remainingFrames, maxSegmentFrames)
+            track.player.scheduleSegment(
+                track.file,
+                startingFrame: startFrame,
+                frameCount: AVAudioFrameCount(nextFrameCount),
+                at: nil,
+                completionHandler: nil
+            )
+            track.scheduledUntilFrame = startFrame + nextFrameCount
+        }
+    }
+
+    private func maintainScheduledSegments(generation: Int) {
+        guard isPlaying, generation == playbackGeneration else { return }
+        let targetTime = min(duration, currentTime() + scheduledSegmentLookaheadSeconds)
+        tracks.forEach { track in
+            scheduleTrackSegmentsUntil(track, targetTime: targetTime, generation: generation)
+        }
     }
 
     private func pausePlayback() {
@@ -364,11 +421,14 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     }
 
     private func stopPlayback(resetPosition: Bool) {
+        playbackGeneration += 1
         tracks.forEach { $0.player.stop() }
         isPlaying = false
         if resetPosition {
             seekOffset = 0
         }
+        tracks.forEach { $0.scheduledUntilFrame = 0 }
+        lastSegmentMaintenanceWallTime = 0
         resetMeters()
         emitState()
     }
@@ -396,7 +456,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     }
 
     private func installMeterTap(for track: NativeTrack) {
-        track.mixer.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self, weak track] buffer, _ in
+        track.mixer.installTap(onBus: 0, bufferSize: meterTapBufferFrameCount, format: nil) { [weak self, weak track] buffer, _ in
             guard let self, let track else { return }
 
             let level = self.computeLevel(from: buffer)
@@ -422,12 +482,9 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         var peak: Float = 0
         for channelIndex in 0..<channelCount {
             let samples = channelData[channelIndex]
-            for frameIndex in 0..<frameLength {
-                let absoluteSample = abs(samples[frameIndex])
-                if absoluteSample > peak {
-                    peak = absoluteSample
-                }
-            }
+            var channelPeak: Float = 0
+            vDSP_maxmgv(samples, 1, &channelPeak, vDSP_Length(frameLength))
+            peak = max(peak, channelPeak)
         }
 
         if peak <= 0.00075 {
@@ -457,6 +514,16 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                     self.stopPlayback(resetPosition: true)
                 }
                 return
+            }
+            if self.isPlaying {
+                let now = CACurrentMediaTime()
+                if now - self.lastSegmentMaintenanceWallTime >= 0.75 {
+                    self.lastSegmentMaintenanceWallTime = now
+                    let generation = self.playbackGeneration
+                    self.engineQueue.async {
+                        self.maintainScheduledSegments(generation: generation)
+                    }
+                }
             }
             self.emitState()
         }
@@ -513,13 +580,17 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
     private func cachedAudioURL(for remoteURL: URL) async throws -> URL {
         let cacheDirectory = try FileManager.default.url(
-            for: .cachesDirectory,
+            for: .applicationSupportDirectory,
             in: .userDomainMask,
             appropriateFor: nil,
             create: true
         ).appendingPathComponent("RedilLiveDirectorStems", isDirectory: true)
 
         try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+        var protectedCacheDirectory = cacheDirectory
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        try? protectedCacheDirectory.setResourceValues(resourceValues)
 
         let extensionName = remoteURL.pathExtension.isEmpty ? "audio" : remoteURL.pathExtension
         let digest = SHA256.hash(data: Data(remoteURL.absoluteString.utf8))
