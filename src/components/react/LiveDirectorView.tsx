@@ -231,43 +231,18 @@ const hashTrackId = (trackId: string) => {
   return hash;
 };
 
-const getGuideMeterProfile = (trackId: string) => {
-  const normalizedId = trackId.toLowerCase();
-
-  if (normalizedId.includes('click') || normalizedId.includes('metro')) {
-    return { floor: 0.08, range: 0.86, pulseRate: 3.7, textureRate: 13.8, transient: 0.9 };
-  }
-
-  if (normalizedId.includes('drum') || normalizedId.includes('perc')) {
-    return { floor: 0.1, range: 0.82, pulseRate: 4.6, textureRate: 15.4, transient: 0.7 };
-  }
-
-  if (normalizedId.includes('bass')) {
-    return { floor: 0.11, range: 0.66, pulseRate: 2.15, textureRate: 8.4, transient: 0.45 };
-  }
-
-  if (normalizedId.includes('pad') || normalizedId.includes('string') || normalizedId.includes('organ')) {
-    return { floor: 0.16, range: 0.42, pulseRate: 1.35, textureRate: 3.6, transient: 0.08 };
-  }
-
-  if (normalizedId.includes('guide') || normalizedId.includes('cue') || normalizedId.includes('vocal')) {
-    return { floor: 0.09, range: 0.74, pulseRate: 3.15, textureRate: 10.6, transient: 0.52 };
-  }
-
-  return { floor: 0.08, range: 0.68, pulseRate: 2.75, textureRate: 9.2, transient: 0.36 };
-};
-
 const buildFallbackMeterLevel = (trackId: string, timeInSeconds: number, volume: number) => {
-  const seed = hashTrackId(trackId);
-  const profile = getGuideMeterProfile(trackId);
-  const pulse =
-    Math.abs(Math.sin(timeInSeconds * (profile.pulseRate + (seed % 7) * 0.11) + seed * 0.07)) * 0.58 +
-    Math.abs(Math.sin(timeInSeconds * (profile.textureRate + (seed % 5) * 0.19) + seed * 0.13)) * 0.3 +
-    Math.pow(Math.max(0, Math.sin(timeInSeconds * (profile.pulseRate * 1.9) + seed * 0.17)), 8) * profile.transient;
-  const shapedPulse = Math.pow(clamp(pulse), 1.18);
-  const volumeWeight = clamp(volume, 0.18, 1);
+  const safeVolume = clamp(volume);
+  if (safeVolume <= 0.001) {
+    return 0;
+  }
 
-  return clamp((profile.floor + shapedPulse * profile.range) * volumeWeight, 0.04, 0.96);
+  const seed = hashTrackId(trackId);
+  const slowLift = 0.94 + Math.sin(timeInSeconds * (1.35 + (seed % 5) * 0.08) + seed * 0.05) * 0.06;
+  const shimmer = 0.96 + Math.sin(timeInSeconds * (4.2 + (seed % 7) * 0.07) + seed * 0.11) * 0.04;
+  const volumeCurve = Math.pow(safeVolume, 0.86);
+
+  return clamp(volumeCurve * slowLift * shimmer, 0.02, 0.92);
 };
 
 const formatClock = (timeInSeconds: number) => {
@@ -592,9 +567,8 @@ const ChannelStrip = memo(function ChannelStrip({
   const knobGlow = muted ? 'rgba(120, 128, 140, 0.15)' : `${accent}30`;
   const displayLevel = muted ? 0 : clamp(level);
   const meterHeightPercent = displayLevel > 0.002 ? Math.max(5, displayLevel * 86) : 0;
-  const meterOpacity = muted ? 0.18 : 0.32 + displayLevel * 0.68;
-  const meterGlow = muted ? '0 0 0 transparent' : `0 0 ${12 + displayLevel * 24}px ${accent}62`;
-  const meterPeakBottom = `${Math.min(94, 10 + meterHeightPercent)}%`;
+  const meterOpacity = muted ? 0.16 : 0.28 + displayLevel * 0.54;
+  const meterGlow = muted ? '0 0 0 transparent' : `0 0 ${10 + displayLevel * 18}px ${accent}42`;
   const shellRadiusClass = ultraCompact ? 'rounded-[0.75rem]' : compact ? 'rounded-[0.85rem]' : 'rounded-[1.2rem]';
   const shellPaddingClass = ultraCompact ? 'px-0.75 pb-0.75 pt-0.85' : compact ? 'px-1.25 pb-1.25 pt-0.95' : 'px-3.5 pb-4 pt-3';
   const topControlsClass = showRouteFlip
@@ -805,38 +779,14 @@ const ChannelStrip = memo(function ChannelStrip({
             />
           ))}
           <div
-            className={`pointer-events-none absolute left-1/2 grid -translate-x-1/2 grid-cols-2 rounded-full transition-[height,opacity,filter] duration-75 ${ultraCompact ? 'bottom-[11%] w-[0.62rem] gap-[2px]' : compact ? 'bottom-[10%] w-[0.72rem] gap-[2px]' : 'bottom-[8.5%] w-[0.9rem] gap-[3px]'}`}
+            className={`pointer-events-none absolute left-1/2 -translate-x-1/2 rounded-full shadow-[0_0_14px_rgba(103,210,242,0.16)] transition-[height,opacity,box-shadow,filter] duration-100 ${ultraCompact ? 'bottom-[11%] w-[0.26rem]' : 'bottom-[10%] w-[0.32rem]'}`}
             style={{
               height: `${meterHeightPercent}%`,
+              backgroundColor: muted ? 'rgba(136, 144, 158, 0.42)' : accent,
               opacity: meterOpacity,
+              boxShadow: meterGlow,
               filter: muted ? 'grayscale(1)' : 'none',
             }}
-            aria-hidden="true"
-          >
-            {[0, 1].map((channel) => (
-              <span
-                key={`${id}-vu-${channel}`}
-                className="mt-auto h-full rounded-full"
-                style={{
-                  background: muted
-                    ? 'linear-gradient(180deg,rgba(148,163,184,0.6),rgba(71,85,105,0.38))'
-                    : `linear-gradient(180deg,#d9fbff 0%,${accent} 44%,rgba(67,196,119,0.74) 100%)`,
-                  boxShadow: meterGlow,
-                  transform: `scaleY(${channel === 0 ? 0.92 + displayLevel * 0.08 : 0.78 + displayLevel * 0.22})`,
-                  transformOrigin: 'bottom',
-                }}
-              />
-            ))}
-          </div>
-          <div
-            className={`pointer-events-none absolute left-1/2 -translate-x-1/2 rounded-full transition-[bottom,opacity,box-shadow] duration-75 ${ultraCompact ? 'h-[3px] w-[0.72rem]' : compact ? 'h-1 w-[0.85rem]' : 'h-1.5 w-[1rem]'}`}
-            style={{
-              bottom: meterPeakBottom,
-              backgroundColor: muted ? 'rgba(148, 163, 184, 0.54)' : '#e6fdff',
-              opacity: displayLevel > 0.05 ? 0.52 + displayLevel * 0.38 : 0,
-              boxShadow: muted ? '0 0 0 transparent' : `0 0 ${8 + displayLevel * 14}px ${accent}88`,
-            }}
-            aria-hidden="true"
           />
           <FaderThumb
             accent={accent}
@@ -1379,12 +1329,11 @@ export function LiveDirectorView({
       const muted = mutedTrackIds.has(track.id);
       const dimmed = Boolean(soloTrackId && soloTrackId !== track.id);
       const rawLevel = clamp(trackLevels[track.id] ?? 0);
-      const guideLevel = isPlaying && hasTrackSession && !muted && !dimmed
+      const hasLiveMeterLevel = rawLevel > 0.018;
+      const guideLevel = isPlaying && hasTrackSession && !hasLiveMeterLevel && !muted && !dimmed
         ? buildFallbackMeterLevel(track.id, visualMeterTime, volume)
         : 0;
-      const visualLevel = guideLevel > 0
-        ? Math.max(guideLevel, rawLevel * 0.72)
-        : rawLevel;
+      const visualLevel = hasLiveMeterLevel ? rawLevel : guideLevel;
 
       return {
         ...meta,
