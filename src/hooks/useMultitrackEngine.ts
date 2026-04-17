@@ -178,9 +178,7 @@ export function useMultitrackEngine(
 
   const commitCurrentTime = useCallback((nextTime: number) => {
     currentTimeRef.current = nextTime;
-    startTransition(() => {
-      setCurrentTime(nextTime);
-    });
+    setCurrentTime(nextTime);
   }, []);
 
   const commitDuration = useCallback((nextDuration: number) => {
@@ -191,9 +189,7 @@ export function useMultitrackEngine(
     }
 
     durationRef.current = safeDuration;
-    startTransition(() => {
-      setDuration(safeDuration);
-    });
+    setDuration(safeDuration);
   }, []);
 
   const getEngine = useCallback((targetKind: EngineKind) => {
@@ -252,9 +248,7 @@ export function useMultitrackEngine(
     }
 
     trackLevelsRef.current = nextSnapshot;
-    startTransition(() => {
-      setTrackLevels(nextSnapshot);
-    });
+    setTrackLevels(nextSnapshot);
   }, []);
 
   const commitDiagnostics = useCallback((nextDiagnostics: EngineDiagnostics | null) => {
