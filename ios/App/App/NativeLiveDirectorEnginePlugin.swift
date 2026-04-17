@@ -601,6 +601,24 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             return destinationURL
         }
 
+        if let legacyCacheDirectory = try? FileManager.default.url(
+            for: .cachesDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: false
+        ).appendingPathComponent("RedilLiveDirectorStems", isDirectory: true) {
+            let legacyURL = legacyCacheDirectory.appendingPathComponent(fileName)
+            if FileManager.default.fileExists(atPath: legacyURL.path) {
+                do {
+                    try FileManager.default.moveItem(at: legacyURL, to: destinationURL)
+                } catch {
+                    try FileManager.default.copyItem(at: legacyURL, to: destinationURL)
+                    try? FileManager.default.removeItem(at: legacyURL)
+                }
+                return destinationURL
+            }
+        }
+
         let (temporaryURL, response) = try await URLSession.shared.download(from: remoteURL)
         if let httpResponse = response as? HTTPURLResponse, !(200..<300).contains(httpResponse.statusCode) {
             throw NSError(domain: "NativeLiveDirectorEngine", code: httpResponse.statusCode, userInfo: [
