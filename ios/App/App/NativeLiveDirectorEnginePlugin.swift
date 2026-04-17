@@ -5,7 +5,7 @@ import Foundation
 import QuartzCore
 
 @objc(NativeLiveDirectorEnginePlugin)
-public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin {
+public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unchecked Sendable {
     public let identifier = "NativeLiveDirectorEnginePlugin"
     public let jsName = "NativeLiveDirectorEngine"
     public let pluginMethods: [CAPPluginMethod] = [
@@ -22,7 +22,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getState", returnType: CAPPluginReturnPromise)
     ]
 
-    private final class NativeTrack {
+    private final class NativeTrack: @unchecked Sendable {
         let id: String
         let name: String
         let remoteURL: URL
@@ -87,7 +87,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         Task {
             do {
                 let loadedTracks = try await self.prepareTracks(rawTracks, call: call)
-                try await self.configureEngine(with: loadedTracks)
+                await self.configureEngine(with: loadedTracks)
                 call.resolve([
                     "duration": self.duration,
                     "tracks": self.tracksPayload()
@@ -283,40 +283,36 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin {
         return preparedTracks
     }
 
-    private func configureEngine(with nextTracks: [NativeTrack]) async throws {
-        try await withCheckedThrowingContinuation { continuation in
+    private func configureEngine(with nextTracks: [NativeTrack]) async {
+        await withCheckedContinuation { continuation in
             engineQueue.async {
-                do {
-                    self.stopPlayback(resetPosition: true)
-                    self.tracks.forEach { track in
-                        track.mixer.removeTap(onBus: 0)
-                        self.engine.detach(track.player)
-                        self.engine.detach(track.mixer)
-                    }
-                    self.engine.stop()
-                    self.engine.reset()
-                    self.tracks = nextTracks
-                    self.duration = nextTracks.map(\.duration).max() ?? 0
-                    self.seekOffset = 0
-                    self.trackLevels = nextTracks.reduce(into: [String: Double]()) { levels, track in
-                        levels[track.id] = 0
-                    }
-
-                    nextTracks.forEach { track in
-                        self.engine.attach(track.player)
-                        self.engine.attach(track.mixer)
-                        self.engine.connect(track.player, to: track.mixer, format: track.file.processingFormat)
-                        self.engine.connect(track.mixer, to: self.engine.mainMixerNode, format: track.file.processingFormat)
-                        self.applyTrackMixState(track)
-                        self.installMeterTap(for: track)
-                    }
-
-                    self.engine.mainMixerNode.outputVolume = self.masterVolume
-                    self.startStateTimer()
-                    continuation.resume()
-                } catch {
-                    continuation.resume(throwing: error)
+                self.stopPlayback(resetPosition: true)
+                self.tracks.forEach { track in
+                    track.mixer.removeTap(onBus: 0)
+                    self.engine.detach(track.player)
+                    self.engine.detach(track.mixer)
                 }
+                self.engine.stop()
+                self.engine.reset()
+                self.tracks = nextTracks
+                self.duration = nextTracks.map(\.duration).max() ?? 0
+                self.seekOffset = 0
+                self.trackLevels = nextTracks.reduce(into: [String: Double]()) { levels, track in
+                    levels[track.id] = 0
+                }
+
+                nextTracks.forEach { track in
+                    self.engine.attach(track.player)
+                    self.engine.attach(track.mixer)
+                    self.engine.connect(track.player, to: track.mixer, format: track.file.processingFormat)
+                    self.engine.connect(track.mixer, to: self.engine.mainMixerNode, format: track.file.processingFormat)
+                    self.applyTrackMixState(track)
+                    self.installMeterTap(for: track)
+                }
+
+                self.engine.mainMixerNode.outputVolume = self.masterVolume
+                self.startStateTimer()
+                continuation.resume()
             }
         }
     }
