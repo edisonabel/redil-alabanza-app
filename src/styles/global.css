@@ -37,6 +37,7 @@
   --font-ui: "adineue", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --font-cta: "Modius", "adineue", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --app-safe-top-offset: 0px;
+  --app-safe-bottom-offset: 0px;
 }
 
 html,
@@ -47,16 +48,25 @@ body {
 }
 
 @media (max-width: 767px) {
-  html[data-standalone-app='true'] {
+  html[data-standalone-app='true'],
+  html[data-native-app='true'] {
     --app-safe-top-offset: calc(env(safe-area-inset-top) + 0.55rem);
+    --app-safe-bottom-offset: env(safe-area-inset-bottom);
+  }
+
+  html[data-native-app='true'] {
+    --app-safe-top-offset: max(calc(env(safe-area-inset-top) + 0.55rem), 2.75rem);
+    --app-safe-bottom-offset: max(env(safe-area-inset-bottom), 1rem);
   }
 }
 
-html[data-standalone-app='true'] .app-safe-main {
+html[data-standalone-app='true'] .app-safe-main,
+html[data-native-app='true'] .app-safe-main {
   padding-top: var(--app-safe-top-offset);
 }
 
-html[data-standalone-app='true'] #dashboard-scroll-root {
+html[data-standalone-app='true'] #dashboard-scroll-root,
+html[data-native-app='true'] #dashboard-scroll-root {
   height: calc(100dvh - 80px - var(--app-safe-top-offset));
 }
 
