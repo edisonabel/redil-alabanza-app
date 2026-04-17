@@ -103,9 +103,16 @@ const themeColors = brandingData;
 
     const syncStandaloneAppState = () => {
       const root = document.documentElement;
+      const capacitorBridge = window.Capacitor;
+      const isCapacitorNative =
+        Boolean(capacitorBridge?.isNativePlatform?.()) ||
+        capacitorBridge?.getPlatform?.() === 'ios' ||
+        capacitorBridge?.getPlatform?.() === 'android';
       const isStandalone =
+        isCapacitorNative ||
         window.matchMedia('(display-mode: standalone)').matches ||
         window.navigator.standalone === true;
+      root.dataset.nativeApp = isCapacitorNative ? 'true' : 'false';
       root.dataset.standaloneApp = isStandalone ? 'true' : 'false';
       const bootSplashDismissed = root.dataset.bootSplashDismissed === 'true';
       root.classList.toggle('app-boot-active', isStandalone && !bootSplashDismissed);
@@ -113,6 +120,8 @@ const themeColors = brandingData;
 
     window.__REDIL_SYNC_STANDALONE_APP_STATE__ = syncStandaloneAppState;
     syncStandaloneAppState();
+    window.setTimeout(syncStandaloneAppState, 0);
+    window.setTimeout(syncStandaloneAppState, 250);
     window.addEventListener('resize', syncStandaloneAppState);
     window.addEventListener('pageshow', syncStandaloneAppState);
     document.addEventListener('astro:page-load', syncStandaloneAppState);
