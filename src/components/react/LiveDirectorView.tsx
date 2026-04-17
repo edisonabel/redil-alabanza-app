@@ -16,6 +16,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProper
 import { useMultitrackEngine } from '../../hooks/useMultitrackEngine';
 import { useNativeIOSMultitrackEngine } from '../../hooks/useNativeIOSMultitrackEngine';
 import type { SongStructure, TrackData } from '../../services/MultitrackEngine';
+import { isNativeLiveDirectorEngineAvailable } from '../../services/NativeLiveDirectorEnginePlugin';
 import {
   createSequenceSessionFromFile,
   createStemSessionFromFolder,
@@ -961,7 +962,7 @@ export function LiveDirectorView({
   const [useStreamingEngine, setUseStreamingEngine] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [hasResolvedEngineFlag, setHasResolvedEngineFlag] = useState(false);
-  const isIOSNativeEngineSurface = engineSurface === 'ios-native';
+  const isIOSNativeEngineSurface = engineSurface === 'ios-native' || isNativeLiveDirectorEngineAvailable();
   const webMultitrackEngine = useMultitrackEngine({
     useStreamingEngine,
   });

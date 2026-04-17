@@ -47,6 +47,7 @@ export const NativeLiveDirectorEngine = registerPlugin<NativeLiveDirectorEngineP
 );
 
 export const isNativeLiveDirectorEngineAvailable = () => (
+  typeof window !== 'undefined' &&
   Capacitor.isNativePlatform() &&
   Capacitor.getPlatform() === 'ios' &&
   Capacitor.isPluginAvailable('NativeLiveDirectorEngine')

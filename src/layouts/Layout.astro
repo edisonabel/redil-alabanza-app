@@ -622,6 +622,62 @@ const themeColors = brandingData;
  )}
 
  <script>
+  import { Capacitor } from '@capacitor/core';
+
+  if (!window.__REDIL_CAPACITOR_INTERNAL_NAV_INITIALIZED__) {
+    window.__REDIL_CAPACITOR_INTERNAL_NAV_INITIALIZED__ = true;
+
+    const isNativeApp = () => Capacitor.isNativePlatform();
+
+    const toInternalPath = (rawUrl) => {
+      if (!rawUrl || typeof rawUrl !== 'string') return null;
+      if (/^(mailto:|tel:|sms:|blob:|data:|javascript:)/i.test(rawUrl)) return null;
+
+      try {
+        const url = new URL(rawUrl, window.location.href);
+        if (url.origin !== window.location.origin) return null;
+        return `${url.pathname}${url.search}${url.hash}`;
+      } catch {
+        return null;
+      }
+    };
+
+    document.addEventListener(
+      'click',
+      (event) => {
+        if (!isNativeApp()) return;
+        const target = event.target instanceof Element ? event.target : null;
+        const link = target?.closest?.('a[target="_blank"]');
+        if (!link) return;
+
+        const internalPath = toInternalPath(link.getAttribute('href') || '');
+        if (!internalPath) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        window.location.assign(internalPath);
+      },
+      true,
+    );
+
+    const nativeOpen = window.open?.bind(window);
+    if (nativeOpen) {
+      window.open = (rawUrl, target, features) => {
+        if (isNativeApp() && (!target || target === '_blank')) {
+          const internalPath = toInternalPath(String(rawUrl || ''));
+          if (internalPath) {
+            window.location.assign(internalPath);
+            return window;
+          }
+        }
+
+        return nativeOpen(rawUrl, target, features);
+      };
+    }
+  }
+ </script>
+
+ <script>
   import { supabase } from '../lib/supabase';
 
   const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
