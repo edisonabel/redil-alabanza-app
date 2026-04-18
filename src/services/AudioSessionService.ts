@@ -33,8 +33,24 @@ type MediaSessionMetadataPayload = {
   artwork?: MediaSessionArtwork[];
 };
 
+type CapacitorBridgeLike = {
+  isNativePlatform?: () => boolean;
+  getPlatform?: () => string;
+};
+
+type WindowWithCapacitorBridge = Window & typeof globalThis & {
+  Capacitor?: CapacitorBridgeLike;
+};
+
 const AUDIO_SESSION_TITLE = 'ALABANZA App';
 const AUDIO_SESSION_ARTIST = 'Modo Director';
+
+const isNativeIOSRuntime = () => {
+  if (typeof window === 'undefined') return false;
+
+  const bridge = (window as WindowWithCapacitorBridge).Capacitor;
+  return Boolean(bridge?.isNativePlatform?.()) && bridge?.getPlatform?.() === 'ios';
+};
 
 const buildSilentWavDataUri = (durationSeconds = 1, sampleRate = 8000) => {
   const numChannels = 1;
@@ -150,6 +166,10 @@ class AudioSessionService {
   async unlockFromUserGesture() {
     this.install();
 
+    if (isNativeIOSRuntime()) {
+      return false;
+    }
+
     if (this.unlockPromise) {
       return this.unlockPromise;
     }
@@ -170,12 +190,14 @@ class AudioSessionService {
         await controller.onPlay();
       } else if (controller?.audioElement) {
         await controller.audioElement.play();
-      } else {
+      } else if (!isNativeIOSRuntime()) {
         await this.ensureSilentLoopPlaying();
       }
     } catch (error) {
       console.warn('[AudioSessionService] No se pudo reanudar el audio principal.', error);
-      await this.ensureSilentLoopPlaying().catch(() => false);
+      if (!isNativeIOSRuntime()) {
+        await this.ensureSilentLoopPlaying().catch(() => false);
+      }
     }
 
     this.updatePlaybackState();
@@ -242,6 +264,7 @@ class AudioSessionService {
   }
 
   private installActivationCapture() {
+    if (isNativeIOSRuntime()) return;
     if (this.activationCaptureInstalled) return;
 
     this.activationCaptureInstalled = true;
@@ -265,7 +288,9 @@ class AudioSessionService {
   };
 
   private async restoreVisibleSession() {
-    await this.ensureSilentLoopPlaying().catch(() => false);
+    if (!isNativeIOSRuntime()) {
+      await this.ensureSilentLoopPlaying().catch(() => false);
+    }
 
     const handlers = Array.from(this.visibilityResumeHandlers);
     for (const handler of handlers) {
@@ -282,6 +307,7 @@ class AudioSessionService {
   private ensureSilentAudioElement() {
     if (this.silentAudio) return this.silentAudio;
     if (typeof document === 'undefined') return null;
+    if (isNativeIOSRuntime()) return null;
 
     const audio = document.createElement('audio');
     audio.id = 'redil-audio-session-silence';
@@ -307,6 +333,8 @@ class AudioSessionService {
   }
 
   private async ensureSilentLoopPlaying() {
+    if (isNativeIOSRuntime()) return false;
+
     const audio = this.ensureSilentAudioElement();
     if (!audio) return false;
 

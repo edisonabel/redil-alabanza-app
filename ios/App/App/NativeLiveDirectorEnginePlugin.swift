@@ -68,7 +68,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private let playerPrepareFrameCount: AVAudioFrameCount = 8192
     private let conversionBufferFrameCount: AVAudioFrameCount = 16384
     private let playbackStartDelay: Double = 0.2
-    private let stateEventIntervalMilliseconds = 125
+    private let stateEventIntervalMilliseconds = 250
     private var engine = AVAudioEngine()
     private var tracks: [NativeTrack] = []
     private var trackLevels: [String: Double] = [:]

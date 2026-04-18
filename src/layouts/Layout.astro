@@ -612,9 +612,15 @@ const themeColors = brandingData;
 
  {showGlobalRuntimeIslands && (
   <script>
+   import { Capacitor } from '@capacitor/core';
    import { audioSessionService } from '../services/AudioSessionService';
 
-   if (!window.__REDIL_AUDIO_SESSION_BOOTSTRAPPED__) {
+   const shouldInstallWebAudioSession = !(
+     Capacitor.isNativePlatform() &&
+     Capacitor.getPlatform() === 'ios'
+   );
+
+   if (shouldInstallWebAudioSession && !window.__REDIL_AUDIO_SESSION_BOOTSTRAPPED__) {
      window.__REDIL_AUDIO_SESSION_BOOTSTRAPPED__ = true;
      audioSessionService.install();
    }
@@ -923,6 +929,15 @@ const themeColors = brandingData;
   (() => {
     if (!('serviceWorker' in navigator)) return;
     if (window.__REDIL_MAIN_SW_SYNC__) return;
+    const capacitorBridge = window.Capacitor;
+    const isCapacitorNative =
+      window.location.protocol === 'capacitor:' ||
+      window.location.protocol === 'ionic:' ||
+      Boolean(capacitorBridge?.isNativePlatform?.()) ||
+      capacitorBridge?.getPlatform?.() === 'ios' ||
+      capacitorBridge?.getPlatform?.() === 'android';
+    if (isCapacitorNative) return;
+
     const isLocalHost =
       window.location.hostname === 'localhost' ||
       window.location.hostname === '127.0.0.1';
@@ -963,6 +978,15 @@ const themeColors = brandingData;
   <script is:inline>
   (function nuclearCacheFlushV3() {
     const FLAG_KEY = "v3_force_purge";
+    const capacitorBridge = window.Capacitor;
+    const isCapacitorNative =
+      window.location.protocol === 'capacitor:' ||
+      window.location.protocol === 'ionic:' ||
+      Boolean(capacitorBridge?.isNativePlatform?.()) ||
+      capacitorBridge?.getPlatform?.() === 'ios' ||
+      capacitorBridge?.getPlatform?.() === 'android';
+
+    if (isCapacitorNative) return;
 
     try {
       if (localStorage.getItem(FLAG_KEY) === "1") return;
