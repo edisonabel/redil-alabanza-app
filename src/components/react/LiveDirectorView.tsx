@@ -72,6 +72,16 @@ type DragScrollState = {
   startScrollLeft: number;
 };
 
+type FaderInteractionState = {
+  active: boolean;
+  pointerId: number | null;
+  mode: 'pending' | 'volume' | 'scroll';
+  startX: number;
+  startY: number;
+  startScrollLeft: number;
+  scrollContainer: HTMLElement | null;
+};
+
 type SurfaceView = 'mix' | 'sections';
 type LiveDirectorMode = 'director' | 'ensayo';
 type LiveDirectorEngineSurface = 'web' | 'ios-native';
@@ -146,6 +156,7 @@ type LiveDirectorViewProps = {
 };
 
 const WEB_ENGINE_MAX_ACTIVE_TRACKS = 9;
+const FADER_AXIS_LOCK_THRESHOLD_PX = 7;
 
 type ChannelStripProps = {
   id: string;
@@ -583,7 +594,15 @@ const ChannelStrip = memo(function ChannelStrip({
   const stripThumbWidthClass = ultraCompact ? 'max-w-[6.15rem]' : compact ? 'max-w-[7.05rem]' : 'max-w-[7.9rem]';
   const stripSliderWidthClass = ultraCompact ? 'top-[8%] bottom-[12%] w-[5.15rem]' : compact ? 'top-[7%] bottom-[11%] w-[5.95rem]' : 'top-[4.5%] bottom-[6.5%] w-[6rem]';
   const sliderSurfaceRef = useRef<HTMLDivElement | null>(null);
-  const draggingPointerIdRef = useRef<number | null>(null);
+  const faderInteractionRef = useRef<FaderInteractionState>({
+    active: false,
+    pointerId: null,
+    mode: 'pending',
+    startX: 0,
+    startY: 0,
+    startScrollLeft: 0,
+    scrollContainer: null,
+  });
 
   const updateVolumeFromClientY = useCallback((clientY: number) => {
     if (disabled) {
@@ -605,17 +624,26 @@ const ChannelStrip = memo(function ChannelStrip({
   }, [disabled, onVolumeChange]);
 
   const finishSliderDrag = useCallback((pointerId?: number, target?: HTMLDivElement | null) => {
+    const interaction = faderInteractionRef.current;
     if (
       typeof pointerId === 'number' &&
-      draggingPointerIdRef.current !== null &&
-      draggingPointerIdRef.current !== pointerId
+      interaction.pointerId !== null &&
+      interaction.pointerId !== pointerId
     ) {
       return;
     }
 
     const sliderSurface = target || sliderSurfaceRef.current;
-    const activePointerId = draggingPointerIdRef.current;
-    draggingPointerIdRef.current = null;
+    const activePointerId = interaction.pointerId;
+    faderInteractionRef.current = {
+      active: false,
+      pointerId: null,
+      mode: 'pending',
+      startX: 0,
+      startY: 0,
+      startScrollLeft: 0,
+      scrollContainer: null,
+    };
 
     if (sliderSurface && activePointerId !== null) {
       try {
@@ -635,20 +663,54 @@ const ChannelStrip = memo(function ChannelStrip({
       return;
     }
 
-    draggingPointerIdRef.current = event.pointerId;
+    const scrollContainer = event.currentTarget.closest('[data-live-director-mixer-scroll="true"]') as HTMLElement | null;
+    faderInteractionRef.current = {
+      active: true,
+      pointerId: event.pointerId,
+      mode: 'pending',
+      startX: event.clientX,
+      startY: event.clientY,
+      startScrollLeft: scrollContainer?.scrollLeft ?? 0,
+      scrollContainer,
+    };
+
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
     } catch {
       // no-op
     }
 
-    updateVolumeFromClientY(event.clientY);
     event.preventDefault();
     event.stopPropagation();
-  }, [disabled, updateVolumeFromClientY]);
+  }, [disabled]);
 
   const handleSliderPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (draggingPointerIdRef.current !== event.pointerId) {
+    const interaction = faderInteractionRef.current;
+    if (!interaction.active || interaction.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const deltaX = event.clientX - interaction.startX;
+    const deltaY = event.clientY - interaction.startY;
+    const absX = Math.abs(deltaX);
+    const absY = Math.abs(deltaY);
+
+    if (interaction.mode === 'pending') {
+      if (absX < FADER_AXIS_LOCK_THRESHOLD_PX && absY < FADER_AXIS_LOCK_THRESHOLD_PX) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
+      interaction.mode = absX > absY * 1.15 && interaction.scrollContainer ? 'scroll' : 'volume';
+    }
+
+    if (interaction.mode === 'scroll') {
+      if (interaction.scrollContainer) {
+        interaction.scrollContainer.scrollLeft = interaction.startScrollLeft - deltaX;
+      }
+      event.preventDefault();
+      event.stopPropagation();
       return;
     }
 
@@ -658,18 +720,25 @@ const ChannelStrip = memo(function ChannelStrip({
   }, [updateVolumeFromClientY]);
 
   const handleSliderPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (draggingPointerIdRef.current !== event.pointerId) {
+    const interaction = faderInteractionRef.current;
+    if (!interaction.active || interaction.pointerId !== event.pointerId) {
       return;
     }
 
-    updateVolumeFromClientY(event.clientY);
+    if (interaction.mode === 'pending' || interaction.mode === 'volume') {
+      updateVolumeFromClientY(event.clientY);
+    } else if (interaction.scrollContainer) {
+      interaction.scrollContainer.scrollLeft = interaction.startScrollLeft - (event.clientX - interaction.startX);
+    }
+
     finishSliderDrag(event.pointerId, event.currentTarget);
     event.preventDefault();
     event.stopPropagation();
   }, [finishSliderDrag, updateVolumeFromClientY]);
 
   const handleSliderPointerCancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (draggingPointerIdRef.current !== event.pointerId) {
+    const interaction = faderInteractionRef.current;
+    if (!interaction.active || interaction.pointerId !== event.pointerId) {
       return;
     }
 
@@ -3536,6 +3605,7 @@ export function LiveDirectorView({
           ) : (
             <div
               ref={mixerScrollRef}
+              data-live-director-mixer-scroll="true"
               onPointerDown={handleMixerPointerDown}
               onPointerMove={handleMixerPointerMove}
               onPointerUp={handleMixerPointerUp}

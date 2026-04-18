@@ -45,6 +45,10 @@ const normalizeStateLevels = (levels: Record<string, number> | undefined): Track
 export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
   const tracksRef = useRef<TrackData[]>([]);
   const trackVolumesRef = useRef<TrackVolumesState>({});
+  const pendingVolumeUpdatesRef = useRef<TrackVolumesState>({});
+  const volumeFlushFrameRef = useRef<number | null>(null);
+  const pendingMasterVolumeRef = useRef<number | null>(null);
+  const masterVolumeFlushFrameRef = useRef<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -107,6 +111,73 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
       void NativeLiveDirectorEngine.stop().catch(() => undefined);
     };
   }, [applyNativeState]);
+
+  const flushVolumeUpdates = useCallback(() => {
+    volumeFlushFrameRef.current = null;
+    const updates = pendingVolumeUpdatesRef.current;
+    pendingVolumeUpdatesRef.current = {};
+
+    Object.entries(updates).forEach(([trackId, volume]) => {
+      void NativeLiveDirectorEngine.setTrackVolume({ trackId, volume }).catch(() => undefined);
+    });
+  }, []);
+
+  const scheduleVolumeUpdate = useCallback((trackId: string, volume: number) => {
+    pendingVolumeUpdatesRef.current = {
+      ...pendingVolumeUpdatesRef.current,
+      [trackId]: volume,
+    };
+
+    if (volumeFlushFrameRef.current !== null) {
+      return;
+    }
+
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      volumeFlushFrameRef.current = window.requestAnimationFrame(flushVolumeUpdates);
+      return;
+    }
+
+    flushVolumeUpdates();
+  }, [flushVolumeUpdates]);
+
+  const flushMasterVolumeUpdate = useCallback(() => {
+    masterVolumeFlushFrameRef.current = null;
+    const volume = pendingMasterVolumeRef.current;
+    pendingMasterVolumeRef.current = null;
+
+    if (volume === null) {
+      return;
+    }
+
+    void NativeLiveDirectorEngine.setMasterVolume({ volume }).catch(() => undefined);
+  }, []);
+
+  const scheduleMasterVolumeUpdate = useCallback((volume: number) => {
+    pendingMasterVolumeRef.current = volume;
+
+    if (masterVolumeFlushFrameRef.current !== null) {
+      return;
+    }
+
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      masterVolumeFlushFrameRef.current = window.requestAnimationFrame(flushMasterVolumeUpdate);
+      return;
+    }
+
+    flushMasterVolumeUpdate();
+  }, [flushMasterVolumeUpdate]);
+
+  useEffect(() => () => {
+    if (volumeFlushFrameRef.current !== null && typeof window !== 'undefined') {
+      window.cancelAnimationFrame(volumeFlushFrameRef.current);
+      volumeFlushFrameRef.current = null;
+    }
+
+    if (masterVolumeFlushFrameRef.current !== null && typeof window !== 'undefined') {
+      window.cancelAnimationFrame(masterVolumeFlushFrameRef.current);
+      masterVolumeFlushFrameRef.current = null;
+    }
+  }, []);
 
   const initialize = useCallback(async (tracks: TrackData[]) => {
     if (!isNativeLiveDirectorEngineAvailable()) {
@@ -172,8 +243,8 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
       [trackId]: safeVolume,
     };
     setTrackVolumes(trackVolumesRef.current);
-    void NativeLiveDirectorEngine.setTrackVolume({ trackId, volume: safeVolume }).catch(() => undefined);
-  }, []);
+    scheduleVolumeUpdate(trackId, safeVolume);
+  }, [scheduleVolumeUpdate]);
 
   const setTrackOutputRoute = useCallback((trackId: string, outputRoute: TrackOutputRoute) => {
     void NativeLiveDirectorEngine.setTrackOutputRoute({ trackId, outputRoute }).catch(() => undefined);
@@ -184,8 +255,8 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
   }, []);
 
   const setMasterVolume = useCallback((volume: number) => {
-    void NativeLiveDirectorEngine.setMasterVolume({ volume: clampVolume(volume) }).catch(() => undefined);
-  }, []);
+    scheduleMasterVolumeUpdate(clampVolume(volume));
+  }, [scheduleMasterVolumeUpdate]);
 
   const toggleLoop = useCallback(() => {
     // Loop regions will land after the first native playback baseline is stable.
