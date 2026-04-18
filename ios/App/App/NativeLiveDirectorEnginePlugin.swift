@@ -140,7 +140,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         let targetTime = max(0, call.getDouble("time") ?? 0)
         engineQueue.async {
             let wasPlaying = self.isPlaying
-            self.stopPlayback(resetPosition: false)
+            self.stopPlayback(resetPosition: false, shouldEmitState: false)
             self.seekOffset = min(targetTime, self.duration)
             if wasPlaying {
                 do {
@@ -242,9 +242,14 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     }
 
     @objc func setMasterVolume(_ call: CAPPluginCall) {
-        masterVolume = clampVolume(Float(call.getDouble("volume") ?? 1))
-        engine.mainMixerNode.outputVolume = masterVolume
-        call.resolve()
+        let volume = clampVolume(Float(call.getDouble("volume") ?? 1))
+        engineQueue.async {
+            self.masterVolume = volume
+            self.engine.mainMixerNode.outputVolume = volume
+            DispatchQueue.main.async {
+                call.resolve()
+            }
+        }
     }
 
     @objc func getState(_ call: CAPPluginCall) {
@@ -360,6 +365,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         playStartWallTime = CACurrentMediaTime() + playbackStartDelay - seekOffset
         isPlaying = true
         startStateTimer()
+        emitState()
     }
 
     private func pausePlayback() {
@@ -372,14 +378,16 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         emitState()
     }
 
-    private func stopPlayback(resetPosition: Bool) {
+    private func stopPlayback(resetPosition: Bool, shouldEmitState: Bool = true) {
         tracks.forEach { $0.player.stop() }
         isPlaying = false
         if resetPosition {
             seekOffset = 0
         }
         resetMeters()
-        emitState()
+        if shouldEmitState {
+            emitState()
+        }
     }
 
     private func currentTime() -> Double {
