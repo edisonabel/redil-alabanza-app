@@ -91,6 +91,11 @@ const normalizeIncomingTracks = (rawTracks) => {
         id,
         name,
         url,
+        iosUrl: String(track.iosUrl || '').trim() || undefined,
+        nativeUrl: String(track.nativeUrl || '').trim() || undefined,
+        optimizedUrl: String(track.optimizedUrl || '').trim() || undefined,
+        cafUrl: String(track.cafUrl || '').trim() || undefined,
+        pcmUrl: String(track.pcmUrl || '').trim() || undefined,
         volume: Number.isFinite(Number(track.volume)) ? Number(track.volume) : 1,
         isMuted: Boolean(track.isMuted),
         enabled: track.enabled !== false,
@@ -116,7 +121,14 @@ const deleteSessionFiles = async (sessionRecord, r2Context, { keepUrls = [] } = 
   const keepSet = new Set((Array.isArray(keepUrls) ? keepUrls : []).map((url) => String(url || '').trim()));
   const candidateUrls = [
     normalizedSession.manifestUrl,
-    ...normalizedSession.tracks.map((track) => track.url),
+    ...normalizedSession.tracks.flatMap((track) => [
+      track.url,
+      track.iosUrl,
+      track.nativeUrl,
+      track.optimizedUrl,
+      track.cafUrl,
+      track.pcmUrl,
+    ]),
   ];
 
   const objectKeys = candidateUrls
@@ -260,7 +272,17 @@ export const POST = async ({ request, cookies }) => {
     }
 
     await deleteSessionFiles(songRow.multitrack_session, r2Context, {
-      keepUrls: [manifestUrl, ...tracks.map((track) => track.url)],
+      keepUrls: [
+        manifestUrl,
+        ...tracks.flatMap((track) => [
+          track.url,
+          track.iosUrl,
+          track.nativeUrl,
+          track.optimizedUrl,
+          track.cafUrl,
+          track.pcmUrl,
+        ]),
+      ],
     });
 
     return jsonResponse(persistedSession);

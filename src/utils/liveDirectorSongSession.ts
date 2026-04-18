@@ -6,6 +6,11 @@ export type LiveDirectorPersistedTrack = {
   id: string;
   name: string;
   url: string;
+  iosUrl?: string;
+  nativeUrl?: string;
+  optimizedUrl?: string;
+  cafUrl?: string;
+  pcmUrl?: string;
   volume: number;
   isMuted: boolean;
   enabled?: boolean;
@@ -52,6 +57,11 @@ const clampTime = (value: unknown) => {
   }
 
   return Math.max(0, numericValue);
+};
+
+const normalizeOptionalUrl = (value: unknown) => {
+  const url = String(value || '').trim();
+  return url || undefined;
 };
 
 export const slugifyLiveDirectorSegment = (value = '') => {
@@ -133,6 +143,11 @@ export const normalizePersistedLiveDirectorSession = (
             id,
             name,
             url,
+            iosUrl: normalizeOptionalUrl(candidate.iosUrl),
+            nativeUrl: normalizeOptionalUrl(candidate.nativeUrl),
+            optimizedUrl: normalizeOptionalUrl(candidate.optimizedUrl),
+            cafUrl: normalizeOptionalUrl(candidate.cafUrl),
+            pcmUrl: normalizeOptionalUrl(candidate.pcmUrl),
             volume: Number.isFinite(Number(candidate.volume)) ? Number(candidate.volume) : 1,
             isMuted: Boolean(candidate.isMuted),
             enabled: candidate.enabled !== false,

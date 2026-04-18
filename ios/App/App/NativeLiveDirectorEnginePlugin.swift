@@ -27,6 +27,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private final class NativeTrack: @unchecked Sendable {
         let id: String
         let name: String
+        let sourceURL: URL
         let remoteURL: URL
         let localURL: URL
         let file: AVAudioFile
@@ -41,6 +42,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         init(
             id: String,
             name: String,
+            sourceURL: URL,
             remoteURL: URL,
             localURL: URL,
             file: AVAudioFile,
@@ -50,6 +52,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         ) {
             self.id = id
             self.name = name
+            self.sourceURL = sourceURL
             self.remoteURL = remoteURL
             self.localURL = localURL
             self.file = file
@@ -300,7 +303,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             guard
                 let id = rawTrack["id"] as? String,
                 let urlString = rawTrack["url"] as? String,
-                let remoteURL = URL(string: urlString)
+                let sourceURL = URL(string: urlString)
             else {
                 throw NSError(domain: "NativeLiveDirectorEngine", code: 10, userInfo: [
                     NSLocalizedDescriptionKey: "Track \(index + 1) is missing id or url."
@@ -308,16 +311,18 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             }
 
             let name = rawTrack["name"] as? String ?? id
-            CAPLog.print("NativeLiveDirectorEngine prepareTrack start index=\(index + 1)/\(rawTracks.count) id=\(id)")
+            let remoteURL = preferredAudioURL(from: rawTrack, fallbackURL: sourceURL)
+            CAPLog.print("NativeLiveDirectorEngine prepareTrack start index=\(index + 1)/\(rawTracks.count) id=\(id) ext=\(remoteURL.pathExtension.lowercased()) optimized=\(remoteURL.absoluteString != sourceURL.absoluteString)")
             let volume = clampVolume(Float((rawTrack["volume"] as? Double) ?? 1))
             let isMuted = rawTrack["isMuted"] as? Bool ?? false
             let outputRoute = normalizeOutputRoute(rawTrack["outputRoute"] as? String ?? "stereo")
             let localURL = try await cachedAudioURL(for: remoteURL)
             let file = try AVAudioFile(forReading: localURL)
-            CAPLog.print("NativeLiveDirectorEngine prepareTrack ready id=\(id) duration=\(file.length)frames url=\(localURL.lastPathComponent)")
+            CAPLog.print("NLDE ASSET id=\(id) local=\(localURL.lastPathComponent) sourceExt=\(sourceURL.pathExtension.lowercased()) playExt=\(remoteURL.pathExtension.lowercased()) durationFrames=\(file.length) \(audioFileSummary(file, url: localURL))")
             preparedTracks.append(NativeTrack(
                 id: id,
                 name: name,
+                sourceURL: sourceURL,
                 remoteURL: remoteURL,
                 localURL: localURL,
                 file: file,
@@ -622,12 +627,71 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             [
                 "id": track.id,
                 "name": track.name,
-                "url": track.remoteURL.absoluteString,
+                "url": track.sourceURL.absoluteString,
+                "nativeUrl": track.remoteURL.absoluteString,
                 "volume": Double(track.volume),
                 "isMuted": track.isMuted,
                 "outputRoute": track.outputRoute,
                 "durationSeconds": track.duration
             ] as JSObject
+        }
+    }
+
+    private func preferredAudioURL(from rawTrack: JSObject, fallbackURL: URL) -> URL {
+        let optimizedURLKeys = ["iosUrl", "nativeUrl", "optimizedUrl", "cafUrl", "pcmUrl"]
+        for key in optimizedURLKeys {
+            guard let rawValue = rawTrack[key] as? String else {
+                continue
+            }
+
+            let trimmedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedValue.isEmpty, let url = URL(string: trimmedValue) else {
+                continue
+            }
+
+            return url
+        }
+
+        return fallbackURL
+    }
+
+    private func audioFileSummary(_ file: AVAudioFile, url: URL) -> String {
+        let processingFormat = file.processingFormat
+        let fileFormat = file.fileFormat
+        let processingDescription = processingFormat.streamDescription.pointee
+        let fileDescription = fileFormat.streamDescription.pointee
+        let fileSizeBytes = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0 } ?? 0
+        let fileSizeMB = Double(fileSizeBytes) / 1_048_576
+
+        return String(
+            format: "sizeMB=%.2f fileRate=%.0f processingRate=%.0f channels=%u fileBits=%u processingBits=%u common=%@ fileFormatID=%08x processingFormatID=%08x interleaved=%@",
+            fileSizeMB,
+            fileFormat.sampleRate,
+            processingFormat.sampleRate,
+            processingFormat.channelCount,
+            fileDescription.mBitsPerChannel,
+            processingDescription.mBitsPerChannel,
+            audioCommonFormatName(processingFormat.commonFormat),
+            fileDescription.mFormatID,
+            processingDescription.mFormatID,
+            processingFormat.isInterleaved ? "true" : "false"
+        )
+    }
+
+    private func audioCommonFormatName(_ commonFormat: AVAudioCommonFormat) -> String {
+        switch commonFormat {
+        case .pcmFormatFloat32:
+            return "float32"
+        case .pcmFormatFloat64:
+            return "float64"
+        case .pcmFormatInt16:
+            return "int16"
+        case .pcmFormatInt32:
+            return "int32"
+        case .otherFormat:
+            return "other"
+        @unknown default:
+            return "unknown"
         }
     }
 

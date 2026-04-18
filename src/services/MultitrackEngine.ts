@@ -162,6 +162,11 @@ export interface TrackData {
   id: string;
   name: string;
   url: string;
+  iosUrl?: string;
+  nativeUrl?: string;
+  optimizedUrl?: string;
+  cafUrl?: string;
+  pcmUrl?: string;
   volume: number;
   isMuted: boolean;
   enabled?: boolean;
