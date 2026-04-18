@@ -107,8 +107,9 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         engineQueue.async {
             do {
                 try self.startPlayback()
+                let payload = self.statePayload()
                 DispatchQueue.main.async {
-                    call.resolve(self.statePayload())
+                    call.resolve(payload)
                 }
             } catch {
                 DispatchQueue.main.async {
@@ -121,8 +122,9 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     @objc func pause(_ call: CAPPluginCall) {
         engineQueue.async {
             self.pausePlayback()
+            let payload = self.statePayload()
             DispatchQueue.main.async {
-                call.resolve(self.statePayload())
+                call.resolve(payload)
             }
         }
     }
@@ -130,8 +132,9 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     @objc func stop(_ call: CAPPluginCall) {
         engineQueue.async {
             self.stopPlayback(resetPosition: true)
+            let payload = self.statePayload()
             DispatchQueue.main.async {
-                call.resolve(self.statePayload())
+                call.resolve(payload)
             }
         }
     }
@@ -152,8 +155,9 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                     return
                 }
             }
+            let payload = self.statePayload()
             DispatchQueue.main.async {
-                call.resolve(self.statePayload())
+                call.resolve(payload)
             }
         }
     }
@@ -253,7 +257,12 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     }
 
     @objc func getState(_ call: CAPPluginCall) {
-        call.resolve(statePayload())
+        engineQueue.async {
+            let payload = self.statePayload()
+            DispatchQueue.main.async {
+                call.resolve(payload)
+            }
+        }
     }
 
     private func prepareTracks(_ rawTracks: [JSObject], call: CAPPluginCall) async throws -> [NativeTrack] {
@@ -462,14 +471,15 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             return
         }
 
-        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.main)
+        let timer = DispatchSource.makeTimerSource(queue: engineQueue)
         timer.schedule(deadline: .now(), repeating: .milliseconds(42), leeway: .milliseconds(8))
         timer.setEventHandler { [weak self] in
             guard let self else { return }
+            if !self.isPlaying {
+                return
+            }
             if self.isPlaying && self.duration > 0 && self.currentTime() >= self.duration {
-                self.engineQueue.async {
-                    self.stopPlayback(resetPosition: true)
-                }
+                self.stopPlayback(resetPosition: true)
                 return
             }
             self.emitState()
@@ -479,8 +489,9 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     }
 
     private func emitState() {
+        let payload = statePayload()
         DispatchQueue.main.async {
-            self.notifyListeners("state", data: self.statePayload())
+            self.notifyListeners("state", data: payload)
         }
     }
 
