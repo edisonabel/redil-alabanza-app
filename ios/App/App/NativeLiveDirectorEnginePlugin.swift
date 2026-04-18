@@ -36,6 +36,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         var outputRoute: String
         let duration: Double
         var isMeterTapInstalled = false
+        var scheduledUntilFrame: AVAudioFramePosition = 0
 
         init(
             id: String,
@@ -65,10 +66,14 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private let meterQueue = DispatchQueue(label: "redil.live-director.native-meters")
     private let meterLock = NSLock()
     private let meterTapBufferFrameCount: AVAudioFrameCount = 2048
+    private let scheduledSegmentDurationSeconds: Double = 8
+    private let scheduledSegmentLookaheadSeconds: Double = 24
     private let playerPrepareFrameCount: AVAudioFrameCount = 8192
     private let conversionBufferFrameCount: AVAudioFrameCount = 16384
     private let playbackStartDelay: Double = 0.2
-    private let stateEventIntervalMilliseconds = 250
+    private let stateEventIntervalMilliseconds = 500
+    private let segmentMaintenanceIntervalSeconds: CFTimeInterval = 1
+    private let preferCompressedAudioCache = true
     private var engine = AVAudioEngine()
     private var tracks: [NativeTrack] = []
     private var trackLevels: [String: Double] = [:]
@@ -81,6 +86,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private var soloTrackId: String?
     private var stateTimer: DispatchSourceTimer?
     private var didRegisterAudioSessionObservers = false
+    private var lastSegmentMaintenanceWallTime: CFTimeInterval = 0
 
     @objc public override func load() {
         super.load()
@@ -374,17 +380,9 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             track.player.stop()
             let startFrame = AVAudioFramePosition(max(0, seekOffset) * track.file.processingFormat.sampleRate)
             let clampedStartFrame = min(max(0, startFrame), track.file.length)
-            let remainingFrames = max(0, track.file.length - clampedStartFrame)
-            if remainingFrames > 0 {
-                track.player.scheduleSegment(
-                    track.file,
-                    startingFrame: clampedStartFrame,
-                    frameCount: AVAudioFrameCount(remainingFrames),
-                    at: nil,
-                    completionHandler: nil
-                )
-                track.player.prepare(withFrameCount: playerPrepareFrameCount)
-            }
+            track.scheduledUntilFrame = clampedStartFrame
+            scheduleTrackSegmentsUntil(track, targetTime: seekOffset + scheduledSegmentLookaheadSeconds)
+            track.player.prepare(withFrameCount: playerPrepareFrameCount)
         }
 
         let startTime = AVAudioTime(
@@ -392,10 +390,56 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         )
         tracks.forEach { $0.player.play(at: startTime) }
         playStartWallTime = CACurrentMediaTime() + playbackStartDelay - seekOffset
+        lastSegmentMaintenanceWallTime = CACurrentMediaTime()
         isPlaying = true
         startStateTimer()
         logSessionState("post-startPlayback")
         emitState()
+    }
+
+    private func scheduleTrackSegmentsUntil(_ track: NativeTrack, targetTime: Double) {
+        let sampleRate = track.file.processingFormat.sampleRate
+        guard sampleRate > 0 else {
+            return
+        }
+
+        let targetFrame = min(
+            track.file.length,
+            AVAudioFramePosition(max(0, targetTime) * sampleRate)
+        )
+        let maxSegmentFrames = max(
+            1,
+            AVAudioFramePosition(scheduledSegmentDurationSeconds * sampleRate)
+        )
+
+        while track.scheduledUntilFrame < targetFrame {
+            let startFrame = track.scheduledUntilFrame
+            let remainingFrames = track.file.length - startFrame
+            if remainingFrames <= 0 {
+                break
+            }
+
+            let nextFrameCount = min(remainingFrames, maxSegmentFrames)
+            track.player.scheduleSegment(
+                track.file,
+                startingFrame: startFrame,
+                frameCount: AVAudioFrameCount(nextFrameCount),
+                at: nil,
+                completionHandler: nil
+            )
+            track.scheduledUntilFrame = startFrame + nextFrameCount
+        }
+    }
+
+    private func maintainScheduledSegments() {
+        guard isPlaying else {
+            return
+        }
+
+        let targetTime = min(duration, currentTime() + scheduledSegmentLookaheadSeconds)
+        tracks.forEach { track in
+            scheduleTrackSegmentsUntil(track, targetTime: targetTime)
+        }
     }
 
     private func pausePlayback() {
@@ -414,6 +458,8 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         if resetPosition {
             seekOffset = 0
         }
+        tracks.forEach { $0.scheduledUntilFrame = 0 }
+        lastSegmentMaintenanceWallTime = 0
         resetMeters()
         if shouldEmitState {
             emitState()
@@ -533,6 +579,11 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                 self.stopPlayback(resetPosition: true)
                 return
             }
+            let now = CACurrentMediaTime()
+            if now - self.lastSegmentMaintenanceWallTime >= self.segmentMaintenanceIntervalSeconds {
+                self.lastSegmentMaintenanceWallTime = now
+                self.maintainScheduledSegments()
+            }
             self.emitState()
         }
         stateTimer = timer
@@ -608,15 +659,18 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         let baseName = digest.map { String(format: "%02x", $0) }.joined()
         let pcmURL = cacheDirectory.appendingPathComponent(baseName + ".caf")
         let compressedURL = cacheDirectory.appendingPathComponent(baseName + "." + extensionName)
-
-        if FileManager.default.fileExists(atPath: pcmURL.path) {
-            CAPLog.print("NativeLiveDirectorEngine cache hit pcm=\(pcmURL.lastPathComponent)")
-            return pcmURL
-        }
+        let uncompressedExtensions: Set<String> = ["caf", "wav", "aif", "aiff"]
 
         if FileManager.default.fileExists(atPath: compressedURL.path) {
-            CAPLog.print("NativeLiveDirectorEngine cache hit compressed=\(compressedURL.lastPathComponent)")
-            return try convertCachedAudioIfPossible(sourceURL: compressedURL, pcmURL: pcmURL)
+            CAPLog.print("NativeLiveDirectorEngine cache hit source=\(compressedURL.lastPathComponent)")
+            return preferCompressedAudioCache || uncompressedExtensions.contains(extensionName.lowercased())
+                ? compressedURL
+                : try convertCachedAudioIfPossible(sourceURL: compressedURL, pcmURL: pcmURL)
+        }
+
+        if !preferCompressedAudioCache, FileManager.default.fileExists(atPath: pcmURL.path) {
+            CAPLog.print("NativeLiveDirectorEngine cache hit pcm=\(pcmURL.lastPathComponent)")
+            return pcmURL
         }
 
         if let legacyCacheDirectory = try? FileManager.default.url(
@@ -628,10 +682,10 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             let legacyURL = legacyCacheDirectory.appendingPathComponent(baseName + "." + extensionName)
             if FileManager.default.fileExists(atPath: legacyURL.path) {
                 CAPLog.print("NativeLiveDirectorEngine cache hit legacy=\(legacyURL.lastPathComponent)")
-                return try convertCachedAudioIfPossible(
+                return try cacheSourceAudio(
                     sourceURL: legacyURL,
-                    pcmURL: pcmURL,
-                    fallbackURL: compressedURL
+                    destinationURL: compressedURL,
+                    shouldRemoveSource: true
                 )
             }
         }
@@ -644,11 +698,38 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         }
 
         CAPLog.print("NativeLiveDirectorEngine download complete url=\(remoteURL.lastPathComponent)")
-        return try convertCachedAudioIfPossible(
+        let sourceURL = try cacheSourceAudio(
             sourceURL: temporaryURL,
-            pcmURL: pcmURL,
-            fallbackURL: compressedURL
+            destinationURL: compressedURL,
+            shouldRemoveSource: true
         )
+
+        if preferCompressedAudioCache || uncompressedExtensions.contains(extensionName.lowercased()) {
+            return sourceURL
+        }
+
+        return try convertCachedAudioIfPossible(sourceURL: sourceURL, pcmURL: pcmURL)
+    }
+
+    private func cacheSourceAudio(
+        sourceURL: URL,
+        destinationURL: URL,
+        shouldRemoveSource: Bool
+    ) throws -> URL {
+        if FileManager.default.fileExists(atPath: destinationURL.path) {
+            try? FileManager.default.removeItem(at: destinationURL)
+        }
+
+        do {
+            try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
+        } catch {
+            try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+            if shouldRemoveSource {
+                try? FileManager.default.removeItem(at: sourceURL)
+            }
+        }
+
+        return destinationURL
     }
 
     private func convertCachedAudioIfPossible(
