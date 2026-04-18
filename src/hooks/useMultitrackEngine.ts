@@ -44,6 +44,7 @@ export type UseMultitrackEngineReturn = {
   setTrackOutputRoute: (trackId: string, outputRoute: TrackOutputRoute) => void;
   toggleMute: (trackId: string) => void;
   setMasterVolume: (volume: number) => void;
+  setMetersEnabled: (enabled: boolean) => void;
   toggleLoop: () => void;
   setLoopPoints: (startInSeconds: number, endInSeconds: number) => void;
   seekTo: (timeInSeconds: number) => Promise<void>;
@@ -479,6 +480,11 @@ export function useMultitrackEngine(
     engine.setMasterVolume(volume);
   }, []);
 
+  const setMetersEnabled = useCallback(() => {
+    // The web engines keep their meters in-process; native iOS uses this hook
+    // to shed AVAudioEngine tap load during touch interaction.
+  }, []);
+
   const toggleLoop = useCallback(() => {
     const engine = engineRef.current;
     if (!engine) {
@@ -653,6 +659,7 @@ export function useMultitrackEngine(
       setTrackOutputRoute,
       toggleMute,
       setMasterVolume,
+      setMetersEnabled,
       toggleLoop,
       setLoopPoints,
       seekTo,
@@ -671,6 +678,7 @@ export function useMultitrackEngine(
       seekTo,
       setLoopPoints,
       setMasterVolume,
+      setMetersEnabled,
       setTrackOutputRoute,
       setVolume,
       soloTrack,

@@ -20,6 +20,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         CAPPluginMethod(name: "toggleMute", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "soloTrack", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setMasterVolume", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setMetersEnabled", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getState", returnType: CAPPluginReturnPromise)
     ]
 
@@ -30,11 +31,11 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         let localURL: URL
         let file: AVAudioFile
         let player = AVAudioPlayerNode()
-        let mixer = AVAudioMixerNode()
         var volume: Float
         var isMuted: Bool
         var outputRoute: String
         let duration: Double
+        var isMeterTapInstalled = false
 
         init(
             id: String,
@@ -67,9 +68,11 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private let playerPrepareFrameCount: AVAudioFrameCount = 8192
     private let conversionBufferFrameCount: AVAudioFrameCount = 16384
     private let playbackStartDelay: Double = 0.2
+    private let stateEventIntervalMilliseconds = 125
     private var engine = AVAudioEngine()
     private var tracks: [NativeTrack] = []
     private var trackLevels: [String: Double] = [:]
+    private var metersEnabled = true
     private var isPlaying = false
     private var seekOffset: Double = 0
     private var playStartWallTime: CFTimeInterval = 0
@@ -77,10 +80,16 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private var masterVolume: Float = 1
     private var soloTrackId: String?
     private var stateTimer: DispatchSourceTimer?
+    private var didRegisterAudioSessionObservers = false
 
     @objc public override func load() {
         super.load()
+        registerAudioSessionObservers()
         configureAudioSession()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     @objc func load(_ call: CAPPluginCall) {
@@ -178,6 +187,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             }
 
             track.volume = volume
+            CAPLog.print("NativeLiveDirectorEngine setTrackVolume id=\(trackId) volume=\(volume)")
             self.applyTrackMixState(track)
             DispatchQueue.main.async {
                 call.resolve()
@@ -249,9 +259,20 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         let volume = clampVolume(Float(call.getDouble("volume") ?? 1))
         engineQueue.async {
             self.masterVolume = volume
+            CAPLog.print("NativeLiveDirectorEngine setMasterVolume volume=\(volume)")
             self.engine.mainMixerNode.outputVolume = volume
             DispatchQueue.main.async {
                 call.resolve()
+            }
+        }
+    }
+
+    @objc func setMetersEnabled(_ call: CAPPluginCall) {
+        let enabled = call.getBool("enabled") ?? true
+        engineQueue.async {
+            self.setMetersEnabledInternal(enabled)
+            DispatchQueue.main.async {
+                call.resolve(["enabled": self.metersEnabled])
             }
         }
     }
@@ -281,11 +302,13 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             }
 
             let name = rawTrack["name"] as? String ?? id
+            CAPLog.print("NativeLiveDirectorEngine prepareTrack start index=\(index + 1)/\(rawTracks.count) id=\(id)")
             let volume = clampVolume(Float((rawTrack["volume"] as? Double) ?? 1))
             let isMuted = rawTrack["isMuted"] as? Bool ?? false
             let outputRoute = normalizeOutputRoute(rawTrack["outputRoute"] as? String ?? "stereo")
             let localURL = try await cachedAudioURL(for: remoteURL)
             let file = try AVAudioFile(forReading: localURL)
+            CAPLog.print("NativeLiveDirectorEngine prepareTrack ready id=\(id) duration=\(file.length)frames url=\(localURL.lastPathComponent)")
             preparedTracks.append(NativeTrack(
                 id: id,
                 name: name,
@@ -307,9 +330,8 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             engineQueue.async {
                 self.stopPlayback(resetPosition: true)
                 self.tracks.forEach { track in
-                    track.mixer.removeTap(onBus: 0)
+                    self.removeMeterTap(for: track)
                     self.engine.detach(track.player)
-                    self.engine.detach(track.mixer)
                 }
                 self.engine.stop()
                 self.engine.reset()
@@ -322,11 +344,11 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
                 nextTracks.forEach { track in
                     self.engine.attach(track.player)
-                    self.engine.attach(track.mixer)
-                    self.engine.connect(track.player, to: track.mixer, format: track.file.processingFormat)
-                    self.engine.connect(track.mixer, to: self.engine.mainMixerNode, format: track.file.processingFormat)
+                    self.engine.connect(track.player, to: self.engine.mainMixerNode, format: track.file.processingFormat)
                     self.applyTrackMixState(track)
-                    self.installMeterTap(for: track)
+                    if self.metersEnabled {
+                        self.installMeterTap(for: track)
+                    }
                 }
 
                 self.engine.mainMixerNode.outputVolume = self.masterVolume
@@ -422,8 +444,14 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     }
 
     private func installMeterTap(for track: NativeTrack) {
-        track.mixer.installTap(onBus: 0, bufferSize: meterTapBufferFrameCount, format: nil) { [weak self, weak track] buffer, _ in
+        guard metersEnabled, !track.isMeterTapInstalled else {
+            return
+        }
+
+        track.isMeterTapInstalled = true
+        track.player.installTap(onBus: 0, bufferSize: meterTapBufferFrameCount, format: track.file.processingFormat) { [weak self, weak track] buffer, _ in
             guard let self, let track else { return }
+            guard self.metersEnabled else { return }
 
             let level = self.computeLevel(from: buffer)
             self.meterQueue.async {
@@ -432,6 +460,32 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                 self.meterLock.unlock()
             }
         }
+    }
+
+    private func removeMeterTap(for track: NativeTrack) {
+        guard track.isMeterTapInstalled else {
+            return
+        }
+
+        track.player.removeTap(onBus: 0)
+        track.isMeterTapInstalled = false
+    }
+
+    private func setMetersEnabledInternal(_ enabled: Bool) {
+        guard metersEnabled != enabled else {
+            return
+        }
+
+        metersEnabled = enabled
+        if enabled {
+            tracks.forEach { installMeterTap(for: $0) }
+        } else {
+            tracks.forEach { removeMeterTap(for: $0) }
+            resetMeters()
+        }
+
+        CAPLog.print("NativeLiveDirectorEngine metersEnabled=\(enabled)")
+        emitState()
     }
 
     private func computeLevel(from buffer: AVAudioPCMBuffer) -> Double {
@@ -472,7 +526,11 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         }
 
         let timer = DispatchSource.makeTimerSource(queue: engineQueue)
-        timer.schedule(deadline: .now(), repeating: .milliseconds(42), leeway: .milliseconds(8))
+        timer.schedule(
+            deadline: .now(),
+            repeating: .milliseconds(stateEventIntervalMilliseconds),
+            leeway: .milliseconds(16)
+        )
         timer.setEventHandler { [weak self] in
             guard let self else { return }
             if !self.isPlaying {
@@ -500,8 +558,8 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         let levels = trackLevels
         meterLock.unlock()
         var jsLevels: JSObject = [:]
-        levels.forEach { trackId, level in
-            jsLevels[trackId] = level
+        tracks.forEach { track in
+            jsLevels[track.id] = metersEnabled ? (levels[track.id] ?? 0) : 0
         }
 
         return [
@@ -557,10 +615,12 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         let compressedURL = cacheDirectory.appendingPathComponent(baseName + "." + extensionName)
 
         if FileManager.default.fileExists(atPath: pcmURL.path) {
+            CAPLog.print("NativeLiveDirectorEngine cache hit pcm=\(pcmURL.lastPathComponent)")
             return pcmURL
         }
 
         if FileManager.default.fileExists(atPath: compressedURL.path) {
+            CAPLog.print("NativeLiveDirectorEngine cache hit compressed=\(compressedURL.lastPathComponent)")
             return try convertCachedAudioIfPossible(sourceURL: compressedURL, pcmURL: pcmURL)
         }
 
@@ -572,6 +632,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         ).appendingPathComponent("RedilLiveDirectorStems", isDirectory: true) {
             let legacyURL = legacyCacheDirectory.appendingPathComponent(baseName + "." + extensionName)
             if FileManager.default.fileExists(atPath: legacyURL.path) {
+                CAPLog.print("NativeLiveDirectorEngine cache hit legacy=\(legacyURL.lastPathComponent)")
                 return try convertCachedAudioIfPossible(
                     sourceURL: legacyURL,
                     pcmURL: pcmURL,
@@ -587,6 +648,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             ])
         }
 
+        CAPLog.print("NativeLiveDirectorEngine download complete url=\(remoteURL.lastPathComponent)")
         return try convertCachedAudioIfPossible(
             sourceURL: temporaryURL,
             pcmURL: pcmURL,
@@ -600,12 +662,15 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         fallbackURL: URL? = nil
     ) throws -> URL {
         do {
+            CAPLog.print("NativeLiveDirectorEngine transcode start source=\(sourceURL.lastPathComponent)")
             try convertAudioToPCMCAF(sourceURL: sourceURL, destinationURL: pcmURL)
+            CAPLog.print("NativeLiveDirectorEngine transcode complete pcm=\(pcmURL.lastPathComponent)")
             if sourceURL.path != pcmURL.path {
                 try? FileManager.default.removeItem(at: sourceURL)
             }
             return pcmURL
         } catch {
+            CAPLog.print("NativeLiveDirectorEngine transcode fallback source=\(sourceURL.lastPathComponent) error=\(error.localizedDescription)")
             guard let fallbackURL else {
                 return sourceURL
             }
@@ -676,10 +741,144 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private func configureAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
+            try? session.setPreferredSampleRate(48_000)
+            try? session.setPreferredIOBufferDuration(0.010)
             try session.setActive(true)
         } catch {
             CAPLog.print("NativeLiveDirectorEngine audio session failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func registerAudioSessionObservers() {
+        guard !didRegisterAudioSessionObservers else {
+            return
+        }
+
+        didRegisterAudioSessionObservers = true
+        let center = NotificationCenter.default
+        let session = AVAudioSession.sharedInstance()
+        center.addObserver(
+            self,
+            selector: #selector(handleAudioSessionInterruption(_:)),
+            name: AVAudioSession.interruptionNotification,
+            object: session
+        )
+        center.addObserver(
+            self,
+            selector: #selector(handleAudioRouteChange(_:)),
+            name: AVAudioSession.routeChangeNotification,
+            object: session
+        )
+        center.addObserver(
+            self,
+            selector: #selector(handleMediaServicesReset(_:)),
+            name: AVAudioSession.mediaServicesWereResetNotification,
+            object: session
+        )
+        center.addObserver(
+            self,
+            selector: #selector(handleEngineConfigurationChange(_:)),
+            name: NSNotification.Name.AVAudioEngineConfigurationChange,
+            object: engine
+        )
+    }
+
+    @objc private func handleAudioSessionInterruption(_ notification: Notification) {
+        let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+        let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+        let type = rawType.flatMap { AVAudioSession.InterruptionType(rawValue: $0) }
+        CAPLog.print("NativeLiveDirectorEngine audio interruption type=\(String(describing: type))")
+
+        engineQueue.async {
+            guard let type else {
+                return
+            }
+
+            switch type {
+            case .began:
+                if self.isPlaying {
+                    self.seekOffset = self.currentTime()
+                }
+                self.tracks.forEach { $0.player.stop() }
+                self.isPlaying = false
+                self.resetMeters()
+                self.emitState()
+            case .ended:
+                self.configureAudioSession()
+                let options = AVAudioSession.InterruptionOptions(rawValue: rawOptions)
+                if options.contains(.shouldResume), self.seekOffset < self.duration {
+                    do {
+                        try self.startPlayback()
+                    } catch {
+                        CAPLog.print("NativeLiveDirectorEngine resume after interruption failed: \(error.localizedDescription)")
+                        self.emitState()
+                    }
+                } else {
+                    self.emitState()
+                }
+            @unknown default:
+                self.emitState()
+            }
+        }
+    }
+
+    @objc private func handleAudioRouteChange(_ notification: Notification) {
+        let rawReason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+        let reason = rawReason.flatMap { AVAudioSession.RouteChangeReason(rawValue: $0) }
+        CAPLog.print("NativeLiveDirectorEngine route change reason=\(String(describing: reason))")
+
+        engineQueue.async {
+            self.configureAudioSession()
+            if self.isPlaying, !self.engine.isRunning {
+                do {
+                    try self.engine.start()
+                } catch {
+                    CAPLog.print("NativeLiveDirectorEngine restart after route change failed: \(error.localizedDescription)")
+                }
+            }
+            self.emitState()
+        }
+    }
+
+    @objc private func handleMediaServicesReset(_ notification: Notification) {
+        CAPLog.print("NativeLiveDirectorEngine media services reset")
+
+        engineQueue.async {
+            let shouldResume = self.isPlaying
+            let resumeTime = self.currentTime()
+            self.tracks.forEach { $0.player.stop() }
+            self.engine.stop()
+            self.engine.reset()
+            self.seekOffset = resumeTime
+            self.isPlaying = false
+            self.configureAudioSession()
+
+            if shouldResume, self.seekOffset < self.duration {
+                do {
+                    try self.startPlayback()
+                } catch {
+                    CAPLog.print("NativeLiveDirectorEngine resume after media reset failed: \(error.localizedDescription)")
+                    self.emitState()
+                }
+            } else {
+                self.emitState()
+            }
+        }
+    }
+
+    @objc private func handleEngineConfigurationChange(_ notification: Notification) {
+        CAPLog.print("NativeLiveDirectorEngine engine configuration changed")
+
+        engineQueue.async {
+            if self.isPlaying, !self.engine.isRunning {
+                do {
+                    try self.engine.start()
+                } catch {
+                    CAPLog.print("NativeLiveDirectorEngine restart after configuration change failed: \(error.localizedDescription)")
+                }
+            }
+            self.emitState()
         }
     }
 

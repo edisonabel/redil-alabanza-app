@@ -177,6 +177,8 @@ type ChannelStripProps = {
   onMute: () => void;
   onSolo: () => void;
   onToggleOutputRoute?: () => void;
+  onInteractionStart?: () => void;
+  onInteractionEnd?: () => void;
 };
 
 type MixerTrackView = MixerTrackMeta & {
@@ -558,6 +560,8 @@ const ChannelStrip = memo(function ChannelStrip({
   onMute,
   onSolo,
   onToggleOutputRoute,
+  onInteractionStart,
+  onInteractionEnd,
 }: ChannelStripProps) {
   const levelBottom = `${10 + volume * 78}%`;
   const knobGlow = muted ? 'rgba(120, 128, 140, 0.15)' : `${accent}30`;
@@ -645,6 +649,8 @@ const ChannelStrip = memo(function ChannelStrip({
       scrollContainer: null,
     };
 
+    onInteractionEnd?.();
+
     if (sliderSurface && activePointerId !== null) {
       try {
         sliderSurface.releasePointerCapture(activePointerId);
@@ -652,7 +658,7 @@ const ChannelStrip = memo(function ChannelStrip({
         // no-op
       }
     }
-  }, []);
+  }, [onInteractionEnd]);
 
   const handleSliderPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (disabled) {
@@ -674,6 +680,8 @@ const ChannelStrip = memo(function ChannelStrip({
       scrollContainer,
     };
 
+    onInteractionStart?.();
+
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
     } catch {
@@ -682,7 +690,7 @@ const ChannelStrip = memo(function ChannelStrip({
 
     event.preventDefault();
     event.stopPropagation();
-  }, [disabled]);
+  }, [disabled, onInteractionStart]);
 
   const handleSliderPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const interaction = faderInteractionRef.current;
@@ -1023,6 +1031,8 @@ export function LiveDirectorView({
   const appliedMasterVolumeRef = useRef(0.82);
   const masterVolumeFadeFrameRef = useRef<number | null>(null);
   const masterVolumeFadeResolveRef = useRef<(() => void) | null>(null);
+  const resumeNativeMetersTimeoutRef = useRef<number | null>(null);
+  const mixerInteractionActiveRef = useRef(false);
   const sectionTransitionTokenRef = useRef(0);
   const isSectionTransitioningRef = useRef(false);
   const sessionSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -1053,6 +1063,7 @@ export function LiveDirectorView({
     setMasterVolume,
     setTrackOutputRoute,
     setVolume,
+    setMetersEnabled,
     soloTrack,
     stop,
     trackLevels,
@@ -1061,6 +1072,43 @@ export function LiveDirectorView({
     trackVolumes,
     loadProgress,
   } = selectedMultitrackEngine;
+
+  const suspendNativeMeters = useCallback(() => {
+    if (!isIOSNativeEngineSurface) {
+      return;
+    }
+
+    if (resumeNativeMetersTimeoutRef.current !== null) {
+      window.clearTimeout(resumeNativeMetersTimeoutRef.current);
+      resumeNativeMetersTimeoutRef.current = null;
+    }
+
+    mixerInteractionActiveRef.current = true;
+    setMetersEnabled(false);
+  }, [isIOSNativeEngineSurface, setMetersEnabled]);
+
+  const resumeNativeMetersSoon = useCallback(() => {
+    if (!isIOSNativeEngineSurface) {
+      return;
+    }
+
+    if (resumeNativeMetersTimeoutRef.current !== null) {
+      window.clearTimeout(resumeNativeMetersTimeoutRef.current);
+    }
+
+    resumeNativeMetersTimeoutRef.current = window.setTimeout(() => {
+      resumeNativeMetersTimeoutRef.current = null;
+      mixerInteractionActiveRef.current = false;
+      setMetersEnabled(true);
+    }, 250);
+  }, [isIOSNativeEngineSurface, setMetersEnabled]);
+
+  useEffect(() => () => {
+    if (resumeNativeMetersTimeoutRef.current !== null) {
+      window.clearTimeout(resumeNativeMetersTimeoutRef.current);
+      resumeNativeMetersTimeoutRef.current = null;
+    }
+  }, []);
   const [isPortrait, setIsPortrait] = useState(false);
   const [isCompactLandscape, setIsCompactLandscape] = useState(false);
   const [isUltraCompactLandscape, setIsUltraCompactLandscape] = useState(false);
@@ -2329,9 +2377,18 @@ export function LiveDirectorView({
       if (mixerAutosaveTimerRef.current !== null) {
         window.clearTimeout(mixerAutosaveTimerRef.current);
       }
-      mixerAutosaveTimerRef.current = window.setTimeout(() => {
+
+      const runAutosaveWhenIdle = () => {
+        if (mixerInteractionActiveRef.current) {
+          mixerAutosaveTimerRef.current = window.setTimeout(runAutosaveWhenIdle, 500);
+          return;
+        }
+
+        mixerAutosaveTimerRef.current = null;
         commitMixerStateSilent();
-      }, 900);
+      };
+
+      mixerAutosaveTimerRef.current = window.setTimeout(runAutosaveWhenIdle, 1000);
     }
 
     return () => {
@@ -2755,7 +2812,8 @@ export function LiveDirectorView({
       startX: 0,
       startScrollLeft: 0,
     };
-  }, []);
+    resumeNativeMetersSoon();
+  }, [resumeNativeMetersSoon]);
 
   const handleMixerPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const container = mixerScrollRef.current;
@@ -2778,13 +2836,14 @@ export function LiveDirectorView({
       startX: event.clientX,
       startScrollLeft: container.scrollLeft,
     };
+    suspendNativeMeters();
 
     try {
       container.setPointerCapture(event.pointerId);
     } catch {
       // no-op
     }
-  }, []);
+  }, [suspendNativeMeters]);
 
   const handleMixerPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const container = mixerScrollRef.current;
@@ -3648,6 +3707,8 @@ export function LiveDirectorView({
 
                       setVolume(track.id, nextVolume);
                     }}
+                    onInteractionStart={isInternalPadTrack ? undefined : suspendNativeMeters}
+                    onInteractionEnd={isInternalPadTrack ? undefined : resumeNativeMetersSoon}
                     onMute={() => {
                       if (isInternalPadTrack) {
                         setIsPadActive((previous) => !previous);
@@ -3790,6 +3851,9 @@ export function LiveDirectorView({
                     step={0.01}
                     value={masterVolume}
                     disabled={!hasTrackSession}
+                    onPointerDown={suspendNativeMeters}
+                    onPointerUp={resumeNativeMetersSoon}
+                    onPointerCancel={resumeNativeMetersSoon}
                     onChange={(event) => setMasterVolumeState(Number(event.target.value))}
                     aria-label="Master volume"
                     className={`absolute left-1/2 top-1/2 h-10 -translate-x-1/2 -translate-y-1/2 -rotate-90 cursor-pointer opacity-0 ${isUltraCompactLandscape ? 'w-32' : isCompactLandscape ? 'w-40' : 'w-[18rem]'}`}

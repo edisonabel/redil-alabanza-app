@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { TrackData } from '../services/MultitrackEngine';
 import {
   isNativeLiveDirectorEngineAvailable,
@@ -11,6 +11,7 @@ import type { UseMultitrackEngineReturn, LiveDirectorEngineDiagnostics } from '.
 type TrackVolumesState = Record<string, number>;
 type TrackLevelsState = Record<string, number>;
 type LoadProgressState = { loaded: number; total: number } | null;
+const TRACK_LEVEL_UPDATE_THRESHOLD = 0.006;
 
 const clampVolume = (volume: number) => {
   if (!Number.isFinite(volume)) {
@@ -42,9 +43,23 @@ const normalizeStateLevels = (levels: Record<string, number> | undefined): Track
   return nextLevels;
 };
 
+const areTrackLevelsClose = (previous: TrackLevelsState, next: TrackLevelsState) => {
+  const previousKeys = Object.keys(previous);
+  const nextKeys = Object.keys(next);
+  if (previousKeys.length !== nextKeys.length) {
+    return false;
+  }
+
+  return nextKeys.every((trackId) => (
+    Object.prototype.hasOwnProperty.call(previous, trackId) &&
+    Math.abs((previous[trackId] ?? 0) - (next[trackId] ?? 0)) < TRACK_LEVEL_UPDATE_THRESHOLD
+  ));
+};
+
 export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
   const tracksRef = useRef<TrackData[]>([]);
   const trackVolumesRef = useRef<TrackVolumesState>({});
+  const trackLevelsRef = useRef<TrackLevelsState>({});
   const pendingVolumeUpdatesRef = useRef<TrackVolumesState>({});
   const volumeFlushFrameRef = useRef<number | null>(null);
   const pendingMasterVolumeRef = useRef<number | null>(null);
@@ -58,23 +73,36 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
   const [trackLevels, setTrackLevels] = useState<TrackLevelsState>({});
   const [diagnostics, setDiagnostics] = useState<LiveDirectorEngineDiagnostics | null>(null);
 
+  const commitTrackLevels = useCallback((nextLevels: TrackLevelsState, force = false) => {
+    if (!force && areTrackLevelsClose(trackLevelsRef.current, nextLevels)) {
+      return;
+    }
+
+    trackLevelsRef.current = nextLevels;
+    startTransition(() => {
+      setTrackLevels(nextLevels);
+    });
+  }, []);
+
   const applyNativeState = useCallback((state: NativeLiveDirectorEngineState) => {
     const safeCurrentTime = Number.isFinite(state.currentTime) ? Math.max(0, state.currentTime) : 0;
     const safeDuration = Number.isFinite(state.duration) ? Math.max(0, state.duration) : 0;
 
-    setIsPlaying(Boolean(state.isPlaying));
-    setCurrentTime(safeCurrentTime);
-    setDuration(safeDuration);
-    setTrackLevels(normalizeStateLevels(state.trackLevels));
-    setDiagnostics({
-      engineMode: 'ios-native',
-      trackCount: tracksRef.current.length,
-      estimatedAudioMemoryBytes: 0,
-      browserHeapUsedBytes: null,
-      browserHeapLimitBytes: null,
-      deviceMemoryGb: null,
+    startTransition(() => {
+      setIsPlaying(Boolean(state.isPlaying));
+      setCurrentTime(safeCurrentTime);
+      setDuration(safeDuration);
+      setDiagnostics({
+        engineMode: 'ios-native',
+        trackCount: tracksRef.current.length,
+        estimatedAudioMemoryBytes: 0,
+        browserHeapUsedBytes: null,
+        browserHeapLimitBytes: null,
+        deviceMemoryGb: null,
+      });
     });
-  }, []);
+    commitTrackLevels(normalizeStateLevels(state.trackLevels));
+  }, [commitTrackLevels]);
 
   useEffect(() => {
     if (!isNativeLiveDirectorEngineAvailable()) {
@@ -197,7 +225,7 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
     setCurrentTime(0);
     setDuration(0);
     setTrackVolumes(trackVolumesRef.current);
-    setTrackLevels(buildTrackLevels(nextTracks));
+    commitTrackLevels(buildTrackLevels(nextTracks), true);
     setLoadProgress({ loaded: 0, total: nextTracks.length });
 
     const result = await NativeLiveDirectorEngine.load({ tracks: nextTracks });
@@ -205,7 +233,7 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
     tracksRef.current = loadedTracks;
     trackVolumesRef.current = buildTrackVolumes(loadedTracks);
     setTrackVolumes(trackVolumesRef.current);
-    setTrackLevels(buildTrackLevels(loadedTracks));
+    commitTrackLevels(buildTrackLevels(loadedTracks), true);
     setDuration(Number.isFinite(result.duration) ? Math.max(0, result.duration) : 0);
     setDiagnostics({
       engineMode: 'ios-native',
@@ -217,7 +245,7 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
     });
     setLoadProgress(null);
     setIsReady(true);
-  }, []);
+  }, [commitTrackLevels]);
 
   const play = useCallback(async () => {
     const state = await NativeLiveDirectorEngine.play();
@@ -232,9 +260,9 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
     void NativeLiveDirectorEngine.stop().then((state) => {
       applyNativeState(state);
       setCurrentTime(0);
-      setTrackLevels(buildTrackLevels(tracksRef.current));
+      commitTrackLevels(buildTrackLevels(tracksRef.current), true);
     }).catch(() => undefined);
-  }, [applyNativeState]);
+  }, [applyNativeState, commitTrackLevels]);
 
   const setVolume = useCallback((trackId: string, volume: number) => {
     const safeVolume = clampVolume(volume);
@@ -257,6 +285,10 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
   const setMasterVolume = useCallback((volume: number) => {
     scheduleMasterVolumeUpdate(clampVolume(volume));
   }, [scheduleMasterVolumeUpdate]);
+
+  const setMetersEnabled = useCallback((enabled: boolean) => {
+    void NativeLiveDirectorEngine.setMetersEnabled({ enabled }).catch(() => undefined);
+  }, []);
 
   const toggleLoop = useCallback(() => {
     // Loop regions will land after the first native playback baseline is stable.
@@ -293,6 +325,7 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
       setTrackOutputRoute,
       toggleMute,
       setMasterVolume,
+      setMetersEnabled,
       toggleLoop,
       setLoopPoints,
       seekTo,
@@ -311,6 +344,7 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
       seekTo,
       setLoopPoints,
       setMasterVolume,
+      setMetersEnabled,
       setTrackOutputRoute,
       setVolume,
       soloTrack,
