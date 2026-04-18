@@ -563,7 +563,9 @@ const ChannelStrip = memo(function ChannelStrip({
   onInteractionStart,
   onInteractionEnd,
 }: ChannelStripProps) {
-  const levelBottom = `${10 + volume * 78}%`;
+  const [draftVolume, setDraftVolume] = useState<number | null>(null);
+  const displayVolume = draftVolume ?? volume;
+  const levelBottom = `${10 + displayVolume * 78}%`;
   const knobGlow = muted ? 'rgba(120, 128, 140, 0.15)' : `${accent}30`;
   const displayLevel = muted ? 0 : clamp(level);
   const meterHeightPercent = displayLevel > 0.002 ? Math.max(5, displayLevel * 86) : 0;
@@ -608,26 +610,38 @@ const ChannelStrip = memo(function ChannelStrip({
     scrollContainer: null,
   });
 
-  const updateVolumeFromClientY = useCallback((clientY: number) => {
+  useEffect(() => {
+    if (
+      draftVolume !== null &&
+      !faderInteractionRef.current.active &&
+      Math.abs(volume - draftVolume) < 0.001
+    ) {
+      setDraftVolume(null);
+    }
+  }, [draftVolume, volume]);
+
+  const updateDraftVolumeFromClientY = useCallback((clientY: number) => {
     if (disabled) {
-      return;
+      return null;
     }
 
     const sliderSurface = sliderSurfaceRef.current;
     if (!sliderSurface) {
-      return;
+      return null;
     }
 
     const bounds = sliderSurface.getBoundingClientRect();
     if (bounds.height <= 0) {
-      return;
+      return null;
     }
 
     const nextVolume = clamp(1 - ((clientY - bounds.top) / bounds.height), 0, 1);
-    onVolumeChange(Math.round(nextVolume * 100) / 100);
-  }, [disabled, onVolumeChange]);
+    const roundedVolume = Math.round(nextVolume * 100) / 100;
+    setDraftVolume(roundedVolume);
+    return roundedVolume;
+  }, [disabled]);
 
-  const finishSliderDrag = useCallback((pointerId?: number, target?: HTMLDivElement | null) => {
+  const finishSliderDrag = useCallback((pointerId?: number, target?: HTMLDivElement | null, keepDraft = false) => {
     const interaction = faderInteractionRef.current;
     if (
       typeof pointerId === 'number' &&
@@ -648,6 +662,10 @@ const ChannelStrip = memo(function ChannelStrip({
       startScrollLeft: 0,
       scrollContainer: null,
     };
+
+    if (!keepDraft) {
+      setDraftVolume(null);
+    }
 
     onInteractionEnd?.();
 
@@ -679,6 +697,7 @@ const ChannelStrip = memo(function ChannelStrip({
       startScrollLeft: scrollContainer?.scrollLeft ?? 0,
       scrollContainer,
     };
+    setDraftVolume(volume);
 
     onInteractionStart?.();
 
@@ -710,7 +729,7 @@ const ChannelStrip = memo(function ChannelStrip({
         return;
       }
 
-      interaction.mode = absX > absY * 1.15 && interaction.scrollContainer ? 'scroll' : 'volume';
+      interaction.mode = absY > absX * 1.5 || !interaction.scrollContainer ? 'volume' : 'scroll';
     }
 
     if (interaction.mode === 'scroll') {
@@ -722,10 +741,10 @@ const ChannelStrip = memo(function ChannelStrip({
       return;
     }
 
-    updateVolumeFromClientY(event.clientY);
+    updateDraftVolumeFromClientY(event.clientY);
     event.preventDefault();
     event.stopPropagation();
-  }, [updateVolumeFromClientY]);
+  }, [updateDraftVolumeFromClientY]);
 
   const handleSliderPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const interaction = faderInteractionRef.current;
@@ -733,16 +752,20 @@ const ChannelStrip = memo(function ChannelStrip({
       return;
     }
 
+    let committedVolume: number | null = null;
     if (interaction.mode === 'pending' || interaction.mode === 'volume') {
-      updateVolumeFromClientY(event.clientY);
+      committedVolume = updateDraftVolumeFromClientY(event.clientY);
     } else if (interaction.scrollContainer) {
       interaction.scrollContainer.scrollLeft = interaction.startScrollLeft - (event.clientX - interaction.startX);
     }
 
-    finishSliderDrag(event.pointerId, event.currentTarget);
+    finishSliderDrag(event.pointerId, event.currentTarget, committedVolume !== null);
+    if (committedVolume !== null) {
+      onVolumeChange(committedVolume);
+    }
     event.preventDefault();
     event.stopPropagation();
-  }, [finishSliderDrag, updateVolumeFromClientY]);
+  }, [finishSliderDrag, onVolumeChange, updateDraftVolumeFromClientY]);
 
   const handleSliderPointerCancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const interaction = faderInteractionRef.current;
@@ -763,9 +786,9 @@ const ChannelStrip = memo(function ChannelStrip({
     let nextVolume: number | null = null;
 
     if (event.key === 'ArrowUp' || event.key === 'ArrowRight') {
-      nextVolume = clamp(volume + 0.02, 0, 1);
+      nextVolume = clamp(displayVolume + 0.02, 0, 1);
     } else if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') {
-      nextVolume = clamp(volume - 0.02, 0, 1);
+      nextVolume = clamp(displayVolume - 0.02, 0, 1);
     } else if (event.key === 'Home') {
       nextVolume = 0;
     } else if (event.key === 'End') {
@@ -779,7 +802,7 @@ const ChannelStrip = memo(function ChannelStrip({
     onVolumeChange(Math.round(nextVolume * 100) / 100);
     event.preventDefault();
     event.stopPropagation();
-  }, [disabled, onVolumeChange, volume]);
+  }, [disabled, displayVolume, onVolumeChange]);
 
   return (
     <div
@@ -871,8 +894,8 @@ const ChannelStrip = memo(function ChannelStrip({
             aria-label={`Volume for ${label}`}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-valuenow={Math.round(volume * 100)}
-            aria-valuetext={`${Math.round(volume * 100)}%`}
+            aria-valuenow={Math.round(displayVolume * 100)}
+            aria-valuetext={`${Math.round(displayVolume * 100)}%`}
             aria-orientation="vertical"
             data-no-drag-scroll="true"
             onPointerDown={handleSliderPointerDown}
@@ -1063,7 +1086,6 @@ export function LiveDirectorView({
     setMasterVolume,
     setTrackOutputRoute,
     setVolume,
-    setMetersEnabled,
     soloTrack,
     stop,
     trackLevels,
@@ -1074,24 +1096,15 @@ export function LiveDirectorView({
   } = selectedMultitrackEngine;
 
   const suspendNativeMeters = useCallback(() => {
-    if (!isIOSNativeEngineSurface) {
-      return;
-    }
-
     if (resumeNativeMetersTimeoutRef.current !== null) {
       window.clearTimeout(resumeNativeMetersTimeoutRef.current);
       resumeNativeMetersTimeoutRef.current = null;
     }
 
     mixerInteractionActiveRef.current = true;
-    setMetersEnabled(false);
-  }, [isIOSNativeEngineSurface, setMetersEnabled]);
+  }, []);
 
   const resumeNativeMetersSoon = useCallback(() => {
-    if (!isIOSNativeEngineSurface) {
-      return;
-    }
-
     if (resumeNativeMetersTimeoutRef.current !== null) {
       window.clearTimeout(resumeNativeMetersTimeoutRef.current);
     }
@@ -1099,9 +1112,8 @@ export function LiveDirectorView({
     resumeNativeMetersTimeoutRef.current = window.setTimeout(() => {
       resumeNativeMetersTimeoutRef.current = null;
       mixerInteractionActiveRef.current = false;
-      setMetersEnabled(true);
     }, 250);
-  }, [isIOSNativeEngineSurface, setMetersEnabled]);
+  }, []);
 
   useEffect(() => () => {
     if (resumeNativeMetersTimeoutRef.current !== null) {

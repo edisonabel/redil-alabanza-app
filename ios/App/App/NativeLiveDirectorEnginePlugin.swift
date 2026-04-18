@@ -72,7 +72,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private var engine = AVAudioEngine()
     private var tracks: [NativeTrack] = []
     private var trackLevels: [String: Double] = [:]
-    private var metersEnabled = true
+    private var metersEnabled = false
     private var isPlaying = false
     private var seekOffset: Double = 0
     private var playStartWallTime: CFTimeInterval = 0
@@ -346,9 +346,6 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                     self.engine.attach(track.player)
                     self.engine.connect(track.player, to: self.engine.mainMixerNode, format: track.file.processingFormat)
                     self.applyTrackMixState(track)
-                    if self.metersEnabled {
-                        self.installMeterTap(for: track)
-                    }
                 }
 
                 self.engine.mainMixerNode.outputVolume = self.masterVolume
@@ -365,7 +362,8 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             ])
         }
 
-        configureAudioSession()
+        CAPLog.print("NLDE SESSION startPlayback requested seek=\(seekOffset) tracks=\(tracks.count) engineRunning=\(engine.isRunning)")
+        logSessionState("pre-startPlayback")
 
         if !engine.isRunning {
             engine.prepare()
@@ -396,6 +394,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         playStartWallTime = CACurrentMediaTime() + playbackStartDelay - seekOffset
         isPlaying = true
         startStateTimer()
+        logSessionState("post-startPlayback")
         emitState()
     }
 
@@ -472,20 +471,14 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     }
 
     private func setMetersEnabledInternal(_ enabled: Bool) {
-        guard metersEnabled != enabled else {
-            return
-        }
-
-        metersEnabled = enabled
-        if enabled {
-            tracks.forEach { installMeterTap(for: $0) }
-        } else {
+        if metersEnabled {
+            metersEnabled = false
             tracks.forEach { removeMeterTap(for: $0) }
             resetMeters()
+            emitState()
         }
 
-        CAPLog.print("NativeLiveDirectorEngine metersEnabled=\(enabled)")
-        emitState()
+        CAPLog.print("NLDE METERS requested=\(enabled) forced=false stabilityBuild=true")
     }
 
     private func computeLevel(from buffer: AVAudioPCMBuffer) -> Double {
@@ -558,8 +551,10 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         let levels = trackLevels
         meterLock.unlock()
         var jsLevels: JSObject = [:]
-        tracks.forEach { track in
-            jsLevels[track.id] = metersEnabled ? (levels[track.id] ?? 0) : 0
+        if metersEnabled {
+            tracks.forEach { track in
+                jsLevels[track.id] = levels[track.id] ?? 0
+            }
         }
 
         return [
@@ -739,15 +734,26 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     }
 
     private func configureAudioSession() {
+        let session = AVAudioSession.sharedInstance()
         do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [.allowAirPlay, .allowBluetoothA2DP])
-            try? session.setPreferredSampleRate(48_000)
-            try? session.setPreferredIOBufferDuration(0.010)
-            try session.setActive(true)
+            try session.setCategory(.playback, mode: .default, options: [])
+            logSessionState("post-setCategory")
+            try session.setActive(true, options: [])
+            logSessionState("post-setActive")
         } catch {
-            CAPLog.print("NativeLiveDirectorEngine audio session failed: \(error.localizedDescription)")
+            CAPLog.print("NLDE SESSION configure FAIL: \(error.localizedDescription)")
+            logSessionState("configure-failed")
         }
+    }
+
+    private func logSessionState(_ tag: String) {
+        let session = AVAudioSession.sharedInstance()
+        let route = session.currentRoute.outputs
+            .map { $0.portType.rawValue }
+            .joined(separator: ",")
+        CAPLog.print(
+            "NLDE SESSION[\(tag)] cat=\(session.category.rawValue) mode=\(session.mode.rawValue) rate=\(session.sampleRate) buf=\(session.ioBufferDuration) route=[\(route)] other=\(session.isOtherAudioPlaying)"
+        )
     }
 
     private func registerAudioSessionObservers() {
@@ -788,7 +794,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
         let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
         let type = rawType.flatMap { AVAudioSession.InterruptionType(rawValue: $0) }
-        CAPLog.print("NativeLiveDirectorEngine audio interruption type=\(String(describing: type))")
+        CAPLog.print("NLDE SESSION interruption rawType=\(String(describing: rawType)) type=\(String(describing: type)) rawOptions=\(rawOptions) info=\(String(describing: notification.userInfo))")
 
         engineQueue.async {
             guard let type else {
@@ -797,21 +803,21 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
             switch type {
             case .began:
-                if self.isPlaying {
-                    self.seekOffset = self.currentTime()
-                }
-                self.tracks.forEach { $0.player.stop() }
-                self.isPlaying = false
-                self.resetMeters()
-                self.emitState()
+                self.logSessionState("interruption-began")
+                self.pausePlayback()
             case .ended:
-                self.configureAudioSession()
                 let options = AVAudioSession.InterruptionOptions(rawValue: rawOptions)
+                do {
+                    try AVAudioSession.sharedInstance().setActive(true, options: [])
+                } catch {
+                    CAPLog.print("NLDE SESSION interruption resume setActive FAIL: \(error.localizedDescription)")
+                }
+                self.logSessionState("interruption-ended")
                 if options.contains(.shouldResume), self.seekOffset < self.duration {
                     do {
                         try self.startPlayback()
                     } catch {
-                        CAPLog.print("NativeLiveDirectorEngine resume after interruption failed: \(error.localizedDescription)")
+                        CAPLog.print("NLDE SESSION resume after interruption FAIL: \(error.localizedDescription)")
                         self.emitState()
                     }
                 } else {
@@ -826,15 +832,15 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     @objc private func handleAudioRouteChange(_ notification: Notification) {
         let rawReason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
         let reason = rawReason.flatMap { AVAudioSession.RouteChangeReason(rawValue: $0) }
-        CAPLog.print("NativeLiveDirectorEngine route change reason=\(String(describing: reason))")
+        CAPLog.print("NLDE SESSION route change rawReason=\(String(describing: rawReason)) reason=\(String(describing: reason)) info=\(String(describing: notification.userInfo))")
 
         engineQueue.async {
-            self.configureAudioSession()
+            self.logSessionState("route-change")
             if self.isPlaying, !self.engine.isRunning {
                 do {
                     try self.engine.start()
                 } catch {
-                    CAPLog.print("NativeLiveDirectorEngine restart after route change failed: \(error.localizedDescription)")
+                    CAPLog.print("NLDE SESSION restart after route change FAIL: \(error.localizedDescription)")
                 }
             }
             self.emitState()
@@ -842,7 +848,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     }
 
     @objc private func handleMediaServicesReset(_ notification: Notification) {
-        CAPLog.print("NativeLiveDirectorEngine media services reset")
+        CAPLog.print("NLDE SESSION media services reset info=\(String(describing: notification.userInfo))")
 
         engineQueue.async {
             let shouldResume = self.isPlaying
@@ -858,7 +864,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                 do {
                     try self.startPlayback()
                 } catch {
-                    CAPLog.print("NativeLiveDirectorEngine resume after media reset failed: \(error.localizedDescription)")
+                    CAPLog.print("NLDE SESSION resume after media reset FAIL: \(error.localizedDescription)")
                     self.emitState()
                 }
             } else {
@@ -868,14 +874,14 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     }
 
     @objc private func handleEngineConfigurationChange(_ notification: Notification) {
-        CAPLog.print("NativeLiveDirectorEngine engine configuration changed")
+        CAPLog.print("NLDE SESSION engine configuration changed info=\(String(describing: notification.userInfo))")
 
         engineQueue.async {
             if self.isPlaying, !self.engine.isRunning {
                 do {
                     try self.engine.start()
                 } catch {
-                    CAPLog.print("NativeLiveDirectorEngine restart after configuration change failed: \(error.localizedDescription)")
+                    CAPLog.print("NLDE SESSION restart after configuration change FAIL: \(error.localizedDescription)")
                 }
             }
             self.emitState()
