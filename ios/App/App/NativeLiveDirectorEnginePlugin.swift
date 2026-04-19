@@ -82,6 +82,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private var seekOffset: Double = 0
     private var playStartWallTime: CFTimeInterval = 0
     private var playbackAnchorOffset: Double = 0
+    private var playbackStartHostTime: UInt64 = 0
     private var duration: Double = 0
     private var masterVolume: Float = 1
     private var soloTrackId: String?
@@ -387,12 +388,12 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             track.player.prepare(withFrameCount: playerPrepareFrameCount)
         }
 
-        let startTime = AVAudioTime(
-            hostTime: mach_absolute_time() + AVAudioTime.hostTime(forSeconds: playbackStartDelay)
-        )
+        let startHostTime = mach_absolute_time() + AVAudioTime.hostTime(forSeconds: playbackStartDelay)
+        let startTime = AVAudioTime(hostTime: startHostTime)
         tracks.forEach { $0.player.play(at: startTime) }
         playStartWallTime = CACurrentMediaTime() + playbackStartDelay - seekOffset
         playbackAnchorOffset = seekOffset
+        playbackStartHostTime = startHostTime
         isPlaying = true
         startStateTimer()
         logSessionState("post-startPlayback")
@@ -433,6 +434,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         if resetPosition {
             seekOffset = 0
             playbackAnchorOffset = 0
+            playbackStartHostTime = 0
         }
         tracks.forEach { $0.scheduledUntilFrame = 0 }
         resetMeters()
@@ -443,37 +445,20 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
     private func currentTime() -> Double {
         if isPlaying {
-            if let renderTime = currentRenderTime() {
-                return min(duration, max(0, playbackAnchorOffset + renderTime))
+            if playbackStartHostTime > 0 {
+                let nowHostTime = mach_absolute_time()
+                if nowHostTime <= playbackStartHostTime {
+                    return min(duration, max(0, playbackAnchorOffset))
+                }
+
+                let elapsedHostTime = nowHostTime - playbackStartHostTime
+                let elapsedSeconds = AVAudioTime.seconds(forHostTime: elapsedHostTime)
+                return min(duration, max(0, playbackAnchorOffset + elapsedSeconds))
             }
             return min(duration, max(0, CACurrentMediaTime() - playStartWallTime))
         }
 
         return min(duration, max(0, seekOffset))
-    }
-
-    private func currentRenderTime() -> Double? {
-        var renderedTime: Double?
-        for track in tracks {
-            guard
-                let nodeTime = track.player.lastRenderTime,
-                let playerTime = track.player.playerTime(forNodeTime: nodeTime)
-            else {
-                continue
-            }
-
-            let sampleRate = playerTime.sampleRate > 0
-                ? playerTime.sampleRate
-                : track.file.processingFormat.sampleRate
-            guard sampleRate > 0 else {
-                continue
-            }
-
-            let trackTime = Double(playerTime.sampleTime) / sampleRate
-            renderedTime = max(renderedTime ?? 0, trackTime)
-        }
-
-        return renderedTime
     }
 
     private func applyTrackMixState(_ track: NativeTrack) {

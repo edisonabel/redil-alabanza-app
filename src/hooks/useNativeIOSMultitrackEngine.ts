@@ -12,8 +12,9 @@ type TrackVolumesState = Record<string, number>;
 type TrackLevelsState = Record<string, number>;
 type LoadProgressState = { loaded: number; total: number } | null;
 const TRACK_LEVEL_UPDATE_THRESHOLD = 0.006;
-const VISUAL_CLOCK_UPDATE_INTERVAL_MS = 100;
+const VISUAL_CLOCK_UPDATE_INTERVAL_MS = 1000 / 24;
 const VISUAL_CLOCK_SNAP_THRESHOLD_SECONDS = 0.35;
+const NATIVE_PLAYBACK_START_DELAY_MS = 200;
 
 type TransportSnapshot = {
   currentTime: number;
@@ -77,6 +78,7 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
     capturedAtMs: 0,
   });
   const visualClockTimerRef = useRef<number | null>(null);
+  const lastVisualClockUpdateRef = useRef(0);
   const pendingVolumeUpdatesRef = useRef<TrackVolumesState>({});
   const volumeFlushFrameRef = useRef<number | null>(null);
   const pendingMasterVolumeRef = useRef<number | null>(null);
@@ -120,12 +122,16 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
     const safeCurrentTime = Number.isFinite(state.currentTime) ? Math.max(0, state.currentTime) : 0;
     const safeDuration = Number.isFinite(state.duration) ? Math.max(0, state.duration) : 0;
     const nextIsPlaying = Boolean(state.isPlaying);
+    const wasPlaying = transportSnapshotRef.current.isPlaying;
+    const capturedAtMs = nextIsPlaying && !wasPlaying
+      ? performance.now() + NATIVE_PLAYBACK_START_DELAY_MS
+      : performance.now();
 
     transportSnapshotRef.current = {
       currentTime: safeCurrentTime,
       duration: safeDuration,
       isPlaying: nextIsPlaying,
-      capturedAtMs: performance.now(),
+      capturedAtMs,
     };
 
     startTransition(() => {
@@ -152,31 +158,34 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
   useEffect(() => {
     if (!isPlaying) {
       if (visualClockTimerRef.current !== null) {
-        window.clearTimeout(visualClockTimerRef.current);
+        window.cancelAnimationFrame(visualClockTimerRef.current);
         visualClockTimerRef.current = null;
       }
       return;
     }
 
     let disposed = false;
-    const tick = () => {
+    const tick = (frameTime: number) => {
       if (disposed) {
         return;
       }
 
-      const nextCurrentTime = computeVisualCurrentTime();
-      if (Math.abs(currentTimeRef.current - nextCurrentTime) >= 0.025) {
-        commitCurrentTime(nextCurrentTime);
+      if (frameTime - lastVisualClockUpdateRef.current >= VISUAL_CLOCK_UPDATE_INTERVAL_MS) {
+        lastVisualClockUpdateRef.current = frameTime;
+        const nextCurrentTime = computeVisualCurrentTime();
+        if (Math.abs(currentTimeRef.current - nextCurrentTime) >= 0.01) {
+          commitCurrentTime(nextCurrentTime);
+        }
       }
-      visualClockTimerRef.current = window.setTimeout(tick, VISUAL_CLOCK_UPDATE_INTERVAL_MS);
+      visualClockTimerRef.current = window.requestAnimationFrame(tick);
     };
 
-    tick();
+    visualClockTimerRef.current = window.requestAnimationFrame(tick);
 
     return () => {
       disposed = true;
       if (visualClockTimerRef.current !== null) {
-        window.clearTimeout(visualClockTimerRef.current);
+        window.cancelAnimationFrame(visualClockTimerRef.current);
         visualClockTimerRef.current = null;
       }
     };
