@@ -318,7 +318,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             let outputRoute = normalizeOutputRoute(rawTrack["outputRoute"] as? String ?? "stereo")
             let localURL = try await cachedAudioURL(for: remoteURL)
             let file = try AVAudioFile(forReading: localURL)
-            CAPLog.print("NLDE ASSET id=\(id) local=\(localURL.lastPathComponent) sourceExt=\(sourceURL.pathExtension.lowercased()) playExt=\(remoteURL.pathExtension.lowercased()) durationFrames=\(file.length) \(audioFileSummary(file, url: localURL))")
+            CAPLog.print("NLDE ASSET id=\(id) local=\(localURL.lastPathComponent) sourceExt=\(sourceURL.pathExtension.lowercased()) playExt=\(remoteURL.pathExtension.lowercased()) durationFrames=\(file.length) scheduleMode=\(schedulingModeName(for: file)) \(audioFileSummary(file, url: localURL))")
             preparedTracks.append(NativeTrack(
                 id: id,
                 name: name,
@@ -386,7 +386,11 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             let startFrame = AVAudioFramePosition(max(0, seekOffset) * track.file.processingFormat.sampleRate)
             let clampedStartFrame = min(max(0, startFrame), track.file.length)
             track.scheduledUntilFrame = clampedStartFrame
-            scheduleTrackSegmentsUntil(track, targetTime: seekOffset + scheduledSegmentLookaheadSeconds)
+            if shouldUseChunkedScheduling(track) {
+                scheduleTrackSegmentsUntil(track, targetTime: seekOffset + scheduledSegmentLookaheadSeconds)
+            } else {
+                scheduleRemainingTrackSegment(track)
+            }
             track.player.prepare(withFrameCount: playerPrepareFrameCount)
         }
 
@@ -436,6 +440,24 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         }
     }
 
+    private func scheduleRemainingTrackSegment(_ track: NativeTrack) {
+        let remainingFrames = track.file.length - track.scheduledUntilFrame
+        guard remainingFrames > 0 else {
+            return
+        }
+
+        let framesToSchedule = min(remainingFrames, AVAudioFramePosition(UInt32.max))
+        CAPLog.print("NLDE SCHED id=\(track.id) mode=single-segment-compressed startFrame=\(track.scheduledUntilFrame) frames=\(framesToSchedule)")
+        track.player.scheduleSegment(
+            track.file,
+            startingFrame: track.scheduledUntilFrame,
+            frameCount: AVAudioFrameCount(framesToSchedule),
+            at: nil,
+            completionHandler: nil
+        )
+        track.scheduledUntilFrame += framesToSchedule
+    }
+
     private func maintainScheduledSegments() {
         guard isPlaying else {
             return
@@ -443,7 +465,9 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
         let targetTime = min(duration, currentTime() + scheduledSegmentLookaheadSeconds)
         tracks.forEach { track in
-            scheduleTrackSegmentsUntil(track, targetTime: targetTime)
+            if shouldUseChunkedScheduling(track) {
+                scheduleTrackSegmentsUntil(track, targetTime: targetTime)
+            }
         }
     }
 
@@ -653,6 +677,18 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         }
 
         return fallbackURL
+    }
+
+    private func shouldUseChunkedScheduling(_ track: NativeTrack) -> Bool {
+        isLinearPCMFile(track.file)
+    }
+
+    private func schedulingModeName(for file: AVAudioFile) -> String {
+        isLinearPCMFile(file) ? "chunked-pcm" : "single-segment-compressed"
+    }
+
+    private func isLinearPCMFile(_ file: AVAudioFile) -> Bool {
+        file.fileFormat.streamDescription.pointee.mFormatID == kAudioFormatLinearPCM
     }
 
     private func audioFileSummary(_ file: AVAudioFile, url: URL) -> String {
