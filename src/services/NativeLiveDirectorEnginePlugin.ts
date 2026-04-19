@@ -1,6 +1,7 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import type { TrackData } from './MultitrackEngine';
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
+import type { TrackActivityEnvelope } from '../utils/audioActivityEnvelope';
 
 export type NativeLiveDirectorEngineState = {
   isPlaying: boolean;
@@ -10,9 +11,18 @@ export type NativeLiveDirectorEngineState = {
   engineMode: 'ios-native';
 };
 
+/**
+ * Track payload returned by the Swift plugin after `load`. Mirrors `TrackData`
+ * but makes the precomputed activity envelope explicit so the hook can fan it
+ * out into `trackEnvelopes` without running any JS-side analysis.
+ */
+export type NativeLiveDirectorLoadedTrack = TrackData & {
+  activityEnvelope?: TrackActivityEnvelope;
+};
+
 export type NativeLiveDirectorEngineLoadResult = {
   duration: number;
-  tracks: TrackData[];
+  tracks: NativeLiveDirectorLoadedTrack[];
 };
 
 export type NativeLiveDirectorLoadProgress = {

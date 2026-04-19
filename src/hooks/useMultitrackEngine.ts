@@ -2,9 +2,11 @@ import { startTransition, useCallback, useEffect, useMemo, useRef, useState } fr
 import { MultitrackEngine, type TrackData } from '../services/MultitrackEngine';
 import { StreamingMultitrackEngine } from '../services/StreamingMultitrackEngine';
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
+import type { TrackActivityEnvelope } from '../utils/audioActivityEnvelope';
 
 type TrackVolumesState = Record<string, number>;
 type TrackLevelsState = Record<string, number>;
+export type TrackEnvelopesState = Record<string, TrackActivityEnvelope>;
 type LoadProgressState = { loaded: number; total: number } | null;
 const UI_UPDATE_INTERVAL_MS = 1000 / 24;
 const DIAGNOSTICS_UPDATE_INTERVAL_MS = 1000;
@@ -35,6 +37,7 @@ export type UseMultitrackEngineReturn = {
   loadProgress: LoadProgressState;
   trackVolumes: TrackVolumesState;
   trackLevels: TrackLevelsState;
+  trackEnvelopes: TrackEnvelopesState;
   diagnostics: EngineDiagnostics | null;
   initialize: (tracks: TrackData[]) => Promise<void>;
   play: () => Promise<void>;
@@ -78,11 +81,30 @@ const cloneTracks = (tracks: TrackData[]): TrackData[] => (
     id: track.id,
     name: track.name,
     url: track.url,
+    iosUrl: track.iosUrl,
+    nativeUrl: track.nativeUrl,
+    optimizedUrl: track.optimizedUrl,
+    cafUrl: track.cafUrl,
+    pcmUrl: track.pcmUrl,
     volume: clampVolume(track.volume),
     isMuted: Boolean(track.isMuted),
+    enabled: track.enabled,
     sourceFileName: track.sourceFileName,
     outputRoute: track.outputRoute,
+    // Preserve any envelope that came in from the persisted session so the
+    // streaming engine (which cannot decode to AudioBuffer) still gets
+    // activity data for the UI.
+    activityEnvelope: track.activityEnvelope,
   }))
+);
+
+const buildTrackEnvelopes = (tracks: TrackData[]): TrackEnvelopesState => (
+  tracks.reduce<TrackEnvelopesState>((envelopes, track) => {
+    if (track.activityEnvelope) {
+      envelopes[track.id] = track.activityEnvelope;
+    }
+    return envelopes;
+  }, {})
 );
 
 const readStreamingAutoRouteDisabled = () => {
@@ -146,6 +168,7 @@ export function useMultitrackEngine(
   const loadProgressRef = useRef<LoadProgressState>(null);
   const [trackVolumes, setTrackVolumes] = useState<TrackVolumesState>({});
   const [trackLevels, setTrackLevels] = useState<TrackLevelsState>({});
+  const [trackEnvelopes, setTrackEnvelopes] = useState<TrackEnvelopesState>({});
   const [diagnostics, setDiagnostics] = useState<EngineDiagnostics | null>(null);
 
   const commitLoadProgress = useCallback((next: LoadProgressState) => {
@@ -314,6 +337,7 @@ export function useMultitrackEngine(
     setDuration(0);
     trackLevelsRef.current = {};
     setTrackLevels({});
+    setTrackEnvelopes({});
     commitLoadProgress({ loaded: 0, total: nextTracks.length });
 
     const handleProgress = (loaded: number, total: number) => {
@@ -332,6 +356,7 @@ export function useMultitrackEngine(
       setTrackVolumes(buildTrackVolumes(loadedTracks));
       trackLevelsRef.current = buildTrackLevels(loadedTracks);
       setTrackLevels(trackLevelsRef.current);
+      setTrackEnvelopes(buildTrackEnvelopes(loadedTracks));
       commitDuration(engine.getDuration());
       commitDiagnostics(engine.getDiagnostics());
       commitLoadProgress(null);
@@ -371,6 +396,7 @@ export function useMultitrackEngine(
           setTrackVolumes(buildTrackVolumes(fallbackLoadedTracks));
           trackLevelsRef.current = buildTrackLevels(fallbackLoadedTracks);
           setTrackLevels(trackLevelsRef.current);
+          setTrackEnvelopes(buildTrackEnvelopes(fallbackLoadedTracks));
           commitDuration(fallbackEngine.getDuration());
           commitDiagnostics(fallbackEngine.getDiagnostics());
           commitLoadProgress(null);
@@ -385,6 +411,7 @@ export function useMultitrackEngine(
       setIsReady(false);
       trackLevelsRef.current = {};
       setTrackLevels({});
+      setTrackEnvelopes({});
       commitDiagnostics(null);
       commitLoadProgress(null);
       throw error;
@@ -562,6 +589,7 @@ export function useMultitrackEngine(
     setDuration(0);
     trackLevelsRef.current = {};
     setTrackLevels({});
+    setTrackEnvelopes({});
     diagnosticsRef.current = null;
     setDiagnostics(null);
     loadProgressRef.current = null;
@@ -650,6 +678,7 @@ export function useMultitrackEngine(
       loadProgress,
       trackVolumes,
       trackLevels,
+      trackEnvelopes,
       diagnostics,
       initialize,
       play,
@@ -686,6 +715,7 @@ export function useMultitrackEngine(
       toggleLoop,
       toggleMute,
       trackLevels,
+      trackEnvelopes,
       trackVolumes,
     ],
   );

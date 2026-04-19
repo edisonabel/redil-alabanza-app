@@ -1,6 +1,8 @@
 import { buildSectionShortLabel, getSectionKind, SECTION_VISUALS, toRgba } from './sectionVisuals';
 import type { TrackOutputRoute } from './liveDirectorTrackRouting';
 import { resolveTrackOutputRoute } from './liveDirectorTrackRouting';
+import type { TrackActivityEnvelope } from './audioActivityEnvelope';
+import { normalizeTrackActivityEnvelope } from './audioActivityEnvelope';
 
 export type LiveDirectorPersistedTrack = {
   id: string;
@@ -16,6 +18,7 @@ export type LiveDirectorPersistedTrack = {
   enabled?: boolean;
   sourceFileName?: string;
   outputRoute?: TrackOutputRoute;
+  activityEnvelope?: TrackActivityEnvelope;
 };
 
 export type LiveDirectorPersistedSession = {
@@ -139,6 +142,8 @@ export const normalizePersistedLiveDirectorSession = (
             return null;
           }
 
+          const activityEnvelope = normalizeTrackActivityEnvelope(candidate.activityEnvelope);
+
           return {
             id,
             name,
@@ -157,6 +162,7 @@ export const normalizePersistedLiveDirectorSession = (
               name,
               outputRoute: candidate.outputRoute,
             }),
+            ...(activityEnvelope ? { activityEnvelope } : {}),
           };
         })
         .filter((track): track is LiveDirectorPersistedTrack => track !== null)

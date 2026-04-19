@@ -1,5 +1,9 @@
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
 import { resolveTrackOutputRoute } from '../utils/liveDirectorTrackRouting';
+import {
+  buildAudioActivityEnvelope,
+  type TrackActivityEnvelope,
+} from '../utils/audioActivityEnvelope';
 
 type WindowWithWebkitAudio = Window & typeof globalThis & {
   webkitAudioContext?: typeof AudioContext;
@@ -172,6 +176,7 @@ export interface TrackData {
   enabled?: boolean;
   sourceFileName?: string;
   outputRoute?: TrackOutputRoute;
+  activityEnvelope?: TrackActivityEnvelope;
   audioBuffer?: AudioBuffer;
   inputNode?: GainNode;
   gainNode?: GainNode;
@@ -548,6 +553,24 @@ export class MultitrackEngine {
         TRACK_DECODE_TIMEOUT_MS,
         `Timed out decoding "${track.name}".`,
       );
+
+      // Precompute a visual activity envelope from the decoded buffer. We do
+      // this once per load so the UI can breathe/pulse without any live
+      // analyser taps (meters stay disabled for stability under 16 stems).
+      if (!track.activityEnvelope) {
+        try {
+          const envelope = buildAudioActivityEnvelope(audioBuffer);
+          if (envelope) {
+            track.activityEnvelope = envelope;
+          }
+        } catch (envelopeError) {
+          console.warn(
+            `[MultitrackEngine] Failed to build activity envelope for "${track.name}".`,
+            envelopeError,
+          );
+        }
+      }
+
       const inputNode = this.context.createGain();
       const gainNode = this.context.createGain();
       const analyserNode = this.createTrackAnalyser();

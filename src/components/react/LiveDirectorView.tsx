@@ -29,6 +29,10 @@ import type {
 } from '../../utils/liveDirectorSongSession';
 import { applyLiveDirectorSectionOffset } from '../../utils/liveDirectorSongSession';
 import {
+  sampleActivityEnvelope,
+  type TrackActivityEnvelope,
+} from '../../utils/audioActivityEnvelope';
+import {
   deleteLiveDirectorSongSession,
   requestLiveDirectorUploadTarget,
   saveLiveDirectorSongSession,
@@ -505,6 +509,7 @@ const toResolvedSession = (
     enabled: track.enabled !== false,
     sourceFileName: track.sourceFileName,
     outputRoute: resolveTrackOutputRoute(track),
+    activityEnvelope: track.activityEnvelope,
   })),
   objectUrls: [],
   unmatchedFiles: session.unmatchedFiles || [],
@@ -1141,6 +1146,7 @@ export function LiveDirectorView({
     soloTrack,
     stop,
     trackLevels,
+    trackEnvelopes,
     toggleLoop,
     toggleMute,
     trackVolumes,
@@ -1517,7 +1523,18 @@ export function LiveDirectorView({
       const volume = trackVolumes[track.id] ?? track.volume ?? meta.defaultVolume;
       const muted = mutedTrackIds.has(track.id);
       const dimmed = Boolean(soloTrackId && soloTrackId !== track.id);
-      const rawLevel = clamp(trackLevels[track.id] ?? 0);
+      // Activity derivation, in order of preference:
+      //   1. Real-time meter level, if the engine is publishing one. On iOS
+      //      we keep meters disabled for thermal/stability, so this stays 0
+      //      and we fall through to the envelope.
+      //   2. Precomputed activity envelope sampled at `currentTime` while the
+      //      transport is playing. Paused tracks freeze at 0 so the UI does
+      //      not keep breathing when nothing is audible.
+      //   3. 0 — no envelope, no meters.
+      const liveLevel = clamp(trackLevels[track.id] ?? 0);
+      const envelope = trackEnvelopes[track.id];
+      const envelopeLevel = isPlaying ? sampleActivityEnvelope(envelope, currentTime) : 0;
+      const rawLevel = liveLevel > 0.002 ? liveLevel : envelopeLevel;
 
       return {
         ...meta,
@@ -1561,7 +1578,7 @@ export function LiveDirectorView({
     }
 
     return resolvedMixerTracks;
-  }, [activeTracks, isEnsayoMode, isPadActive, mutedTrackIds, resolvedInternalPadVolume, resolvedPadUrl, soloTrackId, trackLevels, trackOutputRoutes, trackVolumes]);
+  }, [activeTracks, currentTime, isEnsayoMode, isPadActive, isPlaying, mutedTrackIds, resolvedInternalPadVolume, resolvedPadUrl, soloTrackId, trackEnvelopes, trackLevels, trackOutputRoutes, trackVolumes]);
 
   const mappedTrackDetails = useMemo(
     () =>
@@ -1809,27 +1826,31 @@ export function LiveDirectorView({
 
     return {
       mode,
-      tracks: tracksToPersist.map((track) => ({
-        id: track.id,
-        name: track.name,
-        url: track.url,
-        iosUrl: track.iosUrl,
-        nativeUrl: track.nativeUrl,
-        optimizedUrl: track.optimizedUrl,
-        cafUrl: track.cafUrl,
-        pcmUrl: track.pcmUrl,
-        volume: track.volume,
-        isMuted: track.isMuted,
-        enabled: track.enabled !== false,
-        sourceFileName: track.sourceFileName,
-        outputRoute: resolveTrackOutputRoute(track),
-      })),
+      tracks: tracksToPersist.map((track) => {
+        const envelope = trackEnvelopes[track.id] ?? track.activityEnvelope;
+        return {
+          id: track.id,
+          name: track.name,
+          url: track.url,
+          iosUrl: track.iosUrl,
+          nativeUrl: track.nativeUrl,
+          optimizedUrl: track.optimizedUrl,
+          cafUrl: track.cafUrl,
+          pcmUrl: track.pcmUrl,
+          volume: track.volume,
+          isMuted: track.isMuted,
+          enabled: track.enabled !== false,
+          sourceFileName: track.sourceFileName,
+          outputRoute: resolveTrackOutputRoute(track),
+          ...(envelope ? { activityEnvelope: envelope } : {}),
+        };
+      }),
       unmatchedFiles: params?.unmatchedFiles ?? (manualSession?.unmatchedFiles || []),
       sectionOffsetSeconds: Number.isFinite(Number(params?.sectionOffsetSeconds))
         ? Number(params?.sectionOffsetSeconds)
         : Number(manualSession?.sectionOffsetSeconds) || 0,
     };
-  }, [manualSession]);
+  }, [manualSession, trackEnvelopes]);
 
   const flushSilentSessionSaveQueue = useCallback(async () => {
     if (!hasPersistedSongContext || isFlushingSilentSessionSaveRef.current) {
@@ -2045,6 +2066,12 @@ export function LiveDirectorView({
       setBusyMessage(isIOSNativeEngineSurface ? 'Iniciando motor Apple...' : useStreamingEngine ? 'Iniciando motor en flujo...' : 'Cargando buffers de audio...');
       setMutedTrackIds(new Set(activeTracks.filter((track) => track.isMuted).map((track) => track.id)));
       setSoloTrackId(null);
+
+      const disabledCount = sessionTracks.length - activeTracks.length;
+      console.info(
+        `[LiveDirectorView] Loading ${activeEngineTracks.length}/${sessionTracks.length} enabled tracks` +
+          (disabledCount > 0 ? ` (skipping ${disabledCount} disabled/limited stem${disabledCount === 1 ? '' : 's'}).` : '.'),
+      );
 
       try {
         await initialize(activeEngineTracks);
@@ -2466,6 +2493,40 @@ export function LiveDirectorView({
       }
     };
   }, [trackOutputRoutes, trackVolumes, mutedTrackIds, manualSession, commitMixerStateSilent, hasPersistedSongContext, isInitializingSession]);
+
+  // Persist newly-computed activity envelopes exactly once. When either the
+  // iOS native engine or the web engine finishes loading tracks it hands us a
+  // fresh `trackEnvelopes` map. We push that snapshot back into R2 via the
+  // silent save queue so subsequent reloads (including cold iPhone starts)
+  // skip the per-track envelope computation entirely.
+  const persistedEnvelopeSignatureRef = useRef<string>('');
+  useEffect(() => {
+    if (!hasPersistedSongContext || !manualSession || isInitializingSession) return;
+
+    const entries = manualSession.tracks
+      .map((track) => {
+        const envelope = trackEnvelopes[track.id];
+        if (!envelope) return null;
+        if (track.activityEnvelope && track.activityEnvelope === envelope) return null;
+        return `${track.id}:${envelope.bucketMs}:${envelope.values.length}`;
+      })
+      .filter((value): value is string => value !== null);
+
+    if (entries.length === 0) {
+      return;
+    }
+
+    const signature = entries.sort().join('|');
+    if (signature === persistedEnvelopeSignatureRef.current) {
+      return;
+    }
+    persistedEnvelopeSignatureRef.current = signature;
+
+    console.info(
+      `[LiveDirectorView] Persisting activity envelopes for ${entries.length} track(s).`,
+    );
+    commitMixerStateSilent();
+  }, [commitMixerStateSilent, hasPersistedSongContext, isInitializingSession, manualSession, trackEnvelopes]);
 
   const handleToggleTrackEnabled = useCallback((trackId: string) => {
     if (!manualSession || manualSession.mode !== 'folder' || manualSession.tracks.length <= 1) {

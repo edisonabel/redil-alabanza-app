@@ -24,6 +24,11 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         CAPPluginMethod(name: "getState", returnType: CAPPluginReturnPromise)
     ]
 
+    private struct ActivityEnvelope {
+        let bucketMs: Int
+        let values: [Double]
+    }
+
     private final class NativeTrack: @unchecked Sendable {
         let id: String
         let name: String
@@ -36,6 +41,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         var isMuted: Bool
         var outputRoute: String
         let duration: Double
+        var activityEnvelope: ActivityEnvelope?
         var isMeterTapInstalled = false
         var scheduledUntilFrame: AVAudioFramePosition = 0
 
@@ -48,7 +54,8 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             file: AVAudioFile,
             volume: Float,
             isMuted: Bool,
-            outputRoute: String
+            outputRoute: String,
+            activityEnvelope: ActivityEnvelope?
         ) {
             self.id = id
             self.name = name
@@ -59,6 +66,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             self.volume = volume
             self.isMuted = isMuted
             self.outputRoute = outputRoute
+            self.activityEnvelope = activityEnvelope
             self.duration = file.processingFormat.sampleRate > 0
                 ? Double(file.length) / file.processingFormat.sampleRate
                 : 0
@@ -294,10 +302,25 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     }
 
     private func prepareTracks(_ rawTracks: [JSObject], call: CAPPluginCall) async throws -> [NativeTrack] {
-        var preparedTracks: [NativeTrack] = []
-        notifyLoadProgress(loaded: 0, total: rawTracks.count)
+        // Defensive filter: React already strips `enabled === false` tracks, but
+        // we double-check here so a stale bridge call can never download,
+        // decode, or attach a disabled stem on the native side.
+        let activeRawTracks = rawTracks.filter { rawTrack in
+            if let enabledFlag = rawTrack["enabled"] as? Bool {
+                return enabledFlag
+            }
+            return true
+        }
 
-        for (index, rawTrack) in rawTracks.enumerated() {
+        let skippedCount = rawTracks.count - activeRawTracks.count
+        if skippedCount > 0 {
+            CAPLog.print("NativeLiveDirectorEngine prepareTracks skipping \(skippedCount) disabled track(s)")
+        }
+
+        var preparedTracks: [NativeTrack] = []
+        notifyLoadProgress(loaded: 0, total: activeRawTracks.count)
+
+        for (index, rawTrack) in activeRawTracks.enumerated() {
             guard
                 let id = rawTrack["id"] as? String,
                 let urlString = rawTrack["url"] as? String,
@@ -310,13 +333,26 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
             let name = rawTrack["name"] as? String ?? id
             let remoteURL = preferredAudioURL(from: rawTrack, fallbackURL: sourceURL)
-            CAPLog.print("NativeLiveDirectorEngine prepareTrack start index=\(index + 1)/\(rawTracks.count) id=\(id) ext=\(remoteURL.pathExtension.lowercased()) optimized=\(remoteURL.absoluteString != sourceURL.absoluteString)")
+            CAPLog.print("NativeLiveDirectorEngine prepareTrack start index=\(index + 1)/\(activeRawTracks.count) id=\(id) ext=\(remoteURL.pathExtension.lowercased()) optimized=\(remoteURL.absoluteString != sourceURL.absoluteString)")
             let volume = clampVolume(Float((rawTrack["volume"] as? Double) ?? 1))
             let isMuted = rawTrack["isMuted"] as? Bool ?? false
             let outputRoute = normalizeOutputRoute(rawTrack["outputRoute"] as? String ?? "stereo")
             let localURL = try await cachedAudioURL(for: remoteURL)
             let file = try AVAudioFile(forReading: localURL)
             CAPLog.print("NLDE ASSET id=\(id) local=\(localURL.lastPathComponent) sourceExt=\(sourceURL.pathExtension.lowercased()) playExt=\(remoteURL.pathExtension.lowercased()) durationFrames=\(file.length) scheduleMode=\(schedulingModeName(for: file)) \(audioFileSummary(file, url: localURL))")
+
+            // Reuse the envelope the caller already persisted, otherwise
+            // compute it here off the main thread. Activity envelopes replace
+            // live meter taps for the breathing UI animation, so we only
+            // spend this work once per load.
+            let persistedEnvelope = parseActivityEnvelope(rawTrack["activityEnvelope"])
+            let activityEnvelope: ActivityEnvelope?
+            if let persistedEnvelope = persistedEnvelope {
+                activityEnvelope = persistedEnvelope
+            } else {
+                activityEnvelope = await computeActivityEnvelope(for: localURL)
+            }
+
             preparedTracks.append(NativeTrack(
                 id: id,
                 name: name,
@@ -326,12 +362,175 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                 file: file,
                 volume: volume,
                 isMuted: isMuted,
-                outputRoute: outputRoute
+                outputRoute: outputRoute,
+                activityEnvelope: activityEnvelope
             ))
-            notifyLoadProgress(loaded: index + 1, total: rawTracks.count)
+            notifyLoadProgress(loaded: index + 1, total: activeRawTracks.count)
         }
 
         return preparedTracks
+    }
+
+    private func parseActivityEnvelope(_ raw: Any?) -> ActivityEnvelope? {
+        guard let dict = raw as? JSObject else {
+            return nil
+        }
+
+        let bucketMsValue = (dict["bucketMs"] as? Int)
+            ?? Int(round((dict["bucketMs"] as? Double) ?? 0))
+        let bucketMs = max(20, bucketMsValue > 0 ? bucketMsValue : 100)
+
+        guard let rawValues = dict["values"] as? [Any], !rawValues.isEmpty else {
+            return nil
+        }
+
+        var values: [Double] = []
+        values.reserveCapacity(rawValues.count)
+        var hasAnyActivity = false
+        for rawValue in rawValues {
+            let numericValue: Double
+            if let doubleValue = rawValue as? Double {
+                numericValue = doubleValue
+            } else if let intValue = rawValue as? Int {
+                numericValue = Double(intValue)
+            } else if let nsNumber = rawValue as? NSNumber {
+                numericValue = nsNumber.doubleValue
+            } else {
+                numericValue = 0
+            }
+            let clamped = min(1, max(0, numericValue.isFinite ? numericValue : 0))
+            let quantized = (clamped * 1000).rounded() / 1000
+            values.append(quantized)
+            if quantized > 0 {
+                hasAnyActivity = true
+            }
+        }
+
+        guard hasAnyActivity else {
+            return nil
+        }
+
+        return ActivityEnvelope(bucketMs: bucketMs, values: values)
+    }
+
+    private func computeActivityEnvelope(for localURL: URL) async -> ActivityEnvelope? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<ActivityEnvelope?, Never>) in
+            DispatchQueue.global(qos: .utility).async {
+                let envelope = self.computeActivityEnvelopeSync(for: localURL)
+                continuation.resume(returning: envelope)
+            }
+        }
+    }
+
+    private func computeActivityEnvelopeSync(for localURL: URL) -> ActivityEnvelope? {
+        let bucketMs = 100
+        do {
+            let file = try AVAudioFile(forReading: localURL)
+            let format = file.processingFormat
+            guard format.sampleRate > 0, format.channelCount > 0 else {
+                return nil
+            }
+
+            let totalFrames = file.length
+            guard totalFrames > 0 else {
+                return nil
+            }
+
+            let framesPerBucket = max(1, Int((Double(bucketMs) / 1000.0) * format.sampleRate))
+            let bucketCount = max(1, Int((totalFrames + AVAudioFramePosition(framesPerBucket) - 1) / AVAudioFramePosition(framesPerBucket)))
+            var buckets = [Float](repeating: 0, count: bucketCount)
+
+            // Read in reasonably-sized chunks so we do not allocate a full-
+            // track buffer. 1 second worth of audio per read keeps memory
+            // small and cache-friendly without the per-bucket overhead.
+            let chunkFrameCount: AVAudioFrameCount = AVAudioFrameCount(max(framesPerBucket * 10, 4096))
+            guard let readBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunkFrameCount) else {
+                return nil
+            }
+
+            var cursorFrame: Int = 0
+            while cursorFrame < Int(totalFrames) {
+                readBuffer.frameLength = 0
+                do {
+                    try file.read(into: readBuffer)
+                } catch {
+                    return nil
+                }
+
+                let frameCount = Int(readBuffer.frameLength)
+                if frameCount <= 0 {
+                    break
+                }
+
+                guard let channelData = readBuffer.floatChannelData else {
+                    cursorFrame += frameCount
+                    continue
+                }
+
+                let channelCount = Int(format.channelCount)
+                for channelIndex in 0..<channelCount {
+                    let samples = channelData[channelIndex]
+                    // Walk the channel frame-by-frame to accumulate per-bucket
+                    // peak magnitude. We avoid vDSP here because bucket
+                    // boundaries do not always line up with chunk boundaries.
+                    var localFrame = 0
+                    while localFrame < frameCount {
+                        let globalFrame = cursorFrame + localFrame
+                        let bucketIndex = min(bucketCount - 1, globalFrame / framesPerBucket)
+                        let bucketEndFrameGlobal = (bucketIndex + 1) * framesPerBucket
+                        let framesRemainingInBucketGlobal = bucketEndFrameGlobal - globalFrame
+                        let framesRemainingInChunk = frameCount - localFrame
+                        let framesInSlice = max(1, min(framesRemainingInBucketGlobal, framesRemainingInChunk))
+
+                        var sliceMax: Float = 0
+                        let slicePointer = UnsafePointer(samples.advanced(by: localFrame))
+                        vDSP_maxmgv(slicePointer, 1, &sliceMax, vDSP_Length(framesInSlice))
+
+                        if sliceMax > buckets[bucketIndex] {
+                            buckets[bucketIndex] = sliceMax
+                        }
+
+                        localFrame += framesInSlice
+                    }
+                }
+
+                cursorFrame += frameCount
+            }
+
+            var values: [Double] = []
+            values.reserveCapacity(bucketCount)
+            var hasAnyActivity = false
+            for peak in buckets {
+                let value = shapePeakToActivity(peak)
+                values.append(value)
+                if value > 0 {
+                    hasAnyActivity = true
+                }
+            }
+
+            guard hasAnyActivity else {
+                return nil
+            }
+
+            return ActivityEnvelope(bucketMs: bucketMs, values: values)
+        } catch {
+            CAPLog.print("NativeLiveDirectorEngine envelope compute failed local=\(localURL.lastPathComponent) error=\(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private func shapePeakToActivity(_ peak: Float) -> Double {
+        if !peak.isFinite || peak <= 0.00075 {
+            return 0
+        }
+        let activity = Double(sqrt(peak) * 1.14)
+        if activity >= 1 {
+            return 1
+        }
+        if activity <= 0 {
+            return 0
+        }
+        return (activity * 1000).rounded() / 1000
     }
 
     private func configureEngine(with nextTracks: [NativeTrack]) async {
@@ -601,7 +800,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
     private func tracksPayload() -> JSArray {
         tracks.map { track in
-            [
+            var payload: JSObject = [
                 "id": track.id,
                 "name": track.name,
                 "url": track.sourceURL.absoluteString,
@@ -610,7 +809,14 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                 "isMuted": track.isMuted,
                 "outputRoute": track.outputRoute,
                 "durationSeconds": track.duration
-            ] as JSObject
+            ]
+            if let envelope = track.activityEnvelope {
+                payload["activityEnvelope"] = [
+                    "bucketMs": envelope.bucketMs,
+                    "values": envelope.values
+                ] as JSObject
+            }
+            return payload
         }
     }
 

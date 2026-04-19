@@ -6,7 +6,12 @@ import {
   type NativeLiveDirectorEngineState,
 } from '../services/NativeLiveDirectorEnginePlugin';
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
-import type { UseMultitrackEngineReturn, LiveDirectorEngineDiagnostics } from './useMultitrackEngine';
+import { normalizeTrackActivityEnvelope, type TrackActivityEnvelope } from '../utils/audioActivityEnvelope';
+import type {
+  TrackEnvelopesState,
+  UseMultitrackEngineReturn,
+  LiveDirectorEngineDiagnostics,
+} from './useMultitrackEngine';
 
 type TrackVolumesState = Record<string, number>;
 type TrackLevelsState = Record<string, number>;
@@ -42,6 +47,18 @@ const buildTrackLevels = (tracks: TrackData[]): TrackLevelsState => {
   return tracks.reduce<TrackLevelsState>((levels, track) => {
     levels[track.id] = 0;
     return levels;
+  }, {});
+};
+
+const buildTrackEnvelopes = (
+  tracks: Array<TrackData & { activityEnvelope?: TrackActivityEnvelope }>,
+): TrackEnvelopesState => {
+  return tracks.reduce<TrackEnvelopesState>((envelopes, track) => {
+    const envelope = normalizeTrackActivityEnvelope(track.activityEnvelope);
+    if (envelope) {
+      envelopes[track.id] = envelope;
+    }
+    return envelopes;
   }, {});
 };
 
@@ -90,6 +107,7 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
   const [loadProgress, setLoadProgress] = useState<LoadProgressState>(null);
   const [trackVolumes, setTrackVolumes] = useState<TrackVolumesState>({});
   const [trackLevels, setTrackLevels] = useState<TrackLevelsState>({});
+  const [trackEnvelopes, setTrackEnvelopes] = useState<TrackEnvelopesState>({});
   const [diagnostics, setDiagnostics] = useState<LiveDirectorEngineDiagnostics | null>(null);
 
   const commitCurrentTime = useCallback((nextCurrentTime: number) => {
@@ -319,6 +337,7 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
     setDuration(0);
     setTrackVolumes(trackVolumesRef.current);
     commitTrackLevels(buildTrackLevels(nextTracks), true);
+    setTrackEnvelopes({});
     setLoadProgress({ loaded: 0, total: nextTracks.length });
 
     const result = await NativeLiveDirectorEngine.load({ tracks: nextTracks });
@@ -327,6 +346,7 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
     trackVolumesRef.current = buildTrackVolumes(loadedTracks);
     setTrackVolumes(trackVolumesRef.current);
     commitTrackLevels(buildTrackLevels(loadedTracks), true);
+    setTrackEnvelopes(buildTrackEnvelopes(loadedTracks));
     setDuration(Number.isFinite(result.duration) ? Math.max(0, result.duration) : 0);
     transportSnapshotRef.current = {
       currentTime: 0,
@@ -415,6 +435,7 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
       loadProgress,
       trackVolumes,
       trackLevels,
+      trackEnvelopes,
       diagnostics,
       initialize,
       play,
@@ -450,6 +471,7 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
       stop,
       toggleLoop,
       toggleMute,
+      trackEnvelopes,
       trackLevels,
       trackVolumes,
     ],
