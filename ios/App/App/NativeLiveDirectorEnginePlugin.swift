@@ -69,13 +69,10 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private let meterQueue = DispatchQueue(label: "redil.live-director.native-meters")
     private let meterLock = NSLock()
     private let meterTapBufferFrameCount: AVAudioFrameCount = 2048
-    private let scheduledSegmentDurationSeconds: Double = 8
-    private let scheduledSegmentLookaheadSeconds: Double = 24
     private let playerPrepareFrameCount: AVAudioFrameCount = 8192
     private let conversionBufferFrameCount: AVAudioFrameCount = 16384
     private let playbackStartDelay: Double = 0.2
     private let stateEventIntervalMilliseconds = 500
-    private let segmentMaintenanceIntervalSeconds: CFTimeInterval = 1
     private let preferCompressedAudioCache = true
     private var engine = AVAudioEngine()
     private var tracks: [NativeTrack] = []
@@ -84,12 +81,12 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private var isPlaying = false
     private var seekOffset: Double = 0
     private var playStartWallTime: CFTimeInterval = 0
+    private var playbackAnchorOffset: Double = 0
     private var duration: Double = 0
     private var masterVolume: Float = 1
     private var soloTrackId: String?
     private var stateTimer: DispatchSourceTimer?
     private var didRegisterAudioSessionObservers = false
-    private var lastSegmentMaintenanceWallTime: CFTimeInterval = 0
 
     @objc public override func load() {
         super.load()
@@ -386,11 +383,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             let startFrame = AVAudioFramePosition(max(0, seekOffset) * track.file.processingFormat.sampleRate)
             let clampedStartFrame = min(max(0, startFrame), track.file.length)
             track.scheduledUntilFrame = clampedStartFrame
-            if shouldUseChunkedScheduling(track) {
-                scheduleTrackSegmentsUntil(track, targetTime: seekOffset + scheduledSegmentLookaheadSeconds)
-            } else {
-                scheduleRemainingTrackSegment(track)
-            }
+            scheduleRemainingTrackSegment(track)
             track.player.prepare(withFrameCount: playerPrepareFrameCount)
         }
 
@@ -399,45 +392,11 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         )
         tracks.forEach { $0.player.play(at: startTime) }
         playStartWallTime = CACurrentMediaTime() + playbackStartDelay - seekOffset
-        lastSegmentMaintenanceWallTime = CACurrentMediaTime()
+        playbackAnchorOffset = seekOffset
         isPlaying = true
         startStateTimer()
         logSessionState("post-startPlayback")
         emitState()
-    }
-
-    private func scheduleTrackSegmentsUntil(_ track: NativeTrack, targetTime: Double) {
-        let sampleRate = track.file.processingFormat.sampleRate
-        guard sampleRate > 0 else {
-            return
-        }
-
-        let targetFrame = min(
-            track.file.length,
-            AVAudioFramePosition(max(0, targetTime) * sampleRate)
-        )
-        let maxSegmentFrames = max(
-            1,
-            AVAudioFramePosition(scheduledSegmentDurationSeconds * sampleRate)
-        )
-
-        while track.scheduledUntilFrame < targetFrame {
-            let startFrame = track.scheduledUntilFrame
-            let remainingFrames = track.file.length - startFrame
-            if remainingFrames <= 0 {
-                break
-            }
-
-            let nextFrameCount = min(remainingFrames, maxSegmentFrames)
-            track.player.scheduleSegment(
-                track.file,
-                startingFrame: startFrame,
-                frameCount: AVAudioFrameCount(nextFrameCount),
-                at: nil,
-                completionHandler: nil
-            )
-            track.scheduledUntilFrame = startFrame + nextFrameCount
-        }
     }
 
     private func scheduleRemainingTrackSegment(_ track: NativeTrack) {
@@ -447,7 +406,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         }
 
         let framesToSchedule = min(remainingFrames, AVAudioFramePosition(UInt32.max))
-        CAPLog.print("NLDE SCHED id=\(track.id) mode=single-segment-compressed startFrame=\(track.scheduledUntilFrame) frames=\(framesToSchedule)")
+        CAPLog.print("NLDE SCHED id=\(track.id) mode=\(schedulingModeName(for: track.file)) startFrame=\(track.scheduledUntilFrame) frames=\(framesToSchedule)")
         track.player.scheduleSegment(
             track.file,
             startingFrame: track.scheduledUntilFrame,
@@ -456,19 +415,6 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             completionHandler: nil
         )
         track.scheduledUntilFrame += framesToSchedule
-    }
-
-    private func maintainScheduledSegments() {
-        guard isPlaying else {
-            return
-        }
-
-        let targetTime = min(duration, currentTime() + scheduledSegmentLookaheadSeconds)
-        tracks.forEach { track in
-            if shouldUseChunkedScheduling(track) {
-                scheduleTrackSegmentsUntil(track, targetTime: targetTime)
-            }
-        }
     }
 
     private func pausePlayback() {
@@ -486,9 +432,9 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         isPlaying = false
         if resetPosition {
             seekOffset = 0
+            playbackAnchorOffset = 0
         }
         tracks.forEach { $0.scheduledUntilFrame = 0 }
-        lastSegmentMaintenanceWallTime = 0
         resetMeters()
         if shouldEmitState {
             emitState()
@@ -497,10 +443,37 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
     private func currentTime() -> Double {
         if isPlaying {
+            if let renderTime = currentRenderTime() {
+                return min(duration, max(0, playbackAnchorOffset + renderTime))
+            }
             return min(duration, max(0, CACurrentMediaTime() - playStartWallTime))
         }
 
         return min(duration, max(0, seekOffset))
+    }
+
+    private func currentRenderTime() -> Double? {
+        var renderedTime: Double?
+        for track in tracks {
+            guard
+                let nodeTime = track.player.lastRenderTime,
+                let playerTime = track.player.playerTime(forNodeTime: nodeTime)
+            else {
+                continue
+            }
+
+            let sampleRate = playerTime.sampleRate > 0
+                ? playerTime.sampleRate
+                : track.file.processingFormat.sampleRate
+            guard sampleRate > 0 else {
+                continue
+            }
+
+            let trackTime = Double(playerTime.sampleTime) / sampleRate
+            renderedTime = max(renderedTime ?? 0, trackTime)
+        }
+
+        return renderedTime
     }
 
     private func applyTrackMixState(_ track: NativeTrack) {
@@ -608,11 +581,6 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                 self.stopPlayback(resetPosition: true)
                 return
             }
-            let now = CACurrentMediaTime()
-            if now - self.lastSegmentMaintenanceWallTime >= self.segmentMaintenanceIntervalSeconds {
-                self.lastSegmentMaintenanceWallTime = now
-                self.maintainScheduledSegments()
-            }
             self.emitState()
         }
         stateTimer = timer
@@ -679,12 +647,8 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         return fallbackURL
     }
 
-    private func shouldUseChunkedScheduling(_ track: NativeTrack) -> Bool {
-        isLinearPCMFile(track.file)
-    }
-
     private func schedulingModeName(for file: AVAudioFile) -> String {
-        isLinearPCMFile(file) ? "chunked-pcm" : "single-segment-compressed"
+        isLinearPCMFile(file) ? "single-segment-pcm" : "single-segment-compressed"
     }
 
     private func isLinearPCMFile(_ file: AVAudioFile) -> Bool {
