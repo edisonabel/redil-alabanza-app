@@ -75,6 +75,152 @@ html[data-live-director-active='true'] #layout-notification-bell {
   display: none !important;
 }
 
+.live-director-track-strip {
+  --track-accent: #67d2f2;
+  --track-breath-strength: 0.5;
+  --track-breath-delay: 0s;
+}
+
+.live-director-track-breath-layer {
+  background:
+    radial-gradient(circle at 50% 42%, var(--track-accent) 0%, transparent 58%),
+    linear-gradient(180deg, transparent, rgb(255 255 255 / 0.035));
+  mix-blend-mode: screen;
+  opacity: 0;
+  transform: scale(0.985);
+  transform-origin: center;
+}
+
+.live-director-track-breath-edge {
+  background: linear-gradient(90deg, transparent, var(--track-accent), transparent);
+  opacity: 0;
+}
+
+.live-director-track-strip--breathing .live-director-track-breath-layer {
+  animation: liveDirectorTrackBreath 2.45s ease-in-out infinite;
+  animation-delay: var(--track-breath-delay);
+}
+
+.live-director-track-strip--breathing .live-director-track-breath-edge {
+  animation: liveDirectorTrackEdgeBreath 2.45s ease-in-out infinite;
+  animation-delay: var(--track-breath-delay);
+}
+
+.live-director-track-activity-meter--breathing {
+  animation: liveDirectorTrackMeterBreath 1.35s ease-in-out infinite;
+  animation-delay: var(--track-breath-delay);
+  transform-origin: bottom center;
+}
+
+.live-director-track-thumb--breathing {
+  animation: liveDirectorTrackThumbBreath 2.45s ease-in-out infinite;
+  animation-delay: var(--track-breath-delay);
+}
+
+.live-director-track-signal {
+  opacity: 0.22;
+}
+
+.live-director-track-signal span {
+  display: block;
+  width: 0.18rem;
+  height: 0.32rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.28);
+}
+
+.live-director-track-signal--active {
+  opacity: 1;
+}
+
+.live-director-track-signal--active span {
+  background: var(--track-accent);
+  box-shadow: 0 0 10px var(--track-accent);
+  animation: liveDirectorTrackSignalBreath 0.94s ease-in-out infinite;
+  animation-delay: var(--track-breath-delay);
+}
+
+.live-director-track-signal--active span:nth-child(2) {
+  height: 0.58rem;
+  animation-delay: calc(var(--track-breath-delay) - 160ms);
+}
+
+.live-director-track-signal--active span:nth-child(3) {
+  height: 0.42rem;
+  animation-delay: calc(var(--track-breath-delay) - 80ms);
+}
+
+@keyframes liveDirectorTrackBreath {
+  0%,
+  100% {
+    opacity: calc(0.045 * var(--track-breath-strength));
+    transform: scale(0.985);
+  }
+
+  50% {
+    opacity: calc(0.19 * var(--track-breath-strength));
+    transform: scale(1);
+  }
+}
+
+@keyframes liveDirectorTrackEdgeBreath {
+  0%,
+  100% {
+    opacity: calc(0.12 * var(--track-breath-strength));
+  }
+
+  50% {
+    opacity: calc(0.62 * var(--track-breath-strength));
+  }
+}
+
+@keyframes liveDirectorTrackMeterBreath {
+  0%,
+  100% {
+    opacity: calc(0.34 + (0.18 * var(--track-breath-strength)));
+    scale: 1 0.96;
+  }
+
+  50% {
+    opacity: calc(0.54 + (0.28 * var(--track-breath-strength)));
+    scale: 1 1.035;
+  }
+}
+
+@keyframes liveDirectorTrackThumbBreath {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+
+  50% {
+    filter: brightness(1.12) saturate(1.12);
+  }
+}
+
+@keyframes liveDirectorTrackSignalBreath {
+  0%,
+  100% {
+    opacity: 0.48;
+    scale: 1 0.76;
+  }
+
+  50% {
+    opacity: 1;
+    scale: 1 1.08;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-director-track-strip--breathing .live-director-track-breath-layer,
+  .live-director-track-strip--breathing .live-director-track-breath-edge,
+  .live-director-track-activity-meter--breathing,
+  .live-director-track-thumb--breathing,
+  .live-director-track-signal--active span {
+    animation: none;
+  }
+}
+
 button,
 [role='button'],
 input[type='button'],

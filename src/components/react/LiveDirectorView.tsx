@@ -158,6 +158,14 @@ type LiveDirectorViewProps = {
 const WEB_ENGINE_MAX_ACTIVE_TRACKS = 9;
 const FADER_AXIS_LOCK_THRESHOLD_PX = 7;
 
+const getStableTrackPhaseMs = (value: string) => {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) % 1200;
+  }
+  return hash;
+};
+
 type ChannelStripProps = {
   id: string;
   label: string;
@@ -165,6 +173,7 @@ type ChannelStripProps = {
   accent: string;
   volume: number;
   level: number;
+  isPlaying: boolean;
   muted: boolean;
   soloed: boolean;
   dimmed: boolean;
@@ -553,6 +562,7 @@ const ChannelStrip = memo(function ChannelStrip({
   accent,
   volume,
   level,
+  isPlaying,
   muted,
   soloed,
   dimmed,
@@ -570,12 +580,34 @@ const ChannelStrip = memo(function ChannelStrip({
 }: ChannelStripProps) {
   const [draftVolume, setDraftVolume] = useState<number | null>(null);
   const displayVolume = draftVolume ?? volume;
+  const displayLevel = muted ? 0 : clamp(level);
+  const isAudiblyActive = isPlaying && !muted && !dimmed && !disabled && displayVolume > 0.015;
+  const visualActivityLevel = displayLevel > 0.002
+    ? displayLevel
+    : isAudiblyActive
+      ? displayVolume
+      : 0;
   const levelBottom = `${10 + displayVolume * 78}%`;
   const knobGlow = muted ? 'rgba(120, 128, 140, 0.15)' : `${accent}30`;
-  const displayLevel = muted ? 0 : clamp(level);
-  const meterHeightPercent = displayLevel > 0.002 ? Math.max(5, displayLevel * 86) : 0;
-  const meterOpacity = muted ? 0.16 : 0.28 + displayLevel * 0.54;
-  const meterGlow = muted ? '0 0 0 transparent' : `0 0 ${10 + displayLevel * 18}px ${accent}42`;
+  const meterHeightPercent = visualActivityLevel > 0.002 ? Math.max(5, visualActivityLevel * 86) : 0;
+  const meterOpacity = muted
+    ? 0.16
+    : displayLevel > 0.002
+      ? 0.28 + displayLevel * 0.54
+      : isAudiblyActive
+        ? 0.26 + displayVolume * 0.24
+        : 0.12;
+  const meterGlow = muted
+    ? '0 0 0 transparent'
+    : isAudiblyActive
+      ? `0 0 ${12 + visualActivityLevel * 20}px ${accent}4a`
+      : `0 0 ${10 + displayLevel * 18}px ${accent}42`;
+  const breathStrength = clamp(displayLevel > 0.002 ? displayLevel : displayVolume, 0.22, 1);
+  const trackBreathStyle = {
+    '--track-accent': accent,
+    '--track-breath-strength': String(breathStrength),
+    '--track-breath-delay': `${-(getStableTrackPhaseMs(id) / 1000).toFixed(2)}s`,
+  } as CSSProperties;
   const shellRadiusClass = ultraCompact ? 'rounded-[0.75rem]' : compact ? 'rounded-[0.85rem]' : 'rounded-[1.2rem]';
   const shellPaddingClass = ultraCompact ? 'px-0.75 pb-0.75 pt-0.85' : compact ? 'px-1.25 pb-1.25 pt-0.95' : 'px-3.5 pb-4 pt-3';
   const topControlsClass = showRouteFlip
@@ -811,8 +843,17 @@ const ChannelStrip = memo(function ChannelStrip({
 
   return (
     <div
-      className={`relative flex h-full min-w-0 flex-col items-center border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] transition-all duration-200 ${shellRadiusClass} ${shellPaddingClass} ${dimmed ? 'opacity-45' : 'opacity-100'}`}
+      className={`live-director-track-strip relative flex h-full min-w-0 flex-col items-center overflow-hidden border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] transition-all duration-200 ${isAudiblyActive ? 'live-director-track-strip--breathing' : ''} ${shellRadiusClass} ${shellPaddingClass} ${dimmed ? 'opacity-45' : 'opacity-100'}`}
+      style={trackBreathStyle}
     >
+      <span
+        aria-hidden="true"
+        className={`live-director-track-breath-layer pointer-events-none absolute inset-0 ${shellRadiusClass}`}
+      />
+      <span
+        aria-hidden="true"
+        className="live-director-track-breath-edge pointer-events-none absolute inset-x-3 top-2 h-px rounded-full"
+      />
       <div className={topControlsClass}>
         <button
           type="button"
@@ -869,7 +910,7 @@ const ChannelStrip = memo(function ChannelStrip({
             />
           ))}
           <div
-            className={`pointer-events-none absolute left-1/2 -translate-x-1/2 rounded-full shadow-[0_0_14px_rgba(103,210,242,0.16)] transition-[height,opacity,box-shadow,filter] duration-100 ${ultraCompact ? 'bottom-[11%] w-[0.26rem]' : 'bottom-[10%] w-[0.32rem]'}`}
+            className={`live-director-track-activity-meter pointer-events-none absolute left-1/2 -translate-x-1/2 rounded-full shadow-[0_0_14px_rgba(103,210,242,0.16)] transition-[height,opacity,box-shadow,filter] duration-100 ${isAudiblyActive ? 'live-director-track-activity-meter--breathing' : ''} ${ultraCompact ? 'bottom-[11%] w-[0.26rem]' : 'bottom-[10%] w-[0.32rem]'}`}
             style={{
               height: `${meterHeightPercent}%`,
               backgroundColor: muted ? 'rgba(136, 144, 158, 0.42)' : accent,
@@ -880,9 +921,9 @@ const ChannelStrip = memo(function ChannelStrip({
           />
           <FaderThumb
             accent={accent}
-            level={displayLevel}
+            level={visualActivityLevel}
             muted={muted}
-            className={`${ultraCompact ? 'h-[1.85rem]' : compact ? 'h-[2.2rem]' : 'h-[4.35rem]'} w-full ${stripThumbWidthClass} transition-[bottom,box-shadow,opacity,transform] duration-150`}
+            className={`live-director-track-thumb ${isAudiblyActive ? 'live-director-track-thumb--breathing' : ''} ${ultraCompact ? 'h-[1.85rem]' : compact ? 'h-[2.2rem]' : 'h-[4.35rem]'} w-full ${stripThumbWidthClass} transition-[bottom,box-shadow,opacity,transform] duration-150`}
             style={{
               bottom: `calc(${levelBottom} - ${ultraCompact ? '0.92rem' : compact ? '1.1rem' : '1.75rem'})`,
               boxShadow: muted
@@ -916,6 +957,14 @@ const ChannelStrip = memo(function ChannelStrip({
       </div>
 
       <div className={`text-center ${ultraCompact ? 'mt-0' : compact ? 'mt-0.5' : 'mt-4'}`}>
+        <div
+          aria-hidden="true"
+          className={`live-director-track-signal mx-auto mb-1 flex h-3 items-end justify-center gap-0.5 ${isAudiblyActive ? 'live-director-track-signal--active' : ''}`}
+        >
+          <span />
+          <span />
+          <span />
+        </div>
         {!compact && <p className="text-[0.62rem] font-black uppercase tracking-[0.3em] text-white/28">{shortLabel}</p>}
         <p className={`leading-tight text-white/88 ${ultraCompact ? 'text-[10px] font-semibold' : compact ? 'text-[11px] font-semibold' : 'mt-1 text-[1.03rem] font-semibold'}`}>{label}</p>
       </div>
@@ -928,6 +977,7 @@ const ChannelStrip = memo(function ChannelStrip({
   previousProps.accent === nextProps.accent &&
   previousProps.volume === nextProps.volume &&
   previousProps.level === nextProps.level &&
+  previousProps.isPlaying === nextProps.isPlaying &&
   previousProps.muted === nextProps.muted &&
   previousProps.soloed === nextProps.soloed &&
   previousProps.dimmed === nextProps.dimmed &&
@@ -3710,6 +3760,7 @@ export function LiveDirectorView({
                     accent={track.accent}
                     volume={track.volume}
                     level={track.level}
+                    isPlaying={isPlaying}
                     muted={track.muted}
                     soloed={track.soloed}
                     dimmed={track.dimmed}
