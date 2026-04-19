@@ -581,28 +581,25 @@ const ChannelStrip = memo(function ChannelStrip({
   const [draftVolume, setDraftVolume] = useState<number | null>(null);
   const displayVolume = draftVolume ?? volume;
   const displayLevel = muted ? 0 : clamp(level);
-  const isAudiblyActive = isPlaying && !muted && !dimmed && !disabled && displayVolume > 0.015;
+  const hasLiveSignal = displayLevel > 0.002;
+  const isAudiblyActive = isPlaying && !muted && !dimmed && !disabled && displayVolume > 0.015 && hasLiveSignal;
   const visualActivityLevel = displayLevel > 0.002
     ? displayLevel
-    : isAudiblyActive
-      ? displayVolume
-      : 0;
+    : 0;
   const levelBottom = `${10 + displayVolume * 78}%`;
   const knobGlow = muted ? 'rgba(120, 128, 140, 0.15)' : `${accent}30`;
   const meterHeightPercent = visualActivityLevel > 0.002 ? Math.max(5, visualActivityLevel * 86) : 0;
   const meterOpacity = muted
     ? 0.16
-    : displayLevel > 0.002
+    : hasLiveSignal
       ? 0.28 + displayLevel * 0.54
-      : isAudiblyActive
-        ? 0.26 + displayVolume * 0.24
-        : 0.12;
+      : 0.12;
   const meterGlow = muted
     ? '0 0 0 transparent'
     : isAudiblyActive
       ? `0 0 ${12 + visualActivityLevel * 20}px ${accent}4a`
       : `0 0 ${10 + displayLevel * 18}px ${accent}42`;
-  const breathStrength = clamp(displayLevel > 0.002 ? displayLevel : displayVolume, 0.22, 1);
+  const breathStrength = clamp(displayLevel, 0.22, 1);
   const trackBreathStyle = {
     '--track-accent': accent,
     '--track-breath-strength': String(breathStrength),
