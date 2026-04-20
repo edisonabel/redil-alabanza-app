@@ -20,9 +20,26 @@ export type NativeLiveDirectorLoadedTrack = TrackData & {
   activityEnvelope?: TrackActivityEnvelope;
 };
 
+/**
+ * Non-fatal warning surfaced by the native engine when a specific stem could
+ * not be loaded (e.g. a corrupt raw `.aac` that AVAudioFile cannot parse).
+ * The session still loads with the remaining stems; the React side is
+ * responsible for showing a banner so the operator knows which files to fix.
+ */
+export type NativeLiveDirectorLoadWarning = {
+  trackId: string;
+  trackName: string;
+  reason: 'open' | 'cache' | string;
+  message: string;
+  osStatus?: number;
+  fourCharCode?: string;
+  playExtension?: string;
+};
+
 export type NativeLiveDirectorEngineLoadResult = {
   duration: number;
   tracks: NativeLiveDirectorLoadedTrack[];
+  warnings?: NativeLiveDirectorLoadWarning[];
 };
 
 export type NativeLiveDirectorLoadProgress = {

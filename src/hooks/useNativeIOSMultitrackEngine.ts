@@ -11,6 +11,7 @@ import type {
   TrackEnvelopesState,
   UseMultitrackEngineReturn,
   LiveDirectorEngineDiagnostics,
+  MultitrackEngineLoadWarning,
 } from './useMultitrackEngine';
 
 type TrackVolumesState = Record<string, number>;
@@ -109,6 +110,7 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
   const [trackLevels, setTrackLevels] = useState<TrackLevelsState>({});
   const [trackEnvelopes, setTrackEnvelopes] = useState<TrackEnvelopesState>({});
   const [diagnostics, setDiagnostics] = useState<LiveDirectorEngineDiagnostics | null>(null);
+  const [loadWarnings, setLoadWarnings] = useState<MultitrackEngineLoadWarning[]>([]);
 
   const commitCurrentTime = useCallback((nextCurrentTime: number) => {
     currentTimeRef.current = nextCurrentTime;
@@ -338,10 +340,12 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
     setTrackVolumes(trackVolumesRef.current);
     commitTrackLevels(buildTrackLevels(nextTracks), true);
     setTrackEnvelopes({});
+    setLoadWarnings([]);
     setLoadProgress({ loaded: 0, total: nextTracks.length });
 
     const result = await NativeLiveDirectorEngine.load({ tracks: nextTracks });
     const loadedTracks = result.tracks || nextTracks;
+    setLoadWarnings(Array.isArray(result.warnings) ? (result.warnings as MultitrackEngineLoadWarning[]) : []);
     tracksRef.current = loadedTracks;
     trackVolumesRef.current = buildTrackVolumes(loadedTracks);
     setTrackVolumes(trackVolumesRef.current);
@@ -418,8 +422,21 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
   }, []);
 
   const seekTo = useCallback(async (timeInSeconds: number) => {
+    const wasPlayingBeforeSeek = transportSnapshotRef.current.isPlaying;
     const state = await NativeLiveDirectorEngine.seekTo({ time: Math.max(0, timeInSeconds) });
     applyNativeState(state);
+
+    // applyNativeState only adds the native lead-in delay on a paused → playing
+    // transition. A seek-while-playing restarts the native players with the
+    // same 200ms lead-in but the JS transport sees playing → playing, so
+    // capturedAtMs lands ~200ms too early and the visual clock sprints ahead
+    // of the audio. Re-anchor it here.
+    if (wasPlayingBeforeSeek && transportSnapshotRef.current.isPlaying) {
+      transportSnapshotRef.current = {
+        ...transportSnapshotRef.current,
+        capturedAtMs: performance.now() + NATIVE_PLAYBACK_START_DELAY_MS,
+      };
+    }
   }, [applyNativeState]);
 
   const soloTrack = useCallback((trackId: string) => {
@@ -437,6 +454,7 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
       trackLevels,
       trackEnvelopes,
       diagnostics,
+      loadWarnings,
       initialize,
       play,
       pause,
@@ -459,6 +477,7 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
       isPlaying,
       isReady,
       loadProgress,
+      loadWarnings,
       pause,
       play,
       seekTo,

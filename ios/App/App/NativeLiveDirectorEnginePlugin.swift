@@ -4,6 +4,7 @@ import Capacitor
 import CryptoKit
 import Foundation
 import QuartzCore
+import UIKit
 
 @objc(NativeLiveDirectorEnginePlugin)
 public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unchecked Sendable {
@@ -42,7 +43,6 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         var outputRoute: String
         let duration: Double
         var activityEnvelope: ActivityEnvelope?
-        var isMeterTapInstalled = false
         var scheduledUntilFrame: AVAudioFramePosition = 0
 
         init(
@@ -74,9 +74,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     }
 
     private let engineQueue = DispatchQueue(label: "redil.live-director.native-engine")
-    private let meterQueue = DispatchQueue(label: "redil.live-director.native-meters")
     private let meterLock = NSLock()
-    private let meterTapBufferFrameCount: AVAudioFrameCount = 2048
     private let playerPrepareFrameCount: AVAudioFrameCount = 8192
     private let conversionBufferFrameCount: AVAudioFrameCount = 16384
     private let playbackStartDelay: Double = 0.2
@@ -105,6 +103,13 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        // Release the idle-timer lock if we go away mid-playback so other
+        // apps / screens don't inherit a permanently-awake device.
+        DispatchQueue.main.async {
+            if UIApplication.shared.isIdleTimerDisabled {
+                UIApplication.shared.isIdleTimerDisabled = false
+            }
+        }
     }
 
     @objc func load(_ call: CAPPluginCall) {
@@ -115,12 +120,16 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
         Task {
             do {
-                let loadedTracks = try await self.prepareTracks(rawTracks, call: call)
-                await self.configureEngine(with: loadedTracks)
-                call.resolve([
+                let result = try await self.prepareTracks(rawTracks, call: call)
+                await self.configureEngine(with: result.tracks)
+                var payload: [String: Any] = [
                     "duration": self.duration,
                     "tracks": self.tracksPayload()
-                ])
+                ]
+                if !result.warnings.isEmpty {
+                    payload["warnings"] = result.warnings
+                }
+                call.resolve(payload)
             } catch {
                 call.reject(error.localizedDescription)
             }
@@ -301,7 +310,16 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         }
     }
 
-    private func prepareTracks(_ rawTracks: [JSObject], call: CAPPluginCall) async throws -> [NativeTrack] {
+    /// Result of preparing a session worth of tracks. `warnings` contains one
+    /// JS-ready dictionary per track that failed to open, so the React side can
+    /// surface a non-blocking banner ("El stem X no se pudo abrir, se omitió")
+    /// instead of the whole session collapsing because of a single bad file.
+    private struct PreparedTracksResult {
+        let tracks: [NativeTrack]
+        let warnings: [[String: Any]]
+    }
+
+    private func prepareTracks(_ rawTracks: [JSObject], call: CAPPluginCall) async throws -> PreparedTracksResult {
         // Defensive filter: React already strips `enabled === false` tracks, but
         // we double-check here so a stale bridge call can never download,
         // decode, or attach a disabled stem on the native side.
@@ -318,6 +336,8 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         }
 
         var preparedTracks: [NativeTrack] = []
+        var warnings: [[String: Any]] = []
+        var lastOpenError: NSError? = nil
         notifyLoadProgress(loaded: 0, total: activeRawTracks.count)
 
         for (index, rawTrack) in activeRawTracks.enumerated() {
@@ -326,6 +346,8 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                 let urlString = rawTrack["url"] as? String,
                 let sourceURL = URL(string: urlString)
             else {
+                // Structural issue (missing id/url) — still hard fail, this is
+                // a bug in the caller, not a runtime asset problem.
                 throw NSError(domain: "NativeLiveDirectorEngine", code: 10, userInfo: [
                     NSLocalizedDescriptionKey: "Track \(index + 1) is missing id or url."
                 ])
@@ -337,7 +359,26 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             let volume = clampVolume(Float((rawTrack["volume"] as? Double) ?? 1))
             let isMuted = rawTrack["isMuted"] as? Bool ?? false
             let outputRoute = normalizeOutputRoute(rawTrack["outputRoute"] as? String ?? "stereo")
-            let localURL = try await cachedAudioURL(for: remoteURL)
+
+            let localURL: URL
+            do {
+                localURL = try await cachedAudioURL(for: remoteURL)
+            } catch {
+                let nsError = error as NSError
+                CAPLog.print("NLDE ASSET_CACHE_FAIL id=\(id) remote=\(remoteURL.absoluteString) domain=\(nsError.domain) code=\(nsError.code) desc=\(nsError.localizedDescription)")
+                warnings.append([
+                    "trackId": id,
+                    "trackName": name,
+                    "reason": "cache",
+                    "osStatus": nsError.code,
+                    "fourCharCode": fourCharCodeString(from: nsError.code),
+                    "message": "No se pudo descargar el stem '\(name)': \(nsError.localizedDescription)"
+                ])
+                lastOpenError = nsError
+                notifyLoadProgress(loaded: index + 1, total: activeRawTracks.count)
+                continue
+            }
+
             let file: AVAudioFile
             do {
                 file = try AVAudioFile(forReading: localURL)
@@ -353,14 +394,33 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                     fileSize = "?"
                 }
                 CAPLog.print("NLDE ASSET_OPEN_FAIL id=\(id) local=\(localURL.lastPathComponent) sourceExt=\(sourceURL.pathExtension.lowercased()) playExt=\(remoteURL.pathExtension.lowercased()) size=\(fileSize) OSStatus=\(osCode) fourCC=\(fourCC) domain=\(nsError.domain) desc=\(nsError.localizedDescription)")
-                throw NSError(domain: "NativeLiveDirectorEngine", code: 14, userInfo: [
-                    NSLocalizedDescriptionKey: "No se pudo abrir el stem '\(name)' (\(id)): \(nsError.localizedDescription) [OSStatus=\(osCode) '\(fourCC)']",
+
+                // Special-case: raw ADTS .aac is known to be fragile in
+                // AVAudioFile (AACAudioFile::ParseAudioFile fails with
+                // 'sync'). Surface a targeted hint so the operator knows the
+                // file needs to be remuxed to .m4a.
+                let playExt = remoteURL.pathExtension.lowercased()
+                let hint: String
+                if osCode == 1937337955 && playExt == "aac" {
+                    hint = " — el archivo .aac crudo (ADTS) no lo parsea AVAudioFile en iOS. Re-encodéalo como .m4a o .wav."
+                } else if osCode == 1937337955 {
+                    hint = " — el archivo está corrupto o el contenedor no coincide con la extensión. Verificá la descarga o re-encodeá."
+                } else {
+                    hint = ""
+                }
+
+                warnings.append([
                     "trackId": id,
                     "trackName": name,
+                    "reason": "open",
                     "osStatus": osCode,
                     "fourCharCode": fourCC,
-                    "underlyingError": nsError
+                    "playExtension": playExt,
+                    "message": "No se pudo abrir el stem '\(name)' (\(id)): \(nsError.localizedDescription) [OSStatus=\(osCode) '\(fourCC)']\(hint)"
                 ])
+                lastOpenError = nsError
+                notifyLoadProgress(loaded: index + 1, total: activeRawTracks.count)
+                continue
             }
             CAPLog.print("NLDE ASSET id=\(id) local=\(localURL.lastPathComponent) sourceExt=\(sourceURL.pathExtension.lowercased()) playExt=\(remoteURL.pathExtension.lowercased()) durationFrames=\(file.length) scheduleMode=\(schedulingModeName(for: file)) \(audioFileSummary(file, url: localURL))")
 
@@ -391,7 +451,27 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             notifyLoadProgress(loaded: index + 1, total: activeRawTracks.count)
         }
 
-        return preparedTracks
+        // If *every* enabled track failed we have nothing to play, so bubble
+        // up the last underlying error as the rejection reason. Otherwise we
+        // return whatever we could load and let the UI surface warnings.
+        if preparedTracks.isEmpty, !activeRawTracks.isEmpty {
+            if let underlying = lastOpenError {
+                throw NSError(domain: "NativeLiveDirectorEngine", code: 15, userInfo: [
+                    NSLocalizedDescriptionKey: "Ningún stem se pudo abrir. \(underlying.localizedDescription)",
+                    "warnings": warnings
+                ])
+            }
+            throw NSError(domain: "NativeLiveDirectorEngine", code: 15, userInfo: [
+                NSLocalizedDescriptionKey: "Ningún stem se pudo cargar.",
+                "warnings": warnings
+            ])
+        }
+
+        if !warnings.isEmpty {
+            CAPLog.print("NativeLiveDirectorEngine prepareTracks completed with \(warnings.count) skipped stem(s); \(preparedTracks.count)/\(activeRawTracks.count) loaded")
+        }
+
+        return PreparedTracksResult(tracks: preparedTracks, warnings: warnings)
     }
 
     private func parseActivityEnvelope(_ raw: Any?) -> ActivityEnvelope? {
@@ -561,7 +641,6 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             engineQueue.async {
                 self.stopPlayback(resetPosition: true)
                 self.tracks.forEach { track in
-                    self.removeMeterTap(for: track)
                     self.engine.detach(track.player)
                 }
                 self.engine.stop()
@@ -601,16 +680,37 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             try engine.start()
         }
 
+        // Three-pass startup to keep every AVAudioPlayerNode sample-aligned on
+        // seeks. Mixing stop/schedule/play in a single loop occasionally left a
+        // node in a stale-buffer state after seeking — the next scheduleSegment
+        // silently did nothing and the stem "dejó de sonar" until the session
+        // was reloaded.
+        //
+        // Pass 1: stop + reset each player so its internal scheduled-buffer
+        //         queue is guaranteed clean.
         tracks.forEach { track in
             track.player.stop()
-            let startFrame = AVAudioFramePosition(max(0, seekOffset) * track.file.processingFormat.sampleRate)
+            track.player.reset()
+        }
+
+        // Pass 2: schedule the real audio segment + the trailing silence pad
+        //         for every track. Pad length is adjusted for the current
+        //         seek offset so late-song seeks don't overshoot the shared
+        //         timeline on shorter stems.
+        tracks.forEach { track in
+            let sampleRate = track.file.processingFormat.sampleRate
+            let startFrame = AVAudioFramePosition(max(0, seekOffset) * sampleRate)
             let clampedStartFrame = min(max(0, startFrame), track.file.length)
             track.scheduledUntilFrame = clampedStartFrame
             scheduleRemainingTrackSegment(track)
-            scheduleSilencePadIfNeeded(track)
+            scheduleSilencePadIfNeeded(track, seekOffset: seekOffset)
             track.player.prepare(withFrameCount: playerPrepareFrameCount)
         }
 
+        // Pass 3: arm every player to start at the same hostTime. Done last so
+        //         scheduling work above doesn't eat into the start delay and
+        //         push some nodes past the target (which used to happen when
+        //         schedule + play were interleaved in one forEach).
         let startHostTime = mach_absolute_time() + AVAudioTime.hostTime(forSeconds: playbackStartDelay)
         let startTime = AVAudioTime(hostTime: startHostTime)
         tracks.forEach { $0.player.play(at: startTime) }
@@ -618,6 +718,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         playbackAnchorOffset = seekOffset
         playbackStartHostTime = startHostTime
         isPlaying = true
+        setIdleTimerDisabled(true)
         startStateTimer()
         logSessionState("post-startPlayback")
         logPlaybackAlignment("post-startPlayback")
@@ -647,14 +748,22 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     /// duration. This keeps start/stop alignment checks consistent and avoids
     /// late-track "early stop" artifacts (e.g. bass/custom-ga being ~52ms short
     /// of the other stems due to source-file length mismatches).
-    private func scheduleSilencePadIfNeeded(_ track: NativeTrack) {
+    ///
+    /// When called from a seek path, `seekOffset` lets us shrink the pad so
+    /// stems that end before the seek point don't over-play silence past the
+    /// longer stems and desync the mix.
+    private func scheduleSilencePadIfNeeded(_ track: NativeTrack, seekOffset: Double = 0) {
         let trackSampleRate = track.file.processingFormat.sampleRate
         guard trackSampleRate > 0, duration > 0 else {
             return
         }
 
         let trackSeconds = Double(track.file.length) / trackSampleRate
-        let gapSeconds = duration - trackSeconds
+        // Remaining real audio after the seek (0 if seek is past this stem).
+        let remainingRealSeconds = max(0, trackSeconds - max(0, seekOffset))
+        // Remaining timeline for the longest stem after the seek.
+        let remainingMaxSeconds = max(0, duration - max(0, seekOffset))
+        let gapSeconds = remainingMaxSeconds - remainingRealSeconds
         // Anything under ~2ms is just floating point noise; ignore.
         guard gapSeconds > 0.002 else {
             return
@@ -688,7 +797,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         }
 
         CAPLog.print(
-            "NLDE PAD id=\(track.id) silenceFrames=\(silenceFrameCount) gapMs=\(String(format: "%.2f", gapSeconds * 1000)) sr=\(trackSampleRate) trackSeconds=\(String(format: "%.3f", trackSeconds)) maxDuration=\(String(format: "%.3f", duration))"
+            "NLDE PAD id=\(track.id) silenceFrames=\(silenceFrameCount) gapMs=\(String(format: "%.2f", gapSeconds * 1000)) sr=\(trackSampleRate) trackSeconds=\(String(format: "%.3f", trackSeconds)) maxDuration=\(String(format: "%.3f", duration)) seekOffset=\(String(format: "%.3f", seekOffset))"
         )
         track.player.scheduleBuffer(silenceBuffer, at: nil, options: [], completionHandler: nil)
     }
@@ -699,6 +808,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         }
         tracks.forEach { $0.player.pause() }
         isPlaying = false
+        setIdleTimerDisabled(false)
         resetMeters()
         emitState()
     }
@@ -709,6 +819,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         }
         tracks.forEach { $0.player.stop() }
         isPlaying = false
+        setIdleTimerDisabled(false)
         if resetPosition {
             seekOffset = 0
             playbackAnchorOffset = 0
@@ -718,6 +829,16 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         resetMeters()
         if shouldEmitState {
             emitState()
+        }
+    }
+
+    /// Keep the iPad screen from dimming/locking while multitrack is live.
+    /// Must be set on the main thread. Safe to call redundantly.
+    private func setIdleTimerDisabled(_ disabled: Bool) {
+        DispatchQueue.main.async {
+            if UIApplication.shared.isIdleTimerDisabled != disabled {
+                UIApplication.shared.isIdleTimerDisabled = disabled
+            }
         }
     }
 
@@ -753,69 +874,19 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         }
     }
 
-    private func installMeterTap(for track: NativeTrack) {
-        guard metersEnabled, !track.isMeterTapInstalled else {
-            return
-        }
-
-        track.isMeterTapInstalled = true
-        track.player.installTap(onBus: 0, bufferSize: meterTapBufferFrameCount, format: track.file.processingFormat) { [weak self, weak track] buffer, _ in
-            guard let self, let track else { return }
-            guard self.metersEnabled else { return }
-
-            let level = self.computeLevel(from: buffer)
-            self.meterQueue.async {
-                self.meterLock.lock()
-                self.trackLevels[track.id] = level
-                self.meterLock.unlock()
-            }
-        }
-    }
-
-    private func removeMeterTap(for track: NativeTrack) {
-        guard track.isMeterTapInstalled else {
-            return
-        }
-
-        track.player.removeTap(onBus: 0)
-        track.isMeterTapInstalled = false
-    }
-
+    // Live per-player meter taps were removed: we now derive per-track activity
+    // from the precomputed envelope instead of running an AVAudioEngine tap,
+    // which was the main source of route-change crashes on iPad. Keep this
+    // shim so the JS bridge can still call setMetersEnabled without blowing
+    // up if the preference is toggled in the UI.
     private func setMetersEnabledInternal(_ enabled: Bool) {
         if metersEnabled {
             metersEnabled = false
-            tracks.forEach { removeMeterTap(for: $0) }
             resetMeters()
             emitState()
         }
 
         CAPLog.print("NLDE METERS requested=\(enabled) forced=false stabilityBuild=true")
-    }
-
-    private func computeLevel(from buffer: AVAudioPCMBuffer) -> Double {
-        guard let channelData = buffer.floatChannelData else {
-            return 0
-        }
-
-        let channelCount = Int(buffer.format.channelCount)
-        let frameLength = Int(buffer.frameLength)
-        if channelCount <= 0 || frameLength <= 0 {
-            return 0
-        }
-
-        var peak: Float = 0
-        for channelIndex in 0..<channelCount {
-            let samples = channelData[channelIndex]
-            var channelPeak: Float = 0
-            vDSP_maxmgv(samples, 1, &channelPeak, vDSP_Length(frameLength))
-            peak = max(peak, channelPeak)
-        }
-
-        if peak <= 0.00075 {
-            return 0
-        }
-
-        return min(1, Double(sqrt(peak) * 1.14))
     }
 
     private func resetMeters() {
@@ -1326,13 +1397,34 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
         engineQueue.async {
             self.logSessionState("route-change")
+
+            // Apple HIG: when the previous output becomes unavailable
+            // (headphones unplugged, Bluetooth disconnected), pause playback so
+            // we don't suddenly blast audio through the built-in speaker in a
+            // public rehearsal context.
+            if reason == .oldDeviceUnavailable, self.isPlaying {
+                CAPLog.print("NLDE SESSION route change → pausing due to oldDeviceUnavailable")
+                self.pausePlayback()
+                return
+            }
+
+            // If we're still marked as playing but the engine went down along
+            // with the route change, we need a full reschedule — just calling
+            // engine.start() is not enough because AVAudioEngine discards the
+            // scheduled buffers on hardware configuration swaps.
             if self.isPlaying, !self.engine.isRunning {
+                let resumeTime = self.currentTime()
+                self.stopPlayback(resetPosition: false, shouldEmitState: false)
+                self.seekOffset = min(max(0, resumeTime), self.duration)
                 do {
-                    try self.engine.start()
+                    try self.startPlayback()
                 } catch {
                     CAPLog.print("NLDE SESSION restart after route change FAIL: \(error.localizedDescription)")
+                    self.emitState()
                 }
+                return
             }
+
             self.emitState()
         }
     }
@@ -1367,14 +1459,28 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         CAPLog.print("NLDE SESSION engine configuration changed info=\(String(describing: notification.userInfo))")
 
         engineQueue.async {
-            if self.isPlaying, !self.engine.isRunning {
-                do {
-                    try self.engine.start()
-                } catch {
-                    CAPLog.print("NLDE SESSION restart after configuration change FAIL: \(error.localizedDescription)")
-                }
+            // A configuration change (sample-rate swap, hardware reroute, etc.)
+            // invalidates every scheduled buffer on every AVAudioPlayerNode.
+            // Simply calling engine.start() leaves the nodes armed but empty →
+            // silent output until the next manual seek. To avoid that, snap
+            // the current position, tear everything down, and relaunch via the
+            // normal startPlayback path so buffers get rescheduled from the
+            // resume point.
+            guard self.isPlaying else {
+                self.emitState()
+                return
             }
-            self.emitState()
+
+            let resumeTime = self.currentTime()
+            self.stopPlayback(resetPosition: false, shouldEmitState: false)
+            self.seekOffset = min(max(0, resumeTime), self.duration)
+
+            do {
+                try self.startPlayback()
+            } catch {
+                CAPLog.print("NLDE SESSION restart after configuration change FAIL: \(error.localizedDescription)")
+                self.emitState()
+            }
         }
     }
 

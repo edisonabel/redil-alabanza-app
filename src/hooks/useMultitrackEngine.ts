@@ -29,12 +29,23 @@ type UseMultitrackEngineOptions = {
   useStreamingEngine?: boolean;
 };
 
+export type MultitrackEngineLoadWarning = {
+  trackId: string;
+  trackName: string;
+  reason: 'open' | 'cache' | string;
+  message: string;
+  osStatus?: number;
+  fourCharCode?: string;
+  playExtension?: string;
+};
+
 export type UseMultitrackEngineReturn = {
   isPlaying: boolean;
   currentTime: number;
   duration: number;
   isReady: boolean;
   loadProgress: LoadProgressState;
+  loadWarnings: MultitrackEngineLoadWarning[];
   trackVolumes: TrackVolumesState;
   trackLevels: TrackLevelsState;
   trackEnvelopes: TrackEnvelopesState;
@@ -676,6 +687,11 @@ export function useMultitrackEngine(
       duration,
       isReady,
       loadProgress,
+      // The web/streaming engine does not currently emit per-stem open
+      // warnings — buffers that fail to decode already throw and surface via
+      // the top-level error path. Native iOS is the surface that actually
+      // produces warnings today.
+      loadWarnings: [] as MultitrackEngineLoadWarning[],
       trackVolumes,
       trackLevels,
       trackEnvelopes,

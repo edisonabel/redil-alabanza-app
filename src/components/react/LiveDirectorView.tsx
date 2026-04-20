@@ -1,4 +1,5 @@
 ﻿import {
+  AlertTriangle,
   ChevronLeft,
   ChevronsLeft,
   FolderOpen,
@@ -68,6 +69,11 @@ type SectionLaneSegment = {
   waveBars: number[];
   widthPx: number;
   leftPx: number;
+  // Precomputed style variants so the render map doesn't rebuild these
+  // objects on every visual-clock tick. `activeStyle` is used when the
+  // segment is the currently-playing section; `inactiveStyle` otherwise.
+  activeStyle: CSSProperties;
+  inactiveStyle: CSSProperties;
 };
 
 type DragScrollState = {
@@ -607,11 +613,22 @@ const ChannelStrip = memo(function ChannelStrip({
       ? `0 0 ${12 + visualActivityLevel * 20}px ${accent}4a`
       : `0 0 ${10 + displayLevel * 18}px ${accent}42`;
   const breathStrength = clamp(displayLevel, 0.22, 1);
-  const trackBreathStyle = {
-    '--track-accent': accent,
-    '--track-breath-strength': String(breathStrength),
-    '--track-breath-delay': `${-(getStableTrackPhaseMs(id) / 1000).toFixed(2)}s`,
-  } as CSSProperties;
+  // Memoize the CSS-var bag so React doesn't reconcile a brand-new style
+  // object on every visual-clock tick. The delay only depends on `id`, so
+  // cache the per-track phase string separately and let `breathStrength`
+  // drive intensity without trashing the rest of the object.
+  const trackBreathDelay = useMemo(
+    () => `${-(getStableTrackPhaseMs(id) / 1000).toFixed(2)}s`,
+    [id],
+  );
+  const trackBreathStyle = useMemo<CSSProperties>(
+    () => ({
+      '--track-accent': accent,
+      '--track-breath-strength': String(breathStrength),
+      '--track-breath-delay': trackBreathDelay,
+    } as CSSProperties),
+    [accent, breathStrength, trackBreathDelay],
+  );
   const shellRadiusClass = ultraCompact ? 'rounded-[0.75rem]' : compact ? 'rounded-[0.85rem]' : 'rounded-[1.2rem]';
   const shellPaddingClass = ultraCompact ? 'px-0.75 pb-0.75 pt-0.85' : compact ? 'px-1.25 pb-1.25 pt-0.95' : 'px-3.5 pb-4 pt-3';
   const topControlsClass = showRouteFlip
@@ -914,13 +931,15 @@ const ChannelStrip = memo(function ChannelStrip({
             />
           ))}
           <div
-            className={`live-director-track-activity-meter pointer-events-none absolute left-1/2 -translate-x-1/2 rounded-full shadow-[0_0_14px_rgba(103,210,242,0.16)] transition-[height,opacity,box-shadow,filter] duration-100 ${isAudiblyActive ? 'live-director-track-activity-meter--breathing' : ''} ${ultraCompact ? 'bottom-[11%] w-[0.26rem]' : 'bottom-[10%] w-[0.32rem]'}`}
+            className={`live-director-track-activity-meter pointer-events-none absolute left-1/2 -translate-x-1/2 rounded-full shadow-[0_0_14px_rgba(103,210,242,0.16)] transition-[height,opacity,box-shadow] duration-100 ${isAudiblyActive ? 'live-director-track-activity-meter--breathing' : ''} ${ultraCompact ? 'bottom-[11%] w-[0.26rem]' : 'bottom-[10%] w-[0.32rem]'}`}
             style={{
               height: `${meterHeightPercent}%`,
+              // When muted we already switch to a neutral gray + low opacity,
+              // so the old filter: grayscale(1) was redundant AND paid a
+              // non-compositable paint on every visual-clock tick. Dropped.
               backgroundColor: muted ? 'rgba(136, 144, 158, 0.42)' : accent,
               opacity: meterOpacity,
               boxShadow: meterGlow,
-              filter: muted ? 'grayscale(1)' : 'none',
             }}
           />
           <FaderThumb
@@ -1096,6 +1115,10 @@ export function LiveDirectorView({
   });
   const isUserScrollingSectionsRef = useRef(false);
   const resumeSectionsAutoScrollTimeoutRef = useRef<number | null>(null);
+  // When true, the next auto-follow re-center should animate (smooth scroll).
+  // We set it right when the user-scroll timeout expires so the playhead
+  // slides back to where it should be instead of snapping.
+  const sectionsAutoFollowShouldSmoothRef = useRef(false);
   const mixerScrollRef = useRef<HTMLDivElement | null>(null);
   const mixerDragStateRef = useRef<DragScrollState>({
     active: false,
@@ -1110,6 +1133,27 @@ export function LiveDirectorView({
   const padFadeTargetRefB = useRef(0);
   const padFadeFrameRef = useRef<number | null>(null);
   const ownedObjectUrlsRef = useRef<string[]>([]);
+  // Ref-based indirection so each ChannelStrip gets a STABLE callback
+  // reference keyed by its trackId for the whole session. The callbacks read
+  // from `channelStripHandlersRef.current` at dispatch time, so updates to
+  // parent-side state/handlers don't require churning the callbacks
+  // themselves. This is what actually lets `memo(ChannelStrip)` skip
+  // re-rendering strips whose level/volume haven't changed.
+  const channelStripHandlersRef = useRef<{
+    handleInternalPadVolumeChange: (nextVolume: number) => void;
+    setVolume: (trackId: string, volume: number) => void;
+    handleMuteTrack: (trackId: string) => void;
+    handleSoloTrack: (trackId: string) => void;
+    handleToggleGuideTrackRoute: (trackId: string) => void;
+    setIsPadActive: (value: boolean | ((previous: boolean) => boolean)) => void;
+    isPadActive: boolean;
+  } | null>(null);
+  const channelStripCallbacksRef = useRef<Map<string, {
+    onVolumeChange: (volume: number) => void;
+    onMute: () => void;
+    onSolo: () => void;
+    onToggleOutputRoute: () => void;
+  }>>(new Map());
   const masterVolumeRef = useRef(0.82);
   const appliedMasterVolumeRef = useRef(0.82);
   const masterVolumeFadeFrameRef = useRef<number | null>(null);
@@ -1154,6 +1198,7 @@ export function LiveDirectorView({
     toggleMute,
     trackVolumes,
     loadProgress,
+    loadWarnings,
   } = selectedMultitrackEngine;
 
   const suspendNativeMeters = useCallback(() => {
@@ -1189,10 +1234,15 @@ export function LiveDirectorView({
   const [viewportWidth, setViewportWidth] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [sectionsLaneViewportWidth, setSectionsLaneViewportWidth] = useState(0);
+  // Current horizontal scroll of the sections lane. Kept in state (not ref)
+  // because the minimap viewport marker is rendered from this value — we want
+  // React to re-render when the user scrolls. Throttled via rAF below.
+  const [sectionsLaneScrollLeft, setSectionsLaneScrollLeft] = useState(0);
   const [manualSession, setManualSession] = useState<LiveDirectorResolvedSession | null>(
     initialSession ? toResolvedSession(initialSession) : null,
   );
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [dismissedLoadWarningKey, setDismissedLoadWarningKey] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [isInitializingSession, setIsInitializingSession] = useState(false);
   const [showLoadPanel, setShowLoadPanel] = useState(canLoadManualSession && !initialSession);
@@ -1417,11 +1467,28 @@ export function LiveDirectorView({
           SECTION_WAVE_BAR_MIN_COUNT,
           Math.floor((innerWaveWidth + SECTION_WAVE_BAR_GAP_PX) / (SECTION_WAVE_BAR_WIDTH_PX + SECTION_WAVE_BAR_GAP_PX)),
         );
-        const segment = {
+        const sharedStyle: CSSProperties = {
+          width: `${widthPx}px`,
+          background: `linear-gradient(180deg, ${section.surface}, rgba(20,20,22,0.96))`,
+          contain: 'layout paint',
+        };
+        const inactiveStyle: CSSProperties = {
+          ...sharedStyle,
+          borderColor: section.border,
+          boxShadow: 'none',
+        };
+        const activeStyle: CSSProperties = {
+          ...sharedStyle,
+          borderColor: section.accent,
+          boxShadow: `0 0 22px ${section.accent}20`,
+        };
+        const segment: SectionLaneSegment = {
           section,
           waveBars: buildWaveBars(index + 1, waveBarCount),
           widthPx,
           leftPx: cursor,
+          activeStyle,
+          inactiveStyle,
         };
 
         cursor += widthPx + SECTION_LANE_GAP_PX;
@@ -1507,6 +1574,66 @@ export function LiveDirectorView({
     return activeSegment.leftPx + activeSegment.widthPx * progressWithinSection;
   }, [activeSectionIndex, currentTime, playbackTimelineDuration, sectionLaneSegments, sectionTimelineDuration]);
 
+  // ─── Mini-map derived data ────────────────────────────────────────────────
+  // Precompute section blocks as percentages of the full playback timeline.
+  // This domain (time, not px) lets the minimap stay aligned with the real
+  // playhead regardless of gaps in the big lane.
+  const sectionLaneMinimapSegments = useMemo(() => {
+    if (playbackTimelineDuration <= 0 || resolvedSections.length === 0) {
+      return [] as Array<{
+        id: string;
+        leftPct: number;
+        widthPct: number;
+        accent: string;
+      }>;
+    }
+    return resolvedSections.map((section) => {
+      const startFrac = clamp(section.startTime / playbackTimelineDuration, 0, 1);
+      const endFrac = clamp(section.endTime / playbackTimelineDuration, 0, 1);
+      return {
+        id: section.id,
+        leftPct: startFrac * 100,
+        widthPct: Math.max(0, (endFrac - startFrac) * 100),
+        accent: section.accent,
+      };
+    });
+  }, [playbackTimelineDuration, resolvedSections]);
+
+  const sectionLaneMinimapPlayheadPct = useMemo(() => {
+    if (playbackTimelineDuration <= 0) return 0;
+    return clamp(currentTime / playbackTimelineDuration, 0, 1) * 100;
+  }, [currentTime, playbackTimelineDuration]);
+
+  // Project the big lane's scrolled viewport onto the timeline fraction.
+  // Simplification: we treat the scrollable track as linear over
+  // sectionLaneContentWidth, which is good enough visually even with gaps
+  // between sections. The playhead line stays in true time domain above.
+  const sectionLaneMinimapViewport = useMemo(() => {
+    if (
+      playbackTimelineDuration <= 0 ||
+      sectionLaneContentWidth <= 0 ||
+      sectionsLaneViewportWidth <= 0
+    ) {
+      return { leftPct: 0, widthPct: 100 };
+    }
+    const contentWithoutPads =
+      sectionLaneContentWidth - sectionLanePlayheadOffsetPx - sectionLaneTrailingPaddingPx;
+    if (contentWithoutPads <= 0) {
+      return { leftPct: 0, widthPct: 100 };
+    }
+    const startPx = Math.max(0, sectionsLaneScrollLeft);
+    const widthFrac = clamp(sectionsLaneViewportWidth / contentWithoutPads, 0.03, 1);
+    const startFrac = clamp(startPx / contentWithoutPads, 0, 1 - widthFrac);
+    return { leftPct: startFrac * 100, widthPct: widthFrac * 100 };
+  }, [
+    playbackTimelineDuration,
+    sectionLaneContentWidth,
+    sectionLanePlayheadOffsetPx,
+    sectionLaneTrailingPaddingPx,
+    sectionsLaneScrollLeft,
+    sectionsLaneViewportWidth,
+  ]);
+
   const mixerView = useMemo<MixerTrackView[]>(() => {
     const sourceTracks =
       activeTracks.length > 0
@@ -1582,6 +1709,87 @@ export function LiveDirectorView({
 
     return resolvedMixerTracks;
   }, [activeTracks, currentTime, isEnsayoMode, isPadActive, isPlaying, mutedTrackIds, resolvedInternalPadVolume, resolvedPadUrl, soloTrackId, trackEnvelopes, trackLevels, trackOutputRoutes, trackVolumes]);
+
+  // Precompute the mixer scroll container style so it isn't re-created on
+  // every tick of the visual clock. The grid template only actually changes
+  // when the track count or the landscape breakpoint changes.
+  const mixerScrollStyle = useMemo(
+    () => ({
+      gridTemplateColumns: `repeat(${Math.max(1, mixerView.length)}, minmax(${isUltraCompactLandscape ? '6.7rem' : isCompactLandscape ? '7.45rem' : '8.5rem'}, 1fr))`,
+      touchAction: 'pan-x pinch-zoom' as const,
+      overscrollBehaviorX: 'contain' as const,
+      WebkitOverflowScrolling: 'touch' as const,
+    }),
+    [mixerView.length, isUltraCompactLandscape, isCompactLandscape],
+  );
+
+  // Memoize the mixer scroll container's Tailwind className. The string only
+  // changes with the compact-landscape breakpoint flags, but was being rebuilt
+  // on every render (including every visual-clock tick) because of its
+  // template-literal interpolation. Stabilizing it avoids any chance of
+  // React re-evaluating className diffs and lets browsers reuse the style map.
+  const mixerScrollClassName = useMemo(
+    () =>
+      `hide-scrollbar grid min-h-0 ${
+        isUltraCompactLandscape ? 'gap-1' : isCompactLandscape ? 'gap-1.5' : 'gap-3'
+      } overflow-x-auto overflow-y-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${
+        isUltraCompactLandscape ? 'px-0.5 py-0.5' : isCompactLandscape ? 'px-1 py-0.5' : 'px-3 py-4'
+      }`,
+    [isUltraCompactLandscape, isCompactLandscape],
+  );
+
+  // Returns the stable callback tuple for a given trackId. Lazily creates it
+  // on first request and memoizes forever for that trackId. Callbacks
+  // dispatch through `channelStripHandlersRef.current` so they always see
+  // the latest parent-side handlers without the callbacks themselves needing
+  // to churn — this is what lets memo(ChannelStrip) actually work.
+  const getChannelStripCallbacks = useCallback((trackId: string) => {
+    const cache = channelStripCallbacksRef.current;
+    const cached = cache.get(trackId);
+    if (cached) {
+      return cached;
+    }
+    const isInternalPadTrack = trackId === '__internal-pad__';
+    const callbacks = {
+      onVolumeChange: (nextVolume: number) => {
+        const handlers = channelStripHandlersRef.current;
+        if (!handlers) return;
+        if (isInternalPadTrack) {
+          handlers.handleInternalPadVolumeChange(nextVolume);
+          if (!handlers.isPadActive && nextVolume > 0) {
+            handlers.setIsPadActive(true);
+          }
+          return;
+        }
+        handlers.setVolume(trackId, nextVolume);
+      },
+      onMute: () => {
+        const handlers = channelStripHandlersRef.current;
+        if (!handlers) return;
+        if (isInternalPadTrack) {
+          handlers.setIsPadActive((previous) => !previous);
+          return;
+        }
+        handlers.handleMuteTrack(trackId);
+      },
+      onSolo: () => {
+        const handlers = channelStripHandlersRef.current;
+        if (!handlers) return;
+        if (isInternalPadTrack) {
+          handlers.setIsPadActive(true);
+          return;
+        }
+        handlers.handleSoloTrack(trackId);
+      },
+      onToggleOutputRoute: () => {
+        const handlers = channelStripHandlersRef.current;
+        if (!handlers || isInternalPadTrack) return;
+        handlers.handleToggleGuideTrackRoute(trackId);
+      },
+    };
+    cache.set(trackId, callbacks);
+    return callbacks;
+  }, []);
 
   const mappedTrackDetails = useMemo(
     () =>
@@ -1688,6 +1896,37 @@ export function LiveDirectorView({
     };
   }, [showSectionsPanel]);
 
+  // Track the lane's scrollLeft so the minimap viewport marker follows the
+  // big lane as the user pans. Throttled via rAF so intense drags don't spam
+  // re-renders; state only commits once per frame.
+  useEffect(() => {
+    if (!showSectionsPanel) return;
+    const scrollContainer = sectionsLaneScrollRef.current;
+    if (!scrollContainer) return;
+
+    let rafId: number | null = null;
+    let latest = scrollContainer.scrollLeft;
+
+    const commit = () => {
+      rafId = null;
+      setSectionsLaneScrollLeft(latest);
+    };
+
+    const onScroll = () => {
+      latest = scrollContainer.scrollLeft;
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(commit);
+    };
+
+    // Prime the initial value once so the minimap viewport renders immediately.
+    setSectionsLaneScrollLeft(scrollContainer.scrollLeft);
+    scrollContainer.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      scrollContainer.removeEventListener('scroll', onScroll);
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
+    };
+  }, [showSectionsPanel]);
+
   useEffect(() => {
     if (!showSectionsPanel) {
       setShowOffsetModal(false);
@@ -1710,9 +1949,17 @@ export function LiveDirectorView({
       return;
     }
 
+    // If we're re-engaging auto-follow after a user-scroll timeout, slide the
+    // viewport back to the playhead smoothly so it doesn't snap. Subsequent
+    // ticks fall back to 'auto' (instant) so the playhead stays pinned.
+    const shouldSmooth = sectionsAutoFollowShouldSmoothRef.current;
+    if (shouldSmooth) {
+      sectionsAutoFollowShouldSmoothRef.current = false;
+    }
+
     scrollContainer.scrollTo({
       left: targetScrollLeft,
-      behavior: 'auto',
+      behavior: shouldSmooth ? 'smooth' : 'auto',
     });
   }, [sectionLaneContentWidth, sectionLaneProgressPx, showSectionsPanel]);
 
@@ -2106,6 +2353,28 @@ export function LiveDirectorView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackSignature, hasResolvedEngineFlag, initialize, isIOSNativeEngineSurface, reloadKey, stop, useStreamingEngine]);
 
+  const loadWarningsKey = useMemo(() => {
+    if (!loadWarnings || loadWarnings.length === 0) {
+      return null;
+    }
+
+    return loadWarnings
+      .map((warning) => `${warning.trackId}:${warning.reason}:${warning.fourCharCode || warning.osStatus || ''}`)
+      .join('|');
+  }, [loadWarnings]);
+
+  useEffect(() => {
+    if (!loadWarningsKey) {
+      return;
+    }
+    // Reset dismissal whenever a fresh set of warnings arrives so the user sees the banner again.
+    setDismissedLoadWarningKey((previous) => (previous === loadWarningsKey ? previous : null));
+  }, [loadWarningsKey]);
+
+  const showLoadWarningBanner = Boolean(
+    loadWarnings && loadWarnings.length > 0 && dismissedLoadWarningKey !== loadWarningsKey
+  );
+
   const stopMasterVolumeFade = useCallback(() => {
     if (masterVolumeFadeFrameRef.current !== null) {
       window.cancelAnimationFrame(masterVolumeFadeFrameRef.current);
@@ -2121,6 +2390,14 @@ export function LiveDirectorView({
 
   const applyMasterVolume = useCallback((nextVolume: number) => {
     const safeVolume = clamp(nextVolume, 0, 1);
+    // Skip no-op calls: the native plugin already coalesces setMasterVolume
+    // on rAF, but skipping redundant writes also avoids a `setMasterVolume`
+    // React-state churn and a Capacitor bridge hop per frame when the fade
+    // curve plateaus.
+    if (Math.abs(appliedMasterVolumeRef.current - safeVolume) < 0.0005) {
+      appliedMasterVolumeRef.current = safeVolume;
+      return;
+    }
     appliedMasterVolumeRef.current = safeVolume;
     setMasterVolume(safeVolume);
   }, [setMasterVolume]);
@@ -2919,6 +3196,19 @@ export function LiveDirectorView({
     }
   }, [onInternalPadVolumeChange]);
 
+  // Keep the ref pointed at the latest parent-side handlers so the stable
+  // per-track callbacks returned by getChannelStripCallbacks always see the
+  // current closures without needing to recreate themselves.
+  channelStripHandlersRef.current = {
+    handleInternalPadVolumeChange,
+    setVolume,
+    handleMuteTrack,
+    handleSoloTrack,
+    handleToggleGuideTrackRoute,
+    setIsPadActive,
+    isPadActive,
+  };
+
   const endMixerDrag = useCallback((pointerId?: number) => {
     const container = mixerScrollRef.current;
     const dragState = mixerDragStateRef.current;
@@ -3000,15 +3290,42 @@ export function LiveDirectorView({
     endMixerDrag(event.pointerId);
   }, [endMixerDrag]);
 
-  const triggerUserScrollSections = useCallback(() => {
-    isUserScrollingSectionsRef.current = true;
-    if (resumeSectionsAutoScrollTimeoutRef.current) {
+  // How long after the last user interaction with the sections lane we wait
+  // before auto-follow re-engages. 5s matches the user's request and is a
+  // comfortable window to explore without the playhead pulling you back.
+  const SECTIONS_AUTO_FOLLOW_RESUME_MS = 5000;
+
+  // Internal: schedule (or cancel) the resume timer. When the timer fires,
+  // the next auto-follow pass will smooth-scroll back to the playhead.
+  const scheduleSectionsAutoFollowResume = useCallback(() => {
+    if (resumeSectionsAutoScrollTimeoutRef.current !== null) {
       window.clearTimeout(resumeSectionsAutoScrollTimeoutRef.current);
     }
     resumeSectionsAutoScrollTimeoutRef.current = window.setTimeout(() => {
       isUserScrollingSectionsRef.current = false;
-    }, 3500);
+      sectionsAutoFollowShouldSmoothRef.current = true;
+      resumeSectionsAutoScrollTimeoutRef.current = null;
+    }, SECTIONS_AUTO_FOLLOW_RESUME_MS);
   }, []);
+
+  // Used while the user is actively dragging / wheel-scrolling: blocks the
+  // auto-follow and cancels any pending resume. The resume is programmed when
+  // the interaction ends (pointerUp) or — for wheel — on each wheel event so
+  // continuous scrolling keeps pushing the resume forward.
+  const holdSectionsAutoFollow = useCallback(() => {
+    isUserScrollingSectionsRef.current = true;
+    if (resumeSectionsAutoScrollTimeoutRef.current !== null) {
+      window.clearTimeout(resumeSectionsAutoScrollTimeoutRef.current);
+      resumeSectionsAutoScrollTimeoutRef.current = null;
+    }
+  }, []);
+
+  // Back-compat name kept for the wheel handler: each wheel tick extends the
+  // resume window by 5s from "now".
+  const triggerUserScrollSections = useCallback(() => {
+    isUserScrollingSectionsRef.current = true;
+    scheduleSectionsAutoFollowResume();
+  }, [scheduleSectionsAutoFollowResume]);
 
   const endSectionsDrag = useCallback((pointerId?: number) => {
     const container = sectionsLaneScrollRef.current;
@@ -3036,8 +3353,9 @@ export function LiveDirectorView({
       startX: 0,
       startScrollLeft: 0,
     };
-    triggerUserScrollSections();
-  }, [triggerUserScrollSections]);
+    // Drag finished: now start the 5s countdown to resume auto-follow.
+    scheduleSectionsAutoFollowResume();
+  }, [scheduleSectionsAutoFollowResume]);
 
   const handleSectionsPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const container = sectionsLaneScrollRef.current;
@@ -3045,7 +3363,8 @@ export function LiveDirectorView({
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     if (shouldIgnoreDragScrollTarget(event.target)) return;
 
-    triggerUserScrollSections();
+    // Hold (no timeout) — resume will be armed on pointerUp / endSectionsDrag.
+    holdSectionsAutoFollow();
 
     sectionsDragStateRef.current = {
       active: true,
@@ -3059,7 +3378,7 @@ export function LiveDirectorView({
     } catch {
       // no-op
     }
-  }, [triggerUserScrollSections]);
+  }, [holdSectionsAutoFollow]);
 
   const handleSectionsPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const container = sectionsLaneScrollRef.current;
@@ -3077,6 +3396,65 @@ export function LiveDirectorView({
   const handleSectionsPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     endSectionsDrag(event.pointerId);
   }, [endSectionsDrag]);
+
+  // ─── Minimap interaction ──────────────────────────────────────────────────
+  // The minimap is a tap-and-drag scrub target. We convert clientX to a time
+  // via the track's bounding rect and call the same seek used by the section
+  // buttons. Drag is captured so finger-outside-rect keeps scrubbing.
+  const minimapTrackRef = useRef<HTMLDivElement | null>(null);
+  const minimapDragActiveRef = useRef(false);
+  const minimapDragPointerIdRef = useRef<number | null>(null);
+
+  const minimapXToTime = useCallback((clientX: number): number => {
+    const node = minimapTrackRef.current;
+    if (!node || playbackTimelineDuration <= 0) return 0;
+    const rect = node.getBoundingClientRect();
+    if (rect.width <= 0) return 0;
+    const x = clamp(clientX - rect.left, 0, rect.width);
+    return (x / rect.width) * playbackTimelineDuration;
+  }, [playbackTimelineDuration]);
+
+  const handleMinimapPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const node = minimapTrackRef.current;
+    if (!node) return;
+
+    minimapDragActiveRef.current = true;
+    minimapDragPointerIdRef.current = event.pointerId;
+    try { node.setPointerCapture(event.pointerId); } catch { /* no-op */ }
+
+    // Hold auto-follow while scrubbing from the minimap, so the big lane
+    // doesn't yank you back mid-drag.
+    holdSectionsAutoFollow();
+
+    const t = minimapXToTime(event.clientX);
+    void handleSectionSeek(t);
+    event.preventDefault();
+  }, [handleSectionSeek, holdSectionsAutoFollow, minimapXToTime]);
+
+  const handleMinimapPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!minimapDragActiveRef.current) return;
+    if (minimapDragPointerIdRef.current !== event.pointerId) return;
+    const t = minimapXToTime(event.clientX);
+    void handleSectionSeek(t);
+    event.preventDefault();
+  }, [handleSectionSeek, minimapXToTime]);
+
+  const endMinimapDrag = useCallback((event?: ReactPointerEvent<HTMLDivElement>) => {
+    if (!minimapDragActiveRef.current) return;
+    const node = minimapTrackRef.current;
+    if (node && event && minimapDragPointerIdRef.current === event.pointerId) {
+      try { node.releasePointerCapture(event.pointerId); } catch { /* no-op */ }
+    }
+    minimapDragActiveRef.current = false;
+    minimapDragPointerIdRef.current = null;
+    // Arm the 5s resume so the big lane auto-follow eventually retakes.
+    scheduleSectionsAutoFollowResume();
+  }, [scheduleSectionsAutoFollowResume]);
+
+  const handleMinimapPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    endMinimapDrag(event);
+  }, [endMinimapDrag]);
 
   const pendingEnabledCount = pendingEnabledMap
     ? Object.values(pendingEnabledMap).filter(Boolean).length
@@ -3211,11 +3589,11 @@ export function LiveDirectorView({
                     window.history.back();
                   }
                 }}
-                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] w-[2.2rem] px-1' : isCompactLandscape ? 'h-10 w-10 px-1.5' : 'h-[var(--ld-control-height)] w-[2.75rem] px-2'} shrink-0 items-center justify-center text-white/80 hover:text-white`}
-                aria-label="Regresar a la sección anterior"
-                title="Regresar"
+                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] w-[2.4rem] px-1' : isCompactLandscape ? 'h-10 w-11 px-1.5' : 'h-[var(--ld-control-height)] w-[3.6rem] px-2'} shrink-0 items-center justify-center text-white/85 hover:text-white hover:bg-white/6`}
+                aria-label="Volver al repertorio"
+                title="Volver al repertorio"
               >
-                <ChevronLeft className={`${isUltraCompactLandscape ? 'h-4 w-4' : isCompactLandscape ? 'h-5 w-5' : 'h-6 w-6'}`} />
+                <ChevronLeft className={`${isUltraCompactLandscape ? 'h-4 w-4' : isCompactLandscape ? 'h-5 w-5' : 'h-7 w-7'}`} strokeWidth={isCompactLandscape ? 2 : 2.4} />
               </button>
               <div
                 className={`flex ${isUltraCompactLandscape ? 'rounded-[0.8rem] px-1 py-0.5' : isCompactLandscape ? 'rounded-[1rem] py-1' : 'rounded-[1.45rem] py-3'} shrink-0 flex-col items-center justify-center gap-0.5 border border-white/8 bg-black/16 ${isUltraCompactLandscape ? '' : 'px-2'} text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]`}
@@ -3329,16 +3707,16 @@ export function LiveDirectorView({
                   void play();
                 }}
                 disabled={!isReady}
-                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3.5' : isCompactLandscape ? 'h-10 px-4' : 'h-[var(--ld-control-height)] px-4.5'} justify-center text-[#43c477] hover:text-[#4fe487] disabled:cursor-not-allowed disabled:text-white/24`}
-                style={{ width: scaleRem(isUltraCompactLandscape ? 5.2 : isCompactLandscape ? 6.8 : 7.5, 4.5) }}
+                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3.5' : isCompactLandscape ? 'h-10 px-4' : 'h-[var(--ld-control-height)] px-5'} justify-center ${isPlaying ? 'text-[#43c477] border-[#43c477]/35 bg-[#43c477]/10' : 'text-[#43c477] hover:text-[#4fe487]'} hover:bg-[#43c477]/12 disabled:cursor-not-allowed disabled:text-white/24 disabled:hover:bg-transparent`}
+                style={{ width: scaleRem(isUltraCompactLandscape ? 5.2 : isCompactLandscape ? 6.8 : 9, 4.5) }}
                 aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
                 aria-keyshortcuts="Space"
                 title={isPlaying ? 'Pausar · Espacio' : 'Reproducir · Espacio'}
               >
                 {isPlaying ? (
-                  <Pause className={`${isUltraCompactLandscape ? 'h-[1.125rem] w-[1.125rem]' : isCompactLandscape ? 'h-6 w-6' : 'h-8 w-8'}`} />
+                  <Pause className={`${isUltraCompactLandscape ? 'h-[1.125rem] w-[1.125rem]' : isCompactLandscape ? 'h-6 w-6' : 'h-9 w-9'}`} strokeWidth={2.2} fill="currentColor" />
                 ) : (
-                  <Play className={`ml-0.5 ${isUltraCompactLandscape ? 'h-[1.125rem] w-[1.125rem]' : isCompactLandscape ? 'h-6 w-6' : 'h-8 w-8'}`} />
+                  <Play className={`ml-0.5 ${isUltraCompactLandscape ? 'h-[1.125rem] w-[1.125rem]' : isCompactLandscape ? 'h-6 w-6' : 'h-9 w-9'}`} strokeWidth={2.2} fill="currentColor" />
                 )}
               </button>
 
@@ -3362,12 +3740,12 @@ export function LiveDirectorView({
                 type="button"
                 onClick={handlePreviousSection}
                 disabled={!hasTrackSession}
-                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3.5' : isCompactLandscape ? 'h-10 px-4' : 'h-[var(--ld-control-height)] px-4.5'} justify-center text-white/72 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
-                style={{ width: scaleRem(isUltraCompactLandscape ? 3.85 : isCompactLandscape ? 4.85 : 5.25, 3.25) }}
+                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3.5' : isCompactLandscape ? 'h-10 px-4' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/82 hover:text-white hover:bg-white/6 disabled:cursor-not-allowed disabled:text-white/24`}
+                style={{ width: scaleRem(isUltraCompactLandscape ? 3.85 : isCompactLandscape ? 4.85 : 5.85, 3.25) }}
                 aria-label="Ir a la seccion anterior"
                 title="Ir a la seccion anterior"
               >
-                <ChevronsLeft className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-5 w-5' : 'h-6 w-6'}`} />
+                <ChevronsLeft className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-5 w-5' : 'h-7 w-7'}`} strokeWidth={isCompactLandscape ? 2 : 2.4} />
               </button>
 
               <button
@@ -3621,7 +3999,7 @@ export function LiveDirectorView({
         >
           {showSectionsPanel ? (
             <div className="relative min-h-0 overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(29,30,32,0.98),rgba(23,24,26,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-              <div className="absolute left-4 top-4 z-40 flex items-center gap-3 rounded-full border border-white/10 bg-black/48 px-3 py-2 backdrop-blur-xl">
+              <div className="absolute left-4 top-4 z-40 flex items-center gap-3 rounded-full border border-white/10 bg-black/68 px-3 py-2">
                 <span className="text-[0.68rem] font-black uppercase tracking-[0.28em] text-white/38">Secciones</span>
                 <span className="text-[0.8rem] font-semibold text-white/78">
                   {activeSection?.name || 'Linea de tiempo'}
@@ -3636,14 +4014,14 @@ export function LiveDirectorView({
                     handleOpenOffsetModal();
                   }
                 }}
-                className="ui-pressable-soft absolute right-4 top-4 z-30 flex h-10 w-10 items-center justify-center rounded-[1rem] border border-white/10 bg-black/46 text-white/68 backdrop-blur-xl transition-all hover:text-white"
+                className="ui-pressable-soft absolute right-4 top-4 z-30 flex h-10 w-10 items-center justify-center rounded-[1rem] border border-white/10 bg-black/66 text-white/68 transition-all hover:text-white"
                 aria-label="Abrir ajuste de desfase"
                 title="Ajustar desfase de secciones"
               >
                 <span className="text-[0.92rem] font-black tracking-[0.1em]">±</span>
               </button>
               {showOffsetModal && (
-                <div className="absolute right-4 top-16 z-40 w-[11.5rem] rounded-[1.25rem] border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,22,0.98),rgba(13,15,17,0.98))] p-3 shadow-[0_24px_48px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+                <div className="absolute right-4 top-16 z-40 w-[11.5rem] rounded-[1.25rem] border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,22,0.98),rgba(13,15,17,0.98))] p-3 shadow-[0_24px_48px_rgba(0,0,0,0.34)]">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="text-[0.62rem] font-black uppercase tracking-[0.22em] text-white/42">Desfase</p>
@@ -3698,7 +4076,9 @@ export function LiveDirectorView({
                 <div className="pointer-events-none absolute inset-y-0 left-0 z-20 w-16 bg-[linear-gradient(90deg,rgba(23,24,26,0.96),rgba(23,24,26,0))]" />
                 <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-16 bg-[linear-gradient(270deg,rgba(23,24,26,0.96),rgba(23,24,26,0))]" />
                 <div
-                  className="pointer-events-none absolute bottom-3 top-3 z-30 w-[4px] -translate-x-1/2 rounded-full bg-white shadow-[0_0_18px_rgba(255,255,255,0.68)]"
+                  className={`pointer-events-none absolute top-3 z-30 w-[4px] -translate-x-1/2 rounded-full bg-white shadow-[0_0_18px_rgba(255,255,255,0.68)] ${
+                    isUltraCompactLandscape ? 'bottom-3' : isCompactLandscape ? 'bottom-[22px]' : 'bottom-[34px]'
+                  }`}
                   style={{ left: `${sectionLanePlayheadOffsetPx}px` }}
                 />
                 <div
@@ -3723,7 +4103,7 @@ export function LiveDirectorView({
                         paddingRight: `${sectionLaneTrailingPaddingPx}px`,
                       }}
                     >
-                    {sectionLaneSegments.map(({ section, waveBars, widthPx, leftPx }, index) => {
+                    {sectionLaneSegments.map(({ section, waveBars, widthPx, leftPx, activeStyle, inactiveStyle }, index) => {
                       const isActive = index === activeSectionIndex;
 
                       return (
@@ -3734,12 +4114,7 @@ export function LiveDirectorView({
                             void handleSectionSeek(section.startTime);
                           }}
                           className="relative h-full shrink-0 rounded-[1.55rem] border text-left transition-all duration-200"
-                          style={{
-                            width: `${widthPx}px`,
-                            background: `linear-gradient(180deg, ${section.surface}, rgba(20,20,22,0.96))`,
-                            borderColor: isActive ? section.accent : section.border,
-                            boxShadow: isActive ? `0 0 22px ${section.accent}20` : 'none',
-                          }}
+                          style={isActive ? activeStyle : inactiveStyle}
                         >
                           <div className="absolute inset-0 rounded-[1.5rem] bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.03)_0px,rgba(255,255,255,0.03)_2px,transparent_2px,transparent_20px)]" />
                           <div className="absolute inset-0 rounded-[1.5rem] bg-black/10" />
@@ -3763,7 +4138,7 @@ export function LiveDirectorView({
                               />
                             ))}
                           </div>
-                          <div className="absolute left-4 top-8 flex items-center gap-3 rounded-[1rem] border border-white/8 bg-black/26 px-3 py-2 backdrop-blur-md">
+                          <div className="absolute left-4 top-8 flex items-center gap-3 rounded-[1rem] border border-white/8 bg-black/56 px-3 py-2">
                             <span
                               className="flex h-10 min-w-10 items-center justify-center rounded-full border px-2 text-[0.88rem] font-black tracking-[0.16em]"
                               style={{
@@ -3782,13 +4157,20 @@ export function LiveDirectorView({
                             </div>
                           </div>
                           <div
-                            className="pointer-events-none absolute inset-y-4 rounded-[1.2rem] border border-white/0 transition-all duration-150"
+                            className="pointer-events-none absolute inset-y-4 left-0 rounded-[1.2rem] border border-white/0"
                             style={{
-                              left: `${clamp(sectionLaneProgressPx - leftPx - 1, 0, Math.max(0, widthPx - 2))}px`,
+                              // transform is composited on the GPU; `left`
+                              // was triggering layout on every visual-clock
+                              // tick during playback. `will-change: transform`
+                              // keeps the playhead on its own layer so the
+                              // section card below doesn't repaint.
+                              transform: `translate3d(${clamp(sectionLaneProgressPx - leftPx - 1, 0, Math.max(0, widthPx - 2))}px, 0, 0)`,
                               width: '2px',
                               backgroundColor: isActive ? `${section.accent}cc` : 'transparent',
                               boxShadow: isActive ? `0 0 14px ${section.accent}66` : 'none',
                               opacity: isActive ? 1 : 0,
+                              willChange: isActive ? 'transform' : 'auto',
+                              transition: 'background-color 150ms ease, box-shadow 150ms ease, opacity 150ms ease',
                             }}
                           />
                         </button>
@@ -3807,6 +4189,74 @@ export function LiveDirectorView({
                     )}
                   </div>
                 </div>
+
+                {/* Mini-mapa: banda angosta con bloques de sección, playhead
+                    global y viewport marker. Tap/drag = seek. Oculto en
+                    ultra-compact landscape para no morder altura. */}
+                {!isUltraCompactLandscape && sectionLaneMinimapSegments.length > 0 && (
+                  <div
+                    className={`pointer-events-none absolute left-4 right-4 z-40 ${
+                      isCompactLandscape ? 'bottom-2 h-[14px]' : 'bottom-3 h-[18px]'
+                    }`}
+                  >
+                    <div
+                      ref={minimapTrackRef}
+                      onPointerDown={handleMinimapPointerDown}
+                      onPointerMove={handleMinimapPointerMove}
+                      onPointerUp={handleMinimapPointerUp}
+                      onPointerCancel={handleMinimapPointerUp}
+                      className="pointer-events-auto relative h-full cursor-pointer overflow-hidden rounded-[10px] border border-white/10 bg-black/52 shadow-[0_6px_16px_rgba(0,0,0,0.38)]"
+                      style={{ touchAction: 'none' }}
+                      aria-label="Mini-mapa de la canción"
+                      role="slider"
+                      aria-valuemin={0}
+                      aria-valuemax={playbackTimelineDuration}
+                      aria-valuenow={clamp(currentTime, 0, playbackTimelineDuration)}
+                    >
+                      {sectionLaneMinimapSegments.map((seg, index) => {
+                        const isActive = index === activeSectionIndex;
+                        return (
+                          <div
+                            key={seg.id}
+                            aria-hidden="true"
+                            className="absolute inset-y-0"
+                            style={{
+                              left: `${seg.leftPct}%`,
+                              width: `${seg.widthPct}%`,
+                              backgroundColor: isActive
+                                ? `${seg.accent}b3`
+                                : `${seg.accent}4d`,
+                              borderLeft:
+                                index === 0 ? 'none' : '1px solid rgba(0,0,0,0.45)',
+                              transition:
+                                'background-color 160ms ease',
+                            }}
+                          />
+                        );
+                      })}
+                      {/* Viewport marker: qué rango de la canción está visible
+                          en la lane grande. */}
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute -top-[2px] -bottom-[2px] rounded-[6px] border border-white/60 shadow-[0_0_0_1px_rgba(0,0,0,0.45)]"
+                        style={{
+                          left: `${sectionLaneMinimapViewport.leftPct}%`,
+                          width: `${sectionLaneMinimapViewport.widthPct}%`,
+                          transition: 'left 120ms ease, width 120ms ease',
+                        }}
+                      />
+                      {/* Playhead global */}
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute -top-[4px] -bottom-[4px] w-[2px] -translate-x-1/2 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.9)]"
+                        style={{
+                          left: `${sectionLaneMinimapPlayheadPct}%`,
+                          willChange: 'left',
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
@@ -3817,16 +4267,12 @@ export function LiveDirectorView({
               onPointerMove={handleMixerPointerMove}
               onPointerUp={handleMixerPointerUp}
               onPointerCancel={handleMixerPointerUp}
-              className={`hide-scrollbar grid min-h-0 ${isUltraCompactLandscape ? 'gap-1' : isCompactLandscape ? 'gap-1.5' : 'gap-3'} overflow-x-auto overflow-y-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isUltraCompactLandscape ? 'px-0.5 py-0.5' : isCompactLandscape ? 'px-1 py-0.5' : 'px-3 py-4'}`}
-              style={{
-                gridTemplateColumns: `repeat(${Math.max(1, mixerView.length)}, minmax(${isUltraCompactLandscape ? '6.7rem' : isCompactLandscape ? '7.45rem' : '8.5rem'}, 1fr))`,
-                touchAction: 'pan-x pinch-zoom',
-                overscrollBehaviorX: 'contain',
-                WebkitOverflowScrolling: 'touch',
-              }}
+              className={mixerScrollClassName}
+              style={mixerScrollStyle}
             >
               {mixerView.map((track) => {
                 const isInternalPadTrack = track.id === '__internal-pad__';
+                const stableCallbacks = getChannelStripCallbacks(track.id);
                 return (
                   <ChannelStrip
                     key={track.id}
@@ -3845,40 +4291,12 @@ export function LiveDirectorView({
                     showRouteFlip={track.showRouteFlip}
                     compact={isCompactLandscape}
                     ultraCompact={isUltraCompactLandscape}
-                    onVolumeChange={(nextVolume) => {
-                      if (isInternalPadTrack) {
-                        handleInternalPadVolumeChange(nextVolume);
-                        if (!isPadActive && nextVolume > 0) {
-                          setIsPadActive(true);
-                        }
-                        return;
-                      }
-
-                      setVolume(track.id, nextVolume);
-                    }}
+                    onVolumeChange={stableCallbacks.onVolumeChange}
                     onInteractionStart={isInternalPadTrack ? undefined : suspendNativeMeters}
                     onInteractionEnd={isInternalPadTrack ? undefined : resumeNativeMetersSoon}
-                    onMute={() => {
-                      if (isInternalPadTrack) {
-                        setIsPadActive((previous) => !previous);
-                        return;
-                      }
-
-                      handleMuteTrack(track.id);
-                    }}
-                    onSolo={() => {
-                      if (isInternalPadTrack) {
-                        setIsPadActive(true);
-                        return;
-                      }
-
-                      handleSoloTrack(track.id);
-                    }}
-                    onToggleOutputRoute={() => {
-                      if (!isInternalPadTrack) {
-                        handleToggleGuideTrackRoute(track.id);
-                      }
-                    }}
+                    onMute={stableCallbacks.onMute}
+                    onSolo={stableCallbacks.onSolo}
+                    onToggleOutputRoute={stableCallbacks.onToggleOutputRoute}
                   />
                 );
               })}
@@ -4324,6 +4742,57 @@ export function LiveDirectorView({
 
       <audio ref={padAudioRefA} preload="none" className="hidden" />
       <audio ref={padAudioRefB} preload="none" className="hidden" />
+
+      {showLoadWarningBanner && loadWarnings && loadWarnings.length > 0 && (
+        <div className="pointer-events-none absolute inset-x-0 top-3 z-[55] flex justify-center px-3">
+          <div className="pointer-events-auto w-full max-w-xl rounded-[1.1rem] border border-amber-300/25 bg-[linear-gradient(180deg,rgba(34,26,12,0.96),rgba(24,18,8,0.96))] px-4 py-3 shadow-[0_18px_36px_rgba(0,0,0,0.3)]">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.75rem] border border-amber-300/25 bg-amber-300/10 text-amber-200">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[0.72rem] font-black uppercase tracking-[0.22em] text-amber-200/80">
+                  Stems omitidos ({loadWarnings.length})
+                </p>
+                <p className="mt-1 text-[0.88rem] leading-snug text-white/80">
+                  La sesión cargó sin estos archivos porque el motor no pudo abrirlos:
+                </p>
+                <ul className="mt-2 space-y-1 text-[0.82rem] leading-snug text-white/72">
+                  {loadWarnings.slice(0, 4).map((warning) => {
+                    const ext = warning.playExtension ? `.${warning.playExtension}` : '';
+                    const code = warning.fourCharCode
+                      ? ` (${warning.fourCharCode})`
+                      : warning.osStatus
+                        ? ` (OSStatus ${warning.osStatus})`
+                        : '';
+                    return (
+                      <li key={`${warning.trackId}:${warning.reason}`} className="truncate">
+                        <span className="font-semibold text-white/90">{warning.trackName || warning.trackId}</span>
+                        <span className="text-white/60">{ext}{code}</span>
+                      </li>
+                    );
+                  })}
+                  {loadWarnings.length > 4 && (
+                    <li className="text-white/55">+ {loadWarnings.length - 4} más…</li>
+                  )}
+                </ul>
+                <p className="mt-2 text-[0.76rem] leading-snug text-amber-100/70">
+                  Consejo: re-encode los stems problemáticos como <span className="font-semibold">.m4a</span> o <span className="font-semibold">.wav</span>.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDismissedLoadWarningKey(loadWarningsKey)}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.7rem] border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white"
+                aria-label="Cerrar aviso de stems omitidos"
+                title="Cerrar"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {busyMessage && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/26 backdrop-blur-[8px]">
