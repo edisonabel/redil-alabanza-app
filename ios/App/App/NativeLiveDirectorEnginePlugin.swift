@@ -338,7 +338,30 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             let isMuted = rawTrack["isMuted"] as? Bool ?? false
             let outputRoute = normalizeOutputRoute(rawTrack["outputRoute"] as? String ?? "stereo")
             let localURL = try await cachedAudioURL(for: remoteURL)
-            let file = try AVAudioFile(forReading: localURL)
+            let file: AVAudioFile
+            do {
+                file = try AVAudioFile(forReading: localURL)
+            } catch {
+                let nsError = error as NSError
+                let osCode = nsError.code
+                let fourCC = fourCharCodeString(from: osCode)
+                let fileSize: String
+                if let attrs = try? FileManager.default.attributesOfItem(atPath: localURL.path),
+                   let bytes = attrs[.size] as? NSNumber {
+                    fileSize = "\(bytes.intValue)B"
+                } else {
+                    fileSize = "?"
+                }
+                CAPLog.print("NLDE ASSET_OPEN_FAIL id=\(id) local=\(localURL.lastPathComponent) sourceExt=\(sourceURL.pathExtension.lowercased()) playExt=\(remoteURL.pathExtension.lowercased()) size=\(fileSize) OSStatus=\(osCode) fourCC=\(fourCC) domain=\(nsError.domain) desc=\(nsError.localizedDescription)")
+                throw NSError(domain: "NativeLiveDirectorEngine", code: 14, userInfo: [
+                    NSLocalizedDescriptionKey: "No se pudo abrir el stem '\(name)' (\(id)): \(nsError.localizedDescription) [OSStatus=\(osCode) '\(fourCC)']",
+                    "trackId": id,
+                    "trackName": name,
+                    "osStatus": osCode,
+                    "fourCharCode": fourCC,
+                    "underlyingError": nsError
+                ])
+            }
             CAPLog.print("NLDE ASSET id=\(id) local=\(localURL.lastPathComponent) sourceExt=\(sourceURL.pathExtension.lowercased()) playExt=\(remoteURL.pathExtension.lowercased()) durationFrames=\(file.length) scheduleMode=\(schedulingModeName(for: file)) \(audioFileSummary(file, url: localURL))")
 
             // Reuse the envelope the caller already persisted, otherwise
@@ -584,6 +607,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             let clampedStartFrame = min(max(0, startFrame), track.file.length)
             track.scheduledUntilFrame = clampedStartFrame
             scheduleRemainingTrackSegment(track)
+            scheduleSilencePadIfNeeded(track)
             track.player.prepare(withFrameCount: playerPrepareFrameCount)
         }
 
@@ -596,6 +620,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         isPlaying = true
         startStateTimer()
         logSessionState("post-startPlayback")
+        logPlaybackAlignment("post-startPlayback")
         emitState()
     }
 
@@ -617,6 +642,57 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         track.scheduledUntilFrame += framesToSchedule
     }
 
+    /// If this track is shorter than the longest track in the session, append a
+    /// silent buffer so every player node remains active for the full session
+    /// duration. This keeps start/stop alignment checks consistent and avoids
+    /// late-track "early stop" artifacts (e.g. bass/custom-ga being ~52ms short
+    /// of the other stems due to source-file length mismatches).
+    private func scheduleSilencePadIfNeeded(_ track: NativeTrack) {
+        let trackSampleRate = track.file.processingFormat.sampleRate
+        guard trackSampleRate > 0, duration > 0 else {
+            return
+        }
+
+        let trackSeconds = Double(track.file.length) / trackSampleRate
+        let gapSeconds = duration - trackSeconds
+        // Anything under ~2ms is just floating point noise; ignore.
+        guard gapSeconds > 0.002 else {
+            return
+        }
+
+        let silenceFrameCount = AVAudioFrameCount(max(1, (gapSeconds * trackSampleRate).rounded(.up)))
+        let format = track.file.processingFormat
+        guard let silenceBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: silenceFrameCount) else {
+            CAPLog.print("NLDE PAD id=\(track.id) failed-to-alloc silenceFrames=\(silenceFrameCount)")
+            return
+        }
+
+        silenceBuffer.frameLength = silenceFrameCount
+        // AVAudioPCMBuffer allocation does not guarantee zeroed memory across
+        // all iOS versions. Zero every channel explicitly.
+        if let channelData = silenceBuffer.floatChannelData {
+            let bytesPerChannel = Int(silenceFrameCount) * MemoryLayout<Float>.stride
+            for channel in 0..<Int(format.channelCount) {
+                memset(channelData[channel], 0, bytesPerChannel)
+            }
+        } else if let int16Data = silenceBuffer.int16ChannelData {
+            let bytesPerChannel = Int(silenceFrameCount) * MemoryLayout<Int16>.stride
+            for channel in 0..<Int(format.channelCount) {
+                memset(int16Data[channel], 0, bytesPerChannel)
+            }
+        } else if let int32Data = silenceBuffer.int32ChannelData {
+            let bytesPerChannel = Int(silenceFrameCount) * MemoryLayout<Int32>.stride
+            for channel in 0..<Int(format.channelCount) {
+                memset(int32Data[channel], 0, bytesPerChannel)
+            }
+        }
+
+        CAPLog.print(
+            "NLDE PAD id=\(track.id) silenceFrames=\(silenceFrameCount) gapMs=\(String(format: "%.2f", gapSeconds * 1000)) sr=\(trackSampleRate) trackSeconds=\(String(format: "%.3f", trackSeconds)) maxDuration=\(String(format: "%.3f", duration))"
+        )
+        track.player.scheduleBuffer(silenceBuffer, at: nil, options: [], completionHandler: nil)
+    }
+
     private func pausePlayback() {
         if isPlaying {
             seekOffset = currentTime()
@@ -628,6 +704,9 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     }
 
     private func stopPlayback(resetPosition: Bool, shouldEmitState: Bool = true) {
+        if isPlaying {
+            logPlaybackAlignment("pre-stopPlayback")
+        }
         tracks.forEach { $0.player.stop() }
         isPlaying = false
         if resetPosition {
@@ -844,6 +923,24 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
     private func isLinearPCMFile(_ file: AVAudioFile) -> Bool {
         file.fileFormat.streamDescription.pointee.mFormatID == kAudioFormatLinearPCM
+    }
+
+    /// Decodes a numeric OSStatus (often returned by CoreAudio/AVFoundation)
+    /// as a 4-character ASCII code when possible. Example: 1937337955 → "sync".
+    /// Falls back to the numeric string for non-printable codes.
+    private func fourCharCodeString(from code: Int) -> String {
+        let value = UInt32(bitPattern: Int32(truncatingIfNeeded: code))
+        let bytes: [UInt8] = [
+            UInt8((value >> 24) & 0xFF),
+            UInt8((value >> 16) & 0xFF),
+            UInt8((value >> 8) & 0xFF),
+            UInt8(value & 0xFF)
+        ]
+        let allPrintable = bytes.allSatisfy { $0 >= 0x20 && $0 <= 0x7E }
+        if allPrintable {
+            return String(bytes: bytes, encoding: .ascii) ?? String(code)
+        }
+        return String(code)
     }
 
     private func audioFileSummary(_ file: AVAudioFile, url: URL) -> String {
@@ -1090,6 +1187,63 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         CAPLog.print(
             "NLDE SESSION[\(tag)] cat=\(session.category.rawValue) mode=\(session.mode.rawValue) rate=\(session.sampleRate) buf=\(session.ioBufferDuration) route=[\(route)] other=\(session.isOtherAudioPlaying)"
         )
+    }
+
+    /// Passive one-shot snapshot of per-node alignment. Intended to be called at
+    /// lifecycle transitions (start/stop) so we can verify drift without running
+    /// a periodic timer that might eat CPU on-stage.
+    private func logPlaybackAlignment(_ tag: String) {
+        guard !tracks.isEmpty else {
+            CAPLog.print("NLDE ALIGN[\(tag)] no-tracks")
+            return
+        }
+
+        let engineRenderTime = engine.isRunning ? engine.outputNode.lastRenderTime : nil
+        let engineSampleTime = engineRenderTime?.isSampleTimeValid == true ? engineRenderTime?.sampleTime : nil
+        let engineHostTime = engineRenderTime?.isHostTimeValid == true ? engineRenderTime?.hostTime : nil
+
+        var details: [String] = []
+        var referenceTime: Double? = nil
+        for track in tracks {
+            let player = track.player
+            guard let nodeRenderTime = player.lastRenderTime else {
+                details.append("\(track.id)=no-render")
+                continue
+            }
+            guard let nodeTime = player.playerTime(forNodeTime: nodeRenderTime) else {
+                let rawSample = nodeRenderTime.isSampleTimeValid ? String(nodeRenderTime.sampleTime) : "?"
+                details.append("\(track.id)=no-playerTime(rawSample=\(rawSample))")
+                continue
+            }
+            let sampleRate = nodeTime.sampleRate > 0
+                ? nodeTime.sampleRate
+                : track.file.processingFormat.sampleRate
+            let seconds = sampleRate > 0 ? Double(nodeTime.sampleTime) / sampleRate : Double.nan
+            if referenceTime == nil {
+                referenceTime = seconds
+            }
+            let deltaMs: String
+            if let ref = referenceTime {
+                deltaMs = String(format: "%+.2f", (seconds - ref) * 1000.0)
+            } else {
+                deltaMs = "?"
+            }
+            details.append("\(track.id)=\(String(format: "%.6f", seconds))s Δ=\(deltaMs)ms sr=\(sampleRate) muted=\(track.isMuted) vol=\(track.player.volume)")
+        }
+
+        let engineInfo: String
+        if let sample = engineSampleTime, let host = engineHostTime {
+            engineInfo = "engineSample=\(sample) host=\(host)"
+        } else {
+            engineInfo = "engine=none"
+        }
+
+        CAPLog.print(
+            "NLDE ALIGN[\(tag)] isPlaying=\(isPlaying) anchor=\(playbackAnchorOffset) seek=\(seekOffset) \(engineInfo) tracks=\(tracks.count)"
+        )
+        details.forEach { line in
+            CAPLog.print("NLDE ALIGN[\(tag)] • \(line)")
+        }
     }
 
     private func registerAudioSessionObservers() {

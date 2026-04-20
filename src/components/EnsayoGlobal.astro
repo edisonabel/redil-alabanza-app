@@ -22,6 +22,16 @@ import EnsayoGlobalIsland from './react/EnsayoGlobalIsland.jsx';
         const el = btn as HTMLElement;
         const songId = el.dataset.id || '';
 
+        // If this song has a persisted multitrack session, bypass the compact
+        // rehearsal view and send the user straight to Live Director so the
+        // multitrack engine applies automatically.
+        const hasMultitrack = el.dataset.hasMultitrack === '1';
+        if (hasMultitrack && songId) {
+          const target = `/herramientas/live-director-preview?song=${encodeURIComponent(songId)}`;
+          window.location.href = target;
+          return;
+        }
+
         // Prefer global registry (lightweight) over data attributes (heavy)
         const reg = (window as any).__REDIL_SONG_REGISTRY__?.[songId];
         const chordpro = reg?.c || el.dataset.chordpro || '';

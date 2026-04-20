@@ -1,4 +1,5 @@
 ﻿import {
+  ChevronLeft,
   ChevronsLeft,
   FolderOpen,
   ListMusic,
@@ -157,6 +158,7 @@ type LiveDirectorViewProps = {
   onInternalPadVolumeChange?: (volume: number) => void;
   onPlaybackSnapshot?: (snapshot: LiveDirectorPlaybackSnapshot) => void;
   onSessionPersisted?: (session: LiveDirectorPersistedSession) => void;
+  onBack?: () => void;
 };
 
 const WEB_ENGINE_MAX_ACTIVE_TRACKS = 9;
@@ -1077,6 +1079,7 @@ export function LiveDirectorView({
   onInternalPadVolumeChange,
   onPlaybackSnapshot,
   onSessionPersisted,
+  onBack,
 }: LiveDirectorViewProps) {
   const hasProvidedTracks = Boolean(tracks && tracks.length > 0);
   const hasPersistedSongContext = Boolean(songId);
@@ -3199,6 +3202,21 @@ export function LiveDirectorView({
             style={{ minWidth: headerMinWidth }}
           >
             <div className={`flex items-stretch ${isUltraCompactLandscape ? 'gap-1' : isCompactLandscape ? 'gap-2' : 'gap-2.5'}`}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onBack) {
+                    onBack();
+                  } else if (typeof window !== 'undefined') {
+                    window.history.back();
+                  }
+                }}
+                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] w-[2.2rem] px-1' : isCompactLandscape ? 'h-10 w-10 px-1.5' : 'h-[var(--ld-control-height)] w-[2.75rem] px-2'} shrink-0 items-center justify-center text-white/80 hover:text-white`}
+                aria-label="Regresar a la sección anterior"
+                title="Regresar"
+              >
+                <ChevronLeft className={`${isUltraCompactLandscape ? 'h-4 w-4' : isCompactLandscape ? 'h-5 w-5' : 'h-6 w-6'}`} />
+              </button>
               <div
                 className={`flex ${isUltraCompactLandscape ? 'rounded-[0.8rem] px-1 py-0.5' : isCompactLandscape ? 'rounded-[1rem] py-1' : 'rounded-[1.45rem] py-3'} shrink-0 flex-col items-center justify-center gap-0.5 border border-white/8 bg-black/16 ${isUltraCompactLandscape ? '' : 'px-2'} text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]`}
                 style={{ width: scaleRem(isUltraCompactLandscape ? 2.95 : isCompactLandscape ? 4.15 : 4.6, 2.45) }}
