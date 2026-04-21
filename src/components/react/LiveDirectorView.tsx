@@ -2,6 +2,7 @@
   AlertTriangle,
   ChevronLeft,
   ChevronsLeft,
+  ChevronsRight,
   FolderOpen,
   ListMusic,
   Pause,
@@ -3055,6 +3056,27 @@ export function LiveDirectorView({
     void handleSectionSeek(targetSection?.startTime ?? 0);
   };
 
+  const handleNextSection = () => {
+    if (!hasTrackSession) {
+      return;
+    }
+
+    if (resolvedSections.length === 0) {
+      return;
+    }
+
+    const lastIndex = resolvedSections.length - 1;
+    const targetIndex = Math.min(lastIndex, activeSectionIndex + 1);
+    const targetSection = resolvedSections[targetIndex];
+    if (!targetSection) {
+      return;
+    }
+
+    // If we're already on the last section, snap to its start (useful for
+    // re-cueing the outro) instead of doing nothing.
+    void handleSectionSeek(targetSection.startTime);
+  };
+
   const handleLoopIn = () => {
     if (activeSection) {
       setLoopPoints(activeSection.startTime, activeSection.endTime);
@@ -3756,6 +3778,18 @@ export function LiveDirectorView({
                 title="Ir a la seccion anterior"
               >
                 <ChevronsLeft className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-5 w-5' : 'h-7 w-7'}`} strokeWidth={isCompactLandscape ? 2 : 2.4} />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleNextSection}
+                disabled={!hasTrackSession || resolvedSections.length === 0 || activeSectionIndex >= resolvedSections.length - 1}
+                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3.5' : isCompactLandscape ? 'h-10 px-4' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/82 hover:text-white hover:bg-white/6 disabled:cursor-not-allowed disabled:text-white/24`}
+                style={{ width: scaleRem(isUltraCompactLandscape ? 3.85 : isCompactLandscape ? 4.85 : 5.85, 3.25) }}
+                aria-label="Ir a la siguiente seccion"
+                title="Ir a la siguiente seccion"
+              >
+                <ChevronsRight className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-5 w-5' : 'h-7 w-7'}`} strokeWidth={isCompactLandscape ? 2 : 2.4} />
               </button>
 
               <button
