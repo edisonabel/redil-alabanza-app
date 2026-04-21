@@ -83,6 +83,8 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private let playbackStartDelay: Double = 0.2
     private let stateEventIntervalMilliseconds = 500
     private let preferCompressedAudioCache = true
+    private let internalPadTrackId = "__internal-pad__"
+    private let maxScheduledSilencePadSeconds: Double = 1.0
     private var engine = AVAudioEngine()
     private var tracks: [NativeTrack] = []
     private var trackLevels: [String: Double] = [:]
@@ -694,7 +696,8 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                 self.engine.stop()
                 self.engine.reset()
                 self.tracks = nextTracks
-                self.duration = nextTracks.map(\.duration).max() ?? 0
+                let timelineTracks = nextTracks.filter { !self.isInternalPadTrack($0) }
+                self.duration = (timelineTracks.isEmpty ? nextTracks : timelineTracks).map(\.duration).max() ?? 0
                 self.seekOffset = 0
                 self.trackLevels = nextTracks.reduce(into: [String: Double]()) { levels, track in
                     levels[track.id] = 0
@@ -780,7 +783,14 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     }
 
     private func scheduleRemainingTrackSegment(_ track: NativeTrack) {
-        let remainingFrames = track.file.length - track.scheduledUntilFrame
+        let sampleRate = track.file.processingFormat.sampleRate
+        var scheduleEndFrame = track.file.length
+        if isInternalPadTrack(track), duration > 0, sampleRate > 0 {
+            let timelineEndFrame = AVAudioFramePosition((duration * sampleRate).rounded(.up))
+            scheduleEndFrame = min(scheduleEndFrame, max(0, timelineEndFrame))
+        }
+
+        let remainingFrames = scheduleEndFrame - track.scheduledUntilFrame
         guard remainingFrames > 0 else {
             return
         }
@@ -807,6 +817,10 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     /// stems that end before the seek point don't over-play silence past the
     /// longer stems and desync the mix.
     private func scheduleSilencePadIfNeeded(_ track: NativeTrack, seekOffset: Double = 0) {
+        if isInternalPadTrack(track) {
+            return
+        }
+
         let trackSampleRate = track.file.processingFormat.sampleRate
         guard trackSampleRate > 0, duration > 0 else {
             return
@@ -820,6 +834,12 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         let gapSeconds = remainingMaxSeconds - remainingRealSeconds
         // Anything under ~2ms is just floating point noise; ignore.
         guard gapSeconds > 0.002 else {
+            return
+        }
+        guard gapSeconds <= maxScheduledSilencePadSeconds else {
+            CAPLog.print(
+                "NLDE PAD id=\(track.id) skip-large-silence gapMs=\(String(format: "%.2f", gapSeconds * 1000)) maxMs=\(String(format: "%.0f", maxScheduledSilencePadSeconds * 1000))"
+            )
             return
         }
 
@@ -1046,6 +1066,10 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
     private func schedulingModeName(for file: AVAudioFile) -> String {
         isLinearPCMFile(file) ? "single-segment-pcm" : "single-segment-compressed"
+    }
+
+    private func isInternalPadTrack(_ track: NativeTrack) -> Bool {
+        track.id == internalPadTrackId
     }
 
     private func isLinearPCMFile(_ file: AVAudioFile) -> Bool {
