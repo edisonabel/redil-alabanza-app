@@ -111,6 +111,33 @@ const isAbortError = (error: unknown) =>
   (error instanceof DOMException && error.name === 'AbortError') ||
   (error instanceof Error && error.name === 'AbortError');
 
+/**
+ * Apple Lossless (ALAC) in an .m4a/.caf container is a common multitrack
+ * export default for DAWs like Logic Pro and GarageBand, but Web Audio in
+ * Firefox/Edge on Windows and some Chromium builds cannot decode ALAC —
+ * only plain AAC inside .m4a works universally. When decodeAudioData
+ * rejects with EncodingError on an .m4a file, we enrich the thrown error
+ * with concrete guidance so the operator sees it on the load banner
+ * without having to guess.
+ */
+const isLikelyAlacDecodeFailure = (track: { url?: string; name?: string }, error: unknown) => {
+  const hint = `${track.url ?? ''} ${track.name ?? ''}`.toLowerCase();
+  if (!/\.m4a(\?|#|$)/.test(hint) && !hint.endsWith('.m4a')) return false;
+  const message = (error instanceof Error ? error.message : String(error ?? '')).toLowerCase();
+  const name = error instanceof Error ? error.name.toLowerCase() : '';
+  return (
+    name.includes('encoding') ||
+    message.includes('decoding') ||
+    message.includes('unable to decode') ||
+    message.includes('not supported') ||
+    message.includes('unsupported')
+  );
+};
+
+const ALAC_FORMAT_GUIDANCE =
+  'Posible ALAC (.m4a Apple Lossless). ALAC no se reproduce en Windows ni en navegadores no-Apple. ' +
+  'Re-exporta como AAC-LC 256 kbps en contenedor .m4a para compatibilidad universal, o FLAC/WAV si necesitas sin pérdida.';
+
 const withTimeout = async <T>(
   promise: Promise<T>,
   timeoutMs: number,
@@ -603,6 +630,15 @@ export class MultitrackEngine {
         throw new Error(`Loading "${track.name}" was cancelled before completion.`);
       }
       console.error(`[MultitrackEngine] Error loading "${track.name}".`, error);
+      if (isLikelyAlacDecodeFailure(track, error)) {
+        const baseMessage = error instanceof Error ? error.message : String(error);
+        const enriched = new Error(
+          `No se pudo decodificar "${track.name}". ${ALAC_FORMAT_GUIDANCE} (detalle: ${baseMessage})`,
+        );
+        (enriched as Error & { cause?: unknown }).cause = error;
+        (enriched as Error & { code?: string }).code = 'ALAC_DECODE_LIKELY';
+        throw enriched;
+      }
       throw error;
     } finally {
       this.releaseLoadAbortController(controller);

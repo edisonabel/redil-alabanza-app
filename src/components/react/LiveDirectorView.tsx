@@ -4880,6 +4880,9 @@ export function LiveDirectorView({
                 <p className={`max-w-3xl leading-relaxed text-white/62 ${isCompactLandscape ? 'mt-1 text-[0.84rem]' : 'mt-3 text-[1rem]'}`}>
                   Elige una pista unica o una carpeta multitrack.
                 </p>
+                <p className={`max-w-3xl text-amber-200/70 ${isCompactLandscape ? 'mt-1 text-[0.7rem]' : 'mt-2 text-[0.82rem]'}`}>
+                  Formatos recomendados: <span className="font-semibold">AAC-LC (.m4a)</span> o <span className="font-semibold">FLAC</span>. Evita <span className="font-semibold">ALAC</span> (.m4a lossless de Apple) — no abre en Windows ni Android.
+                </p>
               </div>
               <button
                 type="button"
@@ -5265,7 +5268,7 @@ export function LiveDirectorView({
                   )}
                 </ul>
                 <p className="mt-2 text-[0.76rem] leading-snug text-amber-100/70">
-                  Consejo: re-encode los stems problemáticos como <span className="font-semibold">.m4a</span> o <span className="font-semibold">.wav</span>.
+                  Consejo: re-exporta los stems problemáticos como <span className="font-semibold">AAC-LC (.m4a 256 kbps)</span> o <span className="font-semibold">FLAC</span>. Evita ALAC — no abre en Windows ni Android.
                 </p>
               </div>
               <button
