@@ -502,6 +502,19 @@ select {
 /* Prevent opacity flash before stagger delay fires */
 .card-cancion     { animation-fill-mode: both; }
 
+/* ── Live Director auto-follow indicator ──────────────────────────────── */
+/* Ring that fills over 5s while the auto-follow resume timer is counting
+   down. Paired with the chip rendered in LiveDirectorView. Uses
+   transform-origin:left so the fill animates from 0 → 100% width. */
+@keyframes liveDirectorAutoFollowRing {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+.live-director-autofollow-ring {
+  transform-origin: left center;
+  animation: liveDirectorAutoFollowRing 5000ms linear forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   :where(
     button,

@@ -1238,6 +1238,13 @@ export function LiveDirectorView({
   // because the minimap viewport marker is rendered from this value — we want
   // React to re-render when the user scrolls. Throttled via rAF below.
   const [sectionsLaneScrollLeft, setSectionsLaneScrollLeft] = useState(0);
+  // UI status for the auto-follow indicator chip. 'auto' = normal (indicator
+  // hidden), 'held' = user is actively dragging/scrolling (indicator on,
+  // static), 'resuming' = user released and the 5s timer is counting down
+  // (indicator on, ring animating).
+  const [sectionsAutoFollowStatus, setSectionsAutoFollowStatus] = useState<
+    'auto' | 'held' | 'resuming'
+  >('auto');
   const [manualSession, setManualSession] = useState<LiveDirectorResolvedSession | null>(
     initialSession ? toResolvedSession(initialSession) : null,
   );
@@ -3301,10 +3308,12 @@ export function LiveDirectorView({
     if (resumeSectionsAutoScrollTimeoutRef.current !== null) {
       window.clearTimeout(resumeSectionsAutoScrollTimeoutRef.current);
     }
+    setSectionsAutoFollowStatus('resuming');
     resumeSectionsAutoScrollTimeoutRef.current = window.setTimeout(() => {
       isUserScrollingSectionsRef.current = false;
       sectionsAutoFollowShouldSmoothRef.current = true;
       resumeSectionsAutoScrollTimeoutRef.current = null;
+      setSectionsAutoFollowStatus('auto');
     }, SECTIONS_AUTO_FOLLOW_RESUME_MS);
   }, []);
 
@@ -3318,6 +3327,7 @@ export function LiveDirectorView({
       window.clearTimeout(resumeSectionsAutoScrollTimeoutRef.current);
       resumeSectionsAutoScrollTimeoutRef.current = null;
     }
+    setSectionsAutoFollowStatus('held');
   }, []);
 
   // Back-compat name kept for the wheel handler: each wheel tick extends the
@@ -4005,6 +4015,27 @@ export function LiveDirectorView({
                   {activeSection?.name || 'Linea de tiempo'}
                 </span>
               </div>
+              {sectionsAutoFollowStatus !== 'auto' && (
+                <div className="pointer-events-none absolute left-4 top-[3.4rem] z-40 flex items-center gap-2 rounded-full border border-amber-300/28 bg-black/62 px-2.5 py-1 shadow-[0_6px_18px_rgba(0,0,0,0.28)]">
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full bg-amber-300 ${
+                      sectionsAutoFollowStatus === 'held' ? 'animate-pulse' : ''
+                    }`}
+                    aria-hidden="true"
+                  />
+                  <span className="text-[0.58rem] font-black uppercase tracking-[0.22em] text-amber-100/86">
+                    {sectionsAutoFollowStatus === 'held' ? 'Scroll libre' : 'Auto en 5s'}
+                  </span>
+                  {sectionsAutoFollowStatus === 'resuming' && (
+                    <span className="relative ml-0.5 h-1 w-10 overflow-hidden rounded-full bg-white/10">
+                      <span
+                        key="resume-ring"
+                        className="live-director-autofollow-ring absolute inset-y-0 left-0 block h-full w-full rounded-full bg-amber-300/82"
+                      />
+                    </span>
+                  )}
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => {
