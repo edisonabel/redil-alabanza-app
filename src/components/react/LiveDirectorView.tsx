@@ -1303,6 +1303,32 @@ export function LiveDirectorView({
   // When the user taps Back while audio is playing, defer the navigation and
   // show a confirmation modal. Prevents disastrous accidental exits live.
   const [showBackConfirm, setShowBackConfirm] = useState(false);
+
+  const exitLiveDirector = useCallback(async () => {
+    setShowBackConfirm(false);
+
+    try {
+      if (isNativeLiveDirectorEngineAvailable()) {
+        await NativeLiveDirectorEngine.stop();
+        await NativeLiveDirectorEngine.clearNowPlayingMetadata().catch(() => undefined);
+      } else {
+        stop();
+      }
+    } catch {
+      try {
+        stop();
+      } catch {
+        // ignore: leaving the screen anyway
+      }
+    }
+
+    if (onBack) {
+      onBack();
+    } else if (typeof window !== 'undefined') {
+      window.history.back();
+    }
+  }, [onBack, stop]);
+
   // Show mode: hides the Motor / Diagnostics / Upload chips for a cleaner
   // performance-ready UI. Persists across reloads so the user doesn't have
   // to re-toggle every time they open the app live.
@@ -3948,11 +3974,7 @@ export function LiveDirectorView({
                     setShowBackConfirm(true);
                     return;
                   }
-                  if (onBack) {
-                    onBack();
-                  } else if (typeof window !== 'undefined') {
-                    window.history.back();
-                  }
+                  void exitLiveDirector();
                 }}
                 className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] w-[2.4rem] px-1' : isCompactLandscape ? 'h-10 w-11 px-1.5' : 'h-[var(--ld-control-height)] w-[3.6rem] px-2'} shrink-0 items-center justify-center text-white/85 hover:text-white hover:bg-white/6`}
                 aria-label="Volver al repertorio"
@@ -5282,17 +5304,7 @@ export function LiveDirectorView({
               <button
                 type="button"
                 onClick={() => {
-                  setShowBackConfirm(false);
-                  try {
-                    pause();
-                  } catch {
-                    // ignore: navigating away anyway
-                  }
-                  if (onBack) {
-                    onBack();
-                  } else if (typeof window !== 'undefined') {
-                    window.history.back();
-                  }
+                  void exitLiveDirector();
                 }}
                 className="ui-pressable-soft flex-1 rounded-[1rem] border border-amber-300/38 bg-amber-300/12 px-4 py-3 text-[0.92rem] font-semibold text-amber-50 hover:bg-amber-300/18"
               >

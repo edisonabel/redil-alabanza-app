@@ -169,7 +169,38 @@ const categorizeStem = (file: File): StemCategory => {
   if (hasToken(tokens, ['piano', 'grand', 'upright'])) return 'piano';
   if (hasToken(tokens, ['keys', 'key', 'teclas', 'tecla', 'organ', 'organo', 'rhodes', 'wurli', 'wurlitzer', 'ep', 'synth', 'strings', 'string', 'brass'])) return 'keys';
   if (hasToken(tokens, ['ga', 'gac', 'acoustic', 'acustica']) || hasAny(text, ['guitarra acustica', 'gtr ac'])) return 'acoustic';
-  if (hasToken(tokens, ['ge', 'ge1', 'ge2', 'ge3', 'g1', 'g1a', 'g1b', 'g2', 'eg', 'egtr', 'electric', 'electrica', 'lead', 'dist'])) return 'electric';
+  if (
+    hasToken(tokens, [
+      'ge',
+      'ge1',
+      'ge2',
+      'ge3',
+      'ge4',
+      'ge5',
+      'ge6',
+      'g1',
+      'g1a',
+      'g1b',
+      'g2',
+      'g3',
+      'g4',
+      'g5',
+      'g6',
+      'eg',
+      'eg1',
+      'eg2',
+      'eg3',
+      'eg4',
+      'eg5',
+      'eg6',
+      'egtr',
+      'electric',
+      'electrica',
+      'elec',
+      'lead',
+      'dist',
+    ])
+  ) return 'electric';
   if (hasAny(text, ['guitarra electrica', 'gtr elec', 'gtr electric'])) return 'electric';
   if (hasToken(tokens, ['perc', 'percs', 'percussion', 'percusion', 'shaker', 'tamb', 'tambourine', 'conga', 'bongo', 'loop', 'loops'])) return 'percussion';
   if (hasToken(tokens, ['pad', 'pads', 'ambient', 'ambiente', 'atmos', 'colchon', 'colchones'])) return 'pads';
@@ -290,17 +321,44 @@ const getPlanReason = (category: StemCategory, sources: SourceStem[], action: Pl
   return meta.keepReason;
 };
 
-const createPlanGroup = (category: StemCategory, sources: SourceStem[], action?: PlanAction): SmartPlanGroup => {
+const createPlanGroup = (
+  category: StemCategory,
+  sources: SourceStem[],
+  action?: PlanAction,
+  overrides?: { name?: string; reason?: string },
+): SmartPlanGroup => {
   const meta = categoryMeta[category];
   const finalAction = action || (sources.length > 1 ? 'merge' : 'keep');
   return {
     id: `${category}-${sources.map((source) => source.id).join('|')}`,
     action: finalAction,
     category,
-    name: meta.name,
-    reason: getPlanReason(category, sources, finalAction),
+    name: overrides?.name || meta.name,
+    reason: overrides?.reason || getPlanReason(category, sources, finalAction),
     sources,
   };
+};
+
+const createElectricGuitarPlanGroups = (sources: SourceStem[]) => {
+  if (sources.length <= 2) {
+    return [createPlanGroup('electric', sources, 'keep')];
+  }
+
+  const primarySources = sources.slice(0, 2);
+  const secondarySources = sources.slice(2);
+
+  return [
+    createPlanGroup('electric', primarySources, 'merge', {
+      name: 'Electricas 1-2',
+      reason: 'Guitarras 1 y 2 juntas como opcion principal.',
+    }),
+    createPlanGroup('electric', secondarySources, secondarySources.length > 1 ? 'merge' : 'keep', {
+      name: secondarySources.length > 1 ? 'Electricas extras' : 'Electrica extra',
+      reason: secondarySources.length > 1
+        ? 'Guitarras restantes juntas para ahorrar canales.'
+        : 'Guitarra extra separada para apagarla si no hace falta.',
+    }),
+  ];
 };
 
 const buildSmartPlan = (sources: SourceStem[]) => {
@@ -315,6 +373,7 @@ const buildSmartPlan = (sources: SourceStem[]) => {
   const groups = categoryOrder.flatMap((category) => {
     const bucket = byCategory.get(category);
     if (!bucket?.length) return [];
+    if (category === 'electric') return createElectricGuitarPlanGroups(bucket);
     return [createPlanGroup(category, bucket, getDefaultPlanAction(category, bucket, hasNonPadSources))];
   });
 
