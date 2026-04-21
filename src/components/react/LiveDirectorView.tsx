@@ -3512,6 +3512,9 @@ export function LiveDirectorView({
   const minimapTrackRef = useRef<HTMLDivElement | null>(null);
   const minimapDragActiveRef = useRef(false);
   const minimapDragPointerIdRef = useRef<number | null>(null);
+  // When set, render a tooltip above the minimap showing the section name and
+  // timestamp at the hovered/dragged position. Cleared when the finger lifts.
+  const [minimapHoverTime, setMinimapHoverTime] = useState<number | null>(null);
 
   const minimapXToTime = useCallback((clientX: number): number => {
     const node = minimapTrackRef.current;
@@ -3536,6 +3539,7 @@ export function LiveDirectorView({
     holdSectionsAutoFollow();
 
     const t = minimapXToTime(event.clientX);
+    setMinimapHoverTime(t);
     void handleSectionSeek(t);
     event.preventDefault();
   }, [handleSectionSeek, holdSectionsAutoFollow, minimapXToTime]);
@@ -3544,6 +3548,7 @@ export function LiveDirectorView({
     if (!minimapDragActiveRef.current) return;
     if (minimapDragPointerIdRef.current !== event.pointerId) return;
     const t = minimapXToTime(event.clientX);
+    setMinimapHoverTime(t);
     void handleSectionSeek(t);
     event.preventDefault();
   }, [handleSectionSeek, minimapXToTime]);
@@ -3556,6 +3561,7 @@ export function LiveDirectorView({
     }
     minimapDragActiveRef.current = false;
     minimapDragPointerIdRef.current = null;
+    setMinimapHoverTime(null);
     // Arm the 5s resume so the big lane auto-follow eventually retakes.
     scheduleSectionsAutoFollowResume();
   }, [scheduleSectionsAutoFollowResume]);
@@ -4438,6 +4444,46 @@ export function LiveDirectorView({
                         }}
                       />
                     </div>
+                    {/* Tooltip que sigue al dedo mientras el usuario arrastra
+                        en el mini-mapa: muestra nombre de sección + timestamp
+                        para que el seek ciego se convierta en seek informado. */}
+                    {minimapHoverTime !== null && playbackTimelineDuration > 0 && (() => {
+                      const hoverPct = clamp(
+                        (minimapHoverTime / playbackTimelineDuration) * 100,
+                        0,
+                        100,
+                      );
+                      const hoverSection = resolvedSections.find(
+                        (s) =>
+                          minimapHoverTime >= s.startTime &&
+                          minimapHoverTime < s.endTime,
+                      );
+                      const hoverLabel = hoverSection?.name
+                        ? hoverSection.name
+                        : 'Sin sección';
+                      const hoverAccent = hoverSection?.accent ?? '#f59e0b';
+                      return (
+                        <div
+                          aria-hidden="true"
+                          className="pointer-events-none absolute -top-[34px] flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-white/18 bg-black/82 px-2.5 py-1 shadow-[0_10px_24px_rgba(0,0,0,0.55)] backdrop-blur-sm"
+                          style={{
+                            left: `${hoverPct}%`,
+                            maxWidth: '70%',
+                          }}
+                        >
+                          <span
+                            className="h-1.5 w-1.5 shrink-0 rounded-full"
+                            style={{ backgroundColor: hoverAccent }}
+                          />
+                          <span className="truncate text-[0.62rem] font-black uppercase tracking-[0.18em] text-white/92">
+                            {hoverLabel}
+                          </span>
+                          <span className="text-[0.6rem] font-bold tabular-nums text-white/72">
+                            {formatClock(minimapHoverTime)}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
