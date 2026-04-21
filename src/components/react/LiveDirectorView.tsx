@@ -5126,25 +5126,72 @@ export function LiveDirectorView({
         </div>
       )}
 
-      {busyMessage && (
-        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/26 backdrop-blur-[8px]">
-          <div className="rounded-[1.6rem] border border-white/10 bg-[linear-gradient(180deg,rgba(16,18,19,0.92),rgba(13,15,16,0.92))] px-6 py-5 shadow-[0_28px_48px_rgba(0,0,0,0.28)]">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-[1rem] border border-cyan-300/15 bg-cyan-300/8">
-                <div className="flex gap-1">
-                  <span className="h-6 w-1.5 animate-pulse rounded-full bg-cyan-300/70 [animation-delay:-240ms]" />
-                  <span className="h-8 w-1.5 animate-pulse rounded-full bg-cyan-300/90 [animation-delay:-120ms]" />
-                  <span className="h-5 w-1.5 animate-pulse rounded-full bg-cyan-300/60" />
+      {busyMessage && (() => {
+        // When we have real load progress, compute fill + counts so the
+        // overlay becomes a live progress indicator instead of an opaque
+        // "please wait" spinner. Fall back to indeterminate style when we
+        // don't know the denominator yet.
+        const hasDeterminateProgress =
+          !!loadProgress && loadProgress.total > 0 && loadProgress.loaded >= 0;
+        const progressPct = hasDeterminateProgress
+          ? clamp(loadProgress!.loaded / loadProgress!.total, 0, 1) * 100
+          : 0;
+        return (
+          <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/26 backdrop-blur-[8px]">
+            <div className="w-[min(26rem,88vw)] rounded-[1.6rem] border border-white/10 bg-[linear-gradient(180deg,rgba(16,18,19,0.92),rgba(13,15,16,0.92))] px-6 py-5 shadow-[0_28px_48px_rgba(0,0,0,0.28)]">
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-[1rem] border border-cyan-300/15 bg-cyan-300/8">
+                  <div className="flex gap-1">
+                    <span className="h-6 w-1.5 animate-pulse rounded-full bg-cyan-300/70 [animation-delay:-240ms]" />
+                    <span className="h-8 w-1.5 animate-pulse rounded-full bg-cyan-300/90 [animation-delay:-120ms]" />
+                    <span className="h-5 w-1.5 animate-pulse rounded-full bg-cyan-300/60" />
+                  </div>
                 </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[0.78rem] font-black uppercase tracking-[0.25em] text-cyan-100/72">En espera</p>
+                  <p className="mt-1 truncate text-[1.18rem] font-semibold text-white">{busyMessage}</p>
+                </div>
+                {hasDeterminateProgress && (
+                  <div className="shrink-0 rounded-full border border-cyan-300/22 bg-cyan-400/10 px-2.5 py-1 text-[0.62rem] font-black uppercase tracking-[0.2em] tabular-nums text-cyan-100/86">
+                    {loadProgress!.loaded}/{loadProgress!.total}
+                  </div>
+                )}
               </div>
-              <div>
-                <p className="text-[0.78rem] font-black uppercase tracking-[0.25em] text-cyan-100/72">En espera</p>
-                <p className="mt-1 text-[1.18rem] font-semibold text-white">{busyMessage}</p>
-              </div>
+              {hasDeterminateProgress && (
+                <div className="mt-4">
+                  <div
+                    className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/8"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={loadProgress!.total}
+                    aria-valuenow={loadProgress!.loaded}
+                    aria-label="Progreso de carga de stems"
+                  >
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-cyan-300 via-cyan-200 to-teal-200 shadow-[0_0_14px_rgba(103,232,249,0.45)]"
+                      style={{
+                        width: `${Math.max(progressPct, 4)}%`,
+                        transition: 'width 200ms ease',
+                        willChange: 'width',
+                      }}
+                    />
+                  </div>
+                  <p className="mt-2 text-[0.66rem] font-semibold uppercase tracking-[0.18em] text-white/46">
+                    {Math.round(progressPct)}% — {loadProgress!.total - loadProgress!.loaded} stem{loadProgress!.total - loadProgress!.loaded === 1 ? '' : 's'} restante{loadProgress!.total - loadProgress!.loaded === 1 ? '' : 's'}
+                  </p>
+                </div>
+              )}
+              {!hasDeterminateProgress && (
+                <div className="mt-4">
+                  <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-white/8">
+                    <div className="live-director-indeterminate absolute inset-y-0 w-1/3 rounded-full bg-gradient-to-r from-cyan-300/70 via-cyan-200/90 to-cyan-300/70 shadow-[0_0_12px_rgba(103,232,249,0.4)]" />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {loadError && (
         <div className="absolute inset-0 z-[70] flex items-center justify-center bg-black/24 backdrop-blur-[8px]">
