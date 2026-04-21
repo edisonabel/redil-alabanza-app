@@ -85,6 +85,8 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private let preferCompressedAudioCache = true
     private let internalPadTrackId = "__internal-pad__"
     private let maxScheduledSilencePadSeconds: Double = 1.0
+    private let internalPadTailSeconds: Double = 30.0
+    private let internalPadFadeOutSeconds: Double = 10.0
     private var engine = AVAudioEngine()
     private var tracks: [NativeTrack] = []
     private var trackLevels: [String: Double] = [:]
@@ -95,8 +97,10 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private var playbackAnchorOffset: Double = 0
     private var playbackStartHostTime: UInt64 = 0
     private var duration: Double = 0
+    private var playbackStopDuration: Double = 0
     private var masterVolume: Float = 1
     private var soloTrackId: String?
+    private var internalPadFadeScale: Float = 1
     private var stateTimer: DispatchSourceTimer?
     private var didRegisterAudioSessionObservers = false
     // Now Playing / lock screen metadata. Set from the JS side with
@@ -698,6 +702,8 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                 self.tracks = nextTracks
                 let timelineTracks = nextTracks.filter { !self.isInternalPadTrack($0) }
                 self.duration = (timelineTracks.isEmpty ? nextTracks : timelineTracks).map(\.duration).max() ?? 0
+                self.playbackStopDuration = self.duration + (nextTracks.contains(where: { self.isInternalPadTrack($0) }) ? self.internalPadTailSeconds : 0)
+                self.internalPadFadeScale = 1
                 self.seekOffset = 0
                 self.trackLevels = nextTracks.reduce(into: [String: Double]()) { levels, track in
                     levels[track.id] = 0
@@ -763,6 +769,9 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             track.player.prepare(withFrameCount: playerPrepareFrameCount)
         }
 
+        internalPadFadeScale = internalPadFadeScale(forElapsed: seekOffset)
+        tracks.forEach { applyTrackMixState($0) }
+
         // Pass 3: arm every player to start at the same hostTime. Done last so
         //         scheduling work above doesn't eat into the start delay and
         //         push some nodes past the target (which used to happen when
@@ -786,8 +795,8 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         let sampleRate = track.file.processingFormat.sampleRate
         var scheduleEndFrame = track.file.length
         if isInternalPadTrack(track), duration > 0, sampleRate > 0 {
-            let timelineEndFrame = AVAudioFramePosition((duration * sampleRate).rounded(.up))
-            scheduleEndFrame = min(scheduleEndFrame, max(0, timelineEndFrame))
+            let padEndFrame = AVAudioFramePosition((playbackStopDuration * sampleRate).rounded(.up))
+            scheduleEndFrame = min(scheduleEndFrame, max(0, padEndFrame))
         }
 
         let remainingFrames = scheduleEndFrame - track.scheduledUntilFrame
@@ -900,6 +909,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             playbackAnchorOffset = 0
             playbackStartHostTime = 0
         }
+        internalPadFadeScale = 1
         tracks.forEach { $0.scheduledUntilFrame = 0 }
         resetMeters()
         if shouldEmitState {
@@ -919,26 +929,31 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     }
 
     private func currentTime() -> Double {
+        return min(duration, max(0, rawCurrentTime()))
+    }
+
+    private func rawCurrentTime() -> Double {
         if isPlaying {
             if playbackStartHostTime > 0 {
                 let nowHostTime = mach_absolute_time()
                 if nowHostTime <= playbackStartHostTime {
-                    return min(duration, max(0, playbackAnchorOffset))
+                    return max(0, playbackAnchorOffset)
                 }
 
                 let elapsedHostTime = nowHostTime - playbackStartHostTime
                 let elapsedSeconds = AVAudioTime.seconds(forHostTime: elapsedHostTime)
-                return min(duration, max(0, playbackAnchorOffset + elapsedSeconds))
+                return max(0, playbackAnchorOffset + elapsedSeconds)
             }
-            return min(duration, max(0, CACurrentMediaTime() - playStartWallTime))
+            return max(0, CACurrentMediaTime() - playStartWallTime)
         }
 
-        return min(duration, max(0, seekOffset))
+        return max(0, seekOffset)
     }
 
     private func applyTrackMixState(_ track: NativeTrack) {
         let soloAllowsTrack = soloTrackId == nil || soloTrackId == track.id
-        track.player.volume = track.isMuted || !soloAllowsTrack ? 0 : track.volume
+        let fadeScale = isInternalPadTrack(track) ? internalPadFadeScale : 1
+        track.player.volume = track.isMuted || !soloAllowsTrack ? 0 : track.volume * fadeScale
 
         switch track.outputRoute {
         case "left":
@@ -987,7 +1002,9 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             if !self.isPlaying {
                 return
             }
-            if self.isPlaying && self.duration > 0 && self.currentTime() >= self.duration {
+            let elapsed = self.rawCurrentTime()
+            self.updateInternalPadTailFade(elapsed: elapsed)
+            if self.isPlaying && self.playbackStopDuration > 0 && elapsed >= self.playbackStopDuration {
                 self.stopPlayback(resetPosition: true)
                 return
             }
@@ -1070,6 +1087,40 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
     private func isInternalPadTrack(_ track: NativeTrack) -> Bool {
         track.id == internalPadTrackId
+    }
+
+    private func internalPadFadeScale(forElapsed elapsed: Double) -> Float {
+        guard
+            duration > 0,
+            playbackStopDuration > duration,
+            internalPadFadeOutSeconds > 0,
+            tracks.contains(where: { isInternalPadTrack($0) })
+        else {
+            return 1
+        }
+
+        let fadeStart = max(duration, playbackStopDuration - internalPadFadeOutSeconds)
+        if elapsed <= fadeStart {
+            return 1
+        }
+        if elapsed >= playbackStopDuration {
+            return 0
+        }
+
+        let remaining = max(0, playbackStopDuration - elapsed)
+        return Float(min(1, max(0, remaining / internalPadFadeOutSeconds)))
+    }
+
+    private func updateInternalPadTailFade(elapsed: Double) {
+        let nextScale = internalPadFadeScale(forElapsed: elapsed)
+        guard abs(nextScale - internalPadFadeScale) > 0.001 else {
+            return
+        }
+
+        internalPadFadeScale = nextScale
+        tracks
+            .filter { isInternalPadTrack($0) }
+            .forEach { applyTrackMixState($0) }
     }
 
     private func isLinearPCMFile(_ file: AVAudioFile) -> Bool {
