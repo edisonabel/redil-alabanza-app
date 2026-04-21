@@ -12,14 +12,26 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 
 const MAX_STEMS = 15;
+const TARGET_STEMS = 10;
 const DEFAULT_BITRATE = '256k';
 const FFmpegCoreVersion = '0.12.10';
 
 type StemStatus = 'queued' | 'processing' | 'done' | 'error';
+type StemCategory = 'clickGuide' | 'drums' | 'bass' | 'piano' | 'keys' | 'acoustic' | 'electric' | 'percussion' | 'vocals' | 'pads' | 'misc';
+type PlanAction = 'keep' | 'merge' | 'skip';
+
+type SourceStem = {
+  id: string;
+  file: File;
+  name: string;
+  relativePath: string;
+  size: number;
+  category: StemCategory;
+};
 
 type StemItem = {
   id: string;
-  file: File;
+  sources: SourceStem[];
   name: string;
   relativePath: string;
   size: number;
@@ -28,6 +40,15 @@ type StemItem = {
   outputName?: string;
   outputSize?: number;
   error?: string;
+};
+
+type SmartPlanGroup = {
+  id: string;
+  action: PlanAction;
+  category: StemCategory;
+  name: string;
+  reason: string;
+  sources: SourceStem[];
 };
 
 type OutputAsset = {
@@ -88,6 +109,13 @@ const getFileExtension = (name: string) => {
 
 const getFileBaseName = (name: string) => name.replace(/\.[^.]+$/, '');
 
+const normalizeText = (value: string) => value
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase();
+
+const tokenize = (value: string) => normalizeText(value).split(/[^a-z0-9]+/).filter(Boolean);
+
 const sanitizeFileName = (value: string) => {
   const safe = value
     .normalize('NFD')
@@ -104,20 +132,213 @@ const buildStemId = (file: File, index: number) => {
   return `${index}-${relativePath}-${file.size}-${file.lastModified}`;
 };
 
-const buildOutputName = (file: File, index: number) => {
-  const base = sanitizeFileName(getFileBaseName(file.name));
+const buildOutputName = (name: string, index: number) => {
+  const base = sanitizeFileName(getFileBaseName(name));
   return `${String(index + 1).padStart(2, '0')}-${base}.m4a`;
 };
 
-const buildInputName = (file: File, index: number) => {
+const buildInputName = (file: File, index: number, sourceIndex = 0) => {
   const extension = getFileExtension(file.name) || 'audio';
-  return `input-${index}.${extension}`;
+  return `input-${index}-${sourceIndex}.${extension}`;
 };
 
 const isSupportedAudio = (file: File) => {
   const extension = getFileExtension(file.name);
   return AUDIO_EXTENSIONS.has(extension) || file.type.startsWith('audio/');
 };
+
+const hasAny = (text: string, words: string[]) => words.some((word) => text.includes(word));
+
+const hasToken = (tokens: string[], words: string[]) => words.some((word) => tokens.includes(word));
+
+const categorizeStem = (file: File): StemCategory => {
+  const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
+  const text = normalizeText(`${relativePath} ${getFileBaseName(file.name)}`);
+  const tokens = tokenize(text);
+
+  if (
+    hasToken(tokens, ['click', 'clic', 'metro', 'metronomo', 'metronome', 'tempo', 'bpm', 'cue', 'cues', 'guide', 'guia', 'guias'])
+    || hasAny(text, ['voz guia', 'count in', 'count-in', 'talkback'])
+  ) {
+    return 'clickGuide';
+  }
+
+  if (hasAny(text, ['synthbass', 'synth bass'])) return 'misc';
+  if (hasToken(tokens, ['drums', 'drum', 'bateria', 'baterias'])) return 'drums';
+  if (hasToken(tokens, ['bass', 'bajo'])) return 'bass';
+  if (hasToken(tokens, ['piano', 'grand', 'upright'])) return 'piano';
+  if (hasToken(tokens, ['keys', 'key', 'teclas', 'tecla', 'organ', 'organo', 'rhodes', 'wurli', 'wurlitzer', 'ep', 'synth', 'strings', 'string', 'brass'])) return 'keys';
+  if (hasToken(tokens, ['ga', 'gac', 'acoustic', 'acustica']) || hasAny(text, ['guitarra acustica', 'gtr ac'])) return 'acoustic';
+  if (hasToken(tokens, ['ge', 'ge1', 'ge2', 'ge3', 'g1', 'g1a', 'g1b', 'g2', 'eg', 'egtr', 'electric', 'electrica', 'lead', 'dist'])) return 'electric';
+  if (hasAny(text, ['guitarra electrica', 'gtr elec', 'gtr electric'])) return 'electric';
+  if (hasToken(tokens, ['perc', 'percs', 'percussion', 'percusion', 'shaker', 'tamb', 'tambourine', 'conga', 'bongo', 'loop', 'loops'])) return 'percussion';
+  if (hasToken(tokens, ['pad', 'pads', 'ambient', 'ambiente', 'atmos', 'colchon', 'colchones'])) return 'pads';
+  if (hasToken(tokens, ['voz', 'voces', 'vocal', 'vocals', 'coro', 'coros', 'choir', 'bgv', 'bv'])) return 'vocals';
+  if (hasAny(text, ['guitar', 'guitarra', 'gtr'])) return 'electric';
+
+  return 'misc';
+};
+
+const categoryOrder: StemCategory[] = [
+  'clickGuide',
+  'drums',
+  'bass',
+  'piano',
+  'keys',
+  'acoustic',
+  'electric',
+  'percussion',
+  'vocals',
+  'misc',
+  'pads',
+];
+
+const categoryMeta: Record<StemCategory, { name: string; mergeReason: string; keepReason: string; skipReason?: string }> = {
+  clickGuide: {
+    name: 'Click + Guia',
+    mergeReason: 'Click, guia y cues en una sola pista.',
+    keepReason: 'Guia de tiempo lista.',
+  },
+  drums: {
+    name: 'Bateria',
+    mergeReason: 'Bateria unificada y separada de la percusion extra.',
+    keepReason: 'Base ritmica principal.',
+  },
+  bass: {
+    name: 'Bajo',
+    mergeReason: 'Bajos juntos para mantener un solo canal base.',
+    keepReason: 'Base armonica principal.',
+  },
+  piano: {
+    name: 'Piano',
+    mergeReason: 'Pianos juntos en un solo apoyo.',
+    keepReason: 'Instrumento base frecuente.',
+  },
+  keys: {
+    name: 'Keys / Organos',
+    mergeReason: 'Teclas, organos y synths juntos como apoyo.',
+    keepReason: 'Apoyo de teclas.',
+  },
+  acoustic: {
+    name: 'Guitarras acusticas',
+    mergeReason: 'Acusticas similares en una sola pista.',
+    keepReason: 'Acustica principal.',
+  },
+  electric: {
+    name: 'Guitarras electricas',
+    mergeReason: 'GE, G1, G2 y leads juntos para ahorrar canales.',
+    keepReason: 'Electrica principal.',
+  },
+  percussion: {
+    name: 'Percusion extra',
+    mergeReason: 'Loops y percusiones extra juntos.',
+    keepReason: 'Percusion extra.',
+  },
+  vocals: {
+    name: 'Coros / Voces',
+    mergeReason: 'Coros y voces de apoyo en una sola guia.',
+    keepReason: 'Voz de apoyo.',
+  },
+  misc: {
+    name: 'Extras / FX',
+    mergeReason: 'Extras poco criticos juntos.',
+    keepReason: 'Extra disponible.',
+  },
+  pads: {
+    name: 'Pads / Ambiente',
+    mergeReason: 'Pads juntos si decides usarlos.',
+    keepReason: 'Pad disponible.',
+    skipReason: 'Sugerido omitir: puedes usar el pad interno.',
+  },
+};
+
+const sourceStemFromFile = (file: File, index: number): SourceStem => {
+  const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
+  return {
+    id: buildStemId(file, index),
+    file,
+    name: file.name,
+    relativePath,
+    size: file.size,
+    category: categorizeStem(file),
+  };
+};
+
+const createPlanGroup = (category: StemCategory, sources: SourceStem[], action?: PlanAction): SmartPlanGroup => {
+  const meta = categoryMeta[category];
+  const finalAction = action || (sources.length > 1 ? 'merge' : 'keep');
+  return {
+    id: `${category}-${sources.map((source) => source.id).join('|')}`,
+    action: finalAction,
+    category,
+    name: meta.name,
+    reason: finalAction === 'skip'
+      ? (meta.skipReason || 'Sugerido omitir para ahorrar canales.')
+      : sources.length > 1
+        ? meta.mergeReason
+        : meta.keepReason,
+    sources,
+  };
+};
+
+const buildSmartPlan = (sources: SourceStem[]) => {
+  const byCategory = new Map<StemCategory, SourceStem[]>();
+  sources.forEach((source) => {
+    const bucket = byCategory.get(source.category) || [];
+    bucket.push(source);
+    byCategory.set(source.category, bucket);
+  });
+
+  const hasNonPadSources = sources.some((source) => source.category !== 'pads');
+  const groups = categoryOrder.flatMap((category) => {
+    const bucket = byCategory.get(category);
+    if (!bucket?.length) return [];
+    const shouldSkip = category === 'pads' && hasNonPadSources;
+    return [createPlanGroup(category, bucket, shouldSkip ? 'skip' : undefined)];
+  });
+
+  const outputGroups = groups.filter((group) => group.action !== 'skip');
+  if (outputGroups.length <= MAX_STEMS) {
+    return groups;
+  }
+
+  const allowedIds = new Set(outputGroups.slice(0, MAX_STEMS).map((group) => group.id));
+  return groups.map((group) => (
+    group.action !== 'skip' && !allowedIds.has(group.id)
+      ? { ...group, action: 'skip' as PlanAction, reason: `Sugerido omitir para mantener maximo ${MAX_STEMS} stems.` }
+      : group
+  ));
+};
+
+const planGroupsToStems = (groups: SmartPlanGroup[]) => groups
+  .filter((group) => group.action !== 'skip')
+  .slice(0, MAX_STEMS)
+  .map<StemItem>((group, index) => {
+    const sourceNames = group.sources.map((source) => source.name);
+    return {
+      id: `plan-${index}-${group.id}`,
+      sources: group.sources,
+      name: group.name,
+      relativePath: sourceNames.length > 3
+        ? `${sourceNames.slice(0, 3).join(', ')} +${sourceNames.length - 3}`
+        : sourceNames.join(', '),
+      size: group.sources.reduce((total, source) => total + source.size, 0),
+      status: 'queued',
+      progress: 0,
+      outputName: buildOutputName(group.name, index),
+    };
+  });
+
+const rawSourcesToStems = (sources: SourceStem[]) => sources.slice(0, MAX_STEMS).map<StemItem>((source, index) => ({
+  id: `raw-${index}-${source.id}`,
+  sources: [source],
+  name: source.name,
+  relativePath: source.relativePath,
+  size: source.size,
+  status: 'queued',
+  progress: 0,
+  outputName: buildOutputName(source.name, index),
+}));
 
 const getStatusLabel = (status: StemStatus) => {
   switch (status) {
@@ -164,6 +385,9 @@ export default function StemConverterTool() {
   const [zipName, setZipName] = useState('stems-aac-256k.zip');
   const [zipProgress, setZipProgress] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [pendingSources, setPendingSources] = useState<SourceStem[]>([]);
+  const [smartPlan, setSmartPlan] = useState<SmartPlanGroup[]>([]);
+  const [isPlanOpen, setIsPlanOpen] = useState(false);
 
   const selectedTotalBytes = useMemo(
     () => stems.reduce((total, item) => total + item.size, 0),
@@ -183,6 +407,20 @@ export default function StemConverterTool() {
   const hasFailed = useMemo(
     () => stems.some((item) => item.status === 'error'),
     [stems],
+  );
+  const planOutputCount = useMemo(
+    () => smartPlan.filter((group) => group.action !== 'skip').length,
+    [smartPlan],
+  );
+  const planMergeCount = useMemo(
+    () => smartPlan.filter((group) => group.action === 'merge').length,
+    [smartPlan],
+  );
+  const planSkippedCount = useMemo(
+    () => smartPlan
+      .filter((group) => group.action === 'skip')
+      .reduce((total, group) => total + group.sources.length, 0),
+    [smartPlan],
   );
 
   const canConvert = stems.length > 0 && !isConverting;
@@ -248,20 +486,28 @@ export default function StemConverterTool() {
         return pathA.localeCompare(pathB);
       });
 
-    const selectedFiles = audioFiles.slice(0, MAX_STEMS);
+    const sources = audioFiles.map(sourceStemFromFile);
+    const nextPlan = buildSmartPlan(sources);
     setRejectedCount(allFiles.length - audioFiles.length);
-    setOmittedCount(Math.max(0, audioFiles.length - selectedFiles.length));
-    setStems(selectedFiles.map((file, index) => ({
-      id: buildStemId(file, index),
-      file,
-      name: file.name,
-      relativePath: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
-      size: file.size,
-      status: 'queued',
-      progress: 0,
-      outputName: buildOutputName(file, index),
-    })));
+    setOmittedCount(0);
+    setPendingSources(sources);
+    setSmartPlan(nextPlan);
+    setIsPlanOpen(sources.length > 0);
+    setStems([]);
   }, [resetOutputs]);
+
+  const applySmartPlan = useCallback(() => {
+    const nextStems = planGroupsToStems(smartPlan);
+    setStems(nextStems);
+    setOmittedCount(planSkippedCount);
+    setIsPlanOpen(false);
+  }, [planSkippedCount, smartPlan]);
+
+  const applyRawPlan = useCallback(() => {
+    setStems(rawSourcesToStems(pendingSources));
+    setOmittedCount(Math.max(0, pendingSources.length - MAX_STEMS));
+    setIsPlanOpen(false);
+  }, [pendingSources]);
 
   const loadEngine = useCallback(async () => {
     if (ffmpegRef.current) {
@@ -313,8 +559,8 @@ export default function StemConverterTool() {
   }, []);
 
   const convertOneStem = useCallback(async (ffmpeg: FFmpegInstance, stem: StemItem, index: number) => {
-    const inputName = buildInputName(stem.file, index);
-    const outputName = buildOutputName(stem.file, index);
+    const inputNames = stem.sources.map((source, sourceIndex) => buildInputName(source.file, index, sourceIndex));
+    const outputName = stem.outputName || buildOutputName(stem.name, index);
 
     activeStemIdRef.current = stem.id;
     updateStem(stem.id, {
@@ -326,17 +572,14 @@ export default function StemConverterTool() {
     });
 
     try {
-      const inputBytes = new Uint8Array(await stem.file.arrayBuffer());
-      await ffmpeg.writeFile(inputName, inputBytes);
+      for (let sourceIndex = 0; sourceIndex < stem.sources.length; sourceIndex += 1) {
+        const inputBytes = new Uint8Array(await stem.sources[sourceIndex].file.arrayBuffer());
+        await ffmpeg.writeFile(inputNames[sourceIndex], inputBytes);
+      }
 
-      await ffmpeg.exec([
-        '-hide_banner',
-        '-y',
-        '-i',
-        inputName,
+      const inputArgs = inputNames.flatMap((inputName) => ['-i', inputName]);
+      const outputArgs = [
         '-vn',
-        '-map',
-        '0:a:0',
         '-map_metadata',
         '-1',
         '-c:a',
@@ -348,7 +591,28 @@ export default function StemConverterTool() {
         '-movflags',
         '+faststart',
         outputName,
-      ]);
+      ];
+      const command = inputNames.length === 1
+        ? [
+          '-hide_banner',
+          '-y',
+          ...inputArgs,
+          '-map',
+          '0:a:0',
+          ...outputArgs,
+        ]
+        : [
+          '-hide_banner',
+          '-y',
+          ...inputArgs,
+          '-filter_complex',
+          `${inputNames.map((_, sourceIndex) => `[${sourceIndex}:a:0]`).join('')}amix=inputs=${inputNames.length}:duration=longest:normalize=1,alimiter=limit=0.95[a]`,
+          '-map',
+          '[a]',
+          ...outputArgs,
+        ];
+
+      await ffmpeg.exec(command);
 
       const result = await ffmpeg.readFile(outputName);
       if (typeof result === 'string') {
@@ -377,7 +641,7 @@ export default function StemConverterTool() {
       });
     } finally {
       activeStemIdRef.current = null;
-      await cleanupFfmpegFile(ffmpeg, inputName);
+      await Promise.all(inputNames.map((inputName) => cleanupFfmpegFile(ffmpeg, inputName)));
       await cleanupFfmpegFile(ffmpeg, outputName);
     }
   }, [cleanupFfmpegFile, updateStem]);
@@ -449,6 +713,9 @@ export default function StemConverterTool() {
   const clearSelection = useCallback(() => {
     resetOutputs();
     setStems([]);
+    setPendingSources([]);
+    setSmartPlan([]);
+    setIsPlanOpen(false);
     setRejectedCount(0);
     setOmittedCount(0);
     setErrorMessage('');
@@ -503,6 +770,97 @@ export default function StemConverterTool() {
         onChange={(event: ChangeEvent<HTMLInputElement>) => handleFiles(event.target.files)}
         {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
       />
+
+      {isPlanOpen ? (
+        <div className="fixed inset-0 z-[140] flex items-end justify-center bg-black/60 p-3 backdrop-blur-sm sm:items-center sm:p-6">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="smart-plan-title"
+            className="max-h-[90dvh] w-full max-w-4xl overflow-hidden rounded-[1.5rem] border border-border bg-surface shadow-2xl"
+          >
+            <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-[0.72rem] font-black uppercase tracking-[0.22em] text-brand">Cerebro de stems</p>
+                <h2 id="smart-plan-title" className="text-xl font-black text-content sm:text-2xl">
+                  {pendingSources.length} archivos a {planOutputCount} stems
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPlanOpen(false)}
+                className="ui-pressable-soft inline-flex min-h-10 w-max items-center justify-center rounded-xl border border-border bg-background px-4 text-sm font-bold text-content"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div className="grid max-h-[58dvh] gap-3 overflow-y-auto p-4 sm:grid-cols-2">
+              {smartPlan.map((group) => {
+                const isSkipped = group.action === 'skip';
+                const actionLabel = group.action === 'merge'
+                  ? 'Fusionar'
+                  : group.action === 'skip'
+                    ? 'Omitir sugerido'
+                    : 'Mantener';
+                return (
+                  <article
+                    key={group.id}
+                    className={`rounded-2xl border p-4 ${isSkipped ? 'border-border bg-background/70 opacity-75' : 'border-border bg-background'}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="truncate font-black text-content">{group.name}</h3>
+                        <p className="mt-1 text-xs text-content-muted">{group.reason}</p>
+                      </div>
+                      <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-black ${isSkipped ? 'border-border text-content-muted' : group.action === 'merge' ? 'border-brand/30 bg-brand/10 text-brand' : 'border-success/30 bg-success/10 text-success'}`}>
+                        {actionLabel}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-xs font-bold text-content-muted">
+                      {group.sources.length} pista{group.sources.length === 1 ? '' : 's'}
+                    </p>
+                    <div className="mt-2 space-y-1">
+                      {group.sources.slice(0, 4).map((source) => (
+                        <p key={source.id} className="truncate text-xs text-content-muted">
+                          {source.name}
+                        </p>
+                      ))}
+                      {group.sources.length > 4 ? (
+                        <p className="text-xs font-bold text-content-muted">+{group.sources.length - 4} mas</p>
+                      ) : null}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+
+            <div className="border-t border-border px-5 py-4">
+              <div className="mb-4 flex flex-wrap gap-2 text-xs font-bold text-content-muted">
+                <span className="rounded-full border border-border bg-background px-3 py-1.5">Meta ideal: {TARGET_STEMS}</span>
+                <span className="rounded-full border border-border bg-background px-3 py-1.5">Fusiones: {planMergeCount}</span>
+                <span className="rounded-full border border-border bg-background px-3 py-1.5">Omitidos sugeridos: {planSkippedCount}</span>
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={applyRawPlan}
+                  className="ui-pressable-soft inline-flex min-h-12 items-center justify-center rounded-2xl border border-border bg-background px-5 font-bold text-content"
+                >
+                  Sin fusionar
+                </button>
+                <button
+                  type="button"
+                  onClick={applySmartPlan}
+                  className="ui-pressable inline-flex min-h-12 items-center justify-center rounded-2xl bg-brand px-5 font-bold text-white shadow-lg"
+                >
+                  Aplicar plan
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
         <div className="space-y-5">
@@ -576,6 +934,16 @@ export default function StemConverterTool() {
                 {isConverting || isLoadingEngine ? <Loader2 className="h-5 w-5 animate-spin" /> : <Music4 className="h-5 w-5" />}
                 {isLoadingEngine ? 'Cargando motor...' : isConverting ? 'Convirtiendo...' : stems.length ? `Convertir ${stems.length} a M4A` : 'Selecciona stems'}
               </button>
+              {smartPlan.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setIsPlanOpen(true)}
+                  disabled={isConverting}
+                  className="ui-pressable-soft inline-flex min-h-12 items-center justify-center rounded-2xl border border-border bg-background px-5 font-bold text-content transition disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Ver plan
+                </button>
+              ) : null}
               {zipUrl ? (
                 <a
                   href={zipUrl}
@@ -589,7 +957,7 @@ export default function StemConverterTool() {
               <button
                 type="button"
                 onClick={clearSelection}
-                disabled={isConverting || stems.length === 0}
+                disabled={isConverting || (stems.length === 0 && pendingSources.length === 0)}
                 className="ui-pressable-soft inline-flex min-h-12 items-center justify-center rounded-2xl border border-border bg-background px-5 font-bold text-content-muted transition disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Limpiar
@@ -652,7 +1020,9 @@ export default function StemConverterTool() {
                           )}
                           <p className="truncate font-bold text-content">{stem.name}</p>
                         </div>
-                        <p className="mt-1 truncate text-xs text-content-muted">{stem.relativePath}</p>
+                        <p className="mt-1 truncate text-xs text-content-muted">
+                          {stem.sources.length > 1 ? `${stem.sources.length} pistas: ${stem.relativePath}` : stem.relativePath}
+                        </p>
                         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
                           <div
                             className={`h-full rounded-full transition-all ${stem.status === 'error' ? 'bg-danger' : stem.status === 'done' ? 'bg-success' : 'bg-brand'}`}
@@ -725,7 +1095,7 @@ export default function StemConverterTool() {
 
           {(omittedCount > 0 || rejectedCount > 0) ? (
             <div className="mt-4 rounded-2xl border border-border bg-background p-3 text-sm text-content-muted">
-              {omittedCount > 0 ? <p>{omittedCount} omitidos por superar {MAX_STEMS} stems.</p> : null}
+              {omittedCount > 0 ? <p>{omittedCount} omitidos por sugerencia o limite.</p> : null}
               {rejectedCount > 0 ? <p>{rejectedCount} ignorados por no parecer audio.</p> : null}
             </div>
           ) : null}
