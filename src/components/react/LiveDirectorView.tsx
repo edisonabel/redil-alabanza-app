@@ -1286,6 +1286,11 @@ export function LiveDirectorView({
   const [soloTrackId, setSoloTrackId] = useState<string | null>(null);
   const [masterVolume, setMasterVolumeState] = useState(0.82);
   const [loopEnabled, setLoopEnabled] = useState(false);
+  // Section-loop rehearsal mode: persistent toggle that keeps the current
+  // section in a loop. When the playhead enters a new section (user clicks
+  // another button, or we use prev/next-section), loop points retarget to
+  // the new active section so the user can rehearse any part hands-free.
+  const [sectionLoopMode, setSectionLoopMode] = useState(false);
   const [surfaceView, setSurfaceView] = useState<SurfaceView>('mix');
   const [showOffsetModal, setShowOffsetModal] = useState(false);
   const [showTrackLoadModal, setShowTrackLoadModal] = useState(false);
@@ -2115,6 +2120,34 @@ export function LiveDirectorView({
       // Ignore — haptics are best-effort.
     }
   }, [activeSectionIndex, isPlaying]);
+
+  // Section-loop rehearsal orchestration. When the mode is on and a section
+  // is active, retarget engine loop points to that section's span and enable
+  // loop. When the mode flips off, disable loop. Runs on every
+  // activeSection.id / mode transition so section-to-section jumps retarget
+  // the loop cleanly.
+  useEffect(() => {
+    if (!sectionLoopMode) {
+      if (loopEnabled) {
+        toggleLoop();
+        setLoopEnabled(false);
+      }
+      return;
+    }
+    if (!activeSection) {
+      return;
+    }
+    setLoopPoints(activeSection.startTime, activeSection.endTime);
+    if (!loopEnabled) {
+      toggleLoop();
+      setLoopEnabled(true);
+    }
+  }, [
+    sectionLoopMode,
+    activeSection?.id,
+    activeSection?.startTime,
+    activeSection?.endTime,
+  ]); // eslint-disable-line react-hooks/exhaustive-deps -- intentionally omit engine refs to avoid toggle thrash
 
   const syncManualSessionState = useCallback((session: LiveDirectorResolvedSession) => {
     setLoadError(null);
@@ -3876,6 +3909,24 @@ export function LiveDirectorView({
                 title="Ir a la siguiente seccion"
               >
                 <ChevronsRight className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-5 w-5' : 'h-7 w-7'}`} strokeWidth={isCompactLandscape ? 2 : 2.4} />
+              </button>
+
+              {/* Section-loop rehearsal toggle — single-touch way to loop the
+                  current section hands-free. Retargets automatically when the
+                  active section changes (user taps another, or next/prev). */}
+              <button
+                type="button"
+                onClick={() => setSectionLoopMode((previous) => !previous)}
+                disabled={!hasTrackSession || resolvedSections.length === 0}
+                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3' : isCompactLandscape ? 'h-10 px-3.5' : 'h-[var(--ld-control-height)] px-4'} justify-center ${sectionLoopMode ? 'text-emerald-200 border-emerald-300/40 bg-emerald-400/12' : 'text-white/70 hover:text-white'} disabled:cursor-not-allowed disabled:text-white/24`}
+                style={{ width: scaleRem(isUltraCompactLandscape ? 3.25 : isCompactLandscape ? 4.15 : 4.5, 2.8) }}
+                aria-label={sectionLoopMode ? 'Desactivar bucle de sección' : 'Activar bucle de sección'}
+                aria-pressed={sectionLoopMode}
+                title={sectionLoopMode
+                  ? `Bucle de sección ACTIVO${activeSection ? ` — ${activeSection.name}` : ''}`
+                  : 'Bucle de sección — repite la sección actual hasta que la apagues'}
+              >
+                <Repeat className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : 'h-5 w-5'}`} />
               </button>
 
               {!isShowMode && (
