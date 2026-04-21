@@ -6,7 +6,5 @@
 		"url": "https://alabanzaredilestadio.com",
 		"cleartext": false
 	},
-	"packageClassList": [
-		"App.NativeLiveDirectorEnginePlugin"
-	]
+	"packageClassList": []
 }

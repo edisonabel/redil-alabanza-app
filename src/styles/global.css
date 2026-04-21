@@ -515,6 +515,20 @@ select {
   animation: liveDirectorAutoFollowRing 5000ms linear forwards;
 }
 
+/* ── Live Director indeterminate progress ─────────────────────────────── */
+/* Back-and-forth wipe used by the busy/load overlay when we don't yet
+   have a loaded/total count (before `loadProgress` arrives). Paired with
+   a track of `overflow: hidden`. */
+@keyframes liveDirectorIndeterminate {
+  0%   { transform: translateX(-120%); }
+  50%  { transform: translateX(100%); }
+  100% { transform: translateX(340%); }
+}
+.live-director-indeterminate {
+  animation: liveDirectorIndeterminate 1400ms ease-in-out infinite;
+  will-change: transform;
+}
+
 @media (prefers-reduced-motion: reduce) {
   :where(
     button,

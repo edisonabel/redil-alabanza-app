@@ -3,6 +3,7 @@ import AVFoundation
 import Capacitor
 import CryptoKit
 import Foundation
+import MediaPlayer
 import QuartzCore
 import UIKit
 
@@ -22,7 +23,9 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         CAPPluginMethod(name: "soloTrack", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setMasterVolume", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setMetersEnabled", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "getState", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "getState", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setNowPlayingMetadata", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearNowPlayingMetadata", returnType: CAPPluginReturnPromise)
     ]
 
     private struct ActivityEnvelope {
@@ -94,11 +97,20 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private var soloTrackId: String?
     private var stateTimer: DispatchSourceTimer?
     private var didRegisterAudioSessionObservers = false
+    // Now Playing / lock screen metadata. Set from the JS side with
+    // `setNowPlayingMetadata({title, artist, albumTitle})` when a song is
+    // loaded. Kept in sync with the engine's isPlaying / currentTime / duration
+    // by updateNowPlayingInfo(), which we call on every transport event.
+    private var nowPlayingTitle: String?
+    private var nowPlayingArtist: String?
+    private var nowPlayingAlbumTitle: String?
+    private var didConfigureRemoteCommandCenter = false
 
     @objc public override func load() {
         super.load()
         registerAudioSessionObservers()
         configureAudioSession()
+        configureRemoteCommandCenter()
     }
 
     deinit {
@@ -187,6 +199,10 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                     }
                     return
                 }
+            } else {
+                // Paused seek — startPlayback() won't fire, so push the new
+                // position to the lock screen ourselves.
+                self.updateNowPlayingInfo()
             }
             let payload = self.statePayload()
             DispatchQueue.main.async {
@@ -306,6 +322,38 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             let payload = self.statePayload()
             DispatchQueue.main.async {
                 call.resolve(payload)
+            }
+        }
+    }
+
+    /// Accept a title/artist/album from the JS side and push them to the
+    /// lock screen / Now Playing center. Safe to call as often as metadata
+    /// changes (e.g. when the user picks a different song).
+    @objc func setNowPlayingMetadata(_ call: CAPPluginCall) {
+        let title = call.getString("title") ?? ""
+        let artist = call.getString("artist")
+        let albumTitle = call.getString("albumTitle")
+        engineQueue.async {
+            self.nowPlayingTitle = title.isEmpty ? nil : title
+            self.nowPlayingArtist = artist?.isEmpty == true ? nil : artist
+            self.nowPlayingAlbumTitle = albumTitle?.isEmpty == true ? nil : albumTitle
+            self.updateNowPlayingInfo()
+            DispatchQueue.main.async {
+                call.resolve()
+            }
+        }
+    }
+
+    /// Used when leaving the Live Director screen — clears the lock-screen
+    /// card so we don't advertise a song we aren't actually playing anymore.
+    @objc func clearNowPlayingMetadata(_ call: CAPPluginCall) {
+        engineQueue.async {
+            self.nowPlayingTitle = nil
+            self.nowPlayingArtist = nil
+            self.nowPlayingAlbumTitle = nil
+            DispatchQueue.main.async {
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+                call.resolve()
             }
         }
     }
@@ -660,6 +708,11 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
                 self.engine.mainMixerNode.outputVolume = self.masterVolume
                 self.startStateTimer()
+                // New session → refresh lock-screen duration, even if
+                // metadata hasn't been set yet (it'll use the default
+                // "Live Director" title until the JS side pushes a real
+                // song name via setNowPlayingMetadata).
+                self.updateNowPlayingInfo()
                 continuation.resume()
             }
         }
@@ -723,6 +776,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         logSessionState("post-startPlayback")
         logPlaybackAlignment("post-startPlayback")
         emitState()
+        updateNowPlayingInfo()
     }
 
     private func scheduleRemainingTrackSegment(_ track: NativeTrack) {
@@ -811,6 +865,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         setIdleTimerDisabled(false)
         resetMeters()
         emitState()
+        updateNowPlayingInfo()
     }
 
     private func stopPlayback(resetPosition: Bool, shouldEmitState: Bool = true) {
@@ -829,6 +884,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         resetMeters()
         if shouldEmitState {
             emitState()
+            updateNowPlayingInfo()
         }
     }
 
@@ -1247,6 +1303,133 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         } catch {
             CAPLog.print("NLDE SESSION configure FAIL: \(error.localizedDescription)")
             logSessionState("configure-failed")
+        }
+    }
+
+    /// Wires up the iOS Remote Command Center — the lock-screen / Control
+    /// Center / external media-key surface. Play/pause/seek are handled
+    /// natively (they just drive the existing engine transport). Next /
+    /// Previous Track buttons are forwarded to JS via the `remoteCommand`
+    /// event so the React side can decide what "next/prev" means
+    /// (section jump, song jump, etc.) without the plugin needing to know.
+    private func configureRemoteCommandCenter() {
+        guard !didConfigureRemoteCommandCenter else { return }
+        didConfigureRemoteCommandCenter = true
+
+        let commandCenter = MPRemoteCommandCenter.shared()
+
+        commandCenter.playCommand.isEnabled = true
+        commandCenter.playCommand.addTarget { [weak self] _ in
+            guard let self = self else { return .commandFailed }
+            self.engineQueue.async {
+                do {
+                    try self.startPlayback()
+                } catch {
+                    CAPLog.print("NLDE REMOTE play FAIL \(error.localizedDescription)")
+                }
+            }
+            return .success
+        }
+
+        commandCenter.pauseCommand.isEnabled = true
+        commandCenter.pauseCommand.addTarget { [weak self] _ in
+            guard let self = self else { return .commandFailed }
+            self.engineQueue.async { self.pausePlayback() }
+            return .success
+        }
+
+        commandCenter.togglePlayPauseCommand.isEnabled = true
+        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+            guard let self = self else { return .commandFailed }
+            self.engineQueue.async {
+                if self.isPlaying {
+                    self.pausePlayback()
+                } else {
+                    do { try self.startPlayback() } catch {
+                        CAPLog.print("NLDE REMOTE toggle->play FAIL \(error.localizedDescription)")
+                    }
+                }
+            }
+            return .success
+        }
+
+        commandCenter.changePlaybackPositionCommand.isEnabled = true
+        commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let self = self else { return .commandFailed }
+            guard let positionEvent = event as? MPChangePlaybackPositionCommandEvent else {
+                return .commandFailed
+            }
+            let target = max(0, positionEvent.positionTime)
+            self.engineQueue.async {
+                let wasPlaying = self.isPlaying
+                self.stopPlayback(resetPosition: false, shouldEmitState: false)
+                self.seekOffset = min(target, self.duration)
+                if wasPlaying {
+                    do { try self.startPlayback() } catch {
+                        CAPLog.print("NLDE REMOTE scrub FAIL \(error.localizedDescription)")
+                    }
+                } else {
+                    self.emitState()
+                    self.updateNowPlayingInfo()
+                }
+            }
+            return .success
+        }
+
+        // Next / Previous Track are pass-through: let the JS side decide what
+        // these mean in the context of the current song. React listens for
+        // the `remoteCommand` event and calls its own handlePreviousSection
+        // / handleNextSection.
+        commandCenter.nextTrackCommand.isEnabled = true
+        commandCenter.nextTrackCommand.addTarget { [weak self] _ in
+            guard let self = self else { return .commandFailed }
+            DispatchQueue.main.async {
+                self.notifyListeners("remoteCommand", data: ["action": "nextSection"])
+            }
+            return .success
+        }
+
+        commandCenter.previousTrackCommand.isEnabled = true
+        commandCenter.previousTrackCommand.addTarget { [weak self] _ in
+            guard let self = self else { return .commandFailed }
+            DispatchQueue.main.async {
+                self.notifyListeners("remoteCommand", data: ["action": "previousSection"])
+            }
+            return .success
+        }
+
+        // Explicitly disable commands we don't support so iOS doesn't show
+        // them as active on the lock screen (skipForward / skipBackward
+        // with 15s intervals would look odd in a worship context).
+        commandCenter.skipForwardCommand.isEnabled = false
+        commandCenter.skipBackwardCommand.isEnabled = false
+        commandCenter.seekForwardCommand.isEnabled = false
+        commandCenter.seekBackwardCommand.isEnabled = false
+    }
+
+    /// Push the latest transport state (isPlaying, elapsed, duration,
+    /// metadata) to MPNowPlayingInfoCenter. Must be called after any
+    /// transport event that changes those values or the lock-screen
+    /// scrubber will drift / freeze.
+    private func updateNowPlayingInfo() {
+        // Read engine-thread-owned state on this queue, then hop to the main
+        // queue to touch MPNowPlayingInfoCenter (it's main-thread-affine).
+        let title = nowPlayingTitle ?? "Live Director"
+        let artist = nowPlayingArtist
+        let albumTitle = nowPlayingAlbumTitle
+        let durationSnapshot = duration
+        let elapsedSnapshot = currentTime()
+        let isPlayingSnapshot = isPlaying
+        DispatchQueue.main.async {
+            var info: [String: Any] = [:]
+            info[MPMediaItemPropertyTitle] = title
+            if let artist = artist { info[MPMediaItemPropertyArtist] = artist }
+            if let albumTitle = albumTitle { info[MPMediaItemPropertyAlbumTitle] = albumTitle }
+            info[MPMediaItemPropertyPlaybackDuration] = durationSnapshot
+            info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedSnapshot
+            info[MPNowPlayingInfoPropertyPlaybackRate] = isPlayingSnapshot ? 1.0 : 0.0
+            info[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaType.audio.rawValue
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         }
     }
 
