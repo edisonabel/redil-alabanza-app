@@ -1,15 +1,11 @@
 import {
-  AlertTriangle,
-  Archive,
   CheckCircle2,
   Download,
   FileAudio,
   FolderOpen,
   HardDriveDownload,
-  ListMusic,
   Loader2,
   Music4,
-  ShieldCheck,
   UploadCloud,
   XCircle,
 } from 'lucide-react';
@@ -17,7 +13,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, ty
 
 const MAX_STEMS = 15;
 const DEFAULT_BITRATE = '256k';
-const MAX_QUALITY_BITRATE = '320k';
 const FFmpegCoreVersion = '0.12.10';
 
 type StemStatus = 'queued' | 'processing' | 'done' | 'error';
@@ -164,8 +159,6 @@ export default function StemConverterTool() {
   const [isLoadingEngine, setIsLoadingEngine] = useState(false);
   const [isEngineReady, setIsEngineReady] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
-  const [bitrate, setBitrate] = useState(DEFAULT_BITRATE);
-  const [engineLog, setEngineLog] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [zipUrl, setZipUrl] = useState<string | null>(null);
   const [zipName, setZipName] = useState('stems-aac-256k.zip');
@@ -193,18 +186,26 @@ export default function StemConverterTool() {
   );
 
   const canConvert = stems.length > 0 && !isConverting;
-  const bitrateLabel = bitrate === MAX_QUALITY_BITRATE ? '320 kbps' : '256 kbps';
   const completedPercent = stems.length ? Math.round((completedCount / stems.length) * 100) : 0;
   const activeStem = useMemo(
     () => stems.find((item) => item.status === 'processing') || null,
     [stems],
   );
+  const runtimeStatus = useMemo(() => {
+    if (errorMessage) return 'Error';
+    if (isLoadingEngine) return 'Cargando motor';
+    if (isConverting) return 'Convirtiendo';
+    if (zipUrl) return 'ZIP listo';
+    if (isEngineReady) return 'Motor listo';
+    if (stems.length) return 'Listo para convertir';
+    return 'Arrastra stems para empezar';
+  }, [errorMessage, isConverting, isEngineReady, isLoadingEngine, stems.length, zipUrl]);
   const summaryRows = useMemo<StatRow[]>(() => [
     { label: 'Stems', value: `${stems.length}/${MAX_STEMS}`, tone: stems.length ? 'brand' : undefined },
     { label: 'Original', value: formatBytes(selectedTotalBytes) },
-    { label: 'Preset', value: bitrateLabel },
+    { label: 'Salida', value: 'M4A 256k' },
     { label: 'Convertido', value: formatBytes(convertedTotalBytes), tone: convertedTotalBytes ? 'success' : undefined },
-  ], [bitrateLabel, convertedTotalBytes, selectedTotalBytes, stems.length]);
+  ], [convertedTotalBytes, selectedTotalBytes, stems.length]);
 
   const revokeZipUrl = useCallback(() => {
     if (zipUrlRef.current) {
@@ -269,7 +270,6 @@ export default function StemConverterTool() {
 
     setIsLoadingEngine(true);
     setErrorMessage('');
-    setEngineLog('Cargando motor FFmpeg en el navegador...');
 
     try {
       const [{ FFmpeg }, { toBlobURL }] = await Promise.all([
@@ -278,11 +278,6 @@ export default function StemConverterTool() {
       ]);
 
       const ffmpeg = new FFmpeg() as FFmpegInstance;
-      ffmpeg.on('log', ({ message }) => {
-        if (message) {
-          setEngineLog(message.slice(-180));
-        }
-      });
       ffmpeg.on('progress', ({ progress }) => {
         const activeId = activeStemIdRef.current;
         if (!activeId || typeof progress !== 'number') {
@@ -299,7 +294,6 @@ export default function StemConverterTool() {
 
       ffmpegRef.current = ffmpeg;
       setIsEngineReady(true);
-      setEngineLog('Motor listo. Conversion local activa.');
       return ffmpeg;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'No se pudo cargar FFmpeg.';
@@ -350,7 +344,7 @@ export default function StemConverterTool() {
         '-profile:a',
         'aac_low',
         '-b:a',
-        bitrate,
+        DEFAULT_BITRATE,
         '-movflags',
         '+faststart',
         outputName,
@@ -386,7 +380,7 @@ export default function StemConverterTool() {
       await cleanupFfmpegFile(ffmpeg, inputName);
       await cleanupFfmpegFile(ffmpeg, outputName);
     }
-  }, [bitrate, cleanupFfmpegFile, updateStem]);
+  }, [cleanupFfmpegFile, updateStem]);
 
   const buildZip = useCallback(async () => {
     const outputs = outputsRef.current;
@@ -405,7 +399,7 @@ export default function StemConverterTool() {
     });
 
     setZipProgress(1);
-    const nextZipName = `stems-aac-${bitrate}.zip`;
+    const nextZipName = 'stems-aac-256k.zip';
     const zipBlob = await zip.generateAsync(
       { type: 'blob', compression: 'STORE' },
       (metadata) => {
@@ -419,7 +413,7 @@ export default function StemConverterTool() {
     setZipUrl(url);
     setZipName(nextZipName);
     setZipProgress(100);
-  }, [bitrate, revokeZipUrl, stems]);
+  }, [revokeZipUrl, stems]);
 
   const startConversion = useCallback(async () => {
     if (!canConvert) {
@@ -443,7 +437,6 @@ export default function StemConverterTool() {
         await convertOneStem(ffmpeg, stems[index], index);
       }
       await buildZip();
-      setEngineLog('Conversion terminada. ZIP listo.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'No se pudo completar la conversion.';
       setErrorMessage(message);
@@ -459,7 +452,6 @@ export default function StemConverterTool() {
     setRejectedCount(0);
     setOmittedCount(0);
     setErrorMessage('');
-    setEngineLog('');
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (folderInputRef.current) folderInputRef.current.value = '';
   }, [resetOutputs]);
@@ -516,42 +508,27 @@ export default function StemConverterTool() {
         <div className="space-y-5">
           <div className="overflow-hidden rounded-[1.5rem] border border-border bg-surface shadow-xl">
             <div className="border-b border-border px-5 py-5 md:px-7">
-              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                <div className="flex items-start gap-4">
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand/12 text-brand">
-                    <Archive className="h-6 w-6" />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-[0.72rem] font-black uppercase tracking-[0.22em] text-content-muted">
-                      Procesamiento local
-                    </p>
-                    <h2 className="mt-1 text-2xl font-black tracking-tight text-content md:text-3xl">
-                      WAV/FLAC a M4A para Live Director
-                    </h2>
-                    <p className="mt-2 max-w-2xl text-sm leading-relaxed text-content-muted">
-                      AAC-LC listo para secuencias. Los archivos se procesan en esta computadora.
-                    </p>
-                  </div>
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0">
+                  <p className="text-[0.72rem] font-black uppercase tracking-[0.22em] text-content-muted">
+                    M4A AAC 256 kbps
+                  </p>
+                  <h2 className="mt-1 text-2xl font-black tracking-tight text-content md:text-3xl">
+                    Arrastra stems y descarga
+                  </h2>
                 </div>
-                <div className="flex flex-wrap gap-2 md:justify-end">
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-3 py-1.5 text-xs font-bold text-success">
-                    <ShieldCheck className="h-3.5 w-3.5" />
-                    Sin servidor
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-brand/30 bg-brand/10 px-3 py-1.5 text-xs font-bold text-brand">
-                    <ListMusic className="h-3.5 w-3.5" />
-                    Max {MAX_STEMS} stems
-                  </span>
-                </div>
+                <span className="inline-flex w-max items-center gap-2 rounded-full border border-brand/25 bg-brand/10 px-3 py-1.5 text-xs font-black text-brand">
+                  {stems.length}/{MAX_STEMS} stems
+                </span>
               </div>
             </div>
 
-            <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_19rem]">
+            <div className="p-4 md:p-6">
               <div
                 onDrop={handleDrop}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
-                className={`m-4 flex min-h-[17rem] flex-col justify-center rounded-2xl border-2 border-dashed p-5 text-center transition md:m-6 md:p-8 ${
+                className={`flex min-h-[18rem] flex-col justify-center rounded-2xl border-2 border-dashed p-5 text-center transition md:p-8 ${
                   isDragging
                     ? 'border-brand bg-brand/10'
                     : 'border-border bg-background/70 hover:border-brand/50'
@@ -561,12 +538,12 @@ export default function StemConverterTool() {
                   <HardDriveDownload className="h-8 w-8" />
                 </div>
                 <h3 className="mt-5 text-xl font-black text-content md:text-2xl">
-                  {stems.length ? `${stems.length} stem(s) seleccionados` : 'Arrastra una carpeta o tus stems'}
+                  {stems.length ? `${stems.length}/${MAX_STEMS} stems listos` : 'Arrastra tus stems aqui'}
                 </h3>
-                <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-content-muted">
-                  WAV, FLAC, AIFF, CAF, MP3, M4A o AAC. En PC puedes arrastrar y soltar; en mobile usa los botones.
+                <p className="mx-auto mt-2 max-w-sm text-sm text-content-muted">
+                  WAV, FLAC, AIFF, CAF, MP3, M4A o AAC.
                 </p>
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <div className="mx-auto mt-5 grid w-full max-w-md gap-3 sm:grid-cols-2">
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
@@ -587,67 +564,6 @@ export default function StemConverterTool() {
                   </button>
                 </div>
               </div>
-
-              <div className="border-t border-border p-5 lg:border-l lg:border-t-0 lg:p-6">
-                <ol className="space-y-4">
-                  {[
-                    ['1', 'Selecciona', 'Hasta 15 stems por secuencia.'],
-                    ['2', 'Elige calidad', '256k recomendado; 320k opcional.'],
-                    ['3', 'Descarga', 'ZIP final o archivos individuales.'],
-                  ].map(([number, title, detail]) => (
-                    <li key={number} className="flex gap-3">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/12 text-sm font-black text-brand">
-                        {number}
-                      </span>
-                      <span>
-                        <span className="block font-black text-content">{title}</span>
-                        <span className="mt-0.5 block text-xs leading-relaxed text-content-muted">{detail}</span>
-                      </span>
-                    </li>
-                  ))}
-                </ol>
-
-                <div className="mt-6">
-                  <p className="text-[0.72rem] font-black uppercase tracking-[0.18em] text-content-muted">
-                    Preset AAC
-                  </p>
-                  <div className="mt-3 grid grid-cols-2 rounded-2xl border border-border bg-background p-1">
-                    <button
-                      type="button"
-                      onClick={() => setBitrate(DEFAULT_BITRATE)}
-                      disabled={isConverting}
-                      aria-pressed={bitrate === DEFAULT_BITRATE}
-                      className={`min-h-11 rounded-xl px-4 text-sm font-black transition ${
-                        bitrate === DEFAULT_BITRATE
-                          ? 'bg-brand text-white shadow-md'
-                          : 'text-content-muted hover:text-content'
-                      }`}
-                    >
-                      256k
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setBitrate(MAX_QUALITY_BITRATE)}
-                      disabled={isConverting}
-                      aria-pressed={bitrate === MAX_QUALITY_BITRATE}
-                      className={`min-h-11 rounded-xl px-4 text-sm font-black transition ${
-                        bitrate === MAX_QUALITY_BITRATE
-                          ? 'bg-brand text-white shadow-md'
-                          : 'text-content-muted hover:text-content'
-                      }`}
-                    >
-                      320k
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-6 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm leading-relaxed text-amber-100">
-                  <div className="flex gap-3">
-                    <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-                    <p>Si eliges mas de {MAX_STEMS}, se procesan solo los primeros para proteger la RAM.</p>
-                  </div>
-                </div>
-              </div>
             </div>
 
             <div className="flex flex-col gap-3 border-t border-border px-5 py-4 sm:flex-row sm:flex-wrap md:px-7">
@@ -658,7 +574,7 @@ export default function StemConverterTool() {
                 className="ui-pressable inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-brand px-5 font-bold text-white shadow-lg transition disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
               >
                 {isConverting || isLoadingEngine ? <Loader2 className="h-5 w-5 animate-spin" /> : <Music4 className="h-5 w-5" />}
-                {isLoadingEngine ? 'Cargando motor...' : isConverting ? 'Convirtiendo...' : stems.length ? `Convertir ${stems.length}` : 'Selecciona stems'}
+                {isLoadingEngine ? 'Cargando motor...' : isConverting ? 'Convirtiendo...' : stems.length ? `Convertir ${stems.length} a M4A` : 'Selecciona stems'}
               </button>
               {zipUrl ? (
                 <a
@@ -703,10 +619,7 @@ export default function StemConverterTool() {
             {stems.length === 0 ? (
               <div className="flex min-h-56 flex-col items-center justify-center px-5 py-10 text-center">
                 <FileAudio className="h-10 w-10 text-content-muted" />
-                <p className="mt-3 font-bold text-content">Todavia no hay stems.</p>
-                <p className="mt-1 max-w-md text-sm text-content-muted">
-                  La cola aparecera aqui con peso, salida y estado por archivo.
-                </p>
+                <p className="mt-3 font-bold text-content">Suelta stems para empezar.</p>
               </div>
             ) : (
               <div className="divide-y divide-border">
@@ -789,6 +702,7 @@ export default function StemConverterTool() {
           </dl>
 
           <div className="mt-4" role="status" aria-live="polite">
+            <p className="mb-3 text-sm font-bold text-content">{runtimeStatus}</p>
             <div className="mb-2 flex items-center justify-between text-xs text-content-muted">
               <span>Progreso total</span>
               <span>{completedPercent}%</span>
@@ -810,15 +724,11 @@ export default function StemConverterTool() {
           </div>
 
           {(omittedCount > 0 || rejectedCount > 0) ? (
-            <div className="mt-4 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">
-              {omittedCount > 0 ? <p>{omittedCount} audio(s) omitido(s) por superar el limite.</p> : null}
-              {rejectedCount > 0 ? <p>{rejectedCount} archivo(s) ignorado(s) por no parecer audio.</p> : null}
+            <div className="mt-4 rounded-2xl border border-border bg-background p-3 text-sm text-content-muted">
+              {omittedCount > 0 ? <p>{omittedCount} omitidos por superar {MAX_STEMS} stems.</p> : null}
+              {rejectedCount > 0 ? <p>{rejectedCount} ignorados por no parecer audio.</p> : null}
             </div>
           ) : null}
-
-          <p className="mt-4 min-h-5 truncate text-xs text-content-muted">
-            {isEngineReady ? 'FFmpeg listo.' : 'FFmpeg se carga bajo demanda.'} {engineLog}
-          </p>
         </aside>
       </div>
     </section>
