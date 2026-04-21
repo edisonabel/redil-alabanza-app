@@ -47,23 +47,6 @@ export type NativeLiveDirectorLoadProgress = {
   total: number;
 };
 
-/**
- * Payload fired by the native plugin when the user interacts with the
- * lock-screen / Control Center "Next Track" or "Previous Track" buttons.
- * The plugin doesn't know what these mean in the app's domain, so it
- * forwards the intent up to the React layer to route to section / song
- * navigation as appropriate.
- */
-export type NativeLiveDirectorRemoteCommand = {
-  action: 'nextSection' | 'previousSection';
-};
-
-export type NativeLiveDirectorNowPlayingMetadata = {
-  title: string;
-  artist?: string;
-  albumTitle?: string;
-};
-
 export interface NativeLiveDirectorEnginePlugin {
   load(options: { tracks: TrackData[] }): Promise<NativeLiveDirectorEngineLoadResult>;
   play(): Promise<NativeLiveDirectorEngineState>;
@@ -77,8 +60,6 @@ export interface NativeLiveDirectorEnginePlugin {
   setMasterVolume(options: { volume: number }): Promise<void>;
   setMetersEnabled(options: { enabled: boolean }): Promise<{ enabled: boolean }>;
   getState(): Promise<NativeLiveDirectorEngineState>;
-  setNowPlayingMetadata(options: NativeLiveDirectorNowPlayingMetadata): Promise<void>;
-  clearNowPlayingMetadata(): Promise<void>;
   addListener(
     eventName: 'state',
     listenerFunc: (state: NativeLiveDirectorEngineState) => void,
@@ -86,10 +67,6 @@ export interface NativeLiveDirectorEnginePlugin {
   addListener(
     eventName: 'loadProgress',
     listenerFunc: (progress: NativeLiveDirectorLoadProgress) => void,
-  ): Promise<PluginListenerHandle>;
-  addListener(
-    eventName: 'remoteCommand',
-    listenerFunc: (command: NativeLiveDirectorRemoteCommand) => void,
   ): Promise<PluginListenerHandle>;
 }
 
