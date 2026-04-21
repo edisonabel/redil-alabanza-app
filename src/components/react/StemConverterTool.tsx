@@ -17,7 +17,7 @@ const DEFAULT_BITRATE = '256k';
 const FFmpegCoreVersion = '0.12.10';
 
 type StemStatus = 'queued' | 'processing' | 'done' | 'error';
-type StemCategory = 'clickGuide' | 'drums' | 'bass' | 'piano' | 'keys' | 'acoustic' | 'electric' | 'percussion' | 'vocals' | 'pads' | 'misc';
+type StemCategory = 'clickGuide' | 'drums' | 'bass' | 'piano' | 'keys' | 'acoustic' | 'electric' | 'percussion' | 'vocals' | 'pads' | 'misc' | 'unknown';
 type PlanAction = 'keep' | 'merge' | 'skip';
 
 type SourceStem = {
@@ -176,7 +176,7 @@ const categorizeStem = (file: File): StemCategory => {
   if (hasToken(tokens, ['voz', 'voces', 'vocal', 'vocals', 'coro', 'coros', 'choir', 'bgv', 'bv'])) return 'vocals';
   if (hasAny(text, ['guitar', 'guitarra', 'gtr'])) return 'electric';
 
-  return 'misc';
+  return 'unknown';
 };
 
 const categoryOrder: StemCategory[] = [
@@ -191,6 +191,7 @@ const categoryOrder: StemCategory[] = [
   'vocals',
   'misc',
   'pads',
+  'unknown',
 ];
 
 const categoryMeta: Record<StemCategory, { name: string; mergeReason: string; keepReason: string; skipReason?: string }> = {
@@ -250,6 +251,12 @@ const categoryMeta: Record<StemCategory, { name: string; mergeReason: string; ke
     keepReason: 'Pad disponible.',
     skipReason: 'Sugerido omitir: puedes usar el pad interno.',
   },
+  unknown: {
+    name: 'Por clasificar',
+    mergeReason: 'No estoy seguro de estas pistas.',
+    keepReason: 'No estoy seguro de esta pista.',
+    skipReason: 'No estoy seguro: dime en que categoria va.',
+  },
 };
 
 const sourceStemFromFile = (file: File, index: number): SourceStem => {
@@ -293,7 +300,7 @@ const buildSmartPlan = (sources: SourceStem[]) => {
   const groups = categoryOrder.flatMap((category) => {
     const bucket = byCategory.get(category);
     if (!bucket?.length) return [];
-    const shouldSkip = category === 'pads' && hasNonPadSources;
+    const shouldSkip = (category === 'pads' && hasNonPadSources) || category === 'unknown';
     return [createPlanGroup(category, bucket, shouldSkip ? 'skip' : undefined)];
   });
 
@@ -339,6 +346,21 @@ const rawSourcesToStems = (sources: SourceStem[]) => sources.slice(0, MAX_STEMS)
   progress: 0,
   outputName: buildOutputName(source.name, index),
 }));
+
+const categoryOptions: Array<{ value: StemCategory; label: string }> = [
+  { value: 'unknown', label: 'Elegir categoria' },
+  { value: 'clickGuide', label: 'Click / Guia / Cues' },
+  { value: 'drums', label: 'Bateria' },
+  { value: 'bass', label: 'Bajo' },
+  { value: 'piano', label: 'Piano' },
+  { value: 'keys', label: 'Keys / Organos' },
+  { value: 'acoustic', label: 'Guitarra acustica' },
+  { value: 'electric', label: 'Guitarra electrica' },
+  { value: 'percussion', label: 'Percusion extra' },
+  { value: 'vocals', label: 'Coros / Voces' },
+  { value: 'pads', label: 'Pads / Ambiente' },
+  { value: 'misc', label: 'Extras / FX' },
+];
 
 const getStatusLabel = (status: StemStatus) => {
   switch (status) {
@@ -508,6 +530,16 @@ export default function StemConverterTool() {
     setOmittedCount(Math.max(0, pendingSources.length - MAX_STEMS));
     setIsPlanOpen(false);
   }, [pendingSources]);
+
+  const updatePendingSourceCategory = useCallback((sourceId: string, category: StemCategory) => {
+    setPendingSources((current) => {
+      const nextSources = current.map((source) => (
+        source.id === sourceId ? { ...source, category } : source
+      ));
+      setSmartPlan(buildSmartPlan(nextSources));
+      return nextSources;
+    });
+  }, []);
 
   const loadEngine = useCallback(async () => {
     if (ffmpegRef.current) {
@@ -822,9 +854,25 @@ export default function StemConverterTool() {
                     </p>
                     <div className="mt-2 space-y-1">
                       {group.sources.slice(0, 4).map((source) => (
-                        <p key={source.id} className="truncate text-xs text-content-muted">
-                          {source.name}
-                        </p>
+                        <div key={source.id} className="grid gap-2">
+                          <p className="truncate text-xs text-content-muted">
+                            {source.name}
+                          </p>
+                          {group.category === 'unknown' ? (
+                            <select
+                              value={source.category}
+                              onChange={(event) => updatePendingSourceCategory(source.id, event.target.value as StemCategory)}
+                              className="min-h-10 rounded-xl border border-border bg-surface px-3 text-sm font-bold text-content outline-none transition focus:border-brand"
+                              aria-label={`Categoria para ${source.name}`}
+                            >
+                              {categoryOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          ) : null}
+                        </div>
                       ))}
                       {group.sources.length > 4 ? (
                         <p className="text-xs font-bold text-content-muted">+{group.sources.length - 4} mas</p>
@@ -852,7 +900,8 @@ export default function StemConverterTool() {
                 <button
                   type="button"
                   onClick={applySmartPlan}
-                  className="ui-pressable inline-flex min-h-12 items-center justify-center rounded-2xl bg-brand px-5 font-bold text-white shadow-lg"
+                  disabled={planOutputCount === 0}
+                  className="ui-pressable inline-flex min-h-12 items-center justify-center rounded-2xl bg-brand px-5 font-bold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Aplicar plan
                 </button>
