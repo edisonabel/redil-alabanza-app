@@ -21,7 +21,10 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProper
 import { useMultitrackEngine } from '../../hooks/useMultitrackEngine';
 import { useNativeIOSMultitrackEngine } from '../../hooks/useNativeIOSMultitrackEngine';
 import type { SongStructure, TrackData } from '../../services/MultitrackEngine';
-import { isNativeLiveDirectorEngineAvailable } from '../../services/NativeLiveDirectorEnginePlugin';
+import {
+  isNativeLiveDirectorEngineAvailable,
+  NativeLiveDirectorEngine,
+} from '../../services/NativeLiveDirectorEnginePlugin';
 import {
   createSequenceSessionFromFile,
   createStemSessionFromFolder,
@@ -3185,6 +3188,66 @@ export function LiveDirectorView({
     // re-cueing the outro) instead of doing nothing.
     void handleSectionSeek(targetSection.startTime);
   };
+
+  // Stable ref-based bridge for the native remoteCommand listener below —
+  // the listener is registered once per mount but needs to dispatch to the
+  // latest section handlers without re-registering on every render.
+  const handlePreviousSectionRef = useRef(handlePreviousSection);
+  const handleNextSectionRef = useRef(handleNextSection);
+  useEffect(() => {
+    handlePreviousSectionRef.current = handlePreviousSection;
+    handleNextSectionRef.current = handleNextSection;
+  });
+
+  // Lock-screen / Control Center remote commands, iOS native only. The
+  // Swift plugin forwards Next Track / Previous Track button presses to
+  // us as 'remoteCommand' events so we can translate them into section
+  // jumps in the current song. Play / pause / scrub are handled inside
+  // the plugin itself — no JS wiring needed.
+  useEffect(() => {
+    if (!isIOSNativeEngineSurface) return;
+    if (!isNativeLiveDirectorEngineAvailable()) return;
+    let listenerHandle: { remove: () => Promise<void> } | null = null;
+    let disposed = false;
+    void NativeLiveDirectorEngine.addListener('remoteCommand', (command) => {
+      if (disposed) return;
+      if (command?.action === 'previousSection') {
+        handlePreviousSectionRef.current();
+      } else if (command?.action === 'nextSection') {
+        handleNextSectionRef.current();
+      }
+    }).then((handle) => {
+      if (disposed) {
+        void handle.remove();
+      } else {
+        listenerHandle = handle;
+      }
+    });
+    return () => {
+      disposed = true;
+      void listenerHandle?.remove();
+    };
+  }, [isIOSNativeEngineSurface]);
+
+  // Push song metadata to the iOS lock-screen / Control Center Now Playing
+  // card whenever the identifying fields change. Clears the card on unmount
+  // so the lock screen doesn't keep advertising a song we're no longer
+  // playing.
+  useEffect(() => {
+    if (!isIOSNativeEngineSurface) return;
+    if (!isNativeLiveDirectorEngineAvailable()) return;
+    const title = (songCardTitle || songTitle || 'Live Director').trim();
+    const artist = performerLabel || undefined;
+    const albumTitle = songKey ? `Tonalidad ${songKey}` : undefined;
+    void NativeLiveDirectorEngine.setNowPlayingMetadata({
+      title,
+      artist,
+      albumTitle,
+    }).catch(() => undefined);
+    return () => {
+      void NativeLiveDirectorEngine.clearNowPlayingMetadata().catch(() => undefined);
+    };
+  }, [isIOSNativeEngineSurface, songCardTitle, songTitle, performerLabel, songKey]);
 
   const handleLoopIn = () => {
     if (activeSection) {
