@@ -185,6 +185,9 @@ const IOS_NATIVE_MAX_ACTIVE_TRACKS = 15;
 const ANDROID_MAX_ACTIVE_TRACKS = 10;
 const WEB_ENGINE_MAX_ACTIVE_TRACKS = 15;
 const INTERNAL_PAD_TRACK_ID = '__internal-pad__';
+// The internal pad masters are intentionally lush, but their raw gain is too hot
+// for live control. Apply a fixed -8 dB trim before the pad reaches either engine.
+const INTERNAL_PAD_GAIN_TRIM = Math.pow(10, -8 / 20);
 
 // Priority buckets for auto-disabling extras when a session has more
 // enabled stems than the platform can run. Lower number = more important
@@ -1348,6 +1351,7 @@ export function LiveDirectorView({
     0,
     1,
   );
+  const effectiveInternalPadVolume = clamp(resolvedInternalPadVolume * INTERNAL_PAD_GAIN_TRIM, 0, 1);
   const resolvedPadUrl = useMemo(() => getPadUrlForSongKey(songKey), [songKey]);
   const shouldUseNativeInternalPad = Boolean(isIOSNativeEngineSurface && isEnsayoMode && resolvedPadUrl);
   const nativeInternalPadTrack = useMemo<TrackData | null>(() => {
@@ -1360,13 +1364,13 @@ export function LiveDirectorView({
       name: 'Pad Int.',
       url: resolvedPadUrl,
       nativeUrl: resolvedPadUrl,
-      volume: isPadActive ? resolvedInternalPadVolume : 0,
+      volume: isPadActive ? effectiveInternalPadVolume : 0,
       isMuted: false,
       enabled: true,
       sourceFileName: 'Pad interno',
       outputRoute: 'stereo',
     };
-  }, [isPadActive, resolvedInternalPadVolume, resolvedPadUrl, shouldUseNativeInternalPad]);
+  }, [effectiveInternalPadVolume, isPadActive, resolvedPadUrl, shouldUseNativeInternalPad]);
   const layoutScale = useMemo(() => {
     if (isPortrait || viewportHeight <= 0) {
       return 1;
@@ -2800,17 +2804,17 @@ export function LiveDirectorView({
 
         if (oldPad === padA) {
           padFadeTargetRefA.current = 0;
-          padFadeTargetRefB.current = isPadActive ? resolvedInternalPadVolume : 0;
+          padFadeTargetRefB.current = isPadActive ? effectiveInternalPadVolume : 0;
         } else {
           padFadeTargetRefB.current = 0;
-          padFadeTargetRefA.current = isPadActive ? resolvedInternalPadVolume : 0;
+          padFadeTargetRefA.current = isPadActive ? effectiveInternalPadVolume : 0;
         }
       } else {
         if (activePadChannelRef.current === 'A') {
-          padFadeTargetRefA.current = isPadActive ? resolvedInternalPadVolume : 0;
+          padFadeTargetRefA.current = isPadActive ? effectiveInternalPadVolume : 0;
           padFadeTargetRefB.current = 0;
         } else {
-          padFadeTargetRefB.current = isPadActive ? resolvedInternalPadVolume : 0;
+          padFadeTargetRefB.current = isPadActive ? effectiveInternalPadVolume : 0;
           padFadeTargetRefA.current = 0;
         }
 
@@ -2870,7 +2874,7 @@ export function LiveDirectorView({
         padFadeFrameRef.current = null;
       }
     };
-  }, [isIOSNativeEngineSurface, isPadActive, resolvedInternalPadVolume, resolvedPadUrl]);
+  }, [effectiveInternalPadVolume, isIOSNativeEngineSurface, isPadActive, resolvedPadUrl]);
 
   const persistSongSession = useCallback(async (payload: {
     mode: 'sequence' | 'folder';
@@ -3541,8 +3545,8 @@ export function LiveDirectorView({
       return;
     }
 
-    setVolume(INTERNAL_PAD_TRACK_ID, isPadActive ? resolvedInternalPadVolume : 0);
-  }, [isPadActive, isReady, resolvedInternalPadVolume, setVolume, shouldUseNativeInternalPad]);
+    setVolume(INTERNAL_PAD_TRACK_ID, isPadActive ? effectiveInternalPadVolume : 0);
+  }, [effectiveInternalPadVolume, isPadActive, isReady, setVolume, shouldUseNativeInternalPad]);
 
   // Keep the ref pointed at the latest parent-side handlers so the stable
   // per-track callbacks returned by getChannelStripCallbacks always see the
