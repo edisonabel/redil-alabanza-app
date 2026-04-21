@@ -3,6 +3,8 @@
   ChevronLeft,
   ChevronsLeft,
   ChevronsRight,
+  Eye,
+  EyeOff,
   FolderOpen,
   ListMusic,
   Pause,
@@ -1257,6 +1259,25 @@ export function LiveDirectorView({
   // When the user taps Back while audio is playing, defer the navigation and
   // show a confirmation modal. Prevents disastrous accidental exits live.
   const [showBackConfirm, setShowBackConfirm] = useState(false);
+  // Show mode: hides the Motor / Diagnostics / Upload chips for a cleaner
+  // performance-ready UI. Persists across reloads so the user doesn't have
+  // to re-toggle every time they open the app live.
+  const [isShowMode, setIsShowMode] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return window.localStorage.getItem('ld:showMode') === '1';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem('ld:showMode', isShowMode ? '1' : '0');
+    } catch {
+      // Ignore — privacy mode or storage quota.
+    }
+  }, [isShowMode]);
   const [loaderMode, setLoaderMode] = useState<'sequence' | 'folder'>('sequence');
   const [unmatchedFiles, setUnmatchedFiles] = useState<string[]>([]);
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
@@ -3851,15 +3872,33 @@ export function LiveDirectorView({
                 <ChevronsRight className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-5 w-5' : 'h-7 w-7'}`} strokeWidth={isCompactLandscape ? 2 : 2.4} />
               </button>
 
+              {!isShowMode && (
+                <button
+                  type="button"
+                  onClick={() => setShowLoadPanel(true)}
+                  className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3' : isCompactLandscape ? 'h-10 px-3.5' : 'h-[var(--ld-control-height)] px-4'} justify-center text-white/70 hover:text-white`}
+                  style={{ width: scaleRem(isUltraCompactLandscape ? 3.25 : isCompactLandscape ? 4.15 : 4.5, 2.8) }}
+                  title="Cargar o reemplazar la sesión multitrack"
+                  aria-label="Cargar o reemplazar la sesión multitrack"
+                >
+                  <Upload className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : 'h-5 w-5'}`} />
+                </button>
+              )}
+
               <button
                 type="button"
-                onClick={() => setShowLoadPanel(true)}
-                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3' : isCompactLandscape ? 'h-10 px-3.5' : 'h-[var(--ld-control-height)] px-4'} justify-center text-white/70 hover:text-white`}
+                onClick={() => setIsShowMode((previous) => !previous)}
+                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3' : isCompactLandscape ? 'h-10 px-3.5' : 'h-[var(--ld-control-height)] px-4'} justify-center ${isShowMode ? 'text-cyan-200 border-cyan-300/34 bg-cyan-300/10' : 'text-white/70 hover:text-white'}`}
                 style={{ width: scaleRem(isUltraCompactLandscape ? 3.25 : isCompactLandscape ? 4.15 : 4.5, 2.8) }}
-                title="Cargar o reemplazar la sesión multitrack"
-                aria-label="Cargar o reemplazar la sesión multitrack"
+                title={isShowMode ? 'Modo show ACTIVO — toca para volver a ver motor y diagnóstico' : 'Modo show — oculta motor, diagnóstico y carga para un escenario limpio'}
+                aria-label={isShowMode ? 'Desactivar modo show' : 'Activar modo show'}
+                aria-pressed={isShowMode}
               >
-                <Upload className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : 'h-5 w-5'}`} />
+                {isShowMode ? (
+                  <EyeOff className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : 'h-5 w-5'}`} />
+                ) : (
+                  <Eye className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : 'h-5 w-5'}`} />
+                )}
               </button>
             </div>
           </header>
@@ -3958,6 +3997,7 @@ export function LiveDirectorView({
                             <p className={`text-white/54 ${isUltraCompactLandscape ? 'mt-0.5 text-[0.58rem]' : isCompactLandscape ? 'mt-0.5 text-[0.68rem]' : 'mt-1 text-[0.92rem]'}`}>{songSupportMeta}</p>
                           </div>
 
+                          {!isShowMode && (
                           <div className={`flex shrink-0 ${isUltraCompactLandscape ? 'items-center gap-1' : isCompactLandscape ? 'items-center gap-1.5' : 'items-start gap-2'}`}>
                             <div className={`rounded-full border border-white/8 bg-black/18 ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'}`}>
                               <p className={`${isUltraCompactLandscape ? 'text-[0.5rem]' : 'text-[0.68rem]'} font-black uppercase tracking-[0.18em] text-white/46`}>
@@ -4008,6 +4048,7 @@ export function LiveDirectorView({
                               </p>
                             </div>
                           </div>
+                          )}
                         </div>
 
                         <div className={`flex ${isUltraCompactLandscape ? 'items-center gap-1.5' : isCompactLandscape ? 'items-center gap-2' : 'items-end gap-4'}`}>
