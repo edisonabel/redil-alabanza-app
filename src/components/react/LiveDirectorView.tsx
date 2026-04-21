@@ -1552,6 +1552,29 @@ export function LiveDirectorView({
   }, [currentTime, resolvedSections, sectionTimelineDuration]);
   const activeSection = resolvedSections[activeSectionIndex] || resolvedSections[0] || null;
 
+  // Pre-announce the upcoming section while playing. Returns { name, seconds }
+  // when the next section starts in <= 6 seconds, null otherwise. The 6s lead
+  // is comfortable for musicians to see the heads-up and react before the
+  // transition hits.
+  const NEXT_SECTION_LOOKAHEAD_S = 6;
+  const nextSectionPreview = useMemo<{ name: string; seconds: number } | null>(() => {
+    if (!isPlaying || resolvedSections.length === 0) {
+      return null;
+    }
+    const nextSection = resolvedSections[activeSectionIndex + 1];
+    if (!nextSection) {
+      return null;
+    }
+    const seconds = nextSection.startTime - currentTime;
+    if (seconds <= 0 || seconds > NEXT_SECTION_LOOKAHEAD_S) {
+      return null;
+    }
+    return {
+      name: nextSection.name || `Seccion ${activeSectionIndex + 2}`,
+      seconds: Math.max(1, Math.ceil(seconds)),
+    };
+  }, [activeSectionIndex, currentTime, isPlaying, resolvedSections]);
+
   const sectionLaneProgressPx = useMemo(() => {
     if (sectionLaneSegments.length === 0) {
       return Math.max(0, currentTime) * SECTION_LANE_PIXELS_PER_SECOND;
@@ -4056,6 +4079,24 @@ export function LiveDirectorView({
                   {activeSection?.name || 'Linea de tiempo'}
                 </span>
               </div>
+              {nextSectionPreview && (
+                <div
+                  key={`next-${nextSectionPreview.name}-${nextSectionPreview.seconds}`}
+                  className="pointer-events-none anim-fade-in absolute left-1/2 top-4 z-40 flex -translate-x-1/2 items-center gap-2.5 rounded-full border border-cyan-300/34 bg-[linear-gradient(180deg,rgba(16,30,40,0.92),rgba(10,20,28,0.92))] px-3.5 py-2 shadow-[0_14px_32px_rgba(0,0,0,0.32)]"
+                  aria-live="polite"
+                >
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-300" aria-hidden="true" />
+                  <span className="text-[0.6rem] font-black uppercase tracking-[0.22em] text-cyan-100/66">
+                    Proxima
+                  </span>
+                  <span className="text-[0.88rem] font-semibold text-white">
+                    {nextSectionPreview.name}
+                  </span>
+                  <span className="rounded-full border border-cyan-300/28 bg-cyan-300/10 px-2 py-0.5 text-[0.7rem] font-black tracking-[0.12em] text-cyan-100">
+                    {nextSectionPreview.seconds}s
+                  </span>
+                </div>
+              )}
               {sectionsAutoFollowStatus !== 'auto' && (
                 <div className="pointer-events-none absolute left-4 top-[3.4rem] z-40 flex items-center gap-2 rounded-full border border-amber-300/28 bg-black/62 px-2.5 py-1 shadow-[0_6px_18px_rgba(0,0,0,0.28)]">
                   <span
