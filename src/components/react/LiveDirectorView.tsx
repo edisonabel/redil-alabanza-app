@@ -1254,6 +1254,9 @@ export function LiveDirectorView({
   const [reloadKey, setReloadKey] = useState(0);
   const [isInitializingSession, setIsInitializingSession] = useState(false);
   const [showLoadPanel, setShowLoadPanel] = useState(canLoadManualSession && !initialSession);
+  // When the user taps Back while audio is playing, defer the navigation and
+  // show a confirmation modal. Prevents disastrous accidental exits live.
+  const [showBackConfirm, setShowBackConfirm] = useState(false);
   const [loaderMode, setLoaderMode] = useState<'sequence' | 'folder'>('sequence');
   const [unmatchedFiles, setUnmatchedFiles] = useState<string[]>([]);
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
@@ -3615,6 +3618,10 @@ export function LiveDirectorView({
               <button
                 type="button"
                 onClick={() => {
+                  if (isPlaying) {
+                    setShowBackConfirm(true);
+                    return;
+                  }
                   if (onBack) {
                     onBack();
                   } else if (typeof window !== 'undefined') {
@@ -4800,6 +4807,58 @@ export function LiveDirectorView({
                 );
               })}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBackConfirm && (
+        <div
+          className="absolute inset-0 z-[60] flex items-center justify-center bg-black/58 backdrop-blur-[6px] px-5"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="live-director-back-confirm-title"
+        >
+          <div className="w-full max-w-sm rounded-[1.6rem] border border-white/12 bg-[linear-gradient(180deg,rgba(22,24,26,0.98),rgba(16,18,20,0.98))] px-6 py-6 shadow-[0_32px_72px_rgba(0,0,0,0.42)]">
+            <p className="text-[0.68rem] font-black uppercase tracking-[0.28em] text-amber-200/82">
+              La cancion sigue sonando
+            </p>
+            <h3
+              id="live-director-back-confirm-title"
+              className="mt-2 text-[1.25rem] font-semibold tracking-tight text-white"
+            >
+              ¿Salir del Live Director?
+            </h3>
+            <p className="mt-2 text-[0.88rem] leading-relaxed text-white/60">
+              Si sales ahora, la reproduccion se detiene. Toca Cancelar para seguir dirigiendo.
+            </p>
+            <div className="mt-5 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setShowBackConfirm(false)}
+                className="ui-pressable-soft flex-1 rounded-[1rem] border border-white/12 bg-white/4 px-4 py-3 text-[0.92rem] font-semibold text-white/86 hover:bg-white/8"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowBackConfirm(false);
+                  try {
+                    pause();
+                  } catch {
+                    // ignore: navigating away anyway
+                  }
+                  if (onBack) {
+                    onBack();
+                  } else if (typeof window !== 'undefined') {
+                    window.history.back();
+                  }
+                }}
+                className="ui-pressable-soft flex-1 rounded-[1rem] border border-amber-300/38 bg-amber-300/12 px-4 py-3 text-[0.92rem] font-semibold text-amber-50 hover:bg-amber-300/18"
+              >
+                Salir
+              </button>
             </div>
           </div>
         </div>
