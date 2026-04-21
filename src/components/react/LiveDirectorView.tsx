@@ -184,6 +184,7 @@ type LiveDirectorViewProps = {
 const IOS_NATIVE_MAX_ACTIVE_TRACKS = 15;
 const ANDROID_MAX_ACTIVE_TRACKS = 10;
 const WEB_ENGINE_MAX_ACTIVE_TRACKS = 15;
+const INTERNAL_PAD_TRACK_ID = '__internal-pad__';
 
 // Priority buckets for auto-disabling extras when a session has more
 // enabled stems than the platform can run. Lower number = more important
@@ -1347,6 +1348,25 @@ export function LiveDirectorView({
     0,
     1,
   );
+  const resolvedPadUrl = useMemo(() => getPadUrlForSongKey(songKey), [songKey]);
+  const shouldUseNativeInternalPad = Boolean(isIOSNativeEngineSurface && isEnsayoMode && resolvedPadUrl);
+  const nativeInternalPadTrack = useMemo<TrackData | null>(() => {
+    if (!shouldUseNativeInternalPad || !resolvedPadUrl) {
+      return null;
+    }
+
+    return {
+      id: INTERNAL_PAD_TRACK_ID,
+      name: 'Pad Int.',
+      url: resolvedPadUrl,
+      nativeUrl: resolvedPadUrl,
+      volume: isPadActive ? resolvedInternalPadVolume : 0,
+      isMuted: false,
+      enabled: true,
+      sourceFileName: 'Pad interno',
+      outputRoute: 'stereo',
+    };
+  }, [isPadActive, resolvedInternalPadVolume, resolvedPadUrl, shouldUseNativeInternalPad]);
   const layoutScale = useMemo(() => {
     if (isPortrait || viewportHeight <= 0) {
       return 1;
@@ -1408,6 +1428,10 @@ export function LiveDirectorView({
     }
     return WEB_ENGINE_MAX_ACTIVE_TRACKS;
   }, [isIOSNativeEngineSurface, maxWebActiveTracks]);
+  const sessionActiveTrackLimit = useMemo(
+    () => Math.max(1, webActiveTrackLimit - (shouldUseNativeInternalPad ? 1 : 0)),
+    [shouldUseNativeInternalPad, webActiveTrackLimit],
+  );
 
   const enabledSessionTracks = useMemo(
     () => sessionTracks.filter((track) => track.enabled !== false),
@@ -1420,7 +1444,7 @@ export function LiveDirectorView({
   // auto-disable the rest. Within a rank, original upload order is the
   // tiebreaker so the mix stays deterministic.
   const activeTracks = useMemo(() => {
-    if (enabledSessionTracks.length <= webActiveTrackLimit) {
+    if (enabledSessionTracks.length <= sessionActiveTrackLimit) {
       return enabledSessionTracks;
     }
     const ranked = enabledSessionTracks.map((track, index) => ({
@@ -1429,10 +1453,10 @@ export function LiveDirectorView({
       rank: stemPriorityRank(track),
     }));
     ranked.sort((a, b) => (a.rank - b.rank) || (a.index - b.index));
-    const kept = ranked.slice(0, webActiveTrackLimit);
+    const kept = ranked.slice(0, sessionActiveTrackLimit);
     kept.sort((a, b) => a.index - b.index);
     return kept.map((entry) => entry.track);
-  }, [enabledSessionTracks, webActiveTrackLimit]);
+  }, [enabledSessionTracks, sessionActiveTrackLimit]);
 
   const isWebTrackLimitExceeded = enabledSessionTracks.length > activeTracks.length;
 
@@ -1448,13 +1472,18 @@ export function LiveDirectorView({
       .map((track) => track.name || track.id);
   }, [activeTracks, enabledSessionTracks, isWebTrackLimitExceeded]);
 
-  const activeEngineTracks = useMemo(
-    () => activeTracks.map((track) => ({
+  const activeEngineTracks = useMemo(() => {
+    const engineTracks: TrackData[] = activeTracks.map((track) => ({
       ...track,
       outputRoute: trackOutputRoutes[track.id] ?? resolveTrackOutputRoute(track),
-    })),
-    [activeTracks, trackOutputRoutes],
-  );
+    }));
+
+    if (nativeInternalPadTrack) {
+      engineTracks.push(nativeInternalPadTrack);
+    }
+
+    return engineTracks;
+  }, [activeTracks, nativeInternalPadTrack, trackOutputRoutes]);
 
   const hasSessionTracks = sessionTracks.length > 0;
   const hasTrackSession = activeTracks.length > 0;
@@ -1471,7 +1500,6 @@ export function LiveDirectorView({
   const useWideTrackLoadModal = !isPortrait;
   const showSectionsPanel = surfaceView === 'sections';
   const displayBpm = Number.isFinite(Number(bpm)) ? Math.max(0, Math.round(Number(bpm))) : 0;
-  const resolvedPadUrl = useMemo(() => getPadUrlForSongKey(songKey), [songKey]);
   const songCardTitle = songTitle || currentSessionLabel;
   const performerLabel = isEnsayoMode
     ? String(title || '').replace(/^Modo Ensayo\s*[-·]?\s*/i, '').trim()
@@ -1481,7 +1509,7 @@ export function LiveDirectorView({
     : [performerLabel, songKey].filter(Boolean).join(' · ') || sessionModeLabel;
   const songSupportMeta = hasSessionTracks
     ? isWebTrackLimitExceeded
-      ? `${activeTracks.length} de ${enabledSessionTracks.length} pistas activas (tope ${webActiveTrackLimit})`
+      ? `${activeTracks.length} de ${enabledSessionTracks.length} pistas activas (tope ${sessionActiveTrackLimit}${shouldUseNativeInternalPad ? ' + pad' : ''})`
       : inferredSessionMode === 'folder' && activeTracks.length !== sessionTracks.length
       ? `${activeTracks.length} de ${sessionTracks.length} pistas activas`
       : sessionModeLabel
@@ -1818,19 +1846,23 @@ export function LiveDirectorView({
     });
 
     if (isEnsayoMode && resolvedPadUrl) {
-      const padTrack = {
-        id: '__internal-pad__',
+      const padEnvelope = trackEnvelopes[INTERNAL_PAD_TRACK_ID];
+      const padEnvelopeLevel = isPlaying && isPadActive
+        ? sampleActivityEnvelope(padEnvelope, currentTime)
+        : 0;
+      const padTrack: MixerTrackView = {
+        id: INTERNAL_PAD_TRACK_ID,
         label: 'Pad Int.',
         shortLabel: 'PAD',
         accent: '#43c477',
         defaultVolume: resolvedInternalPadVolume,
         volume: resolvedInternalPadVolume,
-        level: 0,
+        level: padEnvelopeLevel,
         muted: !isPadActive || resolvedInternalPadVolume <= 0.001,
         soloed: false,
         dimmed: false,
         disabled: false,
-        outputRoute: 'stereo',
+        outputRoute: 'stereo' as TrackOutputRoute,
         showRouteFlip: false,
       };
 
@@ -1887,7 +1919,7 @@ export function LiveDirectorView({
     if (cached) {
       return cached;
     }
-    const isInternalPadTrack = trackId === '__internal-pad__';
+    const isInternalPadTrack = trackId === INTERNAL_PAD_TRACK_ID;
     const callbacks = {
       onVolumeChange: (nextVolume: number) => {
         const handlers = channelStripHandlersRef.current;
@@ -2478,8 +2510,8 @@ export function LiveDirectorView({
   }, []);
 
   const trackSignature = useMemo(() => (
-    activeTracks.map(track => `${track.id}:${track.url}`).join('|')
-  ), [activeTracks]);
+    activeEngineTracks.map(track => `${track.id}:${track.url}`).join('|')
+  ), [activeEngineTracks]);
 
   useEffect(() => {
     if (!isInitializingSession) {
@@ -2514,7 +2546,7 @@ export function LiveDirectorView({
 
       const disabledCount = sessionTracks.length - activeTracks.length;
       console.info(
-        `[LiveDirectorView] Loading ${activeEngineTracks.length}/${sessionTracks.length} enabled tracks` +
+        `[LiveDirectorView] Loading ${activeTracks.length}/${sessionTracks.length} enabled tracks${nativeInternalPadTrack ? ' + internal pad' : ''}` +
           (disabledCount > 0 ? ` (skipping ${disabledCount} disabled/limited stem${disabledCount === 1 ? '' : 's'}).` : '.'),
       );
 
@@ -2526,7 +2558,7 @@ export function LiveDirectorView({
 
         setIsInitializingSession(false);
         setBusyMessage(null);
-        console.log(`[LiveDirectorView] Initialized ${activeEngineTracks.length} track(s).`);
+        console.log(`[LiveDirectorView] Initialized ${activeEngineTracks.length} native track(s).`);
       } catch (error) {
         if (cancelled) {
           return;
@@ -2705,6 +2737,28 @@ export function LiveDirectorView({
   }, [applyMasterVolume, currentTime, fadeMasterVolume, hasTrackSession, isPlaying, isReady, seekTo]);
 
   useEffect(() => {
+    if (isIOSNativeEngineSurface) {
+      const padA = padAudioRefA.current;
+      const padB = padAudioRefB.current;
+      if (padFadeFrameRef.current !== null) {
+        window.cancelAnimationFrame(padFadeFrameRef.current);
+        padFadeFrameRef.current = null;
+      }
+      if (padA) {
+        padA.pause();
+        padA.removeAttribute('src');
+        padA.load();
+      }
+      if (padB) {
+        padB.pause();
+        padB.removeAttribute('src');
+        padB.load();
+      }
+      padFadeTargetRefA.current = 0;
+      padFadeTargetRefB.current = 0;
+      return;
+    }
+
     const padA = padAudioRefA.current;
     const padB = padAudioRefB.current;
     if (!padA || !padB) {
@@ -2816,7 +2870,7 @@ export function LiveDirectorView({
         padFadeFrameRef.current = null;
       }
     };
-  }, [isPadActive, resolvedInternalPadVolume, resolvedPadUrl]);
+  }, [isIOSNativeEngineSurface, isPadActive, resolvedInternalPadVolume, resolvedPadUrl]);
 
   const persistSongSession = useCallback(async (payload: {
     mode: 'sequence' | 'folder';
@@ -3475,6 +3529,20 @@ export function LiveDirectorView({
       onInternalPadVolumeChange(safeValue);
     }
   }, [onInternalPadVolumeChange]);
+
+  useEffect(() => {
+    if (!resolvedPadUrl && isPadActive) {
+      setIsPadActive(false);
+    }
+  }, [isPadActive, resolvedPadUrl]);
+
+  useEffect(() => {
+    if (!shouldUseNativeInternalPad || !isReady) {
+      return;
+    }
+
+    setVolume(INTERNAL_PAD_TRACK_ID, isPadActive ? resolvedInternalPadVolume : 0);
+  }, [isPadActive, isReady, resolvedInternalPadVolume, setVolume, shouldUseNativeInternalPad]);
 
   // Keep the ref pointed at the latest parent-side handlers so the stable
   // per-track callbacks returned by getChannelStripCallbacks always see the
@@ -4702,7 +4770,7 @@ export function LiveDirectorView({
               style={mixerScrollStyle}
             >
               {mixerView.map((track) => {
-                const isInternalPadTrack = track.id === '__internal-pad__';
+                const isInternalPadTrack = track.id === INTERNAL_PAD_TRACK_ID;
                 const stableCallbacks = getChannelStripCallbacks(track.id);
                 return (
                   <ChannelStrip
@@ -5231,8 +5299,12 @@ export function LiveDirectorView({
         </div>
       )}
 
-      <audio ref={padAudioRefA} preload="none" className="hidden" />
-      <audio ref={padAudioRefB} preload="none" className="hidden" />
+      {!isIOSNativeEngineSurface && (
+        <>
+          <audio ref={padAudioRefA} preload="none" className="hidden" />
+          <audio ref={padAudioRefB} preload="none" className="hidden" />
+        </>
+      )}
 
       {showLoadWarningBanner && loadWarnings && loadWarnings.length > 0 && (
         <div className="pointer-events-none absolute inset-x-0 top-3 z-[55] flex justify-center px-3">

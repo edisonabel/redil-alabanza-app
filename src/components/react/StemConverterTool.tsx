@@ -271,6 +271,25 @@ const sourceStemFromFile = (file: File, index: number): SourceStem => {
   };
 };
 
+const getDefaultPlanAction = (category: StemCategory, sources: SourceStem[], hasNonPadSources: boolean): PlanAction => {
+  if (category === 'unknown') return 'skip';
+  if (category === 'pads') return hasNonPadSources ? 'skip' : sources.length > 1 ? 'merge' : 'keep';
+  if (sources.length <= 1) return 'keep';
+  if (category === 'clickGuide' || category === 'percussion' || category === 'misc') return 'merge';
+  if (category === 'keys' || category === 'electric' || category === 'vocals') {
+    return sources.length > 2 ? 'merge' : 'keep';
+  }
+  return 'keep';
+};
+
+const getPlanReason = (category: StemCategory, sources: SourceStem[], action: PlanAction) => {
+  const meta = categoryMeta[category];
+  if (action === 'skip') return meta.skipReason || 'Sugerido omitir para ahorrar canales.';
+  if (action === 'merge') return meta.mergeReason;
+  if (sources.length > 1) return 'Separadas para prender/apagar cada una en Live Director.';
+  return meta.keepReason;
+};
+
 const createPlanGroup = (category: StemCategory, sources: SourceStem[], action?: PlanAction): SmartPlanGroup => {
   const meta = categoryMeta[category];
   const finalAction = action || (sources.length > 1 ? 'merge' : 'keep');
@@ -279,11 +298,7 @@ const createPlanGroup = (category: StemCategory, sources: SourceStem[], action?:
     action: finalAction,
     category,
     name: meta.name,
-    reason: finalAction === 'skip'
-      ? (meta.skipReason || 'Sugerido omitir para ahorrar canales.')
-      : sources.length > 1
-        ? meta.mergeReason
-        : meta.keepReason,
+    reason: getPlanReason(category, sources, finalAction),
     sources,
   };
 };
@@ -300,30 +315,52 @@ const buildSmartPlan = (sources: SourceStem[]) => {
   const groups = categoryOrder.flatMap((category) => {
     const bucket = byCategory.get(category);
     if (!bucket?.length) return [];
-    const shouldSkip = (category === 'pads' && hasNonPadSources) || category === 'unknown';
-    return [createPlanGroup(category, bucket, shouldSkip ? 'skip' : undefined)];
+    return [createPlanGroup(category, bucket, getDefaultPlanAction(category, bucket, hasNonPadSources))];
   });
 
-  const outputGroups = groups.filter((group) => group.action !== 'skip');
-  if (outputGroups.length <= MAX_STEMS) {
-    return groups;
-  }
-
-  const allowedIds = new Set(outputGroups.slice(0, MAX_STEMS).map((group) => group.id));
-  return groups.map((group) => (
-    group.action !== 'skip' && !allowedIds.has(group.id)
-      ? { ...group, action: 'skip' as PlanAction, reason: `Sugerido omitir para mantener maximo ${MAX_STEMS} stems.` }
-      : group
-  ));
+  return groups;
 };
 
-const planGroupsToStems = (groups: SmartPlanGroup[]) => groups
-  .filter((group) => group.action !== 'skip')
-  .slice(0, MAX_STEMS)
-  .map<StemItem>((group, index) => {
+const getGroupOutputCount = (group: SmartPlanGroup) => {
+  if (group.action === 'skip') return 0;
+  if (group.action === 'merge') return 1;
+  return group.sources.length;
+};
+
+const getPlanOutputCount = (groups: SmartPlanGroup[]) => groups.reduce(
+  (total, group) => total + getGroupOutputCount(group),
+  0,
+);
+
+const planGroupsToStems = (groups: SmartPlanGroup[]) => {
+  const outputStems: StemItem[] = [];
+
+  groups.forEach((group) => {
+    if (group.action === 'skip') {
+      return;
+    }
+
+    if (group.action === 'keep') {
+      group.sources.forEach((source) => {
+        const outputIndex = outputStems.length;
+        outputStems.push({
+          id: `plan-${outputIndex}-${source.id}`,
+          sources: [source],
+          name: source.name,
+          relativePath: source.relativePath,
+          size: source.size,
+          status: 'queued',
+          progress: 0,
+          outputName: buildOutputName(source.name, outputIndex),
+        });
+      });
+      return;
+    }
+
+    const outputIndex = outputStems.length;
     const sourceNames = group.sources.map((source) => source.name);
-    return {
-      id: `plan-${index}-${group.id}`,
+    outputStems.push({
+      id: `plan-${outputIndex}-${group.id}`,
       sources: group.sources,
       name: group.name,
       relativePath: sourceNames.length > 3
@@ -332,9 +369,12 @@ const planGroupsToStems = (groups: SmartPlanGroup[]) => groups
       size: group.sources.reduce((total, source) => total + source.size, 0),
       status: 'queued',
       progress: 0,
-      outputName: buildOutputName(group.name, index),
-    };
+      outputName: buildOutputName(group.name, outputIndex),
+    });
   });
+
+  return outputStems;
+};
 
 const rawSourcesToStems = (sources: SourceStem[]) => sources.slice(0, MAX_STEMS).map<StemItem>((source, index) => ({
   id: `raw-${index}-${source.id}`,
@@ -431,11 +471,11 @@ export default function StemConverterTool() {
     [stems],
   );
   const planOutputCount = useMemo(
-    () => smartPlan.filter((group) => group.action !== 'skip').length,
+    () => getPlanOutputCount(smartPlan),
     [smartPlan],
   );
   const planMergeCount = useMemo(
-    () => smartPlan.filter((group) => group.action === 'merge').length,
+    () => smartPlan.filter((group) => group.action === 'merge' && group.sources.length > 1).length,
     [smartPlan],
   );
   const planSkippedCount = useMemo(
@@ -444,6 +484,7 @@ export default function StemConverterTool() {
       .reduce((total, group) => total + group.sources.length, 0),
     [smartPlan],
   );
+  const isPlanOverLimit = planOutputCount > MAX_STEMS;
 
   const canConvert = stems.length > 0 && !isConverting;
   const completedPercent = stems.length ? Math.round((completedCount / stems.length) * 100) : 0;
@@ -519,11 +560,14 @@ export default function StemConverterTool() {
   }, [resetOutputs]);
 
   const applySmartPlan = useCallback(() => {
+    if (planOutputCount === 0 || planOutputCount > MAX_STEMS) {
+      return;
+    }
     const nextStems = planGroupsToStems(smartPlan);
     setStems(nextStems);
     setOmittedCount(planSkippedCount);
     setIsPlanOpen(false);
-  }, [planSkippedCount, smartPlan]);
+  }, [planOutputCount, planSkippedCount, smartPlan]);
 
   const applyRawPlan = useCallback(() => {
     setStems(rawSourcesToStems(pendingSources));
@@ -539,6 +583,14 @@ export default function StemConverterTool() {
       setSmartPlan(buildSmartPlan(nextSources));
       return nextSources;
     });
+  }, []);
+
+  const updatePlanGroupAction = useCallback((groupId: string, action: PlanAction) => {
+    setSmartPlan((current) => current.map((group) => (
+      group.id === groupId
+        ? { ...group, action, reason: getPlanReason(group.category, group.sources, action) }
+        : group
+    )));
   }, []);
 
   const loadEngine = useCallback(async () => {
@@ -830,11 +882,19 @@ export default function StemConverterTool() {
             <div className="grid max-h-[58dvh] gap-3 overflow-y-auto p-4 sm:grid-cols-2">
               {smartPlan.map((group) => {
                 const isSkipped = group.action === 'skip';
+                const groupOutputCount = getGroupOutputCount(group);
                 const actionLabel = group.action === 'merge'
                   ? 'Fusionar'
                   : group.action === 'skip'
                     ? 'Omitir sugerido'
-                    : 'Mantener';
+                    : group.sources.length > 1
+                      ? 'Separar'
+                      : 'Mantener';
+                const groupActions: Array<{ action: PlanAction; label: string; disabled?: boolean }> = [
+                  { action: 'keep', label: group.sources.length > 1 ? 'Separar' : 'Mantener' },
+                  { action: 'merge', label: 'Fusionar', disabled: group.sources.length < 2 },
+                  { action: 'skip', label: 'Omitir' },
+                ];
                 return (
                   <article
                     key={group.id}
@@ -850,8 +910,31 @@ export default function StemConverterTool() {
                       </span>
                     </div>
                     <p className="mt-3 text-xs font-bold text-content-muted">
-                      {group.sources.length} pista{group.sources.length === 1 ? '' : 's'}
+                      {group.sources.length} pista{group.sources.length === 1 ? '' : 's'} / {groupOutputCount} salida{groupOutputCount === 1 ? '' : 's'}
                     </p>
+                    <div className="mt-3 grid grid-cols-3 overflow-hidden rounded-xl border border-border bg-surface p-1">
+                      {groupActions.map((option) => {
+                        const isSelected = group.action === option.action;
+                        return (
+                          <button
+                            key={option.action}
+                            type="button"
+                            onClick={() => updatePlanGroupAction(group.id, option.action)}
+                            disabled={option.disabled}
+                            aria-pressed={isSelected}
+                            className={`min-h-9 rounded-lg px-2 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-35 ${
+                              isSelected
+                                ? option.action === 'skip'
+                                  ? 'bg-content text-surface'
+                                  : 'bg-brand text-white'
+                                : 'text-content-muted hover:bg-background hover:text-content'
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                     <div className="mt-2 space-y-1">
                       {group.sources.slice(0, 4).map((source) => (
                         <div key={source.id} className="grid gap-2">
@@ -885,10 +968,18 @@ export default function StemConverterTool() {
 
             <div className="border-t border-border px-5 py-4">
               <div className="mb-4 flex flex-wrap gap-2 text-xs font-bold text-content-muted">
-                <span className="rounded-full border border-border bg-background px-3 py-1.5">Meta ideal: {TARGET_STEMS}</span>
+                <span className={`rounded-full border px-3 py-1.5 ${isPlanOverLimit ? 'border-danger/30 bg-danger/10 text-danger' : 'border-border bg-background'}`}>
+                  Salidas: {planOutputCount}/{MAX_STEMS}
+                </span>
+                <span className="rounded-full border border-border bg-background px-3 py-1.5">Ideal: {TARGET_STEMS}</span>
                 <span className="rounded-full border border-border bg-background px-3 py-1.5">Fusiones: {planMergeCount}</span>
                 <span className="rounded-full border border-border bg-background px-3 py-1.5">Omitidos sugeridos: {planSkippedCount}</span>
               </div>
+              {isPlanOverLimit ? (
+                <p className="mb-4 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm font-bold text-danger">
+                  Baja a {MAX_STEMS} salidas: fusiona u omite algunos grupos.
+                </p>
+              ) : null}
               <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
                 <button
                   type="button"
@@ -900,10 +991,10 @@ export default function StemConverterTool() {
                 <button
                   type="button"
                   onClick={applySmartPlan}
-                  disabled={planOutputCount === 0}
+                  disabled={planOutputCount === 0 || isPlanOverLimit}
                   className="ui-pressable inline-flex min-h-12 items-center justify-center rounded-2xl bg-brand px-5 font-bold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Aplicar plan
+                  {isPlanOverLimit ? `Baja a ${MAX_STEMS}` : 'Aplicar plan'}
                 </button>
               </div>
             </div>
