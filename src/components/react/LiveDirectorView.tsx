@@ -2066,6 +2066,35 @@ export function LiveDirectorView({
     });
   }, [activeSectionIndex, currentTime, isPlaying, onPlaybackSnapshot, sectionOffsetSeconds, songId]);
 
+  // Haptic feedback on section transitions — eyes-free awareness of where the
+  // song is going. Uses navigator.vibrate as a best-effort (works on Android /
+  // web; no-op on iOS WebView). To get real iOS haptics, install
+  // @capacitor/haptics and swap this impl to Haptics.impact({ style: 'light' }).
+  const lastHapticSectionIndexRef = useRef<number>(-1);
+  useEffect(() => {
+    // Skip initial mount / seeks while paused — only pulse on a *transition
+    // during playback*, not on every mount or seek.
+    if (!isPlaying) {
+      lastHapticSectionIndexRef.current = activeSectionIndex;
+      return;
+    }
+    if (lastHapticSectionIndexRef.current === activeSectionIndex) {
+      return;
+    }
+    // Skip the very first update after mount where ref starts at -1 — we only
+    // want real transitions.
+    const wasInitial = lastHapticSectionIndexRef.current < 0;
+    lastHapticSectionIndexRef.current = activeSectionIndex;
+    if (wasInitial) return;
+    try {
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        navigator.vibrate(10);
+      }
+    } catch {
+      // Ignore — haptics are best-effort.
+    }
+  }, [activeSectionIndex, isPlaying]);
+
   const syncManualSessionState = useCallback((session: LiveDirectorResolvedSession) => {
     setLoadError(null);
     setUnmatchedFiles(session.unmatchedFiles);
