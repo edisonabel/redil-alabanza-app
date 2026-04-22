@@ -1,5 +1,6 @@
 const READ_INDEX_SLOT = 0;
 const WRITE_INDEX_SLOT = 1;
+const FALLBACK_CONSUMED_REPORT_FRAMES = 2048;
 
 class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -162,6 +163,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       track.underrunEvents = 0;
       track.underrunFrames = 0;
       track.lastDropDebugFrame = 0;
+      track.consumedFramesSinceReport = 0;
       if (track.trackIndex < this.meterLevels.length) {
         this.meterLevels[track.trackIndex] = 0;
       }
@@ -217,6 +219,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         underrunEvents: 0,
         underrunFrames: 0,
         lastDropDebugFrame: 0,
+        consumedFramesSinceReport: 0,
       };
       this.tracks[trackIndex] = track;
     } else {
@@ -252,6 +255,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       track.underrunEvents = 0;
       track.underrunFrames = 0;
       track.lastDropDebugFrame = 0;
+      track.consumedFramesSinceReport = 0;
     }
 
     if (usesSharedMemory && config.sampleBuffer && config.indexBuffer) {
@@ -535,6 +539,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         framesToRead,
         track.indexCapacity,
       );
+      this.noteFallbackConsumed(track, framesToRead);
       track.lastMeterLevel = this.decayMeterLevel(track.lastMeterLevel);
       this.meterLevels[track.trackIndex] = track.lastMeterLevel;
       return;
@@ -590,6 +595,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
 
     track.localReadIndex = nextReadIndex;
+    this.noteFallbackConsumed(track, framesToRead);
     track.lastMeterLevel = this.updateMeterLevel(track.lastMeterLevel, peakSample);
     this.meterLevels[track.trackIndex] = track.lastMeterLevel;
   }
@@ -616,6 +622,32 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     track.underrunFrames += missingFrames;
   }
 
+  noteFallbackConsumed(track, frames) {
+    if (frames <= 0 || track.usesSharedMemory) {
+      return;
+    }
+
+    track.consumedFramesSinceReport += frames;
+
+    if (track.consumedFramesSinceReport >= FALLBACK_CONSUMED_REPORT_FRAMES) {
+      this.flushFallbackConsumed(track);
+    }
+  }
+
+  flushFallbackConsumed(track) {
+    if (!track || track.usesSharedMemory || track.consumedFramesSinceReport <= 0) {
+      return;
+    }
+
+    const frames = track.consumedFramesSinceReport;
+    track.consumedFramesSinceReport = 0;
+    this.port.postMessage({
+      type: 'fallback-consumed',
+      trackIndex: track.trackIndex,
+      frames,
+    });
+  }
+
   publishDebugStatus() {
     const tracks = [];
     let audibleZeroTracks = 0;
@@ -627,6 +659,8 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       if (!track) {
         continue;
       }
+
+      this.flushFallbackConsumed(track);
 
       const availableRead = this.getAvailableRead(track);
       const audible = !track.isMuted && track.volume > 0.0001;

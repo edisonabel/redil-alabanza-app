@@ -109,6 +109,12 @@ type WorkletDebugDropMessage = {
   capacity: number;
 };
 
+type WorkletFallbackConsumedMessage = {
+  type: 'fallback-consumed';
+  trackIndex: number;
+  frames: number;
+};
+
 type WorkletMessage =
   | WorkletTrackBufferMessage
   | WorkletPcmChunkMessage
@@ -122,7 +128,8 @@ type WorkletInboundMessage =
   | WorkletTrackLevelsMessage
   | WorkletDebugStatusMessage
   | WorkletDebugTransportMessage
-  | WorkletDebugDropMessage;
+  | WorkletDebugDropMessage
+  | WorkletFallbackConsumedMessage;
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -211,11 +218,12 @@ type TrackRuntime = {
   suppressDecodedOutput: boolean;
   lastFetchWaitDebugAt: number;
   lastDecodeWaitDebugAt: number;
+  fallbackDrainScratch: Float32Array;
 };
 
 const DEFAULT_WORKLET_MODULE_URL = '/workers/MultitrackWorkletProcessor.js';
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
-const DEFAULT_SAMPLE_RATE = 44_100;
+const DEFAULT_SAMPLE_RATE = 48_000;
 const DEFAULT_CHANNEL_COUNT = 1;
 const DEFAULT_BUFFER_SECONDS = 3;
 const DEFAULT_FETCH_CHUNK_BYTES = 512 * 1024;
@@ -789,6 +797,7 @@ export class StreamingMultitrackEngine {
       suppressDecodedOutput: false,
       lastFetchWaitDebugAt: 0,
       lastDecodeWaitDebugAt: 0,
+      fallbackDrainScratch: new Float32Array(AAC_FRAME_SIZE),
     };
 
     console.info('[LDWEBDBG] track:create', {
@@ -1415,7 +1424,33 @@ export class StreamingMultitrackEngine {
 
     if (message.type === 'debug-drop') {
       console.warn('[LDWEBDBG] worklet:drop', message);
+      return;
     }
+
+    if (message.type === 'fallback-consumed') {
+      this.applyFallbackConsumedMessage(message);
+    }
+  }
+
+  private applyFallbackConsumedMessage(message: WorkletFallbackConsumedMessage): void {
+    const trackState = this.trackStates[message.trackIndex];
+
+    if (!trackState || trackState.ringBuffer.usesSharedMemory) {
+      return;
+    }
+
+    const requestedFrames = Math.max(0, Math.floor(Number(message.frames) || 0));
+    const framesToDrain = Math.min(requestedFrames, trackState.ringBuffer.availableRead());
+
+    if (framesToDrain <= 0) {
+      return;
+    }
+
+    if (trackState.fallbackDrainScratch.length < framesToDrain) {
+      trackState.fallbackDrainScratch = new Float32Array(framesToDrain);
+    }
+
+    trackState.ringBuffer.pull(trackState.fallbackDrainScratch.subarray(0, framesToDrain));
   }
 
   private applyTrackLevelMessage(levels: Float32Array | number[]): void {
