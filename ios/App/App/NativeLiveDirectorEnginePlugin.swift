@@ -28,7 +28,9 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         CAPPluginMethod(name: "setNowPlayingMetadata", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clearNowPlayingMetadata", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "lockLandscape", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "unlockOrientation", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "unlockOrientation", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "preloadTracks", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cancelPreload", returnType: CAPPluginReturnPromise)
     ]
 
     private struct ActivityEnvelope {
@@ -121,6 +123,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private var nowPlayingArtist: String?
     private var nowPlayingAlbumTitle: String?
     private var didConfigureRemoteCommandCenter = false
+    private var preloadTask: Task<Void, Never>?
 
     @objc public override func load() {
         super.load()
@@ -131,6 +134,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        preloadTask?.cancel()
         // Release the idle-timer lock if we go away mid-playback so other
         // apps / screens don't inherit a permanently-awake device.
         DispatchQueue.main.async {
@@ -154,6 +158,113 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             self.applyOrientationMask(.allButUpsideDown)
             call.resolve()
         }
+    }
+
+    @objc func preloadTracks(_ call: CAPPluginCall) {
+        guard let rawTracks = call.getArray("tracks") as? [JSObject] else {
+            call.reject("Missing tracks")
+            return
+        }
+
+        let activeRawTracks = rawTracks.filter { ($0["enabled"] as? Bool) != false }
+        let gapSeconds = min(8, max(0, call.getDouble("gapSeconds") ?? 2))
+
+        preloadTask?.cancel()
+        if activeRawTracks.isEmpty {
+            call.resolve([
+                "loaded": 0,
+                "failed": 0,
+                "total": 0,
+                "cancelled": false
+            ])
+            return
+        }
+
+        preloadTask = Task { [weak self] in
+            guard let self = self else {
+                DispatchQueue.main.async {
+                    call.resolve([
+                        "loaded": 0,
+                        "failed": 0,
+                        "total": activeRawTracks.count,
+                        "cancelled": true
+                    ])
+                }
+                return
+            }
+
+            var loaded = 0
+            var failed = 0
+            CAPLog.print("NLDE PRELOAD start total=\(activeRawTracks.count) gapSeconds=\(String(format: "%.2f", gapSeconds))")
+
+            for (index, rawTrack) in activeRawTracks.enumerated() {
+                if Task.isCancelled {
+                    CAPLog.print("NLDE PRELOAD cancelled loaded=\(loaded) failed=\(failed) total=\(activeRawTracks.count)")
+                    DispatchQueue.main.async {
+                        call.resolve([
+                            "loaded": loaded,
+                            "failed": failed,
+                            "total": activeRawTracks.count,
+                            "cancelled": true
+                        ])
+                    }
+                    return
+                }
+
+                if index > 0, gapSeconds > 0 {
+                    do {
+                        try await Task.sleep(nanoseconds: UInt64((gapSeconds * 1_000_000_000).rounded()))
+                    } catch {
+                        CAPLog.print("NLDE PRELOAD cancelled during gap loaded=\(loaded) failed=\(failed) total=\(activeRawTracks.count)")
+                        DispatchQueue.main.async {
+                            call.resolve([
+                                "loaded": loaded,
+                                "failed": failed,
+                                "total": activeRawTracks.count,
+                                "cancelled": true
+                            ])
+                        }
+                        return
+                    }
+                }
+
+                guard
+                    let id = rawTrack["id"] as? String,
+                    let urlString = rawTrack["url"] as? String,
+                    let sourceURL = URL(string: urlString)
+                else {
+                    failed += 1
+                    CAPLog.print("NLDE PRELOAD skip malformed index=\(index + 1)")
+                    continue
+                }
+
+                let remoteURL = self.preferredAudioURL(from: rawTrack, fallbackURL: sourceURL)
+                do {
+                    let localURL = try await self.cachedAudioURL(for: remoteURL)
+                    loaded += 1
+                    CAPLog.print("NLDE PRELOAD ready index=\(index + 1)/\(activeRawTracks.count) id=\(id) local=\(localURL.lastPathComponent)")
+                } catch {
+                    failed += 1
+                    CAPLog.print("NLDE PRELOAD fail index=\(index + 1)/\(activeRawTracks.count) id=\(id) file=\(remoteURL.lastPathComponent) error=\(error.localizedDescription)")
+                }
+            }
+
+            CAPLog.print("NLDE PRELOAD complete loaded=\(loaded) failed=\(failed) total=\(activeRawTracks.count)")
+            DispatchQueue.main.async {
+                call.resolve([
+                    "loaded": loaded,
+                    "failed": failed,
+                    "total": activeRawTracks.count,
+                    "cancelled": false
+                ])
+            }
+        }
+    }
+
+    @objc func cancelPreload(_ call: CAPPluginCall) {
+        preloadTask?.cancel()
+        preloadTask = nil
+        call.resolve()
     }
 
     @objc func load(_ call: CAPPluginCall) {

@@ -8,14 +8,91 @@ import {
 } from '../../utils/liveDirectorSongSession';
 import { fetchLiveDirectorSongSession } from '../../utils/liveDirectorUploadClient';
 import { getPadUrlForSongKey } from '../../utils/padAudio';
+import {
+  isNativeLiveDirectorEngineAvailable,
+  NativeLiveDirectorEngine,
+} from '../../services/NativeLiveDirectorEnginePlugin';
 
 const CACHE_NAME = 'repertorio-offline-cache-v1';
-const NEXT_SONG_PREWARM_CONCURRENCY = 2;
+const NEXT_SONG_WEB_PRELOAD_TRACK_LIMIT = 11;
+const NEXT_SONG_IOS_PRELOAD_TRACK_LIMIT = 13;
+const NEXT_SONG_WEB_PRELOAD_START_DELAY_MS = 2500;
+const NEXT_SONG_WEB_PRELOAD_GAP_MS = 900;
+const NEXT_SONG_IOS_PRELOAD_START_DELAY_MS = 3500;
+const NEXT_SONG_IOS_PRELOAD_GAP_SECONDS = 2;
 const ENABLE_AUTO_OFFLINE_CACHE = false;
-const AUDIO_SOURCE_URL_RE = /^(https?:\/\/|\/).+\.(mp3|wav|m4a|aac|ogg)(\?.*)?$/i;
+const AUDIO_SOURCE_URL_RE = /^(https?:\/\/|\/).+\.(mp3|wav|m4a|aac|ogg|flac)(\?.*)?$/i;
+const PRELOAD_PAD_TRACK_ID = '__preload-pad__';
+const PRELOAD_STEM_PRIORITY_RULES = [
+  { rank: 0, pattern: /\b(click|metronom[oe]?)\b/i },
+  { rank: 1, pattern: /\b(gu[ií]a|guide|cue|count[- ]?in|count)\b/i },
+  { rank: 2, pattern: /\b(bater[ií]a|drum|kick|snare|toms?|overhead|cymbal|hi-?hat|hat|percu)/i },
+  { rank: 3, pattern: /\b(bajo|bass)\b/i },
+  { rank: 4, pattern: /\b(voz|lead|vocal|voice|singer)\b/i },
+  { rank: 5, pattern: /\b(coros?|backing|bv|harmon[ií]a|harmony)\b/i },
+  { rank: 6, pattern: /\b(piano|keys?|rhodes|organ[oa]?|synth|wurl)\b/i },
+  { rank: 7, pattern: /\b(guit(arra)?|gtr|ac[uú]stica|el[eé]ctrica)\b/i },
+  { rank: 8, pattern: /\b(pad|strings?|cuerda|orchestr|viol)/i },
+  { rank: 9, pattern: /\b(fx|sfx|efecto|effect)/i },
+];
 
 const resolveSongId = (song) => String(song?.id || '').trim();
 const isAudioSourceUrl = (value = '') => AUDIO_SOURCE_URL_RE.test(String(value || '').trim());
+const wait = (ms, signal) => new Promise((resolve, reject) => {
+  if (signal?.aborted) {
+    reject(new DOMException('Preload cancelled', 'AbortError'));
+    return;
+  }
+
+  const timeoutId = window.setTimeout(resolve, ms);
+  signal?.addEventListener('abort', () => {
+    window.clearTimeout(timeoutId);
+    reject(new DOMException('Preload cancelled', 'AbortError'));
+  }, { once: true });
+});
+
+const preloadStemPriorityRank = (track) => {
+  const haystack = `${track?.name || ''} ${track?.id || ''}`.toLowerCase();
+  for (const rule of PRELOAD_STEM_PRIORITY_RULES) {
+    if (rule.pattern.test(haystack)) return rule.rank;
+  }
+  return 10;
+};
+
+const selectPreloadTracks = (tracks, limit) => {
+  const safeLimit = Math.max(1, Math.floor(Number(limit) || tracks.length || 1));
+  if (!Array.isArray(tracks) || tracks.length <= safeLimit) {
+    return tracks || [];
+  }
+
+  const ranked = tracks
+    .map((track, index) => ({ track, index, rank: preloadStemPriorityRank(track) }))
+    .sort((a, b) => (a.rank - b.rank) || (a.index - b.index));
+  const kept = ranked.slice(0, safeLimit);
+  kept.sort((a, b) => a.index - b.index);
+  return kept.map((entry) => entry.track);
+};
+
+const normalizePreloadTrack = (track, index) => {
+  const url = String(track?.url || '').trim();
+  if (!url) return null;
+
+  return {
+    id: String(track?.id || `preload-${index}-${url}`).trim(),
+    name: String(track?.name || track?.sourceFileName || `Stem ${index + 1}`).trim(),
+    url,
+    iosUrl: String(track?.iosUrl || '').trim() || undefined,
+    nativeUrl: String(track?.nativeUrl || '').trim() || undefined,
+    optimizedUrl: String(track?.optimizedUrl || '').trim() || undefined,
+    cafUrl: String(track?.cafUrl || '').trim() || undefined,
+    pcmUrl: String(track?.pcmUrl || '').trim() || undefined,
+    volume: Number.isFinite(Number(track?.volume)) ? Number(track.volume) : 1,
+    isMuted: Boolean(track?.isMuted),
+    enabled: track?.enabled !== false,
+    sourceFileName: String(track?.sourceFileName || '').trim() || undefined,
+    outputRoute: String(track?.outputRoute || '').trim() || undefined,
+  };
+};
 
 const normalizePlaybackSourceEntry = (entry, index, fallbackKind = 'sequence') => {
   if (!entry) return null;
@@ -137,6 +214,49 @@ const buildSongCacheUrls = (song, sessionOverride = null) => {
   return Array.from(new Set([audioUrl, padUrl, ...sessionUrls].filter(Boolean)));
 };
 
+const buildSongPreloadTracks = (song, sessionOverride = null, { limit = 11, includePad = true } = {}) => {
+  if (!song) return [];
+
+  const session = resolveSongSession(song, sessionOverride);
+  const sessionTracks = Array.isArray(session?.tracks)
+    ? session.tracks
+      .filter((track) => track?.enabled !== false)
+      .map(normalizePreloadTrack)
+      .filter(Boolean)
+    : [];
+  const fallbackAudioUrl = typeof song?.mp3 === 'string' ? song.mp3.trim() : '';
+  const sourceTracks = sessionTracks.length > 0 || !fallbackAudioUrl
+    ? sessionTracks
+    : [{
+      id: 'preload-main-audio',
+      name: 'Audio principal',
+      url: fallbackAudioUrl,
+      nativeUrl: fallbackAudioUrl,
+      volume: 1,
+      isMuted: false,
+      enabled: true,
+    }];
+  const selectedTracks = selectPreloadTracks(sourceTracks, limit);
+  const padUrl = includePad ? getPadUrlForSongKey(song?.originalKey || song?.key) : '';
+
+  if (!padUrl) {
+    return selectedTracks;
+  }
+
+  return [
+    ...selectedTracks,
+    {
+      id: PRELOAD_PAD_TRACK_ID,
+      name: 'Pad siguiente',
+      url: padUrl,
+      nativeUrl: padUrl,
+      volume: 0,
+      isMuted: false,
+      enabled: true,
+    },
+  ];
+};
+
 const buildSessionTrackSignature = (session) => (
   Array.isArray(session?.tracks)
     ? session.tracks
@@ -171,35 +291,19 @@ const shouldUseFetchedSession = (currentSession, fetchedSession) => {
   return buildSessionTrackSignature(currentSession) !== buildSessionTrackSignature(fetchedSession);
 };
 
-const cacheUrlIfNeeded = async (cache, url) => {
+const cacheUrlIfNeeded = async (cache, url, signal) => {
   const cached = await cache.match(url);
   if (cached) {
-    return;
+    return 'hit';
   }
 
-  const response = await fetch(url);
-  if (response.ok) {
+  const response = await fetch(url, { cache: 'force-cache', signal });
+  if (response.ok || response.type === 'opaque') {
     await cache.put(url, response.clone());
-  }
-};
-
-const warmUrlsWithConcurrency = async (urls, worker, limit = NEXT_SONG_PREWARM_CONCURRENCY) => {
-  if (!Array.isArray(urls) || urls.length === 0) {
-    return;
+    return 'stored';
   }
 
-  const safeLimit = Math.max(1, Math.min(limit, urls.length));
-  let nextIndex = 0;
-
-  const runners = new Array(safeLimit).fill(null).map(async () => {
-    while (nextIndex < urls.length) {
-      const currentIndex = nextIndex;
-      nextIndex += 1;
-      await worker(urls[currentIndex], currentIndex);
-    }
-  });
-
-  await Promise.all(runners);
+  return 'skipped';
 };
 
 const buildQueueSongs = (songs) =>
@@ -403,7 +507,7 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
     if (
       ensayoSongs.length === 0 ||
       typeof window === 'undefined' ||
-      !('caches' in window)
+      !isNativeLiveDirectorEngineAvailable()
     ) {
       return;
     }
@@ -415,10 +519,75 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
       return;
     }
 
+    const abortController = new AbortController();
+    let cancelled = false;
+
+    const preloadNextSongNative = async () => {
+      try {
+        await wait(NEXT_SONG_IOS_PRELOAD_START_DELAY_MS, abortController.signal);
+
+        const preloadTracks = buildSongPreloadTracks(nextSong, sessionOverrides[nextSongId], {
+          limit: NEXT_SONG_IOS_PRELOAD_TRACK_LIMIT,
+          includePad: true,
+        });
+
+        if (preloadTracks.length === 0) {
+          prewarmedSongIdsRef.current.add(nextSongId);
+          return;
+        }
+
+        const result = await NativeLiveDirectorEngine.preloadTracks({
+          tracks: preloadTracks,
+          gapSeconds: NEXT_SONG_IOS_PRELOAD_GAP_SECONDS,
+        });
+
+        if (!cancelled && !result.cancelled) {
+          prewarmedSongIdsRef.current.add(nextSongId);
+        }
+      } catch (error) {
+        if (!abortController.signal.aborted) {
+          console.warn('[ModoEnsayoDirector] Fallo la precarga nativa de la siguiente cancion.', error);
+        }
+      }
+    };
+
+    void preloadNextSongNative();
+
+    return () => {
+      cancelled = true;
+      abortController.abort();
+      void NativeLiveDirectorEngine.cancelPreload().catch(() => undefined);
+    };
+  }, [ensayoSongs, safeActiveSongIndex, sessionOverrides]);
+
+  useEffect(() => {
+    if (
+      ensayoSongs.length === 0 ||
+      typeof window === 'undefined' ||
+      !('caches' in window) ||
+      isNativeLiveDirectorEngineAvailable()
+    ) {
+      return;
+    }
+
+    const nextSong = ensayoSongs[safeActiveSongIndex + 1];
+    const nextSongId = resolveSongId(nextSong);
+
+    if (!nextSong || !nextSongId || prewarmedSongIdsRef.current.has(nextSongId)) {
+      return;
+    }
+
+    const abortController = new AbortController();
     let cancelled = false;
 
     const prewarmNextSong = async () => {
-      const urls = buildSongCacheUrls(nextSong, sessionOverrides[nextSongId]);
+      await wait(NEXT_SONG_WEB_PRELOAD_START_DELAY_MS, abortController.signal);
+
+      const preloadTracks = buildSongPreloadTracks(nextSong, sessionOverrides[nextSongId], {
+        limit: NEXT_SONG_WEB_PRELOAD_TRACK_LIMIT,
+        includePad: true,
+      });
+      const urls = Array.from(new Set(preloadTracks.map((track) => track.url).filter(Boolean)));
       if (urls.length === 0) {
         prewarmedSongIdsRef.current.add(nextSongId);
         return;
@@ -434,25 +603,31 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
 
         urlsToWarm.forEach((url) => prewarmInFlightUrlsRef.current.add(url));
 
-        await warmUrlsWithConcurrency(
-          urlsToWarm,
-          async (url) => {
-            try {
-              await cacheUrlIfNeeded(cache, url);
-            } catch (error) {
+        for (const url of urlsToWarm) {
+          if (cancelled || abortController.signal.aborted) {
+            return;
+          }
+
+          try {
+            await cacheUrlIfNeeded(cache, url, abortController.signal);
+          } catch (error) {
+            if (!abortController.signal.aborted) {
               console.warn('[ModoEnsayoDirector] No se pudo precalentar la siguiente cancion.', url, error);
-            } finally {
-              prewarmInFlightUrlsRef.current.delete(url);
             }
-          },
-          NEXT_SONG_PREWARM_CONCURRENCY,
-        );
+          } finally {
+            prewarmInFlightUrlsRef.current.delete(url);
+          }
+
+          await wait(NEXT_SONG_WEB_PRELOAD_GAP_MS, abortController.signal);
+        }
 
         if (!cancelled) {
           prewarmedSongIdsRef.current.add(nextSongId);
         }
       } catch (error) {
-        console.warn('[ModoEnsayoDirector] Fallo el prewarm de la siguiente cancion.', error);
+        if (!abortController.signal.aborted) {
+          console.warn('[ModoEnsayoDirector] Fallo el prewarm de la siguiente cancion.', error);
+        }
       }
     };
 
@@ -460,6 +635,7 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
 
     return () => {
       cancelled = true;
+      abortController.abort();
     };
   }, [ensayoSongs, safeActiveSongIndex, sessionOverrides]);
 

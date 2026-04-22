@@ -47,6 +47,13 @@ export type NativeLiveDirectorLoadProgress = {
   total: number;
 };
 
+export type NativeLiveDirectorPreloadResult = {
+  loaded: number;
+  failed: number;
+  total: number;
+  cancelled?: boolean;
+};
+
 /**
  * Payload fired by the native plugin when the user interacts with the
  * lock-screen / Control Center "Next Track" or "Previous Track" buttons.
@@ -81,6 +88,8 @@ export interface NativeLiveDirectorEnginePlugin {
   clearNowPlayingMetadata(): Promise<void>;
   lockLandscape(): Promise<void>;
   unlockOrientation(): Promise<void>;
+  preloadTracks(options: { tracks: TrackData[]; gapSeconds?: number }): Promise<NativeLiveDirectorPreloadResult>;
+  cancelPreload(): Promise<void>;
   addListener(
     eventName: 'state',
     listenerFunc: (state: NativeLiveDirectorEngineState) => void,
