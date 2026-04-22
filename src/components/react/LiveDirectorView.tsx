@@ -4006,11 +4006,11 @@ export function LiveDirectorView({
                   }
                   void exitLiveDirector();
                 }}
-                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] w-[2.4rem] px-1' : isCompactLandscape ? 'h-10 w-11 px-1.5' : 'h-[var(--ld-control-height)] w-[3.6rem] px-2'} shrink-0 items-center justify-center text-white/85 hover:text-white hover:bg-white/6`}
+                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] w-[3.05rem] px-1.5' : isCompactLandscape ? 'h-12 w-[3.65rem] px-2' : 'h-[var(--ld-control-height)] w-[4.15rem] px-2.5'} shrink-0 items-center justify-center text-white/85 hover:text-white hover:bg-white/6`}
                 aria-label="Volver al repertorio"
                 title="Volver al repertorio"
               >
-                <ChevronLeft className={`${isUltraCompactLandscape ? 'h-4 w-4' : isCompactLandscape ? 'h-5 w-5' : 'h-7 w-7'}`} strokeWidth={isCompactLandscape ? 2 : 2.4} />
+                <ChevronLeft className={`${isUltraCompactLandscape ? 'h-5 w-5' : isCompactLandscape ? 'h-6 w-6' : 'h-8 w-8'}`} strokeWidth={isCompactLandscape ? 2.1 : 2.45} />
               </button>
               <div
                 className={`flex ${isUltraCompactLandscape ? 'rounded-[0.8rem] px-1 py-0.5' : isCompactLandscape ? 'rounded-[1rem] py-1' : 'rounded-[1.45rem] py-3'} shrink-0 flex-col items-center justify-center gap-0.5 border border-white/8 bg-black/16 ${isUltraCompactLandscape ? '' : 'px-2'} text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]`}
@@ -4102,15 +4102,15 @@ export function LiveDirectorView({
               <button
                 type="button"
                 onClick={() => {
-                  void seekTo(Math.max(0, currentTime - 4));
+                  void seekTo(Math.max(0, currentTime - 5));
                 }}
                 disabled={!hasTrackSession}
-                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3' : isCompactLandscape ? 'h-10 px-3.5' : 'h-[var(--ld-control-height)] px-4'} justify-center text-white/78 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
-                style={{ width: scaleRem(isUltraCompactLandscape ? 4.3 : isCompactLandscape ? 5.25 : 5.65, 3.7) }}
-                aria-label="Retroceder cuatro segundos"
-                title="Retroceder cuatro segundos"
+                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-4' : isCompactLandscape ? 'h-12 px-5' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/80 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
+                style={{ width: scaleRem(isUltraCompactLandscape ? (showSectionsPanel ? 4.95 : 5.55) : isCompactLandscape ? (showSectionsPanel ? 6.1 : 6.75) : 7.25, 4.65) }}
+                aria-label="Retroceder cinco segundos"
+                title="Retroceder cinco segundos"
               >
-                <RotateCcw className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-5 w-5' : 'h-6 w-6'}`} />
+                <RotateCcw className={`${isUltraCompactLandscape ? 'h-5 w-5' : isCompactLandscape ? 'h-6 w-6' : 'h-7 w-7'}`} />
               </button>
 
               <button
@@ -4124,16 +4124,16 @@ export function LiveDirectorView({
                   void play();
                 }}
                 disabled={!isReady}
-                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3.5' : isCompactLandscape ? 'h-10 px-4' : 'h-[var(--ld-control-height)] px-5'} justify-center ${isPlaying ? 'text-[#43c477] border-[#43c477]/35 bg-[#43c477]/10' : 'text-[#43c477] hover:text-[#4fe487]'} hover:bg-[#43c477]/12 disabled:cursor-not-allowed disabled:text-white/24 disabled:hover:bg-transparent`}
-                style={{ width: scaleRem(isUltraCompactLandscape ? 6.35 : isCompactLandscape ? 8.35 : 11.25, 5.75) }}
+                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-5' : isCompactLandscape ? 'h-12 px-6' : 'h-[var(--ld-control-height)] px-7'} justify-center ${isPlaying ? 'text-[#43c477] border-[#43c477]/35 bg-[#43c477]/10' : 'text-[#43c477] hover:text-[#4fe487]'} hover:bg-[#43c477]/12 disabled:cursor-not-allowed disabled:text-white/24 disabled:hover:bg-transparent`}
+                style={{ width: scaleRem(isUltraCompactLandscape ? (showSectionsPanel ? 7.35 : 8.85) : isCompactLandscape ? (showSectionsPanel ? 9.35 : 10.75) : showSectionsPanel ? 12.75 : 14.25, 6.85) }}
                 aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
                 aria-keyshortcuts="Space"
                 title={isPlaying ? 'Pausar · Espacio' : 'Reproducir · Espacio'}
               >
                 {isPlaying ? (
-                  <Pause className={`${isUltraCompactLandscape ? 'h-[1.125rem] w-[1.125rem]' : isCompactLandscape ? 'h-6 w-6' : 'h-9 w-9'}`} strokeWidth={2.2} fill="currentColor" />
+                  <Pause className={`${isUltraCompactLandscape ? 'h-[1.55rem] w-[1.55rem]' : isCompactLandscape ? 'h-8 w-8' : 'h-11 w-11'}`} strokeWidth={2.15} fill="currentColor" />
                 ) : (
-                  <Play className={`ml-0.5 ${isUltraCompactLandscape ? 'h-[1.125rem] w-[1.125rem]' : isCompactLandscape ? 'h-6 w-6' : 'h-9 w-9'}`} strokeWidth={2.2} fill="currentColor" />
+                  <Play className={`ml-0.5 ${isUltraCompactLandscape ? 'h-[1.55rem] w-[1.55rem]' : isCompactLandscape ? 'h-8 w-8' : 'h-11 w-11'}`} strokeWidth={2.15} fill="currentColor" />
                 )}
               </button>
 
@@ -4143,12 +4143,12 @@ export function LiveDirectorView({
                   void seekTo(0);
                 }}
                 disabled={!hasTrackSession}
-                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3' : isCompactLandscape ? 'h-10 px-3.5' : 'h-[var(--ld-control-height)] px-4'} justify-center text-white/74 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
-                style={{ width: scaleRem(isUltraCompactLandscape ? 4.45 : isCompactLandscape ? 5.45 : 5.85, 3.85) }}
+                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-4' : isCompactLandscape ? 'h-12 px-5' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/76 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
+                style={{ width: scaleRem(isUltraCompactLandscape ? (showSectionsPanel ? 4.85 : 5.3) : isCompactLandscape ? (showSectionsPanel ? 5.95 : 6.45) : 7.05, 4.45) }}
                 aria-label="Volver al inicio"
                 title="Volver al inicio"
               >
-                <SkipBack className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-5 w-5' : 'h-6 w-6'}`} />
+                <SkipBack className={`${isUltraCompactLandscape ? 'h-5 w-5' : isCompactLandscape ? 'h-6 w-6' : 'h-7 w-7'}`} />
               </button>
             </div>
 
@@ -4159,8 +4159,8 @@ export function LiveDirectorView({
                     type="button"
                     onClick={handlePreviousSection}
                     disabled={!hasTrackSession}
-                    className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3.5' : isCompactLandscape ? 'h-10 px-4' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/82 hover:text-white hover:bg-white/6 disabled:cursor-not-allowed disabled:text-white/24`}
-                    style={{ width: scaleRem(isUltraCompactLandscape ? 3.75 : isCompactLandscape ? 4.65 : 5.45, 3.15) }}
+                    className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-4' : isCompactLandscape ? 'h-12 px-5' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/82 hover:text-white hover:bg-white/6 disabled:cursor-not-allowed disabled:text-white/24`}
+                    style={{ width: scaleRem(isUltraCompactLandscape ? 4.45 : isCompactLandscape ? 5.35 : 6.25, 3.75) }}
                     aria-label="Ir a la seccion anterior"
                     title="Ir a la seccion anterior"
                   >
@@ -4171,8 +4171,8 @@ export function LiveDirectorView({
                     type="button"
                     onClick={handleNextSection}
                     disabled={!hasTrackSession || resolvedSections.length === 0 || activeSectionIndex >= resolvedSections.length - 1}
-                    className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3.5' : isCompactLandscape ? 'h-10 px-4' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/82 hover:text-white hover:bg-white/6 disabled:cursor-not-allowed disabled:text-white/24`}
-                    style={{ width: scaleRem(isUltraCompactLandscape ? 3.75 : isCompactLandscape ? 4.65 : 5.45, 3.15) }}
+                    className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-4' : isCompactLandscape ? 'h-12 px-5' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/82 hover:text-white hover:bg-white/6 disabled:cursor-not-allowed disabled:text-white/24`}
+                    style={{ width: scaleRem(isUltraCompactLandscape ? 4.45 : isCompactLandscape ? 5.35 : 6.25, 3.75) }}
                     aria-label="Ir a la siguiente seccion"
                     title="Ir a la siguiente seccion"
                   >
