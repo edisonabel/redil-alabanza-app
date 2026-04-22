@@ -15,6 +15,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     };
     this.meterPublishInterval = 8;
     this.meterPublishCountdown = 0;
+    this.renderedFrames = 0;
+    this.debugPublishIntervalFrames = sampleRate || 48000;
+    this.debugPublishCountdownFrames = this.debugPublishIntervalFrames;
 
     this.port.onmessage = (event) => {
       const data = event && event.data ? event.data : null;
@@ -124,16 +127,19 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
     if (type === 'transport') {
       this.playing = !!message.playing;
+      this.postTransportDebug();
       return;
     }
 
     if (type === 'PLAY') {
       this.playing = true;
+      this.postTransportDebug();
       return;
     }
 
     if (type === 'PAUSE') {
       this.playing = false;
+      this.postTransportDebug();
     }
   }
 
@@ -153,6 +159,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       track.localReadIndex = 0;
       track.localWriteIndex = 0;
       track.lastMeterLevel = 0;
+      track.underrunEvents = 0;
+      track.underrunFrames = 0;
+      track.lastDropDebugFrame = 0;
       if (track.trackIndex < this.meterLevels.length) {
         this.meterLevels[track.trackIndex] = 0;
       }
@@ -205,6 +214,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         localReadIndex: 0,
         localWriteIndex: 0,
         lastMeterLevel: 0,
+        underrunEvents: 0,
+        underrunFrames: 0,
+        lastDropDebugFrame: 0,
       };
       this.tracks[trackIndex] = track;
     } else {
@@ -237,6 +249,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       track.localReadIndex = 0;
       track.localWriteIndex = 0;
       track.lastMeterLevel = 0;
+      track.underrunEvents = 0;
+      track.underrunFrames = 0;
+      track.lastDropDebugFrame = 0;
     }
 
     if (usesSharedMemory && config.sampleBuffer && config.indexBuffer) {
@@ -320,6 +335,16 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     const availableWrite = this.getLocalAvailableWrite(track);
 
     if (framesToWrite > availableWrite) {
+      if (this.renderedFrames - track.lastDropDebugFrame >= this.debugPublishIntervalFrames / 2) {
+        track.lastDropDebugFrame = this.renderedFrames;
+        this.port.postMessage({
+          type: 'debug-drop',
+          trackIndex,
+          framesToWrite,
+          availableWrite,
+          capacity: track.capacity,
+        });
+      }
       return;
     }
 
@@ -372,6 +397,8 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       return true;
     }
 
+    this.renderedFrames += frameCount;
+
     for (let trackIndex = 0; trackIndex < this.trackCount; trackIndex += 1) {
       const track = this.tracks[trackIndex];
 
@@ -394,6 +421,12 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       this.meterPublishCountdown -= 1;
     }
 
+    this.debugPublishCountdownFrames -= frameCount;
+    if (this.debugPublishCountdownFrames <= 0) {
+      this.publishDebugStatus();
+      this.debugPublishCountdownFrames = this.debugPublishIntervalFrames;
+    }
+
     return true;
   }
 
@@ -409,6 +442,8 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     );
     const framesToRead = frameCount < availableRead ? frameCount : availableRead;
     let nextReadIndex = readIndex;
+
+    this.noteUnderrun(track, frameCount - framesToRead);
 
     if (framesToRead <= 0) {
       track.lastMeterLevel = this.decayMeterLevel(track.lastMeterLevel);
@@ -486,6 +521,8 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     const framesToRead = frameCount < availableRead ? frameCount : availableRead;
     let nextReadIndex = track.localReadIndex;
 
+    this.noteUnderrun(track, frameCount - framesToRead);
+
     if (framesToRead <= 0) {
       track.lastMeterLevel = this.decayMeterLevel(track.lastMeterLevel);
       this.meterLevels[track.trackIndex] = track.lastMeterLevel;
@@ -555,6 +592,93 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     track.localReadIndex = nextReadIndex;
     track.lastMeterLevel = this.updateMeterLevel(track.lastMeterLevel, peakSample);
     this.meterLevels[track.trackIndex] = track.lastMeterLevel;
+  }
+
+  postTransportDebug() {
+    this.port.postMessage({
+      type: 'debug-transport',
+      playing: this.playing,
+      renderedFrames: this.renderedFrames,
+    });
+  }
+
+  noteUnderrun(track, missingFrames) {
+    if (
+      missingFrames <= 0 ||
+      !this.playing ||
+      track.isMuted ||
+      track.volume <= 0.0001
+    ) {
+      return;
+    }
+
+    track.underrunEvents += 1;
+    track.underrunFrames += missingFrames;
+  }
+
+  publishDebugStatus() {
+    const tracks = [];
+    let audibleZeroTracks = 0;
+    let minAvailableRead = Number.POSITIVE_INFINITY;
+
+    for (let trackIndex = 0; trackIndex < this.trackCount; trackIndex += 1) {
+      const track = this.tracks[trackIndex];
+
+      if (!track) {
+        continue;
+      }
+
+      const availableRead = this.getAvailableRead(track);
+      const audible = !track.isMuted && track.volume > 0.0001;
+
+      if (audible) {
+        if (availableRead <= 0) {
+          audibleZeroTracks += 1;
+        }
+
+        if (availableRead < minAvailableRead) {
+          minAvailableRead = availableRead;
+        }
+      }
+
+      tracks.push({
+        index: track.trackIndex,
+        shared: !!track.usesSharedMemory,
+        muted: !!track.isMuted,
+        volume: Math.round(track.volume * 10000) / 10000,
+        availableRead,
+        capacity: track.capacity,
+        underrunEvents: track.underrunEvents,
+        underrunFrames: track.underrunFrames,
+      });
+    }
+
+    this.port.postMessage({
+      type: 'debug-status',
+      playing: this.playing,
+      renderedFrames: this.renderedFrames,
+      sampleRate: sampleRate || 48000,
+      audibleZeroTracks,
+      minAvailableRead:
+        minAvailableRead === Number.POSITIVE_INFINITY ? 0 : minAvailableRead,
+      tracks,
+    });
+  }
+
+  getAvailableRead(track) {
+    if (track.usesSharedMemory && track.indices) {
+      return this.computeAvailableRead(
+        Atomics.load(track.indices, READ_INDEX_SLOT),
+        Atomics.load(track.indices, WRITE_INDEX_SLOT),
+        track.indexCapacity,
+      );
+    }
+
+    return this.computeAvailableRead(
+      track.localReadIndex,
+      track.localWriteIndex,
+      track.indexCapacity,
+    );
   }
 
   ensureMeterCapacity(requiredTrackCount) {

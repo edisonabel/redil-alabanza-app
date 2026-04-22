@@ -74,6 +74,41 @@ type WorkletTrackLevelsMessage = {
   levels: Float32Array | number[];
 };
 
+type WorkletDebugTrackState = {
+  index: number;
+  shared: boolean;
+  muted: boolean;
+  volume: number;
+  availableRead: number;
+  capacity: number;
+  underrunEvents: number;
+  underrunFrames: number;
+};
+
+type WorkletDebugStatusMessage = {
+  type: 'debug-status';
+  playing: boolean;
+  renderedFrames: number;
+  sampleRate: number;
+  audibleZeroTracks: number;
+  minAvailableRead: number;
+  tracks: WorkletDebugTrackState[];
+};
+
+type WorkletDebugTransportMessage = {
+  type: 'debug-transport';
+  playing: boolean;
+  renderedFrames: number;
+};
+
+type WorkletDebugDropMessage = {
+  type: 'debug-drop';
+  trackIndex: number;
+  framesToWrite: number;
+  availableWrite: number;
+  capacity: number;
+};
+
 type WorkletMessage =
   | WorkletTrackBufferMessage
   | WorkletPcmChunkMessage
@@ -83,7 +118,11 @@ type WorkletMessage =
   | WorkletTrackOutputRouteMessage
   | WorkletFlushBuffersMessage;
 
-type WorkletInboundMessage = WorkletTrackLevelsMessage;
+type WorkletInboundMessage =
+  | WorkletTrackLevelsMessage
+  | WorkletDebugStatusMessage
+  | WorkletDebugTransportMessage
+  | WorkletDebugDropMessage;
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -170,6 +209,8 @@ type TrackRuntime = {
   channelScratch: Float32Array[];
   readyResolved: boolean;
   suppressDecodedOutput: boolean;
+  lastFetchWaitDebugAt: number;
+  lastDecodeWaitDebugAt: number;
 };
 
 const DEFAULT_WORKLET_MODULE_URL = '/workers/MultitrackWorkletProcessor.js';
@@ -294,6 +335,22 @@ export class StreamingMultitrackEngine {
 
     this.masterGain = this.context.createGain();
     this.masterGain.connect(this.context.destination);
+
+    console.info('[LDWEBDBG] engine:init', {
+      contextRate: this.context.sampleRate,
+      contextState: this.context.state,
+      requestedRate: this.defaultSampleRate,
+      bufferSeconds: this.defaultBufferSeconds,
+      sharedArrayBuffer: typeof SharedArrayBuffer === 'function',
+      crossOriginIsolated: window.crossOriginIsolated === true,
+    });
+
+    this.context.addEventListener('statechange', () => {
+      console.warn('[LDWEBDBG] audio-context:state', {
+        state: this.context.state,
+        currentTime: this.context.currentTime,
+      });
+    });
   }
 
   async loadTracks(
@@ -390,6 +447,16 @@ export class StreamingMultitrackEngine {
       this.normalizeTrackDefinition(trackDefinition),
     );
 
+    console.info('[LDWEBDBG] init', {
+      tracks: normalizedTracks.length,
+      contextRate: this.context.sampleRate,
+      contextState: this.context.state,
+      bufferSeconds: this.defaultBufferSeconds,
+      fetchChunkBytes: this.fetchChunkBytes,
+      sharedArrayBuffer: typeof SharedArrayBuffer === 'function',
+      crossOriginIsolated: window.crossOriginIsolated === true,
+    });
+
     normalizedTracks.forEach((trackDefinition, index) => {
       const trackState = this.createTrackRuntime(index, trackDefinition);
       this.trackStates.push(trackState);
@@ -444,6 +511,13 @@ export class StreamingMultitrackEngine {
     await this.resumeContextIfNeeded();
     this.startTime = this.context.currentTime - this.pauseTime;
     this.transportPlaying = true;
+    console.info('[LDWEBDBG] transport:play', {
+      currentTime: this.context.currentTime,
+      startTime: this.startTime,
+      pauseTime: this.pauseTime,
+      contextState: this.context.state,
+      tracks: this.trackStates.length,
+    });
     this.postWorkletMessage({
       type: 'transport',
       playing: true,
@@ -458,6 +532,11 @@ export class StreamingMultitrackEngine {
     this.pauseTime = this.getCurrentTime();
     this.startTime = 0;
     this.transportPlaying = false;
+    console.info('[LDWEBDBG] transport:pause', {
+      pauseTime: this.pauseTime,
+      contextTime: this.context.currentTime,
+      contextState: this.context.state,
+    });
     if (this.workletNode) {
       this.workletNode.port.postMessage({
         type: 'transport',
@@ -472,6 +551,11 @@ export class StreamingMultitrackEngine {
     this.startTime = 0;
     this.restartFromHead = this.tracks.length > 0;
     this.transportPlaying = false;
+    console.info('[LDWEBDBG] transport:stop', {
+      contextTime: this.context.currentTime,
+      contextState: this.context.state,
+      tracks: this.trackStates.length,
+    });
     if (this.workletNode) {
       this.workletNode.port.postMessage({
         type: 'transport',
@@ -703,7 +787,28 @@ export class StreamingMultitrackEngine {
       channelScratch: [],
       readyResolved: false,
       suppressDecodedOutput: false,
+      lastFetchWaitDebugAt: 0,
+      lastDecodeWaitDebugAt: 0,
     };
+
+    console.info('[LDWEBDBG] track:create', {
+      index,
+      container: trackDefinition.container,
+      codec: trackDefinition.codec,
+      sampleRate: trackDefinition.sampleRate,
+      channels: trackDefinition.channelCount,
+      capacity: ringBuffer.capacity,
+      bufferSeconds: trackDefinition.bufferSeconds,
+      shared: ringBuffer.usesSharedMemory,
+      url: trackDefinition.url,
+    });
+
+    if (!ringBuffer.usesSharedMemory) {
+      console.warn('[LDWEBDBG] fallback-buffer-mode', {
+        index,
+        reason: 'SharedArrayBuffer unavailable; watching for 3s local-buffer underrun.',
+      });
+    }
 
     return trackState;
   }
@@ -914,6 +1019,15 @@ export class StreamingMultitrackEngine {
 
       if (!trackState.readyResolved && trackState.ringBuffer.availableRead() > 0) {
         trackState.readyResolved = true;
+        console.info('[LDWEBDBG] track:ready', {
+          index: trackState.index,
+          shared: trackState.ringBuffer.usesSharedMemory,
+          availableRead: trackState.ringBuffer.availableRead(),
+          availableWrite: trackState.ringBuffer.availableWrite(),
+          capacity: trackState.ringBuffer.capacity,
+          fetchOffset: trackState.fetchOffset,
+          totalBytes: trackState.totalBytes,
+        });
         trackState.ready.resolve();
       }
     } finally {
@@ -1012,6 +1126,23 @@ export class StreamingMultitrackEngine {
       !trackState.abortController.signal.aborted &&
       trackState.ringBuffer.availableWrite() < resumeWatermark
     ) {
+      const now = performance.now();
+      if (now - trackState.lastFetchWaitDebugAt > 1000) {
+        trackState.lastFetchWaitDebugAt = now;
+        console.warn('[LDWEBDBG] fetch-window-wait', {
+          index: trackState.index,
+          shared: trackState.ringBuffer.usesSharedMemory,
+          availableRead: trackState.ringBuffer.availableRead(),
+          availableWrite: trackState.ringBuffer.availableWrite(),
+          capacity: trackState.ringBuffer.capacity,
+          pauseWatermark,
+          resumeWatermark,
+          fetchOffset: trackState.fetchOffset,
+          totalBytes: trackState.totalBytes,
+          contextTime: this.context.currentTime,
+          playing: this.transportPlaying,
+        });
+      }
       await this.sleep(this.pollIntervalMs);
     }
   }
@@ -1026,6 +1157,23 @@ export class StreamingMultitrackEngine {
       !trackState.abortController.signal.aborted &&
       trackState.ringBuffer.availableWrite() < resumeWatermark
     ) {
+      const now = performance.now();
+      if (now - trackState.lastDecodeWaitDebugAt > 1000) {
+        trackState.lastDecodeWaitDebugAt = now;
+        console.warn('[LDWEBDBG] decode-window-wait', {
+          index: trackState.index,
+          shared: trackState.ringBuffer.usesSharedMemory,
+          availableRead: trackState.ringBuffer.availableRead(),
+          availableWrite: trackState.ringBuffer.availableWrite(),
+          capacity: trackState.ringBuffer.capacity,
+          resumeWatermark,
+          decoderQueue: trackState.decoder.decodeQueueSize,
+          fetchOffset: trackState.fetchOffset,
+          totalBytes: trackState.totalBytes,
+          contextTime: this.context.currentTime,
+          playing: this.transportPlaying,
+        });
+      }
       await this.sleep(this.pollIntervalMs);
     }
   }
@@ -1245,6 +1393,28 @@ export class StreamingMultitrackEngine {
 
     if (message.type === 'track-levels') {
       this.applyTrackLevelMessage(message.levels);
+      return;
+    }
+
+    if (message.type === 'debug-status') {
+      const shouldWarn =
+        message.audibleZeroTracks > 0 ||
+        (Number.isFinite(message.minAvailableRead) && message.minAvailableRead < AAC_FRAME_SIZE);
+      if (shouldWarn) {
+        console.warn('[LDWEBDBG] worklet', message);
+      } else {
+        console.info('[LDWEBDBG] worklet', message);
+      }
+      return;
+    }
+
+    if (message.type === 'debug-transport') {
+      console.info('[LDWEBDBG] worklet:transport', message);
+      return;
+    }
+
+    if (message.type === 'debug-drop') {
+      console.warn('[LDWEBDBG] worklet:drop', message);
     }
   }
 
