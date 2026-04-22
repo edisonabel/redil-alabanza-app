@@ -179,11 +179,11 @@ type LiveDirectorViewProps = {
 // mixer can't meet the I/O deadline. Limits are empirically grounded:
 //   - iOS native (AVAudioEngine):     13 song stems, with internal pad extra
 //   - Android web (Capacitor browser): 10 stems before clocks drift
-//   - Desktop web (Chrome/Edge/FF):    15 stems
+//   - Desktop web (Chrome/Edge/FF):    11 stems before Chrome decode windows stall
 // Changing these requires re-profiling on real devices.
 const IOS_NATIVE_MAX_ACTIVE_TRACKS = 13;
 const ANDROID_MAX_ACTIVE_TRACKS = 10;
-const WEB_ENGINE_MAX_ACTIVE_TRACKS = 15;
+const WEB_ENGINE_MAX_ACTIVE_TRACKS = 11;
 const INTERNAL_PAD_TRACK_ID = '__internal-pad__';
 // The internal pad masters are intentionally lush, but their raw gain is too hot
 // for live control. Apply a fixed -8 dB trim before the pad reaches either engine.
@@ -1299,6 +1299,13 @@ export function LiveDirectorView({
   );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dismissedLoadWarningKey, setDismissedLoadWarningKey] = useState<string | null>(null);
+  const [trackLimitNotice, setTrackLimitNotice] = useState<{
+    key: string;
+    names: string[];
+    limit: number;
+    total: number;
+  } | null>(null);
+  const [dismissedTrackLimitNoticeKey, setDismissedTrackLimitNoticeKey] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [isInitializingSession, setIsInitializingSession] = useState(false);
   const [showLoadPanel, setShowLoadPanel] = useState(canLoadManualSession && !initialSession);
@@ -2576,10 +2583,12 @@ export function LiveDirectorView({
       setMutedTrackIds(new Set(activeTracks.filter((track) => track.isMuted).map((track) => track.id)));
       setSoloTrackId(null);
 
-      const disabledCount = sessionTracks.length - activeTracks.length;
+      const limitedCount = Math.max(0, enabledSessionTracks.length - activeTracks.length);
+      const disabledCount = Math.max(0, sessionTracks.length - enabledSessionTracks.length);
       console.info(
-        `[LiveDirectorView] Loading ${activeTracks.length}/${sessionTracks.length} enabled tracks${nativeInternalPadTrack ? ' + internal pad' : ''}` +
-          (disabledCount > 0 ? ` (skipping ${disabledCount} disabled/limited stem${disabledCount === 1 ? '' : 's'}).` : '.'),
+        `[LiveDirectorView] Loading ${activeTracks.length}/${enabledSessionTracks.length} enabled tracks${nativeInternalPadTrack ? ' + internal pad' : ''}` +
+          (limitedCount > 0 ? ` (auto-disabled ${limitedCount} over-limit stem${limitedCount === 1 ? '' : 's'}).` : '') +
+          (disabledCount > 0 ? ` (${disabledCount} already disabled).` : '.'),
       );
 
       try {
@@ -2632,6 +2641,9 @@ export function LiveDirectorView({
 
   const showLoadWarningBanner = Boolean(
     loadWarnings && loadWarnings.length > 0 && dismissedLoadWarningKey !== loadWarningsKey
+  );
+  const showTrackLimitNotice = Boolean(
+    trackLimitNotice && dismissedTrackLimitNoticeKey !== trackLimitNotice.key
   );
 
   const stopMasterVolumeFade = useCallback(() => {
@@ -3019,6 +3031,62 @@ export function LiveDirectorView({
     }));
   }, [buildSessionSavePayload, hasPersistedSongContext, manualSession, mutedTrackIds, queueSilentSessionSave, trackOutputRoutes, trackVolumes]);
 
+  useEffect(() => {
+    if (hasProvidedTracks || !manualSession || manualSession.mode !== 'folder') {
+      return;
+    }
+    if (enabledSessionTracks.length <= sessionActiveTrackLimit) {
+      return;
+    }
+
+    const activeIds = new Set(activeTracks.map((track) => track.id));
+    const limitedTracks = enabledSessionTracks.filter((track) => !activeIds.has(track.id));
+    if (limitedTracks.length === 0) {
+      return;
+    }
+
+    let changed = false;
+    const nextTracks = manualSession.tracks.map((track) => {
+      if (track.enabled !== false && !activeIds.has(track.id)) {
+        changed = true;
+        return {
+          ...track,
+          enabled: false,
+        };
+      }
+      return track;
+    });
+
+    if (!changed) {
+      return;
+    }
+
+    const names = limitedTracks.map((track) => track.name || track.id);
+    const key = `${sessionActiveTrackLimit}:${limitedTracks.map((track) => track.id).join('|')}`;
+    setTrackLimitNotice({
+      key,
+      names,
+      limit: sessionActiveTrackLimit,
+      total: enabledSessionTracks.length,
+    });
+    setDismissedTrackLimitNoticeKey((previous) => (previous === key ? previous : null));
+    setManualSession((previous) => (
+      previous ? { ...previous, tracks: nextTracks } : previous
+    ));
+
+    if (hasPersistedSongContext) {
+      void commitMixerStateSilent(nextTracks);
+    }
+  }, [
+    activeTracks,
+    commitMixerStateSilent,
+    enabledSessionTracks,
+    hasPersistedSongContext,
+    hasProvidedTracks,
+    manualSession,
+    sessionActiveTrackLimit,
+  ]);
+
   const mixerAutosaveTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -3119,9 +3187,9 @@ export function LiveDirectorView({
       let enabledCount = 0;
       const nextTracks = manualSession.tracks.map((track) => {
         const wantsEnabled = pendingEnabledMap[track.id] !== false;
-        // All platforms now have a finite cap (iOS 13 + pad, Android 10, web 15).
+        // All platforms now have a finite cap (iOS 13 + pad, Android 10, web 11).
         // Previous versions treated iOS native as unlimited — that was wrong:
-        // AVAudioEngine also slips past 15 stems. The cap is enforced here
+        // AVAudioEngine also slips past its ceiling. The cap is enforced here
         // regardless of engine surface so the user gets consistent gating.
         const canEnable = !wantsEnabled || enabledCount < sessionActiveTrackLimit;
         const enabled = wantsEnabled && canEnable;
@@ -5182,7 +5250,7 @@ export function LiveDirectorView({
                   {currentSessionLabel}
                 </h3>
                 <p className={`text-white/54 ${useWideTrackLoadModal ? 'mt-1 text-[0.74rem]' : 'mt-1.5 text-sm'}`}>
-                  Desactiva stems que no vas a usar para que no se descarguen.
+                  Desactiva stems que no vas a usar. En web se cargan maximo {sessionActiveTrackLimit}.
                 </p>
               </div>
               <button
@@ -5224,7 +5292,7 @@ export function LiveDirectorView({
                 }}
                 className={`ui-pressable-soft rounded-full border border-white/10 bg-white/[0.05] font-black uppercase tracking-[0.18em] text-white/76 ${useWideTrackLoadModal ? 'px-3 py-1.5 text-[0.58rem]' : 'px-3 py-2 text-[0.62rem]'}`}
               >
-                Activar todo
+                Auto elegir
               </button>
             </div>
 
@@ -5322,8 +5390,37 @@ export function LiveDirectorView({
         </>
       )}
 
+      {showTrackLimitNotice && trackLimitNotice && (
+        <div className="pointer-events-none absolute inset-x-0 top-3 z-[56] flex justify-center px-3">
+          <div className="pointer-events-auto w-full max-w-xl rounded-[1.1rem] border border-sky-300/22 bg-[linear-gradient(180deg,rgba(13,24,29,0.97),rgba(10,17,21,0.97))] px-4 py-3 shadow-[0_18px_36px_rgba(0,0,0,0.3)]">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.75rem] border border-sky-300/22 bg-sky-300/10 text-sky-100">
+                <SlidersVertical className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[0.72rem] font-black uppercase tracking-[0.22em] text-sky-100/78">
+                  Limite web: {trackLimitNotice.limit} stems
+                </p>
+                <p className="mt-1 text-[0.88rem] leading-snug text-white/80">
+                  Chrome cargara {trackLimitNotice.limit} de {trackLimitNotice.total}. Se omitieron {trackLimitNotice.names.slice(0, 3).join(', ')}{trackLimitNotice.names.length > 3 ? ` +${trackLimitNotice.names.length - 3}` : ''}.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDismissedTrackLimitNoticeKey(trackLimitNotice.key)}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.7rem] border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white"
+                aria-label="Cerrar aviso de limite de stems"
+                title="Cerrar"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showLoadWarningBanner && loadWarnings && loadWarnings.length > 0 && (
-        <div className="pointer-events-none absolute inset-x-0 top-3 z-[55] flex justify-center px-3">
+        <div className={`pointer-events-none absolute inset-x-0 ${showTrackLimitNotice ? 'top-[6.4rem]' : 'top-3'} z-[55] flex justify-center px-3`}>
           <div className="pointer-events-auto w-full max-w-xl rounded-[1.1rem] border border-amber-300/25 bg-[linear-gradient(180deg,rgba(34,26,12,0.96),rgba(24,18,8,0.96))] px-4 py-3 shadow-[0_18px_36px_rgba(0,0,0,0.3)]">
             <div className="flex items-start gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.75rem] border border-amber-300/25 bg-amber-300/10 text-amber-200">
