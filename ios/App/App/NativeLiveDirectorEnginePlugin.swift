@@ -40,6 +40,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         let remoteURL: URL
         let localURL: URL
         let file: AVAudioFile
+        let loadIndex: Int
         let player = AVAudioPlayerNode()
         var volume: Float
         var isMuted: Bool
@@ -55,6 +56,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             remoteURL: URL,
             localURL: URL,
             file: AVAudioFile,
+            loadIndex: Int,
             volume: Float,
             isMuted: Bool,
             outputRoute: String,
@@ -66,6 +68,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             self.remoteURL = remoteURL
             self.localURL = localURL
             self.file = file
+            self.loadIndex = loadIndex
             self.volume = volume
             self.isMuted = isMuted
             self.outputRoute = outputRoute
@@ -87,6 +90,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private let maxScheduledSilencePadSeconds: Double = 1.0
     private let internalPadTailSeconds: Double = 30.0
     private let internalPadFadeOutSeconds: Double = 10.0
+    private let syncDebugIntervalSeconds: Double = 5.0
     private var engine = AVAudioEngine()
     private var tracks: [NativeTrack] = []
     private var trackLevels: [String: Double] = [:]
@@ -101,6 +105,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private var masterVolume: Float = 1
     private var soloTrackId: String?
     private var internalPadFadeScale: Float = 1
+    private var lastSyncDebugLogElapsed: Double = -Double.greatestFiniteMagnitude
     private var stateTimer: DispatchSourceTimer?
     private var didRegisterAudioSessionObservers = false
     // Now Playing / lock screen metadata. Set from the JS side with
@@ -235,6 +240,9 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             track.volume = volume
             CAPLog.print("NativeLiveDirectorEngine setTrackVolume id=\(trackId) volume=\(volume)")
             self.applyTrackMixState(track)
+            if self.isSyncDebugTrack(track) {
+                CAPLog.print("NLDE SYNCDBG MIX index=\(track.loadIndex) id=\(track.id) name=\(track.name) setTrackVolume requested=\(volume) applied=\(track.player.volume) muted=\(track.isMuted) solo=\(self.soloTrackId ?? "none")")
+            }
             DispatchQueue.main.async {
                 call.resolve()
             }
@@ -258,6 +266,9 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
             track.outputRoute = outputRoute
             self.applyTrackMixState(track)
+            if self.isSyncDebugTrack(track) {
+                CAPLog.print("NLDE SYNCDBG MIX index=\(track.loadIndex) id=\(track.id) name=\(track.name) setOutputRoute=\(outputRoute) pan=\(track.player.pan)")
+            }
             DispatchQueue.main.async {
                 call.resolve()
             }
@@ -280,6 +291,9 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
             track.isMuted.toggle()
             self.applyTrackMixState(track)
+            if self.isSyncDebugTrack(track) {
+                CAPLog.print("NLDE SYNCDBG MIX index=\(track.loadIndex) id=\(track.id) name=\(track.name) toggleMute muted=\(track.isMuted) appliedVolume=\(track.player.volume)")
+            }
             DispatchQueue.main.async {
                 call.resolve(["muted": track.isMuted])
             }
@@ -295,6 +309,11 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         engineQueue.async {
             self.soloTrackId = self.soloTrackId == trackId ? nil : trackId
             self.tracks.forEach { self.applyTrackMixState($0) }
+            self.tracks
+                .filter { self.isSyncDebugTrack($0) }
+                .forEach {
+                    CAPLog.print("NLDE SYNCDBG MIX index=\($0.loadIndex) id=\($0.id) name=\($0.name) soloTrack=\(self.soloTrackId ?? "none") appliedVolume=\($0.player.volume) muted=\($0.isMuted)")
+                }
             DispatchQueue.main.async {
                 call.resolve(["soloTrackId": self.soloTrackId as Any])
             }
@@ -490,18 +509,23 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                 activityEnvelope = await computeActivityEnvelope(for: localURL)
             }
 
-            preparedTracks.append(NativeTrack(
+            let nativeTrack = NativeTrack(
                 id: id,
                 name: name,
                 sourceURL: sourceURL,
                 remoteURL: remoteURL,
                 localURL: localURL,
                 file: file,
+                loadIndex: index + 1,
                 volume: volume,
                 isMuted: isMuted,
                 outputRoute: outputRoute,
                 activityEnvelope: activityEnvelope
-            ))
+            )
+            if isSyncDebugTrack(nativeTrack) {
+                logSyncDebugAsset(nativeTrack)
+            }
+            preparedTracks.append(nativeTrack)
             notifyLoadProgress(loaded: index + 1, total: activeRawTracks.count)
         }
 
@@ -704,10 +728,12 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                 self.duration = (timelineTracks.isEmpty ? nextTracks : timelineTracks).map(\.duration).max() ?? 0
                 self.playbackStopDuration = self.duration + (nextTracks.contains(where: { self.isInternalPadTrack($0) }) ? self.internalPadTailSeconds : 0)
                 self.internalPadFadeScale = 1
+                self.lastSyncDebugLogElapsed = -Double.greatestFiniteMagnitude
                 self.seekOffset = 0
                 self.trackLevels = nextTracks.reduce(into: [String: Double]()) { levels, track in
                     levels[track.id] = 0
                 }
+                self.logSyncDebugSessionSummary()
 
                 nextTracks.forEach { track in
                     self.engine.attach(track.player)
@@ -771,6 +797,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
         internalPadFadeScale = internalPadFadeScale(forElapsed: seekOffset)
         tracks.forEach { applyTrackMixState($0) }
+        lastSyncDebugLogElapsed = -Double.greatestFiniteMagnitude
 
         // Pass 3: arm every player to start at the same hostTime. Done last so
         //         scheduling work above doesn't eat into the start delay and
@@ -787,6 +814,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         startStateTimer()
         logSessionState("post-startPlayback")
         logPlaybackAlignment("post-startPlayback")
+        logSyncDebugPlaybackSnapshot("post-startPlayback", elapsed: seekOffset)
         emitState()
         updateNowPlayingInfo()
     }
@@ -801,11 +829,22 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
         let remainingFrames = scheduleEndFrame - track.scheduledUntilFrame
         guard remainingFrames > 0 else {
+            if isSyncDebugTrack(track) {
+                CAPLog.print("NLDE SYNCDBG SCHED index=\(track.loadIndex) id=\(track.id) name=\(track.name) no-remaining startFrame=\(track.scheduledUntilFrame) endFrame=\(scheduleEndFrame) fileFrames=\(track.file.length) seek=\(String(format: "%.6f", seekOffset))")
+            }
             return
         }
 
         let framesToSchedule = min(remainingFrames, AVAudioFramePosition(UInt32.max))
         CAPLog.print("NLDE SCHED id=\(track.id) mode=\(schedulingModeName(for: track.file)) startFrame=\(track.scheduledUntilFrame) frames=\(framesToSchedule)")
+        if isSyncDebugTrack(track) {
+            let startSec = sampleRate > 0 ? Double(track.scheduledUntilFrame) / sampleRate : 0
+            let endSec = sampleRate > 0 ? Double(scheduleEndFrame) / sampleRate : 0
+            let framesSec = sampleRate > 0 ? Double(framesToSchedule) / sampleRate : 0
+            CAPLog.print(
+                "NLDE SYNCDBG SCHED index=\(track.loadIndex) id=\(track.id) name=\(track.name) mode=\(schedulingModeName(for: track.file)) startFrame=\(track.scheduledUntilFrame) startSec=\(String(format: "%.6f", startSec)) frames=\(framesToSchedule) framesSec=\(String(format: "%.6f", framesSec)) endFrame=\(scheduleEndFrame) endSec=\(String(format: "%.6f", endSec)) fileFrames=\(track.file.length) fileSec=\(String(format: "%.6f", track.duration)) seek=\(String(format: "%.6f", seekOffset))"
+            )
+        }
         track.player.scheduleSegment(
             track.file,
             startingFrame: track.scheduledUntilFrame,
@@ -887,6 +926,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
     private func pausePlayback() {
         if isPlaying {
+            logSyncDebugPlaybackSnapshot("pre-pausePlayback", elapsed: rawCurrentTime())
             seekOffset = currentTime()
         }
         tracks.forEach { $0.player.pause() }
@@ -899,6 +939,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
     private func stopPlayback(resetPosition: Bool, shouldEmitState: Bool = true) {
         if isPlaying {
+            logSyncDebugPlaybackSnapshot("pre-stopPlayback", elapsed: rawCurrentTime())
             logPlaybackAlignment("pre-stopPlayback")
         }
         tracks.forEach { $0.player.stop() }
@@ -1004,6 +1045,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             }
             let elapsed = self.rawCurrentTime()
             self.updateInternalPadTailFade(elapsed: elapsed)
+            self.logSyncDebugPlaybackIfNeeded(elapsed: elapsed)
             if self.isPlaying && self.playbackStopDuration > 0 && elapsed >= self.playbackStopDuration {
                 self.stopPlayback(resetPosition: true)
                 return
@@ -1121,6 +1163,144 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         tracks
             .filter { isInternalPadTrack($0) }
             .forEach { applyTrackMixState($0) }
+    }
+
+    private struct SyncDebugPlayerInfo {
+        let nodeSeconds: Double
+        let absoluteSeconds: Double
+        let sampleTime: AVAudioFramePosition
+        let sampleRate: Double
+    }
+
+    private func isSyncDebugTrack(_ track: NativeTrack) -> Bool {
+        let compactText = syncDebugCompactText([
+            track.id,
+            track.name,
+            track.sourceURL.lastPathComponent,
+            track.remoteURL.lastPathComponent,
+            track.localURL.lastPathComponent
+        ])
+
+        return compactText.contains("ge345")
+    }
+
+    private func syncDebugCompactText(_ values: [String]) -> String {
+        values
+            .joined(separator: " ")
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+            .filter { $0.isLetter || $0.isNumber }
+    }
+
+    private func logSyncDebugAsset(_ track: NativeTrack) {
+        let file = track.file
+        let fileRate = file.fileFormat.sampleRate
+        let processingRate = file.processingFormat.sampleRate
+        let fileDuration = processingRate > 0 ? Double(file.length) / processingRate : 0
+        let fileSizeBytes = (try? track.localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0 } ?? 0
+        let fileSizeMB = Double(fileSizeBytes) / 1_048_576
+        let asset = AVURLAsset(url: track.localURL)
+        let assetDuration = CMTimeGetSeconds(asset.duration)
+        let assetDeltaMs = assetDuration.isFinite ? (assetDuration - fileDuration) * 1000 : Double.nan
+        let assetTrackSummary = asset.tracks(withMediaType: .audio)
+            .enumerated()
+            .map { index, assetTrack in
+                let rangeDuration = CMTimeGetSeconds(assetTrack.timeRange.duration)
+                return "audioTrack\(index)=timeRangeSec=\(String(format: "%.6f", rangeDuration))"
+            }
+            .joined(separator: " ")
+
+        CAPLog.print(
+            "NLDE SYNCDBG ASSET index=\(track.loadIndex) id=\(track.id) name=\(track.name) local=\(track.localURL.lastPathComponent) remote=\(track.remoteURL.lastPathComponent) source=\(track.sourceURL.lastPathComponent) fileSizeMB=\(String(format: "%.2f", fileSizeMB)) fileFrames=\(file.length) fileDurationSec=\(String(format: "%.6f", fileDuration)) assetDurationSec=\(String(format: "%.6f", assetDuration)) assetMinusFileMs=\(String(format: "%+.2f", assetDeltaMs)) fileRate=\(String(format: "%.0f", fileRate)) processingRate=\(String(format: "%.0f", processingRate)) channels=\(file.processingFormat.channelCount) scheduleMode=\(schedulingModeName(for: file)) \(assetTrackSummary)"
+        )
+    }
+
+    private func logSyncDebugSessionSummary() {
+        guard tracks.contains(where: { isSyncDebugTrack($0) }) else {
+            return
+        }
+
+        CAPLog.print(
+            "NLDE SYNCDBG SESSION durationSec=\(String(format: "%.6f", duration)) playbackStopSec=\(String(format: "%.6f", playbackStopDuration)) tracks=\(tracks.count) sampleRate=\(String(format: "%.0f", AVAudioSession.sharedInstance().sampleRate))"
+        )
+        tracks.forEach { track in
+            let deltaMs = (track.duration - duration) * 1000
+            let sampleRate = track.file.processingFormat.sampleRate
+            CAPLog.print(
+                "NLDE SYNCDBG SESSION_TRACK index=\(track.loadIndex) debug=\(isSyncDebugTrack(track)) id=\(track.id) name=\(track.name) file=\(track.remoteURL.lastPathComponent) frames=\(track.file.length) durationSec=\(String(format: "%.6f", track.duration)) deltaVsSessionMs=\(String(format: "%+.2f", deltaMs)) sr=\(String(format: "%.0f", sampleRate)) muted=\(track.isMuted) vol=\(track.volume)"
+            )
+        }
+    }
+
+    private func playerInfo(for track: NativeTrack) -> SyncDebugPlayerInfo? {
+        guard let nodeRenderTime = track.player.lastRenderTime,
+              let nodeTime = track.player.playerTime(forNodeTime: nodeRenderTime)
+        else {
+            return nil
+        }
+
+        let sampleRate = nodeTime.sampleRate > 0
+            ? nodeTime.sampleRate
+            : track.file.processingFormat.sampleRate
+        guard sampleRate > 0 else {
+            return nil
+        }
+
+        let nodeSeconds = Double(nodeTime.sampleTime) / sampleRate
+        return SyncDebugPlayerInfo(
+            nodeSeconds: nodeSeconds,
+            absoluteSeconds: playbackAnchorOffset + nodeSeconds,
+            sampleTime: nodeTime.sampleTime,
+            sampleRate: sampleRate
+        )
+    }
+
+    private func logSyncDebugPlaybackIfNeeded(elapsed: Double) {
+        guard tracks.contains(where: { isSyncDebugTrack($0) }) else {
+            return
+        }
+
+        if elapsed < lastSyncDebugLogElapsed {
+            lastSyncDebugLogElapsed = -Double.greatestFiniteMagnitude
+        }
+
+        guard elapsed - lastSyncDebugLogElapsed >= syncDebugIntervalSeconds else {
+            return
+        }
+
+        lastSyncDebugLogElapsed = elapsed
+        logSyncDebugPlaybackSnapshot("timer", elapsed: elapsed)
+    }
+
+    private func logSyncDebugPlaybackSnapshot(_ tag: String, elapsed: Double) {
+        let debugTracks = tracks.filter { isSyncDebugTrack($0) }
+        guard !debugTracks.isEmpty else {
+            return
+        }
+
+        let referenceTrack = tracks.first(where: { !isInternalPadTrack($0) && !isSyncDebugTrack($0) })
+            ?? tracks.first(where: { !isInternalPadTrack($0) })
+        let referenceInfo = referenceTrack.flatMap { playerInfo(for: $0) }
+        let referenceLabel = referenceTrack.map { "\($0.loadIndex):\($0.id)" } ?? "none"
+        let referenceSeconds = referenceInfo.map { String(format: "%.6f", $0.absoluteSeconds) } ?? "?"
+
+        CAPLog.print(
+            "NLDE SYNCDBG PLAY[\(tag)] elapsed=\(String(format: "%.6f", elapsed)) anchor=\(String(format: "%.6f", playbackAnchorOffset)) seek=\(String(format: "%.6f", seekOffset)) ref=\(referenceLabel) refAbsSec=\(referenceSeconds) isPlaying=\(isPlaying)"
+        )
+
+        debugTracks.forEach { track in
+            guard let info = playerInfo(for: track) else {
+                CAPLog.print("NLDE SYNCDBG PLAY[\(tag)] target index=\(track.loadIndex) id=\(track.id) name=\(track.name) no-playerTime playerPlaying=\(track.player.isPlaying) scheduledUntil=\(track.scheduledUntilFrame) fileFrames=\(track.file.length)")
+                return
+            }
+
+            let driftHostMs = (info.absoluteSeconds - elapsed) * 1000
+            let driftRefMs = referenceInfo.map { (info.absoluteSeconds - $0.absoluteSeconds) * 1000 }
+            let driftRefText = driftRefMs.map { String(format: "%+.2f", $0) } ?? "?"
+            CAPLog.print(
+                "NLDE SYNCDBG PLAY[\(tag)] target index=\(track.loadIndex) id=\(track.id) name=\(track.name) nodeSec=\(String(format: "%.6f", info.nodeSeconds)) absSec=\(String(format: "%.6f", info.absoluteSeconds)) driftHostMs=\(String(format: "%+.2f", driftHostMs)) driftRefMs=\(driftRefText) sampleTime=\(info.sampleTime) sr=\(String(format: "%.0f", info.sampleRate)) scheduledUntil=\(track.scheduledUntilFrame) fileFrames=\(track.file.length) playerPlaying=\(track.player.isPlaying) muted=\(track.isMuted) vol=\(String(format: "%.4f", track.player.volume)) pan=\(String(format: "%.2f", track.player.pan))"
+            )
+        }
     }
 
     private func isLinearPCMFile(_ file: AVAudioFile) -> Bool {
