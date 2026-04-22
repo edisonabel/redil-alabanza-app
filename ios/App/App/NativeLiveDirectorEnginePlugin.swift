@@ -1354,9 +1354,10 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         let rssText = currentResidentMemoryMB().map { String(format: "%.1f", $0) } ?? "?"
         let elapsedText = elapsed.map { String(format: "%.3f", $0) } ?? "-"
         let session = AVAudioSession.sharedInstance()
+        let processInfo = ProcessInfo.processInfo
 
         CAPLog.print(
-            "NLDE CAPACITY[\(tag)] elapsed=\(elapsedText) loaded=\(tracks.count) timeline=\(timelineTracks.count) pads=\(padTracks.count) audibleTimeline=\(audibleTimelineTracks.count) audiblePads=\(audiblePadTracks.count) mutedOrSilent=\(mutedOrSilentTracks) solo=\(soloTrackId ?? "none") compressed=\(compressedTracks.count) pcm=\(pcmTracks) channels=\(totalChannels) localMB=\(String(format: "%.1f", totalLocalMB)) estPCMFloatMB=\(String(format: "%.1f", estimatedPcmFloatMB)) rssMB=\(rssText) duration=\(String(format: "%.3f", duration)) stopDuration=\(String(format: "%.3f", playbackStopDuration)) sessionRate=\(String(format: "%.0f", session.sampleRate)) bufferMs=\(String(format: "%.2f", session.ioBufferDuration * 1000)) engineRunning=\(engine.isRunning) isPlaying=\(isPlaying)"
+            "NLDE CAPACITY[\(tag)] elapsed=\(elapsedText) loaded=\(tracks.count) timeline=\(timelineTracks.count) pads=\(padTracks.count) audibleTimeline=\(audibleTimelineTracks.count) audiblePads=\(audiblePadTracks.count) mutedOrSilent=\(mutedOrSilentTracks) solo=\(soloTrackId ?? "none") compressed=\(compressedTracks.count) pcm=\(pcmTracks) channels=\(totalChannels) localMB=\(String(format: "%.1f", totalLocalMB)) estPCMFloatMB=\(String(format: "%.1f", estimatedPcmFloatMB)) rssMB=\(rssText) thermal=\(thermalStateName(processInfo.thermalState)) lowPower=\(processInfo.isLowPowerModeEnabled) duration=\(String(format: "%.3f", duration)) stopDuration=\(String(format: "%.3f", playbackStopDuration)) sessionRate=\(String(format: "%.0f", session.sampleRate)) bufferMs=\(String(format: "%.2f", session.ioBufferDuration * 1000)) engineRunning=\(engine.isRunning) isPlaying=\(isPlaying)"
         )
 
         guard includeTracks else {
@@ -1399,6 +1400,28 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         }
 
         return Double(info.resident_size) / 1_048_576
+    }
+
+    private func thermalStateName(_ state: ProcessInfo.ThermalState) -> String {
+        switch state {
+        case .nominal:
+            return "nominal"
+        case .fair:
+            return "fair"
+        case .serious:
+            return "serious"
+        case .critical:
+            return "critical"
+        @unknown default:
+            return "unknown"
+        }
+    }
+
+    private func logThermalState(_ tag: String) {
+        let processInfo = ProcessInfo.processInfo
+        CAPLog.print(
+            "NLDE THERMAL[\(tag)] state=\(thermalStateName(processInfo.thermalState)) lowPower=\(processInfo.isLowPowerModeEnabled)"
+        )
     }
 
     private func isLinearPCMFile(_ file: AVAudioFile) -> Bool {
@@ -1885,6 +1908,20 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             name: NSNotification.Name.AVAudioEngineConfigurationChange,
             object: engine
         )
+        center.addObserver(
+            self,
+            selector: #selector(handleThermalStateChange(_:)),
+            name: ProcessInfo.thermalStateDidChangeNotification,
+            object: nil
+        )
+        logThermalState("observer-ready")
+    }
+
+    @objc private func handleThermalStateChange(_ notification: Notification) {
+        engineQueue.async {
+            self.logThermalState("changed")
+            self.logCapacitySnapshot("thermal-change", elapsed: self.rawCurrentTime())
+        }
     }
 
     @objc private func handleAudioSessionInterruption(_ notification: Notification) {
