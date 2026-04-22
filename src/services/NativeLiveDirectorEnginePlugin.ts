@@ -79,6 +79,8 @@ export interface NativeLiveDirectorEnginePlugin {
   getState(): Promise<NativeLiveDirectorEngineState>;
   setNowPlayingMetadata(options: NativeLiveDirectorNowPlayingMetadata): Promise<void>;
   clearNowPlayingMetadata(): Promise<void>;
+  lockLandscape(): Promise<void>;
+  unlockOrientation(): Promise<void>;
   addListener(
     eventName: 'state',
     listenerFunc: (state: NativeLiveDirectorEngineState) => void,

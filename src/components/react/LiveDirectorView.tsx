@@ -2447,6 +2447,18 @@ export function LiveDirectorView({
   }, []);
 
   useEffect(() => {
+    if (!isIOSNativeEngineSurface || !isNativeLiveDirectorEngineAvailable()) {
+      return undefined;
+    }
+
+    void NativeLiveDirectorEngine.lockLandscape().catch(() => undefined);
+
+    return () => {
+      void NativeLiveDirectorEngine.unlockOrientation().catch(() => undefined);
+    };
+  }, [isIOSNativeEngineSurface]);
+
+  useEffect(() => {
     if (typeof window === 'undefined') {
       return;
     }

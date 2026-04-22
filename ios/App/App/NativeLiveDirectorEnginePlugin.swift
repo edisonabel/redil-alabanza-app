@@ -26,7 +26,9 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         CAPPluginMethod(name: "setMetersEnabled", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setNowPlayingMetadata", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "clearNowPlayingMetadata", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "clearNowPlayingMetadata", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "lockLandscape", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "unlockOrientation", returnType: CAPPluginReturnPromise)
     ]
 
     private struct ActivityEnvelope {
@@ -135,6 +137,22 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             if UIApplication.shared.isIdleTimerDisabled {
                 UIApplication.shared.isIdleTimerDisabled = false
             }
+        }
+    }
+
+    @objc func lockLandscape(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            AppOrientationLock.mask = [.landscapeLeft, .landscapeRight]
+            self.applyOrientationMask(.landscapeRight)
+            call.resolve()
+        }
+    }
+
+    @objc func unlockOrientation(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            AppOrientationLock.mask = .allButUpsideDown
+            self.applyOrientationMask(.allButUpsideDown)
+            call.resolve()
         }
     }
 
@@ -2055,6 +2073,23 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                 self.emitState()
             }
         }
+    }
+
+    private func applyOrientationMask(_ mask: UIInterfaceOrientationMask) {
+        if #available(iOS 16.0, *) {
+            bridge?.viewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+            let windowScene =
+                bridge?.viewController?.view.window?.windowScene ??
+                UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+
+            windowScene?.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { error in
+                CAPLog.print("NLDE ORIENTATION requestGeometryUpdate failed: \(error.localizedDescription)")
+            }
+        } else if mask == .landscapeRight || mask == [.landscapeLeft, .landscapeRight] {
+            UIDevice.current.setValue(UIInterfaceOrientation.landscapeRight.rawValue, forKey: "orientation")
+        }
+
+        UIViewController.attemptRotationToDeviceOrientation()
     }
 
     private func clampVolume(_ volume: Float) -> Float {
