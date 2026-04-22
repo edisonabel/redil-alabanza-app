@@ -177,11 +177,11 @@ type LiveDirectorViewProps = {
 // Per-platform active stem caps. Going past these on the target device
 // causes audible slipping ("patinar") on the weaker hardware because the
 // mixer can't meet the I/O deadline. Limits are empirically grounded:
-//   - iOS native (AVAudioEngine):     15 stems comfortably
+//   - iOS native (AVAudioEngine):     14 stems with internal pad on real iPhone
 //   - Android web (Capacitor browser): 10 stems before clocks drift
 //   - Desktop web (Chrome/Edge/FF):    15 stems
 // Changing these requires re-profiling on real devices.
-const IOS_NATIVE_MAX_ACTIVE_TRACKS = 15;
+const IOS_NATIVE_MAX_ACTIVE_TRACKS = 14;
 const ANDROID_MAX_ACTIVE_TRACKS = 10;
 const WEB_ENGINE_MAX_ACTIVE_TRACKS = 15;
 const INTERNAL_PAD_TRACK_ID = '__internal-pad__';

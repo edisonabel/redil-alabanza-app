@@ -15,10 +15,16 @@ const MAX_STEMS = 15;
 const TARGET_STEMS = 10;
 const DEFAULT_BITRATE = '256k';
 const FFmpegCoreVersion = '0.12.10';
+const MONO_ANALYSIS_SAMPLE_LIMIT = 120_000;
+const MONO_ANALYSIS_MAX_FILE_BYTES = 220 * 1024 * 1024;
+const MONO_CORRELATION_THRESHOLD = 0.997;
+const MONO_SIDE_RATIO_DB_THRESHOLD = -30;
+const MONO_BALANCE_DB_THRESHOLD = 1.25;
 
 type StemStatus = 'queued' | 'processing' | 'done' | 'error';
 type StemCategory = 'clickGuide' | 'drums' | 'bass' | 'piano' | 'keys' | 'acoustic' | 'electric' | 'percussion' | 'vocals' | 'pads' | 'misc' | 'unknown';
 type PlanAction = 'keep' | 'merge' | 'skip';
+type ChannelMode = 'mono' | 'stereo';
 
 type SourceStem = {
   id: string;
@@ -40,6 +46,8 @@ type StemItem = {
   outputName?: string;
   outputSize?: number;
   error?: string;
+  channelMode?: ChannelMode;
+  channelNote?: string;
 };
 
 type SmartPlanGroup = {
@@ -54,6 +62,11 @@ type SmartPlanGroup = {
 type OutputAsset = {
   blob: Blob;
   name: string;
+};
+
+type ChannelAnalysisResult = {
+  mode: ChannelMode;
+  note: string;
 };
 
 type StatRow = {
@@ -84,6 +97,8 @@ const AUDIO_EXTENSIONS = new Set([
   'mp3',
   'wav',
 ]);
+
+const autoMonoCategories = new Set<StemCategory>(['clickGuide', 'bass', 'vocals']);
 
 const formatBytes = (bytes: number) => {
   if (!Number.isFinite(bytes) || bytes <= 0) {
@@ -446,6 +461,106 @@ const rawSourcesToStems = (sources: SourceStem[]) => sources.slice(0, MAX_STEMS)
   outputName: buildOutputName(source.name, index),
 }));
 
+const shouldAnalyzeMonoForStem = (stem: StemItem) => (
+  stem.sources.length === 1
+  && autoMonoCategories.has(stem.sources[0].category)
+  && stem.sources[0].file.size <= MONO_ANALYSIS_MAX_FILE_BYTES
+);
+
+const compactMetric = (value: number, digits = 2) => (
+  Number.isFinite(value) ? value.toFixed(digits) : '?'
+);
+
+const analyzeStemChannelMode = async (stem: StemItem): Promise<ChannelAnalysisResult> => {
+  if (stem.sources.length !== 1) {
+    return { mode: 'stereo', note: 'Fusion sin forzar mono.' };
+  }
+
+  const [source] = stem.sources;
+  if (!autoMonoCategories.has(source.category)) {
+    return { mode: 'stereo', note: 'Stereo preservado.' };
+  }
+
+  if (source.file.size > MONO_ANALYSIS_MAX_FILE_BYTES) {
+    return { mode: 'stereo', note: 'Stereo: archivo grande, analisis omitido.' };
+  }
+
+  if (typeof window === 'undefined') {
+    return { mode: 'stereo', note: 'Stereo.' };
+  }
+
+  const AudioContextCtor = window.AudioContext
+    || (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioContextCtor) {
+    return { mode: 'stereo', note: 'Stereo: analisis no disponible.' };
+  }
+
+  const audioContext = new AudioContextCtor();
+  try {
+    const audioBuffer = await audioContext.decodeAudioData(await source.file.arrayBuffer());
+    if (audioBuffer.numberOfChannels <= 1) {
+      return { mode: 'mono', note: 'Mono: archivo de 1 canal.' };
+    }
+
+    const left = audioBuffer.getChannelData(0);
+    const right = audioBuffer.getChannelData(1);
+    const step = Math.max(1, Math.floor(audioBuffer.length / MONO_ANALYSIS_SAMPLE_LIMIT));
+    let count = 0;
+    let sumLeftSquared = 0;
+    let sumRightSquared = 0;
+    let sumCross = 0;
+    let sumMidSquared = 0;
+    let sumSideSquared = 0;
+
+    for (let frame = 0; frame < audioBuffer.length; frame += step) {
+      const leftSample = left[frame] || 0;
+      const rightSample = right[frame] || 0;
+      if (!Number.isFinite(leftSample) || !Number.isFinite(rightSample)) {
+        continue;
+      }
+
+      const mid = (leftSample + rightSample) * 0.5;
+      const side = (leftSample - rightSample) * 0.5;
+      sumLeftSquared += leftSample * leftSample;
+      sumRightSquared += rightSample * rightSample;
+      sumCross += leftSample * rightSample;
+      sumMidSquared += mid * mid;
+      sumSideSquared += side * side;
+      count += 1;
+    }
+
+    if (count === 0 || sumLeftSquared <= 0 || sumRightSquared <= 0) {
+      return { mode: 'stereo', note: 'Stereo: sin lectura L/R confiable.' };
+    }
+
+    const epsilon = 1e-12;
+    const correlation = sumCross / Math.sqrt(sumLeftSquared * sumRightSquared);
+    const leftRms = Math.sqrt(sumLeftSquared / count);
+    const rightRms = Math.sqrt(sumRightSquared / count);
+    const balanceDb = 20 * Math.log10((leftRms + epsilon) / (rightRms + epsilon));
+    const sideRatioDb = 10 * Math.log10((sumSideSquared + epsilon) / (sumMidSquared + epsilon));
+    const isSafeMono = correlation >= MONO_CORRELATION_THRESHOLD
+      && sideRatioDb <= MONO_SIDE_RATIO_DB_THRESHOLD
+      && Math.abs(balanceDb) <= MONO_BALANCE_DB_THRESHOLD;
+
+    if (isSafeMono) {
+      return {
+        mode: 'mono',
+        note: `Mono seguro: corr ${compactMetric(correlation, 3)}, side ${compactMetric(sideRatioDb, 1)} dB.`,
+      };
+    }
+
+    return {
+      mode: 'stereo',
+      note: `Stereo: corr ${compactMetric(correlation, 3)}, side ${compactMetric(sideRatioDb, 1)} dB.`,
+    };
+  } catch {
+    return { mode: 'stereo', note: 'Stereo: no se pudo analizar L/R.' };
+  } finally {
+    await audioContext.close().catch(() => undefined);
+  }
+};
+
 const categoryOptions: Array<{ value: StemCategory; label: string }> = [
   { value: 'unknown', label: 'Elegir categoria' },
   { value: 'clickGuide', label: 'Click / Guia / Cues' },
@@ -564,6 +679,7 @@ export default function StemConverterTool() {
     { label: 'Stems', value: `${stems.length}/${MAX_STEMS}`, tone: stems.length ? 'brand' : undefined },
     { label: 'Original', value: formatBytes(selectedTotalBytes) },
     { label: 'Salida', value: 'M4A 256k' },
+    { label: 'Canales', value: 'Auto mono' },
     { label: 'Convertido', value: formatBytes(convertedTotalBytes), tone: convertedTotalBytes ? 'success' : undefined },
   ], [convertedTotalBytes, selectedTotalBytes, stems.length]);
 
@@ -704,6 +820,7 @@ export default function StemConverterTool() {
   const convertOneStem = useCallback(async (ffmpeg: FFmpegInstance, stem: StemItem, index: number) => {
     const inputNames = stem.sources.map((source, sourceIndex) => buildInputName(source.file, index, sourceIndex));
     const outputName = stem.outputName || buildOutputName(stem.name, index);
+    const shouldAnalyzeChannels = shouldAnalyzeMonoForStem(stem);
 
     activeStemIdRef.current = stem.id;
     updateStem(stem.id, {
@@ -712,15 +829,26 @@ export default function StemConverterTool() {
       error: undefined,
       outputName,
       outputSize: undefined,
+      channelMode: undefined,
+      channelNote: shouldAnalyzeChannels ? 'Analizando L/R...' : 'Stereo preservado.',
     });
 
     try {
+      const channelAnalysis = shouldAnalyzeChannels
+        ? await analyzeStemChannelMode(stem)
+        : { mode: 'stereo' as const, note: stem.sources.length > 1 ? 'Fusion sin forzar mono.' : 'Stereo preservado.' };
+      updateStem(stem.id, {
+        channelMode: channelAnalysis.mode,
+        channelNote: channelAnalysis.note,
+      });
+
       for (let sourceIndex = 0; sourceIndex < stem.sources.length; sourceIndex += 1) {
         const inputBytes = new Uint8Array(await stem.sources[sourceIndex].file.arrayBuffer());
         await ffmpeg.writeFile(inputNames[sourceIndex], inputBytes);
       }
 
       const inputArgs = inputNames.flatMap((inputName) => ['-i', inputName]);
+      const channelArgs = channelAnalysis.mode === 'mono' ? ['-ac', '1'] : [];
       const outputArgs = [
         '-vn',
         '-map_metadata',
@@ -731,6 +859,7 @@ export default function StemConverterTool() {
         'aac_low',
         '-b:a',
         DEFAULT_BITRATE,
+        ...channelArgs,
         '-movflags',
         '+faststart',
         outputName,
@@ -836,6 +965,8 @@ export default function StemConverterTool() {
       progress: 0,
       error: undefined,
       outputSize: undefined,
+      channelMode: undefined,
+      channelNote: undefined,
     })));
 
     try {
@@ -1068,7 +1199,7 @@ export default function StemConverterTool() {
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div className="min-w-0">
                   <p className="text-[0.72rem] font-black uppercase tracking-[0.22em] text-content-muted">
-                    M4A AAC 256 kbps
+                    M4A AAC 256 kbps · auto mono
                   </p>
                   <h2 className="mt-1 text-2xl font-black tracking-tight text-content md:text-3xl">
                     Arrastra stems y descarga
@@ -1229,6 +1360,11 @@ export default function StemConverterTool() {
                           />
                         </div>
                         {stem.error ? <p className="mt-2 text-xs text-danger">{stem.error}</p> : null}
+                        {stem.channelNote ? (
+                          <p className={`mt-2 text-xs font-semibold ${stem.channelMode === 'mono' ? 'text-success' : 'text-content-muted'}`}>
+                            {stem.channelNote}
+                          </p>
+                        ) : null}
                       </div>
                       <p className="text-sm font-semibold text-content-muted md:text-right">{formatBytes(stem.size)}</p>
                       <p className="text-sm font-semibold text-content-muted md:text-right">
