@@ -244,7 +244,7 @@ const categoryOrder: StemCategory[] = [
 
 const categoryMeta: Record<StemCategory, { name: string; mergeReason: string; keepReason: string; skipReason?: string }> = {
   clickGuide: {
-    name: 'Click + Guia',
+    name: 'Click + Guia + Cues',
     mergeReason: 'Click, guia y cues en una sola pista.',
     keepReason: 'Guia de tiempo lista.',
   },
@@ -463,8 +463,14 @@ const rawSourcesToStems = (sources: SourceStem[]) => sources.slice(0, MAX_STEMS)
   outputName: buildOutputName(source.name, index),
 }));
 
+const shouldForceMonoForStem = (stem: StemItem) => (
+  stem.sources.length > 0
+  && stem.sources.every((source) => source.category === 'clickGuide')
+);
+
 const shouldAnalyzeMonoForStem = (stem: StemItem) => (
   stem.sources.length === 1
+  && !shouldForceMonoForStem(stem)
   && autoMonoCategories.has(stem.sources[0].category)
   && stem.sources[0].file.size <= MONO_ANALYSIS_MAX_FILE_BYTES
 );
@@ -474,6 +480,10 @@ const compactMetric = (value: number, digits = 2) => (
 );
 
 const analyzeStemChannelMode = async (stem: StemItem): Promise<ChannelAnalysisResult> => {
+  if (shouldForceMonoForStem(stem)) {
+    return { mode: 'mono', note: 'Mono forzado: click, guia y cues.' };
+  }
+
   if (stem.sources.length !== 1) {
     return { mode: 'stereo', note: 'Fusion sin forzar mono.' };
   }
@@ -822,6 +832,7 @@ export default function StemConverterTool() {
   const convertOneStem = useCallback(async (ffmpeg: FFmpegInstance, stem: StemItem, index: number) => {
     const inputNames = stem.sources.map((source, sourceIndex) => buildInputName(source.file, index, sourceIndex));
     const outputName = stem.outputName || buildOutputName(stem.name, index);
+    const shouldForceMono = shouldForceMonoForStem(stem);
     const shouldAnalyzeChannels = shouldAnalyzeMonoForStem(stem);
 
     activeStemIdRef.current = stem.id;
@@ -832,11 +843,11 @@ export default function StemConverterTool() {
       outputName,
       outputSize: undefined,
       channelMode: undefined,
-      channelNote: shouldAnalyzeChannels ? 'Analizando L/R...' : 'Stereo preservado.',
+      channelNote: shouldForceMono ? 'Mono forzado: click, guia y cues.' : shouldAnalyzeChannels ? 'Analizando L/R...' : 'Stereo preservado.',
     });
 
     try {
-      const channelAnalysis = shouldAnalyzeChannels
+      const channelAnalysis = shouldForceMono || shouldAnalyzeChannels
         ? await analyzeStemChannelMode(stem)
         : { mode: 'stereo' as const, note: stem.sources.length > 1 ? 'Fusion sin forzar mono.' : 'Stereo preservado.' };
       updateStem(stem.id, {

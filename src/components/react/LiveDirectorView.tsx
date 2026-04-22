@@ -177,11 +177,11 @@ type LiveDirectorViewProps = {
 // Per-platform active stem caps. Going past these on the target device
 // causes audible slipping ("patinar") on the weaker hardware because the
 // mixer can't meet the I/O deadline. Limits are empirically grounded:
-//   - iOS native (AVAudioEngine):     14 stems with internal pad on real iPhone
+//   - iOS native (AVAudioEngine):     13 song stems, with internal pad extra
 //   - Android web (Capacitor browser): 10 stems before clocks drift
 //   - Desktop web (Chrome/Edge/FF):    15 stems
 // Changing these requires re-profiling on real devices.
-const IOS_NATIVE_MAX_ACTIVE_TRACKS = 14;
+const IOS_NATIVE_MAX_ACTIVE_TRACKS = 13;
 const ANDROID_MAX_ACTIVE_TRACKS = 10;
 const WEB_ENGINE_MAX_ACTIVE_TRACKS = 15;
 const INTERNAL_PAD_TRACK_ID = '__internal-pad__';
@@ -1459,8 +1459,8 @@ export function LiveDirectorView({
     return WEB_ENGINE_MAX_ACTIVE_TRACKS;
   }, [isIOSNativeEngineSurface, maxWebActiveTracks]);
   const sessionActiveTrackLimit = useMemo(
-    () => Math.max(1, webActiveTrackLimit - (shouldUseNativeInternalPad ? 1 : 0)),
-    [shouldUseNativeInternalPad, webActiveTrackLimit],
+    () => Math.max(1, webActiveTrackLimit),
+    [webActiveTrackLimit],
   );
 
   const enabledSessionTracks = useMemo(
@@ -3117,11 +3117,11 @@ export function LiveDirectorView({
       let enabledCount = 0;
       const nextTracks = manualSession.tracks.map((track) => {
         const wantsEnabled = pendingEnabledMap[track.id] !== false;
-        // All platforms now have a finite cap (iOS 15, Android 10, web 15).
+        // All platforms now have a finite cap (iOS 13 + pad, Android 10, web 15).
         // Previous versions treated iOS native as unlimited — that was wrong:
         // AVAudioEngine also slips past 15 stems. The cap is enforced here
         // regardless of engine surface so the user gets consistent gating.
-        const canEnable = !wantsEnabled || enabledCount < webActiveTrackLimit;
+        const canEnable = !wantsEnabled || enabledCount < sessionActiveTrackLimit;
         const enabled = wantsEnabled && canEnable;
         if (enabled) {
           enabledCount += 1;
@@ -3141,7 +3141,7 @@ export function LiveDirectorView({
     }
     setPendingEnabledMap(null);
     setShowTrackLoadModal(false);
-  }, [pendingEnabledMap, manualSession, isIOSNativeEngineSurface, webActiveTrackLimit, hasPersistedSongContext, commitMixerStateSilent]);
+  }, [pendingEnabledMap, manualSession, sessionActiveTrackLimit, hasPersistedSongContext, commitMixerStateSilent]);
 
   const handleOpenOffsetModal = useCallback(() => {
     offsetModalInitialValueRef.current = Number.isFinite(Number(manualSession?.sectionOffsetSeconds))
@@ -3846,9 +3846,7 @@ export function LiveDirectorView({
   const pendingEnabledCount = pendingEnabledMap
     ? Object.values(pendingEnabledMap).filter(Boolean).length
     : activeTracks.length;
-  const pendingEffectiveEnabledCount = isIOSNativeEngineSurface
-    ? pendingEnabledCount
-    : Math.min(pendingEnabledCount, webActiveTrackLimit);
+  const pendingEffectiveEnabledCount = Math.min(pendingEnabledCount, sessionActiveTrackLimit);
 
   const readyStateLabel = !hasTrackSession
     ? 'Sin sesion'
@@ -5199,7 +5197,7 @@ export function LiveDirectorView({
               <div>
                 <p className="text-[0.6rem] font-black uppercase tracking-[0.18em] text-white/36">Resumen</p>
                 <p className={`${useWideTrackLoadModal ? 'mt-0.5 text-[0.92rem]' : 'mt-1 text-sm'} font-semibold text-white/88`}>
-                  {pendingEffectiveEnabledCount} de {sessionTracks.length} activos{isWebTrackLimitExceeded || pendingEnabledCount > pendingEffectiveEnabledCount ? ` (tope ${webActiveTrackLimit})` : ''}
+                  {pendingEffectiveEnabledCount} de {sessionTracks.length} activos{isWebTrackLimitExceeded || pendingEnabledCount > pendingEffectiveEnabledCount ? ` (tope ${sessionActiveTrackLimit}${shouldUseNativeInternalPad ? ' + pad' : ''})` : ''}
                 </p>
               </div>
               <button
@@ -5214,7 +5212,7 @@ export function LiveDirectorView({
                     .sort((a, b) => (a.rank - b.rank) || (a.index - b.index));
                   let enabledCount = 0;
                   rankedTracks.forEach(({ track }) => {
-                    const canEnable = enabledCount < webActiveTrackLimit;
+                    const canEnable = enabledCount < sessionActiveTrackLimit;
                     nextMap[track.id] = canEnable;
                     if (canEnable) {
                       enabledCount += 1;
@@ -5240,7 +5238,7 @@ export function LiveDirectorView({
                       if (!pendingEnabledMap) return;
                       const isEnabling = pendingEnabledMap[track.id] === false;
                       const enabledCount = Object.values(pendingEnabledMap).filter(Boolean).length;
-                      if (isEnabling && enabledCount >= webActiveTrackLimit) return;
+                      if (isEnabling && enabledCount >= sessionActiveTrackLimit) return;
                       const next = { ...pendingEnabledMap, [track.id]: !pendingEnabledMap[track.id] };
                       const hasAny = Object.values(next).some(Boolean);
                       if (hasAny) setPendingEnabledMap(next);
