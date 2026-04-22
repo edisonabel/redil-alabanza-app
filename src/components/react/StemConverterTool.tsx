@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, ty
 const MAX_STEMS = 15;
 const TARGET_STEMS = 10;
 const DEFAULT_BITRATE = '256k';
+const TARGET_SAMPLE_RATE = 48_000;
 const FFmpegCoreVersion = '0.12.10';
 const MONO_ANALYSIS_SAMPLE_LIMIT = 120_000;
 const MONO_ANALYSIS_MAX_FILE_BYTES = 220 * 1024 * 1024;
@@ -618,7 +619,7 @@ export default function StemConverterTool() {
   const [isConverting, setIsConverting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [zipUrl, setZipUrl] = useState<string | null>(null);
-  const [zipName, setZipName] = useState('stems-aac-256k.zip');
+  const [zipName, setZipName] = useState('stems-aac-256k-48k.zip');
   const [zipProgress, setZipProgress] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [pendingSources, setPendingSources] = useState<SourceStem[]>([]);
@@ -678,7 +679,7 @@ export default function StemConverterTool() {
   const summaryRows = useMemo<StatRow[]>(() => [
     { label: 'Stems', value: `${stems.length}/${MAX_STEMS}`, tone: stems.length ? 'brand' : undefined },
     { label: 'Original', value: formatBytes(selectedTotalBytes) },
-    { label: 'Salida', value: 'M4A 256k' },
+    { label: 'Salida', value: 'M4A 48k' },
     { label: 'Canales', value: 'Auto mono' },
     { label: 'Convertido', value: formatBytes(convertedTotalBytes), tone: convertedTotalBytes ? 'success' : undefined },
   ], [convertedTotalBytes, selectedTotalBytes, stems.length]);
@@ -859,6 +860,8 @@ export default function StemConverterTool() {
         'aac_low',
         '-b:a',
         DEFAULT_BITRATE,
+        '-ar',
+        String(TARGET_SAMPLE_RATE),
         ...channelArgs,
         '-movflags',
         '+faststart',
@@ -935,7 +938,7 @@ export default function StemConverterTool() {
     });
 
     setZipProgress(1);
-    const nextZipName = 'stems-aac-256k.zip';
+    const nextZipName = 'stems-aac-256k-48k.zip';
     const zipBlob = await zip.generateAsync(
       { type: 'blob', compression: 'STORE' },
       (metadata) => {
@@ -1199,7 +1202,7 @@ export default function StemConverterTool() {
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div className="min-w-0">
                   <p className="text-[0.72rem] font-black uppercase tracking-[0.22em] text-content-muted">
-                    M4A AAC 256 kbps · auto mono
+                    M4A AAC 256 kbps · 48 kHz · auto mono
                   </p>
                   <h2 className="mt-1 text-2xl font-black tracking-tight text-content md:text-3xl">
                     Arrastra stems y descarga
