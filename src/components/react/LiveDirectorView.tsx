@@ -2588,7 +2588,7 @@ export function LiveDirectorView({
 
         setIsInitializingSession(false);
         setBusyMessage(null);
-        console.log(`[LiveDirectorView] Initialized ${activeEngineTracks.length} native track(s).`);
+        console.log(`[LiveDirectorView] Initialized ${activeEngineTracks.length} ${isIOSNativeEngineSurface ? 'native' : 'web'} track(s).`);
       } catch (error) {
         if (cancelled) {
           return;

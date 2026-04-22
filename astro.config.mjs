@@ -40,6 +40,7 @@ export default defineConfig({
       cleanupOutdatedCaches: true,
       clientsClaim: true,
       skipWaiting: true,
+      navigateFallback: null,
       navigateFallbackDenylist: [/^\/.*$/],
       globPatterns: ['**/*.{js,css,svg,png,jpg,jpeg,webp,avif,ico,txt,webmanifest}'],
       runtimeCaching: [
