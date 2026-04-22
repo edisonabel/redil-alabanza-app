@@ -3,13 +3,10 @@
   ChevronLeft,
   ChevronsLeft,
   ChevronsRight,
-  Eye,
-  EyeOff,
   FolderOpen,
   ListMusic,
   Pause,
   Play,
-  Repeat,
   RotateCcw,
   SkipBack,
   SlidersVertical,
@@ -1338,25 +1335,14 @@ export function LiveDirectorView({
     }
   }, [onBack, stop]);
 
-  // Show mode: hides the Motor / Diagnostics / Upload chips for a cleaner
-  // performance-ready UI. Persists across reloads so the user doesn't have
-  // to re-toggle every time they open the app live.
-  const [isShowMode, setIsShowMode] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    try {
-      return window.localStorage.getItem('ld:showMode') === '1';
-    } catch {
-      return false;
-    }
-  });
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
-      window.localStorage.setItem('ld:showMode', isShowMode ? '1' : '0');
+      window.localStorage.removeItem('ld:showMode');
     } catch {
       // Ignore — privacy mode or storage quota.
     }
-  }, [isShowMode]);
+  }, []);
   const [loaderMode, setLoaderMode] = useState<'sequence' | 'folder'>('sequence');
   const [unmatchedFiles, setUnmatchedFiles] = useState<string[]>([]);
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
@@ -1365,11 +1351,6 @@ export function LiveDirectorView({
   const [soloTrackId, setSoloTrackId] = useState<string | null>(null);
   const [masterVolume, setMasterVolumeState] = useState(0.82);
   const [loopEnabled, setLoopEnabled] = useState(false);
-  // Section-loop rehearsal mode: persistent toggle that keeps the current
-  // section in a loop. When the playhead enters a new section (user clicks
-  // another button, or we use prev/next-section), loop points retarget to
-  // the new active section so the user can rehearse any part hands-free.
-  const [sectionLoopMode, setSectionLoopMode] = useState(false);
   const [surfaceView, setSurfaceView] = useState<SurfaceView>('mix');
   const [showOffsetModal, setShowOffsetModal] = useState(false);
   const [showTrackLoadModal, setShowTrackLoadModal] = useState(false);
@@ -1418,7 +1399,7 @@ export function LiveDirectorView({
       `${clamp(baseRem * layoutScale, minRem, maxRem).toFixed(3)}rem`,
     [layoutScale],
   );
-  const headerMinWidth = useMemo(() => scaleRem(58, 45), [scaleRem]);
+  const headerMinWidth = useMemo(() => scaleRem(52, 42), [scaleRem]);
   const mixerLayoutColumns = useMemo(
     () =>
       isUltraCompactLandscape
@@ -1575,10 +1556,7 @@ export function LiveDirectorView({
   const headerOperationalChips = useMemo<LiveDirectorOperationalChip[]>(
     () =>
       isEnsayoMode
-        ? operationalChips.filter((chip) => (
-          (chip.id === 'sync' && chip.active) ||
-          (chip.id === 'offline' && chip.value.includes('/'))
-        ))
+        ? operationalChips.filter((chip) => chip.id === 'offline' && chip.value.includes('/'))
         : [],
     [isEnsayoMode, operationalChips],
   );
@@ -2269,34 +2247,6 @@ export function LiveDirectorView({
       // Ignore — haptics are best-effort.
     }
   }, [activeSectionIndex, isPlaying]);
-
-  // Section-loop rehearsal orchestration. When the mode is on and a section
-  // is active, retarget engine loop points to that section's span and enable
-  // loop. When the mode flips off, disable loop. Runs on every
-  // activeSection.id / mode transition so section-to-section jumps retarget
-  // the loop cleanly.
-  useEffect(() => {
-    if (!sectionLoopMode) {
-      if (loopEnabled) {
-        toggleLoop();
-        setLoopEnabled(false);
-      }
-      return;
-    }
-    if (!activeSection) {
-      return;
-    }
-    setLoopPoints(activeSection.startTime, activeSection.endTime);
-    if (!loopEnabled) {
-      toggleLoop();
-      setLoopEnabled(true);
-    }
-  }, [
-    sectionLoopMode,
-    activeSection?.id,
-    activeSection?.startTime,
-    activeSection?.endTime,
-  ]); // eslint-disable-line react-hooks/exhaustive-deps -- intentionally omit engine refs to avoid toggle thrash
 
   const syncManualSessionState = useCallback((session: LiveDirectorResolvedSession) => {
     setLoadError(null);
@@ -4175,7 +4125,7 @@ export function LiveDirectorView({
                 }}
                 disabled={!isReady}
                 className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3.5' : isCompactLandscape ? 'h-10 px-4' : 'h-[var(--ld-control-height)] px-5'} justify-center ${isPlaying ? 'text-[#43c477] border-[#43c477]/35 bg-[#43c477]/10' : 'text-[#43c477] hover:text-[#4fe487]'} hover:bg-[#43c477]/12 disabled:cursor-not-allowed disabled:text-white/24 disabled:hover:bg-transparent`}
-                style={{ width: scaleRem(isUltraCompactLandscape ? 5.2 : isCompactLandscape ? 6.8 : 9, 4.5) }}
+                style={{ width: scaleRem(isUltraCompactLandscape ? 6.35 : isCompactLandscape ? 8.35 : 11.25, 5.75) }}
                 aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
                 aria-keyshortcuts="Space"
                 title={isPlaying ? 'Pausar · Espacio' : 'Reproducir · Espacio'}
@@ -4203,76 +4153,45 @@ export function LiveDirectorView({
             </div>
 
             <div className={`flex items-stretch justify-end ${isUltraCompactLandscape ? 'gap-2' : isCompactLandscape ? 'gap-2.5' : 'gap-3'}`}>
-              <button
-                type="button"
-                onClick={handlePreviousSection}
-                disabled={!hasTrackSession}
-                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3.5' : isCompactLandscape ? 'h-10 px-4' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/82 hover:text-white hover:bg-white/6 disabled:cursor-not-allowed disabled:text-white/24`}
-                style={{ width: scaleRem(isUltraCompactLandscape ? 3.85 : isCompactLandscape ? 4.85 : 5.85, 3.25) }}
-                aria-label="Ir a la seccion anterior"
-                title="Ir a la seccion anterior"
-              >
-                <ChevronsLeft className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-5 w-5' : 'h-7 w-7'}`} strokeWidth={isCompactLandscape ? 2 : 2.4} />
-              </button>
+              {showSectionsPanel && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handlePreviousSection}
+                    disabled={!hasTrackSession}
+                    className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3.5' : isCompactLandscape ? 'h-10 px-4' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/82 hover:text-white hover:bg-white/6 disabled:cursor-not-allowed disabled:text-white/24`}
+                    style={{ width: scaleRem(isUltraCompactLandscape ? 3.75 : isCompactLandscape ? 4.65 : 5.45, 3.15) }}
+                    aria-label="Ir a la seccion anterior"
+                    title="Ir a la seccion anterior"
+                  >
+                    <ChevronsLeft className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-5 w-5' : 'h-7 w-7'}`} strokeWidth={isCompactLandscape ? 2 : 2.4} />
+                  </button>
 
-              <button
-                type="button"
-                onClick={handleNextSection}
-                disabled={!hasTrackSession || resolvedSections.length === 0 || activeSectionIndex >= resolvedSections.length - 1}
-                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3.5' : isCompactLandscape ? 'h-10 px-4' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/82 hover:text-white hover:bg-white/6 disabled:cursor-not-allowed disabled:text-white/24`}
-                style={{ width: scaleRem(isUltraCompactLandscape ? 3.85 : isCompactLandscape ? 4.85 : 5.85, 3.25) }}
-                aria-label="Ir a la siguiente seccion"
-                title="Ir a la siguiente seccion"
-              >
-                <ChevronsRight className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-5 w-5' : 'h-7 w-7'}`} strokeWidth={isCompactLandscape ? 2 : 2.4} />
-              </button>
-
-              {/* Section-loop rehearsal toggle — single-touch way to loop the
-                  current section hands-free. Retargets automatically when the
-                  active section changes (user taps another, or next/prev). */}
-              <button
-                type="button"
-                onClick={() => setSectionLoopMode((previous) => !previous)}
-                disabled={!hasTrackSession || resolvedSections.length === 0}
-                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3' : isCompactLandscape ? 'h-10 px-3.5' : 'h-[var(--ld-control-height)] px-4'} justify-center ${sectionLoopMode ? 'text-emerald-200 border-emerald-300/40 bg-emerald-400/12' : 'text-white/70 hover:text-white'} disabled:cursor-not-allowed disabled:text-white/24`}
-                style={{ width: scaleRem(isUltraCompactLandscape ? 3.25 : isCompactLandscape ? 4.15 : 4.5, 2.8) }}
-                aria-label={sectionLoopMode ? 'Desactivar bucle de sección' : 'Activar bucle de sección'}
-                aria-pressed={sectionLoopMode}
-                title={sectionLoopMode
-                  ? `Bucle de sección ACTIVO${activeSection ? ` — ${activeSection.name}` : ''}`
-                  : 'Bucle de sección — repite la sección actual hasta que la apagues'}
-              >
-                <Repeat className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : 'h-5 w-5'}`} />
-              </button>
-
-              {!isShowMode && (
-                <button
-                  type="button"
-                  onClick={() => setShowLoadPanel(true)}
-                  className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3' : isCompactLandscape ? 'h-10 px-3.5' : 'h-[var(--ld-control-height)] px-4'} justify-center text-white/70 hover:text-white`}
-                  style={{ width: scaleRem(isUltraCompactLandscape ? 3.25 : isCompactLandscape ? 4.15 : 4.5, 2.8) }}
-                  title="Cargar o reemplazar la sesión multitrack"
-                  aria-label="Cargar o reemplazar la sesión multitrack"
-                >
-                  <Upload className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : 'h-5 w-5'}`} />
-                </button>
+                  <button
+                    type="button"
+                    onClick={handleNextSection}
+                    disabled={!hasTrackSession || resolvedSections.length === 0 || activeSectionIndex >= resolvedSections.length - 1}
+                    className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3.5' : isCompactLandscape ? 'h-10 px-4' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/82 hover:text-white hover:bg-white/6 disabled:cursor-not-allowed disabled:text-white/24`}
+                    style={{ width: scaleRem(isUltraCompactLandscape ? 3.75 : isCompactLandscape ? 4.65 : 5.45, 3.15) }}
+                    aria-label="Ir a la siguiente seccion"
+                    title="Ir a la siguiente seccion"
+                  >
+                    <ChevronsRight className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-5 w-5' : 'h-7 w-7'}`} strokeWidth={isCompactLandscape ? 2 : 2.4} />
+                  </button>
+                </>
               )}
 
               <button
                 type="button"
-                onClick={() => setIsShowMode((previous) => !previous)}
-                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3' : isCompactLandscape ? 'h-10 px-3.5' : 'h-[var(--ld-control-height)] px-4'} justify-center ${isShowMode ? 'text-cyan-200 border-cyan-300/34 bg-cyan-300/10' : 'text-white/70 hover:text-white'}`}
+                onClick={() => setShowLoadPanel(true)}
+                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3' : isCompactLandscape ? 'h-10 px-3.5' : 'h-[var(--ld-control-height)] px-4'} justify-center text-white/70 hover:text-white`}
                 style={{ width: scaleRem(isUltraCompactLandscape ? 3.25 : isCompactLandscape ? 4.15 : 4.5, 2.8) }}
-                title={isShowMode ? 'Modo show ACTIVO — toca para volver a ver motor y diagnóstico' : 'Modo show — oculta motor, diagnóstico y carga para un escenario limpio'}
-                aria-label={isShowMode ? 'Desactivar modo show' : 'Activar modo show'}
-                aria-pressed={isShowMode}
+                title="Cargar o reemplazar la sesión multitrack"
+                aria-label="Cargar o reemplazar la sesión multitrack"
               >
-                {isShowMode ? (
-                  <EyeOff className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : 'h-5 w-5'}`} />
-                ) : (
-                  <Eye className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : 'h-5 w-5'}`} />
-                )}
+                <Upload className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : 'h-5 w-5'}`} />
               </button>
+
             </div>
           </header>
         </div>
@@ -4368,7 +4287,7 @@ export function LiveDirectorView({
                               {currentSessionLabel}
                             </h1>
                             <p className={`text-white/54 ${isUltraCompactLandscape ? 'mt-0.5 text-[0.58rem]' : isCompactLandscape ? 'mt-0.5 text-[0.68rem]' : 'mt-1 text-[0.92rem]'}`}>{songSupportMeta}</p>
-                            {autoDisabledTrackNames.length > 0 && !isShowMode && (
+                            {autoDisabledTrackNames.length > 0 && (
                               <p
                                 className={`text-amber-200/86 ${isUltraCompactLandscape ? 'mt-0.5 text-[0.56rem]' : isCompactLandscape ? 'mt-0.5 text-[0.66rem]' : 'mt-1 text-[0.78rem]'}`}
                                 title={`Pistas desactivadas automáticamente por el tope: ${autoDisabledTrackNames.join(', ')}`}
@@ -4379,7 +4298,6 @@ export function LiveDirectorView({
                             )}
                           </div>
 
-                          {!isShowMode && (
                           <div className={`flex shrink-0 ${isUltraCompactLandscape ? 'items-center gap-1' : isCompactLandscape ? 'items-center gap-1.5' : 'items-start gap-2'}`}>
                             <div className={`rounded-full border border-white/8 bg-black/18 ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'}`}>
                               <p className={`${isUltraCompactLandscape ? 'text-[0.5rem]' : 'text-[0.68rem]'} font-black uppercase tracking-[0.18em] text-white/46`}>
@@ -4430,7 +4348,6 @@ export function LiveDirectorView({
                               </p>
                             </div>
                           </div>
-                          )}
                         </div>
 
                         <div className={`flex ${isUltraCompactLandscape ? 'items-center gap-1.5' : isCompactLandscape ? 'items-center gap-2' : 'items-end gap-4'}`}>
