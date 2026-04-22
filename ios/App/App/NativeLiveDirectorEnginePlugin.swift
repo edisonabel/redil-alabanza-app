@@ -2,6 +2,7 @@ import Accelerate
 import AVFoundation
 import Capacitor
 import CryptoKit
+import Darwin
 import Foundation
 import MediaPlayer
 import QuartzCore
@@ -91,6 +92,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private let internalPadTailSeconds: Double = 30.0
     private let internalPadFadeOutSeconds: Double = 10.0
     private let syncDebugIntervalSeconds: Double = 5.0
+    private let capacityDebugIntervalSeconds: Double = 10.0
     private var engine = AVAudioEngine()
     private var tracks: [NativeTrack] = []
     private var trackLevels: [String: Double] = [:]
@@ -106,6 +108,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private var soloTrackId: String?
     private var internalPadFadeScale: Float = 1
     private var lastSyncDebugLogElapsed: Double = -Double.greatestFiniteMagnitude
+    private var lastCapacityDebugLogElapsed: Double = -Double.greatestFiniteMagnitude
     private var stateTimer: DispatchSourceTimer?
     private var didRegisterAudioSessionObservers = false
     // Now Playing / lock screen metadata. Set from the JS side with
@@ -294,6 +297,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             if self.isSyncDebugTrack(track) {
                 CAPLog.print("NLDE SYNCDBG MIX index=\(track.loadIndex) id=\(track.id) name=\(track.name) toggleMute muted=\(track.isMuted) appliedVolume=\(track.player.volume)")
             }
+            self.logCapacitySnapshot("toggleMute", includeTracks: false)
             DispatchQueue.main.async {
                 call.resolve(["muted": track.isMuted])
             }
@@ -314,6 +318,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                 .forEach {
                     CAPLog.print("NLDE SYNCDBG MIX index=\($0.loadIndex) id=\($0.id) name=\($0.name) soloTrack=\(self.soloTrackId ?? "none") appliedVolume=\($0.player.volume) muted=\($0.isMuted)")
                 }
+            self.logCapacitySnapshot("soloTrack", includeTracks: false)
             DispatchQueue.main.async {
                 call.resolve(["soloTrackId": self.soloTrackId as Any])
             }
@@ -729,6 +734,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                 self.playbackStopDuration = self.duration + (nextTracks.contains(where: { self.isInternalPadTrack($0) }) ? self.internalPadTailSeconds : 0)
                 self.internalPadFadeScale = 1
                 self.lastSyncDebugLogElapsed = -Double.greatestFiniteMagnitude
+                self.lastCapacityDebugLogElapsed = -Double.greatestFiniteMagnitude
                 self.seekOffset = 0
                 self.trackLevels = nextTracks.reduce(into: [String: Double]()) { levels, track in
                     levels[track.id] = 0
@@ -742,6 +748,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                 }
 
                 self.engine.mainMixerNode.outputVolume = self.masterVolume
+                self.logCapacitySnapshot("post-configure", includeTracks: true)
                 self.startStateTimer()
                 // New session → refresh lock-screen duration, even if
                 // metadata hasn't been set yet (it'll use the default
@@ -798,6 +805,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         internalPadFadeScale = internalPadFadeScale(forElapsed: seekOffset)
         tracks.forEach { applyTrackMixState($0) }
         lastSyncDebugLogElapsed = -Double.greatestFiniteMagnitude
+        lastCapacityDebugLogElapsed = -Double.greatestFiniteMagnitude
 
         // Pass 3: arm every player to start at the same hostTime. Done last so
         //         scheduling work above doesn't eat into the start delay and
@@ -815,6 +823,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         logSessionState("post-startPlayback")
         logPlaybackAlignment("post-startPlayback")
         logSyncDebugPlaybackSnapshot("post-startPlayback", elapsed: seekOffset)
+        logCapacitySnapshot("post-startPlayback", elapsed: seekOffset)
         emitState()
         updateNowPlayingInfo()
     }
@@ -927,6 +936,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private func pausePlayback() {
         if isPlaying {
             logSyncDebugPlaybackSnapshot("pre-pausePlayback", elapsed: rawCurrentTime())
+            logCapacitySnapshot("pre-pausePlayback", elapsed: rawCurrentTime())
             seekOffset = currentTime()
         }
         tracks.forEach { $0.player.pause() }
@@ -941,6 +951,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         if isPlaying {
             logSyncDebugPlaybackSnapshot("pre-stopPlayback", elapsed: rawCurrentTime())
             logPlaybackAlignment("pre-stopPlayback")
+            logCapacitySnapshot("pre-stopPlayback", elapsed: rawCurrentTime())
         }
         tracks.forEach { $0.player.stop() }
         isPlaying = false
@@ -1046,6 +1057,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             let elapsed = self.rawCurrentTime()
             self.updateInternalPadTailFade(elapsed: elapsed)
             self.logSyncDebugPlaybackIfNeeded(elapsed: elapsed)
+            self.logCapacitySnapshotIfNeeded(elapsed: elapsed)
             if self.isPlaying && self.playbackStopDuration > 0 && elapsed >= self.playbackStopDuration {
                 self.stopPlayback(resetPosition: true)
                 return
@@ -1301,6 +1313,92 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                 "NLDE SYNCDBG PLAY[\(tag)] target index=\(track.loadIndex) id=\(track.id) name=\(track.name) nodeSec=\(String(format: "%.6f", info.nodeSeconds)) absSec=\(String(format: "%.6f", info.absoluteSeconds)) driftHostMs=\(String(format: "%+.2f", driftHostMs)) driftRefMs=\(driftRefText) sampleTime=\(info.sampleTime) sr=\(String(format: "%.0f", info.sampleRate)) scheduledUntil=\(track.scheduledUntilFrame) fileFrames=\(track.file.length) playerPlaying=\(track.player.isPlaying) muted=\(track.isMuted) vol=\(String(format: "%.4f", track.player.volume)) pan=\(String(format: "%.2f", track.player.pan))"
             )
         }
+    }
+
+    private func logCapacitySnapshotIfNeeded(elapsed: Double) {
+        if elapsed < lastCapacityDebugLogElapsed {
+            lastCapacityDebugLogElapsed = -Double.greatestFiniteMagnitude
+        }
+
+        guard elapsed - lastCapacityDebugLogElapsed >= capacityDebugIntervalSeconds else {
+            return
+        }
+
+        lastCapacityDebugLogElapsed = elapsed
+        logCapacitySnapshot("timer", elapsed: elapsed)
+    }
+
+    private func logCapacitySnapshot(_ tag: String, elapsed: Double? = nil, includeTracks: Bool = false) {
+        guard !tracks.isEmpty else {
+            CAPLog.print("NLDE CAPACITY[\(tag)] no-tracks")
+            return
+        }
+
+        let timelineTracks = tracks.filter { !isInternalPadTrack($0) }
+        let padTracks = tracks.filter { isInternalPadTrack($0) }
+        let audibleTimelineTracks = timelineTracks.filter { !$0.isMuted && $0.player.volume > 0.0001 }
+        let audiblePadTracks = padTracks.filter { !$0.isMuted && $0.player.volume > 0.0001 }
+        let mutedOrSilentTracks = timelineTracks.count - audibleTimelineTracks.count
+        let compressedTracks = tracks.filter { !isLinearPCMFile($0.file) }
+        let pcmTracks = tracks.count - compressedTracks.count
+        let totalChannels = tracks.reduce(0) { total, track in
+            total + Int(track.file.processingFormat.channelCount)
+        }
+        let totalLocalMB = tracks.reduce(0.0) { total, track in
+            total + Double(localFileSizeBytes(for: track)) / 1_048_576
+        }
+        let estimatedPcmFloatMB = tracks.reduce(0.0) { total, track in
+            let channels = max(1, Int(track.file.processingFormat.channelCount))
+            return total + Double(track.file.length) * Double(channels) * Double(MemoryLayout<Float>.stride) / 1_048_576
+        }
+        let rssText = currentResidentMemoryMB().map { String(format: "%.1f", $0) } ?? "?"
+        let elapsedText = elapsed.map { String(format: "%.3f", $0) } ?? "-"
+        let session = AVAudioSession.sharedInstance()
+
+        CAPLog.print(
+            "NLDE CAPACITY[\(tag)] elapsed=\(elapsedText) loaded=\(tracks.count) timeline=\(timelineTracks.count) pads=\(padTracks.count) audibleTimeline=\(audibleTimelineTracks.count) audiblePads=\(audiblePadTracks.count) mutedOrSilent=\(mutedOrSilentTracks) solo=\(soloTrackId ?? "none") compressed=\(compressedTracks.count) pcm=\(pcmTracks) channels=\(totalChannels) localMB=\(String(format: "%.1f", totalLocalMB)) estPCMFloatMB=\(String(format: "%.1f", estimatedPcmFloatMB)) rssMB=\(rssText) duration=\(String(format: "%.3f", duration)) stopDuration=\(String(format: "%.3f", playbackStopDuration)) sessionRate=\(String(format: "%.0f", session.sampleRate)) bufferMs=\(String(format: "%.2f", session.ioBufferDuration * 1000)) engineRunning=\(engine.isRunning) isPlaying=\(isPlaying)"
+        )
+
+        guard includeTracks else {
+            return
+        }
+
+        tracks
+            .sorted { $0.loadIndex < $1.loadIndex }
+            .forEach { track in
+                let role = isInternalPadTrack(track) ? "pad" : "timeline"
+                let localMB = Double(localFileSizeBytes(for: track)) / 1_048_576
+                let channels = max(1, Int(track.file.processingFormat.channelCount))
+                let estimatedTrackPcmMB = Double(track.file.length) * Double(channels) * Double(MemoryLayout<Float>.stride) / 1_048_576
+                CAPLog.print(
+                    "NLDE CAPACITY_TRACK index=\(track.loadIndex) role=\(role) debug=\(isSyncDebugTrack(track)) id=\(track.id) name=\(track.name) file=\(track.remoteURL.lastPathComponent) mode=\(schedulingModeName(for: track.file)) frames=\(track.file.length) duration=\(String(format: "%.3f", track.duration)) channels=\(track.file.processingFormat.channelCount) localMB=\(String(format: "%.1f", localMB)) estPCMFloatMB=\(String(format: "%.1f", estimatedTrackPcmMB)) muted=\(track.isMuted) baseVol=\(String(format: "%.4f", track.volume)) appliedVol=\(String(format: "%.4f", track.player.volume)) pan=\(String(format: "%.2f", track.player.pan))"
+                )
+            }
+    }
+
+    private func localFileSizeBytes(for track: NativeTrack) -> Int {
+        (try? track.localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0 } ?? 0
+    }
+
+    private func currentResidentMemoryMB() -> Double? {
+        var info = mach_task_basic_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { reboundPointer in
+                task_info(
+                    mach_task_self_,
+                    task_flavor_t(MACH_TASK_BASIC_INFO),
+                    reboundPointer,
+                    &count
+                )
+            }
+        }
+
+        guard result == KERN_SUCCESS else {
+            return nil
+        }
+
+        return Double(info.resident_size) / 1_048_576
     }
 
     private func isLinearPCMFile(_ file: AVAudioFile) -> Bool {
