@@ -15,6 +15,7 @@ const MAX_STEMS = 15;
 const TARGET_STEMS = 10;
 const DEFAULT_BITRATE = '256k';
 const TARGET_SAMPLE_RATE = 48_000;
+const TARGET_SAMPLE_RATE_FILTER = `aresample=${TARGET_SAMPLE_RATE},aformat=sample_rates=${TARGET_SAMPLE_RATE}`;
 const FFmpegCoreVersion = '0.12.10';
 const MONO_ANALYSIS_SAMPLE_LIMIT = 120_000;
 const MONO_ANALYSIS_MAX_FILE_BYTES = 220 * 1024 * 1024;
@@ -874,6 +875,8 @@ export default function StemConverterTool() {
           ...inputArgs,
           '-map',
           '0:a:0',
+          '-af',
+          TARGET_SAMPLE_RATE_FILTER,
           ...outputArgs,
         ]
         : [
@@ -881,7 +884,7 @@ export default function StemConverterTool() {
           '-y',
           ...inputArgs,
           '-filter_complex',
-          `${inputNames.map((_, sourceIndex) => `[${sourceIndex}:a:0]`).join('')}amix=inputs=${inputNames.length}:duration=longest:normalize=1,alimiter=limit=0.95[a]`,
+          `${inputNames.map((_, sourceIndex) => `[${sourceIndex}:a:0]`).join('')}amix=inputs=${inputNames.length}:duration=longest:normalize=1,alimiter=limit=0.95,${TARGET_SAMPLE_RATE_FILTER}[a]`,
           '-map',
           '[a]',
           ...outputArgs,
