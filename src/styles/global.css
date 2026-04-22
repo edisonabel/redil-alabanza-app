@@ -97,23 +97,23 @@ html[data-live-director-active='true'] #layout-notification-bell {
 }
 
 .live-director-track-strip--breathing .live-director-track-breath-layer {
-  animation: liveDirectorTrackBreath 2.45s ease-in-out infinite;
+  animation: liveDirectorTrackBreath 3.6s ease-in-out infinite;
   animation-delay: var(--track-breath-delay);
 }
 
 .live-director-track-strip--breathing .live-director-track-breath-edge {
-  animation: liveDirectorTrackEdgeBreath 2.45s ease-in-out infinite;
+  animation: liveDirectorTrackEdgeBreath 3.6s ease-in-out infinite;
   animation-delay: var(--track-breath-delay);
 }
 
 .live-director-track-activity-meter--breathing {
-  animation: liveDirectorTrackMeterBreath 1.35s ease-in-out infinite;
+  animation: liveDirectorTrackMeterBreath 2.65s ease-in-out infinite;
   animation-delay: var(--track-breath-delay);
   transform-origin: bottom center;
 }
 
 .live-director-track-thumb--breathing {
-  animation: liveDirectorTrackThumbBreath 2.45s ease-in-out infinite;
+  animation: liveDirectorTrackThumbBreath 3.6s ease-in-out infinite;
   animation-delay: var(--track-breath-delay);
 }
 
@@ -135,8 +135,8 @@ html[data-live-director-active='true'] #layout-notification-bell {
 
 .live-director-track-signal--active span {
   background: var(--track-accent);
-  box-shadow: 0 0 10px var(--track-accent);
-  animation: liveDirectorTrackSignalBreath 0.94s ease-in-out infinite;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--track-accent) 74%, transparent);
+  animation: liveDirectorTrackSignalBreath 1.75s ease-in-out infinite;
   animation-delay: var(--track-breath-delay);
 }
 
@@ -153,12 +153,12 @@ html[data-live-director-active='true'] #layout-notification-bell {
 @keyframes liveDirectorTrackBreath {
   0%,
   100% {
-    opacity: calc(0.045 * var(--track-breath-strength));
-    transform: scale(0.985);
+    opacity: calc(0.025 * var(--track-breath-strength));
+    transform: scale(0.992);
   }
 
   50% {
-    opacity: calc(0.19 * var(--track-breath-strength));
+    opacity: calc(0.105 * var(--track-breath-strength));
     transform: scale(1);
   }
 }
@@ -166,24 +166,24 @@ html[data-live-director-active='true'] #layout-notification-bell {
 @keyframes liveDirectorTrackEdgeBreath {
   0%,
   100% {
-    opacity: calc(0.12 * var(--track-breath-strength));
+    opacity: calc(0.08 * var(--track-breath-strength));
   }
 
   50% {
-    opacity: calc(0.62 * var(--track-breath-strength));
+    opacity: calc(0.34 * var(--track-breath-strength));
   }
 }
 
 @keyframes liveDirectorTrackMeterBreath {
   0%,
   100% {
-    opacity: calc(0.34 + (0.18 * var(--track-breath-strength)));
-    scale: 1 0.96;
+    opacity: calc(0.48 + (0.12 * var(--track-breath-strength)));
+    scale: 1 0.985;
   }
 
   50% {
-    opacity: calc(0.54 + (0.28 * var(--track-breath-strength)));
-    scale: 1 1.035;
+    opacity: calc(0.58 + (0.16 * var(--track-breath-strength)));
+    scale: 1 1.012;
   }
 }
 
@@ -194,20 +194,20 @@ html[data-live-director-active='true'] #layout-notification-bell {
   }
 
   50% {
-    filter: brightness(1.12) saturate(1.12);
+    filter: brightness(1.045) saturate(1.06);
   }
 }
 
 @keyframes liveDirectorTrackSignalBreath {
   0%,
   100% {
-    opacity: 0.48;
-    scale: 1 0.76;
+    opacity: 0.54;
+    scale: 1 0.9;
   }
 
   50% {
-    opacity: 1;
-    scale: 1 1.08;
+    opacity: 0.86;
+    scale: 1 1.04;
   }
 }
 

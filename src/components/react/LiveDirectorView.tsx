@@ -587,9 +587,9 @@ function FaderThumb({
   style?: CSSProperties;
 }) {
   const highlightColor = muted ? 'rgba(161, 169, 181, 0.62)' : accent;
-  const lineOpacity = muted ? 0.34 : 0.36 + level * 0.64;
-  const lineScale = 0.78 + level * 0.34;
-  const lineGlow = muted ? '0 0 0 transparent' : `0 0 ${12 + level * 14}px currentColor`;
+  const lineOpacity = muted ? 0.34 : 0.46 + level * 0.32;
+  const lineScale = 0.84 + level * 0.2;
+  const lineGlow = muted ? '0 0 0 transparent' : `0 0 ${8 + level * 10}px currentColor`;
 
   return (
     <div
@@ -602,7 +602,7 @@ function FaderThumb({
       <div className="absolute right-3 top-3 bottom-3 w-px rounded-full bg-white/10" />
       <div className="absolute inset-2 rounded-[0.82rem] border border-white/4 bg-[repeating-linear-gradient(180deg,rgba(255,255,255,0.045)_0px,rgba(255,255,255,0.045)_2px,transparent_2px,transparent_5px)]" />
       <div
-        className="absolute inset-x-3 top-1/2 h-[2px] -translate-y-1/2 rounded-full transition-[opacity,transform,box-shadow] duration-100"
+        className="absolute inset-x-3 top-1/2 h-[2px] -translate-y-1/2 rounded-full transition-[opacity,transform,box-shadow] duration-300 ease-out"
         style={{
           backgroundColor: highlightColor,
           color: highlightColor,
@@ -648,7 +648,9 @@ const ChannelStrip = memo(function ChannelStrip({
     : 0;
   const levelBottom = `${10 + displayVolume * 78}%`;
   const knobGlow = muted ? 'rgba(120, 128, 140, 0.15)' : `${accent}30`;
-  const meterHeightPercent = visualActivityLevel > 0.002 ? Math.max(5, visualActivityLevel * 86) : 0;
+  const meterHeightPercent = visualActivityLevel > 0.002
+    ? Math.min(92, 12 + Math.pow(visualActivityLevel, 0.72) * 80)
+    : 0;
   const meterOpacity = muted
     ? 0.16
     : hasLiveSignal
@@ -657,9 +659,9 @@ const ChannelStrip = memo(function ChannelStrip({
   const meterGlow = muted
     ? '0 0 0 transparent'
     : isAudiblyActive
-      ? `0 0 ${12 + visualActivityLevel * 20}px ${accent}4a`
-      : `0 0 ${10 + displayLevel * 18}px ${accent}42`;
-  const breathStrength = clamp(displayLevel, 0.22, 1);
+      ? `0 0 ${10 + visualActivityLevel * 16}px ${accent}3c`
+      : `0 0 ${8 + displayLevel * 14}px ${accent}36`;
+  const breathStrength = clamp(Math.pow(displayLevel, 0.72), 0.14, 0.76);
   // Memoize the CSS-var bag so React doesn't reconcile a brand-new style
   // object on every visual-clock tick. The delay only depends on `id`, so
   // cache the per-track phase string separately and let `breathStrength`
@@ -978,7 +980,7 @@ const ChannelStrip = memo(function ChannelStrip({
             />
           ))}
           <div
-            className={`live-director-track-activity-meter pointer-events-none absolute left-1/2 -translate-x-1/2 rounded-full shadow-[0_0_14px_rgba(103,210,242,0.16)] transition-[height,opacity,box-shadow] duration-100 ${isAudiblyActive ? 'live-director-track-activity-meter--breathing' : ''} ${ultraCompact ? 'bottom-[11%] w-[0.26rem]' : 'bottom-[10%] w-[0.32rem]'}`}
+            className={`live-director-track-activity-meter pointer-events-none absolute left-1/2 -translate-x-1/2 rounded-full shadow-[0_0_14px_rgba(103,210,242,0.16)] transition-[height,opacity,box-shadow] duration-300 ease-out ${isAudiblyActive ? 'live-director-track-activity-meter--breathing' : ''} ${ultraCompact ? 'bottom-[11%] w-[0.3rem]' : 'bottom-[10%] w-[0.38rem]'}`}
             style={{
               height: `${meterHeightPercent}%`,
               // When muted we already switch to a neutral gray + low opacity,
@@ -993,7 +995,7 @@ const ChannelStrip = memo(function ChannelStrip({
             accent={accent}
             level={visualActivityLevel}
             muted={muted}
-            className={`live-director-track-thumb ${isAudiblyActive ? 'live-director-track-thumb--breathing' : ''} ${ultraCompact ? 'h-[1.85rem]' : compact ? 'h-[2.2rem]' : 'h-[4.35rem]'} w-full ${stripThumbWidthClass} transition-[bottom,box-shadow,opacity,transform] duration-150`}
+            className={`live-director-track-thumb ${isAudiblyActive ? 'live-director-track-thumb--breathing' : ''} ${ultraCompact ? 'h-[1.85rem]' : compact ? 'h-[2.2rem]' : 'h-[4.35rem]'} w-full ${stripThumbWidthClass} transition-[bottom,box-shadow,opacity,transform] duration-300 ease-out`}
             style={{
               bottom: `calc(${levelBottom} - ${ultraCompact ? '0.92rem' : compact ? '1.1rem' : '1.75rem'})`,
               boxShadow: muted
