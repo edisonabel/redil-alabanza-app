@@ -185,6 +185,8 @@ const INTERNAL_PAD_TRACK_ID = '__internal-pad__';
 // The internal pad masters are intentionally lush, but their raw gain is too hot
 // for live control. Apply a fixed -8 dB trim before the pad reaches either engine.
 const INTERNAL_PAD_GAIN_TRIM = Math.pow(10, -8 / 20);
+const INTERNAL_PAD_CROSSFADE_SECONDS = 7;
+const INTERNAL_PAD_CROSSFADE_MS = INTERNAL_PAD_CROSSFADE_SECONDS * 1000;
 
 // Priority buckets for auto-disabling extras when a session has more
 // enabled stems than the platform can run. Lower number = more important
@@ -1369,24 +1371,7 @@ export function LiveDirectorView({
   );
   const effectiveInternalPadVolume = clamp(resolvedInternalPadVolume * INTERNAL_PAD_GAIN_TRIM, 0, 1);
   const resolvedPadUrl = useMemo(() => getPadUrlForSongKey(songKey), [songKey]);
-  const shouldUseNativeInternalPad = Boolean(isIOSNativeEngineSurface && isEnsayoMode && resolvedPadUrl);
-  const nativeInternalPadTrack = useMemo<TrackData | null>(() => {
-    if (!shouldUseNativeInternalPad || !resolvedPadUrl) {
-      return null;
-    }
-
-    return {
-      id: INTERNAL_PAD_TRACK_ID,
-      name: 'Pad Int.',
-      url: resolvedPadUrl,
-      nativeUrl: resolvedPadUrl,
-      volume: isPadActive ? effectiveInternalPadVolume : 0,
-      isMuted: false,
-      enabled: true,
-      sourceFileName: 'Pad interno',
-      outputRoute: 'stereo',
-    };
-  }, [effectiveInternalPadVolume, isPadActive, resolvedPadUrl, shouldUseNativeInternalPad]);
+  const shouldUseNativePadBridge = Boolean(isIOSNativeEngineSurface && isEnsayoMode && resolvedPadUrl);
   const layoutScale = useMemo(() => {
     if (isPortrait || viewportHeight <= 0) {
       return 1;
@@ -1493,17 +1478,11 @@ export function LiveDirectorView({
   }, [activeTracks, enabledSessionTracks, isWebTrackLimitExceeded]);
 
   const activeEngineTracks = useMemo(() => {
-    const engineTracks: TrackData[] = activeTracks.map((track) => ({
+    return activeTracks.map((track) => ({
       ...track,
       outputRoute: trackOutputRoutes[track.id] ?? resolveTrackOutputRoute(track),
     }));
-
-    if (nativeInternalPadTrack) {
-      engineTracks.push(nativeInternalPadTrack);
-    }
-
-    return engineTracks;
-  }, [activeTracks, nativeInternalPadTrack, trackOutputRoutes]);
+  }, [activeTracks, trackOutputRoutes]);
 
   const hasSessionTracks = sessionTracks.length > 0;
   const hasTrackSession = activeTracks.length > 0;
@@ -1529,7 +1508,7 @@ export function LiveDirectorView({
     : [performerLabel, songKey].filter(Boolean).join(' · ') || sessionModeLabel;
   const songSupportMeta = hasSessionTracks
     ? isWebTrackLimitExceeded
-      ? `${activeTracks.length} de ${enabledSessionTracks.length} pistas activas (tope ${sessionActiveTrackLimit}${shouldUseNativeInternalPad ? ' + pad' : ''})`
+      ? `${activeTracks.length} de ${enabledSessionTracks.length} pistas activas (tope ${sessionActiveTrackLimit}${shouldUseNativePadBridge ? ' + pad' : ''})`
       : inferredSessionMode === 'folder' && activeTracks.length !== sessionTracks.length
       ? `${activeTracks.length} de ${sessionTracks.length} pistas activas`
       : sessionModeLabel
@@ -1862,7 +1841,7 @@ export function LiveDirectorView({
       };
     });
 
-    if (isEnsayoMode && resolvedPadUrl) {
+    if (isEnsayoMode && (resolvedPadUrl || isPadActive)) {
       const padEnvelope = trackEnvelopes[INTERNAL_PAD_TRACK_ID];
       const padEnvelopeLevel = isPlaying && isPadActive
         ? sampleActivityEnvelope(padEnvelope, currentTime)
@@ -1883,10 +1862,13 @@ export function LiveDirectorView({
         showRouteFlip: false,
       };
 
-      const clickIdx = resolvedMixerTracks.findIndex((t) => t.id.toLowerCase().includes('click') || t.id.toLowerCase().includes('metro'));
-      const guiaIdx = resolvedMixerTracks.findIndex((t) => t.id.toLowerCase().includes('guia') || t.id.toLowerCase().includes('guide'));
-
-      const insertIdx = Math.max(clickIdx, guiaIdx);
+      let insertIdx = -1;
+      resolvedMixerTracks.forEach((track, index) => {
+        const haystack = `${track.id} ${track.label} ${track.shortLabel}`.toLowerCase();
+        if (/(click|metro|metronom|cue|cues|gu[ií]a|guide|count)/i.test(haystack)) {
+          insertIdx = index;
+        }
+      });
       if (insertIdx !== -1) {
         resolvedMixerTracks.splice(insertIdx + 1, 0, padTrack);
       } else {
@@ -2548,7 +2530,7 @@ export function LiveDirectorView({
       const limitedCount = Math.max(0, enabledSessionTracks.length - activeTracks.length);
       const disabledCount = Math.max(0, sessionTracks.length - enabledSessionTracks.length);
       console.info(
-        `[LiveDirectorView] Loading ${activeTracks.length}/${enabledSessionTracks.length} enabled tracks${nativeInternalPadTrack ? ' + internal pad' : ''}` +
+        `[LiveDirectorView] Loading ${activeTracks.length}/${enabledSessionTracks.length} enabled tracks${shouldUseNativePadBridge ? ' + pad bridge' : ''}` +
           (limitedCount > 0 ? ` (auto-disabled ${limitedCount} over-limit stem${limitedCount === 1 ? '' : 's'}).` : '') +
           (disabledCount > 0 ? ` (${disabledCount} already disabled).` : '.'),
       );
@@ -2777,10 +2759,17 @@ export function LiveDirectorView({
     }
 
     if (!resolvedPadUrl) {
-      padFadeTargetRefA.current = 0;
-      padFadeTargetRefB.current = 0;
       if (isPadActive) {
-        setIsPadActive(false);
+        if (activePadChannelRef.current === 'A') {
+          padFadeTargetRefA.current = effectiveInternalPadVolume;
+          padFadeTargetRefB.current = 0;
+        } else {
+          padFadeTargetRefB.current = effectiveInternalPadVolume;
+          padFadeTargetRefA.current = 0;
+        }
+      } else {
+        padFadeTargetRefA.current = 0;
+        padFadeTargetRefB.current = 0;
       }
     } else {
       const activePad = activePadChannelRef.current === 'A' ? padA : padB;
@@ -2830,7 +2819,7 @@ export function LiveDirectorView({
     }
 
     let lastTime = performance.now();
-    const FADE_DURATION_MS = 5000;
+    const FADE_DURATION_MS = INTERNAL_PAD_CROSSFADE_MS;
 
     const animateFade = (time: number) => {
       const deltaMs = time - lastTime;
@@ -3593,18 +3582,43 @@ export function LiveDirectorView({
   }, [onInternalPadVolumeChange]);
 
   useEffect(() => {
-    if (!resolvedPadUrl && isPadActive) {
+    if (!resolvedPadUrl && isPadActive && !isIOSNativeEngineSurface) {
       setIsPadActive(false);
     }
-  }, [isPadActive, resolvedPadUrl]);
+  }, [isIOSNativeEngineSurface, isPadActive, resolvedPadUrl]);
 
   useEffect(() => {
-    if (!shouldUseNativeInternalPad || !isReady) {
+    if (!isIOSNativeEngineSurface || !isNativeLiveDirectorEngineAvailable()) {
       return;
     }
 
-    setVolume(INTERNAL_PAD_TRACK_ID, isPadActive ? effectiveInternalPadVolume : 0);
-  }, [effectiveInternalPadVolume, isPadActive, isReady, setVolume, shouldUseNativeInternalPad]);
+    if (!shouldUseNativePadBridge || !resolvedPadUrl) {
+      if (!isPadActive) {
+        void NativeLiveDirectorEngine.stopPad({ fadeSeconds: INTERNAL_PAD_CROSSFADE_SECONDS }).catch((error) => {
+          console.warn('[LiveDirectorView] Native pad bridge stop failed.', error);
+        });
+      }
+      return;
+    }
+
+    void NativeLiveDirectorEngine.setPad({
+      url: resolvedPadUrl,
+      active: isPadActive,
+      volume: effectiveInternalPadVolume,
+      fadeSeconds: INTERNAL_PAD_CROSSFADE_SECONDS,
+    }).catch((error) => {
+      console.warn('[LiveDirectorView] Native pad bridge failed.', error);
+      setIsPadActive(false);
+    });
+  }, [effectiveInternalPadVolume, isIOSNativeEngineSurface, isPadActive, resolvedPadUrl, shouldUseNativePadBridge]);
+
+  useEffect(() => () => {
+    if (!isNativeLiveDirectorEngineAvailable()) {
+      return;
+    }
+
+    void NativeLiveDirectorEngine.stopPad({ fadeSeconds: 0 }).catch(() => undefined);
+  }, []);
 
   // Keep the ref pointed at the latest parent-side handlers so the stable
   // per-track callbacks returned by getChannelStripCallbacks always see the
@@ -4037,7 +4051,7 @@ export function LiveDirectorView({
                 </span>
               </div>
 
-              {resolvedPadUrl && (
+              {(resolvedPadUrl || isPadActive) && (
                 <button
                   type="button"
                   onClick={() => setIsPadActive((previous) => !previous)}
@@ -5196,7 +5210,7 @@ export function LiveDirectorView({
               <div>
                 <p className="text-[0.6rem] font-black uppercase tracking-[0.18em] text-white/36">Resumen</p>
                 <p className={`${useWideTrackLoadModal ? 'mt-0.5 text-[0.92rem]' : 'mt-1 text-sm'} font-semibold text-white/88`}>
-                  {pendingEffectiveEnabledCount} de {sessionTracks.length} activos{isWebTrackLimitExceeded || pendingEnabledCount > pendingEffectiveEnabledCount ? ` (tope ${sessionActiveTrackLimit}${shouldUseNativeInternalPad ? ' + pad' : ''})` : ''}
+                  {pendingEffectiveEnabledCount} de {sessionTracks.length} activos{isWebTrackLimitExceeded || pendingEnabledCount > pendingEffectiveEnabledCount ? ` (tope ${sessionActiveTrackLimit}${shouldUseNativePadBridge ? ' + pad' : ''})` : ''}
                 </p>
               </div>
               <button

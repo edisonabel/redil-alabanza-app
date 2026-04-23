@@ -71,6 +71,13 @@ export type NativeLiveDirectorNowPlayingMetadata = {
   albumTitle?: string;
 };
 
+export type NativeLiveDirectorPadOptions = {
+  url?: string;
+  active?: boolean;
+  volume?: number;
+  fadeSeconds?: number;
+};
+
 export interface NativeLiveDirectorEnginePlugin {
   load(options: { tracks: TrackData[] }): Promise<NativeLiveDirectorEngineLoadResult>;
   play(): Promise<NativeLiveDirectorEngineState>;
@@ -88,6 +95,8 @@ export interface NativeLiveDirectorEnginePlugin {
   clearNowPlayingMetadata(): Promise<void>;
   lockLandscape(): Promise<void>;
   unlockOrientation(): Promise<void>;
+  setPad(options: NativeLiveDirectorPadOptions): Promise<void>;
+  stopPad(options?: { fadeSeconds?: number }): Promise<void>;
   preloadTracks(options: { tracks: TrackData[]; gapSeconds?: number }): Promise<NativeLiveDirectorPreloadResult>;
   cancelPreload(): Promise<void>;
   addListener(
