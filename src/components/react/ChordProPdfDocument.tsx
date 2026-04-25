@@ -22,11 +22,28 @@ type ChordProPdfDocumentProps = {
 
 const PAGE_WIDTH_PX = 816;
 const PAGE_HEIGHT_PX = 1056;
+const PDF_FONT_LOAD_CHECKS = [
+  '300 24px "adineue"',
+  '400 24px "adineue"',
+  '700 24px "adineue"',
+];
 
 const nextFrame = () =>
   new Promise<void>((resolve) => {
     requestAnimationFrame(() => resolve());
   });
+
+const waitForPdfFonts = async () => {
+  if (!document.fonts) return;
+
+  try {
+    await Promise.all(PDF_FONT_LOAD_CHECKS.map((fontSpec) => document.fonts.load(fontSpec)));
+    await document.fonts.ready;
+  } catch {
+    // Printing should still work with fallback fonts if the browser blocks the
+    // FontFaceSet API, but the ready flag should prefer loaded brand fonts.
+  }
+};
 
 const readResolvedPayload = (
   initialPayload?: ChordProPdfPayload | null,
@@ -145,13 +162,7 @@ export default function ChordProPdfDocument({
       setIsReady(false);
       window.__CHORDPRO_PDF_READY__ = false;
 
-      try {
-        if (document.fonts?.ready) {
-          await document.fonts.ready;
-        }
-      } catch {
-        // no-op
-      }
+      await waitForPdfFonts();
 
       await nextFrame();
       await nextFrame();
@@ -218,7 +229,10 @@ export default function ChordProPdfDocument({
   }, [clientToken, initialPayload]);
 
   return (
-    <div className="mx-auto min-h-screen w-full bg-white text-black">
+    <div
+      id="chordpro-pdf-root"
+      className="mx-auto min-h-[11in] w-[8.5in] min-w-[8.5in] max-w-[8.5in] bg-white text-black"
+    >
       <div id="chordpro-pdf-ready" data-ready={isReady ? '1' : '0'} hidden />
       {payload ? (
         <div

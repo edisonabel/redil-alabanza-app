@@ -108,14 +108,22 @@ const SONG_SHEET_PRINT_CSS = `
       background: #ffffff !important;
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
-      width: 100% !important;
-      height: 100% !important;
+      -webkit-font-smoothing: antialiased !important;
+      text-rendering: geometricPrecision !important;
+      -webkit-text-size-adjust: 100% !important;
+      text-size-adjust: 100% !important;
+      width: 8.5in !important;
+      min-width: 8.5in !important;
+      height: 11in !important;
+      min-height: 11in !important;
     }
 
     .song-sheet-page {
-      width: 100% !important;
+      width: 8.5in !important;
+      min-width: 8.5in !important;
       max-width: 8.5in !important;
       height: 11in !important;
+      min-height: 11in !important;
       max-height: 11in !important;
       overflow: hidden !important;
       page-break-after: always !important;
@@ -162,7 +170,8 @@ const SONG_SHEET_PRINT_CSS = `
 
     @supports (-webkit-touch-callout: none) {
       .song-sheet-page {
-        width: 100% !important;
+        width: 8.5in !important;
+        min-width: 8.5in !important;
         max-width: 8.5in !important;
         height: 11in !important;
       }

@@ -21,7 +21,7 @@ if (!payload && !clientToken) {
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=816, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>{payload?.title ? `${payload.title} PDF` : "ChordPro PDF"}</title>
   </head>
   <body>
@@ -49,23 +49,84 @@ if (!payload && !clientToken) {
     margin: 0;
   }
 
+  @font-face {
+    font-family: "adineue";
+    src: url("/fonts/redil/adineuePRO-Light.woff2") format("woff2");
+    font-weight: 300;
+    font-style: normal;
+    font-display: block;
+  }
+
+  @font-face {
+    font-family: "adineue";
+    src: url("/fonts/redil/adineuePRO-Regular.woff2") format("woff2");
+    font-weight: 400;
+    font-style: normal;
+    font-display: block;
+  }
+
+  @font-face {
+    font-family: "adineue";
+    src: url("/fonts/redil/adineuePRO-Bold.woff2") format("woff2");
+    font-weight: 700;
+    font-style: normal;
+    font-display: block;
+  }
+
   html,
   body {
     margin: 0;
     padding: 0;
-    width: 100%;
-    min-height: 100%;
+    width: 8.5in;
+    min-width: 8.5in;
+    min-height: 11in;
     background: #ffffff;
     color: #000000;
+    font-family: "adineue", "Segoe UI", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
     overflow: hidden;
   }
 
   body {
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
+    display: block;
+  }
+
+  #chordpro-pdf-root,
+  #chordpro-pdf-sheet {
+    width: 8.5in;
+    min-width: 8.5in;
+    max-width: 8.5in;
+  }
+
+  #chordpro-pdf-sheet {
+    height: 11in;
+    min-height: 11in;
+    max-height: 11in;
+  }
+
+  @media print {
+    html,
+    body,
+    #chordpro-pdf-root,
+    #chordpro-pdf-sheet {
+      width: 8.5in !important;
+      min-width: 8.5in !important;
+      max-width: 8.5in !important;
+    }
+
+    body,
+    #chordpro-pdf-root,
+    #chordpro-pdf-sheet {
+      height: 11in !important;
+      min-height: 11in !important;
+      max-height: 11in !important;
+      overflow: hidden !important;
+    }
   }
 
   .pdf-error-state {

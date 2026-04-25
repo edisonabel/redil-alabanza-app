@@ -12,12 +12,40 @@ import { inferChordProTone } from '../../utils/inferChordProTone';
 import { buildChordProPdfFileName } from '../../lib/chordproPdfPayload';
 import { createChordProPdfBrowserToken } from '../../lib/chordproPdfBrowserStore';
 
-const isIOSDevice = () => {
+const isMobilePrintDevice = () => {
   if (typeof window === 'undefined') return false;
+  const navigatorWithUserAgentData = window.navigator as Navigator & {
+    userAgentData?: { mobile?: boolean };
+  };
+
   return (
-    /iPad|iPhone|iPod/.test(window.navigator.userAgent) ||
+    Boolean(navigatorWithUserAgentData.userAgentData?.mobile) ||
+    /Android|iPad|iPhone|iPod/i.test(window.navigator.userAgent) ||
     (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1)
   );
+};
+
+const fetchGeneratedPdfBlob = async (payload: unknown) => {
+  const response = await fetch('/api/chordpro-print-pdf', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ payload }),
+  });
+
+  if (!response.ok) {
+    let detail = 'No se pudo generar el PDF para compartir.';
+    try {
+      const errorPayload = await response.json();
+      detail = String(errorPayload?.detail || errorPayload?.error || detail);
+    } catch {
+      // Keep the generic message when the server does not return JSON.
+    }
+    throw new Error(detail);
+  }
+
+  return response.blob();
 };
 
 type ChordProPrintWorkspaceProps = {
@@ -399,29 +427,10 @@ export default function ChordProPrintWorkspace({
 
     const targetName = 'chordpro-pdf-preview';
 
-    if (isIOSDevice()) {
+    if (isMobilePrintDevice()) {
       setIsGeneratingPdf(true);
       try {
-        const response = await fetch('/api/chordpro-print-pdf', {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({ payload }),
-        });
-
-        if (!response.ok) {
-          let detail = 'No se pudo generar el PDF para compartir.';
-          try {
-            const errorPayload = await response.json();
-            detail = String(errorPayload?.detail || errorPayload?.error || detail);
-          } catch {
-            // Keep the generic message when the server does not return JSON.
-          }
-          throw new Error(detail);
-        }
-
-        const blob = await response.blob();
+        const blob = await fetchGeneratedPdfBlob(payload);
         const file = new File([blob], payload.fileName, { type: 'application/pdf' });
 
         if (typeof navigator.share === 'function' && navigator.canShare?.({ files: [file] })) {
