@@ -15,11 +15,12 @@
   X,
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { useMultitrackEngine } from '../../hooks/useMultitrackEngine';
 import { useNativeIOSMultitrackEngine } from '../../hooks/useNativeIOSMultitrackEngine';
 import type { SongStructure, TrackData } from '../../services/MultitrackEngine';
 import { ChannelStrip, FaderThumb } from './live-director/ChannelStrip';
+import { EnsayoQueueCard } from './live-director/EnsayoQueueCard';
 import {
   isNativeLiveDirectorEngineAvailable,
   NativeLiveDirectorEngine,
@@ -52,6 +53,7 @@ import {
   type TrackOutputRoute,
 } from '../../utils/liveDirectorTrackRouting';
 import { getPadUrlForSongKey } from '../../utils/padAudio';
+import { extractCoverArtFromMp3 } from '../../utils/mp3CoverArt';
 
 type MixerTrackMeta = {
   id: string;
@@ -263,7 +265,6 @@ const CONTROL_CARD =
 
 const GENERIC_TRACK_ACCENTS = ['#81ddf5', '#7ed8e7', '#9f7cff', '#43c477', '#c98bff', '#73d1f8'];
 const TRACK_META_BY_ID = new Map(MIXER_TRACKS.map((track) => [track.id, track]));
-const coverArtCache = new Map<string, string | null>();
 
 const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 
@@ -323,121 +324,6 @@ const shouldIgnoreKeyboardShortcutTarget = (target: EventTarget | null) => {
         'input, textarea, select, button, a, [contenteditable="true"], [role="textbox"], [data-live-director-shortcuts="off"]',
       ),
     );
-};
-
-const extractCoverArtFromMp3 = async (mp3Url: string): Promise<string | null> => {
-  if (!mp3Url) {
-    return null;
-  }
-
-  if (coverArtCache.has(mp3Url)) {
-    return coverArtCache.get(mp3Url) || null;
-  }
-
-  try {
-    const response = await fetch(mp3Url, {
-      headers: { Range: 'bytes=0-524287' },
-      mode: 'cors',
-    });
-
-    if (!response.ok) {
-      coverArtCache.set(mp3Url, null);
-      return null;
-    }
-
-    const buffer = await response.arrayBuffer();
-    const view = new DataView(buffer);
-
-    if (view.getUint8(0) !== 0x49 || view.getUint8(1) !== 0x44 || view.getUint8(2) !== 0x33) {
-      coverArtCache.set(mp3Url, null);
-      return null;
-    }
-
-    const majorVersion = view.getUint8(3);
-    const tagSize =
-      ((view.getUint8(6) & 0x7f) << 21) |
-      ((view.getUint8(7) & 0x7f) << 14) |
-      ((view.getUint8(8) & 0x7f) << 7) |
-      (view.getUint8(9) & 0x7f);
-
-    const tagEnd = Math.min(10 + tagSize, buffer.byteLength);
-    let offset = 10;
-    const flags = view.getUint8(5);
-
-    if (flags & 0x40 && offset + 4 < tagEnd) {
-      offset += view.getUint32(offset);
-    }
-
-    while (offset + 10 < tagEnd) {
-      const frameId = String.fromCharCode(
-        view.getUint8(offset),
-        view.getUint8(offset + 1),
-        view.getUint8(offset + 2),
-        view.getUint8(offset + 3),
-      );
-
-      const frameSize =
-        majorVersion >= 4
-          ? ((view.getUint8(offset + 4) & 0x7f) << 21) |
-          ((view.getUint8(offset + 5) & 0x7f) << 14) |
-          ((view.getUint8(offset + 6) & 0x7f) << 7) |
-          (view.getUint8(offset + 7) & 0x7f)
-          : view.getUint32(offset + 4);
-
-      if (frameSize <= 0 || frameSize > tagEnd - offset) {
-        break;
-      }
-
-      if (frameId === 'APIC') {
-        const frameData = new Uint8Array(buffer, offset + 10, frameSize);
-        const encoding = frameData[0];
-        let position = 1;
-        let mimeType = '';
-
-        while (position < frameData.length && frameData[position] !== 0) {
-          mimeType += String.fromCharCode(frameData[position]);
-          position += 1;
-        }
-
-        position += 1;
-        position += 1;
-
-        if (encoding === 0 || encoding === 3) {
-          while (position < frameData.length && frameData[position] !== 0) {
-            position += 1;
-          }
-          position += 1;
-        } else {
-          while (
-            position + 1 < frameData.length &&
-            !(frameData[position] === 0 && frameData[position + 1] === 0)
-          ) {
-            position += 2;
-          }
-          position += 2;
-        }
-
-        const imageData = frameData.slice(position);
-        if (imageData.length < 100) {
-          break;
-        }
-
-        const blob = new Blob([imageData], { type: mimeType || 'image/jpeg' });
-        const blobUrl = URL.createObjectURL(blob);
-        coverArtCache.set(mp3Url, blobUrl);
-        return blobUrl;
-      }
-
-      offset += 10 + frameSize;
-    }
-
-    coverArtCache.set(mp3Url, null);
-    return null;
-  } catch (error) {
-    console.warn('[LiveDirectorView] Could not extract cover art.', error);
-    coverArtCache.set(mp3Url, null);
-    return null;
-  }
 };
 
 const buildWaveBars = (seed: number, count = 24) =>
@@ -527,69 +413,6 @@ const toResolvedSession = (
   sectionOffsetSeconds: Number.isFinite(Number(session.sectionOffsetSeconds))
     ? Number(session.sectionOffsetSeconds)
     : 0,
-});
-
-const EnsayoQueueCard = memo(function EnsayoQueueCard({
-  song,
-  coverUrl,
-  active = false,
-  compact = false,
-  ultraCompact = false,
-  onClick,
-}: {
-  song: LiveDirectorQueueSong;
-  coverUrl?: string | null;
-  active?: boolean;
-  compact?: boolean;
-  ultraCompact?: boolean;
-  onClick?: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`ui-pressable-card group relative flex shrink-0 overflow-hidden rounded-[1.15rem] border text-left transition-all duration-200 ${ultraCompact
-        ? 'h-[4.7rem] p-1.25'
-        : compact
-          ? 'h-[5.1rem] p-1.5'
-          : 'h-[5.55rem] p-1.75'
-        } ${active
-          ? 'border-white/80'
-          : 'border-white/8 hover:border-white/14'
-        }`}
-      style={{
-        width: ultraCompact ? '9.15rem' : compact ? '10rem' : '10.95rem',
-        background:
-          'linear-gradient(180deg,rgba(22,24,26,0.98),rgba(15,17,18,0.98))',
-      }}
-      aria-label={`Abrir ${song.title}`}
-    >
-      <div className="absolute inset-0 overflow-hidden rounded-[1rem]">
-        {coverUrl ? (
-          <img src={coverUrl} alt="" className="h-full w-full object-cover" />
-        ) : (
-          <div className="h-full w-full bg-[radial-gradient(circle_at_top,_rgba(129,221,245,0.14),_transparent_34%),linear-gradient(180deg,rgba(43,47,50,0.96),rgba(17,19,21,0.98))]" />
-        )}
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.04)_0%,rgba(0,0,0,0.18)_42%,rgba(0,0,0,0.78)_100%)]" />
-      </div>
-
-      <div className="relative z-10 mt-auto min-w-0">
-        <p className={`truncate font-semibold leading-tight text-white drop-shadow-[0_3px_10px_rgba(0,0,0,0.52)] ${ultraCompact ? 'text-[0.68rem]' : compact ? 'text-[0.76rem]' : 'text-[0.9rem]'
-          }`}>
-          {song.title}
-        </p>
-        {song.subtitle ? (
-          <p className={`truncate text-white/70 ${ultraCompact ? 'mt-0.5 text-[0.5rem]' : compact ? 'mt-0.5 text-[0.56rem]' : 'mt-0.5 text-[0.64rem]'
-            }`}>
-            {song.subtitle}
-          </p>
-        ) : null}
-      </div>
-      {active && (
-        <div className="pointer-events-none absolute inset-0 z-20 rounded-[1.15rem] shadow-[inset_0_0_24px_rgba(255,255,255,0.45)]" />
-      )}
-    </button>
-  );
 });
 
 export function LiveDirectorView({
