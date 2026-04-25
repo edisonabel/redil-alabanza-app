@@ -402,12 +402,26 @@ export default function ChordProPrintWorkspace({
     if (isIOSDevice()) {
       setIsGeneratingPdf(true);
       try {
-        const [{ pdf }, { default: ChordProPdfFile }] = await Promise.all([
-          import('@react-pdf/renderer'),
-          import('../pdf/ChordProPdfFile'),
-        ]);
+        const response = await fetch('/api/chordpro-print-pdf', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ payload }),
+        });
 
-        const blob = await pdf(<ChordProPdfFile payload={payload as any} />).toBlob();
+        if (!response.ok) {
+          let detail = 'No se pudo generar el PDF para compartir.';
+          try {
+            const errorPayload = await response.json();
+            detail = String(errorPayload?.detail || errorPayload?.error || detail);
+          } catch {
+            // Keep the generic message when the server does not return JSON.
+          }
+          throw new Error(detail);
+        }
+
+        const blob = await response.blob();
         const file = new File([blob], payload.fileName, { type: 'application/pdf' });
 
         if (typeof navigator.share === 'function' && navigator.canShare?.({ files: [file] })) {

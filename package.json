@@ -19,7 +19,6 @@
     "@ffmpeg/util": "^0.12.2",
     "@iconify-icons/mdi": "^1.2.48",
     "@iconify/react": "^6.0.2",
-    "@react-pdf/renderer": "^4.3.2",
     "@sparticuz/chromium": "^143.0.4",
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.98.0",
