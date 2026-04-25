@@ -48,6 +48,19 @@ const fetchGeneratedPdfBlob = async (payload: unknown) => {
   return response.blob();
 };
 
+const buildBrowserPrintUrl = (payload: Parameters<typeof createChordProPdfBrowserToken>[0]) => {
+  const clientToken = createChordProPdfBrowserToken(payload);
+  const renderUrl = new URL('/render/chordpro-print-pdf', window.location.origin);
+  renderUrl.searchParams.set('clientToken', clientToken);
+  renderUrl.searchParams.set('autoprint', '1');
+  renderUrl.searchParams.set('fallback', '1');
+  return renderUrl.toString();
+};
+
+const navigateToBrowserPrintFallback = (payload: Parameters<typeof createChordProPdfBrowserToken>[0]) => {
+  window.location.href = buildBrowserPrintUrl(payload);
+};
+
 type ChordProPrintWorkspaceProps = {
   initialChordProText: string;
   initialTitle: string;
@@ -437,15 +450,21 @@ export default function ChordProPrintWorkspace({
           await navigator.share({ files: [file], title: payload.title || 'ChordPro PDF' });
         } else {
           const blobUrl = URL.createObjectURL(blob);
-          window.open(blobUrl, '_blank');
+          window.location.href = blobUrl;
           setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
         }
       } catch (error: any) {
         if (error?.name === 'AbortError') {
           // User cancelled the share sheet — not an error
         } else {
-          console.error('ChordPro iOS PDF generation failed:', error);
-          alert('Hubo un error al generar el PDF para imprimir.');
+          console.warn('ChordPro mobile server PDF failed; opening browser print fallback.', error);
+          try {
+            navigateToBrowserPrintFallback(payload as any);
+            return;
+          } catch (fallbackError) {
+            console.error('ChordPro mobile PDF fallback failed:', fallbackError);
+            alert('Hubo un error al generar el PDF para imprimir.');
+          }
         }
       } finally {
         setIsGeneratingPdf(false);
@@ -473,15 +492,12 @@ export default function ChordProPrintWorkspace({
       window.clearTimeout(pdfFeedbackTimeoutRef.current);
     }
     try {
-      const clientToken = createChordProPdfBrowserToken(payload as any);
-      const renderUrl = new URL('/render/chordpro-print-pdf', window.location.origin);
-      renderUrl.searchParams.set('clientToken', clientToken);
-      renderUrl.searchParams.set('autoprint', '1');
+      const renderUrl = buildBrowserPrintUrl(payload as any);
 
       if (previewWindow && !previewWindow.closed) {
-        previewWindow.location.href = renderUrl.toString();
+        previewWindow.location.href = renderUrl;
       } else {
-        window.open(renderUrl.toString(), targetName);
+        window.open(renderUrl, targetName);
       }
     } catch (error) {
       console.error('ChordPro print route preparation failed:', error);
