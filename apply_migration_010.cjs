@@ -3,10 +3,15 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
-// Lee la URL directa que funciona (la usaste antes) o usa las vars del entorno
-const dbUrl = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL || "postgres://postgres:S41ntp4ul2026++@db.xxtlmykmdntozgczdtnw.supabase.co:5432/postgres";
+const dbUrl = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL;
 
 async function applyMigration() {
+    if (!dbUrl) {
+        console.error('No DATABASE_URL or SUPABASE_DB_URL found in .env');
+        process.exitCode = 1;
+        return;
+    }
+
     console.log('🔗 Conectando a Supabase...');
     const client = new Client({
         connectionString: dbUrl,
