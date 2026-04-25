@@ -2,9 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Clock3, ExternalLink, GripVertical, ListMusic, Mic2, Play, Plus, RadioReceiver, X, Zap } from 'lucide-react';
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
 import EnsayoPersonalView from './EnsayoPersonalView.jsx';
-import ModoEnsayoDirector from './ModoEnsayoDirector.jsx';
 import { supabase } from '../../lib/supabase';
 import { metronomeService } from '../../services/MetronomeEngine';
+
+const ModoEnsayoDirector = React.lazy(() => import('./ModoEnsayoDirector.jsx'));
 
 const LATIN_TO_AMERICAN = {
   Do: 'C',
@@ -875,15 +876,28 @@ export default function EnsayoHub({
 
   if (isLiveMode) {
     return (
-      <ModoEnsayoDirector
-        playlist={songs}
-        contextTitle={contextTitle}
-        onExit={() => {
-          stopMetronome();
-          stopQueue();
-          setIsLiveMode(false);
-        }}
-      />
+      <React.Suspense
+        fallback={
+          <div className="flex h-[100dvh] items-center justify-center bg-[#0b0d12] px-6 text-center text-white">
+            <div>
+              <p className="text-[0.72rem] font-black uppercase tracking-[0.24em] text-cyan-300/80">
+                Modo Live
+              </p>
+              <p className="mt-3 text-sm font-semibold text-white/70">Preparando director...</p>
+            </div>
+          </div>
+        }
+      >
+        <ModoEnsayoDirector
+          playlist={songs}
+          contextTitle={contextTitle}
+          onExit={() => {
+            stopMetronome();
+            stopQueue();
+            setIsLiveMode(false);
+          }}
+        />
+      </React.Suspense>
     );
   }
 
