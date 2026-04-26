@@ -235,23 +235,34 @@ export default function ChordProPdfDocument({
     >
       <div id="chordpro-pdf-ready" data-ready={isReady ? '1' : '0'} hidden />
       {payload ? (
-        <div
-          id="chordpro-pdf-sheet"
-          className="mx-auto h-[11in] w-[8.5in] overflow-hidden bg-white print:overflow-hidden print:w-[8.5in] print:max-w-[8.5in] print:h-[11in]"
-        >
-          <SongSheet
-            blocks={previewData.blocks}
-            title={payload.title || 'SIN TITULO'}
-            artist={payload.artist}
-            metadata={payload.metadata}
-            options={payload.sheetOptions}
-            precomputedCollapseMap={previewData.collapseMap}
-            pageHeightPx={PAGE_HEIGHT_PX}
-            pageWidthPx={PAGE_WIDTH_PX}
-            framed={false}
-            className="h-full"
-          />
-        </div>
+        <>
+          {!autoPrint ? (
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="chordpro-print-action fixed bottom-5 right-5 z-50 rounded-full bg-zinc-950 px-5 py-3 text-sm font-black uppercase tracking-[0.14em] text-white shadow-[0_16px_40px_rgba(0,0,0,0.28)] print:hidden"
+            >
+              Imprimir
+            </button>
+          ) : null}
+          <div
+            id="chordpro-pdf-sheet"
+            className="mx-auto h-[11in] w-[8.5in] overflow-hidden bg-white print:overflow-hidden print:w-[8.5in] print:max-w-[8.5in] print:h-[11in]"
+          >
+            <SongSheet
+              blocks={previewData.blocks}
+              title={payload.title || 'SIN TITULO'}
+              artist={payload.artist}
+              metadata={payload.metadata}
+              options={payload.sheetOptions}
+              precomputedCollapseMap={previewData.collapseMap}
+              pageHeightPx={PAGE_HEIGHT_PX}
+              pageWidthPx={PAGE_WIDTH_PX}
+              framed={false}
+              className="h-full"
+            />
+          </div>
+        </>
       ) : isWaitingForPayload ? (
         <div className="flex min-h-screen items-center justify-center bg-white px-8 text-center">
           <div className="max-w-xl">

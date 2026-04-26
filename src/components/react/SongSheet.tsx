@@ -82,6 +82,25 @@ const SONG_SHEET_PRINT_CSS = `
     column-fill: auto;
   }
 
+  .song-sheet-columns-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-count: auto;
+    -webkit-column-count: auto;
+    column-gap: 1.45rem;
+    gap: 0 1.45rem;
+    width: 100%;
+    height: 100%;
+  }
+
+  .song-sheet-column-stack {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    overflow: visible;
+  }
+
   .song-sheet-section {
     display: inline-block;
     width: 100%;
@@ -138,6 +157,25 @@ const SONG_SHEET_PRINT_CSS = `
       column-fill: auto !important;
       height: 100% !important;
       overflow: hidden !important;
+    }
+
+    .song-sheet-columns-grid {
+      display: grid !important;
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      -webkit-column-count: auto !important;
+      column-count: auto !important;
+      column-gap: 1.45rem !important;
+      gap: 0 1.45rem !important;
+      height: 100% !important;
+      overflow: hidden !important;
+    }
+
+    .song-sheet-column-stack {
+      min-width: 0 !important;
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+      overflow: visible !important;
     }
 
     .song-sheet-single-column {
@@ -563,6 +601,43 @@ const buildPackedLineRows = (
   profile: LinePackingProfile
 ): PackedLineRow[] => inspectPackedLineRows(lines, profile).rows;
 
+const getBlockLayoutWeight = (block: RenderableBlock) => {
+  if (block.isCollapsed) return 1.4;
+
+  const lineCount = Array.isArray(block?.lines) ? block.lines.length : 0;
+  const hasOnlyChords = !blockHasMeaningfulLyrics(block);
+  return 2.8 + lineCount * (hasOnlyChords ? 0.9 : 1.75);
+};
+
+const splitBlocksIntoBalancedColumns = (blocks: RenderableBlock[]) => {
+  if (blocks.length <= 1) return [blocks, []] as [RenderableBlock[], RenderableBlock[]];
+
+  const weights = blocks.map(getBlockLayoutWeight);
+  const totalWeight = weights.reduce((total, weight) => total + weight, 0);
+  const targetWeight = totalWeight / 2;
+  let runningWeight = 0;
+  let splitIndex = 1;
+
+  for (let index = 0; index < blocks.length - 1; index += 1) {
+    runningWeight += weights[index];
+    splitIndex = index + 1;
+
+    if (runningWeight >= targetWeight) {
+      const previousWeight = runningWeight - weights[index];
+      const keepCurrentDistance = Math.abs(runningWeight - targetWeight);
+      const moveCurrentDistance = Math.abs(previousWeight - targetWeight);
+
+      if (index > 0 && moveCurrentDistance < keepCurrentDistance) {
+        splitIndex = index;
+      }
+      break;
+    }
+  }
+
+  splitIndex = Math.max(1, Math.min(blocks.length - 1, splitIndex));
+  return [blocks.slice(0, splitIndex), blocks.slice(splitIndex)] as [RenderableBlock[], RenderableBlock[]];
+};
+
 function SongSheetLine({
   line,
   renderMode,
@@ -717,6 +792,9 @@ export default function SongSheet({
     isCompactMode &&
     !disableCompactLinePacking &&
     resolvedOptions.renderMode === 'chords-lyrics';
+  const twoColumnBlockGroups = isSingleCol
+    ? [renderableBlocks, []] as [RenderableBlock[], RenderableBlock[]]
+    : splitBlocksIntoBalancedColumns(renderableBlocks);
 
   useEffect(() => {
     const sheetNode = sheetRef.current;
@@ -974,14 +1052,23 @@ export default function SongSheet({
     void sheetNode.offsetHeight;
     void columnsNode.offsetHeight;
 
-    let nextFontSize = MIN_FONT_SIZE;
-    for (let candidate = MAX_FONT_SIZE; candidate >= MIN_FONT_SIZE; candidate -= FONT_STEP) {
-      const normalized = Number(candidate.toFixed(1));
-      if (measureFontSize(normalized)) {
-        nextFontSize = normalized;
-        break;
+    let lowStep = Math.ceil(MIN_FONT_SIZE / FONT_STEP);
+    let highStep = Math.floor(MAX_FONT_SIZE / FONT_STEP);
+    let bestStep = lowStep;
+
+    while (lowStep <= highStep) {
+      const midStep = Math.floor((lowStep + highStep) / 2);
+      const candidate = Number((midStep * FONT_STEP).toFixed(2));
+
+      if (measureFontSize(candidate)) {
+        bestStep = midStep;
+        lowStep = midStep + 1;
+      } else {
+        highStep = midStep - 1;
       }
     }
+
+    const nextFontSize = Number((bestStep * FONT_STEP).toFixed(2));
 
     contentNode.style.fontSize = `${nextFontSize}px`;
     contentNode.style.lineHeight = `${getLineHeight(nextFontSize)}px`;
@@ -1096,7 +1183,6 @@ export default function SongSheet({
 
   const columnStyle = {
     '--song-sheet-column-count': String(resolvedOptions.columnCount),
-    columnCount: resolvedOptions.columnCount,
   } as CSSProperties;
   const renderBlock = (block: RenderableBlock) => {
     const sectionColors = getSectionColors(block.typeMarker);
@@ -1293,10 +1379,17 @@ export default function SongSheet({
             ) : (
               <div
                 ref={columnsRef}
-                className="song-sheet-columns h-full gap-x-6 [column-fill:auto]"
+                className="song-sheet-columns song-sheet-columns-grid h-full"
                 style={columnStyle}
               >
-                {renderableBlocks.map(renderBlock)}
+                {twoColumnBlockGroups.map((columnBlocks, columnIndex) => (
+                  <div
+                    key={`song-sheet-column-${columnIndex}`}
+                    className="song-sheet-column-stack"
+                  >
+                    {columnBlocks.map(renderBlock)}
+                  </div>
+                ))}
               </div>
             )}
           </main>
