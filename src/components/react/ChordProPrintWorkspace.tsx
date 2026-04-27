@@ -238,6 +238,7 @@ export default function ChordProPrintWorkspace({
   const [previewZoom, setPreviewZoom] = useState(1);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const pdfFeedbackTimeoutRef = useRef<number | null>(null);
+  const pdfObjectUrlsRef = useRef<string[]>([]);
   const [sheetOptions, setSheetOptions] = useState<Required<SongSheetLayoutOptions>>({
     renderMode: 'chords-lyrics',
     columnCount: 2,
@@ -260,6 +261,11 @@ export default function ChordProPrintWorkspace({
       if (pdfFeedbackTimeoutRef.current !== null && typeof window !== 'undefined') {
         window.clearTimeout(pdfFeedbackTimeoutRef.current);
       }
+
+      for (const objectUrl of pdfObjectUrlsRef.current) {
+        window.URL.revokeObjectURL(objectUrl);
+      }
+      pdfObjectUrlsRef.current = [];
     };
   }, []);
 
@@ -421,17 +427,6 @@ export default function ChordProPrintWorkspace({
     };
 
     const targetName = 'chordpro-pdf-preview';
-
-    if (isMobilePrintDevice()) {
-      try {
-        navigateToBrowserPrintFallback(payload as any);
-      } catch (fallbackError) {
-        console.error('ChordPro mobile PDF fallback failed:', fallbackError);
-        alert('Hubo un error al preparar la hoja para imprimir.');
-      }
-      return;
-    }
-
     const previewWindow = window.open('', targetName);
 
     if (previewWindow && !previewWindow.closed) {
@@ -452,30 +447,69 @@ export default function ChordProPrintWorkspace({
       window.clearTimeout(pdfFeedbackTimeoutRef.current);
     }
     try {
-      const renderUrl = buildBrowserPrintUrl(payload as any, { autoPrint: true });
+      const response = await window.fetch('/api/chordpro-print-pdf', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ payload }),
+      });
+
+      if (!response.ok) {
+        throw new Error('No se pudo generar el PDF final.');
+      }
+
+      const pdfBlob = await response.blob();
+      const pdfUrl = window.URL.createObjectURL(
+        pdfBlob.type === 'application/pdf'
+          ? pdfBlob
+          : new Blob([pdfBlob], { type: 'application/pdf' })
+      );
+      pdfObjectUrlsRef.current.push(pdfUrl);
 
       if (previewWindow && !previewWindow.closed) {
-        previewWindow.location.href = renderUrl;
+        previewWindow.location.href = pdfUrl;
       } else {
-        window.open(renderUrl, targetName);
+        const openedWindow = window.open(pdfUrl, targetName);
+        if (!openedWindow && isMobilePrintDevice()) {
+          window.location.href = pdfUrl;
+        }
       }
     } catch (error) {
       console.error('ChordPro print route preparation failed:', error);
 
-      const errorMessage =
-        error instanceof Error ? error.message : 'No se pudo preparar la hoja para imprimir.';
+      try {
+        const renderUrl = buildBrowserPrintUrl(payload as any, {
+          autoPrint: !isMobilePrintDevice(),
+        });
 
-      if (previewWindow && !previewWindow.closed) {
-        previewWindow.document.title = 'Error al preparar impresion';
-        previewWindow.document.body.innerHTML = `
-          <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:Segoe UI,Arial,sans-serif;background:#0f172a;color:#f8fafc;">
-            <div style="max-width:34rem;padding:2rem;">
-               <p style="margin:0 0 0.75rem;font-size:0.8rem;font-weight:800;letter-spacing:0.18em;text-transform:uppercase;color:#93c5fd;">ChordPro</p>
-               <h1 style="margin:0 0 0.75rem;font-size:1.6rem;font-weight:900;">No se pudo abrir la hoja</h1>
-               <p style="margin:0;font-size:0.95rem;line-height:1.65;color:#cbd5e1;">${errorMessage}</p>
+        if (previewWindow && !previewWindow.closed) {
+          previewWindow.location.href = renderUrl;
+        } else if (isMobilePrintDevice()) {
+          navigateToBrowserPrintFallback(payload as any);
+        } else {
+          window.open(renderUrl, targetName);
+        }
+      } catch (fallbackError) {
+        console.error('ChordPro print fallback failed:', fallbackError);
+
+        const errorMessage =
+          fallbackError instanceof Error
+            ? fallbackError.message
+            : 'No se pudo preparar la hoja para imprimir.';
+
+        if (previewWindow && !previewWindow.closed) {
+          previewWindow.document.title = 'Error al preparar impresion';
+          previewWindow.document.body.innerHTML = `
+            <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:Segoe UI,Arial,sans-serif;background:#0f172a;color:#f8fafc;">
+              <div style="max-width:34rem;padding:2rem;">
+                 <p style="margin:0 0 0.75rem;font-size:0.8rem;font-weight:800;letter-spacing:0.18em;text-transform:uppercase;color:#93c5fd;">ChordPro</p>
+                 <h1 style="margin:0 0 0.75rem;font-size:1.6rem;font-weight:900;">No se pudo abrir la hoja</h1>
+                 <p style="margin:0;font-size:0.95rem;line-height:1.65;color:#cbd5e1;">${errorMessage}</p>
+              </div>
             </div>
-          </div>
-        `;
+          `;
+        }
       }
     } finally {
       setIsGeneratingPdf(false);

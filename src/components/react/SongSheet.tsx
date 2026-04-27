@@ -145,7 +145,8 @@ const SONG_SHEET_PRINT_CSS = `
       min-height: 11in !important;
       max-height: 11in !important;
       overflow: hidden !important;
-      page-break-after: always !important;
+      page-break-after: auto !important;
+      break-after: auto !important;
     }
 
     .song-sheet-columns {
@@ -1141,9 +1142,9 @@ export default function SongSheet({
       titleSize: isSingleCol ? 'text-[1.5em]' : 'text-[1.9em]',
       metaSize: isSingleCol ? 'text-[0.6em]' : 'text-[0.64em]',
       sectionTitleSize: isSingleCol ? 'text-[0.88em]' : 'text-[0.92em]',
-      sectionCardPadding: isSingleCol ? 'px-3 pb-2.5 pt-[0.88rem]' : 'px-3.5 pb-3.5 pt-[1.05rem]',
+      sectionCardPadding: isSingleCol ? 'px-3 pb-2.5 pt-[1.34em]' : 'px-3.5 pb-3.5 pt-[1.42em]',
       collapsedCardPadding: isSingleCol ? 'px-3 py-2.5' : 'px-3.5 py-3',
-      compactChordCardPadding: isSingleCol ? 'px-3 pb-2 pt-[0.8rem]' : 'px-3.5 pb-2.4 pt-[0.92rem]',
+      compactChordCardPadding: isSingleCol ? 'px-3 pb-2 pt-[1.22em]' : 'px-3.5 pb-2.4 pt-[1.3em]',
       sectionCardRadius: 'rounded-[1.15em]',
     }
     : {
@@ -1161,9 +1162,9 @@ export default function SongSheet({
       titleSize: isSingleCol ? 'text-[1.6em]' : 'text-[2.08em]',
       metaSize: isSingleCol ? 'text-[0.62em]' : 'text-[0.67em]',
       sectionTitleSize: isSingleCol ? 'text-[0.9em]' : 'text-[0.96em]',
-      sectionCardPadding: isSingleCol ? 'px-3.5 pb-3.5 pt-[1rem]' : 'px-4 pb-4 pt-[1.18rem]',
+      sectionCardPadding: isSingleCol ? 'px-3.5 pb-3.5 pt-[1.42em]' : 'px-4 pb-4 pt-[1.55em]',
       collapsedCardPadding: isSingleCol ? 'px-3.5 py-3' : 'px-4 py-3.5',
-      compactChordCardPadding: isSingleCol ? 'px-3.5 pb-2.5 pt-[0.88rem]' : 'px-4 pb-2.8 pt-[0.98rem]',
+      compactChordCardPadding: isSingleCol ? 'px-3.5 pb-2.5 pt-[1.28em]' : 'px-4 pb-2.8 pt-[1.36em]',
       sectionCardRadius: 'rounded-[1.28em]',
     };
   const frameClasses = framed

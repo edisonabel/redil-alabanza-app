@@ -203,8 +203,12 @@ export default function ChordProPdfDocument({
 
   useEffect(() => {
     if (!payload) return;
-    document.title = payload.title ? `${payload.title} PDF` : 'ChordPro PDF';
-  }, [payload]);
+    document.title = payload.title || 'Hoja ChordPro';
+
+    if (clientToken && window.location.search) {
+      window.history.replaceState(null, document.title, window.location.pathname);
+    }
+  }, [clientToken, payload]);
 
   useEffect(() => {
     if (!payload || !isReady || !autoPrint || hasTriggeredPrintRef.current) return;
@@ -240,7 +244,7 @@ export default function ChordProPdfDocument({
             <button
               type="button"
               onClick={() => window.print()}
-              className="chordpro-print-action fixed bottom-5 right-5 z-50 rounded-full bg-zinc-950 px-5 py-3 text-sm font-black uppercase tracking-[0.14em] text-white shadow-[0_16px_40px_rgba(0,0,0,0.28)] print:hidden"
+              className="chordpro-print-action fixed z-50 rounded-full bg-zinc-950 px-5 py-3 text-sm font-black uppercase tracking-[0.14em] text-white shadow-[0_16px_40px_rgba(0,0,0,0.28)] print:hidden"
             >
               Imprimir
             </button>

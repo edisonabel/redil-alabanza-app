@@ -96,6 +96,11 @@ if (!payload && !clientToken) {
     display: block;
   }
 
+  .chordpro-print-action {
+    top: max(1rem, env(safe-area-inset-top));
+    right: max(1rem, env(safe-area-inset-right));
+  }
+
   #chordpro-pdf-root,
   #chordpro-pdf-sheet {
     width: 8.5in;
