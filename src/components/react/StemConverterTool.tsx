@@ -5,11 +5,21 @@ import {
   FolderOpen,
   HardDriveDownload,
   Loader2,
+  Music2,
   Music4,
   UploadCloud,
   XCircle,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
+
+import PitchShiftModal from './PitchShiftModal';
+import { detectKey, type DetectedKey } from '../../utils/pitchShift/keyDetection';
+import {
+  pitchShiftAudioBuffer,
+  prewarmPitchShiftEngine,
+  type PitchShiftMaterial,
+} from '../../utils/pitchShift/rubberbandEngine';
+import { encodeAudioBufferToFloat32Wav } from '../../utils/pitchShift/wavEncoder';
 
 const MAX_STEMS = 15;
 const TARGET_STEMS = 10;
@@ -573,6 +583,93 @@ const analyzeStemChannelMode = async (stem: StemItem): Promise<ChannelAnalysisRe
   }
 };
 
+/**
+ * Capacitor bridge shape — we read it off `window.Capacitor` instead of
+ * importing `@capacitor/core` directly so the web build never pulls in the
+ * native plugin runtime.
+ */
+type CapacitorBridgeLike = {
+  isNativePlatform?: () => boolean;
+  getPlatform?: () => string;
+};
+
+type WindowWithCapacitorBridge = Window & typeof globalThis & {
+  Capacitor?: CapacitorBridgeLike;
+};
+
+/**
+ * Returns `true` when running inside the iOS Capacitor shell (or any native
+ * Capacitor wrapper). The pitch-shift feature relies on a GPLv2 WASM build of
+ * Rubber Band, which we don't ship inside the App Store binary — so we hide
+ * the entry point on native iOS and let the rest of the converter run normally.
+ */
+const isNativeMobileRuntime = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const bridge = (window as WindowWithCapacitorBridge).Capacitor;
+  return Boolean(bridge?.isNativePlatform?.());
+};
+
+/**
+ * Categories that are most likely to carry the tonic of the song. We try to
+ * detect on bass first (the strongest fundamental) and fall back through the
+ * keyboard family before giving up on guitars.
+ */
+const KEY_DETECTION_PRIORITY: StemCategory[] = ['bass', 'piano', 'keys', 'acoustic'];
+
+const findKeyDetectionSource = (sources: SourceStem[]): SourceStem | null => {
+  for (const category of KEY_DETECTION_PRIORITY) {
+    const match = sources.find((source) => source.category === category);
+    if (match) return match;
+  }
+  return null;
+};
+
+/**
+ * The Rubber Band engine accepts a `material` hint to tune transient handling.
+ * Drum and click stems do better with mixed transients; everything else uses
+ * the melodic preset (formant-preserved, long window).
+ */
+const getStemMaterial = (stem: StemItem): PitchShiftMaterial => {
+  if (stem.sources.length === 0) return 'melodic';
+  const isAllPercussive = stem.sources.every((source) => (
+    source.category === 'drums'
+    || source.category === 'percussion'
+    || source.category === 'clickGuide'
+  ));
+  return isAllPercussive ? 'percussive' : 'melodic';
+};
+
+/**
+ * Decode an audio file into a Web Audio `AudioBuffer`. Returns `null` if the
+ * environment doesn't expose AudioContext or the file can't be decoded.
+ *
+ * Also exposes the raw decode error so the caller can decide whether to fail
+ * the conversion or fall back to the non-pitch-shifted path.
+ */
+const decodeFileToAudioBuffer = async (file: File): Promise<AudioBuffer | null> => {
+  if (typeof window === 'undefined') return null;
+  const AudioContextCtor = window.AudioContext
+    || (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioContextCtor) return null;
+
+  const audioContext = new AudioContextCtor();
+  try {
+    const buffer = await audioContext.decodeAudioData(await file.arrayBuffer());
+    return buffer;
+  } catch {
+    return null;
+  } finally {
+    await audioContext.close().catch(() => undefined);
+  }
+};
+
+const formatPitchSummary = (semitones: number): string => {
+  if (semitones === 0) return 'Sin cambio';
+  const sign = semitones > 0 ? '+' : '';
+  const noun = Math.abs(semitones) === 1 ? 'semitono' : 'semitonos';
+  return `${sign}${semitones} ${noun}`;
+};
+
 const categoryOptions: Array<{ value: StemCategory; label: string }> = [
   { value: 'unknown', label: 'Elegir categoria' },
   { value: 'clickGuide', label: 'Click / Guia / Cues' },
@@ -621,6 +718,11 @@ export default function StemConverterTool() {
   const zipUrlRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
+  // The FFmpeg progress callback always reports 0..1 of the encode step. When
+  // a pitch shift runs first we want the visible progress bar to reflect both
+  // phases — so we keep an offset/scale here that maps the raw FFmpeg
+  // progress into the slice of the bar reserved for the encoding step.
+  const ffmpegProgressRangeRef = useRef<{ offset: number; scale: number }>({ offset: 0, scale: 1 });
 
   const [stems, setStems] = useState<StemItem[]>([]);
   const [rejectedCount, setRejectedCount] = useState(0);
@@ -636,6 +738,12 @@ export default function StemConverterTool() {
   const [pendingSources, setPendingSources] = useState<SourceStem[]>([]);
   const [smartPlan, setSmartPlan] = useState<SmartPlanGroup[]>([]);
   const [isPlanOpen, setIsPlanOpen] = useState(false);
+
+  // Pitch-shift integration state.
+  const [pitchShiftSemitones, setPitchShiftSemitones] = useState(0);
+  const [detectedKey, setDetectedKey] = useState<DetectedKey | null>(null);
+  const [keyDetectionStatus, setKeyDetectionStatus] = useState<'idle' | 'running' | 'done' | 'failed' | 'unavailable'>('idle');
+  const [isPitchModalOpen, setIsPitchModalOpen] = useState(false);
 
   const selectedTotalBytes = useMemo(
     () => stems.reduce((total, item) => total + item.size, 0),
@@ -687,13 +795,31 @@ export default function StemConverterTool() {
     if (stems.length) return 'Listo para convertir';
     return 'Arrastra stems para empezar';
   }, [errorMessage, isConverting, isEngineReady, isLoadingEngine, stems.length, zipUrl]);
-  const summaryRows = useMemo<StatRow[]>(() => [
-    { label: 'Stems', value: `${stems.length}/${MAX_STEMS}`, tone: stems.length ? 'brand' : undefined },
-    { label: 'Original', value: formatBytes(selectedTotalBytes) },
-    { label: 'Salida', value: 'M4A 48k' },
-    { label: 'Canales', value: 'Auto mono' },
-    { label: 'Convertido', value: formatBytes(convertedTotalBytes), tone: convertedTotalBytes ? 'success' : undefined },
-  ], [convertedTotalBytes, selectedTotalBytes, stems.length]);
+  const summaryRows = useMemo<StatRow[]>(() => {
+    const rows: StatRow[] = [
+      { label: 'Stems', value: `${stems.length}/${MAX_STEMS}`, tone: stems.length ? 'brand' : undefined },
+      { label: 'Original', value: formatBytes(selectedTotalBytes) },
+      { label: 'Salida', value: 'M4A 48k' },
+      { label: 'Canales', value: 'Auto mono' },
+    ];
+    if (detectedKey || pitchShiftSemitones !== 0) {
+      const detected = detectedKey ? detectedKey.label : '—';
+      const shift = pitchShiftSemitones === 0
+        ? 'sin cambio'
+        : formatPitchSummary(pitchShiftSemitones);
+      rows.push({
+        label: 'Tono',
+        value: `${detected} · ${shift}`,
+        tone: pitchShiftSemitones !== 0 ? 'brand' : undefined,
+      });
+    }
+    rows.push({
+      label: 'Convertido',
+      value: formatBytes(convertedTotalBytes),
+      tone: convertedTotalBytes ? 'success' : undefined,
+    });
+    return rows;
+  }, [convertedTotalBytes, detectedKey, pitchShiftSemitones, selectedTotalBytes, stems.length]);
 
   const revokeZipUrl = useCallback(() => {
     if (zipUrlRef.current) {
@@ -706,6 +832,55 @@ export default function StemConverterTool() {
   useEffect(() => () => {
     revokeZipUrl();
   }, [revokeZipUrl]);
+
+  // Run automatic key detection any time the user loads a fresh batch of
+  // sources. We pick the most tonal stem (bass first, then keyboards, then
+  // acoustic guitar) and fire Krumhansl-Schmuckler on it. Detection happens
+  // entirely in the browser — no upload — and is fully cancellable so a fast
+  // re-selection doesn't leave stale results behind.
+  useEffect(() => {
+    if (pendingSources.length === 0) {
+      setDetectedKey(null);
+      setKeyDetectionStatus('idle');
+      return;
+    }
+
+    const tonalSource = findKeyDetectionSource(pendingSources);
+    if (!tonalSource) {
+      setDetectedKey(null);
+      setKeyDetectionStatus('unavailable');
+      return;
+    }
+
+    let cancelled = false;
+    setKeyDetectionStatus('running');
+    setDetectedKey(null);
+
+    (async () => {
+      try {
+        const audioBuffer = await decodeFileToAudioBuffer(tonalSource.file);
+        if (cancelled) return;
+        if (!audioBuffer) {
+          setKeyDetectionStatus('failed');
+          return;
+        }
+        const result = detectKey(audioBuffer);
+        if (cancelled) return;
+        if (result) {
+          setDetectedKey(result);
+          setKeyDetectionStatus('done');
+        } else {
+          setKeyDetectionStatus('failed');
+        }
+      } catch {
+        if (!cancelled) setKeyDetectionStatus('failed');
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingSources]);
 
   const updateStem = useCallback((id: string, patch: Partial<StemItem>) => {
     setStems((current) => current.map((stem) => (
@@ -762,6 +937,23 @@ export default function StemConverterTool() {
     setIsPlanOpen(false);
   }, [pendingSources]);
 
+  const handleApplyPitchShift = useCallback((semitones: number) => {
+    setPitchShiftSemitones(semitones);
+    setIsPitchModalOpen(false);
+  }, []);
+
+  const handleRedetectKey = useCallback(() => {
+    if (pendingSources.length === 0) return;
+    // Trigger the detection effect by re-pushing the same array reference.
+    setPendingSources((current) => [...current]);
+  }, [pendingSources.length]);
+
+  const handlePrewarmPitchEngine = useCallback(() => {
+    // Fire and forget: warm the WASM cache while the user picks a target key
+    // so the actual conversion doesn't pay the network round-trip.
+    void prewarmPitchShiftEngine();
+  }, []);
+
   const updatePendingSourceCategory = useCallback((sourceId: string, category: StemCategory) => {
     setPendingSources((current) => {
       const nextSources = current.map((source) => (
@@ -800,7 +992,10 @@ export default function StemConverterTool() {
         if (!activeId || typeof progress !== 'number') {
           return;
         }
-        updateStem(activeId, { progress: Math.round(Math.max(0, Math.min(1, progress)) * 100) });
+        const { offset, scale } = ffmpegProgressRangeRef.current;
+        const clamped = Math.max(0, Math.min(1, progress));
+        const mapped = offset + clamped * scale;
+        updateStem(activeId, { progress: Math.round(Math.max(0, Math.min(1, mapped)) * 100) });
       });
 
       const baseURL = `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${FFmpegCoreVersion}/dist/esm`;
@@ -830,12 +1025,23 @@ export default function StemConverterTool() {
   }, []);
 
   const convertOneStem = useCallback(async (ffmpeg: FFmpegInstance, stem: StemItem, index: number) => {
-    const inputNames = stem.sources.map((source, sourceIndex) => buildInputName(source.file, index, sourceIndex));
+    const needsPitchShift = pitchShiftSemitones !== 0;
+    // When pitch-shifting we hand FFmpeg a self-describing 32-bit float WAV;
+    // otherwise we keep the original container so the encoder can decode
+    // whatever native format the user supplied.
+    const inputNames = stem.sources.map((source, sourceIndex) => (
+      needsPitchShift
+        ? `input-${index}-${sourceIndex}.wav`
+        : buildInputName(source.file, index, sourceIndex)
+    ));
     const outputName = stem.outputName || buildOutputName(stem.name, index);
     const shouldForceMono = shouldForceMonoForStem(stem);
     const shouldAnalyzeChannels = shouldAnalyzeMonoForStem(stem);
 
     activeStemIdRef.current = stem.id;
+    // Reset the FFmpeg progress mapping to "full bar". When pitch-shifting we
+    // re-scope it below so the encode phase only fills the last 20%.
+    ffmpegProgressRangeRef.current = { offset: 0, scale: 1 };
     updateStem(stem.id, {
       status: 'processing',
       progress: 1,
@@ -855,9 +1061,43 @@ export default function StemConverterTool() {
         channelNote: channelAnalysis.note,
       });
 
-      for (let sourceIndex = 0; sourceIndex < stem.sources.length; sourceIndex += 1) {
-        const inputBytes = new Uint8Array(await stem.sources[sourceIndex].file.arrayBuffer());
-        await ffmpeg.writeFile(inputNames[sourceIndex], inputBytes);
+      if (needsPitchShift) {
+        const material = getStemMaterial(stem);
+        // Reserve 0..80% of the bar for the pitch shift (the heaviest step
+        // when the R3 engine runs offline). FFmpeg encode fills 80..100%.
+        ffmpegProgressRangeRef.current = { offset: 0.8, scale: 0.2 };
+        for (let sourceIndex = 0; sourceIndex < stem.sources.length; sourceIndex += 1) {
+          const file = stem.sources[sourceIndex].file;
+          const sourceShare = 0.8 / stem.sources.length;
+          const sourceOffset = sourceShare * sourceIndex;
+
+          const audioBuffer = await decodeFileToAudioBuffer(file);
+          if (!audioBuffer) {
+            throw new Error(`No se pudo decodificar "${file.name}" para cambio de tono.`);
+          }
+          const shifted = await pitchShiftAudioBuffer(audioBuffer, pitchShiftSemitones, {
+            material,
+            onProgress: ({ phase, progress }) => {
+              // Within each source's slice, give the WASM load 0..5%, the
+              // study pass 5..40%, and the actual process pass 40..100%.
+              const phaseProgress = phase === 'load'
+                ? 0.05 * progress
+                : phase === 'study'
+                  ? 0.05 + progress * 0.35
+                  : 0.4 + progress * 0.6;
+              const overall = sourceOffset + sourceShare * phaseProgress;
+              updateStem(stem.id, { progress: Math.round(Math.max(1, overall * 100)) });
+            },
+          });
+          const wavBytes = encodeAudioBufferToFloat32Wav(shifted);
+          await ffmpeg.writeFile(inputNames[sourceIndex], wavBytes);
+        }
+        updateStem(stem.id, { progress: 80 });
+      } else {
+        for (let sourceIndex = 0; sourceIndex < stem.sources.length; sourceIndex += 1) {
+          const inputBytes = new Uint8Array(await stem.sources[sourceIndex].file.arrayBuffer());
+          await ffmpeg.writeFile(inputNames[sourceIndex], inputBytes);
+        }
       }
 
       const inputArgs = inputNames.flatMap((inputName) => ['-i', inputName]);
@@ -930,10 +1170,11 @@ export default function StemConverterTool() {
       });
     } finally {
       activeStemIdRef.current = null;
+      ffmpegProgressRangeRef.current = { offset: 0, scale: 1 };
       await Promise.all(inputNames.map((inputName) => cleanupFfmpegFile(ffmpeg, inputName)));
       await cleanupFfmpegFile(ffmpeg, outputName);
     }
-  }, [cleanupFfmpegFile, updateStem]);
+  }, [cleanupFfmpegFile, pitchShiftSemitones, updateStem]);
 
   const buildZip = useCallback(async () => {
     const outputs = outputsRef.current;
@@ -1010,6 +1251,10 @@ export default function StemConverterTool() {
     setRejectedCount(0);
     setOmittedCount(0);
     setErrorMessage('');
+    setPitchShiftSemitones(0);
+    setDetectedKey(null);
+    setKeyDetectionStatus('idle');
+    setIsPitchModalOpen(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (folderInputRef.current) folderInputRef.current.value = '';
   }, [resetOutputs]);
@@ -1060,6 +1305,17 @@ export default function StemConverterTool() {
         aria-label="Elegir carpeta de stems"
         onChange={(event: ChangeEvent<HTMLInputElement>) => handleFiles(event.target.files)}
         {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
+      />
+
+      <PitchShiftModal
+        open={isPitchModalOpen}
+        semitones={pitchShiftSemitones}
+        detectedKey={detectedKey}
+        detectionStatus={keyDetectionStatus}
+        onClose={() => setIsPitchModalOpen(false)}
+        onApply={handleApplyPitchShift}
+        onRequestRedetect={pendingSources.length > 0 ? handleRedetectKey : undefined}
+        onPrewarmEngine={handlePrewarmPitchEngine}
       />
 
       {isPlanOpen ? (
@@ -1289,6 +1545,24 @@ export default function StemConverterTool() {
                   className="ui-pressable-soft inline-flex min-h-12 items-center justify-center rounded-2xl border border-border bg-background px-5 font-bold text-content transition disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Ver plan
+                </button>
+              ) : null}
+              {stems.length > 0 && !isNativeMobileRuntime() ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void prewarmPitchShiftEngine();
+                    setIsPitchModalOpen(true);
+                  }}
+                  disabled={isConverting}
+                  className={`ui-pressable-soft inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border px-5 font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                    pitchShiftSemitones !== 0
+                      ? 'border-brand bg-brand/10 text-brand'
+                      : 'border-border bg-background text-content'
+                  }`}
+                >
+                  <Music2 className="h-4 w-4" />
+                  {pitchShiftSemitones === 0 ? 'Cambiar tono' : `Tono: ${formatPitchSummary(pitchShiftSemitones)}`}
                 </button>
               ) : null}
               {zipUrl ? (
