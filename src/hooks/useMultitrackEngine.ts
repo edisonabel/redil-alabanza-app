@@ -421,6 +421,7 @@ export function useMultitrackEngine(
           commitLoadProgress({ loaded: 0, total: nextTracks.length });
           const fallbackLoadedTracks = await fallbackEngine.loadTracks(nextTracks, {
             onProgress: handleProgress,
+            forceMode: 'buffer',
           });
 
           if (initializationToken !== initializationTokenRef.current || fallbackEngine !== engineRef.current) {

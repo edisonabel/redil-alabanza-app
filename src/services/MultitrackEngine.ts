@@ -34,6 +34,7 @@ export type LoadProgressCallback = (loaded: number, total: number) => void;
 
 export type LoadTracksOptions = {
   onProgress?: LoadProgressCallback;
+  forceMode?: EngineMode;
 };
 
 const runWithConcurrency = async <T, R>(
@@ -277,10 +278,11 @@ export class MultitrackEngine {
     this.stop();
     this.abortPendingLoads();
     this.cleanupTrackResources([...this.tracks, ...trackList]);
-    this.mode = this.shouldUseMediaMode(trackList) ? 'media' : 'buffer';
+    this.mode = options?.forceMode || (this.shouldUseMediaMode(trackList) ? 'media' : 'buffer');
     console.log(`[MultitrackEngine] Using ${this.mode} mode.`);
     logLiveDiagnostic('engine:selected', {
       engineMode: this.mode,
+      forcedEngineMode: options?.forceMode || null,
       trackCount: trackList.length,
       thresholdDesktopMediaTracks: STREAMING_TRACK_THRESHOLD,
       thresholdMobileMediaTracks: MOBILE_BUFFER_TRACK_LIMIT + 1,
