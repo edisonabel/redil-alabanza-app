@@ -164,13 +164,12 @@ type LiveDirectorViewProps = {
   onBack?: () => void;
 };
 
-// Per-platform active stem caps. Going past these on the target device
-// causes audible slipping ("patinar") on the weaker hardware because the
-// mixer can't meet the I/O deadline. Limits are empirically grounded:
+// Per-platform active stem warning thresholds. Going past these can cause
+// audible slipping ("patinar") on weaker hardware, but the operator can
+// intentionally exceed the threshold for lightweight sessions.
 //   - iOS native (AVAudioEngine):     13 song stems, with internal pad extra
 //   - Android web (Capacitor browser): 10 stems before clocks drift
 //   - Desktop web (Chrome/Edge/FF):    11 stems before Chrome decode windows stall
-// Changing these requires re-profiling on real devices.
 const IOS_NATIVE_MAX_ACTIVE_TRACKS = 13;
 const ANDROID_MAX_ACTIVE_TRACKS = 10;
 const WEB_ENGINE_MAX_ACTIVE_TRACKS = 11;
@@ -795,11 +794,7 @@ export function LiveDirectorView({
     [trackRouteSeedSignature],
   );
 
-  // Per-platform active-stem cap. See STEM_PRIORITY_RULES comment at top
-  // of file for the empirical numbers. The `maxWebActiveTracks` prop still
-  // wins when the parent supplies one, so unit tests and edge cases
-  // (e.g. a deliberately constrained iPad profile) can override.
-  const webActiveTrackLimit = useMemo(() => {
+  const activeTrackWarningThreshold = useMemo(() => {
     const propLimit = Math.floor(Number(maxWebActiveTracks));
     if (Number.isFinite(propLimit) && propLimit > 0 && propLimit !== WEB_ENGINE_MAX_ACTIVE_TRACKS) {
       return propLimit;
@@ -816,49 +811,18 @@ export function LiveDirectorView({
     }
     return WEB_ENGINE_MAX_ACTIVE_TRACKS;
   }, [isIOSNativeEngineSurface, maxWebActiveTracks]);
-  const sessionActiveTrackLimit = useMemo(
-    () => Math.max(1, webActiveTrackLimit),
-    [webActiveTrackLimit],
-  );
+  const sessionActiveTrackLimit = Math.max(1, activeTrackWarningThreshold);
 
   const enabledSessionTracks = useMemo(
     () => sessionTracks.filter((track) => track.enabled !== false),
     [sessionTracks],
   );
 
-  // Priority-aware active-track selection. When the session has more
-  // enabled stems than the platform cap, we keep the stems with the
-  // lowest priority rank (click/click-guide/drums/bass/vocals first) and
-  // auto-disable the rest. Within a rank, original upload order is the
-  // tiebreaker so the mix stays deterministic.
   const activeTracks = useMemo(() => {
-    if (enabledSessionTracks.length <= sessionActiveTrackLimit) {
-      return enabledSessionTracks;
-    }
-    const ranked = enabledSessionTracks.map((track, index) => ({
-      track,
-      index,
-      rank: stemPriorityRank(track),
-    }));
-    ranked.sort((a, b) => (a.rank - b.rank) || (a.index - b.index));
-    const kept = ranked.slice(0, sessionActiveTrackLimit);
-    kept.sort((a, b) => a.index - b.index);
-    return kept.map((entry) => entry.track);
-  }, [enabledSessionTracks, sessionActiveTrackLimit]);
+    return enabledSessionTracks;
+  }, [enabledSessionTracks]);
 
-  const isWebTrackLimitExceeded = enabledSessionTracks.length > activeTracks.length;
-
-  // Which stems got auto-disabled by the limit. Surfaced in the load
-  // banner so the operator knows what's off and can either pre-mix
-  // them externally or re-enable after manually disabling something
-  // less critical.
-  const autoDisabledTrackNames = useMemo(() => {
-    if (!isWebTrackLimitExceeded) return [];
-    const activeIds = new Set(activeTracks.map((t) => t.id));
-    return enabledSessionTracks
-      .filter((track) => !activeIds.has(track.id))
-      .map((track) => track.name || track.id);
-  }, [activeTracks, enabledSessionTracks, isWebTrackLimitExceeded]);
+  const isWebTrackLimitExceeded = enabledSessionTracks.length > sessionActiveTrackLimit;
 
   const activeEngineTracks = useMemo(() => {
     return activeTracks.map((track) => ({
@@ -891,7 +855,7 @@ export function LiveDirectorView({
     : [performerLabel, songKey].filter(Boolean).join(' · ') || sessionModeLabel;
   const songSupportMeta = hasSessionTracks
     ? isWebTrackLimitExceeded
-      ? `${activeTracks.length} de ${enabledSessionTracks.length} pistas activas (tope ${sessionActiveTrackLimit}${shouldUseNativePadBridge ? ' + pad' : ''})`
+      ? `${activeTracks.length} pistas activas (sobre recomendado ${sessionActiveTrackLimit}${shouldUseNativePadBridge ? ' + pad' : ''})`
       : inferredSessionMode === 'folder' && activeTracks.length !== sessionTracks.length
       ? `${activeTracks.length} de ${sessionTracks.length} pistas activas`
       : sessionModeLabel
@@ -1911,11 +1875,10 @@ export function LiveDirectorView({
       setMutedTrackIds(new Set(activeTracks.filter((track) => track.isMuted).map((track) => track.id)));
       setSoloTrackId(null);
 
-      const limitedCount = Math.max(0, enabledSessionTracks.length - activeTracks.length);
       const disabledCount = Math.max(0, sessionTracks.length - enabledSessionTracks.length);
       console.info(
         `[LiveDirectorView] Loading ${activeTracks.length}/${enabledSessionTracks.length} enabled tracks${shouldUseNativePadBridge ? ' + pad bridge' : ''}` +
-          (limitedCount > 0 ? ` (auto-disabled ${limitedCount} over-limit stem${limitedCount === 1 ? '' : 's'}).` : '') +
+          (isWebTrackLimitExceeded ? ` (above recommended ${sessionActiveTrackLimit}-stem threshold).` : '') +
           (disabledCount > 0 ? ` (${disabledCount} already disabled).` : '.'),
       );
 
@@ -1947,7 +1910,7 @@ export function LiveDirectorView({
       stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trackSignature, hasResolvedEngineFlag, initialize, isIOSNativeEngineSurface, reloadKey, stop, useStreamingEngine]);
+  }, [trackSignature, hasResolvedEngineFlag, initialize, isIOSNativeEngineSurface, isWebTrackLimitExceeded, reloadKey, sessionActiveTrackLimit, stop, useStreamingEngine]);
 
   const loadWarningsKey = useMemo(() => {
     if (!loadWarnings || loadWarnings.length === 0) {
@@ -2367,37 +2330,13 @@ export function LiveDirectorView({
   }, [buildSessionSavePayload, hasPersistedSongContext, manualSession, mutedTrackIds, queueSilentSessionSave, trackOutputRoutes, trackVolumes]);
 
   useEffect(() => {
-    if (hasProvidedTracks || !manualSession || manualSession.mode !== 'folder') {
-      return;
-    }
-    if (enabledSessionTracks.length <= sessionActiveTrackLimit) {
-      return;
-    }
-
-    const activeIds = new Set(activeTracks.map((track) => track.id));
-    const limitedTracks = enabledSessionTracks.filter((track) => !activeIds.has(track.id));
-    if (limitedTracks.length === 0) {
+    if (!hasSessionTracks || enabledSessionTracks.length <= sessionActiveTrackLimit) {
+      setTrackLimitNotice(null);
       return;
     }
 
-    let changed = false;
-    const nextTracks = manualSession.tracks.map((track) => {
-      if (track.enabled !== false && !activeIds.has(track.id)) {
-        changed = true;
-        return {
-          ...track,
-          enabled: false,
-        };
-      }
-      return track;
-    });
-
-    if (!changed) {
-      return;
-    }
-
-    const names = limitedTracks.map((track) => track.name || track.id);
-    const key = `${sessionActiveTrackLimit}:${limitedTracks.map((track) => track.id).join('|')}`;
+    const names = enabledSessionTracks.map((track) => track.name || track.id);
+    const key = `${sessionActiveTrackLimit}:${enabledSessionTracks.map((track) => track.id).join('|')}`;
     setTrackLimitNotice({
       key,
       names,
@@ -2405,22 +2344,7 @@ export function LiveDirectorView({
       total: enabledSessionTracks.length,
     });
     setDismissedTrackLimitNoticeKey((previous) => (previous === key ? previous : null));
-    setManualSession((previous) => (
-      previous ? { ...previous, tracks: nextTracks } : previous
-    ));
-
-    if (hasPersistedSongContext) {
-      void commitMixerStateSilent(nextTracks);
-    }
-  }, [
-    activeTracks,
-    commitMixerStateSilent,
-    enabledSessionTracks,
-    hasPersistedSongContext,
-    hasProvidedTracks,
-    manualSession,
-    sessionActiveTrackLimit,
-  ]);
+  }, [enabledSessionTracks, hasSessionTracks, sessionActiveTrackLimit]);
 
   const mixerAutosaveTimerRef = useRef<number | null>(null);
 
@@ -2519,21 +2443,11 @@ export function LiveDirectorView({
 
   const handleCloseTrackLoadModal = useCallback(() => {
     if (pendingEnabledMap && manualSession) {
-      let enabledCount = 0;
       const nextTracks = manualSession.tracks.map((track) => {
         const wantsEnabled = pendingEnabledMap[track.id] !== false;
-        // All platforms now have a finite cap (iOS 13 + pad, Android 10, web 11).
-        // Previous versions treated iOS native as unlimited — that was wrong:
-        // AVAudioEngine also slips past its ceiling. The cap is enforced here
-        // regardless of engine surface so the user gets consistent gating.
-        const canEnable = !wantsEnabled || enabledCount < sessionActiveTrackLimit;
-        const enabled = wantsEnabled && canEnable;
-        if (enabled) {
-          enabledCount += 1;
-        }
         return {
           ...track,
-          enabled,
+          enabled: wantsEnabled,
         };
       });
       const hasAnyEnabled = nextTracks.some((t) => t.enabled !== false);
@@ -2546,7 +2460,7 @@ export function LiveDirectorView({
     }
     setPendingEnabledMap(null);
     setShowTrackLoadModal(false);
-  }, [pendingEnabledMap, manualSession, sessionActiveTrackLimit, hasPersistedSongContext, commitMixerStateSilent]);
+  }, [pendingEnabledMap, manualSession, hasPersistedSongContext, commitMixerStateSilent]);
 
   const handleOpenOffsetModal = useCallback(() => {
     offsetModalInitialValueRef.current = Number.isFinite(Number(manualSession?.sectionOffsetSeconds))
@@ -3276,7 +3190,6 @@ export function LiveDirectorView({
   const pendingEnabledCount = pendingEnabledMap
     ? Object.values(pendingEnabledMap).filter(Boolean).length
     : activeTracks.length;
-  const pendingEffectiveEnabledCount = Math.min(pendingEnabledCount, sessionActiveTrackLimit);
 
   const readyStateLabel = !hasTrackSession
     ? 'Sin sesion'
@@ -3706,13 +3619,12 @@ export function LiveDirectorView({
                               {currentSessionLabel}
                             </h1>
                             <p className={`text-white/54 ${isUltraCompactLandscape ? 'mt-0.5 text-[0.58rem]' : isCompactLandscape ? 'mt-0.5 text-[0.68rem]' : 'mt-1 text-[0.92rem]'}`}>{songSupportMeta}</p>
-                            {autoDisabledTrackNames.length > 0 && (
+                            {isWebTrackLimitExceeded && (
                               <p
                                 className={`text-amber-200/86 ${isUltraCompactLandscape ? 'mt-0.5 text-[0.56rem]' : isCompactLandscape ? 'mt-0.5 text-[0.66rem]' : 'mt-1 text-[0.78rem]'}`}
-                                title={`Pistas desactivadas automáticamente por el tope: ${autoDisabledTrackNames.join(', ')}`}
+                                title="Puedes usar más stems si la sesión responde estable, pero prueba antes del servicio."
                               >
-                                Auto-silenciadas: {autoDisabledTrackNames.slice(0, 3).join(', ')}
-                                {autoDisabledTrackNames.length > 3 ? ` · +${autoDisabledTrackNames.length - 3} más` : ''}
+                                Sobre el umbral recomendado: {enabledSessionTracks.length}/{sessionActiveTrackLimit} stems
                               </p>
                             )}
                           </div>
@@ -4609,7 +4521,7 @@ export function LiveDirectorView({
                   {currentSessionLabel}
                 </h3>
                 <p className={`text-white/54 ${useWideTrackLoadModal ? 'mt-1 text-[0.74rem]' : 'mt-1.5 text-sm'}`}>
-                  Desactiva stems que no vas a usar. En web se cargan maximo {sessionActiveTrackLimit}.
+                  Desactiva stems que no vas a usar. Más de {sessionActiveTrackLimit} puede ser inestable según el equipo.
                 </p>
               </div>
               <button
@@ -4626,7 +4538,7 @@ export function LiveDirectorView({
               <div>
                 <p className="text-[0.6rem] font-black uppercase tracking-[0.18em] text-white/36">Resumen</p>
                 <p className={`${useWideTrackLoadModal ? 'mt-0.5 text-[0.92rem]' : 'mt-1 text-sm'} font-semibold text-white/88`}>
-                  {pendingEffectiveEnabledCount} de {sessionTracks.length} activos{isWebTrackLimitExceeded || pendingEnabledCount > pendingEffectiveEnabledCount ? ` (tope ${sessionActiveTrackLimit}${shouldUseNativePadBridge ? ' + pad' : ''})` : ''}
+                  {pendingEnabledCount} de {sessionTracks.length} activos{pendingEnabledCount > sessionActiveTrackLimit ? ` (sobre ${sessionActiveTrackLimit})` : ''}
                 </p>
               </div>
               <button
@@ -4634,8 +4546,6 @@ export function LiveDirectorView({
                 onClick={() => {
                   if (!pendingEnabledMap) return;
                   const nextMap: Record<string, boolean> = {};
-                  // Activate highest-priority stems first so the cap retains drums/bass/vocals
-                  // over decorative pads or fx when the session exceeds the platform limit.
                   const rankedTracks = sessionTracks
                     .map((track, index) => ({ track, index, rank: stemPriorityRank(track) }))
                     .sort((a, b) => (a.rank - b.rank) || (a.index - b.index));
@@ -4665,9 +4575,6 @@ export function LiveDirectorView({
                     type="button"
                     onClick={() => {
                       if (!pendingEnabledMap) return;
-                      const isEnabling = pendingEnabledMap[track.id] === false;
-                      const enabledCount = Object.values(pendingEnabledMap).filter(Boolean).length;
-                      if (isEnabling && enabledCount >= sessionActiveTrackLimit) return;
                       const next = { ...pendingEnabledMap, [track.id]: !pendingEnabledMap[track.id] };
                       const hasAny = Object.values(next).some(Boolean);
                       if (hasAny) setPendingEnabledMap(next);
@@ -4758,10 +4665,10 @@ export function LiveDirectorView({
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-[0.72rem] font-black uppercase tracking-[0.22em] text-sky-100/78">
-                  Limite web: {trackLimitNotice.limit} stems
+                  Más de {trackLimitNotice.limit} stems
                 </p>
                 <p className="mt-1 text-[0.88rem] leading-snug text-white/80">
-                  Chrome cargara {trackLimitNotice.limit} de {trackLimitNotice.total}. Se omitieron {trackLimitNotice.names.slice(0, 3).join(', ')}{trackLimitNotice.names.length > 3 ? ` +${trackLimitNotice.names.length - 3}` : ''}.
+                  Estás cargando {trackLimitNotice.total}. Si notas cortes, desactiva stems no esenciales desde Carga selectiva.
                 </p>
               </div>
               <button
