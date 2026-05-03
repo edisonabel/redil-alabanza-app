@@ -265,6 +265,10 @@ const CONTROL_CARD =
 
 const GENERIC_TRACK_ACCENTS = ['#81ddf5', '#7ed8e7', '#9f7cff', '#43c477', '#c98bff', '#73d1f8'];
 const TRACK_META_BY_ID = new Map(MIXER_TRACKS.map((track) => [track.id, track]));
+const AUDIO_MEMORY_CAUTION_BYTES = 700 * 1024 * 1024;
+const AUDIO_MEMORY_WARNING_BYTES = 1.1 * 1024 * 1024 * 1024;
+const HEAP_AUDIO_CAUTION_RATIO = 0.32;
+const HEAP_AUDIO_WARNING_RATIO = 0.52;
 
 const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 
@@ -306,6 +310,92 @@ const formatDeviceMemoryValue = (gigabytes: number | null) => {
   }
 
   return `${gigabytes} GB`;
+};
+
+const buildAudioPressureStatus = ({
+  diagnostics,
+  hasTrackSession,
+  isInitializingSession,
+  isReady,
+  loadError,
+}: {
+  diagnostics: LiveDirectorEngineDiagnostics | null;
+  hasTrackSession: boolean;
+  isInitializingSession: boolean;
+  isReady: boolean;
+  loadError: string | null;
+}) => {
+  if (loadError) {
+    return {
+      label: 'Error',
+      detail: 'Revisa los stems antes del servicio.',
+      tone: 'danger' as const,
+    };
+  }
+
+  if (!hasTrackSession) {
+    return {
+      label: 'Sin stems',
+      detail: 'Carga una sesión para revisar audio.',
+      tone: 'muted' as const,
+    };
+  }
+
+  if (isInitializingSession || !isReady || !diagnostics) {
+    return {
+      label: 'Preflight',
+      detail: 'Cargando y verificando stems.',
+      tone: 'loading' as const,
+    };
+  }
+
+  if (diagnostics.engineMode === 'streaming') {
+    return {
+      label: 'Flujo exp.',
+      detail: 'Streaming queda para pruebas; Buffer es la base live.',
+      tone: 'warning' as const,
+    };
+  }
+
+  if (diagnostics.engineMode === 'media') {
+    return {
+      label: 'Riesgo sync',
+      detail: 'Media puede atrasar stems; cambia a Buffer.',
+      tone: 'danger' as const,
+    };
+  }
+
+  const estimatedAudioBytes = diagnostics.estimatedAudioMemoryBytes || 0;
+  const heapLimitBytes = diagnostics.browserHeapLimitBytes || 0;
+  const audioHeapRatio = heapLimitBytes > 0 ? estimatedAudioBytes / heapLimitBytes : 0;
+
+  if (
+    estimatedAudioBytes >= AUDIO_MEMORY_WARNING_BYTES ||
+    (heapLimitBytes > 0 && audioHeapRatio >= HEAP_AUDIO_WARNING_RATIO)
+  ) {
+    return {
+      label: 'Presion alta',
+      detail: `${formatMemoryValue(estimatedAudioBytes)} en audio. Considera apagar stems no esenciales.`,
+      tone: 'danger' as const,
+    };
+  }
+
+  if (
+    estimatedAudioBytes >= AUDIO_MEMORY_CAUTION_BYTES ||
+    (heapLimitBytes > 0 && audioHeapRatio >= HEAP_AUDIO_CAUTION_RATIO)
+  ) {
+    return {
+      label: 'Presion media',
+      detail: `${formatMemoryValue(estimatedAudioBytes)} en audio. Cierra apps pesadas antes del live.`,
+      tone: 'warning' as const,
+    };
+  }
+
+  return {
+    label: 'Base estable',
+    detail: `Buffer listo (${formatMemoryValue(estimatedAudioBytes)}).`,
+    tone: 'ready' as const,
+  };
 };
 
 const shouldIgnoreDragScrollTarget = (target: EventTarget | null) => {
@@ -948,6 +1038,7 @@ export function LiveDirectorView({
   const progressPercent = playbackTimelineDuration > 0 ? clamp(currentTime / playbackTimelineDuration, 0, 1) * 100 : 0;
   const diagnosticsCards = useMemo(
     () => [
+      { label: 'Motor', value: diagnostics?.engineMode || 'n/a' },
       { label: 'Heap', value: formatMemoryValue(diagnostics?.browserHeapUsedBytes ?? null) },
       { label: 'Audio est.', value: formatMemoryValue(diagnostics?.estimatedAudioMemoryBytes ?? null) },
       { label: 'Pistas', value: diagnostics ? String(diagnostics.trackCount) : 'n/a' },
@@ -3198,6 +3289,27 @@ export function LiveDirectorView({
           : isReady
             ? (isPlaying ? 'En marcha' : 'Armado')
             : 'En espera';
+  const audioPressureStatus = useMemo(
+    () =>
+      buildAudioPressureStatus({
+        diagnostics,
+        hasTrackSession,
+        isInitializingSession,
+        isReady,
+        loadError,
+      }),
+    [diagnostics, hasTrackSession, isInitializingSession, isReady, loadError],
+  );
+  const audioPressureClassName =
+    audioPressureStatus.tone === 'ready'
+      ? 'border-emerald-300/26 bg-emerald-300/10 text-emerald-100'
+      : audioPressureStatus.tone === 'warning'
+        ? 'border-amber-300/30 bg-amber-300/10 text-amber-100'
+        : audioPressureStatus.tone === 'danger'
+          ? 'border-rose-300/30 bg-rose-300/10 text-rose-100'
+          : audioPressureStatus.tone === 'loading'
+            ? 'border-sky-300/24 bg-sky-300/10 text-sky-100'
+            : 'border-white/8 bg-black/18 text-white/62';
 
   const shellClassName = ['fixed inset-0 z-[70] overflow-hidden bg-[#202223] text-white', className]
     .filter(Boolean)
@@ -3654,6 +3766,17 @@ export function LiveDirectorView({
                                 {readyStateLabel}
                               </p>
                             </div>
+                            <div
+                              className={`rounded-[1.1rem] border text-right transition-colors ${audioPressureClassName} ${isUltraCompactLandscape ? 'px-1.5 py-1' : isCompactLandscape ? 'px-2 py-1.5' : 'px-3 py-2'}`}
+                              title={audioPressureStatus.detail}
+                            >
+                              <p className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : 'text-[0.62rem]'} font-black uppercase tracking-[0.2em] opacity-60`}>
+                                Audio
+                              </p>
+                              <p className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.66rem]' : isCompactLandscape ? 'mt-0.5 text-[0.78rem]' : 'mt-1 text-[0.98rem]'} font-semibold`}>
+                                {audioPressureStatus.label}
+                              </p>
+                            </div>
                           </div>
                         </div>
 
@@ -3698,7 +3821,7 @@ export function LiveDirectorView({
                               </div>
                             )}
                             {showDiagnostics && (
-                              <div className={`grid grid-cols-4 gap-2 ${isCompactLandscape ? 'mt-2' : 'mt-3'}`}>
+                              <div className={`grid grid-cols-5 gap-2 ${isCompactLandscape ? 'mt-2' : 'mt-3'}`}>
                                 {diagnosticsCards.map((card) => (
                                   <div
                                     key={card.label}
