@@ -5,7 +5,6 @@ import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
 import type { TrackActivityEnvelope } from '../utils/audioActivityEnvelope';
 import {
   errorLiveDiagnostic,
-  logLiveDiagnostic,
   readLiveBrowserCapabilities,
   warnLiveDiagnostic,
 } from '../utils/liveDiagnostics';
@@ -17,8 +16,6 @@ type LoadProgressState = { loaded: number; total: number } | null;
 const UI_UPDATE_INTERVAL_MS = 1000 / 24;
 const DIAGNOSTICS_UPDATE_INTERVAL_MS = 1000;
 const TRACK_LEVEL_UPDATE_THRESHOLD = 0.006;
-const STREAMING_AUTO_ROUTE_DISABLED_SESSION_KEY = 'live-director:disable-streaming-auto-route';
-const AUTO_STREAMING_TRACK_THRESHOLD = 6;
 type EngineKind = 'buffer' | 'streaming';
 type EngineInstance = MultitrackEngine | StreamingMultitrackEngine;
 export type LiveDirectorEngineDiagnostics = {
@@ -124,34 +121,6 @@ const buildTrackEnvelopes = (tracks: TrackData[]): TrackEnvelopesState => (
   }, {})
 );
 
-const readStreamingAutoRouteDisabled = () => {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  try {
-    return window.sessionStorage.getItem(STREAMING_AUTO_ROUTE_DISABLED_SESSION_KEY) === '1';
-  } catch {
-    return false;
-  }
-};
-
-const persistStreamingAutoRouteDisabled = (disabled: boolean) => {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  try {
-    if (disabled) {
-      window.sessionStorage.setItem(STREAMING_AUTO_ROUTE_DISABLED_SESSION_KEY, '1');
-    } else {
-      window.sessionStorage.removeItem(STREAMING_AUTO_ROUTE_DISABLED_SESSION_KEY);
-    }
-  } catch {
-    // no-op
-  }
-};
-
 const isUnsupportedStreamingConfigError = (error: unknown) => {
   const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
 
@@ -176,7 +145,6 @@ export function useMultitrackEngine(
   const diagnosticsRef = useRef<EngineDiagnostics | null>(null);
   const lastUiUpdateRef = useRef(0);
   const initializationTokenRef = useRef(0);
-  const streamingAutoRouteDisabledRef = useRef(readStreamingAutoRouteDisabled());
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -326,31 +294,7 @@ export function useMultitrackEngine(
     const initializationToken = ++initializationTokenRef.current;
     const nextTracks = cloneTracks(tracks);
 
-    let targetKind = requestedEngineKind;
-    if (targetKind === 'buffer' && nextTracks.length >= AUTO_STREAMING_TRACK_THRESHOLD) {
-      const isAllAacFamily = nextTracks.every((t) => {
-        try {
-          const path = new URL(t.url, window.location.origin).pathname;
-          const lower = path.toLowerCase();
-          return lower.endsWith('.m4a') || lower.endsWith('.mp4') || lower.endsWith('.aac');
-        } catch {
-          return false;
-        }
-      });
-
-      if (isAllAacFamily && !streamingAutoRouteDisabledRef.current) {
-        targetKind = 'streaming';
-        console.log('[useMultitrackEngine] Auto-routed to Streaming Engine (large AAC session detected).');
-        logLiveDiagnostic('engine:auto-route-streaming', {
-          requestedEngineKind,
-          targetKind,
-          trackCount: nextTracks.length,
-          reason: 'Large AAC-family session can use the streaming engine.',
-          browser: readLiveBrowserCapabilities(),
-        });
-      }
-    }
-
+    const targetKind = requestedEngineKind;
     const engine = getEngine(targetKind);
 
     setIsReady(false);
@@ -372,7 +316,13 @@ export function useMultitrackEngine(
     };
 
     try {
-      const loadedTracks = await engine.loadTracks(nextTracks, { onProgress: handleProgress });
+      const loadedTracks =
+        targetKind === 'buffer'
+          ? await (engine as MultitrackEngine).loadTracks(nextTracks, {
+            onProgress: handleProgress,
+            forceMode: 'buffer',
+          })
+          : await engine.loadTracks(nextTracks, { onProgress: handleProgress });
       if (initializationToken !== initializationTokenRef.current || engine !== engineRef.current) {
         return;
       }
@@ -390,16 +340,12 @@ export function useMultitrackEngine(
         return;
       }
 
-      const isAutoRoutedToStreaming = targetKind === 'streaming' && requestedEngineKind === 'buffer';
-
-      if (isAutoRoutedToStreaming) {
+      if (targetKind === 'streaming') {
         if (isUnsupportedStreamingConfigError(error)) {
-          streamingAutoRouteDisabledRef.current = true;
-          persistStreamingAutoRouteDisabled(true);
           console.warn(
-            '[useMultitrackEngine] Auto-routing to streaming was disabled for this session after an unsupported decoder configuration.',
+            '[useMultitrackEngine] Streaming engine reported an unsupported decoder configuration.',
           );
-          warnLiveDiagnostic('engine:streaming-auto-route-disabled', {
+          warnLiveDiagnostic('engine:streaming-unsupported-config', {
             trackCount: nextTracks.length,
             reason: error instanceof Error ? error.message : String(error),
             browser: readLiveBrowserCapabilities(),
