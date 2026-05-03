@@ -239,6 +239,26 @@ const estimateSectionStructureWeight = (section: SectionPayload) => {
   return Math.max(base * kindBonus, 0.8);
 };
 
+const buildExpectedSectionStarts = (sections: SectionPayload[], durationSec: number | null) => {
+  if (!Number.isFinite(Number(durationSec)) || Number(durationSec) <= 0 || sections.length === 0) {
+    return sections.map(() => null);
+  }
+
+  const duration = Number(durationSec);
+  const weights = sections.map((section) => estimateSectionStructureWeight(section));
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  if (!Number.isFinite(totalWeight) || totalWeight <= 0) {
+    return sections.map((_, index) => Math.round((duration * index) / Math.max(sections.length, 1)));
+  }
+
+  let cursor = 0;
+  return weights.map((weight, index) => {
+    const expectedStart = Math.round((duration * cursor) / totalWeight);
+    cursor += weight;
+    return index === 0 ? 0 : Math.min(duration, Math.max(0, expectedStart));
+  });
+};
+
 const levenshteinSimilarity = (() => {
   let buffer = new Int32Array(0);
 
@@ -1098,7 +1118,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     }
 
     const phraseLastMatchedStart = new Map<string, number>();
-    const totalSections = sections.length;
+    const expectedSectionStarts = buildExpectedSectionStarts(sections, durationSec);
     let lastStartSec = 0;
     const suggestedMarkers: SuggestedMarker[] = sections.map((section: any, index: number) => {
       const anchorPhrases = buildSectionAnchorPhrases(section);
@@ -1125,8 +1145,8 @@ export const POST: APIRoute = async ({ request, cookies }) => {
           Math.round(Math.max(...anchorPhrases.map((anchor) => getPhraseSearchWords(anchor.phrase).length)) * 0.75),
         );
       const searchStartSec = Math.max(lastStartSec + MIN_SECTION_PROGRESS_SEC, repeatAwareFloor);
-      const expectedStartSec = durationSec != null
-        ? Math.max(searchStartSec, Math.round((durationSec * index) / Math.max(totalSections, 1)))
+      const expectedStartSec = expectedSectionStarts[index] != null
+        ? Math.max(searchStartSec, Number(expectedSectionStarts[index]))
         : searchStartSec;
 
       const match = selectSectionAnchorMatch({
