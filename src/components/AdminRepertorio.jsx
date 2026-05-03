@@ -1388,6 +1388,12 @@ export default function AdminRepertorio() {
         },
         body: JSON.stringify({
           mp3Url: editorChordproCancion.mp3,
+          songContext: {
+            title: editorChordproCancion?.titulo || '',
+            artist: editorChordproCancion?.cantante || '',
+            key: editorChordproCancion?.tonalidad || '',
+            bpm: editorChordproCancion?.bpm || '',
+          },
           sections: sectionsPayload,
         }),
       });

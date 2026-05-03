@@ -52,6 +52,13 @@ type SectionPayload = {
   lines?: string[];
 };
 
+type SongContextPayload = {
+  title?: string;
+  artist?: string;
+  key?: string;
+  bpm?: string;
+};
+
 type TranscriptWord = {
   word: string;
   start: number;
@@ -84,6 +91,17 @@ type PhraseMatch = {
   confidence: number;
   matchCount: number;
   searchWordCount: number;
+};
+
+type SectionAnchorPhrase = {
+  phrase: string;
+  fingerprint: string;
+  weight: number;
+};
+
+type SectionAnchorMatch = PhraseMatch & {
+  fingerprint: string;
+  relaxed: boolean;
 };
 
 const MIN_SECTION_PROGRESS_SEC = 1;
@@ -130,6 +148,51 @@ const buildCueSearchPhrase = (lines: string[] = []) => {
     .slice(0, 2);
 
   return meaningfulLines.join(' ');
+};
+
+const getMeaningfulLyricLines = (section: SectionPayload, maxLines = 4) => {
+  const seen = new Set<string>();
+  const lines = [
+    section?.firstLine || '',
+    ...(Array.isArray(section?.lines) ? section.lines : []),
+  ];
+
+  return lines
+    .map((line) => stripChords(line))
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter((line) => {
+      const words = getPhraseSearchWords(line);
+      if (words.length === 0) return false;
+      const key = words.join(' ');
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, maxLines);
+};
+
+const buildSectionAnchorPhrases = (section: SectionPayload): SectionAnchorPhrase[] => {
+  const lyricLines = getMeaningfulLyricLines(section, 4);
+  const anchors: SectionAnchorPhrase[] = [];
+  const seen = new Set<string>();
+
+  const addAnchor = (rawPhrase = '', weight = 1) => {
+    const phrase = stripChords(rawPhrase).replace(/\s+/g, ' ').trim();
+    const fingerprint = buildPhraseFingerprint(phrase);
+    if (!phrase || !fingerprint || seen.has(fingerprint)) return;
+    seen.add(fingerprint);
+    anchors.push({ phrase, fingerprint, weight });
+  };
+
+  lyricLines.forEach((line, index) => {
+    addAnchor(line, Math.max(0.86, 1 - index * 0.05));
+  });
+
+  if (lyricLines.length >= 2 && getPhraseSearchWords(lyricLines[0]).length < 4) {
+    addAnchor(`${lyricLines[0]} ${lyricLines[1]}`, 0.95);
+  }
+
+  return anchors;
 };
 
 const countChordTokens = (line = '') => Array.from(String(line || '').matchAll(/\[([^\]]+)\]/g)).length;
@@ -449,6 +512,43 @@ const downloadAudioBlob = async (rawUrl: string, requestUrl: URL) => {
   }
 };
 
+const compactContextValue = (value: unknown, maxLength = 80) =>
+  String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+
+const buildWhisperPrompt = ({
+  sections,
+  songContext,
+  language,
+}: {
+  sections: SectionPayload[];
+  songContext: SongContextPayload;
+  language: string;
+}) => {
+  const contextLines = [
+    compactContextValue(songContext.title) ? `Titulo: ${compactContextValue(songContext.title)}` : '',
+    compactContextValue(songContext.artist) ? `Artista: ${compactContextValue(songContext.artist)}` : '',
+    compactContextValue(songContext.key, 24) ? `Tono: ${compactContextValue(songContext.key, 24)}` : '',
+    compactContextValue(songContext.bpm, 16) ? `BPM: ${compactContextValue(songContext.bpm, 16)}` : '',
+    language === 'es'
+      ? 'Cancion cristiana de alabanza en espanol. Vocabulario posible: Senor, Dios, Jesus, Santo, gloria, aleluya, fiel, amor, gracia.'
+      : 'Christian worship song. Possible vocabulary: Lord, God, Jesus, holy, glory, hallelujah, faithful, love, grace.',
+    `Estructura esperada: ${sections.map((section) => section.name).filter(Boolean).join(' > ')}`,
+  ].filter(Boolean);
+
+  const lyricContext = sections
+    .flatMap((section) => getMeaningfulLyricLines(section, 3))
+    .filter((line) => line.trim().length > 0)
+    .join(' / ');
+
+  return [...contextLines, lyricContext ? `Letras de referencia: ${lyricContext}` : '']
+    .filter(Boolean)
+    .join('\n')
+    .slice(0, 1400);
+};
+
 const findPhraseMatchesInTranscript = (
   words: TranscriptWord[],
   phrase: string,
@@ -530,6 +630,40 @@ const selectPhraseMatch = (
     if (candidate.confidence < (bestCandidate?.confidence ?? 0)) return bestCandidate;
     return candidate.startSec < (bestCandidate?.startSec ?? Infinity) ? candidate : bestCandidate;
   }, shortlisted[0]);
+};
+
+const selectSectionAnchorMatch = ({
+  transcriptWords,
+  anchors,
+  searchStartSec,
+  relaxedSearchStartSec,
+  expectedStartSec,
+}: {
+  transcriptWords: TranscriptWord[];
+  anchors: SectionAnchorPhrase[];
+  searchStartSec: number;
+  relaxedSearchStartSec: number | null;
+  expectedStartSec: number | null;
+}): SectionAnchorMatch | null => {
+  const collectMatches = (startSec: number, relaxed: boolean) => anchors.flatMap((anchor, anchorIndex) => (
+    findPhraseMatchesInTranscript(transcriptWords, anchor.phrase, startSec)
+      .map((match) => ({
+        ...match,
+        confidence: Math.max(0, Math.min(1, (match.confidence * anchor.weight) - (anchorIndex * 0.015) - (relaxed ? 0.05 : 0))),
+        fingerprint: anchor.fingerprint,
+        relaxed,
+      }))
+  ));
+
+  const directMatches = collectMatches(searchStartSec, false);
+  const relaxedMatches = directMatches.length === 0 && relaxedSearchStartSec != null
+    ? collectMatches(relaxedSearchStartSec, true)
+    : [];
+
+  return selectPhraseMatch(
+    directMatches.length > 0 ? directMatches : relaxedMatches,
+    expectedStartSec,
+  ) as SectionAnchorMatch | null;
 };
 
 const findPreviousDetectedIndex = (markers: SuggestedMarker[], targetIndex: number) => {
@@ -741,6 +875,12 @@ export const POST: APIRoute = async ({ request, cookies }) => {
 
     const body = await request.json().catch(() => ({}));
     const mp3Url = String(body?.mp3Url || '').trim();
+    const songContext: SongContextPayload = {
+      title: compactContextValue(body?.songContext?.title),
+      artist: compactContextValue(body?.songContext?.artist),
+      key: compactContextValue(body?.songContext?.key, 24),
+      bpm: compactContextValue(body?.songContext?.bpm, 16),
+    };
     const sections: SectionPayload[] = (Array.isArray(body?.sections) ? body.sections : [])
       .map((section: any) => ({
         name: String(section?.name || '').trim(),
@@ -778,11 +918,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     formData.append('timestamp_granularities[]', 'segment');
     formData.append('language', language);
 
-    const promptText = sections
-      .flatMap((section) => (Array.isArray(section.lines) ? section.lines.map(stripChords) : []))
-      .filter((line) => line.trim().length > 0)
-      .join(' ')
-      .slice(0, 1000);
+    const promptText = buildWhisperPrompt({ sections, songContext, language });
 
     if (promptText) {
       formData.append('prompt', promptText);
@@ -858,14 +994,13 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       });
     }
 
-    const phraseUsageCounts = new Map<string, number>();
     const phraseLastMatchedStart = new Map<string, number>();
     const totalSections = sections.length;
     let lastStartSec = 0;
     const suggestedMarkers: SuggestedMarker[] = sections.map((section: any, index: number) => {
-      const cleanFirstLine = stripChords(section.firstLine || '');
+      const anchorPhrases = buildSectionAnchorPhrases(section);
 
-      if (!cleanFirstLine) {
+      if (anchorPhrases.length === 0) {
         return {
           sectionName: section.name,
           startSec: null,
@@ -874,45 +1009,40 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         };
       }
 
-      const phraseKey = buildPhraseFingerprint(cleanFirstLine);
-      const occurrence = (phraseUsageCounts.get(phraseKey) || 0) + 1;
-      phraseUsageCounts.set(phraseKey, occurrence);
-
-      const previousSamePhraseStart = phraseLastMatchedStart.get(phraseKey);
+      const previousSamePhraseStart = anchorPhrases.reduce<number | null>((latestStart, anchor) => {
+        const lastAnchorStart = phraseLastMatchedStart.get(anchor.fingerprint);
+        if (lastAnchorStart == null) return latestStart;
+        if (latestStart == null) return lastAnchorStart;
+        return Math.max(latestStart, lastAnchorStart);
+      }, null);
       const repeatAwareFloor = previousSamePhraseStart == null
         ? 0
-        : previousSamePhraseStart + Math.max(MIN_REPEAT_PROGRESS_SEC, Math.round(getPhraseSearchWords(cleanFirstLine).length * 0.75));
+        : previousSamePhraseStart + Math.max(
+          MIN_REPEAT_PROGRESS_SEC,
+          Math.round(Math.max(...anchorPhrases.map((anchor) => getPhraseSearchWords(anchor.phrase).length)) * 0.75),
+        );
       const searchStartSec = Math.max(lastStartSec + MIN_SECTION_PROGRESS_SEC, repeatAwareFloor);
       const expectedStartSec = durationSec != null
         ? Math.max(searchStartSec, Math.round((durationSec * index) / Math.max(totalSections, 1)))
         : searchStartSec;
 
-      const directCandidates = findPhraseMatchesInTranscript(transcriptWords, cleanFirstLine, searchStartSec);
-      const relaxedCandidates = directCandidates.length === 0 && previousSamePhraseStart != null
-        ? findPhraseMatchesInTranscript(
-          transcriptWords,
-          cleanFirstLine,
-          Math.max(lastStartSec + MIN_SECTION_PROGRESS_SEC, previousSamePhraseStart + 1),
-        )
-        : [];
-      const match = selectPhraseMatch(
-        directCandidates.length > 0 ? directCandidates : relaxedCandidates,
+      const match = selectSectionAnchorMatch({
+        transcriptWords,
+        anchors: anchorPhrases,
+        searchStartSec,
+        relaxedSearchStartSec: previousSamePhraseStart == null
+          ? null
+          : Math.max(lastStartSec + MIN_SECTION_PROGRESS_SEC, previousSamePhraseStart + 1),
         expectedStartSec,
-      );
+      });
 
       if (match) {
         lastStartSec = match.startSec;
-        phraseLastMatchedStart.set(phraseKey, match.startSec);
+        phraseLastMatchedStart.set(match.fingerprint, match.startSec);
         return {
           sectionName: section.name,
           startSec: match.startSec,
-          confidence: Math.max(
-            0,
-            Math.min(
-              1,
-              match.confidence - (directCandidates.length === 0 && relaxedCandidates.length > 0 ? 0.05 : 0),
-            ),
-          ),
+          confidence: Math.max(0, Math.min(1, match.confidence)),
           method: 'whisper-match',
         };
       }
