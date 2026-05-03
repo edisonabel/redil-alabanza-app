@@ -86,6 +86,16 @@ type SuggestedMarker = {
   cueMarkers?: number[];
 };
 
+type RepeatSuggestion = {
+  sourceIndex: number;
+  sourceSectionName: string;
+  suggestedName: string;
+  startSec: number;
+  confidence: number;
+  insertAfterIndex: number;
+  lines: string[];
+};
+
 type PhraseMatch = {
   startSec: number;
   confidence: number;
@@ -666,6 +676,99 @@ const selectSectionAnchorMatch = ({
   ) as SectionAnchorMatch | null;
 };
 
+const getRepeatBaseName = (sectionName = '') => {
+  const cleaned = String(sectionName || '').trim() || 'Seccion';
+  return cleaned
+    .replace(/\s+(?:\d+|[ivx]+)$/i, '')
+    .replace(/\s+#?\d+$/i, '')
+    .trim() || cleaned;
+};
+
+const buildRepeatSuggestionName = (sectionName: string, sections: SectionPayload[]) => {
+  const baseName = getRepeatBaseName(sectionName);
+  const normalizedBase = normalizeText(baseName);
+  const existingCount = sections.filter((section) => (
+    normalizeText(getRepeatBaseName(String(section?.name || ''))) === normalizedBase
+  )).length;
+
+  return `${baseName} ${existingCount + 1}`;
+};
+
+const detectMissingRepeatSuggestions = ({
+  transcriptWords,
+  sections,
+  markers,
+}: {
+  transcriptWords: TranscriptWord[];
+  sections: SectionPayload[];
+  markers: SuggestedMarker[];
+}): RepeatSuggestion[] => {
+  const existingStarts = markers
+    .map((marker) => marker.startSec)
+    .filter((value): value is number => Number.isFinite(Number(value)))
+    .map((value) => Number(value));
+  const suggestions: RepeatSuggestion[] = [];
+
+  sections.forEach((section, sectionIndex) => {
+    const kind = getSectionKind(String(section?.name || ''));
+    if (kind === 'intro' || kind === 'outro' || kind === 'interlude') return;
+
+    const anchors = buildSectionAnchorPhrases(section).slice(0, 2);
+    if (anchors.length === 0) return;
+
+    const sectionCandidates = anchors.flatMap((anchor, anchorIndex) => (
+      findPhraseMatchesInTranscript(transcriptWords, anchor.phrase, 0)
+        .map((match) => ({
+          ...match,
+          confidence: Math.max(0, Math.min(1, (match.confidence * anchor.weight) - anchorIndex * 0.02)),
+        }))
+    ))
+      .filter((match) => match.confidence >= 0.62)
+      .sort((left, right) => left.startSec - right.startSec);
+
+    sectionCandidates.forEach((candidate) => {
+      const isNearExistingMarker = existingStarts.some((startSec) => Math.abs(startSec - candidate.startSec) <= 7);
+      if (isNearExistingMarker) return;
+
+      const isNearSuggestion = suggestions.some((suggestion) => Math.abs(suggestion.startSec - candidate.startSec) <= 10);
+      if (isNearSuggestion) return;
+
+      const insertAfterIndex = markers.reduce((lastIndex, marker, markerIndex) => (
+        marker.startSec != null && marker.startSec < candidate.startSec ? markerIndex : lastIndex
+      ), -1);
+
+      suggestions.push({
+        sourceIndex: sectionIndex,
+        sourceSectionName: String(section?.name || `Seccion ${sectionIndex + 1}`),
+        suggestedName: buildRepeatSuggestionName(String(section?.name || `Seccion ${sectionIndex + 1}`), sections),
+        startSec: candidate.startSec,
+        confidence: candidate.confidence,
+        insertAfterIndex,
+        lines: Array.isArray(section?.lines) ? section.lines : [],
+      });
+    });
+  });
+
+  const emittedCounts = new Map<string, number>();
+  return suggestions
+    .sort((left, right) => left.startSec - right.startSec)
+    .slice(0, 4)
+    .map((suggestion) => {
+      const baseName = getRepeatBaseName(suggestion.sourceSectionName);
+      const normalizedBase = normalizeText(baseName);
+      const emittedCount = emittedCounts.get(normalizedBase) || 0;
+      emittedCounts.set(normalizedBase, emittedCount + 1);
+      const existingCount = sections.filter((section) => (
+        normalizeText(getRepeatBaseName(String(section?.name || ''))) === normalizedBase
+      )).length;
+
+      return {
+        ...suggestion,
+        suggestedName: `${baseName} ${existingCount + emittedCount + 1}`,
+      };
+    });
+};
+
 const findPreviousDetectedIndex = (markers: SuggestedMarker[], targetIndex: number) => {
   for (let index = targetIndex - 1; index >= 0; index -= 1) {
     if (markers[index]?.startSec != null) return index;
@@ -1151,10 +1254,16 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         }),
       };
     });
+    const repeatSuggestions = detectMissingRepeatSuggestions({
+      transcriptWords,
+      sections,
+      markers: markersWithCueSuggestions,
+    });
 
     return jsonResponse({
       success: true,
       markers: markersWithCueSuggestions,
+      repeatSuggestions,
       language,
       durationSec,
       wordCount: transcriptWords.length,

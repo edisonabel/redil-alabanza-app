@@ -385,6 +385,40 @@ const toManualMarkerPatch = (patch = {}) => ({
   _method: 'manual',
 });
 
+const buildRepeatSectionBlock = (suggestion = {}) => {
+  const sectionName = String(suggestion?.suggestedName || 'Repeticion').trim();
+  const lines = Array.isArray(suggestion?.lines) ? suggestion.lines : [];
+  return [
+    `[${sectionName}]`,
+    ...lines.map((line) => String(line || '').trimEnd()),
+  ].join('\n').trim();
+};
+
+const insertChordProSectionAfterIndex = (rawValue = '', afterSectionIndex = -1, sectionBlock = '') => {
+  const normalizedValue = String(rawValue || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalizedValue.split('\n');
+  let sectionIndex = -1;
+  let insertAtLine = lines.length;
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const sectionLineMatch = lines[lineIndex].trim().match(PURE_SECTION_HEADER_RE);
+    if (!sectionLineMatch || !isLikelySectionHeader(sectionLineMatch[1])) continue;
+
+    sectionIndex += 1;
+    if (sectionIndex > afterSectionIndex) {
+      insertAtLine = lineIndex;
+      break;
+    }
+  }
+
+  const before = lines.slice(0, insertAtLine).join('\n').trimEnd();
+  const after = lines.slice(insertAtLine).join('\n').trimStart();
+
+  return [before, sectionBlock.trim(), after]
+    .filter(Boolean)
+    .join('\n\n');
+};
+
 const EditableCell = ({ cancionId, campoBd, valorInicial, onSave, isSaving, anchoClases = "min-w-[8rem]", customInputClasses = "" }) => {
   const [valor, setValor] = useState(valorInicial || '');
 
@@ -1426,6 +1460,7 @@ export default function AdminRepertorio() {
           cueMarkersDetected: 0,
           language: String(result?.language || 'es').toUpperCase(),
           fallback: 'uniform',
+          repeatSuggestions: [],
         });
         return;
       }
@@ -1458,6 +1493,7 @@ export default function AdminRepertorio() {
             (sum, marker) => sum + (Array.isArray(marker?.cueMarkers) ? marker.cueMarkers.length : 0),
             0,
           ),
+          repeatSuggestions: Array.isArray(result?.repeatSuggestions) ? result.repeatSuggestions : [],
           language: String(result?.language || 'es').toUpperCase(),
           fallback: null,
         });
@@ -1470,6 +1506,50 @@ export default function AdminRepertorio() {
     } finally {
       setIsAutoDetecting(false);
     }
+  };
+
+  const aplicarRepeatSuggestion = (suggestion, suggestionIndex) => {
+    const sectionBlock = buildRepeatSectionBlock(suggestion);
+    if (!sectionBlock) return;
+
+    const suggestedStartSec = Number(suggestion?.startSec);
+    const timeBasedInsertionIndex = Number.isFinite(suggestedStartSec)
+      ? editorSectionMarkers.reduce((lastIndex, marker, markerIndex) => (
+        marker?.startSec != null && Number(marker.startSec) < suggestedStartSec ? markerIndex : lastIndex
+      ), -1)
+      : -1;
+    const fallbackInsertionIndex = Number.isFinite(Number(suggestion?.insertAfterIndex))
+      ? Number(suggestion.insertAfterIndex)
+      : -1;
+    const insertionIndex = Math.max(timeBasedInsertionIndex, fallbackInsertionIndex);
+    const nextChordpro = insertChordProSectionAfterIndex(editorChordproValor, insertionIndex, sectionBlock);
+    const nextRawMarkers = [...editorSectionMarkers];
+    const markerInsertionIndex = Math.min(nextRawMarkers.length, Math.max(0, insertionIndex + 1));
+
+    nextRawMarkers.splice(markerInsertionIndex, 0, {
+      sectionName: String(suggestion?.suggestedName || 'Repeticion'),
+      startSec: Number.isFinite(suggestedStartSec) ? Math.round(suggestedStartSec) : null,
+      cueMarkers: [],
+      note: '',
+      _autoDetected: true,
+      _confidence: Number(suggestion?.confidence) || 0.62,
+      _method: 'repeat-detected',
+    });
+
+    setEditorChordproValor(nextChordpro);
+    setEditorSectionMarkers(normalizeSectionMarkers(parseChordProSections(nextChordpro), nextRawMarkers));
+    setAutoDetectResult((prev) => {
+      if (!prev) return prev;
+      const repeatSuggestions = Array.isArray(prev.repeatSuggestions)
+        ? prev.repeatSuggestions.filter((_, index) => index !== suggestionIndex)
+        : [];
+      return {
+        ...prev,
+        repeatSuggestions,
+        appliedRepeats: (Number(prev.appliedRepeats) || 0) + 1,
+      };
+    });
+    setEditorChordproAviso(`Se agrego ${suggestion?.suggestedName || 'la repeticion'} como seccion editable. Revisa el marker antes de guardar.`);
   };
 
   const editorAudioProgress = editorAudioDuration > 0
@@ -1952,7 +2032,7 @@ export default function AdminRepertorio() {
                             <span className="text-xs font-medium text-emerald-400">
                               {autoDetectResult.fallback === 'uniform'
                                 ? `Distribucion uniforme aplicada (${autoDetectResult.language})`
-                                : `${autoDetectResult.matched} detectados${autoDetectResult.hybrid > 0 ? `, ${autoDetectResult.hybrid} hibridos` : ''}${autoDetectResult.interpolated > 0 ? `, ${autoDetectResult.interpolated} interpolados` : ''}${autoDetectResult.failed > 0 ? `, ${autoDetectResult.failed} sin match` : ''}${autoDetectResult.cueMarkersDetected > 0 ? `, ${autoDetectResult.cueMarkersDetected} cues` : ''} (${autoDetectResult.language})`}
+                                : `${autoDetectResult.matched} detectados${autoDetectResult.hybrid > 0 ? `, ${autoDetectResult.hybrid} hibridos` : ''}${autoDetectResult.interpolated > 0 ? `, ${autoDetectResult.interpolated} interpolados` : ''}${autoDetectResult.failed > 0 ? `, ${autoDetectResult.failed} sin match` : ''}${autoDetectResult.cueMarkersDetected > 0 ? `, ${autoDetectResult.cueMarkersDetected} cues` : ''}${Array.isArray(autoDetectResult.repeatSuggestions) && autoDetectResult.repeatSuggestions.length > 0 ? `, ${autoDetectResult.repeatSuggestions.length} repeticiones sugeridas` : ''} (${autoDetectResult.language})`}
                             </span>
                           ) : (
                             <span className="text-[11px] text-content-muted">
@@ -1960,6 +2040,25 @@ export default function AdminRepertorio() {
                             </span>
                           )}
                         </div>
+                        {Array.isArray(autoDetectResult?.repeatSuggestions) && autoDetectResult.repeatSuggestions.length > 0 && (
+                          <div className="mt-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-2">
+                            <p className="text-[11px] font-semibold text-amber-300">
+                              Posibles repeticiones faltantes. Agregalas solo si coinciden con la estructura real.
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {autoDetectResult.repeatSuggestions.map((suggestion, suggestionIndex) => (
+                                <button
+                                  key={`${suggestion.suggestedName}-${suggestion.startSec}-${suggestionIndex}`}
+                                  type="button"
+                                  onClick={() => aplicarRepeatSuggestion(suggestion, suggestionIndex)}
+                                  className="inline-flex min-h-[30px] items-center rounded-lg border border-amber-400/30 bg-background px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-amber-300 transition-colors hover:bg-amber-500/15"
+                                >
+                                  Agregar {suggestion.suggestedName} · {formatMarkerTime(suggestion.startSec)}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1981,6 +2080,8 @@ export default function AdminRepertorio() {
                                     ? 'bg-yellow-950/70 text-yellow-400'
                                     : marker._method === 'hybrid-structure'
                                       ? 'bg-sky-950/70 text-sky-300'
+                                      : marker._method === 'repeat-detected'
+                                        ? 'bg-amber-950/70 text-amber-300'
                                       : marker._method === 'interpolated' || marker._method === 'uniform'
                                         ? 'bg-yellow-950/70 text-yellow-400'
                                         : 'bg-red-950/70 text-red-400'
@@ -1989,6 +2090,8 @@ export default function AdminRepertorio() {
                                     ? `IA ${Math.round((marker._confidence || 0) * 100)}%`
                                     : marker._method === 'hybrid-structure'
                                       ? 'Hibrido'
+                                      : marker._method === 'repeat-detected'
+                                        ? 'Repeticion'
                                       : marker._method === 'interpolated'
                                         ? 'Interpolado'
                                         : marker._method === 'uniform'
