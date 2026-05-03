@@ -370,7 +370,7 @@ export default function ModalEvento() {
 
     return (
         <div id="event-modal-react" role="dialog" aria-modal="true" data-ui-modal="true" className="fixed inset-0 z-[80] min-h-[100dvh] bg-overlay/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 pt-6 pb-[calc(104px+env(safe-area-inset-bottom))] lg:items-center lg:p-6 transition-opacity">
-            <div className="bg-surface border border-border rounded-3xl w-full max-w-2xl max-h-[calc(100dvh-132px-env(safe-area-inset-bottom))] lg:max-h-[calc(100dvh-96px)] overflow-hidden shadow-2xl flex flex-col transform my-auto lg:my-0">
+            <div className="bg-surface border border-border rounded-3xl w-full max-w-2xl lg:max-w-4xl xl:max-w-5xl max-h-[calc(100dvh-132px-env(safe-area-inset-bottom))] lg:max-h-[calc(100dvh-120px-env(safe-area-inset-bottom))] overflow-hidden shadow-2xl flex flex-col transform my-auto lg:my-0">
                 <div className="p-6 border-b border-border flex justify-between items-center bg-background sticky top-0 z-10">
                     <h2 id="modal-title" className="text-xl font-bold text-content ">
                         {mode === 'new' ? 'Nuevo Evento' : 'Gestionar Evento'}
@@ -490,6 +490,7 @@ export default function ModalEvento() {
                                 evEstadoStr={estado}
                                 esAcustico={esAcustico}
                                 isStrictModerator={isStrictModerator}
+                                canEditRoster={mode === 'edit'}
                                 dbData={dbData}
                                 onRosterChange={(nextAsignaciones) => {
                                     setDbData((prev) => (
@@ -564,5 +565,3 @@ export default function ModalEvento() {
         </div>
     );
 }
-
-

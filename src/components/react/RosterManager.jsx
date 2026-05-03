@@ -3,6 +3,16 @@ import { supabase } from '../../lib/supabase';
 import { getAssignmentProfileId, getVisibleVoiceAssignments, normalizeRosterAssignments } from '../../lib/roster-utils';
 
 const MAX_VOZ_SLOTS = 4;
+const HIDDEN_ASSIGNMENT_ROLE_CODES = new Set(['audiovisuales', 'pastor']);
+
+const isHiddenAssignmentRole = (role) =>
+    HIDDEN_ASSIGNMENT_ROLE_CODES.has(String(role?.codigo || '').trim().toLowerCase());
+
+const isMissingRpcFunctionError = (error) => {
+    const code = String(error?.code || '');
+    const message = String(error?.message || '').toLowerCase();
+    return code === '42883' || code === 'PGRST202' || message.includes('function') || message.includes('schema cache');
+};
 
 const normalizeEventDateString = (value) => {
     const raw = String(value || '').trim();
@@ -50,7 +60,7 @@ const notifyAssignmentRecipients = async ({ eventoId, perfilIds }) => {
     }
 };
 
-export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr, evEstadoStr, esAcustico = false, isStrictModerator, dbData, onRosterChange }) {
+export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr, evEstadoStr, esAcustico = false, isStrictModerator, canEditRoster = !isStrictModerator, dbData, onRosterChange }) {
     const [asignaciones, setAsignaciones] = useState(dbData?.asignaciones || []);
     const [roles, setRoles] = useState([]);
 
@@ -100,9 +110,14 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         ];
     }, [roles, esAcustico]);
 
+    const assignableRoles = useMemo(
+        () => effectiveRoles.filter((rol) => !isHiddenAssignmentRole(rol)),
+        [effectiveRoles],
+    );
+
     const normalizedAssignments = useMemo(
-        () => normalizeRosterAssignments(asignaciones, effectiveRoles, { maxVoiceSlots: MAX_VOZ_SLOTS }),
-        [asignaciones, effectiveRoles],
+        () => normalizeRosterAssignments(asignaciones, assignableRoles, { maxVoiceSlots: MAX_VOZ_SLOTS }),
+        [asignaciones, assignableRoles],
     );
 
     const broadcastRosterChange = (nextAssignments) => {
@@ -122,6 +137,42 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         if (result?.ok || result?.skipped) return;
         console.error('Assignment notification warning:', result);
         alert('La asignacion se guardo, pero no se pudo programar la notificacion automatica.');
+    };
+
+    const replaceRoleAssignment = async ({ perfilId, rolId }) => {
+        const rpcResponse = await supabase.rpc('replace_event_assignment', {
+            p_evento_id: evId,
+            p_perfil_id: perfilId,
+            p_rol_id: rolId,
+        });
+
+        if (!rpcResponse.error || !isMissingRpcFunctionError(rpcResponse.error)) {
+            return rpcResponse;
+        }
+
+        await supabase.from('asignaciones').delete()
+            .eq('evento_id', evId)
+            .eq('rol_id', rolId);
+
+        return supabase.from('asignaciones').insert([{
+            evento_id: evId,
+            perfil_id: perfilId,
+            rol_id: rolId
+        }]);
+    };
+
+    const replaceRosterAssignments = async (bulkPayload) => {
+        const rpcResponse = await supabase.rpc('replace_event_assignments', {
+            p_evento_id: evId,
+            p_assignments: bulkPayload,
+        });
+
+        if (!rpcResponse.error || !isMissingRpcFunctionError(rpcResponse.error)) {
+            return rpcResponse;
+        }
+
+        await supabase.from('asignaciones').delete().eq('evento_id', evId);
+        return supabase.from('asignaciones').insert(bulkPayload);
     };
 
     const resolveEventDateStr = async () => {
@@ -241,11 +292,11 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
     };
 
     useEffect(() => {
-        if (!dbData?.asignaciones || effectiveRoles.length === 0) return;
+        if (!dbData?.asignaciones || assignableRoles.length === 0) return;
         setAsignaciones(
-            normalizeRosterAssignments(dbData.asignaciones, effectiveRoles, { maxVoiceSlots: MAX_VOZ_SLOTS }),
+            normalizeRosterAssignments(dbData.asignaciones, assignableRoles, { maxVoiceSlots: MAX_VOZ_SLOTS }),
         );
-    }, [dbData, effectiveRoles]);
+    }, [dbData, assignableRoles]);
 
     const fetchCurrentRoster = async () => {
         if (!evId || evId.startsWith('virtual|')) return;
@@ -255,16 +306,16 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
             .eq('id', evId)
             .single();
         if (data) {
-            const nextAssignments = normalizeRosterAssignments(data.asignaciones || [], effectiveRoles, { maxVoiceSlots: MAX_VOZ_SLOTS });
+            const nextAssignments = normalizeRosterAssignments(data.asignaciones || [], assignableRoles, { maxVoiceSlots: MAX_VOZ_SLOTS });
             setAsignaciones(nextAssignments);
             broadcastRosterChange(nextAssignments);
         }
     };
 
     useEffect(() => {
-        if (!evId || evId.startsWith('virtual|') || effectiveRoles.length === 0) return;
+        if (!evId || evId.startsWith('virtual|') || assignableRoles.length === 0) return;
         fetchCurrentRoster();
-    }, [evId, effectiveRoles]);
+    }, [evId, assignableRoles]);
 
     const handleRemove = async (assignmentId, rolId = null) => {
         if (!evId || evId.startsWith('virtual|')) return;
@@ -308,7 +359,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         }
 
         const isVoicePool = rId === '_voz_pool';
-        const voiceRoles = effectiveRoles.filter((rol) => String(rol.codigo || '').startsWith('voz_'));
+        const voiceRoles = assignableRoles.filter((rol) => String(rol.codigo || '').startsWith('voz_'));
         const voiceRoleIds = voiceRoles.map((rol) => rol.id);
 
         const perfilesRoles = isVoicePool
@@ -350,7 +401,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                 return {
                     ...p,
                     realRolId: d.rol_id,
-                    realRolNombre: effectiveRoles.find(rol => rol.id === d.rol_id)?.nombre || rName,
+                    realRolNombre: assignableRoles.find(rol => rol.id === d.rol_id)?.nombre || rName,
                     ausente: blockedByProfileId.has(String(p?.id || '').trim()),
                     ausenteMotivo: ausenciaMotivo
                 };
@@ -363,7 +414,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         setPickerLoading(true);
         const saveRolId = forcedRolId || pickerRolId;
         const isVoicePool = pickerRolId === '_voz_pool';
-        const voiceRoleIds = effectiveRoles
+        const voiceRoleIds = assignableRoles
             .filter((rol) => String(rol.codigo || '').startsWith('voz_'))
             .map((rol) => rol.id);
         const eventDateStr = await resolveEventDateStr();
@@ -436,7 +487,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         }
 
         // Validation for exclusive instrument assignment
-        const newRol = effectiveRoles.find(r => r.id === saveRolId);
+        const newRol = assignableRoles.find(r => r.id === saveRolId);
         if (newRol) {
             const isN1 = ['lider_alabanza', 'talkback'].includes(newRol.codigo);
             const isN2 = ['encargado_letras'].includes(newRol.codigo);
@@ -448,7 +499,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                 const userExistingAsig = normalizedAssignments.filter(a => getAssignmentProfileId(a) === perfilId);
                 const hasConflictingInstrument = userExistingAsig.some(a => {
                     if (a.rol_id === saveRolId) return false; // same role is fine to overwrite
-                    const existingRol = effectiveRoles.find(r => r.id === a.rol_id);
+                    const existingRol = assignableRoles.find(r => r.id === a.rol_id);
                     if (!existingRol) return false;
                     const eIsN1 = ['lider_alabanza', 'talkback'].includes(existingRol.codigo);
                     const eIsN2 = ['encargado_letras'].includes(existingRol.codigo);
@@ -473,17 +524,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
             return;
         }
 
-        // Clean first
-        await supabase.from('asignaciones').delete()
-            .eq('evento_id', evId)
-            .eq('rol_id', saveRolId);
-
-        // Insert new
-        const { error } = await supabase.from('asignaciones').insert([{
-            evento_id: evId,
-            perfil_id: perfilId,
-            rol_id: saveRolId
-        }]);
+        const { error } = await replaceRoleAssignment({ perfilId, rolId: saveRolId });
 
         setPickerLoading(false);
         if (!error) {
@@ -535,13 +576,22 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                 return;
             }
 
+            const assignableRoleIds = new Set(assignableRoles.map((rol) => rol.id));
+            const eligibleBlueprint = blueprint.filter((item) => assignableRoleIds.has(item.rol_maestro));
+
+            if (eligibleBlueprint.length === 0) {
+                alert('Este equipo no tiene roles programables para asignaciones.');
+                setEquipoLoading(false);
+                return;
+            }
+
             const { blockedIds, blockedNames, error: blockedError } = await loadBlockedProfilesForEvent(
-                blueprint.map((item) => item.perfil_id)
+                eligibleBlueprint.map((item) => item.perfil_id)
             );
 
             if (blockedError) throw blockedError;
 
-            const bulkPayload = blueprint
+            const bulkPayload = eligibleBlueprint
                 .filter((item) => !blockedIds.has(String(item?.perfil_id || '').trim()))
                 .map(item => ({
                 evento_id: evId,
@@ -557,8 +607,6 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                 setEquipoLoading(false);
                 return;
             }
-
-            await supabase.from('asignaciones').delete().eq('evento_id', evId);
 
             const currentAssignmentKeys = new Set(
                 normalizedAssignments
@@ -577,8 +625,8 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                 )
             ];
 
-            const { error: insError } = await supabase.from('asignaciones').insert(bulkPayload);
-            if (insError) throw insError;
+            const { error: replaceError } = await replaceRosterAssignments(bulkPayload);
+            if (replaceError) throw replaceError;
 
             setEquipoPickerOpen(false);
             const [_, notifyResult] = await Promise.all([
@@ -601,22 +649,22 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
     };
 
     const renderEmptySlot = (rolMap, { forceVisible = false, label = null, keySuffix = '' } = {}) => {
-        const isDisabled = isStrictModerator && !forceVisible;
+        const isDisabled = !canEditRoster && !forceVisible;
         if (isDisabled) return null;
         return (
             <button
                 key={`empty-${rolMap.id}-${label || rolMap.nombre}-${keySuffix}`}
                 type="button"
                 onClick={() => {
-                    if (isStrictModerator) return;
+                    if (!canEditRoster) return;
                     openPicker(
                         rolMap.id,
                         label || rolMap.nombre,
                         Number.isInteger(keySuffix) ? keySuffix : null
                     );
                 }}
-                className={`btn-roster-inline empty-slot inline-flex whitespace-nowrap px-4 h-9 items-center justify-center gap-1.5 rounded-full border border-dashed border-border text-[11px] font-bold leading-none text-content-muted uppercase tracking-widest transition-all ${isStrictModerator ? 'cursor-default opacity-55' : 'hover:border-brand/30 hover:text-brand hover:bg-brand/10'}`}
-                disabled={isStrictModerator}
+                className={`btn-roster-inline empty-slot inline-flex whitespace-nowrap px-4 h-9 items-center justify-center gap-1.5 rounded-full border border-dashed border-border text-[11px] font-bold leading-none text-content-muted uppercase tracking-widest transition-all ${!canEditRoster ? 'cursor-default opacity-55' : 'hover:border-brand/30 hover:text-brand hover:bg-brand/10'}`}
+                disabled={!canEditRoster}
             >
                 {(label || rolMap.nombre).split(' ')[0]} <span className="font-normal opacity-60 text-lg leading-none mt-[-2px]">+</span>
             </button>
@@ -638,7 +686,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         const colorSeccion = isN1 ? 'bg-rol-dir' : (isN2 ? 'bg-rol-let' : (isVoz ? 'bg-rol-voc' : 'bg-rol-ban'));
 
         return (
-            <div key={asig.id || `${asig.rol_id}-${assignmentProfileId}`} className="flex flex-col items-center gap-1 group relative cursor-pointer hover:bg-neutral/20 rounded-xl p-2 -m-2 transition-colors" title={`${p.nombre} (${rolMatch.nombre})`} onClick={() => !isStrictModerator && openPicker(rolMatch.id, rolMatch.nombre)}>
+            <div key={asig.id || `${asig.rol_id}-${assignmentProfileId}`} className="flex flex-col items-center gap-1 group relative cursor-pointer hover:bg-neutral/20 rounded-xl p-2 -m-2 transition-colors" title={`${p.nombre} (${rolMatch.nombre})`} onClick={() => canEditRoster && openPicker(rolMatch.id, rolMatch.nombre)}>
                 <div className="relative">
                     {p.avatar_url ? (
                         <img src={p.avatar_url} alt={p.nombre} loading="lazy" decoding="async" className="w-[42px] h-[42px] sm:w-[46px] sm:h-[46px] shrink-0 rounded-full object-cover shadow-sm border border-border" />
@@ -647,7 +695,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                             {iniciales.toUpperCase()}
                         </div>
                     )}
-                    {!isStrictModerator && (
+                    {canEditRoster && (
                         <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); handleRemove(asig.id, asig.rol_id); }}
@@ -660,7 +708,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                     )}
                 </div>
                 <span className="text-[11px] font-semibold text-content capitalize max-w-[60px] truncate text-center leading-none tracking-tight">{displayName}</span>
-                {!isStrictModerator && (
+                {canEditRoster && (
                     <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); handleRemove(asig.id, asig.rol_id); }}
@@ -679,17 +727,17 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
     const direccion = [];
     const letras = [];
     const banda = [];
-    const voiceRoles = effectiveRoles.filter(rol => String(rol.codigo || '').startsWith('voz_'));
+    const voiceRoles = assignableRoles.filter(rol => String(rol.codigo || '').startsWith('voz_'));
     const voiceRoleIds = new Set(voiceRoles.map((rol) => rol.id));
     const voicePoolRole = { id: '_voz_pool', nombre: 'Voz' };
-    const vocesAsignadas = getVisibleVoiceAssignments(normalizedAssignments, effectiveRoles, { maxVoiceSlots: MAX_VOZ_SLOTS })
+    const vocesAsignadas = getVisibleVoiceAssignments(normalizedAssignments, assignableRoles, { maxVoiceSlots: MAX_VOZ_SLOTS })
         .map((asig) => {
-            const rolMatch = effectiveRoles.find((rol) => rol.id === asig.rol_id) || voiceRoles[0];
+            const rolMatch = assignableRoles.find((rol) => rol.id === asig.rol_id) || voiceRoles[0];
             return rolMatch ? renderAvatar(asig, rolMatch) : null;
         })
         .filter(Boolean);
 
-    effectiveRoles.forEach(rolMatch => {
+    assignableRoles.forEach(rolMatch => {
         const isN1 = ['lider_alabanza', 'talkback'].includes(rolMatch.codigo);
         const isN2 = ['encargado_letras'].includes(rolMatch.codigo);
         const isVoz = String(rolMatch.codigo || '').startsWith('voz_');
@@ -773,7 +821,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                 </div>
             </div>
 
-            {!isStrictModerator && (
+            {canEditRoster && (
                 <button type="button" onClick={openEquipoPicker} className="w-full py-3.5 bg-info/10 text-info border border-info/30 border-dashed rounded-xl text-sm font-bold hover:bg-info/20 hover:text-info transition-colors flex items-center justify-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="m19 11-4-4v8" /><path d="m11 15 4 4" /></svg> Autocompletar Equipo Base
                 </button>

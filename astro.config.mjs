@@ -8,6 +8,15 @@ import netlify from '@astrojs/netlify';
 
 import react from '@astrojs/react';
 
+const isDevCommand = process.argv.includes('dev');
+
+const reactAliases = [
+  {
+    find: /^react\/jsx-runtime$/,
+    replacement: fileURLToPath(new URL('./src/lib/react-jsx-runtime-shim.js', import.meta.url))
+  }
+];
+
 // https://astro.build/config
 export default defineConfig({
   output: 'server',
@@ -23,15 +32,12 @@ export default defineConfig({
   vite: {
     plugins: [tailwindcss()],
     optimizeDeps: {
+      include: ['react-dom/client'],
+      needsInterop: ['react-dom/client'],
       exclude: ['@supabase/supabase-js', 'lucide-react'],
     },
     resolve: {
-      alias: [
-        {
-          find: /^react\/jsx-runtime$/,
-          replacement: fileURLToPath(new URL('./src/lib/react-jsx-runtime-shim.js', import.meta.url))
-        }
-      ]
+      alias: reactAliases
     }
   },
 

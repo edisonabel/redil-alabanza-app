@@ -4,6 +4,12 @@ import {
   buildAudioActivityEnvelope,
   type TrackActivityEnvelope,
 } from '../utils/audioActivityEnvelope';
+import {
+  formatDiagnosticBytes,
+  logLiveDiagnostic,
+  readLiveBrowserCapabilities,
+  warnLiveDiagnostic,
+} from '../utils/liveDiagnostics';
 
 type WindowWithWebkitAudio = Window & typeof globalThis & {
   webkitAudioContext?: typeof AudioContext;
@@ -106,6 +112,7 @@ const MEDIA_MONITOR_INTERVAL_MEDIUM_MS = 180;
 const MEDIA_MONITOR_INTERVAL_SLOW_MS = 250;
 const MEDIA_SYNC_TOLERANCE_SECONDS = 0.12;
 const MEDIA_LOOP_EPSILON_SECONDS = 0.05;
+const MEDIA_DRIFT_DIAGNOSTIC_THROTTLE_MS = 2_500;
 
 const isAbortError = (error: unknown) =>
   (error instanceof DOMException && error.name === 'AbortError') ||
@@ -239,6 +246,7 @@ export class MultitrackEngine {
   private loopStartTime = 0;
   private loopEndTime = 0;
   private mediaMonitorId: number | null = null;
+  private lastMediaDriftDiagnosticAt = 0;
   private readonly activeLoadControllers = new Set<AbortController>();
 
   constructor() {
@@ -271,6 +279,18 @@ export class MultitrackEngine {
     this.cleanupTrackResources([...this.tracks, ...trackList]);
     this.mode = this.shouldUseMediaMode(trackList) ? 'media' : 'buffer';
     console.log(`[MultitrackEngine] Using ${this.mode} mode.`);
+    logLiveDiagnostic('engine:selected', {
+      engineMode: this.mode,
+      trackCount: trackList.length,
+      thresholdDesktopMediaTracks: STREAMING_TRACK_THRESHOLD,
+      thresholdMobileMediaTracks: MOBILE_BUFFER_TRACK_LIMIT + 1,
+      isMobileDevice: this.isMobileDevice(),
+      recommendation:
+        this.mode === 'media'
+          ? 'Media mode uses one HTMLAudioElement per track; watch drift warnings on Safari/macOS.'
+          : 'Buffer mode uses one AudioContext clock and is the preferred sync baseline.',
+      browser: readLiveBrowserCapabilities(),
+    });
 
     const onProgress = options?.onProgress;
     if (onProgress) {
@@ -294,6 +314,11 @@ export class MultitrackEngine {
       this.tracks = loadedTracks;
       this.syncAllTrackGains();
       console.log(`[MultitrackEngine] Loaded ${loadedTracks.length} track(s) successfully.`);
+      const diagnostics = this.getDiagnostics();
+      logLiveDiagnostic('engine:loaded', {
+        ...diagnostics,
+        estimatedAudioMemory: formatDiagnosticBytes(diagnostics.estimatedAudioMemoryBytes),
+      });
       return loadedTracks;
     } catch (error) {
       this.abortPendingLoads();
@@ -913,7 +938,7 @@ export class MultitrackEngine {
       const primaryTrack = this.getPrimaryPlayableMediaTrack(0) || playableTracks[0];
       const primaryTime = primaryTrack.mediaElement.currentTime;
 
-      playableTracks.forEach(({ mediaElement, gainNode, duration }) => {
+      playableTracks.forEach(({ track, mediaElement, gainNode, duration }) => {
         if (this.isLooping) {
           const loopStart = this.clampOffsetForDuration(this.loopStartTime, duration);
           const loopEnd =
@@ -938,11 +963,52 @@ export class MultitrackEngine {
           return;
         }
 
-        if (Math.abs(mediaElement.currentTime - primaryTime) > MEDIA_SYNC_TOLERANCE_SECONDS) {
+        const driftSeconds = mediaElement.currentTime - primaryTime;
+
+        if (Math.abs(driftSeconds) > MEDIA_SYNC_TOLERANCE_SECONDS) {
+          this.reportMediaDriftCorrection({
+            driftSeconds,
+            track,
+            mediaElement,
+            primaryTime,
+            mediaMonitorIntervalMs,
+          });
           mediaElement.currentTime = this.clampOffsetForDuration(primaryTime, duration);
         }
       });
     }, mediaMonitorIntervalMs);
+  }
+
+  private reportMediaDriftCorrection({
+    driftSeconds,
+    track,
+    mediaElement,
+    primaryTime,
+    mediaMonitorIntervalMs,
+  }: {
+    driftSeconds: number;
+    track: TrackData;
+    mediaElement: HTMLAudioElement;
+    primaryTime: number;
+    mediaMonitorIntervalMs: number;
+  }): void {
+    const now = performance.now();
+    if (now - this.lastMediaDriftDiagnosticAt < MEDIA_DRIFT_DIAGNOSTIC_THROTTLE_MS) {
+      return;
+    }
+
+    this.lastMediaDriftDiagnosticAt = now;
+    warnLiveDiagnostic('media:drift-corrected', {
+      trackId: track.id,
+      trackName: track.name,
+      driftMs: Math.round(driftSeconds * 1000),
+      trackTime: mediaElement.currentTime,
+      primaryTime,
+      toleranceMs: Math.round(MEDIA_SYNC_TOLERANCE_SECONDS * 1000),
+      monitorIntervalMs: mediaMonitorIntervalMs,
+      recommendation:
+        'If this repeats, test buffer mode with fewer tracks or streaming mode where WebCodecs/AudioWorklet are supported.',
+    });
   }
 
   private stopMediaMonitor(): void {

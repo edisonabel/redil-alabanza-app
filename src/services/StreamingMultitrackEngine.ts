@@ -3,6 +3,11 @@ import type { TrackData } from './MultitrackEngine';
 import * as MP4Box from 'mp4box';
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
 import { normalizeTrackOutputRoute, resolveTrackOutputRoute } from '../utils/liveDirectorTrackRouting';
+import {
+  logLiveDiagnostic,
+  readLiveBrowserCapabilities,
+  warnLiveDiagnostic,
+} from '../utils/liveDiagnostics';
 
 type WindowWithWebkitAudio = Window & typeof globalThis & {
   webkitAudioContext?: typeof AudioContext;
@@ -344,17 +349,18 @@ export class StreamingMultitrackEngine {
     this.masterGain = this.context.createGain();
     this.masterGain.connect(this.context.destination);
 
-    console.info('[LDWEBDBG] engine:init', {
+    logLiveDiagnostic('streaming:engine-init', {
       contextRate: this.context.sampleRate,
       contextState: this.context.state,
       requestedRate: this.defaultSampleRate,
       bufferSeconds: this.defaultBufferSeconds,
       sharedArrayBuffer: typeof SharedArrayBuffer === 'function',
       crossOriginIsolated: window.crossOriginIsolated === true,
+      browser: readLiveBrowserCapabilities(),
     });
 
     this.context.addEventListener('statechange', () => {
-      console.warn('[LDWEBDBG] audio-context:state', {
+      warnLiveDiagnostic('streaming:audio-context-state', {
         state: this.context.state,
         currentTime: this.context.currentTime,
       });
@@ -455,7 +461,7 @@ export class StreamingMultitrackEngine {
       this.normalizeTrackDefinition(trackDefinition),
     );
 
-    console.info('[LDWEBDBG] init', {
+    logLiveDiagnostic('streaming:init', {
       tracks: normalizedTracks.length,
       contextRate: this.context.sampleRate,
       contextState: this.context.state,
@@ -519,7 +525,7 @@ export class StreamingMultitrackEngine {
     await this.resumeContextIfNeeded();
     this.startTime = this.context.currentTime - this.pauseTime;
     this.transportPlaying = true;
-    console.info('[LDWEBDBG] transport:play', {
+    logLiveDiagnostic('streaming:transport-play', {
       currentTime: this.context.currentTime,
       startTime: this.startTime,
       pauseTime: this.pauseTime,
@@ -540,7 +546,7 @@ export class StreamingMultitrackEngine {
     this.pauseTime = this.getCurrentTime();
     this.startTime = 0;
     this.transportPlaying = false;
-    console.info('[LDWEBDBG] transport:pause', {
+    logLiveDiagnostic('streaming:transport-pause', {
       pauseTime: this.pauseTime,
       contextTime: this.context.currentTime,
       contextState: this.context.state,
@@ -559,7 +565,7 @@ export class StreamingMultitrackEngine {
     this.startTime = 0;
     this.restartFromHead = this.tracks.length > 0;
     this.transportPlaying = false;
-    console.info('[LDWEBDBG] transport:stop', {
+    logLiveDiagnostic('streaming:transport-stop', {
       contextTime: this.context.currentTime,
       contextState: this.context.state,
       tracks: this.trackStates.length,
@@ -800,7 +806,7 @@ export class StreamingMultitrackEngine {
       fallbackDrainScratch: new Float32Array(AAC_FRAME_SIZE),
     };
 
-    console.info('[LDWEBDBG] track:create', {
+    logLiveDiagnostic('streaming:track-create', {
       index,
       container: trackDefinition.container,
       codec: trackDefinition.codec,
@@ -813,7 +819,7 @@ export class StreamingMultitrackEngine {
     });
 
     if (!ringBuffer.usesSharedMemory) {
-      console.warn('[LDWEBDBG] fallback-buffer-mode', {
+      warnLiveDiagnostic('streaming:fallback-buffer-mode', {
         index,
         reason: 'SharedArrayBuffer unavailable; watching for 3s local-buffer underrun.',
       });
@@ -1028,7 +1034,7 @@ export class StreamingMultitrackEngine {
 
       if (!trackState.readyResolved && trackState.ringBuffer.availableRead() > 0) {
         trackState.readyResolved = true;
-        console.info('[LDWEBDBG] track:ready', {
+        logLiveDiagnostic('streaming:track-ready', {
           index: trackState.index,
           shared: trackState.ringBuffer.usesSharedMemory,
           availableRead: trackState.ringBuffer.availableRead(),
@@ -1138,7 +1144,7 @@ export class StreamingMultitrackEngine {
       const now = performance.now();
       if (now - trackState.lastFetchWaitDebugAt > 1000) {
         trackState.lastFetchWaitDebugAt = now;
-        console.warn('[LDWEBDBG] fetch-window-wait', {
+        warnLiveDiagnostic('streaming:fetch-window-wait', {
           index: trackState.index,
           shared: trackState.ringBuffer.usesSharedMemory,
           availableRead: trackState.ringBuffer.availableRead(),
@@ -1169,7 +1175,7 @@ export class StreamingMultitrackEngine {
       const now = performance.now();
       if (now - trackState.lastDecodeWaitDebugAt > 1000) {
         trackState.lastDecodeWaitDebugAt = now;
-        console.warn('[LDWEBDBG] decode-window-wait', {
+        warnLiveDiagnostic('streaming:decode-window-wait', {
           index: trackState.index,
           shared: trackState.ringBuffer.usesSharedMemory,
           availableRead: trackState.ringBuffer.availableRead(),
@@ -1410,20 +1416,20 @@ export class StreamingMultitrackEngine {
         message.audibleZeroTracks > 0 ||
         (Number.isFinite(message.minAvailableRead) && message.minAvailableRead < AAC_FRAME_SIZE);
       if (shouldWarn) {
-        console.warn('[LDWEBDBG] worklet', message);
+        warnLiveDiagnostic('streaming:worklet-status', { message });
       } else {
-        console.info('[LDWEBDBG] worklet', message);
+        logLiveDiagnostic('streaming:worklet-status', { message });
       }
       return;
     }
 
     if (message.type === 'debug-transport') {
-      console.info('[LDWEBDBG] worklet:transport', message);
+      logLiveDiagnostic('streaming:worklet-transport', { message });
       return;
     }
 
     if (message.type === 'debug-drop') {
-      console.warn('[LDWEBDBG] worklet:drop', message);
+      warnLiveDiagnostic('streaming:worklet-drop', { message });
       return;
     }
 

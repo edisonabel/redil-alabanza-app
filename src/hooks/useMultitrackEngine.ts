@@ -3,6 +3,12 @@ import { MultitrackEngine, type TrackData } from '../services/MultitrackEngine';
 import { StreamingMultitrackEngine } from '../services/StreamingMultitrackEngine';
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
 import type { TrackActivityEnvelope } from '../utils/audioActivityEnvelope';
+import {
+  errorLiveDiagnostic,
+  logLiveDiagnostic,
+  readLiveBrowserCapabilities,
+  warnLiveDiagnostic,
+} from '../utils/liveDiagnostics';
 
 type TrackVolumesState = Record<string, number>;
 type TrackLevelsState = Record<string, number>;
@@ -335,6 +341,13 @@ export function useMultitrackEngine(
       if (isAllAacFamily && !streamingAutoRouteDisabledRef.current) {
         targetKind = 'streaming';
         console.log('[useMultitrackEngine] Auto-routed to Streaming Engine (large AAC session detected).');
+        logLiveDiagnostic('engine:auto-route-streaming', {
+          requestedEngineKind,
+          targetKind,
+          trackCount: nextTracks.length,
+          reason: 'Large AAC-family session can use the streaming engine.',
+          browser: readLiveBrowserCapabilities(),
+        });
       }
     }
 
@@ -386,12 +399,22 @@ export function useMultitrackEngine(
           console.warn(
             '[useMultitrackEngine] Auto-routing to streaming was disabled for this session after an unsupported decoder configuration.',
           );
+          warnLiveDiagnostic('engine:streaming-auto-route-disabled', {
+            trackCount: nextTracks.length,
+            reason: error instanceof Error ? error.message : String(error),
+            browser: readLiveBrowserCapabilities(),
+          });
         }
 
         console.warn(
           '[useMultitrackEngine] Streaming engine failed decoding or crashed. Gracefully falling back to RAM buffer mode.',
           error,
         );
+        warnLiveDiagnostic('engine:streaming-fallback-buffer', {
+          trackCount: nextTracks.length,
+          reason: error instanceof Error ? error.message : String(error),
+          browser: readLiveBrowserCapabilities(),
+        });
 
         try {
           const fallbackEngine = getEngine('buffer');
@@ -415,6 +438,10 @@ export function useMultitrackEngine(
           return;
         } catch (fallbackError) {
           console.error('[useMultitrackEngine] Fallback buffer mode also failed.', fallbackError);
+          errorLiveDiagnostic('engine:fallback-buffer-failed', {
+            trackCount: nextTracks.length,
+            reason: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+          });
           error = fallbackError;
         }
       }
