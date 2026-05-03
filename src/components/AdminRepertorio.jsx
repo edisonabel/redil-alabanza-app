@@ -378,6 +378,13 @@ const areTimesClose = (left, right, precision = 0.25) => (
   Math.abs((Number(left) || 0) - (Number(right) || 0)) < precision
 );
 
+const toManualMarkerPatch = (patch = {}) => ({
+  ...patch,
+  _autoDetected: false,
+  _confidence: 0,
+  _method: 'manual',
+});
+
 const EditableCell = ({ cancionId, campoBd, valorInicial, onSave, isSaving, anchoClases = "min-w-[8rem]", customInputClasses = "" }) => {
   const [valor, setValor] = useState(valorInicial || '');
 
@@ -432,6 +439,60 @@ const CueMarkersInput = ({ value = [], sectionStartSec = null, onCommit, placeho
       onBlur={commit}
       placeholder={placeholder}
       className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+    />
+  );
+};
+
+const MarkerTimeInput = ({ value = null, onCommit, placeholder = '00:00' }) => {
+  const formattedValue = value == null ? '' : formatMarkerTime(value);
+  const [draft, setDraft] = useState(formattedValue);
+  const [isFocused, setIsFocused] = useState(false);
+  const skipCommitOnBlurRef = useRef(false);
+
+  useEffect(() => {
+    if (!isFocused) {
+      setDraft(formattedValue);
+    }
+  }, [formattedValue, isFocused]);
+
+  const commit = () => {
+    const parsedValue = parseMarkerTime(draft);
+    onCommit(parsedValue);
+    setDraft(parsedValue == null ? '' : formatMarkerTime(parsedValue));
+  };
+
+  const resetDraft = () => {
+    setDraft(formattedValue);
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={draft}
+      onFocus={() => setIsFocused(true)}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        setIsFocused(false);
+        if (skipCommitOnBlurRef.current) {
+          skipCommitOnBlurRef.current = false;
+          setDraft(formattedValue);
+          return;
+        }
+        commit();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.currentTarget.blur();
+        }
+        if (event.key === 'Escape') {
+          skipCommitOnBlurRef.current = true;
+          resetDraft();
+          event.currentTarget.blur();
+        }
+      }}
+      placeholder={placeholder}
+      className="h-9 w-[4.75rem] rounded-lg border border-border bg-background px-2.5 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
     />
   );
 };
@@ -1262,7 +1323,7 @@ export default function AdminRepertorio() {
   const capturarMarkerActual = (markerIndex) => {
     setEditorSectionMarkers((prev) => prev.map((item, itemIndex) => (
       itemIndex === markerIndex
-        ? { ...item, startSec: Math.round(editorAudioCurrentTimeRef.current) }
+        ? { ...item, ...toManualMarkerPatch({ startSec: Math.round(editorAudioCurrentTimeRef.current) }) }
         : item
     )));
   };
@@ -1279,10 +1340,12 @@ export default function AdminRepertorio() {
 
       return {
         ...item,
-        cueMarkers: normalizeCueMarkerTimes(
-          [...(Array.isArray(item?.cueMarkers) ? item.cueMarkers : []), Math.round(editorAudioCurrentTimeRef.current)],
-          item?.startSec ?? null,
-        ),
+        ...toManualMarkerPatch({
+          cueMarkers: normalizeCueMarkerTimes(
+            [...(Array.isArray(item?.cueMarkers) ? item.cueMarkers : []), Math.round(editorAudioCurrentTimeRef.current)],
+            item?.startSec ?? null,
+          ),
+        }),
       };
     }));
   };
@@ -1290,7 +1353,7 @@ export default function AdminRepertorio() {
   const limpiarCueMarkers = (markerIndex) => {
     setEditorSectionMarkers((prev) => prev.map((item, itemIndex) => (
       itemIndex === markerIndex
-        ? { ...item, cueMarkers: [] }
+        ? { ...item, ...toManualMarkerPatch({ cueMarkers: [] }) }
         : item
     )));
   };
@@ -1928,19 +1991,15 @@ export default function AdminRepertorio() {
                                 </span>
                               )}
                             </div>
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              value={marker.startSec == null ? '' : formatMarkerTime(marker.startSec)}
-                              onChange={(e) => {
-                                const nextValue = parseMarkerTime(e.target.value);
-                                actualizarEditorSectionMarker(index, {
+                            <MarkerTimeInput
+                              value={marker.startSec}
+                              onCommit={(nextValue) => {
+                                actualizarEditorSectionMarker(index, toManualMarkerPatch({
                                   startSec: nextValue,
                                   cueMarkers: normalizeCueMarkerTimes(marker?.cueMarkers, nextValue),
-                                });
+                                }));
                               }}
                               placeholder="00:00"
-                              className="h-9 w-[4.75rem] rounded-lg border border-border bg-background px-2.5 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                             />
                             <input
                               type="text"
@@ -1954,7 +2013,7 @@ export default function AdminRepertorio() {
                             <button
                               type="button"
                               onClick={() => {
-                                actualizarEditorSectionMarker(index, { startSec: null, cueMarkers: [] });
+                                actualizarEditorSectionMarker(index, toManualMarkerPatch({ startSec: null, cueMarkers: [] }));
                               }}
                               className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-surface px-2.5 text-[11px] font-bold text-content-muted transition-colors hover:bg-background hover:text-content"
                             >
@@ -2007,7 +2066,7 @@ export default function AdminRepertorio() {
                                 <CueMarkersInput
                                   value={marker.cueMarkers}
                                   sectionStartSec={marker.startSec}
-                                  onCommit={(nextCueMarkers) => actualizarEditorSectionMarker(index, { cueMarkers: nextCueMarkers })}
+                                  onCommit={(nextCueMarkers) => actualizarEditorSectionMarker(index, toManualMarkerPatch({ cueMarkers: nextCueMarkers }))}
                                   placeholder={cueTransitionCount > 1 ? 'Ej: 01:12, 01:18' : 'Ej: 01:12'}
                                 />
 
