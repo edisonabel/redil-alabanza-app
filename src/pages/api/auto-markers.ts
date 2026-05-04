@@ -179,6 +179,31 @@ const buildCueSearchPhrase = (lines: string[] = []) => {
   return meaningfulLines.join(' ');
 };
 
+const buildCueAnchorPhrases = (lines: string[] = []): SectionAnchorPhrase[] => {
+  const meaningfulLines = (Array.isArray(lines) ? lines : [])
+    .map((line) => stripChords(line).replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  const anchors: SectionAnchorPhrase[] = [];
+  const seen = new Set<string>();
+
+  const addAnchor = (phrase = '', weight = 1) => {
+    const fingerprint = buildPhraseFingerprint(phrase);
+    if (!phrase || !fingerprint || seen.has(fingerprint)) return;
+    seen.add(fingerprint);
+    anchors.push({ phrase, fingerprint, weight });
+  };
+
+  if (meaningfulLines.length >= 2) {
+    addAnchor(meaningfulLines.slice(0, 2).join(' '), 1);
+  }
+
+  meaningfulLines.slice(0, 3).forEach((line, index) => {
+    addAnchor(line, Math.max(0.86, 0.96 - index * 0.05));
+  });
+
+  return anchors;
+};
+
 const getMeaningfulLyricLines = (section: SectionPayload, maxLines = 4) => {
   const seen = new Set<string>();
   const lines = [
@@ -764,6 +789,42 @@ const selectSectionAnchorMatch = ({
   ) as SectionAnchorMatch | null;
 };
 
+const selectCueAnchorMatch = ({
+  transcriptWords,
+  anchors,
+  searchStartSec,
+  relaxedSearchStartSec,
+  expectedStartSec,
+  endBefore,
+}: {
+  transcriptWords: TranscriptWord[];
+  anchors: SectionAnchorPhrase[];
+  searchStartSec: number;
+  relaxedSearchStartSec: number | null;
+  expectedStartSec: number | null;
+  endBefore: number;
+}): SectionAnchorMatch | null => {
+  const collectMatches = (startSec: number, relaxed: boolean) => anchors.flatMap((anchor, anchorIndex) => (
+    findPhraseMatchesInTranscript(transcriptWords, anchor.phrase, startSec, endBefore)
+      .map((match) => ({
+        ...match,
+        confidence: Math.max(0, Math.min(1, (match.confidence * anchor.weight) - (anchorIndex * 0.012) - (relaxed ? 0.04 : 0))),
+        fingerprint: anchor.fingerprint,
+        relaxed,
+      }))
+  ));
+
+  const directMatches = collectMatches(searchStartSec, false);
+  const relaxedMatches = directMatches.length === 0 && relaxedSearchStartSec != null
+    ? collectMatches(relaxedSearchStartSec, true)
+    : [];
+
+  return selectPhraseMatch(
+    directMatches.length > 0 ? directMatches : relaxedMatches,
+    expectedStartSec,
+  ) as SectionAnchorMatch | null;
+};
+
 const selectTextOnlyAnchorMatch = ({
   transcriptText,
   anchors,
@@ -1065,49 +1126,65 @@ const buildCueMarkersForSection = ({
   const cuePhraseLastMatchedStart = new Map<string, number>();
   let lastCueStart = sectionStartSec;
   const cueMarkers: number[] = [];
+  const expectedCueStarts = cueDrafts.map((_, cueIndex) => (
+    sectionDurationGuess != null
+      ? Math.round(sectionStartSec + ((sectionDurationGuess * cueIndex) / cueDrafts.length))
+      : null
+  ));
 
   for (let cueIndex = 1; cueIndex < cueDrafts.length; cueIndex += 1) {
     const cue = cueDrafts[cueIndex];
-    const cuePhrase = buildCueSearchPhrase(cue?.rawLines || []);
-    if (!cuePhrase) continue;
+    const cueAnchors = buildCueAnchorPhrases(cue?.rawLines || []);
+    if (cueAnchors.length === 0) continue;
 
-    const phraseKey = buildPhraseFingerprint(cuePhrase);
+    const phraseKey = cueAnchors[0].fingerprint;
     const occurrence = (cuePhraseUsageCounts.get(phraseKey) || 0) + 1;
     cuePhraseUsageCounts.set(phraseKey, occurrence);
 
-    const previousSamePhraseStart = cuePhraseLastMatchedStart.get(phraseKey);
+    const previousSamePhraseStart = cueAnchors.reduce<number | null>((latestStart, anchor) => {
+      const lastAnchorStart = cuePhraseLastMatchedStart.get(anchor.fingerprint);
+      if (lastAnchorStart == null) return latestStart;
+      if (latestStart == null) return lastAnchorStart;
+      return Math.max(latestStart, lastAnchorStart);
+    }, null);
     const repeatAwareFloor = previousSamePhraseStart == null
       ? 0
-      : previousSamePhraseStart + Math.max(MIN_REPEAT_PROGRESS_SEC, Math.round(getPhraseSearchWords(cuePhrase).length * 0.75));
+      : previousSamePhraseStart + Math.max(
+        MIN_REPEAT_PROGRESS_SEC,
+        Math.round(Math.max(...cueAnchors.map((anchor) => getPhraseSearchWords(anchor.phrase).length)) * 0.75),
+      );
     const searchStartSec = Math.max(lastCueStart + MIN_SECTION_PROGRESS_SEC, repeatAwareFloor);
-    const expectedStartSec = sectionDurationGuess != null
-      ? Math.max(searchStartSec, Math.round(sectionStartSec + ((sectionDurationGuess * cueIndex) / cueDrafts.length)))
+    const expectedStartSec = expectedCueStarts[cueIndex] != null
+      ? Math.max(searchStartSec, Number(expectedCueStarts[cueIndex]))
       : searchStartSec;
 
-    const directCandidates = findPhraseMatchesInTranscript(
+    let match = selectCueAnchorMatch({
       transcriptWords,
-      cuePhrase,
+      anchors: cueAnchors,
       searchStartSec,
-      sectionEndCap,
-    );
-    const relaxedCandidates = directCandidates.length === 0 && previousSamePhraseStart != null
-      ? findPhraseMatchesInTranscript(
-        transcriptWords,
-        cuePhrase,
-        Math.max(lastCueStart + MIN_SECTION_PROGRESS_SEC, previousSamePhraseStart + 1),
-        sectionEndCap,
-      )
-      : [];
-    const match = selectPhraseMatch(
-      directCandidates.length > 0 ? directCandidates : relaxedCandidates,
+      relaxedSearchStartSec: previousSamePhraseStart == null
+        ? Math.max(lastCueStart + MIN_SECTION_PROGRESS_SEC, expectedStartSec - 5)
+        : Math.max(lastCueStart + MIN_SECTION_PROGRESS_SEC, previousSamePhraseStart + 1),
       expectedStartSec,
-    );
+      endBefore: sectionEndCap,
+    });
+
+    if (!match && sectionDurationGuess != null && cueAnchors.some((anchor) => getPhraseSearchWords(anchor.phrase).length >= 2)) {
+      match = {
+        startSec: expectedStartSec,
+        confidence: 0.28,
+        matchCount: 0,
+        searchWordCount: 0,
+        fingerprint: phraseKey,
+        relaxed: true,
+      };
+    }
 
     if (!match) continue;
     if (match.startSec <= sectionStartSec) continue;
     if (Number.isFinite(sectionEndCap) && match.startSec >= sectionEndCap) continue;
 
-    cuePhraseLastMatchedStart.set(phraseKey, match.startSec);
+    cuePhraseLastMatchedStart.set(match.fingerprint || phraseKey, match.startSec);
     lastCueStart = match.startSec;
     cueMarkers.push(match.startSec);
   }
