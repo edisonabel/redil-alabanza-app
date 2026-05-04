@@ -2469,10 +2469,26 @@ export function LiveDirectorView({
     }
   }, [commitMixerStateSilent, hasPersistedSongContext, manualSession]);
 
+  const capEnabledMapToTrackLimit = useCallback((enabledMap: Record<string, boolean>) => {
+    const nextMap: Record<string, boolean> = {};
+    const rankedTracks = sessionTracks
+      .filter((track) => enabledMap[track.id] !== false)
+      .map((track, index) => ({ track, index, rank: stemPriorityRank(track) }))
+      .sort((a, b) => (a.rank - b.rank) || (a.index - b.index));
+    const allowedIds = new Set(rankedTracks.slice(0, sessionActiveTrackLimit).map(({ track }) => track.id));
+
+    sessionTracks.forEach((track) => {
+      nextMap[track.id] = enabledMap[track.id] !== false && allowedIds.has(track.id);
+    });
+
+    return nextMap;
+  }, [sessionActiveTrackLimit, sessionTracks]);
+
   const handleCloseTrackLoadModal = useCallback(() => {
     if (pendingEnabledMap && manualSession) {
+      const cappedEnabledMap = capEnabledMapToTrackLimit(pendingEnabledMap);
       const nextTracks = manualSession.tracks.map((track) => {
-        const wantsEnabled = pendingEnabledMap[track.id] !== false;
+        const wantsEnabled = cappedEnabledMap[track.id] !== false;
         return {
           ...track,
           enabled: wantsEnabled,
@@ -2488,7 +2504,7 @@ export function LiveDirectorView({
     }
     setPendingEnabledMap(null);
     setShowTrackLoadModal(false);
-  }, [pendingEnabledMap, manualSession, hasPersistedSongContext, commitMixerStateSilent]);
+  }, [capEnabledMapToTrackLimit, pendingEnabledMap, manualSession, hasPersistedSongContext, commitMixerStateSilent]);
 
   const handleOpenOffsetModal = useCallback(() => {
     offsetModalInitialValueRef.current = Number.isFinite(Number(manualSession?.sectionOffsetSeconds))
@@ -3420,7 +3436,7 @@ export function LiveDirectorView({
                   onClick={() => {
                     const initial: Record<string, boolean> = {};
                     (manualSession?.tracks || []).forEach((t) => { initial[t.id] = t.enabled !== false; });
-                    setPendingEnabledMap(initial);
+                    setPendingEnabledMap(capEnabledMapToTrackLimit(initial));
                     setShowTrackLoadModal(true);
                   }}
                   className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-1.5 text-[0.58rem]' : isCompactLandscape ? 'h-10 px-2 text-[0.74rem]' : 'h-[var(--ld-control-height)] px-3 text-[0.76rem]'} flex-col font-semibold tracking-[0.16em] text-cyan-50`}
@@ -4603,6 +4619,13 @@ export function LiveDirectorView({
                     type="button"
                     onClick={() => {
                       if (!pendingEnabledMap) return;
+                      const isEnabling = pendingEnabledMap[track.id] === false;
+                      const enabledCount = Object.values(pendingEnabledMap).filter(Boolean).length;
+                      if (isEnabling && enabledCount >= sessionActiveTrackLimit) {
+                        window.alert(`Para estabilidad, no cargues más de ${sessionActiveTrackLimit} stems. Desactiva uno antes de activar otro.`);
+                        return;
+                      }
+
                       const next = { ...pendingEnabledMap, [track.id]: !pendingEnabledMap[track.id] };
                       const hasAny = Object.values(next).some(Boolean);
                       if (hasAny) setPendingEnabledMap(next);
