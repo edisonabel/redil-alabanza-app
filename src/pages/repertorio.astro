@@ -23,6 +23,7 @@ try {
 }
 
 const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean))].sort() as string[];
+const estadosUnicos = [...new Set(canciones.map((c: any) => c.estado).filter(Boolean))].sort() as string[];
 const visibleInitialSongs = canciones.slice(0, 15);
 const firstTourCardId = visibleInitialSongs.find(Boolean)?.id ?? null;
 const firstTourAudioId = visibleInitialSongs.find((c: any) => typeof c?.mp3 === 'string' && c.mp3.trim() !== '')?.id ?? firstTourCardId;
@@ -49,7 +50,7 @@ const firstTourResourcesId =
   </header>
 
  <!-- UI Controles -->
- <section id="searchControls" data-tour="repertorio-search" class="max-w-7xl mx-auto mb-3 md:mb-6 bg-surface border border-border rounded-2xl px-2.5 py-2.5 md:px-4 md:py-4 shadow-lg anim-fade-in-up anim-stagger" style="--delay: 220ms">
+ <section id="searchControls" data-tour="repertorio-search" class="sticky top-2 md:top-3 z-40 max-w-7xl mx-auto mb-3 md:mb-6 bg-surface/95 backdrop-blur-xl border border-border rounded-2xl px-2.5 py-2.5 md:px-4 md:py-4 shadow-lg anim-fade-in-up anim-stagger" style="--delay: 220ms">
  <div class="flex items-end gap-2 md:grid md:grid-cols-[minmax(16rem,1fr)_auto] md:gap-3">
  <div class="min-w-0 flex-1">
  <label for="search-input" class="hidden md:block text-sm font-medium text-content mb-1.5">Buscar</label>
@@ -62,7 +63,7 @@ const firstTourResourcesId =
  </button>
  </div>
 
- <div id="advancedFilters" class="repertorio-advanced-filters mt-0 md:mt-3 md:grid md:grid-cols-3 md:gap-3" data-open="false">
+ <div id="advancedFilters" class="repertorio-advanced-filters mt-0 md:mt-3 md:grid md:grid-cols-4 md:gap-3" data-open="false">
  <div class="grid grid-cols-2 gap-2.5 md:contents">
  <div class="col-span-1">
  <label for="filterVoz" class="block text-xs md:text-sm font-medium text-content mb-1.5">Voz</label>
@@ -93,6 +94,17 @@ const firstTourResourcesId =
  <option value="Todas">Todas</option>
  {temasUnicos.map(tema => (
  <option value={tema}>{tema}</option>
+ ))}
+ </select>
+ </div>
+
+ <div class="col-span-2 md:col-span-1">
+ <label for="filterEstado" class="block text-xs md:text-sm font-medium text-content mb-1.5">Estado</label>
+ <select id="filterEstado"
+ class="w-full h-11 bg-surface border border-border text-content rounded-xl px-3 text-sm md:text-base focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors appearance-none">
+ <option value="Todas">Todas</option>
+ {estadosUnicos.map(estado => (
+ <option value={estado}>{estado}</option>
  ))}
  </select>
  </div>
@@ -359,6 +371,7 @@ if (sessionError || !session) {
  const filterVoz = document.getElementById('filterVoz') as HTMLSelectElement;
  const filterCategoria = document.getElementById('filterCategoria') as HTMLSelectElement;
  const filterTema = document.getElementById('filterTema') as HTMLSelectElement;
+ const filterEstado = document.getElementById('filterEstado') as HTMLSelectElement;
  const btnToggleFilters = document.getElementById('btnToggleFilters') as HTMLButtonElement | null;
  const advancedFilters = document.getElementById('advancedFilters') as HTMLElement | null;
  const activeFiltersBadge = document.getElementById('activeFiltersBadge') as HTMLElement | null;
@@ -528,15 +541,17 @@ if (sessionError || !session) {
   const vozTerm = (filterVoz?.value || 'Todas').trim().toLowerCase();
   const categoriaTerm = (filterCategoria?.value || 'Todas').trim().toLowerCase();
   const temaTerm = (filterTema?.value || 'Todas').trim().toLowerCase();
+  const estadoTerm = (filterEstado?.value || 'Todas').trim().toLowerCase();
 
-  return Boolean(searchTerm) || vozTerm !== 'todas' || categoriaTerm !== 'todas' || temaTerm !== 'todas';
+  return Boolean(searchTerm) || vozTerm !== 'todas' || categoriaTerm !== 'todas' || temaTerm !== 'todas' || estadoTerm !== 'todas';
  }
 
  function countAdvancedSongFilters() {
   const vozTerm = (filterVoz?.value || 'Todas').trim().toLowerCase();
   const categoriaTerm = (filterCategoria?.value || 'Todas').trim().toLowerCase();
   const temaTerm = (filterTema?.value || 'Todas').trim().toLowerCase();
-  return [vozTerm !== 'todas', categoriaTerm !== 'todas', temaTerm !== 'todas'].filter(Boolean).length;
+  const estadoTerm = (filterEstado?.value || 'Todas').trim().toLowerCase();
+  return [vozTerm !== 'todas', categoriaTerm !== 'todas', temaTerm !== 'todas', estadoTerm !== 'todas'].filter(Boolean).length;
  }
 
  function setMobileFiltersOpen(isOpen: boolean) {
@@ -559,6 +574,15 @@ if (sessionError || !session) {
    setMobileFiltersOpen(!isOpen);
   });
  }
+
+ let lastFilterScrollY = window.scrollY || 0;
+ addListener(window, 'scroll', () => {
+  const currentY = window.scrollY || 0;
+  if (currentY > lastFilterScrollY + 8 && advancedFilters?.dataset.open === 'true') {
+   setMobileFiltersOpen(false);
+  }
+  lastFilterScrollY = Math.max(0, currentY);
+ }, { passive: true });
 
  function sortSongsSelectedFirst(songCards) {
   if (isSelectionMode && !hasActiveSongFilters()) {
@@ -1129,6 +1153,7 @@ function filterCards() {
  const vozTerm = normalizeStr(filterVoz.value);
  const categoriaTerm = normalizeStr(filterCategoria.value);
  const temaTerm = normalizeStr(filterTema.value);
+ const estadoTerm = normalizeStr(filterEstado.value);
  syncFilterMenuState();
 
  todasLasCanciones.forEach(card => card.classList.add('cancion-oculta'));
@@ -1140,13 +1165,15 @@ function filterCards() {
  const voz = normalizeStr(card.getAttribute('data-voz') || '');
  const categoria = normalizeStr(card.getAttribute('data-categoria') || '');
  const tema = normalizeStr(card.getAttribute('data-tema') || '');
+ const estado = normalizeStr(card.getAttribute('data-estado') || '');
 
  const matchesSearch = titulo.includes(searchTerm) || artista.includes(searchTerm);
  const matchesVoz = matchVoz(voz, vozTerm);
  const matchesCategoria = matchCategoria(categoria, categoriaTerm);
  const matchesTema = temaTerm === 'todas' || tema.includes(temaTerm);
+ const matchesEstado = estadoTerm === 'todas' || estado.includes(estadoTerm);
 
- return matchesSearch && matchesVoz && matchesCategoria && matchesTema;
+ return matchesSearch && matchesVoz && matchesCategoria && matchesTema && matchesEstado;
  });
 
  cancionesFiltradas = sortSongsSelectedFirst(cancionesFiltradas);
@@ -1186,6 +1213,7 @@ function filterCards() {
    if (filterVoz) (filterVoz as HTMLSelectElement).value = 'Todas';
    if (filterCategoria) (filterCategoria as HTMLSelectElement).value = 'Todas';
    if (filterTema) (filterTema as HTMLSelectElement).value = 'Todas';
+   if (filterEstado) (filterEstado as HTMLSelectElement).value = 'Todas';
    setMobileFiltersOpen(false);
    filterCards();
   });
@@ -1195,6 +1223,7 @@ function filterCards() {
  if(filterVoz) addListener(filterVoz, 'change', debouncedFilterCards);
  if(filterCategoria) addListener(filterCategoria, 'change', debouncedFilterCards);
  if(filterTema) addListener(filterTema, 'change', debouncedFilterCards);
+ if(filterEstado) addListener(filterEstado, 'change', debouncedFilterCards);
  syncFilterMenuState();
 
 
@@ -1238,7 +1267,7 @@ function filterCards() {
      margin-top 220ms ease;
  }
  .repertorio-advanced-filters[data-open='true'] {
-   max-height: 18rem;
+   max-height: 24rem;
    opacity: 1;
    pointer-events: auto;
    transform: translateY(0);
