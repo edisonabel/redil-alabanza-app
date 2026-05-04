@@ -24,6 +24,10 @@ const whisperModel =
   import.meta.env.OPENAI_WHISPER_MODEL ||
   process.env.OPENAI_WHISPER_MODEL ||
   'whisper-1';
+const deepTranscribeModel =
+  import.meta.env.OPENAI_DEEP_TRANSCRIBE_MODEL ||
+  process.env.OPENAI_DEEP_TRANSCRIBE_MODEL ||
+  'gpt-4o-mini-transcribe';
 
 const authClient = supabaseUrl && supabaseServiceRoleKey
   ? createClient(supabaseUrl, supabaseServiceRoleKey, {
@@ -53,10 +57,23 @@ type SectionPayload = {
 };
 
 type SongContextPayload = {
+  songId?: string;
   title?: string;
   artist?: string;
   key?: string;
   bpm?: string;
+};
+
+type AudioCandidatePayload = {
+  label?: string;
+  url?: string;
+  kind?: string;
+  priority?: number;
+};
+
+type CorrectionSummaryPayload = {
+  sampleCount?: number;
+  averageDeltaSec?: number;
 };
 
 type TranscriptWord = {
@@ -73,6 +90,7 @@ type TranscriptResponse = {
 
 type SuggestedMarkerMethod =
   | 'whisper-match'
+  | 'deep-text-structure'
   | 'hybrid-structure'
   | 'interpolated'
   | 'no-match'
@@ -112,6 +130,7 @@ type SectionAnchorPhrase = {
 type SectionAnchorMatch = PhraseMatch & {
   fingerprint: string;
   relaxed: boolean;
+  textOnly?: boolean;
 };
 
 const MIN_SECTION_PROGRESS_SEC = 1;
@@ -542,6 +561,55 @@ const downloadAudioBlob = async (rawUrl: string, requestUrl: URL) => {
   }
 };
 
+const normalizeAudioCandidateUrl = (value = '') => {
+  const url = String(value || '').trim();
+  if (!url || !/^https?:\/\//i.test(url)) return '';
+  return url;
+};
+
+const normalizeAudioCandidates = (rawCandidates: unknown, fallbackUrl: string): AudioCandidatePayload[] => {
+  const candidates = (Array.isArray(rawCandidates) ? rawCandidates : [])
+    .map((candidate) => ({
+      label: String((candidate as AudioCandidatePayload)?.label || 'Audio alterno').replace(/\s+/g, ' ').trim().slice(0, 60),
+      url: normalizeAudioCandidateUrl((candidate as AudioCandidatePayload)?.url || ''),
+      kind: String((candidate as AudioCandidatePayload)?.kind || 'audio').replace(/\s+/g, ' ').trim().slice(0, 40),
+      priority: Number.isFinite(Number((candidate as AudioCandidatePayload)?.priority))
+        ? Number((candidate as AudioCandidatePayload).priority)
+        : 0,
+    }))
+    .filter((candidate) => candidate.url);
+
+  const fallback = normalizeAudioCandidateUrl(fallbackUrl);
+  if (fallback && !candidates.some((candidate) => candidate.url === fallback)) {
+    candidates.push({ label: 'MP3 completo', url: fallback, kind: 'mix', priority: 10 });
+  }
+
+  return [...new Map(candidates.map((candidate) => [candidate.url, candidate])).values()]
+    .sort((left, right) => Number(right.priority || 0) - Number(left.priority || 0));
+};
+
+const downloadBestAudioCandidate = async ({
+  candidates,
+  requestUrl,
+}: {
+  candidates: AudioCandidatePayload[];
+  requestUrl: URL;
+}) => {
+  let lastError: Error | null = null;
+
+  for (const candidate of candidates) {
+    try {
+      const blob = await downloadAudioBlob(String(candidate.url || ''), requestUrl);
+      return { blob, candidate };
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error || 'No se pudo descargar audio.'));
+      console.warn('[auto-markers] Audio candidate skipped:', candidate.label, lastError.message);
+    }
+  }
+
+  throw lastError || new Error('No se pudo descargar ningun audio utilizable.');
+};
+
 const compactContextValue = (value: unknown, maxLength = 80) =>
   String(value || '')
     .replace(/\s+/g, ' ')
@@ -696,6 +764,58 @@ const selectSectionAnchorMatch = ({
   ) as SectionAnchorMatch | null;
 };
 
+const selectTextOnlyAnchorMatch = ({
+  transcriptText,
+  anchors,
+  searchStartSec,
+  expectedStartSec,
+  durationSec,
+}: {
+  transcriptText: string;
+  anchors: SectionAnchorPhrase[];
+  searchStartSec: number;
+  expectedStartSec: number | null;
+  durationSec: number | null;
+}): SectionAnchorMatch | null => {
+  const words = normalizeText(transcriptText).split(/\s+/).filter(Boolean);
+  const duration = Number(durationSec);
+  if (words.length === 0 || !Number.isFinite(duration) || duration <= 0) return null;
+
+  const candidates: SectionAnchorMatch[] = [];
+  anchors.forEach((anchor, anchorIndex) => {
+    const anchorWords = getPhraseSearchWords(anchor.phrase);
+    if (anchorWords.length === 0 || anchorWords.length > words.length) return;
+
+    for (let index = 0; index <= words.length - anchorWords.length; index += 1) {
+      let score = 0;
+      let matchCount = 0;
+      for (let offset = 0; offset < anchorWords.length; offset += 1) {
+        const similarity = levenshteinSimilarity(words[index + offset], anchorWords[offset]);
+        if (similarity > 0.72) {
+          score += similarity;
+          matchCount += 1;
+        }
+      }
+
+      if (matchCount < Math.ceil(anchorWords.length * 0.72)) continue;
+      const startSec = Math.round((duration * index) / Math.max(words.length, 1));
+      if (startSec < searchStartSec) continue;
+
+      candidates.push({
+        startSec,
+        confidence: Math.max(0, Math.min(0.58, (score / anchorWords.length) * anchor.weight - anchorIndex * 0.02)),
+        matchCount,
+        searchWordCount: anchorWords.length,
+        fingerprint: anchor.fingerprint,
+        relaxed: false,
+        textOnly: true,
+      });
+    }
+  });
+
+  return selectPhraseMatch(candidates, expectedStartSec) as SectionAnchorMatch | null;
+};
+
 const getRepeatBaseName = (sectionName = '') => {
   const cleaned = String(sectionName || '').trim() || 'Seccion';
   return cleaned
@@ -787,6 +907,79 @@ const detectMissingRepeatSuggestions = ({
         suggestedName: `${baseName} ${existingCount + emittedCount + 1}`,
       };
     });
+};
+
+const applyCorrectionOffset = (markers: SuggestedMarker[], correctionSummary: CorrectionSummaryPayload) => {
+  const sampleCount = Number(correctionSummary?.sampleCount) || 0;
+  const offset = Number(correctionSummary?.averageDeltaSec) || 0;
+  if (sampleCount < 2 || Math.abs(offset) < 0.5) {
+    return { markers, appliedOffsetSec: 0 };
+  }
+
+  return {
+    appliedOffsetSec: offset,
+    markers: markers.map((marker) => (
+      marker.startSec == null
+        ? marker
+        : {
+          ...marker,
+          startSec: Math.max(0, Math.round(marker.startSec + offset)),
+          confidence: Math.max(0, Math.min(1, marker.confidence + 0.03)),
+        }
+    )),
+  };
+};
+
+const buildQualitySummary = ({
+  markers,
+  repeatSuggestions,
+  deepAnalysis,
+  audioSource,
+  correctionSamples,
+  correctionOffsetSec,
+}: {
+  markers: SuggestedMarker[];
+  repeatSuggestions: RepeatSuggestion[];
+  deepAnalysis: boolean;
+  audioSource: AudioCandidatePayload;
+  correctionSamples: number;
+  correctionOffsetSec: number;
+}) => {
+  const total = markers.length || 1;
+  const matched = markers.filter((marker) => marker.method === 'whisper-match').length;
+  const deepMatched = markers.filter((marker) => marker.method === 'deep-text-structure').length;
+  const hybrid = markers.filter((marker) => marker.method === 'hybrid-structure').length;
+  const interpolated = markers.filter((marker) => marker.method === 'interpolated').length;
+  const failed = markers.filter((marker) => marker.method === 'no-match' || marker.method === 'no-lyrics').length;
+  const averageConfidence = markers.reduce((sum, marker) => sum + (Number(marker.confidence) || 0), 0) / total;
+  const sourceBonus = ['voices', 'stem-voices', 'stem-guide'].includes(String(audioSource?.kind || '')) ? 0.08 : 0;
+  const deepBonus = deepAnalysis && deepMatched > 0 ? 0.06 : 0;
+  const correctionBonus = correctionSamples >= 2 ? 0.03 : 0;
+  const score = Math.max(0, Math.min(1,
+    averageConfidence * 0.62
+    + ((matched + deepMatched) / total) * 0.24
+    + sourceBonus
+    + deepBonus
+    + correctionBonus
+    - (interpolated / total) * 0.08
+    - (failed / total) * 0.16,
+  ));
+  const level = score >= 0.72 ? 'high' : score >= 0.48 ? 'medium' : 'low';
+
+  return {
+    level,
+    label: level === 'high' ? 'Alta confianza' : level === 'medium' ? 'Confianza media' : 'Baja confianza',
+    score: Math.round(score * 100),
+    matched,
+    deepMatched,
+    hybrid,
+    interpolated,
+    failed,
+    repeatSuggestions: repeatSuggestions.length,
+    averageConfidence: Math.round(averageConfidence * 100),
+    correctionSamples,
+    correctionOffsetSec: Number(correctionOffsetSec.toFixed(2)),
+  };
 };
 
 const findPreviousDetectedIndex = (markers: SuggestedMarker[], targetIndex: number) => {
@@ -998,7 +1191,17 @@ export const POST: APIRoute = async ({ request, cookies }) => {
 
     const body = await request.json().catch(() => ({}));
     const mp3Url = String(body?.mp3Url || '').trim();
+    const deepAnalysis = Boolean(body?.deepAnalysis);
+    const correctionSummary: CorrectionSummaryPayload = {
+      sampleCount: Number.isFinite(Number(body?.correctionSummary?.sampleCount))
+        ? Number(body.correctionSummary.sampleCount)
+        : 0,
+      averageDeltaSec: Number.isFinite(Number(body?.correctionSummary?.averageDeltaSec))
+        ? Math.max(-6, Math.min(6, Number(body.correctionSummary.averageDeltaSec)))
+        : 0,
+    };
     const songContext: SongContextPayload = {
+      songId: compactContextValue(body?.songContext?.songId, 80),
       title: compactContextValue(body?.songContext?.title),
       artist: compactContextValue(body?.songContext?.artist),
       key: compactContextValue(body?.songContext?.key, 24),
@@ -1026,7 +1229,11 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       return jsonResponse({ error: 'OPENAI_API_KEY no configurada en el servidor.' }, 500);
     }
 
-    const audioBlob = await downloadAudioBlob(mp3Url, new URL(request.url));
+    const audioCandidates = normalizeAudioCandidates(body?.audioCandidates, mp3Url);
+    const { blob: audioBlob, candidate: selectedAudioCandidate } = await downloadBestAudioCandidate({
+      candidates: audioCandidates,
+      requestUrl: new URL(request.url),
+    });
     // Comprobación de seguridad si Content-Length no estaba disponible en la descarga
     if (audioBlob.size > MAX_AUDIO_BYTES) {
       return jsonResponse({ error: 'Audio excede 25MB (limite actual de la API).' }, 413);
@@ -1098,6 +1305,47 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       : (transcriptWords[transcriptWords.length - 1]?.end
         ? Math.round(transcriptWords[transcriptWords.length - 1].end)
         : null);
+    let deepTranscriptText = '';
+    let deepTranscriptionStatus: 'skipped' | 'ok' | 'failed' = deepAnalysis ? 'failed' : 'skipped';
+
+    if (deepAnalysis && deepTranscribeModel && deepTranscribeModel !== whisperModel) {
+      const deepFormData = new FormData();
+      deepFormData.append('file', audioBlob, 'audio.mp3');
+      deepFormData.append('model', deepTranscribeModel);
+      deepFormData.append('response_format', 'json');
+      deepFormData.append('language', language);
+      if (promptText) {
+        deepFormData.append('prompt', promptText);
+      }
+      deepFormData.append('temperature', '0');
+
+      try {
+        const deepController = new AbortController();
+        const deepTimeoutId = setTimeout(() => deepController.abort(), 120_000);
+        try {
+          const deepResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${openAiApiKey}` },
+            body: deepFormData,
+            signal: deepController.signal,
+          });
+
+          if (deepResponse.ok) {
+            const deepTranscript = await deepResponse.json().catch(() => ({})) as TranscriptResponse;
+            deepTranscriptText = String(deepTranscript?.text || '').trim();
+            deepTranscriptionStatus = deepTranscriptText ? 'ok' : 'failed';
+          } else {
+            console.warn('[auto-markers] Deep transcription skipped:', deepResponse.status);
+            deepTranscriptionStatus = 'failed';
+          }
+        } finally {
+          clearTimeout(deepTimeoutId);
+        }
+      } catch (error) {
+        console.warn('[auto-markers] Deep transcription failed:', error);
+        deepTranscriptionStatus = 'failed';
+      }
+    }
 
     if (transcriptWords.length === 0) {
       return jsonResponse({
@@ -1114,13 +1362,16 @@ export const POST: APIRoute = async ({ request, cookies }) => {
           method: 'no-lyrics' as const,
           cueMarkers: [],
         })),
+        audioSource: selectedAudioCandidate,
+        deepAnalysis,
+        deepTranscriptionStatus,
       });
     }
 
     const phraseLastMatchedStart = new Map<string, number>();
     const expectedSectionStarts = buildExpectedSectionStarts(sections, durationSec);
     let lastStartSec = 0;
-    const suggestedMarkers: SuggestedMarker[] = sections.map((section: any, index: number) => {
+    let suggestedMarkers: SuggestedMarker[] = sections.map((section: any, index: number) => {
       const anchorPhrases = buildSectionAnchorPhrases(section);
 
       if (anchorPhrases.length === 0) {
@@ -1149,7 +1400,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         ? Math.max(searchStartSec, Number(expectedSectionStarts[index]))
         : searchStartSec;
 
-      const match = selectSectionAnchorMatch({
+      const whisperMatch = selectSectionAnchorMatch({
         transcriptWords,
         anchors: anchorPhrases,
         searchStartSec,
@@ -1158,6 +1409,16 @@ export const POST: APIRoute = async ({ request, cookies }) => {
           : Math.max(lastStartSec + MIN_SECTION_PROGRESS_SEC, previousSamePhraseStart + 1),
         expectedStartSec,
       });
+      const deepMatch = !whisperMatch && deepTranscriptText
+        ? selectTextOnlyAnchorMatch({
+          transcriptText: deepTranscriptText,
+          anchors: anchorPhrases,
+          searchStartSec,
+          expectedStartSec,
+          durationSec,
+        })
+        : null;
+      const match = whisperMatch || deepMatch;
 
       if (match) {
         lastStartSec = match.startSec;
@@ -1166,7 +1427,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
           sectionName: section.name,
           startSec: match.startSec,
           confidence: Math.max(0, Math.min(1, match.confidence)),
-          method: 'whisper-match',
+          method: match.textOnly ? 'deep-text-structure' : 'whisper-match',
         };
       }
 
@@ -1177,6 +1438,8 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         method: 'no-match',
       };
     });
+    const correctedMarkerResult = applyCorrectionOffset(suggestedMarkers, correctionSummary);
+    suggestedMarkers = correctedMarkerResult.markers;
 
     const resolvedDuration = durationSec || 0;
     const firstWordStartSec = transcriptWords[0]?.start ?? 0;
@@ -1279,11 +1542,23 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       sections,
       markers: markersWithCueSuggestions,
     });
+    const quality = buildQualitySummary({
+      markers: markersWithCueSuggestions,
+      repeatSuggestions,
+      deepAnalysis,
+      audioSource: selectedAudioCandidate,
+      correctionSamples: Number(correctionSummary.sampleCount) || 0,
+      correctionOffsetSec: correctedMarkerResult.appliedOffsetSec,
+    });
 
     return jsonResponse({
       success: true,
       markers: markersWithCueSuggestions,
       repeatSuggestions,
+      quality,
+      audioSource: selectedAudioCandidate,
+      deepAnalysis,
+      deepTranscriptionStatus,
       language,
       durationSec,
       wordCount: transcriptWords.length,

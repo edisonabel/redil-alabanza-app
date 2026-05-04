@@ -16,6 +16,8 @@ const LEADING_CHORD_SECTION_RE = new RegExp(`^\\[(${CHORD_BODY_PATTERN})\\|`, 'i
 const BROKEN_INLINE_CHORD_RE = new RegExp(`\\[(${CHORD_BODY_PATTERN})\\s*\\|\\s*`, 'gi');
 const EDITOR_MODAL_MAX_HEIGHT = 'min(94vh, calc(100dvh - 4.75rem - env(safe-area-inset-bottom)))';
 const ARCHIVO_ELIMINABLE_FIELDS = new Set(['mp3', 'link_acordes']);
+const AUTO_MARKER_CORRECTION_STORAGE_KEY = 'redil:auto-marker-corrections:v1';
+const AUTO_MARKER_CORRECTION_LIMIT = 120;
 
 const normalizeSectionName = (rawValue = '') => {
   const cleaned = String(rawValue).trim();
@@ -417,6 +419,86 @@ const insertChordProSectionAfterIndex = (rawValue = '', afterSectionIndex = -1, 
   return [before, sectionBlock.trim(), after]
     .filter(Boolean)
     .join('\n\n');
+};
+
+const normalizeAudioCandidateUrl = (value = '') => {
+  const url = String(value || '').trim();
+  if (!url || !/^https?:\/\//i.test(url)) return '';
+  if (!/\.(mp3|wav|m4a|aac|ogg|flac|mp4|mpeg|mpga|webm)(\?.*)?$/i.test(url)) return '';
+  return url;
+};
+
+const parseMultitrackSession = (rawValue) => {
+  if (!rawValue) return null;
+  if (typeof rawValue === 'object') return rawValue;
+  if (typeof rawValue !== 'string') return null;
+  try {
+    return JSON.parse(rawValue);
+  } catch {
+    return null;
+  }
+};
+
+const getAutoMarkerAudioCandidates = (song = {}) => {
+  const candidates = [];
+  const pushCandidate = ({ label, url, kind, priority }) => {
+    const safeUrl = normalizeAudioCandidateUrl(url);
+    if (!safeUrl || candidates.some((item) => item.url === safeUrl)) return;
+    candidates.push({ label, url: safeUrl, kind, priority });
+  };
+
+  pushCandidate({ label: 'Voces', url: song?.link_voces || song?.voces, kind: 'voices', priority: 100 });
+
+  const session = parseMultitrackSession(song?.multitrack_session);
+  const tracks = Array.isArray(session?.tracks) ? session.tracks : [];
+  tracks.forEach((track) => {
+    const name = String(track?.name || track?.sourceFileName || '').toLowerCase();
+    const url = track?.url || track?.optimizedUrl || track?.iosUrl || track?.nativeUrl;
+    if (/(vocal|vocals|voz|voces|lead|coros|choir)/i.test(name)) {
+      pushCandidate({ label: `Stem ${track.name || 'Voces'}`, url, kind: 'stem-voices', priority: 92 });
+    } else if (/(guide|guia|guía|cues?)/i.test(name)) {
+      pushCandidate({ label: `Stem ${track.name || 'Guia'}`, url, kind: 'stem-guide', priority: 76 });
+    }
+  });
+
+  pushCandidate({ label: 'MP3 completo', url: song?.mp3, kind: 'mix', priority: 10 });
+  return candidates.sort((left, right) => right.priority - left.priority);
+};
+
+const loadAutoMarkerCorrections = () => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(AUTO_MARKER_CORRECTION_STORAGE_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveAutoMarkerCorrection = (entry) => {
+  if (typeof window === 'undefined') return;
+  const corrections = loadAutoMarkerCorrections();
+  corrections.unshift(entry);
+  window.localStorage.setItem(
+    AUTO_MARKER_CORRECTION_STORAGE_KEY,
+    JSON.stringify(corrections.slice(0, AUTO_MARKER_CORRECTION_LIMIT)),
+  );
+};
+
+const getAutoMarkerCorrectionSummary = (songId) => {
+  const relevant = loadAutoMarkerCorrections()
+    .filter((entry) => String(entry?.songId || '') === String(songId || ''))
+    .slice(0, 20);
+
+  if (relevant.length < 2) {
+    return { sampleCount: relevant.length, averageDeltaSec: 0 };
+  }
+
+  const averageDeltaSec = relevant.reduce((sum, entry) => sum + (Number(entry?.deltaSec) || 0), 0) / relevant.length;
+  return {
+    sampleCount: relevant.length,
+    averageDeltaSec: Math.max(-6, Math.min(6, averageDeltaSec)),
+  };
 };
 
 const EditableCell = ({ cancionId, campoBd, valorInicial, onSave, isSaving, anchoClases = "min-w-[8rem]", customInputClasses = "" }) => {
@@ -845,7 +927,7 @@ export default function AdminRepertorio() {
       const queryWithMarkers = await supabase
         .from('canciones')
         // eslint-disable-next-line max-len
-        .select('id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, link_youtube, mp3, link_acordes, link_letras, link_voces, link_secuencias, chordpro, section_markers')
+        .select('id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, link_youtube, mp3, link_acordes, link_letras, link_voces, link_secuencias, chordpro, section_markers, multitrack_session')
         .order('titulo', { ascending: true });
 
       let data = queryWithMarkers.data;
@@ -855,7 +937,7 @@ export default function AdminRepertorio() {
         const fallbackQuery = await supabase
           .from('canciones')
           // eslint-disable-next-line max-len
-          .select('id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, link_youtube, mp3, link_acordes, link_letras, link_voces, link_secuencias, chordpro')
+          .select('id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, link_youtube, mp3, link_acordes, link_letras, link_voces, link_secuencias, chordpro, multitrack_session')
           .order('titulo', { ascending: true });
 
         data = fallbackQuery.data;
@@ -1362,9 +1444,30 @@ export default function AdminRepertorio() {
     )));
   };
 
+  const registrarCorreccionAutoMarker = (marker, patch) => {
+    if (!marker?._autoDetected) return;
+    if (!Object.prototype.hasOwnProperty.call(patch || {}, 'startSec')) return;
+
+    const previousStartSec = Number(marker?.startSec);
+    const correctedStartSec = Number(patch?.startSec);
+    if (!Number.isFinite(previousStartSec) || !Number.isFinite(correctedStartSec)) return;
+    if (Math.abs(previousStartSec - correctedStartSec) < 1) return;
+
+    saveAutoMarkerCorrection({
+      songId: editorChordproCancion?.id || '',
+      songTitle: editorChordproCancion?.titulo || '',
+      sectionName: marker?.sectionName || '',
+      method: marker?._method || '',
+      previousStartSec,
+      correctedStartSec,
+      deltaSec: correctedStartSec - previousStartSec,
+      createdAt: new Date().toISOString(),
+    });
+  };
+
   const actualizarEditorSectionMarker = (markerIndex, patch) => {
     setEditorSectionMarkers((prev) => prev.map((item, itemIndex) => (
-      itemIndex === markerIndex ? { ...item, ...patch } : item
+      itemIndex === markerIndex ? (registrarCorreccionAutoMarker(item, patch), { ...item, ...patch }) : item
     )));
   };
 
@@ -1392,7 +1495,7 @@ export default function AdminRepertorio() {
     )));
   };
 
-  const autoDetectMarkers = async () => {
+  const autoDetectMarkers = async ({ deepAnalysis = false } = {}) => {
     if (!editorChordproCancion?.mp3) {
       setAutoDetectError('Esta cancion no tiene MP3 cargado.');
       return;
@@ -1422,7 +1525,11 @@ export default function AdminRepertorio() {
         },
         body: JSON.stringify({
           mp3Url: editorChordproCancion.mp3,
+          deepAnalysis,
+          audioCandidates: getAutoMarkerAudioCandidates(editorChordproCancion),
+          correctionSummary: getAutoMarkerCorrectionSummary(editorChordproCancion?.id),
           songContext: {
+            songId: editorChordproCancion?.id || '',
             title: editorChordproCancion?.titulo || '',
             artist: editorChordproCancion?.cantante || '',
             key: editorChordproCancion?.tonalidad || '',
@@ -1455,12 +1562,16 @@ export default function AdminRepertorio() {
         setAutoDetectResult({
           total: currentSections.length,
           matched: 0,
+          deepMatched: 0,
           interpolated: currentSections.length,
           failed: 0,
           cueMarkersDetected: 0,
           language: String(result?.language || 'es').toUpperCase(),
           fallback: 'uniform',
           repeatSuggestions: [],
+          quality: result?.quality || null,
+          audioSource: result?.audioSource || null,
+          deepAnalysis: Boolean(result?.deepAnalysis),
         });
         return;
       }
@@ -1486,6 +1597,7 @@ export default function AdminRepertorio() {
         setAutoDetectResult({
           total: result.markers.length,
           matched: result.markers.filter((marker) => marker?.method === 'whisper-match').length,
+          deepMatched: result.markers.filter((marker) => marker?.method === 'deep-text-structure').length,
           interpolated: result.markers.filter((marker) => marker?.method === 'interpolated').length,
           hybrid: result.markers.filter((marker) => marker?.method === 'hybrid-structure').length,
           failed: result.markers.filter((marker) => marker?.method === 'no-match' || marker?.method === 'no-lyrics').length,
@@ -1494,6 +1606,9 @@ export default function AdminRepertorio() {
             0,
           ),
           repeatSuggestions: Array.isArray(result?.repeatSuggestions) ? result.repeatSuggestions : [],
+          quality: result?.quality || null,
+          audioSource: result?.audioSource || null,
+          deepAnalysis: Boolean(result?.deepAnalysis),
           language: String(result?.language || 'es').toUpperCase(),
           fallback: null,
         });
@@ -2018,22 +2133,42 @@ export default function AdminRepertorio() {
                         <div className="flex flex-wrap items-center gap-2">
                           <button
                             type="button"
-                            onClick={autoDetectMarkers}
+                            onClick={() => autoDetectMarkers()}
                             disabled={isAutoDetecting}
                             className="inline-flex min-h-[34px] items-center justify-center gap-2 rounded-lg bg-action px-3 py-2 text-[11px] font-bold uppercase tracking-[0.12em] text-white transition-colors hover:bg-action/90 disabled:cursor-wait disabled:bg-zinc-700 disabled:text-zinc-300"
                           >
                             {isAutoDetecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                             {isAutoDetecting ? 'Analizando audio...' : 'Auto-detectar tiempos'}
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => autoDetectMarkers({ deepAnalysis: true })}
+                            disabled={isAutoDetecting}
+                            className="inline-flex min-h-[34px] items-center justify-center gap-2 rounded-lg border border-brand/25 bg-brand/10 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.12em] text-brand transition-colors hover:bg-brand/15 disabled:cursor-wait disabled:border-border disabled:bg-background disabled:text-content-muted"
+                          >
+                            <Sparkles className="h-4 w-4" />
+                            Profundo
+                          </button>
 
                           {autoDetectError ? (
                             <span className="text-xs font-medium text-red-400">{autoDetectError}</span>
                           ) : autoDetectResult ? (
-                            <span className="text-xs font-medium text-emerald-400">
-                              {autoDetectResult.fallback === 'uniform'
-                                ? `Distribucion uniforme aplicada (${autoDetectResult.language})`
-                                : `${autoDetectResult.matched} detectados${autoDetectResult.hybrid > 0 ? `, ${autoDetectResult.hybrid} hibridos` : ''}${autoDetectResult.interpolated > 0 ? `, ${autoDetectResult.interpolated} interpolados` : ''}${autoDetectResult.failed > 0 ? `, ${autoDetectResult.failed} sin match` : ''}${autoDetectResult.cueMarkersDetected > 0 ? `, ${autoDetectResult.cueMarkersDetected} cues` : ''}${Array.isArray(autoDetectResult.repeatSuggestions) && autoDetectResult.repeatSuggestions.length > 0 ? `, ${autoDetectResult.repeatSuggestions.length} repeticiones sugeridas` : ''} (${autoDetectResult.language})`}
-                            </span>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] ${
+                                autoDetectResult.quality?.level === 'high'
+                                  ? 'bg-emerald-500/15 text-emerald-300'
+                                  : autoDetectResult.quality?.level === 'medium'
+                                    ? 'bg-yellow-500/15 text-yellow-300'
+                                    : 'bg-red-500/15 text-red-300'
+                              }`}>
+                                {autoDetectResult.quality?.label || 'Confianza media'}
+                              </span>
+                              <span className="text-xs font-medium text-emerald-400">
+                                {autoDetectResult.fallback === 'uniform'
+                                  ? `Distribucion uniforme aplicada (${autoDetectResult.language})`
+                                  : `${autoDetectResult.matched} detectados${autoDetectResult.deepMatched > 0 ? `, ${autoDetectResult.deepMatched} profundos` : ''}${autoDetectResult.hybrid > 0 ? `, ${autoDetectResult.hybrid} hibridos` : ''}${autoDetectResult.interpolated > 0 ? `, ${autoDetectResult.interpolated} interpolados` : ''}${autoDetectResult.failed > 0 ? `, ${autoDetectResult.failed} sin match` : ''}${autoDetectResult.cueMarkersDetected > 0 ? `, ${autoDetectResult.cueMarkersDetected} cues` : ''}${Array.isArray(autoDetectResult.repeatSuggestions) && autoDetectResult.repeatSuggestions.length > 0 ? `, ${autoDetectResult.repeatSuggestions.length} repeticiones sugeridas` : ''}${autoDetectResult.deepAnalysis ? ', profundo' : ''}${autoDetectResult.audioSource?.label ? ` · ${autoDetectResult.audioSource.label}` : ''} (${autoDetectResult.language})`}
+                              </span>
+                            </div>
                           ) : (
                             <span className="text-[11px] text-content-muted">
                               Usa Whisper para sugerir tiempos y revisa los markers amarillos o rojos antes de guardar.
@@ -2078,6 +2213,8 @@ export default function AdminRepertorio() {
                                   ? 'bg-emerald-950/70 text-emerald-400'
                                   : marker._method === 'whisper-match' && marker._confidence > 0.4
                                     ? 'bg-yellow-950/70 text-yellow-400'
+                                    : marker._method === 'deep-text-structure'
+                                      ? 'bg-violet-950/70 text-violet-300'
                                     : marker._method === 'hybrid-structure'
                                       ? 'bg-sky-950/70 text-sky-300'
                                       : marker._method === 'repeat-detected'
@@ -2088,6 +2225,8 @@ export default function AdminRepertorio() {
                                   }`}>
                                   {marker._method === 'whisper-match'
                                     ? `IA ${Math.round((marker._confidence || 0) * 100)}%`
+                                    : marker._method === 'deep-text-structure'
+                                      ? 'Profundo'
                                     : marker._method === 'hybrid-structure'
                                       ? 'Hibrido'
                                       : marker._method === 'repeat-detected'
