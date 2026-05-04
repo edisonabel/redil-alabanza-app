@@ -49,13 +49,21 @@ const firstTourResourcesId =
   </header>
 
  <!-- UI Controles -->
- <section id="searchControls" data-tour="repertorio-search" class="max-w-7xl mx-auto mb-6 bg-surface border border-border rounded-2xl px-2.5 py-3 md:px-4 md:py-4 shadow-lg anim-fade-in-up anim-stagger" style="--delay: 220ms">
- <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3 items-end">
- <div class="col-span-2 md:col-span-1 lg:col-span-1">
+ <section id="searchControls" data-tour="repertorio-search" class="max-w-7xl mx-auto mb-3 md:mb-6 bg-surface border border-border rounded-2xl px-2.5 py-2.5 md:px-4 md:py-4 shadow-lg anim-fade-in-up anim-stagger" style="--delay: 220ms">
+ <div class="flex items-end gap-2 md:grid md:grid-cols-[minmax(16rem,1fr)_auto] md:gap-3">
+ <div class="min-w-0 flex-1">
  <label for="search-input" class="hidden md:block text-sm font-medium text-content mb-1.5">Buscar</label>
   <BuscadorPredictivo idInput="searchInput" placeholder="Buscar canci&oacute;n o artista..." />
  </div>
- 
+ <button id="btnToggleFilters" type="button" aria-expanded="false" aria-controls="advancedFilters" class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 text-sm font-bold text-content transition-colors hover:bg-surface md:hidden">
+  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18"/><path d="M6 12h12"/><path d="M10 19h4"/></svg>
+  <span>Filtros</span>
+  <span id="activeFiltersBadge" class="hidden min-w-5 rounded-full bg-brand px-1.5 py-0.5 text-[10px] font-black leading-none text-white">0</span>
+ </button>
+ </div>
+
+ <div id="advancedFilters" class="repertorio-advanced-filters mt-0 md:mt-3 md:grid md:grid-cols-3 md:gap-3" data-open="false">
+ <div class="grid grid-cols-2 gap-2.5 md:contents">
  <div class="col-span-1">
  <label for="filterVoz" class="block text-xs md:text-sm font-medium text-content mb-1.5">Voz</label>
  <select id="filterVoz" 
@@ -78,7 +86,7 @@ const firstTourResourcesId =
  </select>
  </div>
 
- <div class="col-span-2 md:col-span-1 lg:col-span-1 mt-0.5 md:mt-0">
+ <div class="col-span-2 md:col-span-1">
  <label for="filterTema" class="block text-xs md:text-sm font-medium text-content mb-1.5">Tema</label>
  <select id="filterTema" 
  class="w-full h-11 bg-surface border border-border text-content rounded-xl px-3 text-sm md:text-base focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors appearance-none">
@@ -88,6 +96,8 @@ const firstTourResourcesId =
  ))}
  </select>
  </div>
+ </div>
+ <div id="futureScriptureFilters" class="hidden" aria-hidden="true" data-ready="scripture-reference book psalm verse"></div>
  </div>
  </section>
 
@@ -349,6 +359,9 @@ if (sessionError || !session) {
  const filterVoz = document.getElementById('filterVoz') as HTMLSelectElement;
  const filterCategoria = document.getElementById('filterCategoria') as HTMLSelectElement;
  const filterTema = document.getElementById('filterTema') as HTMLSelectElement;
+ const btnToggleFilters = document.getElementById('btnToggleFilters') as HTMLButtonElement | null;
+ const advancedFilters = document.getElementById('advancedFilters') as HTMLElement | null;
+ const activeFiltersBadge = document.getElementById('activeFiltersBadge') as HTMLElement | null;
  
  const mainTitle = document.getElementById('mainTitle');
  const searchControls = document.getElementById('searchControls');
@@ -517,6 +530,34 @@ if (sessionError || !session) {
   const temaTerm = (filterTema?.value || 'Todas').trim().toLowerCase();
 
   return Boolean(searchTerm) || vozTerm !== 'todas' || categoriaTerm !== 'todas' || temaTerm !== 'todas';
+ }
+
+ function countAdvancedSongFilters() {
+  const vozTerm = (filterVoz?.value || 'Todas').trim().toLowerCase();
+  const categoriaTerm = (filterCategoria?.value || 'Todas').trim().toLowerCase();
+  const temaTerm = (filterTema?.value || 'Todas').trim().toLowerCase();
+  return [vozTerm !== 'todas', categoriaTerm !== 'todas', temaTerm !== 'todas'].filter(Boolean).length;
+ }
+
+ function setMobileFiltersOpen(isOpen: boolean) {
+  if (!advancedFilters || !btnToggleFilters) return;
+  advancedFilters.dataset.open = isOpen ? 'true' : 'false';
+  btnToggleFilters.setAttribute('aria-expanded', String(isOpen));
+ }
+
+ function syncFilterMenuState() {
+  const activeFilterCount = countAdvancedSongFilters();
+  if (activeFiltersBadge) {
+   activeFiltersBadge.textContent = String(activeFilterCount);
+   activeFiltersBadge.classList.toggle('hidden', activeFilterCount === 0);
+  }
+ }
+
+ if (btnToggleFilters) {
+  addListener(btnToggleFilters, 'click', () => {
+   const isOpen = advancedFilters?.dataset.open === 'true';
+   setMobileFiltersOpen(!isOpen);
+  });
  }
 
  function sortSongsSelectedFirst(songCards) {
@@ -1088,6 +1129,7 @@ function filterCards() {
  const vozTerm = normalizeStr(filterVoz.value);
  const categoriaTerm = normalizeStr(filterCategoria.value);
  const temaTerm = normalizeStr(filterTema.value);
+ syncFilterMenuState();
 
  todasLasCanciones.forEach(card => card.classList.add('cancion-oculta'));
  indiceActual = 0;
@@ -1144,6 +1186,7 @@ function filterCards() {
    if (filterVoz) (filterVoz as HTMLSelectElement).value = 'Todas';
    if (filterCategoria) (filterCategoria as HTMLSelectElement).value = 'Todas';
    if (filterTema) (filterTema as HTMLSelectElement).value = 'Todas';
+   setMobileFiltersOpen(false);
    filterCards();
   });
  }
@@ -1152,6 +1195,7 @@ function filterCards() {
  if(filterVoz) addListener(filterVoz, 'change', debouncedFilterCards);
  if(filterCategoria) addListener(filterCategoria, 'change', debouncedFilterCards);
  if(filterTema) addListener(filterTema, 'change', debouncedFilterCards);
+ syncFilterMenuState();
 
 
  // Helper para Playlist modular
@@ -1180,6 +1224,37 @@ function filterCards() {
 
  /* GPU-accelerated containment for card grid — reduces layout/paint on scroll */
  #gridCanciones { contain: style; }
+
+ .repertorio-advanced-filters {
+   max-height: 0;
+   opacity: 0;
+   overflow: hidden;
+   pointer-events: none;
+   transform: translateY(-0.35rem);
+   transition:
+     max-height 260ms cubic-bezier(0.22,1,0.36,1),
+     opacity 180ms ease,
+     transform 220ms cubic-bezier(0.22,1,0.36,1),
+     margin-top 220ms ease;
+ }
+ .repertorio-advanced-filters[data-open='true'] {
+   max-height: 18rem;
+   opacity: 1;
+   pointer-events: auto;
+   transform: translateY(0);
+   margin-top: 0.65rem;
+ }
+ @media (min-width: 768px) {
+   .repertorio-advanced-filters,
+   .repertorio-advanced-filters[data-open='false'],
+   .repertorio-advanced-filters[data-open='true'] {
+     max-height: none;
+     opacity: 1;
+     overflow: visible;
+     pointer-events: auto;
+     transform: none;
+   }
+ }
 
  /* Estilos Tema Claro */
  body.tema-claro { background-color: #f3f4f6; color: #111827; }
@@ -1298,7 +1373,3 @@ function filterCards() {
  }
 
 </style>
-
-
-
-
