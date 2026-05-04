@@ -119,6 +119,21 @@ const isAbortError = (error: unknown) =>
   (error instanceof DOMException && error.name === 'AbortError') ||
   (error instanceof Error && error.name === 'AbortError');
 
+const isDecodeFailure = (error: unknown) => {
+  const name = error instanceof Error ? error.name.toLowerCase() : '';
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error ?? '').toLowerCase();
+  return (
+    name.includes('encoding') ||
+    message.includes('decoding failed') ||
+    message.includes('decode') ||
+    message.includes('unable to decode')
+  );
+};
+
+const delay = (durationMs: number) => new Promise((resolve) => {
+  globalThis.setTimeout(resolve, durationMs);
+});
+
 /**
  * Apple Lossless (ALAC) in an .m4a/.caf container is a common multitrack
  * export default for DAWs like Logic Pro and GarageBand, but Web Audio in
@@ -556,14 +571,15 @@ export class MultitrackEngine {
     onProgress?: LoadProgressCallback,
   ): Promise<TrackData[]> {
     const total = trackList.length;
+    const loadBatchSize = this.getAudioBufferLoadBatchSize();
     console.log(
-      `[MultitrackEngine] Initiating bounded concurrent loads for ${total} tracks (limit ${AUDIO_BUFFER_LOAD_BATCH_SIZE}).`,
+      `[MultitrackEngine] Initiating bounded concurrent loads for ${total} tracks (limit ${loadBatchSize}).`,
     );
 
     let completed = 0;
     return runWithConcurrency(
       trackList,
-      AUDIO_BUFFER_LOAD_BATCH_SIZE,
+      loadBatchSize,
       async (track) => this.loadTrackWithAudioBuffer(track),
       () => {
         completed += 1;
@@ -602,11 +618,7 @@ export class MultitrackEngine {
         `Timed out downloading "${track.name}".`,
         () => controller.abort(),
       );
-      const audioBuffer = await withTimeout(
-        this.context.decodeAudioData(audioData.slice(0)),
-        TRACK_DECODE_TIMEOUT_MS,
-        `Timed out decoding "${track.name}".`,
-      );
+      const audioBuffer = await this.decodeAudioDataWithRetry(track, audioData);
 
       // Precompute a visual activity envelope from the decoded buffer. We do
       // this once per load so the UI can breathe/pulse without any live
@@ -670,6 +682,48 @@ export class MultitrackEngine {
     } finally {
       this.releaseLoadAbortController(controller);
     }
+  }
+
+  private getAudioBufferLoadBatchSize(): number {
+    const capabilities = readLiveBrowserCapabilities();
+    // Safari's CoreAudio/WebAudio bridge can reject otherwise valid AAC files
+    // when several M4A stems are decoded at once. Sequential decode is slower
+    // but keeps the live session reliable without forcing a lower stem count.
+    if (capabilities.isSafari) {
+      return 1;
+    }
+
+    return AUDIO_BUFFER_LOAD_BATCH_SIZE;
+  }
+
+  private async decodeAudioDataWithRetry(track: TrackData, audioData: ArrayBuffer): Promise<AudioBuffer> {
+    const capabilities = readLiveBrowserCapabilities();
+    const maxAttempts = capabilities.isSafari ? 2 : 1;
+    let lastError: unknown = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        return await withTimeout(
+          this.context.decodeAudioData(audioData.slice(0)),
+          TRACK_DECODE_TIMEOUT_MS,
+          `Timed out decoding "${track.name}".`,
+        );
+      } catch (error) {
+        lastError = error;
+
+        if (attempt >= maxAttempts || !isDecodeFailure(error)) {
+          break;
+        }
+
+        console.warn(
+          `[MultitrackEngine] Decode failed for "${track.name}". Retrying with Safari-safe backoff (${attempt}/${maxAttempts}).`,
+          error,
+        );
+        await delay(250 * attempt);
+      }
+    }
+
+    throw lastError;
   }
 
   private async loadTracksWithMediaElements(
