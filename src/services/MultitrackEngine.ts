@@ -588,6 +588,7 @@ export class MultitrackEngine {
   ): Promise<TrackData[]> {
     const total = trackList.length;
     const loadBatchSize = this.getAudioBufferLoadBatchSize();
+    const skippedDecodeTracks: TrackData[] = [];
     console.log(
       `[MultitrackEngine] Initiating bounded concurrent loads for ${total} tracks (limit ${loadBatchSize}).`,
     );
@@ -616,6 +617,7 @@ export class MultitrackEngine {
             message,
             playExtension: this.getTrackFileExtension(track),
           });
+          skippedDecodeTracks.push(track);
           return null;
         }
       },
@@ -631,6 +633,10 @@ export class MultitrackEngine {
       },
     ).then((tracks) => {
       const playableTracks = tracks.filter((track): track is TrackData => track !== null);
+      const syntheticClickTracks = this.buildSyntheticClickFallbackTracks(skippedDecodeTracks, playableTracks);
+      if (syntheticClickTracks.length > 0) {
+        playableTracks.unshift(...syntheticClickTracks);
+      }
       if (trackList.length > 0 && playableTracks.length === 0) {
         throw new Error('No se pudo decodificar ningún stem de la sesión.');
       }
@@ -783,6 +789,127 @@ export class MultitrackEngine {
     const source = `${track.sourceFileName || ''} ${track.url || ''}`.trim();
     const match = source.match(/\.([a-z0-9]{2,5})(?:[?#\s]|$)/i);
     return match ? match[1].toLowerCase() : undefined;
+  }
+
+  private buildSyntheticClickFallbackTracks(
+    failedTracks: TrackData[],
+    loadedTracks: TrackData[],
+  ): TrackData[] {
+    if (failedTracks.length === 0) {
+      return [];
+    }
+
+    const fallbackDuration = Math.max(
+      ...loadedTracks.map((track) => track.audioBuffer?.duration || track.durationSeconds || 0),
+      0,
+    );
+    const durationSeconds = fallbackDuration > 0 ? fallbackDuration : 300;
+
+    return failedTracks.flatMap((track) => {
+      if (!this.isClickTrack(track)) {
+        return [];
+      }
+
+      const bpm = this.inferClickBpm(track);
+      if (!bpm) {
+        return [];
+      }
+
+      console.warn(
+        `[MultitrackEngine] Generating synthetic click for "${track.name}" at ${bpm} BPM because Safari could not decode the original stem.`,
+      );
+      const syntheticTrack = this.createSyntheticClickTrack(track, bpm, durationSeconds);
+      this.loadWarnings = this.loadWarnings.filter((warning) => (
+        !(warning.trackId === track.id && warning.reason === 'decode')
+      ));
+      this.loadWarnings.push({
+        trackId: track.id,
+        trackName: track.name,
+        reason: 'synthetic-click',
+        message: `El stem original no abrió; se generó un click sintético a ${bpm} BPM.`,
+        playExtension: this.getTrackFileExtension(track),
+      });
+      return [syntheticTrack];
+    });
+  }
+
+  private isClickTrack(track: TrackData): boolean {
+    const haystack = `${track.id || ''} ${track.name || ''} ${track.sourceFileName || ''} ${track.url || ''}`.toLowerCase();
+    return /\b(click|metronom[oe]?|bpm)\b/.test(haystack);
+  }
+
+  private inferClickBpm(track: TrackData): number | null {
+    const haystack = `${track.id || ''} ${track.name || ''} ${track.sourceFileName || ''} ${track.url || ''}`;
+    const bpmMatch = haystack.match(/(?:^|[^0-9])([4-9][0-9]|1[0-9]{2}|2[0-2][0-9])\s*[-_ ]?bpm\b/i);
+    if (!bpmMatch) {
+      return null;
+    }
+
+    const bpm = Number(bpmMatch[1]);
+    return Number.isFinite(bpm) && bpm >= 40 && bpm <= 220 ? bpm : null;
+  }
+
+  private createSyntheticClickTrack(track: TrackData, bpm: number, durationSeconds: number): TrackData {
+    const sampleRate = this.context.sampleRate || 48_000;
+    const channelCount = 1;
+    const frameCount = Math.max(1, Math.ceil(durationSeconds * sampleRate));
+    const audioBuffer = this.context.createBuffer(channelCount, frameCount, sampleRate);
+    const channel = audioBuffer.getChannelData(0);
+    const secondsPerBeat = 60 / bpm;
+    const clickDurationFrames = Math.max(1, Math.floor(sampleRate * 0.045));
+    const twoPi = Math.PI * 2;
+
+    for (let beatIndex = 0; ; beatIndex += 1) {
+      const startFrame = Math.round(beatIndex * secondsPerBeat * sampleRate);
+      if (startFrame >= frameCount) {
+        break;
+      }
+
+      const isAccent = beatIndex % 4 === 0;
+      const frequency = isAccent ? 1760 : 1120;
+      const gain = isAccent ? 0.82 : 0.58;
+
+      for (let frameOffset = 0; frameOffset < clickDurationFrames; frameOffset += 1) {
+        const frame = startFrame + frameOffset;
+        if (frame >= frameCount) {
+          break;
+        }
+
+        const progress = frameOffset / clickDurationFrames;
+        const envelope = Math.exp(-progress * 8);
+        channel[frame] += Math.sin(twoPi * frequency * (frameOffset / sampleRate)) * gain * envelope;
+      }
+    }
+
+    const inputNode = this.context.createGain();
+    const gainNode = this.context.createGain();
+    const analyserNode = this.createTrackAnalyser();
+    const routeSplitterNode = this.context.createChannelSplitter(2);
+    const routeMergerNode = this.context.createChannelMerger(2);
+
+    routeMergerNode.connect(gainNode);
+    gainNode.connect(analyserNode);
+    analyserNode.connect(this.masterGain);
+
+    const syntheticTrack: TrackData = {
+      ...track,
+      volume: this.clampVolume(track.volume),
+      audioBuffer,
+      inputNode,
+      gainNode,
+      analyserNode,
+      meterData: new Float32Array(analyserNode.fftSize),
+      routeSplitterNode,
+      routeMergerNode,
+      sourceNode: undefined,
+      mediaElement: undefined,
+      mediaSourceNode: undefined,
+      durationSeconds: audioBuffer.duration,
+    };
+
+    this.syncTrackOutputRoute(syntheticTrack);
+    this.syncTrackGain(syntheticTrack);
+    return syntheticTrack;
   }
 
   private async loadTracksWithMediaElements(

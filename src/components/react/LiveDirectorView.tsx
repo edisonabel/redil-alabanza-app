@@ -1959,6 +1959,9 @@ export function LiveDirectorView({
   const showLoadWarningBanner = Boolean(
     loadWarnings && loadWarnings.length > 0 && dismissedLoadWarningKey !== loadWarningsKey
   );
+  const hasRecoveredSyntheticClick = Boolean(
+    loadWarnings?.some((warning) => warning.reason === 'synthetic-click')
+  );
   const showTrackLimitNotice = Boolean(
     trackLimitNotice && dismissedTrackLimitNoticeKey !== trackLimitNotice.key
   );
@@ -4719,10 +4722,12 @@ export function LiveDirectorView({
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-[0.72rem] font-black uppercase tracking-[0.22em] text-amber-200/80">
-                  Stems omitidos ({loadWarnings.length})
+                  {hasRecoveredSyntheticClick ? 'Click recuperado' : `Stems omitidos (${loadWarnings.length})`}
                 </p>
                 <p className="mt-1 text-[0.88rem] leading-snug text-white/80">
-                  La sesión cargó sin estos archivos porque el motor no pudo abrirlos:
+                  {hasRecoveredSyntheticClick
+                    ? 'Safari no pudo abrir el click original, así que generamos un click estable para mantener la guía.'
+                    : 'La sesión cargó sin estos archivos porque el motor no pudo abrirlos:'}
                 </p>
                 <ul className="mt-2 space-y-1 text-[0.82rem] leading-snug text-white/72">
                   {loadWarnings.slice(0, 4).map((warning) => {
