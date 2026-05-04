@@ -684,8 +684,18 @@ export default function AdminRepertorio() {
       return {
         cueCount: cues.length,
         cuePreview: cues
-          .map((cue) => cue.rawLines.map(stripChordsFromLine).filter(Boolean).join(' / '))
-          .filter(Boolean),
+          .map((cue, cueIndex) => ({
+            label: cueIndex === 0 ? 'Seccion' : `Cue ${cueIndex + 1}`,
+            text: cue.rawLines.map(stripChordsFromLine).filter(Boolean).join(' / '),
+          }))
+          .filter((cue) => cue.text),
+        cueMarkerPreview: cues
+          .slice(1)
+          .map((cue, cueIndex) => ({
+            label: `Cue ${cueIndex + 2}`,
+            text: cue.rawLines.map(stripChordsFromLine).filter(Boolean).join(' / '),
+          }))
+          .filter((cue) => cue.text),
       };
     })
   ), [seccionesEditorChordpro]);
@@ -2200,7 +2210,7 @@ export default function AdminRepertorio() {
 
                   <div className="editor-column-scroll mt-3 min-h-0 flex-1 space-y-2.5 overflow-y-scroll pr-1">
                     {editorSectionMarkers.length > 0 ? editorSectionMarkers.map((marker, index) => {
-                      const cueDraft = cueDraftsEditor[index] || { cueCount: 1, cuePreview: [] };
+                      const cueDraft = cueDraftsEditor[index] || { cueCount: 1, cuePreview: [], cueMarkerPreview: [] };
                       const cueTransitionCount = Math.max(0, cueDraft.cueCount - 1);
 
                       return (
@@ -2318,13 +2328,13 @@ export default function AdminRepertorio() {
                                   placeholder={cueTransitionCount > 1 ? 'Ej: 01:12, 01:18' : 'Ej: 01:12'}
                                 />
 
-                                {cueDraft.cuePreview.length > 0 && (
+                                {cueDraft.cueMarkerPreview.length > 0 && (
                                   <p className="text-[11px] text-content-muted">
-                                    {cueDraft.cuePreview.map((preview, previewIndex) => (
+                                    {cueDraft.cueMarkerPreview.map((preview, previewIndex) => (
                                       <span key={`${marker.sectionKey || marker.id}-cue-preview-${previewIndex}`}>
                                         {previewIndex > 0 ? ' | ' : ''}
-                                        <span className="font-semibold text-content">{`Cue ${previewIndex + 1}`}</span>
-                                        {`: ${preview}`}
+                                        <span className="font-semibold text-content">{preview.label}</span>
+                                        {`: ${preview.text}`}
                                       </span>
                                     ))}
                                   </p>

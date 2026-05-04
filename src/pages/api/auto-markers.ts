@@ -125,6 +125,7 @@ type SectionAnchorPhrase = {
   phrase: string;
   fingerprint: string;
   weight: number;
+  startOffsetSec: number;
 };
 
 type SectionAnchorMatch = PhraseMatch & {
@@ -186,19 +187,19 @@ const buildCueAnchorPhrases = (lines: string[] = []): SectionAnchorPhrase[] => {
   const anchors: SectionAnchorPhrase[] = [];
   const seen = new Set<string>();
 
-  const addAnchor = (phrase = '', weight = 1) => {
+  const addAnchor = (phrase = '', weight = 1, startOffsetSec = 0) => {
     const fingerprint = buildPhraseFingerprint(phrase);
     if (!phrase || !fingerprint || seen.has(fingerprint)) return;
     seen.add(fingerprint);
-    anchors.push({ phrase, fingerprint, weight });
+    anchors.push({ phrase, fingerprint, weight, startOffsetSec });
   };
 
   if (meaningfulLines.length >= 2) {
-    addAnchor(meaningfulLines.slice(0, 2).join(' '), 1);
+    addAnchor(meaningfulLines.slice(0, 2).join(' '), 1, 0);
   }
 
   meaningfulLines.slice(0, 3).forEach((line, index) => {
-    addAnchor(line, Math.max(0.86, 0.96 - index * 0.05));
+    addAnchor(line, Math.max(0.86, 0.96 - index * 0.05), index * 3);
   });
 
   return anchors;
@@ -230,20 +231,20 @@ const buildSectionAnchorPhrases = (section: SectionPayload): SectionAnchorPhrase
   const anchors: SectionAnchorPhrase[] = [];
   const seen = new Set<string>();
 
-  const addAnchor = (rawPhrase = '', weight = 1) => {
+  const addAnchor = (rawPhrase = '', weight = 1, startOffsetSec = 0) => {
     const phrase = stripChords(rawPhrase).replace(/\s+/g, ' ').trim();
     const fingerprint = buildPhraseFingerprint(phrase);
     if (!phrase || !fingerprint || seen.has(fingerprint)) return;
     seen.add(fingerprint);
-    anchors.push({ phrase, fingerprint, weight });
+    anchors.push({ phrase, fingerprint, weight, startOffsetSec });
   };
 
   lyricLines.forEach((line, index) => {
-    addAnchor(line, Math.max(0.86, 1 - index * 0.05));
+    addAnchor(line, Math.max(0.86, 1 - index * 0.05), index * 3);
   });
 
   if (lyricLines.length >= 2 && getPhraseSearchWords(lyricLines[0]).length < 4) {
-    addAnchor(`${lyricLines[0]} ${lyricLines[1]}`, 0.95);
+    addAnchor(`${lyricLines[0]} ${lyricLines[1]}`, 0.95, 0);
   }
 
   return anchors;
@@ -740,10 +741,15 @@ const selectPhraseMatch = (
   ));
 
   if (shortlisted.length === 1 || !Number.isFinite(expectedStartSec)) {
-    return shortlisted[0] || candidates[0];
+    const selected = shortlisted[0] || candidates[0];
+    const distance = Number.isFinite(expectedStartSec) ? Math.abs(selected.startSec - Number(expectedStartSec)) : 0;
+    return {
+      ...selected,
+      confidence: Math.max(0.35, selected.confidence - Math.min(0.45, distance * 0.018)),
+    };
   }
 
-  return shortlisted.reduce((bestCandidate, candidate) => {
+  const selected = shortlisted.reduce((bestCandidate, candidate) => {
     const bestDistance = Math.abs((bestCandidate?.startSec ?? 0) - expectedStartSec!);
     const candidateDistance = Math.abs(candidate.startSec - expectedStartSec!);
 
@@ -753,6 +759,12 @@ const selectPhraseMatch = (
     if (candidate.confidence < (bestCandidate?.confidence ?? 0)) return bestCandidate;
     return candidate.startSec < (bestCandidate?.startSec ?? Infinity) ? candidate : bestCandidate;
   }, shortlisted[0]);
+  const distance = Math.abs(selected.startSec - expectedStartSec!);
+
+  return {
+    ...selected,
+    confidence: Math.max(0.35, selected.confidence - Math.min(0.45, distance * 0.018)),
+  };
 };
 
 const selectSectionAnchorMatch = ({
@@ -772,6 +784,7 @@ const selectSectionAnchorMatch = ({
     findPhraseMatchesInTranscript(transcriptWords, anchor.phrase, startSec)
       .map((match) => ({
         ...match,
+        startSec: Math.max(0, Math.round(match.startSec - anchor.startOffsetSec)),
         confidence: Math.max(0, Math.min(1, (match.confidence * anchor.weight) - (anchorIndex * 0.015) - (relaxed ? 0.05 : 0))),
         fingerprint: anchor.fingerprint,
         relaxed,
@@ -808,6 +821,7 @@ const selectCueAnchorMatch = ({
     findPhraseMatchesInTranscript(transcriptWords, anchor.phrase, startSec, endBefore)
       .map((match) => ({
         ...match,
+        startSec: Math.max(0, Math.round(match.startSec - anchor.startOffsetSec)),
         confidence: Math.max(0, Math.min(1, (match.confidence * anchor.weight) - (anchorIndex * 0.012) - (relaxed ? 0.04 : 0))),
         fingerprint: anchor.fingerprint,
         relaxed,
@@ -859,7 +873,7 @@ const selectTextOnlyAnchorMatch = ({
       }
 
       if (matchCount < Math.ceil(anchorWords.length * 0.72)) continue;
-      const startSec = Math.round((duration * index) / Math.max(words.length, 1));
+      const startSec = Math.max(0, Math.round((duration * index) / Math.max(words.length, 1) - anchor.startOffsetSec));
       if (startSec < searchStartSec) continue;
 
       candidates.push({
