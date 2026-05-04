@@ -1,5 +1,5 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MultitrackEngine, type TrackData } from '../services/MultitrackEngine';
+import { MultitrackEngine, type TrackData, type MultitrackEngineLoadWarning } from '../services/MultitrackEngine';
 import { StreamingMultitrackEngine } from '../services/StreamingMultitrackEngine';
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
 import type { TrackActivityEnvelope } from '../utils/audioActivityEnvelope';
@@ -8,6 +8,8 @@ import {
   readLiveBrowserCapabilities,
   warnLiveDiagnostic,
 } from '../utils/liveDiagnostics';
+
+export type { MultitrackEngineLoadWarning } from '../services/MultitrackEngine';
 
 type TrackVolumesState = Record<string, number>;
 type TrackLevelsState = Record<string, number>;
@@ -30,16 +32,6 @@ type EngineDiagnostics = LiveDirectorEngineDiagnostics;
 
 type UseMultitrackEngineOptions = {
   useStreamingEngine?: boolean;
-};
-
-export type MultitrackEngineLoadWarning = {
-  trackId: string;
-  trackName: string;
-  reason: 'open' | 'cache' | string;
-  message: string;
-  osStatus?: number;
-  fourCharCode?: string;
-  playExtension?: string;
 };
 
 export type UseMultitrackEngineReturn = {
@@ -155,6 +147,7 @@ export function useMultitrackEngine(
   const [trackLevels, setTrackLevels] = useState<TrackLevelsState>({});
   const [trackEnvelopes, setTrackEnvelopes] = useState<TrackEnvelopesState>({});
   const [diagnostics, setDiagnostics] = useState<EngineDiagnostics | null>(null);
+  const [loadWarnings, setLoadWarnings] = useState<MultitrackEngineLoadWarning[]>([]);
 
   const commitLoadProgress = useCallback((next: LoadProgressState) => {
     const previous = loadProgressRef.current;
@@ -306,6 +299,7 @@ export function useMultitrackEngine(
     trackLevelsRef.current = {};
     setTrackLevels({});
     setTrackEnvelopes({});
+    setLoadWarnings([]);
     commitLoadProgress({ loaded: 0, total: nextTracks.length });
 
     const handleProgress = (loaded: number, total: number) => {
@@ -331,6 +325,7 @@ export function useMultitrackEngine(
       trackLevelsRef.current = buildTrackLevels(loadedTracks);
       setTrackLevels(trackLevelsRef.current);
       setTrackEnvelopes(buildTrackEnvelopes(loadedTracks));
+      setLoadWarnings(targetKind === 'buffer' ? (engine as MultitrackEngine).getLoadWarnings() : []);
       commitDuration(engine.getDuration());
       commitDiagnostics(engine.getDiagnostics());
       commitLoadProgress(null);
@@ -378,6 +373,7 @@ export function useMultitrackEngine(
           trackLevelsRef.current = buildTrackLevels(fallbackLoadedTracks);
           setTrackLevels(trackLevelsRef.current);
           setTrackEnvelopes(buildTrackEnvelopes(fallbackLoadedTracks));
+          setLoadWarnings(fallbackEngine.getLoadWarnings());
           commitDuration(fallbackEngine.getDuration());
           commitDiagnostics(fallbackEngine.getDiagnostics());
           commitLoadProgress(null);
@@ -397,6 +393,7 @@ export function useMultitrackEngine(
       trackLevelsRef.current = {};
       setTrackLevels({});
       setTrackEnvelopes({});
+      setLoadWarnings([]);
       commitDiagnostics(null);
       commitLoadProgress(null);
       throw error;
@@ -661,11 +658,7 @@ export function useMultitrackEngine(
       duration,
       isReady,
       loadProgress,
-      // The web/streaming engine does not currently emit per-stem open
-      // warnings — buffers that fail to decode already throw and surface via
-      // the top-level error path. Native iOS is the surface that actually
-      // produces warnings today.
-      loadWarnings: [] as MultitrackEngineLoadWarning[],
+      loadWarnings,
       trackVolumes,
       trackLevels,
       trackEnvelopes,
@@ -691,6 +684,7 @@ export function useMultitrackEngine(
       initialize,
       isPlaying,
       isReady,
+      loadWarnings,
       loadProgress,
       pause,
       play,

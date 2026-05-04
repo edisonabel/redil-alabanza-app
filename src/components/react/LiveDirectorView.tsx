@@ -54,6 +54,7 @@ import {
 } from '../../utils/liveDirectorTrackRouting';
 import { getPadUrlForSongKey } from '../../utils/padAudio';
 import { extractCoverArtFromMp3 } from '../../utils/mp3CoverArt';
+import { readLiveBrowserCapabilities } from '../../utils/liveDiagnostics';
 
 type MixerTrackMeta = {
   id: string;
@@ -164,14 +165,14 @@ type LiveDirectorViewProps = {
   onBack?: () => void;
 };
 
-// Per-platform active stem warning thresholds. Going past these can cause
-// audible slipping ("patinar") on weaker hardware, but the operator can
-// intentionally exceed the threshold for lightweight sessions.
+// Per-platform active stem limits for reliable live playback.
 //   - iOS native (AVAudioEngine):     13 song stems, with internal pad extra
 //   - Android web (Capacitor browser): 10 stems before clocks drift
+//   - Safari web:                      9 stems before WebAudio/DecoderCocoa rejects some AAC sessions
 //   - Desktop web (Chrome/Edge/FF):    11 stems before Chrome decode windows stall
 const IOS_NATIVE_MAX_ACTIVE_TRACKS = 13;
 const ANDROID_MAX_ACTIVE_TRACKS = 10;
+const SAFARI_WEB_MAX_ACTIVE_TRACKS = 9;
 const WEB_ENGINE_MAX_ACTIVE_TRACKS = 11;
 const INTERNAL_PAD_TRACK_ID = '__internal-pad__';
 // The internal pad masters are intentionally lush, but their raw gain is too hot
@@ -809,6 +810,9 @@ export function LiveDirectorView({
     } catch {
       // Capacitor unavailable (SSR / unit test) — fall through to web cap.
     }
+    if (readLiveBrowserCapabilities().isSafari) {
+      return SAFARI_WEB_MAX_ACTIVE_TRACKS;
+    }
     return WEB_ENGINE_MAX_ACTIVE_TRACKS;
   }, [isIOSNativeEngineSurface, maxWebActiveTracks]);
   const sessionActiveTrackLimit = Math.max(1, activeTrackWarningThreshold);
@@ -819,10 +823,32 @@ export function LiveDirectorView({
   );
 
   const activeTracks = useMemo(() => {
-    return enabledSessionTracks;
-  }, [enabledSessionTracks]);
+    if (enabledSessionTracks.length <= sessionActiveTrackLimit) {
+      return enabledSessionTracks;
+    }
 
-  const isWebTrackLimitExceeded = enabledSessionTracks.length > sessionActiveTrackLimit;
+    const ranked = enabledSessionTracks.map((track, index) => ({
+      track,
+      index,
+      rank: stemPriorityRank(track),
+    }));
+    ranked.sort((a, b) => (a.rank - b.rank) || (a.index - b.index));
+
+    const kept = ranked.slice(0, sessionActiveTrackLimit);
+    kept.sort((a, b) => a.index - b.index);
+
+    return kept.map((entry) => entry.track);
+  }, [enabledSessionTracks, sessionActiveTrackLimit]);
+
+  const isWebTrackLimitExceeded = enabledSessionTracks.length > activeTracks.length;
+
+  const autoDisabledTrackNames = useMemo(() => {
+    if (!isWebTrackLimitExceeded) return [];
+    const activeIds = new Set(activeTracks.map((track) => track.id));
+    return enabledSessionTracks
+      .filter((track) => !activeIds.has(track.id))
+      .map((track) => track.name || track.id);
+  }, [activeTracks, enabledSessionTracks, isWebTrackLimitExceeded]);
 
   const activeEngineTracks = useMemo(() => {
     return activeTracks.map((track) => ({
@@ -855,7 +881,7 @@ export function LiveDirectorView({
     : [performerLabel, songKey].filter(Boolean).join(' · ') || sessionModeLabel;
   const songSupportMeta = hasSessionTracks
     ? isWebTrackLimitExceeded
-      ? `${activeTracks.length} pistas activas (sobre recomendado ${sessionActiveTrackLimit}${shouldUseNativePadBridge ? ' + pad' : ''})`
+      ? `${activeTracks.length} de ${enabledSessionTracks.length} pistas activas (seguro ${sessionActiveTrackLimit}${shouldUseNativePadBridge ? ' + pad' : ''})`
       : inferredSessionMode === 'folder' && activeTracks.length !== sessionTracks.length
       ? `${activeTracks.length} de ${sessionTracks.length} pistas activas`
       : sessionModeLabel
@@ -2330,21 +2356,20 @@ export function LiveDirectorView({
   }, [buildSessionSavePayload, hasPersistedSongContext, manualSession, mutedTrackIds, queueSilentSessionSave, trackOutputRoutes, trackVolumes]);
 
   useEffect(() => {
-    if (!hasSessionTracks || enabledSessionTracks.length <= sessionActiveTrackLimit) {
+    if (!hasSessionTracks || !isWebTrackLimitExceeded || autoDisabledTrackNames.length === 0) {
       setTrackLimitNotice(null);
       return;
     }
 
-    const names = enabledSessionTracks.map((track) => track.name || track.id);
-    const key = `${sessionActiveTrackLimit}:${enabledSessionTracks.map((track) => track.id).join('|')}`;
+    const key = `${sessionActiveTrackLimit}:${autoDisabledTrackNames.join('|')}`;
     setTrackLimitNotice({
       key,
-      names,
+      names: autoDisabledTrackNames,
       limit: sessionActiveTrackLimit,
       total: enabledSessionTracks.length,
     });
     setDismissedTrackLimitNoticeKey((previous) => (previous === key ? previous : null));
-  }, [enabledSessionTracks, hasSessionTracks, sessionActiveTrackLimit]);
+  }, [autoDisabledTrackNames, enabledSessionTracks.length, hasSessionTracks, isWebTrackLimitExceeded, sessionActiveTrackLimit]);
 
   const mixerAutosaveTimerRef = useRef<number | null>(null);
 
@@ -3619,12 +3644,12 @@ export function LiveDirectorView({
                               {currentSessionLabel}
                             </h1>
                             <p className={`text-white/54 ${isUltraCompactLandscape ? 'mt-0.5 text-[0.58rem]' : isCompactLandscape ? 'mt-0.5 text-[0.68rem]' : 'mt-1 text-[0.92rem]'}`}>{songSupportMeta}</p>
-                            {isWebTrackLimitExceeded && (
+                            {autoDisabledTrackNames.length > 0 && (
                               <p
                                 className={`text-amber-200/86 ${isUltraCompactLandscape ? 'mt-0.5 text-[0.56rem]' : isCompactLandscape ? 'mt-0.5 text-[0.66rem]' : 'mt-1 text-[0.78rem]'}`}
-                                title="Puedes usar más stems si la sesión responde estable, pero prueba antes del servicio."
+                                title={`Omitidos para estabilidad: ${autoDisabledTrackNames.join(', ')}`}
                               >
-                                Sobre el umbral recomendado: {enabledSessionTracks.length}/{sessionActiveTrackLimit} stems
+                                Modo seguro: {activeTracks.length}/{enabledSessionTracks.length} stems
                               </p>
                             )}
                           </div>
@@ -4668,7 +4693,7 @@ export function LiveDirectorView({
                   Más de {trackLimitNotice.limit} stems
                 </p>
                 <p className="mt-1 text-[0.88rem] leading-snug text-white/80">
-                  Estás cargando {trackLimitNotice.total}. Si notas cortes, desactiva stems no esenciales desde Carga selectiva.
+                  Se cargarán {trackLimitNotice.limit} de {trackLimitNotice.total}. Omitidos: {trackLimitNotice.names.slice(0, 3).join(', ')}{trackLimitNotice.names.length > 3 ? ` +${trackLimitNotice.names.length - 3}` : ''}.
                 </p>
               </div>
               <button

@@ -32,6 +32,16 @@ type EngineMode = 'buffer' | 'media';
 
 export type LoadProgressCallback = (loaded: number, total: number) => void;
 
+export type MultitrackEngineLoadWarning = {
+  trackId: string;
+  trackName: string;
+  reason: 'decode' | 'open' | 'cache' | string;
+  message: string;
+  osStatus?: number;
+  fourCharCode?: string;
+  playExtension?: string;
+};
+
 export type LoadTracksOptions = {
   onProgress?: LoadProgressCallback;
   forceMode?: EngineMode;
@@ -264,6 +274,7 @@ export class MultitrackEngine {
   private mediaMonitorId: number | null = null;
   private lastMediaDriftDiagnosticAt = 0;
   private readonly activeLoadControllers = new Set<AbortController>();
+  private loadWarnings: MultitrackEngineLoadWarning[] = [];
 
   constructor() {
     if (typeof window === 'undefined') {
@@ -292,6 +303,7 @@ export class MultitrackEngine {
 
     this.stop();
     this.abortPendingLoads();
+    this.loadWarnings = [];
     this.cleanupTrackResources([...this.tracks, ...trackList]);
     this.mode = options?.forceMode || (this.shouldUseMediaMode(trackList) ? 'media' : 'buffer');
     console.log(`[MultitrackEngine] Using ${this.mode} mode.`);
@@ -346,6 +358,10 @@ export class MultitrackEngine {
 
   getTracks(): TrackData[] {
     return this.tracks;
+  }
+
+  getLoadWarnings(): MultitrackEngineLoadWarning[] {
+    return [...this.loadWarnings];
   }
 
   getTrackMeterLevels(): Record<string, number> {
@@ -580,7 +596,29 @@ export class MultitrackEngine {
     return runWithConcurrency(
       trackList,
       loadBatchSize,
-      async (track) => this.loadTrackWithAudioBuffer(track),
+      async (track) => {
+        try {
+          return await this.loadTrackWithAudioBuffer(track);
+        } catch (error) {
+          if (!this.isSkippableTrackDecodeError(error)) {
+            throw error;
+          }
+
+          const message = error instanceof Error ? error.message : String(error || 'Decoding failed');
+          console.warn(
+            `[MultitrackEngine] Skipping "${track.name}" after decode failure. Continuing with the remaining tracks.`,
+            error,
+          );
+          this.loadWarnings.push({
+            trackId: track.id,
+            trackName: track.name,
+            reason: 'decode',
+            message,
+            playExtension: this.getTrackFileExtension(track),
+          });
+          return null;
+        }
+      },
       () => {
         completed += 1;
         if (onProgress) {
@@ -591,7 +629,13 @@ export class MultitrackEngine {
           }
         }
       },
-    );
+    ).then((tracks) => {
+      const playableTracks = tracks.filter((track): track is TrackData => track !== null);
+      if (trackList.length > 0 && playableTracks.length === 0) {
+        throw new Error('No se pudo decodificar ningún stem de la sesión.');
+      }
+      return playableTracks;
+    });
   }
 
   private async loadTrackWithAudioBuffer(track: TrackData): Promise<TrackData> {
@@ -724,6 +768,21 @@ export class MultitrackEngine {
     }
 
     throw lastError;
+  }
+
+  private isSkippableTrackDecodeError(error: unknown): boolean {
+    const codedError = error as Error & { code?: string; cause?: unknown };
+    return (
+      codedError?.code === 'ALAC_DECODE_LIKELY' ||
+      isDecodeFailure(error) ||
+      Boolean(codedError?.cause && isDecodeFailure(codedError.cause))
+    );
+  }
+
+  private getTrackFileExtension(track: TrackData): string | undefined {
+    const source = `${track.sourceFileName || ''} ${track.url || ''}`.trim();
+    const match = source.match(/\.([a-z0-9]{2,5})(?:[?#\s]|$)/i);
+    return match ? match[1].toLowerCase() : undefined;
   }
 
   private async loadTracksWithMediaElements(

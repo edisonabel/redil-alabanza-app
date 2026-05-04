@@ -14,7 +14,7 @@ import {
 } from '../../services/NativeLiveDirectorEnginePlugin';
 
 const CACHE_NAME = 'repertorio-offline-cache-v1';
-const NEXT_SONG_WEB_PRELOAD_TRACK_LIMIT = 11;
+const NEXT_SONG_WEB_PRELOAD_TRACK_LIMIT = 9;
 const NEXT_SONG_IOS_PRELOAD_TRACK_LIMIT = 13;
 const NEXT_SONG_WEB_PRELOAD_START_DELAY_MS = 2500;
 const NEXT_SONG_WEB_PRELOAD_GAP_MS = 900;
@@ -38,6 +38,11 @@ const PRELOAD_STEM_PRIORITY_RULES = [
 
 const resolveSongId = (song) => String(song?.id || '').trim();
 const isAudioSourceUrl = (value = '') => AUDIO_SOURCE_URL_RE.test(String(value || '').trim());
+const isSafariWebBrowser = () => {
+  if (typeof navigator === 'undefined') return false;
+  const userAgent = navigator.userAgent || '';
+  return /Safari/i.test(userAgent) && !/Chrome|Chromium|CriOS|Edg/i.test(userAgent);
+};
 const wait = (ms, signal) => new Promise((resolve, reject) => {
   if (signal?.aborted) {
     reject(new DOMException('Preload cancelled', 'AbortError'));
@@ -255,6 +260,26 @@ const buildSongPreloadTracks = (song, sessionOverride = null, { limit = 11, incl
       enabled: true,
     },
   ];
+};
+
+const hasPreloadableMultitrackSession = (song, sessionOverride = null) => {
+  const session = resolveSongSession(song, sessionOverride);
+  return Array.isArray(session?.tracks) && session.tracks.some((track) => (
+    track?.enabled !== false && String(track?.url || '').trim()
+  ));
+};
+
+const findNextPreloadableSong = (songs, startIndex, sessionOverrides) => {
+  for (let index = startIndex + 1; index < songs.length; index += 1) {
+    const song = songs[index];
+    const songId = resolveSongId(song);
+    if (!song || !songId) continue;
+    if (hasPreloadableMultitrackSession(song, sessionOverrides[songId])) {
+      return { song, songId };
+    }
+  }
+
+  return { song: null, songId: '' };
 };
 
 const buildSessionTrackSignature = (session) => (
@@ -512,8 +537,11 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
       return;
     }
 
-    const nextSong = ensayoSongs[safeActiveSongIndex + 1];
-    const nextSongId = resolveSongId(nextSong);
+    const { song: nextSong, songId: nextSongId } = findNextPreloadableSong(
+      ensayoSongs,
+      safeActiveSongIndex,
+      sessionOverrides,
+    );
 
     if (!nextSong || !nextSongId || prewarmedSongIdsRef.current.has(nextSongId)) {
       return;
@@ -565,13 +593,17 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
       ensayoSongs.length === 0 ||
       typeof window === 'undefined' ||
       !('caches' in window) ||
-      isNativeLiveDirectorEngineAvailable()
+      isNativeLiveDirectorEngineAvailable() ||
+      isSafariWebBrowser()
     ) {
       return;
     }
 
-    const nextSong = ensayoSongs[safeActiveSongIndex + 1];
-    const nextSongId = resolveSongId(nextSong);
+    const { song: nextSong, songId: nextSongId } = findNextPreloadableSong(
+      ensayoSongs,
+      safeActiveSongIndex,
+      sessionOverrides,
+    );
 
     if (!nextSong || !nextSongId || prewarmedSongIdsRef.current.has(nextSongId)) {
       return;
