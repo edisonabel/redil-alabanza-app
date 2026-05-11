@@ -5,6 +5,7 @@ const DRIVE_HOSTS = new Set([
   'drive.usercontent.google.com',
 ]);
 const AUDIO_API_PATHS = new Set(['/api/audio', '/api/mp3-proxy']);
+const AUDIO_PROXY_VERSION = '2';
 
 const resolveBaseOrigin = (origin = '') => {
   if (origin) return origin;
@@ -102,6 +103,7 @@ export const toAudioApiUrl = (rawUrl, { origin = '' } = {}) => {
       (parsed.pathname === '/api/audio' && parsed.searchParams.get('id')) ||
       (parsed.pathname === '/api/mp3-proxy' && parsed.searchParams.get('src'))
     ) {
+      parsed.searchParams.set('v', AUDIO_PROXY_VERSION);
       return parsed.href;
     }
   } catch {
@@ -112,12 +114,16 @@ export const toAudioApiUrl = (rawUrl, { origin = '' } = {}) => {
   if (!fileId) return normalized;
 
   const baseOrigin = resolveBaseOrigin(origin);
-  return `${baseOrigin}/api/audio?id=${encodeURIComponent(fileId)}`;
+  return `${baseOrigin}/api/audio?id=${encodeURIComponent(fileId)}&v=${encodeURIComponent(AUDIO_PROXY_VERSION)}`;
 };
 
 export const buildPlaybackSourceCandidates = (rawUrl, { origin = '' } = {}) => {
   const normalized = normalizeExternalAudioUrl(rawUrl, { origin });
   if (!normalized) return [];
+
+  if (isAudioApiUrl(normalized, { origin })) {
+    return [toAudioApiUrl(normalized, { origin })].filter(Boolean);
+  }
 
   if (!isDriveLikeAudioUrl(normalized, { origin })) {
     return [normalized];

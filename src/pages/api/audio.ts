@@ -40,12 +40,24 @@ const buildProxyHeaders = (upstream: Response) => {
   if (!headers.has('accept-ranges')) {
     headers.set('accept-ranges', 'bytes');
   }
-  if (!headers.has('cache-control')) {
-    headers.set('cache-control', 'public, max-age=3600');
-  }
+  headers.set('cache-control', 'private, no-store, max-age=0, must-revalidate');
+  headers.set('pragma', 'no-cache');
+  headers.set('expires', '0');
+  headers.set('vary', 'Range');
 
   return headers;
 };
+
+const audioErrorResponse = (message: string, status: number) => (
+  new Response(message, {
+    status,
+    headers: {
+      'cache-control': 'private, no-store, max-age=0, must-revalidate',
+      pragma: 'no-cache',
+      expires: '0',
+    },
+  })
+);
 
 const buildFetchHeaders = (request: Request, cookieHeader = '') => {
   const forwardedHeaders = new Headers();
@@ -233,17 +245,17 @@ const fetchDriveStream = async (request: Request, id: string) => {
     lastErrorMessage = result.message;
   }
 
-  return new Response(lastErrorMessage, { status: lastErrorStatus });
+  return audioErrorResponse(lastErrorMessage, lastErrorStatus);
 };
 
 export const GET: APIRoute = async ({ request, url }) => {
   const id = (url.searchParams.get('id') || '').trim();
 
   if (!id) {
-    return new Response('Falta el parametro id', { status: 400 });
+    return audioErrorResponse('Falta el parametro id', 400);
   }
   if (!FILE_ID_REGEX.test(id)) {
-    return new Response('id de archivo invalido', { status: 400 });
+    return audioErrorResponse('id de archivo invalido', 400);
   }
 
   return fetchDriveStream(request, id);

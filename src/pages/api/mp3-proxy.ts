@@ -26,23 +26,36 @@ const toDriveDownloadUrl = (rawUrl: string) => {
   return `https://drive.google.com/uc?export=download&id=${fileId}`;
 };
 
+const audioProxyResponse = (body: BodyInit | null, init: ResponseInit = {}) => {
+  const headers = new Headers(init.headers);
+  headers.set('cache-control', 'private, no-store, max-age=0, must-revalidate');
+  headers.set('pragma', 'no-cache');
+  headers.set('expires', '0');
+  headers.set('vary', 'Range');
+
+  return new Response(body, {
+    ...init,
+    headers,
+  });
+};
+
 export const prerender = false;
 
 export const GET: APIRoute = async ({ request, url }) => {
   const src = url.searchParams.get('src');
   if (!src) {
-    return new Response('Missing src', { status: 400 });
+    return audioProxyResponse('Missing src', { status: 400 });
   }
 
   let parsed: URL;
   try {
     parsed = new URL(src);
   } catch {
-    return new Response('Invalid src URL', { status: 400 });
+    return audioProxyResponse('Invalid src URL', { status: 400 });
   }
 
   if (!isAllowedDriveHost(parsed.hostname)) {
-    return new Response('Host not allowed', { status: 403 });
+    return audioProxyResponse('Host not allowed', { status: 403 });
   }
 
   const targetUrl = toDriveDownloadUrl(src);
@@ -60,12 +73,12 @@ export const GET: APIRoute = async ({ request, url }) => {
       redirect: 'follow',
     });
   } catch {
-    return new Response('Failed to fetch source audio', { status: 502 });
+    return audioProxyResponse('Failed to fetch source audio', { status: 502 });
   }
 
   const contentType = upstream.headers.get('content-type') || '';
   if (contentType.includes('text/html')) {
-    return new Response('Drive did not return an audio file. Verify sharing permissions.', { status: 422 });
+    return audioProxyResponse('Drive did not return an audio file. Verify sharing permissions.', { status: 422 });
   }
 
   const responseHeaders = new Headers();
@@ -82,9 +95,10 @@ export const GET: APIRoute = async ({ request, url }) => {
     if (value) responseHeaders.set(key, value);
   });
 
-  if (!responseHeaders.has('cache-control')) {
-    responseHeaders.set('cache-control', 'public, max-age=3600');
-  }
+  responseHeaders.set('cache-control', 'private, no-store, max-age=0, must-revalidate');
+  responseHeaders.set('pragma', 'no-cache');
+  responseHeaders.set('expires', '0');
+  responseHeaders.set('vary', 'Range');
 
   return new Response(upstream.body, {
     status: upstream.status,
