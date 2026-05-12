@@ -72,11 +72,9 @@
         <audio id="mp3Audio" class="hidden" preload="auto" playsinline webkit-playsinline="true"></audio>
 
         <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          <section class="order-2 shrink-0 border-t border-white/10 bg-black/34 p-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] backdrop-blur-3xl md:p-4">
-            <div class="mx-auto max-w-5xl rounded-[1.6rem] border border-white/10 bg-white/[0.105] p-3 shadow-[0_20px_60px_rgba(0,0,0,0.38)] backdrop-blur-3xl md:p-4">
-              <div class="flex items-center gap-3">
-                <span id="mp3CurrentTime" class="w-12 text-right text-xs font-semibold tabular-nums text-white/58">00:00</span>
-                <div id="mp3TimelineWrap" class="relative flex h-9 flex-1 items-center">
+          <section class="order-2 shrink-0 border-t border-white/6 bg-black/18 px-5 pb-[max(env(safe-area-inset-bottom),1rem)] pt-3 backdrop-blur-3xl md:px-10 md:pb-8 md:pt-4">
+            <div class="mx-auto max-w-4xl">
+              <div id="mp3TimelineWrap" class="relative flex h-8 items-center">
                   <canvas id="mp3Waveform" class="pointer-events-none absolute inset-x-0 top-1/2 h-8 w-full -translate-y-1/2 opacity-80"></canvas>
                   <input id="mp3Seek" type="range" min="0" max="100" value="0" class="w-full accent-action" />
                   <div id="mp3LoopBracket" class="pointer-events-none absolute inset-x-0 top-1/2 hidden h-2 -translate-y-1/2">
@@ -84,30 +82,43 @@
                     <button id="mp3LoopHandleA" type="button" class="mp3-loop-handle pointer-events-auto absolute top-1/2 -translate-x-1/2 -translate-y-1/2" aria-label="Bracket A"><span class="mp3-loop-stick"></span></button>
                     <button id="mp3LoopHandleB" type="button" class="mp3-loop-handle pointer-events-auto absolute top-1/2 -translate-x-1/2 -translate-y-1/2" aria-label="Bracket B"><span class="mp3-loop-stick"></span></button>
                   </div>
+              </div>
+              <div class="mt-1 flex items-center justify-between text-xs font-semibold tabular-nums text-white/54">
+                <span id="mp3CurrentTime">00:00</span>
+                <span id="mp3Duration">00:00</span>
+              </div>
+
+              <div class="mt-8 grid grid-cols-[1fr_auto_1fr] items-center gap-4 md:mt-9">
+                <div class="flex items-center justify-end gap-6 md:gap-8">
+                  <button id="btnMp3Repeat" type="button" class="mp3-transport-secondary" aria-label="Repetir canción">
+                    <svg id="mp3RepeatIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2.35" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+                  </button>
+                  <button id="btnMp3Back5" type="button" class="mp3-transport-main" aria-label="Retroceder 5 segundos">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-10 w-10 md:h-12 md:w-12" fill="currentColor"><path d="M11 18.5 2.5 12 11 5.5v13Zm10 0L12.5 12 21 5.5v13Z"></path></svg>
+                  </button>
                 </div>
-                <span id="mp3Duration" class="w-12 text-xs font-semibold tabular-nums text-white/58">00:00</span>
+                <button id="btnMp3PlayPause" type="button" class="mp3-play-core" aria-label="Reproducir">
+                  <svg id="mp3PlayIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-14 w-14 fill-current md:h-16 md:w-16"><path d="M8 5v14l11-7z"></path></svg>
+                  <span id="mp3PlayLabel" class="sr-only">Reproducir</span>
+                </button>
+                <div class="flex items-center justify-start gap-6 md:gap-8">
+                  <button id="btnMp3Forward5" type="button" class="mp3-transport-main" aria-label="Adelantar 5 segundos">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-10 w-10 md:h-12 md:w-12" fill="currentColor"><path d="M13 5.5 21.5 12 13 18.5v-13Zm-10 0L11.5 12 3 18.5v-13Z"></path></svg>
+                  </button>
+                  <button id="btnMp3VolumeToggle" type="button" class="mp3-transport-secondary hidden md:inline-flex" aria-label="Mostrar volumen">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M18.36 5.64a9 9 0 0 1 0 12.73"/></svg>
+                  </button>
+                </div>
               </div>
 
-              <div class="mt-4 grid grid-cols-[auto_auto_1fr_auto_auto] items-center gap-2">
-                <button id="btnMp3Back5" type="button" class="h-11 rounded-full bg-white/8 px-3.5 text-sm font-bold text-white transition-colors hover:bg-white/14" aria-label="Retroceder 5 segundos">-5s</button>
-                <button id="btnMp3Repeat" type="button" class="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/8 text-white/72 transition-colors hover:bg-white/14 hover:text-white" aria-label="Repetir canción">
-                  <svg id="mp3RepeatIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
-                </button>
-                <button id="btnMp3PlayPause" type="button" class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-white text-[#111113] shadow-lg transition-colors hover:bg-white/88" aria-label="Reproducir">
-                  <svg id="mp3PlayIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5 fill-current"><path d="M8 5v14l11-7z"></path></svg>
-                  <span id="mp3PlayLabel" class="text-sm font-semibold tracking-wide">Reproducir</span>
-                </button>
-                <button id="btnMp3VolumeToggle" type="button" class="hidden h-11 w-11 items-center justify-center rounded-full bg-white/8 text-white/72 transition-colors hover:bg-white/14 hover:text-white md:inline-flex" aria-label="Mostrar volumen">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M18.36 5.64a9 9 0 0 1 0 12.73"/></svg>
-                </button>
-                <button id="btnMp3Forward5" type="button" class="h-11 rounded-full bg-white/8 px-3.5 text-sm font-bold text-white transition-colors hover:bg-white/14" aria-label="Adelantar 5 segundos">+5s</button>
-              </div>
-
-              <div id="mp3VolumeRow" class="mt-3 flex items-center gap-3">
-                <button id="btnMp3Mute" type="button" class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/8 text-white/74 transition-colors hover:bg-white/14 hover:text-white" aria-label="Silenciar">
+              <div id="mp3VolumeRow" class="mt-8 flex items-center gap-4 md:mt-9">
+                <button id="btnMp3Mute" type="button" class="inline-flex h-9 w-9 shrink-0 items-center justify-center text-white/70 transition-colors hover:text-white" aria-label="Silenciar">
                   <svg id="mp3VolumeIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M18.36 5.64a9 9 0 0 1 0 12.73"/></svg>
                 </button>
                 <input id="mp3Volume" type="range" min="0" max="1" step="0.01" value="0.85" class="mp3-volume-slider flex-1" aria-label="Volumen" />
+                <span class="grid h-9 w-9 place-items-center text-white/70" aria-hidden="true">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M18.36 5.64a9 9 0 0 1 0 12.73"/></svg>
+                </span>
               </div>
 
               <div class="mt-3 hidden flex-wrap items-center justify-between gap-2">
@@ -670,6 +681,8 @@
       const visibleValue = audio.muted ? 0 : audio.volume;
       volume.value = String(visibleValue);
       miniVolume.value = String(visibleValue);
+      volume.style.setProperty('--mp3-volume-pct', `${clamp(visibleValue, 0, 1) * 100}%`);
+      miniVolume.style.setProperty('--mp3-volume-pct', `${clamp(visibleValue, 0, 1) * 100}%`);
       renderVolumeIcon();
     };
 
@@ -1394,7 +1407,8 @@
     -webkit-appearance: none;
     height: 5px;
     border-radius: 9999px;
-    background: rgb(255 255 255 / 0.18);
+    background:
+      linear-gradient(90deg, rgb(255 255 255 / 0.82) var(--mp3-volume-pct, 85%), rgb(255 255 255 / 0.22) var(--mp3-volume-pct, 85%));
     accent-color: white;
   }
 
@@ -1430,11 +1444,77 @@
     box-shadow: 0 2px 10px rgb(0 0 0 / 0.28);
   }
 
-  #mp3PlayerModal.mp3-playing #btnMp3PlayPause,
   #mp3MiniPlayer.mp3-playing #btnMp3MiniPlay {
     background: white;
     color: #111113;
     box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08), 0 10px 28px rgb(0 0 0 / 0.32);
+  }
+
+  .mp3-transport-main,
+  .mp3-transport-secondary,
+  .mp3-play-core {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    background: transparent;
+    color: white;
+    transition: color 180ms ease, opacity 180ms ease, transform 180ms ease;
+  }
+
+  .mp3-transport-main {
+    min-width: 3.25rem;
+    min-height: 3.25rem;
+    opacity: 0.94;
+  }
+
+  .mp3-transport-secondary {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    opacity: 0.68;
+  }
+
+  .mp3-play-core {
+    min-width: 5rem;
+    min-height: 5rem;
+    opacity: 0.98;
+  }
+
+  .mp3-transport-main:hover,
+  .mp3-transport-secondary:hover,
+  .mp3-play-core:hover {
+    opacity: 1;
+    transform: scale(1.035);
+  }
+
+  .mp3-transport-main:active,
+  .mp3-transport-secondary:active,
+  .mp3-play-core:active {
+    transform: scale(0.96);
+  }
+
+  .mp3-transport-main:focus,
+  .mp3-transport-secondary:focus,
+  .mp3-play-core:focus {
+    outline: none;
+  }
+
+  .mp3-transport-main:focus-visible,
+  .mp3-transport-secondary:focus-visible,
+  .mp3-play-core:focus-visible {
+    outline: 2px solid rgb(255 255 255 / 0.44);
+    outline-offset: 0.35rem;
+    border-radius: 9999px;
+  }
+
+  #btnMp3VolumeToggle {
+    display: none;
+  }
+
+  @media (min-width: 768px) {
+    #btnMp3VolumeToggle {
+      display: inline-flex;
+    }
   }
 
   #btnMp3Repeat.is-active {
