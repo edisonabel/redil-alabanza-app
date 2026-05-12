@@ -1,68 +1,146 @@
-﻿<div id="proPlayerGlobalRoot" transition:persist transition:animate="none">
-  <div id="mp3PlayerModal" class="fixed inset-0 z-[180] hidden overscroll-contain" aria-hidden="true">
-    <div id="mp3PlayerBackdrop" class="absolute inset-0 bg-overlay/82 backdrop-blur-md opacity-0 transition-opacity duration-[900ms] [transition-timing-function:cubic-bezier(0.2,0.8,0.2,1)]"></div>
-    <div class="relative z-10 w-full h-full flex items-end md:items-center justify-center px-2 pt-2 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] md:p-4 overflow-y-auto overscroll-contain">
-      <div id="mp3PlayerPanel" class="w-full md:w-[95%] lg:w-[95%] max-w-5xl max-h-[calc(100dvh-env(safe-area-inset-bottom)-7.5rem)] md:max-h-[92dvh] overflow-y-auto my-0 md:my-2 bg-surface border border-border rounded-3xl shadow-2xl p-4 md:p-6 opacity-0 translate-y-4 transition-all duration-[900ms] [transition-timing-function:cubic-bezier(0.2,0.8,0.2,1)]">
-        <div class="flex items-start justify-between gap-3">
+<div id="proPlayerGlobalRoot" transition:persist transition:animate="none">
+  <div id="mp3MiniPlayer" class="fixed left-3 right-3 md:left-auto md:right-5 md:w-[34rem] bottom-[calc(env(safe-area-inset-bottom)+5.85rem)] md:bottom-[6.75rem] z-[310] hidden overflow-hidden rounded-[1.35rem] border border-white/10 bg-[#1c1c1f]/92 text-white shadow-2xl backdrop-blur-2xl">
+    <div class="h-1 bg-border/60">
+      <div id="mp3MiniProgress" class="h-full w-0 bg-action transition-[width] duration-150"></div>
+    </div>
+    <div class="grid grid-cols-[auto_auto_1fr_auto] items-center gap-3 p-2.5">
+      <button id="btnMp3MiniPlay" type="button" class="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#111113] shadow-lg transition-colors hover:bg-white/88" aria-label="Reproducir">
+        <svg id="mp3MiniPlayIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5 fill-current"><path d="M8 5v14l11-7z"></path></svg>
+      </button>
+      <div class="relative h-11 w-11 overflow-hidden rounded-xl border border-white/10 bg-black/24">
+        <img id="mp3MiniArtwork" src="" alt="" class="hidden h-full w-full object-cover" />
+        <div id="mp3MiniArtworkFallback" class="grid h-full w-full place-items-center text-white/55" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+        </div>
+      </div>
+      <button id="btnMp3Expand" type="button" class="min-w-0 text-left" aria-label="Expandir reproductor">
+        <span id="mp3MiniTitle" class="block truncate text-sm font-black leading-tight">Cancion</span>
+        <span class="mt-0.5 flex items-center gap-2 text-[11px] font-semibold text-white/58">
+          <span id="mp3MiniArtist" class="truncate">Artista</span>
+          <span class="shrink-0 text-white/35">/</span>
+          <span id="mp3MiniTime" class="shrink-0 tabular-nums">00:00</span>
+        </span>
+      </button>
+      <div class="flex items-center gap-1">
+        <div class="hidden items-center gap-1.5 sm:flex">
+          <button id="btnMp3MiniMute" type="button" class="inline-flex h-10 w-10 items-center justify-center rounded-full text-white/74 transition-colors hover:bg-white/10 hover:text-white" aria-label="Silenciar">
+            <svg id="mp3MiniVolumeIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M18.36 5.64a9 9 0 0 1 0 12.73"/></svg>
+          </button>
+          <input id="mp3MiniVolume" type="range" min="0" max="1" step="0.01" value="0.85" class="mp3-volume-slider w-20" aria-label="Volumen mini reproductor" />
+        </div>
+        <button id="btnMp3MiniExpandIcon" type="button" class="inline-flex h-10 w-10 items-center justify-center rounded-full text-white/74 transition-colors hover:bg-white/10 hover:text-white" aria-label="Abrir panel">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg>
+        </button>
+        <button id="btnMp3MiniClose" type="button" class="inline-flex h-10 w-10 items-center justify-center rounded-full text-white/74 transition-colors hover:bg-white/10 hover:text-white" aria-label="Cerrar reproductor">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="mp3PlayerModal" class="fixed inset-0 z-[320] hidden overscroll-contain" aria-hidden="true">
+    <div id="mp3PlayerBackdrop" class="absolute inset-0 bg-black/74 backdrop-blur-3xl opacity-0 transition-opacity duration-500"></div>
+    <div class="relative z-10 flex h-full w-full items-end justify-center px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 md:items-stretch md:justify-end md:p-4">
+      <div id="mp3PlayerPanel" class="flex h-[calc(100dvh-env(safe-area-inset-bottom)-1rem)] max-h-[calc(100dvh-env(safe-area-inset-bottom)-1rem)] w-full max-w-5xl translate-y-[6rem] scale-[0.985] flex-col overflow-hidden rounded-[1.8rem] border border-white/14 bg-[#17171b]/90 text-white opacity-0 shadow-[0_28px_90px_rgba(0,0,0,0.68)] outline outline-1 outline-white/5 backdrop-blur-3xl transition-[opacity,transform] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-transform md:h-full md:max-h-none md:w-[min(58rem,calc(100vw-2rem))]">
+        <div class="flex items-start justify-between gap-3 border-b border-white/8 bg-white/[0.06] p-4 backdrop-blur-2xl md:p-5">
           <div class="min-w-0 flex items-center gap-3">
-            <div class="relative w-14 h-14 rounded-xl border border-border bg-background overflow-hidden shrink-0">
-              <img id="mp3Artwork" src="" alt="" class="hidden w-full h-full object-cover" />
-              <div id="mp3ArtworkFallback" class="w-full h-full grid place-items-center text-content-muted bg-gradient-to-br from-surface to-background" aria-hidden="true">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+            <div class="relative h-14 w-14 shrink-0 overflow-hidden rounded-2xl border border-white/14 bg-black/24 shadow-[0_12px_34px_rgba(0,0,0,0.36)]">
+              <img id="mp3Artwork" src="" alt="" class="hidden h-full w-full object-cover" />
+              <div id="mp3ArtworkFallback" class="grid h-full w-full place-items-center text-content-muted" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
               </div>
             </div>
             <div class="min-w-0">
-              <h3 id="mp3Title" class="text-lg md:text-xl font-black text-content truncate">Cancion</h3>
-              <p id="mp3Artist" class="text-sm text-content-muted truncate">Artista</p>
-              <div class="mt-1.5 h-1.5 w-12 rounded-full bg-border/70 overflow-hidden">
+              <h3 id="mp3Title" class="truncate text-lg font-black leading-tight md:text-xl">Cancion</h3>
+              <p id="mp3Artist" class="truncate text-sm text-white/58">Artista</p>
+              <div class="mt-1.5 h-1.5 w-12 overflow-hidden rounded-full bg-white/12">
                 <span id="mp3LiveIndicator" class="block h-full w-2 rounded-full bg-action transition-all duration-300"></span>
               </div>
             </div>
           </div>
-          <button id="btnMp3Close" type="button" class="shrink-0 inline-flex items-center justify-center leading-none w-10 h-10 md:w-11 md:h-11 rounded-2xl border border-border bg-background text-content-muted hover:text-content hover:bg-surface transition-colors" aria-label="Cerrar reproductor">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-5 h-5 md:w-5.5 md:h-5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6l-12 12"/></svg>
-          </button>
+          <div class="flex shrink-0 items-center gap-2">
+            <button id="btnMp3Collapse" type="button" class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/8 text-white/74 transition-colors hover:bg-white/14 hover:text-white" aria-label="Minimizar reproductor">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <button id="btnMp3Close" type="button" class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/8 text-white/74 transition-colors hover:bg-white/14 hover:text-white" aria-label="Cerrar reproductor">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+            </button>
+          </div>
         </div>
 
-        <audio id="mp3Audio" class="hidden" preload="auto" crossorigin="anonymous" playsinline webkit-playsinline="true"></audio>
+        <audio id="mp3Audio" class="hidden" preload="auto" playsinline webkit-playsinline="true"></audio>
 
-        <div class="mt-4 rounded-2xl border border-border bg-background/70 p-4 md:p-5">
-          <div class="flex items-center gap-3">
-            <span id="mp3CurrentTime" class="text-xs font-semibold text-content-muted w-12 text-right">00:00</span>
-            <div id="mp3TimelineWrap" class="relative flex-1 h-9 flex items-center">
-              <canvas id="mp3Waveform" class="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-8 w-full opacity-80"></canvas>
-              <input id="mp3Seek" type="range" min="0" max="100" value="0" class="w-full accent-action" />
-              <div id="mp3LoopBracket" class="hidden pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-2">
-                <div id="mp3LoopRangeFill" class="absolute top-0 h-2 rounded-full bg-brand/35"></div>
-                <button id="mp3LoopHandleA" type="button" class="mp3-loop-handle pointer-events-auto absolute top-1/2 -translate-x-1/2 -translate-y-1/2" aria-label="Bracket A">
-                  <span class="mp3-loop-stick"></span>
+        <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          <section class="order-2 shrink-0 border-t border-white/10 bg-black/34 p-3 backdrop-blur-3xl md:p-4">
+            <div class="mx-auto max-w-3xl rounded-[1.6rem] border border-white/14 bg-white/[0.105] p-3 shadow-[0_20px_60px_rgba(0,0,0,0.38)] backdrop-blur-3xl md:p-4">
+              <div class="flex items-center gap-3">
+                <span id="mp3CurrentTime" class="w-12 text-right text-xs font-semibold tabular-nums text-white/58">00:00</span>
+                <div id="mp3TimelineWrap" class="relative flex h-9 flex-1 items-center">
+                  <canvas id="mp3Waveform" class="pointer-events-none absolute inset-x-0 top-1/2 h-8 w-full -translate-y-1/2 opacity-80"></canvas>
+                  <input id="mp3Seek" type="range" min="0" max="100" value="0" class="w-full accent-action" />
+                  <div id="mp3LoopBracket" class="pointer-events-none absolute inset-x-0 top-1/2 hidden h-2 -translate-y-1/2">
+                    <div id="mp3LoopRangeFill" class="absolute top-0 h-2 rounded-full bg-brand/35"></div>
+                    <button id="mp3LoopHandleA" type="button" class="mp3-loop-handle pointer-events-auto absolute top-1/2 -translate-x-1/2 -translate-y-1/2" aria-label="Bracket A"><span class="mp3-loop-stick"></span></button>
+                    <button id="mp3LoopHandleB" type="button" class="mp3-loop-handle pointer-events-auto absolute top-1/2 -translate-x-1/2 -translate-y-1/2" aria-label="Bracket B"><span class="mp3-loop-stick"></span></button>
+                  </div>
+                </div>
+                <span id="mp3Duration" class="w-12 text-xs font-semibold tabular-nums text-white/58">00:00</span>
+              </div>
+
+              <div class="mt-4 grid grid-cols-[auto_1fr_auto] items-center gap-2">
+                <button id="btnMp3Back5" type="button" class="h-11 rounded-full bg-white/8 px-3.5 text-sm font-bold text-white transition-colors hover:bg-white/14" aria-label="Retroceder 5 segundos">-5s</button>
+                <button id="btnMp3PlayPause" type="button" class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-white text-[#111113] shadow-lg transition-colors hover:bg-white/88" aria-label="Reproducir">
+                  <svg id="mp3PlayIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5 fill-current"><path d="M8 5v14l11-7z"></path></svg>
+                  <span id="mp3PlayLabel" class="text-sm font-semibold tracking-wide">Reproducir</span>
                 </button>
-                <button id="mp3LoopHandleB" type="button" class="mp3-loop-handle pointer-events-auto absolute top-1/2 -translate-x-1/2 -translate-y-1/2" aria-label="Bracket B">
-                  <span class="mp3-loop-stick"></span>
+                <button id="btnMp3Forward5" type="button" class="h-11 rounded-full bg-white/8 px-3.5 text-sm font-bold text-white transition-colors hover:bg-white/14" aria-label="Adelantar 5 segundos">+5s</button>
+              </div>
+
+              <div class="mt-3 flex items-center gap-3">
+                <button id="btnMp3Mute" type="button" class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/8 text-white/74 transition-colors hover:bg-white/14 hover:text-white" aria-label="Silenciar">
+                  <svg id="mp3VolumeIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M18.36 5.64a9 9 0 0 1 0 12.73"/></svg>
                 </button>
+                <input id="mp3Volume" type="range" min="0" max="1" step="0.01" value="0.85" class="mp3-volume-slider flex-1" aria-label="Volumen" />
+              </div>
+
+              <div class="mt-3 hidden flex-wrap items-center justify-between gap-2">
+                <label class="inline-flex items-center gap-2 text-sm font-semibold text-content">
+                  <input id="chkLoopRange" type="checkbox" class="h-4 w-4 rounded border-border accent-action" />
+                  Loop A/B
+                </label>
+                <button id="btnClearLoopRange" type="button" class="rounded-xl border border-border bg-surface px-3 py-1.5 text-xs font-bold text-content transition-colors hover:bg-background">Limpiar</button>
+              </div>
+              <p id="mp3LoopInfo" class="mt-2 hidden text-xs text-content-muted">[A] 00:00 - [B] 00:00</p>
+              <p id="mp3Status" class="mt-3 hidden text-xs leading-tight text-white/52">Cargando audio...</p>
+            </div>
+
+            <div class="mt-4 hidden rounded-2xl border border-border bg-background/60 p-3">
+              <div class="grid grid-cols-3 gap-2">
+                <button id="btnMp3PrevSection" type="button" class="h-10 rounded-xl border border-border bg-surface text-xs font-black text-content transition-colors hover:bg-background">Anterior</button>
+                <button id="btnMp3LoopSection" type="button" class="h-10 rounded-xl border border-brand/25 bg-brand/10 text-xs font-black text-brand transition-colors hover:bg-brand/15">Loop seccion</button>
+                <button id="btnMp3NextSection" type="button" class="h-10 rounded-xl border border-border bg-surface text-xs font-black text-content transition-colors hover:bg-background">Siguiente</button>
+              </div>
+              <div id="mp3SectionStrip" class="mt-3 flex max-h-44 flex-col gap-1.5 overflow-y-auto pr-1"></div>
+            </div>
+          </section>
+
+          <section class="order-1 min-h-0 flex-1 p-4 pb-2 md:p-6 md:pb-3">
+            <div class="sr-only mb-3 flex items-center justify-between gap-3">
+              <div class="min-w-0">
+                <p class="text-[10px] font-black uppercase tracking-[0.24em] text-content-muted">Karaoke</p>
+                <h4 id="mp3ActiveSectionTitle" class="truncate text-base font-black text-content">Sin secciones</h4>
+              </div>
+              <div class="inline-flex shrink-0 rounded-xl border border-border bg-background p-1">
+                <button id="btnMp3ModeLyrics" type="button" class="mp3-mode-btn is-active h-8 rounded-lg px-3 text-xs font-black">Letra</button>
+                <button id="btnMp3ModeMap" type="button" class="mp3-mode-btn h-8 rounded-lg px-3 text-xs font-black">Mapa</button>
               </div>
             </div>
-            <span id="mp3Duration" class="text-xs font-semibold text-content-muted w-12">00:00</span>
-          </div>
-
-          <div class="mt-3 flex items-center justify-between gap-3 flex-wrap">
-            <label class="inline-flex items-center gap-2 text-sm font-semibold text-content">
-              <input id="chkLoopRange" type="checkbox" class="w-4 h-4 rounded border-border accent-action" />
-              Loop [A-B] (ensayo)
-            </label>
-            <p id="mp3LoopInfo" class="text-xs text-content-muted">[A] 00:00 - [B] 00:00</p>
-            <button id="btnClearLoopRange" type="button" class="px-3 py-1.5 rounded-xl border border-border bg-surface text-content text-xs font-bold hover:bg-background transition-colors">Limpiar loop</button>
-          </div>
-
-          <p id="mp3Status" class="mt-3 text-xs text-content-muted leading-tight">Activa el loop y arrastra los brackets A/B sobre la barra.</p>
-          <div class="mt-3 grid grid-cols-[auto_1fr_auto] items-center gap-2">
-            <button id="btnMp3Back5" type="button" class="h-11 px-3.5 rounded-xl border border-border bg-surface text-content text-sm font-bold hover:bg-background transition-colors" aria-label="Retroceder 5 segundos">-5s</button>
-            <button id="btnMp3PlayPause" type="button" class="h-11 w-full rounded-xl bg-action text-white inline-flex items-center justify-center gap-2 hover:bg-action/90 transition-colors shadow-lg" aria-label="Reproducir">
-              <svg id="mp3PlayIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-5 h-5 fill-current"><path d="M8 5v14l11-7z"></path></svg>
-              <span id="mp3PlayLabel" class="text-sm font-semibold tracking-wide">Reproducir</span>
-            </button>
-            <button id="btnMp3Forward5" type="button" class="h-11 px-3.5 rounded-xl border border-border bg-surface text-content text-sm font-bold hover:bg-background transition-colors" aria-label="Adelantar 5 segundos">+5s</button>
-          </div>
+            <div id="mp3KaraokePanel" class="h-full min-h-[24rem] overflow-y-auto rounded-2xl border border-transparent bg-transparent p-1 md:min-h-0 md:p-3">
+              <div id="mp3KaraokeEmpty" class="grid h-full place-items-center text-center text-sm text-white/50">Esta cancion todavia no tiene letra sincronizable.</div>
+              <div id="mp3KaraokeLyrics" class="hidden space-y-2"></div>
+              <div id="mp3KaraokeMap" class="hidden space-y-2"></div>
+            </div>
+          </section>
         </div>
       </div>
     </div>
@@ -81,30 +159,49 @@
     if (window.__REDIL_PRO_PLAYER_READY__) return;
     window.__REDIL_PRO_PLAYER_READY__ = true;
 
-    const MODAL_PREMIUM_MS = 900;
+    const MODAL_PREMIUM_MS = 300;
 
     const modal = document.getElementById('mp3PlayerModal');
     const backdrop = document.getElementById('mp3PlayerBackdrop');
     const panel = document.getElementById('mp3PlayerPanel');
+    const mini = document.getElementById('mp3MiniPlayer');
     const audio = document.getElementById('mp3Audio');
 
     const titleEl = document.getElementById('mp3Title');
     const artistEl = document.getElementById('mp3Artist');
+    const miniTitleEl = document.getElementById('mp3MiniTitle');
+    const miniArtistEl = document.getElementById('mp3MiniArtist');
+    const miniTimeEl = document.getElementById('mp3MiniTime');
+    const miniProgressEl = document.getElementById('mp3MiniProgress');
     const artworkEl = document.getElementById('mp3Artwork');
+    const miniArtworkEl = document.getElementById('mp3MiniArtwork');
     const artworkFallbackEl = document.getElementById('mp3ArtworkFallback');
+    const miniArtworkFallbackEl = document.getElementById('mp3MiniArtworkFallback');
     const liveIndicatorEl = document.getElementById('mp3LiveIndicator');
     const statusEl = document.getElementById('mp3Status');
 
     const btnClose = document.getElementById('btnMp3Close');
+    const btnCollapse = document.getElementById('btnMp3Collapse');
+    const btnMiniClose = document.getElementById('btnMp3MiniClose');
+    const btnExpand = document.getElementById('btnMp3Expand');
+    const btnExpandIcon = document.getElementById('btnMp3MiniExpandIcon');
     const btnPlay = document.getElementById('btnMp3PlayPause');
+    const btnMiniPlay = document.getElementById('btnMp3MiniPlay');
+    const btnMute = document.getElementById('btnMp3Mute');
+    const btnMiniMute = document.getElementById('btnMp3MiniMute');
     const btnBack5 = document.getElementById('btnMp3Back5');
     const btnForward5 = document.getElementById('btnMp3Forward5');
     const playIcon = document.getElementById('mp3PlayIcon');
+    const miniPlayIcon = document.getElementById('mp3MiniPlayIcon');
+    const volumeIcon = document.getElementById('mp3VolumeIcon');
+    const miniVolumeIcon = document.getElementById('mp3MiniVolumeIcon');
     const playLabel = document.getElementById('mp3PlayLabel');
 
     const timelineWrap = document.getElementById('mp3TimelineWrap');
     const waveformCanvas = document.getElementById('mp3Waveform');
     const seek = document.getElementById('mp3Seek');
+    const volume = document.getElementById('mp3Volume');
+    const miniVolume = document.getElementById('mp3MiniVolume');
     const currentEl = document.getElementById('mp3CurrentTime');
     const durationEl = document.getElementById('mp3Duration');
 
@@ -115,41 +212,37 @@
     const handleA = document.getElementById('mp3LoopHandleA');
     const handleB = document.getElementById('mp3LoopHandleB');
     const btnClearLoop = document.getElementById('btnClearLoopRange');
+    const btnPrevSection = document.getElementById('btnMp3PrevSection');
+    const btnNextSection = document.getElementById('btnMp3NextSection');
+    const btnLoopSection = document.getElementById('btnMp3LoopSection');
+    const sectionStrip = document.getElementById('mp3SectionStrip');
+    const activeSectionTitle = document.getElementById('mp3ActiveSectionTitle');
+    const karaokeEmpty = document.getElementById('mp3KaraokeEmpty');
+    const karaokePanel = document.getElementById('mp3KaraokePanel');
+    const karaokeLyrics = document.getElementById('mp3KaraokeLyrics');
+    const karaokeMap = document.getElementById('mp3KaraokeMap');
+    const btnModeLyrics = document.getElementById('btnMp3ModeLyrics');
+    const btnModeMap = document.getElementById('btnMp3ModeMap');
 
     if (
-      !modal ||
-      !backdrop ||
-      !panel ||
-      !audio ||
-      !titleEl ||
-      !artistEl ||
-      !artworkEl ||
-      !artworkFallbackEl ||
-      !liveIndicatorEl ||
-      !statusEl ||
-      !btnClose ||
-      !btnPlay ||
-      !btnBack5 ||
-      !btnForward5 ||
-      !playIcon ||
-      !playLabel ||
-      !timelineWrap ||
-      !waveformCanvas ||
-      !seek ||
-      !currentEl ||
-      !durationEl ||
-      !chkLoop ||
-      !loopInfo ||
-      !loopBracket ||
-      !loopFill ||
-      !handleA ||
-      !handleB ||
-      !btnClearLoop
+      !modal || !backdrop || !panel || !mini || !audio || !titleEl || !artistEl ||
+      !miniTitleEl || !miniArtistEl || !miniTimeEl || !miniProgressEl ||
+      !artworkEl || !miniArtworkEl || !artworkFallbackEl || !miniArtworkFallbackEl ||
+      !liveIndicatorEl || !statusEl ||
+      !btnClose || !btnCollapse || !btnMiniClose || !btnExpand || !btnExpandIcon ||
+      !btnPlay || !btnMiniPlay || !btnMute || !btnMiniMute || !btnBack5 ||
+      !btnForward5 || !playIcon || !miniPlayIcon || !volumeIcon || !miniVolumeIcon ||
+      !playLabel || !timelineWrap || !waveformCanvas || !seek || !volume ||
+      !miniVolume || !currentEl || !durationEl || !chkLoop || !loopInfo || !loopBracket ||
+      !loopFill || !handleA || !handleB || !btnClearLoop || !btnPrevSection ||
+      !btnNextSection || !btnLoopSection || !sectionStrip || !activeSectionTitle ||
+      !karaokeEmpty || !karaokePanel || !karaokeLyrics || !karaokeMap || !btnModeLyrics || !btnModeMap
     ) {
       return;
     }
 
     const prefersNativeBackgroundPlayback = shouldPreferNativeBackgroundPlayback();
+    const useWaveformAnalyser = false;
 
     audioSessionService.install();
     audioSessionService.registerPrimaryAudio(
@@ -158,14 +251,10 @@
         audioElement: audio,
         onPlay: async () => {
           await setupWaveform().catch(() => {});
-          if (waveCtx && waveCtx.state === 'suspended') {
-            await waveCtx.resume();
-          }
+          if (waveCtx && waveCtx.state === 'suspended') await waveCtx.resume();
           await audio.play();
         },
-        onPause: () => {
-          audio.pause();
-        },
+        onPause: () => audio.pause(),
       },
       10
     );
@@ -179,13 +268,21 @@
     let sourceCandidates = [];
     let sourceIndex = 0;
     let requestedPlay = false;
+    let activeSectionIndex = -1;
+    let activeCueIndex = -1;
+    let currentSections = [];
+    let lyricSections = [];
+    let lyricCues = [];
+    let karaokeMode = 'lyrics';
+    let closingPlayer = false;
+    let lastVolume = Number(window.localStorage?.getItem('redil:pro-player-volume') || 0.85);
+    let artworkRequestId = 0;
 
     let waveRaf = 0;
     let waveCtx = null;
     let waveSource = null;
     let waveAnalyser = null;
     let waveData = null;
-
     let lockedScrollY = 0;
 
     const formatTime = (seconds) => {
@@ -197,9 +294,162 @@
     };
 
     const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+    const normalizeLabel = (value = '') => String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
 
-    const buildSourceCandidates = (rawUrl) => {
-      return buildPlaybackSourceCandidates(rawUrl, { origin: window.location.origin });
+    const buildSourceCandidates = (rawUrl) => buildPlaybackSourceCandidates(rawUrl, { origin: window.location.origin });
+
+    const stripChordProLine = (line = '') => String(line || '')
+      .replace(/\{[^}]*\}/g, '')
+      .replace(/\[[^\]]+\]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const isChordLikeToken = (value = '') => /^[A-G](?:#|b)?(?:m|maj|min|dim|aug|sus|add)?\d*(?:\/[A-G](?:#|b)?)?$/i.test(String(value || '').trim());
+
+    const isSectionHeading = (value = '') => {
+      const label = String(value || '').split('|')[0].trim();
+      if (!label) return false;
+      const key = normalizeLabel(label);
+      if (/^(intro|verso|pre coro|precoro|coro|interludio|puente|solo|final|outro|tag|entrada|salida)(\s+\d+)?$/.test(key)) return true;
+      if (/\s/.test(label) && !label.split(/\s+/).every(isChordLikeToken)) return true;
+      return !isChordLikeToken(label) && !/^[A-G](?:#|b)?$/i.test(label);
+    };
+
+    const parseChordProSections = (rawChordpro = '') => {
+      const source = String(rawChordpro || '').replace(/\r\n/g, '\n');
+      if (!source.trim()) return [];
+
+      const sections = [];
+      let current = { name: 'Letra', lines: [] };
+      const pushCurrent = () => {
+        if (current.name !== 'Letra' || current.lines.some(Boolean)) {
+          sections.push({ ...current, lines: current.lines.filter(Boolean) });
+        }
+      };
+
+      source.split('\n').forEach((rawLine) => {
+        const line = rawLine.trim();
+        if (!line) return;
+
+        const sectionDirective =
+          line.match(/^\{(?:section|s|comment|c):\s*([^}]+)\}$/i) ||
+          line.match(/^\{start_of_([^}:]+)(?::\s*([^}]+))?\}$/i);
+
+        if (sectionDirective) {
+          pushCurrent();
+          current = {
+            name: (sectionDirective[2] || sectionDirective[1] || 'Seccion').replace(/_/g, ' '),
+            lines: [],
+          };
+          return;
+        }
+
+        if (/^\{(?:title|t|subtitle|artist|key|tempo|end_of_|eoc|eov)/i.test(line)) return;
+
+        const bracketHeading = line.match(/^\[([^\]]+)\]\s*$/);
+        if (bracketHeading && isSectionHeading(bracketHeading[1])) {
+          pushCurrent();
+          current = {
+            name: bracketHeading[1].split('|')[0].trim() || 'Seccion',
+            lines: [],
+          };
+          return;
+        }
+
+        const lyric = stripChordProLine(line);
+        if (lyric) current.lines.push(lyric);
+      });
+
+      pushCurrent();
+      return sections;
+    };
+
+    const normalizeSectionMarkers = (markers = [], duration = 0) => {
+      if (!Array.isArray(markers)) return [];
+      const normalized = markers
+        .map((marker, index) => {
+          const start = Number(marker?.startSec ?? marker?.start_sec ?? marker?.time ?? marker?.seconds);
+          if (!Number.isFinite(start) || start < 0) return null;
+          return {
+            id: marker?.id || `section-${index}`,
+            label: String(marker?.sectionName || marker?.name || marker?.label || marker?.title || `Seccion ${index + 1}`).trim() || `Seccion ${index + 1}`,
+            startSec: start,
+            endSec: Number.isFinite(Number(marker?.endSec ?? marker?.end_sec)) ? Number(marker?.endSec ?? marker?.end_sec) : null,
+            lyricIndex: -1,
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.startSec - b.startSec);
+
+      return normalized.map((marker, index) => ({
+        ...marker,
+        endSec: Number.isFinite(marker.endSec) && marker.endSec > marker.startSec
+          ? marker.endSec
+          : (normalized[index + 1]?.startSec ?? duration ?? 0),
+      }));
+    };
+
+    const baseSectionLabel = (value = '') => normalizeLabel(String(value || '').split('|')[0])
+      .replace(/\b\d+\b/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const attachLyricsToSections = (sections, lyrics) => {
+      const usedLyrics = new Set();
+      return sections.map((section, index) => {
+        const sectionKey = normalizeLabel(section.label);
+        const sectionBase = baseSectionLabel(section.label);
+        let lyricIndex = lyrics.findIndex((lyric, candidateIndex) => (
+          !usedLyrics.has(candidateIndex) && normalizeLabel(lyric.name) === sectionKey
+        ));
+        if (lyricIndex === -1) {
+          lyricIndex = lyrics.findIndex((lyric, candidateIndex) => (
+            !usedLyrics.has(candidateIndex) && baseSectionLabel(lyric.name) === sectionBase
+          ));
+        }
+        if (lyricIndex === -1 && lyrics[index]) lyricIndex = index;
+        if (lyricIndex !== -1) usedLyrics.add(lyricIndex);
+        return { ...section, lyricIndex };
+      });
+    };
+
+    const buildLyricCues = (sections, lyrics, duration = 0) => {
+      const cues = [];
+      const pushLines = (lines, startSec, endSec, sectionIndex = -1) => {
+        const cleanLines = (lines || []).map((line) => String(line || '').trim()).filter(Boolean);
+        if (!cleanLines.length) return;
+        const safeStart = Number.isFinite(startSec) ? Math.max(0, startSec) : 0;
+        const fallbackEnd = Number.isFinite(duration) && duration > safeStart ? duration : safeStart + cleanLines.length * 4;
+        const safeEnd = Number.isFinite(endSec) && endSec > safeStart ? endSec : fallbackEnd;
+        const span = Math.max(cleanLines.length * 1.8, safeEnd - safeStart);
+        cleanLines.forEach((line, lineIndex) => {
+          const cueStart = safeStart + (span * lineIndex) / cleanLines.length;
+          const cueEnd = safeStart + (span * (lineIndex + 1)) / cleanLines.length;
+          cues.push({
+            text: line,
+            startSec: cueStart,
+            endSec: cueEnd,
+            sectionIndex,
+          });
+        });
+      };
+
+      if (sections.length) {
+        sections.forEach((section, sectionIndex) => {
+          const lyric = lyrics[section.lyricIndex] || null;
+          pushLines(lyric?.lines || [], section.startSec, section.endSec, sectionIndex);
+        });
+      } else {
+        const allLines = lyrics.flatMap((section) => section.lines || []);
+        pushLines(allLines, 0, duration, -1);
+      }
+
+      return cues.sort((a, b) => a.startSec - b.startSec);
     };
 
     const setSource = (index) => {
@@ -216,37 +466,70 @@
       const ok = setSource(sourceIndex);
       if (!ok) return false;
       statusEl.textContent = `Probando fuente alterna (${sourceIndex + 1}/${sourceCandidates.length})...`;
-      if (autoPlay) {
-        void audio.play().catch(() => {});
-      }
+      if (autoPlay) void audio.play().catch(() => {});
       return true;
     };
 
     const setArtworkFallback = (title = '', artist = '') => {
       artworkEl.classList.add('hidden');
+      miniArtworkEl.classList.add('hidden');
       artworkEl.removeAttribute('src');
+      miniArtworkEl.removeAttribute('src');
       artworkEl.alt = '';
+      miniArtworkEl.alt = '';
       artworkFallbackEl.classList.remove('hidden');
+      miniArtworkFallbackEl.classList.remove('hidden');
       artworkFallbackEl.setAttribute('aria-label', `${title || 'Cancion'} ${artist || ''}`.trim());
+      miniArtworkFallbackEl.setAttribute('aria-label', `${title || 'Cancion'} ${artist || ''}`.trim());
     };
 
-    const setArtworkFromSource = (rawUrl, title, artist) => {
-      const fileId = extractDriveFileId(rawUrl);
-      if (!fileId) {
+    const setArtworkImage = (src, title, artist) => {
+      const artworkSrc = String(src || '').trim();
+      if (!artworkSrc) {
         setArtworkFallback(title, artist);
         return;
       }
 
-      const artworkUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w512`;
       artworkEl.alt = `Portada de ${title || 'cancion'}${artist ? ` - ${artist}` : ''}`;
+      miniArtworkEl.alt = artworkEl.alt;
       artworkEl.onload = () => {
         artworkEl.classList.remove('hidden');
         artworkFallbackEl.classList.add('hidden');
       };
-      artworkEl.onerror = () => {
-        setArtworkFallback(title, artist);
+      miniArtworkEl.onload = () => {
+        miniArtworkEl.classList.remove('hidden');
+        miniArtworkFallbackEl.classList.add('hidden');
       };
-      artworkEl.src = artworkUrl;
+      artworkEl.onerror = () => setArtworkFallback(title, artist);
+      miniArtworkEl.onerror = () => setArtworkFallback(title, artist);
+      artworkEl.src = artworkSrc;
+      miniArtworkEl.src = artworkSrc;
+    };
+
+    const toArtworkSrc = (rawUrl = '') => {
+      const cleanUrl = String(rawUrl || '').trim();
+      if (!cleanUrl) return '';
+      const fileId = extractDriveFileId(cleanUrl);
+      return fileId ? `https://drive.google.com/thumbnail?id=${fileId}&sz=w512` : cleanUrl;
+    };
+
+    const toEmbeddedCoverApiUrl = (rawUrl = '') => {
+      const cleanUrl = String(rawUrl || '').trim();
+      if (!cleanUrl) return '';
+      return `${window.location.origin}/api/mp3-cover-art?src=${encodeURIComponent(cleanUrl)}`;
+    };
+
+    const setArtworkFromSource = (rawUrl, title, artist, artworkUrl = '') => {
+      const requestId = artworkRequestId + 1;
+      artworkRequestId = requestId;
+      const explicitArtwork = toArtworkSrc(artworkUrl);
+      if (explicitArtwork) {
+        setArtworkImage(explicitArtwork, title, artist);
+        return;
+      }
+
+      setArtworkFallback(title, artist);
+      if (requestId === artworkRequestId) setArtworkImage(toEmbeddedCoverApiUrl(rawUrl), title, artist);
     };
 
     const stopWaveform = () => {
@@ -257,16 +540,14 @@
     };
 
     const setupWaveform = async () => {
-      if (prefersNativeBackgroundPlayback) return;
+      if (!useWaveformAnalyser || prefersNativeBackgroundPlayback) return;
       if (waveAnalyser && waveData) return;
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
 
       try {
         waveCtx = waveCtx || new AudioCtx();
-        if (!waveSource) {
-          waveSource = waveCtx.createMediaElementSource(audio);
-        }
+        if (!waveSource) waveSource = waveCtx.createMediaElementSource(audio);
         waveAnalyser = waveAnalyser || waveCtx.createAnalyser();
         waveAnalyser.fftSize = 1024;
         waveData = new Uint8Array(waveAnalyser.fftSize);
@@ -283,10 +564,8 @@
 
     const drawWaveformFrame = () => {
       if (!waveAnalyser || !waveData) return;
-
       const rect = waveformCanvas.getBoundingClientRect();
       if (!rect.width || !rect.height) return;
-
       const dpr = window.devicePixelRatio || 1;
       const targetW = Math.floor(rect.width * dpr);
       const targetH = Math.floor(rect.height * dpr);
@@ -297,7 +576,6 @@
 
       const ctx = waveformCanvas.getContext('2d');
       if (!ctx) return;
-
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, rect.width, rect.height);
 
@@ -305,18 +583,15 @@
       const midY = rect.height / 2;
       const amp = rect.height * 0.34;
       const step = rect.width / (waveData.length - 1);
-
       ctx.lineWidth = 1.25;
-      ctx.strokeStyle = audio.paused ? 'rgba(96, 165, 250, 0.35)' : 'rgba(110, 231, 183, 0.72)';
+      ctx.strokeStyle = audio.paused ? 'rgba(96,165,250,0.35)' : 'rgba(16,185,129,0.74)';
       ctx.beginPath();
-
       for (let i = 0; i < waveData.length; i += 1) {
         const x = i * step;
         const y = midY + ((waveData[i] - 128) / 128) * amp;
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
-
       ctx.stroke();
     };
 
@@ -324,42 +599,78 @@
       stopWaveform();
       const tick = () => {
         drawWaveformFrame();
-        if (!audio.paused && !audio.ended) {
-          waveRaf = requestAnimationFrame(tick);
-        } else {
-          waveRaf = 0;
-        }
+        if (!audio.paused && !audio.ended) waveRaf = requestAnimationFrame(tick);
+        else waveRaf = 0;
       };
       tick();
     };
 
     const syncPlaybackWaveform = () => {
-      if (!waveAnalyser) return;
-      drawWaveformFrame();
+      if (waveAnalyser) drawWaveformFrame();
     };
 
     const setLiveIndicatorState = (isPlaying) => {
       liveIndicatorEl.classList.toggle('mp3-live-on', isPlaying);
     };
 
+    const renderPlayIcon = (isPlaying) => {
+      const html = isPlaying
+        ? '<path d="M8 5h3v14H8zM13 5h3v14h-3z"></path>'
+        : '<path d="M8 5v14l11-7z"></path>';
+      playIcon.innerHTML = html;
+      miniPlayIcon.innerHTML = html;
+    };
+
     const setPlayButtonState = (isPlaying) => {
       modal.classList.toggle('mp3-playing', isPlaying);
+      mini.classList.toggle('mp3-playing', isPlaying);
       setLiveIndicatorState(isPlaying);
+      renderPlayIcon(isPlaying);
 
-      if (isPlaying) {
-        playIcon.innerHTML = '<path d="M8 5h3v14H8zM13 5h3v14h-3z"></path>';
-        playLabel.textContent = 'Pausar';
-        btnPlay.setAttribute('aria-label', 'Pausar');
-        btnPlay.title = 'Pausar';
-      } else {
-        playIcon.innerHTML = '<path d="M8 5v14l11-7z"></path>';
-        playLabel.textContent = 'Reproducir';
-        btnPlay.setAttribute('aria-label', 'Reproducir');
-        btnPlay.title = 'Reproducir';
-      }
+      playLabel.textContent = isPlaying ? 'Pausar' : 'Reproducir';
+      btnPlay.setAttribute('aria-label', isPlaying ? 'Pausar' : 'Reproducir');
+      btnMiniPlay.setAttribute('aria-label', isPlaying ? 'Pausar' : 'Reproducir');
 
       if (isPlaying) runWaveform();
       else drawWaveformFrame();
+    };
+
+    const renderVolumeIcon = () => {
+      const muted = audio.muted || audio.volume <= 0.01;
+      const html = muted
+        ? '<path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="m16 9 5 5"/><path d="m21 9-5 5"/>'
+        : '<path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M18.36 5.64a9 9 0 0 1 0 12.73"/>';
+      volumeIcon.innerHTML = html;
+      miniVolumeIcon.innerHTML = html;
+      btnMute.setAttribute('aria-label', muted ? 'Activar volumen' : 'Silenciar');
+      btnMiniMute.setAttribute('aria-label', muted ? 'Activar volumen' : 'Silenciar');
+    };
+
+    const syncVolumeInputs = () => {
+      const visibleValue = audio.muted ? 0 : audio.volume;
+      volume.value = String(visibleValue);
+      miniVolume.value = String(visibleValue);
+      renderVolumeIcon();
+    };
+
+    const setVolume = (value, { remember = true } = {}) => {
+      const next = clamp(Number(value), 0, 1);
+      audio.volume = next;
+      audio.muted = next <= 0.01;
+      if (next > 0.01) lastVolume = next;
+      if (remember) {
+        try { window.localStorage?.setItem('redil:pro-player-volume', String(lastVolume)); } catch {}
+      }
+      syncVolumeInputs();
+    };
+
+    const toggleMute = () => {
+      if (audio.muted || audio.volume <= 0.01) {
+        setVolume(lastVolume > 0.01 ? lastVolume : 0.85);
+      } else {
+        audio.muted = true;
+        syncVolumeInputs();
+      }
     };
 
     const lockBackgroundScroll = () => {
@@ -388,37 +699,46 @@
       window.scrollTo({ top: lockedScrollY, behavior: 'auto' });
     };
 
-    const animateOpen = () => {
+    const showMini = () => {
+      mini.classList.remove('hidden');
+    };
+
+    const openExpanded = () => {
+      mini.classList.add('hidden');
+      lockBackgroundScroll();
       modal.classList.remove('hidden');
       modal.setAttribute('aria-hidden', 'false');
       backdrop.classList.add('opacity-0');
-      panel.classList.add('opacity-0', 'translate-y-4');
-
+      panel.classList.add('opacity-0', 'translate-y-[6rem]', 'scale-[0.985]');
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           backdrop.classList.remove('opacity-0');
-          panel.classList.remove('opacity-0', 'translate-y-4');
+          panel.classList.remove('opacity-0', 'translate-y-[6rem]', 'scale-[0.985]');
         });
       });
     };
 
-    const animateClose = (onAfterClose = () => {}) => {
+    const collapseExpanded = (onAfterClose = () => {}) => {
       if (modal.classList.contains('hidden')) {
         onAfterClose();
         return;
       }
-
       backdrop.classList.add('opacity-0');
-      panel.classList.add('opacity-0', 'translate-y-4');
+      panel.classList.add('opacity-0', 'translate-y-[6rem]', 'scale-[0.985]');
       window.setTimeout(() => {
         modal.classList.add('hidden');
         modal.setAttribute('aria-hidden', 'true');
+        unlockBackgroundScroll();
+        if (!closingPlayer && sourceCandidates.length > 0) {
+          showMini();
+        }
         onAfterClose();
       }, MODAL_PREMIUM_MS);
     };
 
     const setLoopUiVisibility = () => {
       loopBracket.classList.toggle('hidden', !chkLoop.checked);
+      btnLoopSection.classList.toggle('is-active', chkLoop.checked && activeSectionIndex >= 0);
     };
 
     const syncLoopUi = () => {
@@ -443,19 +763,14 @@
     const secondsFromPointer = (clientX) => {
       const rect = timelineWrap.getBoundingClientRect();
       if (!rect.width || !totalDuration) return 0;
-      const ratio = clamp((clientX - rect.left) / rect.width, 0, 1);
-      return ratio * totalDuration;
+      return clamp((clientX - rect.left) / rect.width, 0, 1) * totalDuration;
     };
 
     const updateLoopHandlePosition = (which, clientX) => {
       if (!totalDuration) return;
       const nextSec = secondsFromPointer(clientX);
-
-      if (which === 'A') {
-        loopStartSec = clamp(nextSec, 0, Math.max(0, loopEndSec - 0.1));
-      } else {
-        loopEndSec = clamp(nextSec, Math.min(totalDuration, loopStartSec + 0.1), totalDuration);
-      }
+      if (which === 'A') loopStartSec = clamp(nextSec, 0, Math.max(0, loopEndSec - 0.1));
+      else loopEndSec = clamp(nextSec, Math.min(totalDuration, loopStartSec + 0.1), totalDuration);
 
       const current = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
       if (which === 'A' && loopStartSec > current) {
@@ -468,9 +783,189 @@
         if (!isSeekingAudio) seek.value = String(loopSafeStart);
         currentEl.textContent = formatTime(loopSafeStart);
       }
-
       syncLoopUi();
       syncPlaybackWaveform();
+    };
+
+    const renderSections = () => {
+      sectionStrip.innerHTML = '';
+      karaokeLyrics.innerHTML = '';
+      karaokeMap.innerHTML = '';
+
+      const hasSections = currentSections.length > 0;
+      const hasLyrics = lyricCues.length > 0 || lyricSections.some((section) => section.lines?.length);
+      karaokeEmpty.classList.toggle('hidden', hasLyrics);
+      karaokeLyrics.classList.toggle('hidden', karaokeMode !== 'lyrics' || !hasLyrics);
+      karaokeMap.classList.toggle('hidden', karaokeMode !== 'map' || !hasSections);
+
+      btnPrevSection.disabled = !hasSections;
+      btnNextSection.disabled = !hasSections;
+      btnLoopSection.disabled = !hasSections;
+
+      if (!hasSections) {
+        activeSectionTitle.textContent = hasLyrics ? 'Letra disponible' : 'Sin secciones';
+        if (hasLyrics) {
+          const fallbackLines = lyricCues.length
+            ? lyricCues
+            : lyricSections.flatMap((section) => (section.lines || []).map((line) => ({ text: line, sectionIndex: -1 })));
+          fallbackLines.forEach((cue, index) => {
+            const line = document.createElement('p');
+            line.className = 'mp3-lyric-line';
+            line.dataset.cueIndex = String(index);
+            line.textContent = cue.text || '';
+            karaokeLyrics.appendChild(line);
+          });
+        }
+        syncActiveCue(true);
+        return;
+      }
+
+      currentSections.forEach((section, index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'mp3-section-btn';
+        button.dataset.sectionIndex = String(index);
+        button.innerHTML = `
+          <span class="min-w-0 truncate">${escapeHtml(section.label)}</span>
+          <span class="shrink-0 tabular-nums text-content-muted">${formatTime(section.startSec)}</span>
+        `;
+        button.addEventListener('click', () => seekToSection(index));
+        sectionStrip.appendChild(button);
+
+        const mapButton = document.createElement('button');
+        mapButton.type = 'button';
+        mapButton.className = 'mp3-map-row';
+        mapButton.dataset.sectionIndex = String(index);
+        mapButton.innerHTML = `
+          <span class="truncate font-black">${escapeHtml(section.label)}</span>
+          <span class="shrink-0 tabular-nums text-content-muted">${formatTime(section.startSec)}</span>
+        `;
+        mapButton.addEventListener('click', () => seekToSection(index));
+        karaokeMap.appendChild(mapButton);
+      });
+
+      lyricCues.forEach((cue, index) => {
+        const line = document.createElement('p');
+        line.className = 'mp3-lyric-line';
+        line.dataset.cueIndex = String(index);
+        line.dataset.sectionIndex = String(cue.sectionIndex ?? -1);
+        line.textContent = cue.text || '';
+        karaokeLyrics.appendChild(line);
+      });
+
+      syncActiveSection(true);
+      syncActiveCue(true);
+    };
+
+    const escapeHtml = (value = '') => String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+    const setKaraokeMode = (mode) => {
+      karaokeMode = mode === 'map' ? 'map' : 'lyrics';
+      btnModeLyrics.classList.toggle('is-active', karaokeMode === 'lyrics');
+      btnModeMap.classList.toggle('is-active', karaokeMode === 'map');
+      renderSections();
+    };
+
+    const seekToSection = (index) => {
+      const section = currentSections[index];
+      if (!section) return;
+      audio.currentTime = section.startSec;
+      syncPlaybackMetrics();
+      syncActiveSection(true);
+      if (audio.paused && requestedPlay) void audio.play().catch(() => {});
+    };
+
+    const loopActiveSection = () => {
+      const section = currentSections[activeSectionIndex];
+      if (!section) return;
+      loopStartSec = section.startSec;
+      loopEndSec = Number.isFinite(section.endSec) && section.endSec > section.startSec
+        ? section.endSec
+        : totalDuration;
+      chkLoop.checked = true;
+      setLoopUiVisibility();
+      syncLoopUi();
+      audio.currentTime = loopStartSec;
+      syncPlaybackMetrics();
+    };
+
+    const syncActiveSection = (forceScroll = false) => {
+      if (!currentSections.length) return;
+      const current = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+      const nextIndex = currentSections.findIndex((section, index) => {
+        const nextStart = currentSections[index + 1]?.startSec ?? Number.POSITIVE_INFINITY;
+        const end = Number.isFinite(section.endSec) && section.endSec > section.startSec ? section.endSec : nextStart;
+        return current >= section.startSec && current < end;
+      });
+      const safeIndex = nextIndex === -1
+        ? (current < currentSections[0].startSec ? 0 : currentSections.length - 1)
+        : nextIndex;
+      if (safeIndex === -1 || (!forceScroll && safeIndex === activeSectionIndex)) return;
+      activeSectionIndex = safeIndex;
+      const active = currentSections[activeSectionIndex];
+      activeSectionTitle.textContent = active?.label || 'Seccion actual';
+
+      [...sectionStrip.querySelectorAll('[data-section-index]'), ...karaokeMap.querySelectorAll('[data-section-index]')]
+        .forEach((node) => {
+          node.classList.toggle('is-active', Number(node.dataset.sectionIndex) === activeSectionIndex);
+        });
+
+      const activeButton = sectionStrip.querySelector(`[data-section-index="${activeSectionIndex}"]`);
+      if (activeButton && (forceScroll || !modal.classList.contains('hidden'))) {
+        activeButton.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+      setLoopUiVisibility();
+    };
+
+    const syncActiveCue = (forceScroll = false) => {
+      if (!lyricCues.length) return;
+      const current = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+      const nextIndex = lyricCues.findIndex((cue, index) => {
+        const nextStart = lyricCues[index + 1]?.startSec ?? Number.POSITIVE_INFINITY;
+        const end = Number.isFinite(cue.endSec) && cue.endSec > cue.startSec ? cue.endSec : nextStart;
+        return current >= cue.startSec && current < end;
+      });
+      const safeIndex = nextIndex === -1
+        ? (current < lyricCues[0].startSec ? 0 : lyricCues.length - 1)
+        : nextIndex;
+      if (safeIndex === -1 || (!forceScroll && safeIndex === activeCueIndex)) return;
+      activeCueIndex = safeIndex;
+
+      karaokeLyrics.querySelectorAll('[data-cue-index]').forEach((node) => {
+        const index = Number(node.dataset.cueIndex);
+        node.classList.toggle('is-active', index === activeCueIndex);
+        node.classList.toggle('is-past', index < activeCueIndex);
+        node.classList.toggle('is-near', Math.abs(index - activeCueIndex) === 1);
+      });
+
+      const activeLyric = karaokeLyrics.querySelector(`[data-cue-index="${activeCueIndex}"]`);
+      if (activeLyric && (forceScroll || !modal.classList.contains('hidden'))) {
+        const lyricRect = activeLyric.getBoundingClientRect();
+        const panelRect = karaokePanel.getBoundingClientRect();
+        const targetTop = karaokePanel.scrollTop + lyricRect.top - panelRect.top - (karaokePanel.clientHeight * 0.34);
+        karaokePanel.scrollTo({
+          top: Math.max(0, targetTop),
+          behavior: forceScroll ? 'auto' : 'smooth',
+        });
+      }
+    };
+
+    const syncPlaybackMetrics = () => {
+      const current = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+      const duration = Number.isFinite(totalDuration) && totalDuration > 0
+        ? totalDuration
+        : (Number.isFinite(audio.duration) ? audio.duration : 0);
+      if (!isSeekingAudio) seek.value = String(current);
+      currentEl.textContent = formatTime(current);
+      durationEl.textContent = formatTime(duration);
+      miniTimeEl.textContent = `${formatTime(current)} / ${formatTime(duration)}`;
+      const progress = duration > 0 ? clamp((current / duration) * 100, 0, 100) : 0;
+      miniProgressEl.style.width = `${progress}%`;
     };
 
     const onLoopPointerMove = (event) => {
@@ -493,36 +988,55 @@
       window.addEventListener('pointerup', onLoopPointerUp);
     };
 
-    const closeModal = () => {
+    const closePlayer = () => {
+      closingPlayer = true;
       audio.pause();
       audio.removeAttribute('src');
       audio.load();
       audioSessionService.resetMetadata();
-
       sourceCandidates = [];
       sourceIndex = 0;
       requestedPlay = false;
-
+      activeSectionIndex = -1;
+      activeCueIndex = -1;
+      currentSections = [];
+      lyricSections = [];
+      lyricCues = [];
+      artworkRequestId += 1;
+      mini.classList.add('hidden');
       setArtworkFallback();
       setPlayButtonState(false);
       stopWaveform();
-
-      animateClose(() => {
-        unlockBackgroundScroll();
+      collapseExpanded(() => {
+        mini.classList.add('hidden');
+        closingPlayer = false;
       });
     };
 
-    const openModal = async ({ url, title = 'Cancion', artist = 'Artista no especificado', autoPlay = true }) => {
+    const openPlayer = async ({
+      url,
+      title = 'Cancion',
+      artist = 'Artista no especificado',
+      autoPlay = true,
+      chordpro = '',
+      sectionMarkers = [],
+      artworkUrl = '',
+      expand = false,
+    }) => {
       const playableCandidates = buildSourceCandidates(url);
       if (!playableCandidates.length) return;
 
       sourceCandidates = playableCandidates;
       sourceIndex = 0;
       requestedPlay = false;
+      activeSectionIndex = -1;
+      activeCueIndex = -1;
 
       titleEl.textContent = title || 'Cancion';
+      miniTitleEl.textContent = title || 'Cancion';
       artistEl.textContent = String(artist || '').trim() || 'Artista no especificado';
-      setArtworkFromSource(url, title, artist || '');
+      miniArtistEl.textContent = String(artist || '').trim() || 'Artista no especificado';
+      setArtworkFromSource(url, title, artist || '', artworkUrl);
       audioSessionService.setMetadata({
         title: title || 'Cancion',
         artist: String(artist || '').trim() || 'Artista no especificado',
@@ -530,18 +1044,25 @@
 
       statusEl.textContent = 'Cargando audio...';
       setPlayButtonState(false);
-
       seek.value = '0';
       currentEl.textContent = '00:00';
       durationEl.textContent = '00:00';
+      miniTimeEl.textContent = '00:00 / 00:00';
+      miniProgressEl.style.width = '0%';
 
       totalDuration = 0;
       chkLoop.checked = false;
       setLoopUiVisibility();
       syncPlaybackWaveform();
 
-      lockBackgroundScroll();
-      animateOpen();
+      lyricSections = parseChordProSections(chordpro);
+      currentSections = attachLyricsToSections(normalizeSectionMarkers(sectionMarkers, 0), lyricSections);
+      lyricCues = buildLyricCues(currentSections, lyricSections, 0);
+      renderSections();
+
+      showMini();
+      if (expand) openExpanded();
+      else collapseExpanded();
       setSource(0);
 
       if (!autoPlay) return;
@@ -559,70 +1080,7 @@
       }
     };
 
-    window.__REDIL_PRO_PLAYER__ = {
-      open: ({ url, title, artist, autoPlay }) =>
-        openModal({
-          url,
-          title,
-          artist,
-          autoPlay: autoPlay !== false,
-        }),
-      close: closeModal,
-    };
-
-    window.addEventListener('play-pro-audio', (event) => {
-      const detail = event?.detail || {};
-      if (!detail.url) return;
-      void openModal({
-        url: detail.url,
-        title: detail.title,
-        artist: detail.artist,
-        autoPlay: detail.autoPlay !== false,
-      });
-    });
-
-    audio.addEventListener('loadedmetadata', () => {
-      totalDuration = Number.isFinite(audio.duration) ? audio.duration : 0;
-      seek.min = '0';
-      seek.max = String(totalDuration || 1);
-      durationEl.textContent = formatTime(totalDuration);
-      resetLoopRange();
-      statusEl.textContent = 'Activa el loop y arrastra los brackets A/B sobre la barra.';
-      void setupWaveform().then(() => drawWaveformFrame());
-    });
-
-    audio.addEventListener('timeupdate', () => {
-      if (!isSeekingAudio) seek.value = String(audio.currentTime || 0);
-      currentEl.textContent = formatTime(audio.currentTime || 0);
-      syncPlaybackWaveform();
-
-      if (chkLoop.checked && loopEndSec > loopStartSec + 0.15 && audio.currentTime >= loopEndSec) {
-        audio.currentTime = loopStartSec;
-        syncPlaybackWaveform();
-      }
-    });
-
-    audio.addEventListener('play', () => {
-      requestedPlay = true;
-      setPlayButtonState(true);
-    });
-
-    audio.addEventListener('pause', () => {
-      setPlayButtonState(false);
-    });
-
-    audio.addEventListener('ended', () => {
-      requestedPlay = false;
-      setPlayButtonState(false);
-    });
-
-    audio.addEventListener('error', () => {
-      if (tryNextSource(requestedPlay)) return;
-      requestedPlay = false;
-      statusEl.textContent = 'El enlace no se pudo reproducir. Verifica permisos o formato del archivo.';
-    });
-
-    btnPlay.addEventListener('click', async () => {
+    const togglePlayback = async () => {
       try {
         if (audio.paused) {
           requestedPlay = true;
@@ -638,27 +1096,105 @@
           statusEl.textContent = 'El navegador bloqueo la reproduccion. Toca Reproducir nuevamente.';
           return;
         }
-
         if (error instanceof DOMException && error.name === 'NotSupportedError') {
           if (tryNextSource(true)) return;
           requestedPlay = false;
           statusEl.textContent = 'El enlace no se pudo reproducir. Revisa formato o permisos del MP3.';
           return;
         }
-
         requestedPlay = false;
         statusEl.textContent = 'No se pudo iniciar el audio. Intentalo de nuevo.';
       }
+    };
+
+    window.__REDIL_PRO_PLAYER__ = {
+      open: (payload) => openPlayer({ ...payload, autoPlay: payload?.autoPlay !== false }),
+      close: closePlayer,
+      expand: openExpanded,
+    };
+
+    window.addEventListener('play-pro-audio', (event) => {
+      const detail = event?.detail || {};
+      if (!detail.url) return;
+      void openPlayer({
+        url: detail.url,
+        title: detail.title,
+        artist: detail.artist,
+        autoPlay: detail.autoPlay !== false,
+        chordpro: detail.chordpro || '',
+        sectionMarkers: Array.isArray(detail.sectionMarkers) ? detail.sectionMarkers : [],
+        artworkUrl: detail.artworkUrl || '',
+        expand: detail.expand === true,
+      });
     });
+
+    audio.addEventListener('loadedmetadata', () => {
+      totalDuration = Number.isFinite(audio.duration) ? audio.duration : 0;
+      seek.min = '0';
+      seek.max = String(totalDuration || 1);
+      currentSections = attachLyricsToSections(normalizeSectionMarkers(currentSections, totalDuration), lyricSections);
+      lyricCues = buildLyricCues(currentSections, lyricSections, totalDuration);
+      activeCueIndex = -1;
+      renderSections();
+      resetLoopRange();
+      syncPlaybackMetrics();
+      statusEl.textContent = '';
+      void setupWaveform().then(() => drawWaveformFrame());
+    });
+
+    audio.addEventListener('timeupdate', () => {
+      syncPlaybackMetrics();
+      syncPlaybackWaveform();
+      syncActiveSection();
+      syncActiveCue();
+
+      if (chkLoop.checked && loopEndSec > loopStartSec + 0.15 && audio.currentTime >= loopEndSec) {
+        audio.currentTime = loopStartSec;
+        syncPlaybackMetrics();
+        syncPlaybackWaveform();
+        syncActiveCue(true);
+      }
+    });
+
+    audio.addEventListener('play', () => {
+      requestedPlay = true;
+      setPlayButtonState(true);
+    });
+
+    audio.addEventListener('pause', () => setPlayButtonState(false));
+    audio.addEventListener('ended', () => {
+      requestedPlay = false;
+      setPlayButtonState(false);
+    });
+
+    audio.addEventListener('error', () => {
+      if (tryNextSource(requestedPlay)) return;
+      requestedPlay = false;
+      statusEl.textContent = 'El enlace no se pudo reproducir. Verifica permisos o formato del archivo.';
+    });
+
+    btnPlay.addEventListener('click', togglePlayback);
+    btnMiniPlay.addEventListener('click', togglePlayback);
+    btnMute.addEventListener('click', toggleMute);
+    btnMiniMute.addEventListener('click', toggleMute);
+    volume.addEventListener('input', () => setVolume(volume.value));
+    miniVolume.addEventListener('input', () => setVolume(miniVolume.value));
+    btnExpand.addEventListener('click', openExpanded);
+    btnExpandIcon.addEventListener('click', openExpanded);
+    btnCollapse.addEventListener('click', () => collapseExpanded());
+    btnClose.addEventListener('click', closePlayer);
+    btnMiniClose.addEventListener('click', closePlayer);
+    backdrop.addEventListener('click', () => collapseExpanded());
 
     seek.addEventListener('input', () => {
       isSeekingAudio = true;
       currentEl.textContent = formatTime(Number(seek.value || 0));
     });
-
     seek.addEventListener('change', () => {
       audio.currentTime = Number(seek.value || 0);
-      syncPlaybackWaveform();
+      syncPlaybackMetrics();
+      syncActiveSection(true);
+      syncActiveCue(true);
       isSeekingAudio = false;
     });
 
@@ -666,46 +1202,45 @@
       setLoopUiVisibility();
       syncLoopUi();
     });
-
     btnClearLoop.addEventListener('click', () => {
+      chkLoop.checked = false;
+      setLoopUiVisibility();
       resetLoopRange();
     });
-
-    handleA.addEventListener('pointerdown', (event) => {
-      startLoopDrag('A', event);
-    });
-
-    handleB.addEventListener('pointerdown', (event) => {
-      startLoopDrag('B', event);
-    });
+    handleA.addEventListener('pointerdown', (event) => startLoopDrag('A', event));
+    handleB.addEventListener('pointerdown', (event) => startLoopDrag('B', event));
 
     btnBack5.addEventListener('click', () => {
       if (!Number.isFinite(audio.currentTime)) return;
-      const next = Math.max(0, (audio.currentTime || 0) - 5);
-      audio.currentTime = next;
-      if (!isSeekingAudio) seek.value = String(next);
-      currentEl.textContent = formatTime(next);
+      audio.currentTime = Math.max(0, (audio.currentTime || 0) - 5);
+      syncPlaybackMetrics();
+      syncActiveSection();
+      syncActiveCue(true);
       syncPlaybackWaveform();
     });
-
     btnForward5.addEventListener('click', () => {
       const maxDuration = Number.isFinite(totalDuration) && totalDuration > 0 ? totalDuration : Number.isFinite(audio.duration) ? audio.duration : 0;
       if (!maxDuration) return;
-      const next = Math.min(maxDuration, (audio.currentTime || 0) + 5);
-      audio.currentTime = next;
-      if (!isSeekingAudio) seek.value = String(next);
-      currentEl.textContent = formatTime(next);
+      audio.currentTime = Math.min(maxDuration, (audio.currentTime || 0) + 5);
+      syncPlaybackMetrics();
+      syncActiveSection();
+      syncActiveCue(true);
       syncPlaybackWaveform();
     });
-
-    btnClose.addEventListener('click', closeModal);
-    backdrop.addEventListener('click', closeModal);
+    btnPrevSection.addEventListener('click', () => seekToSection(Math.max(0, activeSectionIndex - 1)));
+    btnNextSection.addEventListener('click', () => seekToSection(Math.min(currentSections.length - 1, activeSectionIndex + 1)));
+    btnLoopSection.addEventListener('click', loopActiveSection);
+    btnModeLyrics.addEventListener('click', () => setKaraokeMode('lyrics'));
+    btnModeMap.addEventListener('click', () => setKaraokeMode('map'));
 
     document.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') return;
-      if (modal.classList.contains('hidden')) return;
-      closeModal();
+      if (!modal.classList.contains('hidden')) {
+        collapseExpanded();
+      }
     });
+
+    setVolume(Number.isFinite(lastVolume) ? lastVolume : 0.85, { remember: false });
   })();
 </script>
 
@@ -723,13 +1258,13 @@
   #mp3Seek::-webkit-slider-runnable-track {
     height: 6px;
     border-radius: 9999px;
-    background: rgb(var(--border-base) / 0.55);
+    background: rgb(255 255 255 / 0.18);
   }
 
   #mp3Seek::-moz-range-track {
     height: 6px;
     border-radius: 9999px;
-    background: rgb(var(--border-base) / 0.55);
+    background: rgb(255 255 255 / 0.18);
   }
 
   #mp3Seek::-webkit-slider-thumb {
@@ -738,8 +1273,8 @@
     height: 16px;
     margin-top: -5px;
     border-radius: 9999px;
-    background: rgb(var(--color-info));
-    border: 1px solid rgb(var(--bg-surface));
+    background: white;
+    border: 1px solid rgb(255 255 255 / 0.65);
     box-shadow: 0 2px 8px rgb(0 0 0 / 0.22);
     transition: background-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
   }
@@ -748,8 +1283,8 @@
     width: 5px;
     height: 16px;
     border-radius: 9999px;
-    background: rgb(var(--color-info));
-    border: 1px solid rgb(var(--bg-surface));
+    background: white;
+    border: 1px solid rgb(255 255 255 / 0.65);
     box-shadow: 0 2px 8px rgb(0 0 0 / 0.22);
     transition: background-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
   }
@@ -776,44 +1311,206 @@
     box-shadow: 0 0 0 1px rgb(var(--color-brand) / 0.28), 0 4px 9px rgb(0 0 0 / 0.16);
   }
 
-  #mp3PlayerModal.mp3-playing #mp3LoopBracket .mp3-loop-stick {
-    background: rgb(16 185 129);
-    box-shadow: 0 0 0 1px rgb(16 185 129 / 0.35), 0 4px 10px rgb(16 185 129 / 0.25);
-  }
-
   #mp3Waveform {
     z-index: 1;
     transition: opacity 180ms ease;
     opacity: 0.75;
   }
 
-  #mp3PlayerModal.mp3-playing #btnMp3PlayPause {
-    background: linear-gradient(135deg, rgb(16 185 129), rgb(52 211 153));
-    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.06), 0 8px 22px rgb(16 185 129 / 0.34);
+  .mp3-volume-slider {
+    appearance: none;
+    -webkit-appearance: none;
+    height: 5px;
+    border-radius: 9999px;
+    background: rgb(255 255 255 / 0.18);
+    accent-color: white;
+  }
+
+  .mp3-volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 9999px;
+    background: white;
+    border: 0;
+    box-shadow: 0 2px 10px rgb(0 0 0 / 0.28);
+  }
+
+  .mp3-volume-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border: 0;
+    border-radius: 9999px;
+    background: white;
+    box-shadow: 0 2px 10px rgb(0 0 0 / 0.28);
+  }
+
+  #mp3PlayerModal.mp3-playing #btnMp3PlayPause,
+  #mp3MiniPlayer.mp3-playing #btnMp3MiniPlay {
+    background: white;
+    color: #111113;
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08), 0 10px 28px rgb(0 0 0 / 0.32);
   }
 
   #mp3PlayerModal.mp3-playing #mp3Seek::-webkit-slider-thumb {
-    background: rgb(16 185 129);
-    box-shadow: 0 0 0 3px rgb(52 211 153 / 0.18), 0 2px 10px rgb(16 185 129 / 0.32);
+    background: white;
+    box-shadow: 0 0 0 3px rgb(255 255 255 / 0.16), 0 2px 10px rgb(0 0 0 / 0.32);
     transform: scale(1.03);
   }
 
   #mp3PlayerModal.mp3-playing #mp3Seek::-moz-range-thumb {
-    background: rgb(16 185 129);
-    box-shadow: 0 0 0 3px rgb(52 211 153 / 0.18), 0 2px 10px rgb(16 185 129 / 0.32);
+    background: white;
+    box-shadow: 0 0 0 3px rgb(255 255 255 / 0.16), 0 2px 10px rgb(0 0 0 / 0.32);
     transform: scale(1.03);
   }
 
   #mp3PlayerModal.mp3-playing #mp3Seek::-webkit-slider-runnable-track {
-    background: rgb(52 211 153 / 0.28);
+    background: rgb(255 255 255 / 0.28);
   }
 
   #mp3PlayerModal.mp3-playing #mp3Seek::-moz-range-track {
-    background: rgb(52 211 153 / 0.28);
+    background: rgb(255 255 255 / 0.28);
   }
 
   #mp3PlayerModal.mp3-playing #mp3Waveform {
     opacity: 0.95;
+  }
+
+  .mp3-section-btn,
+  .mp3-map-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    min-height: 2.5rem;
+    border: 1px solid rgb(var(--border-base));
+    border-radius: 0.75rem;
+    background: rgb(var(--bg-surface));
+    color: rgb(var(--text-base));
+    padding: 0.55rem 0.7rem;
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-align: left;
+    transition: border-color 160ms ease, background 160ms ease, color 160ms ease, transform 160ms ease;
+  }
+
+  .mp3-section-btn:hover,
+  .mp3-map-row:hover {
+    background: rgb(var(--bg-base));
+  }
+
+  .mp3-section-btn.is-active,
+  .mp3-map-row.is-active {
+    border-color: rgb(var(--color-action) / 0.46);
+    background: rgb(var(--color-action) / 0.12);
+    color: rgb(var(--color-action));
+  }
+
+  .mp3-lyric-section {
+    border: 0;
+    padding: 0.35rem 0.15rem;
+    opacity: 0.24;
+    filter: blur(0.2px);
+    transition: opacity 220ms ease, filter 220ms ease, transform 220ms ease;
+  }
+
+  .mp3-lyric-section.is-active {
+    opacity: 1;
+    filter: none;
+    transform: none;
+  }
+
+  .mp3-lyric-heading {
+    display: none;
+    margin-bottom: 0.45rem;
+    color: rgb(var(--text-muted));
+    font-size: 0.68rem;
+    font-weight: 900;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .mp3-lyric-line {
+    max-width: 18ch;
+    color: rgb(255 255 255 / 0.28);
+    font-size: clamp(1.65rem, 5.8vw, 3.15rem);
+    font-weight: 900;
+    line-height: 1.16;
+    letter-spacing: 0;
+    text-wrap: balance;
+    transition: color 240ms ease, opacity 240ms ease, filter 240ms ease, transform 240ms ease;
+  }
+
+  .mp3-lyric-line.is-near {
+    color: rgb(255 255 255 / 0.42);
+  }
+
+  .mp3-lyric-line.is-past {
+    color: rgb(255 255 255 / 0.18);
+  }
+
+  .mp3-lyric-line.is-active {
+    color: white !important;
+    text-shadow: 0 12px 30px rgb(0 0 0 / 0.42);
+    filter: none;
+    transform: translateX(0.08rem);
+  }
+
+  .mp3-mode-btn {
+    color: rgb(var(--text-muted));
+    transition: background 160ms ease, color 160ms ease;
+  }
+
+  .mp3-mode-btn.is-active {
+    background: rgb(var(--color-action));
+    color: white;
+  }
+
+  #btnMp3LoopSection.is-active {
+    background: rgb(var(--color-action) / 0.14);
+    border-color: rgb(var(--color-action) / 0.42);
+    color: rgb(var(--color-action));
+  }
+
+  #btnMp3PrevSection:disabled,
+  #btnMp3NextSection:disabled,
+  #btnMp3LoopSection:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+
+  body[data-pro-player-modal-open='true'] nav[data-bottom-nav='true'] {
+    display: none !important;
+  }
+
+  @media (max-width: 767px) {
+    #mp3SectionStrip {
+      flex-direction: row;
+      max-height: none;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding-bottom: 0.2rem;
+      scroll-snap-type: x proximity;
+    }
+
+    #mp3SectionStrip .mp3-section-btn {
+      min-width: 10.5rem;
+      scroll-snap-align: start;
+    }
+
+    #mp3KaraokeLyrics {
+      padding: 0.25rem 1.25rem 8rem;
+    }
+
+    .mp3-lyric-section {
+      padding-block: 0.95rem;
+    }
+
+    .mp3-lyric-line {
+      font-size: clamp(2.1rem, 8.4vw, 3rem);
+      line-height: 1.13;
+    }
   }
 
   @keyframes mp3-live-slide {

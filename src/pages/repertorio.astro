@@ -158,7 +158,7 @@ const firstTourResourcesId =
  </div>
 
  {/* Registro global: chordpro + markers fuera del DOM para ahorrar payload en data-attributes */}
- <script is:inline define:vars={{ songRegistry: canciones.reduce((acc, c) => { if (c.chordpro || (Array.isArray(c.section_markers) && c.section_markers.length)) { acc[String(c.id)] = {}; if (c.chordpro) acc[String(c.id)].c = c.chordpro; if (Array.isArray(c.section_markers) && c.section_markers.length) acc[String(c.id)].m = c.section_markers; } return acc; }, {}) }}>
+ <script is:inline define:vars={{ songRegistry: canciones.reduce((acc, c) => { const artwork = c.portada || c.imagen || c.image || c.cover || c.thumbnail || c.artwork || c.album_art || c.albumArt || c.caratula || c.foto || ''; if (c.chordpro || artwork || (Array.isArray(c.section_markers) && c.section_markers.length)) { acc[String(c.id)] = {}; if (c.chordpro) acc[String(c.id)].c = c.chordpro; if (Array.isArray(c.section_markers) && c.section_markers.length) acc[String(c.id)].m = c.section_markers; if (artwork) acc[String(c.id)].a = artwork; } return acc; }, {}) }}>
    window.__REDIL_SONG_REGISTRY__ = songRegistry;
  </script>
 
@@ -637,7 +637,16 @@ if (sessionError || !session) {
   });
  }
 
- const dispatchProPlayerEvent = (payload: { url: string; title?: string; artist?: string; isDirectPlayable?: boolean; autoPlay?: boolean }) => {
+ const dispatchProPlayerEvent = (payload: {
+  url: string;
+  title?: string;
+  artist?: string;
+  isDirectPlayable?: boolean;
+  autoPlay?: boolean;
+  songId?: string;
+  chordpro?: string;
+  sectionMarkers?: any[];
+ }) => {
   const url = (payload?.url || '').trim();
   if (!url) return;
   const proPlayer = (window as any).__REDIL_PRO_PLAYER__;
@@ -647,6 +656,9 @@ if (sessionError || !session) {
     title: payload.title,
     artist: payload.artist,
     autoPlay: payload.autoPlay !== false,
+    songId: payload.songId,
+    chordpro: payload.chordpro,
+    sectionMarkers: payload.sectionMarkers,
    });
    return;
   }
@@ -667,6 +679,9 @@ if (sessionError || !session) {
 
  // Llamada al RPC seguro para sumar una reproducción (sin detener la música si falla)
  const cancionId = mp3Button.getAttribute('data-id') || mp3Button.closest('article')?.getAttribute('data-id');
+ const registryEntry = cancionId
+   ? ((window as any).__REDIL_SONG_REGISTRY__?.[String(cancionId)] || null)
+   : null;
  if (cancionId) {
    try {
      const { error } = await supabase.rpc('incrementar_reproduccion', { 
@@ -680,7 +695,16 @@ if (sessionError || !session) {
    }
  }
 
- dispatchProPlayerEvent({ url: mp3Url, title: songTitle, artist: songArtist, autoPlay: true });
+ dispatchProPlayerEvent({
+   url: mp3Url,
+   title: songTitle,
+   artist: songArtist,
+   autoPlay: true,
+   songId: cancionId ? String(cancionId) : '',
+   chordpro: typeof registryEntry?.c === 'string' ? registryEntry.c : '',
+   sectionMarkers: Array.isArray(registryEntry?.m) ? registryEntry.m : [],
+   artworkUrl: typeof registryEntry?.a === 'string' ? registryEntry.a : '',
+ });
  }, { capture: true });
 
 // ----- Metronomo Interactivo Logic -----
