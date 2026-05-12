@@ -177,7 +177,8 @@
     if (window.__REDIL_PRO_PLAYER_READY__) return;
     window.__REDIL_PRO_PLAYER_READY__ = true;
 
-    const MODAL_PREMIUM_MS = 300;
+    const MODAL_PREMIUM_MS = 420;
+    const MINI_ENTER_MS = 520;
 
     const modal = document.getElementById('mp3PlayerModal');
     const backdrop = document.getElementById('mp3PlayerBackdrop');
@@ -736,8 +737,15 @@
       window.scrollTo({ top: lockedScrollY, behavior: 'auto' });
     };
 
-    const showMini = () => {
+    const showMini = ({ animate = true } = {}) => {
       mini.classList.remove('hidden');
+      if (!animate) return;
+      mini.classList.remove('mp3-mini-entering');
+      void mini.offsetWidth;
+      mini.classList.add('mp3-mini-entering');
+      window.setTimeout(() => {
+        mini.classList.remove('mp3-mini-entering');
+      }, MINI_ENTER_MS);
     };
 
     const openExpanded = () => {
@@ -745,6 +753,8 @@
       lockBackgroundScroll();
       modal.classList.remove('hidden');
       modal.setAttribute('aria-hidden', 'false');
+      modal.classList.remove('mp3-modal-leaving');
+      modal.classList.add('mp3-modal-entering');
       backdrop.classList.add('opacity-0');
       panel.classList.add('opacity-0', 'translate-y-[6rem]', 'scale-[0.985]');
       requestAnimationFrame(() => {
@@ -753,6 +763,9 @@
           panel.classList.remove('opacity-0', 'translate-y-[6rem]', 'scale-[0.985]');
         });
       });
+      window.setTimeout(() => {
+        modal.classList.remove('mp3-modal-entering');
+      }, 620);
     };
 
     const collapseExpanded = (onAfterClose = () => {}) => {
@@ -760,11 +773,14 @@
         onAfterClose();
         return;
       }
+      modal.classList.remove('mp3-modal-entering');
+      modal.classList.add('mp3-modal-leaving');
       backdrop.classList.add('opacity-0');
       panel.classList.add('opacity-0', 'translate-y-[6rem]', 'scale-[0.985]');
       window.setTimeout(() => {
         modal.classList.add('hidden');
         modal.setAttribute('aria-hidden', 'true');
+        modal.classList.remove('mp3-modal-leaving');
         unlockBackgroundScroll();
         if (!closingPlayer && sourceCandidates.length > 0) {
           showMini();
@@ -1659,6 +1675,22 @@
     display: none !important;
   }
 
+  #mp3MiniPlayer.mp3-mini-entering {
+    animation: mp3-mini-rise 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  #mp3PlayerModal.mp3-modal-entering #mp3PlayerBackdrop {
+    animation: mp3-backdrop-bloom 520ms ease-out both;
+  }
+
+  #mp3PlayerModal.mp3-modal-entering #mp3PlayerPanel {
+    animation: mp3-panel-rise 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  #mp3PlayerModal.mp3-modal-leaving #mp3PlayerPanel {
+    animation: mp3-panel-dismiss 360ms cubic-bezier(0.32, 0, 0.67, 0) both;
+  }
+
   @media (min-width: 768px) {
     #mp3KaraokeLyrics {
       max-width: min(54rem, 72vw);
@@ -1718,6 +1750,76 @@
     100% {
       transform: translateX(0);
       opacity: 0.72;
+    }
+  }
+
+  @keyframes mp3-mini-rise {
+    0% {
+      opacity: 0;
+      filter: blur(12px);
+      transform: translate3d(0, 3.25rem, 0) scale(0.94);
+    }
+    62% {
+      opacity: 1;
+      filter: blur(0);
+      transform: translate3d(0, -0.22rem, 0) scale(1.01);
+    }
+    100% {
+      opacity: 1;
+      filter: blur(0);
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+
+  @keyframes mp3-backdrop-bloom {
+    0% {
+      opacity: 0;
+      backdrop-filter: blur(0);
+    }
+    100% {
+      opacity: 1;
+      backdrop-filter: blur(18px);
+    }
+  }
+
+  @keyframes mp3-panel-rise {
+    0% {
+      opacity: 0;
+      filter: blur(16px);
+      transform: translate3d(0, 5.5rem, 0) scale(0.955);
+    }
+    64% {
+      opacity: 1;
+      filter: blur(0);
+      transform: translate3d(0, -0.35rem, 0) scale(1.006);
+    }
+    100% {
+      opacity: 1;
+      filter: blur(0);
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+
+  @keyframes mp3-panel-dismiss {
+    0% {
+      opacity: 1;
+      filter: blur(0);
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    100% {
+      opacity: 0;
+      filter: blur(12px);
+      transform: translate3d(0, 4.25rem, 0) scale(0.97);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #mp3MiniPlayer.mp3-mini-entering,
+    #mp3PlayerModal.mp3-modal-entering #mp3PlayerBackdrop,
+    #mp3PlayerModal.mp3-modal-entering #mp3PlayerPanel,
+    #mp3PlayerModal.mp3-modal-leaving #mp3PlayerPanel,
+    #mp3LiveIndicator.mp3-live-on {
+      animation: none !important;
     }
   }
 
