@@ -171,10 +171,15 @@
       const finalTitle = voiceName ? `${modalSongTitle} · ${voiceName}` : modalSongTitle;
 
       closeVocesModal(() => {
+        const voiceColor = getVoiceColor(voiceName);
         dispatchProPlayerEvent({
           url: normalized,
-          title: finalTitle,
-          artist: modalSongArtist,
+          title: modalSongTitle,
+          artist: voiceName || modalSongArtist,
+          subtitle: modalSongArtist,
+          mediaKind: 'voice',
+          voiceName,
+          voiceColor,
           isDirectPlayable: true,
           autoPlay: true,
         });
