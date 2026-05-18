@@ -179,6 +179,7 @@
 
     const MODAL_PREMIUM_MS = 420;
     const MINI_ENTER_MS = 520;
+    const LYRIC_SCROLL_RELEASE_MS = 3000;
 
     const modal = document.getElementById('mp3PlayerModal');
     const backdrop = document.getElementById('mp3PlayerBackdrop');
@@ -308,6 +309,10 @@
     let waveAnalyser = null;
     let waveData = null;
     let lockedScrollY = 0;
+    let manualLyricScrollUntil = 0;
+    let manualLyricScrollTimer = 0;
+    let programmaticLyricScrollTimer = 0;
+    let isProgrammaticLyricScroll = false;
 
     const formatTime = (seconds) => {
       if (!Number.isFinite(seconds) || seconds < 0) return '00:00';
@@ -326,6 +331,42 @@
       .trim();
 
     const buildSourceCandidates = (rawUrl) => buildPlaybackSourceCandidates(rawUrl, { origin: window.location.origin });
+
+    const isManualLyricScrollReleased = () => Date.now() < manualLyricScrollUntil;
+
+    const markProgrammaticLyricScroll = (durationMs = 720) => {
+      isProgrammaticLyricScroll = true;
+      window.clearTimeout(programmaticLyricScrollTimer);
+      programmaticLyricScrollTimer = window.setTimeout(() => {
+        isProgrammaticLyricScroll = false;
+      }, durationMs);
+    };
+
+    const scrollKaraokePanelTo = ({ top, behavior = 'smooth' }) => {
+      markProgrammaticLyricScroll(behavior === 'smooth' ? 760 : 220);
+      karaokePanel.scrollTo({ top: Math.max(0, top), behavior });
+    };
+
+    const releaseLyricAutoScrollBriefly = () => {
+      if (modal.classList.contains('hidden')) return;
+      manualLyricScrollUntil = Date.now() + LYRIC_SCROLL_RELEASE_MS;
+      window.clearTimeout(manualLyricScrollTimer);
+      manualLyricScrollTimer = window.setTimeout(() => {
+        manualLyricScrollUntil = 0;
+        syncActiveCue(true);
+      }, LYRIC_SCROLL_RELEASE_MS);
+    };
+
+    const beginManualLyricScroll = () => {
+      isProgrammaticLyricScroll = false;
+      window.clearTimeout(programmaticLyricScrollTimer);
+      releaseLyricAutoScrollBriefly();
+    };
+
+    const resumeLyricAutoScroll = () => {
+      manualLyricScrollUntil = 0;
+      window.clearTimeout(manualLyricScrollTimer);
+    };
 
     const stripChordProLine = (line = '') => String(line || '')
       .replace(/\{[^}]*\}/g, '')
@@ -887,6 +928,9 @@
             const line = document.createElement('p');
             line.className = 'mp3-lyric-line';
             line.dataset.cueIndex = String(index);
+            line.tabIndex = 0;
+            line.setAttribute('role', 'button');
+            line.setAttribute('aria-label', `Ir a ${cue.text || 'esta linea'}`);
             line.textContent = cue.text || '';
             karaokeLyrics.appendChild(line);
           });
@@ -924,6 +968,9 @@
         line.className = cue.instrumental ? 'mp3-lyric-line mp3-instrumental-cue' : 'mp3-lyric-line';
         line.dataset.cueIndex = String(index);
         line.dataset.sectionIndex = String(cue.sectionIndex ?? -1);
+        line.tabIndex = 0;
+        line.setAttribute('role', 'button');
+        line.setAttribute('aria-label', `Ir a ${cue.instrumental ? cue.label || 'interludio' : cue.text || 'esta linea'}`);
         if (cue.instrumental) {
           line.style.setProperty('--mp3-instrumental-progress', '0%');
           line.innerHTML = `
@@ -960,9 +1007,23 @@
     const seekToSection = (index) => {
       const section = currentSections[index];
       if (!section) return;
+      resumeLyricAutoScroll();
       audio.currentTime = section.startSec;
       syncPlaybackMetrics();
       syncActiveSection(true);
+      syncActiveCue(true);
+      if (audio.paused && requestedPlay) void audio.play().catch(() => {});
+    };
+
+    const seekToCue = (index) => {
+      const cue = lyricCues[index];
+      if (!cue) return;
+      resumeLyricAutoScroll();
+      audio.currentTime = Math.max(0, cue.startSec + 0.01);
+      syncPlaybackMetrics();
+      syncPlaybackWaveform();
+      syncActiveSection(true);
+      syncActiveCue(true);
       if (audio.paused && requestedPlay) void audio.play().catch(() => {});
     };
 
@@ -1042,11 +1103,12 @@
       });
 
       const activeLyric = karaokeLyrics.querySelector(`[data-cue-index="${activeCueIndex}"]`);
-      if (activeLyric && (forceScroll || !modal.classList.contains('hidden'))) {
+      const shouldFollowLyric = forceScroll || (!modal.classList.contains('hidden') && !isManualLyricScrollReleased());
+      if (activeLyric && shouldFollowLyric) {
         const lyricRect = activeLyric.getBoundingClientRect();
         const panelRect = karaokePanel.getBoundingClientRect();
         const targetTop = karaokePanel.scrollTop + lyricRect.top - panelRect.top - (karaokePanel.clientHeight * 0.34);
-        karaokePanel.scrollTo({
+        scrollKaraokePanelTo({
           top: Math.max(0, targetTop),
           behavior: forceScroll ? 'auto' : 'smooth',
         });
@@ -1365,6 +1427,25 @@
     btnLoopSection.addEventListener('click', loopActiveSection);
     btnModeLyrics.addEventListener('click', () => setKaraokeMode('lyrics'));
     btnModeMap.addEventListener('click', () => setKaraokeMode('map'));
+    karaokePanel.addEventListener('scroll', () => {
+      if (isProgrammaticLyricScroll) return;
+      releaseLyricAutoScrollBriefly();
+    }, { passive: true });
+    karaokePanel.addEventListener('wheel', beginManualLyricScroll, { passive: true });
+    karaokePanel.addEventListener('touchstart', beginManualLyricScroll, { passive: true });
+    karaokePanel.addEventListener('pointerdown', beginManualLyricScroll, { passive: true });
+    karaokeLyrics.addEventListener('click', (event) => {
+      const cueNode = event.target?.closest?.('[data-cue-index]');
+      if (!cueNode || !karaokeLyrics.contains(cueNode)) return;
+      seekToCue(Number(cueNode.dataset.cueIndex));
+    });
+    karaokeLyrics.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const cueNode = event.target?.closest?.('[data-cue-index]');
+      if (!cueNode || !karaokeLyrics.contains(cueNode)) return;
+      event.preventDefault();
+      seekToCue(Number(cueNode.dataset.cueIndex));
+    });
 
     document.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') return;
@@ -1671,7 +1752,22 @@
     line-height: 1.16;
     letter-spacing: 0;
     text-wrap: balance;
+    cursor: pointer;
     transition: color 240ms ease, opacity 240ms ease, filter 240ms ease, transform 240ms ease;
+  }
+
+  .mp3-lyric-line:hover {
+    color: rgb(255 255 255 / 0.6);
+  }
+
+  .mp3-lyric-line:focus {
+    outline: none;
+  }
+
+  .mp3-lyric-line:focus-visible {
+    border-radius: 0.45rem;
+    outline: 2px solid rgb(255 255 255 / 0.36);
+    outline-offset: 0.35rem;
   }
 
   .mp3-lyric-line.is-near {
