@@ -93,9 +93,17 @@ const formatServiceDuration = (startValue, endValue) => {
   return `${hours} h ${String(minutes).padStart(2, '0')} min`;
 };
 
-const dispatchProPlayerEvent = ({ url, title, artist, autoPlay = true }) => {
+const dispatchProPlayerEvent = ({
+  url,
+  title,
+  artist,
+  autoPlay = true,
+  chordpro = '',
+  sectionMarkers = [],
+}) => {
   const cleanUrl = String(url || '').trim();
   if (!cleanUrl || typeof window === 'undefined') return;
+  const safeSectionMarkers = Array.isArray(sectionMarkers) ? sectionMarkers : [];
 
   if (window.__REDIL_PRO_PLAYER__?.open) {
     window.__REDIL_PRO_PLAYER__.open({
@@ -103,6 +111,8 @@ const dispatchProPlayerEvent = ({ url, title, artist, autoPlay = true }) => {
       title,
       artist,
       autoPlay,
+      chordpro,
+      sectionMarkers: safeSectionMarkers,
     });
     return;
   }
@@ -113,6 +123,8 @@ const dispatchProPlayerEvent = ({ url, title, artist, autoPlay = true }) => {
       title,
       artist,
       autoPlay,
+      chordpro,
+      sectionMarkers: safeSectionMarkers,
     },
   }));
 };
@@ -592,6 +604,8 @@ export default function EnsayoHub({
       title: song.title,
       artist: song.artist,
       autoPlay,
+      chordpro: song.chordpro || '',
+      sectionMarkers: song.sectionMarkers || [],
     });
   }, []);
 

@@ -426,6 +426,7 @@ const buildSongFromRow = async (songRow, orderIndex = 0) => {
     linkVoces: songRow?.voces || songRow?.link_voces || '',
     linkSecuencias: songRow?.link_secuencias || '',
     multitrackSession: songRow?.multitrack_session || null,
+    chordpro: chordproContent,
     sectionMarkers: rawSectionMarkers,
     duration: estimateDuration(sections),
     sections,

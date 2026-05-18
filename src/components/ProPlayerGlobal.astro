@@ -423,6 +423,11 @@
       .replace(/\s+/g, ' ')
       .trim();
 
+    const isInstrumentalSectionLabel = (value = '') => {
+      const label = baseSectionLabel(value);
+      return /^(intro|entrada|interludio|interlude|instrumental|musica|music|musical|solo|break|outro|salida|final)$/.test(label);
+    };
+
     const attachLyricsToSections = (sections, lyrics) => {
       const usedLyrics = new Set();
       return sections.map((section, index) => {
@@ -436,7 +441,7 @@
             !usedLyrics.has(candidateIndex) && baseSectionLabel(lyric.name) === sectionBase
           ));
         }
-        if (lyricIndex === -1 && lyrics[index]) lyricIndex = index;
+        if (lyricIndex === -1 && lyrics[index] && !isInstrumentalSectionLabel(section.label)) lyricIndex = index;
         if (lyricIndex !== -1) usedLyrics.add(lyricIndex);
         return { ...section, lyricIndex };
       });
@@ -444,6 +449,7 @@
 
     const buildLyricCues = (sections, lyrics, duration = 0) => {
       const cues = [];
+      const hasAnyLyricLines = lyrics.some((section) => (section.lines || []).some((line) => String(line || '').trim()));
       const pushLines = (lines, startSec, endSec, sectionIndex = -1) => {
         const cleanLines = (lines || []).map((line) => String(line || '').trim()).filter(Boolean);
         if (!cleanLines.length) return;
@@ -462,11 +468,27 @@
           });
         });
       };
+      const pushInstrumentalCue = (section, sectionIndex = -1) => {
+        if (!hasAnyLyricLines || !section) return;
+        const safeStart = Number.isFinite(section.startSec) ? Math.max(0, section.startSec) : 0;
+        const fallbackEnd = Number.isFinite(duration) && duration > safeStart ? duration : safeStart + 8;
+        const safeEnd = Number.isFinite(section.endSec) && section.endSec > safeStart ? section.endSec : fallbackEnd;
+        cues.push({
+          text: '•••',
+          label: section.label || 'Interludio',
+          startSec: safeStart,
+          endSec: safeEnd,
+          sectionIndex,
+          instrumental: true,
+        });
+      };
 
       if (sections.length) {
         sections.forEach((section, sectionIndex) => {
           const lyric = lyrics[section.lyricIndex] || null;
+          const beforeCount = cues.length;
           pushLines(lyric?.lines || [], section.startSec, section.endSec, sectionIndex);
+          if (cues.length === beforeCount) pushInstrumentalCue(section, sectionIndex);
         });
       } else {
         const allLines = lyrics.flatMap((section) => section.lines || []);
@@ -898,11 +920,20 @@
       });
 
       lyricCues.forEach((cue, index) => {
-        const line = document.createElement('p');
-        line.className = 'mp3-lyric-line';
+        const line = document.createElement(cue.instrumental ? 'div' : 'p');
+        line.className = cue.instrumental ? 'mp3-lyric-line mp3-instrumental-cue' : 'mp3-lyric-line';
         line.dataset.cueIndex = String(index);
         line.dataset.sectionIndex = String(cue.sectionIndex ?? -1);
-        line.textContent = cue.text || '';
+        if (cue.instrumental) {
+          line.style.setProperty('--mp3-instrumental-progress', '0%');
+          line.innerHTML = `
+            <span class="mp3-instrumental-label">${escapeHtml(cue.label || 'Interludio')}</span>
+            <span class="mp3-instrumental-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="mp3-instrumental-bar" aria-hidden="true"><span></span></span>
+          `;
+        } else {
+          line.textContent = cue.text || '';
+        }
         karaokeLyrics.appendChild(line);
       });
 
@@ -991,9 +1022,19 @@
 
       karaokeLyrics.querySelectorAll('[data-cue-index]').forEach((node) => {
         const index = Number(node.dataset.cueIndex);
+        const cue = lyricCues[index] || null;
         node.classList.toggle('is-active', index === activeCueIndex);
         node.classList.toggle('is-past', index < activeCueIndex);
         node.classList.toggle('is-near', Math.abs(index - activeCueIndex) === 1);
+        if (cue?.instrumental) {
+          const span = Number.isFinite(cue.endSec) && cue.endSec > cue.startSec ? cue.endSec - cue.startSec : 1;
+          const progress = index < activeCueIndex
+            ? 100
+            : index > activeCueIndex
+              ? 0
+              : clamp(((current - cue.startSec) / span) * 100, 0, 100);
+          node.style.setProperty('--mp3-instrumental-progress', `${progress}%`);
+        }
       });
 
       const activeLyric = karaokeLyrics.querySelector(`[data-cue-index="${activeCueIndex}"]`);
@@ -1644,6 +1685,83 @@
     transform: translateX(0.08rem);
   }
 
+  .mp3-instrumental-cue {
+    display: inline-flex;
+    width: min(18rem, 76vw);
+    max-width: 100%;
+    flex-direction: column;
+    gap: 0.85rem;
+    border-radius: 1.35rem;
+    border: 1px solid rgb(255 255 255 / 0.1);
+    background: linear-gradient(135deg, rgb(255 255 255 / 0.12), rgb(255 255 255 / 0.035));
+    padding: 1rem;
+    color: rgb(255 255 255 / 0.42);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
+    backdrop-filter: blur(18px);
+  }
+
+  .mp3-instrumental-cue.is-active {
+    color: white !important;
+    transform: translateX(0);
+    border-color: rgb(255 255 255 / 0.2);
+    background: linear-gradient(135deg, rgb(255 255 255 / 0.18), rgb(255 255 255 / 0.055));
+  }
+
+  .mp3-instrumental-label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 900;
+    letter-spacing: 0.18em;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
+  .mp3-instrumental-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.42rem;
+  }
+
+  .mp3-instrumental-dots i {
+    display: block;
+    width: 0.48rem;
+    height: 0.48rem;
+    border-radius: 9999px;
+    background: currentColor;
+    opacity: 0.48;
+    transform: translateY(0);
+  }
+
+  .mp3-instrumental-cue.is-active .mp3-instrumental-dots i {
+    animation: mp3-instrumental-pulse 1.15s ease-in-out infinite;
+  }
+
+  .mp3-instrumental-cue.is-active .mp3-instrumental-dots i:nth-child(2) {
+    animation-delay: 140ms;
+  }
+
+  .mp3-instrumental-cue.is-active .mp3-instrumental-dots i:nth-child(3) {
+    animation-delay: 280ms;
+  }
+
+  .mp3-instrumental-bar {
+    display: block;
+    height: 0.25rem;
+    overflow: hidden;
+    border-radius: 9999px;
+    background: rgb(255 255 255 / 0.16);
+  }
+
+  .mp3-instrumental-bar span {
+    display: block;
+    width: var(--mp3-instrumental-progress, 0%);
+    height: 100%;
+    border-radius: inherit;
+    background: white;
+    box-shadow: 0 0 18px rgb(255 255 255 / 0.35);
+    transition: width 180ms linear;
+  }
+
   .mp3-mode-btn {
     color: rgb(var(--text-muted));
     transition: background 160ms ease, color 160ms ease;
@@ -1813,12 +1931,25 @@
     }
   }
 
+  @keyframes mp3-instrumental-pulse {
+    0%,
+    100% {
+      opacity: 0.35;
+      transform: translateY(0);
+    }
+    45% {
+      opacity: 1;
+      transform: translateY(-0.22rem);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     #mp3MiniPlayer.mp3-mini-entering,
     #mp3PlayerModal.mp3-modal-entering #mp3PlayerBackdrop,
     #mp3PlayerModal.mp3-modal-entering #mp3PlayerPanel,
     #mp3PlayerModal.mp3-modal-leaving #mp3PlayerPanel,
-    #mp3LiveIndicator.mp3-live-on {
+    #mp3LiveIndicator.mp3-live-on,
+    .mp3-instrumental-cue.is-active .mp3-instrumental-dots i {
       animation: none !important;
     }
   }
