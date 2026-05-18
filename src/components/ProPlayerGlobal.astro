@@ -927,9 +927,11 @@
         if (cue.instrumental) {
           line.style.setProperty('--mp3-instrumental-progress', '0%');
           line.innerHTML = `
+            <span class="mp3-instrumental-meter" aria-hidden="true">
+              <span class="mp3-instrumental-dots"><i></i><i></i><i></i></span>
+              <span class="mp3-instrumental-bar"><span></span></span>
+            </span>
             <span class="mp3-instrumental-label">${escapeHtml(cue.label || 'Interludio')}</span>
-            <span class="mp3-instrumental-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-            <span class="mp3-instrumental-bar" aria-hidden="true"><span></span></span>
           `;
         } else {
           line.textContent = cue.text || '';
@@ -1688,18 +1690,19 @@
   }
 
   .mp3-instrumental-cue {
-    display: inline-flex;
-    width: min(14rem, 58vw);
-    max-width: 100%;
-    flex-direction: column;
-    gap: 0.58rem;
-    margin-block: 0.35rem;
+    display: inline-grid;
+    grid-template-columns: minmax(4.5rem, 7rem) minmax(0, auto);
+    align-items: center;
+    width: min(28rem, 88vw);
+    max-width: 88vw;
+    gap: clamp(0.75rem, 3vw, 1.2rem);
+    margin-block: 0.55rem 0.75rem;
     padding: 0;
     color: rgb(255 255 255 / 0.42);
-    font-size: 1rem;
-    font-weight: 800;
-    line-height: 1;
+    font-weight: 900;
+    line-height: 1.08;
     text-shadow: none;
+    text-wrap: balance;
   }
 
   .mp3-instrumental-cue.is-active {
@@ -1707,20 +1710,28 @@
     transform: translateX(0);
   }
 
+  .mp3-instrumental-meter {
+    display: grid;
+    width: clamp(4.6rem, 17vw, 7rem);
+    gap: 0.42rem;
+    justify-self: end;
+  }
+
   .mp3-instrumental-label {
     display: block;
     color: currentColor;
-    font-size: 0.68rem;
+    font-size: inherit;
     font-weight: 900;
-    letter-spacing: 0.18em;
-    line-height: 1;
-    opacity: 0.58;
-    text-transform: uppercase;
+    letter-spacing: 0;
+    line-height: 1.08;
+    opacity: 0.74;
+    text-transform: none;
   }
 
   .mp3-instrumental-dots {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 0.42rem;
   }
 
