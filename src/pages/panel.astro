@@ -34,11 +34,16 @@ const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
 });
 
 const now = new Date();
+const currentYear = now.getFullYear();
+const currentYearStart = new Date(currentYear, 0, 1);
 const operationFloor = new Date(now.getTime() - 12 * 60 * 60 * 1000);
 const upcomingWindowEnd = new Date(now);
 upcomingWindowEnd.setDate(upcomingWindowEnd.getDate() + 45);
 const fetchPastFloor = new Date(now);
-fetchPastFloor.setDate(fetchPastFloor.getDate() - 120);
+fetchPastFloor.setDate(fetchPastFloor.getDate() - 365);
+if (currentYearStart < fetchPastFloor) {
+  fetchPastFloor.setTime(currentYearStart.getTime());
+}
 const fetchFutureLimit = new Date(now);
 fetchFutureLimit.setDate(fetchFutureLimit.getDate() + 120);
 const upcomingAbsenceFloor = new Date(now);
@@ -60,7 +65,22 @@ const normalizeFold = (value) =>
     .toLowerCase();
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-const formatCountLabel = (count, singular, plural = `${singular}s`) => `${count} ${count === 1 ? singular : plural}`;
+const pluralizeSpanish = (singular) => {
+  if (singular.endsWith('cion')) return `${singular.slice(0, -3)}iones`;
+  return `${singular}s`;
+};
+const formatCountLabel = (count, singular, plural = pluralizeSpanish(singular)) => `${count} ${count === 1 ? singular : plural}`;
+
+const isServiceStateExcludedFromUsage = (value) => {
+  const text = normalizeFold(value);
+  return text.includes('borrador') || text.includes('cancel') || text.includes('eliminad');
+};
+
+const isRealizedService = (evento) => {
+  const eventDate = new Date(evento?.dateIso || evento?.fecha_hora || '');
+  if (Number.isNaN(eventDate.getTime())) return false;
+  return eventDate <= now && !isServiceStateExcludedFromUsage(evento?.rawStatus || evento?.estado);
+};
 
 const formatDateKey = (dateValue) => {
   if (!dateValue) return null;
@@ -376,6 +396,7 @@ const operationalEvents = eventos
       title: buildEventHeadline(evento, safeText(evento.titulo, 'Servicio')),
       eventTitle: safeText(evento.titulo, 'Evento'),
       dateIso: evento.fecha_hora,
+      rawStatus: safeText(evento.estado),
       status,
       leaderName,
       playlistId: playlist?.id ? String(playlist.id) : '',
@@ -388,7 +409,7 @@ const operationalEvents = eventos
       hasRoster,
       hasDirection,
       hasLyrics,
-      setlistSongIds: setlistSongs.map((song) => String(song.id)),
+      setlistSongIds: [...new Set(setlistSongs.map((song) => String(song.id)))],
       rosterMembers: roster
         .filter((item) => item.perfil_id)
         .map((item) => ({
@@ -419,7 +440,6 @@ const mp3ReadyCount = canciones.filter((song) => hasText(song?.mp3)).length;
 const voicesReadyCount = canciones.filter((song) => hasVoiceResource(song)).length;
 const sequencesReadyCount = canciones.filter((song) => hasSequenceResource(song)).length;
 const markersReadyCount = canciones.filter((song) => hasMarkers(song)).length;
-const rehearsalReadyCount = canciones.filter((song) => hasText(song?.chordpro) && hasText(song?.mp3) && hasMarkers(song)).length;
 const baseResourceCoverage = [
   resourceCoverageItem('ChordPro', chordproReadyCount, canciones.length),
   resourceCoverageItem('MP3', mp3ReadyCount, canciones.length),
@@ -427,6 +447,84 @@ const baseResourceCoverage = [
   resourceCoverageItem('Secuencias', sequencesReadyCount, canciones.length),
   resourceCoverageItem('Markers', markersReadyCount, canciones.length),
 ];
+
+const getUniqueSongIdsForEvents = (events) => {
+  const songIds = new Set();
+  events.forEach((evento) => {
+    (evento?.setlistSongIds || []).forEach((songId) => {
+      const key = String(songId || '');
+      if (key && activeSongIds.has(key)) songIds.add(key);
+    });
+  });
+  return songIds;
+};
+
+const upcomingRehearsalSongIds = getUniqueSongIdsForEvents(
+  operationalEvents.filter((evento) => {
+    const eventDate = new Date(evento.dateIso);
+    return !Number.isNaN(eventDate.getTime())
+      && eventDate >= operationFloor
+      && eventDate <= upcomingWindowEnd
+      && !isServiceStateExcludedFromUsage(evento.rawStatus);
+  }),
+);
+
+const rehearsalReadyCount = [...upcomingRehearsalSongIds].filter((songId) => {
+  const song = cancionesById.get(String(songId));
+  return song && hasText(song?.chordpro) && hasText(song?.mp3) && hasMarkers(song);
+}).length;
+
+const buildSongUsageRanking = ({ events, limit = 10 } = {}) => {
+  const usageByServiceSong = new Map();
+
+  events.forEach((evento) => {
+    const eventDate = new Date(evento?.dateIso || '');
+    if (Number.isNaN(eventDate.getTime())) return;
+
+    // Cada cancion cuenta una sola vez por servicio aunque este duplicada en la playlist.
+    const uniqueServiceSongIds = new Set(evento?.setlistSongIds || []);
+    uniqueServiceSongIds.forEach((songId) => {
+      const key = String(songId || '');
+      if (!key || !activeSongIds.has(key)) return;
+
+      const current = usageByServiceSong.get(key) || {
+        song_id: key,
+        id: key,
+        title: safeText(cancionesById.get(key)?.titulo, 'Cancion sin titulo'),
+        artist: safeText(cancionesById.get(key)?.cantante, 'Sin cantante'),
+        usage_count: 0,
+        count: 0,
+        last_used_at: null,
+      };
+
+      current.usage_count += 1;
+      current.count = current.usage_count;
+      if (!current.last_used_at || eventDate > new Date(current.last_used_at)) {
+        current.last_used_at = evento.dateIso;
+      }
+      usageByServiceSong.set(key, current);
+    });
+  });
+
+  return [...usageByServiceSong.values()]
+    .sort((a, b) => (b.usage_count - a.usage_count) || a.title.localeCompare(b.title, 'es'))
+    .slice(0, limit)
+    .map((item, index, ranking) => ({
+      ...item,
+      rank: index + 1,
+      max_count: ranking[0]?.usage_count || item.usage_count || 1,
+    }));
+};
+
+const currentYearUsageEvents = operationalEvents.filter((evento) => {
+  const eventDate = new Date(evento.dateIso);
+  return !Number.isNaN(eventDate.getTime())
+    && eventDate >= currentYearStart
+    && eventDate <= now
+    && isRealizedService(evento);
+});
+const topSongsCurrentYear = buildSongUsageRanking({ events: currentYearUsageEvents, limit: 10 });
+const currentYearUsedSongIds = getUniqueSongIdsForEvents(currentYearUsageEvents);
 
 const profileRolesByProfileId = new Map();
 perfilRoles.forEach((entry) => {
@@ -582,8 +680,11 @@ const buildPanelSnapshot = ({ label, mode, days }) => {
       ]
     : [];
 
+  const repertoireUsageEvents = mode === 'future'
+    ? periodEvents.filter((evento) => !isServiceStateExcludedFromUsage(evento.rawStatus))
+    : periodEvents.filter((evento) => isRealizedService(evento));
   const periodUsageBySongId = new Map();
-  periodEvents.forEach((evento) => {
+  repertoireUsageEvents.forEach((evento) => {
     (evento.setlistSongIds || []).forEach((songId) => {
       const key = String(songId || '');
       if (!key) return;
@@ -741,10 +842,22 @@ const buildPanelSnapshot = ({ label, mode, days }) => {
         { label: 'Canciones activas', value: String(canciones.length), detail: 'Catalogo disponible', tone: 'brand' },
         { label: 'Usadas en periodo', value: String(usedSongIds.size), detail: mode === 'future' ? 'Canciones presentes en servicios proximos' : 'Canciones presentes en servicios pasados', tone: 'blue' },
         { label: 'Sin uso en periodo', value: String(songsNeverUsed.length), detail: 'Oportunidad para refrescar repertorio', tone: 'amber' },
-        { label: 'Listas para ensayo', value: String(rehearsalReadyCount), detail: 'ChordPro + MP3 + markers', tone: 'emerald' },
+        { label: 'Listas para ensayo', value: String(rehearsalReadyCount), detail: `${upcomingRehearsalSongIds.size} canciones en servicios proximos`, tone: 'emerald' },
       ],
       resourceCoverage: baseResourceCoverage,
-      topSongs,
+      topSongs: topSongsCurrentYear,
+      topSongsPeriod: topSongs,
+      topSongsMeta: {
+        year: currentYear,
+        servicesCount: currentYearUsageEvents.length,
+        usedSongsCount: currentYearUsedSongIds.size,
+        emptyTitle: 'Sin canciones usadas este ano',
+        emptyDetail: 'Todavia no hay canciones registradas como usadas este ano.',
+      },
+      errors: warnings.filter((warning) =>
+        !warning.includes('no se encontro')
+        && ['Eventos:', 'Eventos fallback:', 'Playlists:', 'Playlist canciones:', 'Canciones:'].some((prefix) => warning.startsWith(prefix)),
+      ),
       categoryDistribution: histogram(periodSongPool, (song) => getSongCategoryLabel(song?.categoria), { limit: 6 }),
       voiceDistribution: histogram(periodSongPool, (song) => getSongVoiceLabel(song?.voz), { limit: 5 }),
       themeDistribution: histogram(periodSongPool, (song) => safeText(song?.tema, 'Sin tema'), { limit: 8 }),

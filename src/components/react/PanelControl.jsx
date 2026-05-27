@@ -143,6 +143,18 @@ function EmptyState({ title, detail }) {
   );
 }
 
+function LoadingState({ title = 'Cargando datos', detail = 'Estamos preparando la informacion del panel.' }) {
+  return (
+    <div className="rounded-[22px] border border-zinc-200 bg-zinc-50/80 px-4 py-6 dark:border-zinc-800 dark:bg-zinc-900/65">
+      <div className="h-3 w-32 animate-pulse rounded-full bg-zinc-200 dark:bg-zinc-800" />
+      <div className="mt-4 h-2.5 w-full animate-pulse rounded-full bg-zinc-200 dark:bg-zinc-800" />
+      <div className="mt-2 h-2.5 w-2/3 animate-pulse rounded-full bg-zinc-200 dark:bg-zinc-800" />
+      <p className="mt-4 text-sm font-medium text-zinc-800 dark:text-zinc-200">{title}</p>
+      <p className="mt-1 text-sm leading-6 text-zinc-500 dark:text-zinc-400">{detail}</p>
+    </div>
+  );
+}
+
 function BarList({ items = [], tone = 'brand', valueSuffix = '', emptyTitle = 'Sin datos', emptyDetail = 'No hay suficientes registros para mostrar este bloque.' }) {
   if (!items.length) {
     return <EmptyState title={emptyTitle} detail={emptyDetail} />;
@@ -153,14 +165,66 @@ function BarList({ items = [], tone = 'brand', valueSuffix = '', emptyTitle = 'S
     <div className="space-y-3">
       {items.map((item) => {
         const percent = (Number(item?.count || 0) / maxValue) * 100;
+        const label = item?.label || item?.title || 'Sin definir';
         return (
-          <div key={`${item.label}-${item.count}`} className="space-y-2">
+          <div key={`${label}-${item.count}`} className="space-y-2">
             <div className="flex items-center justify-between gap-3 text-sm">
-              <span className="truncate font-medium text-zinc-900 dark:text-zinc-100">{item.label}</span>
+              <span className="min-w-0 truncate font-medium text-zinc-900 dark:text-zinc-100">{label}</span>
               <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400">{item.count}{valueSuffix}</span>
             </div>
             <MiniProgress percent={percent} tone={tone} />
           </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SongRankingList({ items = [], meta = {}, errors = [], loading = false }) {
+  if (loading) {
+    return <LoadingState title="Cargando canciones" detail="Estamos calculando el ranking desde servicios reales." />;
+  }
+
+  if (errors.length) {
+    return <EmptyState title="No se pudo cargar el ranking" detail={errors[0]} />;
+  }
+
+  if (!items.length) {
+    return <EmptyState title={meta?.emptyTitle || 'Sin canciones usadas este ano'} detail={meta?.emptyDetail || 'Todavia no hay canciones registradas como usadas este ano.'} />;
+  }
+
+  const maxValue = Math.max(...items.map((item) => Number(item?.usage_count || item?.count || 0)), 1);
+  return (
+    <div className="space-y-3">
+      {items.map((item, index) => {
+        const count = Number(item?.usage_count || item?.count || 0);
+        const percent = (count / maxValue) * 100;
+        const title = item?.title || item?.label || 'Cancion sin titulo';
+        const rank = Number(item?.rank || index + 1);
+        return (
+          <article key={item?.song_id || item?.id || `${title}-${rank}`} className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 p-4 dark:border-zinc-800 dark:bg-zinc-900/65">
+            <div className="flex items-start gap-3">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-xs font-semibold text-white dark:bg-white dark:text-zinc-950">
+                {rank}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                  <div className="min-w-0">
+                    <h3 className="break-words text-sm font-semibold leading-5 text-zinc-950 dark:text-zinc-50">{title}</h3>
+                    {item?.last_used_at ? (
+                      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Ultima vez: {formatShortDate(item.last_used_at)}</p>
+                    ) : null}
+                  </div>
+                  <p className="shrink-0 text-sm font-semibold text-blue-700 dark:text-blue-200">
+                    {count} {count === 1 ? 'vez' : 'veces'}
+                  </p>
+                </div>
+                <div className="mt-3">
+                  <MiniProgress percent={percent} tone="brand" />
+                </div>
+              </div>
+            </div>
+          </article>
         );
       })}
     </div>
@@ -436,8 +500,16 @@ export default function PanelControl({ data }) {
       {activeTab === 'repertorio' ? (
         <div className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-6">
-            <PanelCard title="Canciones mas usadas" subtitle="Las piezas que mas sostienen las playlists recientes.">
-              <BarList items={activeData?.topSongs || []} tone="brand" emptyTitle="Sin uso suficiente" emptyDetail="Todavia no hay suficientes playlists para establecer un ranking." />
+            <PanelCard
+              title={`Canciones mas usadas ${activeData?.topSongsMeta?.year || ''}`}
+              subtitle={`${activeData?.topSongsMeta?.servicesCount || 0} servicios realizados analizados | ${(activeData?.topSongsMeta?.usedSongsCount || 0)} canciones usadas`}
+            >
+              <SongRankingList
+                items={activeData?.topSongs || []}
+                meta={activeData?.topSongsMeta || {}}
+                errors={activeData?.errors || []}
+                loading={Boolean(activeData?.loading)}
+              />
             </PanelCard>
 
             <PanelCard title="Distribucion del repertorio" subtitle="Balance real del catalogo para tomar decisiones de refresh.">
