@@ -336,17 +336,27 @@ function ChordDisplay({ chord, sizeClass = '' }) {
 function ClickableChordToken({
   chord,
   sizeClass = '',
-  onChordClick,
+  onChordPreview,
   className = '',
 }) {
+  const openPreview = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onChordPreview?.(chord, event.currentTarget);
+  };
+
   return (
     <button
       type="button"
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        onChordClick?.(chord);
+      data-chord-preview-trigger="true"
+      onClick={openPreview}
+      onPointerEnter={(event) => {
+        if (event.pointerType !== 'touch') {
+          openPreview(event);
+        }
       }}
+      onMouseEnter={openPreview}
+      onFocus={openPreview}
       className={`inline-flex rounded-md px-0.5 py-0.5 text-left leading-none transition-colors hover:bg-brand/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/35 ${className}`.trim()}
       aria-label={`Ver acorde ${formatChordAccidentals(chord)}`}
     >
@@ -787,7 +797,7 @@ function ChordOverlayLine({
   fontPreset,
   lineKey,
   interactiveChords = false,
-  onChordClick,
+  onChordPreview,
 }) {
   const renderChord = (chord, key) => (
     interactiveChords ? (
@@ -795,7 +805,7 @@ function ChordOverlayLine({
         key={key}
         chord={chord}
         sizeClass={`font-mono ${fontPreset.chord}`}
-        onChordClick={onChordClick}
+        onChordPreview={onChordPreview}
       />
     ) : (
       <ChordDisplay
@@ -1091,20 +1101,17 @@ function ChordLibraryModal({
   variationByChord,
   onVariationChange,
   onClose,
-  eyebrow = 'Ver acordes',
-  title = 'Acordes de la canción',
-  singleChord = false,
 }) {
   return (
-    <div className="fixed inset-0 z-[90] flex items-end justify-center bg-zinc-950/48 px-2 pt-10 backdrop-blur-sm sm:items-center sm:px-4" role="dialog" aria-modal="true" aria-label={title}>
-      <div className={`flex max-h-[min(92vh,48rem)] w-full flex-col overflow-hidden rounded-t-[1.65rem] border border-zinc-200/90 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.26)] dark:border-white/10 dark:bg-zinc-950 sm:rounded-[1.65rem] ${singleChord ? 'max-w-sm' : 'max-w-5xl'}`}>
+    <div className="fixed inset-0 z-[90] flex items-end justify-center bg-zinc-950/48 px-2 pt-10 backdrop-blur-sm sm:items-center sm:px-4" role="dialog" aria-modal="true" aria-label="Acordes de la cancion">
+      <div className="flex max-h-[min(92vh,48rem)] w-full max-w-5xl flex-col overflow-hidden rounded-t-[1.65rem] border border-zinc-200/90 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.26)] dark:border-white/10 dark:bg-zinc-950 sm:rounded-[1.65rem]">
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-200/80 px-4 py-4 dark:border-white/10 sm:px-5">
           <div className="min-w-0">
             <p className="text-[0.68rem] font-black uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
-              {eyebrow}
+              Ver acordes
             </p>
             <h3 className="mt-1 truncate text-xl font-black tracking-tight text-zinc-950 dark:text-zinc-50">
-              {title}
+              Acordes de la canción
             </h3>
           </div>
           <button
@@ -1142,7 +1149,7 @@ function ChordLibraryModal({
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 [scrollbar-width:none] dark:bg-zinc-950 sm:px-5 sm:py-5 [&::-webkit-scrollbar]:hidden">
           {chords.length > 0 ? (
-            <div className={singleChord ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'}>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {chords.map((chord) => {
                 const variations = instrument === 'guitar' ? buildGuitarVariations(chord) : buildPianoVariations(chord);
                 const activeIndex = Math.min(
@@ -1192,6 +1199,54 @@ function ChordLibraryModal({
     </div>
   );
 }
+
+function ChordPreviewPopover({
+  preview,
+  instrument,
+  variationByChord,
+  onVariationChange,
+  previewRef,
+}) {
+  if (!preview?.chord) return null;
+  const chord = preview.chord;
+  const variations = instrument === 'guitar' ? buildGuitarVariations(chord) : buildPianoVariations(chord);
+  const activeIndex = Math.min(
+    Math.max(0, variationByChord[`${instrument}:${chord}`] || 0),
+    Math.max(variations.length - 1, 0),
+  );
+  const activeVariation = variations[activeIndex] || variations[0] || null;
+
+  return (
+    <div
+      ref={previewRef}
+      className="fixed z-[88] w-[min(17rem,calc(100vw-1.25rem))] overflow-hidden rounded-[1.05rem] border border-zinc-200/90 bg-white/98 p-3 text-zinc-900 shadow-[0_18px_46px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-zinc-950/98 dark:text-zinc-50"
+      style={{
+        left: `${preview.left}px`,
+        top: `${preview.top}px`,
+      }}
+      role="dialog"
+      aria-label={`Acorde ${formatChordAccidentals(chord)}`}
+    >
+      <h4 className="text-2xl font-black leading-none tracking-tight text-zinc-950 dark:text-zinc-50">
+        <ChordDisplay chord={chord} />
+      </h4>
+      <div className="mt-2 flex min-h-[8.5rem] items-center justify-center rounded-[0.9rem] bg-zinc-50 px-2 py-2 text-zinc-800 dark:bg-zinc-900/80 dark:text-zinc-200">
+        {instrument === 'guitar' ? (
+          <GuitarChordDiagram chord={chord} variation={activeVariation} />
+        ) : (
+          <PianoChordDiagram chord={chord} variation={activeVariation} />
+        )}
+      </div>
+      <ChordVariationStepper
+        chord={chord}
+        instrument={instrument}
+        variations={variations}
+        activeIndex={activeIndex}
+        onChange={onVariationChange}
+      />
+    </div>
+  );
+}
 export default function ModoEnsayoCompacto({
   song,
   contextTitle = '',
@@ -1216,7 +1271,8 @@ export default function ModoEnsayoCompacto({
   const [showPlaybackOptions, setShowPlaybackOptions] = useState(false);
   const [showChordLibrary, setShowChordLibrary] = useState(false);
   const [tapChordPreviewEnabled, setTapChordPreviewEnabled] = useState(false);
-  const [selectedChordPreview, setSelectedChordPreview] = useState('');
+  const [tapChordPreviewInstrument, setTapChordPreviewInstrument] = useState('guitar');
+  const [activeChordPreview, setActiveChordPreview] = useState(null);
   const [chordLibraryInstrument, setChordLibraryInstrument] = useState('guitar');
   const [chordVariationByKey, setChordVariationByKey] = useState({});
   const [selectedPlaybackSourceId, setSelectedPlaybackSourceId] = useState('original');
@@ -1237,6 +1293,7 @@ export default function ModoEnsayoCompacto({
   const sectionRefs = useRef([]);
   const optionsMenuRef = useRef(null);
   const playbackOptionsRef = useRef(null);
+  const chordPreviewRef = useRef(null);
   const pendingPlaybackResumeRef = useRef(false);
   const audioCtxRef = useRef(null);
   const trackSourceRef = useRef(null);
@@ -1323,19 +1380,49 @@ export default function ModoEnsayoCompacto({
     setTapChordPreviewEnabled((enabled) => {
       const nextEnabled = !enabled;
       if (!nextEnabled) {
-        setSelectedChordPreview('');
+        setActiveChordPreview(null);
       }
       return nextEnabled;
     });
   }, []);
-  const handleChordPreviewClick = useCallback((chord) => {
+  const selectTapChordPreviewInstrument = useCallback((instrument) => {
+    setTapChordPreviewInstrument(instrument);
+    setTapChordPreviewEnabled(true);
+    setActiveChordPreview(null);
+  }, []);
+  const getChordPreviewPlacement = useCallback((triggerNode) => {
+    if (typeof window === 'undefined' || !triggerNode?.getBoundingClientRect) {
+      return { left: 12, top: 88 };
+    }
+    const rect = triggerNode.getBoundingClientRect();
+    const viewportWidth = window.innerWidth || 360;
+    const viewportHeight = window.innerHeight || 640;
+    const margin = 10;
+    const popoverWidth = Math.min(272, Math.max(220, viewportWidth - (margin * 2)));
+    const estimatedHeight = tapChordPreviewInstrument === 'piano' ? 240 : 286;
+    const left = Math.min(
+      Math.max(margin, rect.left + (rect.width / 2) - (popoverWidth / 2)),
+      Math.max(margin, viewportWidth - popoverWidth - margin),
+    );
+    let top = rect.bottom + 8;
+    if (top + estimatedHeight > viewportHeight - margin) {
+      top = rect.top - estimatedHeight - 8;
+    }
+    return {
+      left,
+      top: Math.max(margin, top),
+    };
+  }, [tapChordPreviewInstrument]);
+  const handleChordPreviewOpen = useCallback((chord, triggerNode) => {
     if (!tapChordPreviewEnabled) return;
     const normalizedChord = normalizeChordSymbol(chord);
     if (!normalizedChord || !parseChordSymbol(normalizedChord)) return;
-    setShowOptionsMenu(false);
     setShowChordLibrary(false);
-    setSelectedChordPreview(normalizedChord);
-  }, [tapChordPreviewEnabled]);
+    setActiveChordPreview({
+      chord: normalizedChord,
+      ...getChordPreviewPlacement(triggerNode),
+    });
+  }, [getChordPreviewPlacement, tapChordPreviewEnabled]);
   const sectionMapItems = useMemo(() => {
     const kindOccurrences = new Map();
     return currentSections.map((section, index) => {
@@ -1822,7 +1909,7 @@ export default function ModoEnsayoCompacto({
     setShowPlaybackOptions(false);
     setShowChordLibrary(false);
     setTapChordPreviewEnabled(false);
-    setSelectedChordPreview('');
+    setActiveChordPreview(null);
     setChordVariationByKey({});
     setSelectedPlaybackSourceId('original');
     setHeaderHidden(isLandscapeCompact);
@@ -1865,16 +1952,40 @@ export default function ModoEnsayoCompacto({
     };
   }, [showPlaybackOptions]);
   useEffect(() => {
-    if ((!showChordLibrary && !selectedChordPreview) || typeof window === 'undefined') return undefined;
+    if (!activeChordPreview || typeof window === 'undefined') return undefined;
+    const handlePointerDown = (event) => {
+      if (chordPreviewRef.current?.contains(event.target)) return;
+      if (event.target?.closest?.('[data-chord-preview-trigger="true"]')) return;
+      setActiveChordPreview(null);
+    };
+    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('touchstart', handlePointerDown, { passive: true });
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('touchstart', handlePointerDown);
+    };
+  }, [activeChordPreview]);
+  useEffect(() => {
+    if (!activeChordPreview || typeof window === 'undefined') return undefined;
+    const closePreview = () => setActiveChordPreview(null);
+    window.addEventListener('resize', closePreview);
+    window.addEventListener('scroll', closePreview, true);
+    return () => {
+      window.removeEventListener('resize', closePreview);
+      window.removeEventListener('scroll', closePreview, true);
+    };
+  }, [activeChordPreview]);
+  useEffect(() => {
+    if ((!showChordLibrary && !activeChordPreview) || typeof window === 'undefined') return undefined;
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
         setShowChordLibrary(false);
-        setSelectedChordPreview('');
+        setActiveChordPreview(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedChordPreview, showChordLibrary]);
+  }, [activeChordPreview, showChordLibrary]);
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
     const mediaQuery = window.matchMedia('(orientation: landscape) and (max-height: 540px)');
@@ -2509,13 +2620,36 @@ export default function ModoEnsayoCompacto({
                     >
                       <span className="min-w-0">
                         <span className="block text-base font-black leading-tight">
-                          Acordes al tocar
+                          Mostrar al tocar
                         </span>
                       </span>
                       <span className={`shrink-0 text-[0.62rem] font-black uppercase tracking-[0.16em] ${tapChordPreviewEnabled ? 'text-brand' : 'text-zinc-400 dark:text-zinc-500'}`}>
                         {tapChordPreviewEnabled ? 'Activo' : 'Off'}
                       </span>
                     </button>
+                    <div className={`grid grid-cols-2 gap-1 rounded-[0.85rem] bg-zinc-100 p-1 dark:bg-zinc-900 ${currentChordLibrary.length === 0 ? 'opacity-50' : ''}`}>
+                      {[
+                        ['guitar', 'Guitarra'],
+                        ['piano', 'Piano'],
+                      ].map(([instrument, label]) => {
+                        const active = tapChordPreviewEnabled && tapChordPreviewInstrument === instrument;
+                        return (
+                          <button
+                            key={`tap-preview-${instrument}`}
+                            type="button"
+                            onClick={() => selectTapChordPreviewInstrument(instrument)}
+                            disabled={currentChordLibrary.length === 0}
+                            className={`rounded-[0.68rem] px-2 py-2 text-sm font-black transition-all ${active
+                              ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-800 dark:text-zinc-50'
+                              : 'text-zinc-500 hover:text-zinc-800 disabled:cursor-not-allowed dark:text-zinc-400 dark:hover:text-zinc-200'
+                              }`}
+                            aria-pressed={active}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                   <div>
                     <p className="mb-2 px-1 text-[0.72rem] font-black uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
@@ -2683,7 +2817,7 @@ export default function ModoEnsayoCompacto({
                                     key={`${section.name}-${lineIndex}-chord-${chordIndex}`}
                                     chord={chord}
                                     sizeClass={`font-mono ${fontPreset.chord}`}
-                                    onChordClick={handleChordPreviewClick}
+                                    onChordPreview={handleChordPreviewOpen}
                                   />
                                 ) : (
                                   <ChordDisplay
@@ -2701,7 +2835,7 @@ export default function ModoEnsayoCompacto({
                               fontPreset={fontPreset}
                               lineKey={`${section.name}-${lineIndex}`}
                               interactiveChords={tapChordPreviewEnabled}
-                              onChordClick={handleChordPreviewClick}
+                              onChordPreview={handleChordPreviewOpen}
                             />
                           )}
                         </div>
@@ -2929,20 +3063,16 @@ export default function ModoEnsayoCompacto({
           onClose={() => setShowChordLibrary(false)}
         />
       )}
-      {selectedChordPreview && (
-        <ChordLibraryModal
-          chords={[selectedChordPreview]}
-          instrument={chordLibraryInstrument}
-          onInstrumentChange={setChordLibraryInstrument}
+      {activeChordPreview && (
+        <ChordPreviewPopover
+          preview={activeChordPreview}
+          instrument={tapChordPreviewInstrument}
           variationByChord={chordVariationByKey}
           onVariationChange={(key, index) => setChordVariationByKey((current) => ({
             ...current,
             [key]: index,
           }))}
-          onClose={() => setSelectedChordPreview('')}
-          eyebrow="Acorde al tocar"
-          title={`Acorde ${formatChordAccidentals(selectedChordPreview)}`}
-          singleChord
+          previewRef={chordPreviewRef}
         />
       )}
       <style>{`
