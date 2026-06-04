@@ -694,7 +694,7 @@ const resolvedColorTokens = {
 ---
 
 <!doctype html>
-<html lang="es">
+<html lang="es" data-ensayo-route="true">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -718,7 +718,7 @@ const resolvedColorTokens = {
     <style
       is:global
       set:html={`
-        :root {
+        html[data-ensayo-route="true"] {
           --bg-background: 248 250 252;
           --bg-surface: 255 255 255;
           --border-base: 226 232 240;
@@ -740,7 +740,7 @@ const resolvedColorTokens = {
           --color-rol-voc: ${resolvedColorTokens.rolVoc};
         }
 
-        .dark {
+        html[data-ensayo-route="true"].dark {
           --bg-background: 9 9 11;
           --bg-surface: 24 24 27;
           --border-base: 63 63 70;

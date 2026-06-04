@@ -539,7 +539,7 @@ const themeColors = brandingData;
 
   {themeColors && (
     <style is:global set:html={`
-      :root {
+      html[data-branding-source="ssr"] {
         ${themeColors.brand ? `--color-brand: ${hexToRgbString(themeColors.brand)};` : ''}
         ${
           themeColors.action
