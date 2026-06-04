@@ -4,6 +4,7 @@ import type {
   SongSheetDensity,
   SongSheetLayoutOptions,
   SongSheetMetadata,
+  SongSheetPrintProfile,
   SongSheetRenderMode,
 } from './SongSheet';
 import { parseChordProSemantic } from '../../utils/parseChordProSemantic';
@@ -237,6 +238,7 @@ export default function ChordProPrintWorkspace({
   initialMetadata,
 }: ChordProPrintWorkspaceProps) {
   const pdfEngine = useMemo(() => readRequestedPdfEngine(), []);
+  const printProfile: SongSheetPrintProfile = pdfEngine === 'v2' ? 'v2-optimized' : 'classic';
   const explicitOriginalTone = normalizeNote(initialMetadata?.tone);
   const inferredOriginalTone = useMemo(() => {
     if (explicitOriginalTone) return '';
@@ -581,7 +583,7 @@ export default function ChordProPrintWorkspace({
                 : 'border-zinc-200 bg-white/88 text-slate-500',
             ].join(' ')}
           >
-            Carta
+            {pdfEngine === 'v2' ? 'PDF V2' : 'Carta'}
           </span>
         </div>
 
@@ -799,7 +801,11 @@ export default function ChordProPrintWorkspace({
             isGeneratingPdf ? 'cursor-wait opacity-90' : '',
           ].join(' ')}
         >
-          {isGeneratingPdf ? 'Generando PDF...' : 'Imprimir PDF'}
+          {isGeneratingPdf
+            ? 'Generando PDF...'
+            : pdfEngine === 'v2'
+              ? 'Imprimir PDF V2'
+              : 'Imprimir PDF'}
         </button>
       </aside>
 
@@ -839,6 +845,7 @@ export default function ChordProPrintWorkspace({
             metadata={previewMetadata}
             sheetOptions={sheetOptions}
             zoomMultiplier={previewZoom}
+            printProfile={printProfile}
             className="w-full min-h-[26rem] sm:min-h-[32rem] lg:h-[calc(100dvh-5.9rem)] xl:h-[calc(100dvh-5.5rem)]"
           />
         </section>

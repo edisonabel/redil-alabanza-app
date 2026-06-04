@@ -24,11 +24,13 @@ export type SongSheetProps = {
   disableCompactLinePacking?: boolean;
   disableAutoFit?: boolean;
   fixedFontSize?: number;
+  printProfile?: SongSheetPrintProfile;
 };
 
 export type SongSheetRenderMode = 'chords-lyrics' | 'lyrics-only' | 'chords-only';
 export type SongSheetDensity = 'complete' | 'condensed';
 export type SongSheetStyleMode = 'completo' | 'condensado';
+export type SongSheetPrintProfile = 'classic' | 'v2-optimized';
 
 export type SongSheetLayoutOptions = {
   renderMode?: SongSheetRenderMode;
@@ -53,9 +55,14 @@ const DEFAULT_PAGE_HEIGHT_PX = 1056;
 const DEFAULT_PAGE_WIDTH_PX = 816;
 const INITIAL_FONT_SIZE = 24;
 const MAX_FONT_SIZE = 40;
+const V2_MAX_FONT_SIZE = 46;
 const MIN_FONT_SIZE = 6;
+const V2_MIN_FONT_SIZE = 5.5;
 const FONT_STEP = 0.25;
+const V2_FONT_STEP = 0.125;
 const LINE_HEIGHT_RATIO = 1.28;
+const V2_COMPLETE_LINE_HEIGHT_RATIO = 1.22;
+const V2_CONDENSED_LINE_HEIGHT_RATIO = 1.15;
 const FIT_VERTICAL_BUFFER_PX = 0;
 const FIT_HORIZONTAL_OVERFLOW_PX = 2;
 const FIT_COLUMN_OVERFLOW_PX = 2;
@@ -76,8 +83,8 @@ const SONG_SHEET_PRINT_CSS = `
     width: 100%;
     -webkit-column-count: var(--song-sheet-column-count, 2);
     column-count: var(--song-sheet-column-count, 2);
-    -webkit-column-gap: 1.45rem;
-    column-gap: 1.45rem;
+    -webkit-column-gap: var(--song-sheet-column-gap, 1.45rem);
+    column-gap: var(--song-sheet-column-gap, 1.45rem);
     -webkit-column-fill: auto;
     column-fill: auto;
   }
@@ -87,8 +94,8 @@ const SONG_SHEET_PRINT_CSS = `
     grid-template-columns: repeat(2, minmax(0, 1fr));
     column-count: auto;
     -webkit-column-count: auto;
-    column-gap: 1.45rem;
-    gap: 0 1.45rem;
+    column-gap: var(--song-sheet-column-gap, 1.45rem);
+    gap: 0 var(--song-sheet-column-gap, 1.45rem);
     width: 100%;
     height: 100%;
   }
@@ -152,8 +159,8 @@ const SONG_SHEET_PRINT_CSS = `
     .song-sheet-columns {
       -webkit-column-count: var(--song-sheet-column-count, 2) !important;
       column-count: var(--song-sheet-column-count, 2) !important;
-      -webkit-column-gap: 1.45rem !important;
-      column-gap: 1.45rem !important;
+      -webkit-column-gap: var(--song-sheet-column-gap, 1.45rem) !important;
+      column-gap: var(--song-sheet-column-gap, 1.45rem) !important;
       -webkit-column-fill: auto !important;
       column-fill: auto !important;
       height: 100% !important;
@@ -165,8 +172,8 @@ const SONG_SHEET_PRINT_CSS = `
       grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
       -webkit-column-count: auto !important;
       column-count: auto !important;
-      column-gap: 1.45rem !important;
-      gap: 0 1.45rem !important;
+      column-gap: var(--song-sheet-column-gap, 1.45rem) !important;
+      gap: 0 var(--song-sheet-column-gap, 1.45rem) !important;
       height: 100% !important;
       overflow: hidden !important;
     }
@@ -245,6 +252,8 @@ type PackedLineRow =
 type LinePackingProfile = {
   maxPackableLineWidth: number;
   maxPackedRowWidth: number;
+  maxLinesPerRow?: number;
+  gapSpaces?: number;
 };
 
 type SongSheetDebugFlags = {
@@ -285,7 +294,8 @@ const FAMILY_COLLAPSE_MODE: Record<string, 'family' | 'content'> = {
   S: 'content',
 };
 
-const getLineHeight = (fontSize: number) => Number((fontSize * LINE_HEIGHT_RATIO).toFixed(2));
+const getLineHeight = (fontSize: number, ratio = LINE_HEIGHT_RATIO) =>
+  Number((fontSize * ratio).toFixed(2));
 const getMetaValue = (value: string | number | null | undefined) => {
   const safeValue = String(value ?? '').trim();
   return safeValue || '—';
@@ -464,6 +474,12 @@ const CONDENSED_LINE_PACKING_PROFILE: LinePackingProfile = {
   maxPackableLineWidth: 38,
   maxPackedRowWidth: 80,
 };
+const V2_CONDENSED_LINE_PACKING_PROFILE: LinePackingProfile = {
+  maxPackableLineWidth: 44,
+  maxPackedRowWidth: 96,
+  maxLinesPerRow: 3,
+  gapSpaces: 4,
+};
 const LINE_PACKING_GAP_SPACES = 3;
 
 const getLineVisualWidth = (line: ParsedChordLine) => (
@@ -498,7 +514,36 @@ const canPackLinePair = (
     return false;
   }
 
-  return leftWidth + rightWidth + LINE_PACKING_GAP_SPACES <= profile.maxPackedRowWidth;
+  const gapSpaces = profile.gapSpaces ?? LINE_PACKING_GAP_SPACES;
+  return leftWidth + rightWidth + gapSpaces <= profile.maxPackedRowWidth;
+};
+
+const getPackableLineKind = (line: ParsedChordLine) => {
+  if (hasLyricWords(String(line?.lyrics || ''))) return 'lyrics';
+  if (isChordOnlyLine(line)) return 'chords';
+  return null;
+};
+
+const canPackLineGroup = (lines: ParsedChordLine[], profile: LinePackingProfile) => {
+  if (lines.length < 2) return false;
+
+  const firstKind = getPackableLineKind(lines[0]);
+  if (!firstKind) return false;
+
+  const widths = lines.map(getLineVisualWidth);
+  if (
+    lines.some((line) => getPackableLineKind(line) !== firstKind) ||
+    widths.some((width) => width === 0 || width > profile.maxPackableLineWidth)
+  ) {
+    return false;
+  }
+
+  const gapSpaces = profile.gapSpaces ?? LINE_PACKING_GAP_SPACES;
+  const combinedWidth =
+    widths.reduce((total, width) => total + width, 0) +
+    Math.max(0, lines.length - 1) * gapSpaces;
+
+  return combinedWidth <= profile.maxPackedRowWidth;
 };
 
 const inspectPackedLineRows = (
@@ -522,7 +567,8 @@ const inspectPackedLineRows = (
       const rightChordOnly = isChordOnlyLine(next);
       const leftWidth = getLineVisualWidth(current);
       const rightWidth = getLineVisualWidth(next);
-      const combinedWidth = leftWidth + rightWidth + LINE_PACKING_GAP_SPACES;
+      const gapSpaces = profile.gapSpaces ?? LINE_PACKING_GAP_SPACES;
+      const combinedWidth = leftWidth + rightWidth + gapSpaces;
       const reasons: string[] = [];
 
       if (!leftHasLyrics && !leftChordOnly) reasons.push('left-no-packable-content');
@@ -551,7 +597,7 @@ const inspectPackedLineRows = (
       if (allowed) {
         rows.push({
           kind: 'merged',
-          line: buildMergedLinePair(current, next),
+          line: buildMergedLinePair(current, next, profile),
         });
         mergedCount += 1;
         index += 1;
@@ -574,16 +620,18 @@ const inspectPackedLineRows = (
 
 const buildMergedLinePair = (
   left: ParsedChordLine,
-  right: ParsedChordLine
+  right: ParsedChordLine,
+  profile: LinePackingProfile = CONDENSED_LINE_PACKING_PROFILE
 ): ParsedChordLine => {
   const leftLyrics = String(left?.lyrics || '');
   const rightLyrics = String(right?.lyrics || '');
   const leftWidth = getLineVisualWidth(left);
   const leftLyricsPadded = leftLyrics.padEnd(leftWidth, ' ');
-  const offset = leftWidth + LINE_PACKING_GAP_SPACES;
+  const gapSpaces = profile.gapSpaces ?? LINE_PACKING_GAP_SPACES;
+  const offset = leftWidth + gapSpaces;
 
   return {
-    lyrics: `${leftLyricsPadded}${' '.repeat(LINE_PACKING_GAP_SPACES)}${rightLyrics}`,
+    lyrics: `${leftLyricsPadded}${' '.repeat(gapSpaces)}${rightLyrics}`,
     chords: [
       ...(Array.isArray(left?.chords) ? left.chords : []).map((item) => ({
         position: Number(item?.position) || 0,
@@ -595,6 +643,77 @@ const buildMergedLinePair = (
       })),
     ],
   };
+};
+
+const buildMergedLineGroup = (
+  lines: ParsedChordLine[],
+  profile: LinePackingProfile
+): ParsedChordLine => {
+  const gapSpaces = profile.gapSpaces ?? LINE_PACKING_GAP_SPACES;
+  let offset = 0;
+  const lyricsSegments: string[] = [];
+  const chords: ParsedChordLine['chords'] = [];
+
+  lines.forEach((line, lineIndex) => {
+    const lyrics = String(line?.lyrics || '');
+    const visualWidth = getLineVisualWidth(line);
+    const shouldPad = lineIndex < lines.length - 1;
+    lyricsSegments.push(shouldPad ? lyrics.padEnd(visualWidth, ' ') : lyrics);
+
+    if (Array.isArray(line?.chords)) {
+      chords.push(
+        ...line.chords.map((item) => ({
+          position: Math.max(0, (Number(item?.position) || 0) + offset),
+          chord: String(item?.chord || ''),
+        }))
+      );
+    }
+
+    offset += visualWidth + gapSpaces;
+  });
+
+  return {
+    lyrics: lyricsSegments.join(' '.repeat(gapSpaces)),
+    chords,
+  };
+};
+
+const buildOptimizedPackedLineRows = (
+  lines: ParsedChordLine[],
+  profile: LinePackingProfile
+): PackedLineRow[] => {
+  const rows: PackedLineRow[] = [];
+  const maxLinesPerRow = Math.max(2, profile.maxLinesPerRow ?? 2);
+
+  for (let index = 0; index < lines.length; index += 1) {
+    let packedGroup: ParsedChordLine[] | null = null;
+    const remainingLines = lines.length - index;
+    const maxCandidateSize = Math.min(maxLinesPerRow, remainingLines);
+
+    for (let size = maxCandidateSize; size >= 2; size -= 1) {
+      const candidate = lines.slice(index, index + size);
+      if (canPackLineGroup(candidate, profile)) {
+        packedGroup = candidate;
+        break;
+      }
+    }
+
+    if (packedGroup) {
+      rows.push({
+        kind: 'merged',
+        line: buildMergedLineGroup(packedGroup, profile),
+      });
+      index += packedGroup.length - 1;
+      continue;
+    }
+
+    rows.push({
+      kind: 'single',
+      line: lines[index],
+    });
+  }
+
+  return rows;
 };
 
 const buildPackedLineRows = (
@@ -725,6 +844,7 @@ export default function SongSheet({
   disableCompactLinePacking = false,
   disableAutoFit = false,
   fixedFontSize,
+  printProfile = 'classic',
 }: SongSheetProps) {
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const columnsRef = useRef<HTMLDivElement | null>(null);
@@ -737,6 +857,15 @@ export default function SongSheet({
     styleMode ||
     options?.styleMode ||
     (resolvedOptions.density === 'condensed' ? 'condensado' : 'completo');
+  const isV2Optimized = printProfile === 'v2-optimized';
+  const fitFontStep = isV2Optimized ? V2_FONT_STEP : FONT_STEP;
+  const minFontSize = isV2Optimized ? V2_MIN_FONT_SIZE : MIN_FONT_SIZE;
+  const maxFontSize = isV2Optimized ? V2_MAX_FONT_SIZE : MAX_FONT_SIZE;
+  const lineHeightRatio = isV2Optimized
+    ? resolvedStyleMode === 'condensado'
+      ? V2_CONDENSED_LINE_HEIGHT_RATIO
+      : V2_COMPLETE_LINE_HEIGHT_RATIO
+    : LINE_HEIGHT_RATIO;
   const renderableBlocks: RenderableBlock[] = (() => {
     const seenSectionKeys = new Set<string>();
 
@@ -766,14 +895,15 @@ export default function SongSheet({
     styleMode: resolvedStyleMode,
     disableAutoFit,
     fixedFontSize: Number.isFinite(Number(fixedFontSize)) ? Number(fixedFontSize) : null,
+    printProfile,
   });
   const [fontSize, setFontSize] = useState(INITIAL_FONT_SIZE);
-  const [lineHeight, setLineHeight] = useState(getLineHeight(INITIAL_FONT_SIZE));
+  const [lineHeight, setLineHeight] = useState(getLineHeight(INITIAL_FONT_SIZE, lineHeightRatio));
   const [fitVersion, setFitVersion] = useState(0);
   const fitDebugSignatureRef = useRef('');
   const packingDebugSignatureRef = useRef('');
   const resolvedFixedFontSize = Number.isFinite(Number(fixedFontSize))
-    ? Math.max(MIN_FONT_SIZE, Number(fixedFontSize))
+    ? Math.max(minFontSize, Number(fixedFontSize))
     : null;
   const debugFlags = getSongSheetDebugFlags();
   const songMap = resolvedOptions.showSongMap
@@ -793,6 +923,9 @@ export default function SongSheet({
     isCompactMode &&
     !disableCompactLinePacking &&
     resolvedOptions.renderMode === 'chords-lyrics';
+  const activeLinePackingProfile = isV2Optimized
+    ? V2_CONDENSED_LINE_PACKING_PROFILE
+    : CONDENSED_LINE_PACKING_PROFILE;
   const twoColumnBlockGroups = isSingleCol
     ? [renderableBlocks, []] as [RenderableBlock[], RenderableBlock[]]
     : splitBlocksIntoBalancedColumns(renderableBlocks);
@@ -857,7 +990,7 @@ export default function SongSheet({
     const diagnostics = renderableBlocks
       .filter((block) => !block.isCollapsed)
       .map((block) => {
-        const inspection = inspectPackedLineRows(block.lines, CONDENSED_LINE_PACKING_PROFILE);
+        const inspection = inspectPackedLineRows(block.lines, activeLinePackingProfile);
         return {
           blockId: block.id,
           marker: block.typeMarker,
@@ -916,6 +1049,7 @@ export default function SongSheet({
     console.groupEnd();
   }, [
     debugFlags.logPacking,
+    activeLinePackingProfile,
     layoutFingerprint,
     renderableBlocks,
     resolvedOptions.columnCount,
@@ -932,7 +1066,7 @@ export default function SongSheet({
 
     if (disableAutoFit || resolvedFixedFontSize !== null) {
       const nextFontSize = resolvedFixedFontSize ?? fontSize;
-      const nextLineHeight = getLineHeight(nextFontSize);
+      const nextLineHeight = getLineHeight(nextFontSize, lineHeightRatio);
       contentNode.style.fontSize = `${nextFontSize}px`;
       contentNode.style.lineHeight = `${nextLineHeight}px`;
 
@@ -959,7 +1093,7 @@ export default function SongSheet({
 
     const measureFontSize = (candidateFontSize: number): boolean => {
       contentNode.style.fontSize = `${candidateFontSize}px`;
-      contentNode.style.lineHeight = `${getLineHeight(candidateFontSize)}px`;
+      contentNode.style.lineHeight = `${getLineHeight(candidateFontSize, lineHeightRatio)}px`;
 
       void contentNode.offsetHeight;
 
@@ -1016,8 +1150,7 @@ export default function SongSheet({
       overflowCount = widthGuards.filter(
         (node) => node.scrollWidth - node.clientWidth > FIT_HORIZONTAL_OVERFLOW_PX
       ).length;
-      // Zero tolerance: if more than 1 line overflows, font is too big
-      const hasHorizontalOverflow = overflowCount > 1;
+      const hasHorizontalOverflow = isV2Optimized ? overflowCount > 0 : overflowCount > 1;
 
       if (!rejectReason && hasHorizontalOverflow) {
         rejectReason = 'horizontal-overflow';
@@ -1053,13 +1186,13 @@ export default function SongSheet({
     void sheetNode.offsetHeight;
     void columnsNode.offsetHeight;
 
-    let lowStep = Math.ceil(MIN_FONT_SIZE / FONT_STEP);
-    let highStep = Math.floor(MAX_FONT_SIZE / FONT_STEP);
+    let lowStep = Math.ceil(minFontSize / fitFontStep);
+    let highStep = Math.floor(maxFontSize / fitFontStep);
     let bestStep = lowStep;
 
     while (lowStep <= highStep) {
       const midStep = Math.floor((lowStep + highStep) / 2);
-      const candidate = Number((midStep * FONT_STEP).toFixed(2));
+      const candidate = Number((midStep * fitFontStep).toFixed(3));
 
       if (measureFontSize(candidate)) {
         bestStep = midStep;
@@ -1069,12 +1202,12 @@ export default function SongSheet({
       }
     }
 
-    const nextFontSize = Number((bestStep * FONT_STEP).toFixed(2));
+    const nextFontSize = Number((bestStep * fitFontStep).toFixed(3));
 
     contentNode.style.fontSize = `${nextFontSize}px`;
-    contentNode.style.lineHeight = `${getLineHeight(nextFontSize)}px`;
+    contentNode.style.lineHeight = `${getLineHeight(nextFontSize, lineHeightRatio)}px`;
 
-    const nextLineHeight = getLineHeight(nextFontSize);
+    const nextLineHeight = getLineHeight(nextFontSize, lineHeightRatio);
     if (nextFontSize !== fontSize || nextLineHeight !== lineHeight) {
       setFontSize(nextFontSize);
       setLineHeight(nextLineHeight);
@@ -1113,9 +1246,14 @@ export default function SongSheet({
     debugFlags.logFit,
     disableAutoFit,
     fitVersion,
+    fitFontStep,
     fontSize,
+    isV2Optimized,
     layoutFingerprint,
     lineHeight,
+    lineHeightRatio,
+    maxFontSize,
+    minFontSize,
     pageHeightPx,
     pageWidthPx,
     resolvedFixedFontSize,
@@ -1126,8 +1264,52 @@ export default function SongSheet({
     fontSize: `${fontSize}px`,
     lineHeight: `${lineHeight}px`,
   };
-  const densityClasses = resolvedOptions.density === 'condensed'
-    ? {
+  const densityClasses = isV2Optimized
+    ? resolvedOptions.density === 'condensed'
+      ? {
+        framePadding: isSingleCol ? 'px-4 py-3' : 'px-5 py-4',
+        headerPadding: isSingleCol ? 'pb-[0.18em]' : 'pb-1',
+        artistMargin: 'mt-[0.16em]',
+        artistSize: isSingleCol ? 'text-[0.62em]' : 'text-[0.68em]',
+        mapMargin: isSingleCol ? 'mt-[0.48em]' : 'mt-[0.72em]',
+        mapGap: 'gap-[0.3em]',
+        mainPadding: isSingleCol ? 'pt-[0.72em]' : 'pt-[1.45em]',
+        sectionMargin: isSingleCol ? 'mb-[0.72em]' : 'mb-[1.55em]',
+        collapsedSectionMargin: isSingleCol ? 'mb-[0.42em]' : 'mb-[0.8em]',
+        sectionTopClearance: isSingleCol ? 'pt-[0.58em]' : 'pt-[0.66em]',
+        sectionHeaderMargin: 'mb-0',
+        linesGap: 'space-y-0',
+        titleSize: isSingleCol ? 'text-[1.32em]' : 'text-[1.74em]',
+        metaSize: isSingleCol ? 'text-[0.54em]' : 'text-[0.59em]',
+        sectionTitleSize: isSingleCol ? 'text-[0.76em]' : 'text-[0.82em]',
+        sectionCardPadding: isSingleCol ? 'px-2.5 pb-[0.72em] pt-[0.98em]' : 'px-3 pb-[1em] pt-[1.16em]',
+        collapsedCardPadding: isSingleCol ? 'px-2.5 py-[0.42em]' : 'px-3 py-[0.62em]',
+        compactChordCardPadding: isSingleCol ? 'px-2.5 pb-[0.55em] pt-[0.9em]' : 'px-3 pb-[0.72em] pt-[1em]',
+        sectionCardRadius: 'rounded-[0.98em]',
+      }
+      : {
+        framePadding: isSingleCol ? 'px-4 py-4' : 'px-6 py-5',
+        headerPadding: isSingleCol ? 'pb-1' : 'pb-[1.25em]',
+        artistMargin: 'mt-[0.24em]',
+        artistSize: isSingleCol ? 'text-[0.68em]' : 'text-[0.72em]',
+        mapMargin: isSingleCol ? 'mt-[0.65em]' : 'mt-[0.9em]',
+        mapGap: isSingleCol ? 'gap-[0.38em]' : 'gap-[0.46em]',
+        mainPadding: isSingleCol ? 'pt-[1.5em]' : 'pt-[2.35em]',
+        sectionMargin: isSingleCol ? 'mb-[1.55em]' : 'mb-[2.65em]',
+        collapsedSectionMargin: isSingleCol ? 'mb-[0.9em]' : 'mb-[1.55em]',
+        sectionTopClearance: isSingleCol ? 'pt-[0.72em]' : 'pt-[0.78em]',
+        sectionHeaderMargin: isSingleCol ? 'mb-0' : 'mb-[0.18em]',
+        linesGap: isSingleCol ? 'space-y-0' : 'space-y-[0.1em]',
+        titleSize: isSingleCol ? 'text-[1.48em]' : 'text-[1.92em]',
+        metaSize: isSingleCol ? 'text-[0.58em]' : 'text-[0.62em]',
+        sectionTitleSize: isSingleCol ? 'text-[0.84em]' : 'text-[0.9em]',
+        sectionCardPadding: isSingleCol ? 'px-3 pb-[1em] pt-[1.24em]' : 'px-3.5 pb-[1.25em] pt-[1.36em]',
+        collapsedCardPadding: isSingleCol ? 'px-3 py-[0.72em]' : 'px-3.5 py-[0.85em]',
+        compactChordCardPadding: isSingleCol ? 'px-3 pb-[0.72em] pt-[1.1em]' : 'px-3.5 pb-[0.9em] pt-[1.18em]',
+        sectionCardRadius: 'rounded-[1.08em]',
+      }
+    : resolvedOptions.density === 'condensed'
+      ? {
       framePadding: isSingleCol ? 'px-5 py-3.5' : 'px-6 py-5',
       headerPadding: isSingleCol ? 'pb-0.5' : 'pb-1.5',
       artistMargin: 'mt-0.35',
@@ -1147,8 +1329,8 @@ export default function SongSheet({
       collapsedCardPadding: isSingleCol ? 'px-3 py-2.5' : 'px-3.5 py-3',
       compactChordCardPadding: isSingleCol ? 'px-3 pb-2 pt-[1.22em]' : 'px-3.5 pb-2.4 pt-[1.3em]',
       sectionCardRadius: 'rounded-[1.15em]',
-    }
-    : {
+      }
+      : {
       framePadding: isSingleCol ? 'px-5 py-5' : 'px-7 py-6',
       headerPadding: isSingleCol ? 'pb-1.5' : 'pb-1.85',
       artistMargin: 'mt-0.4',
@@ -1168,7 +1350,7 @@ export default function SongSheet({
       collapsedCardPadding: isSingleCol ? 'px-3.5 py-3' : 'px-4 py-3.5',
       compactChordCardPadding: isSingleCol ? 'px-3.5 pb-2.5 pt-[1.28em]' : 'px-4 pb-2.8 pt-[1.36em]',
       sectionCardRadius: 'rounded-[1.28em]',
-    };
+      };
   const frameClasses = framed
     ? 'song-sheet-page relative mx-auto overflow-hidden rounded-[20px] border border-zinc-300 bg-white text-zinc-950 shadow-[0_20px_60px_rgba(15,23,42,0.12)] print:h-[11in] print:w-[8.5in] print:max-h-none print:max-w-none print:overflow-hidden print:rounded-none print:border-0 print:shadow-none print:[-webkit-print-color-adjust:exact] print:[print-color-adjust:exact]'
     : 'song-sheet-page relative mx-auto h-full overflow-hidden bg-white text-zinc-950 print:h-[11in] print:w-[8.5in] print:max-h-none print:max-w-none print:overflow-hidden print:[-webkit-print-color-adjust:exact] print:[print-color-adjust:exact]';
@@ -1186,6 +1368,11 @@ export default function SongSheet({
 
   const columnStyle = {
     '--song-sheet-column-count': String(resolvedOptions.columnCount),
+    '--song-sheet-column-gap': isV2Optimized
+      ? resolvedOptions.density === 'condensed'
+        ? '1rem'
+        : '1.16rem'
+      : '1.45rem',
   } as CSSProperties;
   const renderBlock = (block: RenderableBlock) => {
     const sectionColors = getSectionColors(block.typeMarker);
@@ -1196,7 +1383,9 @@ export default function SongSheet({
         ? densityClasses.compactChordCardPadding
         : densityClasses.sectionCardPadding;
     const packedLineRows = useCompactLinePacking && !block.isCollapsed
-      ? buildPackedLineRows(block.lines, CONDENSED_LINE_PACKING_PROFILE)
+      ? isV2Optimized
+        ? buildOptimizedPackedLineRows(block.lines, activeLinePackingProfile)
+        : buildPackedLineRows(block.lines, activeLinePackingProfile)
       : null;
 
     if (block.isCollapsed && useInlineCollapsedSections) {

@@ -113,6 +113,7 @@ const readIncomingPayload = async (request: Request) => {
 const buildRenderUrl = (request: Request, token: string) => {
   const renderUrl = new URL('/render/chordpro-print-pdf-v2', request.url);
   renderUrl.searchParams.set('token', token);
+  renderUrl.searchParams.set('pdfExport', '1');
   return renderUrl.toString();
 };
 

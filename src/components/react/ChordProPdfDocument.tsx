@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import SongSheet from './SongSheet';
+import type { SongSheetPrintProfile } from './SongSheet';
 import type { ChordProPdfPayload } from '../../lib/chordproPdfPayload';
 import {
   deleteChordProPdfBrowserToken,
@@ -18,6 +19,8 @@ type ChordProPdfDocumentProps = {
   payload?: ChordProPdfPayload | null;
   clientToken?: string;
   autoPrint?: boolean;
+  hidePrintAction?: boolean;
+  printProfile?: SongSheetPrintProfile;
 };
 
 const PAGE_WIDTH_PX = 816;
@@ -58,6 +61,8 @@ export default function ChordProPdfDocument({
   payload: initialPayload = null,
   clientToken = '',
   autoPrint = false,
+  hidePrintAction = false,
+  printProfile = 'classic',
 }: ChordProPdfDocumentProps) {
   const [payload, setPayload] = useState<ChordProPdfPayload | null>(() =>
     readResolvedPayload(initialPayload, clientToken)
@@ -164,8 +169,10 @@ export default function ChordProPdfDocument({
 
       await waitForPdfFonts();
 
-      await nextFrame();
-      await nextFrame();
+      const frameCount = printProfile === 'v2-optimized' ? 5 : 2;
+      for (let index = 0; index < frameCount; index += 1) {
+        await nextFrame();
+      }
 
       if (cancelled) return;
 
@@ -199,6 +206,7 @@ export default function ChordProPdfDocument({
     payload?.sheetOptions.showSongMap,
     payload?.sheetOptions.styleMode,
     payload?.title,
+    printProfile,
   ]);
 
   useEffect(() => {
@@ -240,7 +248,7 @@ export default function ChordProPdfDocument({
       <div id="chordpro-pdf-ready" data-ready={isReady ? '1' : '0'} hidden />
       {payload ? (
         <>
-          {!autoPrint ? (
+          {!autoPrint && !hidePrintAction ? (
             <button
               type="button"
               onClick={() => window.print()}
@@ -264,6 +272,7 @@ export default function ChordProPdfDocument({
               pageWidthPx={PAGE_WIDTH_PX}
               framed={false}
               className="h-full"
+              printProfile={printProfile}
             />
           </div>
         </>

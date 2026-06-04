@@ -10,6 +10,9 @@ const clientToken = Astro.url.searchParams.get("clientToken")?.trim() || "";
 const autoPrint =
   Astro.url.searchParams.get("autoprint")?.trim() === "1" ||
   Astro.url.searchParams.get("autoprint")?.trim() === "true";
+const pdfExport =
+  Astro.url.searchParams.get("pdfExport")?.trim() === "1" ||
+  Astro.url.searchParams.get("pdfExport")?.trim() === "true";
 const payload = token ? await readChordProPdfPayloadToken(token) : null;
 
 if (!payload && !clientToken) {
@@ -32,6 +35,8 @@ if (!payload && !clientToken) {
           payload={payload}
           clientToken={clientToken}
           autoPrint={autoPrint}
+          hidePrintAction={pdfExport}
+          printProfile="v2-optimized"
         />
       ) : (
         <div class="pdf-error-state">
@@ -99,6 +104,15 @@ if (!payload && !clientToken) {
   .chordpro-print-action {
     top: max(1rem, env(safe-area-inset-top));
     right: max(1rem, env(safe-area-inset-right));
+  }
+
+  astro-dev-toolbar,
+  astro-dev-toolbar-window,
+  astro-dev-toolbar-button,
+  [data-astro-dev-toolbar] {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
   }
 
   #chordpro-pdf-root,
