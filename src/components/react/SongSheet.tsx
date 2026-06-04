@@ -61,8 +61,8 @@ const V2_MIN_FONT_SIZE = 5.5;
 const FONT_STEP = 0.25;
 const V2_FONT_STEP = 0.125;
 const LINE_HEIGHT_RATIO = 1.28;
-const V2_COMPLETE_LINE_HEIGHT_RATIO = 1.22;
-const V2_CONDENSED_LINE_HEIGHT_RATIO = 1.15;
+const V2_COMPLETE_LINE_HEIGHT_RATIO = 1.18;
+const V2_CONDENSED_LINE_HEIGHT_RATIO = 1.12;
 const FIT_VERTICAL_BUFFER_PX = 0;
 const FIT_HORIZONTAL_OVERFLOW_PX = 2;
 const FIT_COLUMN_OVERFLOW_PX = 2;
@@ -120,6 +120,21 @@ const SONG_SHEET_PRINT_CSS = `
     column-span: none;
     will-change: transform;
     transform: translateZ(0);
+  }
+
+  .song-sheet-pdf-export .song-sheet-section {
+    will-change: auto !important;
+    transform: none !important;
+  }
+
+  .song-sheet-pdf-export .song-sheet-page,
+  .song-sheet-pdf-export .song-sheet-section,
+  .song-sheet-pdf-export .song-sheet-section > div,
+  .song-sheet-pdf-export .song-sheet-section span,
+  .song-sheet-pdf-export .song-sheet-page header span {
+    box-shadow: none !important;
+    text-shadow: none !important;
+    filter: none !important;
   }
 
   @page {
@@ -1150,7 +1165,9 @@ export default function SongSheet({
       overflowCount = widthGuards.filter(
         (node) => node.scrollWidth - node.clientWidth > FIT_HORIZONTAL_OVERFLOW_PX
       ).length;
-      const hasHorizontalOverflow = isV2Optimized ? overflowCount > 0 : overflowCount > 1;
+      const allowedHorizontalOverflowCount =
+        isV2Optimized && resolvedStyleMode === 'condensado' ? 0 : 1;
+      const hasHorizontalOverflow = overflowCount > allowedHorizontalOverflowCount;
 
       if (!rejectReason && hasHorizontalOverflow) {
         rejectReason = 'horizontal-overflow';
@@ -1267,45 +1284,45 @@ export default function SongSheet({
   const densityClasses = isV2Optimized
     ? resolvedOptions.density === 'condensed'
       ? {
-        framePadding: isSingleCol ? 'px-4 py-3' : 'px-5 py-4',
+        framePadding: isSingleCol ? 'px-3.5 py-2.5' : 'px-4 py-3',
         headerPadding: isSingleCol ? 'pb-[0.18em]' : 'pb-1',
         artistMargin: 'mt-[0.16em]',
         artistSize: isSingleCol ? 'text-[0.62em]' : 'text-[0.68em]',
         mapMargin: isSingleCol ? 'mt-[0.48em]' : 'mt-[0.72em]',
         mapGap: 'gap-[0.3em]',
-        mainPadding: isSingleCol ? 'pt-[0.72em]' : 'pt-[1.45em]',
-        sectionMargin: isSingleCol ? 'mb-[0.72em]' : 'mb-[1.55em]',
-        collapsedSectionMargin: isSingleCol ? 'mb-[0.42em]' : 'mb-[0.8em]',
+        mainPadding: isSingleCol ? 'pt-[0.58em]' : 'pt-[1.1em]',
+        sectionMargin: isSingleCol ? 'mb-[0.58em]' : 'mb-[1.15em]',
+        collapsedSectionMargin: isSingleCol ? 'mb-[0.34em]' : 'mb-[0.65em]',
         sectionTopClearance: isSingleCol ? 'pt-[0.58em]' : 'pt-[0.66em]',
         sectionHeaderMargin: 'mb-0',
         linesGap: 'space-y-0',
         titleSize: isSingleCol ? 'text-[1.32em]' : 'text-[1.74em]',
         metaSize: isSingleCol ? 'text-[0.54em]' : 'text-[0.59em]',
         sectionTitleSize: isSingleCol ? 'text-[0.76em]' : 'text-[0.82em]',
-        sectionCardPadding: isSingleCol ? 'px-2.5 pb-[0.72em] pt-[0.98em]' : 'px-3 pb-[1em] pt-[1.16em]',
+        sectionCardPadding: isSingleCol ? 'px-2.5 pb-[0.6em] pt-[0.9em]' : 'px-2.5 pb-[0.82em] pt-[1.02em]',
         collapsedCardPadding: isSingleCol ? 'px-2.5 py-[0.42em]' : 'px-3 py-[0.62em]',
-        compactChordCardPadding: isSingleCol ? 'px-2.5 pb-[0.55em] pt-[0.9em]' : 'px-3 pb-[0.72em] pt-[1em]',
+        compactChordCardPadding: isSingleCol ? 'px-2.5 pb-[0.45em] pt-[0.78em]' : 'px-2.5 pb-[0.58em] pt-[0.88em]',
         sectionCardRadius: 'rounded-[0.98em]',
       }
       : {
-        framePadding: isSingleCol ? 'px-4 py-4' : 'px-6 py-5',
-        headerPadding: isSingleCol ? 'pb-1' : 'pb-[1.25em]',
+        framePadding: isSingleCol ? 'px-4 py-3.5' : 'px-5 py-4',
+        headerPadding: isSingleCol ? 'pb-1' : 'pb-[0.78em]',
         artistMargin: 'mt-[0.24em]',
         artistSize: isSingleCol ? 'text-[0.68em]' : 'text-[0.72em]',
-        mapMargin: isSingleCol ? 'mt-[0.65em]' : 'mt-[0.9em]',
-        mapGap: isSingleCol ? 'gap-[0.38em]' : 'gap-[0.46em]',
-        mainPadding: isSingleCol ? 'pt-[1.5em]' : 'pt-[2.35em]',
-        sectionMargin: isSingleCol ? 'mb-[1.55em]' : 'mb-[2.65em]',
-        collapsedSectionMargin: isSingleCol ? 'mb-[0.9em]' : 'mb-[1.55em]',
-        sectionTopClearance: isSingleCol ? 'pt-[0.72em]' : 'pt-[0.78em]',
+        mapMargin: isSingleCol ? 'mt-[0.58em]' : 'mt-[0.68em]',
+        mapGap: isSingleCol ? 'gap-[0.36em]' : 'gap-[0.38em]',
+        mainPadding: isSingleCol ? 'pt-[1.15em]' : 'pt-[1.45em]',
+        sectionMargin: isSingleCol ? 'mb-[1.15em]' : 'mb-[1.68em]',
+        collapsedSectionMargin: isSingleCol ? 'mb-[0.72em]' : 'mb-[1.08em]',
+        sectionTopClearance: isSingleCol ? 'pt-[0.62em]' : 'pt-[0.66em]',
         sectionHeaderMargin: isSingleCol ? 'mb-0' : 'mb-[0.18em]',
         linesGap: isSingleCol ? 'space-y-0' : 'space-y-[0.1em]',
         titleSize: isSingleCol ? 'text-[1.48em]' : 'text-[1.92em]',
         metaSize: isSingleCol ? 'text-[0.58em]' : 'text-[0.62em]',
         sectionTitleSize: isSingleCol ? 'text-[0.84em]' : 'text-[0.9em]',
-        sectionCardPadding: isSingleCol ? 'px-3 pb-[1em] pt-[1.24em]' : 'px-3.5 pb-[1.25em] pt-[1.36em]',
-        collapsedCardPadding: isSingleCol ? 'px-3 py-[0.72em]' : 'px-3.5 py-[0.85em]',
-        compactChordCardPadding: isSingleCol ? 'px-3 pb-[0.72em] pt-[1.1em]' : 'px-3.5 pb-[0.9em] pt-[1.18em]',
+        sectionCardPadding: isSingleCol ? 'px-3 pb-[0.86em] pt-[1.08em]' : 'px-3 pb-[0.96em] pt-[1.14em]',
+        collapsedCardPadding: isSingleCol ? 'px-3 py-[0.62em]' : 'px-3 py-[0.72em]',
+        compactChordCardPadding: isSingleCol ? 'px-3 pb-[0.58em] pt-[0.95em]' : 'px-3 pb-[0.68em] pt-[1em]',
         sectionCardRadius: 'rounded-[1.08em]',
       }
     : resolvedOptions.density === 'condensed'
@@ -1370,8 +1387,8 @@ export default function SongSheet({
     '--song-sheet-column-count': String(resolvedOptions.columnCount),
     '--song-sheet-column-gap': isV2Optimized
       ? resolvedOptions.density === 'condensed'
-        ? '1rem'
-        : '1.16rem'
+        ? '0.9rem'
+        : '0.9rem'
       : '1.45rem',
   } as CSSProperties;
   const renderBlock = (block: RenderableBlock) => {

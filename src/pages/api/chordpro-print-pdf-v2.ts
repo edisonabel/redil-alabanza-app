@@ -192,6 +192,7 @@ export const POST: APIRoute = async ({ request }) => {
       format: 'Letter',
       printBackground: true,
       preferCSSPageSize: true,
+      tagged: false,
       margin: { top: 0, right: 0, bottom: 0, left: 0 },
     });
 

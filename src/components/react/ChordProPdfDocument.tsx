@@ -240,10 +240,15 @@ export default function ChordProPdfDocument({
     };
   }, [clientToken, initialPayload]);
 
+  const isFastPdfExport = hidePrintAction && printProfile === 'v2-optimized';
+
   return (
     <div
       id="chordpro-pdf-root"
-      className="mx-auto min-h-[11in] w-[8.5in] min-w-[8.5in] max-w-[8.5in] bg-white text-black"
+      className={[
+        'mx-auto min-h-[11in] w-[8.5in] min-w-[8.5in] max-w-[8.5in] bg-white text-black',
+        isFastPdfExport ? 'song-sheet-pdf-export' : '',
+      ].filter(Boolean).join(' ')}
     >
       <div id="chordpro-pdf-ready" data-ready={isReady ? '1' : '0'} hidden />
       {payload ? (
