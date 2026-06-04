@@ -36,6 +36,10 @@ const OPEN_SHAPE_ROOTS = new Set(['C', 'D', 'E', 'G', 'A']);
 const OPEN_MINOR_ROOTS = new Set(['A', 'D', 'E']);
 const GUITAR_TUNING = ['E', 'A', 'D', 'G', 'B', 'E'];
 const PIANO_WHITE_NOTES = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+const NOTE_INDEX = SHARP_NOTES.reduce((acc, note, index) => {
+  acc[note] = index;
+  return acc;
+}, {});
 const CHORD_QUALITY_INTERVALS = {
   major: [0, 4, 7],
   minor: [0, 3, 7],
@@ -537,10 +541,60 @@ const buildGuitarVariations = (chord = '') => {
 const getChordNoteNames = (chord = '') => {
   const parsed = parseChordSymbol(chord);
   if (!parsed) return [];
-  const rootIndex = SHARP_NOTES.indexOf(parsed.root);
+  const rootIndex = NOTE_INDEX[parsed.root];
   if (rootIndex < 0) return [];
   const intervals = CHORD_QUALITY_INTERVALS[getChordQuality(parsed.suffix)] || CHORD_QUALITY_INTERVALS.major;
   return intervals.map((interval) => SHARP_NOTES[(rootIndex + interval) % 12]);
+};
+const midiToNoteName = (midi = 60) => (
+  SHARP_NOTES[((Number(midi) % 12) + 12) % 12]
+);
+const noteToMidi = (note = 'C', octave = 4) => {
+  const noteIndex = NOTE_INDEX[note];
+  if (!Number.isFinite(noteIndex)) return 60;
+  return (Number(octave) + 1) * 12 + noteIndex;
+};
+const getRootMidi = (root = 'C') => {
+  const noteIndex = NOTE_INDEX[root];
+  if (!Number.isFinite(noteIndex)) return 60;
+  return noteToMidi(root, noteIndex >= NOTE_INDEX.A ? 3 : 4);
+};
+const buildPianoVoicing = (chord = '', rotation = 0) => {
+  const parsed = parseChordSymbol(chord);
+  if (!parsed) return { midiNotes: [], noteNames: [] };
+  const rootMidi = getRootMidi(parsed.root);
+  const intervals = CHORD_QUALITY_INTERVALS[getChordQuality(parsed.suffix)] || CHORD_QUALITY_INTERVALS.major;
+  const chordTones = intervals.map((interval) => rootMidi + interval);
+  const safeRotation = Math.max(0, Math.min(Number(rotation) || 0, Math.max(chordTones.length - 1, 0)));
+  const rotatedTones = [
+    ...chordTones.slice(safeRotation),
+    ...chordTones.slice(0, safeRotation).map((midi) => midi + 12),
+  ];
+  const upperTones = parsed.bass
+    ? rotatedTones.filter((midi) => midiToNoteName(midi) !== parsed.bass)
+    : rotatedTones;
+  const midiNotes = [...upperTones];
+
+  if (parsed.bass) {
+    let bassMidi = getRootMidi(parsed.bass);
+    const firstUpperTone = upperTones[0] || rotatedTones[0] || rootMidi;
+    while (bassMidi >= firstUpperTone) {
+      bassMidi -= 12;
+    }
+    while (firstUpperTone - bassMidi > 12) {
+      bassMidi += 12;
+    }
+    midiNotes.unshift(bassMidi);
+  }
+
+  const dedupedMidiNotes = midiNotes.filter((midi, index, source) => (
+    source.findIndex((candidate) => candidate === midi) === index
+  ));
+
+  return {
+    midiNotes: dedupedMidiNotes,
+    noteNames: dedupedMidiNotes.map(midiToNoteName),
+  };
 };
 const buildPianoVariations = (chord = '') => {
   const notes = getChordNoteNames(chord);
@@ -548,7 +602,7 @@ const buildPianoVariations = (chord = '') => {
   const rotations = [0, 1, 2].filter((rotation) => rotation < notes.length);
   return rotations.map((rotation) => ({
     label: rotation === 0 ? 'Triada' : `Inversión ${rotation}`,
-    notes: [...notes.slice(rotation), ...notes.slice(0, rotation)],
+    ...buildPianoVoicing(chord, rotation),
   }));
 };
 const buildChordLibrary = (chords = []) => {
@@ -867,34 +921,47 @@ function GuitarChordDiagram({ chord, variation }) {
 }
 
 function PianoChordDiagram({ chord, variation }) {
-  const activeNotes = new Set((variation?.notes || getChordNoteNames(chord)).map((note) => normalizeKeyToAmerican(note)));
-  const whiteKeyWidth = 24;
+  const voicing = variation?.midiNotes?.length ? variation : buildPianoVoicing(chord, 0);
+  const activeMidiNotes = Array.isArray(voicing?.midiNotes) ? voicing.midiNotes : [];
+  const activeMidiSet = new Set(activeMidiNotes);
+  const whiteKeyWidth = 22;
   const whiteKeyHeight = 86;
-  const startOctave = 3;
-  const whiteKeys = Array.from({ length: 14 }).map((_, index) => {
-    const note = PIANO_WHITE_NOTES[index % PIANO_WHITE_NOTES.length];
-    const octave = startOctave + Math.floor(index / PIANO_WHITE_NOTES.length);
-    return { note, octave, x: index * whiteKeyWidth };
-  });
-  const blackKeys = whiteKeys
-    .map((key, index) => {
-      if (!['C', 'D', 'F', 'G', 'A'].includes(key.note)) return null;
-      return {
-        note: `${key.note}#`,
-        octave: key.octave,
-        x: ((index + 1) * whiteKeyWidth) - 7,
-      };
-    })
-    .filter(Boolean);
+  const minMidi = activeMidiNotes.length ? Math.min(...activeMidiNotes) : 60;
+  const maxMidi = activeMidiNotes.length ? Math.max(...activeMidiNotes) : 72;
+  let startMidi = Math.floor((minMidi - 2) / 12) * 12;
+  while (maxMidi > startMidi + 24) {
+    startMidi += 12;
+  }
+  const endMidi = startMidi + 24;
+  const whiteKeys = [];
+  const blackKeys = [];
+
+  for (let midi = startMidi; midi <= endMidi; midi += 1) {
+    const note = midiToNoteName(midi);
+    if (PIANO_WHITE_NOTES.includes(note)) {
+      whiteKeys.push({
+        midi,
+        note,
+        x: whiteKeys.length * whiteKeyWidth,
+      });
+    } else {
+      blackKeys.push({
+        midi,
+        note,
+        x: (Math.max(whiteKeys.length, 1) * whiteKeyWidth) - 7,
+      });
+    }
+  }
+
   const width = whiteKeys.length * whiteKeyWidth;
 
   return (
     <svg viewBox={`0 0 ${width} 112`} className="h-auto w-full" role="img" aria-label={`Teclado de piano ${chord}`}>
       <rect x="0" y="0" width={width} height={whiteKeyHeight} rx="9" className="fill-zinc-100 dark:fill-zinc-800" />
       {whiteKeys.map((key) => {
-        const active = activeNotes.has(key.note);
+        const active = activeMidiSet.has(key.midi);
         return (
-          <g key={`white-${key.note}-${key.octave}-${key.x}`}>
+          <g key={`white-${key.midi}`}>
             <rect
               x={key.x + 1}
               y="1"
@@ -914,9 +981,9 @@ function PianoChordDiagram({ chord, variation }) {
         );
       })}
       {blackKeys.map((key) => {
-        const active = activeNotes.has(key.note);
+        const active = activeMidiSet.has(key.midi);
         return (
-          <g key={`black-${key.note}-${key.octave}-${key.x}`}>
+          <g key={`black-${key.midi}`}>
             <rect
               x={key.x}
               y="0"
@@ -934,7 +1001,7 @@ function PianoChordDiagram({ chord, variation }) {
         );
       })}
       <text x={width / 2} y="105" textAnchor="middle" className="fill-zinc-500 text-[10px] font-black dark:fill-zinc-400">
-        {[...activeNotes].map(formatChordAccidentals).join(' · ')}
+        {activeMidiNotes.map((midi) => formatChordAccidentals(midiToNoteName(midi))).join(' · ')}
       </text>
     </svg>
   );
