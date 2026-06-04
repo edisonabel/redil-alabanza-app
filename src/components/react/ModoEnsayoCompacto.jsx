@@ -777,29 +777,6 @@ function GuitarChordDiagram({ chord, variation }) {
   const stringGap = (right - left) / 5;
   const fretCount = Math.min(5, Math.max(4, maxVisibleFret));
   const bottom = top + (fretGap * fretCount);
-  const barreGroups = [];
-  for (let index = 0; index < relativeFrets.length; index += 1) {
-    const fret = Number(relativeFrets[index]);
-    if (!Number.isFinite(fret) || fret <= 0 || String(shape.fingers?.[index] || '') !== '1') continue;
-    let endIndex = index;
-    while (
-      endIndex + 1 < relativeFrets.length &&
-      Number(relativeFrets[endIndex + 1]) === fret &&
-      String(shape.fingers?.[endIndex + 1] || '') === '1'
-    ) {
-      endIndex += 1;
-    }
-    if (endIndex - index >= 2) {
-      barreGroups.push({ startIndex: index, endIndex, fret });
-      index = endIndex;
-    }
-  }
-  const barreStringIndexes = new Set(
-    barreGroups.flatMap((group) => (
-      Array.from({ length: group.endIndex - group.startIndex + 1 }, (_, offset) => group.startIndex + offset)
-    )),
-  );
-
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" role="img" aria-label={`Diagrama de guitarra ${chord}`}>
       {baseFret > 0 && (
@@ -837,28 +814,6 @@ function GuitarChordDiagram({ chord, variation }) {
           />
         );
       })}
-      {barreGroups.map((group) => {
-        const y = top + ((group.fret - 0.5) * fretGap);
-        const startX = left + (stringGap * group.startIndex);
-        const endX = left + (stringGap * group.endIndex);
-        return (
-          <g key={`barre-${group.startIndex}-${group.endIndex}-${group.fret}`}>
-            <line
-              x1={startX}
-              y1={y}
-              x2={endX}
-              y2={y}
-              stroke="currentColor"
-              strokeWidth="17"
-              strokeLinecap="round"
-              className="text-brand"
-            />
-            <text x={startX - 0.5} y={y + 3.5} textAnchor="middle" className="fill-white text-[9px] font-black">
-              1
-            </text>
-          </g>
-        );
-      })}
       {relativeFrets.map((fret, stringIndex) => {
         const x = left + (stringGap * stringIndex);
         if (String(fret).toLowerCase() === 'x') {
@@ -884,7 +839,6 @@ function GuitarChordDiagram({ chord, variation }) {
         }
         const fretNumber = Number(fret);
         if (!Number.isFinite(fretNumber)) return null;
-        if (barreStringIndexes.has(stringIndex)) return null;
         const y = top + ((fretNumber - 0.5) * fretGap);
         return (
           <g key={`dot-${stringIndex}-${fretNumber}`}>
