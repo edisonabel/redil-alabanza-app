@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ChevronDown, Pause, Play, Radio, RadioReceiver, Repeat, Repeat1, SlidersHorizontal } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Pause, Play, Radio, RadioReceiver, Repeat, Repeat1, SlidersHorizontal, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { audioSessionService } from '../../services/AudioSessionService';
 import { metronomeService } from '../../services/MetronomeEngine';
@@ -34,6 +34,53 @@ const TRANSPOSE_OPTIONS = [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6];
 const CAPO_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7];
 const OPEN_SHAPE_ROOTS = new Set(['C', 'D', 'E', 'G', 'A']);
 const OPEN_MINOR_ROOTS = new Set(['A', 'D', 'E']);
+const GUITAR_TUNING = ['E', 'A', 'D', 'G', 'B', 'E'];
+const PIANO_WHITE_NOTES = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+const CHORD_QUALITY_INTERVALS = {
+  major: [0, 4, 7],
+  minor: [0, 3, 7],
+  dom7: [0, 4, 7, 10],
+  dom9: [0, 4, 7, 10, 14],
+  maj7: [0, 4, 7, 11],
+  maj9: [0, 4, 7, 11, 14],
+  min7: [0, 3, 7, 10],
+  min9: [0, 3, 7, 10, 14],
+  sus4: [0, 5, 7],
+  sus2: [0, 2, 7],
+  dim: [0, 3, 6],
+  aug: [0, 4, 8],
+  add9: [0, 4, 7, 14],
+  power: [0, 7],
+};
+const OPEN_GUITAR_SHAPES = {
+  A: { label: 'Abierto', frets: ['x', 0, 2, 2, 2, 0], fingers: ['', '', '1', '2', '3', ''] },
+  Am: { label: 'Abierto', frets: ['x', 0, 2, 2, 1, 0], fingers: ['', '', '2', '3', '1', ''] },
+  A7: { label: 'Abierto', frets: ['x', 0, 2, 0, 2, 0], fingers: ['', '', '2', '', '3', ''] },
+  Am7: { label: 'Abierto', frets: ['x', 0, 2, 0, 1, 0], fingers: ['', '', '2', '', '1', ''] },
+  Asus2: { label: 'Abierto', frets: ['x', 0, 2, 2, 0, 0], fingers: ['', '', '1', '2', '', ''] },
+  Asus4: { label: 'Abierto', frets: ['x', 0, 2, 2, 3, 0], fingers: ['', '', '1', '2', '3', ''] },
+  B: { label: 'Cejilla A', frets: ['x', 2, 4, 4, 4, 2], fingers: ['', '1', '3', '3', '3', '1'] },
+  Bm: { label: 'Cejilla A', frets: ['x', 2, 4, 4, 3, 2], fingers: ['', '1', '3', '4', '2', '1'] },
+  B7: { label: 'Abierto', frets: ['x', 2, 1, 2, 0, 2], fingers: ['', '2', '1', '3', '', '4'] },
+  C: { label: 'Abierto', frets: ['x', 3, 2, 0, 1, 0], fingers: ['', '3', '2', '', '1', ''] },
+  Cmaj7: { label: 'Abierto', frets: ['x', 3, 2, 0, 0, 0], fingers: ['', '3', '2', '', '', ''] },
+  C7: { label: 'Abierto', frets: ['x', 3, 2, 3, 1, 0], fingers: ['', '3', '2', '4', '1', ''] },
+  D: { label: 'Abierto', frets: ['x', 'x', 0, 2, 3, 2], fingers: ['', '', '', '1', '3', '2'] },
+  Dm: { label: 'Abierto', frets: ['x', 'x', 0, 2, 3, 1], fingers: ['', '', '', '2', '3', '1'] },
+  D7: { label: 'Abierto', frets: ['x', 'x', 0, 2, 1, 2], fingers: ['', '', '', '2', '1', '3'] },
+  Dm7: { label: 'Abierto', frets: ['x', 'x', 0, 2, 1, 1], fingers: ['', '', '', '2', '1', '1'] },
+  Dsus2: { label: 'Abierto', frets: ['x', 'x', 0, 2, 3, 0], fingers: ['', '', '', '1', '3', ''] },
+  Dsus4: { label: 'Abierto', frets: ['x', 'x', 0, 2, 3, 3], fingers: ['', '', '', '1', '2', '3'] },
+  E: { label: 'Abierto', frets: [0, 2, 2, 1, 0, 0], fingers: ['', '2', '3', '1', '', ''] },
+  Em: { label: 'Abierto', frets: [0, 2, 2, 0, 0, 0], fingers: ['', '2', '3', '', '', ''] },
+  E7: { label: 'Abierto', frets: [0, 2, 0, 1, 0, 0], fingers: ['', '2', '', '1', '', ''] },
+  Em7: { label: 'Abierto', frets: [0, 2, 0, 0, 0, 0], fingers: ['', '2', '', '', '', ''] },
+  Esus4: { label: 'Abierto', frets: [0, 2, 2, 2, 0, 0], fingers: ['', '1', '2', '3', '', ''] },
+  F: { label: 'Cejilla E', frets: [1, 3, 3, 2, 1, 1], fingers: ['1', '3', '4', '2', '1', '1'] },
+  Fm: { label: 'Cejilla E', frets: [1, 3, 3, 1, 1, 1], fingers: ['1', '3', '4', '1', '1', '1'] },
+  G: { label: 'Abierto', frets: [3, 2, 0, 0, 0, 3], fingers: ['3', '2', '', '', '', '4'] },
+  G7: { label: 'Abierto', frets: [3, 2, 0, 0, 0, 1], fingers: ['3', '2', '', '', '', '1'] },
+};
 const TRACK_DEFAULT_GAIN = 1;
 const TRACK_DUCKED_GAIN = 0.38;
 const TRACK_DUCK_IN_DURATION_MS = 3200;
@@ -349,6 +396,182 @@ const extractChordTokensFromSections = (sections = []) => {
       : []
   ));
 };
+const normalizeChordSymbol = (value = '') => (
+  String(value || '')
+    .trim()
+    .replace(/\u266F/g, '#')
+    .replace(/\u266D/g, 'b')
+    .replace(/\s+/g, '')
+);
+const parseChordSymbol = (value = '') => {
+  const source = normalizeChordSymbol(value);
+  const match = source.match(/^([A-G])([#b]?)([^/]*?)(?:\/([A-G])([#b]?))?$/);
+  if (!match) return null;
+  const [, root, accidental = '', suffix = '', bassRoot = '', bassAccidental = ''] = match;
+  const normalizedSuffix = String(suffix || '').toLowerCase();
+  const hasValidSuffix = !normalizedSuffix || /^(m|min|maj|ma|sus|dim|aug|add|no|[-+\u00B0\u00F8]|\d|[#b(])/.test(normalizedSuffix);
+  if (!hasValidSuffix) return null;
+  return {
+    source,
+    root: normalizeChordRoot(root, accidental),
+    suffix,
+    bass: bassRoot ? normalizeChordRoot(bassRoot, bassAccidental) : '',
+  };
+};
+const getChordQuality = (suffix = '') => {
+  const normalized = String(suffix || '').toLowerCase();
+  if (normalized.includes('sus4') || normalized === 'sus') return 'sus4';
+  if (normalized.includes('sus2')) return 'sus2';
+  if (normalized.includes('dim') || normalized.includes('\u00B0')) return 'dim';
+  if (normalized.includes('aug') || normalized.includes('+')) return 'aug';
+  if (normalized.includes('maj9') || normalized.includes('ma9') || normalized.includes('\u03949')) return 'maj9';
+  if (normalized.includes('maj7') || normalized.includes('ma7') || normalized.includes('\u03947')) return 'maj7';
+  if (normalized.includes('m9') || normalized.includes('min9') || normalized.includes('-9')) return 'min9';
+  if (normalized.includes('m7') || normalized.includes('min7') || normalized.includes('-7')) return 'min7';
+  if (normalized.includes('add9')) return 'add9';
+  if (normalized.includes('9')) return 'dom9';
+  if (normalized.includes('7')) return 'dom7';
+  if (normalized === '5') return 'power';
+  if (normalized.startsWith('m') || normalized.startsWith('min') || normalized.startsWith('-')) return 'minor';
+  return 'major';
+};
+const getChordOpenShapeKey = (parsedChord) => {
+  if (!parsedChord) return '';
+  const quality = getChordQuality(parsedChord.suffix);
+  if (quality === 'major') return parsedChord.root;
+  if (quality === 'minor') return `${parsedChord.root}m`;
+  if (quality === 'dom7') return `${parsedChord.root}7`;
+  if (quality === 'maj7') return `${parsedChord.root}maj7`;
+  if (quality === 'min7') return `${parsedChord.root}m7`;
+  if (quality === 'sus2') return `${parsedChord.root}sus2`;
+  if (quality === 'sus4') return `${parsedChord.root}sus4`;
+  return `${parsedChord.root}${parsedChord.suffix}`;
+};
+const normalizeFrets = (frets = []) => {
+  const numericFrets = frets.filter((fret) => Number.isFinite(Number(fret))).map(Number);
+  const fretted = numericFrets.filter((fret) => fret > 0);
+  if (fretted.length === 0) {
+    return {
+      baseFret: 0,
+      maxVisibleFret: 4,
+      relativeFrets: frets,
+    };
+  }
+  const minFret = Math.min(...fretted);
+  const maxFret = Math.max(...fretted);
+  const baseFret = maxFret <= 4 ? 0 : minFret;
+  return {
+    baseFret,
+    maxVisibleFret: Math.max(4, maxFret - baseFret + 1),
+    relativeFrets: frets.map((fret) => (
+      Number.isFinite(Number(fret)) && Number(fret) > 0 && baseFret > 0
+        ? Number(fret) - baseFret + 1
+        : fret
+    )),
+  };
+};
+const getBarreFretFromRoot = (root = '', stringRoot = 'E') => {
+  const rootIndex = SHARP_NOTES.indexOf(root);
+  const stringIndex = SHARP_NOTES.indexOf(stringRoot);
+  if (rootIndex < 0 || stringIndex < 0) return 1;
+  const fret = (rootIndex - stringIndex + 12) % 12;
+  return fret === 0 ? 12 : fret;
+};
+const buildEBarreShape = (parsedChord) => {
+  const quality = getChordQuality(parsedChord?.suffix);
+  const fret = getBarreFretFromRoot(parsedChord?.root, 'E');
+  const shapeMap = {
+    major: [fret, fret + 2, fret + 2, fret + 1, fret, fret],
+    minor: [fret, fret + 2, fret + 2, fret, fret, fret],
+    dom7: [fret, fret + 2, fret, fret + 1, fret, fret],
+    maj7: [fret, fret + 2, fret + 1, fret + 1, fret, fret],
+    min7: [fret, fret + 2, fret, fret, fret, fret],
+    sus4: [fret, fret + 2, fret + 2, fret + 2, fret, fret],
+    sus2: [fret, fret + 2, fret + 2, fret, fret, fret],
+    power: [fret, fret + 2, fret + 2, 'x', 'x', 'x'],
+  };
+  return {
+    label: quality === 'power' ? 'Power' : 'Cejilla E',
+    frets: shapeMap[quality] || shapeMap.major,
+    fingers: ['1', '3', '4', '2', '1', '1'],
+  };
+};
+const buildABarreShape = (parsedChord) => {
+  const quality = getChordQuality(parsedChord?.suffix);
+  const fret = getBarreFretFromRoot(parsedChord?.root, 'A');
+  const shapeMap = {
+    major: ['x', fret, fret + 2, fret + 2, fret + 2, fret],
+    minor: ['x', fret, fret + 2, fret + 2, fret + 1, fret],
+    dom7: ['x', fret, fret + 2, fret, fret + 2, fret],
+    maj7: ['x', fret, fret + 2, fret + 1, fret + 2, fret],
+    min7: ['x', fret, fret + 2, fret, fret + 1, fret],
+    sus4: ['x', fret, fret + 2, fret + 2, fret + 3, fret],
+    sus2: ['x', fret, fret + 2, fret + 2, fret, fret],
+    power: ['x', fret, fret + 2, fret + 2, 'x', 'x'],
+  };
+  return {
+    label: quality === 'power' ? 'Power A' : 'Cejilla A',
+    frets: shapeMap[quality] || shapeMap.major,
+    fingers: ['', '1', '3', '4', '4', '1'],
+  };
+};
+const shapeSignature = (shape) => JSON.stringify(shape?.frets || []);
+const buildGuitarVariations = (chord = '') => {
+  const parsed = parseChordSymbol(chord);
+  if (!parsed) return [];
+  const candidates = [];
+  const openShape = OPEN_GUITAR_SHAPES[getChordOpenShapeKey(parsed)];
+  if (openShape) candidates.push(openShape);
+  candidates.push(buildEBarreShape(parsed), buildABarreShape(parsed));
+  const seen = new Set();
+  return candidates
+    .filter(Boolean)
+    .filter((shape) => {
+      const signature = shapeSignature(shape);
+      if (seen.has(signature)) return false;
+      seen.add(signature);
+      return true;
+    })
+    .slice(0, 4);
+};
+const getChordNoteNames = (chord = '') => {
+  const parsed = parseChordSymbol(chord);
+  if (!parsed) return [];
+  const rootIndex = SHARP_NOTES.indexOf(parsed.root);
+  if (rootIndex < 0) return [];
+  const intervals = CHORD_QUALITY_INTERVALS[getChordQuality(parsed.suffix)] || CHORD_QUALITY_INTERVALS.major;
+  return intervals.map((interval) => SHARP_NOTES[(rootIndex + interval) % 12]);
+};
+const buildPianoVariations = (chord = '') => {
+  const notes = getChordNoteNames(chord);
+  if (notes.length === 0) return [];
+  const rotations = [0, 1, 2].filter((rotation) => rotation < notes.length);
+  return rotations.map((rotation) => ({
+    label: rotation === 0 ? 'Triada' : `Inversión ${rotation}`,
+    notes: [...notes.slice(rotation), ...notes.slice(0, rotation)],
+  }));
+};
+const buildChordLibrary = (chords = []) => {
+  const seen = new Set();
+  return chords
+    .map(normalizeChordSymbol)
+    .filter(Boolean)
+    .filter((chord) => {
+      const parsed = parseChordSymbol(chord);
+      if (!parsed) return false;
+      const key = `${parsed.root}${parsed.suffix}${parsed.bass ? `/${parsed.bass}` : ''}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => {
+      const parsedA = parseChordSymbol(a);
+      const parsedB = parseChordSymbol(b);
+      const rootDelta = SHARP_NOTES.indexOf(parsedA?.root) - SHARP_NOTES.indexOf(parsedB?.root);
+      if (rootDelta !== 0) return rootDelta;
+      return a.localeCompare(b);
+    });
+};
 const normalizeChordRoot = (root = '', accidental = '') => (
   FLAT_TO_SHARP[`${root}${accidental}`] || `${root}${accidental}`
 );
@@ -541,6 +764,369 @@ function ChordOverlayLine({ renderedLine, fontPreset, lineKey }) {
     </div>
   );
 }
+function GuitarChordDiagram({ chord, variation }) {
+  const shape = variation || buildGuitarVariations(chord)[0];
+  if (!shape) return null;
+  const { baseFret, maxVisibleFret, relativeFrets } = normalizeFrets(shape.frets);
+  const width = 164;
+  const height = 150;
+  const left = 24;
+  const right = 140;
+  const top = 30;
+  const fretGap = 20;
+  const stringGap = (right - left) / 5;
+  const fretCount = Math.min(5, Math.max(4, maxVisibleFret));
+  const bottom = top + (fretGap * fretCount);
+  const barreGroups = [];
+  for (let index = 0; index < relativeFrets.length; index += 1) {
+    const fret = Number(relativeFrets[index]);
+    if (!Number.isFinite(fret) || fret <= 0 || String(shape.fingers?.[index] || '') !== '1') continue;
+    let endIndex = index;
+    while (
+      endIndex + 1 < relativeFrets.length &&
+      Number(relativeFrets[endIndex + 1]) === fret &&
+      String(shape.fingers?.[endIndex + 1] || '') === '1'
+    ) {
+      endIndex += 1;
+    }
+    if (endIndex - index >= 2) {
+      barreGroups.push({ startIndex: index, endIndex, fret });
+      index = endIndex;
+    }
+  }
+  const barreStringIndexes = new Set(
+    barreGroups.flatMap((group) => (
+      Array.from({ length: group.endIndex - group.startIndex + 1 }, (_, offset) => group.startIndex + offset)
+    )),
+  );
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" role="img" aria-label={`Diagrama de guitarra ${chord}`}>
+      {baseFret > 0 && (
+        <text x="8" y={top + 14} className="fill-zinc-500 text-[10px] font-black dark:fill-zinc-400">
+          {baseFret}
+        </text>
+      )}
+      {Array.from({ length: 6 }).map((_, stringIndex) => {
+        const x = left + (stringGap * stringIndex);
+        return (
+          <line
+            key={`string-${stringIndex}`}
+            x1={x}
+            y1={top}
+            x2={x}
+            y2={bottom}
+            stroke="currentColor"
+            strokeWidth={stringIndex === 0 || stringIndex === 5 ? 1.35 : 1}
+            className="text-zinc-400 dark:text-zinc-500"
+          />
+        );
+      })}
+      {Array.from({ length: fretCount + 1 }).map((_, fretIndex) => {
+        const y = top + (fretGap * fretIndex);
+        return (
+          <line
+            key={`fret-${fretIndex}`}
+            x1={left}
+            y1={y}
+            x2={right}
+            y2={y}
+            stroke="currentColor"
+            strokeWidth={fretIndex === 0 && baseFret === 0 ? 4 : 1}
+            className="text-zinc-500 dark:text-zinc-400"
+          />
+        );
+      })}
+      {barreGroups.map((group) => {
+        const y = top + ((group.fret - 0.5) * fretGap);
+        const startX = left + (stringGap * group.startIndex);
+        const endX = left + (stringGap * group.endIndex);
+        return (
+          <g key={`barre-${group.startIndex}-${group.endIndex}-${group.fret}`}>
+            <line
+              x1={startX}
+              y1={y}
+              x2={endX}
+              y2={y}
+              stroke="currentColor"
+              strokeWidth="17"
+              strokeLinecap="round"
+              className="text-brand"
+            />
+            <text x={startX - 0.5} y={y + 3.5} textAnchor="middle" className="fill-white text-[9px] font-black">
+              1
+            </text>
+          </g>
+        );
+      })}
+      {relativeFrets.map((fret, stringIndex) => {
+        const x = left + (stringGap * stringIndex);
+        if (String(fret).toLowerCase() === 'x') {
+          return (
+            <text key={`muted-${stringIndex}`} x={x} y={18} textAnchor="middle" className="fill-zinc-400 text-[13px] font-black dark:fill-zinc-500">
+              x
+            </text>
+          );
+        }
+        if (Number(fret) === 0) {
+          return (
+            <circle
+              key={`open-${stringIndex}`}
+              cx={x}
+              cy={14}
+              r="4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              className="text-zinc-500 dark:text-zinc-400"
+            />
+          );
+        }
+        const fretNumber = Number(fret);
+        if (!Number.isFinite(fretNumber)) return null;
+        if (barreStringIndexes.has(stringIndex)) return null;
+        const y = top + ((fretNumber - 0.5) * fretGap);
+        return (
+          <g key={`dot-${stringIndex}-${fretNumber}`}>
+            <circle cx={x} cy={y} r="8.5" className="fill-brand" />
+            {shape.fingers?.[stringIndex] && (
+              <text x={x} y={y + 3.5} textAnchor="middle" className="fill-white text-[9px] font-black">
+                {shape.fingers[stringIndex]}
+              </text>
+            )}
+          </g>
+        );
+      })}
+      {GUITAR_TUNING.map((label, stringIndex) => (
+        <text
+          key={`tuning-${stringIndex}`}
+          x={left + (stringGap * stringIndex)}
+          y={bottom + 18}
+          textAnchor="middle"
+          className="fill-zinc-400 text-[9px] font-bold dark:fill-zinc-500"
+        >
+          {label}
+        </text>
+      ))}
+    </svg>
+  );
+}
+
+function PianoChordDiagram({ chord, variation }) {
+  const activeNotes = new Set((variation?.notes || getChordNoteNames(chord)).map((note) => normalizeKeyToAmerican(note)));
+  const whiteKeyWidth = 24;
+  const whiteKeyHeight = 86;
+  const startOctave = 3;
+  const whiteKeys = Array.from({ length: 14 }).map((_, index) => {
+    const note = PIANO_WHITE_NOTES[index % PIANO_WHITE_NOTES.length];
+    const octave = startOctave + Math.floor(index / PIANO_WHITE_NOTES.length);
+    return { note, octave, x: index * whiteKeyWidth };
+  });
+  const blackKeys = whiteKeys
+    .map((key, index) => {
+      if (!['C', 'D', 'F', 'G', 'A'].includes(key.note)) return null;
+      return {
+        note: `${key.note}#`,
+        octave: key.octave,
+        x: ((index + 1) * whiteKeyWidth) - 7,
+      };
+    })
+    .filter(Boolean);
+  const width = whiteKeys.length * whiteKeyWidth;
+
+  return (
+    <svg viewBox={`0 0 ${width} 112`} className="h-auto w-full" role="img" aria-label={`Teclado de piano ${chord}`}>
+      <rect x="0" y="0" width={width} height={whiteKeyHeight} rx="9" className="fill-zinc-100 dark:fill-zinc-800" />
+      {whiteKeys.map((key) => {
+        const active = activeNotes.has(key.note);
+        return (
+          <g key={`white-${key.note}-${key.octave}-${key.x}`}>
+            <rect
+              x={key.x + 1}
+              y="1"
+              width={whiteKeyWidth - 2}
+              height={whiteKeyHeight}
+              rx="7"
+              className={active ? 'fill-brand' : 'fill-white dark:fill-zinc-900'}
+              stroke="currentColor"
+              strokeWidth="1"
+            />
+            {active && (
+              <text x={key.x + (whiteKeyWidth / 2)} y="74" textAnchor="middle" className="fill-white text-[9px] font-black">
+                {formatChordAccidentals(key.note)}
+              </text>
+            )}
+          </g>
+        );
+      })}
+      {blackKeys.map((key) => {
+        const active = activeNotes.has(key.note);
+        return (
+          <g key={`black-${key.note}-${key.octave}-${key.x}`}>
+            <rect
+              x={key.x}
+              y="0"
+              width="14"
+              height="54"
+              rx="5"
+              className={active ? 'fill-emerald-500' : 'fill-zinc-950 dark:fill-zinc-200'}
+            />
+            {active && (
+              <text x={key.x + 7} y="44" textAnchor="middle" className="fill-white text-[7px] font-black">
+                {formatChordAccidentals(key.note)}
+              </text>
+            )}
+          </g>
+        );
+      })}
+      <text x={width / 2} y="105" textAnchor="middle" className="fill-zinc-500 text-[10px] font-black dark:fill-zinc-400">
+        {[...activeNotes].map(formatChordAccidentals).join(' · ')}
+      </text>
+    </svg>
+  );
+}
+
+function ChordVariationStepper({ chord, instrument, variations, activeIndex, onChange }) {
+  if (!Array.isArray(variations) || variations.length === 0) return null;
+  const activeVariation = variations[activeIndex] || variations[0];
+  const moveVariation = (direction) => {
+    if (variations.length <= 1) return;
+    const nextIndex = (activeIndex + direction + variations.length) % variations.length;
+    onChange(`${instrument}:${chord}`, nextIndex);
+  };
+
+  return (
+    <div className="mt-2 grid grid-cols-[2.35rem_minmax(0,1fr)_2.35rem] items-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => moveVariation(-1)}
+        disabled={variations.length <= 1}
+        className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-600 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-45 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        aria-label={`Variación anterior de ${chord}`}
+      >
+        <ChevronLeft className="h-4.5 w-4.5" />
+      </button>
+      <p className="truncate text-center text-sm font-black text-zinc-700 dark:text-zinc-200">
+        {activeVariation?.label || 'Variación'}
+      </p>
+      <button
+        type="button"
+        onClick={() => moveVariation(1)}
+        disabled={variations.length <= 1}
+        className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-600 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-45 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        aria-label={`Siguiente variación de ${chord}`}
+      >
+        <ChevronRight className="h-4.5 w-4.5" />
+      </button>
+    </div>
+  );
+}
+
+function ChordLibraryModal({
+  chords,
+  instrument,
+  onInstrumentChange,
+  variationByChord,
+  onVariationChange,
+  onClose,
+}) {
+  return (
+    <div className="fixed inset-0 z-[90] flex items-end justify-center bg-zinc-950/48 px-2 pt-10 backdrop-blur-sm sm:items-center sm:px-4" role="dialog" aria-modal="true" aria-label="Acordes de la cancion">
+      <div className="flex max-h-[min(92vh,48rem)] w-full max-w-5xl flex-col overflow-hidden rounded-t-[1.65rem] border border-zinc-200/90 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.26)] dark:border-white/10 dark:bg-zinc-950 sm:rounded-[1.65rem]">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-200/80 px-4 py-4 dark:border-white/10 sm:px-5">
+          <div className="min-w-0">
+            <p className="text-[0.68rem] font-black uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+              Ver acordes
+            </p>
+            <h3 className="mt-1 truncate text-xl font-black tracking-tight text-zinc-950 dark:text-zinc-50">
+              Acordes de la canción
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            aria-label="Cerrar acordes"
+          >
+            <X className="h-4.5 w-4.5" />
+          </button>
+        </div>
+        <div className="shrink-0 border-b border-zinc-200/80 px-4 py-3 dark:border-white/10 sm:px-5">
+          <div className="grid grid-cols-2 gap-1 rounded-2xl bg-zinc-100 p-1 dark:bg-zinc-900">
+            {[
+              ['guitar', 'Guitarra'],
+              ['piano', 'Piano'],
+            ].map(([key, label]) => {
+              const active = instrument === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => onInstrumentChange(key)}
+                  className={`rounded-xl px-3 py-2.5 text-sm font-black transition-all ${active
+                    ? 'bg-white text-zinc-950 shadow-sm dark:bg-zinc-800 dark:text-zinc-50'
+                    : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
+                    }`}
+                  aria-pressed={active}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 [scrollbar-width:none] dark:bg-zinc-950 sm:px-5 sm:py-5 [&::-webkit-scrollbar]:hidden">
+          {chords.length > 0 ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {chords.map((chord) => {
+                const variations = instrument === 'guitar' ? buildGuitarVariations(chord) : buildPianoVariations(chord);
+                const activeIndex = Math.min(
+                  Math.max(0, variationByChord[`${instrument}:${chord}`] || 0),
+                  Math.max(variations.length - 1, 0),
+                );
+                const activeVariation = variations[activeIndex] || variations[0] || null;
+                return (
+                  <article
+                    key={`${instrument}-${chord}`}
+                    className="flex min-h-[14.4rem] flex-col rounded-[1.15rem] border border-zinc-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-zinc-900/90"
+                  >
+                    <div className="mb-2 flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h4 className="text-2xl font-black leading-none tracking-tight text-zinc-950 dark:text-zinc-50">
+                          <ChordDisplay chord={chord} />
+                        </h4>
+                      </div>
+                    </div>
+                    <div className="flex min-h-[7.4rem] flex-1 items-center justify-center rounded-[0.9rem] bg-zinc-50 px-2 py-2 text-zinc-800 dark:bg-zinc-950/70 dark:text-zinc-200">
+                      {instrument === 'guitar' ? (
+                        <GuitarChordDiagram chord={chord} variation={activeVariation} />
+                      ) : (
+                        <PianoChordDiagram chord={chord} variation={activeVariation} />
+                      )}
+                    </div>
+                    <ChordVariationStepper
+                      chord={chord}
+                      instrument={instrument}
+                      variations={variations}
+                      activeIndex={activeIndex}
+                      onChange={onVariationChange}
+                    />
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-[1.2rem] border border-dashed border-zinc-300 bg-zinc-50 px-4 py-8 text-center dark:border-white/10 dark:bg-zinc-900">
+              <p className="font-bold text-zinc-600 dark:text-zinc-300">
+                Esta canción no tiene acordes detectables.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 export default function ModoEnsayoCompacto({
   song,
   contextTitle = '',
@@ -563,6 +1149,9 @@ export default function ModoEnsayoCompacto({
   const [isLandscapeCompact, setIsLandscapeCompact] = useState(false);
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const [showPlaybackOptions, setShowPlaybackOptions] = useState(false);
+  const [showChordLibrary, setShowChordLibrary] = useState(false);
+  const [chordLibraryInstrument, setChordLibraryInstrument] = useState('guitar');
+  const [chordVariationByKey, setChordVariationByKey] = useState({});
   const [selectedPlaybackSourceId, setSelectedPlaybackSourceId] = useState('original');
   const [syncRole, setSyncRole] = useState(globalSyncMode ? 'musico' : 'local');
   const [remotePayload, setRemotePayload] = useState(null);
@@ -660,6 +1249,9 @@ export default function ModoEnsayoCompacto({
         : [],
     }))
   ), [currentSong?.sections, displayTransposeSteps]);
+  const currentChordLibrary = useMemo(() => (
+    buildChordLibrary(extractChordTokensFromSections(currentSections))
+  ), [currentSections]);
   const sectionMapItems = useMemo(() => {
     const kindOccurrences = new Map();
     return currentSections.map((section, index) => {
@@ -1144,6 +1736,8 @@ export default function ModoEnsayoCompacto({
     setLoopState(0);
     setShowOptionsMenu(false);
     setShowPlaybackOptions(false);
+    setShowChordLibrary(false);
+    setChordVariationByKey({});
     setSelectedPlaybackSourceId('original');
     setHeaderHidden(isLandscapeCompact);
     stopMetronome();
@@ -1184,6 +1778,16 @@ export default function ModoEnsayoCompacto({
       window.removeEventListener('touchstart', handlePointerDown);
     };
   }, [showPlaybackOptions]);
+  useEffect(() => {
+    if (!showChordLibrary || typeof window === 'undefined') return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setShowChordLibrary(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showChordLibrary]);
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
     const mediaQuery = window.matchMedia('(orientation: landscape) and (max-height: 540px)');
@@ -1784,6 +2388,28 @@ export default function ModoEnsayoCompacto({
                     </div>
                   )}
                   <div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowOptionsMenu(false);
+                        setChordLibraryInstrument('guitar');
+                        setShowChordLibrary(true);
+                      }}
+                      disabled={currentChordLibrary.length === 0}
+                      className={`flex w-full items-center justify-between gap-3 rounded-[1rem] border px-4 py-4.5 text-left transition-all ${currentChordLibrary.length > 0
+                        ? 'border-zinc-200 bg-white text-zinc-900 hover:border-brand/35 hover:bg-zinc-50 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800'
+                        : 'cursor-not-allowed border-zinc-200/70 bg-zinc-50 text-zinc-400 dark:border-white/10 dark:bg-zinc-900/60 dark:text-zinc-500'
+                        }`}
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-base font-black leading-tight">
+                          Ver acordes
+                        </span>
+                      </span>
+                      <ChevronRight className="h-5 w-5 shrink-0 text-zinc-400 dark:text-zinc-500" />
+                    </button>
+                  </div>
+                  <div>
                     <p className="mb-2 px-1 text-[0.72rem] font-black uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
                       Tamaño de texto
                     </p>
@@ -2171,6 +2797,19 @@ export default function ModoEnsayoCompacto({
           </div>
         </div>
       </div>
+      {showChordLibrary && (
+        <ChordLibraryModal
+          chords={currentChordLibrary}
+          instrument={chordLibraryInstrument}
+          onInstrumentChange={setChordLibraryInstrument}
+          variationByChord={chordVariationByKey}
+          onVariationChange={(key, index) => setChordVariationByKey((current) => ({
+            ...current,
+            [key]: index,
+          }))}
+          onClose={() => setShowChordLibrary(false)}
+        />
+      )}
       <style>{`
         .ensayo-seek::-webkit-slider-runnable-track {
           height: 3px;
