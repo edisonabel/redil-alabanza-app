@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Clock3, ExternalLink, GripVertical, ListMusic, Mic2, Play, Plus, RadioReceiver, X, Zap } from 'lucide-react';
+import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Clock3, ExternalLink, GripVertical, ListMusic, Loader2, Mic2, Play, Plus, Printer, RadioReceiver, X, Zap } from 'lucide-react';
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
 import EnsayoPersonalView from './EnsayoPersonalView.jsx';
 import { supabase } from '../../lib/supabase';
@@ -29,6 +29,10 @@ const LATIN_TO_AMERICAN = {
 };
 
 const FLAT_TO_SHARP = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
+const CHROMATIC_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const SETLIST_CAPO_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7];
+const CHORD_ROOT_PATTERN = /^([A-G][#b]?)(.*)$/;
+const BASS_NOTE_PATTERN = /\/([A-G][#b]?)/g;
 
 const normalizeKeyToAmerican = (rawKey = '') => {
   const source = String(rawKey || '').trim();
@@ -49,6 +53,48 @@ const normalizeKeyToAmerican = (rawKey = '') => {
 
   return FLAT_TO_SHARP[rootMatch[1]] || rootMatch[1];
 };
+
+const shiftNote = (rawNote = '', semitones = 0) => {
+  const normalized = FLAT_TO_SHARP[String(rawNote || '').trim()] || String(rawNote || '').trim();
+  const currentIndex = CHROMATIC_NOTES.indexOf(normalized);
+  if (currentIndex < 0) return rawNote;
+  return CHROMATIC_NOTES[(currentIndex + semitones + 1200) % 12];
+};
+
+const transposeChordSymbol = (rawChord = '', semitones = 0) => {
+  const source = String(rawChord || '');
+  if (!source || semitones === 0) return source;
+
+  const match = source.match(CHORD_ROOT_PATTERN);
+  if (!match) return source;
+
+  const nextRoot = shiftNote(match[1], semitones);
+  const suffix = String(match[2] || '').replace(BASS_NOTE_PATTERN, (_, bassNote) => `/${shiftNote(bassNote, semitones)}`);
+  return `${nextRoot}${suffix}`;
+};
+
+const transposeChordProText = (chordProText = '', semitones = 0) => {
+  const source = String(chordProText || '');
+  if (!source || semitones === 0) return source;
+
+  return source.replace(/\[([^\]]+)\]/g, (fullMatch, chordGroup) => {
+    const parts = String(chordGroup || '').split(/(\s+)/);
+    const transposed = parts.map((part) => (
+      /\s+/.test(part) ? part : transposeChordSymbol(part, semitones)
+    )).join('');
+    return `[${transposed}]`;
+  });
+};
+
+const buildSafePdfFileName = (value = 'setlist') => (
+  String(value || 'setlist')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w\s.-]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80) || 'setlist'
+);
 
 const formatDateLabel = (value) => {
   if (!value) return '';
@@ -411,15 +457,24 @@ export default function EnsayoHub({
   ));
   const [isSavingVoiceAssignments, setIsSavingVoiceAssignments] = useState(false);
   const [voiceAssignmentFeedback, setVoiceAssignmentFeedback] = useState(null);
+  const [showSetlistPrintModal, setShowSetlistPrintModal] = useState(false);
+  const [setlistCapos, setSetlistCapos] = useState({});
+  const [setlistRenderMode, setSetlistRenderMode] = useState('chords-lyrics');
+  const [isGeneratingSetlistPdf, setIsGeneratingSetlistPdf] = useState(false);
+  const [setlistPrintError, setSetlistPrintError] = useState('');
 
   const queueSongsRef = useRef([]);
   const queueIndexRef = useRef(-1);
   const queueActiveRef = useRef(false);
   const voiceAssignmentFeedbackTimeoutRef = useRef(null);
+  const setlistPdfObjectUrlsRef = useRef([]);
   const [insertAfterIndex, setInsertAfterIndex] = useState(-1);
 
   const playableSongs = useMemo(() => (
     songs.filter((song) => typeof song?.mp3 === 'string' && song.mp3.trim() !== '')
+  ), [songs]);
+  const printableSongs = useMemo(() => (
+    songs.filter((song) => !song?.isPrayer && typeof song?.chordpro === 'string' && song.chordpro.trim() !== '')
   ), [songs]);
   const voiceMemberOptions = useMemo(() => (
     (Array.isArray(rosterMembers) ? rosterMembers : [])
@@ -449,6 +504,17 @@ export default function EnsayoHub({
         window.clearTimeout(voiceAssignmentFeedbackTimeoutRef.current);
       }
     };
+  }, []);
+
+  useEffect(() => () => {
+    setlistPdfObjectUrlsRef.current.forEach((url) => {
+      try {
+        window.URL.revokeObjectURL(url);
+      } catch {
+        // Ignore stale browser object URLs.
+      }
+    });
+    setlistPdfObjectUrlsRef.current = [];
   }, []);
 
   const showVoiceAssignmentFeedback = useCallback((type, message) => {
@@ -796,6 +862,117 @@ export default function EnsayoHub({
     playQueueItem(Math.max(0, Math.min(startIndex, playableSongs.length - 1)));
   }, [playQueueItem, playableSongs, stopMetronome]);
 
+  const serviceDate = formatDateLabel(eventMeta?.fecha_hora);
+  const serviceHour = formatHourLabel(eventMeta?.fecha_hora);
+  const serviceDuration = formatServiceDuration(eventMeta?.fecha_hora, eventMeta?.hora_fin);
+  const displayContextTitle = String(eventMeta?.display_theme || contextTitle || '').trim() || 'Modo Ensayo';
+  const displayContextPreacher = String(eventMeta?.display_preacher || eventMeta?.predicador || '').trim();
+
+  const openSetlistPrintModal = useCallback(() => {
+    const nextCapos = {};
+    printableSongs.forEach((song) => {
+      const songId = String(song?.id || '');
+      nextCapos[songId] = Number.isFinite(Number(setlistCapos[songId]))
+        ? Math.max(0, Math.min(7, Number(setlistCapos[songId])))
+        : 0;
+    });
+    setSetlistCapos(nextCapos);
+    setSetlistPrintError('');
+    setShowSetlistPrintModal(true);
+  }, [printableSongs, setlistCapos]);
+
+  const updateSetlistCapo = useCallback((songId, capo) => {
+    setSetlistCapos((current) => ({
+      ...current,
+      [String(songId || '')]: capo,
+    }));
+  }, []);
+
+  const generateSetlistPdf = useCallback(async () => {
+    if (isGeneratingSetlistPdf || printableSongs.length === 0) return;
+
+    setIsGeneratingSetlistPdf(true);
+    setSetlistPrintError('');
+
+    let previewWindow = null;
+    if (typeof window !== 'undefined') {
+      previewWindow = window.open('', 'redil-setlist-pdf-v2');
+      previewWindow?.document?.write?.('<!doctype html><title>Generando PDF</title><body style="font-family:system-ui;margin:32px;color:#18181b">Generando PDF del setlist...</body>');
+    }
+
+    try {
+      const subtitle = [serviceDate, serviceHour].filter(Boolean).join(' · ');
+      const fileName = `${buildSafePdfFileName(displayContextTitle)} - setlist V2.pdf`;
+      const payload = {
+        title: displayContextTitle || 'Setlist de ensayo',
+        subtitle,
+        fileName,
+        songs: printableSongs.map((song, index) => {
+          const songId = String(song?.id || `${index}`);
+          const capo = Math.max(0, Math.min(7, Number(setlistCapos[songId] || 0)));
+          const baseTone = normalizeKeyToAmerican(song?.originalKey || song?.key || '');
+          const shapeTone = capo > 0 && baseTone !== '-' ? transposeChordSymbol(baseTone, -capo) : '';
+          const bpmValue = Number.isFinite(Number(song?.bpm)) && Number(song.bpm) > 0
+            ? String(Math.round(Number(song.bpm)))
+            : '';
+
+          return {
+            id: songId,
+            order: index + 1,
+            title: song?.title || `Cancion ${index + 1}`,
+            artist: song?.artist || '',
+            chordProText: transposeChordProText(song?.chordpro || '', -capo),
+            metadata: {
+              tone: baseTone === '-' ? '' : baseTone,
+              capo: capo > 0 ? `${capo}${shapeTone ? ` (${shapeTone})` : ''}` : '0',
+              tempo: bpmValue,
+              time: '',
+            },
+            sheetOptions: {
+              renderMode: setlistRenderMode,
+              columnCount: 2,
+              density: 'condensed',
+              styleMode: 'condensado',
+              showSongMap: true,
+              showSectionDividers: true,
+            },
+            fileName: `${buildSafePdfFileName(song?.title || `cancion-${index + 1}`)}.pdf`,
+          };
+        }),
+      };
+
+      const response = await fetch('/api/chordpro-print-setlist-pdf-v2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payload }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(errorText || 'No se pudo generar el PDF del setlist.');
+      }
+
+      const pdfBlob = await response.blob();
+      const pdfUrl = window.URL.createObjectURL(pdfBlob);
+      setlistPdfObjectUrlsRef.current.push(pdfUrl);
+
+      if (previewWindow && !previewWindow.closed) {
+        previewWindow.location.href = pdfUrl;
+      } else {
+        const openedWindow = window.open(pdfUrl, 'redil-setlist-pdf-v2');
+        if (!openedWindow) window.location.href = pdfUrl;
+      }
+    } catch (error) {
+      console.error('EnsayoHub setlist PDF error:', error);
+      setSetlistPrintError(error?.message || 'No se pudo generar el PDF del setlist.');
+      if (previewWindow && !previewWindow.closed) {
+        previewWindow.close();
+      }
+    } finally {
+      setIsGeneratingSetlistPdf(false);
+    }
+  }, [displayContextTitle, isGeneratingSetlistPdf, printableSongs, serviceDate, serviceHour, setlistCapos, setlistRenderMode]);
+
   const openCompactSong = useCallback((song) => {
     if (!song) return;
     stopMetronome();
@@ -915,11 +1092,6 @@ export default function EnsayoHub({
     );
   }
 
-  const serviceDate = formatDateLabel(eventMeta?.fecha_hora);
-  const serviceHour = formatHourLabel(eventMeta?.fecha_hora);
-  const serviceDuration = formatServiceDuration(eventMeta?.fecha_hora, eventMeta?.hora_fin);
-  const displayContextTitle = String(eventMeta?.display_theme || contextTitle || '').trim() || 'Modo Ensayo';
-  const displayContextPreacher = String(eventMeta?.display_preacher || eventMeta?.predicador || '').trim();
   const hasMonitorUrl = typeof monitorUrl === 'string' && monitorUrl.trim() !== '';
 
   return (
@@ -991,9 +1163,9 @@ export default function EnsayoHub({
       <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-28 pt-4">
         <div className="mx-auto max-w-5xl">
           <div className="overflow-hidden rounded-[2rem] border border-zinc-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-zinc-950/88 dark:shadow-[0_24px_80px_rgba(0,0,0,0.4)]">
-            {playableSongs.length > 0 && (
+            {(playableSongs.length > 0 || printableSongs.length > 0) && (
               <section className="border-b border-zinc-200/90 bg-[linear-gradient(180deg,_rgba(248,250,252,0.92),_rgba(255,255,255,0.96))] px-4 py-4 dark:border-white/10 dark:bg-[linear-gradient(180deg,_rgba(15,23,42,0.55),_rgba(9,9,11,0.92))]">
-                <div className="grid grid-cols-[minmax(0,1fr)_minmax(148px,176px)] items-center gap-3 sm:gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
+                <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-4">
                   <div className="min-w-0">
                     <p className="text-[10px] font-black uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
                       Reproducir setlist
@@ -1008,7 +1180,7 @@ export default function EnsayoHub({
                     )}
                   </div>
 
-                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 lg:justify-end">
+                  <div className="flex min-w-0 flex-wrap items-center justify-start gap-2 sm:justify-end">
                     {queueState.active && (
                       <button
                         type="button"
@@ -1020,8 +1192,19 @@ export default function EnsayoHub({
                     )}
                     <button
                       type="button"
+                      onClick={openSetlistPrintModal}
+                      disabled={printableSongs.length === 0 || isGeneratingSetlistPdf}
+                      className="inline-flex h-11 min-w-[7.25rem] flex-1 items-center justify-center gap-2 rounded-2xl border border-zinc-200 bg-white px-4 text-sm font-black text-zinc-800 shadow-sm transition-all hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800 sm:flex-none"
+                      aria-label="Imprimir setlist PDF V2"
+                    >
+                      <Printer className="h-4 w-4" />
+                      Imprimir
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => startQueue(queueState.active ? queueState.index : 0)}
-                      className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-brand px-4 text-sm font-black text-white shadow-lg shadow-brand/20 transition-all hover:bg-brand/90 hover:shadow-brand/35"
+                      disabled={playableSongs.length === 0}
+                      className="inline-flex h-11 min-w-[9.25rem] flex-1 items-center justify-center gap-2 rounded-2xl bg-brand px-4 text-sm font-black text-white shadow-lg shadow-brand/20 transition-all hover:bg-brand/90 hover:shadow-brand/35 disabled:cursor-not-allowed disabled:opacity-40 sm:flex-none"
                     >
                       <Play className="ml-0.5 h-4 w-4" />
                       {queueState.active ? 'Reiniciar lista' : 'Reproducir todo'}
@@ -1273,6 +1456,159 @@ export default function EnsayoHub({
           </div>
         </div>
       </main>
+
+      {showSetlistPrintModal && (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-zinc-950/55 px-0 pt-10 backdrop-blur-sm sm:items-center sm:px-4">
+          <div className="flex max-h-[min(88dvh,760px)] w-full max-w-2xl flex-col overflow-hidden rounded-t-[2rem] border border-zinc-200 bg-white shadow-[0_32px_100px_rgba(15,23,42,0.28)] dark:border-white/10 dark:bg-zinc-950 sm:rounded-[2rem]">
+            <div className="flex items-start justify-between gap-3 border-b border-zinc-200/90 px-4 py-4 dark:border-white/10 sm:px-5">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
+                  PDF setlist V2
+                </p>
+                <h2 className="mt-1 truncate text-xl font-black tracking-tight text-zinc-950 dark:text-zinc-50">
+                  Imprimir ensayo
+                </h2>
+                <p className="mt-1 text-sm font-semibold text-zinc-500 dark:text-zinc-400">
+                  {printableSongs.length} canciones
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isGeneratingSetlistPdf) setShowSetlistPrintModal(false);
+                }}
+                disabled={isGeneratingSetlistPdf}
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-600 shadow-sm transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                aria-label="Cerrar impresión de setlist"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 sm:px-5">
+              <div className="mb-3 rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSetlistRenderMode('chords-lyrics')}
+                    className={`inline-flex h-11 items-center justify-center rounded-xl px-3 text-sm font-black transition-all ${
+                      setlistRenderMode === 'chords-lyrics'
+                        ? 'bg-brand text-white shadow-lg shadow-brand/20'
+                        : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-white/5 dark:text-zinc-300 dark:hover:bg-white/10'
+                    }`}
+                    aria-pressed={setlistRenderMode === 'chords-lyrics'}
+                  >
+                    Letras y acordes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSetlistRenderMode('lyrics-only')}
+                    className={`inline-flex h-11 items-center justify-center rounded-xl px-3 text-sm font-black transition-all ${
+                      setlistRenderMode === 'lyrics-only'
+                        ? 'bg-brand text-white shadow-lg shadow-brand/20'
+                        : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-white/5 dark:text-zinc-300 dark:hover:bg-white/10'
+                    }`}
+                    aria-pressed={setlistRenderMode === 'lyrics-only'}
+                  >
+                    Solo letras
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {printableSongs.map((song, index) => {
+                  const songId = String(song?.id || `${index}`);
+                  const currentCapo = Math.max(0, Math.min(7, Number(setlistCapos[songId] || 0)));
+                  const baseTone = normalizeKeyToAmerican(song?.originalKey || song?.key || '');
+                  const shapeTone = currentCapo > 0 && baseTone !== '-' ? transposeChordSymbol(baseTone, -currentCapo) : '';
+                  const showCapoControls = setlistRenderMode === 'chords-lyrics';
+
+                  return (
+                    <section
+                      key={songId}
+                      className="rounded-2xl border border-zinc-200 bg-zinc-50/70 p-3 dark:border-white/10 dark:bg-white/[0.03]"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-zinc-400 dark:text-zinc-500">
+                            {String(index + 1).padStart(2, '0')}
+                          </p>
+                          <h3 className="mt-1 truncate text-base font-black text-zinc-950 dark:text-zinc-50">
+                            {song?.title || `Cancion ${index + 1}`}
+                          </h3>
+                          <p className="mt-0.5 truncate text-sm font-semibold text-zinc-500 dark:text-zinc-400">
+                            {baseTone !== '-' ? `Tono ${baseTone}` : 'Sin tono'}
+                            {shapeTone ? ` · Figura ${shapeTone}` : ''}
+                          </p>
+                        </div>
+                        {showCapoControls && (
+                          <span className="inline-flex h-8 shrink-0 items-center rounded-full bg-white px-3 text-xs font-black text-zinc-600 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:text-zinc-300 dark:ring-white/10">
+                            Capo {currentCapo}
+                          </span>
+                        )}
+                      </div>
+
+                      {showCapoControls && (
+                        <div className="mt-3 grid grid-cols-4 gap-1.5 sm:grid-cols-8">
+                          {SETLIST_CAPO_OPTIONS.map((capo) => {
+                            const isSelected = currentCapo === capo;
+                            return (
+                              <button
+                                key={`${songId}-${capo}`}
+                                type="button"
+                                onClick={() => updateSetlistCapo(songId, capo)}
+                                className={`h-10 rounded-xl text-sm font-black transition-all ${
+                                  isSelected
+                                    ? 'bg-brand text-white shadow-lg shadow-brand/20'
+                                    : 'border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                                }`}
+                                aria-pressed={isSelected}
+                              >
+                                {capo}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="border-t border-zinc-200/90 bg-white px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-3 dark:border-white/10 dark:bg-zinc-950 sm:px-5">
+              {setlistPrintError && (
+                <p className="mb-3 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
+                  {setlistPrintError}
+                </p>
+              )}
+              <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-2 sm:flex sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowSetlistPrintModal(false)}
+                  disabled={isGeneratingSetlistPdf}
+                  className="inline-flex h-11 items-center justify-center rounded-2xl border border-zinc-200 bg-white px-4 text-sm font-black text-zinc-700 shadow-sm transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={generateSetlistPdf}
+                  disabled={isGeneratingSetlistPdf || printableSongs.length === 0}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-brand px-4 text-sm font-black text-white shadow-lg shadow-brand/25 transition-all hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {isGeneratingSetlistPdf ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Printer className="h-4 w-4" />
+                  )}
+                  {isGeneratingSetlistPdf ? 'Generando' : 'Generar PDF'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="ensayo-hub-queuebar fixed inset-x-0 bottom-0 z-30 border-t border-zinc-200 bg-white/96 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/96">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4">

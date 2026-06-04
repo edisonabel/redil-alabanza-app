@@ -1,0 +1,126 @@
+---
+import "../../styles/global.css";
+import ChordProSetlistPdfDocument from "../../components/react/ChordProSetlistPdfDocument";
+import { readChordProSetlistPdfPayloadToken } from "../../lib/chordproSetlistPdfPayloadStore";
+
+export const prerender = false;
+
+const token = Astro.url.searchParams.get("token")?.trim() || "";
+const payload = token ? await readChordProSetlistPdfPayloadToken(token) : null;
+
+if (!payload) {
+  Astro.response.status = 404;
+}
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=816, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>{payload?.title ? `${payload.title} PDF V2` : "Setlist PDF V2"}</title>
+  </head>
+  <body>
+    {
+      payload ? (
+        <ChordProSetlistPdfDocument client:load payload={payload} />
+      ) : (
+        <div class="pdf-error-state">
+          <h1>No pudimos abrir este setlist</h1>
+          <p>Vuelve a intentarlo desde modo ensayo.</p>
+        </div>
+      )
+    }
+  </body>
+</html>
+
+<style is:global>
+  @page {
+    size: 8.5in 11in;
+    margin: 0;
+  }
+
+  @font-face {
+    font-family: "adineue";
+    src: url("/fonts/redil/adineuePRO-Light.woff2") format("woff2");
+    font-weight: 300;
+    font-style: normal;
+    font-display: block;
+  }
+
+  @font-face {
+    font-family: "adineue";
+    src: url("/fonts/redil/adineuePRO-Regular.woff2") format("woff2");
+    font-weight: 400;
+    font-style: normal;
+    font-display: block;
+  }
+
+  @font-face {
+    font-family: "adineue";
+    src: url("/fonts/redil/adineuePRO-Bold.woff2") format("woff2");
+    font-weight: 700;
+    font-style: normal;
+    font-display: block;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    width: 8.5in;
+    min-width: 8.5in;
+    min-height: 11in;
+    background: #ffffff;
+    color: #000000;
+    font-family: "adineue", "Segoe UI", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  astro-dev-toolbar,
+  astro-dev-toolbar-window,
+  astro-dev-toolbar-button,
+  [data-astro-dev-toolbar] {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+
+  #chordpro-setlist-pdf-root,
+  .chordpro-setlist-pdf-page {
+    width: 8.5in;
+    min-width: 8.5in;
+    max-width: 8.5in;
+  }
+
+  .chordpro-setlist-pdf-page {
+    height: 11in;
+    min-height: 11in;
+    max-height: 11in;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .chordpro-setlist-pdf-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .pdf-error-state {
+    min-height: 100vh;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    text-align: center;
+    font-family: var(--font-ui, "Segoe UI", Arial, sans-serif);
+  }
+</style>
+
