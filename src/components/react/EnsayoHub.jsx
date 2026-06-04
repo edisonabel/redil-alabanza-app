@@ -31,6 +31,7 @@ const LATIN_TO_AMERICAN = {
 const FLAT_TO_SHARP = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
 const CHROMATIC_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const SETLIST_CAPO_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7];
+const SETLIST_TONE_OPTIONS = CHROMATIC_NOTES;
 const CHORD_ROOT_PATTERN = /^([A-G][#b]?)(.*)$/;
 const BASS_NOTE_PATTERN = /\/([A-G][#b]?)/g;
 
@@ -84,6 +85,13 @@ const transposeChordProText = (chordProText = '', semitones = 0) => {
     )).join('');
     return `[${transposed}]`;
   });
+};
+
+const getToneDelta = (fromTone = '', toTone = '') => {
+  const fromIndex = CHROMATIC_NOTES.indexOf(normalizeKeyToAmerican(fromTone));
+  const toIndex = CHROMATIC_NOTES.indexOf(normalizeKeyToAmerican(toTone));
+  if (fromIndex < 0 || toIndex < 0) return 0;
+  return (toIndex - fromIndex + 12) % 12;
 };
 
 const buildSafePdfFileName = (value = 'setlist') => (
@@ -459,6 +467,8 @@ export default function EnsayoHub({
   const [voiceAssignmentFeedback, setVoiceAssignmentFeedback] = useState(null);
   const [showSetlistPrintModal, setShowSetlistPrintModal] = useState(false);
   const [setlistCapos, setSetlistCapos] = useState({});
+  const [setlistTones, setSetlistTones] = useState({});
+  const [setlistPicker, setSetlistPicker] = useState(null);
   const [setlistRenderMode, setSetlistRenderMode] = useState('chords-lyrics');
   const [isGeneratingSetlistPdf, setIsGeneratingSetlistPdf] = useState(false);
   const [setlistPrintError, setSetlistPrintError] = useState('');
@@ -870,22 +880,40 @@ export default function EnsayoHub({
 
   const openSetlistPrintModal = useCallback(() => {
     const nextCapos = {};
+    const nextTones = {};
     printableSongs.forEach((song) => {
       const songId = String(song?.id || '');
+      const baseTone = normalizeKeyToAmerican(song?.originalKey || song?.key || '');
       nextCapos[songId] = Number.isFinite(Number(setlistCapos[songId]))
         ? Math.max(0, Math.min(7, Number(setlistCapos[songId])))
         : 0;
+      nextTones[songId] = CHROMATIC_NOTES.includes(setlistTones[songId])
+        ? setlistTones[songId]
+        : baseTone;
     });
     setSetlistCapos(nextCapos);
+    setSetlistTones(nextTones);
+    setSetlistPicker(null);
     setSetlistPrintError('');
     setShowSetlistPrintModal(true);
-  }, [printableSongs, setlistCapos]);
+  }, [printableSongs, setlistCapos, setlistTones]);
 
   const updateSetlistCapo = useCallback((songId, capo) => {
     setSetlistCapos((current) => ({
       ...current,
       [String(songId || '')]: capo,
     }));
+    setSetlistPicker(null);
+  }, []);
+
+  const updateSetlistTone = useCallback((songId, tone) => {
+    const safeTone = normalizeKeyToAmerican(tone);
+    if (!CHROMATIC_NOTES.includes(safeTone)) return;
+    setSetlistTones((current) => ({
+      ...current,
+      [String(songId || '')]: safeTone,
+    }));
+    setSetlistPicker(null);
   }, []);
 
   const generateSetlistPdf = useCallback(async () => {
@@ -909,9 +937,17 @@ export default function EnsayoHub({
         fileName,
         songs: printableSongs.map((song, index) => {
           const songId = String(song?.id || `${index}`);
-          const capo = Math.max(0, Math.min(7, Number(setlistCapos[songId] || 0)));
+          const capo = setlistRenderMode === 'chords-lyrics'
+            ? Math.max(0, Math.min(7, Number(setlistCapos[songId] || 0)))
+            : 0;
           const baseTone = normalizeKeyToAmerican(song?.originalKey || song?.key || '');
-          const shapeTone = capo > 0 && baseTone !== '-' ? transposeChordSymbol(baseTone, -capo) : '';
+          const selectedTone = CHROMATIC_NOTES.includes(setlistTones[songId])
+            ? setlistTones[songId]
+            : baseTone;
+          const toneDelta = getToneDelta(baseTone, selectedTone);
+          const shapeTone = capo > 0 && selectedTone !== '-'
+            ? transposeChordSymbol(selectedTone, -capo)
+            : '';
           const bpmValue = Number.isFinite(Number(song?.bpm)) && Number(song.bpm) > 0
             ? String(Math.round(Number(song.bpm)))
             : '';
@@ -921,9 +957,9 @@ export default function EnsayoHub({
             order: index + 1,
             title: song?.title || `Cancion ${index + 1}`,
             artist: song?.artist || '',
-            chordProText: transposeChordProText(song?.chordpro || '', -capo),
+            chordProText: transposeChordProText(song?.chordpro || '', toneDelta - capo),
             metadata: {
-              tone: baseTone === '-' ? '' : baseTone,
+              tone: selectedTone === '-' ? '' : selectedTone,
               capo: capo > 0 ? `${capo}${shapeTone ? ` (${shapeTone})` : ''}` : '0',
               tempo: bpmValue,
               time: '',
@@ -971,7 +1007,7 @@ export default function EnsayoHub({
     } finally {
       setIsGeneratingSetlistPdf(false);
     }
-  }, [displayContextTitle, isGeneratingSetlistPdf, printableSongs, serviceDate, serviceHour, setlistCapos, setlistRenderMode]);
+  }, [displayContextTitle, isGeneratingSetlistPdf, printableSongs, serviceDate, serviceHour, setlistCapos, setlistRenderMode, setlistTones]);
 
   const openCompactSong = useCallback((song) => {
     if (!song) return;
@@ -1093,6 +1129,20 @@ export default function EnsayoHub({
   }
 
   const hasMonitorUrl = typeof monitorUrl === 'string' && monitorUrl.trim() !== '';
+  const setlistPickerSong = setlistPicker
+    ? printableSongs.find((song) => String(song?.id || '') === String(setlistPicker.songId || '')) || null
+    : null;
+  const setlistPickerSongId = String(setlistPickerSong?.id || '');
+  const setlistPickerBaseTone = normalizeKeyToAmerican(
+    setlistPickerSong?.originalKey || setlistPickerSong?.key || ''
+  );
+  const setlistPickerSelectedTone = CHROMATIC_NOTES.includes(setlistTones[setlistPickerSongId])
+    ? setlistTones[setlistPickerSongId]
+    : setlistPickerBaseTone;
+  const setlistPickerSelectedCapo = Math.max(
+    0,
+    Math.min(7, Number(setlistCapos[setlistPickerSongId] || 0))
+  );
 
   return (
     <div className="flex h-screen w-full flex-col bg-white text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
@@ -1475,7 +1525,10 @@ export default function EnsayoHub({
               <button
                 type="button"
                 onClick={() => {
-                  if (!isGeneratingSetlistPdf) setShowSetlistPrintModal(false);
+                  if (!isGeneratingSetlistPdf) {
+                    setSetlistPicker(null);
+                    setShowSetlistPrintModal(false);
+                  }
                 }}
                 disabled={isGeneratingSetlistPdf}
                 className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-600 shadow-sm transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -1490,7 +1543,10 @@ export default function EnsayoHub({
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setSetlistRenderMode('chords-lyrics')}
+                    onClick={() => {
+                      setSetlistPicker(null);
+                      setSetlistRenderMode('chords-lyrics');
+                    }}
                     className={`inline-flex h-11 items-center justify-center rounded-xl px-3 text-sm font-black transition-all ${
                       setlistRenderMode === 'chords-lyrics'
                         ? 'bg-brand text-white shadow-lg shadow-brand/20'
@@ -1502,7 +1558,10 @@ export default function EnsayoHub({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setSetlistRenderMode('lyrics-only')}
+                    onClick={() => {
+                      setSetlistPicker(null);
+                      setSetlistRenderMode('lyrics-only');
+                    }}
                     className={`inline-flex h-11 items-center justify-center rounded-xl px-3 text-sm font-black transition-all ${
                       setlistRenderMode === 'lyrics-only'
                         ? 'bg-brand text-white shadow-lg shadow-brand/20'
@@ -1520,7 +1579,8 @@ export default function EnsayoHub({
                   const songId = String(song?.id || `${index}`);
                   const currentCapo = Math.max(0, Math.min(7, Number(setlistCapos[songId] || 0)));
                   const baseTone = normalizeKeyToAmerican(song?.originalKey || song?.key || '');
-                  const shapeTone = currentCapo > 0 && baseTone !== '-' ? transposeChordSymbol(baseTone, -currentCapo) : '';
+                  const selectedTone = CHROMATIC_NOTES.includes(setlistTones[songId]) ? setlistTones[songId] : baseTone;
+                  const shapeTone = currentCapo > 0 && selectedTone !== '-' ? transposeChordSymbol(selectedTone, -currentCapo) : '';
                   const showCapoControls = setlistRenderMode === 'chords-lyrics';
 
                   return (
@@ -1537,39 +1597,30 @@ export default function EnsayoHub({
                             {song?.title || `Cancion ${index + 1}`}
                           </h3>
                           <p className="mt-0.5 truncate text-sm font-semibold text-zinc-500 dark:text-zinc-400">
-                            {baseTone !== '-' ? `Tono ${baseTone}` : 'Sin tono'}
+                            {selectedTone !== '-' ? `Tono ${selectedTone}` : 'Sin tono'}
                             {shapeTone ? ` · Figura ${shapeTone}` : ''}
                           </p>
                         </div>
-                        {showCapoControls && (
-                          <span className="inline-flex h-8 shrink-0 items-center rounded-full bg-white px-3 text-xs font-black text-zinc-600 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:text-zinc-300 dark:ring-white/10">
-                            Capo {currentCapo}
-                          </span>
-                        )}
                       </div>
 
-                      {showCapoControls && (
-                        <div className="mt-3 grid grid-cols-4 gap-1.5 sm:grid-cols-8">
-                          {SETLIST_CAPO_OPTIONS.map((capo) => {
-                            const isSelected = currentCapo === capo;
-                            return (
-                              <button
-                                key={`${songId}-${capo}`}
-                                type="button"
-                                onClick={() => updateSetlistCapo(songId, capo)}
-                                className={`h-10 rounded-xl text-sm font-black transition-all ${
-                                  isSelected
-                                    ? 'bg-brand text-white shadow-lg shadow-brand/20'
-                                    : 'border border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800'
-                                }`}
-                                aria-pressed={isSelected}
-                              >
-                                {capo}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
+                      <div className={`mt-3 grid gap-2 ${showCapoControls ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                        <button
+                          type="button"
+                          onClick={() => setSetlistPicker({ type: 'tone', songId })}
+                          className="inline-flex h-11 min-w-0 items-center justify-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-black text-zinc-700 shadow-sm transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                        >
+                          Tono {selectedTone !== '-' ? selectedTone : '--'}
+                        </button>
+                        {showCapoControls && (
+                          <button
+                            type="button"
+                            onClick={() => setSetlistPicker({ type: 'capo', songId })}
+                            className="inline-flex h-11 min-w-0 items-center justify-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-black text-zinc-700 shadow-sm transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                          >
+                            Capo {currentCapo}
+                          </button>
+                        )}
+                      </div>
                     </section>
                   );
                 })}
@@ -1585,7 +1636,10 @@ export default function EnsayoHub({
               <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-2 sm:flex sm:justify-end">
                 <button
                   type="button"
-                  onClick={() => setShowSetlistPrintModal(false)}
+                  onClick={() => {
+                    setSetlistPicker(null);
+                    setShowSetlistPrintModal(false);
+                  }}
                   disabled={isGeneratingSetlistPdf}
                   className="inline-flex h-11 items-center justify-center rounded-2xl border border-zinc-200 bg-white px-4 text-sm font-black text-zinc-700 shadow-sm transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
                 >
@@ -1605,6 +1659,91 @@ export default function EnsayoHub({
                   {isGeneratingSetlistPdf ? 'Generando' : 'Generar PDF'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSetlistPrintModal && setlistPicker && setlistPickerSong && (
+        <div
+          className="fixed inset-0 z-[90] flex items-end justify-center bg-zinc-950/45 px-0 pt-10 backdrop-blur-sm sm:items-center sm:px-4"
+          onClick={() => setSetlistPicker(null)}
+        >
+          <div
+            className="w-full max-w-md overflow-hidden rounded-t-[2rem] border border-zinc-200 bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)] dark:border-white/10 dark:bg-zinc-950 sm:rounded-[2rem]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-zinc-200/90 px-4 py-4 dark:border-white/10">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
+                  {setlistPicker.type === 'tone' ? 'Tono' : 'Capo'}
+                </p>
+                <h3 className="mt-1 truncate text-lg font-black tracking-tight text-zinc-950 dark:text-zinc-50">
+                  {setlistPickerSong?.title || 'Cancion'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSetlistPicker(null)}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-600 shadow-sm transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                aria-label="Cerrar selector"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="max-h-[min(60dvh,440px)] overflow-y-auto px-4 py-4">
+              {setlistPicker.type === 'tone' ? (
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                  {SETLIST_TONE_OPTIONS.map((tone) => {
+                    const isSelected = setlistPickerSelectedTone === tone;
+                    return (
+                      <button
+                        key={tone}
+                        type="button"
+                        onClick={() => updateSetlistTone(setlistPickerSongId, tone)}
+                        className={`h-12 rounded-xl text-base font-black transition-all ${
+                          isSelected
+                            ? 'bg-brand text-white shadow-lg shadow-brand/20'
+                            : 'border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800'
+                        }`}
+                        aria-pressed={isSelected}
+                      >
+                        {tone}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {SETLIST_CAPO_OPTIONS.map((capo) => {
+                    const isSelected = setlistPickerSelectedCapo === capo;
+                    const shapeTone = capo > 0 && setlistPickerSelectedTone !== '-'
+                      ? transposeChordSymbol(setlistPickerSelectedTone, -capo)
+                      : '';
+                    return (
+                      <button
+                        key={`setlist-picker-capo-${capo}`}
+                        type="button"
+                        onClick={() => updateSetlistCapo(setlistPickerSongId, capo)}
+                        className={`flex h-14 flex-col items-center justify-center rounded-xl text-sm font-black transition-all ${
+                          isSelected
+                            ? 'bg-brand text-white shadow-lg shadow-brand/20'
+                            : 'border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800'
+                        }`}
+                        aria-pressed={isSelected}
+                      >
+                        <span>Capo {capo}</span>
+                        {shapeTone && (
+                          <span className={`mt-0.5 text-[11px] font-black ${isSelected ? 'text-white/80' : 'text-zinc-400 dark:text-zinc-500'}`}>
+                            Figura {shapeTone}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>
