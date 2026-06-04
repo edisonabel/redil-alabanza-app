@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import SongSheet, { type SongSheetLayoutOptions, type SongSheetMetadata } from './SongSheet';
+import SongSheet, {
+  type SongSheetLayoutOptions,
+  type SongSheetMetadata,
+  type SongSheetPrintProfile,
+} from './SongSheet';
 import { parseChordProSemantic } from '../../utils/parseChordProSemantic';
 import { resolveSongSheetSemanticBlocks } from '../../utils/resolveSongSheetSemanticBlocks';
 
@@ -25,6 +29,7 @@ export type ChordProPreviewProps = {
   pageWidthPx?: number;
   domSync?: boolean;
   selectors?: ChordProPreviewSelectors;
+  printProfile?: SongSheetPrintProfile;
 };
 
 type LivePreviewState = {
@@ -139,6 +144,7 @@ export function ChordProPreview({
   pageWidthPx = DEFAULT_PAGE_WIDTH_PX,
   domSync = false,
   selectors,
+  printProfile = 'classic',
 }: ChordProPreviewProps) {
   const mergedSelectors = useMemo<Required<ChordProPreviewSelectors>>(
     () => ({
@@ -335,6 +341,7 @@ export function ChordProPreview({
                   pageWidthPx={pageWidthPx}
                   framed={false}
                   className="h-full"
+                  printProfile={printProfile}
                 />
               ) : (
                 <div className="flex h-full items-center justify-center bg-white px-10 text-center">

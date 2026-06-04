@@ -4,6 +4,7 @@ import type {
   SongSheetDensity,
   SongSheetLayoutOptions,
   SongSheetMetadata,
+  SongSheetPrintProfile,
   SongSheetRenderMode,
 } from './SongSheet';
 import { parseChordProSemantic } from '../../utils/parseChordProSemantic';
@@ -11,6 +12,8 @@ import { resolveSongSheetSemanticBlocks } from '../../utils/resolveSongSheetSema
 import { inferChordProTone } from '../../utils/inferChordProTone';
 import { buildChordProPdfFileName } from '../../lib/chordproPdfPayload';
 import { createChordProPdfBrowserToken } from '../../lib/chordproPdfBrowserStore';
+
+type PdfEngine = 'v1' | 'v2';
 
 const isMobilePrintDevice = () => {
   if (typeof window === 'undefined') return false;
@@ -25,12 +28,24 @@ const isMobilePrintDevice = () => {
   );
 };
 
+const readRequestedPdfEngine = (): PdfEngine => {
+  if (typeof window === 'undefined') return 'v2';
+  const requestedEngine = new URLSearchParams(window.location.search)
+    .get('pdfEngine')
+    ?.trim()
+    .toLowerCase();
+  return requestedEngine === 'v1' ? 'v1' : 'v2';
+};
+
 const buildBrowserPrintUrl = (
   payload: Parameters<typeof createChordProPdfBrowserToken>[0],
-  options: { autoPrint?: boolean } = {},
+  options: { autoPrint?: boolean; engine?: PdfEngine } = {},
 ) => {
   const clientToken = createChordProPdfBrowserToken(payload);
-  const renderUrl = new URL('/render/chordpro-print-pdf', window.location.origin);
+  const engine = options.engine ?? 'v2';
+  const renderPath =
+    engine === 'v2' ? '/render/chordpro-print-pdf-v2' : '/render/chordpro-print-pdf';
+  const renderUrl = new URL(renderPath, window.location.origin);
   renderUrl.searchParams.set('clientToken', clientToken);
   renderUrl.searchParams.set('fallback', '1');
   if (options.autoPrint !== false) {
@@ -39,8 +54,11 @@ const buildBrowserPrintUrl = (
   return renderUrl.toString();
 };
 
-const navigateToBrowserPrintFallback = (payload: Parameters<typeof createChordProPdfBrowserToken>[0]) => {
-  window.location.href = buildBrowserPrintUrl(payload, { autoPrint: false });
+const navigateToBrowserPrintFallback = (
+  payload: Parameters<typeof createChordProPdfBrowserToken>[0],
+  engine: PdfEngine
+) => {
+  window.location.href = buildBrowserPrintUrl(payload, { autoPrint: false, engine });
 };
 
 type ChordProPrintWorkspaceProps = {
@@ -220,6 +238,8 @@ export default function ChordProPrintWorkspace({
   initialArtist = '',
   initialMetadata,
 }: ChordProPrintWorkspaceProps) {
+  const pdfEngine = useMemo(() => readRequestedPdfEngine(), []);
+  const printProfile: SongSheetPrintProfile = pdfEngine === 'v2' ? 'v2-optimized' : 'classic';
   const explicitOriginalTone = normalizeNote(initialMetadata?.tone);
   const inferredOriginalTone = useMemo(() => {
     if (explicitOriginalTone) return '';
@@ -447,7 +467,9 @@ export default function ChordProPrintWorkspace({
       window.clearTimeout(pdfFeedbackTimeoutRef.current);
     }
     try {
-      const response = await window.fetch('/api/chordpro-print-pdf', {
+      const pdfApiPath =
+        pdfEngine === 'v2' ? '/api/chordpro-print-pdf-v2' : '/api/chordpro-print-pdf';
+      const response = await window.fetch(pdfApiPath, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -480,13 +502,14 @@ export default function ChordProPrintWorkspace({
 
       try {
         const renderUrl = buildBrowserPrintUrl(payload as any, {
+          engine: pdfEngine,
           autoPrint: !isMobilePrintDevice(),
         });
 
         if (previewWindow && !previewWindow.closed) {
           previewWindow.location.href = renderUrl;
         } else if (isMobilePrintDevice()) {
-          navigateToBrowserPrintFallback(payload as any);
+          navigateToBrowserPrintFallback(payload as any, pdfEngine);
         } else {
           window.open(renderUrl, targetName);
         }
@@ -819,6 +842,7 @@ export default function ChordProPrintWorkspace({
             metadata={previewMetadata}
             sheetOptions={sheetOptions}
             zoomMultiplier={previewZoom}
+            printProfile={printProfile}
             className="w-full min-h-[26rem] sm:min-h-[32rem] lg:h-[calc(100dvh-5.9rem)] xl:h-[calc(100dvh-5.5rem)]"
           />
         </section>
