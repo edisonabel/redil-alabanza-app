@@ -1137,6 +1137,7 @@ export default function SongSheet({
       mainPadding: isSingleCol ? 'pt-1.5' : 'pt-3',
       sectionMargin: isSingleCol ? 'mb-1.5' : 'mb-3',
       collapsedSectionMargin: isSingleCol ? 'mb-1' : 'mb-2',
+      sectionTopClearance: 'pt-[0.76em]',
       sectionHeaderMargin: 'mb-0.5',
       linesGap: 'space-y-0',
       titleSize: isSingleCol ? 'text-[1.5em]' : 'text-[1.9em]',
@@ -1157,6 +1158,7 @@ export default function SongSheet({
       mainPadding: isSingleCol ? 'pt-2.5' : 'pt-3.5',
       sectionMargin: isSingleCol ? 'mb-2.5' : 'mb-4',
       collapsedSectionMargin: isSingleCol ? 'mb-1.5' : 'mb-2.5',
+      sectionTopClearance: 'pt-[0.82em]',
       sectionHeaderMargin: isSingleCol ? 'mb-0.5' : 'mb-1',
       linesGap: isSingleCol ? 'space-y-0' : 'space-y-0.5',
       titleSize: isSingleCol ? 'text-[1.6em]' : 'text-[2.08em]',
@@ -1231,6 +1233,7 @@ export default function SongSheet({
         className={[
           'song-sheet-section break-inside-avoid',
           isSingleCol ? 'shrink-0' : '',
+          block.isCollapsed ? '' : densityClasses.sectionTopClearance,
           block.isCollapsed ? densityClasses.collapsedSectionMargin : densityClasses.sectionMargin,
         ].join(' ')}
       >
