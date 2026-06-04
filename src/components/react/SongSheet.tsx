@@ -925,12 +925,8 @@ export default function SongSheet({
     ? blocks.map((block) => block.typeMarker).filter(Boolean)
     : [];
   const metaItems = [
-    ...(resolvedOptions.renderMode === 'lyrics-only'
-      ? []
-      : [
-        { label: 'Tono', value: getMetaValue(metadata?.tone) },
-        { label: 'Capo', value: getMetaValue(metadata?.capo) },
-      ]),
+    { label: 'Tono', value: getMetaValue(metadata?.tone) },
+    { label: 'Capo', value: getMetaValue(metadata?.capo) },
     { label: 'Tempo', value: getMetaValue(metadata?.tempo) },
     { label: 'Time', value: getMetaValue(metadata?.time) },
   ];

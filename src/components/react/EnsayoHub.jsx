@@ -944,6 +944,7 @@ export default function EnsayoHub({
           const selectedTone = CHROMATIC_NOTES.includes(setlistTones[songId])
             ? setlistTones[songId]
             : baseTone;
+          const metadataTone = setlistRenderMode === 'chords-lyrics' ? selectedTone : baseTone;
           const toneDelta = getToneDelta(baseTone, selectedTone);
           const transpositionSteps = setlistRenderMode === 'chords-lyrics' ? toneDelta - capo : 0;
           const shapeTone = capo > 0 && selectedTone !== '-'
@@ -960,10 +961,8 @@ export default function EnsayoHub({
             artist: song?.artist || '',
             chordProText: transposeChordProText(song?.chordpro || '', transpositionSteps),
             metadata: {
-              tone: setlistRenderMode === 'chords-lyrics' && selectedTone !== '-' ? selectedTone : '',
-              capo: setlistRenderMode === 'chords-lyrics'
-                ? capo > 0 ? `${capo}${shapeTone ? ` (${shapeTone})` : ''}` : '0'
-                : '',
+              tone: metadataTone === '-' ? '' : metadataTone,
+              capo: capo > 0 ? `${capo}${shapeTone ? ` (${shapeTone})` : ''}` : '0',
               tempo: bpmValue,
               time: '',
             },
