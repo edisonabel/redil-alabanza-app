@@ -1324,13 +1324,20 @@ export default function ModoEnsayoCompacto({
   const currentSong = song;
   const activeSongIndex = 0;
   const currentSongBpm = Number.isFinite(Number(currentSong?.bpm)) ? Math.max(0, Math.round(Number(currentSong.bpm))) : 0;
-  const originalSongKey = normalizeKeyToAmerican(currentSong?.originalKey || currentSong?.key || '-');
+  const songChordTokens = useMemo(() => extractChordTokensFromSections(currentSong?.sections || []), [currentSong?.sections]);
+  const explicitSongKey = normalizeKeyToAmerican(currentSong?.originalKey || currentSong?.key || '-');
+  const originalSongKey = useMemo(() => {
+    if (explicitSongKey !== '-') return explicitSongKey;
+    const firstParsedChord = songChordTokens
+      .map((token) => parseChordSymbol(token))
+      .find(Boolean);
+    return firstParsedChord?.root || '-';
+  }, [explicitSongKey, songChordTokens]);
   const currentSongDisplayKey = useMemo(() => transposeChordToken(originalSongKey, transposeSteps), [originalSongKey, transposeSteps]);
   const capoShapeKey = useMemo(() => (
     capoFret > 0 ? transposeChordToken(currentSongDisplayKey, -capoFret) : currentSongDisplayKey
   ), [capoFret, currentSongDisplayKey]);
   const displayTransposeSteps = transposeSteps - capoFret;
-  const songChordTokens = useMemo(() => extractChordTokensFromSections(currentSong?.sections || []), [currentSong?.sections]);
   const transposeKeyOptions = useMemo(() => (
     TRANSPOSE_OPTIONS.map((steps) => ({
       steps,
