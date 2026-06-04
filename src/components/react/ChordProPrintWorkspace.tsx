@@ -29,12 +29,12 @@ const isMobilePrintDevice = () => {
 };
 
 const readRequestedPdfEngine = (): PdfEngine => {
-  if (typeof window === 'undefined') return 'v1';
+  if (typeof window === 'undefined') return 'v2';
   const requestedEngine = new URLSearchParams(window.location.search)
     .get('pdfEngine')
     ?.trim()
     .toLowerCase();
-  return requestedEngine === 'v2' ? 'v2' : 'v1';
+  return requestedEngine === 'v1' ? 'v1' : 'v2';
 };
 
 const buildBrowserPrintUrl = (
@@ -42,8 +42,9 @@ const buildBrowserPrintUrl = (
   options: { autoPrint?: boolean; engine?: PdfEngine } = {},
 ) => {
   const clientToken = createChordProPdfBrowserToken(payload);
+  const engine = options.engine ?? 'v2';
   const renderPath =
-    options.engine === 'v2' ? '/render/chordpro-print-pdf-v2' : '/render/chordpro-print-pdf';
+    engine === 'v2' ? '/render/chordpro-print-pdf-v2' : '/render/chordpro-print-pdf';
   const renderUrl = new URL(renderPath, window.location.origin);
   renderUrl.searchParams.set('clientToken', clientToken);
   renderUrl.searchParams.set('fallback', '1');
@@ -583,7 +584,7 @@ export default function ChordProPrintWorkspace({
                 : 'border-zinc-200 bg-white/88 text-slate-500',
             ].join(' ')}
           >
-            {pdfEngine === 'v2' ? 'PDF V2' : 'Carta'}
+            Carta
           </span>
         </div>
 
@@ -801,11 +802,7 @@ export default function ChordProPrintWorkspace({
             isGeneratingPdf ? 'cursor-wait opacity-90' : '',
           ].join(' ')}
         >
-          {isGeneratingPdf
-            ? 'Generando PDF...'
-            : pdfEngine === 'v2'
-              ? 'Imprimir PDF V2'
-              : 'Imprimir PDF'}
+          {isGeneratingPdf ? 'Generando PDF...' : 'Imprimir PDF'}
         </button>
       </aside>
 
