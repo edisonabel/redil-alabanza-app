@@ -945,6 +945,7 @@ export default function EnsayoHub({
             ? setlistTones[songId]
             : baseTone;
           const toneDelta = getToneDelta(baseTone, selectedTone);
+          const transpositionSteps = setlistRenderMode === 'chords-lyrics' ? toneDelta - capo : 0;
           const shapeTone = capo > 0 && selectedTone !== '-'
             ? transposeChordSymbol(selectedTone, -capo)
             : '';
@@ -957,10 +958,12 @@ export default function EnsayoHub({
             order: index + 1,
             title: song?.title || `Cancion ${index + 1}`,
             artist: song?.artist || '',
-            chordProText: transposeChordProText(song?.chordpro || '', toneDelta - capo),
+            chordProText: transposeChordProText(song?.chordpro || '', transpositionSteps),
             metadata: {
-              tone: selectedTone === '-' ? '' : selectedTone,
-              capo: capo > 0 ? `${capo}${shapeTone ? ` (${shapeTone})` : ''}` : '0',
+              tone: setlistRenderMode === 'chords-lyrics' && selectedTone !== '-' ? selectedTone : '',
+              capo: setlistRenderMode === 'chords-lyrics'
+                ? capo > 0 ? `${capo}${shapeTone ? ` (${shapeTone})` : ''}` : '0'
+                : '',
               tempo: bpmValue,
               time: '',
             },
@@ -1581,7 +1584,7 @@ export default function EnsayoHub({
                   const baseTone = normalizeKeyToAmerican(song?.originalKey || song?.key || '');
                   const selectedTone = CHROMATIC_NOTES.includes(setlistTones[songId]) ? setlistTones[songId] : baseTone;
                   const shapeTone = currentCapo > 0 && selectedTone !== '-' ? transposeChordSymbol(selectedTone, -currentCapo) : '';
-                  const showCapoControls = setlistRenderMode === 'chords-lyrics';
+                  const showToneControls = setlistRenderMode === 'chords-lyrics';
 
                   return (
                     <section
@@ -1596,22 +1599,24 @@ export default function EnsayoHub({
                           <h3 className="mt-1 truncate text-base font-black text-zinc-950 dark:text-zinc-50">
                             {song?.title || `Cancion ${index + 1}`}
                           </h3>
-                          <p className="mt-0.5 truncate text-sm font-semibold text-zinc-500 dark:text-zinc-400">
-                            {selectedTone !== '-' ? `Tono ${selectedTone}` : 'Sin tono'}
-                            {shapeTone ? ` · Figura ${shapeTone}` : ''}
-                          </p>
+                          {showToneControls && (
+                            <p className="mt-0.5 truncate text-sm font-semibold text-zinc-500 dark:text-zinc-400">
+                              {selectedTone !== '-' ? `Tono ${selectedTone}` : 'Sin tono'}
+                              {shapeTone ? ` · Figura ${shapeTone}` : ''}
+                            </p>
+                          )}
                         </div>
                       </div>
 
-                      <div className={`mt-3 grid gap-2 ${showCapoControls ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                        <button
-                          type="button"
-                          onClick={() => setSetlistPicker({ type: 'tone', songId })}
-                          className="inline-flex h-11 min-w-0 items-center justify-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-black text-zinc-700 shadow-sm transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
-                        >
-                          Tono {selectedTone !== '-' ? selectedTone : '--'}
-                        </button>
-                        {showCapoControls && (
+                      {showToneControls && (
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSetlistPicker({ type: 'tone', songId })}
+                            className="inline-flex h-11 min-w-0 items-center justify-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-black text-zinc-700 shadow-sm transition-colors hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                          >
+                            Tono {selectedTone !== '-' ? selectedTone : '--'}
+                          </button>
                           <button
                             type="button"
                             onClick={() => setSetlistPicker({ type: 'capo', songId })}
@@ -1619,8 +1624,8 @@ export default function EnsayoHub({
                           >
                             Capo {currentCapo}
                           </button>
-                        )}
-                      </div>
+                        </div>
+                      )}
                     </section>
                   );
                 })}
