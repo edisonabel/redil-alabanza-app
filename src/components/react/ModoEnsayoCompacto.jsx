@@ -990,7 +990,7 @@ function PianoChordDiagram({ chord, variation }) {
               width="14"
               height="54"
               rx="5"
-              className={active ? 'fill-emerald-500' : 'fill-zinc-950 dark:fill-zinc-200'}
+              className={active ? 'fill-brand' : 'fill-zinc-950 dark:fill-zinc-200'}
             />
             {active && (
               <text x={key.x + 7} y="44" textAnchor="middle" className="fill-white text-[7px] font-black">
