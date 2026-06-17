@@ -13,6 +13,7 @@ import { supabase } from '../../lib/supabase';
 import { normalizeRosterAssignments } from '../../lib/roster-utils';
 import { getEventThemeAndPreacher } from '../../lib/event-display.js';
 import { openBrandedTab } from '../../lib/open-branded-tab.js';
+import { isEventRepertoryManagerRoleCode } from '../../lib/role-permissions.js';
 
 const getRoleBadgeIcon = (role) => {
     const codigo = String(role?.codigo || '').toLowerCase();
@@ -163,7 +164,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
     let isModerator = false;
     if (miAsignacion) {
         const miRolObj = initialRoles?.find?.((r) => r.id === miAsignacion.rol_id);
-        if (miRolObj && (miRolObj.codigo === 'lider_alabanza' || miRolObj.codigo === 'talkback' || miRolObj.codigo === 'moderador')) {
+        if (miRolObj && (isEventRepertoryManagerRoleCode(miRolObj.codigo) || miRolObj.codigo === 'moderador')) {
             isModerator = true;
         }
     }

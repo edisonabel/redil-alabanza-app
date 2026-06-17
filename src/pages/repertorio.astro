@@ -358,14 +358,21 @@ import { metronomeService } from '../services/MetronomeEngine';
   }
  };
 
-// Puerta Guardiana de Seguridad RLS: Verificar Sesion Activa
-const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+// Verificar sesion sin bloquear la UI local de repertorio.
+let session = null;
+let sessionError = null;
+try {
+ const authResult = await supabase.auth.getSession();
+ session = authResult?.data?.session || null;
+ sessionError = authResult?.error || null;
+} catch (error) {
+ sessionError = error;
+}
 if (isStaleInit()) return;
-if (sessionError || !session) {
-// Expulsar solicitudes anonimas inmediatamente re-direccionando hacia el tunel de autenticacion
-/* window.location.replace('/login'); Movido a Middleware */
- return;
- }
+const hasAuthSession = Boolean(session) && !sessionError;
+if (sessionError) {
+ console.warn('Repertorio: no se pudo verificar la sesion; se mantiene la UI local activa.', sessionError);
+}
  
  const searchInput = document.getElementById('searchInput') as HTMLInputElement;
  const filterVoz = document.getElementById('filterVoz') as HTMLSelectElement;
@@ -682,7 +689,7 @@ if (sessionError || !session) {
  const registryEntry = cancionId
    ? ((window as any).__REDIL_SONG_REGISTRY__?.[String(cancionId)] || null)
    : null;
- if (cancionId) {
+ if (cancionId && hasAuthSession) {
    try {
      const { error } = await supabase.rpc('incrementar_reproduccion', { 
        cancion_id: cancionId 
@@ -898,6 +905,7 @@ const clearPlaylistSelection = () => {
  };
 
  // Pre-cargar canciones de la playlist existente
+ if (hasAuthSession) {
  (async () => {
  const { data: pl } = await supabase.from('playlists').select('id').eq('evento_id', seleccionarPara).single();
  if (pl) {
@@ -912,6 +920,7 @@ const clearPlaylistSelection = () => {
  }
  }
  })();
+ }
 
  // Listeners de Guardar y Cancelar Playlist
  addListener(document.getElementById('btn-cancel-playlist'), 'click', () => { window.location.href = '/programacion'; });
@@ -924,6 +933,9 @@ const clearPlaylistSelection = () => {
  btn.innerHTML = 'Guardando...';
 
  try {
+ if (!hasAuthSession) {
+ throw new Error('Inicia sesion para guardar esta playlist.');
+ }
  const { data: playlist, error: plErr } = await supabase.from('playlists').upsert({ evento_id: seleccionarPara }, { onConflict: 'evento_id' }).select('id').single();
  if (plErr) throw plErr;
 

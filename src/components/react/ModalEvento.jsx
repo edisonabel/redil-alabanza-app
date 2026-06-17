@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase';
 import RosterManager from './RosterManager.jsx';
 import { getEventThemeAndPreacher } from '../../lib/event-display.js';
 import { isPredicadorColumnMissingError } from '../../lib/predicador-compat.js';
+import { isEventRepertoryManagerRoleCode } from '../../lib/role-permissions.js';
 
 const composeLegacyTemaPredicacion = (temaValue, predicadorValue) => {
     const temaSafe = String(temaValue || '').trim();
@@ -154,14 +155,15 @@ export default function ModalEvento() {
             setShowPlaylistBtn(false);
             setHasPlaylist(false);
 
-            const profileReq = await supabase.from('perfiles').select('is_admin').eq('id', user?.id || '').single();
+            const currentUserId = user?.id || window.__SSR_USER__?.id || '';
+            const profileReq = await supabase.from('perfiles').select('is_admin').eq('id', currentUserId).single();
             if (profileReq.data?.is_admin) {
                 setShowPlaylistBtn(true);
             } else {
-                const rolesReq = await supabase.from('asignaciones').select('roles(codigo)').eq('evento_id', id).eq('perfil_id', user?.id || '');
+                const rolesReq = await supabase.from('asignaciones').select('roles(codigo)').eq('evento_id', id).eq('perfil_id', currentUserId);
                 if (rolesReq.data) {
                     const codigos = rolesReq.data.map(r => r.roles?.codigo).filter(Boolean);
-                    if (codigos.includes('lider_alabanza') || codigos.includes('talkback')) {
+                    if (codigos.some(isEventRepertoryManagerRoleCode)) {
                         setShowPlaylistBtn(true);
                     }
                 }

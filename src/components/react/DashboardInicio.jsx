@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { buildEventHeadline, getEventThemeAndPreacher } from '../../lib/event-display.js';
+import { isEventRepertoryManagerRoleCode } from '../../lib/role-permissions.js';
 
 const getFirstName = (fullName) => {
     if (!fullName || typeof fullName !== 'string') return '';
@@ -275,8 +276,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                                 const roleCodes = Array.isArray(servicio?.mi_rol_codigos) ? servicio.mi_rol_codigos : [];
                                 const canManageSetlist = Boolean(
                                     usuario?.is_admin
-                                    || roleCodes.includes('lider_alabanza')
-                                    || roleCodes.includes('talkback')
+                                    || roleCodes.some(isEventRepertoryManagerRoleCode)
                                 );
                                 const misRoles = Array.isArray(servicio.mis_roles) && servicio.mis_roles.length > 0
                                     ? servicio.mis_roles

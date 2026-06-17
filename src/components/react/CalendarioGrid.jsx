@@ -12,6 +12,7 @@ import musicNoteIcon from '@iconify-icons/mdi/music-note';
 import { supabase } from '../../lib/supabase';
 import { normalizeRosterAssignments } from '../../lib/roster-utils';
 import { buildEventHeadline, getEventThemeAndPreacher } from '../../lib/event-display.js';
+import { isEventRepertoryManagerRoleCode } from '../../lib/role-permissions.js';
 
 const MONTH_CHUNK_SIZE = 2;
 const EVENT_SELECT = '*, asignaciones(id, rol_id, perfiles(id, nombre, email, avatar_url))';
@@ -408,7 +409,7 @@ export default function CalendarioGrid({
             const names = asig.perfiles.nombre.trim().split(' ');
             const displayName = `${names[0]}`.trim(); // Just first name to match image
 
-            const isN1 = ['lider_alabanza', 'talkback'].includes(rolMatch.codigo);
+            const isN1 = isEventRepertoryManagerRoleCode(rolMatch.codigo);
             const isN2 = ['encargado_letras'].includes(rolMatch.codigo);
             const isVoz = String(rolMatch.codigo || '').startsWith('voz_');
 
@@ -545,7 +546,7 @@ export default function CalendarioGrid({
         let isModerator = false;
         if (miAsignacion) {
             const miRolObj = dictRoles.find(r => r.id === miAsignacion.rol_id);
-            if (miRolObj && (miRolObj.codigo === 'lider_alabanza' || miRolObj.codigo === 'talkback')) {
+            if (miRolObj && isEventRepertoryManagerRoleCode(miRolObj.codigo)) {
                 isModerator = true;
             }
         }
@@ -723,7 +724,7 @@ export default function CalendarioGrid({
         let isModerator = false;
         if (miAsignacion) {
             const miRolObj = dictRoles.find(r => r.id === miAsignacion.rol_id);
-            if (miRolObj && (miRolObj.codigo === 'lider_alabanza' || miRolObj.codigo === 'talkback')) {
+            if (miRolObj && isEventRepertoryManagerRoleCode(miRolObj.codigo)) {
                 isModerator = true;
             }
         }

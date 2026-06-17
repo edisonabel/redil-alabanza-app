@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
+import { fetchLiveDirectorSongSession } from '../../utils/liveDirectorUploadClient';
 
 // ── ChordPro parser ──────────────────────────────────────────────────────────
 // Identical logic to AdminRepertorio so sections are compatible.
@@ -204,6 +205,21 @@ const resolveChordPro = async (raw = '') => {
   }
 };
 
+const resolveMultitrackSession = async (song = {}) => {
+  const localSession = song?.multitrackSession || song?.multitrack_session || null;
+  if (localSession) return localSession;
+
+  const songId = String(song?.id || '').trim();
+  if (!songId || song?.hasMultitrackSession === false) return null;
+
+  try {
+    return await fetchLiveDirectorSongSession(songId);
+  } catch (error) {
+    console.warn('[EnsayoGlobalIsland] No se pudo cargar la sesion multitrack guardada.', error);
+    return null;
+  }
+};
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function EnsayoGlobalIsland() {
@@ -214,8 +230,10 @@ export default function EnsayoGlobalIsland() {
       const raw = event?.detail?.song;
       if (!raw) return;
 
-      // If chordpro is a remote URL, fetch it first
-      const chordproText = await resolveChordPro(raw.chordpro);
+      const [chordproText, multitrackSession] = await Promise.all([
+        resolveChordPro(raw.chordpro),
+        resolveMultitrackSession(raw),
+      ]);
 
       const sections =
         Array.isArray(raw.sections) && raw.sections.length > 0
@@ -223,7 +241,13 @@ export default function EnsayoGlobalIsland() {
           : parseChordProSections(chordproText);
 
       const sectionMarkers = Array.isArray(raw.sectionMarkers) ? raw.sectionMarkers : [];
-      setActiveSong({ ...raw, chordpro: chordproText, sections, sectionMarkers });
+      setActiveSong({
+        ...raw,
+        chordpro: chordproText,
+        sections,
+        sectionMarkers,
+        ...(multitrackSession ? { multitrackSession } : {}),
+      });
     };
 
     window.addEventListener('open-ensayo-compacto', handleOpen);

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { isEventRepertoryManagerRoleCode } from '../../lib/role-permissions.js';
 
 export const prerender = false;
 
@@ -38,7 +39,6 @@ const jsonHeaders = {
   'content-type': 'application/json',
 };
 
-const moderatorRoleCodes = new Set(['lider_alabanza', 'talkback']);
 const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
 
 const getErrorMessage = (error) => {
@@ -96,7 +96,7 @@ const canManageAssignments = async ({ userId, eventoId }) => {
 
   if (rolesError) throw rolesError;
 
-  return (roles || []).some((role) => moderatorRoleCodes.has(String(role?.codigo || '')));
+  return (roles || []).some((role) => isEventRepertoryManagerRoleCode(role?.codigo));
 };
 
 const resolveEventDateOnly = async ({ eventoId, fallbackDateOnly = '' }) => {

@@ -3,6 +3,7 @@ import {
   enqueueAssignmentNotifications,
   getAssignmentNotificationDelayMinutes,
 } from '../../lib/server/assignment-notification-queue.js';
+import { isEventRepertoryManagerRoleCode } from '../../lib/role-permissions.js';
 
 export const prerender = false;
 
@@ -41,8 +42,6 @@ const serviceRoleClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
 const jsonHeaders = {
   'content-type': 'application/json',
 };
-
-const moderatorRoleCodes = new Set(['lider_alabanza', 'talkback']);
 
 const getErrorMessage = (error) => {
   if (error instanceof Error) return error.message;
@@ -92,7 +91,7 @@ const canManageAssignments = async ({ userId, eventoId }) => {
 
   if (rolesError) throw rolesError;
 
-  return (roles || []).some((role) => moderatorRoleCodes.has(String(role?.codigo || '')));
+  return (roles || []).some((role) => isEventRepertoryManagerRoleCode(role?.codigo));
 };
 
 export async function POST({ request, cookies }) {

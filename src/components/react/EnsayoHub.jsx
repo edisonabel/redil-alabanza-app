@@ -432,6 +432,7 @@ export default function EnsayoHub({
   monitorUrl = '',
   playlistId = null,
   canEdit = false,
+  canAssignVoices = false,
   userId = '',
   rosterMembers = [],
   initialSongVoiceAssignments = {},
@@ -1081,7 +1082,7 @@ export default function EnsayoHub({
         tracksOriginales={parsedVoices.entries || []}
         songVoiceAssignments={songVoiceAssignments}
         memberOptions={voiceMemberOptions}
-        canEdit={canEdit}
+        canEdit={canEdit || canAssignVoices}
         isSavingAssignments={isSavingVoiceAssignments}
         saveFeedback={voiceAssignmentFeedback}
         onBack={handlePersonalViewBack}

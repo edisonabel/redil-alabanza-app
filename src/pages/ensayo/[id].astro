@@ -8,6 +8,10 @@ import { getBrandingConfig } from '../../lib/branding';
 import { buildEventHeadline, getEventThemeAndPreacher } from '../../lib/event-display.js';
 import { buildEventDateSlug, isUuidLike, parseEventDateSlug } from '../../lib/event-slug.js';
 import { isPredicadorColumnMissingError, withPredicadorFallbackRow } from '../../lib/predicador-compat.js';
+import {
+  isEventRepertoryManagerRoleCode,
+  isVocalLeaderRoleCode,
+} from '../../lib/role-permissions.js';
 
 const MOCK_CANCION_ENSAYO = {
   id: 'demo',
@@ -438,17 +442,24 @@ let playlistSongs = [];
 let playlistDbId = null;
 let rosterMembers = [];
 let initialSongVoiceAssignments = {};
+let canAssignVoices = false;
 
 // ── Verificar si el usuario puede editar el setlist ──
 let canEditSetlist = false;
 if (user?.id) {
-  const { data: perfilRoles } = await supabaseSSR
-    .from('perfil_roles')
-    .select('roles(codigo)')
-    .eq('perfil_id', user.id);
-  if (perfilRoles) {
-    const rolCodes = perfilRoles.map(pr => pr.roles?.codigo).filter(Boolean);
-    canEditSetlist = rolCodes.includes('lider_alabanza') || rolCodes.includes('talkback');
+  const { data: perfil, error: perfilPermissionError } = await supabaseSSR
+    .from('perfiles')
+    .select('is_admin')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (perfilPermissionError) {
+    console.error('Ensayo profile permission query error:', perfilPermissionError);
+  }
+
+  if (perfil?.is_admin) {
+    canEditSetlist = true;
+    canAssignVoices = true;
   }
 }
 
@@ -544,6 +555,7 @@ if (!routeIsDemo) {
       console.error('Ensayo roster query error:', rosterError);
     } else if (Array.isArray(rosterRows)) {
       const rosterMap = new Map();
+      const currentUserEventRoleCodes = [];
 
       rosterRows.forEach((row) => {
         const profileId = String(row?.perfil_id || row?.perfiles?.id || '').trim();
@@ -551,6 +563,9 @@ if (!routeIsDemo) {
 
         const roleCode = String(row?.roles?.codigo || '').trim();
         const roleName = String(row?.roles?.nombre || '').trim();
+        if (profileId === String(user?.id || '').trim() && roleCode) {
+          currentUserEventRoleCodes.push(roleCode);
+        }
         const existing = rosterMap.get(profileId) || {
           id: profileId,
           name: String(row?.perfiles?.nombre || row?.perfiles?.email || 'Integrante').trim() || 'Integrante',
@@ -581,6 +596,25 @@ if (!routeIsDemo) {
 
       rosterMembers = (voiceMembers.length > 0 ? voiceMembers : allMembers)
         .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
+
+      if (currentUserEventRoleCodes.some(isEventRepertoryManagerRoleCode)) {
+        canEditSetlist = true;
+        canAssignVoices = true;
+      }
+    }
+
+    if (!canAssignVoices) {
+      const { data: perfilRoles, error: perfilRolesError } = await supabaseSSR
+        .from('perfil_roles')
+        .select('roles(codigo)')
+        .eq('perfil_id', user.id);
+
+      if (perfilRolesError) {
+        console.error('Ensayo perfil_roles permission query error:', perfilRolesError);
+      } else if (perfilRoles) {
+        const roleCodes = perfilRoles.map((pr) => pr.roles?.codigo).filter(Boolean);
+        canAssignVoices = roleCodes.some(isVocalLeaderRoleCode);
+      }
     }
 
     const { data: playlistRow, error: playlistError } = await supabaseSSR
@@ -898,6 +932,7 @@ const resolvedColorTokens = {
       monitorUrl={monitorUrl}
       playlistId={playlistDbId}
       canEdit={canEditSetlist}
+      canAssignVoices={canAssignVoices}
       userId={user.id}
       rosterMembers={rosterMembers}
       initialSongVoiceAssignments={initialSongVoiceAssignments}

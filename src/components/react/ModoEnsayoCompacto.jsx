@@ -6,6 +6,7 @@ import { metronomeService } from '../../services/MetronomeEngine';
 import { screenWakeLockService } from '../../services/ScreenWakeLockService';
 import { isLikelyAudioSourceUrl, resolvePreferredAudioUrl } from '../../lib/audio-playback.js';
 import { buildWordGroups, parseChordProLine } from '../../utils/chordProLineUtils';
+import { normalizePersistedLiveDirectorSession } from '../../utils/liveDirectorSongSession';
 import {
   buildSectionShortLabel,
   getSectionKind,
@@ -181,6 +182,53 @@ const isAudioSourceUrl = (value = '') => {
   if (!source) return false;
   return isLikelyAudioSourceUrl(source);
 };
+const normalizeTrackSearchText = (value = '') => (
+  String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+);
+const isGuideCueTrack = (track = {}) => {
+  const text = normalizeTrackSearchText([
+    track.id,
+    track.name,
+    track.sourceFileName,
+  ].filter(Boolean).join(' '));
+  return /\b(click|clic|cue|cues|guide|guia|metro|metronomo|metronome|count|countin|count-in)\b/.test(text);
+};
+const getTrackAudioUrl = (track = {}) => (
+  track.optimizedUrl || track.url || track.iosUrl || track.nativeUrl || ''
+);
+const getReadableTrackLabel = (trackName = '', index = 0) => {
+  const rawName = String(trackName || '').trim();
+  const text = normalizeTrackSearchText(rawName);
+  const numbered = (base) => {
+    const suffix = rawName.match(/\b(\d+)\b/)?.[1] || '';
+    return suffix && !base.includes(suffix) ? `${base} ${suffix}` : base;
+  };
+
+  if (/\b(bass|bajo)\b/.test(text)) return 'Bajo';
+  if (/\b(drums?|bateria|percusion|percu|kick|snare|toms?)\b/.test(text)) return 'Bateria';
+  if (/\b(acoustic|acustica)\b/.test(text) && /\b(gtr|guitar|guitarra)\b/.test(text)) return 'Guitarra acustica';
+  if (/\b(electric|electrica)\b/.test(text) && /\b(gtr|guitar|guitarra)\b/.test(text)) return numbered('Guitarra electrica');
+  if (/\b(gtr|guitar|guitarra)\b/.test(text)) return numbered('Guitarra');
+  if (/\b(piano|keys?|teclas|keyboard|synth|organ)\b/.test(text)) return 'Piano';
+  if (/\b(strings?|cuerdas?|str)\b/.test(text)) return 'Cuerdas';
+  if (/\b(brass|vientos?|horns?)\b/.test(text)) return 'Vientos';
+  if (/\b(pad)\b/.test(text)) return 'Pad';
+  if (/\b(sequence|secuencia|playback|tracks?|pistas?|mix|lr)\b/.test(text)) return 'Pista';
+
+  return rawName || `Pista ${index + 1}`;
+};
+const getGuideCueLabel = (sources = []) => {
+  const names = sources.map((source) => normalizeTrackSearchText(source.label)).join(' ');
+  const hasGuide = /\b(guide|guia)\b/.test(names);
+  const hasCues = /\b(cue|cues|click|clic|metro|metronomo|metronome|count)\b/.test(names);
+  if (hasGuide && hasCues) return 'Guia / Cues';
+  if (hasGuide) return 'Guia';
+  if (hasCues) return 'Cues / Metro';
+  return 'Guia';
+};
 const normalizePlaybackSourceEntry = (entry, index, fallbackKind = 'sequence') => {
   if (!entry) return null;
   if (typeof entry === 'string') {
@@ -188,7 +236,7 @@ const normalizePlaybackSourceEntry = (entry, index, fallbackKind = 'sequence') =
     if (!isAudioSourceUrl(trimmedEntry)) return null;
     return {
       id: `${fallbackKind}-${index}-${trimmedEntry}`,
-      label: fallbackKind === 'original' ? 'Musica original' : `Secuencia ${index + 1}`,
+      label: fallbackKind === 'original' ? 'Musica original' : fallbackKind === 'stem' ? `Pista ${index + 1}` : `Secuencia ${index + 1}`,
       url: trimmedEntry,
       kind: fallbackKind,
     };
@@ -197,16 +245,16 @@ const normalizePlaybackSourceEntry = (entry, index, fallbackKind = 'sequence') =
     const rawUrl = String(entry.url || entry.src || entry.href || entry.link || '').trim();
     if (!isAudioSourceUrl(rawUrl)) return null;
     const rawKind = String(entry.kind || entry.type || fallbackKind || 'sequence').trim().toLowerCase();
-    const kind = rawKind === 'original' ? 'original' : 'sequence';
+    const kind = rawKind === 'original' ? 'original' : rawKind === 'stem' ? 'stem' : 'sequence';
     const label = String(
       entry.label ||
       entry.name ||
       entry.title ||
-      (kind === 'original' ? 'Musica original' : `Secuencia ${index + 1}`)
+      (kind === 'original' ? 'Musica original' : kind === 'stem' ? `Pista ${index + 1}` : `Secuencia ${index + 1}`)
     ).trim();
     return {
       id: String(entry.id || `${kind}-${index}-${rawUrl}`),
-      label: label || (kind === 'original' ? 'Musica original' : `Secuencia ${index + 1}`),
+      label: label || (kind === 'original' ? 'Musica original' : kind === 'stem' ? `Pista ${index + 1}` : `Secuencia ${index + 1}`),
       url: rawUrl,
       kind,
     };
@@ -241,6 +289,12 @@ const parseSequenceSourceEntries = (rawValue = '') => {
       };
     });
 };
+const getPersistedLiveDirectorSession = (song) => (
+  normalizePersistedLiveDirectorSession(song?.multitrackSession || song?.multitrack_session || null, {
+    songId: song?.id,
+    songTitle: song?.title,
+  })
+);
 const buildPlaybackSources = (song) => {
   const sources = [];
   const seenUrls = new Set();
@@ -270,10 +324,41 @@ const buildPlaybackSources = (song) => {
   if (rawLinkSecuencias) {
     collectionCandidates.push(...parseSequenceSourceEntries(rawLinkSecuencias));
   }
+  const liveDirectorSession = getPersistedLiveDirectorSession(song);
+  if (Array.isArray(liveDirectorSession?.tracks)) {
+    liveDirectorSession.tracks.forEach((track, index) => {
+      if (isGuideCueTrack(track)) return;
+      collectionCandidates.push({
+        id: `stem-${track.id || index}`,
+        label: getReadableTrackLabel(track.name, index),
+        url: getTrackAudioUrl(track),
+        kind: 'stem',
+      });
+    });
+  }
   collectionCandidates.forEach((entry, index) => {
     pushSource(entry, index, 'sequence');
   });
   return sources;
+};
+const buildGuideCueSources = (song) => {
+  const liveDirectorSession = getPersistedLiveDirectorSession(song);
+  if (!Array.isArray(liveDirectorSession?.tracks)) return [];
+
+  const seenUrls = new Set();
+  return liveDirectorSession.tracks
+    .filter((track) => isGuideCueTrack(track))
+    .map((track, index) => {
+      const url = getTrackAudioUrl(track);
+      if (!isAudioSourceUrl(url) || seenUrls.has(url)) return null;
+      seenUrls.add(url);
+      return {
+        id: `guide-${track.id || index}`,
+        label: String(track.name || `Guia ${index + 1}`).trim(),
+        url,
+      };
+    })
+    .filter(Boolean);
 };
 const formatChordAccidentals = (value = '') => (
   String(value || '')
@@ -1279,6 +1364,8 @@ export default function ModoEnsayoCompacto({
   const [syncRole, setSyncRole] = useState(globalSyncMode ? 'musico' : 'local');
   const [remotePayload, setRemotePayload] = useState(null);
   const [panValue, setPanValue] = useState(0);
+  const [guideCueEnabled, setGuideCueEnabled] = useState(true);
+  const [guideCueVolume, setGuideCueVolume] = useState(0.72);
   const syncChannelRef = useRef(null);
   const syncSnapshotRef = useRef({
     songId: '',
@@ -1287,6 +1374,7 @@ export default function ModoEnsayoCompacto({
     isPlaying: false,
   });
   const audioRef = useRef(null);
+  const guideCueAudioRefs = useRef([]);
   const headerRef = useRef(null);
   const scrollRef = useRef(null);
   const lastScrollTop = useRef(0);
@@ -1452,9 +1540,17 @@ export default function ModoEnsayoCompacto({
   const artistLine = currentSong.artist || 'Artista';
   const shouldRotateHeaderMeta = Boolean(artistLine) && titleLine.trim() !== artistLine.trim();
   const playbackSources = useMemo(() => buildPlaybackSources(currentSong), [currentSong]);
-  const hasSequenceSources = useMemo(() => (
-    playbackSources.some((source) => source.kind === 'sequence')
-  ), [playbackSources]);
+  const guideCueSources = useMemo(() => buildGuideCueSources(currentSong), [currentSong]);
+  const processedGuideCueSources = useMemo(() => (
+    guideCueSources.map((source) => ({
+      ...source,
+      playbackUrl: resolvePreferredAudioUrl(source.url, {
+        origin: typeof window !== 'undefined' ? window.location.origin : '',
+      }) || source.url,
+    }))
+  ), [guideCueSources]);
+  const hasGuideCueSources = processedGuideCueSources.length > 0;
+  const guideCueDisplayLabel = useMemo(() => getGuideCueLabel(guideCueSources), [guideCueSources]);
   const activePlaybackSource = useMemo(() => (
     playbackSources.find((source) => source.id === selectedPlaybackSourceId) || playbackSources[0] || null
   ), [playbackSources, selectedPlaybackSourceId]);
@@ -1464,7 +1560,16 @@ export default function ModoEnsayoCompacto({
       origin: typeof window !== 'undefined' ? window.location.origin : '',
     })
   ), [activePlaybackUrl]);
+  const hasSupplementalPlaybackSources = useMemo(() => (
+    playbackSources.some((source) => source.kind === 'sequence' || source.kind === 'stem') || hasGuideCueSources
+  ), [hasGuideCueSources, playbackSources]);
   const shouldUseTrackWebAudio = panValue !== 0;
+  const liveDirectorSectionOffsetSeconds = useMemo(() => {
+    const session = getPersistedLiveDirectorSession(currentSong);
+    return Number.isFinite(Number(session?.sectionOffsetSeconds))
+      ? Number(session.sectionOffsetSeconds)
+      : 0;
+  }, [currentSong]);
   const currentSongMarkers = useMemo(() => (
     Array.isArray(currentSong?.sectionMarkers)
       ? (() => {
@@ -1474,8 +1579,8 @@ export default function ModoEnsayoCompacto({
           .map((marker, index) => ({
             id: marker?.id || `${currentSongKey}-marker-${index}`,
             sectionName: String(marker?.sectionName || '').trim(),
-            startSec: Math.max(0, Number(marker?.startSec) || 0),
-            endSec: Number.isFinite(Number(marker?.endSec)) ? Math.max(0, Number(marker.endSec)) : null,
+            startSec: Math.max(0, (Number(marker?.startSec) || 0) + liveDirectorSectionOffsetSeconds),
+            endSec: Number.isFinite(Number(marker?.endSec)) ? Math.max(0, Number(marker.endSec) + liveDirectorSectionOffsetSeconds) : null,
             originalOrder: index,
             rawSectionIndex: Number.isInteger(Number(marker?.sectionIndex)) ? Number(marker.sectionIndex) : null,
             rawSectionOccurrence: Number.isInteger(Number(marker?.sectionOccurrence)) ? Number(marker.sectionOccurrence) : null,
@@ -1518,7 +1623,7 @@ export default function ModoEnsayoCompacto({
         return repairMarkerTimeline(mappedMarkers, Math.max(0, currentSong?.duration || 0));
       })()
       : []
-  ), [currentSections, currentSong?.duration, currentSong?.sectionMarkers, currentSongKey]);
+  ), [currentSections, currentSong?.duration, currentSong?.sectionMarkers, currentSongKey, liveDirectorSectionOffsetSeconds]);
   const hasAudio = typeof processedActivePlaybackUrl === 'string' && processedActivePlaybackUrl.trim() !== '';
   const markerBySectionIndex = useMemo(() => {
     const map = new Map();
@@ -1591,12 +1696,13 @@ export default function ModoEnsayoCompacto({
       payload: {
         songId: String(snapshot.songId),
         sectionIndex: Number.isFinite(Number(snapshot.sectionIndex)) ? Number(snapshot.sectionIndex) : 0,
-        currentTime: Math.max(0, Number(snapshot.currentTime) || 0),
+        currentTime: Math.max(0, (Number(snapshot.currentTime) || 0) - liveDirectorSectionOffsetSeconds),
         currentTimeRaw: Math.max(0, Number(snapshot.currentTime) || 0),
+        sectionOffsetSeconds: liveDirectorSectionOffsetSeconds,
         isPlaying: Boolean(snapshot.isPlaying),
       },
     }).catch((error) => console.warn('[LiveSync] Error enviando snapshot:', error));
-  }, [syncRole]);
+  }, [liveDirectorSectionOffsetSeconds, syncRole]);
   const playbackSectionStrip = useMemo(() => (
     currentSections.map((section, index) => {
       const marker = markerBySectionIndex.get(index) || null;
@@ -1780,6 +1886,43 @@ export default function ModoEnsayoCompacto({
       panNode.pan.setTargetAtTime(panValue, ctx.currentTime, 0.05);
     }
   }, [disconnectTrackWebAudio, panValue, shouldUseTrackWebAudio]);
+  const getGuideCueAudioElements = React.useCallback(() => (
+    guideCueAudioRefs.current.filter(Boolean)
+  ), []);
+  const syncGuideCueTracks = React.useCallback((nextTime = 0, { force = false } = {}) => {
+    const safeTime = Math.max(0, Number(nextTime) || 0);
+    getGuideCueAudioElements().forEach((element) => {
+      if (!element) return;
+      const currentTime = Number.isFinite(element.currentTime) ? element.currentTime : 0;
+      if (force || Math.abs(currentTime - safeTime) > 0.45) {
+        try {
+          element.currentTime = safeTime;
+        } catch {
+          // Some browsers reject seeks before metadata is ready.
+        }
+      }
+    });
+  }, [getGuideCueAudioElements]);
+  const pauseGuideCueTracks = React.useCallback(() => {
+    getGuideCueAudioElements().forEach((element) => {
+      try { element.pause(); } catch { }
+    });
+  }, [getGuideCueAudioElements]);
+  const playGuideCueTracks = React.useCallback(async (nextTime = 0) => {
+    if (!hasGuideCueSources || !guideCueEnabled) return;
+    const elements = getGuideCueAudioElements();
+    if (elements.length === 0) return;
+
+    syncGuideCueTracks(nextTime, { force: true });
+    await Promise.all(elements.map(async (element) => {
+      element.volume = Math.max(0, Math.min(1, guideCueVolume));
+      try {
+        await element.play();
+      } catch {
+        // Browser autoplay rules can block the auxiliary layer; the main track keeps working.
+      }
+    }));
+  }, [getGuideCueAudioElements, guideCueEnabled, guideCueVolume, hasGuideCueSources, syncGuideCueTracks]);
   const stopMetronome = React.useCallback(() => {
     metronomeService.stop();
     setIsMetronomeOn(false);
@@ -1891,6 +2034,24 @@ export default function ModoEnsayoCompacto({
     padEl.volume = padVolume;
   }, [padVolume, isPadActive]);
   useEffect(() => {
+    guideCueAudioRefs.current = guideCueAudioRefs.current.slice(0, processedGuideCueSources.length);
+  }, [processedGuideCueSources.length]);
+  useEffect(() => {
+    getGuideCueAudioElements().forEach((element) => {
+      element.volume = guideCueEnabled ? Math.max(0, Math.min(1, guideCueVolume)) : 0;
+      if (!guideCueEnabled) {
+        try { element.pause(); } catch { }
+      }
+    });
+  }, [getGuideCueAudioElements, guideCueEnabled, guideCueVolume, processedGuideCueSources]);
+  useEffect(() => {
+    if (!isPlaying) {
+      pauseGuideCueTracks();
+      return;
+    }
+    void playGuideCueTracks(audioRef.current?.currentTime || audioCurrentTime);
+  }, [guideCueEnabled, isPlaying, pauseGuideCueTracks, playGuideCueTracks, processedGuideCueSources]);
+  useEffect(() => {
     fadeTrackGainTo(
       isMetronomeOn ? TRACK_DUCKED_GAIN : TRACK_DEFAULT_GAIN,
       isMetronomeOn ? TRACK_DUCK_IN_DURATION_MS : TRACK_DUCK_OUT_DURATION_MS,
@@ -1919,10 +2080,12 @@ export default function ModoEnsayoCompacto({
     setActiveChordPreview(null);
     setChordVariationByKey({});
     setSelectedPlaybackSourceId('original');
+    setGuideCueEnabled(true);
     setHeaderHidden(isLandscapeCompact);
+    pauseGuideCueTracks();
     stopMetronome();
     setTrackGainImmediate(TRACK_DEFAULT_GAIN);
-  }, [currentSongKey, currentSong?.mp3, isLandscapeCompact, setTrackGainImmediate, stopMetronome]);
+  }, [currentSongKey, currentSong?.mp3, isLandscapeCompact, pauseGuideCueTracks, setTrackGainImmediate, stopMetronome]);
   useEffect(() => {
     if (playbackSources.length === 0) return;
     const hasSelectedSource = playbackSources.some((source) => source.id === selectedPlaybackSourceId);
@@ -2178,10 +2341,12 @@ export default function ModoEnsayoCompacto({
   useEffect(() => {
     if (!pendingPlaybackResumeRef.current || !audioReady || !audioRef.current) return;
     pendingPlaybackResumeRef.current = false;
-    audioRef.current.play().catch(() => {
+    audioRef.current.play().then(() => {
+      void playGuideCueTracks(audioRef.current?.currentTime || audioCurrentTime);
+    }).catch(() => {
       setIsPlaying(false);
     });
-  }, [audioReady]);
+  }, [audioCurrentTime, audioReady, playGuideCueTracks]);
   useEffect(() => {
     if (syncRole === 'local' || typeof window === 'undefined') {
       if (syncChannelRef.current) {
@@ -2254,10 +2419,10 @@ export default function ModoEnsayoCompacto({
     } = remotePayload;
     const offsetSeconds = Number.isFinite(Number(sectionOffsetSeconds)) ? Number(sectionOffsetSeconds) : 0;
     const directorTime =
-      typeof currentTime === 'number'
-        ? currentTime
-        : typeof currentTimeRaw === 'number'
-          ? Math.max(0, currentTimeRaw - offsetSeconds)
+      typeof currentTimeRaw === 'number'
+        ? Math.max(0, currentTimeRaw)
+        : typeof currentTime === 'number'
+          ? Math.max(0, currentTime + offsetSeconds)
           : null;
 
     if (String(songId) === String(currentSongKey)) {
@@ -2298,6 +2463,7 @@ export default function ModoEnsayoCompacto({
             if (audioRef.current) {
               audioRef.current.currentTime = marker.startSec;
               setAudioCurrentTime(marker.startSec);
+              syncGuideCueTracks(marker.startSec, { force: true });
             }
             // Micro Fade-in de 150ms tras el salto
             gainNode.gain.cancelScheduledValues(ctx.currentTime);
@@ -2308,6 +2474,7 @@ export default function ModoEnsayoCompacto({
           // Fallback si Web Audio no está inicializado
           audioRef.current.currentTime = marker.startSec;
           setAudioCurrentTime(marker.startSec);
+          syncGuideCueTracks(marker.startSec, { force: true });
         }
       }
     }
@@ -2324,8 +2491,10 @@ export default function ModoEnsayoCompacto({
           await audioCtxRef.current.resume();
         }
         await audioRef.current.play();
+        await playGuideCueTracks(audioRef.current.currentTime || audioCurrentTime);
       } else {
         audioRef.current.pause();
+        pauseGuideCueTracks();
       }
     } catch (_error) {
       setIsPlaying(false);
@@ -2337,6 +2506,7 @@ export default function ModoEnsayoCompacto({
     if (audioRef.current) {
       audioRef.current.currentTime = nextTime;
     }
+    syncGuideCueTracks(nextTime, { force: true });
   };
   const cycleFontScale = () => {
     setFontScale((current) => {
@@ -2356,6 +2526,7 @@ export default function ModoEnsayoCompacto({
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
     }
+    pauseGuideCueTracks();
     setIsPlaying(false);
     setAudioCurrentTime(0);
     setAudioDuration(0);
@@ -2379,21 +2550,31 @@ export default function ModoEnsayoCompacto({
         onTimeUpdate={(event) => {
           const nextTime = Number.isFinite(event.currentTarget.currentTime) ? event.currentTarget.currentTime : 0;
           setAudioCurrentTime(nextTime);
+          syncGuideCueTracks(nextTime);
         }}
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
+        onPlay={(event) => {
+          setIsPlaying(true);
+          void playGuideCueTracks(event.currentTarget.currentTime || audioCurrentTime);
+        }}
+        onPause={() => {
+          setIsPlaying(false);
+          pauseGuideCueTracks();
+        }}
         onEnded={async () => {
           if (loopState === 1 && audioRef.current) {
             audioRef.current.currentTime = 0;
             setAudioCurrentTime(0);
+            syncGuideCueTracks(0, { force: true });
             try {
               await audioRef.current.play();
+              await playGuideCueTracks(0);
               return;
             } catch (_error) {
               // keep regular ended fallback
             }
           }
           setIsPlaying(false);
+          pauseGuideCueTracks();
           const finalTime = Number.isFinite(audioRef.current?.duration) ? audioRef.current.duration : 0;
           setAudioCurrentTime(finalTime || 0);
         }}
@@ -2402,6 +2583,18 @@ export default function ModoEnsayoCompacto({
           setAudioDuration(0);
         }}
       />
+      {processedGuideCueSources.map((source, index) => (
+        <audio
+          key={`${currentSongKey}-${source.id}-${source.playbackUrl || source.url}`}
+          ref={(element) => {
+            guideCueAudioRefs.current[index] = element;
+          }}
+          src={source.playbackUrl || source.url}
+          crossOrigin="anonymous"
+          preload="metadata"
+          playsInline
+        />
+      ))}
       <audio
         key={`pad-${activePadUrl}`}
         ref={padAudioRef}
@@ -2891,12 +3084,53 @@ export default function ModoEnsayoCompacto({
                     </button>
                   );
                 })}
-                {!hasSequenceSources && (
+                {!hasSupplementalPlaybackSources && (
                   <div className="shrink-0 rounded-full border border-dashed border-zinc-300 bg-zinc-50 px-3.5 py-2 text-sm font-semibold text-zinc-500 dark:border-white/10 dark:bg-zinc-950 dark:text-zinc-400">
                     Secuencia no disponible
                   </div>
                 )}
               </div>
+              {hasGuideCueSources && (
+                <div className="mt-4 border-t border-zinc-200/60 pt-3 dark:border-white/10">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[0.66rem] font-black uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">
+                        Apoyo de ensayo
+                      </p>
+                      <p className="truncate text-sm font-bold text-zinc-800 dark:text-zinc-100">
+                        {guideCueDisplayLabel}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setGuideCueEnabled((current) => !current)}
+                      className={`rounded-full px-3 py-1 text-xs font-bold transition-all ${guideCueEnabled
+                        ? 'bg-brand text-white shadow-sm'
+                        : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
+                        }`}
+                      aria-pressed={guideCueEnabled}
+                    >
+                      {guideCueEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-3 rounded-xl bg-zinc-50 px-3 py-2 dark:bg-zinc-950/50">
+                    <span className="w-10 text-xs font-bold text-zinc-400">Vol</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={guideCueVolume}
+                      onChange={(event) => setGuideCueVolume(parseFloat(event.target.value))}
+                      className="ensayo-seek h-4 flex-1 cursor-pointer appearance-none bg-transparent"
+                      aria-label={`Volumen ${guideCueDisplayLabel}`}
+                    />
+                    <span className="w-9 text-right text-xs font-black text-zinc-500 dark:text-zinc-400">
+                      {Math.round(guideCueVolume * 100)}
+                    </span>
+                  </div>
+                </div>
+              )}
               {hasAudio && (
                 <div className="mt-4 border-t border-zinc-200/60 pt-3 dark:border-white/10">
                   <div className="mb-2 flex items-center justify-between gap-3">

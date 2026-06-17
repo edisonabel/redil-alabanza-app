@@ -1,12 +1,12 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import { getAssignmentProfileId, getVisibleVoiceAssignments, normalizeRosterAssignments } from '../../lib/roster-utils';
+import { isEventRepertoryManagerRoleCode, isHiddenEventAssignmentRoleCode } from '../../lib/role-permissions.js';
 
 const MAX_VOZ_SLOTS = 4;
-const HIDDEN_ASSIGNMENT_ROLE_CODES = new Set(['audiovisuales', 'pastor']);
 
 const isHiddenAssignmentRole = (role) =>
-    HIDDEN_ASSIGNMENT_ROLE_CODES.has(String(role?.codigo || '').trim().toLowerCase());
+    isHiddenEventAssignmentRoleCode(role?.codigo);
 
 const isMissingRpcFunctionError = (error) => {
     const code = String(error?.code || '');
@@ -489,7 +489,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         // Validation for exclusive instrument assignment
         const newRol = assignableRoles.find(r => r.id === saveRolId);
         if (newRol) {
-            const isN1 = ['lider_alabanza', 'talkback'].includes(newRol.codigo);
+            const isN1 = isEventRepertoryManagerRoleCode(newRol.codigo);
             const isN2 = ['encargado_letras'].includes(newRol.codigo);
             const isVoz = String(newRol.codigo || '').startsWith('voz_');
             const isInstrumento = !isN1 && !isN2 && !isVoz;
@@ -501,7 +501,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                     if (a.rol_id === saveRolId) return false; // same role is fine to overwrite
                     const existingRol = assignableRoles.find(r => r.id === a.rol_id);
                     if (!existingRol) return false;
-                    const eIsN1 = ['lider_alabanza', 'talkback'].includes(existingRol.codigo);
+                    const eIsN1 = isEventRepertoryManagerRoleCode(existingRol.codigo);
                     const eIsN2 = ['encargado_letras'].includes(existingRol.codigo);
                     const eIsVoz = String(existingRol.codigo || '').startsWith('voz_');
                     const eIsInstrumento = !eIsN1 && !eIsN2 && !eIsVoz;
@@ -680,7 +680,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         const displayName = `${names[0]}`.trim();
         const iniciales = names.length > 1 ? `${names[0].charAt(0)}${names[1].charAt(0)}` : names[0].charAt(0);
 
-        const isN1 = ['lider_alabanza', 'talkback'].includes(rolMatch.codigo);
+        const isN1 = isEventRepertoryManagerRoleCode(rolMatch.codigo);
         const isN2 = ['encargado_letras'].includes(rolMatch.codigo);
         const isVoz = String(rolMatch.codigo || '').startsWith('voz_');
         const colorSeccion = isN1 ? 'bg-rol-dir' : (isN2 ? 'bg-rol-let' : (isVoz ? 'bg-rol-voc' : 'bg-rol-ban'));
@@ -738,7 +738,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         .filter(Boolean);
 
     assignableRoles.forEach(rolMatch => {
-        const isN1 = ['lider_alabanza', 'talkback'].includes(rolMatch.codigo);
+        const isN1 = isEventRepertoryManagerRoleCode(rolMatch.codigo);
         const isN2 = ['encargado_letras'].includes(rolMatch.codigo);
         const isVoz = String(rolMatch.codigo || '').startsWith('voz_');
         const isCajaRole = /(^|_)(caja|cajon)(_|\b)/.test(String(rolMatch.codigo || ''));
