@@ -90,6 +90,7 @@ const TRACK_DEFAULT_GAIN = 1;
 const TRACK_DUCKED_GAIN = 0.38;
 const TRACK_DUCK_IN_DURATION_MS = 3200;
 const TRACK_DUCK_OUT_DURATION_MS = 4200;
+const GUIDE_CUE_SYNC_TOLERANCE_SECONDS = 0.035;
 const LATIN_TO_AMERICAN = {
   Do: 'C',
   'Do#': 'C#',
@@ -1894,7 +1895,7 @@ export default function ModoEnsayoCompacto({
     getGuideCueAudioElements().forEach((element) => {
       if (!element) return;
       const currentTime = Number.isFinite(element.currentTime) ? element.currentTime : 0;
-      if (force || Math.abs(currentTime - safeTime) > 0.45) {
+      if (force || Math.abs(currentTime - safeTime) > GUIDE_CUE_SYNC_TOLERANCE_SECONDS) {
         try {
           element.currentTime = safeTime;
         } catch {
@@ -1903,6 +1904,15 @@ export default function ModoEnsayoCompacto({
       }
     });
   }, [getGuideCueAudioElements]);
+  const scheduleGuideCueResync = React.useCallback(() => {
+    if (typeof window === 'undefined' || !audioRef.current) return;
+    [80, 220, 520].forEach((delayMs) => {
+      window.setTimeout(() => {
+        if (!audioRef.current || audioRef.current.paused) return;
+        syncGuideCueTracks(audioRef.current.currentTime, { force: true });
+      }, delayMs);
+    });
+  }, [syncGuideCueTracks]);
   const pauseGuideCueTracks = React.useCallback(() => {
     getGuideCueAudioElements().forEach((element) => {
       try { element.pause(); } catch { }
@@ -2343,10 +2353,11 @@ export default function ModoEnsayoCompacto({
     pendingPlaybackResumeRef.current = false;
     audioRef.current.play().then(() => {
       void playGuideCueTracks(audioRef.current?.currentTime || audioCurrentTime);
+      scheduleGuideCueResync();
     }).catch(() => {
       setIsPlaying(false);
     });
-  }, [audioCurrentTime, audioReady, playGuideCueTracks]);
+  }, [audioCurrentTime, audioReady, playGuideCueTracks, scheduleGuideCueResync]);
   useEffect(() => {
     if (syncRole === 'local' || typeof window === 'undefined') {
       if (syncChannelRef.current) {
@@ -2490,8 +2501,17 @@ export default function ModoEnsayoCompacto({
         if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
           await audioCtxRef.current.resume();
         }
-        await audioRef.current.play();
-        await playGuideCueTracks(audioRef.current.currentTime || audioCurrentTime);
+        const startTime = audioRef.current.currentTime || audioCurrentTime;
+        syncGuideCueTracks(startTime, { force: true });
+        const results = await Promise.allSettled([
+          audioRef.current.play(),
+          playGuideCueTracks(startTime),
+        ]);
+        const mainPlayback = results[0];
+        if (mainPlayback.status === 'rejected') {
+          throw mainPlayback.reason;
+        }
+        scheduleGuideCueResync();
       } else {
         audioRef.current.pause();
         pauseGuideCueTracks();
@@ -2555,6 +2575,7 @@ export default function ModoEnsayoCompacto({
         onPlay={(event) => {
           setIsPlaying(true);
           void playGuideCueTracks(event.currentTarget.currentTime || audioCurrentTime);
+          scheduleGuideCueResync();
         }}
         onPause={() => {
           setIsPlaying(false);
