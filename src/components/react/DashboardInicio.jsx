@@ -568,7 +568,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                             )}
                         </article>
 
-                        <article className="relative mb-[calc(7rem+env(safe-area-inset-bottom))] overflow-hidden border border-zinc-200/80 rounded-[2rem] p-5 shadow-sm bg-[radial-gradient(circle_at_top_right,_rgba(20,184,166,0.06),_transparent_45%),linear-gradient(180deg,_rgba(255,255,255,0.99),_rgba(244,244,245,0.97))] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_right,_rgba(20,184,166,0.15),_transparent_40%),linear-gradient(180deg,_rgba(24,24,27,0.98),_rgba(15,23,42,0.95))] dark:shadow-[0_8px_32px_rgba(2,6,23,0.3)] lg:mb-0">
+                        <article className="relative overflow-hidden border border-zinc-200/80 rounded-[2rem] p-5 shadow-sm bg-[radial-gradient(circle_at_top_right,_rgba(20,184,166,0.06),_transparent_45%),linear-gradient(180deg,_rgba(255,255,255,0.99),_rgba(244,244,245,0.97))] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_right,_rgba(20,184,166,0.15),_transparent_40%),linear-gradient(180deg,_rgba(24,24,27,0.98),_rgba(15,23,42,0.95))] dark:shadow-[0_8px_32px_rgba(2,6,23,0.3)]">
                             <div className="flex items-center justify-between gap-3 mb-3">
                                 <h3 className="text-sm font-black text-content uppercase tracking-wide inline-flex items-center gap-2">
                                     <span className="w-6 h-6 rounded-md bg-brand/15 border border-brand/30 text-brand flex items-center justify-center">

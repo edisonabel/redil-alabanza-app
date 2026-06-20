@@ -201,7 +201,8 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
    )}
 
    {/* ── Secondary Actions Strip (pills con texto) ── */}
-   <div class="resource-actions flex items-center gap-2.5 mt-2.5 -mx-1 px-1 pb-1">
+   <div class="resource-actions-shell relative">
+   <div class="resource-actions flex items-center gap-2.5 mt-2.5 -mx-1 px-1 pr-7 pb-1">
 
      {/* Ensayar (secondary when MP3 is primary) */}
       {primaryIsMp3 && hasChordpro && (
@@ -305,6 +306,12 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
      </a>
      )}
 
+   </div>
+   <span class="resource-actions-hint" aria-hidden="true">
+     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.35" stroke-linecap="round" stroke-linejoin="round">
+       <path d="m9 18 6-6-6-6"></path>
+     </svg>
+   </span>
    </div>
   </div>
  </div>
