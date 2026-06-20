@@ -404,9 +404,13 @@ if (sessionError) {
   const shell = scroller.closest('.resource-actions-shell') as HTMLElement | null;
   if (!shell) return;
   const hasOverflow = scroller.scrollWidth - scroller.clientWidth > 8;
+  const canScrollBack = hasOverflow && scroller.scrollLeft > 12;
   const isAtEnd = scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 12;
+  const canScrollForward = hasOverflow && !isAtEnd;
   shell.classList.toggle('has-overflow', hasOverflow);
-  shell.classList.toggle('has-more', hasOverflow && !isAtEnd);
+  shell.classList.toggle('has-more', canScrollForward);
+  shell.classList.toggle('can-scroll-back', canScrollBack);
+  shell.classList.toggle('can-scroll-forward', canScrollForward);
  };
 
  const syncResourceActionHints = () => {
@@ -427,6 +431,26 @@ if (sessionError) {
    if (el.dataset.resourceHintBound === 'true') return;
    el.dataset.resourceHintBound = 'true';
    addListener(el, 'scroll', scheduleResourceActionHints, { passive: true });
+
+   const shell = el.closest('.resource-actions-shell') as HTMLElement | null;
+   shell?.querySelectorAll('[data-resource-scroll]').forEach((button) => {
+    const control = button as HTMLButtonElement;
+    if (control.dataset.resourceScrollBound === 'true') return;
+    control.dataset.resourceScrollBound = 'true';
+    addListener(control, 'click', (event) => {
+     event.preventDefault();
+     event.stopPropagation();
+     const direction = control.dataset.resourceScroll === 'prev' ? -1 : 1;
+     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+     const distance = Math.max(180, Math.round(el.clientWidth * 0.72));
+     el.scrollBy({
+      left: direction * distance,
+      behavior: reducedMotion ? 'auto' : 'smooth',
+     });
+     scheduleResourceActionHints();
+     window.setTimeout(scheduleResourceActionHints, reducedMotion ? 30 : 320);
+    });
+   });
   });
   scheduleResourceActionHints();
  };
@@ -1469,6 +1493,70 @@ function filterCards() {
    opacity: 0.92;
    animation: resource-actions-arrow-nudge 1.35s ease-in-out infinite;
   }
+ .resource-actions-nav {
+   position: absolute;
+   top: calc(50% + 0.15rem);
+   z-index: 4;
+   display: none;
+   width: 1.75rem;
+   height: 2.25rem;
+   align-items: center;
+   justify-content: center;
+   border: 0;
+   background: transparent;
+   color: rgba(39, 39, 42, 0.78);
+   opacity: 0;
+   pointer-events: none;
+   transform: translate3d(0, -50%, 0);
+   transition:
+     opacity 180ms ease,
+     color 180ms ease,
+     transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+ .resource-actions-nav-prev {
+   left: -0.45rem;
+  }
+ .resource-actions-nav-next {
+   right: -0.45rem;
+  }
+ .dark .resource-actions-nav {
+   color: rgba(244, 244, 245, 0.8);
+   filter: drop-shadow(0 1px 3px rgba(0,0,0,0.55));
+  }
+
+ @media (hover: hover) and (pointer: fine) {
+   .resource-actions-shell.has-overflow .resource-actions {
+     padding-left: 1.65rem;
+     padding-right: 1.65rem;
+     scroll-padding-inline: 1.65rem;
+   }
+
+   .resource-actions-hint {
+     display: none;
+   }
+
+   .resource-actions-nav {
+     display: flex;
+   }
+
+   .resource-actions-shell.can-scroll-back .resource-actions-nav-prev,
+   .resource-actions-shell.can-scroll-forward .resource-actions-nav-next {
+     opacity: 0.9;
+     pointer-events: auto;
+   }
+
+   .resource-actions-nav:hover,
+   .resource-actions-nav:focus-visible {
+     color: rgb(var(--color-brand));
+     transform: translate3d(0, -50%, 0) scale(1.08);
+   }
+
+   .resource-actions-nav:focus-visible {
+     outline: 2px solid rgb(var(--color-brand) / 0.45);
+     outline-offset: 2px;
+     border-radius: 0.5rem;
+   }
+ }
 
  @keyframes resource-actions-arrow-nudge {
    0%, 100% {
