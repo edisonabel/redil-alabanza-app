@@ -50,7 +50,7 @@ const firstTourResourcesId =
   </header>
 
  <!-- UI Controles -->
- <section id="searchControls" data-tour="repertorio-search" class="sticky z-40 max-w-7xl mx-auto mb-3 md:mb-6 bg-surface/95 backdrop-blur-xl border border-border rounded-2xl px-2.5 py-2.5 md:px-4 md:py-4 shadow-lg anim-fade-in-up anim-stagger" style="--delay: 220ms; top: max(calc(env(safe-area-inset-top) + 0.65rem), 0.75rem);">
+ <section id="searchControls" data-tour="repertorio-search" class="repertoire-search-bar sticky z-40 max-w-7xl mx-auto mb-3 md:mb-6 bg-surface/95 backdrop-blur-xl border border-border rounded-2xl px-2.5 py-2.5 md:px-4 md:py-4 shadow-lg anim-fade-in-up anim-stagger" style="--delay: 220ms; top: max(calc(env(safe-area-inset-top) + 0.65rem), 0.75rem);">
  <div class="flex items-end gap-2 md:grid md:grid-cols-[minmax(16rem,1fr)_auto] md:gap-3">
  <div class="min-w-0 flex-1">
  <label for="search-input" class="hidden md:block text-sm font-medium text-content mb-1.5">Buscar</label>
@@ -398,6 +398,57 @@ if (sessionError) {
  
  // Obtenemos todos los <article> dentro del grid
  const cards = document.querySelectorAll('#gridCanciones article') as NodeListOf<HTMLElement>;
+
+ let lastSearchScrollY = Math.max(window.scrollY, 0);
+ let searchScrollTicking = false;
+ let searchControlsHidden = false;
+
+ const setSearchControlsHidden = (hidden: boolean) => {
+  if (!searchControls || searchControlsHidden === hidden) return;
+  searchControlsHidden = hidden;
+  searchControls.classList.toggle('is-hidden', hidden);
+ };
+
+ const keepSearchControlsVisible = () => {
+  lastSearchScrollY = Math.max(window.scrollY, 0);
+  setSearchControlsHidden(false);
+ };
+
+ const handleSearchControlsScroll = () => {
+  if (!searchControls || searchScrollTicking) return;
+  searchScrollTicking = true;
+
+  window.requestAnimationFrame(() => {
+   const currentScrollY = Math.max(window.scrollY, 0);
+   const diff = currentScrollY - lastSearchScrollY;
+   const focusedElement = document.activeElement;
+   const controlsFocused = Boolean(focusedElement && searchControls.contains(focusedElement));
+   const filtersOpen = advancedFilters?.dataset.open === 'true';
+
+   if (currentScrollY <= 80 || controlsFocused || filtersOpen) {
+    setSearchControlsHidden(false);
+    lastSearchScrollY = currentScrollY;
+    searchScrollTicking = false;
+    return;
+   }
+
+   if (Math.abs(diff) >= 8) {
+    if (diff > 0 && currentScrollY > 120) {
+     setSearchControlsHidden(true);
+    } else if (diff < 0) {
+     setSearchControlsHidden(false);
+    }
+
+    lastSearchScrollY = currentScrollY;
+   }
+
+   searchScrollTicking = false;
+  });
+ };
+
+ addListener(window, 'scroll', handleSearchControlsScroll, { passive: true });
+ addListener(searchControls, 'focusin', keepSearchControlsVisible);
+ addListener(searchControls, 'pointerdown', keepSearchControlsVisible);
 
  // ----- View Toggle Logic -----
  let isListView = false;
@@ -1290,6 +1341,70 @@ function filterCards() {
  /* GPU-accelerated containment for card grid — reduces layout/paint on scroll */
  #gridCanciones { contain: style; }
 
+ .repertoire-search-bar {
+   animation: none;
+   transform: translate3d(0, 0, 0);
+   opacity: 1;
+   will-change: transform, opacity;
+   transition:
+     transform 700ms cubic-bezier(0.22, 1, 0.36, 1),
+     opacity 700ms cubic-bezier(0.22, 1, 0.36, 1);
+ }
+ .repertoire-search-bar.is-hidden {
+   transform: translate3d(0, calc(-100% - 1.25rem), 0);
+   opacity: 0;
+   pointer-events: none;
+ }
+
+ .repertorio-meta-row {
+   white-space: nowrap;
+   -webkit-overflow-scrolling: touch;
+ }
+ .repertorio-meta-item {
+   position: relative;
+ }
+ .repertorio-meta-item + .repertorio-meta-item {
+   margin-left: 0.65rem;
+ }
+ .repertorio-meta-item + .repertorio-meta-item::before {
+   content: "";
+   position: absolute;
+   left: -0.42rem;
+   top: 50%;
+   width: 0.2rem;
+   height: 0.2rem;
+   border-radius: 9999px;
+   background: currentColor;
+   opacity: 0.38;
+   transform: translateY(-50%);
+   pointer-events: none;
+ }
+ .card-cancion .badge-tono:hover,
+ .card-cancion .badge-bpm:hover {
+   background-color: rgba(113, 113, 122, 0.08);
+ }
+ :global(.dark) .card-cancion .badge-tono:hover,
+ :global(.dark) .card-cancion .badge-bpm:hover {
+   background-color: rgba(255, 255, 255, 0.07);
+ }
+ .resource-actions {
+   flex-wrap: nowrap;
+   overflow-x: auto;
+   overflow-y: hidden;
+   white-space: nowrap;
+   -webkit-overflow-scrolling: touch;
+   scroll-snap-type: x proximity;
+   scrollbar-width: none;
+ }
+ .resource-actions::-webkit-scrollbar {
+   display: none;
+ }
+ .resource-actions > * {
+   flex: 0 0 auto;
+   scroll-snap-align: start;
+   white-space: nowrap;
+ }
+
  .repertorio-advanced-filters {
    max-height: 0;
    opacity: 0;
@@ -1328,7 +1443,19 @@ function filterCards() {
  body.tema-claro #mainTitle,
  body.tema-claro h2 { color: #111827; }
  body.tema-claro input, body.tema-claro select { background-color: #ffffff; color: #111827; border-color: #d1d5db; }
- body.tema-claro .badge-tono, body.tema-claro .badge-bpm, body.tema-claro .badge-voz, body.tema-claro .badge-categoria { background-color: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+ body.tema-claro .badge-tono,
+ body.tema-claro .badge-bpm,
+ body.tema-claro .badge-voz,
+ body.tema-claro .badge-categoria {
+   background-color: transparent;
+   color: #4b5563;
+   border-color: transparent;
+ }
+ body.tema-claro .badge-tono:hover,
+ body.tema-claro .badge-bpm:hover {
+   background-color: rgba(229, 231, 235, 0.58);
+   color: #111827;
+ }
  body.tema-claro .text-content-muted { color: #6b7280; }
  body.tema-claro .text-content-muted { color: #4b5563; }
  body.tema-claro .bg-surface { background-color: #ffffff; border-color: #e5e7eb; }
@@ -1435,6 +1562,12 @@ function filterCards() {
  }
  :global(.dark) .modo-lista.expandido {
    box-shadow: 0 0 0 1.5px rgba(59,130,246,0.25), 0 8px 32px rgba(2,6,23,0.3);
+ }
+
+ @media (prefers-reduced-motion: reduce) {
+   .repertoire-search-bar {
+     transition-duration: 1ms;
+   }
  }
 
 </style>

@@ -54,7 +54,7 @@ const visibleNavItems = navItems.filter((item) => !item.adminOnly || isAdmin);
 const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, minmax(0, 1fr));`;
 ---
 
-<nav data-bottom-nav="true" transition:persist transition:animate="none" class="fixed bottom-0 w-full z-50 bg-surface/85 backdrop-blur-xl border-t border-border pt-1 pb-safe shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
+<nav data-bottom-nav="true" transition:persist transition:animate="none" class="bottom-nav-shell fixed bottom-0 w-full z-50 bg-surface/85 backdrop-blur-xl border-t border-border pt-1 pb-safe shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
  <div class="mx-auto grid w-full max-w-none px-2 md:max-w-xl" style={navGridStyle}>
  {visibleNavItems.map((item) => {
  const active = isActive(item.href);
@@ -83,6 +83,27 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  /* Support for mobile safe areas (iOS notches/bars) */
  .pb-safe {
  padding-bottom: calc(env(safe-area-inset-bottom) + 0.75rem);
+ }
+
+ .bottom-nav-shell {
+  transform: translate3d(0, 0, 0);
+  opacity: 1;
+  will-change: transform, opacity;
+  transition:
+   transform 700ms cubic-bezier(0.22, 1, 0.36, 1),
+   opacity 700ms cubic-bezier(0.22, 1, 0.36, 1);
+ }
+
+ .bottom-nav-shell.is-hidden {
+  transform: translate3d(0, calc(100% + env(safe-area-inset-bottom) + 1.25rem), 0);
+  opacity: 0;
+  pointer-events: none;
+ }
+
+ :global(html[data-bottom-nav-hidden='true'] nav[data-bottom-nav='true']) {
+  transform: translate3d(0, calc(100% + env(safe-area-inset-bottom) + 1.25rem), 0) !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
  }
 
  .nav-link {
@@ -126,6 +147,10 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  }
 
  @media (prefers-reduced-motion: reduce) {
+  .bottom-nav-shell {
+   transition-duration: 1ms;
+  }
+
   .nav-icon,
   .nav-link.nav-link-pressed .nav-icon,
   .nav-link.is-active .nav-icon {
@@ -145,7 +170,8 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
 <script>
  const initBottomNav = async () => {
  const navLinks = Array.from(document.querySelectorAll('a[data-nav-link="true"]'));
- if (!navLinks.length) return;
+ const bottomNav = document.querySelector('nav[data-bottom-nav="true"]');
+ if (!navLinks.length || !bottomNav) return;
 
  const triggerHaptic = () => {
  try {
@@ -187,6 +213,71 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  if (label) label.classList.toggle('font-bold', active);
  });
  };
+
+ const setBottomNavHiddenState = (hidden) => {
+ const nav = document.querySelector('nav[data-bottom-nav="true"]');
+ document.documentElement.dataset.bottomNavHidden = hidden ? 'true' : 'false';
+ if (nav) nav.classList.toggle('is-hidden', hidden);
+ window.__REDIL_BOTTOM_NAV_HIDDEN__ = hidden;
+ };
+
+ const showBottomNav = () => {
+ setBottomNavHiddenState(false);
+ };
+
+ if (!window.__REDIL_BOTTOM_NAV_SCROLL_BOUND__) {
+ let lastScrollY = Math.max(window.scrollY, 0);
+ let ticking = false;
+
+ const handleScroll = () => {
+ if (ticking) return;
+ ticking = true;
+
+ window.requestAnimationFrame(() => {
+ const currentScrollY = Math.max(window.scrollY, 0);
+ const diff = currentScrollY - lastScrollY;
+ const activeElement = document.activeElement;
+ const nav = document.querySelector('nav[data-bottom-nav="true"]');
+ const navFocused = Boolean(activeElement && nav?.contains(activeElement));
+
+ if (currentScrollY <= 80 || navFocused) {
+ setBottomNavHiddenState(false);
+ lastScrollY = currentScrollY;
+ ticking = false;
+ return;
+ }
+
+ if (Math.abs(diff) >= 8) {
+ if (diff > 0 && currentScrollY > 120) {
+ setBottomNavHiddenState(true);
+ } else if (diff < 0) {
+ setBottomNavHiddenState(false);
+ }
+
+ lastScrollY = currentScrollY;
+ }
+
+ ticking = false;
+ });
+ };
+
+ window.addEventListener('scroll', handleScroll, { passive: true });
+ window.addEventListener('focusin', () => {
+ const nav = document.querySelector('nav[data-bottom-nav="true"]');
+ if (nav?.contains(document.activeElement)) setBottomNavHiddenState(false);
+ });
+ document.addEventListener('astro:before-swap', () => setBottomNavHiddenState(false));
+ document.addEventListener('astro:after-swap', () => {
+ lastScrollY = Math.max(window.scrollY, 0);
+ setBottomNavHiddenState(false);
+ });
+ document.addEventListener('astro:page-load', () => {
+ lastScrollY = Math.max(window.scrollY, 0);
+ setBottomNavHiddenState(false);
+ });
+
+ window.__REDIL_BOTTOM_NAV_SCROLL_BOUND__ = true;
+ }
 
  const clearLoadingState = () => {
  navLinks.forEach((link) => {
@@ -243,6 +334,7 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  link.addEventListener('pointerenter', () => prefetchRoute(href), { passive: true });
  link.addEventListener('touchstart', () => prefetchRoute(href), { passive: true });
  link.addEventListener('pointerdown', () => {
+ showBottomNav();
  triggerHaptic();
  link.classList.add('nav-link-pressed');
  window.setTimeout(() => {
@@ -296,4 +388,3 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  initBottomNav();
  }
 </script>
-
