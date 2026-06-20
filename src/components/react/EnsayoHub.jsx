@@ -385,6 +385,13 @@ const normalizeVoiceLabel = (rawVoice = '') => {
   return source;
 };
 
+const formatCompactMetaLabel = (value = '') => {
+  const source = String(value || '').trim();
+  if (!source) return '';
+  const lower = source.toLocaleLowerCase('es-CO');
+  return lower.charAt(0).toLocaleUpperCase('es-CO') + lower.slice(1);
+};
+
 const hasValidVoicePayload = (value) => {
   const raw = serializeVoicePayload(value);
   const normalized = raw
@@ -479,6 +486,8 @@ export default function EnsayoHub({
   const queueActiveRef = useRef(false);
   const voiceAssignmentFeedbackTimeoutRef = useRef(null);
   const setlistPdfObjectUrlsRef = useRef([]);
+  const songActionScrollerRefs = useRef(new Map());
+  const [overflowingSongActionIds, setOverflowingSongActionIds] = useState(() => new Set());
   const [insertAfterIndex, setInsertAfterIndex] = useState(-1);
 
   const playableSongs = useMemo(() => (
@@ -527,6 +536,55 @@ export default function EnsayoHub({
     });
     setlistPdfObjectUrlsRef.current = [];
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    let frame = 0;
+    const updateOverflowState = () => {
+      frame = 0;
+      const nextOverflowingIds = new Set();
+
+      songActionScrollerRefs.current.forEach((scroller, key) => {
+        if (scroller && scroller.scrollWidth - scroller.clientWidth > 8) {
+          nextOverflowingIds.add(key);
+        }
+      });
+
+      setOverflowingSongActionIds((current) => {
+        if (
+          current.size === nextOverflowingIds.size &&
+          [...current].every((key) => nextOverflowingIds.has(key))
+        ) {
+          return current;
+        }
+
+        return nextOverflowingIds;
+      });
+    };
+
+    const scheduleOverflowUpdate = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(updateOverflowState);
+    };
+
+    scheduleOverflowUpdate();
+    window.addEventListener('resize', scheduleOverflowUpdate, { passive: true });
+
+    let resizeObserver = null;
+    if (typeof window.ResizeObserver === 'function') {
+      resizeObserver = new window.ResizeObserver(scheduleOverflowUpdate);
+      songActionScrollerRefs.current.forEach((scroller) => {
+        if (scroller) resizeObserver.observe(scroller);
+      });
+    }
+
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize', scheduleOverflowUpdate);
+      resizeObserver?.disconnect();
+    };
+  }, [songs, isEditMode, songVoiceAssignments, viewerVoiceMemberId]);
 
   const showVoiceAssignmentFeedback = useCallback((type, message) => {
     if (!message || typeof window === 'undefined') {
@@ -1195,14 +1253,14 @@ export default function EnsayoHub({
                       <button
                         type="button"
                         onClick={() => setIsEditMode(!isEditMode)}
-                        className={`ui-pressable-soft inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-wider transition-all ${
+                        className={`ui-pressable-soft inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-[0.12em] transition-all ${
                           isEditMode
                             ? 'bg-brand text-white'
                             : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
                         }`}
                       >
                         <GripVertical className="h-3 w-3" />
-                        {isEditMode ? 'Listo' : 'Editar'}
+                        {isEditMode ? 'Listo' : 'Ordenar setlist'}
                       </button>
                     )}
                   </div>
@@ -1330,16 +1388,24 @@ export default function EnsayoHub({
                 currentUserAssignedTrackName &&
                 parsedVoices.entries.some((entry) => String(entry?.label || '').trim() === currentUserAssignedTrackName)
               );
+              const songActionKey = String(song?.id || `${song?.title || 'song'}-${index}`);
+              const hasActionOverflow = overflowingSongActionIds.has(songActionKey);
+              const metadataItems = [
+                keyLabel && keyLabel !== '-' ? keyLabel : '',
+                song?.category ? formatCompactMetaLabel(song.category) : '',
+                voiceLabel,
+              ].filter(Boolean);
 
               return (
                 <React.Fragment key={song?.id || `${song?.title || 'song'}-${index}`}>
                 <article
                   onClick={(event) => {
-                    if (isEditMode || event.target.closest('button')) return;
+                    if (isEditMode || event.target.closest('button, a')) return;
                     openCompactSong(song);
                   }}
                   onKeyDown={(event) => {
                     if (isEditMode) return;
+                    if (event.target.closest('button, a')) return;
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
                       openCompactSong(song);
@@ -1349,8 +1415,8 @@ export default function EnsayoHub({
                   tabIndex={isEditMode ? -1 : 0}
                   className={`ui-pressable-row group grid w-full items-start gap-x-3 gap-y-2 border-b border-zinc-200/90 px-4 py-4 text-left transition-colors dark:border-white/10 last:border-b-0 ${
                     isEditMode
-                      ? 'grid-cols-[auto_auto_minmax(0,1fr)_auto]'
-                      : 'grid-cols-[auto_minmax(0,1fr)_auto]'
+                      ? 'grid-cols-[auto_auto_minmax(0,1fr)]'
+                      : 'grid-cols-[auto_minmax(0,1fr)]'
                   } ${
                     isLastViewed
                       ? 'bg-brand/6 hover:bg-brand/10 dark:bg-brand/10 dark:hover:bg-brand/12'
@@ -1372,19 +1438,98 @@ export default function EnsayoHub({
                     </div>
                   )}
 
-                  <div className="grid h-12 w-12 shrink-0 place-items-center self-center rounded-2xl border border-zinc-200 bg-[linear-gradient(180deg,_rgba(255,255,255,0.96),_rgba(244,244,245,0.96))] text-sm font-black text-zinc-600 shadow-sm dark:border-white/10 dark:bg-[linear-gradient(180deg,_rgba(39,39,42,0.92),_rgba(24,24,27,0.92))] dark:text-zinc-200">
+                  <div className="flex w-12 shrink-0 justify-center self-start pt-0.5 text-2xl font-black tabular-nums leading-none tracking-tight text-zinc-500 dark:text-zinc-300">
                     {String(index + 1).padStart(2, '0')}
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-base font-black tracking-tight text-zinc-950 dark:text-zinc-50 md:text-lg">
-                      {song?.title || `Canción ${index + 1}`}
-                    </p>
-                    <p className="truncate text-sm text-zinc-500 dark:text-zinc-400">
-                      {song?.artist || 'Redil Worship'}
-                    </p>
-                    <div className="mt-1.5 flex items-center gap-2 overflow-x-auto px-0.5 py-1.5 pr-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                      {hasStructuredVoiceEntries && (
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-base font-black tracking-tight text-zinc-950 dark:text-zinc-50 md:text-lg">
+                          {song?.title || `Canción ${index + 1}`}
+                        </p>
+                        <p className="truncate text-sm text-zinc-500 dark:text-zinc-400">
+                          {song?.artist || 'Redil Worship'}
+                        </p>
+                        {metadataItems.length > 0 && (
+                          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-zinc-500 dark:text-zinc-400">
+                            {metadataItems.map((item, metaIndex) => (
+                              <React.Fragment key={`${songActionKey}-meta-${item}-${metaIndex}`}>
+                                {metaIndex > 0 && (
+                                  <span className="h-1 w-1 rounded-full bg-zinc-300 dark:bg-zinc-700" aria-hidden="true" />
+                                )}
+                                <span className="min-w-0 max-w-full truncate">
+                                  {item}
+                                </span>
+                              </React.Fragment>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {!isEditMode && (
+                        <div className="ensayo-hub-row-actions flex shrink-0 items-start gap-2">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              toggleSongMetronome(song?.id || index, bpmValue);
+                            }}
+                            disabled={!bpmValue}
+                            className={`ensayo-hub-bpm relative inline-flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl border bg-white text-zinc-900 shadow-sm transition-colors dark:bg-zinc-900 dark:text-zinc-50 ${
+                              bpmValue
+                                ? 'border-zinc-200 hover:bg-zinc-100 dark:border-white/10 dark:hover:bg-zinc-800'
+                                : 'cursor-not-allowed border-zinc-200/70 text-zinc-400 dark:border-white/10 dark:text-zinc-500'
+                            } ${isMetronomeActive ? 'beat-active' : ''}`}
+                            style={isMetronomeActive && bpmValue ? { '--bpm-duration': `${60 / bpmValue}s` } : undefined}
+                            aria-label={isMetronomeActive ? `Detener metrónomo ${bpmValue} BPM` : `Activar metrónomo ${bpmValue || 0} BPM`}
+                            title={bpmValue ? `${bpmValue} BPM` : 'Sin BPM'}
+                          >
+                            <span className={`relative z-[1] font-black leading-none ${String(bpmValue || '--').length > 2 ? 'text-[11px]' : 'text-sm'}`}>
+                              {bpmValue || '--'}
+                            </span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              stopQueue();
+                              openSongInPlayer(song, true);
+                            }}
+                            disabled={!hasSongAudio}
+                            className={`inline-flex h-10 w-10 items-center justify-center rounded-full border transition-colors ${
+                              hasSongAudio
+                                ? 'border-zinc-200 bg-white text-zinc-900 shadow-sm hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800'
+                                : 'cursor-not-allowed border-zinc-200/70 bg-zinc-100 text-zinc-400 shadow-none dark:border-white/10 dark:bg-zinc-900/60 dark:text-zinc-600'
+                            }`}
+                            aria-label={hasSongAudio ? `Reproducir ${song?.title || 'canción'}` : 'Sin MP3'}
+                            title={hasSongAudio ? 'Escuchar canción' : 'Esta canción no tiene MP3'}
+                          >
+                            <Play className="ml-0.5 h-4.5 w-4.5" />
+                          </button>
+
+                          <div className="ensayo-hub-row-chevron hidden h-10 w-10 items-center justify-center rounded-full text-zinc-300 transition-colors group-hover:text-zinc-500 dark:text-zinc-700 dark:group-hover:text-zinc-400 md:flex">
+                            <ChevronRight className="h-5 w-5" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className={`ensayo-song-actions-wrap mt-3 ${hasActionOverflow ? 'has-overflow' : ''}`}>
+                      <div
+                        ref={(node) => {
+                          if (node) {
+                            songActionScrollerRefs.current.set(songActionKey, node);
+                          } else {
+                            songActionScrollerRefs.current.delete(songActionKey);
+                          }
+                        }}
+                        className="ensayo-song-actions flex min-w-0 items-center gap-2.5 overflow-x-auto px-0.5 py-1 pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                      >
+                      {hasVoiceResources && (
                         <button
                           type="button"
                           onClick={(event) => {
@@ -1392,101 +1537,51 @@ export default function EnsayoHub({
                             event.stopPropagation();
                             openPersonalVoiceView(song);
                           }}
-                          className={`ui-pressable-soft inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] transition-all ${
+                          className={`ui-pressable-soft inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border px-3 text-[12px] font-bold transition-all ${
                             hasPersonalVoiceAssignment
-                              ? 'border-cyan-300 bg-cyan-50 text-cyan-700 shadow-[0_1px_2px_rgba(8,145,178,0.08),0_0_0_1px_rgba(34,211,238,0.12)] hover:bg-cyan-100 dark:border-cyan-400/55 dark:bg-cyan-400/12 dark:text-cyan-300 dark:shadow-[0_0_0_1px_rgba(34,211,238,0.14),0_0_16px_rgba(34,211,238,0.16)] dark:hover:bg-cyan-400/16'
-                              : 'border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800'
+                              ? 'border-violet-300/55 bg-violet-500/14 text-violet-800 shadow-sm hover:bg-violet-500/18 dark:border-violet-300/25 dark:bg-violet-400/14 dark:text-violet-100 dark:hover:bg-violet-400/18'
+                              : 'border-violet-300/40 bg-violet-500/10 text-violet-700 shadow-sm hover:bg-violet-500/15 hover:text-violet-800 dark:border-violet-300/20 dark:bg-violet-400/10 dark:text-violet-200 dark:hover:bg-violet-400/16 dark:hover:text-violet-100'
                           }`}
                           aria-label={`Abrir vista vocal de ${song?.title || 'cancion'}`}
-                          title="Abrir vista vocal personalizada"
+                          title="Abrir voces"
                         >
                           <Mic2 className="h-3.5 w-3.5" />
-                          {hasPersonalVoiceAssignment ? 'Mi voz' : 'Vista vocal'}
+                          Voces
                         </button>
                       )}
-                      <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-700 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-200">
-                        {keyLabel}
-                      </span>
-                      {song?.category && (
-                        <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-400">
-                          {song.category}
-                        </span>
-                      )}
-                      {voiceLabel && (
-                        <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold tracking-[0.04em] text-zinc-500 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-400">
-                          {voiceLabel}
-                        </span>
-                      )}
-                      {hasPersonalVoiceAssignment && (
-                        <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-cyan-300 bg-cyan-50 px-2.5 text-[11px] font-black tracking-[0.04em] text-cyan-800 shadow-[0_1px_2px_rgba(8,145,178,0.08)] dark:border-cyan-400/25 dark:bg-cyan-400/10 dark:text-cyan-300 dark:shadow-none">
-                          Tu voz: {currentUserAssignedTrackName}
-                        </span>
-                      )}
+
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          openCompactSong(song);
+                        }}
+                        className="ui-pressable-soft inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-brand/30 bg-brand/10 px-3 text-[12px] font-bold text-brand shadow-sm transition-all hover:bg-brand/15 active:scale-95 dark:border-brand/25 dark:bg-brand/10 dark:text-brand dark:hover:bg-brand/16"
+                        aria-label={`Abrir modo ensayo de ${song?.title || 'canción'}`}
+                        title="Abrir modo ensayo"
+                      >
+                        <ListMusic className="h-3.5 w-3.5" />
+                        Ensayar
+                      </button>
+
                       {song?.id && (
                         <a
                           href={`/herramientas/chordpro-print?song=${encodeURIComponent(String(song.id))}`}
                           onClick={(event) => event.stopPropagation()}
-                          className="ui-pressable-soft inline-flex h-8 shrink-0 items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500 transition-all hover:bg-zinc-100 hover:text-zinc-700 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                          className="ui-pressable-soft inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-amber-300/45 bg-amber-500/10 px-3 text-[12px] font-bold text-amber-800 shadow-sm transition-all hover:bg-amber-500/15 hover:text-amber-900 active:scale-95 dark:border-amber-300/20 dark:bg-amber-300/10 dark:text-amber-200 dark:hover:bg-amber-300/16 dark:hover:text-amber-100"
                           title="Imprimir hoja de la canción"
                           aria-label={`Imprimir ${song?.title || 'canción'}`}
                         >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
+                          <Printer className="h-3.5 w-3.5" />
                           Imprimir
                         </a>
                       )}
-                    </div>
-                  </div>
-
-                  <div className="ensayo-hub-row-actions flex shrink-0 items-start gap-2 self-start pt-1">
-                    {!isEditMode && (
-                      <>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        toggleSongMetronome(song?.id || index, bpmValue);
-                      }}
-                      disabled={!bpmValue}
-                      className={`ensayo-hub-bpm relative inline-flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl border bg-white text-zinc-900 shadow-sm transition-colors dark:bg-zinc-900 dark:text-zinc-50 ${
-                        bpmValue
-                          ? 'border-zinc-200 hover:bg-zinc-100 dark:border-white/10 dark:hover:bg-zinc-800'
-                          : 'cursor-not-allowed border-zinc-200/70 text-zinc-400 dark:border-white/10 dark:text-zinc-500'
-                      } ${isMetronomeActive ? 'beat-active' : ''}`}
-                      style={isMetronomeActive && bpmValue ? { '--bpm-duration': `${60 / bpmValue}s` } : undefined}
-                      aria-label={isMetronomeActive ? `Detener metrónomo ${bpmValue} BPM` : `Activar metrónomo ${bpmValue || 0} BPM`}
-                      title={bpmValue ? `${bpmValue} BPM` : 'Sin BPM'}
-                    >
-                      <span className={`relative z-[1] font-black leading-none ${String(bpmValue || '--').length > 2 ? 'text-[11px]' : 'text-sm'}`}>
-                        {bpmValue || '--'}
+                      </div>
+                      <span className="ensayo-song-actions-hint" aria-hidden="true">
+                        <ChevronRight className="h-4.5 w-4.5" />
                       </span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        stopQueue();
-                        openSongInPlayer(song, true);
-                      }}
-                      disabled={!hasSongAudio}
-                      className={`inline-flex h-10 w-10 items-center justify-center rounded-full border transition-colors ${
-                        hasSongAudio
-                          ? 'border-zinc-200 bg-white text-zinc-900 shadow-sm hover:bg-zinc-100 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800'
-                          : 'cursor-not-allowed border-zinc-200/70 bg-zinc-100 text-zinc-400 shadow-none dark:border-white/10 dark:bg-zinc-900/60 dark:text-zinc-600'
-                      }`}
-                      aria-label={hasSongAudio ? `Reproducir ${song?.title || 'canción'}` : 'Sin MP3'}
-                      title={hasSongAudio ? 'Escuchar canción' : 'Esta canción no tiene MP3'}
-                    >
-                      <Play className="ml-0.5 h-4.5 w-4.5" />
-                    </button>
-
-                    <div className="ensayo-hub-row-chevron hidden h-10 w-10 items-center justify-center rounded-full text-zinc-300 transition-colors group-hover:text-zinc-500 dark:text-zinc-700 dark:group-hover:text-zinc-400 md:flex">
-                      <ChevronRight className="h-5 w-5" />
                     </div>
-                      </>
-                    )}
                   </div>
                 </article>
 
@@ -1838,6 +1933,57 @@ export default function EnsayoHub({
 
         .dark .ensayo-hub-bpm.beat-active {
           background-color: rgba(24, 24, 27, 0.98);
+        }
+
+        .ensayo-song-actions-wrap {
+          position: relative;
+          min-width: 0;
+          transition: padding-right 180ms ease;
+        }
+
+        .ensayo-song-actions-wrap.has-overflow {
+          padding-right: 1.35rem;
+        }
+
+        .ensayo-song-actions > * {
+          flex: 0 0 auto;
+        }
+
+        .ensayo-song-actions-hint {
+          position: absolute;
+          right: 0;
+          top: 50%;
+          display: inline-flex;
+          width: 1.2rem;
+          height: 1.75rem;
+          align-items: center;
+          justify-content: center;
+          color: rgb(var(--color-brand));
+          opacity: 0;
+          pointer-events: none;
+          transform: translate3d(-0.25rem, -50%, 0);
+          transition:
+            opacity 180ms ease,
+            transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .ensayo-song-actions-wrap.has-overflow .ensayo-song-actions-hint {
+          opacity: 1;
+          animation: ensayo-song-actions-nudge 1.35s ease-in-out infinite;
+        }
+
+        .dark .ensayo-song-actions-hint {
+          color: rgba(244, 244, 245, 0.92);
+          filter: drop-shadow(0 1px 3px rgba(0,0,0,0.55));
+        }
+
+        @keyframes ensayo-song-actions-nudge {
+          0%, 100% {
+            transform: translate3d(-0.25rem, -50%, 0);
+          }
+          50% {
+            transform: translate3d(0.05rem, -50%, 0);
+          }
         }
 
         body[data-pro-player-modal-open='true'] .ensayo-hub-row-actions,

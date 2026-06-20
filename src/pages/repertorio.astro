@@ -1509,15 +1509,22 @@ function filterCards() {
    align-items: center;
    justify-content: center;
    border: 0;
-   background: transparent;
+   background: transparent !important;
    color: rgba(39, 39, 42, 0.78);
    opacity: 0;
    pointer-events: none;
+   box-shadow: none !important;
+   filter: none !important;
+   scale: 1 !important;
+   translate: 0 0 !important;
    transform: translate3d(0, -50%, 0);
    transition:
      opacity 180ms ease,
      color 180ms ease,
      transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+ .resource-actions-nav svg {
+   transition: filter 180ms ease;
   }
  .resource-actions-nav-prev {
    left: 0;
@@ -1557,14 +1564,23 @@ function filterCards() {
 
    .resource-actions-nav:hover,
    .resource-actions-nav:focus-visible {
+     background: transparent !important;
+     box-shadow: none !important;
      color: rgb(var(--color-brand));
+     filter: none !important;
+     outline: 0;
+     scale: 1 !important;
+     translate: 0 0 !important;
      transform: translate3d(0, -50%, 0) scale(1.08);
    }
 
+   .resource-actions-nav:hover svg,
+   .resource-actions-nav:focus-visible svg {
+     filter: drop-shadow(0 0 6px rgb(var(--color-brand) / 0.45));
+   }
+
    .resource-actions-nav:focus-visible {
-     outline: 2px solid rgb(var(--color-brand) / 0.45);
-     outline-offset: 2px;
-     border-radius: 0.5rem;
+     outline: 0;
    }
  }
 
