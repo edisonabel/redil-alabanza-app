@@ -1905,6 +1905,20 @@
     display: none !important;
   }
 
+  #mp3MiniPlayer {
+    transform: translate3d(0, 0, 0);
+    transition:
+      transform 700ms cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 700ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform, opacity;
+  }
+
+  html[data-bottom-nav-hidden='true'] #mp3MiniPlayer:not(.hidden) {
+    transform: translate3d(0, calc(100% + env(safe-area-inset-bottom) + 1.5rem), 0);
+    opacity: 0;
+    pointer-events: none;
+  }
+
   #mp3MiniPlayer.mp3-mini-entering {
     animation: mp3-mini-rise 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
@@ -2056,6 +2070,10 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
+    #mp3MiniPlayer {
+      transition-duration: 1ms;
+    }
+
     #mp3MiniPlayer.mp3-mini-entering,
     #mp3PlayerModal.mp3-modal-entering #mp3PlayerBackdrop,
     #mp3PlayerModal.mp3-modal-entering #mp3PlayerPanel,

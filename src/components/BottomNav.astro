@@ -86,12 +86,87 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  }
 
  .bottom-nav-shell {
+  isolation: isolate;
+  overflow: hidden;
+  background:
+   linear-gradient(180deg, rgba(255,255,255,0.54), rgba(255,255,255,0.34));
+  border-top-color: rgba(255,255,255,0.36);
+  box-shadow:
+   0 -18px 46px rgba(15,23,42,0.16),
+   0 -1px 0 rgba(15,23,42,0.06),
+   inset 0 1px 0 rgba(255,255,255,0.68),
+   inset 0 -1px 0 rgba(255,255,255,0.24);
   transform: translate3d(0, 0, 0);
   opacity: 1;
+  -webkit-backdrop-filter: blur(24px) saturate(1.75);
+  backdrop-filter: blur(24px) saturate(1.75);
   will-change: transform, opacity;
   transition:
    transform 700ms cubic-bezier(0.22, 1, 0.36, 1),
    opacity 700ms cubic-bezier(0.22, 1, 0.36, 1);
+ }
+
+ .bottom-nav-shell::before,
+ .bottom-nav-shell::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  pointer-events: none;
+  z-index: 0;
+ }
+
+ .bottom-nav-shell::before {
+  top: 0;
+  height: 58%;
+  background:
+   linear-gradient(180deg, rgba(255,255,255,0.46), rgba(255,255,255,0.06) 58%, transparent);
+  opacity: 0.82;
+ }
+
+ .bottom-nav-shell::after {
+  bottom: 0;
+  height: 72%;
+  background:
+   radial-gradient(120% 86% at 50% 100%, rgba(255,255,255,0.22), transparent 64%);
+  opacity: 0.64;
+ }
+
+ .bottom-nav-shell > * {
+  position: relative;
+  z-index: 1;
+ }
+
+ :global(.dark) .bottom-nav-shell {
+  background:
+   linear-gradient(180deg, rgba(24,24,27,0.52), rgba(9,9,11,0.36));
+  border-top-color: rgba(255,255,255,0.15);
+  box-shadow:
+   0 -22px 60px rgba(0,0,0,0.46),
+   0 -1px 0 rgba(255,255,255,0.08),
+   inset 0 1px 0 rgba(255,255,255,0.16),
+   inset 0 -1px 0 rgba(255,255,255,0.04);
+ }
+
+ :global(.dark) .bottom-nav-shell::before {
+  background:
+   linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.03) 58%, transparent);
+  opacity: 0.84;
+ }
+
+ :global(.dark) .bottom-nav-shell::after {
+  background:
+   radial-gradient(120% 86% at 50% 100%, rgba(59,130,246,0.16), transparent 66%);
+  opacity: 0.66;
+ }
+
+ @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .bottom-nav-shell {
+   background: rgba(255,255,255,0.92);
+  }
+
+  :global(.dark) .bottom-nav-shell {
+   background: rgba(9,9,11,0.92);
+  }
  }
 
  .bottom-nav-shell.is-hidden {
@@ -226,15 +301,49 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  };
 
  if (!window.__REDIL_BOTTOM_NAV_SCROLL_BOUND__) {
- let lastScrollY = Math.max(window.scrollY, 0);
+ let lastWindowScrollY = Math.max(window.scrollY, 0);
+ const scrollPositions = new WeakMap();
  let ticking = false;
 
- const handleScroll = () => {
+ const getScrollTarget = (event) => {
+ const target = event?.target;
+ if (
+ target instanceof Element &&
+ target !== document.documentElement &&
+ target !== document.body &&
+ target.scrollHeight - target.clientHeight > 1
+ ) {
+ return target;
+ }
+ return window;
+ };
+
+ const getCurrentScrollY = (scrollTarget) => {
+ if (scrollTarget === window) return Math.max(window.scrollY, 0);
+ return Math.max(scrollTarget.scrollTop, 0);
+ };
+
+ const getLastScrollY = (scrollTarget) => {
+ if (scrollTarget === window) return lastWindowScrollY;
+ return scrollPositions.get(scrollTarget) ?? 0;
+ };
+
+ const setLastScrollY = (scrollTarget, currentScrollY) => {
+ if (scrollTarget === window) {
+ lastWindowScrollY = currentScrollY;
+ return;
+ }
+ scrollPositions.set(scrollTarget, currentScrollY);
+ };
+
+ const handleScroll = (event) => {
  if (ticking) return;
  ticking = true;
 
  window.requestAnimationFrame(() => {
- const currentScrollY = Math.max(window.scrollY, 0);
+ const scrollTarget = getScrollTarget(event);
+ const currentScrollY = getCurrentScrollY(scrollTarget);
+ const lastScrollY = getLastScrollY(scrollTarget);
  const diff = currentScrollY - lastScrollY;
  const activeElement = document.activeElement;
  const nav = document.querySelector('nav[data-bottom-nav="true"]');
@@ -242,7 +351,7 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
 
  if (currentScrollY <= 80 || navFocused) {
  setBottomNavHiddenState(false);
- lastScrollY = currentScrollY;
+ setLastScrollY(scrollTarget, currentScrollY);
  ticking = false;
  return;
  }
@@ -254,27 +363,90 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  setBottomNavHiddenState(false);
  }
 
- lastScrollY = currentScrollY;
+ setLastScrollY(scrollTarget, currentScrollY);
  }
 
  ticking = false;
  });
  };
 
+ const scrollListenerTargets = new WeakSet();
+ let scrollBindingScheduled = false;
+ let scrollContainerObserver = null;
+ let observedScrollObserverBody = null;
+ const scrollContainerSelector = [
+ '[data-bottom-nav-scroll-root]',
+ '[id$="scroll-root"]',
+ '[class*="overflow-y-auto"]',
+ '[class*="overflow-y-scroll"]',
+ '[class*="overflow-auto"]',
+ 'main'
+ ].join(',');
+
+ const isVerticalScrollContainer = (element) => {
+ if (!(element instanceof Element)) return false;
+ if (element === document.documentElement || element === document.body) return false;
+ if (element.scrollHeight - element.clientHeight <= 1) return false;
+ const style = window.getComputedStyle(element);
+ return /(auto|scroll|overlay)/.test(style.overflowY);
+ };
+
+ const bindScrollTarget = (element) => {
+ if (!isVerticalScrollContainer(element) || scrollListenerTargets.has(element)) return;
+ element.addEventListener('scroll', handleScroll, { passive: true });
+ scrollListenerTargets.add(element);
+ };
+
+ const bindScrollableContainers = () => {
+ document.querySelectorAll(scrollContainerSelector).forEach(bindScrollTarget);
+ };
+
+ const scheduleScrollableContainerBinding = () => {
+ if (scrollBindingScheduled) return;
+ scrollBindingScheduled = true;
+ window.requestAnimationFrame(() => {
+ scrollBindingScheduled = false;
+ bindScrollableContainers();
+ });
+ window.setTimeout(bindScrollableContainers, 450);
+ window.setTimeout(bindScrollableContainers, 1200);
+ };
+
+ const observeScrollableContainerMounts = () => {
+ if (!('MutationObserver' in window) || observedScrollObserverBody === document.body) return;
+ if (scrollContainerObserver) scrollContainerObserver.disconnect();
+ observedScrollObserverBody = document.body;
+ scrollContainerObserver = new MutationObserver((mutations) => {
+ const hasAddedElements = mutations.some((mutation) =>
+ Array.from(mutation.addedNodes).some((node) => node instanceof Element)
+ );
+ if (hasAddedElements) scheduleScrollableContainerBinding();
+ });
+ scrollContainerObserver.observe(document.body, { childList: true, subtree: true });
+ };
+
  window.addEventListener('scroll', handleScroll, { passive: true });
+ document.addEventListener('scroll', handleScroll, { passive: true, capture: true });
+ observeScrollableContainerMounts();
+ scheduleScrollableContainerBinding();
  window.addEventListener('focusin', () => {
  const nav = document.querySelector('nav[data-bottom-nav="true"]');
  if (nav?.contains(document.activeElement)) setBottomNavHiddenState(false);
  });
  document.addEventListener('astro:before-swap', () => setBottomNavHiddenState(false));
  document.addEventListener('astro:after-swap', () => {
- lastScrollY = Math.max(window.scrollY, 0);
+ lastWindowScrollY = Math.max(window.scrollY, 0);
  setBottomNavHiddenState(false);
+ observeScrollableContainerMounts();
+ scheduleScrollableContainerBinding();
  });
  document.addEventListener('astro:page-load', () => {
- lastScrollY = Math.max(window.scrollY, 0);
+ lastWindowScrollY = Math.max(window.scrollY, 0);
  setBottomNavHiddenState(false);
+ observeScrollableContainerMounts();
+ scheduleScrollableContainerBinding();
  });
+ window.addEventListener('resize', scheduleScrollableContainerBinding, { passive: true });
 
  window.__REDIL_BOTTOM_NAV_SCROLL_BOUND__ = true;
  }
