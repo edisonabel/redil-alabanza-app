@@ -23,6 +23,7 @@ import {
   SECTION_VISUALS,
   toRgba,
 } from '../../utils/sectionVisuals';
+import { readLiveBrowserCapabilities } from '../../utils/liveDiagnostics';
 const FONT_PRESETS = {
   grande: {
     section: 'text-[0.78rem] sm:text-[0.82rem] tracking-[0.3em]',
@@ -217,6 +218,12 @@ const getRehearsalMixMainOutputRoute = (panValue = 0) => {
   if (panValue === -1) return 'left';
   if (panValue === 1) return 'right';
   return 'stereo';
+};
+const shouldUseStreamingRehearsalMixEngine = () => {
+  if (typeof window === 'undefined') return false;
+  const capabilities = readLiveBrowserCapabilities();
+  if (capabilities.isIOS || capabilities.isSafari) return false;
+  return Boolean(capabilities.audioDecoder && capabilities.audioWorkletNode);
 };
 const getReadableTrackLabel = (trackName = '', index = 0) => {
   const rawName = String(trackName || '').trim();
@@ -1421,7 +1428,8 @@ export default function ModoEnsayoCompacto({
   const [padVolume, setPadVolume] = useState(0.5);
   const [isPadActive, setIsPadActive] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(148);
-  const rehearsalMixEngine = useMultitrackEngine({ useStreamingEngine: true });
+  const useStreamingRehearsalMixEngine = useMemo(() => shouldUseStreamingRehearsalMixEngine(), []);
+  const rehearsalMixEngine = useMultitrackEngine({ useStreamingEngine: useStreamingRehearsalMixEngine });
   const {
     currentTime: rehearsalMixCurrentTime,
     duration: rehearsalMixDuration,

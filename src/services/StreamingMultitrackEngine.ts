@@ -628,7 +628,11 @@ export class StreamingMultitrackEngine {
   }
 
   setTrackVolume(trackIdOrIndex: string | number, volume: number): void {
-    const trackState = this.getTrackState(trackIdOrIndex);
+    const trackState = this.getTrackStateOrNull(trackIdOrIndex, 'volume update');
+    if (!trackState) {
+      return;
+    }
+
     const nextVolume = this.clampVolume(volume, MAX_TRACK_VOLUME);
 
     trackState.volume = nextVolume;
@@ -645,7 +649,11 @@ export class StreamingMultitrackEngine {
   }
 
   setTrackOutputRoute(trackIdOrIndex: string | number, outputRoute: TrackOutputRoute): void {
-    const trackState = this.getTrackState(trackIdOrIndex);
+    const trackState = this.getTrackStateOrNull(trackIdOrIndex, 'output routing');
+    if (!trackState) {
+      return;
+    }
+
     const nextOutputRoute = normalizeTrackOutputRoute(outputRoute) || 'stereo';
 
     trackState.outputRoute = nextOutputRoute;
@@ -662,7 +670,10 @@ export class StreamingMultitrackEngine {
   }
 
   toggleTrackMute(trackIdOrIndex: string | number): void {
-    const trackState = this.getTrackState(trackIdOrIndex);
+    const trackState = this.getTrackStateOrNull(trackIdOrIndex, 'mute toggle');
+    if (!trackState) {
+      return;
+    }
 
     trackState.muted = !trackState.muted;
     if (this.tracks[trackState.index]) {
@@ -1387,6 +1398,17 @@ export class StreamingMultitrackEngine {
     }
 
     return trackState;
+  }
+
+  private getTrackStateOrNull(trackIdOrIndex: string | number, action: string): TrackRuntime | null {
+    try {
+      return this.getTrackState(trackIdOrIndex);
+    } catch {
+      console.warn(
+        `[StreamingMultitrackEngine] Track reference "${String(trackIdOrIndex)}" not found for ${action}.`,
+      );
+      return null;
+    }
   }
 
   private detectContainer(url: string): TrackContainer {
