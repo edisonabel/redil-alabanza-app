@@ -4,6 +4,10 @@ import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
 import EnsayoPersonalView from './EnsayoPersonalView.jsx';
 import { supabase } from '../../lib/supabase';
 import { metronomeService } from '../../services/MetronomeEngine';
+import {
+  loadRehearsalSongSettingsMap,
+  sanitizeRehearsalSongSettings,
+} from '../../utils/rehearsalUserSongSettings';
 
 const ModoEnsayoDirector = React.lazy(() => import('./ModoEnsayoDirector.jsx'));
 
@@ -478,6 +482,7 @@ export default function EnsayoHub({
   const [setlistTones, setSetlistTones] = useState({});
   const [setlistPicker, setSetlistPicker] = useState(null);
   const [setlistRenderMode, setSetlistRenderMode] = useState('chords-lyrics');
+  const [personalSongSettings, setPersonalSongSettings] = useState({});
   const [isGeneratingSetlistPdf, setIsGeneratingSetlistPdf] = useState(false);
   const [setlistPrintError, setSetlistPrintError] = useState('');
 
@@ -936,26 +941,71 @@ export default function EnsayoHub({
   const serviceDuration = formatServiceDuration(eventMeta?.fecha_hora, eventMeta?.hora_fin);
   const displayContextTitle = String(eventMeta?.display_theme || contextTitle || '').trim() || 'Modo Ensayo';
   const displayContextPreacher = String(eventMeta?.display_preacher || eventMeta?.predicador || '').trim();
+  const rehearsalEventId = String(eventMeta?.id || '').trim();
 
-  const openSetlistPrintModal = useCallback(() => {
+  const loadPersonalSongSettingsForSongs = useCallback(async (targetSongs = printableSongs) => {
+    const songIds = (Array.isArray(targetSongs) ? targetSongs : [])
+      .map((song) => String(song?.id || '').trim())
+      .filter(Boolean);
+
+    if (songIds.length === 0) return {};
+
+    const settingsMap = await loadRehearsalSongSettingsMap(
+      supabase,
+      {
+        userId: String(userId || ''),
+        eventId: rehearsalEventId,
+        playlistId: String(playlistId || ''),
+      },
+      songIds,
+    );
+
+    setPersonalSongSettings((current) => ({
+      ...current,
+      ...settingsMap,
+    }));
+
+    return settingsMap;
+  }, [playlistId, printableSongs, rehearsalEventId, userId]);
+
+  const handlePersonalSettingsChange = useCallback((songId, settings) => {
+    const safeSongId = String(songId || '').trim();
+    if (!safeSongId) return;
+
+    const safeSettings = sanitizeRehearsalSongSettings(settings);
+    setPersonalSongSettings((current) => ({
+      ...current,
+      [safeSongId]: safeSettings,
+    }));
+  }, []);
+
+  useEffect(() => {
+    if (printableSongs.length === 0) return;
+    void loadPersonalSongSettingsForSongs(printableSongs);
+  }, [loadPersonalSongSettingsForSongs, printableSongs]);
+
+  const openSetlistPrintModal = useCallback(async () => {
+    const loadedSettings = await loadPersonalSongSettingsForSongs(printableSongs);
+    const mergedPersonalSettings = {
+      ...personalSongSettings,
+      ...loadedSettings,
+    };
     const nextCapos = {};
     const nextTones = {};
     printableSongs.forEach((song) => {
       const songId = String(song?.id || '');
       const baseTone = normalizeKeyToAmerican(song?.originalKey || song?.key || '');
-      nextCapos[songId] = Number.isFinite(Number(setlistCapos[songId]))
-        ? Math.max(0, Math.min(7, Number(setlistCapos[songId])))
-        : 0;
-      nextTones[songId] = CHROMATIC_NOTES.includes(setlistTones[songId])
-        ? setlistTones[songId]
-        : baseTone;
+      const savedSettings = sanitizeRehearsalSongSettings(mergedPersonalSettings[songId]);
+      const savedTone = transposeChordSymbol(baseTone, savedSettings.transposeSteps);
+      nextCapos[songId] = savedSettings.capoFret;
+      nextTones[songId] = CHROMATIC_NOTES.includes(savedTone) ? savedTone : baseTone;
     });
     setSetlistCapos(nextCapos);
     setSetlistTones(nextTones);
     setSetlistPicker(null);
     setSetlistPrintError('');
     setShowSetlistPrintModal(true);
-  }, [printableSongs, setlistCapos, setlistTones]);
+  }, [loadPersonalSongSettingsForSongs, personalSongSettings, printableSongs]);
 
   const updateSetlistCapo = useCallback((songId, capo) => {
     setSetlistCapos((current) => ({
@@ -1158,6 +1208,10 @@ export default function EnsayoHub({
         contextTitle={contextTitle}
         onGoBack={handleCompactBack}
         globalSyncMode={isSyncReceiver}
+        eventId={rehearsalEventId}
+        playlistId={String(playlistId || '')}
+        userId={String(userId || '')}
+        onPersonalSettingsChange={handlePersonalSettingsChange}
       />
     );
   }
@@ -1395,6 +1449,12 @@ export default function EnsayoHub({
                 song?.category ? formatCompactMetaLabel(song.category) : '',
                 voiceLabel,
               ].filter(Boolean);
+              const singlePrintParams = new URLSearchParams({
+                song: String(song?.id || ''),
+              });
+              if (rehearsalEventId) singlePrintParams.set('event', rehearsalEventId);
+              if (playlistId) singlePrintParams.set('playlist', String(playlistId));
+              const singlePrintHref = `/herramientas/chordpro-print?${singlePrintParams.toString()}`;
 
               return (
                 <React.Fragment key={song?.id || `${song?.title || 'song'}-${index}`}>
@@ -1567,7 +1627,7 @@ export default function EnsayoHub({
 
                       {song?.id && (
                         <a
-                          href={`/herramientas/chordpro-print?song=${encodeURIComponent(String(song.id))}`}
+                          href={singlePrintHref}
                           onClick={(event) => event.stopPropagation()}
                           className="ui-pressable-soft inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-amber-300/45 bg-amber-500/10 px-3 text-[12px] font-bold text-amber-800 shadow-sm transition-all hover:bg-amber-500/15 hover:text-amber-900 active:scale-95 dark:border-amber-300/20 dark:bg-amber-300/10 dark:text-amber-200 dark:hover:bg-amber-300/16 dark:hover:text-amber-100"
                           title="Imprimir hoja de la canción"

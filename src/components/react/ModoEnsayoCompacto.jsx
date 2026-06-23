@@ -8,6 +8,14 @@ import { isLikelyAudioSourceUrl, resolvePreferredAudioUrl } from '../../lib/audi
 import { buildWordGroups, parseChordProLine } from '../../utils/chordProLineUtils';
 import { normalizePersistedLiveDirectorSession } from '../../utils/liveDirectorSongSession';
 import {
+  REHEARSAL_PERSONAL_SETTINGS_TOAST_MS,
+  formatRehearsalSongSettingsSummary,
+  hasPersonalRehearsalSongSettings,
+  loadRehearsalSongSettings,
+  sanitizeRehearsalSongSettings,
+  saveRehearsalSongSettings,
+} from '../../utils/rehearsalUserSongSettings';
+import {
   buildSectionShortLabel,
   getSectionKind,
   normalizeSectionLabel,
@@ -1338,6 +1346,10 @@ export default function ModoEnsayoCompacto({
   contextTitle = '',
   onGoBack,
   globalSyncMode = false,
+  eventId = '',
+  playlistId = '',
+  userId = '',
+  onPersonalSettingsChange,
 }) {
   if (!song) return null;
   const [headerHidden, setHeaderHidden] = useState(false);
@@ -1356,6 +1368,7 @@ export default function ModoEnsayoCompacto({
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const [showPlaybackOptions, setShowPlaybackOptions] = useState(false);
   const [showChordLibrary, setShowChordLibrary] = useState(false);
+  const [personalSettingsToast, setPersonalSettingsToast] = useState(null);
   const [tapChordPreviewEnabled, setTapChordPreviewEnabled] = useState(false);
   const [tapChordPreviewInstrument, setTapChordPreviewInstrument] = useState('guitar');
   const [activeChordPreview, setActiveChordPreview] = useState(null);
@@ -1383,6 +1396,9 @@ export default function ModoEnsayoCompacto({
   const optionsMenuRef = useRef(null);
   const playbackOptionsRef = useRef(null);
   const chordPreviewRef = useRef(null);
+  const personalSettingsLoadedRef = useRef(false);
+  const lastPersistedPersonalSettingsRef = useRef('');
+  const personalSettingsToastTimeoutRef = useRef(null);
   const pendingPlaybackResumeRef = useRef(false);
   const audioCtxRef = useRef(null);
   const trackSourceRef = useRef(null);
@@ -1537,6 +1553,29 @@ export default function ModoEnsayoCompacto({
   }, [currentSections]);
   const fontPreset = FONT_PRESETS[fontScale] || FONT_PRESETS.grande;
   const currentSongKey = String(currentSong?.id || 'demo');
+  const personalSettingsContext = useMemo(() => ({
+    userId,
+    eventId,
+    playlistId,
+    songId: currentSongKey,
+  }), [currentSongKey, eventId, playlistId, userId]);
+  const buildPersonalSettingsToastDetail = useCallback((settings, options = {}) => (
+    formatRehearsalSongSettingsSummary(settings, {
+      includeNeutral: Boolean(options.includeNeutral),
+      targetTone: transposeChordToken(originalSongKey, sanitizeRehearsalSongSettings(settings).transposeSteps),
+    })
+  ), [originalSongKey]);
+  const showPersonalSettingsToast = useCallback((title, detail = '') => {
+    if (!title) return;
+    if (personalSettingsToastTimeoutRef.current) {
+      window.clearTimeout(personalSettingsToastTimeoutRef.current);
+    }
+    setPersonalSettingsToast({ title, detail });
+    personalSettingsToastTimeoutRef.current = window.setTimeout(() => {
+      setPersonalSettingsToast(null);
+      personalSettingsToastTimeoutRef.current = null;
+    }, REHEARSAL_PERSONAL_SETTINGS_TOAST_MS);
+  }, []);
   const titleLine = currentSong.title || 'Titulo de Cancion';
   const artistLine = currentSong.artist || 'Artista';
   const shouldRotateHeaderMeta = Boolean(artistLine) && titleLine.trim() !== artistLine.trim();
@@ -2096,6 +2135,81 @@ export default function ModoEnsayoCompacto({
     stopMetronome();
     setTrackGainImmediate(TRACK_DEFAULT_GAIN);
   }, [currentSongKey, currentSong?.mp3, isLandscapeCompact, pauseGuideCueTracks, setTrackGainImmediate, stopMetronome]);
+  useEffect(() => () => {
+    if (personalSettingsToastTimeoutRef.current) {
+      window.clearTimeout(personalSettingsToastTimeoutRef.current);
+      personalSettingsToastTimeoutRef.current = null;
+    }
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+
+    personalSettingsLoadedRef.current = false;
+    lastPersistedPersonalSettingsRef.current = '';
+    setTransposeSteps(0);
+    setCapoFret(0);
+
+    const loadPersonalSettings = async () => {
+      const loadedSettings = sanitizeRehearsalSongSettings(
+        await loadRehearsalSongSettings(supabase, personalSettingsContext),
+      );
+      if (cancelled) return;
+
+      setTransposeSteps(loadedSettings.transposeSteps);
+      setCapoFret(loadedSettings.capoFret);
+      lastPersistedPersonalSettingsRef.current = JSON.stringify(loadedSettings);
+      personalSettingsLoadedRef.current = true;
+      onPersonalSettingsChange?.(currentSongKey, loadedSettings);
+
+      if (hasPersonalRehearsalSongSettings(loadedSettings)) {
+        showPersonalSettingsToast(
+          'Tus acordes guardados se cargaron para este domingo.',
+          buildPersonalSettingsToastDetail(loadedSettings),
+        );
+      }
+    };
+
+    void loadPersonalSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    buildPersonalSettingsToastDetail,
+    currentSongKey,
+    onPersonalSettingsChange,
+    personalSettingsContext,
+    showPersonalSettingsToast,
+  ]);
+  useEffect(() => {
+    if (!personalSettingsLoadedRef.current) return undefined;
+
+    const nextSettings = sanitizeRehearsalSongSettings({ transposeSteps, capoFret });
+    const nextSignature = JSON.stringify(nextSettings);
+    if (lastPersistedPersonalSettingsRef.current === nextSignature) return undefined;
+
+    const saveTimeout = window.setTimeout(() => {
+      void saveRehearsalSongSettings(supabase, personalSettingsContext, nextSettings).then((savedSettings) => {
+        const safeSettings = sanitizeRehearsalSongSettings(savedSettings);
+        lastPersistedPersonalSettingsRef.current = JSON.stringify(safeSettings);
+        onPersonalSettingsChange?.(currentSongKey, safeSettings);
+        showPersonalSettingsToast(
+          'Ajuste guardado para este domingo.',
+          buildPersonalSettingsToastDetail(safeSettings, { includeNeutral: true }),
+        );
+      });
+    }, 450);
+
+    return () => window.clearTimeout(saveTimeout);
+  }, [
+    capoFret,
+    buildPersonalSettingsToastDetail,
+    currentSongKey,
+    onPersonalSettingsChange,
+    personalSettingsContext,
+    showPersonalSettingsToast,
+    transposeSteps,
+  ]);
   useEffect(() => {
     if (playbackSources.length === 0) return;
     const hasSelectedSource = playbackSources.some((source) => source.id === selectedPlaybackSourceId);
@@ -2623,6 +2737,21 @@ export default function ModoEnsayoCompacto({
         loop
         preload="auto"
       />
+      {personalSettingsToast && (
+        <div
+          className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[80] flex justify-center px-4"
+          aria-live="polite"
+        >
+          <div className="max-w-[min(92vw,28rem)] rounded-2xl border border-zinc-200/85 bg-white/96 px-5 py-3.5 text-center text-base font-black leading-snug text-zinc-800 shadow-[0_18px_60px_rgba(15,23,42,0.18)] backdrop-blur-xl sm:text-[17px] dark:border-white/10 dark:bg-zinc-950/96 dark:text-zinc-100">
+            <div>{personalSettingsToast.title}</div>
+            {personalSettingsToast.detail && (
+              <div className="mt-1.5 text-sm font-extrabold leading-tight text-brand sm:text-[15px] dark:text-brand-light">
+                {personalSettingsToast.detail}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       <header
         ref={headerRef}
         className={`absolute inset-x-0 top-0 z-30 border-b border-zinc-200/70 bg-white/92 backdrop-blur-xl dark:border-white/8 dark:bg-zinc-950/96 transition-transform duration-300 ${headerHidden ? '-translate-y-full' : 'translate-y-0'

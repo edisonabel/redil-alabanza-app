@@ -3,6 +3,14 @@ import { supabase } from '../../lib/supabase';
 import { buildWordGroups } from '../../utils/chordProLineUtils';
 import { buildDisplayTrack } from '../../utils/splitSectionIntoCues';
 import { toRgba } from '../../utils/sectionVisuals';
+import {
+  REHEARSAL_PERSONAL_SETTINGS_TOAST_MS,
+  formatRehearsalSongSettingsSummary,
+  hasPersonalRehearsalSongSettings,
+  loadRehearsalSongSettings,
+  sanitizeRehearsalSongSettings,
+  saveRehearsalSongSettings,
+} from '../../utils/rehearsalUserSongSettings';
 
 const FONT_SIZES = {
   compact: { lyrics: 36, chords: 28, next: 22, countdown: 48 },
@@ -18,10 +26,12 @@ const DEFAULT_SETTINGS = {
   showSectionMap: true,
   showSongInfo: true,
   fontSize: 'standard',
+  transposeSteps: 0,
   capoFret: 0,
 };
 
 const SETTINGS_STORAGE_KEY = 'confidence_monitor_settings';
+const TRANSPOSE_OPTIONS = [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6];
 
 const loadSettings = () => {
   try {
@@ -35,21 +45,55 @@ const loadSettings = () => {
 
 const CAPO_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const CAPO_FLAT_MAP = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
+const MONITOR_LATIN_TO_AMERICAN = {
+  Do: 'C',
+  'Do#': 'C#',
+  Reb: 'C#',
+  Re: 'D',
+  'Re#': 'D#',
+  Mib: 'D#',
+  Mi: 'E',
+  Fa: 'F',
+  'Fa#': 'F#',
+  Solb: 'F#',
+  Sol: 'G',
+  'Sol#': 'G#',
+  Lab: 'G#',
+  La: 'A',
+  'La#': 'A#',
+  Sib: 'A#',
+  Si: 'B',
+  Dob: 'B',
+};
 
-const transposeNoteForCapo = (note, fret) => {
+const normalizeMonitorTone = (rawTone = '') => {
+  const source = String(rawTone || '').trim();
+  if (!source) return '';
+  const normalizedSource = source
+    .replace(/♯/g, '#')
+    .replace(/♭/g, 'b')
+    .replace(/\s+/g, '');
+  if (MONITOR_LATIN_TO_AMERICAN[normalizedSource]) return MONITOR_LATIN_TO_AMERICAN[normalizedSource];
+  const upperRoot = normalizedSource.charAt(0).toUpperCase() + normalizedSource.slice(1);
+  const rootMatch = upperRoot.match(/^([A-G][#b]?)/);
+  if (!rootMatch) return '';
+  return CAPO_FLAT_MAP[rootMatch[1]] || rootMatch[1];
+};
+
+const transposeNoteBySteps = (note, steps = 0) => {
   const n = CAPO_FLAT_MAP[note] || note;
   const idx = CAPO_NOTES.indexOf(n);
   if (idx === -1) return note;
-  return CAPO_NOTES[((idx - fret) % 12 + 12) % 12];
+  return CAPO_NOTES[((idx + steps) % 12 + 12) % 12];
 };
 
-const transposeChordForCapo = (chord, fret) => {
-  if (!fret || !chord) return chord;
+const transposeChordBySteps = (chord, steps = 0) => {
+  if (!steps || !chord) return chord;
   const slashIdx = chord.indexOf('/');
   const transposeToken = (token) => {
     const m = token.match(/^([A-G][#b]?)(.*)/);
     if (!m) return token;
-    return transposeNoteForCapo(m[1], fret) + m[2];
+    return transposeNoteBySteps(m[1], steps) + m[2];
   };
   if (slashIdx > 0) {
     return transposeToken(chord.slice(0, slashIdx)) + '/' + transposeToken(chord.slice(slashIdx + 1));
@@ -57,9 +101,9 @@ const transposeChordForCapo = (chord, fret) => {
   return transposeToken(chord);
 };
 
-const transposeLineForCapo = (line, fret) => {
-  if (!fret) return line;
-  return String(line || '').replace(/\[([^\]]+)\]/g, (_, chord) => `[${transposeChordForCapo(chord, fret)}]`);
+const transposeLineBySteps = (line, steps = 0) => {
+  if (!steps) return line;
+  return String(line || '').replace(/\[([^\]]+)\]/g, (_, chord) => `[${transposeChordBySteps(chord, steps)}]`);
 };
 
 const SYNC_ANTICIPATION_SEC = 0.85;
@@ -343,13 +387,14 @@ function MonitorChordOverlayLine({
   );
 }
 
-export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle = '' }) {
+export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle = '', userId = '' }) {
   const [activeTrackIndex, setActiveTrackIndex] = useState(0);
   const [activeSectionIndex, setActiveSectionIndex] = useState(0);
   const [activeCueIndex, setActiveCueIndex] = useState(0);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [settings, setSettings] = useState(loadSettings);
   const [showSettings, setShowSettings] = useState(false);
+  const [personalSettingsToast, setPersonalSettingsToast] = useState(null);
   const [sectionTimeRemaining, setSectionTimeRemaining] = useState(null);
   const [runtimeTrackDurations, setRuntimeTrackDurations] = useState({});
   const [viewport, setViewport] = useState(() => ({
@@ -396,6 +441,28 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
   const pendingDurationLoadsRef = useRef(new Map());
   const runtimeTrackDurationsRef = useRef({});
   const timelineRef = useRef(timeline);
+  const personalSettingsLoadedRef = useRef(false);
+  const lastPersistedPersonalSettingsRef = useRef('');
+  const personalSettingsToastTimeoutRef = useRef(null);
+
+  const showPersonalSettingsToast = useCallback((title, detail = '') => {
+    if (!title) return;
+    if (personalSettingsToastTimeoutRef.current) {
+      window.clearTimeout(personalSettingsToastTimeoutRef.current);
+    }
+    setPersonalSettingsToast({ title, detail });
+    personalSettingsToastTimeoutRef.current = window.setTimeout(() => {
+      setPersonalSettingsToast(null);
+      personalSettingsToastTimeoutRef.current = null;
+    }, REHEARSAL_PERSONAL_SETTINGS_TOAST_MS);
+  }, []);
+
+  useEffect(() => () => {
+    if (personalSettingsToastTimeoutRef.current) {
+      window.clearTimeout(personalSettingsToastTimeoutRef.current);
+      personalSettingsToastTimeoutRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     activeTrackIndexRef.current = activeTrackIndex;
@@ -492,8 +559,99 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
   }, [activeTrackIndex, timeline.tracks.length]);
 
   const activeTrack = timeline.tracks[activeTrackIndex] || null;
+  const personalSettingsContext = useMemo(() => ({
+    userId,
+    eventId,
+    songId: activeTrack?.songId || '',
+  }), [activeTrack?.songId, eventId, userId]);
+  const personalChordShift = Number(settings.transposeSteps || 0) - Number(settings.capoFret || 0);
+  const activeTrackBaseTone = useMemo(
+    () => normalizeMonitorTone(activeTrack?.key || activeTrack?.originalKey || ''),
+    [activeTrack?.key, activeTrack?.originalKey],
+  );
+  const buildPersonalSettingsToastDetail = useCallback((settingsValue, options = {}) => {
+    const safeSettings = sanitizeRehearsalSongSettings(settingsValue);
+    const targetTone = activeTrackBaseTone
+      ? transposeNoteBySteps(activeTrackBaseTone, safeSettings.transposeSteps)
+      : '';
+    return formatRehearsalSongSettingsSummary(safeSettings, {
+      includeNeutral: Boolean(options.includeNeutral),
+      targetTone,
+    });
+  }, [activeTrackBaseTone]);
   const activeCue = activeTrack?.cues[activeCueIndex] || null;
   const nextCue = activeTrack?.cues[activeCueIndex + 1] || null;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    personalSettingsLoadedRef.current = false;
+    lastPersistedPersonalSettingsRef.current = '';
+    setSettings((current) => ({
+      ...current,
+      transposeSteps: 0,
+      capoFret: 0,
+    }));
+
+    const loadPersonalSettings = async () => {
+      const loadedSettings = sanitizeRehearsalSongSettings(
+        await loadRehearsalSongSettings(supabase, personalSettingsContext),
+      );
+      if (cancelled) return;
+
+      setSettings((current) => ({
+        ...current,
+        transposeSteps: loadedSettings.transposeSteps,
+        capoFret: loadedSettings.capoFret,
+      }));
+      lastPersistedPersonalSettingsRef.current = JSON.stringify(loadedSettings);
+      personalSettingsLoadedRef.current = true;
+
+      if (hasPersonalRehearsalSongSettings(loadedSettings)) {
+        showPersonalSettingsToast(
+          'Tus acordes guardados se cargaron para este domingo.',
+          buildPersonalSettingsToastDetail(loadedSettings),
+        );
+      }
+    };
+
+    void loadPersonalSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [buildPersonalSettingsToastDetail, personalSettingsContext, showPersonalSettingsToast]);
+
+  useEffect(() => {
+    if (!personalSettingsLoadedRef.current) return undefined;
+
+    const nextSettings = sanitizeRehearsalSongSettings({
+      transposeSteps: settings.transposeSteps,
+      capoFret: settings.capoFret,
+    });
+    const nextSignature = JSON.stringify(nextSettings);
+    if (lastPersistedPersonalSettingsRef.current === nextSignature) return undefined;
+
+    const saveTimeout = window.setTimeout(() => {
+      void saveRehearsalSongSettings(supabase, personalSettingsContext, nextSettings).then((savedSettings) => {
+        const safeSettings = sanitizeRehearsalSongSettings(savedSettings);
+        lastPersistedPersonalSettingsRef.current = JSON.stringify(safeSettings);
+        showPersonalSettingsToast(
+          'Ajuste guardado para este domingo.',
+          buildPersonalSettingsToastDetail(safeSettings, { includeNeutral: true }),
+        );
+      });
+    }, 450);
+
+    return () => window.clearTimeout(saveTimeout);
+  }, [
+    buildPersonalSettingsToastDetail,
+    personalSettingsContext,
+    settings.capoFret,
+    settings.transposeSteps,
+    showPersonalSettingsToast,
+  ]);
+
   const nextSectionLabel = useMemo(() => {
     if (!activeTrack || !activeCue) return null;
     const nextSection = activeTrack.sections[activeCue.sectionIndex + 1];
@@ -953,6 +1111,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     activeCue?.rawLines?.length,
     cueLineCount,
     longestCueLineLength,
+    personalChordShift,
     settings.showChords,
     showBottomPreview,
     displayFontScale.lyrics,
@@ -1009,6 +1168,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     nextCue?.id,
     nextCueTitle,
     nextCuePreviewLines,
+    personalChordShift,
     showBottomPreview,
     viewport.width,
     viewport.height,
@@ -1121,8 +1281,8 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                   height: 22,
                   borderRadius: 4,
                   border: 'none',
-                  background: settings.capoFret > 0 ? 'rgba(99,102,241,0.35)' : 'rgba(255,255,255,0.08)',
-                  color: settings.capoFret > 0 ? '#a5b4fc' : 'rgba(255,255,255,0.5)',
+                  background: settings.capoFret > 0 || settings.transposeSteps !== 0 ? 'rgba(99,102,241,0.35)' : 'rgba(255,255,255,0.08)',
+                  color: settings.capoFret > 0 || settings.transposeSteps !== 0 ? '#a5b4fc' : 'rgba(255,255,255,0.5)',
                   fontSize: 11,
                   fontWeight: 900,
                   cursor: 'pointer',
@@ -1133,7 +1293,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                   lineHeight: 1,
                 }}
               >
-                {settings.capoFret > 0 ? `C${settings.capoFret}` : '⚙'}
+                {settings.capoFret > 0 ? `C${settings.capoFret}` : settings.transposeSteps !== 0 ? '±' : '⚙'}
               </button>
             )}
           </div>
@@ -1253,7 +1413,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                           settings.showChords
                             ? segments.map((segment) => ({
                                 ...segment,
-                                chord: transposeChordForCapo(segment.chord, settings.capoFret),
+                                chord: transposeChordBySteps(segment.chord, personalChordShift),
                               }))
                             : segments.map((segment) => ({ ...segment, chord: '' }))
                         }
@@ -1288,7 +1448,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                         lineHeight: 1.2,
                       }}
                     >
-                      {activeCue.rawLines.map((l) => transposeLineForCapo(l, settings.capoFret)).join('   ')}
+                      {activeCue.rawLines.map((l) => transposeLineBySteps(l, personalChordShift)).join('   ')}
                     </div>
                   </div>
                 )}
@@ -1435,7 +1595,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                       }}
                     >
                       <MonitorChordDisplay
-                        chord={transposeChordForCapo(nextCuePrimaryChord, settings.capoFret)}
+                        chord={transposeChordBySteps(nextCuePrimaryChord, personalChordShift)}
                         fontSize={viewport.width >= 1180 ? 44 : 40}
                         color={toRgba(nextCue?.sectionColor || activeCue?.sectionColor || [249, 115, 22], 0.98)}
                       />
@@ -1650,6 +1810,47 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
         }}
       />
 
+      {personalSettingsToast && (
+        <div
+          aria-live="polite"
+          style={{
+            position: 'absolute',
+            top: 18,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 12,
+            maxWidth: 'min(92vw, 440px)',
+            padding: '12px 16px',
+            borderRadius: 14,
+            border: '1px solid rgba(255,255,255,0.14)',
+            background: 'rgba(15,15,18,0.88)',
+            color: '#f4f4f5',
+            fontSize: 16,
+            fontWeight: 800,
+            lineHeight: 1.25,
+            textAlign: 'center',
+            boxShadow: '0 18px 50px rgba(0,0,0,0.34)',
+            pointerEvents: 'none',
+            backdropFilter: 'blur(14px)',
+          }}
+        >
+          <div>{personalSettingsToast.title}</div>
+          {personalSettingsToast.detail && (
+            <div
+              style={{
+                marginTop: 4,
+                color: '#a5b4fc',
+                fontSize: 14,
+                fontWeight: 900,
+                lineHeight: 1.2,
+              }}
+            >
+              {personalSettingsToast.detail}
+            </div>
+          )}
+        </div>
+      )}
+
       {showSettings && (
         <div
           style={{
@@ -1662,6 +1863,8 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
             justifyContent: 'center',
             gap: 16,
             zIndex: 10,
+            overflowY: 'auto',
+            padding: 24,
           }}
         >
           <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Configuración</h2>
@@ -1714,9 +1917,37 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
             </label>
           ))}
 
+          <div style={{ marginTop: 8, width: 'min(92vw, 520px)' }}>
+            <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: 1, textTransform: 'uppercase', opacity: 0.45, marginBottom: 10, textAlign: 'center' }}>
+              Tono personal
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
+              {TRANSPOSE_OPTIONS.map((step) => (
+                <button
+                  key={step}
+                  type="button"
+                  onClick={() => setSettings((c) => ({ ...c, transposeSteps: step }))}
+                  style={{
+                    width: 36,
+                    height: 34,
+                    borderRadius: 8,
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontWeight: 800,
+                    fontSize: 13,
+                    background: settings.transposeSteps === step ? '#f0f0f0' : 'rgba(255,255,255,0.1)',
+                    color: settings.transposeSteps === step ? '#0a0a0a' : '#f0f0f0',
+                  }}
+                >
+                  {step === 0 ? '0' : step > 0 ? `+${step}` : step}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div style={{ marginTop: 8 }}>
             <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: 1, textTransform: 'uppercase', opacity: 0.45, marginBottom: 10, textAlign: 'center' }}>
-              Capo (solo este dispositivo)
+              Capo personal
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               {[0, 1, 2, 3, 4, 5, 6, 7].map((fret) => (

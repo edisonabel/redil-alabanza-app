@@ -581,6 +581,7 @@ const pageTitle = `Monitor | ${buildEventHeadline(eventData || {}, contextTitle)
 const monitorData = {
   eventId: eventData?.id || '',
   eventTitle: contextTitle,
+  userId: user.id,
   songs: rehearsalSongs,
 };
 ---
@@ -607,6 +608,7 @@ const monitorData = {
       songs={monitorData.songs}
       eventId={monitorData.eventId}
       eventTitle={monitorData.eventTitle}
+      userId={monitorData.userId}
     />
   </body>
 </html>

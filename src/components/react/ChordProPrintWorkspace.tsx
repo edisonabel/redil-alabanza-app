@@ -66,6 +66,8 @@ type ChordProPrintWorkspaceProps = {
   initialTitle: string;
   initialArtist?: string;
   initialMetadata?: SongSheetMetadata;
+  initialTargetTone?: string;
+  initialCapo?: string | number | null;
 };
 
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -125,6 +127,13 @@ const normalizeNote = (value: string | number | null | undefined) => {
   if (!safeValue) return '';
   if (FLAT_TO_SHARP[safeValue]) return FLAT_TO_SHARP[safeValue];
   return NOTES.includes(safeValue) ? safeValue : safeValue;
+};
+
+const normalizeCapo = (value: string | number | null | undefined) => {
+  const match = String(value ?? '').match(/\d+/);
+  const numeric = Number(match?.[0] ?? value ?? 0);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.min(7, Math.round(numeric)));
 };
 
 const transposeChord = (chord: string, steps: number) => {
@@ -237,6 +246,8 @@ export default function ChordProPrintWorkspace({
   initialTitle,
   initialArtist = '',
   initialMetadata,
+  initialTargetTone = '',
+  initialCapo = null,
 }: ChordProPrintWorkspaceProps) {
   const pdfEngine = useMemo(() => readRequestedPdfEngine(), []);
   const printProfile: SongSheetPrintProfile = pdfEngine === 'v2' ? 'v2-optimized' : 'classic';
@@ -253,8 +264,8 @@ export default function ChordProPrintWorkspace({
   const [isDarkTheme, setIsDarkTheme] = useState(() => readIsDarkTheme());
   const [title, setTitle] = useState(initialTitle || '');
   const [artist, setArtist] = useState(initialArtist || '');
-  const [targetTone, setTargetTone] = useState(originalTone || '');
-  const [selectedCapo, setSelectedCapo] = useState(0);
+  const [targetTone, setTargetTone] = useState(normalizeNote(initialTargetTone) || originalTone || '');
+  const [selectedCapo, setSelectedCapo] = useState(() => normalizeCapo(initialCapo ?? initialMetadata?.capo));
   const [previewZoom, setPreviewZoom] = useState(1);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const pdfFeedbackTimeoutRef = useRef<number | null>(null);

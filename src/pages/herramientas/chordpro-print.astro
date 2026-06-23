@@ -2,18 +2,71 @@
 import Layout from '../../layouts/Layout.astro';
 import ChordProPrintWorkspace from '../../components/react/ChordProPrintWorkspace';
 import { supabase } from '../../lib/supabase';
+import { createClient } from '@supabase/supabase-js';
+import {
+  loadRehearsalSongSettings,
+  sanitizeRehearsalSongSettings,
+} from '../../utils/rehearsalUserSongSettings';
 
 const requestedSongId = Astro.url.searchParams.get('song')?.trim() || '';
+const requestedEventId = Astro.url.searchParams.get('event')?.trim() || '';
+const requestedPlaylistId = Astro.url.searchParams.get('playlist')?.trim() || '';
 let initialSong: {
   id: string;
   titulo: string;
   artista: string;
   tono: string;
   capo: string;
+  targetTone: string;
+  initialCapo: number;
   tempo: string;
   time: string;
   chordpro: string;
 } | null = null;
+
+const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const LATIN_TO_AMERICAN: Record<string, string> = {
+  Do: 'C',
+  'Do#': 'C#',
+  Reb: 'C#',
+  Re: 'D',
+  'Re#': 'D#',
+  Mib: 'D#',
+  Mi: 'E',
+  Fa: 'F',
+  'Fa#': 'F#',
+  Solb: 'F#',
+  Sol: 'G',
+  'Sol#': 'G#',
+  Lab: 'G#',
+  La: 'A',
+  'La#': 'A#',
+  Sib: 'A#',
+  Si: 'B',
+  Dob: 'B',
+};
+const FLAT_TO_SHARP: Record<string, string> = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
+
+const normalizeKeyToAmerican = (rawKey = '') => {
+  const source = String(rawKey || '').trim();
+  if (!source) return '';
+  const normalizedSource = source
+    .replace(/♯/g, '#')
+    .replace(/♭/g, 'b')
+    .replace(/\s+/g, '');
+  if (LATIN_TO_AMERICAN[normalizedSource]) return LATIN_TO_AMERICAN[normalizedSource];
+  const upperRoot = normalizedSource.charAt(0).toUpperCase() + normalizedSource.slice(1);
+  const rootMatch = upperRoot.match(/^([A-G][#b]?)/);
+  if (!rootMatch) return source;
+  return FLAT_TO_SHARP[rootMatch[1]] || rootMatch[1];
+};
+
+const transposeTone = (tone = '', steps = 0) => {
+  const normalizedTone = normalizeKeyToAmerican(tone);
+  const toneIndex = NOTES.indexOf(normalizedTone);
+  if (toneIndex === -1) return normalizedTone;
+  return NOTES[(toneIndex + steps + 1200) % 12];
+};
 
 const resolveInitialChordPro = async (rawValue: unknown) => {
   const value = String(rawValue || '').trim();
@@ -44,12 +97,44 @@ if (requestedSongId) {
 
     if (songRow) {
       const chordproContent = await resolveInitialChordPro(songRow.chordpro);
+      const tokenCookie = Astro.cookies.get('sb-access-token');
+      const rawUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_URL || '';
+      const supabaseUrl = rawUrl.replace(/\/$/, '');
+      const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY || '';
+      const userId = Astro.locals.user?.id || '';
+      let personalSettings = sanitizeRehearsalSongSettings();
+
+      if (tokenCookie?.value && userId && requestedEventId && supabaseUrl && supabaseAnonKey) {
+        const supabaseAuthed = createClient(supabaseUrl, supabaseAnonKey, {
+          global: {
+            headers: {
+              Authorization: `Bearer ${tokenCookie.value}`,
+            },
+          },
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+          },
+        });
+
+        personalSettings = sanitizeRehearsalSongSettings(await loadRehearsalSongSettings(supabaseAuthed, {
+          userId,
+          eventId: requestedEventId,
+          playlistId: requestedPlaylistId,
+          songId: String(songRow.id ?? requestedSongId),
+        }));
+      }
+
+      const originalTone = normalizeKeyToAmerican(songRow.tonalidad || '');
+      const targetTone = transposeTone(originalTone, personalSettings.transposeSteps);
       initialSong = {
         id: String(songRow.id ?? requestedSongId),
         titulo: String(songRow.titulo || ''),
         artista: String(songRow.cantante || ''),
-        tono: String(songRow.tonalidad || ''),
-        capo: '',
+        tono: originalTone,
+        capo: personalSettings.capoFret > 0 ? String(personalSettings.capoFret) : '',
+        targetTone,
+        initialCapo: personalSettings.capoFret,
         tempo: String(songRow.bpm || ''),
         time: '',
         chordpro: chordproContent,
@@ -91,6 +176,8 @@ if (requestedSongId) {
         initialChordProText={initialSong.chordpro}
         initialTitle={initialSong.titulo}
         initialArtist={initialSong.artista}
+        initialTargetTone={initialSong.targetTone}
+        initialCapo={initialSong.initialCapo}
         initialMetadata={{
           tone: initialSong.tono,
           capo: initialSong.capo,
