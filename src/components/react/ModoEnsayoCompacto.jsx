@@ -100,7 +100,7 @@ const TRACK_DEFAULT_GAIN = 1;
 const TRACK_DUCKED_GAIN = 0.38;
 const TRACK_DUCK_IN_DURATION_MS = 3200;
 const TRACK_DUCK_OUT_DURATION_MS = 4200;
-const GUIDE_CUE_SYNC_TOLERANCE_SECONDS = 0.035;
+const GUIDE_CUE_SYNC_TOLERANCE_SECONDS = 0.35;
 const REHEARSAL_MIX_MAIN_TRACK_ID = 'rehearsal-main';
 const REHEARSAL_MIX_GUIDE_TRACK_PREFIX = 'rehearsal-guide';
 const REHEARSAL_MIX_STEM_BOOST_DB = 2;
@@ -2056,7 +2056,7 @@ export default function ModoEnsayoCompacto({
     [80, 220, 520].forEach((delayMs) => {
       window.setTimeout(() => {
         if (!audioRef.current || audioRef.current.paused) return;
-        syncGuideCueTracks(audioRef.current.currentTime, { force: true });
+        syncGuideCueTracks(audioRef.current.currentTime);
       }, delayMs);
     });
   }, [syncGuideCueTracks]);
@@ -2115,6 +2115,7 @@ export default function ModoEnsayoCompacto({
     fallbackTimeoutId = window.setTimeout(() => {
       if (cancelled) return;
       console.warn('[ModoEnsayoCompacto] La mezcla de ensayo tardo demasiado; usando reproductor simple.');
+      setPanValue(0);
       setRehearsalMixUnavailable(true);
     }, 5000);
 
@@ -2128,6 +2129,7 @@ export default function ModoEnsayoCompacto({
       }
       if (cancelled) return;
       console.warn('[ModoEnsayoCompacto] No se pudo preparar la mezcla de ensayo.', error);
+      setPanValue(0);
       setRehearsalMixUnavailable(true);
       setAudioReady(false);
       setIsPlaying(false);
@@ -3007,7 +3009,7 @@ export default function ModoEnsayoCompacto({
         ref={audioRef}
         src={!shouldUseRehearsalMix && hasAudio ? (processedActivePlaybackUrl || activePlaybackUrl) : undefined}
         crossOrigin="anonymous"
-        preload="metadata"
+        preload="auto"
         playsInline
         onLoadedMetadata={(event) => syncAudioMetrics(event.currentTarget)}
         onLoadedData={(event) => syncAudioMetrics(event.currentTarget)}
@@ -3058,7 +3060,7 @@ export default function ModoEnsayoCompacto({
           }}
           src={source.playbackUrl || source.url}
           crossOrigin="anonymous"
-          preload="metadata"
+          preload="auto"
           playsInline
         />
       ))}
