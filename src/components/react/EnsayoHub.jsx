@@ -36,6 +36,7 @@ const FLAT_TO_SHARP = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
 const CHROMATIC_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const SETLIST_CAPO_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7];
 const SETLIST_TONE_OPTIONS = CHROMATIC_NOTES;
+const VOICE_TRACK_ANCHORS_KEY = '__trackAnchors';
 const CHORD_ROOT_PATTERN = /^([A-G][#b]?)(.*)$/;
 const BASS_NOTE_PATTERN = /\/([A-G][#b]?)/g;
 
@@ -151,13 +152,58 @@ const formatServiceDuration = (startValue, endValue) => {
   return `${hours} h ${String(minutes).padStart(2, '0')} min`;
 };
 
+const getSectionMarkerStartSec = (marker = {}) => {
+  const value = Number(marker?.startSec ?? marker?.start_sec ?? marker?.time ?? marker?.seconds);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+};
+
+const getSectionMarkerEndSec = (marker = {}) => {
+  const value = Number(marker?.endSec ?? marker?.end_sec);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+};
+
+const shiftSectionMarkersForVoiceTrack = (sectionMarkers = [], anchorStartSec = null) => {
+  const safeMarkers = Array.isArray(sectionMarkers) ? sectionMarkers : [];
+  const offset = Number(anchorStartSec);
+
+  if (!Number.isFinite(offset) || offset <= 0) return safeMarkers;
+
+  return safeMarkers
+    .map((marker, index) => {
+      const startSec = getSectionMarkerStartSec(marker);
+      if (startSec == null || startSec < offset - 0.35) return null;
+
+      const endSec = getSectionMarkerEndSec(marker);
+      const shiftedStartSec = Math.max(0, startSec - offset);
+      const shiftedEndSec = endSec != null && endSec > offset
+        ? Math.max(shiftedStartSec, endSec - offset)
+        : null;
+
+      return {
+        ...marker,
+        id: marker?.id || `voice-section-${index}`,
+        startSec: shiftedStartSec,
+        time: shiftedStartSec,
+        seconds: shiftedStartSec,
+        endSec: shiftedEndSec,
+      };
+    })
+    .filter(Boolean);
+};
+
 const dispatchProPlayerEvent = ({
   url,
   title,
   artist,
+  subtitle = '',
+  mediaKind = '',
+  voiceName = '',
+  voiceColor = '',
   autoPlay = true,
   chordpro = '',
   sectionMarkers = [],
+  expand = false,
+  startAtSec = null,
 }) => {
   const cleanUrl = String(url || '').trim();
   if (!cleanUrl || typeof window === 'undefined') return;
@@ -168,9 +214,15 @@ const dispatchProPlayerEvent = ({
       url: cleanUrl,
       title,
       artist,
+      subtitle,
+      mediaKind,
+      voiceName,
+      voiceColor,
       autoPlay,
       chordpro,
       sectionMarkers: safeSectionMarkers,
+      expand,
+      startAtSec,
     });
     return;
   }
@@ -180,9 +232,15 @@ const dispatchProPlayerEvent = ({
       url: cleanUrl,
       title,
       artist,
+      subtitle,
+      mediaKind,
+      voiceName,
+      voiceColor,
       autoPlay,
       chordpro,
       sectionMarkers: safeSectionMarkers,
+      expand,
+      startAtSec,
     },
   }));
 };
@@ -805,13 +863,34 @@ export default function EnsayoHub({
   const handlePersonalVoiceTrackPlay = useCallback((song, track) => {
     const safeUrl = normalizeVoiceExternalUrl(track?.url || track?.href || '');
     if (!safeUrl) return;
+
+    const safeSongId = String(song?.id || '').trim();
+    const safeTrackName = String(track?.label || track?.name || track?.track_name || track?.title || '').trim();
+    const songTitle = String(song?.title || 'Recursos de voz').trim() || 'Recursos de voz';
+    const displayVoiceName = String(track?.__displayTitle || safeTrackName || 'Voz seleccionada').trim();
+    const trackAnchors = songVoiceAssignments?.[safeSongId]?.[VOICE_TRACK_ANCHORS_KEY] || {};
+    const trackAnchor = trackAnchors?.[safeTrackName] || null;
+    const anchorStartSec = Number(trackAnchor?.startSec);
+    const sectionMarkers = shiftSectionMarkersForVoiceTrack(
+      song?.sectionMarkers || [],
+      Number.isFinite(anchorStartSec) ? anchorStartSec : null
+    );
+
     dispatchProPlayerEvent({
       url: safeUrl,
-      title: track?.label ? `${song?.title || 'Recursos de voz'} - ${track.label}` : (song?.title || 'Recursos de voz'),
+      title: `${songTitle} - ${displayVoiceName}`,
       artist: song?.artist || '',
+      subtitle: trackAnchor?.sectionLabel ? `Desde ${trackAnchor.sectionLabel}` : 'Practica vocal',
+      mediaKind: 'voice',
+      voiceName: displayVoiceName,
+      voiceColor: track?.__voiceColor || '',
       autoPlay: true,
+      chordpro: song?.chordpro || '',
+      sectionMarkers,
+      expand: true,
+      startAtSec: 0,
     });
-  }, []);
+  }, [songVoiceAssignments]);
 
   const handleSaveVoiceAssignment = useCallback(async ({ songId, targetUserId, trackName }) => {
     const safeSongId = String(songId || '').trim();
@@ -909,6 +988,73 @@ export default function EnsayoHub({
     } catch (error) {
       console.error('EnsayoHub unexpected voice assignment clear error:', error);
       showVoiceAssignmentFeedback('error', 'Ocurrio un problema limpiando la asignacion.');
+    } finally {
+      setIsSavingVoiceAssignments(false);
+    }
+  }, [playlistId, eventMeta?.id, userId, songVoiceAssignments, showVoiceAssignmentFeedback]);
+
+  const handleSaveVoiceTrackAnchor = useCallback(async ({ songId, trackName, anchor }) => {
+    const safeSongId = String(songId || '').trim();
+    const safeTrackName = String(trackName || '').trim();
+    const safeStartSec = Number(anchor?.startSec);
+    const safeSectionStartSec = Number(anchor?.sectionStartSec);
+    const safePreRollSec = Number(anchor?.preRollSec);
+
+    if (!safeSongId || !safeTrackName || !Number.isFinite(safeStartSec)) return;
+    if (!playlistId || !eventMeta?.id || !userId) {
+      showVoiceAssignmentFeedback('error', 'No pudimos identificar este setlist para guardar.');
+      return;
+    }
+
+    const currentSongAssignments = {
+      ...(songVoiceAssignments?.[safeSongId] || {}),
+    };
+    const currentAnchors = {
+      ...(currentSongAssignments?.[VOICE_TRACK_ANCHORS_KEY] || {}),
+    };
+
+    const nextAssignments = {
+      ...sanitizeSongVoiceAssignments(songVoiceAssignments),
+      [safeSongId]: {
+        ...currentSongAssignments,
+        [VOICE_TRACK_ANCHORS_KEY]: {
+          ...currentAnchors,
+          [safeTrackName]: {
+            sectionId: String(anchor?.sectionId || ''),
+            sectionLabel: String(anchor?.sectionLabel || 'Seccion').trim() || 'Seccion',
+            sectionStartSec: Number.isFinite(safeSectionStartSec) ? safeSectionStartSec : safeStartSec,
+            preRollSec: Number.isFinite(safePreRollSec) ? Math.max(0, safePreRollSec) : 0,
+            startSec: safeStartSec,
+          },
+        },
+      },
+    };
+
+    setIsSavingVoiceAssignments(true);
+
+    try {
+      const { error } = await supabase
+        .from('playlist_voice_assignments')
+        .upsert({
+          playlist_id: playlistId,
+          evento_id: eventMeta.id,
+          assignments: nextAssignments,
+          updated_by: userId,
+        }, {
+          onConflict: 'playlist_id',
+        });
+
+      if (error) {
+        console.error('EnsayoHub voice track anchor save error:', error);
+        showVoiceAssignmentFeedback('error', getVoiceAssignmentErrorMessage(error, 'No se pudo guardar el inicio de la pista.'));
+        return;
+      }
+
+      setSongVoiceAssignments(nextAssignments);
+      showVoiceAssignmentFeedback('success', 'Inicio de pista guardado.');
+    } catch (error) {
+      console.error('EnsayoHub unexpected voice track anchor save error:', error);
+      showVoiceAssignmentFeedback('error', 'Ocurrio un problema guardando el inicio de la pista.');
     } finally {
       setIsSavingVoiceAssignments(false);
     }
@@ -1197,6 +1343,7 @@ export default function EnsayoHub({
         onTrackPlay={(track) => handlePersonalVoiceTrackPlay(cancionPersonalActiva, track)}
         onSaveAssignment={handleSaveVoiceAssignment}
         onClearAssignment={handleClearVoiceAssignment}
+        onSaveTrackAnchor={handleSaveVoiceTrackAnchor}
       />
     );
   }

@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ChevronDown, ChevronUp, Mic2, Save, UserRound, Volume2 } from 'lucide-react';
+import { ArrowLeft, MapPin, Mic2, Save, Settings2, UserRound, Volume2 } from 'lucide-react';
+
+const TRACK_ANCHORS_KEY = '__trackAnchors';
 
 const getTrackDisplayName = (track = {}) => (
   String(
@@ -14,6 +16,29 @@ const getTrackDisplayName = (track = {}) => (
 const getTrackStableId = (track = {}, index = 0) => (
   String(track?.id || track?.url || track?.href || `${getTrackDisplayName(track) || 'track'}-${index}`)
 );
+
+const cleanVoiceTrackLabel = (value = '') => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  return raw
+    .replace(/\s*\([^)]*\)\s*/g, ' ')
+    .replace(/\b(?:primera|segunda|tercera|cuarta|quinta|sexta|septima|séptima|octava)\s+en\s+el\s+acorde\b/gi, ' ')
+    .replace(/\b(mp3|wav|m4a|aac|flac|ogg)\b/gi, ' ')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+const getVoiceTrackDisplayParts = (track = {}, index = 0) => {
+  const fallback = `Voz ${index + 1}`;
+  const cleaned = cleanVoiceTrackLabel(getTrackDisplayName(track)) || fallback;
+
+  return {
+    title: cleaned,
+    detail: '',
+  };
+};
 
 const normalizeFold = (value = '') => (
   String(value || '')
@@ -107,6 +132,49 @@ const getVoiceColorTheme = (value = '') => {
     glowStrong: hexToRgba(accent, 0.24),
     text: hexToRgba(accent, theme?.key === 'guia' ? 0.98 : 0.92),
   };
+};
+
+const formatAnchorTime = (seconds = 0) => {
+  const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+  const min = Math.floor(safeSeconds / 60);
+  const sec = safeSeconds % 60;
+  return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+};
+
+const formatPreRollLabel = (seconds = 0) => {
+  const value = Number(seconds) || 0;
+  if (value <= 0) return 'En la seccion';
+  return `${Number.isInteger(value) ? value : value.toFixed(1)}s antes`;
+};
+
+const getSectionStartSec = (marker = {}) => {
+  const value = Number(marker?.startSec ?? marker?.start_sec ?? marker?.time ?? marker?.seconds);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+};
+
+const buildVoiceAnchorSectionOptions = (song = {}) => {
+  const markers = Array.isArray(song?.sectionMarkers) ? song.sectionMarkers : [];
+  return markers
+    .map((marker, index) => {
+      const startSec = getSectionStartSec(marker);
+      if (startSec == null) return null;
+
+      const label = String(
+        marker?.sectionName ||
+        marker?.name ||
+        marker?.label ||
+        marker?.title ||
+        `Seccion ${index + 1}`
+      ).trim() || `Seccion ${index + 1}`;
+
+      return {
+        id: String(marker?.id || `${label}-${startSec}-${index}`),
+        label,
+        startSec,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.startSec - b.startSec);
 };
 
 export function priorizarVozAsignada(
@@ -308,6 +376,7 @@ export default function EnsayoPersonalView({
   onTrackPlay,
   onSaveAssignment,
   onClearAssignment,
+  onSaveTrackAnchor,
 }) {
   const currentSong = song || {};
   const songId = String(currentSong?.id || '');
@@ -335,6 +404,11 @@ export default function EnsayoPersonalView({
     )
   ), [memberIdSet, songAssignments]);
   const currentAssignment = String(validSongAssignments?.[viewerMemberId]?.trackName || '').trim();
+  const voiceTrackAnchors = useMemo(() => (
+    songAssignments?.[TRACK_ANCHORS_KEY] && typeof songAssignments[TRACK_ANCHORS_KEY] === 'object'
+      ? songAssignments[TRACK_ANCHORS_KEY]
+      : {}
+  ), [songAssignments]);
 
   const memberNameById = useMemo(() => {
     const entries = safeMembers.map((member) => [
@@ -391,17 +465,27 @@ export default function EnsayoPersonalView({
       )
     )
   ), [safeTracks]);
+  const anchorSectionOptions = useMemo(() => (
+    buildVoiceAnchorSectionOptions(currentSong)
+  ), [currentSong]);
 
   const [activeTrackId, setActiveTrackId] = useState(null);
+  const [assignmentPanelMode, setAssignmentPanelMode] = useState('voices');
   const [selectedMemberId, setSelectedMemberId] = useState(() => (
     String(viewerMemberId || safeMembers[0]?.id || '')
   ));
   const [selectedTrackName, setSelectedTrackName] = useState(() => (
     currentAssignment || availableTrackNames[0] || ''
   ));
+  const [selectedAnchorTrackName, setSelectedAnchorTrackName] = useState(() => (
+    currentAssignment || availableTrackNames[0] || ''
+  ));
+  const [selectedAnchorSectionId, setSelectedAnchorSectionId] = useState('');
+  const [anchorPreRollSec, setAnchorPreRollSec] = useState(0);
   const [hasManualMemberSelection, setHasManualMemberSelection] = useState(false);
   const [showAssignmentPanel, setShowAssignmentPanel] = useState(false);
   const canManageAssignments = canEdit && safeMembers.length > 0 && availableTrackNames.length > 0;
+  const selectedTrackAnchor = voiceTrackAnchors?.[selectedAnchorTrackName] || null;
 
   useEffect(() => {
     const fallbackMemberId = String(viewerMemberId || safeMembers[0]?.id || '');
@@ -417,6 +501,41 @@ export default function EnsayoPersonalView({
       return currentAssignment || availableTrackNames[0] || '';
     });
   }, [availableTrackNames, currentAssignment]);
+
+  useEffect(() => {
+    setSelectedAnchorTrackName((prev) => {
+      if (prev && availableTrackNames.includes(prev)) return prev;
+      return currentAssignment || availableTrackNames[0] || '';
+    });
+  }, [availableTrackNames, currentAssignment]);
+
+  useEffect(() => {
+    if (!anchorSectionOptions.length) {
+      setSelectedAnchorSectionId('');
+      setAnchorPreRollSec(0);
+      return;
+    }
+
+    const savedSectionId = String(selectedTrackAnchor?.sectionId || '');
+    const savedSection = savedSectionId
+      ? anchorSectionOptions.find((section) => String(section.id) === savedSectionId)
+      : null;
+    const nextSection = savedSection || anchorSectionOptions[0];
+    setSelectedAnchorSectionId(String(nextSection?.id || ''));
+
+    const savedPreRoll = Number(selectedTrackAnchor?.preRollSec);
+    if (Number.isFinite(savedPreRoll)) {
+      setAnchorPreRollSec(Math.max(0, Math.min(12, savedPreRoll)));
+      return;
+    }
+
+    const savedStart = Number(selectedTrackAnchor?.startSec);
+    const sectionStart = Number(selectedTrackAnchor?.sectionStartSec ?? nextSection?.startSec);
+    const inferredPreRoll = Number.isFinite(savedStart) && Number.isFinite(sectionStart)
+      ? Math.max(0, sectionStart - savedStart)
+      : 0;
+    setAnchorPreRollSec(Math.max(0, Math.min(12, inferredPreRoll)));
+  }, [anchorSectionOptions, selectedTrackAnchor]);
 
   useEffect(() => {
     if (!activeTrackId) return;
@@ -460,10 +579,18 @@ export default function EnsayoPersonalView({
   const selectedMemberAssignment = String(
     validSongAssignments?.[selectedMemberId]?.trackName || ''
   ).trim();
+  const selectedAnchorSection = anchorSectionOptions.find((section) => (
+    String(section.id) === String(selectedAnchorSectionId)
+  )) || anchorSectionOptions[0] || null;
 
-  const handleTrackClick = (track) => {
+  const handleTrackClick = (track, trackDisplayParts) => {
+    const title = trackDisplayParts?.title || getTrackDisplayName(track) || 'Voz';
     setActiveTrackId(track.__viewId);
-    onTrackPlay?.(track);
+    onTrackPlay?.({
+      ...track,
+      __displayTitle: title,
+      __voiceColor: getVoiceColorTheme(title).accent,
+    });
   };
 
   const handleSaveAssignment = async () => {
@@ -485,12 +612,38 @@ export default function EnsayoPersonalView({
     setHasManualMemberSelection(false);
   };
 
+  const updateAnchorPreRoll = (delta) => {
+    setAnchorPreRollSec((current) => {
+      const next = Math.round((Number(current || 0) + delta) * 2) / 2;
+      return Math.max(0, Math.min(12, next));
+    });
+  };
+
+  const handleSaveTrackAnchor = async () => {
+    if (!songId || !selectedAnchorTrackName || !selectedAnchorSection) return;
+    const safePreRollSec = Math.max(0, Math.min(12, Number(anchorPreRollSec) || 0));
+    const sectionStartSec = Number(selectedAnchorSection.startSec) || 0;
+
+    await onSaveTrackAnchor?.({
+      songId,
+      trackName: String(selectedAnchorTrackName).trim(),
+      anchor: {
+        sectionId: selectedAnchorSection.id,
+        sectionLabel: selectedAnchorSection.label,
+        sectionStartSec,
+        preRollSec: safePreRollSec,
+        startSec: Math.max(0, sectionStartSec - safePreRollSec),
+      },
+    });
+  };
+
   const selectedMemberLabel = safeMembers.find((member) => String(member?.id || '') === String(selectedMemberId || ''));
-  const priorityDescription = currentAssignment
-    ? 'Tu voz estara resaltada y aparecera de primera. Las voces asignadas a tus companeros quedaran debajo con su nombre.'
-    : viewerMemberId
-      ? 'Cuando el director te asigne una voz, aparecera aqui resaltada y de primera. Abajo veras tambien las voces de tus companeros.'
-      : 'Aqui ves la asignacion vocal del equipo. Las voces asignadas se muestran con el nombre del integrante correspondiente.';
+  const priorityTitle = currentAssignment
+    ? cleanVoiceTrackLabel(currentAssignment)
+    : 'Sin voz asignada';
+  const priorityMeta = currentAssignment
+    ? 'Tu pista aparece primero'
+    : `${tracksParaVista.length} pistas vocales`;
 
   if (!song) return null;
 
@@ -526,17 +679,15 @@ export default function EnsayoPersonalView({
             <button
               type="button"
               onClick={() => setShowAssignmentPanel((prev) => !prev)}
-              className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-2xl border px-3.5 text-sm font-black transition-all ${
+              className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border text-sm font-black transition-all ${
                 showAssignmentPanel
                   ? 'border-cyan-400/45 bg-cyan-400/14 text-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.14)]'
                   : 'border-white/10 bg-white/[0.04] text-zinc-200 hover:bg-white/[0.08] hover:text-white'
               }`}
               aria-expanded={showAssignmentPanel}
-              aria-label={showAssignmentPanel ? 'Ocultar panel de asignacion' : 'Mostrar panel de asignacion'}
+              aria-label={showAssignmentPanel ? 'Ocultar ajustes vocales' : 'Mostrar ajustes vocales'}
             >
-              <Mic2 className="h-4 w-4" />
-              <span>Asignar</span>
-              {showAssignmentPanel ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              <Settings2 className="h-5 w-5" />
             </button>
           )}
         </div>
@@ -545,111 +696,233 @@ export default function EnsayoPersonalView({
       {canManageAssignments && showAssignmentPanel && (
         <section className="shrink-0 border-b border-white/8 bg-[#0d1118]/94 backdrop-blur-xl">
           <div className="mx-auto max-w-4xl px-4 py-4 sm:px-5">
-            <div className="rounded-[1.75rem] border border-white/10 bg-[#12161f] px-5 py-5 shadow-[0_18px_60px_rgba(0,0,0,0.28)]">
-              <div className="flex flex-col gap-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-zinc-500">
-                      Asignacion por cancion
-                    </p>
-                    <h3 className="mt-2 text-lg font-black text-white">
-                      Director: asigna una voz especifica
-                    </h3>
-                    <p className="mt-1 text-sm text-zinc-400">
-                      La sugerencia automatica busca coincidencias entre el nombre del track y el rol vocal del integrante, pero solo se confirma cuando guardas.
-                    </p>
-                  </div>
-
+            <div className="rounded-[1.35rem] border border-white/10 bg-[#12161f] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.28)] sm:p-5">
+              <div className="flex flex-col gap-3">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-zinc-500">
+                    Ajustes vocales
+                  </p>
                   <button
                     type="button"
                     onClick={() => setShowAssignmentPanel(false)}
-                    className="inline-flex h-10 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] px-3 text-xs font-black uppercase tracking-[0.16em] text-zinc-300 transition-colors hover:bg-white/[0.08] hover:text-white"
+                    className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-zinc-300 transition-colors hover:bg-white/[0.08] hover:text-white"
                   >
-                    Ocultar
+                    Cerrar
                   </button>
                 </div>
 
-                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                  <label className="flex min-w-0 flex-col gap-2">
-                    <span className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-500">
-                      Integrante
-                    </span>
-                    <div className="relative">
-                      <UserRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
-                      <select
-                        value={selectedMemberId}
-                        onChange={(event) => {
-                          setSelectedMemberId(event.target.value);
-                          setHasManualMemberSelection(true);
-                        }}
-                        className="h-12 w-full appearance-none rounded-2xl border border-white/10 bg-white/[0.04] pl-10 pr-4 text-sm font-semibold text-white outline-none transition-colors focus:border-cyan-400/55"
-                      >
-                        {safeMembers.map((member) => (
-                          <option key={member.id} value={member.id} className="bg-[#12161f] text-white">
-                            {member.name}{member.roleLabel ? ` - ${member.roleLabel}` : ''}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </label>
-
-                  <label className="flex min-w-0 flex-col gap-2">
-                    <span className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-500">
-                      Voz asignada
-                    </span>
-                    <select
-                      value={selectedTrackName}
-                      onChange={(event) => {
-                        setSelectedTrackName(event.target.value);
-                        setHasManualMemberSelection(false);
-                      }}
-                      className="h-12 w-full appearance-none rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-white outline-none transition-colors focus:border-cyan-400/55"
-                    >
-                      {availableTrackNames.map((trackName) => (
-                        <option key={trackName} value={trackName} className="bg-[#12161f] text-white">
-                          {trackName}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <div className="flex items-end gap-2">
+                <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/8 bg-black/20 p-1">
+                  {[
+                    ['voices', 'Asignar voces'],
+                    ['starts', 'Comienzos'],
+                  ].map(([mode, label]) => (
                     <button
+                      key={mode}
                       type="button"
-                      onClick={handleSaveAssignment}
-                      disabled={isSavingAssignments || !selectedMemberId || !selectedTrackName}
-                      className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-cyan-400 px-4 text-sm font-black text-slate-950 shadow-[0_0_22px_rgba(34,211,238,0.22)] transition-all hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={() => setAssignmentPanelMode(mode)}
+                      className={`min-h-10 rounded-xl px-3 text-xs font-black uppercase tracking-[0.1em] transition-colors ${
+                        assignmentPanelMode === mode
+                          ? 'bg-cyan-400 text-slate-950 shadow-[0_0_18px_rgba(34,211,238,0.18)]'
+                          : 'text-zinc-400 hover:bg-white/[0.05] hover:text-white'
+                      }`}
                     >
-                      <Save className="h-4 w-4" />
-                      {isSavingAssignments ? 'Guardando...' : 'Guardar'}
+                      {label}
                     </button>
+                  ))}
+                </div>
 
-                    {selectedMemberAssignment && (
+                {assignmentPanelMode === 'voices' ? (
+                  <>
+                    <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
+                      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-zinc-500">
+                        Estado
+                      </p>
+                      <p className="mt-1 truncate text-sm font-semibold text-zinc-200">
+                        {selectedMemberLabel?.name || 'Integrante'} · {selectedMemberAssignment ? cleanVoiceTrackLabel(selectedMemberAssignment) : 'sin voz'}
+                      </p>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="flex min-w-0 flex-col gap-2">
+                        <span className="text-[11px] font-black uppercase tracking-[0.16em] text-zinc-500">
+                          Integrante
+                        </span>
+                        <div className="relative">
+                          <UserRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+                          <select
+                            value={selectedMemberId}
+                            onChange={(event) => {
+                              setSelectedMemberId(event.target.value);
+                              setHasManualMemberSelection(true);
+                            }}
+                            className="h-12 w-full appearance-none rounded-2xl border border-white/10 bg-white/[0.04] pl-10 pr-4 text-sm font-semibold text-white outline-none transition-colors focus:border-cyan-400/55"
+                          >
+                            {safeMembers.map((member) => (
+                              <option key={member.id} value={member.id} className="bg-[#12161f] text-white">
+                                {member.name}{member.roleLabel ? ` - ${member.roleLabel}` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </label>
+
+                      <label className="flex min-w-0 flex-col gap-2">
+                        <span className="text-[11px] font-black uppercase tracking-[0.16em] text-zinc-500">
+                          Voz
+                        </span>
+                        <select
+                          value={selectedTrackName}
+                          onChange={(event) => {
+                            setSelectedTrackName(event.target.value);
+                            setHasManualMemberSelection(false);
+                          }}
+                          className="h-12 w-full appearance-none rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-white outline-none transition-colors focus:border-cyan-400/55"
+                        >
+                          {availableTrackNames.map((trackName) => (
+                            <option key={trackName} value={trackName} className="bg-[#12161f] text-white">
+                              {getVoiceTrackDisplayParts({ label: trackName }).title}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                       <button
                         type="button"
-                        onClick={handleClearAssignment}
-                        disabled={isSavingAssignments}
-                        className="inline-flex h-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-sm font-black text-zinc-300 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={handleSaveAssignment}
+                        disabled={isSavingAssignments || !selectedMemberId || !selectedTrackName}
+                        className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-cyan-400 px-4 text-sm font-black text-slate-950 shadow-[0_0_22px_rgba(34,211,238,0.22)] transition-all hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        Limpiar
+                        <Save className="h-4 w-4" />
+                        {isSavingAssignments ? 'Guardando...' : 'Guardar voz'}
                       </button>
-                    )}
-                  </div>
-                </div>
 
-                <div className="rounded-[1.35rem] border border-white/8 bg-black/20 px-4 py-3">
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-zinc-500">
-                    Estado actual
-                  </p>
-                  <p className="mt-1 text-sm text-zinc-200">
-                    {selectedMemberLabel?.name || 'Integrante'}: {selectedMemberAssignment || 'sin voz asignada'}
-                  </p>
-                  {smartSuggestedMemberId && !selectedTrackAssignmentOwnerId && (
-                    <p className="mt-1 text-xs text-cyan-300/80">
-                      Sugerencia automatica: {safeMembers.find((member) => String(member?.id || '') === smartSuggestedMemberId)?.name || 'Integrante'}
-                    </p>
-                  )}
-                </div>
+                      {selectedMemberAssignment && (
+                        <button
+                          type="button"
+                          onClick={handleClearAssignment}
+                          disabled={isSavingAssignments}
+                          className="inline-flex h-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-sm font-black text-zinc-300 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Limpiar
+                        </button>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
+                      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-zinc-500">
+                        Estado
+                      </p>
+                      <p className="mt-1 truncate text-sm font-semibold text-zinc-200">
+                        {selectedTrackAnchor?.sectionLabel
+                          ? `${getVoiceTrackDisplayParts({ label: selectedAnchorTrackName }).title} · ${selectedTrackAnchor.sectionLabel} · ${formatPreRollLabel(selectedTrackAnchor.preRollSec)}`
+                          : `${getVoiceTrackDisplayParts({ label: selectedAnchorTrackName }).title || 'Pista'} · sin comienzo`}
+                      </p>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+                      <label className="flex min-w-0 flex-col gap-2">
+                        <span className="text-[11px] font-black uppercase tracking-[0.16em] text-zinc-500">
+                          Pista
+                        </span>
+                        <select
+                          value={selectedAnchorTrackName}
+                          onChange={(event) => setSelectedAnchorTrackName(event.target.value)}
+                          className="h-12 w-full appearance-none rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-sm font-semibold text-white outline-none transition-colors focus:border-cyan-400/55"
+                        >
+                          {availableTrackNames.map((trackName) => (
+                            <option key={trackName} value={trackName} className="bg-[#12161f] text-white">
+                              {getVoiceTrackDisplayParts({ label: trackName }).title}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <div className="flex min-w-0 flex-col gap-2">
+                        <span className="text-[11px] font-black uppercase tracking-[0.16em] text-zinc-500">
+                          Ajuste
+                        </span>
+                        <div className="grid h-12 grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]">
+                          <button
+                            type="button"
+                            onClick={() => updateAnchorPreRoll(-0.5)}
+                            className="text-lg font-black text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-white"
+                            aria-label="Reducir segundos antes"
+                          >
+                            -
+                          </button>
+                          <div className="grid place-items-center border-x border-white/8 px-2 text-center text-sm font-black text-white">
+                            {formatPreRollLabel(anchorPreRollSec)}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => updateAnchorPreRoll(0.5)}
+                            className="text-lg font-black text-zinc-300 transition-colors hover:bg-white/[0.06] hover:text-white"
+                            aria-label="Aumentar segundos antes"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {anchorSectionOptions.length > 0 ? (
+                      <>
+                        <div className="flex gap-2 overflow-x-auto pb-1">
+                          {anchorSectionOptions.map((section) => {
+                            const isSelected = String(selectedAnchorSection?.id || '') === String(section.id);
+
+                            return (
+                              <button
+                                key={section.id}
+                                type="button"
+                                onClick={() => setSelectedAnchorSectionId(String(section.id))}
+                                className={`inline-flex min-h-10 shrink-0 items-center gap-2 rounded-full border px-3.5 text-xs font-black uppercase tracking-[0.1em] transition-all ${
+                                  isSelected
+                                    ? 'border-cyan-300/50 bg-cyan-300/14 text-cyan-100 shadow-[0_0_18px_rgba(34,211,238,0.12)]'
+                                    : 'border-white/10 bg-white/[0.04] text-zinc-300 hover:border-cyan-300/28 hover:bg-cyan-300/10 hover:text-cyan-100'
+                                }`}
+                              >
+                                <span>{section.label}</span>
+                                <span className="text-[10px] font-black tracking-normal text-white/45">
+                                  {formatAnchorTime(Math.max(0, section.startSec - anchorPreRollSec))}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <input
+                          type="range"
+                          min="0"
+                          max="12"
+                          step="0.5"
+                          value={anchorPreRollSec}
+                          onChange={(event) => setAnchorPreRollSec(Number(event.target.value))}
+                          className="w-full accent-cyan-400"
+                          aria-label="Segundos antes de la seccion"
+                        />
+
+                        <button
+                          type="button"
+                          onClick={handleSaveTrackAnchor}
+                          disabled={isSavingAssignments || !selectedAnchorTrackName || !selectedAnchorSection}
+                          className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-cyan-400 px-4 text-sm font-black text-slate-950 shadow-[0_0_22px_rgba(34,211,238,0.22)] transition-all hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <MapPin className="h-4 w-4" />
+                          {isSavingAssignments ? 'Guardando...' : 'Guardar comienzo'}
+                        </button>
+                      </>
+                    ) : (
+                      <p className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3 text-sm font-semibold text-zinc-400">
+                        Sin secciones con tiempo.
+                      </p>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -658,30 +931,26 @@ export default function EnsayoPersonalView({
 
       <main
         className="min-h-0 flex-1 overflow-y-auto px-4 pt-4 sm:px-5"
-        style={{ paddingBottom: 'max(calc(env(safe-area-inset-bottom) + 1rem), 1rem)' }}
+        style={{
+          paddingBottom: activeTrackId
+            ? 'max(calc(env(safe-area-inset-bottom) + 8rem), 8rem)'
+            : 'max(calc(env(safe-area-inset-bottom) + 1rem), 1rem)',
+        }}
       >
         <div className="mx-auto flex max-w-4xl flex-col gap-4">
-          <section className="overflow-hidden rounded-[2rem] border border-cyan-400/14 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.14),_transparent_45%),linear-gradient(180deg,_rgba(18,23,34,0.96),_rgba(14,18,27,0.96))] px-5 py-5 shadow-[0_24px_80px_rgba(2,6,23,0.46)]">
-            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <section className="overflow-hidden rounded-[1.6rem] border border-cyan-400/14 bg-[linear-gradient(180deg,_rgba(18,23,34,0.96),_rgba(14,18,27,0.96))] px-4 py-4 shadow-[0_20px_70px_rgba(2,6,23,0.36)] sm:px-5">
+            <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-zinc-500">
-                  Prioridad vocal
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-300/65">
+                  Voz asignada
                 </p>
-                <h2 className="mt-2 text-lg font-black text-white">
-                  {currentAssignment || 'Aun sin voz asignada'}
+                <h2 className="mt-1 truncate text-lg font-black text-white">
+                  {priorityTitle}
                 </h2>
-                <p className="mt-1 text-sm text-zinc-400">
-                  {priorityDescription}
-                </p>
               </div>
 
-              <div className="rounded-[1.25rem] border border-white/10 bg-white/[0.04] px-4 py-3">
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-zinc-500">
-                  Vista activa
-                </p>
-                <p className="mt-1 text-sm font-semibold text-zinc-200">
-                  {tracksParaVista.length} pistas vocales listas
-                </p>
+              <div className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-black text-zinc-300">
+                {priorityMeta}
               </div>
             </div>
           </section>
@@ -692,11 +961,12 @@ export default function EnsayoPersonalView({
                 const assignedMembers = Array.isArray(track?.assignedMembers) ? track.assignedMembers : [];
                 const assignedOthers = assignedMembers.filter((member) => member && member.isCurrentUser !== true);
                 const assignedOthersText = formatAssignedMembersText(assignedOthers);
+                const trackDisplayParts = getVoiceTrackDisplayParts(track, index);
                 const subtitle = track?.esAsignada
                   ? 'Tu voz asignada para este ensayo'
                   : assignedOthersText
                     ? `Asignada a ${assignedOthersText}`
-                    : 'Disponible para practica libre';
+                    : trackDisplayParts.detail;
 
                 const assignmentLabel = !track?.esAsignada && assignedOthers.length > 0
                   ? assignedOthersText
@@ -706,11 +976,11 @@ export default function EnsayoPersonalView({
                   <TrackButton
                     key={track.__viewId}
                     track={track}
-                    title={getTrackDisplayName(track) || `Voz ${index + 1}`}
+                    title={trackDisplayParts.title || `Voz ${index + 1}`}
                     subtitle={subtitle}
                     assignmentLabel={assignmentLabel}
                     isActive={activeTrackId === track.__viewId}
-                    onClick={() => handleTrackClick(track)}
+                    onClick={() => handleTrackClick(track, trackDisplayParts)}
                   />
                 );
               })
