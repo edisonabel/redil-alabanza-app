@@ -5,6 +5,7 @@ const DRIVE_HOSTS = new Set([
   'docs.google.com',
   'drive.usercontent.google.com',
 ]);
+const R2_AUDIO_HOST = 'pub-4faa87e319a345c38e4f3be570797088.r2.dev';
 
 const extractGoogleDriveId = (rawUrl: string) => {
   if (!rawUrl) return '';
@@ -19,6 +20,15 @@ const isAllowedDriveHost = (hostname: string) => {
   const host = (hostname || '').toLowerCase();
   return DRIVE_HOSTS.has(host);
 };
+
+const isAllowedR2Host = (hostname: string) => {
+  const host = (hostname || '').toLowerCase();
+  return host === R2_AUDIO_HOST || host.endsWith('.r2.dev');
+};
+
+const isAllowedAudioProxyHost = (hostname: string) => (
+  isAllowedDriveHost(hostname) || isAllowedR2Host(hostname)
+);
 
 const toDriveDownloadUrl = (rawUrl: string) => {
   const fileId = extractGoogleDriveId(rawUrl);
@@ -54,11 +64,11 @@ export const GET: APIRoute = async ({ request, url }) => {
     return audioProxyResponse('Invalid src URL', { status: 400 });
   }
 
-  if (!isAllowedDriveHost(parsed.hostname)) {
+  if (parsed.protocol !== 'https:' || !isAllowedAudioProxyHost(parsed.hostname)) {
     return audioProxyResponse('Host not allowed', { status: 403 });
   }
 
-  const targetUrl = toDriveDownloadUrl(src);
+  const targetUrl = isAllowedDriveHost(parsed.hostname) ? toDriveDownloadUrl(src) : parsed.href;
   const forwardHeaders = new Headers();
   const incomingRange = request.headers.get('range');
   if (incomingRange) {
@@ -78,7 +88,7 @@ export const GET: APIRoute = async ({ request, url }) => {
 
   const contentType = upstream.headers.get('content-type') || '';
   if (contentType.includes('text/html')) {
-    return audioProxyResponse('Drive did not return an audio file. Verify sharing permissions.', { status: 422 });
+    return audioProxyResponse('Source did not return an audio file. Verify sharing permissions.', { status: 422 });
   }
 
   const responseHeaders = new Headers();

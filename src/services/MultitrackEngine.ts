@@ -124,6 +124,7 @@ const MEDIA_MONITOR_INTERVAL_SLOW_MS = 250;
 const MEDIA_SYNC_TOLERANCE_SECONDS = 0.12;
 const MEDIA_LOOP_EPSILON_SECONDS = 0.05;
 const MEDIA_DRIFT_DIAGNOSTIC_THROTTLE_MS = 2_500;
+const MAX_TRACK_VOLUME = 2;
 
 const isAbortError = (error: unknown) =>
   (error instanceof DOMException && error.name === 'AbortError') ||
@@ -525,7 +526,7 @@ export class MultitrackEngine {
       return;
     }
 
-    track.volume = this.clampVolume(volume);
+    track.volume = this.clampVolume(volume, MAX_TRACK_VOLUME);
     this.syncTrackGain(track);
   }
 
@@ -697,7 +698,7 @@ export class MultitrackEngine {
       gainNode.connect(analyserNode);
       analyserNode.connect(this.masterGain);
 
-      track.volume = this.clampVolume(track.volume);
+      track.volume = this.clampVolume(track.volume, MAX_TRACK_VOLUME);
       track.audioBuffer = audioBuffer;
       track.inputNode = inputNode;
       track.gainNode = gainNode;
@@ -893,7 +894,7 @@ export class MultitrackEngine {
 
     const syntheticTrack: TrackData = {
       ...track,
-      volume: this.clampVolume(track.volume),
+      volume: this.clampVolume(track.volume, MAX_TRACK_VOLUME),
       audioBuffer,
       inputNode,
       gainNode,
@@ -939,7 +940,7 @@ export class MultitrackEngine {
           gainNode.connect(analyserNode);
           analyserNode.connect(this.masterGain);
 
-          track.volume = this.clampVolume(track.volume);
+          track.volume = this.clampVolume(track.volume, MAX_TRACK_VOLUME);
           track.audioBuffer = undefined;
           track.sourceNode = undefined;
           track.inputNode = inputNode;
@@ -1508,7 +1509,7 @@ export class MultitrackEngine {
         ? 0
         : track.isMuted
           ? 0
-          : this.clampVolume(track.volume);
+          : this.clampVolume(track.volume, MAX_TRACK_VOLUME);
 
     track.gainNode.gain.value = nextGain;
 
@@ -1689,12 +1690,12 @@ export class MultitrackEngine {
     return Math.min(Math.max(0, offset), Math.max(0, duration - MEDIA_LOOP_EPSILON_SECONDS));
   }
 
-  private clampVolume(volume: number): number {
+  private clampVolume(volume: number, maxVolume = 1): number {
     if (!Number.isFinite(volume)) {
       return 1;
     }
 
-    return Math.min(1, Math.max(0, volume));
+    return Math.min(maxVolume, Math.max(0, volume));
   }
 
   private clampTime(timeInSeconds: number): number {

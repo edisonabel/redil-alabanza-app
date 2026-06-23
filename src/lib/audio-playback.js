@@ -4,6 +4,7 @@ const DRIVE_HOSTS = new Set([
   'docs.google.com',
   'drive.usercontent.google.com',
 ]);
+const R2_AUDIO_HOST = 'pub-4faa87e319a345c38e4f3be570797088.r2.dev';
 const AUDIO_API_PATHS = new Set(['/api/audio', '/api/mp3-proxy']);
 const AUDIO_PROXY_VERSION = '2';
 
@@ -59,6 +60,18 @@ export const isDriveLikeAudioUrl = (rawUrl, { origin = '' } = {}) => {
   }
 };
 
+export const isR2AudioUrl = (rawUrl, { origin = '' } = {}) => {
+  const normalized = normalizeExternalAudioUrl(rawUrl, { origin });
+  if (!normalized) return false;
+
+  try {
+    const host = new URL(normalized).hostname.toLowerCase();
+    return host === R2_AUDIO_HOST || host.endsWith('.r2.dev');
+  } catch {
+    return false;
+  }
+};
+
 export const isAudioApiUrl = (rawUrl, { origin = '' } = {}) => {
   const normalized = normalizeExternalAudioUrl(rawUrl, { origin });
   if (!normalized) return false;
@@ -77,6 +90,7 @@ export const isLikelyAudioSourceUrl = (rawUrl, { origin = '' } = {}) => {
   return (
     AUDIO_SOURCE_EXT_RE.test(normalized) ||
     isDriveLikeAudioUrl(normalized, { origin }) ||
+    isR2AudioUrl(normalized, { origin }) ||
     isAudioApiUrl(normalized, { origin })
   );
 };
@@ -140,6 +154,42 @@ export const buildPlaybackSourceCandidates = (rawUrl, { origin = '' } = {}) => {
 export const resolvePreferredAudioUrl = (rawUrl, { origin = '' } = {}) => (
   buildPlaybackSourceCandidates(rawUrl, { origin })[0] || ''
 );
+
+export const resolveFetchableAudioUrl = (rawUrl, { origin = '' } = {}) => {
+  const normalized = normalizeExternalAudioUrl(rawUrl, { origin });
+  if (!normalized) return '';
+
+  if (isAudioApiUrl(normalized, { origin })) {
+    return toAudioApiUrl(normalized, { origin });
+  }
+
+  const baseOrigin = resolveBaseOrigin(origin);
+  let parsed;
+  let base;
+  try {
+    parsed = new URL(normalized);
+    base = new URL(baseOrigin);
+  } catch {
+    return '';
+  }
+
+  if (parsed.origin === base.origin) {
+    return parsed.href;
+  }
+
+  if (isDriveLikeAudioUrl(normalized, { origin })) {
+    return toAudioApiUrl(normalized, { origin });
+  }
+
+  if (parsed.protocol === 'https:' && isR2AudioUrl(normalized, { origin })) {
+    const proxyUrl = new URL('/api/mp3-proxy', baseOrigin);
+    proxyUrl.searchParams.set('src', parsed.href);
+    proxyUrl.searchParams.set('v', AUDIO_PROXY_VERSION);
+    return proxyUrl.href;
+  }
+
+  return normalized;
+};
 
 export const shouldPreferNativeBackgroundPlayback = () => {
   if (typeof window === 'undefined') return false;

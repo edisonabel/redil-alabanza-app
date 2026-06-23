@@ -18,6 +18,7 @@ type LoadProgressState = { loaded: number; total: number } | null;
 const UI_UPDATE_INTERVAL_MS = 1000 / 24;
 const DIAGNOSTICS_UPDATE_INTERVAL_MS = 1000;
 const TRACK_LEVEL_UPDATE_THRESHOLD = 0.006;
+const MAX_TRACK_VOLUME = 2;
 type EngineKind = 'buffer' | 'streaming';
 type EngineInstance = MultitrackEngine | StreamingMultitrackEngine;
 export type LiveDirectorEngineDiagnostics = {
@@ -60,17 +61,17 @@ export type UseMultitrackEngineReturn = {
   soloTrack: (trackId: string) => void;
 };
 
-const clampVolume = (volume: number) => {
+const clampVolume = (volume: number, maxVolume = 1) => {
   if (!Number.isFinite(volume)) {
     return 1;
   }
 
-  return Math.min(1, Math.max(0, volume));
+  return Math.min(maxVolume, Math.max(0, volume));
 };
 
 const buildTrackVolumes = (tracks: TrackData[]): TrackVolumesState => {
   return tracks.reduce<TrackVolumesState>((volumes, track) => {
-    volumes[track.id] = clampVolume(track.volume);
+    volumes[track.id] = clampVolume(track.volume, MAX_TRACK_VOLUME);
     return volumes;
   }, {});
 };
@@ -92,7 +93,7 @@ const cloneTracks = (tracks: TrackData[]): TrackData[] => (
     optimizedUrl: track.optimizedUrl,
     cafUrl: track.cafUrl,
     pcmUrl: track.pcmUrl,
-    volume: clampVolume(track.volume),
+    volume: clampVolume(track.volume, MAX_TRACK_VOLUME),
     isMuted: Boolean(track.isMuted),
     enabled: track.enabled,
     sourceFileName: track.sourceFileName,
@@ -453,7 +454,7 @@ export function useMultitrackEngine(
       return;
     }
 
-    const safeVolume = clampVolume(volume);
+    const safeVolume = clampVolume(volume, MAX_TRACK_VOLUME);
 
     engine.setTrackVolume(trackId, safeVolume);
     setTrackVolumes((previousVolumes) => ({

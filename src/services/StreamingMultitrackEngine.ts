@@ -146,6 +146,7 @@ type DemuxAppendResult = {
   chunks: EncodedAudioChunk[];
   decoderConfig?: AudioDecoderConfig;
   nextFileStart?: number;
+  durationSeconds?: number;
 };
 
 type DemuxSeekResult = {
@@ -236,6 +237,7 @@ const DEFAULT_FETCH_PAUSE_WATERMARK_RATIO = 0.25;
 const DEFAULT_FETCH_RESUME_WATERMARK_RATIO = 0.55;
 const DEFAULT_DECODE_RESUME_WATERMARK_RATIO = 0.1;
 const DEFAULT_BUFFER_POLL_INTERVAL_MS = 20;
+const MAX_TRACK_VOLUME = 2;
 const AAC_FRAME_SIZE = 1024;
 const MP4_EXTRACTION_SAMPLE_BATCH_SIZE = 16;
 const DECODER_SPECIFIC_INFO_TAG = 0x05;
@@ -373,7 +375,7 @@ export class StreamingMultitrackEngine {
   ): Promise<TrackData[]> {
     const normalizedTracks = trackList.map((track) => ({
       ...track,
-      volume: this.clampVolume(track.volume),
+      volume: this.clampVolume(track.volume, MAX_TRACK_VOLUME),
       isMuted: Boolean(track.isMuted),
       outputRoute: resolveTrackOutputRoute(track),
     }));
@@ -627,7 +629,7 @@ export class StreamingMultitrackEngine {
 
   setTrackVolume(trackIdOrIndex: string | number, volume: number): void {
     const trackState = this.getTrackState(trackIdOrIndex);
-    const nextVolume = this.clampVolume(volume);
+    const nextVolume = this.clampVolume(volume, MAX_TRACK_VOLUME);
 
     trackState.volume = nextVolume;
     if (this.tracks[trackState.index]) {
@@ -747,7 +749,7 @@ export class StreamingMultitrackEngine {
       ),
       decoderDescription: trackDefinition.decoderDescription,
       demuxerFactory: trackDefinition.demuxerFactory,
-      initialVolume: this.clampVolume(trackDefinition.initialVolume ?? 1),
+      initialVolume: this.clampVolume(trackDefinition.initialVolume ?? 1, MAX_TRACK_VOLUME),
       initiallyMuted: Boolean(trackDefinition.initiallyMuted),
       initialOutputRoute: normalizeTrackOutputRoute(trackDefinition.initialOutputRoute) || 'stereo',
     };
@@ -843,10 +845,30 @@ export class StreamingMultitrackEngine {
   private buildStreamingTrackDefinition(track: TrackData): StreamingTrackDefinition {
     return {
       url: track.url,
+      container: this.detectTrackContainer(track),
       initialVolume: track.volume,
       initiallyMuted: track.isMuted,
       initialOutputRoute: resolveTrackOutputRoute(track),
     };
+  }
+
+  private detectTrackContainer(track: TrackData): TrackContainer | undefined {
+    const candidates = [
+      track.sourceFileName,
+      track.optimizedUrl,
+      track.url,
+      track.iosUrl,
+      track.nativeUrl,
+    ];
+
+    for (let index = 0; index < candidates.length; index += 1) {
+      const candidate = String(candidates[index] || '').toLowerCase();
+      if (!candidate) continue;
+      if (/\.(m4a|mp4)(?:[?#\s]|$)/i.test(candidate)) return 'm4a';
+      if (/\.(aac|adts)(?:[?#\s]|$)/i.test(candidate)) return 'adts';
+    }
+
+    return undefined;
   }
 
   private startTrackPipeline(trackState: TrackRuntime): void {
@@ -942,6 +964,7 @@ export class StreamingMultitrackEngine {
       }
 
       const remainingChunks = trackState.demuxer.flush();
+      this.applyDemuxedMetadata(trackState, remainingChunks);
       await this.applyDecoderConfigIfNeeded(trackState, remainingChunks.decoderConfig);
       await this.feedEncodedChunks(trackState, remainingChunks.chunks);
 
@@ -965,9 +988,27 @@ export class StreamingMultitrackEngine {
   ): Promise<DemuxAppendResult> {
     await this.waitForDecodeWindow(trackState);
     const demuxed = trackState.demuxer.append(bytes, endOfStream, fileStart);
+    this.applyDemuxedMetadata(trackState, demuxed);
     await this.applyDecoderConfigIfNeeded(trackState, demuxed.decoderConfig);
     await this.feedEncodedChunks(trackState, demuxed.chunks);
     return demuxed;
+  }
+
+  private applyDemuxedMetadata(trackState: TrackRuntime, demuxed: DemuxAppendResult): void {
+    const durationSeconds = Number(demuxed.durationSeconds);
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+      return;
+    }
+
+    const track = this.tracks[trackState.index];
+    if (!track) {
+      return;
+    }
+
+    const previousDuration = Number.isFinite(track.durationSeconds)
+      ? Number(track.durationSeconds)
+      : 0;
+    track.durationSeconds = Math.max(previousDuration, durationSeconds);
   }
 
   private async applyDecoderConfigIfNeeded(
@@ -1482,12 +1523,12 @@ export class StreamingMultitrackEngine {
     }
   }
 
-  private clampVolume(volume: number): number {
+  private clampVolume(volume: number, maxVolume = 1): number {
     if (!Number.isFinite(volume)) {
       return 1;
     }
 
-    return Math.min(1, Math.max(0, volume));
+    return Math.min(maxVolume, Math.max(0, volume));
   }
 
   private createDeferred<T>(): Deferred<T> {
@@ -1698,6 +1739,7 @@ class Mp4BoxDemuxer implements EncodedAudioChunkDemuxer {
   private extractionTrackId: number | null = null;
   private extractionStarted = false;
   private trackReady = false;
+  private durationSeconds: number | undefined;
 
   constructor(private readonly trackDefinition: NormalizedTrackDefinition) {
     this.file.onError = (_errorCode, message) => {
@@ -1799,6 +1841,12 @@ class Mp4BoxDemuxer implements EncodedAudioChunkDemuxer {
     }
 
     const audioTrackId = audioTrack.id;
+    const trackDuration = Number(audioTrack.duration);
+    const trackTimescale = Number(audioTrack.timescale);
+    if (Number.isFinite(trackDuration) && trackDuration > 0 && Number.isFinite(trackTimescale) && trackTimescale > 0) {
+      this.durationSeconds = trackDuration / trackTimescale;
+    }
+
     const rawDecoderDescription = this.getDecoderSpecificInfo(audioTrackId);
     const decoderDescription =
       rawDecoderDescription ||
@@ -1926,6 +1974,7 @@ class Mp4BoxDemuxer implements EncodedAudioChunkDemuxer {
       chunks,
       decoderConfig,
       nextFileStart,
+      durationSeconds: this.durationSeconds,
     };
   }
 

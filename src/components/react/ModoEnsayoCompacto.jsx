@@ -4,7 +4,8 @@ import { supabase } from '../../lib/supabase';
 import { audioSessionService } from '../../services/AudioSessionService';
 import { metronomeService } from '../../services/MetronomeEngine';
 import { screenWakeLockService } from '../../services/ScreenWakeLockService';
-import { isLikelyAudioSourceUrl, resolvePreferredAudioUrl } from '../../lib/audio-playback.js';
+import { useMultitrackEngine } from '../../hooks/useMultitrackEngine';
+import { isLikelyAudioSourceUrl, resolveFetchableAudioUrl, resolvePreferredAudioUrl } from '../../lib/audio-playback.js';
 import { buildWordGroups, parseChordProLine } from '../../utils/chordProLineUtils';
 import { normalizePersistedLiveDirectorSession } from '../../utils/liveDirectorSongSession';
 import {
@@ -99,6 +100,10 @@ const TRACK_DUCKED_GAIN = 0.38;
 const TRACK_DUCK_IN_DURATION_MS = 3200;
 const TRACK_DUCK_OUT_DURATION_MS = 4200;
 const GUIDE_CUE_SYNC_TOLERANCE_SECONDS = 0.035;
+const REHEARSAL_MIX_MAIN_TRACK_ID = 'rehearsal-main';
+const REHEARSAL_MIX_GUIDE_TRACK_PREFIX = 'rehearsal-guide';
+const REHEARSAL_MIX_STEM_BOOST_DB = 2;
+const REHEARSAL_MIX_STEM_GAIN = 10 ** (REHEARSAL_MIX_STEM_BOOST_DB / 20);
 const LATIN_TO_AMERICAN = {
   Do: 'C',
   'Do#': 'C#',
@@ -208,6 +213,11 @@ const isGuideCueTrack = (track = {}) => {
 const getTrackAudioUrl = (track = {}) => (
   track.optimizedUrl || track.url || track.iosUrl || track.nativeUrl || ''
 );
+const getRehearsalMixMainOutputRoute = (panValue = 0) => {
+  if (panValue === -1) return 'left';
+  if (panValue === 1) return 'right';
+  return 'stereo';
+};
 const getReadableTrackLabel = (trackName = '', index = 0) => {
   const rawName = String(trackName || '').trim();
   const text = normalizeTrackSearchText(rawName);
@@ -1400,6 +1410,7 @@ export default function ModoEnsayoCompacto({
   const lastPersistedPersonalSettingsRef = useRef('');
   const personalSettingsToastTimeoutRef = useRef(null);
   const pendingPlaybackResumeRef = useRef(false);
+  const lastRehearsalMixSourceRef = useRef('');
   const audioCtxRef = useRef(null);
   const trackSourceRef = useRef(null);
   const trackGainRef = useRef(null);
@@ -1410,6 +1421,21 @@ export default function ModoEnsayoCompacto({
   const [padVolume, setPadVolume] = useState(0.5);
   const [isPadActive, setIsPadActive] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(148);
+  const rehearsalMixEngine = useMultitrackEngine({ useStreamingEngine: true });
+  const {
+    currentTime: rehearsalMixCurrentTime,
+    duration: rehearsalMixDuration,
+    initialize: initializeRehearsalMix,
+    isPlaying: rehearsalMixIsPlaying,
+    isReady: rehearsalMixIsReady,
+    loadProgress: rehearsalMixLoadProgress,
+    pause: pauseRehearsalMix,
+    play: playRehearsalMix,
+    seekTo: seekRehearsalMixTo,
+    setTrackOutputRoute: setRehearsalMixTrackOutputRoute,
+    setVolume: setRehearsalMixVolume,
+    stop: stopRehearsalMix,
+  } = rehearsalMixEngine;
   useEffect(() => {
     screenWakeLockService.setRequested('modo-ensayo-compacto', true);
     return () => {
@@ -1587,6 +1613,9 @@ export default function ModoEnsayoCompacto({
       playbackUrl: resolvePreferredAudioUrl(source.url, {
         origin: typeof window !== 'undefined' ? window.location.origin : '',
       }) || source.url,
+      rehearsalMixUrl: resolveFetchableAudioUrl(source.url, {
+        origin: typeof window !== 'undefined' ? window.location.origin : '',
+      }) || source.url,
     }))
   ), [guideCueSources]);
   const hasGuideCueSources = processedGuideCueSources.length > 0;
@@ -1600,6 +1629,11 @@ export default function ModoEnsayoCompacto({
       origin: typeof window !== 'undefined' ? window.location.origin : '',
     })
   ), [activePlaybackUrl]);
+  const rehearsalMixActivePlaybackUrl = useMemo(() => (
+    resolveFetchableAudioUrl(activePlaybackUrl, {
+      origin: typeof window !== 'undefined' ? window.location.origin : '',
+    }) || processedActivePlaybackUrl
+  ), [activePlaybackUrl, processedActivePlaybackUrl]);
   const hasSupplementalPlaybackSources = useMemo(() => (
     playbackSources.some((source) => source.kind === 'sequence' || source.kind === 'stem') || hasGuideCueSources
   ), [hasGuideCueSources, playbackSources]);
@@ -1665,6 +1699,63 @@ export default function ModoEnsayoCompacto({
       : []
   ), [currentSections, currentSong?.duration, currentSong?.sectionMarkers, currentSongKey, liveDirectorSectionOffsetSeconds]);
   const hasAudio = typeof processedActivePlaybackUrl === 'string' && processedActivePlaybackUrl.trim() !== '';
+  const shouldUseRehearsalMix = Boolean(
+    hasAudio &&
+    hasGuideCueSources &&
+    activePlaybackSource?.kind !== 'original'
+  );
+  const rehearsalMixMainOutputRoute = useMemo(() => (
+    getRehearsalMixMainOutputRoute(panValue)
+  ), [panValue]);
+  const rehearsalMixGuideTrackIds = useMemo(() => (
+    processedGuideCueSources.map((source, index) => `${REHEARSAL_MIX_GUIDE_TRACK_PREFIX}-${source.id || index}`)
+  ), [processedGuideCueSources]);
+  const rehearsalMixTracks = useMemo(() => {
+    const mainUrl = String(rehearsalMixActivePlaybackUrl || processedActivePlaybackUrl || activePlaybackUrl || '').trim();
+    if (!shouldUseRehearsalMix || !mainUrl || processedGuideCueSources.length === 0) {
+      return [];
+    }
+
+    const guideTracks = processedGuideCueSources
+      .map((source, index) => {
+        const url = String(source.rehearsalMixUrl || source.playbackUrl || source.url || '').trim();
+        if (!url) return null;
+        return {
+          id: `${REHEARSAL_MIX_GUIDE_TRACK_PREFIX}-${source.id || index}`,
+          name: source.label || `Guia ${index + 1}`,
+          url,
+          volume: 0.72,
+          isMuted: false,
+          outputRoute: 'left',
+          sourceFileName: source.url || source.label || '',
+        };
+      })
+      .filter(Boolean);
+
+    if (guideTracks.length === 0) {
+      return [];
+    }
+
+    return [
+      ...guideTracks,
+      {
+        id: REHEARSAL_MIX_MAIN_TRACK_ID,
+        name: activePlaybackSource?.label || 'Pista de ensayo',
+        url: mainUrl,
+        volume: REHEARSAL_MIX_STEM_GAIN,
+        isMuted: false,
+        outputRoute: 'right',
+        sourceFileName: activePlaybackUrl || activePlaybackSource?.label || '',
+      },
+    ];
+  }, [
+    activePlaybackSource?.label,
+    activePlaybackUrl,
+    processedActivePlaybackUrl,
+    processedGuideCueSources,
+    rehearsalMixActivePlaybackUrl,
+    shouldUseRehearsalMix,
+  ]);
   const markerBySectionIndex = useMemo(() => {
     const map = new Map();
     currentSongMarkers.forEach((marker) => {
@@ -1972,6 +2063,160 @@ export default function ModoEnsayoCompacto({
       }
     }));
   }, [getGuideCueAudioElements, guideCueEnabled, guideCueVolume, hasGuideCueSources, syncGuideCueTracks]);
+  useEffect(() => {
+    if (!shouldUseRehearsalMix) {
+      lastRehearsalMixSourceRef.current = '';
+      return;
+    }
+
+    const mixSourceKey = `${currentSongKey}:${selectedPlaybackSourceId}`;
+    if (lastRehearsalMixSourceRef.current === mixSourceKey) return;
+
+    lastRehearsalMixSourceRef.current = mixSourceKey;
+    setPanValue(1);
+  }, [currentSongKey, selectedPlaybackSourceId, shouldUseRehearsalMix]);
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!shouldUseRehearsalMix || rehearsalMixTracks.length === 0) {
+      stopRehearsalMix();
+      return undefined;
+    }
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.removeAttribute('src');
+      audioRef.current.load();
+    }
+    pauseGuideCueTracks();
+    setIsPlaying(false);
+    setAudioCurrentTime(0);
+    setAudioDuration(0);
+    setAudioReady(false);
+
+    initializeRehearsalMix(rehearsalMixTracks).catch((error) => {
+      if (cancelled) return;
+      console.warn('[ModoEnsayoCompacto] No se pudo preparar la mezcla de ensayo.', error);
+      setAudioReady(false);
+      setIsPlaying(false);
+    });
+
+    return () => {
+      cancelled = true;
+      stopRehearsalMix();
+    };
+  }, [
+    initializeRehearsalMix,
+    pauseGuideCueTracks,
+    rehearsalMixTracks,
+    shouldUseRehearsalMix,
+    stopRehearsalMix,
+  ]);
+  useEffect(() => {
+    if (!shouldUseRehearsalMix || !rehearsalMixIsReady) return;
+
+    const guideVolume = guideCueEnabled ? Math.max(0, Math.min(1, guideCueVolume)) : 0;
+    rehearsalMixGuideTrackIds.forEach((trackId) => {
+      setRehearsalMixVolume(trackId, guideVolume);
+      setRehearsalMixTrackOutputRoute(trackId, 'left');
+    });
+  }, [
+    guideCueEnabled,
+    guideCueVolume,
+    rehearsalMixGuideTrackIds,
+    rehearsalMixIsReady,
+    setRehearsalMixTrackOutputRoute,
+    setRehearsalMixVolume,
+    shouldUseRehearsalMix,
+  ]);
+  useEffect(() => {
+    if (!shouldUseRehearsalMix || !rehearsalMixIsReady) return;
+
+    setRehearsalMixVolume(
+      REHEARSAL_MIX_MAIN_TRACK_ID,
+      (isMetronomeOn ? TRACK_DUCKED_GAIN : TRACK_DEFAULT_GAIN) * REHEARSAL_MIX_STEM_GAIN,
+    );
+    setRehearsalMixTrackOutputRoute(REHEARSAL_MIX_MAIN_TRACK_ID, rehearsalMixMainOutputRoute);
+  }, [
+    isMetronomeOn,
+    rehearsalMixIsReady,
+    rehearsalMixMainOutputRoute,
+    setRehearsalMixTrackOutputRoute,
+    setRehearsalMixVolume,
+    shouldUseRehearsalMix,
+  ]);
+  useEffect(() => {
+    if (!shouldUseRehearsalMix) return;
+
+    const resolvedMixDuration = Math.max(
+      Number.isFinite(Number(rehearsalMixDuration)) ? Number(rehearsalMixDuration) : 0,
+      fallbackTrackDuration || 0,
+    );
+    const resolvedMixTime = resolvedMixDuration > 0
+      ? Math.min(rehearsalMixCurrentTime, resolvedMixDuration)
+      : rehearsalMixCurrentTime;
+
+    setIsPlaying(rehearsalMixIsPlaying);
+    setAudioReady(rehearsalMixIsReady);
+    setAudioCurrentTime((previousTime) => (
+      Math.abs(previousTime - resolvedMixTime) < 0.05 ? previousTime : resolvedMixTime
+    ));
+    setAudioDuration((previousDuration) => (
+      Math.abs(previousDuration - resolvedMixDuration) < 0.05 ? previousDuration : resolvedMixDuration
+    ));
+  }, [
+    fallbackTrackDuration,
+    rehearsalMixCurrentTime,
+    rehearsalMixDuration,
+    rehearsalMixIsPlaying,
+    rehearsalMixIsReady,
+    shouldUseRehearsalMix,
+  ]);
+  useEffect(() => {
+    if (!shouldUseRehearsalMix || !rehearsalMixIsReady || !rehearsalMixIsPlaying) {
+      return;
+    }
+
+    const resolvedMixDuration = Math.max(
+      Number.isFinite(Number(rehearsalMixDuration)) ? Number(rehearsalMixDuration) : 0,
+      fallbackTrackDuration || 0,
+    );
+
+    if (loopState === 2 && activeLoopSection) {
+      const loopEnd = Number.isFinite(activeLoopSection.endSec)
+        ? activeLoopSection.endSec
+        : resolvedMixDuration;
+      if (
+        Number.isFinite(loopEnd) &&
+        Number.isFinite(activeLoopSection.startSec) &&
+        rehearsalMixCurrentTime >= Math.max(loopEnd - 0.08, activeLoopSection.startSec)
+      ) {
+        void seekRehearsalMixTo(activeLoopSection.startSec);
+        setAudioCurrentTime(activeLoopSection.startSec);
+      }
+    } else if (resolvedMixDuration > 0 && rehearsalMixCurrentTime >= resolvedMixDuration - 0.05) {
+      if (loopState === 1) {
+        void seekRehearsalMixTo(0).then(() => playRehearsalMix());
+        setAudioCurrentTime(0);
+      } else {
+        pauseRehearsalMix();
+        setIsPlaying(false);
+        setAudioCurrentTime(resolvedMixDuration);
+      }
+    }
+  }, [
+    activeLoopSection,
+    fallbackTrackDuration,
+    loopState,
+    pauseRehearsalMix,
+    playRehearsalMix,
+    rehearsalMixCurrentTime,
+    rehearsalMixDuration,
+    rehearsalMixIsPlaying,
+    rehearsalMixIsReady,
+    seekRehearsalMixTo,
+    shouldUseRehearsalMix,
+  ]);
   const stopMetronome = React.useCallback(() => {
     metronomeService.stop();
     setIsMetronomeOn(false);
@@ -1992,6 +2237,8 @@ export default function ModoEnsayoCompacto({
     setIsMetronomeOn(true);
   }, [currentSongBpm, isMetronomeOn, stopMetronome]);
   useEffect(() => {
+    if (shouldUseRehearsalMix) return undefined;
+
     const audioElement = audioRef.current;
     if (!audioElement) return undefined;
 
@@ -2014,7 +2261,7 @@ export default function ModoEnsayoCompacto({
       },
       30
     );
-  }, [ensureWebAudioConnected, processedActivePlaybackUrl, shouldUseTrackWebAudio]);
+  }, [ensureWebAudioConnected, processedActivePlaybackUrl, shouldUseRehearsalMix, shouldUseTrackWebAudio]);
   useEffect(() => {
     if (shouldUseTrackWebAudio) return;
     disconnectTrackWebAudio();
@@ -2094,12 +2341,14 @@ export default function ModoEnsayoCompacto({
     });
   }, [getGuideCueAudioElements, guideCueEnabled, guideCueVolume, processedGuideCueSources]);
   useEffect(() => {
+    if (shouldUseRehearsalMix) return;
+
     if (!isPlaying) {
       pauseGuideCueTracks();
       return;
     }
     void playGuideCueTracks(audioRef.current?.currentTime || audioCurrentTime);
-  }, [guideCueEnabled, isPlaying, pauseGuideCueTracks, playGuideCueTracks, processedGuideCueSources]);
+  }, [audioCurrentTime, guideCueEnabled, isPlaying, pauseGuideCueTracks, playGuideCueTracks, processedGuideCueSources, shouldUseRehearsalMix]);
   useEffect(() => {
     fadeTrackGainTo(
       isMetronomeOn ? TRACK_DUCKED_GAIN : TRACK_DEFAULT_GAIN,
@@ -2132,9 +2381,10 @@ export default function ModoEnsayoCompacto({
     setGuideCueEnabled(true);
     setHeaderHidden(isLandscapeCompact);
     pauseGuideCueTracks();
+    stopRehearsalMix();
     stopMetronome();
     setTrackGainImmediate(TRACK_DEFAULT_GAIN);
-  }, [currentSongKey, currentSong?.mp3, isLandscapeCompact, pauseGuideCueTracks, setTrackGainImmediate, stopMetronome]);
+  }, [currentSongKey, currentSong?.mp3, isLandscapeCompact, pauseGuideCueTracks, setTrackGainImmediate, stopMetronome, stopRehearsalMix]);
   useEffect(() => () => {
     if (personalSettingsToastTimeoutRef.current) {
       window.clearTimeout(personalSettingsToastTimeoutRef.current);
@@ -2395,6 +2645,7 @@ export default function ModoEnsayoCompacto({
     });
   }, [activeSectionByAudioIndex]);
   useEffect(() => {
+    if (shouldUseRehearsalMix) return undefined;
     if (loopState !== 2 || !isPlaying || !audioRef.current || !activeLoopSection) return undefined;
     const audioElement = audioRef.current;
     const handleSectionLoop = () => {
@@ -2406,7 +2657,7 @@ export default function ModoEnsayoCompacto({
     };
     audioElement.addEventListener('timeupdate', handleSectionLoop);
     return () => audioElement.removeEventListener('timeupdate', handleSectionLoop);
-  }, [activeLoopSection, isPlaying, loopState]);
+  }, [activeLoopSection, isPlaying, loopState, shouldUseRehearsalMix]);
   useEffect(() => {
     if (currentSongBpm > 0) return;
     stopMetronome();
@@ -2425,6 +2676,7 @@ export default function ModoEnsayoCompacto({
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
     }
+    stopRehearsalMix();
     setIsPlaying(false);
     setAudioCurrentTime(0);
     stopMetronome();
@@ -2456,13 +2708,23 @@ export default function ModoEnsayoCompacto({
     setAudioCurrentTime((prev) => (Math.abs(prev - nextTime) < 0.05 ? prev : nextTime));
   };
   useEffect(() => {
+    if (shouldUseRehearsalMix) return;
     if (!hasAudio || !audioRef.current) return;
     const audioElement = audioRef.current;
     window.requestAnimationFrame(() => {
       syncAudioMetrics(audioElement);
     });
-  }, [hasAudio, processedActivePlaybackUrl]);
+  }, [hasAudio, processedActivePlaybackUrl, shouldUseRehearsalMix]);
   useEffect(() => {
+    if (shouldUseRehearsalMix) {
+      if (!pendingPlaybackResumeRef.current || !rehearsalMixIsReady) return;
+      pendingPlaybackResumeRef.current = false;
+      playRehearsalMix().catch(() => {
+        setIsPlaying(false);
+      });
+      return;
+    }
+
     if (!pendingPlaybackResumeRef.current || !audioReady || !audioRef.current) return;
     pendingPlaybackResumeRef.current = false;
     audioRef.current.play().then(() => {
@@ -2471,7 +2733,15 @@ export default function ModoEnsayoCompacto({
     }).catch(() => {
       setIsPlaying(false);
     });
-  }, [audioCurrentTime, audioReady, playGuideCueTracks, scheduleGuideCueResync]);
+  }, [
+    audioCurrentTime,
+    audioReady,
+    playGuideCueTracks,
+    playRehearsalMix,
+    rehearsalMixIsReady,
+    scheduleGuideCueResync,
+    shouldUseRehearsalMix,
+  ]);
   useEffect(() => {
     if (syncRole === 'local' || typeof window === 'undefined') {
       if (syncChannelRef.current) {
@@ -2575,8 +2845,11 @@ export default function ModoEnsayoCompacto({
       },
     }));
     const marker = markerBySectionIndex.get(index);
-    if (marker && audioRef.current) {
-      if (seekAudio) {
+    if (marker && seekAudio) {
+      if (shouldUseRehearsalMix) {
+        void seekRehearsalMixTo(marker.startSec);
+        setAudioCurrentTime(marker.startSec);
+      } else if (audioRef.current) {
         const gainNode = trackGainRef?.current;
         const ctx = audioCtxRef?.current;
         if (gainNode && ctx && ctx.state === 'running') {
@@ -2608,7 +2881,26 @@ export default function ModoEnsayoCompacto({
     });
   };
   const handleTogglePlayback = async () => {
-    if (!audioRef.current || !hasAudio) return;
+    if (!hasAudio) return;
+    if (shouldUseRehearsalMix) {
+      if (!rehearsalMixIsReady) return;
+      try {
+        if (rehearsalMixIsPlaying) {
+          pauseRehearsalMix();
+        } else {
+          if (audioDuration > 0 && audioCurrentTime >= audioDuration - 0.05) {
+            await seekRehearsalMixTo(0);
+            setAudioCurrentTime(0);
+          }
+          await playRehearsalMix();
+        }
+      } catch (_error) {
+        setIsPlaying(false);
+      }
+      return;
+    }
+    if (!audioRef.current) return;
+
     try {
       if (audioRef.current.paused) {
         await ensureWebAudioConnected();
@@ -2637,6 +2929,10 @@ export default function ModoEnsayoCompacto({
   const handleSeekChange = (event) => {
     const nextTime = Number(event.target.value || 0);
     setAudioCurrentTime(nextTime);
+    if (shouldUseRehearsalMix) {
+      void seekRehearsalMixTo(nextTime);
+      return;
+    }
     if (audioRef.current) {
       audioRef.current.currentTime = nextTime;
     }
@@ -2660,6 +2956,7 @@ export default function ModoEnsayoCompacto({
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
     }
+    stopRehearsalMix();
     pauseGuideCueTracks();
     setIsPlaying(false);
     setAudioCurrentTime(0);
@@ -2673,7 +2970,7 @@ export default function ModoEnsayoCompacto({
       <audio
         key={`${currentSongKey}-${selectedPlaybackSourceId}-${processedActivePlaybackUrl || activePlaybackUrl || 'no-audio'}`}
         ref={audioRef}
-        src={hasAudio ? (processedActivePlaybackUrl || activePlaybackUrl) : undefined}
+        src={!shouldUseRehearsalMix && hasAudio ? (processedActivePlaybackUrl || activePlaybackUrl) : undefined}
         crossOrigin="anonymous"
         preload="metadata"
         playsInline
@@ -2718,7 +3015,7 @@ export default function ModoEnsayoCompacto({
           setAudioDuration(0);
         }}
       />
-      {processedGuideCueSources.map((source, index) => (
+      {!shouldUseRehearsalMix && processedGuideCueSources.map((source, index) => (
         <audio
           key={`${currentSongKey}-${source.id}-${source.playbackUrl || source.url}`}
           ref={(element) => {
@@ -3353,8 +3650,8 @@ export default function ModoEnsayoCompacto({
           <button
             type="button"
             onClick={handleTogglePlayback}
-            disabled={!hasAudio}
-            className={`ensayo-footer-play flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-white shadow-lg transition-transform active:scale-95 ${hasAudio ? 'bg-action' : 'bg-zinc-500/50 cursor-not-allowed shadow-none'}`}
+            disabled={!hasAudio || (shouldUseRehearsalMix && !audioReady)}
+            className={`ensayo-footer-play flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-white shadow-lg transition-transform active:scale-95 ${hasAudio && (!shouldUseRehearsalMix || audioReady) ? 'bg-action' : 'bg-zinc-500/50 cursor-not-allowed shadow-none'}`}
             aria-label={isPlaying ? 'Pausar ensayo' : 'Reproducir ensayo'}
           >
             {isPlaying ? <Pause className="h-4.5 w-4.5" /> : <Play className="ml-0.5 h-4.5 w-4.5" />}
@@ -3404,6 +3701,11 @@ export default function ModoEnsayoCompacto({
             {!hasAudio && (
               <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400">
                 Esta canci\u00F3n todav\u00EDa no tiene MP3 cargado.
+              </p>
+            )}
+            {shouldUseRehearsalMix && rehearsalMixLoadProgress && (
+              <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400" aria-live="polite">
+                Preparando mezcla {rehearsalMixLoadProgress.loaded}/{rehearsalMixLoadProgress.total}
               </p>
             )}
           </div>
