@@ -1377,6 +1377,7 @@ export default function ModoEnsayoCompacto({
   const [audioCurrentTime, setAudioCurrentTime] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
   const [audioReady, setAudioReady] = useState(false);
+  const [rehearsalMixUnavailable, setRehearsalMixUnavailable] = useState(false);
   const [transposeSteps, setTransposeSteps] = useState(0);
   const [capoFret, setCapoFret] = useState(0);
   const [isMetronomeOn, setIsMetronomeOn] = useState(false);
@@ -1618,7 +1619,9 @@ export default function ModoEnsayoCompacto({
   const processedGuideCueSources = useMemo(() => (
     guideCueSources.map((source) => ({
       ...source,
-      playbackUrl: resolvePreferredAudioUrl(source.url, {
+      playbackUrl: resolveFetchableAudioUrl(source.url, {
+        origin: typeof window !== 'undefined' ? window.location.origin : '',
+      }) || resolvePreferredAudioUrl(source.url, {
         origin: typeof window !== 'undefined' ? window.location.origin : '',
       }) || source.url,
       rehearsalMixUrl: resolveFetchableAudioUrl(source.url, {
@@ -1633,7 +1636,9 @@ export default function ModoEnsayoCompacto({
   ), [playbackSources, selectedPlaybackSourceId]);
   const activePlaybackUrl = activePlaybackSource?.url || '';
   const processedActivePlaybackUrl = useMemo(() => (
-    resolvePreferredAudioUrl(activePlaybackUrl, {
+    resolveFetchableAudioUrl(activePlaybackUrl, {
+      origin: typeof window !== 'undefined' ? window.location.origin : '',
+    }) || resolvePreferredAudioUrl(activePlaybackUrl, {
       origin: typeof window !== 'undefined' ? window.location.origin : '',
     })
   ), [activePlaybackUrl]);
@@ -1707,11 +1712,12 @@ export default function ModoEnsayoCompacto({
       : []
   ), [currentSections, currentSong?.duration, currentSong?.sectionMarkers, currentSongKey, liveDirectorSectionOffsetSeconds]);
   const hasAudio = typeof processedActivePlaybackUrl === 'string' && processedActivePlaybackUrl.trim() !== '';
-  const shouldUseRehearsalMix = Boolean(
+  const shouldUseRehearsalMixCandidate = Boolean(
     hasAudio &&
     hasGuideCueSources &&
     activePlaybackSource?.kind !== 'original'
   );
+  const shouldUseRehearsalMix = shouldUseRehearsalMixCandidate && !rehearsalMixUnavailable;
   const rehearsalMixMainOutputRoute = useMemo(() => (
     getRehearsalMixMainOutputRoute(panValue)
   ), [panValue]);
@@ -1764,6 +1770,9 @@ export default function ModoEnsayoCompacto({
     rehearsalMixActivePlaybackUrl,
     shouldUseRehearsalMix,
   ]);
+  useEffect(() => {
+    setRehearsalMixUnavailable(false);
+  }, [activePlaybackUrl, currentSongKey, selectedPlaybackSourceId, shouldUseRehearsalMixCandidate]);
   const markerBySectionIndex = useMemo(() => {
     const map = new Map();
     currentSongMarkers.forEach((marker) => {
@@ -2085,6 +2094,7 @@ export default function ModoEnsayoCompacto({
   }, [currentSongKey, selectedPlaybackSourceId, shouldUseRehearsalMix]);
   useEffect(() => {
     let cancelled = false;
+    let fallbackTimeoutId = null;
 
     if (!shouldUseRehearsalMix || rehearsalMixTracks.length === 0) {
       stopRehearsalMix();
@@ -2102,15 +2112,32 @@ export default function ModoEnsayoCompacto({
     setAudioDuration(0);
     setAudioReady(false);
 
-    initializeRehearsalMix(rehearsalMixTracks).catch((error) => {
+    fallbackTimeoutId = window.setTimeout(() => {
+      if (cancelled) return;
+      console.warn('[ModoEnsayoCompacto] La mezcla de ensayo tardo demasiado; usando reproductor simple.');
+      setRehearsalMixUnavailable(true);
+    }, 5000);
+
+    initializeRehearsalMix(rehearsalMixTracks).then(() => {
+      if (fallbackTimeoutId !== null) {
+        window.clearTimeout(fallbackTimeoutId);
+      }
+    }).catch((error) => {
+      if (fallbackTimeoutId !== null) {
+        window.clearTimeout(fallbackTimeoutId);
+      }
       if (cancelled) return;
       console.warn('[ModoEnsayoCompacto] No se pudo preparar la mezcla de ensayo.', error);
+      setRehearsalMixUnavailable(true);
       setAudioReady(false);
       setIsPlaying(false);
     });
 
     return () => {
       cancelled = true;
+      if (fallbackTimeoutId !== null) {
+        window.clearTimeout(fallbackTimeoutId);
+      }
       stopRehearsalMix();
     };
   }, [

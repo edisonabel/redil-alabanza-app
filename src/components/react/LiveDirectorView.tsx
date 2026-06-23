@@ -46,6 +46,7 @@ import {
   saveLiveDirectorSongSession,
   uploadFileToLiveDirectorTarget,
 } from '../../utils/liveDirectorUploadClient';
+import { resolveFetchableAudioUrl } from '../../lib/audio-playback.js';
 import {
   isGuideRoutingTrack,
   resolveTrackOutputRoute,
@@ -168,10 +169,12 @@ type LiveDirectorViewProps = {
 // Per-platform active stem limits for reliable live playback.
 //   - iOS native (AVAudioEngine):     13 song stems, with internal pad extra
 //   - Android web (Capacitor browser): 10 stems before clocks drift
-//   - Safari web:                      9 stems before WebAudio/DecoderCocoa rejects some AAC sessions
+//   - iOS Safari web:                  4 stems before WebAudio memory pressure becomes unreliable
+//   - Safari desktop web:              9 stems before WebAudio/DecoderCocoa rejects some AAC sessions
 //   - Desktop web (Chrome/Edge/FF):    11 stems before Chrome decode windows stall
 const IOS_NATIVE_MAX_ACTIVE_TRACKS = 13;
 const ANDROID_MAX_ACTIVE_TRACKS = 10;
+const IOS_SAFARI_WEB_MAX_ACTIVE_TRACKS = 4;
 const SAFARI_WEB_MAX_ACTIVE_TRACKS = 9;
 const WEB_ENGINE_MAX_ACTIVE_TRACKS = 11;
 const INTERNAL_PAD_TRACK_ID = '__internal-pad__';
@@ -599,7 +602,10 @@ export function LiveDirectorView({
   const [useStreamingEngine, setUseStreamingEngine] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [hasResolvedEngineFlag, setHasResolvedEngineFlag] = useState(false);
-  const isIOSNativeEngineSurface = engineSurface === 'ios-native' || isNativeLiveDirectorEngineAvailable();
+  const [nativeEngineAvailable, setNativeEngineAvailable] = useState(() => (
+    engineSurface === 'ios-native' || isNativeLiveDirectorEngineAvailable()
+  ));
+  const isIOSNativeEngineSurface = engineSurface === 'ios-native' || nativeEngineAvailable;
   const webMultitrackEngine = useMultitrackEngine({
     useStreamingEngine,
   });
@@ -631,6 +637,24 @@ export function LiveDirectorView({
     loadProgress,
     loadWarnings,
   } = selectedMultitrackEngine;
+
+  useEffect(() => {
+    if (engineSurface === 'ios-native') {
+      setNativeEngineAvailable(true);
+      return;
+    }
+
+    const refreshNativeEngineAvailability = () => {
+      setNativeEngineAvailable(isNativeLiveDirectorEngineAvailable());
+    };
+
+    refreshNativeEngineAvailability();
+    const timeoutId = window.setTimeout(refreshNativeEngineAvailability, 250);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [engineSurface]);
 
   const suspendNativeMeters = useCallback(() => {
     if (resumeNativeMetersTimeoutRef.current !== null) {
@@ -810,7 +834,11 @@ export function LiveDirectorView({
     } catch {
       // Capacitor unavailable (SSR / unit test) — fall through to web cap.
     }
-    if (readLiveBrowserCapabilities().isSafari) {
+    const capabilities = readLiveBrowserCapabilities();
+    if (capabilities.isIOS && capabilities.isSafari) {
+      return IOS_SAFARI_WEB_MAX_ACTIVE_TRACKS;
+    }
+    if (capabilities.isSafari) {
       return SAFARI_WEB_MAX_ACTIVE_TRACKS;
     }
     return WEB_ENGINE_MAX_ACTIVE_TRACKS;
@@ -851,11 +879,18 @@ export function LiveDirectorView({
   }, [activeTracks, enabledSessionTracks, isWebTrackLimitExceeded]);
 
   const activeEngineTracks = useMemo(() => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+
     return activeTracks.map((track) => ({
       ...track,
+      // Keep the canonical source URL for the native engine. The Swift plugin
+      // receives nativeUrl/iosUrl/optimizedUrl too and chooses the best asset.
+      url: isIOSNativeEngineSurface
+        ? track.url || track.nativeUrl || track.iosUrl || track.optimizedUrl
+        : resolveFetchableAudioUrl(track.optimizedUrl || track.url, { origin }) || track.url,
       outputRoute: trackOutputRoutes[track.id] ?? resolveTrackOutputRoute(track),
     }));
-  }, [activeTracks, trackOutputRoutes]);
+  }, [activeTracks, isIOSNativeEngineSurface, trackOutputRoutes]);
 
   const hasSessionTracks = sessionTracks.length > 0;
   const hasTrackSession = activeTracks.length > 0;

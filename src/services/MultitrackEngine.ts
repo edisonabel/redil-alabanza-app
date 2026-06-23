@@ -729,9 +729,44 @@ export class MultitrackEngine {
         (enriched as Error & { code?: string }).code = 'ALAC_DECODE_LIKELY';
         throw enriched;
       }
-      throw error;
+      throw this.buildTrackLoadError(track, error);
     } finally {
       this.releaseLoadAbortController(controller);
+    }
+  }
+
+  private buildTrackLoadError(track: TrackData, error: unknown): Error {
+    const baseMessage = error instanceof Error ? error.message : String(error || 'Error desconocido');
+    const sourceLabel = this.describeTrackSource(track.url);
+    const lowerMessage = baseMessage.toLowerCase();
+    const reason =
+      lowerMessage.includes('load failed') || lowerMessage.includes('failed to fetch')
+        ? 'El navegador no pudo descargar el audio. Revisa conexion, permisos del archivo o CORS/proxy.'
+        : 'El audio no pudo cargarse completamente.';
+    const enriched = new Error(
+      `No se pudo cargar "${track.name}" desde ${sourceLabel}. ${reason} Detalle: ${baseMessage}`,
+    );
+    (enriched as Error & { cause?: unknown }).cause = error;
+    return enriched;
+  }
+
+  private describeTrackSource(rawUrl: string): string {
+    if (!rawUrl) {
+      return 'una URL vacia';
+    }
+
+    if (rawUrl.startsWith('blob:')) {
+      return 'un archivo local del navegador';
+    }
+
+    try {
+      const parsed = new URL(rawUrl);
+      if (parsed.origin === window.location.origin) {
+        return `${parsed.pathname}${parsed.search}`;
+      }
+      return `${parsed.hostname}${parsed.pathname}`;
+    } catch {
+      return rawUrl;
     }
   }
 

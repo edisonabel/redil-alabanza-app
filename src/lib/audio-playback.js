@@ -7,6 +7,10 @@ const DRIVE_HOSTS = new Set([
 const R2_AUDIO_HOST = 'pub-4faa87e319a345c38e4f3be570797088.r2.dev';
 const AUDIO_API_PATHS = new Set(['/api/audio', '/api/mp3-proxy']);
 const AUDIO_PROXY_VERSION = '2';
+const R2_DIRECT_CORS_HOSTS = new Set([
+  'alabanzaredilestadio.com',
+  'www.alabanzaredilestadio.com',
+]);
 
 const resolveBaseOrigin = (origin = '') => {
   if (origin) return origin;
@@ -78,6 +82,15 @@ export const isAudioApiUrl = (rawUrl, { origin = '' } = {}) => {
 
   try {
     return AUDIO_API_PATHS.has(new URL(normalized).pathname);
+  } catch {
+    return false;
+  }
+};
+
+const canUseDirectR2AudioUrl = (origin = '') => {
+  try {
+    const host = new URL(resolveBaseOrigin(origin)).hostname.toLowerCase();
+    return R2_DIRECT_CORS_HOSTS.has(host);
   } catch {
     return false;
   }
@@ -182,6 +195,10 @@ export const resolveFetchableAudioUrl = (rawUrl, { origin = '' } = {}) => {
   }
 
   if (parsed.protocol === 'https:' && isR2AudioUrl(normalized, { origin })) {
+    if (canUseDirectR2AudioUrl(baseOrigin)) {
+      return normalized;
+    }
+
     const proxyUrl = new URL('/api/mp3-proxy', baseOrigin);
     proxyUrl.searchParams.set('src', parsed.href);
     proxyUrl.searchParams.set('v', AUDIO_PROXY_VERSION);
