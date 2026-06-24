@@ -428,6 +428,220 @@ const normalizeAudioCandidateUrl = (value = '') => {
   return url;
 };
 
+const normalizeExternalVoiceUrl = (rawUrl = '') => {
+  let normalized = String(rawUrl || '').trim();
+  if (!normalized) return '';
+
+  if (normalized.startsWith('www.')) {
+    normalized = `https://${normalized}`;
+  } else if (normalized.startsWith('//')) {
+    normalized = `https:${normalized}`;
+  } else if (/^\/(uc|open|file)\b/i.test(normalized)) {
+    normalized = `https://drive.google.com${normalized}`;
+  }
+
+  if (!/^https?:\/\//i.test(normalized)) return '';
+
+  try {
+    const url = new URL(normalized);
+    const hostname = url.hostname.replace(/^www\./i, '').toLowerCase();
+
+    if (hostname === 'drive.google.com') {
+      const fullUrl = `${url.origin}${url.pathname}${url.search}`;
+      const driveIdPatterns = [
+        /\/file\/d\/([a-zA-Z0-9_-]+)/i,
+        /[?&]id=([a-zA-Z0-9_-]+)/i,
+        /\/uc\b.*[?&]id=([a-zA-Z0-9_-]+)/i,
+      ];
+
+      const fileId = driveIdPatterns.reduce((foundId, pattern) => {
+        if (foundId) return foundId;
+        const match = fullUrl.match(pattern);
+        return match?.[1] || '';
+      }, '');
+
+      if (fileId) {
+        return `https://drive.google.com/uc?export=download&id=${fileId}`;
+      }
+    }
+
+    return url.toString();
+  } catch {
+    return normalized;
+  }
+};
+
+const isDirectVoiceAudioUrl = (url = '') => /\.(mp3|wav|m4a|aac|ogg|flac|mp4|mpeg|mpga|webm)(\?.*)?$/i.test(String(url || ''));
+
+const VOICE_LABEL_OPTIONS = [
+  'Voz guia',
+  'Segunda',
+  'Tercera',
+  'Quinta',
+  'Octava',
+  'Todas las voces',
+  'Hombre',
+  'Mujer',
+  'Pista',
+  'Otra voz',
+];
+
+const normalizeVoiceLabelText = (value = '') => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase();
+
+const inferVoiceLabelFromText = (value = '', fallback = 'Voz guia') => {
+  const normalized = normalizeVoiceLabelText(value);
+
+  if (/\b(guia|principal|lead)\b/.test(normalized)) return 'Voz guia';
+  if (/\b(segunda|segundo|2da|2do|2)\b/.test(normalized)) return 'Segunda';
+  if (/\b(tercera|tercero|3ra|3ro|3)\b/.test(normalized)) return 'Tercera';
+  if (/\b(quinta|quinto|5ta|5to|5)\b/.test(normalized)) return 'Quinta';
+  if (/\b(octava|octavo|8va|8vo|8)\b/.test(normalized)) return 'Octava';
+  if (/\b(todas|tres voces|full|voces)\b/.test(normalized)) return 'Todas las voces';
+  if (/\b(hombre|male|tenor)\b/.test(normalized)) return 'Hombre';
+  if (/\b(mujer|female|soprano)\b/.test(normalized)) return 'Mujer';
+  if (/\b(pista|instrumental|track)\b/.test(normalized)) return 'Pista';
+
+  return fallback;
+};
+
+const normalizeVoiceLabelOption = (value = '', fallback = 'Voz guia') => {
+  const label = String(value || '').trim();
+  if (!label) return fallback;
+
+  const exactOption = VOICE_LABEL_OPTIONS.find((option) => option.toLowerCase() === label.toLowerCase());
+  if (exactOption) return exactOption;
+
+  return inferVoiceLabelFromText(label, label);
+};
+
+const crearEntradaVoz = (candidate, index = 0, forcedLabel = '') => {
+  if (typeof candidate === 'string') {
+    const url = normalizeExternalVoiceUrl(candidate);
+    if (!url) return null;
+    return {
+      id: `voice-${index}-${Math.random().toString(36).slice(2, 8)}`,
+      label: normalizeVoiceLabelOption(forcedLabel || `Voz ${index + 1}`, index === 0 ? 'Voz guia' : 'Otra voz'),
+      url,
+    };
+  }
+
+  if (!candidate || typeof candidate !== 'object') return null;
+
+  const url = normalizeExternalVoiceUrl(
+    candidate.url ||
+    candidate.link ||
+    candidate.href ||
+    candidate.src ||
+    candidate.audio ||
+    '',
+  );
+  if (!url) return null;
+
+  const label = String(
+    forcedLabel ||
+    candidate.label ||
+    candidate.nombre ||
+    candidate.name ||
+    candidate.title ||
+    candidate.voice ||
+    `Voz ${index + 1}`,
+  ).trim() || `Voz ${index + 1}`;
+
+  return {
+    id: `voice-${index}-${Math.random().toString(36).slice(2, 8)}`,
+    label: normalizeVoiceLabelOption(label, index === 0 ? 'Voz guia' : 'Otra voz'),
+    url,
+  };
+};
+
+const parseVoiceAdminPayload = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw || raw === '-') return { entries: [], legacyUrl: '' };
+
+  const normalizedDirectUrl = normalizeExternalVoiceUrl(raw);
+  if (normalizedDirectUrl && !raw.startsWith('[') && !raw.startsWith('{') && !raw.includes('\n')) {
+    if (isDirectVoiceAudioUrl(normalizedDirectUrl)) {
+      return { entries: [crearEntradaVoz(normalizedDirectUrl, 0, 'Voz guia')].filter(Boolean), legacyUrl: '' };
+    }
+    return { entries: [], legacyUrl: normalizedDirectUrl };
+  }
+
+  if (raw.includes('\n')) {
+    const entries = raw
+      .split('\n')
+      .map((line, index) => {
+        const trimmed = String(line || '').trim();
+        if (!trimmed) return null;
+        const [labelPart, ...urlParts] = trimmed.includes('|') ? trimmed.split('|') : [`Voz ${index + 1}`, trimmed];
+        return crearEntradaVoz(urlParts.join('|').trim(), index, String(labelPart || '').trim());
+      })
+      .filter(Boolean);
+
+    if (entries.length) return { entries, legacyUrl: '' };
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed === 'string') return parseVoiceAdminPayload(parsed);
+
+    if (Array.isArray(parsed)) {
+      return {
+        entries: parsed.map((entry, index) => crearEntradaVoz(entry, index, index === 0 ? 'Voz guia' : '')).filter(Boolean),
+        legacyUrl: '',
+      };
+    }
+
+    if (parsed && typeof parsed === 'object') {
+      const legacyUrl = normalizeExternalVoiceUrl(parsed.legacyUrl || parsed.folder || parsed.drive || '');
+      const sourceEntries = Array.isArray(parsed.entries)
+        ? parsed.entries
+        : Object.entries(parsed).map(([key, candidate]) => (
+          ['legacyUrl', 'folder', 'drive'].includes(key) ? null : { label: key, url: candidate }
+        )).filter(Boolean);
+
+      const directEntry = Array.isArray(parsed.entries) ? null : crearEntradaVoz(parsed, 0, parsed.label || parsed.nombre || parsed.name || parsed.title || '');
+      const entries = directEntry
+        ? [directEntry]
+        : sourceEntries.map((entry, index) => crearEntradaVoz(entry, index, index === 0 ? 'Voz guia' : '')).filter(Boolean);
+
+      return { entries, legacyUrl };
+    }
+  } catch {
+    return { entries: [], legacyUrl: normalizedDirectUrl || '' };
+  }
+
+  return { entries: [], legacyUrl: '' };
+};
+
+const serializeVoiceAdminPayload = (entries = [], legacyUrl = '') => {
+  const normalizedEntries = (Array.isArray(entries) ? entries : [])
+    .map((entry, index) => {
+      const label = String(entry?.label || `Voz ${index + 1}`).trim() || `Voz ${index + 1}`;
+      const url = normalizeExternalVoiceUrl(entry?.url || '');
+      return url ? { label, url } : null;
+    })
+    .filter(Boolean);
+
+  if (normalizedEntries.length > 0) {
+    return normalizedEntries.map((entry) => `${entry.label} | ${entry.url}`).join('\n');
+  }
+
+  return normalizeExternalVoiceUrl(legacyUrl);
+};
+
+const getVoiceFileLabel = (fileName = '', index = 0) => {
+  const baseName = String(fileName || '')
+    .replace(/\.[^.]+$/, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return inferVoiceLabelFromText(baseName, index === 0 ? 'Voz guia' : 'Otra voz');
+};
+
 const parseMultitrackSession = (rawValue) => {
   if (!rawValue) return null;
   if (typeof rawValue === 'object') return rawValue;
@@ -635,6 +849,11 @@ export default function AdminRepertorio() {
   const [editorAudioCurrentTime, setEditorAudioCurrentTime] = useState(0);
   const [editorAudioDuration, setEditorAudioDuration] = useState(0);
   const [editorAudioPlaying, setEditorAudioPlaying] = useState(false);
+  const [vocesModalCancion, setVocesModalCancion] = useState(null);
+  const [vocesDraftEntries, setVocesDraftEntries] = useState([]);
+  const [vocesDraftLegacyUrl, setVocesDraftLegacyUrl] = useState('');
+  const [vocesFeedback, setVocesFeedback] = useState('');
+  const [guardandoVoces, setGuardandoVoces] = useState(false);
   const editorAudioCurrentTimeRef = useRef(0);
   const editorAudioDurationRef = useRef(0);
   const editorAudioFrameRef = useRef(null);
@@ -1031,6 +1250,28 @@ export default function AdminRepertorio() {
     }
   };
 
+  const subirArchivoR2 = async (file) => {
+    const response = await fetch('/api/get-upload-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileName: file.name, fileType: file.type }),
+    });
+
+    if (!response.ok) throw new Error('No estas autorizado o hubo un error en el servidor.');
+
+    const { presignedUrl, publicUrl } = await response.json();
+
+    const uploadResponse = await fetch(presignedUrl, {
+      method: 'PUT',
+      body: file,
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    });
+
+    if (!uploadResponse.ok) throw new Error('Fallo al subir el archivo a R2.');
+
+    return publicUrl;
+  };
+
   const manejarSubida = async (event, cancionId, campoBd) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -1039,23 +1280,7 @@ export default function AdminRepertorio() {
     setUploading(prev => ({ ...prev, [keyContext]: true }));
 
     try {
-      const response = await fetch('/api/get-upload-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileName: file.name }),
-      });
-
-      if (!response.ok) throw new Error('No estas autorizado o hubo un error en el servidor.');
-
-      const { presignedUrl, publicUrl } = await response.json();
-
-      const uploadResponse = await fetch(presignedUrl, {
-        method: 'PUT',
-        body: file,
-        headers: { 'Content-Type': file.type },
-      });
-
-      if (!uploadResponse.ok) throw new Error('Fallo al subir el archivo a R2.');
+      const publicUrl = await subirArchivoR2(file);
 
       const updateData = { [campoBd]: publicUrl };
       const { error: updateError } = await supabase
@@ -1115,6 +1340,151 @@ export default function AdminRepertorio() {
       event.target.value = '';
       setUploading(prev => ({ ...prev, [keyContext]: false }));
     }
+  };
+
+  const abrirModalVoces = (cancion) => {
+    const parsed = parseVoiceAdminPayload(cancion?.link_voces || '');
+    setVocesModalCancion(cancion);
+    setVocesDraftEntries(parsed.entries || []);
+    setVocesDraftLegacyUrl(parsed.legacyUrl || '');
+    setVocesFeedback('');
+  };
+
+  const cerrarModalVoces = () => {
+    if (guardandoVoces) return;
+    setVocesModalCancion(null);
+    setVocesDraftEntries([]);
+    setVocesDraftLegacyUrl('');
+    setVocesFeedback('');
+  };
+
+  const actualizarDraftVoz = (entryId, patch) => {
+    setVocesDraftEntries((prev) => prev.map((entry) => (
+      entry.id === entryId ? { ...entry, ...patch } : entry
+    )));
+  };
+
+  const agregarDraftVozVacia = () => {
+    setVocesDraftEntries((prev) => ([
+      ...prev,
+      {
+        id: `voice-manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        label: VOICE_LABEL_OPTIONS[Math.min(prev.length, 4)] || 'Otra voz',
+        url: '',
+      },
+    ]));
+    setVocesDraftLegacyUrl('');
+    setVocesFeedback('');
+  };
+
+  const quitarDraftVoz = (entryId) => {
+    setVocesDraftEntries((prev) => prev.filter((entry) => entry.id !== entryId));
+    setVocesFeedback('');
+  };
+
+  const obtenerUrlsVoces = (entries = [], legacyUrl = '') => {
+    const urls = (Array.isArray(entries) ? entries : [])
+      .map((entry) => normalizeExternalVoiceUrl(entry?.url || ''))
+      .filter(Boolean);
+    const normalizedLegacyUrl = normalizeExternalVoiceUrl(legacyUrl);
+    if (normalizedLegacyUrl) urls.push(normalizedLegacyUrl);
+    return [...new Set(urls)];
+  };
+
+  const limpiarVocesRemovidas = async (previousPayload = '', nextPayload = '') => {
+    const previous = parseVoiceAdminPayload(previousPayload);
+    const next = parseVoiceAdminPayload(nextPayload);
+    const previousUrls = obtenerUrlsVoces(previous.entries, previous.legacyUrl);
+    const nextUrls = new Set(obtenerUrlsVoces(next.entries, next.legacyUrl));
+    const removedUrls = previousUrls.filter((url) => !nextUrls.has(url));
+
+    for (const fileUrl of removedUrls) {
+      const cleanupResponse = await fetch('/api/delete-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileUrl }),
+      });
+
+      if (!cleanupResponse.ok) {
+        const cleanupBody = await cleanupResponse.json().catch(() => null);
+        throw new Error(cleanupBody?.error || 'No se pudo limpiar una voz removida.');
+      }
+    }
+  };
+
+  const manejarSubidaVoces = async (event) => {
+    const files = Array.from(event.target.files || []);
+    if (!files.length || !vocesModalCancion?.id) return;
+
+    const keyContext = `${vocesModalCancion.id}_link_voces`;
+    setUploading((prev) => ({ ...prev, [keyContext]: true }));
+    setVocesFeedback(`Subiendo ${files.length} archivo${files.length === 1 ? '' : 's'}...`);
+
+    try {
+      const uploadedEntries = [];
+
+      for (const file of files) {
+        const publicUrl = await subirArchivoR2(file);
+        uploadedEntries.push({
+          id: `voice-upload-${Date.now()}-${uploadedEntries.length}-${Math.random().toString(36).slice(2, 8)}`,
+          label: getVoiceFileLabel(file.name, vocesDraftEntries.length + uploadedEntries.length),
+          url: publicUrl,
+        });
+      }
+
+      setVocesDraftEntries((prev) => [...prev, ...uploadedEntries]);
+      setVocesDraftLegacyUrl('');
+      setVocesFeedback(`${uploadedEntries.length} voz${uploadedEntries.length === 1 ? '' : 'es'} anexada${uploadedEntries.length === 1 ? '' : 's'}. Revisa y guarda.`);
+    } catch (err) {
+      console.error('Error subiendo voces:', err);
+      setVocesFeedback(`Error al subir voces: ${err.message}`);
+    } finally {
+      event.target.value = '';
+      setUploading((prev) => ({ ...prev, [keyContext]: false }));
+    }
+  };
+
+  const guardarVocesDesdeModal = async () => {
+    if (!vocesModalCancion?.id) return;
+
+    const payload = serializeVoiceAdminPayload(vocesDraftEntries, vocesDraftLegacyUrl);
+    const keyContext = `${vocesModalCancion.id}_link_voces`;
+    setGuardandoVoces(true);
+    setUploading((prev) => ({ ...prev, [keyContext]: true }));
+    setVocesFeedback('Guardando voces...');
+
+    try {
+      await limpiarVocesRemovidas(vocesModalCancion.link_voces || '', payload);
+
+      const { error: updateError } = await supabase
+        .from('canciones')
+        .update({ link_voces: payload || null })
+        .eq('id', vocesModalCancion.id);
+
+      if (updateError) throw updateError;
+
+      setCanciones((prev) => prev.map((item) => (
+        item.id === vocesModalCancion.id
+          ? { ...item, link_voces: payload || null }
+          : item
+      )));
+
+      setVocesModalCancion((prev) => (prev ? { ...prev, link_voces: payload || null } : prev));
+      setVocesFeedback('Voces guardadas.');
+      cerrarModalVoces();
+    } catch (err) {
+      console.error('Error guardando voces:', err);
+      setVocesFeedback(`Error al guardar voces: ${err.message}`);
+    } finally {
+      setGuardandoVoces(false);
+      setUploading((prev) => ({ ...prev, [keyContext]: false }));
+    }
+  };
+
+  const quitarTodasLasVoces = () => {
+    setVocesDraftEntries([]);
+    setVocesDraftLegacyUrl('');
+    setVocesFeedback('Se quitaran al guardar.');
   };
 
   const eliminarArchivoActual = async (cancion, campoBd) => {
@@ -1294,11 +1664,38 @@ export default function AdminRepertorio() {
     const valorTexto = String(valor || '').trim();
     const puedeEliminar = ARCHIVO_ELIMINABLE_FIELDS.has(campoBd);
     const etiquetaArchivo = campoBd === 'mp3' ? 'MP3 actual' : 'Acordes actuales';
+    const esVoces = campoBd === 'link_voces';
 
     if (estaCargando) {
       return (
         <div className="flex justify-center items-center h-full text-brand min-w-[8rem]">
           <Loader2 className="w-5 h-5 animate-spin" />
+        </div>
+      );
+    }
+
+    if (esVoces) {
+      const parsedVoices = parseVoiceAdminPayload(valorTexto);
+      const voiceCount = parsedVoices.entries.length;
+      const hasVoiceResource = voiceCount > 0 || Boolean(parsedVoices.legacyUrl);
+      const statusLabel = voiceCount > 0
+        ? `${voiceCount} voz${voiceCount === 1 ? '' : 'es'}`
+        : parsedVoices.legacyUrl
+          ? 'Link'
+          : 'Sin voces';
+
+      return (
+        <div className="flex h-full min-w-[8rem] items-center justify-center px-1.5 py-1">
+          <button
+            type="button"
+            onClick={() => abrirModalVoces(cancion)}
+            className={`group inline-flex min-h-[34px] w-full items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-all shadow-sm ${hasVoiceResource ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15' : 'border-border bg-surface text-action hover:bg-background'}`}
+            title={hasVoiceResource ? `Gestionar voces: ${statusLabel}` : 'Subir o anexar voces'}
+            aria-label={`${hasVoiceResource ? 'Gestionar' : 'Subir'} voces de ${cancion?.titulo || 'cancion'}`}
+          >
+            {hasVoiceResource ? <CheckCircle className="h-4 w-4" /> : <UploadCloud className="h-4 w-4" />}
+            <span className="truncate">{hasVoiceResource ? statusLabel : 'Subir'}</span>
+          </button>
         </div>
       );
     }
@@ -1989,6 +2386,166 @@ export default function AdminRepertorio() {
               </div>
             )}
           </section>
+        </div>
+      )}
+
+      {vocesModalCancion && (
+        <div
+          className="fixed inset-0 z-[56] flex items-center justify-center overflow-y-auto bg-slate-950/65 p-3 backdrop-blur-sm md:p-5"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) cerrarModalVoces();
+          }}
+        >
+          <div
+            className="w-full max-w-2xl overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-voces-modal-title"
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-4 md:px-5">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-content-muted">Voces</p>
+                <h2 id="admin-voces-modal-title" className="mt-1 truncate text-lg font-bold text-content">
+                  {vocesModalCancion.titulo || 'Sin titulo'}
+                </h2>
+                <p className="truncate text-sm text-content-muted">
+                  {vocesModalCancion.cantante || 'Gestionar recursos vocales'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={cerrarModalVoces}
+                disabled={guardandoVoces}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-background text-content-muted transition-colors hover:bg-surface hover:text-content disabled:opacity-60"
+                aria-label="Cerrar gestor de voces"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="max-h-[min(72vh,42rem)] overflow-y-auto px-4 py-4 md:px-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-2 rounded-lg border border-brand/25 bg-brand/10 px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand/15">
+                  <UploadCloud className="h-4 w-4" />
+                  Anexar audios
+                  <input
+                    type="file"
+                    hidden
+                    multiple
+                    accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.mp4,.mpeg,.mpga,.webm"
+                    onChange={manejarSubidaVoces}
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  onClick={agregarDraftVozVacia}
+                  className="inline-flex min-h-[38px] items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-semibold text-content transition-colors hover:bg-surface"
+                >
+                  <Plus className="h-4 w-4" />
+                  Agregar URL
+                </button>
+
+                {(vocesDraftEntries.length > 0 || vocesDraftLegacyUrl) && (
+                  <button
+                    type="button"
+                    onClick={quitarTodasLasVoces}
+                    className="inline-flex min-h-[38px] items-center justify-center gap-2 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-sm font-semibold text-danger transition-colors hover:bg-danger/15"
+                  >
+                    <X className="h-4 w-4" />
+                    Quitar todo
+                  </button>
+                )}
+              </div>
+
+              {vocesFeedback && (
+                <p className="mt-3 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-content-muted" role="status" aria-live="polite">
+                  {vocesFeedback}
+                </p>
+              )}
+
+              <div className="mt-4 space-y-2">
+                {vocesDraftEntries.length > 0 ? vocesDraftEntries.map((entry, index) => (
+                  <div key={entry.id} className="grid gap-2 rounded-xl border border-border bg-background p-3 md:grid-cols-[minmax(8rem,0.55fr)_minmax(0,1fr)_auto] md:items-center">
+                    <label className="min-w-0">
+                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.16em] text-content-muted">Tipo de voz</span>
+                      <select
+                        value={entry.label}
+                        onChange={(event) => actualizarDraftVoz(entry.id, { label: event.target.value })}
+                        className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                      >
+                        {!VOICE_LABEL_OPTIONS.includes(entry.label) && entry.label ? (
+                          <option value={entry.label}>{entry.label}</option>
+                        ) : null}
+                        {VOICE_LABEL_OPTIONS.map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="min-w-0">
+                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.16em] text-content-muted">URL</span>
+                      <input
+                        type="url"
+                        value={entry.url}
+                        onChange={(event) => actualizarDraftVoz(entry.id, { url: event.target.value })}
+                        placeholder="https://..."
+                        className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() => quitarDraftVoz(entry.id)}
+                      className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-danger/20 bg-danger/10 px-3 text-sm font-semibold text-danger transition-colors hover:bg-danger/15 md:mt-5 md:w-10 md:px-0"
+                      aria-label={`Quitar ${entry.label || `voz ${index + 1}`}`}
+                      title="Quitar voz"
+                    >
+                      <X className="h-4 w-4" />
+                      <span className="md:hidden">Quitar</span>
+                    </button>
+                  </div>
+                )) : (
+                  <div className="rounded-xl border border-dashed border-border bg-background/70 p-4">
+                    <p className="text-sm font-semibold text-content">Sin voces individuales aun.</p>
+                    <p className="mt-1 text-sm text-content-muted">
+                      Puedes anexar audios o pegar una URL de carpeta/link antiguo mientras migras la cancion.
+                    </p>
+                    <label className="mt-3 block">
+                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-[0.16em] text-content-muted">Link antiguo o carpeta</span>
+                      <input
+                        type="url"
+                        value={vocesDraftLegacyUrl}
+                        onChange={(event) => setVocesDraftLegacyUrl(event.target.value)}
+                        placeholder="https://drive.google.com/..."
+                        className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 border-t border-border bg-background/80 px-4 py-3 md:flex-row md:items-center md:justify-end md:px-5">
+              <button
+                type="button"
+                onClick={cerrarModalVoces}
+                disabled={guardandoVoces}
+                className="inline-flex min-h-[40px] items-center justify-center rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-content transition-colors hover:bg-background disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={guardarVocesDesdeModal}
+                disabled={guardandoVoces || uploading[`${vocesModalCancion.id}_link_voces`]}
+                className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand/90 disabled:opacity-60"
+              >
+                {guardandoVoces || uploading[`${vocesModalCancion.id}_link_voces`] ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Guardar voces
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
