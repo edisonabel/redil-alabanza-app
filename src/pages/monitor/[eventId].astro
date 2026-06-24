@@ -382,7 +382,7 @@ const buildSongFromRow = async (songRow, orderIndex = 0) => {
     category: songRow?.categoria || '',
     voz: songRow?.voz || '',
     mp3: songRow?.mp3 || '',
-    linkVoces: songRow?.voces || songRow?.link_voces || '',
+    linkVoces: songRow?.link_voces || songRow?.voces || '',
     linkSecuencias: songRow?.link_secuencias || '',
     sectionMarkers: rawSectionMarkers,
     duration: estimateDuration(sections),

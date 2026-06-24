@@ -431,7 +431,7 @@ const operationalEvents = eventos
 
 const activeSongIds = new Set(canciones.map((song) => String(song.id)));
 
-const hasVoiceResource = (song) => hasText(song?.voces) || hasText(song?.link_voces);
+const hasVoiceResource = (song) => hasText(song?.link_voces) || hasText(song?.voces);
 const hasSequenceResource = (song) => hasText(song?.link_secuencias);
 const hasMarkers = (song) => Array.isArray(song?.section_markers) && song.section_markers.length > 0;
 
