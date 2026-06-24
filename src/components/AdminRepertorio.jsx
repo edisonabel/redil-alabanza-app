@@ -1156,7 +1156,7 @@ export default function AdminRepertorio() {
       const queryWithMarkers = await supabase
         .from('canciones')
         // eslint-disable-next-line max-len
-        .select('id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, link_youtube, mp3, link_acordes, link_letras, link_voces, link_secuencias, chordpro, section_markers, multitrack_session')
+        .select('id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, link_youtube, mp3, link_acordes, link_letras, voces, link_voces, link_secuencias, chordpro, section_markers, multitrack_session')
         .order('titulo', { ascending: true });
 
       let data = queryWithMarkers.data;
@@ -1166,7 +1166,7 @@ export default function AdminRepertorio() {
         const fallbackQuery = await supabase
           .from('canciones')
           // eslint-disable-next-line max-len
-          .select('id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, link_youtube, mp3, link_acordes, link_letras, link_voces, link_secuencias, chordpro, multitrack_session')
+          .select('id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, link_youtube, mp3, link_acordes, link_letras, voces, link_voces, link_secuencias, chordpro, multitrack_session')
           .order('titulo', { ascending: true });
 
         data = fallbackQuery.data;
@@ -1343,7 +1343,7 @@ export default function AdminRepertorio() {
   };
 
   const abrirModalVoces = (cancion) => {
-    const parsed = parseVoiceAdminPayload(cancion?.link_voces || '');
+    const parsed = parseVoiceAdminPayload(cancion?.link_voces || cancion?.voces || '');
     setVocesModalCancion(cancion);
     setVocesDraftEntries(parsed.entries || []);
     setVocesDraftLegacyUrl(parsed.legacyUrl || '');
@@ -1454,22 +1454,22 @@ export default function AdminRepertorio() {
     setVocesFeedback('Guardando voces...');
 
     try {
-      await limpiarVocesRemovidas(vocesModalCancion.link_voces || '', payload);
+      await limpiarVocesRemovidas(vocesModalCancion.link_voces || vocesModalCancion.voces || '', payload);
 
       const { error: updateError } = await supabase
         .from('canciones')
-        .update({ link_voces: payload || null })
+        .update({ link_voces: payload || null, voces: payload || null })
         .eq('id', vocesModalCancion.id);
 
       if (updateError) throw updateError;
 
       setCanciones((prev) => prev.map((item) => (
         item.id === vocesModalCancion.id
-          ? { ...item, link_voces: payload || null }
+          ? { ...item, link_voces: payload || null, voces: payload || null }
           : item
       )));
 
-      setVocesModalCancion((prev) => (prev ? { ...prev, link_voces: payload || null } : prev));
+      setVocesModalCancion((prev) => (prev ? { ...prev, link_voces: payload || null, voces: payload || null } : prev));
       setVocesFeedback('Voces guardadas.');
       cerrarModalVoces();
     } catch (err) {
@@ -1657,7 +1657,7 @@ export default function AdminRepertorio() {
   };
 
   const renderizarCeldaArchivo = (cancion, campoBd) => {
-    const valor = cancion[campoBd];
+    const valor = campoBd === 'link_voces' ? (cancion.link_voces || cancion.voces) : cancion[campoBd];
     const keyContext = `${cancion.id}_${campoBd}`;
     const estaCargando = uploading[keyContext];
     const esChordPro = campoBd === 'chordpro';
@@ -1679,7 +1679,7 @@ export default function AdminRepertorio() {
       const voiceCount = parsedVoices.entries.length;
       const hasVoiceResource = voiceCount > 0 || Boolean(parsedVoices.legacyUrl);
       const statusLabel = voiceCount > 0
-        ? `${voiceCount} voz${voiceCount === 1 ? '' : 'es'}`
+        ? `${voiceCount} ${voiceCount === 1 ? 'voz' : 'voces'}`
         : parsedVoices.legacyUrl
           ? 'Link'
           : 'Sin voces';
