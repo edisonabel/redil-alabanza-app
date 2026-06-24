@@ -315,7 +315,6 @@ export function useMultitrackEngine(
         targetKind === 'buffer'
           ? await (engine as MultitrackEngine).loadTracks(nextTracks, {
             onProgress: handleProgress,
-            forceMode: 'buffer',
           })
           : await engine.loadTracks(nextTracks, { onProgress: handleProgress });
       if (initializationToken !== initializationTokenRef.current || engine !== engineRef.current) {
@@ -363,7 +362,6 @@ export function useMultitrackEngine(
           commitLoadProgress({ loaded: 0, total: nextTracks.length });
           const fallbackLoadedTracks = await fallbackEngine.loadTracks(nextTracks, {
             onProgress: handleProgress,
-            forceMode: 'buffer',
           });
 
           if (initializationToken !== initializationTokenRef.current || fallbackEngine !== engineRef.current) {

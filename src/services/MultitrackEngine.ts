@@ -576,6 +576,12 @@ export class MultitrackEngine {
       return true;
     }
 
+    const capabilities = readLiveBrowserCapabilities();
+    if (capabilities.isIOS && trackList.length > 1) {
+      console.log('[MultitrackEngine] iOS WebKit detected. Using Media mode to avoid full WebAudio buffer decode pressure.');
+      return true;
+    }
+
     if (this.isMobileDevice()) {
       return trackList.length > MOBILE_BUFFER_TRACK_LIMIT;
     }
