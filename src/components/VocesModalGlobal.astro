@@ -137,14 +137,39 @@
     const getVoiceColor = (label) => {
       const text = (label || '').toLowerCase();
       if (text.includes('guia') || text.includes('guía') || text.includes('principal')) return '#2563EB';
-      if (text.includes('segunda')) return '#DC2626';
       if (text.includes('tercera')) return '#16A34A';
       if (text.includes('quinta')) return '#CA8A04';
-      if (text.includes('octava')) return '#EA580C';
       if (text.includes('todas') || text.includes('tres voces')) return '#9333EA';
       if (text.includes('pista') || text.includes('instru')) return '#0891B2';
       return '#64748B';
     };
+
+    const VOICE_LABEL_ORDER = ['Voz guía', 'Tercera voz', 'Quinta voz', 'Todas las voces', 'Pista'];
+    const normalizeVoiceText = (value = '') => String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+
+    const normalizeVoiceLabel = (value = '') => {
+      const normalized = normalizeVoiceText(value);
+      if (normalized.includes('guia') || normalized.includes('principal') || normalized.includes('lead')) return 'Voz guía';
+      if (normalized.includes('tercera') || /\b3(?:ra|ro)?\b/.test(normalized)) return 'Tercera voz';
+      if (normalized.includes('quinta') || /\b5(?:ta|to)?\b/.test(normalized)) return 'Quinta voz';
+      if (normalized.includes('todas') || normalized.includes('tres voces') || normalized.includes('full')) return 'Todas las voces';
+      if (normalized.includes('pista') || normalized.includes('instrumental') || normalized.includes('track')) return 'Pista';
+      return 'Pista';
+    };
+
+    const sortVoiceEntries = (entries = []) => (
+      (Array.isArray(entries) ? entries : [])
+        .map((entry, index) => ({ entry: { ...entry, label: normalizeVoiceLabel(entry?.label || entry?.name || '') }, index }))
+        .sort((left, right) => {
+          const leftOrder = VOICE_LABEL_ORDER.indexOf(left.entry.label);
+          const rightOrder = VOICE_LABEL_ORDER.indexOf(right.entry.label);
+          return (leftOrder === -1 ? 99 : leftOrder) - (rightOrder === -1 ? 99 : rightOrder) || left.index - right.index;
+        })
+        .map(({ entry }) => entry)
+    );
 
     const closeVocesModal = (onAfterClose = () => {}) => {
       const { vocesModal, vocesBackdrop, vocesPanel } = getRefs();
@@ -194,7 +219,7 @@
       vocesArtist.textContent = String(artist || '').trim() || 'Selecciona una pista';
       vocesOptions.innerHTML = '';
 
-      if (legacyUrl) {
+      if (legacyUrl && !(Array.isArray(entries) && entries.length > 0)) {
         const safeLegacyUrl = normalizeExternalUrl(legacyUrl);
         const legacyCard = document.createElement('div');
         legacyCard.className = 'col-span-full rounded-2xl border border-zinc-200 bg-white p-4 dark:border-white/10 dark:bg-zinc-800/60';
@@ -222,14 +247,15 @@
       const validEntries = (Array.isArray(entries) ? entries : [])
         .map((entry, index) => {
           const labelRaw = entry?.label || entry?.nombre || entry?.name || 'Pista';
-          const label = String(labelRaw).trim() || `Pista ${index + 1}`;
+          const label = normalizeVoiceLabel(String(labelRaw).trim() || `Pista ${index + 1}`);
           const url = normalizeExternalUrl(typeof entry?.url === 'string' ? entry.url : '');
           if (!url) return null;
           return { label, url };
         })
         .filter(Boolean);
+      const orderedEntries = sortVoiceEntries(validEntries);
 
-      if (!validEntries.length) {
+      if (!orderedEntries.length) {
         const emptyCard = document.createElement('div');
         emptyCard.className = 'col-span-full rounded-2xl border border-zinc-200 bg-white p-4 dark:border-white/10 dark:bg-zinc-800/60';
         emptyCard.innerHTML = `
@@ -242,7 +268,7 @@
         return;
       }
 
-      validEntries.forEach((entry, index) => {
+      orderedEntries.forEach((entry, index) => {
         const button = document.createElement('button');
         const labelText = entry.label || `Pista ${index + 1}`;
         const color = getVoiceColor(labelText);
@@ -279,6 +305,19 @@
         vocesOptions.appendChild(button);
       });
 
+      if (legacyUrl) {
+        const safeLegacyUrl = normalizeExternalUrl(legacyUrl);
+        if (safeLegacyUrl) {
+          const legacyCard = document.createElement('a');
+          legacyCard.href = safeLegacyUrl;
+          legacyCard.target = '_blank';
+          legacyCard.rel = 'noopener noreferrer';
+          legacyCard.className = 'col-span-full mt-1 inline-flex h-10 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-xs font-black uppercase tracking-[0.12em] text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-800 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200';
+          legacyCard.textContent = 'Abrir link viejo';
+          vocesOptions.appendChild(legacyCard);
+        }
+      }
+
       lockBackgroundScroll();
       animateModalOpen(vocesModal, vocesBackdrop, vocesPanel);
     };
@@ -292,7 +331,7 @@
         if (typeof candidate === 'string') {
           const url = normalizeExternalUrl(candidate);
           if (!url) return null;
-          return { label: forcedLabel || `Voz ${index + 1}`, url };
+          return { label: normalizeVoiceLabel(forcedLabel || `Voz ${index + 1}`), url };
         }
 
         if (!candidate || typeof candidate !== 'object') return null;
@@ -302,7 +341,7 @@
 
         const labelRaw = forcedLabel || candidate.label || candidate.nombre || candidate.name || candidate.title || candidate.voice || '';
         return {
-          label: String(labelRaw || `Voz ${index + 1}`).trim() || `Voz ${index + 1}`,
+          label: normalizeVoiceLabel(String(labelRaw || `Voz ${index + 1}`).trim() || `Voz ${index + 1}`),
           url,
         };
       };
@@ -319,7 +358,7 @@
           .filter(Boolean);
 
         if (entries.length > 0) {
-          return { type: 'lines', entries, legacyUrl: '' };
+          return { type: 'lines', entries: sortVoiceEntries(entries), legacyUrl: '' };
         }
       }
 
@@ -330,11 +369,22 @@
         }
         return { type: 'legacy', legacyUrl: normalizedUrl, entries: [] };
       }
-      if (value.startsWith('[')) {
+      if (value.startsWith('[') || value.startsWith('{')) {
         try {
           const parsed = JSON.parse(value);
           if (Array.isArray(parsed)) {
-            return { type: 'json', entries: parsed.map((entry, index) => toVoiceEntry(entry, index)).filter(Boolean), legacyUrl: '' };
+            return { type: 'json', entries: sortVoiceEntries(parsed.map((entry, index) => toVoiceEntry(entry, index)).filter(Boolean)), legacyUrl: '' };
+          }
+          if (parsed && typeof parsed === 'object') {
+            const entries = Array.isArray(parsed.entries)
+              ? parsed.entries.map((entry, index) => toVoiceEntry(entry, index)).filter(Boolean)
+              : [];
+            const legacyUrl = normalizeExternalUrl(parsed.legacyUrl || parsed.folder || parsed.drive || '');
+            return {
+              type: 'json',
+              entries: sortVoiceEntries(entries),
+              legacyUrl,
+            };
           }
           return null;
         } catch {

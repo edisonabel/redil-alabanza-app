@@ -301,6 +301,34 @@ const normalizeVoiceExternalUrl = (rawUrl = '') => {
   }
 };
 
+const VOICE_LABEL_ORDER = ['Voz guía', 'Tercera voz', 'Quinta voz', 'Todas las voces', 'Pista'];
+
+const normalizeVoiceText = (value = '') => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase();
+
+const normalizeVoiceTrackLabel = (value = '') => {
+  const normalized = normalizeVoiceText(value);
+  if (normalized.includes('guia') || normalized.includes('principal') || normalized.includes('lead')) return 'Voz guía';
+  if (normalized.includes('tercera') || /\b3(?:ra|ro)?\b/.test(normalized)) return 'Tercera voz';
+  if (normalized.includes('quinta') || /\b5(?:ta|to)?\b/.test(normalized)) return 'Quinta voz';
+  if (normalized.includes('todas') || normalized.includes('tres voces') || normalized.includes('full')) return 'Todas las voces';
+  if (normalized.includes('pista') || normalized.includes('instrumental') || normalized.includes('track')) return 'Pista';
+  return 'Pista';
+};
+
+const sortVoiceEntries = (entries = []) => (
+  (Array.isArray(entries) ? entries : [])
+    .map((entry, index) => ({ entry: { ...entry, label: normalizeVoiceTrackLabel(entry?.label || entry?.name || '') }, index }))
+    .sort((left, right) => {
+      const leftOrder = VOICE_LABEL_ORDER.indexOf(left.entry.label);
+      const rightOrder = VOICE_LABEL_ORDER.indexOf(right.entry.label);
+      return (leftOrder === -1 ? 99 : leftOrder) - (rightOrder === -1 ? 99 : rightOrder) || left.index - right.index;
+    })
+    .map(({ entry }) => entry)
+);
+
 const parseVoiceResources = (value) => {
   const raw = serializeVoicePayload(value);
   const rawNormalized = raw
@@ -312,7 +340,7 @@ const parseVoiceResources = (value) => {
       const url = normalizeVoiceExternalUrl(candidate);
       if (!url) return null;
       return {
-        label: forcedLabel || `Voz ${index + 1}`,
+        label: normalizeVoiceTrackLabel(forcedLabel || `Voz ${index + 1}`),
         url,
       };
     }
@@ -340,7 +368,7 @@ const parseVoiceResources = (value) => {
       '';
 
     return {
-      label: String(labelRaw || `Voz ${index + 1}`).trim() || `Voz ${index + 1}`,
+      label: normalizeVoiceTrackLabel(String(labelRaw || `Voz ${index + 1}`).trim() || `Voz ${index + 1}`),
       url,
     };
   };
@@ -377,7 +405,7 @@ const parseVoiceResources = (value) => {
       .filter(Boolean);
 
     if (entries.length > 0) {
-      return { hasResources: true, entries, legacyUrl: '' };
+      return { hasResources: true, entries: sortVoiceEntries(entries), legacyUrl: '' };
     }
   }
 
@@ -390,14 +418,14 @@ const parseVoiceResources = (value) => {
       const entries = parsed
         .map((entry, index) => toVoiceEntry(entry, index, index === 0 ? 'Voz guía' : ''))
         .filter(Boolean);
-      return { hasResources: entries.length > 0, entries, legacyUrl: '' };
+      return { hasResources: entries.length > 0, entries: sortVoiceEntries(entries), legacyUrl: '' };
     }
     if (parsed && typeof parsed === 'object' && Array.isArray(parsed.entries)) {
       const entries = parsed.entries
         .map((entry, index) => toVoiceEntry(entry, index, index === 0 ? 'Voz guía' : ''))
         .filter(Boolean);
       const legacyUrl = normalizeVoiceExternalUrl(String(parsed.legacyUrl || parsed.folder || parsed.drive || '').trim());
-      return { hasResources: entries.length > 0 || Boolean(legacyUrl), entries, legacyUrl };
+      return { hasResources: entries.length > 0 || Boolean(legacyUrl), entries: sortVoiceEntries(entries), legacyUrl };
     }
     if (parsed && typeof parsed === 'object') {
       const directEntry = toVoiceEntry(
@@ -406,14 +434,14 @@ const parseVoiceResources = (value) => {
         parsed.label || parsed.nombre || parsed.name || parsed.title || 'Voz guía',
       );
       if (directEntry) {
-        return { hasResources: true, entries: [directEntry], legacyUrl: '' };
+        return { hasResources: true, entries: sortVoiceEntries([directEntry]), legacyUrl: '' };
       }
 
       const entries = Object.entries(parsed)
         .map(([key, candidate], index) => toVoiceEntry(candidate, index, String(key || `Voz ${index + 1}`)))
         .filter(Boolean);
       if (entries.length > 0) {
-        return { hasResources: true, entries, legacyUrl: '' };
+        return { hasResources: true, entries: sortVoiceEntries(entries), legacyUrl: '' };
       }
     }
   } catch {
@@ -895,7 +923,7 @@ export default function EnsayoHub({
   const handleSaveVoiceAssignment = useCallback(async ({ songId, targetUserId, trackName }) => {
     const safeSongId = String(songId || '').trim();
     const safeTargetUserId = String(targetUserId || '').trim();
-    const safeTrackName = String(trackName || '').trim();
+    const safeTrackName = normalizeVoiceTrackLabel(trackName || '');
 
     if (!safeSongId || !safeTargetUserId || !safeTrackName) return;
     if (!playlistId || !eventMeta?.id || !userId) {

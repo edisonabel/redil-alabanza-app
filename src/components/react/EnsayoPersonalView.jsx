@@ -32,7 +32,7 @@ const cleanVoiceTrackLabel = (value = '') => {
 
 const getVoiceTrackDisplayParts = (track = {}, index = 0) => {
   const fallback = `Voz ${index + 1}`;
-  const cleaned = cleanVoiceTrackLabel(getTrackDisplayName(track)) || fallback;
+  const cleaned = normalizeCanonicalVoiceLabel(cleanVoiceTrackLabel(getTrackDisplayName(track)) || fallback);
 
   return {
     title: cleaned,
@@ -45,6 +45,34 @@ const normalizeFold = (value = '') => (
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
+);
+
+const CANONICAL_VOICE_ORDER = ['Voz guía', 'Tercera voz', 'Quinta voz', 'Todas las voces', 'Pista'];
+
+const normalizeCanonicalVoiceLabel = (value = '') => {
+  const normalized = normalizeFold(value);
+  if (normalized.includes('guia') || normalized.includes('principal') || normalized.includes('lead')) return 'Voz guía';
+  if (normalized.includes('tercera') || /\b3(?:ra|ro)?\b/.test(normalized)) return 'Tercera voz';
+  if (normalized.includes('quinta') || /\b5(?:ta|to)?\b/.test(normalized)) return 'Quinta voz';
+  if (normalized.includes('todas') || normalized.includes('tres voces') || normalized.includes('full')) return 'Todas las voces';
+  if (normalized.includes('pista') || normalized.includes('instrumental') || normalized.includes('track')) return 'Pista';
+  return 'Pista';
+};
+
+const getCanonicalVoiceOrder = (track = {}) => {
+  const label = normalizeCanonicalVoiceLabel(getTrackDisplayName(track));
+  const order = CANONICAL_VOICE_ORDER.indexOf(label);
+  return order === -1 ? CANONICAL_VOICE_ORDER.length : order;
+};
+
+const sortTracksByCanonicalVoiceOrder = (tracks = []) => (
+  (Array.isArray(tracks) ? tracks : [])
+    .map((track, index) => ({ track, index }))
+    .sort((left, right) => getCanonicalVoiceOrder(left.track) - getCanonicalVoiceOrder(right.track) || left.index - right.index)
+    .map(({ track }) => ({
+      ...track,
+      label: normalizeCanonicalVoiceLabel(getTrackDisplayName(track)),
+    }))
 );
 
 const VOICE_ROLE_MATCHERS = [
@@ -189,34 +217,15 @@ export function priorizarVozAsignada(
   }
 
   const asignacion = asignaciones?.[songId]?.[userId];
-  const trackNameAsignado = String(asignacion?.trackName || '').trim();
+  const trackNameAsignado = normalizeCanonicalVoiceLabel(asignacion?.trackName || '');
 
-  if (!trackNameAsignado) {
-    return tracksOriginales;
-  }
-
-  const indiceAsignado = tracksOriginales.findIndex((track) => {
+  return tracksOriginales.map((track) => {
     const nombreTrack = String(getTrackName(track) || '').trim();
-    return nombreTrack === trackNameAsignado;
-  });
-
-  if (indiceAsignado === -1) {
-    return tracksOriginales;
-  }
-
-  const trackAsignado = tracksOriginales[indiceAsignado];
-  const restoTracks = tracksOriginales.filter((_, index) => index !== indiceAsignado);
-
-  return [
-    {
-      ...trackAsignado,
-      esAsignada: true,
-    },
-    ...restoTracks.map((track) => ({
+    return {
       ...track,
-      esAsignada: false,
-    })),
-  ];
+      esAsignada: Boolean(trackNameAsignado && nombreTrack === trackNameAsignado),
+    };
+  });
 }
 
 export function TrackButton({
@@ -400,10 +409,18 @@ export default function EnsayoPersonalView({
   }, [memberIdSet, userId]);
   const validSongAssignments = useMemo(() => (
     Object.fromEntries(
-      Object.entries(songAssignments).filter(([memberId]) => memberIdSet.has(String(memberId || '').trim()))
+      Object.entries(songAssignments)
+        .filter(([memberId]) => memberIdSet.has(String(memberId || '').trim()))
+        .map(([memberId, assignment]) => ([
+          memberId,
+          {
+            ...(assignment || {}),
+            trackName: normalizeCanonicalVoiceLabel(assignment?.trackName || ''),
+          },
+        ]))
     )
   ), [memberIdSet, songAssignments]);
-  const currentAssignment = String(validSongAssignments?.[viewerMemberId]?.trackName || '').trim();
+  const currentAssignment = normalizeCanonicalVoiceLabel(validSongAssignments?.[viewerMemberId]?.trackName || '');
   const voiceTrackAnchors = useMemo(() => (
     songAssignments?.[TRACK_ANCHORS_KEY] && typeof songAssignments[TRACK_ANCHORS_KEY] === 'object'
       ? songAssignments[TRACK_ANCHORS_KEY]
@@ -422,7 +439,7 @@ export default function EnsayoPersonalView({
     const assignmentsMap = new Map();
 
     Object.entries(validSongAssignments).forEach(([memberId, assignment]) => {
-      const safeTrackName = String(assignment?.trackName || '').trim();
+      const safeTrackName = normalizeCanonicalVoiceLabel(assignment?.trackName || '');
       if (!safeTrackName) return;
 
       const existing = assignmentsMap.get(safeTrackName) || [];
@@ -439,7 +456,7 @@ export default function EnsayoPersonalView({
 
   const tracksOrdenados = useMemo(() => (
     priorizarVozAsignada(
-      safeTracks,
+      sortTracksByCanonicalVoiceOrder(safeTracks),
       songId,
       viewerMemberId,
       { [songId]: validSongAssignments },
@@ -552,7 +569,7 @@ export default function EnsayoPersonalView({
 
   const selectedTrackAssignmentOwnerId = useMemo(() => {
     return Object.keys(validSongAssignments).find((memberId) => (
-      String(validSongAssignments?.[memberId]?.trackName || '').trim() === String(selectedTrackName || '').trim()
+      normalizeCanonicalVoiceLabel(validSongAssignments?.[memberId]?.trackName || '') === normalizeCanonicalVoiceLabel(selectedTrackName || '')
     )) || '';
   }, [selectedTrackName, validSongAssignments]);
 
@@ -577,7 +594,7 @@ export default function EnsayoPersonalView({
   }, [hasManualMemberSelection, memberIdSet, selectedMemberId, smartSuggestedMemberId, safeMembers, viewerMemberId]);
 
   const selectedMemberAssignment = String(
-    validSongAssignments?.[selectedMemberId]?.trackName || ''
+    normalizeCanonicalVoiceLabel(validSongAssignments?.[selectedMemberId]?.trackName || '')
   ).trim();
   const selectedAnchorSection = anchorSectionOptions.find((section) => (
     String(section.id) === String(selectedAnchorSectionId)
