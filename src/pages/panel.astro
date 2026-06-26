@@ -142,36 +142,56 @@ const histogram = (items, getLabel, { limit = 8 } = {}) => {
     .slice(0, limit);
 };
 
-const resourceCoverageItem = (label, count, total) => ({
+const resourceCoverageItem = (label, count, total, detail = '') => ({
   label,
   count,
   total,
+  detail,
   percent: total > 0 ? Math.round((count / total) * 100) : 0,
 });
 
 const fetchSongs = async () => {
-  const fullSelect = 'id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, mp3, voces, link_voces, link_secuencias, chordpro, section_markers';
-  const fallbackSelect = 'id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, mp3, voces, link_voces, link_secuencias, chordpro';
-
-  const fullResp = await supabaseSSR.from('canciones').select(fullSelect).order('titulo');
-  if (!fullResp.error) {
-    return {
-      data: fullResp.data || [],
+  const baseSelect = 'id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, mp3, voces, link_voces, link_secuencias, chordpro';
+  const candidates = [
+    {
+      select: `${baseSelect}, section_markers, multitrack_session`,
       warnings: [],
-    };
+      normalize: (rows) => rows,
+    },
+    {
+      select: `${baseSelect}, section_markers`,
+      warnings: ['Canciones: no se encontro multitrack_session, usando fallback sin detalle de secuencias completas.'],
+      normalize: (rows) => rows.map((song) => ({ ...song, multitrack_session: null })),
+    },
+    {
+      select: `${baseSelect}, multitrack_session`,
+      warnings: ['Canciones: no se encontro section_markers, usando fallback sin markers.'],
+      normalize: (rows) => rows.map((song) => ({ ...song, section_markers: [] })),
+    },
+    {
+      select: baseSelect,
+      warnings: [
+        'Canciones: no se encontro section_markers, usando fallback sin markers.',
+        'Canciones: no se encontro multitrack_session, usando fallback sin detalle de secuencias completas.',
+      ],
+      normalize: (rows) => rows.map((song) => ({ ...song, section_markers: [], multitrack_session: null })),
+    },
+  ];
+
+  for (const candidate of candidates) {
+    const response = await supabaseSSR.from('canciones').select(candidate.select).order('titulo');
+    if (!response.error) {
+      return {
+        data: candidate.normalize(response.data || []),
+        warnings: candidate.warnings,
+      };
+    }
   }
 
-  const fallbackResp = await supabaseSSR.from('canciones').select(fallbackSelect).order('titulo');
-  if (fallbackResp.error) {
-    return {
-      data: [],
-      warnings: [`Canciones: ${fallbackResp.error.message}`],
-    };
-  }
-
+  const fallbackResp = await supabaseSSR.from('canciones').select(baseSelect).order('titulo');
   return {
-    data: (fallbackResp.data || []).map((song) => ({ ...song, section_markers: [] })),
-    warnings: ['Canciones: no se encontro section_markers, usando fallback sin markers.'],
+    data: [],
+    warnings: [`Canciones: ${fallbackResp.error?.message || 'No se pudieron consultar las canciones.'}`],
   };
 };
 
@@ -267,6 +287,86 @@ const canciones = cancionesRaw.filter((song) => normalizeFold(song?.estado) !== 
 const perfilesById = new Map(perfiles.map((perfil) => [String(perfil.id), perfil]));
 const rolesById = new Map(roles.map((rol) => [String(rol.id), rol]));
 const cancionesById = new Map(canciones.map((song) => [String(song.id), song]));
+
+const normalizeMultitrackSession = (rawValue) => {
+  if (!rawValue) return null;
+
+  let parsedValue = rawValue;
+  if (typeof rawValue === 'string') {
+    try {
+      parsedValue = JSON.parse(rawValue);
+    } catch {
+      return null;
+    }
+  }
+
+  if (!parsedValue || typeof parsedValue !== 'object') return null;
+
+  const tracks = (Array.isArray(parsedValue.tracks) ? parsedValue.tracks : [])
+    .map((track) => ({
+      id: safeText(track?.id),
+      name: safeText(track?.name, 'Pista'),
+      url: safeText(track?.url),
+      enabled: track?.enabled !== false,
+    }))
+    .filter((track) => track.id && track.name && track.url);
+
+  if (!tracks.length) return null;
+
+  return {
+    mode: parsedValue.mode === 'folder' ? 'folder' : 'sequence',
+    updatedAt: safeText(parsedValue.updatedAt),
+    tracks,
+  };
+};
+
+const getSongSequenceProfile = (song) => {
+  const session = normalizeMultitrackSession(song?.multitrack_session);
+  const enabledTracks = (session?.tracks || []).filter((track) => track.enabled !== false);
+  const trackCount = enabledTracks.length;
+  const hasExternalSequence = hasText(song?.link_secuencias);
+
+  if (trackCount >= 4) {
+    return {
+      type: 'complete',
+      label: 'Completa',
+      trackCount,
+      detail: `${trackCount} pistas separadas listas para Live Director.`,
+    };
+  }
+
+  if (trackCount >= 2) {
+    return {
+      type: 'partial',
+      label: 'Parcial',
+      trackCount,
+      detail: `${trackCount} pistas separadas; revisar si faltan bajo, bateria u otros stems.`,
+    };
+  }
+
+  if (trackCount === 1 || hasExternalSequence) {
+    return {
+      type: 'simple',
+      label: 'Una pista',
+      trackCount: trackCount || 1,
+      detail: trackCount === 1 ? 'Una pista cargada en Live Director.' : 'Link de secuencia sin stems separados.',
+    };
+  }
+
+  return {
+    type: 'missing',
+    label: 'Sin secuencia',
+    trackCount: 0,
+    detail: 'Sin link de secuencia ni sesion multitrack cargada.',
+  };
+};
+
+const sequenceProfileBySongId = new Map(
+  canciones.map((song) => [String(song.id), getSongSequenceProfile(song)]),
+);
+
+const getSequenceProfileForSong = (song) =>
+  sequenceProfileBySongId.get(String(song?.id || '')) || getSongSequenceProfile(song);
 
 const playlistsByEventId = new Map();
 playlists.forEach((playlist) => {
@@ -416,6 +516,8 @@ const operationalEvents = eventos
           profileId: String(item.perfil_id),
           name: safeText(item?.profile?.nombre, 'Sin nombre'),
           avatarUrl: safeText(item?.profile?.avatar_url),
+          roleId: String(item?.role?.id || item?.rol_id || ''),
+          roleCode: safeText(item?.role?.codigo),
           roleName: safeText(item?.role?.nombre),
         })),
       missingChordproCount: missingChordproSongs.length,
@@ -432,20 +534,22 @@ const operationalEvents = eventos
 const activeSongIds = new Set(canciones.map((song) => String(song.id)));
 
 const hasVoiceResource = (song) => hasText(song?.link_voces) || hasText(song?.voces);
-const hasSequenceResource = (song) => hasText(song?.link_secuencias);
+const hasSequenceResource = (song) => getSequenceProfileForSong(song).type !== 'missing';
+const hasCompleteSequenceResource = (song) => getSequenceProfileForSong(song).type === 'complete';
 const hasMarkers = (song) => Array.isArray(song?.section_markers) && song.section_markers.length > 0;
 
 const chordproReadyCount = canciones.filter((song) => hasText(song?.chordpro)).length;
 const mp3ReadyCount = canciones.filter((song) => hasText(song?.mp3)).length;
 const voicesReadyCount = canciones.filter((song) => hasVoiceResource(song)).length;
 const sequencesReadyCount = canciones.filter((song) => hasSequenceResource(song)).length;
+const completeSequencesReadyCount = canciones.filter((song) => hasCompleteSequenceResource(song)).length;
 const markersReadyCount = canciones.filter((song) => hasMarkers(song)).length;
 const baseResourceCoverage = [
-  resourceCoverageItem('ChordPro', chordproReadyCount, canciones.length),
-  resourceCoverageItem('MP3', mp3ReadyCount, canciones.length),
-  resourceCoverageItem('Voces', voicesReadyCount, canciones.length),
-  resourceCoverageItem('Secuencias', sequencesReadyCount, canciones.length),
-  resourceCoverageItem('Markers', markersReadyCount, canciones.length),
+  resourceCoverageItem('ChordPro', chordproReadyCount, canciones.length, 'Guia de acordes y letras para ensayo.'),
+  resourceCoverageItem('MP3', mp3ReadyCount, canciones.length, 'Audio base disponible.'),
+  resourceCoverageItem('Voces', voicesReadyCount, canciones.length, 'Guia o recurso vocal.'),
+  resourceCoverageItem('Secuencias', sequencesReadyCount, canciones.length, `${completeSequencesReadyCount} completas con multitrack separado.`),
+  resourceCoverageItem('Guia por secciones', markersReadyCount, canciones.length, 'Markers para navegar la cancion por partes en ensayo/Live Director.'),
 ];
 
 const getUniqueSongIdsForEvents = (events) => {
@@ -471,11 +575,38 @@ const upcomingRehearsalSongIds = getUniqueSongIdsForEvents(
 
 const rehearsalReadyCount = [...upcomingRehearsalSongIds].filter((songId) => {
   const song = cancionesById.get(String(songId));
-  return song && hasText(song?.chordpro) && hasText(song?.mp3) && hasMarkers(song);
+  return song && hasText(song?.chordpro) && hasText(song?.mp3);
 }).length;
 
 const buildSongUsageRanking = ({ events, limit = 10 } = {}) => {
   const usageByServiceSong = new Map();
+  const repeatWindowMs = 60 * 24 * 60 * 60 * 1000;
+
+  const getRepeatAlert = (history = []) => {
+    const sortedAsc = history
+      .map((item) => ({ ...item, date: new Date(item.dateIso) }))
+      .filter((item) => !Number.isNaN(item.date.getTime()))
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    let bestWindow = null;
+    for (let startIndex = 0; startIndex < sortedAsc.length; startIndex += 1) {
+      const start = sortedAsc[startIndex];
+      const inWindow = sortedAsc.filter((item) => item.date.getTime() >= start.date.getTime() && item.date.getTime() - start.date.getTime() <= repeatWindowMs);
+      if (!bestWindow || inWindow.length > bestWindow.items.length) {
+        bestWindow = { start, end: inWindow[inWindow.length - 1], items: inWindow };
+      }
+    }
+
+    if (!bestWindow || bestWindow.items.length < 3) return null;
+
+    return {
+      label: `${bestWindow.items.length} usos en 60 dias`,
+      detail: `Entre ${formatCountLabel(bestWindow.items.length, 'servicio')} del ${formatDateKey(bestWindow.start.date)} al ${formatDateKey(bestWindow.end.date)}.`,
+      count: bestWindow.items.length,
+      from: bestWindow.start.dateIso,
+      to: bestWindow.end.dateIso,
+    };
+  };
 
   events.forEach((evento) => {
     const eventDate = new Date(evento?.dateIso || '');
@@ -495,10 +626,17 @@ const buildSongUsageRanking = ({ events, limit = 10 } = {}) => {
         usage_count: 0,
         count: 0,
         last_used_at: null,
+        history: [],
       };
 
       current.usage_count += 1;
       current.count = current.usage_count;
+      current.history.push({
+        eventId: evento.id,
+        serviceTitle: evento.title,
+        dateIso: evento.dateIso,
+        href: evento.programacionHref,
+      });
       if (!current.last_used_at || eventDate > new Date(current.last_used_at)) {
         current.last_used_at = evento.dateIso;
       }
@@ -511,6 +649,8 @@ const buildSongUsageRanking = ({ events, limit = 10 } = {}) => {
     .slice(0, limit)
     .map((item, index, ranking) => ({
       ...item,
+      history: (item.history || []).sort((a, b) => new Date(b.dateIso).getTime() - new Date(a.dateIso).getTime()),
+      repeatAlert: getRepeatAlert(item.history || []),
       rank: index + 1,
       max_count: ranking[0]?.usage_count || item.usage_count || 1,
     }));
@@ -524,6 +664,10 @@ const currentYearUsageEvents = operationalEvents.filter((evento) => {
     && isRealizedService(evento);
 });
 const topSongsCurrentYear = buildSongUsageRanking({ events: currentYearUsageEvents, limit: 10 });
+const currentYearRepeatWatch = buildSongUsageRanking({ events: currentYearUsageEvents, limit: canciones.length })
+  .filter((song) => song.repeatAlert)
+  .sort((a, b) => (b.repeatAlert.count - a.repeatAlert.count) || (b.usage_count - a.usage_count) || a.title.localeCompare(b.title, 'es'))
+  .slice(0, 8);
 const currentYearUsedSongIds = getUniqueSongIdsForEvents(currentYearUsageEvents);
 
 const profileRolesByProfileId = new Map();
@@ -536,17 +680,34 @@ perfilRoles.forEach((entry) => {
   profileRolesByProfileId.set(profileId, bucket);
 });
 
+const roleMembersByRoleId = new Map();
+perfilRoles.forEach((entry) => {
+  const roleId = String(entry?.rol_id || '');
+  const profile = perfilesById.get(String(entry?.perfil_id || ''));
+  if (!roleId || !profile) return;
+  const bucket = roleMembersByRoleId.get(roleId) || [];
+  bucket.push({
+    id: String(profile.id),
+    name: safeText(profile.nombre, 'Sin nombre'),
+    avatarUrl: safeText(profile.avatar_url),
+  });
+  roleMembersByRoleId.set(roleId, bucket);
+});
+
 const roleCoverage = roles
-  .map((role) => ({
-    id: String(role.id),
-    label: safeText(role.nombre, 'Rol'),
-    code: safeText(role.codigo),
-    count: perfilRoles.filter((entry) => String(entry?.rol_id || '') === String(role.id)).length,
-  }))
+  .map((role) => {
+    const members = (roleMembersByRoleId.get(String(role.id)) || []).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    return {
+      id: String(role.id),
+      label: safeText(role.nombre, 'Rol'),
+      code: safeText(role.codigo),
+      count: members.length,
+      members,
+    };
+  })
   .sort((a, b) => (b.count - a.count) || a.label.localeCompare(b.label, 'es'));
 
 const rolesWithCoverage = roleCoverage.filter((role) => role.count > 0).length;
-const lowCoverageRoles = roleCoverage.filter((role) => role.count <= 1).slice(0, 10);
 
 const completeProfilesCount = perfiles.filter(
   (profile) => hasText(profile?.avatar_url) && hasText(profile?.telefono) && hasText(profile?.fecha_nacimiento),
@@ -698,15 +859,57 @@ const buildPanelSnapshot = ({ label, mode, days }) => {
     ? canciones.filter((song) => usedSongIds.has(String(song.id)))
     : canciones;
 
-  const topSongs = canciones
+  const topSongs = buildSongUsageRanking({ events: repertoireUsageEvents, limit: 10 });
+  const unusedSongs = songsNeverUsed
+    .slice(0, 10)
     .map((song) => ({
       id: String(song.id),
       title: safeText(song.titulo, 'Cancion sin titulo'),
-      artist: safeText(song.cantante, 'Sin cantante'),
-      count: periodUsageBySongId.get(String(song.id)) || 0,
+      detail: [
+        safeText(song.cantante),
+        getSongCategoryLabel(song?.categoria),
+        getSongVoiceLabel(song?.voz),
+      ].filter(Boolean).join(' | ') || 'Sin metadatos visibles',
+    }));
+
+  const sequenceBreakdown = [
+    {
+      type: 'complete',
+      label: 'Completas',
+      count: canciones.filter((song) => getSequenceProfileForSong(song).type === 'complete').length,
+      detail: 'Sesiones multitrack con varias pistas separadas.',
+    },
+    {
+      type: 'partial',
+      label: 'Parciales',
+      count: canciones.filter((song) => getSequenceProfileForSong(song).type === 'partial').length,
+      detail: 'Hay stems, pero probablemente falta completar el paquete.',
+    },
+    {
+      type: 'simple',
+      label: 'Una pista',
+      count: canciones.filter((song) => getSequenceProfileForSong(song).type === 'simple').length,
+      detail: 'Link o pista unica sin separacion por instrumentos.',
+    },
+    {
+      type: 'missing',
+      label: 'Sin secuencia',
+      count: canciones.filter((song) => getSequenceProfileForSong(song).type === 'missing').length,
+      detail: 'No hay link ni sesion multitrack cargada.',
+    },
+  ];
+
+  const sequenceGaps = periodSongPool
+    .map((song) => ({
+      id: String(song.id),
+      title: safeText(song.titulo, 'Cancion sin titulo'),
+      ...getSequenceProfileForSong(song),
     }))
-    .filter((song) => song.count > 0)
-    .sort((a, b) => (b.count - a.count) || a.title.localeCompare(b.title, 'es'))
+    .filter((item) => item.type !== 'complete')
+    .sort((a, b) => {
+      const order = { missing: 0, simple: 1, partial: 2, complete: 3 };
+      return (order[a.type] - order[b.type]) || a.title.localeCompare(b.title, 'es');
+    })
     .slice(0, 10);
 
   const teamAssignmentsByProfile = new Map();
@@ -721,10 +924,20 @@ const buildPanelSnapshot = ({ label, mode, days }) => {
         assignments: 0,
         eventIds: new Set(),
         roles: new Set(),
+        servicesByEvent: new Map(),
       };
       bucket.assignments += 1;
       bucket.eventIds.add(evento.id);
       if (member?.roleName) bucket.roles.add(member.roleName);
+      const service = bucket.servicesByEvent.get(evento.id) || {
+        id: evento.id,
+        title: evento.title,
+        dateIso: evento.dateIso,
+        href: evento.programacionHref,
+        roles: new Set(),
+      };
+      if (member?.roleName) service.roles.add(member.roleName);
+      bucket.servicesByEvent.set(evento.id, service);
       teamAssignmentsByProfile.set(profileId, bucket);
     });
   });
@@ -737,11 +950,21 @@ const buildPanelSnapshot = ({ label, mode, days }) => {
       assignments: item.assignments,
       services: item.eventIds.size,
       roles: [...item.roles].sort((a, b) => a.localeCompare(b, 'es')).slice(0, 3),
+      assignedServices: [...item.servicesByEvent.values()]
+        .map((service) => ({
+          id: service.id,
+          title: service.title,
+          dateIso: service.dateIso,
+          href: service.href,
+          roles: [...service.roles].sort((a, b) => a.localeCompare(b, 'es')),
+        }))
+        .sort((a, b) => new Date(b.dateIso).getTime() - new Date(a.dateIso).getTime())
+        .slice(0, 5),
     }))
     .sort((a, b) => (b.services - a.services) || (b.assignments - a.assignments) || a.name.localeCompare(b.name, 'es'))
     .slice(0, 12);
 
-  const assignedProfileIds = new Set(workload.map((item) => item.id));
+  const assignedProfileIds = new Set([...teamAssignmentsByProfile.keys()]);
   const idleProfiles = perfiles
     .filter((profile) => !assignedProfileIds.has(String(profile.id)))
     .map((profile) => ({
@@ -751,6 +974,58 @@ const buildPanelSnapshot = ({ label, mode, days }) => {
       roles: (profileRolesByProfileId.get(String(profile.id)) || []).map((role) => role.nombre).slice(0, 2),
     }))
     .slice(0, 8);
+
+  const roleDemandByRoleId = new Map();
+  periodEvents.forEach((evento) => {
+    const roleIdsInEvent = new Set((evento.rosterMembers || []).map((member) => member.roleId).filter(Boolean));
+    roleIdsInEvent.forEach((roleId) => {
+      roleDemandByRoleId.set(roleId, (roleDemandByRoleId.get(roleId) || 0) + 1);
+    });
+  });
+
+  const isLowerPriorityRole = (role) => {
+    const text = normalizeFold(`${role.label} ${role.code}`);
+    return ['letra', 'visual', 'proyeccion', 'produccion'].some((alias) => text.includes(alias));
+  };
+
+  const isMusicalCriticalRole = (role) => {
+    const text = normalizeFold(`${role.label} ${role.code}`);
+    return [
+      'guitarra electrica',
+      'guitarra acustica',
+      'bateria',
+      'bajo',
+      'piano',
+      'teclado',
+      'voz',
+      'vocal',
+      'lider',
+      'director',
+      'talkback',
+    ].some((alias) => text.includes(alias));
+  };
+
+  const lowCoverageRoles = roleCoverage
+    .map((role) => {
+      const demand = roleDemandByRoleId.get(role.id) || 0;
+      const risk = role.count <= 1 ? 'critico' : 'fragil';
+      const availabilityLabel = `${formatCountLabel(role.count, 'persona')} ${role.count === 1 ? 'disponible' : 'disponibles'}`;
+      return {
+        ...role,
+        demand,
+        risk,
+        lowPriority: isLowerPriorityRole(role),
+        detail: `${availabilityLabel}${demand ? ` | aparece en ${formatCountLabel(demand, 'servicio')} del rango` : ' | sin demanda visible en este rango'}`,
+      };
+    })
+    .filter((role) => role.count <= 1 || (isMusicalCriticalRole(role) && role.count <= 2))
+    .sort((a, b) =>
+      Number(a.lowPriority) - Number(b.lowPriority)
+      || (a.count - b.count)
+      || (b.demand - a.demand)
+      || a.label.localeCompare(b.label, 'es'),
+    )
+    .slice(0, 10);
 
   const teamConflicts = periodEvents
     .flatMap((evento) =>
@@ -847,6 +1122,10 @@ const buildPanelSnapshot = ({ label, mode, days }) => {
       resourceCoverage: baseResourceCoverage,
       topSongs: topSongsCurrentYear,
       topSongsPeriod: topSongs,
+      repeatWatch: currentYearRepeatWatch,
+      unusedSongs,
+      sequenceBreakdown,
+      sequenceGaps,
       topSongsMeta: {
         year: currentYear,
         servicesCount: currentYearUsageEvents.length,
@@ -879,7 +1158,7 @@ const buildPanelSnapshot = ({ label, mode, days }) => {
       kpis: [
         { label: 'Eventos con setlist', value: `${servicesWithSetlist}/${periodEvents.length || 0}`, detail: 'Dentro del periodo seleccionado', tone: 'brand' },
         { label: 'Eventos con roster', value: `${servicesWithRoster}/${periodEvents.length || 0}`, detail: 'Servicios con equipo cargado', tone: 'blue' },
-        { label: 'Canciones con markers', value: String(markersReadyCount), detail: 'Listas para auto-resaltado', tone: 'amber' },
+        { label: 'Guia por secciones', value: String(markersReadyCount), detail: 'Markers para ensayo y Live Director', tone: 'amber' },
         { label: 'Perfiles completos', value: `${completeProfilesCount}/${perfiles.length || 0}`, detail: 'Foto, telefono y cumpleanos', tone: 'emerald' },
       ],
       eventGaps: systemEventGaps,
