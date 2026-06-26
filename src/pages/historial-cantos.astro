@@ -1,0 +1,284 @@
+---
+import Layout from '../layouts/Layout.astro';
+import HistorialCantos from '../components/react/HistorialCantos.jsx';
+import { supabase } from '../lib/supabase';
+import { createClient } from '@supabase/supabase-js';
+import { buildEventHeadline, getEventThemeAndPreacher } from '../lib/event-display.js';
+import { isPredicadorColumnMissingError, withPredicadorFallbackRows } from '../lib/predicador-compat.js';
+
+const tokenCookie = Astro.cookies.get('sb-access-token');
+if (!tokenCookie) {
+  return Astro.redirect('/login');
+}
+
+const rawUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_URL || '';
+const supabaseUrl = rawUrl.replace(/\/$/, '');
+const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY || '';
+
+const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
+  global: {
+    headers: {
+      Authorization: `Bearer ${tokenCookie.value}`
+    }
+  },
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false
+  }
+});
+
+const { data: { user }, error: authError } = await supabase.auth.getUser(tokenCookie.value);
+if (authError || !user) {
+  return Astro.redirect('/login');
+}
+
+const historyFloor = new Date();
+historyFloor.setDate(historyFloor.getDate() - 365);
+
+const buildHistoryEventsSelect = (includePredicador = true) => `
+  id,
+  fecha_hora,
+  titulo,
+  tema_predicacion,
+  ${includePredicador ? 'predicador,' : ''}
+  estado,
+  asignaciones (
+    perfil_id,
+    rol_id,
+    perfiles (id, nombre, avatar_url)
+  )
+`;
+
+const buildHistoryEventsQuery = (includePredicador = true) =>
+  supabaseSSR
+    .from('eventos')
+    .select(buildHistoryEventsSelect(includePredicador))
+    .gte('fecha_hora', historyFloor.toISOString())
+    .lte('fecha_hora', new Date().toISOString())
+    .eq('estado', 'Publicado')
+    .order('fecha_hora', { ascending: false })
+    .limit(80);
+
+let { data: historyEventsData, error: historyEventsError } = await buildHistoryEventsQuery(true);
+
+const { data: rolesCatalog, error: rolesError } = await supabaseSSR
+  .from('roles')
+  .select('id, nombre, codigo');
+
+if (rolesError) {
+  console.error('Historial de cantos roles query error:', rolesError);
+}
+
+const rolesById = new Map((rolesCatalog || []).map((role) => [role.id, role]));
+
+if (isPredicadorColumnMissingError(historyEventsError)) {
+  const fallbackResp = await buildHistoryEventsQuery(false);
+  if (!fallbackResp.error) {
+    historyEventsData = withPredicadorFallbackRows(fallbackResp.data || []);
+    historyEventsError = null;
+    console.warn('Historial de cantos: usando fallback sin columna predicador.');
+  } else {
+    historyEventsData = fallbackResp.data;
+    historyEventsError = fallbackResp.error;
+  }
+} else {
+  historyEventsData = withPredicadorFallbackRows(historyEventsData || []);
+}
+
+if (historyEventsError) {
+  console.error('Historial de cantos eventos query error:', historyEventsError);
+}
+
+const historyEventIds = (historyEventsData || []).map((event) => event.id).filter(Boolean);
+const playlistByEvent = new Map();
+const itemsByPlaylist = new Map();
+const songsById = new Map();
+
+if (historyEventIds.length > 0) {
+  const { data: playlistsData, error: playlistsError } = await supabaseSSR
+    .from('playlists')
+    .select('id, evento_id')
+    .in('evento_id', historyEventIds);
+
+  if (playlistsError) {
+    console.error('Historial de cantos playlists query error:', playlistsError);
+  } else {
+    const playlistIds = [];
+
+    for (const playlist of playlistsData || []) {
+      if (!playlist?.id || !playlist?.evento_id) continue;
+      playlistByEvent.set(playlist.evento_id, playlist);
+      playlistIds.push(playlist.id);
+    }
+
+    if (playlistIds.length > 0) {
+      const { data: playlistItemsData, error: playlistItemsError } = await supabaseSSR
+        .from('playlist_canciones')
+        .select('playlist_id, cancion_id, orden')
+        .in('playlist_id', playlistIds)
+        .order('orden', { ascending: true });
+
+      if (playlistItemsError) {
+        console.error('Historial de cantos playlist_canciones query error:', playlistItemsError);
+      } else {
+        const songIds = new Set();
+
+        for (const item of playlistItemsData || []) {
+          const playlistId = item?.playlist_id;
+          if (!playlistId) continue;
+
+          const bucket = itemsByPlaylist.get(playlistId) || [];
+          bucket.push(item);
+          itemsByPlaylist.set(playlistId, bucket);
+
+          if (item?.cancion_id) songIds.add(item.cancion_id);
+        }
+
+        if (songIds.size > 0) {
+          const { data: songsData, error: songsError } = await supabaseSSR
+            .from('canciones')
+            .select('id, titulo')
+            .in('id', [...songIds]);
+
+          if (songsError) {
+            console.error('Historial de cantos canciones query error:', songsError);
+          } else {
+            for (const song of songsData || []) {
+              if (song?.id) songsById.set(song.id, song);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+const getSongsForEvent = (event) => {
+  const playlist = playlistByEvent.get(event.id);
+  if (!playlist?.id) return [];
+  const seenSongs = new Set();
+
+  return (itemsByPlaylist.get(playlist.id) || [])
+    .slice()
+    .sort((a, b) => Number(a?.orden || 0) - Number(b?.orden || 0))
+    .map((item) => {
+      const song = songsById.get(item?.cancion_id);
+      if (!song) return null;
+      const songKey = String(song.id || song.titulo || '').trim().toLowerCase();
+      if (seenSongs.has(songKey)) return null;
+      seenSongs.add(songKey);
+
+      return {
+        id: String(song.id),
+        title: song.titulo || 'Cancion sin titulo',
+      };
+    })
+    .filter(Boolean);
+};
+
+const getTeamForEvent = (event) => {
+  const assignments = Array.isArray(event?.asignaciones) ? event.asignaciones : [];
+  const people = new Map();
+
+  for (const assignment of assignments) {
+    const profile = assignment?.perfiles;
+    if (!profile?.id && !profile?.nombre) continue;
+
+    const personKey = String(profile.id || profile.nombre);
+    const current = people.get(personKey) || {
+      id: personKey,
+      name: profile.nombre || 'Persona',
+      avatarUrl: profile.avatar_url || '',
+      roles: [],
+    };
+    const role = rolesById.get(assignment?.rol_id);
+    if (role?.nombre && !current.roles.includes(role.nombre)) {
+      current.roles.push(role.nombre);
+    }
+    people.set(personKey, current);
+  }
+
+  return [...people.values()].sort((a, b) => a.name.localeCompare(b.name, 'es'));
+};
+
+const servicesWithSongs = (historyEventsData || [])
+  .map((event) => {
+    const { theme } = getEventThemeAndPreacher(event, event.titulo || 'Servicio');
+    const songs = getSongsForEvent(event);
+
+    return {
+      id: String(event.id),
+      title: theme || buildEventHeadline(event, event.titulo || 'Servicio'),
+      dateIso: event.fecha_hora,
+      href: `/programacion?ver_evento=${event.id}&focus=repertorio`,
+      songs,
+      team: getTeamForEvent(event),
+    };
+  })
+  .filter((service) => service.songs.length > 0);
+
+const currentYearStart = new Date(new Date().getFullYear(), 0, 1);
+const songUsage = new Map();
+
+for (const event of historyEventsData || []) {
+  const eventDate = new Date(event?.fecha_hora || '');
+  if (Number.isNaN(eventDate.getTime()) || eventDate < currentYearStart) continue;
+
+  const uniqueSongs = new Map();
+  for (const song of getSongsForEvent(event)) {
+    if (!uniqueSongs.has(song.id)) uniqueSongs.set(song.id, song);
+  }
+
+  for (const song of uniqueSongs.values()) {
+    const current = songUsage.get(song.id) || {
+      id: song.id,
+      title: song.title,
+      count: 0,
+      history: [],
+    };
+
+    current.count += 1;
+    current.history.push({
+      eventId: String(event.id),
+      title: buildEventHeadline(event, event.titulo || 'Servicio'),
+      dateIso: event.fecha_hora,
+      href: `/programacion?ver_evento=${event.id}&focus=repertorio`,
+    });
+    songUsage.set(song.id, current);
+  }
+}
+
+const topSongs = [...songUsage.values()]
+  .map((song) => ({
+    ...song,
+    history: song.history.sort((a, b) => new Date(b.dateIso).getTime() - new Date(a.dateIso).getTime()),
+  }))
+  .sort((a, b) => (b.count - a.count) || a.title.localeCompare(b.title, 'es'))
+  .slice(0, 12);
+
+const historyMeta = {
+  servicesAnalyzed: (historyEventsData || []).length,
+  usedSongs: songUsage.size,
+};
+---
+
+<Layout title="Historial de cantos | Redil Alabanza">
+  <main class="mx-auto w-full max-w-6xl px-3 pb-32 pt-4 sm:px-4 md:pt-8 lg:px-6">
+    <a
+      href="/"
+      class="mb-5 inline-flex h-11 items-center gap-2 rounded-2xl border border-border bg-surface px-4 text-sm font-black text-content shadow-sm transition-colors hover:bg-background"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m15 18-6-6 6-6" />
+      </svg>
+      Inicio
+    </a>
+
+    <HistorialCantos
+      client:idle
+      recentServices={servicesWithSongs.slice(0, 15)}
+      topSongs={topSongs}
+      meta={historyMeta}
+    />
+  </main>
+</Layout>
