@@ -81,6 +81,9 @@ const statusTone = {
   incompleto: 'bg-rose-100 text-rose-700 ring-1 ring-inset ring-rose-200 dark:bg-rose-500/12 dark:text-rose-200 dark:ring-rose-500/25',
 };
 
+const outerInteractiveCardClass =
+  'transition-[border-color,box-shadow,transform] duration-200 ease-out hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_18px_45px_-32px_rgba(37,99,235,0.42)] focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-500/20 dark:hover:border-blue-500/30 dark:focus-within:border-blue-500/40 dark:focus-within:ring-blue-400/20';
+
 const clampPercent = (value) => Math.max(0, Math.min(100, Number(value || 0)));
 
 const formatDateTime = (value) => {
@@ -433,12 +436,12 @@ function RoleCoverageList({ items = [], tone = 'blue', emptyTitle = 'Sin roles c
         const expanded = expandedRoleId === roleId;
 
         return (
-          <article key={`${roleId}-${count}`} className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 p-4 dark:border-zinc-800 dark:bg-zinc-900/65">
+          <article key={`${roleId}-${count}`} className={`rounded-[22px] border border-zinc-200/80 bg-zinc-50/90 p-4 dark:border-zinc-800 dark:bg-zinc-900/65 ${outerInteractiveCardClass}`}>
             <button
               type="button"
               aria-expanded={expanded}
               onClick={() => setExpandedRoleId(expanded ? null : roleId)}
-              className="w-full text-left"
+              className="ui-no-press w-full text-left outline-none focus:outline-none focus-visible:outline-none"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -528,7 +531,7 @@ function SongRankingList({ items = [], meta = {}, errors = [], loading = false }
         const songKey = item?.song_id || item?.id || `${title}-${rank}`;
         const expanded = expandedSongId === songKey;
         return (
-          <article key={songKey} className={`rounded-[22px] border p-4 transition-colors ${
+          <article key={songKey} className={`rounded-[22px] border p-4 ${outerInteractiveCardClass} ${
             item?.repeatAlert
               ? 'border-amber-200 bg-amber-50/70 dark:border-amber-500/20 dark:bg-amber-500/10'
               : 'border-zinc-200/80 bg-zinc-50/90 dark:border-zinc-800 dark:bg-zinc-900/65'
@@ -537,7 +540,7 @@ function SongRankingList({ items = [], meta = {}, errors = [], loading = false }
               type="button"
               aria-expanded={expanded}
               onClick={() => setExpandedSongId(expanded ? null : songKey)}
-              className="w-full text-left"
+              className="ui-no-press w-full text-left outline-none focus:outline-none focus-visible:outline-none"
             >
               <div className="flex items-start gap-3">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-xs font-semibold text-white dark:bg-white dark:text-zinc-950">
@@ -706,12 +709,12 @@ function WorkloadList({ items = [] }) {
         const rolesLabel = (item.roles || []).join(' | ') || 'Sin roles visibles';
 
         return (
-          <article key={item.id} className="rounded-[22px] border border-zinc-200/80 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-900/65">
+          <article key={item.id} className={`rounded-[22px] border border-zinc-200/80 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-900/65 ${outerInteractiveCardClass}`}>
             <button
               type="button"
               aria-expanded={expanded}
               onClick={() => setExpandedProfileId(expanded ? null : item.id)}
-              className="w-full text-left"
+              className="ui-no-press w-full text-left outline-none focus:outline-none focus-visible:outline-none"
             >
               <div className="flex items-center justify-between gap-3">
                 <AvatarCell name={item.name} avatarUrl={item.avatarUrl} subtitle={rolesLabel} size="lg" />
