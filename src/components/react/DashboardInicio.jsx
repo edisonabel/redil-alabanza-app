@@ -58,9 +58,9 @@ function SongHistoryEntry() {
             <a
                 href="/historial-cantos"
                 data-astro-prefetch="hover"
-                className="ui-pressable-card group grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-[1.75rem] border border-border bg-surface/95 p-4 shadow-sm transition-all hover:border-action/40 hover:shadow-lg dark:bg-zinc-900/85"
+                className="ui-pressable-card group grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 rounded-[2rem] border border-zinc-200/80 p-5 shadow-sm transition-all hover:border-action/40 hover:shadow-lg bg-[radial-gradient(circle_at_top_right,_rgba(59,130,246,0.08),_transparent_42%),linear-gradient(180deg,_rgba(255,255,255,0.99),_rgba(244,244,245,0.97))] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_right,_rgba(59,130,246,0.18),_transparent_42%),linear-gradient(180deg,_rgba(24,24,27,0.98),_rgba(15,23,42,0.95))]"
             >
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-action/25 bg-action/10 text-action">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-action/30 bg-action/10 text-action">
                     <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                         <path d="M9 18V5l12-2v13" />
                         <circle cx="6" cy="18" r="3" />
@@ -68,12 +68,11 @@ function SongHistoryEntry() {
                     </svg>
                 </span>
                 <div className="min-w-0">
-                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-action">Historial de cantos</p>
-                    <h2 className="mt-1 text-lg font-black leading-tight tracking-tight text-content sm:text-xl">
+                    <h2 className="text-lg font-black leading-tight tracking-tight text-content sm:text-xl">
                         Servicios anteriores
                     </h2>
-                    <p className="mt-1 text-sm font-medium leading-5 text-content-muted">
-                        Canciones cantadas y repeticiones.
+                    <p className="mt-1 text-sm font-semibold leading-5 text-content-muted">
+                        Canciones cantadas y programas anteriores.
                     </p>
                 </div>
                 <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-content text-background transition-transform group-hover:translate-x-0.5">
