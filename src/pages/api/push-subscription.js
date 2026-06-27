@@ -1,20 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
+import {
+  getSupabaseServerEnv,
+  getSupabaseServiceRoleKey,
+} from '../../lib/server/supabase-env.js';
 
 export const prerender = false;
 
-const readEnv = (...keys) => {
-  for (const key of keys) {
-    const value = import.meta.env?.[key] || process.env?.[key] || '';
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim();
-    }
-  }
-  return '';
-};
-
-const supabaseUrl = readEnv('SUPABASE_URL', 'PUBLIC_SUPABASE_URL').replace(/\/$/, '');
-const supabaseAnonKey = readEnv('SUPABASE_ANON_KEY', 'PUBLIC_SUPABASE_ANON_KEY');
-const supabaseServiceRoleKey = readEnv('SUPABASE_SERVICE_ROLE_KEY');
+const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
+const supabaseServiceRoleKey = getSupabaseServiceRoleKey();
 
 const jsonHeaders = {
   'content-type': 'application/json',

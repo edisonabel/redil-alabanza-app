@@ -1,10 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
+import { getSupabaseServerEnv, getSupabaseServiceRoleKey } from './server/supabase-env.js';
 
 const BRANDING_TABLE_CANDIDATES = ['configuracion_app', 'configuracion', 'branding_config'];
-const rawUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_URL || '';
-const supabaseUrl = rawUrl.replace(/\/$/, '');
-const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY || '';
-const supabaseServiceRoleKey = import.meta.env.SUPABASE_SERVICE_ROLE_KEY || import.meta.env.SERVICE_ROLE_KEY || '';
+const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
+const supabaseServiceRoleKey = getSupabaseServiceRoleKey();
 
 const supabaseBrandingAdmin = supabaseServiceRoleKey
   ? createClient(supabaseUrl, supabaseServiceRoleKey, {

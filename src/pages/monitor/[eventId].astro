@@ -4,6 +4,7 @@ import ConfidenceMonitor from '../../components/react/ConfidenceMonitor.jsx';
 import { buildEventHeadline, getEventThemeAndPreacher } from '../../lib/event-display.js';
 import { buildEventDateSlug, isUuidLike, parseEventDateSlug } from '../../lib/event-slug.js';
 import { isPredicadorColumnMissingError, withPredicadorFallbackRow } from '../../lib/predicador-compat.js';
+import { getSupabaseServerEnv } from '../../lib/server/supabase-env.js';
 
 const MOCK_CANCION_ENSAYO = {
   id: 'demo',
@@ -394,19 +395,18 @@ const { eventId = 'demo' } = Astro.params;
 const routeId = String(eventId || 'demo').trim();
 const routeIsDemo = routeId === 'demo';
 const routeIsUuid = isUuidLike(routeId);
-const tokenCookie = Astro.cookies.get('sb-access-token');
-if (!tokenCookie) {
+const user = Astro.locals.user;
+const accessToken = Astro.locals.accessToken || Astro.cookies.get('sb-access-token')?.value || '';
+if (!user || !accessToken) {
   return Astro.redirect('/login');
 }
 
-const rawUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_URL || '';
-const supabaseUrl = rawUrl.replace(/\/$/, '');
-const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY || '';
+const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
 
 const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
   global: {
     headers: {
-      Authorization: `Bearer ${tokenCookie.value}`,
+      Authorization: `Bearer ${accessToken}`,
     },
   },
   auth: {
@@ -414,12 +414,6 @@ const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: false,
   },
 });
-
-const { data: userData, error: authError } = await supabaseSSR.auth.getUser(tokenCookie.value);
-const user = userData?.user || null;
-if (authError || !user) {
-  return Astro.redirect('/login');
-}
 
 let eventData = null;
 let playlistSongs = [];

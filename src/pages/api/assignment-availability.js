@@ -1,25 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import { isEventRepertoryManagerRoleCode } from '../../lib/role-permissions.js';
+import { getSupabaseServerEnv, getSupabaseServiceRoleKey } from '../../lib/server/supabase-env.js';
 
 export const prerender = false;
 
-const rawUrl =
-  import.meta.env.SUPABASE_URL ||
-  process.env.SUPABASE_URL ||
-  import.meta.env.PUBLIC_SUPABASE_URL ||
-  process.env.PUBLIC_SUPABASE_URL ||
-  '';
-const supabaseUrl = rawUrl.replace(/\/$/, '');
-const supabaseAnonKey =
-  import.meta.env.SUPABASE_ANON_KEY ||
-  process.env.SUPABASE_ANON_KEY ||
-  import.meta.env.PUBLIC_SUPABASE_ANON_KEY ||
-  process.env.PUBLIC_SUPABASE_ANON_KEY ||
-  '';
-const supabaseServiceRoleKey =
-  import.meta.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  '';
+const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
+const supabaseServiceRoleKey = getSupabaseServiceRoleKey();
 
 const authClient = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {

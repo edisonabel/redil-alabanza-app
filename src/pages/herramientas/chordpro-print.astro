@@ -1,8 +1,8 @@
 ---
 import Layout from '../../layouts/Layout.astro';
 import ChordProPrintWorkspace from '../../components/react/ChordProPrintWorkspace';
-import { supabase } from '../../lib/supabase';
 import { createClient } from '@supabase/supabase-js';
+import { getSupabaseServerEnv } from '../../lib/server/supabase-env.js';
 import {
   loadRehearsalSongSettings,
   sanitizeRehearsalSongSettings,
@@ -11,6 +11,25 @@ import {
 const requestedSongId = Astro.url.searchParams.get('song')?.trim() || '';
 const requestedEventId = Astro.url.searchParams.get('event')?.trim() || '';
 const requestedPlaylistId = Astro.url.searchParams.get('playlist')?.trim() || '';
+const userId = Astro.locals.user?.id || '';
+const accessToken = Astro.locals.accessToken || Astro.cookies.get('sb-access-token')?.value || '';
+
+if (!Astro.locals.user || !accessToken) {
+  return Astro.redirect('/login');
+}
+
+const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
+const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
+  global: {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  },
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+});
 let initialSong: {
   id: string;
   titulo: string;
@@ -89,7 +108,7 @@ const resolveInitialChordPro = async (rawValue: unknown) => {
 
 if (requestedSongId) {
   try {
-    const { data: songRow } = await supabase
+    const { data: songRow } = await supabaseSSR
       .from('canciones')
       .select('id, titulo, cantante, tonalidad, bpm, chordpro')
       .eq('id', requestedSongId)
@@ -97,27 +116,10 @@ if (requestedSongId) {
 
     if (songRow) {
       const chordproContent = await resolveInitialChordPro(songRow.chordpro);
-      const tokenCookie = Astro.cookies.get('sb-access-token');
-      const rawUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_URL || '';
-      const supabaseUrl = rawUrl.replace(/\/$/, '');
-      const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY || '';
-      const userId = Astro.locals.user?.id || '';
       let personalSettings = sanitizeRehearsalSongSettings();
 
-      if (tokenCookie?.value && userId && requestedEventId && supabaseUrl && supabaseAnonKey) {
-        const supabaseAuthed = createClient(supabaseUrl, supabaseAnonKey, {
-          global: {
-            headers: {
-              Authorization: `Bearer ${tokenCookie.value}`,
-            },
-          },
-          auth: {
-            persistSession: false,
-            autoRefreshToken: false,
-          },
-        });
-
-        personalSettings = sanitizeRehearsalSongSettings(await loadRehearsalSongSettings(supabaseAuthed, {
+      if (userId && requestedEventId) {
+        personalSettings = sanitizeRehearsalSongSettings(await loadRehearsalSongSettings(supabaseSSR, {
           userId,
           eventId: requestedEventId,
           playlistId: requestedPlaylistId,

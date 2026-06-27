@@ -9,6 +9,7 @@ import {
   createChordProSetlistPdfPayloadToken,
   deleteChordProSetlistPdfPayloadToken,
 } from '../../lib/chordproSetlistPdfPayloadStore';
+import { readEnv } from '../../lib/server/supabase-env.js';
 
 export const prerender = false;
 
@@ -20,8 +21,10 @@ type BrowserLauncher = {
   defaultArgs?: (options?: Record<string, unknown>) => string[];
 };
 
+const isDevRuntime = () => readEnv('DEV') === 'true' || process.env.NODE_ENV === 'development';
+
 const isServerlessChromiumRuntime = () =>
-  !import.meta.env.DEV &&
+  !isDevRuntime() &&
   Boolean(
     process.env.NETLIFY ||
       process.env.AWS_EXECUTION_ENV ||
@@ -113,13 +116,13 @@ export const POST: APIRoute = async ({ request }) => {
     try {
       const url = new URL(request.url);
       return (
-        import.meta.env.DEV ||
+        isDevRuntime() ||
         url.hostname === 'localhost' ||
         url.hostname === '127.0.0.1' ||
         url.hostname.endsWith('.local')
       );
     } catch {
-      return Boolean(import.meta.env.DEV);
+      return isDevRuntime();
     }
   })();
 
@@ -220,4 +223,3 @@ export const POST: APIRoute = async ({ request }) => {
     }
   }
 };
-

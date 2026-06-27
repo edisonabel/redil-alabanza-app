@@ -2,15 +2,11 @@ import {
   getAssignmentNotificationDelayMinutes,
   processDueAssignmentNotifications,
 } from '../../lib/server/assignment-notification-queue.js';
+import { readEnv } from '../../lib/server/supabase-env.js';
 
 export const prerender = false;
 
-const notificationFunctionSecret =
-  import.meta.env.NOTIFICATION_FUNCTION_SECRET ||
-  process.env.NOTIFICATION_FUNCTION_SECRET ||
-  import.meta.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  '';
+const notificationFunctionSecret = readEnv('NOTIFICATION_FUNCTION_SECRET', 'SUPABASE_SERVICE_ROLE_KEY');
 
 const jsonHeaders = {
   'content-type': 'application/json',

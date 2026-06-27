@@ -1,9 +1,11 @@
+import { readEnv } from '../../lib/server/supabase-env.js';
+
 export const prerender = false;
 
 export async function POST({ request }) {
   try {
     const { code } = await request.json();
-    const validCode = import.meta.env.REGISTRATION_CODE;
+    const validCode = readEnv('REGISTRATION_CODE');
 
     if (!validCode) {
       console.error('[verify-access-code] REGISTRATION_CODE env var not set');

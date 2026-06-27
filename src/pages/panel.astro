@@ -4,27 +4,22 @@ import PanelControl from '../components/react/PanelControl.jsx';
 import { createClient } from '@supabase/supabase-js';
 import { buildEventHeadline } from '../lib/event-display.js';
 import { isPredicadorColumnMissingError, withPredicadorFallbackRows } from '../lib/predicador-compat.js';
-
-const tokenCookie = Astro.cookies.get('sb-access-token');
-if (!tokenCookie) {
-  return Astro.redirect('/login');
-}
+import { getSupabaseServerEnv } from '../lib/server/supabase-env.js';
 
 const user = Astro.locals.user;
 const perfilBase = Astro.locals.perfil;
+const accessToken = Astro.locals.accessToken || Astro.cookies.get('sb-access-token')?.value || '';
 
-if (!user) {
+if (!user || !accessToken) {
   return Astro.redirect('/login');
 }
 
-const rawUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_URL || '';
-const supabaseUrl = rawUrl.replace(/\/$/, '');
-const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY || '';
+const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
 
 const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
   global: {
     headers: {
-      Authorization: `Bearer ${tokenCookie.value}`,
+      Authorization: `Bearer ${accessToken}`,
     },
   },
   auth: {

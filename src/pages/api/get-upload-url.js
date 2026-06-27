@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { getSupabaseServerEnv, readEnv } from '../../lib/server/supabase-env.js';
 
-const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY;
+const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
@@ -18,11 +18,11 @@ function limpiarNombreArchivo(nombre) {
 export const POST = async ({ request, cookies }) => {
   try {
     // 1. Extracción y limpieza extrema de variables (quita espacios ocultos y evita undefined)
-    const r2Endpoint = String(import.meta.env.R2_ENDPOINT || '').trim();
-    const r2AccessKey = String(import.meta.env.R2_ACCESS_KEY_ID || '').trim();
-    const r2SecretKey = String(import.meta.env.R2_SECRET_ACCESS_KEY || '').trim();
-    const r2Bucket = String(import.meta.env.R2_BUCKET_NAME || '').trim();
-    const publicR2Url = String(import.meta.env.PUBLIC_R2_URL || '').trim();
+    const r2Endpoint = readEnv('R2_ENDPOINT');
+    const r2AccessKey = readEnv('R2_ACCESS_KEY_ID');
+    const r2SecretKey = readEnv('R2_SECRET_ACCESS_KEY');
+    const r2Bucket = readEnv('R2_BUCKET_NAME');
+    const publicR2Url = readEnv('PUBLIC_R2_URL');
 
     // Verificación de seguridad en consola
     console.log("[API R2] Endpoint Limpio:", r2Endpoint);

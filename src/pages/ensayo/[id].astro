@@ -12,6 +12,7 @@ import {
   isEventRepertoryManagerRoleCode,
   isVocalLeaderRoleCode,
 } from '../../lib/role-permissions.js';
+import { getSupabaseServerEnv } from '../../lib/server/supabase-env.js';
 
 const MOCK_CANCION_ENSAYO = {
   id: 'demo',
@@ -66,19 +67,18 @@ const { id = 'demo' } = Astro.params;
 const routeId = String(id || 'demo').trim();
 const routeIsDemo = routeId === 'demo';
 const routeIsUuid = isUuidLike(routeId);
-const tokenCookie = Astro.cookies.get('sb-access-token');
-if (!tokenCookie) {
+const user = Astro.locals.user;
+const accessToken = Astro.locals.accessToken || Astro.cookies.get('sb-access-token')?.value || '';
+if (!user || !accessToken) {
   return Astro.redirect('/login');
 }
 
-const rawUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_URL || '';
-const supabaseUrl = rawUrl.replace(/\/$/, '');
-const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY || '';
+const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
 
 const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
   global: {
     headers: {
-      Authorization: `Bearer ${tokenCookie.value}`,
+      Authorization: `Bearer ${accessToken}`,
     },
   },
   auth: {
@@ -86,12 +86,6 @@ const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: false,
   },
 });
-
-const { data: userData, error: authError } = await supabaseSSR.auth.getUser(tokenCookie.value);
-const user = userData?.user || null;
-if (authError || !user) {
-  return Astro.redirect('/login');
-}
 
 const hexToRgbString = (hex) => {
   if (!hex || typeof hex !== 'string') return '';
@@ -708,7 +702,7 @@ const pageDescription = eventData?.id
   ? `Vista de ensayo para ${buildEventHeadline(eventData || {}, contextTitle)}.`
   : 'Vista de ensayo enfocada para leer acordes y letras en vivo.';
 
-const themeColors = await getBrandingConfig({ accessToken: tokenCookie.value });
+const themeColors = await getBrandingConfig({ accessToken });
 const resolvedColorTokens = {
   brand: hexToRgbString(themeColors?.brand || '#14b8a6'),
   action: hexToRgbString(themeColors?.action || themeColors?.brand || '#14b8a6'),

@@ -1,8 +1,20 @@
 import { createClient } from '@supabase/supabase-js';
 
-const rawUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_URL || '';
+const readEnv = (...keys) => {
+  const metaEnv = import.meta.env || {};
+  const processEnv = typeof process !== 'undefined' && process.env ? process.env : {};
+
+  for (const key of keys) {
+    const value = metaEnv[key] || processEnv[key] || '';
+    if (value) return value;
+  }
+
+  return '';
+};
+
+const rawUrl = readEnv('PUBLIC_SUPABASE_URL', 'SUPABASE_URL');
 const supabaseUrl = rawUrl.replace(/\/$/, '');
-const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY || '';
+const supabaseAnonKey = readEnv('PUBLIC_SUPABASE_ANON_KEY', 'SUPABASE_ANON_KEY');
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 const AUTH_STORAGE_KEY_REGEX = /(supabase\.auth\.token|sb-.*-auth-token)/i;
 

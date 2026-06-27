@@ -5,9 +5,9 @@ import {
   normalizePersistedLiveDirectorSession,
 } from '../../utils/liveDirectorSongSession.ts';
 import { resolveTrackOutputRoute } from '../../utils/liveDirectorTrackRouting.ts';
+import { getSupabaseServerEnv, readEnv } from '../../lib/server/supabase-env.js';
 
-const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY;
+const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
@@ -32,11 +32,11 @@ const getR2ObjectKeyFromUrl = (fileUrl = '', publicBaseUrl = '') => {
 };
 
 const createR2Context = () => {
-  const endpoint = String(import.meta.env.R2_ENDPOINT || '').trim();
-  const accessKeyId = String(import.meta.env.R2_ACCESS_KEY_ID || '').trim();
-  const secretAccessKey = String(import.meta.env.R2_SECRET_ACCESS_KEY || '').trim();
-  const bucket = String(import.meta.env.R2_BUCKET_NAME || '').trim();
-  const publicBaseUrl = normalizePublicBaseUrl(import.meta.env.PUBLIC_R2_URL || '');
+  const endpoint = readEnv('R2_ENDPOINT');
+  const accessKeyId = readEnv('R2_ACCESS_KEY_ID');
+  const secretAccessKey = readEnv('R2_SECRET_ACCESS_KEY');
+  const bucket = readEnv('R2_BUCKET_NAME');
+  const publicBaseUrl = normalizePublicBaseUrl(readEnv('PUBLIC_R2_URL'));
 
   if (!endpoint || !accessKeyId || !secretAccessKey || !bucket || !publicBaseUrl) {
     throw new Error('Faltan variables de Cloudflare R2 para Live Director.');

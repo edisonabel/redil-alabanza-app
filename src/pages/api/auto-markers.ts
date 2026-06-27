@@ -2,32 +2,19 @@ import type { APIRoute } from 'astro';
 import { createClient } from '@supabase/supabase-js';
 import { splitSectionIntoCues } from '../../utils/splitSectionIntoCues';
 import { getSectionKind } from '../../utils/sectionVisuals';
+import {
+  getSupabaseServerEnv,
+  getSupabaseServiceRoleKey,
+  readEnv,
+} from '../../lib/server/supabase-env.js';
 
 export const prerender = false;
 
-const rawSupabaseUrl =
-  import.meta.env.SUPABASE_URL ||
-  process.env.SUPABASE_URL ||
-  import.meta.env.PUBLIC_SUPABASE_URL ||
-  process.env.PUBLIC_SUPABASE_URL ||
-  '';
-const supabaseUrl = rawSupabaseUrl.replace(/\/$/, '');
-const supabaseServiceRoleKey =
-  import.meta.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  '';
-const openAiApiKey =
-  import.meta.env.OPENAI_API_KEY ||
-  process.env.OPENAI_API_KEY ||
-  '';
-const whisperModel =
-  import.meta.env.OPENAI_WHISPER_MODEL ||
-  process.env.OPENAI_WHISPER_MODEL ||
-  'whisper-1';
-const deepTranscribeModel =
-  import.meta.env.OPENAI_DEEP_TRANSCRIBE_MODEL ||
-  process.env.OPENAI_DEEP_TRANSCRIBE_MODEL ||
-  'gpt-4o-mini-transcribe';
+const { supabaseUrl } = getSupabaseServerEnv();
+const supabaseServiceRoleKey = getSupabaseServiceRoleKey();
+const openAiApiKey = readEnv('OPENAI_API_KEY');
+const whisperModel = readEnv('OPENAI_WHISPER_MODEL') || 'whisper-1';
+const deepTranscribeModel = readEnv('OPENAI_DEEP_TRANSCRIBE_MODEL') || 'gpt-4o-mini-transcribe';
 
 const authClient = supabaseUrl && supabaseServiceRoleKey
   ? createClient(supabaseUrl, supabaseServiceRoleKey, {

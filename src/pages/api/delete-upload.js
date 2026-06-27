@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { DeleteObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { getSupabaseServerEnv, readEnv } from '../../lib/server/supabase-env.js';
 
-const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY;
+const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
@@ -46,17 +46,17 @@ export const POST = async ({ request, cookies }) => {
       return jsonResponse({ error: 'Se requiere la URL actual del archivo.' }, 400);
     }
 
-    const publicR2Url = normalizePublicBaseUrl(import.meta.env.PUBLIC_R2_URL || '');
+    const publicR2Url = normalizePublicBaseUrl(readEnv('PUBLIC_R2_URL'));
     const objectKey = getR2ObjectKeyFromUrl(fileUrl, publicR2Url);
 
     if (!objectKey) {
       return jsonResponse({ deleted: false, skipped: true, reason: 'external-or-legacy-url' });
     }
 
-    const r2Endpoint = String(import.meta.env.R2_ENDPOINT || '').trim();
-    const r2AccessKey = String(import.meta.env.R2_ACCESS_KEY_ID || '').trim();
-    const r2SecretKey = String(import.meta.env.R2_SECRET_ACCESS_KEY || '').trim();
-    const r2Bucket = String(import.meta.env.R2_BUCKET_NAME || '').trim();
+    const r2Endpoint = readEnv('R2_ENDPOINT');
+    const r2AccessKey = readEnv('R2_ACCESS_KEY_ID');
+    const r2SecretKey = readEnv('R2_SECRET_ACCESS_KEY');
+    const r2Bucket = readEnv('R2_BUCKET_NAME');
 
     if (!r2Endpoint || !r2AccessKey || !r2SecretKey || !r2Bucket) {
       return jsonResponse({ deleted: false, skipped: true, reason: 'missing-r2-config' });

@@ -5,7 +5,8 @@ import ModalDetalle from '../components/react/ModalDetalle.jsx';
 import ModalSerie from '../components/react/ModalSerie.jsx';
 import CalendarioGrid from '../components/react/CalendarioGrid.jsx';
 import OnboardingRoot from '../components/onboarding/OnboardingRoot';
-import { supabase } from '../lib/supabase';
+import { createClient } from '@supabase/supabase-js';
+import { getSupabaseServerEnv } from '../lib/server/supabase-env.js';
 
 const INITIAL_MONTH_WINDOW = 2;
 
@@ -14,10 +15,8 @@ const initialFetchLimit = new Date(initialFetchFloor);
 initialFetchLimit.setMonth(initialFetchLimit.getMonth() + INITIAL_MONTH_WINDOW, 0);
 initialFetchLimit.setHours(23, 59, 59, 999);
 
-// SSR Auth Retrieval (runs safely on the server)
-const tokenCookie = Astro.cookies.get('sb-access-token');
-const token = tokenCookie ? tokenCookie.value : null;
-let ssrUser = null;
+const accessToken = Astro.locals.accessToken || Astro.cookies.get('sb-access-token')?.value || '';
+let ssrUser = Astro.locals.user || null;
 let ssrRoles = [];
 let ssrEventos = [];
 let queryError = null;
@@ -25,23 +24,31 @@ let ssrAdmin = false;
 let ssrCanEditTema = false;
 let ssrHasMoreEventos = false;
 
-if (token) {
-  const { data: userData } = await supabase.auth.getUser(token);
-  ssrUser = userData?.user || null;
-  
-  if (!ssrUser) {
-    Astro.cookies.delete('sb-access-token', { path: '/' });
-    Astro.cookies.delete('sb-refresh-token', { path: '/' });
-    return Astro.redirect('/login');
-  }
+if (!ssrUser || !accessToken) {
+  return Astro.redirect('/login');
+}
 
-  const rolesPromise = supabase.from('roles').select('*').order('nombre');
-  const perfilPromise = supabase.from('perfiles').select('is_admin').eq('id', ssrUser.id).single();
-  const canEditTemaPromise = supabase.rpc('has_sermon_edit_role');
+const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
+const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
+  global: {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  },
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+});
+
+if (ssrUser) {
+  const rolesPromise = supabaseSSR.from('roles').select('*').order('nombre');
+  const perfilPromise = supabaseSSR.from('perfiles').select('is_admin').eq('id', ssrUser.id).maybeSingle();
+  const canEditTemaPromise = supabaseSSR.rpc('has_sermon_edit_role');
   const eventosPromise = perfilPromise.then(({ data: perfil }) => {
     const isAdmin = perfil?.is_admin || false;
 
-    let query = supabase
+    let query = supabaseSSR
       .from('eventos')
       .select('*, asignaciones(rol_id, perfiles(id, nombre, email, avatar_url))')
       .gte('fecha_hora', initialFetchFloor.toISOString())
@@ -57,7 +64,7 @@ if (token) {
   const moreEventosPromise = perfilPromise.then(({ data: perfil }) => {
     const isAdmin = perfil?.is_admin || false;
 
-    let query = supabase
+    let query = supabaseSSR
       .from('eventos')
       .select('id', { count: 'exact', head: true })
       .gt('fecha_hora', initialFetchLimit.toISOString());

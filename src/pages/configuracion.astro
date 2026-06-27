@@ -3,25 +3,8 @@ import Layout from '../layouts/Layout.astro';
 import PanelBranding from '../components/react/PanelBranding.jsx';
 import PanelAdminPush from '../components/react/PanelAdminPush.jsx';
 import PanelModoExperto from '../components/react/PanelModoExperto.jsx';
-import { supabase } from '../lib/supabase';
 
-let isAdmin = false;
-const tokenCookie = Astro.cookies.get('sb-access-token');
-
-if (tokenCookie) {
-  const { data: { user } } = await supabase.auth.getUser(tokenCookie.value);
-  if (user) {
-    const { data: profile } = await supabase
-      .from('perfiles')
-      .select('is_admin')
-      .eq('id', user.id)
-      .single();
-
-    if (profile?.is_admin) {
-      isAdmin = true;
-    }
-  }
-}
+const isAdmin = Boolean(Astro.locals.perfil?.is_admin);
 
 if (!isAdmin) {
   return Astro.redirect('/programacion');
@@ -52,4 +35,3 @@ if (!isAdmin) {
     <PanelAdminPush client:load isAdmin={isAdmin} />
   </section>
 </Layout>
-

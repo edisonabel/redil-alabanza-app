@@ -1,15 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import webpush from 'web-push';
-
-const readEnv = (...keys) => {
-  for (const key of keys) {
-    const value = import.meta.env?.[key] || process.env?.[key] || '';
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim();
-    }
-  }
-  return '';
-};
+import { readEnv } from './supabase-env.js';
 
 const rawSupabaseUrl = readEnv('SUPABASE_URL', 'PUBLIC_SUPABASE_URL');
 const supabaseUrl = rawSupabaseUrl.replace(/\/$/, '');

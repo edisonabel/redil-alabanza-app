@@ -1,21 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 import { createAbsenceAndReleaseAssignments } from '../../lib/server/absence-management.js';
+import { getSupabaseServerEnv } from '../../lib/server/supabase-env.js';
 
 export const prerender = false;
 
-const rawUrl =
-  import.meta.env.SUPABASE_URL ||
-  process.env.SUPABASE_URL ||
-  import.meta.env.PUBLIC_SUPABASE_URL ||
-  process.env.PUBLIC_SUPABASE_URL ||
-  '';
-const supabaseUrl = rawUrl.replace(/\/$/, '');
-const supabaseAnonKey =
-  import.meta.env.SUPABASE_ANON_KEY ||
-  process.env.SUPABASE_ANON_KEY ||
-  import.meta.env.PUBLIC_SUPABASE_ANON_KEY ||
-  process.env.PUBLIC_SUPABASE_ANON_KEY ||
-  '';
+const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
 
 const authClient = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
