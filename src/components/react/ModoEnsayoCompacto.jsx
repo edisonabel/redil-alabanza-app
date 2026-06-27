@@ -8,6 +8,7 @@ import { useMultitrackEngine } from '../../hooks/useMultitrackEngine';
 import { isLikelyAudioSourceUrl, resolveFetchableAudioUrl, resolvePreferredAudioUrl } from '../../lib/audio-playback.js';
 import { buildWordGroups, parseChordProLine } from '../../utils/chordProLineUtils';
 import { normalizePersistedLiveDirectorSession } from '../../utils/liveDirectorSongSession';
+import { getPadUrlForSongKey } from '../../utils/padAudio';
 import {
   REHEARSAL_PERSONAL_SETTINGS_TOAST_MS,
   formatRehearsalSongSettingsSummary,
@@ -1508,10 +1509,9 @@ export default function ModoEnsayoCompacto({
     }, null);
   }, [capoOptions, songChordTokens]);
   const activePadUrl = useMemo(() => {
-    if (!currentSongDisplayKey || currentSongDisplayKey === '-') return null;
-    const safeKey = currentSongDisplayKey.replace('#', 'Sharp').replace('b', 'Flat');
-    return `https://pub-4faa87e319a345c38e4f3be570797088.r2.dev/pads/Pad_${safeKey}.mp3`;
-  }, [currentSongDisplayKey]);
+    const sourceKey = currentSong?.originalKey || currentSong?.key || currentSongDisplayKey;
+    return getPadUrlForSongKey(sourceKey) || null;
+  }, [currentSong?.key, currentSong?.originalKey, currentSongDisplayKey]);
   const currentSections = useMemo(() => (
     (currentSong?.sections || []).map((section) => ({
       ...section,

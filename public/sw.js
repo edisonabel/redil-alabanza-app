@@ -1,4 +1,4 @@
-const VERSION = 'redil-sw-v1';
+const VERSION = 'redil-sw-v2';
 const R2_AUDIO_CACHE = `${VERSION}:r2-audio`;
 const R2_AUDIO_HOST = 'pub-4faa87e319a345c38e4f3be570797088.r2.dev';
 const MAX_R2_AUDIO_ENTRIES = 50;
@@ -64,10 +64,17 @@ const handleR2Audio = async (request) => {
   if (request.headers.has('range')) {
     try {
       return await fetch(request);
-    } catch {
+    } catch (_error) {
       const partialResponse = await createPartialResponse(request, cachedResponse);
       if (partialResponse) return partialResponse;
-      throw new Error('No cached response available for range request.');
+      return new Response('', {
+        status: 504,
+        statusText: 'Audio unavailable',
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Cache-Control': 'no-store',
+        },
+      });
     }
   }
 
@@ -75,7 +82,24 @@ const handleR2Audio = async (request) => {
     return cachedResponse;
   }
 
-  const response = await fetch(request);
+  let response;
+  try {
+    response = await fetch(request);
+  } catch (_error) {
+    if (cachedResponse) {
+      return cachedResponse;
+    }
+
+    return new Response('', {
+      status: 504,
+      statusText: 'Audio unavailable',
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
+    });
+  }
+
   if (response.ok) {
     await cache.put(cacheKey, response.clone());
     await trimCache(cache, MAX_R2_AUDIO_ENTRIES);
@@ -89,7 +113,7 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
-  if (url.hostname === R2_AUDIO_HOST) {
+  if (url.hostname === R2_AUDIO_HOST || url.hostname.endsWith('.r2.dev')) {
     event.respondWith(handleR2Audio(request));
   }
 });
