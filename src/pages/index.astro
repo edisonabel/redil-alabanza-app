@@ -6,6 +6,7 @@ import ModalDetalle from '../components/react/ModalDetalle.jsx';
 import OnboardingRoot from '../components/onboarding/OnboardingRoot';
 import { createClient } from '@supabase/supabase-js';
 import { isPredicadorColumnMissingError, withPredicadorFallbackRows } from '../lib/predicador-compat.js';
+import { getSupabaseServerEnv } from '../lib/server/supabase-env.js';
 
 const user = Astro.locals.user;
 const accessToken = Astro.locals.accessToken || Astro.cookies.get('sb-access-token')?.value || '';
@@ -14,9 +15,7 @@ if (!user || !accessToken) {
   return Astro.redirect('/login');
 }
 
-const rawUrl = import.meta.env.PUBLIC_SUPABASE_URL || import.meta.env.SUPABASE_URL || '';
-const supabaseUrl = rawUrl.replace(/\/$/, '');
-const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY || '';
+const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
 
 const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
   global: {
