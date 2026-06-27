@@ -531,6 +531,29 @@ const sortVoiceEntries = (entries = []) => (
     }))
 );
 
+const mergeVoiceEntriesByUrl = (...entryGroups) => {
+  const seenUrls = new Set();
+  const mergedEntries = [];
+
+  entryGroups.flat().forEach((entry, index) => {
+    if (!entry || typeof entry !== 'object') return;
+
+    const normalizedUrl = normalizeExternalVoiceUrl(entry.url || '');
+    if (normalizedUrl) {
+      if (seenUrls.has(normalizedUrl)) return;
+      seenUrls.add(normalizedUrl);
+    }
+
+    mergedEntries.push({
+      ...entry,
+      label: normalizeVoiceLabelOption(entry.label || `Voz ${index + 1}`),
+      url: normalizedUrl || entry.url || '',
+    });
+  });
+
+  return sortVoiceEntries(mergedEntries);
+};
+
 const crearEntradaVoz = (candidate, index = 0, forcedLabel = '') => {
   if (typeof candidate === 'string') {
     const url = normalizeExternalVoiceUrl(candidate);
@@ -611,7 +634,9 @@ const parseVoiceAdminPayload = (value) => {
     }
 
     if (parsed && typeof parsed === 'object') {
-      const legacyUrl = normalizeExternalVoiceUrl(parsed.legacyUrl || parsed.folder || parsed.drive || '');
+      const legacyCandidate = parsed.legacyUrl || parsed.folder || parsed.drive || '';
+      const parsedLegacy = legacyCandidate ? parseVoiceAdminPayload(legacyCandidate) : { entries: [], legacyUrl: '' };
+      const legacyUrl = parsedLegacy.legacyUrl || normalizeExternalVoiceUrl(legacyCandidate);
       const sourceEntries = Array.isArray(parsed.entries)
         ? parsed.entries
         : Object.entries(parsed).map(([key, candidate]) => (
@@ -619,11 +644,12 @@ const parseVoiceAdminPayload = (value) => {
         )).filter(Boolean);
 
       const directEntry = Array.isArray(parsed.entries) ? null : crearEntradaVoz(parsed, 0, parsed.label || parsed.nombre || parsed.name || parsed.title || '');
-      const entries = directEntry
+      const entriesFromObject = directEntry
         ? [directEntry]
         : sourceEntries.map((entry, index) => crearEntradaVoz(entry, index, index === 0 ? 'Voz guía' : '')).filter(Boolean);
+      const entries = mergeVoiceEntriesByUrl(parsedLegacy.entries, entriesFromObject);
 
-      return { entries: sortVoiceEntries(entries), legacyUrl };
+      return { entries, legacyUrl };
     }
   } catch {
     return { entries: [], legacyUrl: normalizedDirectUrl || '' };
@@ -1418,11 +1444,11 @@ export default function AdminRepertorio() {
   const abrirModalVoces = (cancion) => {
     const parsedManaged = parseVoiceAdminPayload(cancion?.link_voces || '');
     const parsedLegacy = parseVoiceAdminPayload(cancion?.voces || '');
-    const entries = parsedManaged.entries.length > 0 ? parsedManaged.entries : parsedLegacy.entries;
+    const entries = mergeVoiceEntriesByUrl(parsedManaged.entries, parsedLegacy.entries);
     const legacyUrl = parsedManaged.legacyUrl || parsedLegacy.legacyUrl || '';
 
     setVocesModalCancion(cancion);
-    setVocesDraftEntries(sortVoiceEntries(entries || []).map((entry) => ({
+    setVocesDraftEntries(entries.map((entry) => ({
       ...entry,
       source: 'remote',
       fileName: entry.fileName || getVoiceDisplayNameFromUrl(entry.url),
@@ -1497,6 +1523,26 @@ export default function AdminRepertorio() {
     setVocesDraftLegacyUrl('');
     setMostrarLinkViejoVoces(false);
     setVocesFeedback('Link viejo quitado. Guarda para aplicar.');
+  };
+
+  const actualizarLinkViejoVoces = (value) => {
+    const rawValue = String(value || '');
+    const parsed = parseVoiceAdminPayload(rawValue);
+
+    if (parsed.entries.length > 0) {
+      setVocesDraftEntries((prev) => mergeVoiceEntriesByUrl(prev, parsed.entries).map((entry) => ({
+        ...entry,
+        source: entry.source || 'remote',
+        fileName: entry.fileName || getVoiceDisplayNameFromUrl(entry.url),
+      })));
+      setVocesDraftLegacyUrl(parsed.legacyUrl || '');
+      setMostrarLinkViejoVoces(Boolean(parsed.legacyUrl));
+      setVocesFeedback(`${parsed.entries.length} pista${parsed.entries.length === 1 ? '' : 's'} cargada${parsed.entries.length === 1 ? '' : 's'} desde link viejo.`);
+      return;
+    }
+
+    setVocesDraftLegacyUrl(rawValue);
+    setVocesFeedback('');
   };
 
   const reemplazarDraftVoz = (event, entryId) => {
@@ -1612,7 +1658,10 @@ export default function AdminRepertorio() {
         preparedEntries.push(entry);
       }
 
-      const payload = serializeVoiceAdminPayload(preparedEntries, vocesDraftLegacyUrl);
+      const parsedLegacyDraft = parseVoiceAdminPayload(vocesDraftLegacyUrl);
+      const payloadEntries = mergeVoiceEntriesByUrl(preparedEntries, parsedLegacyDraft.entries);
+      const payloadLegacyUrl = parsedLegacyDraft.legacyUrl || '';
+      const payload = serializeVoiceAdminPayload(payloadEntries, payloadLegacyUrl);
       setVocesFeedback('Guardando voces...');
       await limpiarVocesRemovidas(vocesModalCancion.link_voces || vocesModalCancion.voces || '', payload);
 
@@ -2660,10 +2709,10 @@ export default function AdminRepertorio() {
                     ) : null}
                   </div>
                   <input
-                    type="url"
+                    type="text"
                     value={vocesDraftLegacyUrl}
-                    onChange={(event) => setVocesDraftLegacyUrl(event.target.value)}
-                    placeholder="https://drive.google.com/..."
+                    onChange={(event) => actualizarLinkViejoVoces(event.target.value)}
+                    placeholder="https://drive.google.com/... o JSON de voces"
                     className="mt-2 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                   />
                 </div>

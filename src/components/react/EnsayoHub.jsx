@@ -329,6 +329,21 @@ const sortVoiceEntries = (entries = []) => (
     .map(({ entry }) => entry)
 );
 
+const mergeVoiceEntriesByUrl = (...entryGroups) => {
+  const seenUrls = new Set();
+  const mergedEntries = [];
+
+  entryGroups.flat().forEach((entry) => {
+    if (!entry || typeof entry !== 'object') return;
+    const url = normalizeVoiceExternalUrl(entry.url || '');
+    if (!url || seenUrls.has(url)) return;
+    seenUrls.add(url);
+    mergedEntries.push({ ...entry, url });
+  });
+
+  return sortVoiceEntries(mergedEntries);
+};
+
 const parseVoiceResources = (value) => {
   const raw = serializeVoicePayload(value);
   const rawNormalized = raw
@@ -424,24 +439,39 @@ const parseVoiceResources = (value) => {
       const entries = parsed.entries
         .map((entry, index) => toVoiceEntry(entry, index, index === 0 ? 'Voz guía' : ''))
         .filter(Boolean);
-      const legacyUrl = normalizeVoiceExternalUrl(String(parsed.legacyUrl || parsed.folder || parsed.drive || '').trim());
-      return { hasResources: entries.length > 0 || Boolean(legacyUrl), entries: sortVoiceEntries(entries), legacyUrl };
+      const nestedLegacy = parseVoiceResources(parsed.legacyUrl || parsed.folder || parsed.drive || '');
+      const legacyUrl =
+        nestedLegacy.legacyUrl ||
+        normalizeVoiceExternalUrl(String(parsed.legacyUrl || parsed.folder || parsed.drive || '').trim());
+      const mergedEntries = mergeVoiceEntriesByUrl(entries, nestedLegacy.entries || []);
+      return { hasResources: mergedEntries.length > 0 || Boolean(legacyUrl), entries: mergedEntries, legacyUrl };
     }
     if (parsed && typeof parsed === 'object') {
+      const nestedLegacy = parseVoiceResources(parsed.legacyUrl || parsed.folder || parsed.drive || '');
       const directEntry = toVoiceEntry(
         parsed,
         0,
         parsed.label || parsed.nombre || parsed.name || parsed.title || 'Voz guía',
       );
       if (directEntry) {
-        return { hasResources: true, entries: sortVoiceEntries([directEntry]), legacyUrl: '' };
+        const entries = mergeVoiceEntriesByUrl([directEntry], nestedLegacy.entries || []);
+        return {
+          hasResources: entries.length > 0 || Boolean(nestedLegacy.legacyUrl),
+          entries,
+          legacyUrl: nestedLegacy.legacyUrl || '',
+        };
       }
 
       const entries = Object.entries(parsed)
-        .map(([key, candidate], index) => toVoiceEntry(candidate, index, String(key || `Voz ${index + 1}`)))
+        .map(([key, candidate], index) => (
+          ['legacyUrl', 'folder', 'drive'].includes(key)
+            ? null
+            : toVoiceEntry(candidate, index, String(key || `Voz ${index + 1}`))
+        ))
         .filter(Boolean);
-      if (entries.length > 0) {
-        return { hasResources: true, entries: sortVoiceEntries(entries), legacyUrl: '' };
+      const mergedEntries = mergeVoiceEntriesByUrl(entries, nestedLegacy.entries || []);
+      if (mergedEntries.length > 0 || nestedLegacy.legacyUrl) {
+        return { hasResources: true, entries: mergedEntries, legacyUrl: nestedLegacy.legacyUrl || '' };
       }
     }
   } catch {

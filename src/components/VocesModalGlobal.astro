@@ -171,6 +171,21 @@
         .map(({ entry }) => entry)
     );
 
+    const mergeVoiceEntriesByUrl = (...entryGroups) => {
+      const seenUrls = new Set();
+      const mergedEntries = [];
+
+      entryGroups.flat().forEach((entry) => {
+        if (!entry || typeof entry !== 'object') return;
+        const url = normalizeExternalUrl(entry.url || '');
+        if (!url || seenUrls.has(url)) return;
+        seenUrls.add(url);
+        mergedEntries.push({ ...entry, url });
+      });
+
+      return sortVoiceEntries(mergedEntries);
+    };
+
     const closeVocesModal = (onAfterClose = () => {}) => {
       const { vocesModal, vocesBackdrop, vocesPanel } = getRefs();
       const runAfterClose = () => {
@@ -376,13 +391,24 @@
             return { type: 'json', entries: sortVoiceEntries(parsed.map((entry, index) => toVoiceEntry(entry, index)).filter(Boolean)), legacyUrl: '' };
           }
           if (parsed && typeof parsed === 'object') {
-            const entries = Array.isArray(parsed.entries)
-              ? parsed.entries.map((entry, index) => toVoiceEntry(entry, index)).filter(Boolean)
-              : [];
-            const legacyUrl = normalizeExternalUrl(parsed.legacyUrl || parsed.folder || parsed.drive || '');
+            const directEntry = Array.isArray(parsed.entries)
+              ? null
+              : toVoiceEntry(parsed, 0, parsed.label || parsed.nombre || parsed.name || parsed.title || 'Voz guía');
+            const sourceEntries = Array.isArray(parsed.entries)
+              ? parsed.entries
+              : Object.entries(parsed)
+                .map(([key, candidate]) => (
+                  ['legacyUrl', 'folder', 'drive'].includes(key) ? null : { label: key, url: candidate }
+                ))
+                .filter(Boolean);
+            const entries = directEntry
+              ? [directEntry]
+              : sourceEntries.map((entry, index) => toVoiceEntry(entry, index)).filter(Boolean);
+            const nestedLegacy = parseDatasetVoces(parsed.legacyUrl || parsed.folder || parsed.drive || '');
+            const legacyUrl = nestedLegacy?.legacyUrl || normalizeExternalUrl(parsed.legacyUrl || parsed.folder || parsed.drive || '');
             return {
               type: 'json',
-              entries: sortVoiceEntries(entries),
+              entries: mergeVoiceEntriesByUrl(entries, nestedLegacy?.entries || []),
               legacyUrl,
             };
           }
