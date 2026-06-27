@@ -950,10 +950,6 @@ const themeColors = brandingData;
       navigator.serviceWorker
         .register('/sw.js')
         .then((registration) => {
-          registration.update().catch((error) => {
-            console.warn('SW main update check failed', error);
-          });
-
           registration.onupdatefound = () => {
             const installingWorker = registration.installing;
             if (!installingWorker) return;
