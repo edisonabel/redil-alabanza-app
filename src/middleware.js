@@ -60,26 +60,34 @@ const resolveAuthState = async (cookies, isSecure) => {
   const refreshToken = cookies.get('sb-refresh-token')?.value || null;
 
   if (accessToken) {
-    const { data, error } = await supabaseServer.auth.getUser(accessToken);
-    if (!error && data?.user) {
-      return { user: data.user, accessToken, refreshed: false };
+    try {
+      const { data, error } = await supabaseServer.auth.getUser(accessToken);
+      if (!error && data?.user) {
+        return { user: data.user, accessToken, refreshed: false };
+      }
+    } catch (authError) {
+      console.error('Middleware access token validation error:', authError);
     }
   }
 
   if (refreshToken) {
-    const { data, error } = await supabaseServer.auth.refreshSession({ refresh_token: refreshToken });
-    const session = data?.session;
-    if (!error && session?.access_token) {
-      setAuthCookies(cookies, session, isSecure);
+    try {
+      const { data, error } = await supabaseServer.auth.refreshSession({ refresh_token: refreshToken });
+      const session = data?.session;
+      if (!error && session?.access_token) {
+        setAuthCookies(cookies, session, isSecure);
 
-      if (data?.user) {
-        return { user: data.user, accessToken: session.access_token, refreshed: true };
-      }
+        if (data?.user) {
+          return { user: data.user, accessToken: session.access_token, refreshed: true };
+        }
 
-      const { data: refreshedUserData, error: refreshedUserError } = await supabaseServer.auth.getUser(session.access_token);
-      if (!refreshedUserError && refreshedUserData?.user) {
-        return { user: refreshedUserData.user, accessToken: session.access_token, refreshed: true };
+        const { data: refreshedUserData, error: refreshedUserError } = await supabaseServer.auth.getUser(session.access_token);
+        if (!refreshedUserError && refreshedUserData?.user) {
+          return { user: refreshedUserData.user, accessToken: session.access_token, refreshed: true };
+        }
       }
+    } catch (refreshError) {
+      console.error('Middleware refresh token validation error:', refreshError);
     }
   }
 
@@ -133,13 +141,22 @@ export const onRequest = defineMiddleware(async (context, next) => {
       },
     });
 
-    const { data: perfil } = await supabaseAuthed
-      .from('perfiles')
-      .select('id, is_admin')
-      .eq('id', authState.user.id)
-      .single();
+    try {
+      const { data: perfil, error: perfilError } = await supabaseAuthed
+        .from('perfiles')
+        .select('id, is_admin')
+        .eq('id', authState.user.id)
+        .maybeSingle();
 
-    locals.perfil = perfil || null;
+      if (perfilError) {
+        console.error('Middleware perfil query error:', perfilError);
+      }
+
+      locals.perfil = perfil || null;
+    } catch (perfilQueryError) {
+      console.error('Middleware perfil query error:', perfilQueryError);
+      locals.perfil = null;
+    }
   }
 
   return next();

@@ -4,7 +4,6 @@ import DashboardInicio from '../components/react/DashboardInicio.jsx';
 import DashboardShortcuts from '../components/react/DashboardShortcuts.jsx';
 import ModalDetalle from '../components/react/ModalDetalle.jsx';
 import OnboardingRoot from '../components/onboarding/OnboardingRoot';
-import { supabase } from '../lib/supabase';
 import { createClient } from '@supabase/supabase-js';
 import { isPredicadorColumnMissingError, withPredicadorFallbackRows } from '../lib/predicador-compat.js';
 
@@ -29,43 +28,76 @@ const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
   }
 });
 
-const { data: { user }, error: authError } = await supabase.auth.getUser(tokenCookie.value);
+const { data: userData, error: authError } = await supabaseSSR.auth.getUser(tokenCookie.value);
+const user = userData?.user || null;
 if (authError || !user) {
+  console.error('Inicio auth validation error:', authError);
   return Astro.redirect('/login');
 }
 
-const [
-  { data: perfil },
-  { data: eventosEspecialesData, error: eventosEspecialesError },
-  { data: perfilesCumplesData, error: perfilesCumplesError },
-  { data: rolesCatalog, error: rolesError },
-] = await Promise.all([
-  supabaseSSR
-    .from('perfiles')
-    .select('id, nombre, avatar_url, is_admin, tour_completado')
-    .eq('id', user.id)
-    .single(),
-  supabaseSSR
-    .from('eventos_especiales')
-    .select('id, titulo, descripcion, fecha, activo')
-    .eq('activo', true)
-    .order('fecha', { ascending: true })
-    .limit(5),
-  supabaseSSR
-    .from('perfiles')
-    .select('id, nombre, fecha_nacimiento, avatar_url')
-    .not('fecha_nacimiento', 'is', null),
-  supabaseSSR
-    .from('roles')
-    .select('id, nombre, codigo'),
-]);
+const emptyHomeData = {
+  perfil: null,
+  eventosEspecialesData: [],
+  perfilesCumplesData: [],
+  rolesCatalog: [],
+};
 
-if (eventosEspecialesError) {
-  console.error('Inicio eventos_especiales query error:', eventosEspecialesError);
-}
+let {
+  perfil,
+  eventosEspecialesData,
+  perfilesCumplesData,
+  rolesCatalog,
+} = emptyHomeData;
 
-if (perfilesCumplesError) {
-  console.error('Inicio cumpleaneros query error:', perfilesCumplesError);
+try {
+  const [
+    { data: perfilData, error: perfilError },
+    { data: eventosData, error: eventosEspecialesError },
+    { data: cumplesData, error: perfilesCumplesError },
+    { data: rolesData, error: rolesError },
+  ] = await Promise.all([
+    supabaseSSR
+      .from('perfiles')
+      .select('id, nombre, avatar_url, is_admin, tour_completado')
+      .eq('id', user.id)
+      .maybeSingle(),
+    supabaseSSR
+      .from('eventos_especiales')
+      .select('id, titulo, descripcion, fecha, activo')
+      .eq('activo', true)
+      .order('fecha', { ascending: true })
+      .limit(5),
+    supabaseSSR
+      .from('perfiles')
+      .select('id, nombre, fecha_nacimiento, avatar_url')
+      .not('fecha_nacimiento', 'is', null),
+    supabaseSSR
+      .from('roles')
+      .select('id, nombre, codigo'),
+  ]);
+
+  perfil = perfilData || null;
+  eventosEspecialesData = eventosData || [];
+  perfilesCumplesData = cumplesData || [];
+  rolesCatalog = rolesData || [];
+
+  if (perfilError) {
+    console.error('Inicio perfil query error:', perfilError);
+  }
+
+  if (eventosEspecialesError) {
+    console.error('Inicio eventos_especiales query error:', eventosEspecialesError);
+  }
+
+  if (perfilesCumplesError) {
+    console.error('Inicio cumpleaneros query error:', perfilesCumplesError);
+  }
+
+  if (rolesError) {
+    console.error('Inicio roles query error:', rolesError);
+  }
+} catch (homeDataError) {
+  console.error('Inicio bootstrap data error:', homeDataError);
 }
 
 const hoy = new Date();
@@ -109,10 +141,6 @@ const cumpleanerosMes = cumpleanerosTodos
 const fechaFiltroISO = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
 const userEmail = user.email || null;
 
-if (rolesError) {
-  console.error('Inicio roles query error:', rolesError);
-}
-
 const rolesById = new Map((rolesCatalog || []).map((rol) => [rol.id, rol]));
 
 const buildEventosSelect = (includePredicador = true) => `
@@ -144,17 +172,31 @@ const buildEventosQuery = (includePredicador = true) => {
   return query;
 };
 
-let { data: eventosData, error: eventosError } = await buildEventosQuery(true);
+let eventosData = [];
+let eventosError = null;
+
+try {
+  const eventosResp = await buildEventosQuery(true);
+  eventosData = eventosResp.data || [];
+  eventosError = eventosResp.error || null;
+} catch (eventosQueryError) {
+  eventosError = eventosQueryError;
+}
 
 if (isPredicadorColumnMissingError(eventosError)) {
-  const fallbackResp = await buildEventosQuery(false);
-  if (!fallbackResp.error) {
-    eventosData = withPredicadorFallbackRows(fallbackResp.data || []);
-    eventosError = null;
-    console.warn('Inicio eventos query: usando fallback sin columna predicador.');
-  } else {
-    eventosData = fallbackResp.data;
-    eventosError = fallbackResp.error;
+  try {
+    const fallbackResp = await buildEventosQuery(false);
+    if (!fallbackResp.error) {
+      eventosData = withPredicadorFallbackRows(fallbackResp.data || []);
+      eventosError = null;
+      console.warn('Inicio eventos query: usando fallback sin columna predicador.');
+    } else {
+      eventosData = fallbackResp.data || [];
+      eventosError = fallbackResp.error;
+    }
+  } catch (fallbackError) {
+    eventosData = [];
+    eventosError = fallbackError;
   }
 } else {
   eventosData = withPredicadorFallbackRows(eventosData || []);
@@ -162,27 +204,32 @@ if (isPredicadorColumnMissingError(eventosError)) {
 
 if (eventosError) {
   console.error('Inicio eventos query error:', eventosError);
+  eventosData = [];
 }
 
 const eventoIds = (eventosData || []).map((evento) => evento.id).filter(Boolean);
 const playlistByEvento = new Map();
 
 if (eventoIds.length > 0) {
-  const { data: playlistsData, error: playlistsError } = await supabaseSSR
-    .from('playlists')
-    .select('id, evento_id, playlist_canciones(id)')
-    .in('evento_id', eventoIds);
+  try {
+    const { data: playlistsData, error: playlistsError } = await supabaseSSR
+      .from('playlists')
+      .select('id, evento_id, playlist_canciones(id)')
+      .in('evento_id', eventoIds);
 
-  if (playlistsError) {
-    console.error('Inicio playlists query error:', playlistsError);
-  } else {
-    for (const playlist of playlistsData || []) {
-      const count = Array.isArray(playlist.playlist_canciones) ? playlist.playlist_canciones.length : 0;
-      playlistByEvento.set(playlist.evento_id, {
-        id: playlist.id,
-        count
-      });
+    if (playlistsError) {
+      console.error('Inicio playlists query error:', playlistsError);
+    } else {
+      for (const playlist of playlistsData || []) {
+        const count = Array.isArray(playlist.playlist_canciones) ? playlist.playlist_canciones.length : 0;
+        playlistByEvento.set(playlist.evento_id, {
+          id: playlist.id,
+          count
+        });
+      }
     }
+  } catch (playlistsQueryError) {
+    console.error('Inicio playlists query error:', playlistsQueryError);
   }
 }
 
