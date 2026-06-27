@@ -950,6 +950,10 @@ const themeColors = brandingData;
       navigator.serviceWorker
         .register('/sw.js')
         .then((registration) => {
+          registration.update().catch((error) => {
+            console.warn('SW main update check failed', error);
+          });
+
           registration.onupdatefound = () => {
             const installingWorker = registration.installing;
             if (!installingWorker) return;
@@ -977,8 +981,8 @@ const themeColors = brandingData;
   })();
  </script>
   <script is:inline>
-  (function nuclearCacheFlushV3() {
-    const FLAG_KEY = "v3_force_purge";
+  (function nuclearCacheFlushV4() {
+    const FLAG_KEY = "v4_force_purge_home_recovery";
     const capacitorBridge = window.Capacitor;
     const isCapacitorNative =
       window.location.protocol === 'capacitor:' ||
