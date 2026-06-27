@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { BarChart3, Clock3, EyeOff, UsersRound } from 'lucide-react';
 
 const formatServiceDate = (isoString) => {
     if (!isoString) {
@@ -59,27 +60,31 @@ function EmptyState({ children }) {
 
 function SegmentedTabs({ activeTab, onTabChange }) {
     const tabs = [
-        { id: 'servicios', label: 'Últimos servicios' },
-        { id: 'ranking', label: 'Más cantadas' },
+        { id: 'servicios', label: 'Servicios recientes', icon: Clock3 },
+        { id: 'ranking', label: 'Más repetidas', icon: BarChart3 },
     ];
 
     return (
-        <div className="inline-flex w-full rounded-full border border-border bg-surface p-1 shadow-sm sm:w-auto">
-            {tabs.map((tab) => (
-                <button
-                    key={tab.id}
-                    type="button"
-                    aria-pressed={activeTab === tab.id}
-                    onClick={() => onTabChange(tab.id)}
-                    className={`ui-no-press h-11 flex-1 rounded-full px-4 text-[11px] font-black uppercase tracking-[0.14em] transition-colors sm:flex-none ${
-                        activeTab === tab.id
-                            ? 'bg-content text-background'
-                            : 'text-content-muted hover:text-content'
-                    }`}
-                >
-                    {tab.label}
-                </button>
-            ))}
+        <div className="inline-flex h-9 w-full rounded-full border border-white/[0.12] bg-[#15161b]/90 p-1 shadow-sm sm:w-auto">
+            {tabs.map((tab) => {
+                const Icon = tab.icon;
+                return (
+                    <button
+                        key={tab.id}
+                        type="button"
+                        aria-pressed={activeTab === tab.id}
+                        onClick={() => onTabChange(tab.id)}
+                        className={`ui-no-press inline-flex h-7 flex-1 items-center justify-center gap-1.5 rounded-full px-2.5 text-[9px] font-black uppercase tracking-[0.12em] transition-colors sm:flex-none sm:px-3.5 ${
+                            activeTab === tab.id
+                                ? 'bg-white text-action'
+                                : 'text-zinc-500 hover:text-content'
+                        }`}
+                    >
+                        <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                        <span className="truncate">{tab.label}</span>
+                    </button>
+                );
+            })}
         </div>
     );
 }
@@ -91,86 +96,113 @@ function ServiceCard({ service }) {
     const team = Array.isArray(service.team) ? service.team : [];
 
     return (
-        <article className="rounded-[1.75rem] border border-border bg-surface p-4 shadow-sm sm:p-5 md:p-6">
-            <div className="grid grid-cols-[minmax(5.5rem,auto)_minmax(0,1fr)] items-start gap-4 sm:grid-cols-[minmax(7.5rem,auto)_minmax(0,1fr)] sm:gap-6">
-                <div className="min-w-0">
-                    <p className="mb-1 text-[10px] font-black uppercase tracking-[0.22em] text-content-muted sm:text-[11px]">
-                        {date.weekday}
-                    </p>
-                    <div className="flex items-baseline gap-1.5">
-                        <span className="text-5xl font-black leading-none tracking-tight text-action sm:text-6xl">
-                            {date.day}
+        <article className="relative overflow-hidden rounded-[1.7rem] border border-[#343946]/70 bg-[#15161b] p-4 shadow-[0_14px_44px_rgba(0,0,0,0.24)] transition-all duration-300 sm:p-5 md:rounded-[2rem] md:p-6">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(59,130,246,0.10),transparent_38%),radial-gradient(circle_at_100%_0%,rgba(59,130,246,0.07),transparent_32%),linear-gradient(145deg,rgba(255,255,255,0.035),rgba(255,255,255,0))]" />
+            <div className="relative">
+                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-start gap-4 border-b border-white/[0.10] pb-4 sm:gap-5">
+                    <div className="min-w-0">
+                        <span className="inline-flex h-7 items-center rounded-full border border-white/[0.12] bg-black/10 px-4 text-[10px] font-black uppercase tracking-[0.24em] text-zinc-400 shadow-inner">
+                            {date.weekday}
                         </span>
-                        <span className="text-2xl font-light leading-none text-content sm:text-3xl">
-                            {date.month}
-                        </span>
-                        <span className="text-sm font-black text-content-muted sm:text-base">
-                            {date.year}
-                        </span>
+                        <div className="mt-3 flex min-w-0 items-end gap-2.5">
+                            <span className="text-[3.1rem] font-black leading-[0.82] tracking-tight text-action drop-shadow-[0_0_16px_rgba(59,130,246,0.30)] sm:text-[3.7rem] md:text-[4.1rem]">
+                                {date.day}
+                            </span>
+                            <span className="mb-0.5 hidden h-11 w-px bg-white/[0.16] sm:block" aria-hidden="true" />
+                            <span className="mb-0.5 flex min-w-0 items-baseline gap-2">
+                                <span className="text-2xl font-light leading-none text-white sm:text-3xl">
+                                    {date.month}
+                                </span>
+                                <span className="text-lg font-black leading-none text-zinc-500 sm:text-xl">
+                                    {date.year}
+                                </span>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className="min-w-0 text-right">
+                        <h2 className="text-[1.85rem] font-black leading-[0.95] tracking-tight text-action drop-shadow-[0_0_16px_rgba(59,130,246,0.24)] sm:text-[2.55rem] md:text-[3rem]">
+                            {service.title || 'Servicio'}
+                        </h2>
+                        {team.length > 0 ? (
+                            <button
+                                type="button"
+                                aria-expanded={showTeam}
+                                onClick={() => setShowTeam((value) => !value)}
+                                className="ui-no-press mt-3 inline-flex h-9 items-center justify-center gap-2 rounded-full border border-white/[0.18] bg-black/10 px-3.5 text-xs font-bold text-zinc-400 shadow-inner transition-colors duration-200 hover:border-action/45 hover:text-white sm:px-4 sm:text-sm"
+                            >
+                                {showTeam ? (
+                                    <>
+                                        <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
+                                        Ocultar equipo
+                                    </>
+                                ) : (
+                                    <>
+                                        <UsersRound className="h-3.5 w-3.5" aria-hidden="true" />
+                                        Equipo ({team.length})
+                                    </>
+                                )}
+                            </button>
+                        ) : null}
                     </div>
                 </div>
 
-                <div className="min-w-0 text-right">
-                    <h2 className="text-2xl font-black leading-[1.04] tracking-tight text-action sm:text-3xl md:text-4xl">
-                        {service.title || 'Servicio'}
-                    </h2>
-                    {team.length > 0 ? (
-                        <button
-                            type="button"
-                            aria-expanded={showTeam}
-                            onClick={() => setShowTeam((value) => !value)}
-                            className="ui-no-press mt-2 inline-flex h-8 items-center justify-center rounded-full border border-border bg-background px-3 text-[10px] font-black uppercase tracking-[0.16em] text-content-muted transition-colors hover:border-action/40 hover:text-action"
-                        >
-                            {showTeam ? 'Ocultar' : `Equipo (${team.length})`}
-                        </button>
-                    ) : null}
+                <div className="transition-all duration-300 ease-out">
+                    {!showTeam ? (
+                        <ol className="grid grid-cols-2">
+                            {songs.map((song, index) => {
+                                const isRightColumn = index % 2 === 1;
+                                const hasTopBorder = index > 1;
+                                return (
+                                    <li
+                                        key={`${service.id}-${song.id}-${index}`}
+                                        className={`grid min-w-0 grid-cols-[2rem_minmax(0,1fr)] items-start gap-2.5 py-3 sm:grid-cols-[2.55rem_minmax(0,1fr)] sm:gap-3 sm:py-4 ${
+                                            hasTopBorder ? 'border-t border-white/[0.08]' : ''
+                                        } ${isRightColumn ? 'border-l border-white/[0.08] pl-3 sm:pl-5' : 'pr-3 sm:pr-5'}`}
+                                    >
+                                        <span className="inline-flex h-7 min-w-8 items-center justify-center rounded-lg border border-[#273044] bg-white/[0.035] px-1.5 text-[12px] font-black leading-none text-action shadow-inner">
+                                            {String(index + 1).padStart(2, '0')}
+                                        </span>
+                                        <span className="min-w-0 text-[14px] font-light leading-tight text-white sm:text-lg md:text-xl">
+                                            {song.title || 'Canción sin título'}
+                                        </span>
+                                    </li>
+                                );
+                            })}
+                        </ol>
+                    ) : (
+                        <div className="pt-4">
+                            <p className="text-[11px] font-black uppercase tracking-[0.26em] text-zinc-500">
+                                Equipo del servicio
+                            </p>
+                            <div className="mt-3 grid grid-cols-3 gap-2 sm:gap-2.5">
+                                {team.map((person) => (
+                                    <span
+                                        key={person.id}
+                                        title={[person.name, ...(person.roles || [])].filter(Boolean).join(' · ')}
+                                        className="inline-flex h-10 min-w-0 items-center gap-1.5 rounded-full border border-white/[0.13] bg-black/[0.18] px-1.5 pr-2 text-[11px] font-black text-white shadow-inner sm:h-12 sm:gap-2 sm:px-2 sm:pr-3 sm:text-sm"
+                                    >
+                                        {person.avatarUrl ? (
+                                            <img
+                                                src={person.avatarUrl}
+                                                alt=""
+                                                loading="lazy"
+                                                decoding="async"
+                                                className="h-7 w-7 shrink-0 rounded-full object-cover sm:h-8 sm:w-8"
+                                            />
+                                        ) : (
+                                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-action/14 text-[9px] font-black text-action sm:h-8 sm:w-8 sm:text-[10px]">
+                                                {getInitials(person.name)}
+                                            </span>
+                                        )}
+                                        <span className="min-w-0 truncate">{getShortName(person.name)}</span>
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
-
-            <ol className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 sm:mt-6 sm:gap-x-8">
-                {songs.map((song, index) => (
-                    <li key={`${service.id}-${song.id}-${index}`} className="flex min-w-0 items-start gap-3">
-                        <span className="mt-1 w-5 shrink-0 text-[10px] font-black tracking-[0.14em] text-content-muted sm:w-7 sm:text-[11px]">
-                            {String(index + 1).padStart(2, '0')}
-                        </span>
-                        <span className="min-w-0 text-[15px] font-black leading-tight text-content sm:text-lg md:text-xl">
-                            {song.title || 'Canción sin título'}
-                        </span>
-                    </li>
-                ))}
-            </ol>
-
-            {showTeam ? (
-                <div className="mt-4 border-t border-border pt-4">
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-content-muted">
-                        Equipo del servicio
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                        {team.map((person) => (
-                            <span
-                                key={person.id}
-                                title={[person.name, ...(person.roles || [])].filter(Boolean).join(' · ')}
-                                className="inline-flex h-11 max-w-full items-center gap-2 rounded-full border border-border bg-background px-2.5 pr-3 text-sm font-black text-content"
-                            >
-                                {person.avatarUrl ? (
-                                    <img
-                                        src={person.avatarUrl}
-                                        alt=""
-                                        loading="lazy"
-                                        decoding="async"
-                                        className="h-8 w-8 shrink-0 rounded-full object-cover"
-                                    />
-                                ) : (
-                                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-action/12 text-[10px] font-black text-action">
-                                        {getInitials(person.name)}
-                                    </span>
-                                )}
-                                <span className="truncate">{getShortName(person.name)}</span>
-                            </span>
-                        ))}
-                    </div>
-                </div>
-            ) : null}
         </article>
     );
 }
@@ -181,24 +213,25 @@ function SongRankCard({ song, index, maxCount, expanded, onToggle }) {
     const barWidth = maxCount > 0 ? Math.max(16, Math.round((Number(song.count || 0) / maxCount) * 100)) : 0;
 
     return (
-        <article className="rounded-[2rem] border border-border bg-surface p-4 shadow-sm md:p-5">
+        <article className="relative overflow-hidden rounded-[1.7rem] border border-[#343946]/65 bg-[#15161b] p-4 shadow-[0_12px_38px_rgba(0,0,0,0.20)] md:p-5">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_0%,rgba(59,130,246,0.09),transparent_34%),radial-gradient(circle_at_100%_0%,rgba(255,255,255,0.035),transparent_30%),linear-gradient(145deg,rgba(255,255,255,0.028),rgba(255,255,255,0))]" />
             <button
                 type="button"
                 aria-expanded={expanded}
                 onClick={onToggle}
-                className="ui-no-press flex w-full items-start gap-4 text-left outline-none focus-visible:outline-none"
+                className="ui-no-press relative flex w-full items-start gap-4 text-left outline-none focus-visible:outline-none"
             >
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-content text-base font-black text-background">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white bg-white text-base font-black text-[#0b0b0f] shadow-[0_8px_22px_rgba(255,255,255,0.10)]">
                     {index + 1}
                 </span>
                 <span className="min-w-0 flex-1">
-                    <span className="block text-xl font-black leading-tight tracking-tight text-content md:text-2xl">
+                    <span className="block text-xl font-semibold leading-tight tracking-tight text-content md:text-2xl">
                         {song.title || 'Canción sin título'}
                     </span>
-                    <span className="mt-1 block text-sm font-bold text-content-muted">
+                    <span className="mt-1 block text-sm font-medium leading-5 text-zinc-400">
                         Última vez: {lastUsage ? formatExactDate(lastUsage.dateIso) : 'sin fecha'}
                     </span>
-                    <span className="mt-3 block h-2 overflow-hidden rounded-full bg-background">
+                    <span className="mt-3 block h-1.5 overflow-hidden rounded-full bg-black/35">
                         <span
                             className="block h-full rounded-full bg-action"
                             style={{ width: `${barWidth}%` }}
@@ -206,31 +239,31 @@ function SongRankCard({ song, index, maxCount, expanded, onToggle }) {
                     </span>
                 </span>
                 <span className="shrink-0 pt-1 text-right">
-                    <span className="block text-base font-black text-action">
+                    <span className="block text-base font-bold text-action">
                         {song.count} {song.count === 1 ? 'vez' : 'veces'}
                     </span>
-                    <span className="mt-1 block text-[11px] font-black uppercase tracking-[0.16em] text-content-muted">
+                    <span className="mt-1 block text-[11px] font-bold uppercase tracking-[0.16em] text-zinc-500">
                         {expanded ? 'Ocultar' : 'Ver fechas'}
                     </span>
                 </span>
             </button>
 
             {expanded ? (
-                <div className="mt-5 border-t border-border pt-4">
-                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-content-muted">
+                <div className="relative mt-5 border-t border-white/[0.08] pt-4">
+                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-500">
                         Fechas exactas
                     </p>
-                    <div className="mt-3 divide-y divide-border">
+                    <div className="mt-3 divide-y divide-white/[0.08]">
                         {history.map((usage) => (
                             <a
                                 key={`${song.id}-${usage.eventId}`}
                                 href={usage.href}
                                 className="block py-3 transition-colors hover:text-action"
                             >
-                                <span className="block text-base font-black capitalize leading-tight text-content">
+                                <span className="block text-base font-semibold capitalize leading-tight text-content">
                                     {formatExactDate(usage.dateIso)}
                                 </span>
-                                <span className="mt-1 block text-sm font-semibold text-content-muted">
+                                <span className="mt-1 block text-sm font-medium text-zinc-400">
                                     {usage.title || 'Servicio'}
                                 </span>
                             </a>
@@ -251,21 +284,20 @@ export default function HistorialCantos({ recentServices = [], topSongs = [], me
     );
 
     return (
-        <div className="space-y-6">
-            <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-                <div className="max-w-3xl">
-                    <p className="text-[11px] font-black uppercase tracking-[0.2em] text-action">
-                        Consulta para todos
-                    </p>
-                    <h1 className="mt-2 text-[2.35rem] font-black leading-[0.95] tracking-tight text-content md:text-6xl">
+        <div className="space-y-3.5">
+            <header className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end md:gap-5">
+                <div className="min-w-0">
+                    <h1 className="text-[1.9rem] font-black leading-[0.92] tracking-tight text-content md:text-[2.45rem]">
                         Historial de cantos
                     </h1>
-                    <p className="mt-3 text-sm font-medium leading-6 text-content-muted md:text-base">
-                        Últimos servicios publicados y canciones más repetidas para cuidar mejor el repertorio.
-                    </p>
-                    <p className="mt-2 text-xs font-black uppercase tracking-[0.16em] text-content-muted">
-                        {Number(meta.servicesAnalyzed || 0)} servicios analizados · {Number(meta.usedSongs || 0)} canciones usadas
-                    </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] font-semibold leading-5 text-content-muted md:text-sm">
+                        <span>Servicios recientes y canciones repetidas</span>
+                        <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[11px] font-black uppercase tracking-[0.1em] text-zinc-400 md:text-xs">
+                            <span>{Number(meta.servicesAnalyzed || 0)} servicios</span>
+                            <span className="text-zinc-600" aria-hidden="true">·</span>
+                            <span>{Number(meta.usedSongs || 0)} canciones</span>
+                        </span>
+                    </div>
                 </div>
                 <SegmentedTabs activeTab={activeTab} onTabChange={setActiveTab} />
             </header>
