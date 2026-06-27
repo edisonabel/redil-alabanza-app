@@ -40,17 +40,13 @@ const clearAuthCookies = (cookies) => {
   cookies.delete('sb-refresh-token', { path: '/' });
 };
 
-const redirectHtml = (location, status = 302) => new Response(
-  `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${location}"><title>Redirigiendo</title>`,
-  {
-    status,
-    headers: {
-      Location: location,
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'no-cache',
-    },
+const redirectTo = (location, status = 302) => new Response(null, {
+  status,
+  headers: {
+    Location: location,
+    'Cache-Control': 'no-cache',
   },
-);
+});
 
 const isProtectedRoute = (path) =>
   protectedRoutes.some((route) => path === route || path.startsWith(`${route}/`));
@@ -100,6 +96,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const isSecure = url.protocol === 'https:';
   locals.user = null;
   locals.perfil = null;
+  locals.accessToken = null;
 
   if (
     path.startsWith('/_astro') ||
@@ -116,18 +113,19 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   if (path === '/login') {
     if (authState?.accessToken) {
-      return redirectHtml('/');
+      return redirectTo('/');
     }
     return next();
   }
 
   if (protectedPath && !authState?.accessToken) {
     clearAuthCookies(cookies);
-    return redirectHtml('/login');
+    return redirectTo('/login');
   }
 
   if (authState?.user) {
     locals.user = authState.user;
+    locals.accessToken = authState.accessToken;
 
     const supabaseAuthed = createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
@@ -144,7 +142,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     try {
       const { data: perfil, error: perfilError } = await supabaseAuthed
         .from('perfiles')
-        .select('id, is_admin')
+        .select('id, nombre, avatar_url, is_admin, tour_completado')
         .eq('id', authState.user.id)
         .maybeSingle();
 

@@ -75,18 +75,27 @@ const isLiveDirectorShellView = pathname === '/herramientas/live-director-previe
 const isAuthView = pathname === '/login' || pathname === '/reset-password';
 const showBottomNav = !isAdminRepertorioView && !isChordProPrintView && !isLiveDirectorShellView && !isAuthView;
 const showGlobalRuntimeIslands = !isAuthView;
-const brandingAccessToken = Astro.cookies.get('sb-access-token')?.value || '';
+const brandingAccessToken = Astro.locals.accessToken || Astro.cookies.get('sb-access-token')?.value || '';
 const shouldBustBrandingCache =
   Astro.cookies.has('branding_cache_bust') ||
   Astro.request.headers.get('x-branding-bust') === '1' ||
   new URL(Astro.request.url).searchParams.get('branding_bust') === '1';
 
 if (shouldBustBrandingCache) {
-  invalidarCacheBranding();
+  try {
+    invalidarCacheBranding();
+  } catch (brandingCacheError) {
+    console.error('Layout branding cache invalidation error:', brandingCacheError);
+  }
   Astro.cookies.delete('branding_cache_bust', { path: '/' });
 }
 
-const brandingData = await getBrandingConfig({ accessToken: brandingAccessToken });
+let brandingData = null;
+try {
+  brandingData = await getBrandingConfig({ accessToken: brandingAccessToken });
+} catch (brandingError) {
+  console.error('Layout branding config error:', brandingError);
+}
 const themeColors = brandingData;
 ---
 <!DOCTYPE html>

@@ -7,8 +7,10 @@ import OnboardingRoot from '../components/onboarding/OnboardingRoot';
 import { createClient } from '@supabase/supabase-js';
 import { isPredicadorColumnMissingError, withPredicadorFallbackRows } from '../lib/predicador-compat.js';
 
-const tokenCookie = Astro.cookies.get('sb-access-token');
-if (!tokenCookie) {
+const user = Astro.locals.user;
+const accessToken = Astro.locals.accessToken || Astro.cookies.get('sb-access-token')?.value || '';
+
+if (!user || !accessToken) {
   return Astro.redirect('/login');
 }
 
@@ -19,7 +21,7 @@ const supabaseAnonKey = import.meta.env.PUBLIC_SUPABASE_ANON_KEY || import.meta.
 const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
   global: {
     headers: {
-      Authorization: `Bearer ${tokenCookie.value}`
+      Authorization: `Bearer ${accessToken}`
     }
   },
   auth: {
@@ -28,15 +30,8 @@ const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
   }
 });
 
-const { data: userData, error: authError } = await supabaseSSR.auth.getUser(tokenCookie.value);
-const user = userData?.user || null;
-if (authError || !user) {
-  console.error('Inicio auth validation error:', authError);
-  return Astro.redirect('/login');
-}
-
 const emptyHomeData = {
-  perfil: null,
+  perfil: Astro.locals.perfil || null,
   eventosEspecialesData: [],
   perfilesCumplesData: [],
   rolesCatalog: [],
@@ -56,11 +51,13 @@ try {
     { data: cumplesData, error: perfilesCumplesError },
     { data: rolesData, error: rolesError },
   ] = await Promise.all([
-    supabaseSSR
-      .from('perfiles')
-      .select('id, nombre, avatar_url, is_admin, tour_completado')
-      .eq('id', user.id)
-      .maybeSingle(),
+    perfil
+      ? Promise.resolve({ data: perfil, error: null })
+      : supabaseSSR
+        .from('perfiles')
+        .select('id, nombre, avatar_url, is_admin, tour_completado')
+        .eq('id', user.id)
+        .maybeSingle(),
     supabaseSSR
       .from('eventos_especiales')
       .select('id, titulo, descripcion, fecha, activo')
