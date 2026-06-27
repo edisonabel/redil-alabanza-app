@@ -40,6 +40,18 @@ const clearAuthCookies = (cookies) => {
   cookies.delete('sb-refresh-token', { path: '/' });
 };
 
+const redirectHtml = (location, status = 302) => new Response(
+  `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${location}"><title>Redirigiendo</title>`,
+  {
+    status,
+    headers: {
+      Location: location,
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-cache',
+    },
+  },
+);
+
 const isProtectedRoute = (path) =>
   protectedRoutes.some((route) => path === route || path.startsWith(`${route}/`));
 
@@ -75,7 +87,7 @@ const resolveAuthState = async (cookies, isSecure) => {
 };
 
 export const onRequest = defineMiddleware(async (context, next) => {
-  const { cookies, url, redirect, locals } = context;
+  const { cookies, url, locals } = context;
   const path = url.pathname;
   const isSecure = url.protocol === 'https:';
   locals.user = null;
@@ -96,14 +108,14 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   if (path === '/login') {
     if (authState?.accessToken) {
-      return redirect('/');
+      return redirectHtml('/');
     }
     return next();
   }
 
   if (protectedPath && !authState?.accessToken) {
     clearAuthCookies(cookies);
-    return redirect('/login');
+    return redirectHtml('/login');
   }
 
   if (authState?.user) {
@@ -132,4 +144,3 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   return next();
 });
-
