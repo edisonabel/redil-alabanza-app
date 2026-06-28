@@ -32,6 +32,23 @@ const formatExactDate = (isoString) => {
     });
 };
 
+const formatMonthGroup = (isoString) => {
+    if (!isoString) return { key: 'sin-fecha', label: 'Fecha por definir' };
+    const date = new Date(isoString);
+    if (Number.isNaN(date.getTime())) return { key: 'sin-fecha', label: 'Fecha por definir' };
+
+    const rawLabel = date.toLocaleDateString('es-ES', {
+        month: 'long',
+        year: 'numeric',
+    });
+    const label = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);
+
+    return {
+        key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
+        label,
+    };
+};
+
 const getInitials = (fullName) => {
     if (!fullName || typeof fullName !== 'string') return 'RD';
     return fullName
@@ -278,6 +295,28 @@ function SongRankCard({ song, index, maxCount, expanded, onToggle }) {
 export default function HistorialCantos({ recentServices = [], topSongs = [], meta = {} }) {
     const [activeTab, setActiveTab] = useState('servicios');
     const [expandedSongId, setExpandedSongId] = useState(null);
+    const serviceGroups = useMemo(() => {
+        const groups = [];
+        const groupsByKey = new Map();
+
+        for (const service of recentServices) {
+            const month = formatMonthGroup(service?.dateIso);
+            const currentGroup = groupsByKey.get(month.key) || {
+                key: month.key,
+                label: month.label,
+                services: [],
+            };
+
+            currentGroup.services.push(service);
+
+            if (!groupsByKey.has(month.key)) {
+                groupsByKey.set(month.key, currentGroup);
+                groups.push(currentGroup);
+            }
+        }
+
+        return groups;
+    }, [recentServices]);
     const maxCount = useMemo(
         () => Math.max(0, ...topSongs.map((song) => Number(song?.count || 0))),
         [topSongs],
@@ -303,12 +342,34 @@ export default function HistorialCantos({ recentServices = [], topSongs = [], me
             </header>
 
             {activeTab === 'servicios' ? (
-                <section className="grid items-start gap-4 lg:grid-cols-2" aria-label="Últimos servicios publicados">
+                <section className="mx-auto grid w-full max-w-5xl gap-5" aria-label="Últimos servicios publicados">
                     {recentServices.length === 0 ? (
                         <EmptyState>Aún no hay servicios publicados con canciones cargadas.</EmptyState>
                     ) : (
-                        recentServices.map((service) => (
-                            <ServiceCard key={service.id} service={service} />
+                        serviceGroups.map((group) => (
+                            <section
+                                key={group.key}
+                                className="grid gap-3"
+                                aria-labelledby={`historial-cantos-${group.key}`}
+                            >
+                                <div className="flex items-center gap-3 px-1">
+                                    <h2
+                                        id={`historial-cantos-${group.key}`}
+                                        className="text-[12px] font-black uppercase tracking-[0.16em] text-slate-500"
+                                    >
+                                        {group.label}
+                                    </h2>
+                                    <span className="h-px flex-1 bg-slate-200" aria-hidden="true" />
+                                    <span className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">
+                                        {group.services.length} servicio{group.services.length === 1 ? '' : 's'}
+                                    </span>
+                                </div>
+                                <div className="grid gap-4">
+                                    {group.services.map((service) => (
+                                        <ServiceCard key={service.id} service={service} />
+                                    ))}
+                                </div>
+                            </section>
                         ))
                     )}
                 </section>
