@@ -551,6 +551,54 @@ const getVoiceAssignmentErrorMessage = (error, fallbackMessage) => {
   return fallbackMessage;
 };
 
+const getSongArtworkUrl = (song = {}) => {
+  const directArtwork =
+    song.artworkUrl ||
+    song.portada ||
+    song.imagen ||
+    song.image ||
+    song.cover ||
+    song.thumbnail ||
+    song.artwork ||
+    song.album_art ||
+    song.albumArt ||
+    song.caratula ||
+    song.foto ||
+    '';
+
+  if (directArtwork) return directArtwork;
+  if (!song.mp3) return '';
+
+  return `/api/mp3-cover-art?src=${encodeURIComponent(song.mp3)}`;
+};
+
+function SongArtworkThumb({ song, index }) {
+  const [failed, setFailed] = useState(false);
+  const artworkUrl = getSongArtworkUrl(song);
+
+  return (
+    <div className="relative h-[76px] w-[76px] shrink-0 overflow-hidden rounded-[16px] border border-zinc-200 bg-zinc-100 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+      {artworkUrl && !failed ? (
+        <img
+          src={artworkUrl}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          className="h-full w-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_30%_20%,rgba(59,130,246,0.20),transparent_38%),linear-gradient(135deg,rgba(248,250,252,0.96),rgba(226,232,240,0.74))] text-zinc-400 dark:bg-[radial-gradient(circle_at_30%_20%,rgba(59,130,246,0.30),transparent_38%),linear-gradient(135deg,rgba(255,255,255,0.10),rgba(255,255,255,0.02))] dark:text-white/52">
+          <ListMusic className="h-5 w-5" aria-hidden="true" />
+        </div>
+      )}
+      <span className="absolute bottom-1 left-1 inline-flex h-5 min-w-5 items-center justify-center rounded-[7px] border border-white/40 bg-zinc-950/72 px-1 text-[10px] font-black leading-none text-white shadow-lg backdrop-blur dark:border-white/12">
+        {index + 1}
+      </span>
+    </div>
+  );
+}
+
 export default function EnsayoHub({
   playlist = [],
   contextTitle = 'Modo Ensayo',
@@ -1530,27 +1578,12 @@ export default function EnsayoHub({
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-28 pt-4">
-        <div className="mx-auto max-w-5xl">
-          <div className="overflow-hidden rounded-[2rem] border border-zinc-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-zinc-950/88 dark:shadow-[0_24px_80px_rgba(0,0,0,0.4)]">
+      <main className="min-h-0 flex-1 overflow-y-auto px-0 pb-28 pt-4">
+        <div className="mx-auto w-full max-w-5xl">
+          <div className="overflow-hidden">
             {(playableSongs.length > 0 || printableSongs.length > 0) && (
-              <section className="border-b border-zinc-200/90 bg-[linear-gradient(180deg,_rgba(248,250,252,0.92),_rgba(255,255,255,0.96))] px-4 py-4 dark:border-white/10 dark:bg-[linear-gradient(180deg,_rgba(15,23,42,0.55),_rgba(9,9,11,0.92))]">
-                <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-4">
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-zinc-500 dark:text-zinc-400">
-                      Reproducir setlist
-                    </p>
-                    <p className="mt-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                      Reproduce toda la lista de canciones.
-                    </p>
-                    {queueState.active && (
-                      <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                        Sonando: {queueSongsRef.current[queueState.index]?.title || 'Setlist en reproduccion'}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="flex min-w-0 flex-wrap items-center justify-start gap-2 sm:justify-end">
+              <section className="border-y border-zinc-200/90 px-4 py-3.5 dark:border-white/10 sm:px-5">
+                <div className="flex min-w-0 flex-wrap items-center justify-start gap-2 sm:justify-end">
                     {queueState.active && (
                       <button
                         type="button"
@@ -1568,7 +1601,7 @@ export default function EnsayoHub({
                       aria-label="Imprimir setlist PDF V2"
                     >
                       <Printer className="h-4 w-4" />
-                      Imprimir
+                      Imprimir todo
                     </button>
                     <button
                       type="button"
@@ -1579,7 +1612,6 @@ export default function EnsayoHub({
                       <Play className="ml-0.5 h-4 w-4" />
                       {queueState.active ? 'Reiniciar lista' : 'Reproducir todo'}
                     </button>
-                  </div>
                 </div>
               </section>
             )}
@@ -1678,7 +1710,7 @@ export default function EnsayoHub({
                   }}
                   role="button"
                   tabIndex={isEditMode ? -1 : 0}
-                  className={`ui-pressable-row group grid w-full items-start gap-x-3 gap-y-2 border-b border-zinc-200/90 px-4 py-4 text-left transition-colors dark:border-white/10 last:border-b-0 ${
+                  className={`ui-pressable-row group grid w-full items-start gap-x-3.5 gap-y-2 border-b border-zinc-200/90 px-4 py-3.5 text-left transition-colors dark:border-white/10 last:border-b-0 sm:gap-x-4 sm:px-5 ${
                     isEditMode
                       ? 'grid-cols-[auto_auto_minmax(0,1fr)]'
                       : 'grid-cols-[auto_minmax(0,1fr)]'
@@ -1703,21 +1735,19 @@ export default function EnsayoHub({
                     </div>
                   )}
 
-                  <div className="flex w-12 shrink-0 justify-center self-start pt-0.5 text-2xl font-black tabular-nums leading-none tracking-tight text-zinc-500 dark:text-zinc-300">
-                    {String(index + 1).padStart(2, '0')}
-                  </div>
+                  <SongArtworkThumb song={song} index={index} />
 
                   <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-start gap-3">
+                    <div className="flex min-w-0 items-start gap-3.5">
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-base font-black tracking-tight text-zinc-950 dark:text-zinc-50 md:text-lg">
+                        <p className="truncate text-base font-black leading-tight tracking-tight text-zinc-950 dark:text-zinc-50 md:text-lg">
                           {song?.title || `Canción ${index + 1}`}
                         </p>
-                        <p className="truncate text-sm text-zinc-500 dark:text-zinc-400">
+                        <p className="mt-0.5 truncate text-sm leading-tight text-zinc-500 dark:text-zinc-400">
                           {song?.artist || 'Redil Worship'}
                         </p>
                         {metadataItems.length > 0 && (
-                          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-zinc-500 dark:text-zinc-400">
+                          <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold leading-none text-zinc-500 dark:text-zinc-400">
                             {metadataItems.map((item, metaIndex) => (
                               <React.Fragment key={`${songActionKey}-meta-${item}-${metaIndex}`}>
                                 {metaIndex > 0 && (
