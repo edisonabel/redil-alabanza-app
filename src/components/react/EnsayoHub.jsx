@@ -1579,7 +1579,7 @@ export default function EnsayoHub({
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto px-0 pb-28 pt-4">
-        <div className="mx-auto w-full max-w-5xl lg:max-w-none">
+        <div className="mx-auto w-full max-w-5xl">
           <div className="overflow-hidden">
             {(playableSongs.length > 0 || printableSongs.length > 0) && (
               <section className="border-y border-zinc-200/90 px-4 py-3.5 dark:border-white/10 sm:px-5">
