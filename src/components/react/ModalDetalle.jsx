@@ -54,6 +54,105 @@ const RosterIcon = ({ role }) => {
     return <Icon icon={icon} className={isPianoBadge ? 'w-3 h-3' : 'w-3.5 h-3.5'} />;
 };
 
+const getCleanName = (name = '') => String(name || '').replace(/\s*\(.*?\)\s*/g, '').trim();
+
+const getInitials = (name = '') => {
+    const cleanName = getCleanName(name);
+    return cleanName
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((part) => part[0])
+        .join('')
+        .substring(0, 2)
+        .toUpperCase() || 'RD';
+};
+
+const getRoleSection = (role = {}) => {
+    const codigo = String(role?.codigo || '').toLowerCase();
+    const nombre = String(role?.nombre || '').toLowerCase();
+    const text = `${codigo} ${nombre}`.trim();
+
+    if (
+        isEventRepertoryManagerRoleCode(codigo) ||
+        text.includes('direccion') ||
+        text.includes('dirección') ||
+        text.includes('lider_alabanza') ||
+        text.includes('líder de alabanza')
+    ) {
+        return { key: 'direccion', label: 'Dirección', accent: 'text-violet-400', line: 'bg-violet-400/24' };
+    }
+
+    if (
+        codigo.includes('encargado_letras') ||
+        codigo.includes('letra_y_notas') ||
+        codigo.includes('produccion_visual') ||
+        codigo.includes('letras') ||
+        nombre.includes('letras')
+    ) {
+        return { key: 'letras', label: 'Letras', accent: 'text-amber-400', line: 'bg-amber-400/24' };
+    }
+
+    if (codigo.startsWith('voz_') || nombre.includes('voz') || nombre.includes('vocal')) {
+        return { key: 'voces', label: 'Voces', accent: 'text-blue-400', line: 'bg-blue-400/24' };
+    }
+
+    if (
+        text.includes('sonido') ||
+        text.includes('audio') ||
+        text.includes('consola') ||
+        text.includes('multimedia') ||
+        text.includes('video') ||
+        text.includes('visual')
+    ) {
+        return { key: 'produccion', label: 'Producción', accent: 'text-sky-300', line: 'bg-sky-300/24' };
+    }
+
+    return { key: 'banda', label: 'Banda', accent: 'text-teal-300', line: 'bg-teal-300/24' };
+};
+
+const getSongArtworkUrl = (song = {}) => {
+    const directArtwork =
+        song.portada ||
+        song.imagen ||
+        song.image ||
+        song.cover ||
+        song.thumbnail ||
+        song.artwork ||
+        song.album_art ||
+        song.albumArt ||
+        song.caratula ||
+        '';
+
+    if (directArtwork) return directArtwork;
+    if (!song.mp3) return '';
+
+    return `/api/mp3-cover-art?src=${encodeURIComponent(song.mp3)}`;
+};
+
+function SongArtwork({ song }) {
+    const [failed, setFailed] = useState(false);
+    const artworkUrl = getSongArtworkUrl(song);
+
+    if (!artworkUrl || failed) {
+        return (
+            <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_30%_20%,rgba(59,130,246,0.38),transparent_36%),linear-gradient(135deg,rgba(255,255,255,0.14),rgba(255,255,255,0.03))] text-white/74">
+                <Icon icon={musicNoteIcon} className="h-7 w-7" aria-hidden="true" />
+            </div>
+        );
+    }
+
+    return (
+        <img
+            src={artworkUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="h-full w-full object-cover"
+            onError={() => setFailed(true)}
+        />
+    );
+}
+
 export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = false }) {
     const [isOpen, setIsOpen] = useState(false);
     const [eventData, setEventData] = useState(null);
@@ -61,6 +160,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
     const [playlistItems, setPlaylistItems] = useState([]);
     const [loadingPlaylist, setLoadingPlaylist] = useState(false);
     const [focusSection, setFocusSection] = useState(null);
+    const [activeTab, setActiveTab] = useState('repertorio');
     const [flashPlaylistSection, setFlashPlaylistSection] = useState(false);
     const playlistSectionRef = useRef(null);
 
@@ -70,6 +170,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
             if (!cardData) return;
             setEventData(cardData);
             setFocusSection(options?.focusSection || null);
+            setActiveTab(options?.focusSection === 'equipo' ? 'equipo' : 'repertorio');
             setIsOpen(true);
             document.body.style.overflow = 'hidden';
             fetchPlaylist(cardData.dbData?.id);
@@ -109,7 +210,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
 
             const { data: items } = await supabase
                 .from('playlist_canciones')
-                .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, link_youtube, link_acordes, link_letras, link_voces, link_secuencias)')
+                .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, mp3, link_youtube, link_acordes, link_letras, link_voces, link_secuencias)')
                 .eq('playlist_id', pl.id)
                 .order('orden');
 
@@ -149,8 +250,13 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
 
     const fechaObj = eventData?.fecha || new Date();
     const titulo = eventData?.dbData?.titulo || 'Actividad Redil';
-    const estado = eventData?.dbData?.estado || 'Activo';
     const { theme: temaPrincipal, preacher: predicador } = getEventThemeAndPreacher(eventData?.dbData || {}, titulo);
+    const eventNote =
+        String(eventData?.dbData?.descripcion || '').trim() ||
+        String(eventData?.dbData?.anexo || '').trim() ||
+        String(eventData?.dbData?.notas || '').trim() ||
+        String(eventData?.dbData?.observaciones || '').trim() ||
+        String(predicador || '').trim();
 
     const mesStr = fechaObj.toLocaleString('es-ES', { month: 'short' });
     const fechaFormat = `${fechaObj.toLocaleString('es-ES', { weekday: 'long' })} ${fechaObj.getDate()} ${mesStr}`;
@@ -158,6 +264,21 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
     const timeString = eventData?.dbData?.hora_fin ? `${horaInicio} - ${eventData.dbData.hora_fin.substring(0, 5)}` : horaInicio;
 
     const roster = normalizeRosterAssignments(eventData?.dbData?.asignaciones || [], initialRoles || [], { maxVoiceSlots: 4 });
+    const rolesById = new Map((initialRoles || []).map((role) => [role.id, role]));
+    const rosterGroupsMap = new Map();
+
+    roster.forEach((asig) => {
+        if (!asig?.perfiles) return;
+        const role = rolesById.get(asig.rol_id) || asig.roles || {};
+        const section = getRoleSection(role);
+        const group = rosterGroupsMap.get(section.key) || { ...section, members: [] };
+        group.members.push({ assignment: asig, profile: asig.perfiles, role });
+        rosterGroupsMap.set(section.key, group);
+    });
+
+    const rosterGroups = ['direccion', 'letras', 'banda', 'voces', 'produccion']
+        .map((key) => rosterGroupsMap.get(key))
+        .filter(Boolean);
     const eventoId = eventData?.dbData?.id || '';
     const miAsignacion = roster.find((asig) => asig?.perfiles?.id === sessionUser?.id || asig?.perfiles?.email === sessionUser?.email);
     let isModerator = false;
@@ -178,145 +299,198 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
     };
 
     return (
-        <div role="dialog" aria-modal="true" aria-hidden={isOpen ? 'false' : 'true'} data-ui-modal="true" className={`fixed inset-0 z-[70] min-h-[100dvh] bg-overlay/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 pt-6 pb-[calc(104px+env(safe-area-inset-bottom))] lg:items-center lg:p-6 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
-            <div className={`bg-surface border border-border rounded-[24px] md:rounded-3xl w-full max-w-2xl lg:max-w-[1180px] xl:max-w-[1260px] max-h-[calc(100dvh-132px-env(safe-area-inset-bottom))] lg:max-h-[calc(100dvh-96px)] shadow-2xl flex flex-col overflow-hidden transition-transform duration-300 my-auto lg:my-0 ${isOpen ? 'scale-100' : 'scale-95'}`}>
-                {/* Header */}
-                <div className="p-6 border-b border-border flex justify-between items-start bg-background shrink-0 lg:px-5 lg:py-4">
-                    <div>
-                        <span className="inline-block px-3 py-1 bg-brand/10 text-brand rounded-full text-xs font-bold tracking-widest uppercase mb-3 border border-brand/30 shadow-sm lg:mb-2">{estado}</span>
-                        <h2 className="text-3xl font-black text-content tracking-tight capitalize lg:text-[2rem]">{fechaFormat}</h2>
-                        <div className="mt-2 flex items-end gap-2 lg:mt-1.5">
-                            <div className="flex min-w-0 flex-1 items-end gap-3">
-                                <div className={`min-w-0 ${predicador ? 'flex-[0_1_65%] max-w-[65%]' : 'flex-1 max-w-full'}`}>
-                                    <span className="min-w-0 line-clamp-2 font-medium text-lg text-content-muted lg:text-[1.05rem]">
-                                        {temaPrincipal || titulo}
-                                    </span>
-                                </div>
-                                {predicador && (
-                                    <div className="min-w-0 flex-[1_1_35%] self-end border-l border-white/12 pl-2.5 lg:pl-3">
-                                        <p className="min-w-0 text-left line-clamp-2 text-[13px] lg:text-[14px] font-light leading-[1.08] text-content dark:text-white">
-                                            {predicador}
-                                        </p>
+        <div
+            role="dialog"
+            aria-modal="true"
+            aria-hidden={isOpen ? 'false' : 'true'}
+            data-ui-modal="true"
+            className={`fixed inset-0 z-[70] min-h-[100dvh] items-start justify-center overflow-y-auto bg-zinc-950/74 p-2 pt-3 pb-[calc(88px+env(safe-area-inset-bottom))] backdrop-blur-md transition-opacity duration-300 sm:p-4 sm:pt-6 lg:flex lg:items-center lg:p-6 ${isOpen ? 'flex opacity-100' : 'pointer-events-none opacity-0'}`}
+            onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
+        >
+            <div className={`relative my-0 flex max-h-[calc(100dvh-92px-env(safe-area-inset-bottom))] w-full max-w-2xl flex-col overflow-hidden rounded-[24px] border border-white/12 bg-[linear-gradient(145deg,rgba(20,26,35,0.98),rgba(9,12,17,0.98))] text-white shadow-[0_30px_90px_rgba(0,0,0,0.54)] transition-transform duration-300 sm:rounded-[28px] lg:my-auto lg:max-h-[calc(100dvh-80px)] lg:max-w-[1180px] xl:max-w-[1260px] ${isOpen ? 'scale-100' : 'scale-95'}`}>
+                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(59,130,246,0.16),transparent_34%),radial-gradient(circle_at_96%_0%,rgba(59,130,246,0.10),transparent_28%)]" />
+
+                <button
+                    type="button"
+                    onClick={handleClose}
+                    aria-label="Cerrar detalle"
+                    className="absolute right-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white sm:right-4 sm:top-4 sm:h-10 sm:w-10"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                </button>
+
+                <div className="relative z-10 shrink-0 border-b border-white/10 px-4 pb-3 pt-5 sm:px-7 sm:pt-8 lg:px-8 lg:pb-5">
+                    <div className="grid gap-3 pr-10 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start lg:gap-6 lg:pr-12">
+                        <div className="min-w-0">
+                            <h2 className="text-[2rem] font-black capitalize leading-[0.9] tracking-tight text-white sm:text-[2.85rem] lg:text-[3rem]">
+                                {fechaFormat}
+                            </h2>
+                            {temaPrincipal ? (
+                                <p className="mt-2 text-lg font-semibold leading-tight text-white/68 sm:mt-3 sm:text-xl">
+                                    <span className="text-action">{temaPrincipal}</span>
+                                </p>
+                            ) : null}
+                            {eventNote ? (
+                                <p className="mt-2 line-clamp-2 max-w-3xl text-sm font-light leading-5 text-white/64 sm:mt-3 sm:text-base sm:leading-7 lg:text-[1.05rem]">
+                                    {eventNote}
+                                </p>
+                            ) : null}
+                        </div>
+                        <span className="inline-flex h-9 w-max items-center gap-2 rounded-full border border-white/12 bg-white/[0.06] px-3 text-sm font-bold text-white/76 shadow-inner sm:h-11 sm:px-4 sm:text-base">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="text-action"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+                            {timeString}
+                        </span>
+                    </div>
+
+                    <a
+                        href={rehearsalHref}
+                        className="group relative mt-4 inline-flex min-h-[48px] w-full items-center justify-center gap-3 overflow-hidden rounded-2xl border border-blue-300/30 bg-[linear-gradient(135deg,#3b82f6,#1d4ed8)] px-5 py-2.5 text-base font-black text-white shadow-[0_16px_34px_rgba(37,99,235,0.34)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_20px_42px_rgba(37,99,235,0.42)] sm:mt-6 sm:min-h-[58px] sm:px-6 sm:py-3 sm:text-lg lg:w-[min(100%,34rem)]"
+                    >
+                        <span className="absolute inset-0 translate-y-full bg-white/14 transition-transform duration-300 group-hover:translate-y-0" />
+                        <Icon icon={musicNoteIcon} className="relative z-10 h-5 w-5 sm:h-7 sm:w-7" aria-hidden="true" />
+                        <span className="relative z-10">Entrar a Modo Ensayo</span>
+                    </a>
+                </div>
+
+                <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+                    <div className="grid grid-cols-2 border-b border-white/10 px-4 sm:px-7 lg:px-8">
+                        {[
+                            { id: 'repertorio', label: 'Repertorio' },
+                            { id: 'equipo', label: `Equipo (${roster.length})` },
+                        ].map((tab) => (
+                            <button
+                                key={tab.id}
+                                type="button"
+                                onClick={() => setActiveTab(tab.id)}
+                                className={`relative h-12 text-sm font-black transition-colors sm:h-14 sm:text-base ${activeTab === tab.id ? 'text-action' : 'text-white/55 hover:text-white/78'}`}
+                            >
+                                {tab.label}
+                                <span className={`absolute inset-x-0 bottom-0 h-1 rounded-t-full bg-action transition-opacity ${activeTab === tab.id ? 'opacity-100' : 'opacity-0'}`} />
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-7 sm:py-5 lg:px-8 lg:py-6">
+                        {activeTab === 'repertorio' ? (
+                            <div ref={playlistSectionRef} className={`grid gap-3 rounded-2xl transition-shadow sm:gap-4 ${flashPlaylistSection ? 'shadow-[0_0_0_2px_rgba(59,130,246,0.48)]' : ''}`}>
+                                {loadingPlaylist ? (
+                                    <div className="flex justify-center py-14"><div className="h-9 w-9 animate-spin rounded-full border-4 border-blue-400/25 border-t-blue-400" /></div>
+                                ) : !playlist ? (
+                                    <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-white/14 bg-white/[0.035] px-5 py-12 text-center">
+                                        <Icon icon={musicNoteIcon} className="mb-3 h-9 w-9 text-white/40" aria-hidden="true" />
+                                        <p className="text-base font-black text-white/70">Sin repertorio asignado</p>
+                                    </div>
+                                ) : playlistItems.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-white/14 bg-white/[0.035] px-5 py-12 text-center">
+                                        <Icon icon={musicNoteIcon} className="mb-3 h-9 w-9 text-white/40" aria-hidden="true" />
+                                        <p className="text-base font-black text-white/70">Repertorio sin canciones</p>
+                                        {canManageRepertorio && (
+                                            <button
+                                                type="button"
+                                                onClick={handleManageRepertorio}
+                                                className="mt-5 inline-flex min-h-[46px] items-center justify-center gap-2 rounded-2xl border border-action/60 bg-transparent px-5 py-3 text-base font-bold text-action transition-colors hover:bg-action/10"
+                                            >
+                                                <span>{manageRepertorioLabel}</span>
+                                            </button>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="grid gap-2.5 sm:gap-3 lg:grid-cols-2">
+                                            {playlistItems.map((item, idx) => {
+                                                const c = item.canciones || {};
+                                                const order = idx + 1;
+                                                return (
+                                                    <article key={`${item.cancion_id || c.id || idx}-${order}`} className="group overflow-hidden rounded-2xl border border-white/10 bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors hover:border-blue-400/36 hover:bg-white/[0.055]">
+                                                        <div className="grid min-w-0 grid-cols-[4.35rem_minmax(0,1fr)_2.65rem] items-center gap-2.5 p-2.5 sm:grid-cols-[6rem_minmax(0,1fr)_3.25rem] sm:gap-3 sm:p-3.5">
+                                                            <div className="h-[4.35rem] w-[4.35rem] overflow-hidden rounded-xl border border-white/10 bg-white/[0.05] shadow-lg sm:h-24 sm:w-24">
+                                                                <SongArtwork song={c} />
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <h3 className="truncate text-base font-black leading-tight text-white sm:text-xl">
+                                                                    {c.titulo || 'Sin título'}
+                                                                </h3>
+                                                                <p className="mt-1 line-clamp-1 text-xs font-medium leading-4 text-white/58 sm:line-clamp-2 sm:text-base sm:leading-5">
+                                                                    {c.cantante || ''}
+                                                                </p>
+                                                            </div>
+                                                            <span className="inline-flex h-9 w-9 items-center justify-center justify-self-end rounded-xl border border-white/12 bg-white/[0.06] text-base font-black text-white/78 sm:h-11 sm:w-11 sm:text-lg">
+                                                                {order}
+                                                            </span>
+                                                        </div>
+                                                    </article>
+                                                );
+                                            })}
+                                        </div>
+                                        {canManageRepertorio && (
+                                            <button
+                                                type="button"
+                                                onClick={handleManageRepertorio}
+                                                className="mt-2 inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl border border-action/60 bg-transparent px-5 py-3 text-base font-bold text-action transition-colors hover:bg-action/10"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                                                    <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                                                </svg>
+                                                <span>{manageRepertorioLabel}</span>
+                                            </button>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="grid gap-4 sm:gap-5 lg:gap-6">
+                                {rosterGroups.length > 0 ? rosterGroups.map((group) => (
+                                    <section key={group.key} className="grid gap-2.5 sm:gap-3">
+                                        <div className="flex items-center gap-3">
+                                            <h3 className={`shrink-0 text-[11px] font-black uppercase tracking-[0.18em] sm:text-[12px] ${group.accent}`}>
+                                                {group.label}
+                                            </h3>
+                                            <span className={`h-px flex-1 ${group.line}`} aria-hidden="true" />
+                                        </div>
+                                        <div className={`grid gap-2 sm:gap-2.5 lg:grid-cols-4 xl:grid-cols-5 ${group.members.length === 1 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-2 sm:grid-cols-3'}`}>
+                                            {group.members.map(({ assignment, profile, role }) => {
+                                                const roleName = role?.nombre || assignment?.roles?.nombre || 'Equipo';
+                                                const displayName = getCleanName(profile.nombre) || profile.nombre || 'Persona';
+                                                return (
+                                                    <article key={`${assignment.rol_id}-${profile.id || profile.email || displayName}`} className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/8 bg-white/[0.025] p-2 text-left">
+                                                        <div className="relative h-11 w-11 shrink-0 sm:h-12 sm:w-12 lg:h-13 lg:w-13">
+                                                            {profile.avatar_url ? (
+                                                                <img
+                                                                    src={profile.avatar_url}
+                                                                    alt={profile.nombre}
+                                                                    loading="lazy"
+                                                                    decoding="async"
+                                                                    className="h-full w-full rounded-full border border-white/14 object-cover shadow-[0_8px_20px_rgba(0,0,0,0.30)]"
+                                                                />
+                                                            ) : (
+                                                                <div className="flex h-full w-full items-center justify-center rounded-full border border-action/24 bg-action/12 text-base font-black text-action shadow-[0_8px_20px_rgba(0,0,0,0.26)] sm:text-lg">
+                                                                    {getInitials(profile.nombre)}
+                                                                </div>
+                                                            )}
+                                                            <span className="absolute -right-1 -top-1 inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/14 bg-zinc-950 text-action shadow-[0_8px_20px_rgba(0,0,0,0.35)] sm:h-7 sm:w-7">
+                                                                <RosterIcon role={role} />
+                                                            </span>
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <h4 className="truncate text-sm font-black leading-tight text-white sm:text-base">
+                                                                {displayName}
+                                                            </h4>
+                                                            <p className="mt-0.5 truncate text-[10px] font-bold uppercase tracking-[0.10em] text-white/46 sm:text-[11px]">
+                                                                {roleName}
+                                                            </p>
+                                                        </div>
+                                                    </article>
+                                                );
+                                            })}
+                                        </div>
+                                    </section>
+                                )) : (
+                                    <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-white/14 bg-white/[0.035] px-5 py-12 text-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="mb-3 text-white/36"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="m19 8 3 3-3 3" /></svg>
+                                        <p className="text-base font-black text-white/70">Nadie asignado aún al equipo</p>
                                     </div>
                                 )}
                             </div>
-                            <span className="shrink-0 text-sm font-bold text-content-muted bg-border/50 px-2 py-0.5 rounded-md ml-2">{timeString}</span>
-                        </div>
-                    </div>
-                    <button onClick={handleClose} className="text-content-muted hover:text-content transition-colors p-2 bg-background hover:bg-border rounded-full shadow-sm border border-border lg:p-1.5">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
-                    </button>
-                </div>
-
-                {/* Body scrollable */}
-                <div className="p-6 pb-[100px] overflow-y-auto flex-1 bg-surface lg:grid lg:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)] lg:grid-rows-1 lg:gap-5 lg:overflow-hidden lg:px-5 lg:pt-4 lg:pb-5 xl:grid-cols-[minmax(0,1.14fr)_minmax(390px,0.86fr)]">
-                    {/* Assigned Personnel */}
-                    <div className="mb-8 relative z-10 lg:mb-0 lg:min-h-0 lg:overflow-y-auto lg:pr-2">
-                        <h4 className="text-xs font-bold text-content-muted uppercase tracking-widest mb-4 flex items-center gap-2 lg:mb-3">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg>
-                            Personal Asignado
-                        </h4>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-3">
-                            {roster.length > 0 ? roster.map((asig, idx) => {
-                                if (!asig.perfiles) return null;
-                                const p = asig.perfiles;
-                                const rNombre = initialRoles?.find?.(r => r.id === asig.rol_id)?.nombre || asig.roles?.nombre || 'Músico';
-                                const rCodigo = initialRoles?.find?.(r => r.id === asig.rol_id)?.codigo || asig.roles?.codigo || '';
-
-                                const cleanName = p.nombre.replace(/\s*\(.*?\)\s*/g, '').trim();
-                                const initials = cleanName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-
-                                return (
-                                    <div key={idx} className="flex items-center gap-4 p-3 rounded-2xl border border-border bg-background hover:bg-surface transition-colors group relative overflow-hidden lg:gap-3 lg:px-3 lg:py-2.5">
-                                        <div className="relative">
-                                            {p.avatar_url ? (
-                                                <img src={p.avatar_url} alt={p.nombre} loading="lazy" decoding="async" className="w-14 h-14 shrink-0 rounded-full object-cover shadow-sm bg-surface lg:w-12 lg:h-12" />
-                                            ) : (
-                                                <div className="w-14 h-14 shrink-0 rounded-full bg-brand/10 text-brand border border-brand/30 flex items-center justify-center font-black text-lg shadow-sm lg:w-12 lg:h-12 lg:text-base">{initials}</div>
-                                            )}
-                                            <div className="absolute -bottom-1 -right-1 w-7 h-7 bg-surface rounded-full flex items-center justify-center shadow-md border border-border text-content-muted lg:w-6 lg:h-6">
-                                                <RosterIcon role={{ codigo: rCodigo, nombre: rNombre }} />
-                                            </div>
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="font-bold text-content text-base truncate lg:text-[0.97rem]">{p.nombre}</p>
-                                            <p className="text-xs font-semibold text-content-muted uppercase tracking-wider lg:text-[11px]">{rNombre}</p>
-                                        </div>
-                                    </div>
-                                );
-                            }) : (
-                                <div className="col-span-1 md:col-span-2 flex flex-col items-center justify-center py-8 opacity-50 bg-background rounded-2xl border border-border border-dashed">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mb-3 text-content-muted"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="m19 8 3 3-3 3" /></svg>
-                                    <p className="font-bold text-base text-content-muted">Nadie asignado aún al roster</p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                                        {/* Setlist */}
-                    <div
-                        ref={playlistSectionRef}
-                        className={`relative z-10 rounded-2xl transition-shadow lg:min-h-0 lg:overflow-y-auto lg:pl-1 ${flashPlaylistSection ? 'shadow-[0_0_0_2px_rgba(20,184,166,0.45)]' : ''}`}
-                    >
-                        <h4 className="text-xs font-bold text-content-muted uppercase tracking-widest mb-4 flex items-center gap-2 lg:mb-3">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
-                            Repertorio / Setlist
-                        </h4>
-
-                        <div className="bg-background border border-border rounded-[24px] p-5 shadow-inner min-h-[150px] lg:p-4">
-                            {loadingPlaylist ? (
-                                <div className="flex justify-center py-10"><div className="w-8 h-8 border-4 border-brand/30 border-t-brand rounded-full animate-spin"></div></div>
-                            ) : !playlist ? (
-                                <div className="flex flex-col items-center justify-center py-6 opacity-60">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" className="mx-auto mb-3 text-content-muted" stroke="currentColor" strokeWidth="1.5"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
-                                    <p className="text-sm font-bold text-content-muted">Sin setlist asignada</p>
-                                    <p className="text-[11px] text-content-muted mt-1">El líder de alabanza puede crear una desde el módulo Repertorio.</p>
-                                </div>
-                            ) : (
-                                <div className="flex flex-col">
-                                    <div className="flex flex-col items-center justify-center w-full gap-2.5 mb-6 lg:mb-4">
-                                        <a href={rehearsalHref} className="group relative inline-flex w-full items-center justify-center gap-3 px-8 py-3 overflow-hidden rounded-xl bg-action text-white font-bold text-sm sm:text-base tracking-wide shadow-lg hover:bg-action/90 hover:-translate-y-0.5 transition-all duration-300 lg:px-6 lg:py-2.5">
-                                            <div className="absolute inset-0 bg-white/15 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-in-out"></div>
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" className="shrink-0 relative z-10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                                            <span className="relative z-10">Entrar a Modo Ensayo</span>
-                                        </a>
-                                    </div>
-                                    <div className="flex flex-col gap-2 lg:gap-1.5">
-                                        {playlistItems.length > 0 ? playlistItems.map((item, idx) => {
-                                            const c = item.canciones || {};
-                                            return (
-                                                <article key={idx} className="relative bg-surface border border-border rounded-xl shadow-sm overflow-hidden hover:border-brand/30 transition-colors">
-                                                    <div className="px-3 py-2.5 sm:px-4 sm:py-3 flex items-center gap-3 lg:px-3 lg:py-2.5">
-                                                        <div className="w-8 h-8 rounded-full bg-brand/10 text-brand border border-brand/30 flex items-center justify-center font-black shrink-0 text-sm shadow-sm lg:w-7 lg:h-7 lg:text-xs">{idx + 1}</div>
-                                                        <div className="flex-1 min-w-0">
-                                                            <h3 className="text-base font-bold tracking-tight text-content truncate">{c.titulo || 'Sin título'}</h3>
-                                                            <p className="text-xs font-medium text-content-muted truncate">{c.cantante || 'Redil Sur'}</p>
-                                                        </div>
-                                                    </div>
-                                                </article>
-                                            )
-                                        }) : null}
-                                    </div>
-                                    <p className="text-[10px] sm:text-xs text-content-muted mt-4 text-center lg:mt-3">
-                                        Última modificación: {new Date(playlist.updated_at).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                                    </p>
-                                </div>
-                            )}
-                        </div>
-                        {canManageRepertorio && (
-                            <button
-                                type="button"
-                                onClick={handleManageRepertorio}
-                                className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 bg-surface text-content hover:bg-background rounded-xl transition-colors font-bold text-xs tracking-wide border border-border dark:bg-white dark:text-zinc-900 dark:border-white/90 dark:hover:bg-zinc-100 lg:mt-3 lg:py-2"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-                                    <path d="M9 18V5l12-2v13"></path>
-                                    <circle cx="6" cy="18" r="3"></circle>
-                                    <circle cx="18" cy="16" r="3"></circle>
-                                </svg>
-                                <span>{manageRepertorioLabel}</span>
-                            </button>
                         )}
                     </div>
                 </div>
