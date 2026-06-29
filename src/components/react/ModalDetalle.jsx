@@ -163,6 +163,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
     const [activeTab, setActiveTab] = useState('repertorio');
     const [flashPlaylistSection, setFlashPlaylistSection] = useState(false);
     const playlistSectionRef = useRef(null);
+    const previousBottomNavHiddenRef = useRef(null);
 
     useEffect(() => {
         // Register global hook for CalendarioGrid
@@ -190,6 +191,22 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
 
         return () => clearTimeout(scrollTimer);
     }, [isOpen, focusSection, playlistItems.length, loadingPlaylist]);
+
+    useEffect(() => {
+        if (!isOpen || typeof document === 'undefined') return undefined;
+
+        const root = document.documentElement;
+        previousBottomNavHiddenRef.current = root.getAttribute('data-bottom-nav-hidden');
+        root.setAttribute('data-bottom-nav-hidden', 'true');
+
+        return () => {
+            if (previousBottomNavHiddenRef.current === null) {
+                root.removeAttribute('data-bottom-nav-hidden');
+            } else {
+                root.setAttribute('data-bottom-nav-hidden', previousBottomNavHiddenRef.current);
+            }
+        };
+    }, [isOpen]);
 
     const fetchPlaylist = async (eventoId) => {
         if (!eventoId) return;
@@ -304,10 +321,10 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
             aria-modal="true"
             aria-hidden={isOpen ? 'false' : 'true'}
             data-ui-modal="true"
-            className={`fixed inset-0 z-[70] min-h-[100dvh] items-start justify-center overflow-y-auto bg-zinc-950/74 p-2 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-[calc(124px+env(safe-area-inset-bottom))] backdrop-blur-md transition-opacity duration-300 sm:p-4 sm:pt-6 lg:flex lg:items-center lg:p-6 ${isOpen ? 'flex opacity-100' : 'pointer-events-none opacity-0'}`}
+            className={`fixed inset-0 z-[140] min-h-[100dvh] items-start justify-center overflow-y-auto bg-zinc-950/76 p-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-[calc(env(safe-area-inset-bottom)+1rem)] backdrop-blur-md transition-opacity duration-300 sm:p-4 sm:pt-6 lg:flex lg:items-start lg:px-6 lg:pb-6 lg:pt-[7vh] ${isOpen ? 'flex opacity-100' : 'pointer-events-none opacity-0'}`}
             onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
         >
-            <div className={`relative my-0 flex max-h-[76dvh] w-full max-w-2xl flex-col overflow-hidden rounded-[24px] border border-white/12 bg-[linear-gradient(145deg,rgba(20,26,35,0.98),rgba(9,12,17,0.98))] text-white shadow-[0_30px_90px_rgba(0,0,0,0.54)] transition-transform duration-300 sm:max-h-[calc(100dvh-112px-env(safe-area-inset-bottom))] sm:rounded-[28px] lg:my-auto lg:max-h-[calc(100dvh-80px)] lg:max-w-[1180px] xl:max-w-[1260px] ${isOpen ? 'scale-100' : 'scale-95'}`}>
+            <div className={`relative my-0 flex max-h-[84dvh] w-[calc(100%-0.35rem)] max-w-2xl flex-col overflow-hidden rounded-[24px] border border-white/12 bg-[linear-gradient(145deg,rgba(20,26,35,0.98),rgba(9,12,17,0.98))] text-white shadow-[0_30px_90px_rgba(0,0,0,0.54)] transition-transform duration-300 sm:max-h-[calc(100dvh-112px-env(safe-area-inset-bottom))] sm:w-full sm:rounded-[28px] lg:my-0 lg:max-h-[calc(100dvh-8.5rem)] lg:max-w-[1180px] xl:max-w-[1260px] ${isOpen ? 'scale-100' : 'scale-95'}`}>
                 <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(59,130,246,0.16),transparent_34%),radial-gradient(circle_at_96%_0%,rgba(59,130,246,0.10),transparent_28%)]" />
 
                 <button
@@ -319,16 +336,16 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                     <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
                 </button>
 
-                <div className="relative z-10 shrink-0 border-b border-white/10 px-4 pb-2.5 pt-4 sm:px-7 sm:pb-4 sm:pt-8 lg:px-8 lg:py-6">
+                <div className="relative z-10 shrink-0 border-b border-white/10 px-3 pb-2.5 pt-4 sm:px-7 sm:pb-4 sm:pt-8 lg:px-8 lg:py-6">
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 pr-9 lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-center lg:gap-x-8 lg:gap-y-0 lg:pr-12">
                         <div className="min-w-0">
                             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 lg:block">
                                 <div className="min-w-0">
-                                    <h2 className="text-[1.5rem] font-black capitalize leading-none tracking-tight text-white min-[390px]:text-[1.65rem] sm:text-[2.85rem] sm:leading-[0.9] lg:text-[2.35rem]">
+                                    <h2 className="text-[1.35rem] font-black capitalize leading-none tracking-tight text-white min-[390px]:text-[1.5rem] sm:text-[2.85rem] sm:leading-[0.9] lg:text-[2.35rem]">
                                         {fechaFormat}
                                     </h2>
                                     {temaPrincipal ? (
-                                        <p className="mt-1.5 text-base font-semibold leading-tight text-white/68 min-[390px]:text-[1.05rem] sm:mt-3 sm:text-xl lg:mt-2 lg:text-lg">
+                                        <p className="mt-1.5 text-[0.95rem] font-semibold leading-tight text-white/68 min-[390px]:text-base sm:mt-3 sm:text-xl lg:mt-2 lg:text-lg">
                                             <span className="text-action">{temaPrincipal}</span>
                                         </p>
                                     ) : null}
