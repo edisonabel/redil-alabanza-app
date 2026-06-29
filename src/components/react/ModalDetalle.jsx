@@ -135,7 +135,7 @@ function SongArtwork({ song }) {
 
     if (!artworkUrl || failed) {
         return (
-            <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_30%_20%,rgba(59,130,246,0.38),transparent_36%),linear-gradient(135deg,rgba(255,255,255,0.14),rgba(255,255,255,0.03))] text-white/74">
+            <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_30%_20%,rgba(59,130,246,0.20),transparent_36%),linear-gradient(135deg,rgba(239,246,255,0.95),rgba(226,232,240,0.72))] text-slate-400 dark:bg-[radial-gradient(circle_at_30%_20%,rgba(59,130,246,0.38),transparent_36%),linear-gradient(135deg,rgba(255,255,255,0.14),rgba(255,255,255,0.03))] dark:text-white/74">
                 <Icon icon={musicNoteIcon} className="h-7 w-7" aria-hidden="true" />
             </div>
         );
@@ -321,49 +321,49 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
             aria-modal="true"
             aria-hidden={isOpen ? 'false' : 'true'}
             data-ui-modal="true"
-            className={`fixed inset-0 z-[140] min-h-[100dvh] items-start justify-center overflow-y-auto bg-zinc-950/76 p-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-[calc(env(safe-area-inset-bottom)+1rem)] backdrop-blur-md transition-opacity duration-300 sm:p-4 sm:pt-6 lg:flex lg:items-start lg:px-6 lg:pb-6 lg:pt-[7vh] ${isOpen ? 'flex opacity-100' : 'pointer-events-none opacity-0'}`}
+            className={`fixed inset-0 z-[140] min-h-[100dvh] items-start justify-center overflow-y-auto bg-slate-950/34 p-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-[calc(env(safe-area-inset-bottom)+1rem)] backdrop-blur-md transition-opacity duration-300 dark:bg-zinc-950/76 sm:p-4 sm:pt-6 lg:flex lg:items-start lg:px-6 lg:pb-6 lg:pt-[7vh] ${isOpen ? 'flex opacity-100' : 'pointer-events-none opacity-0'}`}
             onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
         >
-            <div className={`relative my-0 flex max-h-[84dvh] w-[calc(100%-0.35rem)] max-w-2xl flex-col overflow-hidden rounded-[24px] border border-white/12 bg-[linear-gradient(145deg,rgba(20,26,35,0.98),rgba(9,12,17,0.98))] text-white shadow-[0_30px_90px_rgba(0,0,0,0.54)] transition-transform duration-300 sm:max-h-[calc(100dvh-112px-env(safe-area-inset-bottom))] sm:w-full sm:rounded-[28px] lg:my-0 lg:max-h-[calc(100dvh-8.5rem)] lg:max-w-[1180px] xl:max-w-[1260px] ${isOpen ? 'scale-100' : 'scale-95'}`}>
-                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(59,130,246,0.16),transparent_34%),radial-gradient(circle_at_96%_0%,rgba(59,130,246,0.10),transparent_28%)]" />
+            <div className={`relative my-0 flex max-h-[84dvh] w-[calc(100%-0.35rem)] max-w-2xl flex-col overflow-hidden rounded-[24px] border border-slate-200/90 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.98))] text-slate-950 shadow-[0_28px_80px_rgba(15,23,42,0.20)] transition-transform duration-300 dark:border-white/12 dark:bg-[linear-gradient(145deg,rgba(20,26,35,0.98),rgba(9,12,17,0.98))] dark:text-white dark:shadow-[0_30px_90px_rgba(0,0,0,0.54)] sm:max-h-[calc(100dvh-112px-env(safe-area-inset-bottom))] sm:w-full sm:rounded-[28px] lg:my-0 lg:max-h-[calc(100dvh-8.5rem)] lg:max-w-[1180px] xl:max-w-[1260px] ${isOpen ? 'scale-100' : 'scale-95'}`}>
+                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(59,130,246,0.12),transparent_34%),radial-gradient(circle_at_96%_0%,rgba(59,130,246,0.07),transparent_28%)] dark:bg-[radial-gradient(circle_at_18%_0%,rgba(59,130,246,0.16),transparent_34%),radial-gradient(circle_at_96%_0%,rgba(59,130,246,0.10),transparent_28%)]" />
 
                 <button
                     type="button"
                     onClick={handleClose}
                     aria-label="Cerrar detalle"
-                    className="absolute right-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white sm:right-4 sm:top-4 sm:h-10 sm:w-10"
+                    className="absolute right-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/78 text-slate-500 shadow-sm transition-colors hover:bg-white hover:text-slate-900 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70 dark:hover:bg-white/[0.08] dark:hover:text-white sm:right-4 sm:top-4 sm:h-10 sm:w-10"
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
                 </button>
 
-                <div className="relative z-10 shrink-0 border-b border-white/10 px-3 pb-2.5 pt-4 sm:px-7 sm:pb-4 sm:pt-8 lg:px-8 lg:py-6">
+                <div className="relative z-10 shrink-0 border-b border-slate-200/80 px-3 pb-2.5 pt-4 dark:border-white/10 sm:px-7 sm:pb-4 sm:pt-8 lg:px-8 lg:py-6">
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 pr-9 lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-center lg:gap-x-8 lg:gap-y-0 lg:pr-12">
                         <div className="min-w-0">
                             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 lg:block">
                                 <div className="min-w-0">
-                                    <h2 className="text-[1.35rem] font-black capitalize leading-none tracking-tight text-white min-[390px]:text-[1.5rem] sm:text-[2.85rem] sm:leading-[0.9] lg:text-[2.35rem]">
+                                    <h2 className="text-[1.35rem] font-black capitalize leading-none tracking-tight text-slate-950 dark:text-white min-[390px]:text-[1.5rem] sm:text-[2.85rem] sm:leading-[0.9] lg:text-[2.35rem]">
                                         {fechaFormat}
                                     </h2>
                                     {temaPrincipal ? (
-                                        <p className="mt-1.5 text-[0.95rem] font-semibold leading-tight text-white/68 min-[390px]:text-base sm:mt-3 sm:text-xl lg:mt-2 lg:text-lg">
+                                        <p className="mt-1.5 text-[0.95rem] font-semibold leading-tight text-slate-600 dark:text-white/68 min-[390px]:text-base sm:mt-3 sm:text-xl lg:mt-2 lg:text-lg">
                                             <span className="text-action">{temaPrincipal}</span>
                                         </p>
                                     ) : null}
                                 </div>
-                                <span className="mt-0.5 inline-flex h-8 w-max items-center gap-1.5 rounded-full border border-white/12 bg-white/[0.06] px-2.5 text-xs font-bold text-white/76 shadow-inner min-[390px]:text-[13px] sm:h-11 sm:gap-2 sm:px-4 sm:text-base lg:hidden">
+                                <span className="mt-0.5 inline-flex h-8 w-max items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50/90 px-2.5 text-xs font-bold text-slate-700 shadow-inner dark:border-white/12 dark:bg-white/[0.06] dark:text-white/76 min-[390px]:text-[13px] sm:h-11 sm:gap-2 sm:px-4 sm:text-base lg:hidden">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="text-action sm:h-[17px] sm:w-[17px]"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
                                     {timeString}
                                 </span>
                             </div>
                             {eventNote ? (
-                                <p className="mt-2 line-clamp-1 max-w-3xl text-[12px] font-light leading-4 text-white/62 min-[390px]:text-[13px] sm:mt-3 sm:line-clamp-2 sm:text-base sm:leading-7 lg:mt-3 lg:line-clamp-1 lg:text-base lg:leading-6">
+                                <p className="mt-2 line-clamp-1 max-w-3xl text-[12px] font-light leading-4 text-slate-500 dark:text-white/62 min-[390px]:text-[13px] sm:mt-3 sm:line-clamp-2 sm:text-base sm:leading-7 lg:mt-3 lg:line-clamp-1 lg:text-base lg:leading-6">
                                     {eventNote}
                                 </p>
                             ) : null}
                         </div>
 
                         <div className="col-span-2 flex min-w-0 flex-col gap-3 lg:col-span-1 lg:items-stretch">
-                            <span className="hidden h-10 w-max items-center gap-2 self-end rounded-full border border-white/12 bg-white/[0.06] px-4 text-sm font-bold text-white/76 shadow-inner lg:inline-flex">
+                            <span className="hidden h-10 w-max items-center gap-2 self-end rounded-full border border-slate-200 bg-slate-50/90 px-4 text-sm font-bold text-slate-700 shadow-inner dark:border-white/12 dark:bg-white/[0.06] dark:text-white/76 lg:inline-flex">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="text-action"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
                                 {timeString}
                             </span>
@@ -380,7 +380,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                 </div>
 
                 <div className="relative z-10 flex min-h-0 flex-1 flex-col">
-                    <div className="grid grid-cols-2 border-b border-white/10 px-4 sm:px-7 lg:px-8">
+                    <div className="grid grid-cols-2 border-b border-slate-200/80 px-4 dark:border-white/10 sm:px-7 lg:px-8">
                         {[
                             { id: 'repertorio', label: 'Repertorio' },
                             { id: 'equipo', label: `Equipo (${roster.length})` },
@@ -389,7 +389,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                                 key={tab.id}
                                 type="button"
                                 onClick={() => setActiveTab(tab.id)}
-                                className={`relative h-10 text-sm font-black transition-colors sm:h-14 sm:text-base ${activeTab === tab.id ? 'text-action' : 'text-white/55 hover:text-white/78'}`}
+                                className={`relative h-10 text-sm font-black transition-colors sm:h-14 sm:text-base ${activeTab === tab.id ? 'text-action' : 'text-slate-500 hover:text-slate-800 dark:text-white/55 dark:hover:text-white/78'}`}
                             >
                                 {tab.label}
                                 <span className={`absolute inset-x-0 bottom-0 h-1 rounded-t-full bg-action transition-opacity ${activeTab === tab.id ? 'opacity-100' : 'opacity-0'}`} />
@@ -403,14 +403,14 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                                 {loadingPlaylist ? (
                                     <div className="flex justify-center py-14"><div className="h-9 w-9 animate-spin rounded-full border-4 border-blue-400/25 border-t-blue-400" /></div>
                                 ) : !playlist ? (
-                                    <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-white/14 bg-white/[0.035] px-5 py-12 text-center">
-                                        <Icon icon={musicNoteIcon} className="mb-3 h-9 w-9 text-white/40" aria-hidden="true" />
-                                        <p className="text-base font-black text-white/70">Sin repertorio asignado</p>
+                                    <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-slate-50/80 px-5 py-12 text-center dark:border-white/14 dark:bg-white/[0.035]">
+                                        <Icon icon={musicNoteIcon} className="mb-3 h-9 w-9 text-slate-400 dark:text-white/40" aria-hidden="true" />
+                                        <p className="text-base font-black text-slate-600 dark:text-white/70">Sin repertorio asignado</p>
                                     </div>
                                 ) : playlistItems.length === 0 ? (
-                                    <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-white/14 bg-white/[0.035] px-5 py-12 text-center">
-                                        <Icon icon={musicNoteIcon} className="mb-3 h-9 w-9 text-white/40" aria-hidden="true" />
-                                        <p className="text-base font-black text-white/70">Repertorio sin canciones</p>
+                                    <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-slate-50/80 px-5 py-12 text-center dark:border-white/14 dark:bg-white/[0.035]">
+                                        <Icon icon={musicNoteIcon} className="mb-3 h-9 w-9 text-slate-400 dark:text-white/40" aria-hidden="true" />
+                                        <p className="text-base font-black text-slate-600 dark:text-white/70">Repertorio sin canciones</p>
                                         {canManageRepertorio && (
                                             <button
                                                 type="button"
@@ -428,20 +428,20 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                                                 const c = item.canciones || {};
                                                 const order = idx + 1;
                                                 return (
-                                                    <article key={`${item.cancion_id || c.id || idx}-${order}`} className="group overflow-hidden rounded-2xl border border-white/10 bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors hover:border-blue-400/36 hover:bg-white/[0.055]">
+                                                    <article key={`${item.cancion_id || c.id || idx}-${order}`} className="group overflow-hidden rounded-2xl border border-slate-200 bg-white/82 shadow-[0_10px_28px_rgba(15,23,42,0.05),inset_0_1px_0_rgba(255,255,255,0.80)] transition-colors hover:border-blue-300/70 hover:bg-white dark:border-white/10 dark:bg-white/[0.035] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] dark:hover:border-blue-400/36 dark:hover:bg-white/[0.055]">
                                                         <div className="grid min-w-0 grid-cols-[3.85rem_minmax(0,1fr)_2.4rem] items-center gap-2 p-2 min-[390px]:grid-cols-[4.35rem_minmax(0,1fr)_2.65rem] min-[390px]:gap-2.5 min-[390px]:p-2.5 sm:grid-cols-[6rem_minmax(0,1fr)_3.25rem] sm:gap-3 sm:p-3.5">
-                                                            <div className="h-[3.85rem] w-[3.85rem] overflow-hidden rounded-xl border border-white/10 bg-white/[0.05] shadow-lg min-[390px]:h-[4.35rem] min-[390px]:w-[4.35rem] sm:h-24 sm:w-24">
+                                                            <div className="h-[3.85rem] w-[3.85rem] overflow-hidden rounded-xl border border-slate-200 bg-slate-100 shadow-lg dark:border-white/10 dark:bg-white/[0.05] min-[390px]:h-[4.35rem] min-[390px]:w-[4.35rem] sm:h-24 sm:w-24">
                                                                 <SongArtwork song={c} />
                                                             </div>
                                                             <div className="min-w-0">
-                                                                <h3 className="truncate text-[0.95rem] font-black leading-tight text-white min-[390px]:text-base sm:text-xl">
+                                                                <h3 className="truncate text-[0.95rem] font-black leading-tight text-slate-950 dark:text-white min-[390px]:text-base sm:text-xl">
                                                                     {c.titulo || 'Sin título'}
                                                                 </h3>
-                                                                <p className="mt-0.5 line-clamp-1 text-[11px] font-medium leading-4 text-white/58 min-[390px]:mt-1 min-[390px]:text-xs sm:line-clamp-2 sm:text-base sm:leading-5">
+                                                                <p className="mt-0.5 line-clamp-1 text-[11px] font-medium leading-4 text-slate-500 dark:text-white/58 min-[390px]:mt-1 min-[390px]:text-xs sm:line-clamp-2 sm:text-base sm:leading-5">
                                                                     {c.cantante || ''}
                                                                 </p>
                                                             </div>
-                                                            <span className="inline-flex h-8 w-8 items-center justify-center justify-self-end rounded-xl border border-white/12 bg-white/[0.06] text-sm font-black text-white/78 min-[390px]:h-9 min-[390px]:w-9 min-[390px]:text-base sm:h-11 sm:w-11 sm:text-lg">
+                                                            <span className="inline-flex h-8 w-8 items-center justify-center justify-self-end rounded-xl border border-slate-200 bg-slate-50 text-sm font-black text-slate-600 shadow-inner dark:border-white/12 dark:bg-white/[0.06] dark:text-white/78 min-[390px]:h-9 min-[390px]:w-9 min-[390px]:text-base sm:h-11 sm:w-11 sm:text-lg">
                                                                 {order}
                                                             </span>
                                                         </div>
@@ -479,7 +479,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                                                 const roleName = role?.nombre || assignment?.roles?.nombre || 'Equipo';
                                                 const displayName = getCleanName(profile.nombre) || profile.nombre || 'Persona';
                                                 return (
-                                                    <article key={`${assignment.rol_id}-${profile.id || profile.email || displayName}`} className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/8 bg-white/[0.025] p-2 text-left">
+                                                    <article key={`${assignment.rol_id}-${profile.id || profile.email || displayName}`} className="flex min-w-0 items-center gap-2 rounded-2xl border border-slate-200 bg-white/72 p-2 text-left shadow-[0_8px_24px_rgba(15,23,42,0.04)] dark:border-white/8 dark:bg-white/[0.025] dark:shadow-none">
                                                         <div className="relative h-11 w-11 shrink-0 sm:h-12 sm:w-12 lg:h-13 lg:w-13">
                                                             {profile.avatar_url ? (
                                                                 <img
@@ -487,22 +487,22 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                                                                     alt={profile.nombre}
                                                                     loading="lazy"
                                                                     decoding="async"
-                                                                    className="h-full w-full rounded-full border border-white/14 object-cover shadow-[0_8px_20px_rgba(0,0,0,0.30)]"
+                                                                    className="h-full w-full rounded-full border border-slate-200 object-cover shadow-[0_8px_18px_rgba(15,23,42,0.16)] dark:border-white/14 dark:shadow-[0_8px_20px_rgba(0,0,0,0.30)]"
                                                                 />
                                                             ) : (
-                                                                <div className="flex h-full w-full items-center justify-center rounded-full border border-action/24 bg-action/12 text-base font-black text-action shadow-[0_8px_20px_rgba(0,0,0,0.26)] sm:text-lg">
+                                                                <div className="flex h-full w-full items-center justify-center rounded-full border border-action/24 bg-action/12 text-base font-black text-action shadow-[0_8px_18px_rgba(15,23,42,0.12)] dark:shadow-[0_8px_20px_rgba(0,0,0,0.26)] sm:text-lg">
                                                                     {getInitials(profile.nombre)}
                                                                 </div>
                                                             )}
-                                                            <span className="absolute -right-1 -top-1 inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/14 bg-zinc-950 text-action shadow-[0_8px_20px_rgba(0,0,0,0.35)] sm:h-7 sm:w-7">
+                                                            <span className="absolute -right-1 -top-1 inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-action shadow-[0_8px_18px_rgba(15,23,42,0.16)] dark:border-white/14 dark:bg-zinc-950 dark:shadow-[0_8px_20px_rgba(0,0,0,0.35)] sm:h-7 sm:w-7">
                                                                 <RosterIcon role={role} />
                                                             </span>
                                                         </div>
                                                         <div className="min-w-0">
-                                                            <h4 className="truncate text-sm font-black leading-tight text-white sm:text-base">
+                                                            <h4 className="truncate text-sm font-black leading-tight text-slate-950 dark:text-white sm:text-base">
                                                                 {displayName}
                                                             </h4>
-                                                            <p className="mt-0.5 truncate text-[10px] font-bold uppercase tracking-[0.10em] text-white/46 sm:text-[11px]">
+                                                            <p className="mt-0.5 truncate text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500 dark:text-white/46 sm:text-[11px]">
                                                                 {roleName}
                                                             </p>
                                                         </div>
@@ -512,9 +512,9 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                                         </div>
                                     </section>
                                 )) : (
-                                    <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-white/14 bg-white/[0.035] px-5 py-12 text-center">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="mb-3 text-white/36"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="m19 8 3 3-3 3" /></svg>
-                                        <p className="text-base font-black text-white/70">Nadie asignado aún al equipo</p>
+                                    <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-slate-50/80 px-5 py-12 text-center dark:border-white/14 dark:bg-white/[0.035]">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="mb-3 text-slate-400 dark:text-white/36"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="m19 8 3 3-3 3" /></svg>
+                                        <p className="text-base font-black text-slate-600 dark:text-white/70">Nadie asignado aún al equipo</p>
                                     </div>
                                 )}
                             </div>
