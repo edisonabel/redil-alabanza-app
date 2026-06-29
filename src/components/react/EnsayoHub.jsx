@@ -577,7 +577,7 @@ function SongArtworkThumb({ song, index }) {
   const artworkUrl = getSongArtworkUrl(song);
 
   return (
-    <div className="relative h-[84px] w-[84px] shrink-0 overflow-hidden rounded-[18px] border border-zinc-200 bg-zinc-100 shadow-sm dark:border-white/10 dark:bg-zinc-900 sm:h-[92px] sm:w-[92px] md:h-[116px] md:w-[116px] lg:h-[132px] lg:w-[132px]">
+    <div className="relative h-[clamp(84px,23vw,99px)] w-[clamp(84px,23vw,99px)] shrink-0 overflow-hidden rounded-[18px] border border-zinc-200 bg-zinc-100 shadow-sm dark:border-white/10 dark:bg-zinc-900 sm:h-[107px] sm:w-[107px] md:h-[131px] md:w-[131px] lg:h-[147px] lg:w-[147px]">
       {artworkUrl && !failed ? (
         <img
           src={artworkUrl}
