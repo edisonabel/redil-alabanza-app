@@ -577,7 +577,7 @@ function SongArtworkThumb({ song, index }) {
   const artworkUrl = getSongArtworkUrl(song);
 
   return (
-    <div className="relative h-[76px] w-[76px] shrink-0 overflow-hidden rounded-[16px] border border-zinc-200 bg-zinc-100 shadow-sm dark:border-white/10 dark:bg-zinc-900">
+    <div className="relative h-[84px] w-[84px] shrink-0 overflow-hidden rounded-[18px] border border-zinc-200 bg-zinc-100 shadow-sm dark:border-white/10 dark:bg-zinc-900 sm:h-[92px] sm:w-[92px] md:h-[116px] md:w-[116px] lg:h-[132px] lg:w-[132px]">
       {artworkUrl && !failed ? (
         <img
           src={artworkUrl}
@@ -1579,7 +1579,7 @@ export default function EnsayoHub({
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto px-0 pb-28 pt-4">
-        <div className="mx-auto w-full max-w-5xl">
+        <div className="mx-auto w-full max-w-5xl lg:max-w-none">
           <div className="overflow-hidden">
             {(playableSongs.length > 0 || printableSongs.length > 0) && (
               <section className="border-y border-zinc-200/90 px-4 py-3.5 dark:border-white/10 sm:px-5">
