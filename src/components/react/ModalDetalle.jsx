@@ -304,10 +304,10 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
             aria-modal="true"
             aria-hidden={isOpen ? 'false' : 'true'}
             data-ui-modal="true"
-            className={`fixed inset-0 z-[70] min-h-[100dvh] items-start justify-center overflow-y-auto bg-zinc-950/74 p-2 pt-3 pb-[calc(88px+env(safe-area-inset-bottom))] backdrop-blur-md transition-opacity duration-300 sm:p-4 sm:pt-6 lg:flex lg:items-center lg:p-6 ${isOpen ? 'flex opacity-100' : 'pointer-events-none opacity-0'}`}
+            className={`fixed inset-0 z-[70] min-h-[100dvh] items-start justify-center overflow-y-auto bg-zinc-950/74 p-2 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-[calc(124px+env(safe-area-inset-bottom))] backdrop-blur-md transition-opacity duration-300 sm:p-4 sm:pt-6 lg:flex lg:items-center lg:p-6 ${isOpen ? 'flex opacity-100' : 'pointer-events-none opacity-0'}`}
             onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
         >
-            <div className={`relative my-0 flex max-h-[calc(100dvh-92px-env(safe-area-inset-bottom))] w-full max-w-2xl flex-col overflow-hidden rounded-[24px] border border-white/12 bg-[linear-gradient(145deg,rgba(20,26,35,0.98),rgba(9,12,17,0.98))] text-white shadow-[0_30px_90px_rgba(0,0,0,0.54)] transition-transform duration-300 sm:rounded-[28px] lg:my-auto lg:max-h-[calc(100dvh-80px)] lg:max-w-[1180px] xl:max-w-[1260px] ${isOpen ? 'scale-100' : 'scale-95'}`}>
+            <div className={`relative my-0 flex max-h-[76dvh] w-full max-w-2xl flex-col overflow-hidden rounded-[24px] border border-white/12 bg-[linear-gradient(145deg,rgba(20,26,35,0.98),rgba(9,12,17,0.98))] text-white shadow-[0_30px_90px_rgba(0,0,0,0.54)] transition-transform duration-300 sm:max-h-[calc(100dvh-112px-env(safe-area-inset-bottom))] sm:rounded-[28px] lg:my-auto lg:max-h-[calc(100dvh-80px)] lg:max-w-[1180px] xl:max-w-[1260px] ${isOpen ? 'scale-100' : 'scale-95'}`}>
                 <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(59,130,246,0.16),transparent_34%),radial-gradient(circle_at_96%_0%,rgba(59,130,246,0.10),transparent_28%)]" />
 
                 <button
@@ -319,37 +319,47 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                     <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
                 </button>
 
-                <div className="relative z-10 shrink-0 border-b border-white/10 px-4 pb-3 pt-5 sm:px-7 sm:pt-8 lg:px-8 lg:pb-5">
-                    <div className="grid gap-3 pr-10 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start lg:gap-6 lg:pr-12">
+                <div className="relative z-10 shrink-0 border-b border-white/10 px-4 pb-2.5 pt-4 sm:px-7 sm:pb-4 sm:pt-8 lg:px-8 lg:py-6">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 pr-9 lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-center lg:gap-x-8 lg:gap-y-0 lg:pr-12">
                         <div className="min-w-0">
-                            <h2 className="text-[2rem] font-black capitalize leading-[0.9] tracking-tight text-white sm:text-[2.85rem] lg:text-[3rem]">
-                                {fechaFormat}
-                            </h2>
-                            {temaPrincipal ? (
-                                <p className="mt-2 text-lg font-semibold leading-tight text-white/68 sm:mt-3 sm:text-xl">
-                                    <span className="text-action">{temaPrincipal}</span>
-                                </p>
-                            ) : null}
+                            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 lg:block">
+                                <div className="min-w-0">
+                                    <h2 className="text-[1.5rem] font-black capitalize leading-none tracking-tight text-white min-[390px]:text-[1.65rem] sm:text-[2.85rem] sm:leading-[0.9] lg:text-[2.35rem]">
+                                        {fechaFormat}
+                                    </h2>
+                                    {temaPrincipal ? (
+                                        <p className="mt-1.5 text-base font-semibold leading-tight text-white/68 min-[390px]:text-[1.05rem] sm:mt-3 sm:text-xl lg:mt-2 lg:text-lg">
+                                            <span className="text-action">{temaPrincipal}</span>
+                                        </p>
+                                    ) : null}
+                                </div>
+                                <span className="mt-0.5 inline-flex h-8 w-max items-center gap-1.5 rounded-full border border-white/12 bg-white/[0.06] px-2.5 text-xs font-bold text-white/76 shadow-inner min-[390px]:text-[13px] sm:h-11 sm:gap-2 sm:px-4 sm:text-base lg:hidden">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="text-action sm:h-[17px] sm:w-[17px]"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+                                    {timeString}
+                                </span>
+                            </div>
                             {eventNote ? (
-                                <p className="mt-2 line-clamp-2 max-w-3xl text-sm font-light leading-5 text-white/64 sm:mt-3 sm:text-base sm:leading-7 lg:text-[1.05rem]">
+                                <p className="mt-2 line-clamp-1 max-w-3xl text-[12px] font-light leading-4 text-white/62 min-[390px]:text-[13px] sm:mt-3 sm:line-clamp-2 sm:text-base sm:leading-7 lg:mt-3 lg:line-clamp-1 lg:text-base lg:leading-6">
                                     {eventNote}
                                 </p>
                             ) : null}
                         </div>
-                        <span className="inline-flex h-9 w-max items-center gap-2 rounded-full border border-white/12 bg-white/[0.06] px-3 text-sm font-bold text-white/76 shadow-inner sm:h-11 sm:px-4 sm:text-base">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="text-action"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
-                            {timeString}
-                        </span>
-                    </div>
 
-                    <a
-                        href={rehearsalHref}
-                        className="group relative mt-4 inline-flex min-h-[48px] w-full items-center justify-center gap-3 overflow-hidden rounded-2xl border border-blue-300/30 bg-[linear-gradient(135deg,#3b82f6,#1d4ed8)] px-5 py-2.5 text-base font-black text-white shadow-[0_16px_34px_rgba(37,99,235,0.34)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_20px_42px_rgba(37,99,235,0.42)] sm:mt-6 sm:min-h-[58px] sm:px-6 sm:py-3 sm:text-lg lg:w-[min(100%,34rem)]"
-                    >
-                        <span className="absolute inset-0 translate-y-full bg-white/14 transition-transform duration-300 group-hover:translate-y-0" />
-                        <Icon icon={musicNoteIcon} className="relative z-10 h-5 w-5 sm:h-7 sm:w-7" aria-hidden="true" />
-                        <span className="relative z-10">Entrar a Modo Ensayo</span>
-                    </a>
+                        <div className="col-span-2 flex min-w-0 flex-col gap-3 lg:col-span-1 lg:items-stretch">
+                            <span className="hidden h-10 w-max items-center gap-2 self-end rounded-full border border-white/12 bg-white/[0.06] px-4 text-sm font-bold text-white/76 shadow-inner lg:inline-flex">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="text-action"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+                                {timeString}
+                            </span>
+                            <a
+                                href={rehearsalHref}
+                                className="group relative inline-flex min-h-[42px] w-full items-center justify-center gap-2.5 overflow-hidden rounded-xl border border-blue-300/30 bg-[linear-gradient(135deg,#3b82f6,#1d4ed8)] px-4 py-2 text-sm font-black text-white shadow-[0_12px_28px_rgba(37,99,235,0.30)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_20px_42px_rgba(37,99,235,0.42)] min-[390px]:min-h-[44px] min-[390px]:text-[15px] sm:min-h-[58px] sm:gap-3 sm:rounded-2xl sm:px-6 sm:py-3 sm:text-lg lg:min-h-[48px] lg:text-base"
+                            >
+                                <span className="absolute inset-0 translate-y-full bg-white/14 transition-transform duration-300 group-hover:translate-y-0" />
+                                <Icon icon={musicNoteIcon} className="relative z-10 h-[1.125rem] w-[1.125rem] sm:h-7 sm:w-7 lg:h-5 lg:w-5" aria-hidden="true" />
+                                <span className="relative z-10">Entrar a Modo Ensayo</span>
+                            </a>
+                        </div>
+                    </div>
                 </div>
 
                 <div className="relative z-10 flex min-h-0 flex-1 flex-col">
@@ -362,7 +372,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                                 key={tab.id}
                                 type="button"
                                 onClick={() => setActiveTab(tab.id)}
-                                className={`relative h-12 text-sm font-black transition-colors sm:h-14 sm:text-base ${activeTab === tab.id ? 'text-action' : 'text-white/55 hover:text-white/78'}`}
+                                className={`relative h-10 text-sm font-black transition-colors sm:h-14 sm:text-base ${activeTab === tab.id ? 'text-action' : 'text-white/55 hover:text-white/78'}`}
                             >
                                 {tab.label}
                                 <span className={`absolute inset-x-0 bottom-0 h-1 rounded-t-full bg-action transition-opacity ${activeTab === tab.id ? 'opacity-100' : 'opacity-0'}`} />
@@ -370,7 +380,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                         ))}
                     </div>
 
-                    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-7 sm:py-5 lg:px-8 lg:py-6">
+                    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 sm:px-7 sm:py-5 lg:px-8 lg:py-6">
                         {activeTab === 'repertorio' ? (
                             <div ref={playlistSectionRef} className={`grid gap-3 rounded-2xl transition-shadow sm:gap-4 ${flashPlaylistSection ? 'shadow-[0_0_0_2px_rgba(59,130,246,0.48)]' : ''}`}>
                                 {loadingPlaylist ? (
@@ -402,19 +412,19 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                                                 const order = idx + 1;
                                                 return (
                                                     <article key={`${item.cancion_id || c.id || idx}-${order}`} className="group overflow-hidden rounded-2xl border border-white/10 bg-white/[0.035] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors hover:border-blue-400/36 hover:bg-white/[0.055]">
-                                                        <div className="grid min-w-0 grid-cols-[4.35rem_minmax(0,1fr)_2.65rem] items-center gap-2.5 p-2.5 sm:grid-cols-[6rem_minmax(0,1fr)_3.25rem] sm:gap-3 sm:p-3.5">
-                                                            <div className="h-[4.35rem] w-[4.35rem] overflow-hidden rounded-xl border border-white/10 bg-white/[0.05] shadow-lg sm:h-24 sm:w-24">
+                                                        <div className="grid min-w-0 grid-cols-[3.85rem_minmax(0,1fr)_2.4rem] items-center gap-2 p-2 min-[390px]:grid-cols-[4.35rem_minmax(0,1fr)_2.65rem] min-[390px]:gap-2.5 min-[390px]:p-2.5 sm:grid-cols-[6rem_minmax(0,1fr)_3.25rem] sm:gap-3 sm:p-3.5">
+                                                            <div className="h-[3.85rem] w-[3.85rem] overflow-hidden rounded-xl border border-white/10 bg-white/[0.05] shadow-lg min-[390px]:h-[4.35rem] min-[390px]:w-[4.35rem] sm:h-24 sm:w-24">
                                                                 <SongArtwork song={c} />
                                                             </div>
                                                             <div className="min-w-0">
-                                                                <h3 className="truncate text-base font-black leading-tight text-white sm:text-xl">
+                                                                <h3 className="truncate text-[0.95rem] font-black leading-tight text-white min-[390px]:text-base sm:text-xl">
                                                                     {c.titulo || 'Sin título'}
                                                                 </h3>
-                                                                <p className="mt-1 line-clamp-1 text-xs font-medium leading-4 text-white/58 sm:line-clamp-2 sm:text-base sm:leading-5">
+                                                                <p className="mt-0.5 line-clamp-1 text-[11px] font-medium leading-4 text-white/58 min-[390px]:mt-1 min-[390px]:text-xs sm:line-clamp-2 sm:text-base sm:leading-5">
                                                                     {c.cantante || ''}
                                                                 </p>
                                                             </div>
-                                                            <span className="inline-flex h-9 w-9 items-center justify-center justify-self-end rounded-xl border border-white/12 bg-white/[0.06] text-base font-black text-white/78 sm:h-11 sm:w-11 sm:text-lg">
+                                                            <span className="inline-flex h-8 w-8 items-center justify-center justify-self-end rounded-xl border border-white/12 bg-white/[0.06] text-sm font-black text-white/78 min-[390px]:h-9 min-[390px]:w-9 min-[390px]:text-base sm:h-11 sm:w-11 sm:text-lg">
                                                                 {order}
                                                             </span>
                                                         </div>
