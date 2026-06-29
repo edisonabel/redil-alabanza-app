@@ -1,0 +1,35 @@
+---
+const pageTitle = 'Audio Lab - Cross-Origin Isolation';
+import AudioLabView from '../../components/react/audio-lab/AudioLabView';
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <style is:inline>
+      html {
+        background: #101114;
+      }
+
+      body {
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <AudioLabView client:only="react" />
+
+    <script is:inline>
+      (() => {
+        const isolated = self.crossOriginIsolated === true;
+        const hasSharedArrayBuffer = typeof SharedArrayBuffer === 'function';
+
+        console.log('[audio-lab] self.crossOriginIsolated:', isolated);
+        console.log('[audio-lab] SharedArrayBuffer available:', hasSharedArrayBuffer);
+      })();
+    </script>
+  </body>
+</html>

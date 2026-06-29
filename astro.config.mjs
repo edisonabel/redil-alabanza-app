@@ -17,10 +17,42 @@ const reactAliases = [
   }
 ];
 
+const crossOriginIsolationHeaders = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+  'Cross-Origin-Resource-Policy': 'same-origin',
+};
+
+/**
+ * @param {any} _request
+ * @param {any} response
+ * @param {() => void} next
+ */
+const applyCrossOriginIsolationHeaders = (_request, response, next) => {
+  for (const [header, value] of Object.entries(crossOriginIsolationHeaders)) {
+    response.setHeader(header, value);
+  }
+  next();
+};
+
+const crossOriginIsolationPlugin = () => ({
+  name: 'cross-origin-isolation-headers',
+  apply: /** @type {'serve'} */ ('serve'),
+  /** @param {any} server */
+  configureServer(server) {
+    server.middlewares.use(applyCrossOriginIsolationHeaders);
+  },
+  /** @param {any} server */
+  configurePreviewServer(server) {
+    server.middlewares.use(applyCrossOriginIsolationHeaders);
+  },
+});
+
 const legacyCatchBindingPlugin = () => ({
   name: 'legacy-catch-binding',
-  apply: 'build',
-  enforce: 'post',
+  apply: /** @type {'build'} */ ('build'),
+  enforce: /** @type {'post'} */ ('post'),
+  /** @param {any} _options @param {Record<string, any>} bundle */
   generateBundle(_options, bundle) {
     for (const asset of Object.values(bundle)) {
       if (asset.type === 'chunk' && /\bcatch\s*\{/.test(asset.code)) {
@@ -53,7 +85,17 @@ export default defineConfig({
   integrations: [react()],
 
   vite: {
-    plugins: [tailwindcss(), legacyCatchBindingPlugin()],
+    plugins: [
+      /** @type {any} */ (crossOriginIsolationPlugin()),
+      /** @type {any} */ (tailwindcss()),
+      /** @type {any} */ (legacyCatchBindingPlugin()),
+    ],
+    server: {
+      headers: crossOriginIsolationHeaders,
+    },
+    preview: {
+      headers: crossOriginIsolationHeaders,
+    },
     build: {
       target: 'es2018',
     },

@@ -1,6 +1,9 @@
 const READ_INDEX_SLOT = 0;
 const WRITE_INDEX_SLOT = 1;
 const FALLBACK_CONSUMED_REPORT_FRAMES = 2048;
+const SOLO_GAIN_SMOOTHING = 0.18;
+const GAIN_FLOOR = 0.00001;
+const LOOP_CROSSFADE_FRAMES = 64;
 
 class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -19,6 +22,15 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.renderedFrames = 0;
     this.debugPublishIntervalFrames = sampleRate || 48000;
     this.debugPublishCountdownFrames = this.debugPublishIntervalFrames;
+    this.publishMeterMessages = true;
+    this.publishDebugMessages = false;
+    this.telemetry = null;
+    this.telemetryBaseSeconds = 0;
+    this.telemetryBaseRenderedFrames = 0;
+    this.soloCount = 0;
+    this.loopEnabled = false;
+    this.loopStartSample = 0;
+    this.loopEndSample = 0;
 
     this.port.onmessage = (event) => {
       const data = event && event.data ? event.data : null;
@@ -51,6 +63,11 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         sampleBuffer: message.sampleBuffer,
         indexBuffer: message.indexBuffer,
       });
+      return;
+    }
+
+    if (type === 'configure-telemetry') {
+      this.configureTelemetry(message);
       return;
     }
 
@@ -106,6 +123,16 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       return;
     }
 
+    if (type === 'track-solo') {
+      this.setTrackSoloByIndex(message.trackIndex, message.solo);
+      return;
+    }
+
+    if (type === 'clear-solo') {
+      this.clearSolo();
+      return;
+    }
+
     if (type === 'track-output-route') {
       this.setTrackOutputRouteByIndex(message.trackIndex, message.outputRoute);
       return;
@@ -122,12 +149,28 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
 
     if (type === 'FLUSH_BUFFERS') {
-      this.flushAllBuffers();
+      this.flushAllBuffers(message);
+      return;
+    }
+
+    if (type === 'loop-region') {
+      this.configureLoopRegion(message);
+      return;
+    }
+
+    if (type === 'debug-enabled') {
+      this.publishDebugMessages = message.enabled === true;
       return;
     }
 
     if (type === 'transport') {
+      if (typeof message.positionSeconds === 'number' && Number.isFinite(message.positionSeconds)) {
+        this.telemetryBaseSeconds = Math.max(0, message.positionSeconds);
+        this.telemetryBaseRenderedFrames = this.renderedFrames;
+        this.syncTracksToTransportPosition(this.telemetryBaseSeconds);
+      }
       this.playing = !!message.playing;
+      this.writeTelemetrySnapshot(this.telemetryBaseSeconds);
       this.postTransportDebug();
       return;
     }
@@ -144,7 +187,39 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
   }
 
-  flushAllBuffers() {
+  configureTelemetry(message) {
+    if (
+      typeof SharedArrayBuffer !== 'function' ||
+      !(message.sequenceBuffer instanceof SharedArrayBuffer) ||
+      !(message.timeBuffer instanceof SharedArrayBuffer) ||
+      !(message.levelBuffer instanceof SharedArrayBuffer)
+    ) {
+      this.telemetry = null;
+      this.publishMeterMessages = message.publishMeterMessages !== false;
+      return;
+    }
+
+    const trackCount =
+      typeof message.trackCount === 'number' && message.trackCount > 0
+        ? Math.floor(message.trackCount)
+        : 0;
+
+    this.telemetry = {
+      sequence: new Int32Array(message.sequenceBuffer),
+      currentTime: new Float64Array(message.timeBuffer),
+      levels: new Float32Array(message.levelBuffer),
+      trackCount,
+    };
+    this.publishMeterMessages = message.publishMeterMessages !== false;
+    this.writeTelemetrySnapshot(this.telemetryBaseSeconds);
+  }
+
+  flushAllBuffers(message) {
+    const targetSample =
+      message && typeof message.targetSample === 'number' && Number.isFinite(message.targetSample)
+        ? Math.max(0, Math.floor(message.targetSample))
+        : 0;
+
     for (let trackIndex = 0; trackIndex < this.trackCount; trackIndex += 1) {
       const track = this.tracks[trackIndex];
 
@@ -152,14 +227,21 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         continue;
       }
 
+      const targetIndex = this.frameToIndex(targetSample, track.indexCapacity);
+
       if (track.usesSharedMemory && track.indices) {
-        Atomics.store(track.indices, READ_INDEX_SLOT, 0);
-        Atomics.store(track.indices, WRITE_INDEX_SLOT, 0);
+        Atomics.store(track.indices, READ_INDEX_SLOT, targetIndex);
+        Atomics.store(track.indices, WRITE_INDEX_SLOT, targetIndex);
       }
 
-      track.localReadIndex = 0;
-      track.localWriteIndex = 0;
+      track.localReadIndex = targetIndex;
+      track.localWriteIndex = targetIndex;
       track.lastMeterLevel = 0;
+      track.effectiveGain = 0;
+      track.absoluteReadFrame = targetSample;
+      track.indexBaseFrame = targetSample;
+      track.indexBaseIndex = targetIndex;
+      this.applyLoopToTrack(track);
       track.underrunEvents = 0;
       track.underrunFrames = 0;
       track.lastDropDebugFrame = 0;
@@ -195,6 +277,8 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         trackIndex,
         volume: this.clampVolume(config.volume),
         isMuted: !!config.isMuted,
+        isSolo: false,
+        effectiveGain: 0,
         outputRoute:
           config.outputRoute === 'left' || config.outputRoute === 'right'
             ? config.outputRoute
@@ -215,6 +299,14 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         localSamples: new Float32Array(capacity),
         localReadIndex: 0,
         localWriteIndex: 0,
+        absoluteReadFrame: 0,
+        indexBaseFrame: 0,
+        indexBaseIndex: 0,
+        loopEnabled: false,
+        loopStartFrame: 0,
+        loopEndFrame: 0,
+        loopStartIndex: 0,
+        loopFadeFrames: LOOP_CROSSFADE_FRAMES,
         lastMeterLevel: 0,
         underrunEvents: 0,
         underrunFrames: 0,
@@ -229,6 +321,8 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       );
       track.isMuted =
         typeof config.isMuted === 'boolean' ? config.isMuted : track.isMuted;
+      track.isSolo = false;
+      track.effectiveGain = 0;
       track.outputRoute =
         config.outputRoute === 'left' || config.outputRoute === 'right'
           ? config.outputRoute
@@ -251,6 +345,11 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
       track.localReadIndex = 0;
       track.localWriteIndex = 0;
+      track.absoluteReadFrame = 0;
+      track.indexBaseFrame = 0;
+      track.indexBaseIndex = 0;
+      track.loopStartIndex = 0;
+      track.loopFadeFrames = LOOP_CROSSFADE_FRAMES;
       track.lastMeterLevel = 0;
       track.underrunEvents = 0;
       track.underrunFrames = 0;
@@ -271,6 +370,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
 
     this.ensureMeterCapacity(trackIndex + 1);
+    this.applyLoopToTrack(track);
   }
 
   setTrackVolumeByIndex(trackIndex, volume) {
@@ -311,6 +411,104 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
 
     track.isMuted = !!muted;
+  }
+
+  setTrackSoloByIndex(trackIndex, solo) {
+    const track = this.getTrackByIndex(trackIndex);
+
+    if (!track) {
+      return;
+    }
+
+    const nextSolo = !!solo;
+
+    if (track.isSolo === nextSolo) {
+      return;
+    }
+
+    track.isSolo = nextSolo;
+    this.recomputeSoloCount();
+  }
+
+  clearSolo() {
+    for (let trackIndex = 0; trackIndex < this.trackCount; trackIndex += 1) {
+      const track = this.tracks[trackIndex];
+
+      if (track) {
+        track.isSolo = false;
+      }
+    }
+
+    this.soloCount = 0;
+  }
+
+  recomputeSoloCount() {
+    let nextSoloCount = 0;
+
+    for (let trackIndex = 0; trackIndex < this.trackCount; trackIndex += 1) {
+      const track = this.tracks[trackIndex];
+
+      if (track && track.isSolo) {
+        nextSoloCount += 1;
+      }
+    }
+
+    this.soloCount = nextSoloCount;
+  }
+
+  configureLoopRegion(message) {
+    const startSample = Math.max(0, Math.floor(Number(message.startSample) || 0));
+    const endSample = Math.max(0, Math.floor(Number(message.endSample) || 0));
+    const enabled = message.enabled === true && endSample > startSample + 1;
+
+    this.loopEnabled = enabled;
+    this.loopStartSample = enabled ? startSample : 0;
+    this.loopEndSample = enabled ? endSample : 0;
+
+    for (let trackIndex = 0; trackIndex < this.trackCount; trackIndex += 1) {
+      const track = this.tracks[trackIndex];
+
+      if (track) {
+        this.applyLoopToTrack(track);
+      }
+    }
+  }
+
+  applyLoopToTrack(track) {
+    if (!this.loopEnabled || this.loopEndSample <= this.loopStartSample + 1) {
+      track.loopEnabled = false;
+      track.loopStartFrame = 0;
+      track.loopEndFrame = 0;
+      track.loopStartIndex = 0;
+      track.loopFadeFrames = LOOP_CROSSFADE_FRAMES;
+      return;
+    }
+
+    track.loopEnabled = true;
+    track.loopStartFrame = this.loopStartSample;
+    track.loopEndFrame = this.loopEndSample;
+    track.loopStartIndex = this.frameToTrackIndex(track, track.loopStartFrame);
+    track.loopFadeFrames = Math.min(
+      LOOP_CROSSFADE_FRAMES,
+      Math.max(1, track.loopEndFrame - track.loopStartFrame - 1),
+    );
+  }
+
+  syncTracksToTransportPosition(positionSeconds) {
+    for (let trackIndex = 0; trackIndex < this.trackCount; trackIndex += 1) {
+      const track = this.tracks[trackIndex];
+
+      if (!track) {
+        continue;
+      }
+
+      const nextFrame = Math.max(0, Math.floor(positionSeconds * track.sampleRate));
+      const nextReadIndex = this.getTrackReadIndex(track);
+      track.absoluteReadFrame = nextFrame;
+      track.indexBaseFrame = nextFrame;
+      track.indexBaseIndex = nextReadIndex;
+      this.applyLoopToTrack(track);
+    }
   }
 
   setTrackOutputRouteByIndex(trackIndex, outputRoute) {
@@ -418,20 +616,66 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       this.mixLocalTrack(track, output, outputChannelCount, frameCount);
     }
 
-    if (this.meterPublishCountdown <= 0) {
+    this.writeTelemetrySnapshot(this.getTelemetryPositionSeconds());
+
+    if (this.publishMeterMessages && this.meterPublishCountdown <= 0) {
       this.port.postMessage(this.meterMessage);
       this.meterPublishCountdown = this.meterPublishInterval;
-    } else {
+    } else if (this.publishMeterMessages) {
       this.meterPublishCountdown -= 1;
     }
 
     this.debugPublishCountdownFrames -= frameCount;
-    if (this.debugPublishCountdownFrames <= 0) {
+    if (this.publishDebugMessages && this.debugPublishCountdownFrames <= 0) {
       this.publishDebugStatus();
       this.debugPublishCountdownFrames = this.debugPublishIntervalFrames;
     }
 
     return true;
+  }
+
+  writeTelemetrySnapshot(positionSeconds) {
+    const telemetry = this.telemetry;
+    if (!telemetry) {
+      return;
+    }
+
+    const sequence = telemetry.sequence;
+    const nextSequence = (Atomics.load(sequence, 0) + 1) | 0;
+    Atomics.store(sequence, 0, nextSequence);
+
+    telemetry.currentTime[0] =
+      typeof positionSeconds === 'number' && Number.isFinite(positionSeconds)
+        ? Math.max(0, positionSeconds)
+        : 0;
+
+    const count = Math.min(
+      telemetry.trackCount,
+      telemetry.levels.length,
+      this.meterLevels.length,
+    );
+
+    for (let index = 0; index < count; index += 1) {
+      telemetry.levels[index] = this.meterLevels[index] || 0;
+    }
+
+    Atomics.store(sequence, 0, (nextSequence + 1) | 0);
+  }
+
+  getTelemetryPositionSeconds() {
+    for (let trackIndex = 0; trackIndex < this.trackCount; trackIndex += 1) {
+      const track = this.tracks[trackIndex];
+
+      if (track && track.sampleRate > 0) {
+        return track.absoluteReadFrame / track.sampleRate;
+      }
+    }
+
+    return (
+      this.telemetryBaseSeconds +
+      (this.renderedFrames - this.telemetryBaseRenderedFrames) /
+        (sampleRate || 48000)
+    );
   }
 
   mixSharedTrack(track, output, outputChannelCount, frameCount) {
@@ -455,28 +699,41 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       return;
     }
 
-    if (track.isMuted || track.volume <= 0) {
-      nextReadIndex = this.advanceIndex(nextReadIndex, framesToRead, track.indexCapacity);
-      Atomics.store(indices, READ_INDEX_SLOT, nextReadIndex);
-      track.lastMeterLevel = this.decayMeterLevel(track.lastMeterLevel);
-      this.meterLevels[track.trackIndex] = track.lastMeterLevel;
-      return;
-    }
-
-    const volume = track.volume;
+    const targetGain = this.getTrackTargetGain(track);
     let peakSample = 0;
 
     if (outputChannelCount === 1) {
       const left = output[0];
 
       for (let frameIndex = 0; frameIndex < framesToRead; frameIndex += 1) {
-        const sample = samples[this.toSampleIndex(nextReadIndex, track.capacity)] * volume;
+        let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
+        if (track.loopEnabled) {
+          const framesToLoopEnd = track.loopEndFrame - track.absoluteReadFrame;
+          if (framesToLoopEnd > 0 && framesToLoopEnd <= track.loopFadeFrames) {
+            const fadeOut = framesToLoopEnd / track.loopFadeFrames;
+            const blendIndex = this.advanceIndex(
+              track.loopStartIndex,
+              track.loopFadeFrames - framesToLoopEnd,
+              track.indexCapacity,
+            );
+            rawSample =
+              rawSample * fadeOut +
+              samples[this.toSampleIndex(blendIndex, track.capacity)] * (1 - fadeOut);
+          }
+        }
+        track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
+        const sample = rawSample * track.effectiveGain;
         const absoluteSample = sample >= 0 ? sample : -sample;
         if (absoluteSample > peakSample) {
           peakSample = absoluteSample;
         }
         left[frameIndex] += sample;
         nextReadIndex = this.advanceIndex(nextReadIndex, 1, track.indexCapacity);
+        track.absoluteReadFrame += 1;
+        if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
+          track.absoluteReadFrame = track.loopStartFrame;
+          nextReadIndex = track.loopStartIndex;
+        }
       }
     } else if (outputChannelCount === 2) {
       const left = output[0];
@@ -484,7 +741,23 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       const outputRoute = track.outputRoute || 'stereo';
 
       for (let frameIndex = 0; frameIndex < framesToRead; frameIndex += 1) {
-        const sample = samples[this.toSampleIndex(nextReadIndex, track.capacity)] * volume;
+        let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
+        if (track.loopEnabled) {
+          const framesToLoopEnd = track.loopEndFrame - track.absoluteReadFrame;
+          if (framesToLoopEnd > 0 && framesToLoopEnd <= track.loopFadeFrames) {
+            const fadeOut = framesToLoopEnd / track.loopFadeFrames;
+            const blendIndex = this.advanceIndex(
+              track.loopStartIndex,
+              track.loopFadeFrames - framesToLoopEnd,
+              track.indexCapacity,
+            );
+            rawSample =
+              rawSample * fadeOut +
+              samples[this.toSampleIndex(blendIndex, track.capacity)] * (1 - fadeOut);
+          }
+        }
+        track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
+        const sample = rawSample * track.effectiveGain;
         const absoluteSample = sample >= 0 ? sample : -sample;
         if (absoluteSample > peakSample) {
           peakSample = absoluteSample;
@@ -498,16 +771,46 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
           right[frameIndex] += sample;
         }
         nextReadIndex = this.advanceIndex(nextReadIndex, 1, track.indexCapacity);
+        track.absoluteReadFrame += 1;
+        if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
+          track.absoluteReadFrame = track.loopStartFrame;
+          nextReadIndex = track.loopStartIndex;
+        }
       }
     } else {
       for (let frameIndex = 0; frameIndex < framesToRead; frameIndex += 1) {
-        const sample = samples[this.toSampleIndex(nextReadIndex, track.capacity)] * volume;
+        let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
+        if (track.loopEnabled) {
+          const framesToLoopEnd = track.loopEndFrame - track.absoluteReadFrame;
+          if (framesToLoopEnd > 0 && framesToLoopEnd <= track.loopFadeFrames) {
+            const fadeOut = framesToLoopEnd / track.loopFadeFrames;
+            const blendIndex = this.advanceIndex(
+              track.loopStartIndex,
+              track.loopFadeFrames - framesToLoopEnd,
+              track.indexCapacity,
+            );
+            rawSample =
+              rawSample * fadeOut +
+              samples[this.toSampleIndex(blendIndex, track.capacity)] * (1 - fadeOut);
+          }
+        }
+        track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
+        const sample = rawSample * track.effectiveGain;
+        const absoluteSample = sample >= 0 ? sample : -sample;
+        if (absoluteSample > peakSample) {
+          peakSample = absoluteSample;
+        }
 
         for (let channelIndex = 0; channelIndex < outputChannelCount; channelIndex += 1) {
           output[channelIndex][frameIndex] += sample;
         }
 
         nextReadIndex = this.advanceIndex(nextReadIndex, 1, track.indexCapacity);
+        track.absoluteReadFrame += 1;
+        if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
+          track.absoluteReadFrame = track.loopStartFrame;
+          nextReadIndex = track.loopStartIndex;
+        }
       }
     }
 
@@ -533,33 +836,42 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       return;
     }
 
-    if (track.isMuted || track.volume <= 0) {
-      track.localReadIndex = this.advanceIndex(
-        nextReadIndex,
-        framesToRead,
-        track.indexCapacity,
-      );
-      this.noteFallbackConsumed(track, framesToRead);
-      track.lastMeterLevel = this.decayMeterLevel(track.lastMeterLevel);
-      this.meterLevels[track.trackIndex] = track.lastMeterLevel;
-      return;
-    }
-
     const samples = track.localSamples;
-    const volume = track.volume;
+    const targetGain = this.getTrackTargetGain(track);
     let peakSample = 0;
 
     if (outputChannelCount === 1) {
       const left = output[0];
 
       for (let frameIndex = 0; frameIndex < framesToRead; frameIndex += 1) {
-        const sample = samples[this.toSampleIndex(nextReadIndex, track.capacity)] * volume;
+        let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
+        if (track.loopEnabled) {
+          const framesToLoopEnd = track.loopEndFrame - track.absoluteReadFrame;
+          if (framesToLoopEnd > 0 && framesToLoopEnd <= track.loopFadeFrames) {
+            const fadeOut = framesToLoopEnd / track.loopFadeFrames;
+            const blendIndex = this.advanceIndex(
+              track.loopStartIndex,
+              track.loopFadeFrames - framesToLoopEnd,
+              track.indexCapacity,
+            );
+            rawSample =
+              rawSample * fadeOut +
+              samples[this.toSampleIndex(blendIndex, track.capacity)] * (1 - fadeOut);
+          }
+        }
+        track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
+        const sample = rawSample * track.effectiveGain;
         const absoluteSample = sample >= 0 ? sample : -sample;
         if (absoluteSample > peakSample) {
           peakSample = absoluteSample;
         }
         left[frameIndex] += sample;
         nextReadIndex = this.advanceIndex(nextReadIndex, 1, track.indexCapacity);
+        track.absoluteReadFrame += 1;
+        if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
+          track.absoluteReadFrame = track.loopStartFrame;
+          nextReadIndex = track.loopStartIndex;
+        }
       }
     } else if (outputChannelCount === 2) {
       const left = output[0];
@@ -567,7 +879,23 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       const outputRoute = track.outputRoute || 'stereo';
 
       for (let frameIndex = 0; frameIndex < framesToRead; frameIndex += 1) {
-        const sample = samples[this.toSampleIndex(nextReadIndex, track.capacity)] * volume;
+        let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
+        if (track.loopEnabled) {
+          const framesToLoopEnd = track.loopEndFrame - track.absoluteReadFrame;
+          if (framesToLoopEnd > 0 && framesToLoopEnd <= track.loopFadeFrames) {
+            const fadeOut = framesToLoopEnd / track.loopFadeFrames;
+            const blendIndex = this.advanceIndex(
+              track.loopStartIndex,
+              track.loopFadeFrames - framesToLoopEnd,
+              track.indexCapacity,
+            );
+            rawSample =
+              rawSample * fadeOut +
+              samples[this.toSampleIndex(blendIndex, track.capacity)] * (1 - fadeOut);
+          }
+        }
+        track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
+        const sample = rawSample * track.effectiveGain;
         const absoluteSample = sample >= 0 ? sample : -sample;
         if (absoluteSample > peakSample) {
           peakSample = absoluteSample;
@@ -581,16 +909,46 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
           right[frameIndex] += sample;
         }
         nextReadIndex = this.advanceIndex(nextReadIndex, 1, track.indexCapacity);
+        track.absoluteReadFrame += 1;
+        if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
+          track.absoluteReadFrame = track.loopStartFrame;
+          nextReadIndex = track.loopStartIndex;
+        }
       }
     } else {
       for (let frameIndex = 0; frameIndex < framesToRead; frameIndex += 1) {
-        const sample = samples[this.toSampleIndex(nextReadIndex, track.capacity)] * volume;
+        let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
+        if (track.loopEnabled) {
+          const framesToLoopEnd = track.loopEndFrame - track.absoluteReadFrame;
+          if (framesToLoopEnd > 0 && framesToLoopEnd <= track.loopFadeFrames) {
+            const fadeOut = framesToLoopEnd / track.loopFadeFrames;
+            const blendIndex = this.advanceIndex(
+              track.loopStartIndex,
+              track.loopFadeFrames - framesToLoopEnd,
+              track.indexCapacity,
+            );
+            rawSample =
+              rawSample * fadeOut +
+              samples[this.toSampleIndex(blendIndex, track.capacity)] * (1 - fadeOut);
+          }
+        }
+        track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
+        const sample = rawSample * track.effectiveGain;
+        const absoluteSample = sample >= 0 ? sample : -sample;
+        if (absoluteSample > peakSample) {
+          peakSample = absoluteSample;
+        }
 
         for (let channelIndex = 0; channelIndex < outputChannelCount; channelIndex += 1) {
           output[channelIndex][frameIndex] += sample;
         }
 
         nextReadIndex = this.advanceIndex(nextReadIndex, 1, track.indexCapacity);
+        track.absoluteReadFrame += 1;
+        if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
+          track.absoluteReadFrame = track.loopStartFrame;
+          nextReadIndex = track.loopStartIndex;
+        }
       }
     }
 
@@ -601,6 +959,10 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   }
 
   postTransportDebug() {
+    if (!this.publishDebugMessages) {
+      return;
+    }
+
     this.port.postMessage({
       type: 'debug-transport',
       playing: this.playing,
@@ -613,6 +975,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       missingFrames <= 0 ||
       !this.playing ||
       track.isMuted ||
+      (this.soloCount > 0 && !track.isSolo) ||
       track.volume <= 0.0001
     ) {
       return;
@@ -793,6 +1156,49 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
   toSampleIndex(index, capacity) {
     return index < capacity ? index : index - capacity;
+  }
+
+  frameToIndex(frame, indexCapacity) {
+    let nextIndex = frame % indexCapacity;
+
+    if (nextIndex < 0) {
+      nextIndex += indexCapacity;
+    }
+
+    return nextIndex;
+  }
+
+  getTrackTargetGain(track) {
+    if (
+      track.isMuted ||
+      track.volume <= GAIN_FLOOR ||
+      (this.soloCount > 0 && !track.isSolo)
+    ) {
+      return 0;
+    }
+
+    return track.volume;
+  }
+
+  getTrackReadIndex(track) {
+    if (track.usesSharedMemory && track.indices) {
+      return Atomics.load(track.indices, READ_INDEX_SLOT);
+    }
+
+    return track.localReadIndex;
+  }
+
+  frameToTrackIndex(track, frame) {
+    const relativeFrame = frame - track.indexBaseFrame;
+    let nextIndex = track.indexBaseIndex + relativeFrame;
+
+    nextIndex %= track.indexCapacity;
+
+    if (nextIndex < 0) {
+      nextIndex += track.indexCapacity;
+    }
+
+    return nextIndex;
   }
 
   clampVolume(volume) {
