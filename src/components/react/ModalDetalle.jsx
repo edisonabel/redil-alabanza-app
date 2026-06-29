@@ -368,7 +368,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                 </button>
 
                 <div className="relative z-10 shrink-0 border-b border-slate-200/80 px-3 pb-2.5 pt-4 dark:border-white/10 sm:px-7 sm:pb-4 sm:pt-8 lg:px-8 lg:py-6">
-                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 pr-9 lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-center lg:gap-x-8 lg:gap-y-0 lg:pr-12">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 pr-9 lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-center lg:gap-x-8 lg:gap-y-0 lg:pr-12 xl:grid-cols-[minmax(0,1fr)_26rem]">
                         <div className="min-w-0">
                             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 lg:block">
                                 <div className="min-w-0">
@@ -393,17 +393,17 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                             ) : null}
                         </div>
 
-                        <div className="col-span-2 flex min-w-0 flex-col gap-3 lg:col-span-1 lg:items-stretch">
+                        <div className="col-span-2 -mr-9 flex min-w-0 flex-col gap-3 pt-1 lg:col-span-1 lg:mr-0 lg:items-stretch lg:pt-0">
                             <span className="hidden h-10 w-max items-center gap-2 self-end rounded-full border border-slate-200 bg-slate-50/90 px-4 text-sm font-bold text-slate-700 shadow-inner dark:border-white/12 dark:bg-white/[0.06] dark:text-white/76 lg:inline-flex">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="text-action"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
                                 {timeString}
                             </span>
                             <a
                                 href={rehearsalHref}
-                                className="group relative inline-flex min-h-[42px] w-full items-center justify-center gap-2.5 overflow-hidden rounded-xl border border-blue-300/30 bg-[linear-gradient(135deg,#3b82f6,#1d4ed8)] px-4 py-2 text-sm font-black text-white shadow-[0_12px_28px_rgba(37,99,235,0.30)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_20px_42px_rgba(37,99,235,0.42)] min-[390px]:min-h-[44px] min-[390px]:text-[15px] sm:min-h-[58px] sm:gap-3 sm:rounded-2xl sm:px-6 sm:py-3 sm:text-lg lg:min-h-[48px] lg:text-base"
+                                className="group relative inline-flex min-h-[48px] w-full items-center justify-center gap-3 overflow-hidden rounded-2xl border border-blue-200/45 bg-[linear-gradient(135deg,#3b82f6,#1d4ed8)] px-4 py-2.5 text-base font-black text-white shadow-[0_16px_34px_rgba(37,99,235,0.34)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_22px_46px_rgba(37,99,235,0.44)] min-[390px]:min-h-[52px] min-[390px]:text-[1.05rem] sm:min-h-[58px] sm:px-6 sm:py-3 sm:text-lg lg:min-h-[52px] lg:px-7 lg:text-[1.05rem]"
                             >
                                 <span className="absolute inset-0 translate-y-full bg-white/14 transition-transform duration-300 group-hover:translate-y-0" />
-                                <Icon icon={musicNoteIcon} className="relative z-10 h-[1.125rem] w-[1.125rem] sm:h-7 sm:w-7 lg:h-5 lg:w-5" aria-hidden="true" />
+                                <Icon icon={musicNoteIcon} className="relative z-10 h-5 w-5 sm:h-7 sm:w-7 lg:h-5 lg:w-5" aria-hidden="true" />
                                 <span className="relative z-10">Entrar a Modo Ensayo</span>
                             </a>
                         </div>
