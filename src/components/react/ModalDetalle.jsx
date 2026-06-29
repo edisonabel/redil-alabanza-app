@@ -387,7 +387,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                                 </span>
                             </div>
                             {eventNote ? (
-                                <p className="mt-2 line-clamp-1 max-w-3xl text-[12px] font-light leading-4 text-slate-500 dark:text-white/62 min-[390px]:text-[13px] sm:mt-3 sm:line-clamp-2 sm:text-base sm:leading-7 lg:mt-3 lg:line-clamp-1 lg:text-base lg:leading-6">
+                                <p className="mt-2 line-clamp-1 max-w-3xl text-[12px] font-normal leading-4 text-slate-600 dark:text-white/62 min-[390px]:text-[13px] sm:mt-3 sm:line-clamp-2 sm:text-base sm:font-medium sm:leading-7 lg:mt-3 lg:line-clamp-1 lg:text-base lg:leading-6">
                                     {eventNote}
                                 </p>
                             ) : null}
