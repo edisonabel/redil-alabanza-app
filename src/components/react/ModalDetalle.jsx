@@ -164,6 +164,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
     const [flashPlaylistSection, setFlashPlaylistSection] = useState(false);
     const playlistSectionRef = useRef(null);
     const previousBottomNavHiddenRef = useRef(null);
+    const bottomNavInlineStylesRef = useRef([]);
 
     useEffect(() => {
         // Register global hook for CalendarioGrid
@@ -199,12 +200,42 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
         previousBottomNavHiddenRef.current = root.getAttribute('data-bottom-nav-hidden');
         root.setAttribute('data-bottom-nav-hidden', 'true');
 
+        const styleProps = ['display', 'visibility', 'opacity', 'pointer-events', 'transform'];
+        const navElements = Array.from(document.querySelectorAll('nav[data-bottom-nav="true"]'));
+        bottomNavInlineStylesRef.current = navElements.map((nav) => ({
+            nav,
+            styles: styleProps.map((prop) => ({
+                prop,
+                value: nav.style.getPropertyValue(prop),
+                priority: nav.style.getPropertyPriority(prop),
+            })),
+        }));
+
+        navElements.forEach((nav) => {
+            nav.style.setProperty('display', 'none', 'important');
+            nav.style.setProperty('visibility', 'hidden', 'important');
+            nav.style.setProperty('opacity', '0', 'important');
+            nav.style.setProperty('pointer-events', 'none', 'important');
+            nav.style.setProperty('transform', 'translate3d(0, calc(100% + env(safe-area-inset-bottom) + 1.25rem), 0)', 'important');
+        });
+
         return () => {
             if (previousBottomNavHiddenRef.current === null) {
                 root.removeAttribute('data-bottom-nav-hidden');
             } else {
                 root.setAttribute('data-bottom-nav-hidden', previousBottomNavHiddenRef.current);
             }
+
+            bottomNavInlineStylesRef.current.forEach(({ nav, styles }) => {
+                styles.forEach(({ prop, value, priority }) => {
+                    if (value) {
+                        nav.style.setProperty(prop, value, priority);
+                    } else {
+                        nav.style.removeProperty(prop);
+                    }
+                });
+            });
+            bottomNavInlineStylesRef.current = [];
         };
     }, [isOpen]);
 
