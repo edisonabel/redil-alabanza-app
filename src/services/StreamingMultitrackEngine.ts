@@ -84,18 +84,24 @@ type WorkletTrackOutputRouteMessage = {
 type WorkletFlushBuffersMessage = {
   type: 'FLUSH_BUFFERS';
   targetSample?: number;
+  reason?: 'seek' | 'reset';
+  seekSerial?: number;
 };
 
 type WorkletPauseAndFlushMessage = {
   type: 'PAUSE_AND_FLUSH';
   targetSample: number;
   positionSeconds: number;
+  reason?: 'seek' | 'reset';
+  seekSerial?: number;
 };
 
 type WorkletResumeReadingMessage = {
   type: 'RESUME_READING';
   playing: boolean;
   positionSeconds: number;
+  reason?: 'seek' | 'startup';
+  seekSerial?: number;
 };
 
 type WorkletConfigureTelemetryMessage = {
@@ -157,6 +163,13 @@ type WorkletDebugDropMessage = {
   capacity: number;
 };
 
+type WorkletSeekDebugMessage = {
+  type: 'seek-debug';
+  message: string;
+  seekSerial?: number;
+  activeSeekSerial?: number;
+};
+
 type WorkletAudioUnderflowMessage = {
   type: 'audio-underflow';
   reason: string;
@@ -213,6 +226,7 @@ type WorkletInboundMessage =
   | WorkletDebugStatusMessage
   | WorkletDebugTransportMessage
   | WorkletDebugDropMessage
+  | WorkletSeekDebugMessage
   | WorkletAudioUnderflowMessage
   | WorkletAudioSyncDriftMessage
   | WorkletFallbackConsumedMessage;
@@ -260,6 +274,7 @@ type ProducerSeekMessage = {
   type: 'seek';
   sessionId: number;
   targetSample: number;
+  seekSerial: number;
 };
 
 type ProducerOutboundMessage =
@@ -442,6 +457,7 @@ type ProducerSeekReadyMessage = {
   sessionId: number | null;
   trackIndex: number;
   targetSample: number;
+  seekSerial?: number;
   nextFileStart: number;
   availableRead?: number;
   thresholdFrames?: number;
@@ -452,6 +468,19 @@ type ProducerSeekCompleteMessage = {
   type: 'producer-seek-complete';
   sessionId: number | null;
   targetSample: number;
+  seekSerial?: number;
+};
+
+type ProducerSeekDebugMessage = {
+  type: 'producer-seek-debug';
+  message: string;
+  sessionId?: number | null;
+  seekSerial?: number;
+  currentSeekSerial?: number;
+  targetSample?: number;
+  trackIndex?: number;
+  fallback?: boolean;
+  reason?: string;
 };
 
 type ProducerInboundMessage =
@@ -468,7 +497,8 @@ type ProducerInboundMessage =
   | ProducerDecoderOverloadMessage
   | ProducerErrorMessage
   | ProducerSeekReadyMessage
-  | ProducerSeekCompleteMessage;
+  | ProducerSeekCompleteMessage
+  | ProducerSeekDebugMessage;
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -693,6 +723,7 @@ export class StreamingMultitrackEngine {
   private startTime = 0;
   private pauseTime = 0;
   private restartFromHead = false;
+  private activeSeekSerial = 0;
   private producerSeekSerial = 0;
   private pendingProducerSeek: PendingProducerSeek | null = null;
 
@@ -1088,28 +1119,51 @@ export class StreamingMultitrackEngine {
         targetSample,
         targetTimeSeconds: clampedTime,
       });
+      const seekSerial = pendingSeek.serial;
+      this.activeSeekSerial = seekSerial;
+      console.log(
+        `[SEEK-DEBUG] Engine: Seek start -> serial: ${seekSerial}, target: ${targetSample}, wasPlaying: ${wasPlaying}`,
+      );
       this.postWorkletMessage({
         type: 'PAUSE_AND_FLUSH',
         targetSample,
         positionSeconds: clampedTime,
+        reason: 'seek',
+        seekSerial,
       });
       this.postProducerMessage({
         type: 'seek',
         sessionId: this.producerSessionId,
         targetSample,
+        seekSerial,
       });
       await pendingSeek.promise;
-      if (pendingSeek.cancelled || this.producerSeekSerial !== pendingSeek.serial) {
+      if (
+        pendingSeek.cancelled ||
+        this.producerSeekSerial !== pendingSeek.serial ||
+        this.activeSeekSerial !== seekSerial
+      ) {
         return;
       }
       this.pendingProducerSeek = null;
       this.pauseTime = clampedTime;
       this.startTime = wasPlaying ? this.context.currentTime - clampedTime : 0;
       this.transportPlaying = wasPlaying;
+      if (!wasPlaying) {
+        logLiveDiagnostic('streaming:seek-paused-ready', {
+          seekSerial,
+          targetSample,
+          targetTimeSeconds: clampedTime,
+        });
+        return;
+      }
+      console.log(`[SEEK-DEBUG] Engine: Resume reading -> serial: ${seekSerial}`);
       this.postWorkletMessage({
         type: 'RESUME_READING',
         playing: wasPlaying,
         positionSeconds: clampedTime,
+        reason: 'seek',
+        seekSerial,
       });
       return;
     }
@@ -1522,6 +1576,8 @@ export class StreamingMultitrackEngine {
         const byteRangeStart = trackState.fetchOffset;
         const byteRangeEnd = byteRangeStart + this.fetchChunkBytes - 1;
         const response = await fetch(trackState.config.url, {
+          mode: 'cors',
+          credentials: 'omit',
           headers: {
             Range: `bytes=${byteRangeStart}-${byteRangeEnd}`,
           },
@@ -2032,6 +2088,11 @@ export class StreamingMultitrackEngine {
       return;
     }
 
+    if (message.type === 'producer-seek-debug') {
+      console.log(message.message, message);
+      return;
+    }
+
     if (message.type === 'loop-cache-status') {
       const shouldWarn =
         message.strategy === 'PREDICTIVE_DOUBLE_BUFFER' ||
@@ -2078,14 +2139,17 @@ export class StreamingMultitrackEngine {
       if (!pending || pending.serial !== serial) {
         return;
       }
-      pending.cancelled = true;
+      warnLiveDiagnostic('streaming:producer-seek-soft-timeout', {
+        sessionId: pending.sessionId,
+        seekSerial: pending.serial,
+        targetSample: pending.targetSample,
+        targetTimeSeconds: pending.targetTimeSeconds,
+        readyTracks: pending.readyTracks.size,
+        expectedTrackCount: pending.expectedTrackCount,
+      });
       this.pendingProducerSeek = null;
-      rejectSeek(
-        new Error(
-          `El producer no confirmó audio listo para el seek ${options.targetTimeSeconds.toFixed(2)}s.`,
-        ),
-      );
-    }, 8000);
+      resolveSeek();
+    }, 2500);
 
     const pendingSeek: PendingProducerSeek = {
       serial,
@@ -2126,11 +2190,15 @@ export class StreamingMultitrackEngine {
       !pending ||
       pending.cancelled ||
       message.sessionId !== pending.sessionId ||
-      message.targetSample !== pending.targetSample
+      message.targetSample !== pending.targetSample ||
+      (typeof message.seekSerial === 'number' && message.seekSerial !== pending.serial)
     ) {
       return;
     }
 
+    console.log(
+      `[SEEK-DEBUG] Engine: Seek ready <- serial: ${message.seekSerial ?? pending.serial}, track: ${message.trackIndex}`,
+    );
     pending.readyTracks.add(message.trackIndex);
     if (pending.readyTracks.size >= pending.expectedTrackCount) {
       window.clearTimeout(pending.timeoutId);
@@ -2144,7 +2212,8 @@ export class StreamingMultitrackEngine {
       !pending ||
       pending.cancelled ||
       message.sessionId !== pending.sessionId ||
-      message.targetSample !== pending.targetSample
+      message.targetSample !== pending.targetSample ||
+      (typeof message.seekSerial === 'number' && message.seekSerial !== pending.serial)
     ) {
       return;
     }
@@ -2199,7 +2268,7 @@ export class StreamingMultitrackEngine {
       trackState.abortController.abort();
     }
 
-    this.postWorkletMessage({ type: 'FLUSH_BUFFERS' });
+    this.postWorkletMessage({ type: 'FLUSH_BUFFERS', reason: 'seek' });
 
     for (let trackIndex = 0; trackIndex < this.trackStates.length; trackIndex += 1) {
       this.trackStates[trackIndex].ringBuffer.reset();
@@ -2413,6 +2482,11 @@ export class StreamingMultitrackEngine {
 
     if (message.type === 'debug-drop') {
       warnLiveDiagnostic('streaming:worklet-drop', { message });
+      return;
+    }
+
+    if (message.type === 'seek-debug') {
+      console.log(message.message, message);
       return;
     }
 

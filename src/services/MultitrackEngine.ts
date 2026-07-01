@@ -657,7 +657,11 @@ export class MultitrackEngine {
 
     try {
       const response = await withTimeout(
-        fetch(track.url, { signal: controller.signal }),
+        fetch(track.url, {
+          mode: 'cors',
+          credentials: 'omit',
+          signal: controller.signal,
+        }),
         TRACK_FETCH_TIMEOUT_MS,
         `Timed out fetching "${track.name}".`,
         () => controller.abort(),

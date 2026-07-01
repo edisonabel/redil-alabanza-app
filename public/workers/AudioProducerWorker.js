@@ -21,6 +21,7 @@ const MAX_AHEAD_SECONDS = 10;
 const MIN_RING_WRITE_FRAMES = 1024;
 const DECODER_RECOVERY_SAMPLE_LIMIT = 8;
 const SEEK_READY_SECONDS = 0.5;
+const SEEK_HANDSHAKE_SOFT_TIMEOUT_MS = 2500;
 const TRACK_READY_WATCHDOG_MS = 18000;
 const RANGE_FETCH_MAX_RETRIES = 3;
 const RANGE_FETCH_BASE_RETRY_DELAY_MS = 500;
@@ -533,6 +534,8 @@ class RangeFetcher {
       try {
         this.abortController = new AbortController();
         const response = await fetch(this.url, {
+          mode: 'cors',
+          credentials: 'omit',
           headers: {
             Range: `bytes=${safeByteStart}-${byteEnd}`,
           },
@@ -569,7 +572,18 @@ class RangeFetcher {
           this.abortController = null;
         }
 
-        if (isAbortError(error) || !this.isRetryableFetchError(error) || attempt >= this.maxRetries) {
+        if (isAbortError(error)) {
+          self.postMessage({
+            type: 'producer-fetch-aborted',
+            trackIndex: this.trackIndex,
+            trackName: this.trackName,
+            byteStart: safeByteStart,
+            byteEnd,
+          });
+          throw error;
+        }
+
+        if (!this.isRetryableFetchError(error) || attempt >= this.maxRetries) {
           throw this.buildFetchFailure(error, safeByteStart, byteEnd, attempt + 1);
         }
 
@@ -704,7 +718,7 @@ class SharedRingWriter {
   }
 
   availableWrite() {
-    return this.capacity - this.availableRead();
+    return Math.max(0, Math.min(this.capacity, this.capacity - this.availableRead()));
   }
 
   targetAheadFrames() {
@@ -884,28 +898,44 @@ class SharedRingWriter {
   }
 
   computeAvailableRead(readIndex, writeIndex) {
-    return writeIndex >= readIndex
-      ? writeIndex - readIndex
-      : this.indexCapacity - readIndex + writeIndex;
+    if (!Number.isFinite(this.indexCapacity) || this.indexCapacity <= 0) {
+      return 0;
+    }
+
+    const safeReadIndex = this.normalizeIndex(readIndex, this.indexCapacity);
+    const safeWriteIndex = this.normalizeIndex(writeIndex, this.indexCapacity);
+    const availableRead =
+      safeWriteIndex >= safeReadIndex
+        ? safeWriteIndex - safeReadIndex
+        : this.indexCapacity - safeReadIndex + safeWriteIndex;
+
+    return Math.max(0, Math.min(this.capacity, availableRead));
   }
 
   advanceIndex(currentIndex, delta) {
-    const nextIndex = currentIndex + delta;
-
-    return nextIndex >= this.indexCapacity
-      ? nextIndex - this.indexCapacity
-      : nextIndex;
+    return this.normalizeIndex(
+      (Number(currentIndex) || 0) + (Number(delta) || 0),
+      this.indexCapacity,
+    );
   }
 
   toSampleIndex(index) {
-    return index < this.capacity ? index : index - this.capacity;
+    return this.normalizeIndex(index, this.capacity);
   }
 
   frameToIndex(frame) {
-    let nextIndex = Math.floor(Number(frame) || 0) % this.indexCapacity;
+    return this.normalizeIndex(frame, this.indexCapacity);
+  }
+
+  normalizeIndex(index, modulo) {
+    if (!Number.isFinite(modulo) || modulo <= 0) {
+      return 0;
+    }
+
+    let nextIndex = Math.floor(Number(index) || 0) % modulo;
 
     if (nextIndex < 0) {
-      nextIndex += this.indexCapacity;
+      nextIndex += modulo;
     }
 
     return nextIndex;
@@ -1202,6 +1232,7 @@ class ProducerTrackPipeline {
     this.recentDecodeSamples = [];
     this.decoderRecoveryInFlight = false;
     this.pendingSeekReady = null;
+    this.currentSeekSerial = 0;
     this.readyWatchdogId = 0;
     this.decoderQueueOverloadStartedAt = 0;
     this.lastDecoderQueueAlertAt = 0;
@@ -1304,7 +1335,7 @@ class ProducerTrackPipeline {
     this.ready = true;
   }
 
-  startLookAhead(sessionId) {
+  startLookAhead(sessionId, seekSerial = this.currentSeekSerial) {
     if (this.isDestroyed) {
       return;
     }
@@ -1313,7 +1344,12 @@ class ProducerTrackPipeline {
     this.lookAheadToken = token;
     this.startReadyWatchdog(sessionId, token);
     this.runLookAhead(sessionId, token).catch((error) => {
-      if (this.isDestroyed || isAbortError(error)) {
+      if (this.isDestroyed) {
+        return;
+      }
+
+      if (isAbortError(error)) {
+        this.postSeekReadyFallback(sessionId, 'abort', seekSerial);
         return;
       }
 
@@ -1372,11 +1408,22 @@ class ProducerTrackPipeline {
     this.readyWatchdogId = 0;
   }
 
-  async seekToSample(targetSample, sessionId) {
+  async seekToSample(targetSample, sessionId, seekSerial) {
     this.assertAlive();
 
     const safeTargetSample = Math.max(0, Math.floor(Number(targetSample) || 0));
+    const safeSeekSerial = Math.max(0, Math.floor(Number(seekSerial) || 0));
 
+    this.postSeekReadyFallback(sessionId, 'superseded-by-new-seek');
+    this.currentSeekSerial = safeSeekSerial;
+    self.postMessage({
+      type: 'producer-seek-debug',
+      message: `[SEEK-DEBUG] Worker: Seek start -> serial: ${safeSeekSerial}, target: ${safeTargetSample}, track: ${this.track.name || this.track.id || this.track.trackIndex}`,
+      sessionId,
+      seekSerial: safeSeekSerial,
+      targetSample: safeTargetSample,
+      trackIndex: this.track.trackIndex,
+    });
     this.stopLookAhead();
     this.prepareToken += 1;
     this.fetcher.abort();
@@ -1384,6 +1431,8 @@ class ProducerTrackPipeline {
 
     this.decodedUntilSample = safeTargetSample;
     this.clearPendingNormalPcm();
+    this.recentDecodeSamples = [];
+    this.decoderRecoveryInFlight = false;
     this.resetNormalWriteTimeline(safeTargetSample);
     this.endOfFileReached = false;
     this.normalReadyPosted = false;
@@ -1412,6 +1461,7 @@ class ProducerTrackPipeline {
 
       this.pendingSeekReady = {
         sessionId,
+        seekSerial: safeSeekSerial,
         targetSample: safeTargetSample,
         thresholdFrames: Math.max(
           MIN_RING_WRITE_FRAMES,
@@ -1421,7 +1471,7 @@ class ProducerTrackPipeline {
         reject,
       };
 
-      this.startLookAhead(sessionId);
+      this.startLookAhead(sessionId, safeSeekSerial);
       this.postSeekReadyIfAvailable();
     });
   }
@@ -1460,11 +1510,13 @@ class ProducerTrackPipeline {
     while (!this.isDestroyed && this.lookAheadToken === token && !this.endOfFileReached) {
       this.drainPendingNormalPcm();
       if (this.pendingNormalFrameCount > 0) {
+        this.postSeekReadyIfAvailable();
         await sleep(this.ringWriter.waitTimeMs());
         continue;
       }
 
       if (!this.ringWriter.shouldFetchMore()) {
+        this.postSeekReadyIfAvailable();
         await sleep(this.ringWriter.waitTimeMs());
         continue;
       }
@@ -1685,13 +1737,14 @@ class ProducerTrackPipeline {
       );
     }
 
+    const decoderSeekSerial = this.currentSeekSerial;
     this.decoder = new AudioDecoder({
       output: (audioData) => {
         if (this.isDestroyed) {
           audioData.close();
           return;
         }
-        this.handleDecodedAudioData(audioData);
+        this.handleDecodedAudioData(audioData, decoderSeekSerial);
       },
       error: (error) => {
         if (this.isDestroyed) {
@@ -1786,6 +1839,8 @@ class ProducerTrackPipeline {
   }
 
   async waitForDecoderBackpressure() {
+    let guard = 0;
+
     while (
       !this.isDestroyed &&
       (
@@ -1794,8 +1849,13 @@ class ProducerTrackPipeline {
         (this.ringWriter.isReady() && this.ringWriter.availableWrite() < MIN_RING_WRITE_FRAMES)
       )
     ) {
+      guard += 1;
       this.drainPendingNormalPcm();
+      this.postSeekReadyIfAvailable();
       this.monitorDecoderQueueHealth();
+      if (guard > 256) {
+        break;
+      }
       await sleep(4);
     }
 
@@ -1852,9 +1912,20 @@ class ProducerTrackPipeline {
     });
   }
 
-  handleDecodedAudioData(audioData) {
+  handleDecodedAudioData(audioData, seekSerial) {
     try {
       if (this.isDestroyed) {
+        return;
+      }
+
+      if (typeof seekSerial === 'number' && seekSerial !== this.currentSeekSerial) {
+        self.postMessage({
+          type: 'producer-seek-debug',
+          message: `[SEEK-DEBUG] Worker: Drop stale PCM -> viejoSerial: ${seekSerial}, actualSerial: ${this.currentSeekSerial}, track: ${this.track.name || this.track.id || this.track.trackIndex}`,
+          seekSerial,
+          currentSeekSerial: this.currentSeekSerial,
+          trackIndex: this.track.trackIndex,
+        });
         return;
       }
 
@@ -1873,6 +1944,7 @@ class ProducerTrackPipeline {
       this.writeNormalRingBufferIfAvailable(
         absoluteStartSample,
         pcm.subarray(0, audioData.numberOfFrames),
+        seekSerial,
       );
 
       this.decodedUntilSample = Math.max(
@@ -1942,15 +2014,26 @@ class ProducerTrackPipeline {
     return this.decodeScratch;
   }
 
-  writeNormalRingBufferIfAvailable(_absoluteStartSample, _pcm) {
+  writeNormalRingBufferIfAvailable(_absoluteStartSample, _pcm, seekSerial = this.currentSeekSerial) {
     if (this.isDestroyed) {
+      return;
+    }
+
+    if (seekSerial !== this.currentSeekSerial) {
+      self.postMessage({
+        type: 'producer-seek-debug',
+        message: `[SEEK-DEBUG] Worker: Drop stale PCM -> viejoSerial: ${seekSerial}, actualSerial: ${this.currentSeekSerial}, track: ${this.track.name || this.track.id || this.track.trackIndex}`,
+        seekSerial,
+        currentSeekSerial: this.currentSeekSerial,
+        trackIndex: this.track.trackIndex,
+      });
       return;
     }
 
     this.drainPendingNormalPcm();
 
     if (this.pendingNormalFrameCount > 0) {
-      this.enqueuePendingNormalPcm(_absoluteStartSample, _pcm);
+      this.enqueuePendingNormalPcm(_absoluteStartSample, _pcm, seekSerial);
       this.postRingBackpressure(_pcm.length, 'queued');
       return;
     }
@@ -1987,7 +2070,11 @@ class ProducerTrackPipeline {
     }
 
     if (result.consumedFrames < _pcm.length) {
-      this.enqueuePendingNormalPcm(result.remainingAbsoluteStartSample, _pcm.subarray(result.consumedFrames));
+      this.enqueuePendingNormalPcm(
+        result.remainingAbsoluteStartSample,
+        _pcm.subarray(result.consumedFrames),
+        seekSerial,
+      );
       this.postRingBackpressure(_pcm.length - result.consumedFrames, 'queued');
     }
   }
@@ -2103,7 +2190,7 @@ class ProducerTrackPipeline {
     };
   }
 
-  enqueuePendingNormalPcm(absoluteStartSample, pcm) {
+  enqueuePendingNormalPcm(absoluteStartSample, pcm, seekSerial = this.currentSeekSerial) {
     if (this.isDestroyed) {
       return;
     }
@@ -2118,6 +2205,7 @@ class ProducerTrackPipeline {
       absoluteStartSample,
       pcm: copy,
       offset: 0,
+      seekSerial,
     });
     this.pendingNormalFrameCount += copy.length;
   }
@@ -2127,8 +2215,30 @@ class ProducerTrackPipeline {
       return;
     }
 
+    let guard = 0;
+
     while (this.pendingNormalPcm.length > 0 && this.ringWriter.availableWrite() > 0) {
+      guard += 1;
+      if (guard > 128) {
+        break;
+      }
+
       const entry = this.pendingNormalPcm[0];
+      if (entry.seekSerial !== this.currentSeekSerial) {
+        self.postMessage({
+          type: 'producer-seek-debug',
+          message: `[SEEK-DEBUG] Worker: Drop stale PCM -> viejoSerial: ${entry.seekSerial}, actualSerial: ${this.currentSeekSerial}, track: ${this.track.name || this.track.id || this.track.trackIndex}`,
+          seekSerial: entry.seekSerial,
+          currentSeekSerial: this.currentSeekSerial,
+          trackIndex: this.track.trackIndex,
+        });
+        this.pendingNormalFrameCount = Math.max(
+          0,
+          this.pendingNormalFrameCount - Math.max(0, entry.pcm.length - entry.offset),
+        );
+        this.pendingNormalPcm.shift();
+        continue;
+      }
       const pcm = entry.offset > 0 ? entry.pcm.subarray(entry.offset) : entry.pcm;
       const result = this.writeAnchoredNormalPcm(entry.absoluteStartSample + entry.offset, pcm);
       const writtenFrames = result.writtenFrames;
@@ -2230,14 +2340,61 @@ class ProducerTrackPipeline {
 
     this.pendingSeekReady = null;
     self.postMessage({
+      type: 'producer-seek-debug',
+      message: `[SEEK-DEBUG] Worker: Seek ready -> serial: ${pending.seekSerial}, track: ${this.track.name || this.track.id || this.track.trackIndex}`,
+      sessionId: pending.sessionId,
+      seekSerial: pending.seekSerial,
+      targetSample: pending.targetSample,
+      trackIndex: this.track.trackIndex,
+    });
+    self.postMessage({
       type: 'producer-seek-ready',
       sessionId: pending.sessionId,
+      seekSerial: pending.seekSerial,
       trackIndex: this.track.trackIndex,
       targetSample: pending.targetSample,
       nextFileStart: this.nextFileStart,
       availableRead,
       thresholdFrames: pending.thresholdFrames,
       decodedUntilSample: this.decodedUntilSample,
+    });
+    pending.resolve();
+  }
+
+  postSeekReadyFallback(sessionId, reason, seekSerial = this.currentSeekSerial) {
+    const pending = this.pendingSeekReady;
+    if (
+      !pending ||
+      pending.sessionId !== sessionId ||
+      pending.seekSerial !== Math.max(0, Math.floor(Number(seekSerial) || 0))
+    ) {
+      return;
+    }
+
+    this.pendingSeekReady = null;
+    self.postMessage({
+      type: 'producer-seek-debug',
+      message: `[SEEK-DEBUG] Worker: Seek ready -> serial: ${pending.seekSerial}, track: ${this.track.name || this.track.id || this.track.trackIndex}, fallback: ${reason}`,
+      sessionId: pending.sessionId,
+      seekSerial: pending.seekSerial,
+      targetSample: pending.targetSample,
+      trackIndex: this.track.trackIndex,
+      fallback: true,
+      reason,
+    });
+    self.postMessage({
+      type: 'producer-seek-ready',
+      sessionId: pending.sessionId,
+      seekSerial: pending.seekSerial,
+      trackIndex: this.track.trackIndex,
+      targetSample: pending.targetSample,
+      nextFileStart: this.nextFileStart,
+      availableRead: this.ringWriter.availableRead(),
+      availableWrite: this.ringWriter.availableWrite(),
+      thresholdFrames: pending.thresholdFrames,
+      decodedUntilSample: this.decodedUntilSample,
+      fallback: true,
+      reason,
     });
     pending.resolve();
   }
@@ -2395,17 +2552,36 @@ const preparePinnedLoop = async (result, sessionId) => {
   });
 };
 
-const seekAllPipelines = async (targetSample, sessionId) => {
+const seekAllPipelines = async (targetSample, sessionId, seekSerial) => {
   const tasks = [];
+  const safeSeekSerial = Math.max(0, Math.floor(Number(seekSerial) || 0));
 
   for (const pipeline of trackPipelines.values()) {
-    tasks.push(pipeline.seekToSample(targetSample, sessionId));
+    const seekTask = pipeline.seekToSample(targetSample, sessionId, safeSeekSerial).catch((error) => {
+      if (isAbortError(error)) {
+        pipeline.postSeekReadyFallback(sessionId, 'abort', safeSeekSerial);
+        return;
+      }
+
+      throw error;
+    });
+    const softTimeoutTask = sleep(SEEK_HANDSHAKE_SOFT_TIMEOUT_MS).then(() => {
+      pipeline.postSeekReadyFallback(sessionId, 'soft-timeout', safeSeekSerial);
+    });
+
+    tasks.push(Promise.race([seekTask, softTimeoutTask]));
   }
 
-  await Promise.all(tasks);
+  const results = await Promise.allSettled(tasks);
+  const rejected = results.find((result) => result.status === 'rejected');
+  if (rejected) {
+    throw rejected.reason;
+  }
+
   self.postMessage({
     type: 'producer-seek-complete',
     sessionId,
+    seekSerial: safeSeekSerial,
     targetSample,
   });
 };
@@ -2455,13 +2631,15 @@ self.onmessage = (event) => {
 
   if (message.type === 'seek') {
     const targetSample = Math.max(0, Math.floor(Number(message.targetSample) || 0));
-    seekAllPipelines(targetSample, message.sessionId || activeSessionId).catch((error) => {
+    const seekSerial = Math.max(0, Math.floor(Number(message.seekSerial) || 0));
+    seekAllPipelines(targetSample, message.sessionId || activeSessionId, seekSerial).catch((error) => {
       if (isAbortError(error)) {
         return;
       }
 
       postProducerError('seek-failed', error, {
         sessionId: message.sessionId || null,
+        seekSerial,
         targetSample,
       });
     });

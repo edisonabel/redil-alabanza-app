@@ -18,10 +18,19 @@ const staticAssetRegex = /\.(png|ico|svg|webmanifest|css|js|txt|map|woff2?|ttf|e
 const crossOriginIsolationHeaders = {
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Embedder-Policy': 'require-corp',
-  'Cross-Origin-Resource-Policy': 'same-origin',
 };
 
-const withCrossOriginIsolation = (response) => {
+const shouldApplyCrossOriginIsolation = (path) => (
+  path === '/herramientas/live-director-preview' ||
+  path === '/audio-lab' ||
+  path.startsWith('/audio-lab/')
+);
+
+const withCrossOriginIsolation = (response, path) => {
+  if (!shouldApplyCrossOriginIsolation(path)) {
+    return response;
+  }
+
   for (const [header, value] of Object.entries(crossOriginIsolationHeaders)) {
     response.headers.set(header, value);
   }
@@ -52,13 +61,13 @@ const clearAuthCookies = (cookies) => {
   cookies.delete('sb-refresh-token', { path: '/' });
 };
 
-const redirectTo = (location, status = 302) => withCrossOriginIsolation(new Response(null, {
+const redirectTo = (location, status = 302) => new Response(null, {
   status,
   headers: {
     Location: location,
     'Cache-Control': 'no-cache',
   },
-}));
+});
 
 const isProtectedRoute = (path) =>
   protectedRoutes.some((route) => path === route || path.startsWith(`${route}/`));
@@ -127,7 +136,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     if (authState?.accessToken) {
       return redirectTo('/');
     }
-    return withCrossOriginIsolation(await next());
+    return withCrossOriginIsolation(await next(), path);
   }
 
   if (protectedPath && !authState?.accessToken) {
@@ -169,5 +178,5 @@ export const onRequest = defineMiddleware(async (context, next) => {
     }
   }
 
-  return withCrossOriginIsolation(await next());
+  return withCrossOriginIsolation(await next(), path);
 });

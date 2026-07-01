@@ -507,6 +507,9 @@ export function LiveDirectorView({
   const passiveProgressTextRef = useRef<HTMLSpanElement | null>(null);
   const passiveProgressBarRef = useRef<HTMLDivElement | null>(null);
   const passiveMixerLevelRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const passiveSectionPlayheadRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const passiveMinimapPlayheadRef = useRef<HTMLDivElement | null>(null);
+  const programmaticSectionsScrollUntilRef = useRef(0);
   const passiveFpsMonitorRef = useRef({
     lastSampleAt: 0,
     frames: 0,
@@ -1028,6 +1031,59 @@ export function LiveDirectorView({
     return sectionLanePlayheadOffsetPx + sectionLaneTrailingPaddingPx + contentTrackWidth;
   }, [sectionLanePlayheadOffsetPx, sectionLaneSegments, sectionLaneTailWidthPx, sectionLaneTrailingPaddingPx]);
 
+  const getSectionIndexAtTime = useCallback((timeInSeconds: number) => {
+    const safeTime = Math.max(0, Number(timeInSeconds) || 0);
+    const nextIndex = resolvedSections.findIndex(
+      (section) => safeTime >= section.startTime && safeTime < section.endTime,
+    );
+
+    if (nextIndex !== -1) {
+      return nextIndex;
+    }
+
+    if (safeTime >= sectionTimelineDuration && resolvedSections.length > 0) {
+      return resolvedSections.length - 1;
+    }
+
+    return 0;
+  }, [resolvedSections, sectionTimelineDuration]);
+
+  const getSectionLaneProgressPxAtTime = useCallback((timeInSeconds: number) => {
+    const safeTime = Math.max(0, Number(timeInSeconds) || 0);
+
+    if (sectionLaneSegments.length === 0) {
+      return safeTime * SECTION_LANE_PIXELS_PER_SECOND;
+    }
+
+    const timeSectionIndex = getSectionIndexAtTime(safeTime);
+    const activeSegment = sectionLaneSegments[timeSectionIndex] || sectionLaneSegments[0];
+
+    if (safeTime <= activeSegment.section.startTime) {
+      return activeSegment.leftPx;
+    }
+
+    if (safeTime >= sectionTimelineDuration) {
+      const lastSegment = sectionLaneSegments[sectionLaneSegments.length - 1];
+      const overflowDuration = Math.max(
+        0,
+        Math.min(safeTime, playbackTimelineDuration) - sectionTimelineDuration,
+      );
+      return lastSegment.leftPx + lastSegment.widthPx + overflowDuration * SECTION_LANE_PIXELS_PER_SECOND;
+    }
+
+    const sectionDuration = Math.max(
+      0.001,
+      activeSegment.section.endTime - activeSegment.section.startTime,
+    );
+    const progressWithinSection = clamp(
+      (safeTime - activeSegment.section.startTime) / sectionDuration,
+      0,
+      1,
+    );
+
+    return activeSegment.leftPx + activeSegment.widthPx * progressWithinSection;
+  }, [getSectionIndexAtTime, playbackTimelineDuration, sectionLaneSegments, sectionTimelineDuration]);
+
   const progressPercent = playbackTimelineDuration > 0 ? clamp(currentTime / playbackTimelineDuration, 0, 1) * 100 : 0;
 
   const stopPassiveTelemetryLoop = useCallback(() => {
@@ -1102,6 +1158,51 @@ export function LiveDirectorView({
           passiveProgressBarRef.current.style.transform = `scaleX(${Math.max(hasTrackSession ? progress / 100 : 0, hasTrackSession ? 0.04 : 0)})`;
         }
 
+        if (passiveMinimapPlayheadRef.current) {
+          const minimapWidth = passiveMinimapPlayheadRef.current.parentElement?.clientWidth || 0;
+          passiveMinimapPlayheadRef.current.style.left = '0px';
+          passiveMinimapPlayheadRef.current.style.transform = `translate3d(${minimapWidth * (progress / 100)}px, 0, 0)`;
+        }
+
+        if (showSectionsPanel) {
+          const progressPx = getSectionLaneProgressPxAtTime(nextTime);
+          const activeSectionIndex = getSectionIndexAtTime(nextTime);
+          const scrollContainer = sectionsLaneScrollRef.current;
+
+          if (scrollContainer && !isUserScrollingSectionsRef.current) {
+            const maxScrollLeft = Math.max(0, scrollContainer.scrollWidth - scrollContainer.clientWidth);
+            const targetScrollLeft = clamp(progressPx, 0, maxScrollLeft);
+
+            if (Math.abs(scrollContainer.scrollLeft - targetScrollLeft) > 0.5) {
+              programmaticSectionsScrollUntilRef.current = frameTime + 80;
+              scrollContainer.scrollLeft = targetScrollLeft;
+            }
+          }
+
+          for (let index = 0; index < sectionLaneSegments.length; index += 1) {
+            const segment = sectionLaneSegments[index];
+            const element = passiveSectionPlayheadRefs.current.get(segment.section.id);
+
+            if (!element) {
+              continue;
+            }
+
+            if (index === activeSectionIndex) {
+              const x = clamp(progressPx - segment.leftPx - 1, 0, Math.max(0, segment.widthPx - 2));
+              element.style.transform = `translate3d(${x}px, 0, 0)`;
+              element.style.opacity = '1';
+              element.style.backgroundColor = `${segment.section.accent}cc`;
+              element.style.boxShadow = `0 0 14px ${segment.section.accent}66`;
+              element.style.willChange = 'transform';
+            } else if (element.style.opacity !== '0') {
+              element.style.opacity = '0';
+              element.style.backgroundColor = 'transparent';
+              element.style.boxShadow = 'none';
+              element.style.willChange = 'auto';
+            }
+          }
+        }
+
         for (let index = 0; index < telemetry.trackIds.length; index += 1) {
           const trackId = telemetry.trackIds[index];
           const element = passiveMixerLevelRefs.current.get(trackId);
@@ -1125,8 +1226,12 @@ export function LiveDirectorView({
     hasTrackSession,
     isPlaying,
     activeTracks.length,
+    getSectionIndexAtTime,
+    getSectionLaneProgressPxAtTime,
     passiveStreamingTelemetryEnabled,
     playbackTimelineDuration,
+    sectionLaneSegments,
+    showSectionsPanel,
     stopPassiveTelemetryLoop,
   ]);
 
@@ -1246,21 +1351,10 @@ export function LiveDirectorView({
     stopChordDomClock();
   }, [stopChordDomClock]);
 
-  const activeSectionIndex = useMemo(() => {
-    const nextIndex = resolvedSections.findIndex(
-      (section) => currentTime >= section.startTime && currentTime < section.endTime,
-    );
-
-    if (nextIndex !== -1) {
-      return nextIndex;
-    }
-
-    if (currentTime >= sectionTimelineDuration && resolvedSections.length > 0) {
-      return resolvedSections.length - 1;
-    }
-
-    return 0;
-  }, [currentTime, resolvedSections, sectionTimelineDuration]);
+  const activeSectionIndex = useMemo(
+    () => getSectionIndexAtTime(currentTime),
+    [currentTime, getSectionIndexAtTime],
+  );
   const activeSection = resolvedSections[activeSectionIndex] || resolvedSections[0] || null;
 
   // Pre-announce the upcoming section while playing. Returns { name, seconds }
@@ -1286,38 +1380,10 @@ export function LiveDirectorView({
     };
   }, [activeSectionIndex, currentTime, isPlaying, resolvedSections]);
 
-  const sectionLaneProgressPx = useMemo(() => {
-    if (sectionLaneSegments.length === 0) {
-      return Math.max(0, currentTime) * SECTION_LANE_PIXELS_PER_SECOND;
-    }
-
-    const activeSegment = sectionLaneSegments[activeSectionIndex] || sectionLaneSegments[0];
-
-    if (currentTime <= activeSegment.section.startTime) {
-      return activeSegment.leftPx;
-    }
-
-    if (currentTime >= sectionTimelineDuration) {
-      const lastSegment = sectionLaneSegments[sectionLaneSegments.length - 1];
-      const overflowDuration = Math.max(
-        0,
-        Math.min(currentTime, playbackTimelineDuration) - sectionTimelineDuration,
-      );
-      return lastSegment.leftPx + lastSegment.widthPx + overflowDuration * SECTION_LANE_PIXELS_PER_SECOND;
-    }
-
-    const sectionDuration = Math.max(
-      0.001,
-      activeSegment.section.endTime - activeSegment.section.startTime,
-    );
-    const progressWithinSection = clamp(
-      (currentTime - activeSegment.section.startTime) / sectionDuration,
-      0,
-      1,
-    );
-
-    return activeSegment.leftPx + activeSegment.widthPx * progressWithinSection;
-  }, [activeSectionIndex, currentTime, playbackTimelineDuration, sectionLaneSegments, sectionTimelineDuration]);
+  const sectionLaneProgressPx = useMemo(
+    () => getSectionLaneProgressPxAtTime(currentTime),
+    [currentTime, getSectionLaneProgressPxAtTime],
+  );
 
   // ─── Mini-map derived data ────────────────────────────────────────────────
   // Precompute section blocks as percentages of the full playback timeline.
@@ -1665,6 +1731,10 @@ export function LiveDirectorView({
     };
 
     const onScroll = () => {
+      if (performance.now() < programmaticSectionsScrollUntilRef.current) {
+        return;
+      }
+
       latest = scrollContainer.scrollLeft;
       if (rafId !== null) return;
       rafId = window.requestAnimationFrame(commit);
@@ -4105,6 +4175,14 @@ export function LiveDirectorView({
                             </div>
                           </div>
                           <div
+                            ref={(element) => {
+                              const playheadRefs = passiveSectionPlayheadRefs.current;
+                              if (element) {
+                                playheadRefs.set(section.id, element);
+                              } else {
+                                playheadRefs.delete(section.id);
+                              }
+                            }}
                             className="pointer-events-none absolute inset-y-4 left-0 rounded-[1.2rem] border border-white/0"
                             style={{
                               // transform is composited on the GPU; `left`
@@ -4195,11 +4273,13 @@ export function LiveDirectorView({
                       />
                       {/* Playhead global */}
                       <div
+                        ref={passiveMinimapPlayheadRef}
                         aria-hidden="true"
-                        className="pointer-events-none absolute -top-[4px] -bottom-[4px] w-[2px] -translate-x-1/2 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.9)]"
+                        className="pointer-events-none absolute -top-[4px] -bottom-[4px] left-0 w-[2px] rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.9)]"
                         style={{
                           left: `${sectionLaneMinimapPlayheadPct}%`,
-                          willChange: 'left',
+                          transform: 'translate3d(-1px, 0, 0)',
+                          willChange: 'transform',
                         }}
                       />
                     </div>

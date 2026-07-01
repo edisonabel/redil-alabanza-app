@@ -20,17 +20,28 @@ const reactAliases = [
 const crossOriginIsolationHeaders = {
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Embedder-Policy': 'require-corp',
-  'Cross-Origin-Resource-Policy': 'same-origin',
+};
+
+const shouldApplyCrossOriginIsolation = (url = '') => {
+  const pathname = String(url || '').split('?')[0];
+
+  return (
+    pathname === '/herramientas/live-director-preview' ||
+    pathname === '/audio-lab' ||
+    pathname.startsWith('/audio-lab/')
+  );
 };
 
 /**
- * @param {any} _request
+ * @param {any} request
  * @param {any} response
  * @param {() => void} next
  */
-const applyCrossOriginIsolationHeaders = (_request, response, next) => {
-  for (const [header, value] of Object.entries(crossOriginIsolationHeaders)) {
-    response.setHeader(header, value);
+const applyCrossOriginIsolationHeaders = (request, response, next) => {
+  if (shouldApplyCrossOriginIsolation(request.url)) {
+    for (const [header, value] of Object.entries(crossOriginIsolationHeaders)) {
+      response.setHeader(header, value);
+    }
   }
   next();
 };
@@ -91,11 +102,7 @@ export default defineConfig({
       /** @type {any} */ (legacyCatchBindingPlugin()),
     ],
     server: {
-      headers: crossOriginIsolationHeaders,
       allowedHosts: ['.trycloudflare.com'],
-    },
-    preview: {
-      headers: crossOriginIsolationHeaders,
     },
     build: {
       target: 'es2018',
