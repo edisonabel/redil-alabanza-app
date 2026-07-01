@@ -892,7 +892,7 @@ export function LiveDirectorView({
   );
 
   const activeTrackWarningThreshold = useMemo(() => {
-    if (useStreamingEngine) {
+    if (spscBetaRequested) {
       return Number.MAX_SAFE_INTEGER;
     }
 
@@ -918,8 +918,11 @@ export function LiveDirectorView({
       return SAFARI_WEB_MAX_ACTIVE_TRACKS;
     }
     return WEB_ENGINE_MAX_ACTIVE_TRACKS;
-  }, [isIOSNativeEngineSurface, maxWebActiveTracks, useStreamingEngine]);
+  }, [isIOSNativeEngineSurface, maxWebActiveTracks, spscBetaRequested]);
   const sessionActiveTrackLimit = Math.max(1, activeTrackWarningThreshold);
+  const trackLoadGuidanceText = spscBetaRequested
+    ? 'Beta SPSC activa: puedes probar todos los stems.'
+    : `Desactiva stems que no vas a usar. Más de ${sessionActiveTrackLimit} puede ser inestable según el equipo.`;
 
   const enabledSessionTracks = useMemo(
     () => sessionTracks.filter((track) => track.enabled !== false),
@@ -4943,7 +4946,7 @@ export function LiveDirectorView({
                   {currentSessionLabel}
                 </h3>
                 <p className={`text-white/54 ${useWideTrackLoadModal ? 'mt-1 text-[0.74rem]' : 'mt-1.5 text-sm'}`}>
-                  Desactiva stems que no vas a usar. Más de {sessionActiveTrackLimit} puede ser inestable según el equipo.
+                  {trackLoadGuidanceText}
                 </p>
               </div>
               <button

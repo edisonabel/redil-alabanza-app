@@ -15,6 +15,19 @@ const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 const protectedRoutes = ['/', '/admin', '/programacion', '/repertorio', '/historial-cantos', '/perfil', '/equipo', '/herramientas', '/configuracion', '/ensayo', '/monitor', '/panel'];
 
 const staticAssetRegex = /\.(png|ico|svg|webmanifest|css|js|txt|map|woff2?|ttf|eot|json)$/i;
+const crossOriginIsolationHeaders = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+  'Cross-Origin-Resource-Policy': 'same-origin',
+};
+
+const withCrossOriginIsolation = (response) => {
+  for (const [header, value] of Object.entries(crossOriginIsolationHeaders)) {
+    response.headers.set(header, value);
+  }
+
+  return response;
+};
 
 const setAuthCookies = (cookies, session, isSecure) => {
   const options = {
@@ -39,13 +52,13 @@ const clearAuthCookies = (cookies) => {
   cookies.delete('sb-refresh-token', { path: '/' });
 };
 
-const redirectTo = (location, status = 302) => new Response(null, {
+const redirectTo = (location, status = 302) => withCrossOriginIsolation(new Response(null, {
   status,
   headers: {
     Location: location,
     'Cache-Control': 'no-cache',
   },
-});
+}));
 
 const isProtectedRoute = (path) =>
   protectedRoutes.some((route) => path === route || path.startsWith(`${route}/`));
@@ -114,7 +127,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     if (authState?.accessToken) {
       return redirectTo('/');
     }
-    return next();
+    return withCrossOriginIsolation(await next());
   }
 
   if (protectedPath && !authState?.accessToken) {
@@ -156,5 +169,5 @@ export const onRequest = defineMiddleware(async (context, next) => {
     }
   }
 
-  return next();
+  return withCrossOriginIsolation(await next());
 });

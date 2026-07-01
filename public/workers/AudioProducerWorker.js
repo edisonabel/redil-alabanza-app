@@ -1150,7 +1150,7 @@ class ProducerTrackPipeline {
     if (this.demuxer) {
       try {
         this.demuxer.resetPending();
-      } catch {
+      } catch (_error) {
         // MP4Box may already be half torn down by an aborted append.
       }
       this.demuxer = null;
@@ -1166,7 +1166,7 @@ class ProducerTrackPipeline {
       if (this.decoder.state !== 'closed') {
         this.decoder.close();
       }
-    } catch {
+    } catch (_error) {
       // WebKit may throw if the decoder is already closing; the pipeline is dead anyway.
     }
 
@@ -1348,7 +1348,7 @@ class ProducerTrackPipeline {
       if (this.isDecoderUsable()) {
         this.decoder.reset();
       }
-    } catch {
+    } catch (_error) {
       // Decoder may already be closed/reset by the browser; continue the seek.
     }
 
@@ -1626,7 +1626,7 @@ class ProducerTrackPipeline {
       if (this.decoder) {
         try {
           this.decoder.reset();
-        } catch {
+        } catch (_error) {
           // Continue with a fresh decoder variant.
         }
         this.decoder = null;
