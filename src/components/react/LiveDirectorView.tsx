@@ -1,5 +1,6 @@
 ﻿import {
   AlertTriangle,
+  AudioWaveform,
   ChevronLeft,
   ChevronsLeft,
   ChevronsRight,
@@ -272,11 +273,6 @@ const CONTROL_CARD =
 
 const GENERIC_TRACK_ACCENTS = ['#81ddf5', '#7ed8e7', '#9f7cff', '#43c477', '#c98bff', '#73d1f8'];
 const TRACK_META_BY_ID = new Map(MIXER_TRACKS.map((track) => [track.id, track]));
-const AUDIO_MEMORY_CAUTION_BYTES = 700 * 1024 * 1024;
-const AUDIO_MEMORY_WARNING_BYTES = 1.1 * 1024 * 1024 * 1024;
-const HEAP_AUDIO_CAUTION_RATIO = 0.32;
-const HEAP_AUDIO_WARNING_RATIO = 0.52;
-const SPSC_BETA_ENGINE_PARAM = 'spsc-beta';
 
 const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 
@@ -310,118 +306,6 @@ const readStableStreamingTelemetryTime = (telemetry: SharedStreamingTelemetry) =
   }
 
   return currentTime;
-};
-
-const formatMemoryValue = (bytes: number | null) => {
-  if (!Number.isFinite(bytes) || bytes === null || bytes <= 0) {
-    return 'n/a';
-  }
-
-  const megaBytes = bytes / (1024 * 1024);
-
-  if (megaBytes >= 100) {
-    return `${Math.round(megaBytes)} MB`;
-  }
-
-  if (megaBytes >= 10) {
-    return `${megaBytes.toFixed(1)} MB`;
-  }
-
-  return `${megaBytes.toFixed(2)} MB`;
-};
-
-const formatDeviceMemoryValue = (gigabytes: number | null) => {
-  if (!Number.isFinite(gigabytes) || gigabytes === null || gigabytes <= 0) {
-    return 'n/a';
-  }
-
-  return `${gigabytes} GB`;
-};
-
-const buildAudioPressureStatus = ({
-  diagnostics,
-  hasTrackSession,
-  isInitializingSession,
-  isReady,
-  loadError,
-}: {
-  diagnostics: LiveDirectorEngineDiagnostics | null;
-  hasTrackSession: boolean;
-  isInitializingSession: boolean;
-  isReady: boolean;
-  loadError: string | null;
-}) => {
-  if (loadError) {
-    return {
-      label: 'Error',
-      detail: 'Revisa los stems antes del servicio.',
-      tone: 'danger' as const,
-    };
-  }
-
-  if (!hasTrackSession) {
-    return {
-      label: 'Sin stems',
-      detail: 'Carga una sesión para revisar audio.',
-      tone: 'muted' as const,
-    };
-  }
-
-  if (isInitializingSession || !isReady || !diagnostics) {
-    return {
-      label: 'Preflight',
-      detail: 'Cargando y verificando stems.',
-      tone: 'loading' as const,
-    };
-  }
-
-  if (diagnostics.engineMode === 'streaming') {
-    return {
-      label: 'Flujo exp.',
-      detail: 'Streaming queda para pruebas; Buffer es la base live.',
-      tone: 'warning' as const,
-    };
-  }
-
-  if (diagnostics.engineMode === 'media') {
-    return {
-      label: 'Riesgo sync',
-      detail: 'Media puede atrasar stems; cambia a Buffer.',
-      tone: 'danger' as const,
-    };
-  }
-
-  const estimatedAudioBytes = diagnostics.estimatedAudioMemoryBytes || 0;
-  const heapLimitBytes = diagnostics.browserHeapLimitBytes || 0;
-  const audioHeapRatio = heapLimitBytes > 0 ? estimatedAudioBytes / heapLimitBytes : 0;
-
-  if (
-    estimatedAudioBytes >= AUDIO_MEMORY_WARNING_BYTES ||
-    (heapLimitBytes > 0 && audioHeapRatio >= HEAP_AUDIO_WARNING_RATIO)
-  ) {
-    return {
-      label: 'Presion alta',
-      detail: `${formatMemoryValue(estimatedAudioBytes)} en audio. Considera apagar stems no esenciales.`,
-      tone: 'danger' as const,
-    };
-  }
-
-  if (
-    estimatedAudioBytes >= AUDIO_MEMORY_CAUTION_BYTES ||
-    (heapLimitBytes > 0 && audioHeapRatio >= HEAP_AUDIO_CAUTION_RATIO)
-  ) {
-    return {
-      label: 'Presion media',
-      detail: `${formatMemoryValue(estimatedAudioBytes)} en audio. Cierra apps pesadas antes del live.`,
-      tone: 'warning' as const,
-    };
-  }
-
-  return {
-    label: 'Base estable',
-    detail: `Buffer listo (${formatMemoryValue(estimatedAudioBytes)}).`,
-    tone: 'ready' as const,
-  };
 };
 
 const shouldIgnoreDragScrollTarget = (target: EventTarget | null) => {
@@ -641,15 +525,16 @@ export function LiveDirectorView({
   const activeChordSectionRef = useRef<HTMLElement | null>(null);
   const lastChordScrollKeyRef = useRef('');
   const visualClockReaderRef = useRef<() => number>(() => 0);
-  const [spscBetaRequested, setSpscBetaRequested] = useState(false);
-  const [useStreamingEngine, setUseStreamingEngine] = useState(false);
-  const [strictStreamingEngine, setStrictStreamingEngine] = useState(false);
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
-  const [hasResolvedEngineFlag, setHasResolvedEngineFlag] = useState(false);
   const [nativeEngineAvailable, setNativeEngineAvailable] = useState(() => (
     engineSurface === 'ios-native' || isNativeLiveDirectorEngineAvailable()
   ));
   const isIOSNativeEngineSurface = engineSurface === 'ios-native' || nativeEngineAvailable;
+  const [useStreamingEngine, setUseStreamingEngine] = useState(() => (
+    engineSurface !== 'ios-native' &&
+    !isNativeLiveDirectorEngineAvailable() &&
+    canUseAdvancedStreamingEngine()
+  ));
+  const [hasResolvedEngineCapability, setHasResolvedEngineCapability] = useState(false);
   const passiveStreamingTelemetryEnabled = !isIOSNativeEngineSurface && useStreamingEngine;
   const webMultitrackEngine = useMultitrackEngine({
     useStreamingEngine,
@@ -724,6 +609,11 @@ export function LiveDirectorView({
       window.clearTimeout(timeoutId);
     };
   }, [engineSurface]);
+
+  useEffect(() => {
+    setUseStreamingEngine(!isIOSNativeEngineSurface && canUseAdvancedStreamingEngine());
+    setHasResolvedEngineCapability(true);
+  }, [isIOSNativeEngineSurface]);
 
   const suspendNativeMeters = useCallback(() => {
     if (resumeNativeMetersTimeoutRef.current !== null) {
@@ -838,7 +728,6 @@ export function LiveDirectorView({
   const [internalPadVolumeState, setInternalPadVolumeState] = useState(0.34);
   const [songCoverArtUrl, setSongCoverArtUrl] = useState<string | null>(null);
   const [queueSongCoverArtMap, setQueueSongCoverArtMap] = useState<Record<string, string | null>>({});
-  const currentEngineLabel = isIOSNativeEngineSurface ? 'Apple' : useStreamingEngine ? 'Flujo v2' : 'Buffer';
   const getLivePlaybackTime = useCallback(() => (
     passiveStreamingTelemetryEnabled ? passiveCurrentTimeRef.current : currentTime
   ), [currentTime, passiveStreamingTelemetryEnabled]);
@@ -892,7 +781,7 @@ export function LiveDirectorView({
   );
 
   const activeTrackWarningThreshold = useMemo(() => {
-    if (spscBetaRequested) {
+    if (useStreamingEngine) {
       return Number.MAX_SAFE_INTEGER;
     }
 
@@ -918,10 +807,10 @@ export function LiveDirectorView({
       return SAFARI_WEB_MAX_ACTIVE_TRACKS;
     }
     return WEB_ENGINE_MAX_ACTIVE_TRACKS;
-  }, [isIOSNativeEngineSurface, maxWebActiveTracks, spscBetaRequested]);
+  }, [isIOSNativeEngineSurface, maxWebActiveTracks, useStreamingEngine]);
   const sessionActiveTrackLimit = Math.max(1, activeTrackWarningThreshold);
-  const trackLoadGuidanceText = spscBetaRequested
-    ? 'Beta SPSC activa: puedes probar todos los stems.'
+  const trackLoadGuidanceText = useStreamingEngine
+    ? 'Motor avanzado activo: puedes cargar todos los stems.'
     : `Desactiva stems que no vas a usar. Más de ${sessionActiveTrackLimit} puede ser inestable según el equipo.`;
 
   const enabledSessionTracks = useMemo(
@@ -1181,14 +1070,12 @@ export function LiveDirectorView({
             frameTime - fpsMonitor.lastAlertAt >= 5000
           ) {
             fpsMonitor.lastAlertAt = frameTime;
-            if (showDiagnostics) {
-              console.warn('[LiveDirector][streaming:ui-throttling]', {
-                reason: 'UI Throttling',
-                fps: Math.round(fps * 10) / 10,
-                lowSamples: fpsMonitor.lowSamples,
-                activeTrackCount: activeTracks.length,
-              });
-            }
+            console.warn('[LiveDirector][streaming:ui-throttling]', {
+              reason: 'UI Throttling',
+              fps: Math.round(fps * 10) / 10,
+              lowSamples: fpsMonitor.lowSamples,
+              activeTrackCount: activeTracks.length,
+            });
           }
         }
       }
@@ -1240,7 +1127,6 @@ export function LiveDirectorView({
     activeTracks.length,
     passiveStreamingTelemetryEnabled,
     playbackTimelineDuration,
-    showDiagnostics,
     stopPassiveTelemetryLoop,
   ]);
 
@@ -1359,17 +1245,6 @@ export function LiveDirectorView({
   useEffect(() => () => {
     stopChordDomClock();
   }, [stopChordDomClock]);
-
-  const diagnosticsCards = useMemo(
-    () => [
-      { label: 'Motor', value: diagnostics?.engineMode || 'n/a' },
-      { label: 'Heap', value: formatMemoryValue(diagnostics?.browserHeapUsedBytes ?? null) },
-      { label: 'Audio est.', value: formatMemoryValue(diagnostics?.estimatedAudioMemoryBytes ?? null) },
-      { label: 'Pistas', value: diagnostics ? String(diagnostics.trackCount) : 'n/a' },
-      { label: 'Equipo', value: formatDeviceMemoryValue(diagnostics?.deviceMemoryGb ?? null) },
-    ],
-    [diagnostics],
-  );
 
   const activeSectionIndex = useMemo(() => {
     const nextIndex = resolvedSections.findIndex(
@@ -2150,60 +2025,6 @@ export function LiveDirectorView({
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const searchParams = new URLSearchParams(window.location.search);
-    const requestedEngine = searchParams.get('engine');
-    const betaRequested = requestedEngine === SPSC_BETA_ENGINE_PARAM;
-    const canRunBeta = betaRequested && canUseAdvancedStreamingEngine();
-    setSpscBetaRequested(betaRequested);
-    setUseStreamingEngine(
-      !isIOSNativeEngineSurface &&
-      canRunBeta,
-    );
-    setStrictStreamingEngine(
-      searchParams.get('strict') === '1' || searchParams.get('strictStreaming') === '1',
-    );
-    setShowDiagnostics(searchParams.get('debug') === '1');
-    setHasResolvedEngineFlag(true);
-  }, [isIOSNativeEngineSurface]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !hasResolvedEngineFlag) {
-      return;
-    }
-
-    if (isIOSNativeEngineSurface) {
-      return;
-    }
-
-    const nextUrl = new URL(window.location.href);
-
-    if (spscBetaRequested) {
-      nextUrl.searchParams.set('engine', SPSC_BETA_ENGINE_PARAM);
-    } else {
-      nextUrl.searchParams.delete('engine');
-    }
-
-    if (showDiagnostics) {
-      nextUrl.searchParams.set('debug', '1');
-    } else {
-      nextUrl.searchParams.delete('debug');
-    }
-
-    if (strictStreamingEngine) {
-      nextUrl.searchParams.set('strict', '1');
-    } else {
-      nextUrl.searchParams.delete('strict');
-    }
-
-    const nextHref = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
-    window.history.replaceState(window.history.state, '', nextHref);
-  }, [hasResolvedEngineFlag, isIOSNativeEngineSurface, showDiagnostics, spscBetaRequested, strictStreamingEngine]);
-
-  useEffect(() => {
     return () => {
       replaceOwnedObjectUrls([]);
     };
@@ -2236,7 +2057,7 @@ export function LiveDirectorView({
     let cancelled = false;
 
     const setup = async () => {
-      if (!hasResolvedEngineFlag) {
+      if (!hasResolvedEngineCapability) {
         return;
       }
 
@@ -2288,7 +2109,7 @@ export function LiveDirectorView({
       stopEngineRef.current();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trackSignature, hasResolvedEngineFlag, isIOSNativeEngineSurface, isWebTrackLimitExceeded, reloadKey, sessionActiveTrackLimit, useStreamingEngine]);
+  }, [trackSignature, hasResolvedEngineCapability, isIOSNativeEngineSurface, isWebTrackLimitExceeded, reloadKey, sessionActiveTrackLimit, useStreamingEngine]);
 
   const loadWarningsKey = useMemo(() => {
     if (!loadWarnings || loadWarnings.length === 0) {
@@ -3216,22 +3037,6 @@ export function LiveDirectorView({
     }
   }, [commitMixerStateSilent, hasPersistedSongContext, hasProvidedTracks, hasTrackSession, manualSession, sessionTracks, setTrackOutputRoute, trackOutputRoutes]);
 
-  const handleEngineToggle = useCallback(() => {
-    if (isIOSNativeEngineSurface) {
-      return;
-    }
-
-    if (!spscBetaRequested) {
-      return;
-    }
-
-    setLoadError(null);
-    setBusyMessage(null);
-    setIsInitializingSession(false);
-    setSpscBetaRequested(false);
-    setUseStreamingEngine(false);
-  }, [isIOSNativeEngineSurface, spscBetaRequested]);
-
   useEffect(() => {
     if (typeof window === 'undefined') {
       return;
@@ -3592,38 +3397,7 @@ export function LiveDirectorView({
     ? Object.values(pendingEnabledMap).filter(Boolean).length
     : activeTracks.length;
 
-  const readyStateLabel = !hasTrackSession
-    ? 'Sin sesion'
-    : busyMessage
-      ? 'Preparando'
-      : isInitializingSession
-        ? 'Cargando'
-        : loadError
-          ? 'Error'
-          : isReady
-            ? (isPlaying ? 'En marcha' : 'Armado')
-            : 'En espera';
-  const audioPressureStatus = useMemo(
-    () =>
-      buildAudioPressureStatus({
-        diagnostics,
-        hasTrackSession,
-        isInitializingSession,
-        isReady,
-        loadError,
-      }),
-    [diagnostics, hasTrackSession, isInitializingSession, isReady, loadError],
-  );
-  const audioPressureClassName =
-    audioPressureStatus.tone === 'ready'
-      ? 'border-emerald-300/26 bg-emerald-300/10 text-emerald-100'
-      : audioPressureStatus.tone === 'warning'
-        ? 'border-amber-300/30 bg-amber-300/10 text-amber-100'
-        : audioPressureStatus.tone === 'danger'
-          ? 'border-rose-300/30 bg-rose-300/10 text-rose-100'
-          : audioPressureStatus.tone === 'loading'
-            ? 'border-sky-300/24 bg-sky-300/10 text-sky-100'
-            : 'border-white/8 bg-black/18 text-white/62';
+  const advancedStreamingActive = diagnostics?.engineMode === 'streaming';
 
   const shellClassName = ['fixed inset-0 z-[70] overflow-hidden bg-[#202223] text-white', className]
     .filter(Boolean)
@@ -4016,9 +3790,20 @@ export function LiveDirectorView({
                             <p className={`${isUltraCompactLandscape ? 'text-[0.52rem]' : 'text-[0.7rem]'} font-black uppercase tracking-[0.24em] text-white/34`}>
                               {performerLabel ? `Live Director · ${performerLabel}` : 'Live Director'}
                             </p>
-                            <h1 className={`truncate font-semibold tracking-tight text-white ${isUltraCompactLandscape ? 'mt-0.5 text-[0.92rem]' : isCompactLandscape ? 'mt-1 text-sm' : 'mt-2 text-[1.35rem]'}`}>
-                              {currentSessionLabel}
-                            </h1>
+                            <div className={`flex min-w-0 items-center ${isUltraCompactLandscape ? 'mt-0.5 gap-1.5' : isCompactLandscape ? 'mt-1 gap-2' : 'mt-2 gap-2.5'}`}>
+                              <h1 className={`truncate font-semibold tracking-tight text-white ${isUltraCompactLandscape ? 'text-[0.92rem]' : isCompactLandscape ? 'text-sm' : 'text-[1.35rem]'}`}>
+                                {currentSessionLabel}
+                              </h1>
+                              {advancedStreamingActive && (
+                                <span
+                                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-emerald-300/18 bg-emerald-300/8 text-emerald-200/88 shadow-[0_0_14px_rgba(67,196,119,0.10)]"
+                                  aria-label="Motor avanzado activo"
+                                  title="Motor avanzado activo"
+                                >
+                                  <AudioWaveform className="h-3.5 w-3.5" aria-hidden="true" />
+                                </span>
+                              )}
+                            </div>
                             <p className={`text-white/54 ${isUltraCompactLandscape ? 'mt-0.5 text-[0.58rem]' : isCompactLandscape ? 'mt-0.5 text-[0.68rem]' : 'mt-1 text-[0.92rem]'}`}>{songSupportMeta}</p>
                             {autoDisabledTrackNames.length > 0 && (
                               <p
@@ -4034,66 +3819,6 @@ export function LiveDirectorView({
                             <div className={`rounded-full border border-white/8 bg-black/18 ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'}`}>
                               <p className={`${isUltraCompactLandscape ? 'text-[0.5rem]' : 'text-[0.68rem]'} font-black uppercase tracking-[0.18em] text-white/46`}>
                                 {surfaceBadgeLabel}
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={handleEngineToggle}
-                              disabled={isIOSNativeEngineSurface || !spscBetaRequested}
-                              className={`ui-pressable-soft rounded-full border ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'} text-left transition-all disabled:cursor-not-allowed disabled:opacity-60 ${useStreamingEngine
-                                ? 'border-cyan-300/34 bg-cyan-300/10 text-cyan-50 shadow-[0_0_18px_rgba(129,221,245,0.14)]'
-                                : isIOSNativeEngineSurface
-                                  ? 'border-emerald-300/30 bg-emerald-300/10 text-emerald-50 shadow-[0_0_18px_rgba(67,196,119,0.12)]'
-                                  : 'border-white/8 bg-black/18 text-white/76 hover:text-white'
-                                }`}
-                              aria-label={`Cambiar motor. Motor actual: ${currentEngineLabel}`}
-                              title={
-                                isIOSNativeEngineSurface
-                                  ? 'Motor Apple nativo activo para app iOS.'
-                                  : spscBetaRequested
-                                    ? `Motor activo: ${currentEngineLabel}. Pulsa para volver al motor legacy.`
-                                    : 'Beta SPSC disponible solo abriendo la URL con ?engine=spsc-beta.'
-                              }
-                            >
-                              <p className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : 'text-[0.6rem]'} font-black uppercase tracking-[0.18em] text-white/38`}>
-                                Motor
-                              </p>
-                              <p className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.62rem]' : isCompactLandscape ? 'mt-0.5 text-[0.74rem]' : 'mt-1 text-[0.92rem]'} font-semibold text-inherit`}>{currentEngineLabel}</p>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setShowDiagnostics((previous) => !previous)}
-                              className={`ui-pressable-soft rounded-full border ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'} text-left transition-all ${showDiagnostics
-                                ? 'border-cyan-300/34 bg-cyan-300/10 text-cyan-50 shadow-[0_0_18px_rgba(129,221,245,0.14)]'
-                                : 'border-white/8 bg-black/18 text-white/72 hover:text-white'
-                                }`}
-                              aria-label={`${showDiagnostics ? 'Ocultar' : 'Mostrar'} diagnostico de memoria`}
-                              title="Mostrar u ocultar diagnostico de memoria y carga"
-                            >
-                              <p className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : 'text-[0.6rem]'} font-black uppercase tracking-[0.18em] text-white/38`}>
-                                RAM
-                              </p>
-                              <p className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.62rem]' : isCompactLandscape ? 'mt-0.5 text-[0.74rem]' : 'mt-1 text-[0.92rem]'} font-semibold text-inherit`}>
-                                {showDiagnostics ? 'Activa' : 'Oculta'}
-                              </p>
-                            </button>
-                            <div className={`rounded-[1.1rem] border border-white/8 bg-black/18 text-right ${isUltraCompactLandscape ? 'px-1.5 py-1' : isCompactLandscape ? 'px-2 py-1.5' : 'px-3 py-2'}`}>
-                              <p className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : 'text-[0.62rem]'} font-black uppercase tracking-[0.2em] text-white/36`}>
-                                Estado
-                              </p>
-                              <p className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.66rem]' : isCompactLandscape ? 'mt-0.5 text-[0.78rem]' : 'mt-1 text-[0.98rem]'} font-semibold ${isReady ? 'text-[#43c477]' : 'text-white/58'}`}>
-                                {readyStateLabel}
-                              </p>
-                            </div>
-                            <div
-                              className={`rounded-[1.1rem] border text-right transition-colors ${audioPressureClassName} ${isUltraCompactLandscape ? 'px-1.5 py-1' : isCompactLandscape ? 'px-2 py-1.5' : 'px-3 py-2'}`}
-                              title={audioPressureStatus.detail}
-                            >
-                              <p className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : 'text-[0.62rem]'} font-black uppercase tracking-[0.2em] opacity-60`}>
-                                Audio
-                              </p>
-                              <p className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.66rem]' : isCompactLandscape ? 'mt-0.5 text-[0.78rem]' : 'mt-1 text-[0.98rem]'} font-semibold`}>
-                                {audioPressureStatus.label}
                               </p>
                             </div>
                           </div>
@@ -4140,21 +3865,6 @@ export function LiveDirectorView({
                                     title="Audio sin seccion marcada"
                                   />
                                 )}
-                              </div>
-                            )}
-                            {showDiagnostics && (
-                              <div className={`grid grid-cols-5 gap-2 ${isCompactLandscape ? 'mt-2' : 'mt-3'}`}>
-                                {diagnosticsCards.map((card) => (
-                                  <div
-                                    key={card.label}
-                                    className="rounded-[1rem] border border-white/8 bg-black/20 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]"
-                                  >
-                                    <p className="text-[0.58rem] font-black uppercase tracking-[0.22em] text-white/34">
-                                      {card.label}
-                                    </p>
-                                    <p className="mt-1 text-[0.88rem] font-semibold text-white/78">{card.value}</p>
-                                  </div>
-                                ))}
                               </div>
                             )}
                           </div>

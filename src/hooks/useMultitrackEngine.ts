@@ -162,7 +162,7 @@ export const canUseAdvancedStreamingEngine = () => (
 export function useMultitrackEngine(
   options: UseMultitrackEngineOptions = {},
 ): UseMultitrackEngineReturn {
-  const requestedStreamingEngine = options.useStreamingEngine === true;
+  const requestedStreamingEngine = options.useStreamingEngine ?? canUseAdvancedStreamingEngine();
   const requestedEngineKind: EngineKind =
     requestedStreamingEngine && canUseAdvancedStreamingEngine() ? 'streaming' : 'buffer';
   const passiveTelemetry = Boolean(options.passiveTelemetry);
@@ -408,7 +408,7 @@ export function useMultitrackEngine(
         }
 
         console.warn(
-          '[useMultitrackEngine] Streaming engine failed decoding or crashed. Gracefully falling back to RAM buffer mode.',
+          '[useMultitrackEngine] Streaming engine failed decoding or crashed. Gracefully falling back to legacy buffer mode.',
           error,
         );
         warnLiveDiagnostic('engine:streaming-fallback-buffer', {
