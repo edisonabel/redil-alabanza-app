@@ -11,13 +11,220 @@ const DEFAULT_FETCH_CHUNK_BYTES = 256 * 1024;
 const MP4_EXTRACTION_SAMPLE_BATCH_SIZE = 16;
 const DECODER_SPECIFIC_INFO_TAG = 0x05;
 const MAX_DECODER_QUEUE_SIZE = 6;
+const CRITICAL_DECODER_QUEUE_SIZE = 10;
+const DECODER_QUEUE_ALERT_MS = 900;
+const DECODER_QUEUE_ALERT_INTERVAL_MS = 1500;
 const MP4BOX_SCRIPT_URL = '/vendor/mp4box.all.min.js';
 const READ_INDEX_SLOT = 0;
 const WRITE_INDEX_SLOT = 1;
 const MAX_AHEAD_SECONDS = 10;
 const MIN_RING_WRITE_FRAMES = 1024;
+const DECODER_RECOVERY_SAMPLE_LIMIT = 8;
+const SEEK_READY_SECONDS = 0.5;
+const TRACK_READY_WATCHDOG_MS = 18000;
+const RANGE_FETCH_MAX_RETRIES = 3;
+const RANGE_FETCH_BASE_RETRY_DELAY_MS = 500;
+const RANGE_FETCH_INITIAL_JITTER_MIN_MS = 10;
+const RANGE_FETCH_INITIAL_JITTER_MAX_MS = 50;
 
 let mp4BoxModulePromise = null;
+
+const AAC_SAMPLE_RATE_INDEXES = new Map([
+  [96000, 0],
+  [88200, 1],
+  [64000, 2],
+  [48000, 3],
+  [44100, 4],
+  [32000, 5],
+  [24000, 6],
+  [22050, 7],
+  [16000, 8],
+  [12000, 9],
+  [11025, 10],
+  [8000, 11],
+  [7350, 12],
+]);
+
+const getAacAudioSpecificConfig = (sampleRate, channelCount) => {
+  const sampleRateKey = Math.round(Number(sampleRate) || 48000);
+  const sampleRateIndex = AAC_SAMPLE_RATE_INDEXES.has(sampleRateKey)
+    ? AAC_SAMPLE_RATE_INDEXES.get(sampleRateKey)
+    : 3;
+  const audioObjectType = 2;
+  const safeChannelCount = Math.max(1, Math.min(7, Math.round(Number(channelCount) || 1)));
+  const config = new Uint8Array(2);
+
+  config[0] = (audioObjectType << 3) | ((sampleRateIndex & 0x0e) >> 1);
+  config[1] = ((sampleRateIndex & 0x01) << 7) | (safeChannelCount << 3);
+
+  return config.buffer;
+};
+
+const preferGeneratedAacDescription = (codec, description) => (
+  /^mp4a\.40\.2$/i.test(String(codec || '')) &&
+  (!description || description.byteLength !== 2)
+);
+
+const containsLavcMarker = (bytes) => {
+  if (!bytes || bytes.byteLength < 4) {
+    return false;
+  }
+
+  const view =
+    bytes instanceof Uint8Array
+      ? bytes
+      : new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+  for (let index = 0; index <= view.byteLength - 4; index += 1) {
+    if (
+      view[index] === 0x4c &&
+      view[index + 1] === 0x61 &&
+      view[index + 2] === 0x76 &&
+      view[index + 3] === 0x63
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const bufferToHex = (bufferSource, maxBytes) => {
+  if (!bufferSource) {
+    return 'none';
+  }
+
+  const view =
+    bufferSource instanceof ArrayBuffer
+      ? new Uint8Array(bufferSource)
+      : new Uint8Array(bufferSource.buffer, bufferSource.byteOffset, bufferSource.byteLength);
+  const limit = Math.min(view.byteLength, maxBytes || 16);
+  const parts = [];
+
+  for (let index = 0; index < limit; index += 1) {
+    parts.push(view[index].toString(16).padStart(2, '0'));
+  }
+
+  return `${parts.join(' ')}${view.byteLength > limit ? ' ...' : ''}`;
+};
+
+const cloneArrayBuffer = (bufferSource) => {
+  if (!bufferSource) {
+    return undefined;
+  }
+
+  const view =
+    bufferSource instanceof ArrayBuffer
+      ? new Uint8Array(bufferSource)
+      : new Uint8Array(bufferSource.buffer, bufferSource.byteOffset, bufferSource.byteLength);
+  const copy = new Uint8Array(view.byteLength);
+  copy.set(view);
+  return copy.buffer;
+};
+
+const descriptionsMatch = (left, right) => {
+  if (!left && !right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+
+  const leftView = new Uint8Array(left);
+  const rightView = new Uint8Array(right);
+  if (leftView.byteLength !== rightView.byteLength) {
+    return false;
+  }
+
+  for (let index = 0; index < leftView.byteLength; index += 1) {
+    if (leftView[index] !== rightView[index]) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const cloneDecoderConfig = (config, description, channelCount) => ({
+  codec: config.codec,
+  sampleRate: config.sampleRate,
+  numberOfChannels: Math.max(1, Math.min(7, Math.round(Number(channelCount || config.numberOfChannels) || 1))),
+  ...(description ? { description: cloneArrayBuffer(description) } : {}),
+});
+
+const wrapAacAccessUnitWithAdts = (payload, sampleRate, channelCount) => {
+  if (!payload || payload.byteLength === 0) {
+    return payload;
+  }
+
+  const sampleRateKey = Math.round(Number(sampleRate) || 48000);
+  const sampleRateIndex = AAC_SAMPLE_RATE_INDEXES.has(sampleRateKey)
+    ? AAC_SAMPLE_RATE_INDEXES.get(sampleRateKey)
+    : 3;
+
+  const payloadView =
+    payload instanceof Uint8Array
+      ? payload
+      : new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength);
+  const safeChannelCount = Math.max(1, Math.min(7, Math.round(Number(channelCount) || 1)));
+  const profile = 1;
+  const frameLength = payloadView.byteLength + 7;
+  const output = new Uint8Array(frameLength);
+
+  output[0] = 0xff;
+  output[1] = 0xf1;
+  output[2] = ((profile & 0x03) << 6) | ((sampleRateIndex & 0x0f) << 2) | ((safeChannelCount >> 2) & 0x01);
+  output[3] = ((safeChannelCount & 0x03) << 6) | ((frameLength >> 11) & 0x03);
+  output[4] = (frameLength >> 3) & 0xff;
+  output[5] = ((frameLength & 0x07) << 5) | 0x1f;
+  output[6] = 0xfc;
+  output.set(payloadView, 7);
+
+  return output;
+};
+
+const buildDecoderConfigVariants = (config) => {
+  const variants = [];
+  const addVariant = (label, description, options) => {
+    const wrapsAdts = Boolean(options && options.wrapAdts);
+    const variantChannelCount = Math.max(
+      1,
+      Math.min(7, Math.round(Number(options && options.channelCount ? options.channelCount : config.numberOfChannels) || 1)),
+    );
+    if (
+      variants.some((variant) =>
+        variant.wrapAdts === wrapsAdts &&
+        variant.config.numberOfChannels === variantChannelCount &&
+        descriptionsMatch(variant.config.description, description)
+      )
+    ) {
+      return;
+    }
+    variants.push({
+      label,
+      config: cloneDecoderConfig(config, description, variantChannelCount),
+      wrapAdts: wrapsAdts,
+    });
+  };
+
+  const originalDescription = config.description ? cloneArrayBuffer(config.description) : undefined;
+  const generatedDescription = getAacAudioSpecificConfig(config.sampleRate, config.numberOfChannels);
+  const monoDescription = getAacAudioSpecificConfig(config.sampleRate, 1);
+
+  if (/^mp4a\.40\.2$/i.test(String(config.codec || ''))) {
+    addVariant('generated-aac-lc-description', generatedDescription);
+    addVariant(originalDescription ? 'original-description' : 'no-description', originalDescription);
+    addVariant('adts-no-description', undefined, { wrapAdts: true });
+    if (Math.round(Number(config.numberOfChannels) || 1) > 1) {
+      addVariant('force-mono-description', monoDescription, { channelCount: 1 });
+      addVariant('force-mono-adts', undefined, { wrapAdts: true, channelCount: 1 });
+    }
+  } else {
+    addVariant(originalDescription ? 'original-description' : 'no-description', originalDescription);
+  }
+
+  return variants;
+};
 
 const sleep = (durationMs) => (
   new Promise((resolve) => {
@@ -28,6 +235,16 @@ const sleep = (durationMs) => (
 const isAbortError = (error) => (
   !!error && typeof error === 'object' && error.name === 'AbortError'
 );
+
+const createAbortError = (message) => {
+  if (typeof DOMException === 'function') {
+    return new DOMException(message, 'AbortError');
+  }
+
+  const error = new Error(message);
+  error.name = 'AbortError';
+  return error;
+};
 
 const postProducerError = (code, error, extra) => {
   self.postMessage({
@@ -278,45 +495,160 @@ class RangeFetcher {
       options && typeof options.chunkBytes === 'number' && options.chunkBytes > 0
         ? options.chunkBytes
         : DEFAULT_FETCH_CHUNK_BYTES;
+    this.trackIndex =
+      options && typeof options.trackIndex === 'number' ? options.trackIndex : null;
+    this.trackName = options && options.trackName ? options.trackName : null;
+    this.maxRetries =
+      options && typeof options.maxRetries === 'number' && options.maxRetries >= 0
+        ? Math.floor(options.maxRetries)
+        : RANGE_FETCH_MAX_RETRIES;
+    this.initialJitterMs =
+      options && typeof options.initialJitterMs === 'number' && options.initialJitterMs > 0
+        ? Math.floor(options.initialJitterMs)
+        : 0;
     this.totalBytes = null;
     this.abortController = null;
+    this.fetchSerial = 0;
+    this.aborted = false;
+    this.hasAppliedInitialJitter = false;
   }
 
   async fetchChunk(byteStart) {
     const safeByteStart = Math.max(0, Math.floor(Number(byteStart) || 0));
     const byteEnd = safeByteStart + this.chunkBytes - 1;
-    this.abortController = new AbortController();
-    const response = await fetch(this.url, {
-      headers: {
-        Range: `bytes=${safeByteStart}-${byteEnd}`,
-      },
-      signal: this.abortController.signal,
-    });
+    const fetchSerial = this.fetchSerial + 1;
+    this.fetchSerial = fetchSerial;
+    this.aborted = false;
 
-    if (response.status !== 200 && response.status !== 206) {
-      throw new Error(`Range fetch failed (${response.status} ${response.statusText}) for ${this.url}`);
+    if (!this.hasAppliedInitialJitter && this.initialJitterMs > 0) {
+      this.hasAppliedInitialJitter = true;
+      await sleep(this.initialJitterMs);
+      this.assertFetchActive(fetchSerial);
     }
 
-    this.totalBytes = this.parseTotalBytes(response.headers.get('Content-Range'), this.totalBytes);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    const nextByteStart = safeByteStart + bytes.byteLength;
+    for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
+      this.assertFetchActive(fetchSerial);
 
-    return {
-      bytes,
-      byteStart: safeByteStart,
-      nextByteStart,
-      endOfFile:
-        response.status === 200 ||
-        bytes.byteLength === 0 ||
-        (this.totalBytes !== null && nextByteStart >= this.totalBytes),
-    };
+      try {
+        this.abortController = new AbortController();
+        const response = await fetch(this.url, {
+          headers: {
+            Range: `bytes=${safeByteStart}-${byteEnd}`,
+          },
+          signal: this.abortController.signal,
+        });
+        this.assertFetchActive(fetchSerial);
+
+        if (response.status !== 200 && response.status !== 206) {
+          const statusError = new Error(
+            `Range fetch failed (${response.status} ${response.statusText}) for ${this.url}`,
+          );
+          statusError.status = response.status;
+          statusError.statusText = response.statusText;
+          throw statusError;
+        }
+
+        this.totalBytes = this.parseTotalBytes(response.headers.get('Content-Range'), this.totalBytes);
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        this.assertFetchActive(fetchSerial);
+        const nextByteStart = safeByteStart + bytes.byteLength;
+        this.abortController = null;
+
+        return {
+          bytes,
+          byteStart: safeByteStart,
+          nextByteStart,
+          endOfFile:
+            response.status === 200 ||
+            bytes.byteLength === 0 ||
+            (this.totalBytes !== null && nextByteStart >= this.totalBytes),
+        };
+      } catch (error) {
+        if (this.abortController && fetchSerial === this.fetchSerial) {
+          this.abortController = null;
+        }
+
+        if (isAbortError(error) || !this.isRetryableFetchError(error) || attempt >= this.maxRetries) {
+          throw this.buildFetchFailure(error, safeByteStart, byteEnd, attempt + 1);
+        }
+
+        const delayMs = this.getRetryDelayMs(attempt + 1);
+        self.postMessage({
+          type: 'producer-fetch-retry',
+          reason: 'range-fetch-retry',
+          trackIndex: this.trackIndex,
+          trackName: this.trackName,
+          byteStart: safeByteStart,
+          byteEnd,
+          attempt: attempt + 1,
+          maxRetries: this.maxRetries,
+          delayMs,
+          errorName: error && error.name ? error.name : 'Error',
+          errorMessage: error && error.message ? error.message : String(error),
+          status: error && typeof error.status === 'number' ? error.status : null,
+        });
+        await sleep(delayMs);
+      }
+    }
+
+    throw new Error(`Range fetch failed after ${this.maxRetries + 1} attempts for ${this.url}`);
   }
 
   abort() {
+    this.aborted = true;
+    this.fetchSerial += 1;
     if (this.abortController) {
       this.abortController.abort();
       this.abortController = null;
     }
+  }
+
+  assertFetchActive(fetchSerial) {
+    if (this.aborted || fetchSerial !== this.fetchSerial) {
+      throw createAbortError(`Range fetch aborted for ${this.url}`);
+    }
+  }
+
+  isRetryableFetchError(error) {
+    if (!error || isAbortError(error)) {
+      return false;
+    }
+
+    if (typeof error.status === 'number') {
+      return (
+        error.status === 408 ||
+        error.status === 425 ||
+        error.status === 429 ||
+        error.status >= 500
+      );
+    }
+
+    return error.name === 'TypeError' || /fetch|load|network|connection/i.test(String(error.message || ''));
+  }
+
+  getRetryDelayMs(attemptNumber) {
+    const exponentialDelay = RANGE_FETCH_BASE_RETRY_DELAY_MS * Math.pow(2, Math.max(0, attemptNumber - 1));
+    const jitterMs = Math.floor(Math.random() * 120);
+    return exponentialDelay + jitterMs;
+  }
+
+  buildFetchFailure(error, byteStart, byteEnd, attempts) {
+    if (isAbortError(error)) {
+      return error;
+    }
+
+    const label = this.trackName ? ` for "${this.trackName}"` : '';
+    const message = error && error.message ? error.message : String(error);
+    const failure = new Error(
+      `Range fetch failed after ${attempts} attempt${attempts === 1 ? '' : 's'}${label} ` +
+        `(bytes=${byteStart}-${byteEnd}): ${message}`,
+    );
+    failure.name = error && error.name ? error.name : 'RangeFetchError';
+    if (error && typeof error.status === 'number') {
+      failure.status = error.status;
+      failure.statusText = error.statusText;
+    }
+    return failure;
   }
 
   parseTotalBytes(contentRangeHeader, fallback) {
@@ -495,6 +827,8 @@ class Mp4TrackDemuxer {
     this.extractionStarted = false;
     this.trackReady = false;
     this.durationSeconds = undefined;
+    this.seenSampleCount = 0;
+    this.droppedLavcSampleCount = 0;
 
     this.file.onError = (_errorCode, message) => {
       this.pendingError = new Error(`[AudioProducerWorker] MP4 demuxer error for ${track.url}: ${message}`);
@@ -599,11 +933,20 @@ class Mp4TrackDemuxer {
       this.durationSeconds = trackDuration / trackTimescale;
     }
 
+    const codec = audioTrack.codec || this.track.codec || 'mp4a.40.2';
+    const sampleRate = audioTrack.audio?.sample_rate || this.track.sampleRate || 48000;
+    const numberOfChannels = audioTrack.audio?.channel_count || this.track.channelCount || 1;
+    const containerDescription = this.getDecoderSpecificInfo(audioTrackId);
+    const generatedDescription = getAacAudioSpecificConfig(sampleRate, numberOfChannels);
+    const shouldUseGeneratedDescription = /^mp4a\.40\.2$/i.test(String(codec || ''));
+
     this.pendingDecoderConfig = {
-      codec: audioTrack.codec || this.track.codec || 'mp4a.40.2',
-      sampleRate: audioTrack.audio?.sample_rate || this.track.sampleRate || 48000,
-      numberOfChannels: audioTrack.audio?.channel_count || this.track.channelCount || 1,
-      description: this.getDecoderSpecificInfo(audioTrackId),
+      codec,
+      sampleRate,
+      numberOfChannels,
+      description: shouldUseGeneratedDescription || preferGeneratedAacDescription(codec, containerDescription)
+        ? generatedDescription
+        : containerDescription || generatedDescription,
     };
 
     this.extractionTrackId = audioTrackId;
@@ -628,17 +971,40 @@ class Mp4TrackDemuxer {
       const sampleData = sample.data;
 
       if (!sampleData || sampleData.byteLength === 0) {
+        this.seenSampleCount += 1;
         continue;
       }
 
+      const shouldDropLavcSample = this.seenSampleCount < 2 && containsLavcMarker(sampleData);
+      this.seenSampleCount += 1;
+
+      if (shouldDropLavcSample) {
+        this.droppedLavcSampleCount += 1;
+        self.postMessage({
+          type: 'producer-sample-dropped',
+          reason: 'lavc-metadata-sample',
+          trackIndex: this.track.trackIndex,
+          trackId: this.track.id,
+          trackName: this.track.name,
+          sampleNumber: sample.number,
+          timestampUs: Math.round((sample.cts / sample.timescale) * 1_000_000),
+          bytes: sampleData.byteLength,
+          hex: bufferToHex(sampleData, 16),
+        });
+        continue;
+      }
+
+      const copiedSampleData = new Uint8Array(sampleData.byteLength);
+      copiedSampleData.set(sampleData);
+
       this.pendingSamples.push({
-        type: sample.is_sync || sample.is_rap ? 'key' : 'delta',
+        type: 'key',
         timestampUs: Math.round((sample.cts / sample.timescale) * 1_000_000),
         durationUs:
           sample.duration > 0
             ? Math.round((sample.duration / sample.timescale) * 1_000_000)
             : undefined,
-        data: sampleData,
+        data: copiedSampleData,
       });
     }
 
@@ -712,6 +1078,11 @@ class ProducerTrackPipeline {
     this.loopCacheManager = loopCacheManager;
     this.fetcher = new RangeFetcher(track.url, {
       chunkBytes: DEFAULT_FETCH_CHUNK_BYTES,
+      trackIndex: track.trackIndex,
+      trackName: track.name || track.id,
+      initialJitterMs:
+        RANGE_FETCH_INITIAL_JITTER_MIN_MS +
+        Math.floor(Math.random() * (RANGE_FETCH_INITIAL_JITTER_MAX_MS - RANGE_FETCH_INITIAL_JITTER_MIN_MS + 1)),
     });
     this.ringWriter = new SharedRingWriter(track);
     this.demuxer = null;
@@ -726,22 +1097,102 @@ class ProducerTrackPipeline {
     this.normalReadyPosted = false;
     this.decodeScratch = new Float32Array(0);
     this.channelScratch = [];
+    this.pendingNormalPcm = [];
+    this.pendingNormalFrameCount = 0;
+    this.decoderVariants = [];
+    this.decoderVariantIndex = 0;
+    this.recentDecodeSamples = [];
+    this.decoderRecoveryInFlight = false;
+    this.pendingSeekReady = null;
+    this.readyWatchdogId = 0;
+    this.decoderQueueOverloadStartedAt = 0;
+    this.lastDecoderQueueAlertAt = 0;
+    this.isDestroyed = false;
+  }
+
+  assertAlive() {
+    if (this.isDestroyed) {
+      throw createAbortError(`Producer pipeline destroyed for ${this.track.name || this.track.id || this.track.url}`);
+    }
+  }
+
+  isDecoderUsable() {
+    return !!this.decoder && this.decoder.state !== 'closed';
+  }
+
+  destroy() {
+    if (this.isDestroyed) {
+      return;
+    }
+
+    this.isDestroyed = true;
+    this.lookAheadToken += 1;
+    this.prepareToken += 1;
+    this.clearReadyWatchdog();
+    this.fetcher.abort();
+    this.clearPendingNormalPcm();
+    this.recentDecodeSamples = [];
+    this.decoderVariants = [];
+    this.decoderVariantIndex = 0;
+    this.decoderRecoveryInFlight = false;
+    this.ready = false;
+    this.normalReadyPosted = false;
+    this.endOfFileReached = true;
+
+    if (this.pendingSeekReady) {
+      const pending = this.pendingSeekReady;
+      this.pendingSeekReady = null;
+      pending.reject(createAbortError('Producer pipeline destroyed during seek.'));
+    }
+
+    this.closeDecoder();
+
+    if (this.demuxer) {
+      try {
+        this.demuxer.resetPending();
+      } catch {
+        // MP4Box may already be half torn down by an aborted append.
+      }
+      this.demuxer = null;
+    }
+  }
+
+  closeDecoder() {
+    if (!this.decoder) {
+      return;
+    }
+
+    try {
+      if (this.decoder.state !== 'closed') {
+        this.decoder.close();
+      }
+    } catch {
+      // WebKit may throw if the decoder is already closing; the pipeline is dead anyway.
+    }
+
+    this.decoder = null;
   }
 
   async ensureReady() {
+    this.assertAlive();
+
     if (!this.demuxer) {
       const mp4box = await loadMp4Box();
+      this.assertAlive();
       this.demuxer = new Mp4TrackDemuxer(mp4box, this.track);
     }
 
     while (!this.demuxer.trackReady) {
+      this.assertAlive();
       const chunk = await this.fetcher.fetchChunk(this.nextFileStart);
-      this.nextFileStart = chunk.nextByteStart;
+      this.assertAlive();
       const result = this.demuxer.append(chunk.bytes, chunk.byteStart);
+      this.nextFileStart = this.resolveNextFileStart(result, chunk);
 
       await this.feedDemuxedSamples(result);
 
       if (chunk.endOfFile && !this.demuxer.trackReady) {
+        this.assertAlive();
         const flushResult = this.demuxer.flush();
         await this.feedDemuxedSamples(flushResult);
         break;
@@ -756,25 +1207,76 @@ class ProducerTrackPipeline {
   }
 
   startLookAhead(sessionId) {
+    if (this.isDestroyed) {
+      return;
+    }
+
     const token = this.lookAheadToken + 1;
     this.lookAheadToken = token;
+    this.startReadyWatchdog(sessionId, token);
     this.runLookAhead(sessionId, token).catch((error) => {
-      if (isAbortError(error)) {
+      if (this.isDestroyed || isAbortError(error)) {
         return;
       }
 
+      this.clearReadyWatchdog();
+      this.rejectPendingSeekReady(error, sessionId);
       postProducerError('look-ahead-failed', error, {
         sessionId,
         trackIndex: this.track.trackIndex,
+        trackId: this.track.id,
+        trackName: this.track.name,
+        ...this.getStartupDiagnostic('look-ahead-failed'),
       });
     });
   }
 
   stopLookAhead() {
     this.lookAheadToken += 1;
+    this.clearReadyWatchdog();
+  }
+
+  startReadyWatchdog(sessionId, token) {
+    this.clearReadyWatchdog();
+    if (this.normalReadyPosted) {
+      return;
+    }
+
+    this.readyWatchdogId = setTimeout(() => {
+      if (this.isDestroyed || this.lookAheadToken !== token || this.normalReadyPosted) {
+        return;
+      }
+
+      const diagnostic = this.getStartupDiagnostic('track-ready-timeout');
+      postProducerError(
+        'track-ready-timeout',
+        new Error(`La pista no produjo PCM inicial (${diagnostic.startupPhase}).`),
+        {
+          sessionId,
+          trackIndex: this.track.trackIndex,
+          trackId: this.track.id,
+          trackName: this.track.name,
+          codec: diagnostic.codec,
+          sampleRate: diagnostic.sampleRate,
+          channelCount: diagnostic.channelCount,
+          ...diagnostic,
+        },
+      );
+    }, TRACK_READY_WATCHDOG_MS);
+  }
+
+  clearReadyWatchdog() {
+    if (!this.readyWatchdogId) {
+      return;
+    }
+
+    clearTimeout(this.readyWatchdogId);
+    this.readyWatchdogId = 0;
   }
 
   async seekToSample(targetSample, sessionId) {
+    this.assertAlive();
+
     const safeTargetSample = Math.max(0, Math.floor(Number(targetSample) || 0));
 
     this.stopLookAhead();
@@ -783,11 +1285,14 @@ class ProducerTrackPipeline {
     await this.flushDecoderForSeek();
 
     this.decodedUntilSample = safeTargetSample;
+    this.clearPendingNormalPcm();
     this.endOfFileReached = false;
     this.normalReadyPosted = false;
+    this.pendingSeekReady = null;
     this.ringWriter.flushToSample(safeTargetSample);
 
     await this.ensureReady();
+    this.assertAlive();
 
     const seekTimeSeconds = safeTargetSample / this.getOutputSampleRate();
     const seekResult = this.demuxer.seek(seekTimeSeconds, true);
@@ -800,24 +1305,35 @@ class ProducerTrackPipeline {
       this.nextFileStart = seekResult.nextFileStart;
     }
 
-    self.postMessage({
-      type: 'producer-seek-ready',
-      sessionId,
-      trackIndex: this.track.trackIndex,
-      targetSample: safeTargetSample,
-      nextFileStart: this.nextFileStart,
-    });
+    return new Promise((resolve, reject) => {
+      if (this.isDestroyed) {
+        reject(createAbortError('Producer pipeline destroyed before seek ready.'));
+        return;
+      }
 
-    this.startLookAhead(sessionId);
+      this.pendingSeekReady = {
+        sessionId,
+        targetSample: safeTargetSample,
+        thresholdFrames: Math.max(
+          MIN_RING_WRITE_FRAMES,
+          Math.floor(this.getOutputSampleRate() * SEEK_READY_SECONDS),
+        ),
+        resolve,
+        reject,
+      };
+
+      this.startLookAhead(sessionId);
+      this.postSeekReadyIfAvailable();
+    });
   }
 
   async flushDecoderForSeek() {
-    if (!this.decoder) {
+    if (this.isDestroyed || !this.decoder) {
       return;
     }
 
     try {
-      if (this.decoder.decodeQueueSize > 0) {
+      if (this.isDecoderUsable() && this.decoder.decodeQueueSize > 0) {
         await this.decoder.flush();
       }
     } catch (error) {
@@ -829,7 +1345,9 @@ class ProducerTrackPipeline {
     }
 
     try {
-      this.decoder.reset();
+      if (this.isDecoderUsable()) {
+        this.decoder.reset();
+      }
     } catch {
       // Decoder may already be closed/reset by the browser; continue the seek.
     }
@@ -840,17 +1358,25 @@ class ProducerTrackPipeline {
   async runLookAhead(sessionId, token) {
     await this.ensureReady();
 
-    while (this.lookAheadToken === token && !this.endOfFileReached) {
+    while (!this.isDestroyed && this.lookAheadToken === token && !this.endOfFileReached) {
+      this.drainPendingNormalPcm();
+      if (this.pendingNormalFrameCount > 0) {
+        await sleep(this.ringWriter.waitTimeMs());
+        continue;
+      }
+
       if (!this.ringWriter.shouldFetchMore()) {
         await sleep(this.ringWriter.waitTimeMs());
         continue;
       }
 
       const chunk = await this.fetcher.fetchChunk(this.nextFileStart);
-      this.nextFileStart = chunk.nextByteStart;
+      this.assertAlive();
       const result = this.demuxer.append(chunk.bytes, chunk.byteStart);
+      this.nextFileStart = this.resolveNextFileStart(result, chunk);
 
       await this.feedDemuxedSamples(result);
+      this.assertAlive();
 
       self.postMessage({
         type: 'producer-lookahead-status',
@@ -862,21 +1388,26 @@ class ProducerTrackPipeline {
       });
 
       if (chunk.endOfFile) {
+        this.assertAlive();
         const flushResult = this.demuxer.flush();
         await this.feedDemuxedSamples(flushResult);
-        if (this.decoder && this.decoder.decodeQueueSize > 0) {
+        if (this.isDecoderUsable() && this.decoder.decodeQueueSize > 0) {
           await this.decoder.flush();
         }
         this.endOfFileReached = true;
+        this.postSeekReadyIfAvailable();
       }
     }
   }
 
   async prepareLoopRegion(startSample, endSample, sessionId) {
+    this.assertAlive();
+
     const token = this.prepareToken + 1;
     this.prepareToken = token;
 
     await this.ensureReady();
+    this.assertAlive();
 
     const seekTimeSeconds = startSample / this.getOutputSampleRate();
     const seekResult = this.demuxer.seek(seekTimeSeconds, true);
@@ -888,12 +1419,14 @@ class ProducerTrackPipeline {
     this.decodedUntilSample = Math.max(0, startSample);
     await this.ensureDecoder();
 
-    while (this.prepareToken === token && this.decodedUntilSample < endSample) {
+    while (!this.isDestroyed && this.prepareToken === token && this.decodedUntilSample < endSample) {
       const chunk = await this.fetcher.fetchChunk(this.nextFileStart);
-      this.nextFileStart = chunk.nextByteStart;
+      this.assertAlive();
       const result = this.demuxer.append(chunk.bytes, chunk.byteStart);
+      this.nextFileStart = this.resolveNextFileStart(result, chunk);
 
       await this.feedDemuxedSamples(result);
+      this.assertAlive();
 
       self.postMessage({
         type: 'producer-track-progress',
@@ -904,13 +1437,14 @@ class ProducerTrackPipeline {
       });
 
       if (chunk.endOfFile) {
+        this.assertAlive();
         const flushResult = this.demuxer.flush();
         await this.feedDemuxedSamples(flushResult);
         break;
       }
     }
 
-    if (this.decoder && this.decoder.decodeQueueSize > 0) {
+    if (this.isDecoderUsable() && this.decoder.decodeQueueSize > 0) {
       await this.decoder.flush();
     }
 
@@ -924,34 +1458,87 @@ class ProducerTrackPipeline {
   }
 
   async feedDemuxedSamples(result) {
+    this.assertAlive();
+
     if (result && result.decoderConfig) {
       this.decoderConfig = result.decoderConfig;
       await this.ensureDecoder();
+      this.assertAlive();
     }
 
-    if (!this.decoder && this.decoderConfig) {
+    if (!this.isDecoderUsable() && this.decoderConfig) {
       await this.ensureDecoder();
+      this.assertAlive();
     }
 
     const samples = result && Array.isArray(result.samples) ? result.samples : [];
 
     for (let index = 0; index < samples.length; index += 1) {
+      this.assertAlive();
       await this.waitForDecoderBackpressure();
 
       const sample = samples[index];
-      this.decoder.decode(
-        new EncodedAudioChunk({
-          type: sample.type,
-          timestamp: sample.timestampUs,
-          duration: sample.durationUs,
-          data: sample.data,
-        }),
-      );
+      if (!this.decodeSample(sample)) {
+        break;
+      }
+    }
+  }
+
+  decodeSample(sample) {
+    if (this.isDestroyed || !this.isDecoderUsable()) {
+      return false;
+    }
+
+    this.monitorDecoderQueueHealth();
+    this.rememberDecodeSample(sample);
+    if (this.isDestroyed || !this.isDecoderUsable()) {
+      return false;
+    }
+
+    this.decoder.decode(this.createEncodedAudioChunk(sample));
+    this.monitorDecoderQueueHealth();
+    return true;
+  }
+
+  createEncodedAudioChunk(sample) {
+    const variant = this.decoderVariants[this.decoderVariantIndex] || null;
+    const data = variant && variant.wrapAdts
+      ? wrapAacAccessUnitWithAdts(
+        sample.data,
+        variant.config.sampleRate,
+        variant.config.numberOfChannels,
+      )
+      : sample.data;
+
+    return new EncodedAudioChunk({
+      type: sample.type || 'key',
+      timestamp: sample.timestampUs,
+      duration: sample.durationUs,
+      data,
+    });
+  }
+
+  rememberDecodeSample(sample) {
+    if (!sample || !sample.data || sample.data.byteLength === 0) {
+      return;
+    }
+
+    this.recentDecodeSamples.push({
+      type: sample.type || 'key',
+      timestampUs: sample.timestampUs,
+      durationUs: sample.durationUs,
+      data: sample.data,
+    });
+
+    if (this.recentDecodeSamples.length > DECODER_RECOVERY_SAMPLE_LIMIT) {
+      this.recentDecodeSamples.shift();
     }
   }
 
   async ensureDecoder() {
-    if (this.decoder) {
+    this.assertAlive();
+
+    if (this.isDecoderUsable()) {
       return;
     }
 
@@ -964,35 +1551,214 @@ class ProducerTrackPipeline {
     }
 
     const decoderConfig = this.decoderConfig;
+    this.decoderVariants = buildDecoderConfigVariants(decoderConfig);
+    this.decoderVariantIndex = 0;
+    await this.configureDecoderVariant();
+  }
+
+  async configureDecoderVariant() {
+    this.assertAlive();
+
+    const variant = this.decoderVariants[this.decoderVariantIndex];
+    if (!variant) {
+      throw new Error(`No decoder config variants available for codec "${this.decoderConfig.codec}".`);
+    }
+
+    const decoderConfig = variant.config;
+    if (
+      /^mp4a\.40\.2$/i.test(String(decoderConfig.codec || '')) &&
+      !variant.wrapAdts &&
+      !decoderConfig.description
+    ) {
+      decoderConfig.description = getAacAudioSpecificConfig(
+        decoderConfig.sampleRate,
+        decoderConfig.numberOfChannels,
+      );
+    }
+
     const support = await AudioDecoder.isConfigSupported(decoderConfig);
+    this.assertAlive();
+
     if (!support.supported) {
-      throw new Error(`AudioDecoder does not support codec "${decoderConfig.codec}".`);
+      throw new Error(
+        `AudioDecoder does not support codec "${decoderConfig.codec}" (${variant.label}, description ${bufferToHex(decoderConfig.description, 8)}).`,
+      );
     }
 
     this.decoder = new AudioDecoder({
       output: (audioData) => {
+        if (this.isDestroyed) {
+          audioData.close();
+          return;
+        }
         this.handleDecodedAudioData(audioData);
       },
       error: (error) => {
-        postProducerError('decoder-error', error, {
-          trackIndex: this.track.trackIndex,
-        });
+        if (this.isDestroyed) {
+          return;
+        }
+        this.handleDecoderError(error);
       },
     });
+    this.assertAlive();
     this.decoder.configure(decoderConfig);
+  }
+
+  handleDecoderError(error) {
+    if (
+      !this.decoderRecoveryInFlight &&
+      !this.normalReadyPosted &&
+      this.decoderVariantIndex + 1 < this.decoderVariants.length
+    ) {
+      this.decoderRecoveryInFlight = true;
+      this.recoverDecoderAfterError(error).catch((recoveryError) => {
+        this.postFinalDecoderError(recoveryError || error);
+      });
+      return;
+    }
+
+    this.postFinalDecoderError(error);
+  }
+
+  async recoverDecoderAfterError(_error) {
+    try {
+      this.assertAlive();
+      if (this.decoder) {
+        try {
+          this.decoder.reset();
+        } catch {
+          // Continue with a fresh decoder variant.
+        }
+        this.decoder = null;
+      }
+
+      this.decoderVariantIndex += 1;
+      await this.configureDecoderVariant();
+      this.assertAlive();
+
+      const samplesToReplay = this.recentDecodeSamples.slice();
+      this.recentDecodeSamples = [];
+
+      for (let index = 0; index < samplesToReplay.length; index += 1) {
+        if (!this.decodeSample(samplesToReplay[index])) {
+          break;
+        }
+      }
+    } finally {
+      this.decoderRecoveryInFlight = false;
+    }
+  }
+
+  postFinalDecoderError(error) {
+    const variant = this.decoderVariants[this.decoderVariantIndex] || null;
+    const firstSample = this.recentDecodeSamples[0] || null;
+
+    postProducerError('decoder-error', error, {
+      trackIndex: this.track.trackIndex,
+      trackId: this.track.id,
+      trackName: this.track.name,
+      codec: this.decoderConfig && this.decoderConfig.codec,
+      sampleRate: this.decoderConfig && this.decoderConfig.sampleRate,
+      channelCount: this.decoderConfig && this.decoderConfig.numberOfChannels,
+      decoderVariant: variant ? variant.label : 'unknown',
+      decoderVariantChannels: variant ? variant.config.numberOfChannels : null,
+      decoderWrapAdts: variant ? Boolean(variant.wrapAdts) : false,
+      decoderDescriptionBytes:
+        variant && variant.config.description ? variant.config.description.byteLength : 0,
+      decoderDescriptionHex:
+        variant && variant.config.description ? bufferToHex(variant.config.description, 16) : 'none',
+      firstSampleBytes: firstSample && firstSample.data ? firstSample.data.byteLength : 0,
+      firstAdtsSampleHex:
+        firstSample && firstSample.data && variant && variant.wrapAdts
+          ? bufferToHex(
+            wrapAacAccessUnitWithAdts(
+              firstSample.data,
+              variant.config.sampleRate,
+              variant.config.numberOfChannels,
+            ),
+            16,
+          )
+          : 'n/a',
+      firstSampleHex: firstSample && firstSample.data ? bufferToHex(firstSample.data, 16) : 'none',
+      firstSampleTimestampUs: firstSample ? firstSample.timestampUs : null,
+      firstSampleDurationUs: firstSample ? firstSample.durationUs : null,
+    });
   }
 
   async waitForDecoderBackpressure() {
     while (
-      (this.decoder && this.decoder.decodeQueueSize > MAX_DECODER_QUEUE_SIZE) ||
-      (this.ringWriter.isReady() && this.ringWriter.availableWrite() < MIN_RING_WRITE_FRAMES)
+      !this.isDestroyed &&
+      (
+        this.pendingNormalFrameCount > 0 ||
+        (this.decoder && this.decoder.decodeQueueSize > MAX_DECODER_QUEUE_SIZE) ||
+        (this.ringWriter.isReady() && this.ringWriter.availableWrite() < MIN_RING_WRITE_FRAMES)
+      )
     ) {
+      this.drainPendingNormalPcm();
+      this.monitorDecoderQueueHealth();
       await sleep(4);
     }
+
+    this.assertAlive();
+    this.monitorDecoderQueueHealth();
+  }
+
+  monitorDecoderQueueHealth() {
+    if (this.isDestroyed) {
+      return;
+    }
+
+    const queueSize = this.decoder ? this.decoder.decodeQueueSize : 0;
+    const now = Date.now();
+
+    if (queueSize <= MAX_DECODER_QUEUE_SIZE) {
+      this.decoderQueueOverloadStartedAt = 0;
+      return;
+    }
+
+    if (this.decoderQueueOverloadStartedAt <= 0) {
+      this.decoderQueueOverloadStartedAt = now;
+    }
+
+    if (
+      queueSize < CRITICAL_DECODER_QUEUE_SIZE ||
+      now - this.decoderQueueOverloadStartedAt < DECODER_QUEUE_ALERT_MS ||
+      now - this.lastDecoderQueueAlertAt < DECODER_QUEUE_ALERT_INTERVAL_MS
+    ) {
+      return;
+    }
+
+    this.lastDecoderQueueAlertAt = now;
+    self.postMessage({
+      type: 'producer-decoder-overload',
+      reason: 'Sobrecarga de Decodificador',
+      sessionId: activeSessionId,
+      trackIndex: this.track.trackIndex,
+      trackId: this.track.id,
+      trackName: this.track.name,
+      codec: this.decoderConfig ? this.decoderConfig.codec : this.track.codec,
+      sampleRate: this.decoderConfig ? this.decoderConfig.sampleRate : this.track.sampleRate,
+      channelCount: this.decoderConfig
+        ? this.decoderConfig.numberOfChannels
+        : this.track.channelCount,
+      decoderQueueSize: queueSize,
+      maxDecoderQueueSize: MAX_DECODER_QUEUE_SIZE,
+      criticalDecoderQueueSize: CRITICAL_DECODER_QUEUE_SIZE,
+      pendingNormalFrameCount: this.pendingNormalFrameCount,
+      availableRead: this.ringWriter.availableRead(),
+      availableWrite: this.ringWriter.availableWrite(),
+      decodedUntilSample: this.decodedUntilSample,
+      nextFileStart: this.nextFileStart,
+    });
   }
 
   handleDecodedAudioData(audioData) {
     try {
+      if (this.isDestroyed) {
+        return;
+      }
+
+      this.monitorDecoderQueueHealth();
       const pcm = this.copyAudioDataToMono(audioData);
       const absoluteStartSample = Math.max(
         0,
@@ -1077,10 +1843,23 @@ class ProducerTrackPipeline {
   }
 
   writeNormalRingBufferIfAvailable(_absoluteStartSample, _pcm) {
+    if (this.isDestroyed) {
+      return;
+    }
+
+    this.drainPendingNormalPcm();
+
+    if (this.pendingNormalFrameCount > 0) {
+      this.enqueuePendingNormalPcm(_absoluteStartSample, _pcm);
+      this.postRingBackpressure(_pcm.length, 'queued');
+      return;
+    }
+
     const writtenFrames = this.ringWriter.writePcm(_pcm);
 
     if (writtenFrames > 0 && !this.normalReadyPosted) {
       this.normalReadyPosted = true;
+      this.clearReadyWatchdog();
       self.postMessage({
         type: 'producer-track-ready',
         sessionId: activeSessionId,
@@ -1100,24 +1879,202 @@ class ProducerTrackPipeline {
         availableRead: this.ringWriter.availableRead(),
         availableWrite: this.ringWriter.availableWrite(),
       });
+      this.postSeekReadyIfAvailable();
     }
 
     if (writtenFrames < _pcm.length) {
+      this.enqueuePendingNormalPcm(
+        _absoluteStartSample + writtenFrames,
+        _pcm.subarray(writtenFrames),
+      );
+      this.postRingBackpressure(_pcm.length - writtenFrames, 'queued');
+    }
+  }
+
+  enqueuePendingNormalPcm(absoluteStartSample, pcm) {
+    if (this.isDestroyed) {
+      return;
+    }
+
+    if (!pcm || pcm.length === 0) {
+      return;
+    }
+
+    const copy = new Float32Array(pcm.length);
+    copy.set(pcm);
+    this.pendingNormalPcm.push({
+      absoluteStartSample,
+      pcm: copy,
+      offset: 0,
+    });
+    this.pendingNormalFrameCount += copy.length;
+  }
+
+  drainPendingNormalPcm() {
+    if (this.isDestroyed) {
+      return;
+    }
+
+    while (this.pendingNormalPcm.length > 0 && this.ringWriter.availableWrite() > 0) {
+      const entry = this.pendingNormalPcm[0];
+      const pcm = entry.offset > 0 ? entry.pcm.subarray(entry.offset) : entry.pcm;
+      const writtenFrames = this.ringWriter.writePcm(pcm);
+
+      if (writtenFrames <= 0) {
+        break;
+      }
+
+      this.pendingNormalFrameCount = Math.max(0, this.pendingNormalFrameCount - writtenFrames);
+
       self.postMessage({
-        type: 'producer-ring-backpressure',
+        type: 'producer-ring-write',
         sessionId: activeSessionId,
         trackIndex: this.track.trackIndex,
-        droppedFrames: _pcm.length - writtenFrames,
+        absoluteStartSample: entry.absoluteStartSample + entry.offset,
+        frameCount: writtenFrames,
         availableRead: this.ringWriter.availableRead(),
         availableWrite: this.ringWriter.availableWrite(),
       });
+      this.postSeekReadyIfAvailable();
+
+      entry.offset += writtenFrames;
+      if (entry.offset >= entry.pcm.length) {
+        this.pendingNormalPcm.shift();
+      } else {
+        break;
+      }
     }
+  }
+
+  clearPendingNormalPcm() {
+    this.pendingNormalPcm = [];
+    this.pendingNormalFrameCount = 0;
+  }
+
+  postSeekReadyIfAvailable() {
+    if (this.isDestroyed) {
+      return;
+    }
+
+    const pending = this.pendingSeekReady;
+    if (!pending) {
+      return;
+    }
+
+    const availableRead = this.ringWriter.availableRead();
+    const hasEnoughAudio = availableRead >= pending.thresholdFrames;
+    const reachedEndWithAudio = this.endOfFileReached && availableRead > 0;
+
+    if (!hasEnoughAudio && !reachedEndWithAudio) {
+      return;
+    }
+
+    this.pendingSeekReady = null;
+    self.postMessage({
+      type: 'producer-seek-ready',
+      sessionId: pending.sessionId,
+      trackIndex: this.track.trackIndex,
+      targetSample: pending.targetSample,
+      nextFileStart: this.nextFileStart,
+      availableRead,
+      thresholdFrames: pending.thresholdFrames,
+      decodedUntilSample: this.decodedUntilSample,
+    });
+    pending.resolve();
+  }
+
+  rejectPendingSeekReady(error, sessionId) {
+    const pending = this.pendingSeekReady;
+    if (!pending || pending.sessionId !== sessionId) {
+      return;
+    }
+
+    this.pendingSeekReady = null;
+    pending.reject(error);
+  }
+
+  postRingBackpressure(frameCount, mode) {
+    self.postMessage({
+      type: 'producer-ring-backpressure',
+      sessionId: activeSessionId,
+      trackIndex: this.track.trackIndex,
+      queuedFrames: frameCount,
+      pendingFrames: this.pendingNormalFrameCount,
+      mode,
+      availableRead: this.ringWriter.availableRead(),
+      availableWrite: this.ringWriter.availableWrite(),
+    });
+  }
+
+  resolveNextFileStart(result, chunk) {
+    const nextFileStart = Number(result && result.nextFileStart);
+
+    if (
+      Number.isFinite(nextFileStart) &&
+      nextFileStart >= 0 &&
+      nextFileStart !== chunk.byteStart
+    ) {
+      return Math.floor(nextFileStart);
+    }
+
+    return chunk.nextByteStart;
   }
 
   getOutputSampleRate() {
     return this.decoderConfig && this.decoderConfig.sampleRate > 0
       ? this.decoderConfig.sampleRate
       : this.track.sampleRate || 48000;
+  }
+
+  getStartupDiagnostic(reason) {
+    const demuxerReady = !!(this.demuxer && this.demuxer.trackReady);
+    const decoderConfigured = !!this.decoderConfig;
+    const decoderVariant = this.decoderVariants[this.decoderVariantIndex] || null;
+    const availableRead = this.ringWriter.availableRead();
+    const availableWrite = this.ringWriter.availableWrite();
+    let startupPhase = 'unknown';
+
+    if (!demuxerReady) {
+      startupPhase = 'demuxer-not-ready';
+    } else if (!decoderConfigured) {
+      startupPhase = 'decoder-config-missing';
+    } else if (!this.decoder) {
+      startupPhase = 'decoder-not-created';
+    } else if (this.decodedUntilSample <= 0 && this.decoder.decodeQueueSize > 0) {
+      startupPhase = 'decoder-queued-no-output';
+    } else if (this.decodedUntilSample <= 0 && this.endOfFileReached) {
+      startupPhase = 'end-of-file-without-pcm';
+    } else if (this.decodedUntilSample > 0 && availableRead <= 0) {
+      startupPhase = 'pcm-decoded-but-ring-empty';
+    } else if (this.pendingNormalFrameCount > 0 && availableWrite <= 0) {
+      startupPhase = 'ring-buffer-backpressure';
+    }
+
+    return {
+      reason,
+      startupPhase,
+      demuxerReady,
+      demuxerSeenSamples: this.demuxer ? this.demuxer.seenSampleCount : 0,
+      demuxerDroppedLavcSamples: this.demuxer ? this.demuxer.droppedLavcSampleCount : 0,
+      decoderConfigured,
+      decoderPresent: !!this.decoder,
+      decoderQueueSize: this.decoder ? this.decoder.decodeQueueSize : 0,
+      decoderVariant: decoderVariant ? decoderVariant.label : 'none',
+      decoderVariantChannels: decoderVariant ? decoderVariant.config.numberOfChannels : null,
+      decoderWrapAdts: decoderVariant ? Boolean(decoderVariant.wrapAdts) : false,
+      codec: this.decoderConfig ? this.decoderConfig.codec : this.track.codec,
+      sampleRate: this.decoderConfig ? this.decoderConfig.sampleRate : this.track.sampleRate,
+      channelCount: this.decoderConfig
+        ? this.decoderConfig.numberOfChannels
+        : this.track.channelCount,
+      nextFileStart: this.nextFileStart,
+      decodedUntilSample: this.decodedUntilSample,
+      availableRead,
+      availableWrite,
+      pendingNormalFrameCount: this.pendingNormalFrameCount,
+      endOfFileReached: this.endOfFileReached,
+      recentDecodeSampleCount: this.recentDecodeSamples.length,
+    };
   }
 }
 
@@ -1129,15 +2086,15 @@ let activeSessionId = 0;
 
 const resetTrackPipelines = () => {
   for (const pipeline of trackPipelines.values()) {
-    pipeline.stopLookAhead();
+    pipeline.destroy();
   }
   trackPipelines.clear();
 };
 
 const configureSession = (message) => {
   activeSessionId = message.sessionId || 0;
-  loopCacheManager.configureSession(message);
   resetTrackPipelines();
+  loopCacheManager.configureSession(message);
 
   for (let index = 0; index < loopCacheManager.tracks.length; index += 1) {
     const track = loopCacheManager.tracks[index];
@@ -1221,6 +2178,10 @@ self.onmessage = (event) => {
         ...result,
       });
       preparePinnedLoop(result, message.sessionId || activeSessionId).catch((error) => {
+        if (isAbortError(error)) {
+          return;
+        }
+
         postProducerError('prepare-pinned-loop-failed', error, {
           sessionId: message.sessionId || null,
         });
@@ -1236,6 +2197,10 @@ self.onmessage = (event) => {
   if (message.type === 'seek') {
     const targetSample = Math.max(0, Math.floor(Number(message.targetSample) || 0));
     seekAllPipelines(targetSample, message.sessionId || activeSessionId).catch((error) => {
+      if (isAbortError(error)) {
+        return;
+      }
+
       postProducerError('seek-failed', error, {
         sessionId: message.sessionId || null,
         targetSample,

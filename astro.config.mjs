@@ -92,6 +92,7 @@ export default defineConfig({
     ],
     server: {
       headers: crossOriginIsolationHeaders,
+      allowedHosts: ['.trycloudflare.com'],
     },
     preview: {
       headers: crossOriginIsolationHeaders,

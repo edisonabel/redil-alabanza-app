@@ -19,7 +19,7 @@ type WindowWithWebkitAudio = Window & typeof globalThis & {
 type DiagnosticMethod = 'info' | 'warn' | 'error';
 type DiagnosticPayload = Record<string, unknown>;
 
-const DEBUG_QUERY_KEYS = ['debugLive', 'liveDebug', 'lddebug'];
+const DEBUG_QUERY_KEYS = ['debug', 'debugLive', 'liveDebug', 'lddebug'];
 const DEBUG_STORAGE_KEY = 'live-director:debug';
 const DISABLED_VALUES = new Set(['0', 'false', 'off', 'no']);
 

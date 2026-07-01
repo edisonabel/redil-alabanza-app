@@ -107,14 +107,13 @@ html[data-live-director-active='true'] #layout-notification-bell {
 }
 
 .live-director-track-activity-meter--breathing {
-  animation: liveDirectorTrackMeterBreath 2.65s ease-in-out infinite;
-  animation-delay: var(--track-breath-delay);
+  animation: none;
   transform-origin: bottom center;
+  will-change: transform;
 }
 
 .live-director-track-thumb--breathing {
-  animation: liveDirectorTrackThumbBreath 3.6s ease-in-out infinite;
-  animation-delay: var(--track-breath-delay);
+  animation: none;
 }
 
 .live-director-track-signal {
@@ -135,9 +134,7 @@ html[data-live-director-active='true'] #layout-notification-bell {
 
 .live-director-track-signal--active span {
   background: var(--track-accent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--track-accent) 74%, transparent);
-  animation: liveDirectorTrackSignalBreath 1.75s ease-in-out infinite;
-  animation-delay: var(--track-breath-delay);
+  animation: none;
 }
 
 .live-director-track-signal--active span:nth-child(2) {
@@ -148,6 +145,24 @@ html[data-live-director-active='true'] #layout-notification-bell {
 .live-director-track-signal--active span:nth-child(3) {
   height: 0.42rem;
   animation-delay: calc(var(--track-breath-delay) - 80ms);
+}
+
+.active-chord-section,
+.is-active-section {
+  outline: 2px solid rgb(103 210 242 / 0.45);
+  outline-offset: 3px;
+}
+
+.active-chord-line,
+.is-active-line {
+  border-radius: 0.45rem;
+  background: rgb(103 210 242 / 0.14);
+  box-shadow: 0 0 0 1px rgb(103 210 242 / 0.22);
+}
+
+.active-chord-line .song-sheet-width-guard,
+.is-active-line .song-sheet-width-guard {
+  color: #0f172a;
 }
 
 @keyframes liveDirectorTrackBreath {

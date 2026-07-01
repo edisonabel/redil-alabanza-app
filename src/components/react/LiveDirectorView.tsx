@@ -16,9 +16,10 @@
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react';
-import { useMultitrackEngine } from '../../hooks/useMultitrackEngine';
+import { canUseAdvancedStreamingEngine, useMultitrackEngine } from '../../hooks/useMultitrackEngine';
 import { useNativeIOSMultitrackEngine } from '../../hooks/useNativeIOSMultitrackEngine';
 import type { SongStructure, TrackData } from '../../services/MultitrackEngine';
+import type { SharedStreamingTelemetry } from '../../services/StreamingMultitrackEngine';
 import { ChannelStrip, FaderThumb } from './live-director/ChannelStrip';
 import { EnsayoQueueCard } from './live-director/EnsayoQueueCard';
 import {
@@ -110,6 +111,9 @@ type LiveDirectorOperationalChip = {
   tone?: 'neutral' | 'info' | 'success';
   active?: boolean;
 };
+
+const EMPTY_QUEUE_SONGS: LiveDirectorQueueSong[] = [];
+const EMPTY_OPERATIONAL_CHIPS: LiveDirectorOperationalChip[] = [];
 
 type LiveDirectorPlaybackSnapshot = {
   songId: string;
@@ -272,6 +276,7 @@ const AUDIO_MEMORY_CAUTION_BYTES = 700 * 1024 * 1024;
 const AUDIO_MEMORY_WARNING_BYTES = 1.1 * 1024 * 1024 * 1024;
 const HEAP_AUDIO_CAUTION_RATIO = 0.32;
 const HEAP_AUDIO_WARNING_RATIO = 0.52;
+const SPSC_BETA_ENGINE_PARAM = 'spsc-beta';
 
 const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 
@@ -287,6 +292,24 @@ const formatCompact = (timeInSeconds: number) => {
   const minutes = Math.floor(safeValue / 60);
   const seconds = safeValue % 60;
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
+};
+
+const readStableStreamingTelemetryTime = (telemetry: SharedStreamingTelemetry) => {
+  let before = 0;
+  let after = 0;
+  let currentTime = 0;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    before = Atomics.load(telemetry.sequence, 0);
+    currentTime = telemetry.currentTime[0] || 0;
+    after = Atomics.load(telemetry.sequence, 0);
+
+    if (before === after && before % 2 === 0) {
+      break;
+    }
+  }
+
+  return currentTime;
 };
 
 const formatMemoryValue = (bytes: number | null) => {
@@ -524,10 +547,10 @@ export function LiveDirectorView({
   mode = 'director',
   engineSurface = 'web',
   maxWebActiveTracks = WEB_ENGINE_MAX_ACTIVE_TRACKS,
-  queueSongs = [],
+  queueSongs = EMPTY_QUEUE_SONGS,
   activeQueueSongId = '',
   onSelectQueueSong,
-  operationalChips = [],
+  operationalChips = EMPTY_OPERATIONAL_CHIPS,
   internalPadVolume,
   onInternalPadVolumeChange,
   onPlaybackSnapshot,
@@ -593,21 +616,45 @@ export function LiveDirectorView({
   const masterVolumeFadeFrameRef = useRef<number | null>(null);
   const masterVolumeFadeResolveRef = useRef<(() => void) | null>(null);
   const resumeNativeMetersTimeoutRef = useRef<number | null>(null);
+  const passiveTelemetryFrameRef = useRef<number | null>(null);
+  const passiveCurrentTimeRef = useRef(0);
+  const passiveClockTextRef = useRef<HTMLSpanElement | null>(null);
+  const passiveCompactClockTextRef = useRef<HTMLSpanElement | null>(null);
+  const passiveProgressTextRef = useRef<HTMLSpanElement | null>(null);
+  const passiveProgressBarRef = useRef<HTMLDivElement | null>(null);
+  const passiveMixerLevelRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const passiveFpsMonitorRef = useRef({
+    lastSampleAt: 0,
+    frames: 0,
+    lowSamples: 0,
+    lastAlertAt: 0,
+  });
   const mixerInteractionActiveRef = useRef(false);
   const sectionTransitionTokenRef = useRef(0);
   const isSectionTransitioningRef = useRef(false);
   const sessionSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const pendingSilentSessionSaveRef = useRef<PendingLiveDirectorSessionSave | null>(null);
   const isFlushingSilentSessionSaveRef = useRef(false);
+  const liveDirectorRootRef = useRef<HTMLDivElement | null>(null);
+  const chordClockFrameRef = useRef<number | null>(null);
+  const activeChordLineRef = useRef<HTMLElement | null>(null);
+  const activeChordSectionRef = useRef<HTMLElement | null>(null);
+  const lastChordScrollKeyRef = useRef('');
+  const visualClockReaderRef = useRef<() => number>(() => 0);
+  const [spscBetaRequested, setSpscBetaRequested] = useState(false);
   const [useStreamingEngine, setUseStreamingEngine] = useState(false);
+  const [strictStreamingEngine, setStrictStreamingEngine] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [hasResolvedEngineFlag, setHasResolvedEngineFlag] = useState(false);
   const [nativeEngineAvailable, setNativeEngineAvailable] = useState(() => (
     engineSurface === 'ios-native' || isNativeLiveDirectorEngineAvailable()
   ));
   const isIOSNativeEngineSurface = engineSurface === 'ios-native' || nativeEngineAvailable;
+  const passiveStreamingTelemetryEnabled = !isIOSNativeEngineSurface && useStreamingEngine;
   const webMultitrackEngine = useMultitrackEngine({
     useStreamingEngine,
+    passiveTelemetry: passiveStreamingTelemetryEnabled,
+    allowStreamingFallback: true,
   });
   const nativeIOSMultitrackEngine = useNativeIOSMultitrackEngine();
   const selectedMultitrackEngine = isIOSNativeEngineSurface
@@ -637,6 +684,28 @@ export function LiveDirectorView({
     loadProgress,
     loadWarnings,
   } = selectedMultitrackEngine;
+  const nullSharedTelemetry = useCallback(() => null, []);
+  const getSharedTelemetry = 'getSharedTelemetry' in selectedMultitrackEngine
+    ? selectedMultitrackEngine.getSharedTelemetry
+    : nullSharedTelemetry;
+  const getVisualClockTime = useCallback(() => {
+    if ('getCurrentTimeSnapshot' in selectedMultitrackEngine) {
+      return selectedMultitrackEngine.getCurrentTimeSnapshot();
+    }
+
+    return selectedMultitrackEngine.currentTime;
+  }, [selectedMultitrackEngine]);
+
+  useEffect(() => {
+    visualClockReaderRef.current = getVisualClockTime;
+  }, [getVisualClockTime]);
+  const initializeEngineRef = useRef(initialize);
+  const stopEngineRef = useRef(stop);
+
+  useEffect(() => {
+    initializeEngineRef.current = initialize;
+    stopEngineRef.current = stop;
+  }, [initialize, stop]);
 
   useEffect(() => {
     if (engineSurface === 'ios-native') {
@@ -769,7 +838,10 @@ export function LiveDirectorView({
   const [internalPadVolumeState, setInternalPadVolumeState] = useState(0.34);
   const [songCoverArtUrl, setSongCoverArtUrl] = useState<string | null>(null);
   const [queueSongCoverArtMap, setQueueSongCoverArtMap] = useState<Record<string, string | null>>({});
-  const currentEngineLabel = isIOSNativeEngineSurface ? 'Apple' : useStreamingEngine ? 'Flujo' : 'Buffer';
+  const currentEngineLabel = isIOSNativeEngineSurface ? 'Apple' : useStreamingEngine ? 'Flujo v2' : 'Buffer';
+  const getLivePlaybackTime = useCallback(() => (
+    passiveStreamingTelemetryEnabled ? passiveCurrentTimeRef.current : currentTime
+  ), [currentTime, passiveStreamingTelemetryEnabled]);
   const isEnsayoMode = mode === 'ensayo';
   const resolvedInternalPadVolume = clamp(
     Number.isFinite(Number(internalPadVolume)) ? Number(internalPadVolume) : internalPadVolumeState,
@@ -820,6 +892,10 @@ export function LiveDirectorView({
   );
 
   const activeTrackWarningThreshold = useMemo(() => {
+    if (useStreamingEngine) {
+      return Number.MAX_SAFE_INTEGER;
+    }
+
     const propLimit = Math.floor(Number(maxWebActiveTracks));
     if (Number.isFinite(propLimit) && propLimit > 0 && propLimit !== WEB_ENGINE_MAX_ACTIVE_TRACKS) {
       return propLimit;
@@ -842,7 +918,7 @@ export function LiveDirectorView({
       return SAFARI_WEB_MAX_ACTIVE_TRACKS;
     }
     return WEB_ENGINE_MAX_ACTIVE_TRACKS;
-  }, [isIOSNativeEngineSurface, maxWebActiveTracks]);
+  }, [isIOSNativeEngineSurface, maxWebActiveTracks, useStreamingEngine]);
   const sessionActiveTrackLimit = Math.max(1, activeTrackWarningThreshold);
 
   const enabledSessionTracks = useMemo(
@@ -1061,6 +1137,226 @@ export function LiveDirectorView({
   }, [sectionLanePlayheadOffsetPx, sectionLaneSegments, sectionLaneTailWidthPx, sectionLaneTrailingPaddingPx]);
 
   const progressPercent = playbackTimelineDuration > 0 ? clamp(currentTime / playbackTimelineDuration, 0, 1) * 100 : 0;
+
+  const stopPassiveTelemetryLoop = useCallback(() => {
+    if (passiveTelemetryFrameRef.current !== null) {
+      window.cancelAnimationFrame(passiveTelemetryFrameRef.current);
+      passiveTelemetryFrameRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!passiveStreamingTelemetryEnabled || !isPlaying) {
+      stopPassiveTelemetryLoop();
+      return undefined;
+    }
+
+    passiveFpsMonitorRef.current = {
+      lastSampleAt: 0,
+      frames: 0,
+      lowSamples: 0,
+      lastAlertAt: 0,
+    };
+
+    const drawPassiveTelemetry = (frameTime: number) => {
+      const fpsMonitor = passiveFpsMonitorRef.current;
+      if (fpsMonitor.lastSampleAt <= 0) {
+        fpsMonitor.lastSampleAt = frameTime;
+        fpsMonitor.frames = 0;
+      } else {
+        fpsMonitor.frames += 1;
+        const elapsedMs = frameTime - fpsMonitor.lastSampleAt;
+
+        if (elapsedMs >= 1000) {
+          const fps = (fpsMonitor.frames * 1000) / elapsedMs;
+          fpsMonitor.frames = 0;
+          fpsMonitor.lastSampleAt = frameTime;
+          fpsMonitor.lowSamples = fps < 30 ? fpsMonitor.lowSamples + 1 : 0;
+
+          if (
+            fpsMonitor.lowSamples >= 2 &&
+            frameTime - fpsMonitor.lastAlertAt >= 5000
+          ) {
+            fpsMonitor.lastAlertAt = frameTime;
+            if (showDiagnostics) {
+              console.warn('[LiveDirector][streaming:ui-throttling]', {
+                reason: 'UI Throttling',
+                fps: Math.round(fps * 10) / 10,
+                lowSamples: fpsMonitor.lowSamples,
+                activeTrackCount: activeTracks.length,
+              });
+            }
+          }
+        }
+      }
+
+      const telemetry = getSharedTelemetry();
+
+      if (telemetry) {
+        const nextTime = readStableStreamingTelemetryTime(telemetry);
+        const duration = Math.max(playbackTimelineDuration, nextTime, 0.001);
+        const progress = hasTrackSession ? clamp(nextTime / duration, 0, 1) * 100 : 0;
+
+        passiveCurrentTimeRef.current = nextTime;
+
+        if (passiveClockTextRef.current) {
+          passiveClockTextRef.current.textContent = formatClock(nextTime);
+        }
+        if (passiveCompactClockTextRef.current) {
+          passiveCompactClockTextRef.current.textContent = `${formatCompact(nextTime)} / ${formatCompact(duration)}`;
+        }
+        if (passiveProgressTextRef.current) {
+          passiveProgressTextRef.current.textContent = `${formatCompact(nextTime)} / ${formatCompact(duration)}`;
+        }
+        if (passiveProgressBarRef.current) {
+          passiveProgressBarRef.current.style.transform = `scaleX(${Math.max(hasTrackSession ? progress / 100 : 0, hasTrackSession ? 0.04 : 0)})`;
+        }
+
+        for (let index = 0; index < telemetry.trackIds.length; index += 1) {
+          const trackId = telemetry.trackIds[index];
+          const element = passiveMixerLevelRefs.current.get(trackId);
+          if (!element) continue;
+
+          const level = clamp(telemetry.levels[index] || 0);
+          const levelScale = level > 0.002 ? Math.min(1, 0.08 + Math.pow(level, 0.72) * 0.92) : 0;
+          element.style.setProperty('--ld-vu-level', levelScale.toFixed(4));
+        }
+      }
+
+      passiveTelemetryFrameRef.current = window.requestAnimationFrame(drawPassiveTelemetry);
+    };
+
+    stopPassiveTelemetryLoop();
+    passiveTelemetryFrameRef.current = window.requestAnimationFrame(drawPassiveTelemetry);
+
+    return stopPassiveTelemetryLoop;
+  }, [
+    getSharedTelemetry,
+    hasTrackSession,
+    isPlaying,
+    activeTracks.length,
+    passiveStreamingTelemetryEnabled,
+    playbackTimelineDuration,
+    showDiagnostics,
+    stopPassiveTelemetryLoop,
+  ]);
+
+  useEffect(() => () => {
+    stopPassiveTelemetryLoop();
+  }, [stopPassiveTelemetryLoop]);
+
+  const stopChordDomClock = useCallback(() => {
+    if (chordClockFrameRef.current !== null) {
+      window.cancelAnimationFrame(chordClockFrameRef.current);
+      chordClockFrameRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hasTrackSession || !isPlaying) {
+      stopChordDomClock();
+      activeChordLineRef.current?.classList.remove('active-chord-line', 'is-active-line');
+      activeChordSectionRef.current?.classList.remove('active-chord-section', 'is-active-section');
+      activeChordLineRef.current = null;
+      activeChordSectionRef.current = null;
+      lastChordScrollKeyRef.current = '';
+      return undefined;
+    }
+
+    const findActiveTimedElement = (
+      nodes: NodeListOf<HTMLElement>,
+      nowSeconds: number,
+      startAttribute: string,
+      endAttribute: string,
+    ) => {
+      let fallback: HTMLElement | null = null;
+      let fallbackStart = Number.NEGATIVE_INFINITY;
+
+      for (let index = 0; index < nodes.length; index += 1) {
+        const node = nodes[index];
+        const start = Number(node.dataset[startAttribute] || node.getAttribute(`data-${startAttribute}`));
+        const end = Number(node.dataset[endAttribute] || node.getAttribute(`data-${endAttribute}`));
+
+        if (!Number.isFinite(start)) {
+          continue;
+        }
+
+        if (nowSeconds >= start && (!Number.isFinite(end) || nowSeconds < end)) {
+          return node;
+        }
+
+        if (start <= nowSeconds && start > fallbackStart) {
+          fallback = node;
+          fallbackStart = start;
+        }
+      }
+
+      return fallback;
+    };
+
+    const applyActiveClass = (
+      previous: HTMLElement | null,
+      next: HTMLElement | null,
+      activeClass: string,
+      aliasClass: string,
+    ) => {
+      if (previous === next) {
+        return previous;
+      }
+
+      previous?.classList.remove(activeClass, aliasClass);
+      next?.classList.add(activeClass, aliasClass);
+      return next;
+    };
+
+    const tickChordClock = () => {
+      const root = liveDirectorRootRef.current;
+
+      if (root) {
+        const nowSeconds = visualClockReaderRef.current();
+        const lineNodes = root.querySelectorAll<HTMLElement>('[data-live-chord-line="true"]');
+        const sectionNodes = root.querySelectorAll<HTMLElement>('[data-live-chord-section="true"]');
+        const nextLine = findActiveTimedElement(lineNodes, nowSeconds, 'liveLineStart', 'liveLineEnd');
+        const nextSection = findActiveTimedElement(sectionNodes, nowSeconds, 'liveSectionStart', 'liveSectionEnd');
+
+        activeChordLineRef.current = applyActiveClass(
+          activeChordLineRef.current,
+          nextLine,
+          'active-chord-line',
+          'is-active-line',
+        );
+        activeChordSectionRef.current = applyActiveClass(
+          activeChordSectionRef.current,
+          nextSection,
+          'active-chord-section',
+          'is-active-section',
+        );
+
+        const scrollTarget = nextLine || nextSection;
+        const scrollKey =
+          scrollTarget?.dataset.liveCueId ||
+          scrollTarget?.dataset.liveSectionIndex ||
+          '';
+
+        if (scrollTarget && scrollKey && scrollKey !== lastChordScrollKeyRef.current) {
+          lastChordScrollKeyRef.current = scrollKey;
+          scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+        }
+      }
+
+      chordClockFrameRef.current = window.requestAnimationFrame(tickChordClock);
+    };
+
+    stopChordDomClock();
+    chordClockFrameRef.current = window.requestAnimationFrame(tickChordClock);
+
+    return stopChordDomClock;
+  }, [hasTrackSession, isPlaying, stopChordDomClock]);
+
+  useEffect(() => () => {
+    stopChordDomClock();
+  }, [stopChordDomClock]);
+
   const diagnosticsCards = useMemo(
     () => [
       { label: 'Motor', value: diagnostics?.engineMode || 'n/a' },
@@ -1566,7 +1862,9 @@ export function LiveDirectorView({
     let cancelled = false;
 
     if (ensayoQueueSongs.length === 0) {
-      setQueueSongCoverArtMap({});
+      setQueueSongCoverArtMap((previous) => (
+        Object.keys(previous).length === 0 ? previous : {}
+      ));
       return () => {
         cancelled = true;
       };
@@ -1854,7 +2152,17 @@ export function LiveDirectorView({
     }
 
     const searchParams = new URLSearchParams(window.location.search);
-    setUseStreamingEngine(!isIOSNativeEngineSurface && searchParams.get('engine') === 'streaming');
+    const requestedEngine = searchParams.get('engine');
+    const betaRequested = requestedEngine === SPSC_BETA_ENGINE_PARAM;
+    const canRunBeta = betaRequested && canUseAdvancedStreamingEngine();
+    setSpscBetaRequested(betaRequested);
+    setUseStreamingEngine(
+      !isIOSNativeEngineSurface &&
+      canRunBeta,
+    );
+    setStrictStreamingEngine(
+      searchParams.get('strict') === '1' || searchParams.get('strictStreaming') === '1',
+    );
     setShowDiagnostics(searchParams.get('debug') === '1');
     setHasResolvedEngineFlag(true);
   }, [isIOSNativeEngineSurface]);
@@ -1870,8 +2178,8 @@ export function LiveDirectorView({
 
     const nextUrl = new URL(window.location.href);
 
-    if (useStreamingEngine) {
-      nextUrl.searchParams.set('engine', 'streaming');
+    if (spscBetaRequested) {
+      nextUrl.searchParams.set('engine', SPSC_BETA_ENGINE_PARAM);
     } else {
       nextUrl.searchParams.delete('engine');
     }
@@ -1882,9 +2190,15 @@ export function LiveDirectorView({
       nextUrl.searchParams.delete('debug');
     }
 
+    if (strictStreamingEngine) {
+      nextUrl.searchParams.set('strict', '1');
+    } else {
+      nextUrl.searchParams.delete('strict');
+    }
+
     const nextHref = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
     window.history.replaceState(window.history.state, '', nextHref);
-  }, [hasResolvedEngineFlag, isIOSNativeEngineSurface, showDiagnostics, useStreamingEngine]);
+  }, [hasResolvedEngineFlag, isIOSNativeEngineSurface, showDiagnostics, spscBetaRequested, strictStreamingEngine]);
 
   useEffect(() => {
     return () => {
@@ -1944,7 +2258,7 @@ export function LiveDirectorView({
       );
 
       try {
-        await initialize(activeEngineTracks);
+        await initializeEngineRef.current(activeEngineTracks);
         if (cancelled) {
           return;
         }
@@ -1968,10 +2282,10 @@ export function LiveDirectorView({
 
     return () => {
       cancelled = true;
-      stop();
+      stopEngineRef.current();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trackSignature, hasResolvedEngineFlag, initialize, isIOSNativeEngineSurface, isWebTrackLimitExceeded, reloadKey, sessionActiveTrackLimit, stop, useStreamingEngine]);
+  }, [trackSignature, hasResolvedEngineFlag, isIOSNativeEngineSurface, isWebTrackLimitExceeded, reloadKey, sessionActiveTrackLimit, useStreamingEngine]);
 
   const loadWarningsKey = useMemo(() => {
     if (!loadWarnings || loadWarnings.length === 0) {
@@ -2107,7 +2421,7 @@ export function LiveDirectorView({
       return;
     }
 
-    if (Math.abs(currentTime - safeTargetTime) < 0.05) {
+    if (Math.abs(getLivePlaybackTime() - safeTargetTime) < 0.05) {
       return;
     }
 
@@ -2133,7 +2447,7 @@ export function LiveDirectorView({
         applyMasterVolume(masterVolumeRef.current);
       }
     }
-  }, [applyMasterVolume, currentTime, fadeMasterVolume, hasTrackSession, isPlaying, isReady, seekTo]);
+  }, [applyMasterVolume, fadeMasterVolume, getLivePlaybackTime, hasTrackSession, isPlaying, isReady, seekTo]);
 
   useEffect(() => {
     if (isIOSNativeEngineSurface) {
@@ -2904,11 +3218,16 @@ export function LiveDirectorView({
       return;
     }
 
+    if (!spscBetaRequested) {
+      return;
+    }
+
     setLoadError(null);
     setBusyMessage(null);
     setIsInitializingSession(false);
-    setUseStreamingEngine((previous) => !previous);
-  }, [isIOSNativeEngineSurface]);
+    setSpscBetaRequested(false);
+    setUseStreamingEngine(false);
+  }, [isIOSNativeEngineSurface, spscBetaRequested]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -3399,7 +3718,7 @@ export function LiveDirectorView({
   }
 
   return (
-    <div className={shellClassName}>
+    <div ref={liveDirectorRootRef} className={shellClassName}>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(93,214,240,0.08),_transparent_24%),linear-gradient(180deg,#232526_0%,#222425_46%,#202224_100%)]" />
       <div className="relative flex h-[100dvh] flex-col overflow-hidden" style={shellContentStyle}>
         <div className={`hide-scrollbar -mx-1 shrink-0 overflow-x-auto ${isUltraCompactLandscape ? 'pb-0' : isCompactLandscape ? 'pb-0' : 'pb-1'}`}>
@@ -3440,10 +3759,10 @@ export function LiveDirectorView({
                 className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-1.5 py-0.5' : isCompactLandscape ? 'h-10 px-2 py-1' : 'h-[var(--ld-control-height)] px-4 py-3'} flex-col`}
                 style={{ width: scaleRem(isUltraCompactLandscape ? 6.25 : isCompactLandscape ? 8.45 : 9.25, 5.1) }}
               >
-                <span className={`font-light leading-none tracking-tight text-white ${isUltraCompactLandscape ? 'text-[1.45rem]' : isCompactLandscape ? 'text-[2.05rem]' : 'text-[2.65rem]'}`}>
+                <span ref={passiveClockTextRef} className={`font-light leading-none tracking-tight text-white ${isUltraCompactLandscape ? 'text-[1.45rem]' : isCompactLandscape ? 'text-[2.05rem]' : 'text-[2.65rem]'}`}>
                   {formatClock(currentTime)}
                 </span>
-                <span className={`font-medium tabular-nums text-white/58 ${isUltraCompactLandscape ? 'text-[0.58rem]' : isCompactLandscape ? 'text-[0.8rem]' : 'mt-1 text-[0.96rem]'}`}>
+                <span ref={passiveCompactClockTextRef} className={`font-medium tabular-nums text-white/58 ${isUltraCompactLandscape ? 'text-[0.58rem]' : isCompactLandscape ? 'text-[0.8rem]' : 'mt-1 text-[0.96rem]'}`}>
                   {formatCompact(currentTime)} / {formatCompact(playbackTimelineDuration)}
                 </span>
               </div>
@@ -3513,7 +3832,7 @@ export function LiveDirectorView({
               <button
                 type="button"
                 onClick={() => {
-                  void seekTo(Math.max(0, currentTime - 5));
+                  void seekTo(Math.max(0, getLivePlaybackTime() - 5));
                 }}
                 disabled={!hasTrackSession}
                 className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-4' : isCompactLandscape ? 'h-12 px-5' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/80 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
@@ -3717,15 +4036,21 @@ export function LiveDirectorView({
                             <button
                               type="button"
                               onClick={handleEngineToggle}
-                              disabled={isIOSNativeEngineSurface}
-                              className={`ui-pressable-soft rounded-full border ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'} text-left transition-all ${useStreamingEngine
+                              disabled={isIOSNativeEngineSurface || !spscBetaRequested}
+                              className={`ui-pressable-soft rounded-full border ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'} text-left transition-all disabled:cursor-not-allowed disabled:opacity-60 ${useStreamingEngine
                                 ? 'border-cyan-300/34 bg-cyan-300/10 text-cyan-50 shadow-[0_0_18px_rgba(129,221,245,0.14)]'
                                 : isIOSNativeEngineSurface
                                   ? 'border-emerald-300/30 bg-emerald-300/10 text-emerald-50 shadow-[0_0_18px_rgba(67,196,119,0.12)]'
                                   : 'border-white/8 bg-black/18 text-white/76 hover:text-white'
                                 }`}
                               aria-label={`Cambiar motor. Motor actual: ${currentEngineLabel}`}
-                              title={isIOSNativeEngineSurface ? 'Motor Apple nativo activo para app iOS.' : `Motor activo: ${currentEngineLabel}. Pulsa para cambiar.`}
+                              title={
+                                isIOSNativeEngineSurface
+                                  ? 'Motor Apple nativo activo para app iOS.'
+                                  : spscBetaRequested
+                                    ? `Motor activo: ${currentEngineLabel}. Pulsa para volver al motor legacy.`
+                                    : 'Beta SPSC disponible solo abriendo la URL con ?engine=spsc-beta.'
+                              }
                             >
                               <p className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : 'text-[0.6rem]'} font-black uppercase tracking-[0.18em] text-white/38`}>
                                 Motor
@@ -3775,12 +4100,15 @@ export function LiveDirectorView({
                           <div className="min-w-0 flex-1">
                             <div className={`flex items-center justify-between font-semibold uppercase tracking-[0.18em] text-white/46 ${isUltraCompactLandscape ? 'mb-0.5 text-[0.56rem]' : isCompactLandscape ? 'mb-1 text-[0.72rem]' : 'mb-2 text-[0.72rem]'}`}>
                               <span>{hasTrackSession ? `${activeTracks.length} pistas` : 'Sin sesion'}</span>
-                              <span>{formatCompact(currentTime)} / {formatCompact(playbackTimelineDuration)}</span>
+                              <span ref={passiveProgressTextRef}>{formatCompact(currentTime)} / {formatCompact(playbackTimelineDuration)}</span>
                             </div>
                             <div className={`${isUltraCompactLandscape ? 'h-1' : isCompactLandscape ? 'h-1.5' : 'h-2.5'} rounded-full bg-black/30`}>
                               <div
-                                className="h-full rounded-full bg-[linear-gradient(90deg,#43c477_0%,#81ddf5_100%)] shadow-[0_0_14px_rgba(67,196,119,0.16)] transition-[width] duration-200"
-                                style={{ width: `${Math.max(hasTrackSession ? progressPercent : 0, hasTrackSession ? 4 : 0)}%` }}
+                                ref={passiveProgressBarRef}
+                                className="h-full origin-left rounded-full bg-[linear-gradient(90deg,#43c477_0%,#81ddf5_100%)] shadow-[0_0_14px_rgba(67,196,119,0.16)] transition-transform duration-200 will-change-transform"
+                                style={{
+                                  transform: `scaleX(${Math.max(hasTrackSession ? progressPercent / 100 : 0, hasTrackSession ? 0.04 : 0)})`,
+                                }}
                               />
                             </div>
                             {(resolvedSections.length > 0 || sectionTimelineTailDuration > 0) && (
@@ -4013,6 +4341,10 @@ export function LiveDirectorView({
                         <button
                           key={section.id}
                           type="button"
+                          data-live-chord-section="true"
+                          data-live-section-index={index}
+                          data-live-section-start={section.startTime}
+                          data-live-section-end={section.endTime}
                           onClick={() => {
                             void handleSectionSeek(section.startTime);
                           }}
@@ -4217,30 +4549,41 @@ export function LiveDirectorView({
                 const isInternalPadTrack = track.id === INTERNAL_PAD_TRACK_ID;
                 const stableCallbacks = getChannelStripCallbacks(track.id);
                 return (
-                  <ChannelStrip
+                  <div
                     key={track.id}
-                    id={track.id}
-                    label={track.label}
-                    shortLabel={track.shortLabel}
-                    accent={track.accent}
-                    volume={track.volume}
-                    level={track.level}
-                    isPlaying={isPlaying}
-                    muted={track.muted}
-                    soloed={track.soloed}
-                    dimmed={track.dimmed}
-                    disabled={track.disabled}
-                    outputRoute={track.outputRoute}
-                    showRouteFlip={track.showRouteFlip}
-                    compact={isCompactLandscape}
-                    ultraCompact={isUltraCompactLandscape}
-                    onVolumeChange={stableCallbacks.onVolumeChange}
-                    onInteractionStart={isInternalPadTrack ? undefined : suspendNativeMeters}
-                    onInteractionEnd={isInternalPadTrack ? undefined : resumeNativeMetersSoon}
-                    onMute={stableCallbacks.onMute}
-                    onSolo={stableCallbacks.onSolo}
-                    onToggleOutputRoute={stableCallbacks.onToggleOutputRoute}
-                  />
+                    ref={(element) => {
+                      if (element) {
+                        passiveMixerLevelRefs.current.set(track.id, element);
+                      } else {
+                        passiveMixerLevelRefs.current.delete(track.id);
+                      }
+                    }}
+                    className="h-full min-w-0"
+                  >
+                    <ChannelStrip
+                      id={track.id}
+                      label={track.label}
+                      shortLabel={track.shortLabel}
+                      accent={track.accent}
+                      volume={track.volume}
+                      level={track.level}
+                      isPlaying={isPlaying}
+                      muted={track.muted}
+                      soloed={track.soloed}
+                      dimmed={track.dimmed}
+                      disabled={track.disabled}
+                      outputRoute={track.outputRoute}
+                      showRouteFlip={track.showRouteFlip}
+                      compact={isCompactLandscape}
+                      ultraCompact={isUltraCompactLandscape}
+                      onVolumeChange={stableCallbacks.onVolumeChange}
+                      onInteractionStart={isInternalPadTrack ? undefined : suspendNativeMeters}
+                      onInteractionEnd={isInternalPadTrack ? undefined : resumeNativeMetersSoon}
+                      onMute={stableCallbacks.onMute}
+                      onSolo={stableCallbacks.onSolo}
+                      onToggleOutputRoute={stableCallbacks.onToggleOutputRoute}
+                    />
+                  </div>
                 );
               })}
             </div>

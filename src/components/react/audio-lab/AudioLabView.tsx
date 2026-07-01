@@ -4,8 +4,6 @@ import { useMultitrackEngine } from '../../../hooks/useMultitrackEngine';
 import type { TrackData } from '../../../services/MultitrackEngine';
 import type { SharedStreamingTelemetry } from '../../../services/StreamingMultitrackEngine';
 
-const MAX_LAB_TRACKS = 12;
-
 const formatTime = (seconds: number) => {
   const safeSeconds = Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
   const minutes = Math.floor(safeSeconds / 60);
@@ -40,7 +38,7 @@ export default function AudioLabView() {
   const [tracks, setTracks] = useState<TrackData[]>([]);
   const [soloTrackIds, setSoloTrackIds] = useState<Set<string>>(() => new Set());
   const [loopEnabled, setLoopEnabled] = useState(false);
-  const [status, setStatus] = useState('Carga hasta 12 stems AAC/M4A para probar telemetria pasiva.');
+  const [status, setStatus] = useState('Carga stems AAC/M4A para probar telemetria pasiva sin limite artificial.');
   const objectUrlsRef = useRef<string[]>([]);
   const animationFrameRef = useRef<number | null>(null);
   const levelRefs = useRef(new Map<string, HTMLDivElement>());
@@ -51,6 +49,12 @@ export default function AudioLabView() {
   const renderCountRef = useRef(0);
   const renderCountTextRef = useRef<HTMLSpanElement | null>(null);
   const durationRef = useRef(0);
+  const fpsMonitorRef = useRef({
+    lastSampleAt: 0,
+    frames: 0,
+    lowSamples: 0,
+    lastAlertAt: 0,
+  });
 
   renderCountRef.current += 1;
 
@@ -67,7 +71,33 @@ export default function AudioLabView() {
     }
   }, []);
 
-  const drawPassiveFrame = useCallback(() => {
+  const drawPassiveFrame = useCallback((frameTime: number) => {
+    const fpsMonitor = fpsMonitorRef.current;
+    if (fpsMonitor.lastSampleAt <= 0) {
+      fpsMonitor.lastSampleAt = frameTime;
+      fpsMonitor.frames = 0;
+    } else {
+      fpsMonitor.frames += 1;
+      const elapsedMs = frameTime - fpsMonitor.lastSampleAt;
+
+      if (elapsedMs >= 1000) {
+        const fps = (fpsMonitor.frames * 1000) / elapsedMs;
+        fpsMonitor.frames = 0;
+        fpsMonitor.lastSampleAt = frameTime;
+        fpsMonitor.lowSamples = fps < 30 ? fpsMonitor.lowSamples + 1 : 0;
+
+        if (fpsMonitor.lowSamples >= 2 && frameTime - fpsMonitor.lastAlertAt >= 5000) {
+          fpsMonitor.lastAlertAt = frameTime;
+          console.warn('[AudioLab][streaming:ui-throttling]', {
+            reason: 'UI Throttling',
+            fps: Math.round(fps * 10) / 10,
+            lowSamples: fpsMonitor.lowSamples,
+            trackCount: tracks.length,
+          });
+        }
+      }
+    }
+
     const telemetry = engine.getSharedTelemetry();
 
     if (telemetry) {
@@ -94,10 +124,16 @@ export default function AudioLabView() {
     }
 
     animationFrameRef.current = window.requestAnimationFrame(drawPassiveFrame);
-  }, [engine]);
+  }, [engine, tracks.length]);
 
   const startPassiveLoop = useCallback(() => {
     stopPassiveLoop();
+    fpsMonitorRef.current = {
+      lastSampleAt: 0,
+      frames: 0,
+      lowSamples: 0,
+      lastAlertAt: 0,
+    };
     animationFrameRef.current = window.requestAnimationFrame(drawPassiveFrame);
   }, [drawPassiveFrame, stopPassiveLoop]);
 
@@ -108,7 +144,7 @@ export default function AudioLabView() {
   }, [stopPassiveLoop]);
 
   const handleFilesSelected = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.currentTarget.files || []).slice(0, MAX_LAB_TRACKS);
+    const files = Array.from(event.currentTarget.files || []);
 
     stopPassiveLoop();
     engine.stop();
@@ -137,7 +173,7 @@ export default function AudioLabView() {
     setStatus(
       nextTracks.length > 0
         ? `${nextTracks.length} stem${nextTracks.length === 1 ? '' : 's'} listo${nextTracks.length === 1 ? '' : 's'} para inicializar.`
-        : 'Carga hasta 12 stems AAC/M4A para probar telemetria pasiva.',
+        : 'Carga stems AAC/M4A para probar telemetria pasiva sin limite artificial.',
     );
     event.currentTarget.value = '';
   }, [engine, stopPassiveLoop]);
@@ -353,7 +389,7 @@ export default function AudioLabView() {
             className="mt-4 h-2 overflow-hidden rounded-full bg-white/10 [--playhead-progress:0]"
           >
             <div
-              className="h-full rounded-full bg-emerald-300"
+              className="h-full rounded-full bg-emerald-300 will-change-transform"
               style={{ transform: 'scaleX(var(--playhead-progress))', transformOrigin: 'left center' }}
             />
           </div>
@@ -391,7 +427,7 @@ export default function AudioLabView() {
                 className="h-3 overflow-hidden rounded-full bg-white/10 [--vu-level:0]"
               >
                 <div
-                  className="h-full rounded-full bg-[linear-gradient(90deg,#5ee787,#f2cc60,#ff7b72)]"
+                  className="h-full rounded-full bg-[linear-gradient(90deg,#5ee787,#f2cc60,#ff7b72)] will-change-transform"
                   style={{ transform: 'scaleX(var(--vu-level))', transformOrigin: 'left center' }}
                 />
               </div>

@@ -25,6 +25,7 @@ export type SongSheetProps = {
   disableAutoFit?: boolean;
   fixedFontSize?: number;
   printProfile?: SongSheetPrintProfile;
+  liveTiming?: SongSheetLiveTiming;
 };
 
 export type SongSheetRenderMode = 'chords-lyrics' | 'lyrics-only' | 'chords-only';
@@ -39,6 +40,26 @@ export type SongSheetLayoutOptions = {
   styleMode?: SongSheetStyleMode;
   showSongMap?: boolean;
   showSectionDividers?: boolean;
+};
+
+export type SongSheetLiveCueTiming = {
+  id: string;
+  sectionIndex: number;
+  cueIndex: number;
+  rawLines?: string[];
+  estimatedStartSec: number | null;
+  estimatedEndSec: number | null;
+};
+
+export type SongSheetLiveSectionTiming = {
+  index: number;
+  startSec: number | null;
+  endSec: number | null;
+};
+
+export type SongSheetLiveTiming = {
+  cues?: SongSheetLiveCueTiming[];
+  sections?: SongSheetLiveSectionTiming[];
 };
 
 type GroupedChord = {
@@ -270,6 +291,29 @@ type LinePackingProfile = {
   maxLinesPerRow?: number;
   gapSpaces?: number;
 };
+
+type SongSheetLineLiveTiming = {
+  cueId?: string;
+  sectionIndex?: number;
+  cueIndex?: number;
+  lineIndex?: number;
+  startSec?: number | null;
+  endSec?: number | null;
+};
+
+const buildLiveLineAttributes = (liveTiming?: SongSheetLineLiveTiming) => (
+  liveTiming
+    ? {
+      'data-live-chord-line': 'true',
+      'data-live-cue-id': liveTiming.cueId,
+      'data-live-section-index': liveTiming.sectionIndex,
+      'data-live-cue-index': liveTiming.cueIndex,
+      'data-live-line-index': liveTiming.lineIndex,
+      'data-live-line-start': liveTiming.startSec ?? undefined,
+      'data-live-line-end': liveTiming.endSec ?? undefined,
+    }
+    : {}
+);
 
 type SongSheetDebugFlags = {
   enabled: boolean;
@@ -776,9 +820,11 @@ const splitBlocksIntoBalancedColumns = (blocks: RenderableBlock[]) => {
 function SongSheetLine({
   line,
   renderMode,
+  liveTiming,
 }: {
   line: ParsedChordLine;
   renderMode: SongSheetRenderMode;
+  liveTiming?: SongSheetLineLiveTiming;
 }) {
   const chordGuide = buildChordGuide(line);
   const lyrics = getPrintableLyrics(line);
@@ -792,7 +838,7 @@ function SongSheetLine({
     const compactChords = chords.map((g) => g.text).join('    ');
 
     return (
-      <div className="break-inside-avoid">
+      <div className="break-inside-avoid" {...buildLiveLineAttributes(liveTiming)}>
         <div
           className="song-sheet-width-guard overflow-hidden whitespace-pre text-[0.9em] font-black tracking-[-0.02em] text-blue-600"
           style={{
@@ -808,7 +854,7 @@ function SongSheetLine({
 
   if (renderMode === 'lyrics-only') {
     return (
-      <div className="break-inside-avoid">
+      <div className="break-inside-avoid" {...buildLiveLineAttributes(liveTiming)}>
         <div
           className="song-sheet-width-guard overflow-hidden whitespace-pre text-[0.94em] font-medium tracking-[-0.01em] text-zinc-950"
           style={{ fontFamily: BODY_FONT_FAMILY }}
@@ -820,7 +866,7 @@ function SongSheetLine({
   }
 
   return (
-    <div className="break-inside-avoid">
+    <div className="break-inside-avoid" {...buildLiveLineAttributes(liveTiming)}>
       {chordGuide ? (
         <div
           className="song-sheet-width-guard overflow-hidden whitespace-pre text-[0.86em] font-black tracking-[-0.02em] text-blue-600"
@@ -860,6 +906,7 @@ export default function SongSheet({
   disableAutoFit = false,
   fixedFontSize,
   printProfile = 'classic',
+  liveTiming,
 }: SongSheetProps) {
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const columnsRef = useRef<HTMLDivElement | null>(null);
@@ -930,6 +977,47 @@ export default function SongSheet({
     { label: 'Tempo', value: getMetaValue(metadata?.tempo) },
     { label: 'Time', value: getMetaValue(metadata?.time) },
   ];
+  const liveSectionTimingByIndex = new Map<number, SongSheetLiveSectionTiming>();
+  const liveLineTimingBySectionIndex = new Map<number, SongSheetLineLiveTiming[]>();
+
+  for (const sectionTiming of liveTiming?.sections || []) {
+    if (Number.isFinite(Number(sectionTiming.index))) {
+      liveSectionTimingByIndex.set(Number(sectionTiming.index), sectionTiming);
+    }
+  }
+
+  for (const cue of liveTiming?.cues || []) {
+    const sectionIndex = Number(cue.sectionIndex);
+    if (!Number.isFinite(sectionIndex)) {
+      continue;
+    }
+
+    const lineCount = Math.max(1, Array.isArray(cue.rawLines) ? cue.rawLines.length : 1);
+    const cueStart = Number(cue.estimatedStartSec);
+    const cueEnd = Number(cue.estimatedEndSec);
+    const hasCueWindow = Number.isFinite(cueStart) && Number.isFinite(cueEnd) && cueEnd >= cueStart;
+    const sectionLines = liveLineTimingBySectionIndex.get(sectionIndex) || [];
+
+    for (let lineOffset = 0; lineOffset < lineCount; lineOffset += 1) {
+      const lineStart = hasCueWindow
+        ? cueStart + ((cueEnd - cueStart) * lineOffset) / lineCount
+        : cue.estimatedStartSec;
+      const lineEnd = hasCueWindow
+        ? cueStart + ((cueEnd - cueStart) * (lineOffset + 1)) / lineCount
+        : cue.estimatedEndSec;
+
+      sectionLines.push({
+        cueId: cue.id,
+        sectionIndex,
+        cueIndex: cue.cueIndex,
+        lineIndex: sectionLines.length,
+        startSec: lineStart,
+        endSec: lineEnd,
+      });
+    }
+
+    liveLineTimingBySectionIndex.set(sectionIndex, sectionLines);
+  }
   const isSingleCol = resolvedOptions.columnCount === 1;
   const isCompactMode = resolvedStyleMode === 'condensado';
   const useInlineCollapsedSections = isSingleCol && isCompactMode;
@@ -1392,6 +1480,9 @@ export default function SongSheet({
       : '1.45rem',
   } as CSSProperties;
   const renderBlock = (block: RenderableBlock) => {
+    const blockSectionIndex = Math.max(0, renderableBlocks.findIndex((candidate) => candidate.id === block.id));
+    const sectionTiming = liveSectionTimingByIndex.get(blockSectionIndex);
+    const lineTimings = liveLineTimingBySectionIndex.get(blockSectionIndex) || [];
     const sectionColors = getSectionColors(block.typeMarker);
     const isChordOnlyBlock = !blockHasMeaningfulLyrics(block);
     const sectionCardPadding = block.isCollapsed
@@ -1410,6 +1501,10 @@ export default function SongSheet({
         <section
           key={block.id}
           className="song-sheet-section mb-1 shrink-0 break-inside-avoid"
+          data-live-chord-section={sectionTiming ? 'true' : undefined}
+          data-live-section-index={sectionTiming ? blockSectionIndex : undefined}
+          data-live-section-start={sectionTiming?.startSec ?? undefined}
+          data-live-section-end={sectionTiming?.endSec ?? undefined}
         >
           <div className="flex items-center gap-2 rounded-full border border-zinc-200/90 bg-zinc-50/90 px-2.5 py-1.5">
             <span
@@ -1436,6 +1531,10 @@ export default function SongSheet({
     return (
       <section
         key={block.id}
+        data-live-chord-section={sectionTiming ? 'true' : undefined}
+        data-live-section-index={sectionTiming ? blockSectionIndex : undefined}
+        data-live-section-start={sectionTiming?.startSec ?? undefined}
+        data-live-section-end={sectionTiming?.endSec ?? undefined}
         className={[
           'song-sheet-section break-inside-avoid',
           isSingleCol ? 'shrink-0' : '',
@@ -1488,6 +1587,7 @@ export default function SongSheet({
                     key={`${block.id}-row-${index}-${row.kind}`}
                     line={row.line}
                     renderMode={resolvedOptions.renderMode}
+                    liveTiming={lineTimings[index]}
                   />
                 ))
               ) : (
@@ -1496,6 +1596,7 @@ export default function SongSheet({
                     key={`${block.id}-line-${index}`}
                     line={line}
                     renderMode={resolvedOptions.renderMode}
+                    liveTiming={lineTimings[index]}
                   />
                 ))
               )}

@@ -4,6 +4,10 @@ const FALLBACK_CONSUMED_REPORT_FRAMES = 2048;
 const SOLO_GAIN_SMOOTHING = 0.18;
 const GAIN_FLOOR = 0.00001;
 const LOOP_CROSSFADE_FRAMES = 64;
+const SEEK_RESUME_FADE_FRAMES = 256;
+const UNDERFLOW_ALERT_INTERVAL_FRAMES = 48000;
+const SYNC_DRIFT_ALERT_MS = 40;
+const SYNC_DRIFT_ALERT_INTERVAL_FRAMES = 96000;
 
 class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -31,6 +35,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.loopEnabled = false;
     this.loopStartSample = 0;
     this.loopEndSample = 0;
+    this.readingBlocked = false;
+    this.fadeInFramesRemaining = 0;
+    this.fadeInTotalFrames = SEEK_RESUME_FADE_FRAMES;
 
     this.port.onmessage = (event) => {
       const data = event && event.data ? event.data : null;
@@ -153,6 +160,39 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       return;
     }
 
+    if (type === 'PAUSE_AND_FLUSH') {
+      const positionSeconds =
+        typeof message.positionSeconds === 'number' && Number.isFinite(message.positionSeconds)
+          ? Math.max(0, message.positionSeconds)
+          : 0;
+      this.readingBlocked = true;
+      this.playing = false;
+      this.fadeInFramesRemaining = 0;
+      this.telemetryBaseSeconds = positionSeconds;
+      this.telemetryBaseRenderedFrames = this.renderedFrames;
+      this.flushAllBuffers(message);
+      this.writeTelemetrySnapshot(positionSeconds);
+      this.postTransportDebug();
+      return;
+    }
+
+    if (type === 'RESUME_READING') {
+      const positionSeconds =
+        typeof message.positionSeconds === 'number' && Number.isFinite(message.positionSeconds)
+          ? Math.max(0, message.positionSeconds)
+          : this.telemetryBaseSeconds;
+      this.telemetryBaseSeconds = positionSeconds;
+      this.telemetryBaseRenderedFrames = this.renderedFrames;
+      this.syncTracksToTransportPosition(positionSeconds);
+      this.readingBlocked = false;
+      this.fadeInTotalFrames = SEEK_RESUME_FADE_FRAMES;
+      this.fadeInFramesRemaining = message.playing === true ? SEEK_RESUME_FADE_FRAMES : 0;
+      this.playing = !!message.playing;
+      this.writeTelemetrySnapshot(positionSeconds);
+      this.postTransportDebug();
+      return;
+    }
+
     if (type === 'loop-region') {
       this.configureLoopRegion(message);
       return;
@@ -245,6 +285,8 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       track.underrunEvents = 0;
       track.underrunFrames = 0;
       track.lastDropDebugFrame = 0;
+      track.lastUnderflowAlertFrame = 0;
+      track.lastSyncDriftAlertFrame = 0;
       track.consumedFramesSinceReport = 0;
       if (track.trackIndex < this.meterLevels.length) {
         this.meterLevels[track.trackIndex] = 0;
@@ -311,6 +353,8 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         underrunEvents: 0,
         underrunFrames: 0,
         lastDropDebugFrame: 0,
+        lastUnderflowAlertFrame: 0,
+        lastSyncDriftAlertFrame: 0,
         consumedFramesSinceReport: 0,
       };
       this.tracks[trackIndex] = track;
@@ -354,6 +398,8 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       track.underrunEvents = 0;
       track.underrunFrames = 0;
       track.lastDropDebugFrame = 0;
+      track.lastUnderflowAlertFrame = 0;
+      track.lastSyncDriftAlertFrame = 0;
       track.consumedFramesSinceReport = 0;
     }
 
@@ -595,7 +641,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       }
     }
 
-    if (!this.playing) {
+    if (!this.playing || this.readingBlocked) {
       return true;
     }
 
@@ -616,6 +662,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       this.mixLocalTrack(track, output, outputChannelCount, frameCount);
     }
 
+    this.applySeekResumeFade(output, outputChannelCount, frameCount);
     this.writeTelemetrySnapshot(this.getTelemetryPositionSeconds());
 
     if (this.publishMeterMessages && this.meterPublishCountdown <= 0) {
@@ -691,7 +738,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     const framesToRead = frameCount < availableRead ? frameCount : availableRead;
     let nextReadIndex = readIndex;
 
-    this.noteUnderrun(track, frameCount - framesToRead);
+    this.noteUnderrun(track, frameCount - framesToRead, availableRead);
 
     if (framesToRead <= 0) {
       track.lastMeterLevel = this.decayMeterLevel(track.lastMeterLevel);
@@ -828,7 +875,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     const framesToRead = frameCount < availableRead ? frameCount : availableRead;
     let nextReadIndex = track.localReadIndex;
 
-    this.noteUnderrun(track, frameCount - framesToRead);
+    this.noteUnderrun(track, frameCount - framesToRead, availableRead);
 
     if (framesToRead <= 0) {
       track.lastMeterLevel = this.decayMeterLevel(track.lastMeterLevel);
@@ -966,14 +1013,16 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.port.postMessage({
       type: 'debug-transport',
       playing: this.playing,
+      readingBlocked: this.readingBlocked,
       renderedFrames: this.renderedFrames,
     });
   }
 
-  noteUnderrun(track, missingFrames) {
+  noteUnderrun(track, missingFrames, availableRead) {
     if (
       missingFrames <= 0 ||
       !this.playing ||
+      this.readingBlocked ||
       track.isMuted ||
       (this.soloCount > 0 && !track.isSolo) ||
       track.volume <= 0.0001
@@ -983,6 +1032,24 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
     track.underrunEvents += 1;
     track.underrunFrames += missingFrames;
+
+    if (
+      availableRead <= 0 &&
+      this.renderedFrames - track.lastUnderflowAlertFrame >= UNDERFLOW_ALERT_INTERVAL_FRAMES
+    ) {
+      track.lastUnderflowAlertFrame = this.renderedFrames;
+      this.port.postMessage({
+        type: 'audio-underflow',
+        reason: 'Underflow / Audio Dropout',
+        trackIndex: track.trackIndex,
+        trackId: track.id,
+        missingFrames,
+        availableRead,
+        underrunEvents: track.underrunEvents,
+        underrunFrames: track.underrunFrames,
+        renderedFrames: this.renderedFrames,
+      });
+    }
   }
 
   noteFallbackConsumed(track, frames) {
@@ -1011,10 +1078,104 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     });
   }
 
+  isTrackAudibleForSync(track) {
+    return (
+      !!track &&
+      !track.isMuted &&
+      track.volume > 0.0001 &&
+      (this.soloCount <= 0 || track.isSolo)
+    );
+  }
+
+  getTrackPositionSeconds(track) {
+    if (!track || !(track.sampleRate > 0)) {
+      return 0;
+    }
+
+    return track.absoluteReadFrame / track.sampleRate;
+  }
+
+  getTrackReadWriteSnapshot(track) {
+    if (track.usesSharedMemory && track.indices) {
+      return {
+        readIndex: Atomics.load(track.indices, READ_INDEX_SLOT),
+        writeIndex: Atomics.load(track.indices, WRITE_INDEX_SLOT),
+      };
+    }
+
+    return {
+      readIndex: track.localReadIndex,
+      writeIndex: track.localWriteIndex,
+    };
+  }
+
+  computeSyncReferenceSeconds() {
+    const positions = [];
+
+    for (let trackIndex = 0; trackIndex < this.trackCount; trackIndex += 1) {
+      const track = this.tracks[trackIndex];
+
+      if (this.isTrackAudibleForSync(track)) {
+        positions.push(this.getTrackPositionSeconds(track));
+      }
+    }
+
+    if (positions.length <= 0) {
+      return NaN;
+    }
+
+    positions.sort((left, right) => left - right);
+
+    const midpoint = Math.floor(positions.length / 2);
+
+    if (positions.length % 2 === 1) {
+      return positions[midpoint];
+    }
+
+    return (positions[midpoint - 1] + positions[midpoint]) / 2;
+  }
+
+  maybePostSyncDrift(track, availableRead, positionSeconds, referenceSeconds, syncDriftMs) {
+    if (
+      !this.playing ||
+      this.readingBlocked ||
+      !this.isTrackAudibleForSync(track) ||
+      !Number.isFinite(referenceSeconds) ||
+      Math.abs(syncDriftMs) < SYNC_DRIFT_ALERT_MS ||
+      this.renderedFrames - track.lastSyncDriftAlertFrame < SYNC_DRIFT_ALERT_INTERVAL_FRAMES
+    ) {
+      return;
+    }
+
+    const snapshot = this.getTrackReadWriteSnapshot(track);
+    const rate = track.sampleRate || sampleRate || 48000;
+
+    track.lastSyncDriftAlertFrame = this.renderedFrames;
+
+    this.port.postMessage({
+      type: 'audio-sync-drift',
+      reason: 'Track drifted away from audible median clock',
+      trackIndex: track.trackIndex,
+      trackId: track.id,
+      driftMs: Math.round(syncDriftMs * 1000) / 1000,
+      driftFrames: Math.round((syncDriftMs / 1000) * rate),
+      positionSeconds: Math.round(positionSeconds * 1000) / 1000,
+      referenceSeconds: Math.round(referenceSeconds * 1000) / 1000,
+      availableRead,
+      capacity: track.capacity,
+      readIndex: snapshot.readIndex,
+      writeIndex: snapshot.writeIndex,
+      underrunEvents: track.underrunEvents,
+      underrunFrames: track.underrunFrames,
+      renderedFrames: this.renderedFrames,
+    });
+  }
+
   publishDebugStatus() {
     const tracks = [];
     let audibleZeroTracks = 0;
     let minAvailableRead = Number.POSITIVE_INFINITY;
+    const referenceSeconds = this.computeSyncReferenceSeconds();
 
     for (let trackIndex = 0; trackIndex < this.trackCount; trackIndex += 1) {
       const track = this.tracks[trackIndex];
@@ -1026,7 +1187,11 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       this.flushFallbackConsumed(track);
 
       const availableRead = this.getAvailableRead(track);
-      const audible = !track.isMuted && track.volume > 0.0001;
+      const audible = this.isTrackAudibleForSync(track);
+      const positionSeconds = this.getTrackPositionSeconds(track);
+      const syncDriftMs = Number.isFinite(referenceSeconds)
+        ? (positionSeconds - referenceSeconds) * 1000
+        : 0;
 
       if (audible) {
         if (availableRead <= 0) {
@@ -1036,6 +1201,14 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         if (availableRead < minAvailableRead) {
           minAvailableRead = availableRead;
         }
+
+        this.maybePostSyncDrift(
+          track,
+          availableRead,
+          positionSeconds,
+          referenceSeconds,
+          syncDriftMs,
+        );
       }
 
       tracks.push({
@@ -1045,6 +1218,8 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         volume: Math.round(track.volume * 10000) / 10000,
         availableRead,
         capacity: track.capacity,
+        positionSeconds: Math.round(positionSeconds * 1000) / 1000,
+        syncDriftMs: Math.round(syncDriftMs * 1000) / 1000,
         underrunEvents: track.underrunEvents,
         underrunFrames: track.underrunFrames,
       });
@@ -1053,13 +1228,39 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.port.postMessage({
       type: 'debug-status',
       playing: this.playing,
+      readingBlocked: this.readingBlocked,
       renderedFrames: this.renderedFrames,
       sampleRate: sampleRate || 48000,
+      referenceSeconds: Number.isFinite(referenceSeconds)
+        ? Math.round(referenceSeconds * 1000) / 1000
+        : null,
       audibleZeroTracks,
       minAvailableRead:
         minAvailableRead === Number.POSITIVE_INFINITY ? 0 : minAvailableRead,
       tracks,
     });
+  }
+
+  applySeekResumeFade(output, outputChannelCount, frameCount) {
+    if (this.fadeInFramesRemaining <= 0 || this.fadeInTotalFrames <= 0) {
+      return;
+    }
+
+    for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+      if (this.fadeInFramesRemaining <= 0) {
+        return;
+      }
+
+      const gain =
+        (this.fadeInTotalFrames - this.fadeInFramesRemaining + 1) /
+        this.fadeInTotalFrames;
+
+      for (let channelIndex = 0; channelIndex < outputChannelCount; channelIndex += 1) {
+        output[channelIndex][frameIndex] *= gain;
+      }
+
+      this.fadeInFramesRemaining -= 1;
+    }
   }
 
   getAvailableRead(track) {

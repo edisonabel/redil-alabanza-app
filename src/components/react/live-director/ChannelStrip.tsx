@@ -59,7 +59,6 @@ const getStableTrackPhaseMs = (value: string) => {
 
 export function FaderThumb({
   accent,
-  level = 0,
   muted = false,
   className = '',
   style,
@@ -71,9 +70,8 @@ export function FaderThumb({
   style?: CSSProperties;
 }) {
   const highlightColor = muted ? 'rgba(161, 169, 181, 0.62)' : accent;
-  const lineOpacity = muted ? 0.34 : 0.46 + level * 0.32;
-  const lineScale = 0.84 + level * 0.2;
-  const lineGlow = muted ? '0 0 0 transparent' : `0 0 ${8 + level * 10}px currentColor`;
+  const lineOpacity = muted ? 0.34 : 0.62;
+  const lineScale = muted ? 0.84 : 0.96;
 
   return (
     <div
@@ -86,13 +84,12 @@ export function FaderThumb({
       <div className="absolute right-3 top-3 bottom-3 w-px rounded-full bg-white/10" />
       <div className="absolute inset-2 rounded-[0.82rem] border border-white/4 bg-[repeating-linear-gradient(180deg,rgba(255,255,255,0.045)_0px,rgba(255,255,255,0.045)_2px,transparent_2px,transparent_5px)]" />
       <div
-        className="absolute inset-x-3 top-1/2 h-[2px] -translate-y-1/2 rounded-full transition-[opacity,transform,box-shadow] duration-300 ease-out"
+        className="absolute inset-x-3 top-1/2 h-[2px] -translate-y-1/2 rounded-full transition-transform duration-300 ease-out will-change-transform"
         style={{
           backgroundColor: highlightColor,
           color: highlightColor,
           opacity: lineOpacity,
           transform: `translateY(-50%) scaleX(${lineScale})`,
-          boxShadow: lineGlow,
         }}
       />
     </div>
@@ -132,20 +129,9 @@ export const ChannelStrip = memo(function ChannelStrip({
     : 0;
   const levelBottom = `${10 + displayVolume * 78}%`;
   const knobGlow = muted ? 'rgba(120, 128, 140, 0.15)' : `${accent}30`;
-  const meterHeightPercent = visualActivityLevel > 0.002
-    ? Math.min(92, 12 + Math.pow(visualActivityLevel, 0.72) * 80)
+  const fallbackVuLevel = visualActivityLevel > 0.002
+    ? Math.min(1, 0.08 + Math.pow(visualActivityLevel, 0.72) * 0.92)
     : 0;
-  const meterOpacity = muted
-    ? 0.16
-    : hasLiveSignal
-      ? 0.28 + displayLevel * 0.54
-      : 0.12;
-  const meterGlow = muted
-    ? '0 0 0 transparent'
-    : isAudiblyActive
-      ? `0 0 ${10 + visualActivityLevel * 16}px ${accent}3c`
-      : `0 0 ${8 + displayLevel * 14}px ${accent}36`;
-  const breathStrength = clamp(Math.pow(displayLevel, 0.72), 0.14, 0.76);
   const trackBreathDelay = useMemo(
     () => `${-(getStableTrackPhaseMs(id) / 1000).toFixed(2)}s`,
     [id],
@@ -153,10 +139,9 @@ export const ChannelStrip = memo(function ChannelStrip({
   const trackBreathStyle = useMemo<CSSProperties>(
     () => ({
       '--track-accent': accent,
-      '--track-breath-strength': String(breathStrength),
       '--track-breath-delay': trackBreathDelay,
     } as CSSProperties),
-    [accent, breathStrength, trackBreathDelay],
+    [accent, trackBreathDelay],
   );
   const shellRadiusClass = ultraCompact ? 'rounded-[0.75rem]' : compact ? 'rounded-[0.85rem]' : 'rounded-[1.2rem]';
   const shellPaddingClass = ultraCompact ? 'px-0.75 pb-0.75 pt-0.85' : compact ? 'px-1.25 pb-1.25 pt-0.95' : 'px-3.5 pb-4 pt-3';
@@ -393,7 +378,7 @@ export const ChannelStrip = memo(function ChannelStrip({
 
   return (
     <div
-      className={`live-director-track-strip relative flex h-full min-w-0 flex-col items-center overflow-hidden border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] transition-all duration-200 ${isAudiblyActive ? 'live-director-track-strip--breathing' : ''} ${shellRadiusClass} ${shellPaddingClass} ${dimmed ? 'opacity-45' : 'opacity-100'}`}
+      className={`live-director-track-strip relative flex h-full min-w-0 flex-col items-center overflow-hidden border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] transition-opacity duration-200 ${shellRadiusClass} ${shellPaddingClass} ${dimmed ? 'opacity-45' : 'opacity-100'}`}
       style={trackBreathStyle}
     >
       <span
@@ -460,19 +445,18 @@ export const ChannelStrip = memo(function ChannelStrip({
             />
           ))}
           <div
-            className={`live-director-track-activity-meter pointer-events-none absolute left-1/2 -translate-x-1/2 rounded-full shadow-[0_0_14px_rgba(103,210,242,0.16)] transition-[height,opacity,box-shadow] duration-300 ease-out ${isAudiblyActive ? 'live-director-track-activity-meter--breathing' : ''} ${ultraCompact ? 'bottom-[11%] w-[0.3rem]' : 'bottom-[10%] w-[0.38rem]'}`}
+            className={`live-director-track-activity-meter pointer-events-none absolute left-1/2 rounded-full opacity-75 transition-transform duration-75 ease-linear will-change-transform ${ultraCompact ? 'top-[8%] bottom-[12%] w-[0.3rem]' : compact ? 'top-[7%] bottom-[11%] w-[0.38rem]' : 'top-[4.5%] bottom-[6.5%] w-[0.38rem]'}`}
             style={{
-              height: `${meterHeightPercent}%`,
-              backgroundColor: muted ? 'rgba(136, 144, 158, 0.42)' : accent,
-              opacity: meterOpacity,
-              boxShadow: meterGlow,
+              backgroundColor: muted ? 'rgba(136, 144, 158, 0.42)' : 'var(--track-accent)',
+              transform: `translateX(-50%) scaleY(var(--ld-vu-level, ${fallbackVuLevel.toFixed(4)}))`,
+              transformOrigin: 'bottom center',
             }}
           />
           <FaderThumb
             accent={accent}
-            level={visualActivityLevel}
+            level={0}
             muted={muted}
-            className={`live-director-track-thumb ${isAudiblyActive ? 'live-director-track-thumb--breathing' : ''} ${ultraCompact ? 'h-[1.85rem]' : compact ? 'h-[2.2rem]' : 'h-[4.35rem]'} w-full ${stripThumbWidthClass} transition-[bottom,box-shadow,opacity,transform] duration-300 ease-out`}
+            className={`live-director-track-thumb ${ultraCompact ? 'h-[1.85rem]' : compact ? 'h-[2.2rem]' : 'h-[4.35rem]'} w-full ${stripThumbWidthClass} transition-[bottom,opacity,transform] duration-300 ease-out`}
             style={{
               bottom: `calc(${levelBottom} - ${ultraCompact ? '0.92rem' : compact ? '1.1rem' : '1.75rem'})`,
               boxShadow: muted
