@@ -26,6 +26,7 @@ const RANGE_FETCH_MAX_RETRIES = 3;
 const RANGE_FETCH_BASE_RETRY_DELAY_MS = 500;
 const RANGE_FETCH_INITIAL_JITTER_MIN_MS = 10;
 const RANGE_FETCH_INITIAL_JITTER_MAX_MS = 50;
+const MICRO_SYNC_LOG_THRESHOLD_FRAMES = 8;
 
 let mp4BoxModulePromise = null;
 
@@ -777,6 +778,101 @@ class SharedRingWriter {
     return framesToWrite;
   }
 
+  writePcmAtSample(absoluteStartSample, pcm, sourceOffset = 0, requestedFrameCount = null) {
+    if (!this.isReady() || !pcm || pcm.length === 0) {
+      return 0;
+    }
+
+    const safeSourceOffset = Math.max(0, Math.floor(Number(sourceOffset) || 0));
+    if (safeSourceOffset >= pcm.length) {
+      return 0;
+    }
+
+    const availableSourceFrames = pcm.length - safeSourceOffset;
+    const frameCount =
+      typeof requestedFrameCount === 'number' && requestedFrameCount >= 0
+        ? Math.min(Math.floor(requestedFrameCount), availableSourceFrames)
+        : availableSourceFrames;
+
+    if (frameCount <= 0) {
+      return 0;
+    }
+
+    const targetWriteIndex = this.frameToIndex(absoluteStartSample);
+    const readIndex = Atomics.load(this.indices, READ_INDEX_SLOT);
+    const availableWrite = this.capacity - this.computeAvailableRead(readIndex, targetWriteIndex);
+    const framesToWrite = Math.min(frameCount, availableWrite);
+
+    if (framesToWrite <= 0) {
+      return 0;
+    }
+
+    let sampleIndex = this.toSampleIndex(targetWriteIndex);
+    const remainingToEnd = this.capacity - sampleIndex;
+
+    if (framesToWrite <= remainingToEnd) {
+      for (let frameIndex = 0; frameIndex < framesToWrite; frameIndex += 1) {
+        this.samples[sampleIndex + frameIndex] = pcm[safeSourceOffset + frameIndex];
+      }
+    } else {
+      for (let frameIndex = 0; frameIndex < remainingToEnd; frameIndex += 1) {
+        this.samples[sampleIndex + frameIndex] = pcm[safeSourceOffset + frameIndex];
+      }
+
+      const wrappedCount = framesToWrite - remainingToEnd;
+      sampleIndex = 0;
+
+      for (let frameIndex = 0; frameIndex < wrappedCount; frameIndex += 1) {
+        this.samples[sampleIndex + frameIndex] =
+          pcm[safeSourceOffset + remainingToEnd + frameIndex];
+      }
+    }
+
+    Atomics.store(
+      this.indices,
+      WRITE_INDEX_SLOT,
+      this.frameToIndex(Number(absoluteStartSample) + framesToWrite),
+    );
+    return framesToWrite;
+  }
+
+  writeSilenceAtSample(absoluteStartSample, frameCount) {
+    if (!this.isReady()) {
+      return 0;
+    }
+
+    const safeFrameCount = Math.max(0, Math.floor(Number(frameCount) || 0));
+    if (safeFrameCount <= 0) {
+      return 0;
+    }
+
+    const targetWriteIndex = this.frameToIndex(absoluteStartSample);
+    const readIndex = Atomics.load(this.indices, READ_INDEX_SLOT);
+    const availableWrite = this.capacity - this.computeAvailableRead(readIndex, targetWriteIndex);
+    const framesToWrite = Math.min(safeFrameCount, availableWrite);
+
+    if (framesToWrite <= 0) {
+      return 0;
+    }
+
+    let sampleIndex = this.toSampleIndex(targetWriteIndex);
+    const remainingToEnd = this.capacity - sampleIndex;
+
+    if (framesToWrite <= remainingToEnd) {
+      this.samples.fill(0, sampleIndex, sampleIndex + framesToWrite);
+    } else {
+      this.samples.fill(0, sampleIndex, this.capacity);
+      this.samples.fill(0, 0, framesToWrite - remainingToEnd);
+    }
+
+    Atomics.store(
+      this.indices,
+      WRITE_INDEX_SLOT,
+      this.frameToIndex(Number(absoluteStartSample) + framesToWrite),
+    );
+    return framesToWrite;
+  }
+
   flushToSample(targetSample) {
     if (!this.isReady()) {
       return;
@@ -1099,6 +1195,8 @@ class ProducerTrackPipeline {
     this.channelScratch = [];
     this.pendingNormalPcm = [];
     this.pendingNormalFrameCount = 0;
+    this.normalTimelineInitialized = false;
+    this.lastNormalWriteEndSample = 0;
     this.decoderVariants = [];
     this.decoderVariantIndex = 0;
     this.recentDecodeSamples = [];
@@ -1286,6 +1384,7 @@ class ProducerTrackPipeline {
 
     this.decodedUntilSample = safeTargetSample;
     this.clearPendingNormalPcm();
+    this.resetNormalWriteTimeline(safeTargetSample);
     this.endOfFileReached = false;
     this.normalReadyPosted = false;
     this.pendingSeekReady = null;
@@ -1417,6 +1516,7 @@ class ProducerTrackPipeline {
     }
 
     this.decodedUntilSample = Math.max(0, startSample);
+    this.resetNormalWriteTimeline(startSample);
     await this.ensureDecoder();
 
     while (!this.isDestroyed && this.prepareToken === token && this.decodedUntilSample < endSample) {
@@ -1855,7 +1955,8 @@ class ProducerTrackPipeline {
       return;
     }
 
-    const writtenFrames = this.ringWriter.writePcm(_pcm);
+    const result = this.writeAnchoredNormalPcm(_absoluteStartSample, _pcm);
+    const writtenFrames = result.writtenFrames;
 
     if (writtenFrames > 0 && !this.normalReadyPosted) {
       this.normalReadyPosted = true;
@@ -1864,7 +1965,7 @@ class ProducerTrackPipeline {
         type: 'producer-track-ready',
         sessionId: activeSessionId,
         trackIndex: this.track.trackIndex,
-        decodedUntilSample: _absoluteStartSample + writtenFrames,
+        decodedUntilSample: result.absoluteEndSample,
         targetEndSample: null,
       });
     }
@@ -1874,21 +1975,132 @@ class ProducerTrackPipeline {
         type: 'producer-ring-write',
         sessionId: activeSessionId,
         trackIndex: this.track.trackIndex,
-        absoluteStartSample: _absoluteStartSample,
+        absoluteStartSample: result.absolutePcmStartSample,
         frameCount: writtenFrames,
+        paddedFrames: result.paddedFrames,
+        trimmedFrames: result.trimmedFrames,
+        absoluteWriteEndSample: result.absoluteEndSample,
         availableRead: this.ringWriter.availableRead(),
         availableWrite: this.ringWriter.availableWrite(),
       });
       this.postSeekReadyIfAvailable();
     }
 
-    if (writtenFrames < _pcm.length) {
-      this.enqueuePendingNormalPcm(
-        _absoluteStartSample + writtenFrames,
-        _pcm.subarray(writtenFrames),
-      );
-      this.postRingBackpressure(_pcm.length - writtenFrames, 'queued');
+    if (result.consumedFrames < _pcm.length) {
+      this.enqueuePendingNormalPcm(result.remainingAbsoluteStartSample, _pcm.subarray(result.consumedFrames));
+      this.postRingBackpressure(_pcm.length - result.consumedFrames, 'queued');
     }
+  }
+
+  writeAnchoredNormalPcm(absoluteStartSample, pcm) {
+    const safeAbsoluteStartSample = Math.max(0, Math.floor(Number(absoluteStartSample) || 0));
+    const emptyResult = {
+      writtenFrames: 0,
+      consumedFrames: 0,
+      paddedFrames: 0,
+      trimmedFrames: 0,
+      absolutePcmStartSample: safeAbsoluteStartSample,
+      absoluteEndSample: safeAbsoluteStartSample,
+      remainingAbsoluteStartSample: safeAbsoluteStartSample,
+    };
+
+    if (!pcm || pcm.length === 0 || !this.ringWriter.isReady()) {
+      return emptyResult;
+    }
+
+    if (!this.normalTimelineInitialized) {
+      this.normalTimelineInitialized = true;
+      this.lastNormalWriteEndSample = safeAbsoluteStartSample;
+    }
+
+    let sourceOffset = 0;
+    let pcmStartSample = safeAbsoluteStartSample;
+    let paddedFrames = 0;
+    let trimmedFrames = 0;
+
+    if (pcmStartSample < this.lastNormalWriteEndSample) {
+      trimmedFrames = Math.min(pcm.length, this.lastNormalWriteEndSample - pcmStartSample);
+      sourceOffset += trimmedFrames;
+      pcmStartSample += trimmedFrames;
+
+      if (sourceOffset >= pcm.length) {
+        this.postMicroSyncCorrection({
+          paddedFrames: 0,
+          trimmedFrames,
+          absoluteStartSample: safeAbsoluteStartSample,
+          absoluteEndSample: this.lastNormalWriteEndSample,
+        });
+
+        return {
+          ...emptyResult,
+          consumedFrames: pcm.length,
+          trimmedFrames,
+          absolutePcmStartSample: pcmStartSample,
+          absoluteEndSample: this.lastNormalWriteEndSample,
+          remainingAbsoluteStartSample: this.lastNormalWriteEndSample,
+        };
+      }
+    }
+
+    if (pcmStartSample > this.lastNormalWriteEndSample) {
+      const gapFrames = pcmStartSample - this.lastNormalWriteEndSample;
+      paddedFrames = this.ringWriter.writeSilenceAtSample(this.lastNormalWriteEndSample, gapFrames);
+
+      if (paddedFrames < gapFrames) {
+        if (paddedFrames > 0) {
+          this.lastNormalWriteEndSample += paddedFrames;
+        }
+
+        this.postMicroSyncCorrection({
+          paddedFrames,
+          trimmedFrames,
+          absoluteStartSample: safeAbsoluteStartSample,
+          absoluteEndSample: this.lastNormalWriteEndSample,
+          blockedGapFrames: gapFrames - paddedFrames,
+        });
+
+        return {
+          ...emptyResult,
+          consumedFrames: sourceOffset,
+          paddedFrames,
+          trimmedFrames,
+          absolutePcmStartSample: pcmStartSample,
+          absoluteEndSample: this.lastNormalWriteEndSample,
+          remainingAbsoluteStartSample: pcmStartSample,
+        };
+      }
+
+      this.lastNormalWriteEndSample = pcmStartSample;
+    }
+
+    const writtenFrames = this.ringWriter.writePcmAtSample(
+      pcmStartSample,
+      pcm,
+      sourceOffset,
+      pcm.length - sourceOffset,
+    );
+    const consumedFrames = sourceOffset + writtenFrames;
+
+    if (writtenFrames > 0) {
+      this.lastNormalWriteEndSample = pcmStartSample + writtenFrames;
+    }
+
+    this.postMicroSyncCorrection({
+      paddedFrames,
+      trimmedFrames,
+      absoluteStartSample: safeAbsoluteStartSample,
+      absoluteEndSample: this.lastNormalWriteEndSample,
+    });
+
+    return {
+      writtenFrames,
+      consumedFrames,
+      paddedFrames,
+      trimmedFrames,
+      absolutePcmStartSample: pcmStartSample,
+      absoluteEndSample: this.lastNormalWriteEndSample,
+      remainingAbsoluteStartSample: pcmStartSample + writtenFrames,
+    };
   }
 
   enqueuePendingNormalPcm(absoluteStartSample, pcm) {
@@ -1918,26 +2130,35 @@ class ProducerTrackPipeline {
     while (this.pendingNormalPcm.length > 0 && this.ringWriter.availableWrite() > 0) {
       const entry = this.pendingNormalPcm[0];
       const pcm = entry.offset > 0 ? entry.pcm.subarray(entry.offset) : entry.pcm;
-      const writtenFrames = this.ringWriter.writePcm(pcm);
+      const result = this.writeAnchoredNormalPcm(entry.absoluteStartSample + entry.offset, pcm);
+      const writtenFrames = result.writtenFrames;
 
-      if (writtenFrames <= 0) {
+      if (result.consumedFrames <= 0) {
         break;
       }
 
-      this.pendingNormalFrameCount = Math.max(0, this.pendingNormalFrameCount - writtenFrames);
+      this.pendingNormalFrameCount = Math.max(
+        0,
+        this.pendingNormalFrameCount - result.consumedFrames,
+      );
 
-      self.postMessage({
-        type: 'producer-ring-write',
-        sessionId: activeSessionId,
-        trackIndex: this.track.trackIndex,
-        absoluteStartSample: entry.absoluteStartSample + entry.offset,
-        frameCount: writtenFrames,
-        availableRead: this.ringWriter.availableRead(),
-        availableWrite: this.ringWriter.availableWrite(),
-      });
-      this.postSeekReadyIfAvailable();
+      if (writtenFrames > 0) {
+        self.postMessage({
+          type: 'producer-ring-write',
+          sessionId: activeSessionId,
+          trackIndex: this.track.trackIndex,
+          absoluteStartSample: result.absolutePcmStartSample,
+          frameCount: writtenFrames,
+          paddedFrames: result.paddedFrames,
+          trimmedFrames: result.trimmedFrames,
+          absoluteWriteEndSample: result.absoluteEndSample,
+          availableRead: this.ringWriter.availableRead(),
+          availableWrite: this.ringWriter.availableWrite(),
+        });
+        this.postSeekReadyIfAvailable();
+      }
 
-      entry.offset += writtenFrames;
+      entry.offset += result.consumedFrames;
       if (entry.offset >= entry.pcm.length) {
         this.pendingNormalPcm.shift();
       } else {
@@ -1949,6 +2170,44 @@ class ProducerTrackPipeline {
   clearPendingNormalPcm() {
     this.pendingNormalPcm = [];
     this.pendingNormalFrameCount = 0;
+  }
+
+  resetNormalWriteTimeline(targetSample) {
+    this.normalTimelineInitialized = true;
+    this.lastNormalWriteEndSample = Math.max(0, Math.floor(Number(targetSample) || 0));
+  }
+
+  postMicroSyncCorrection(details) {
+    if (!details) {
+      return;
+    }
+
+    const paddedFrames = Math.max(0, Math.floor(Number(details.paddedFrames) || 0));
+    const trimmedFrames = Math.max(0, Math.floor(Number(details.trimmedFrames) || 0));
+    const blockedGapFrames = Math.max(0, Math.floor(Number(details.blockedGapFrames) || 0));
+
+    if (
+      paddedFrames < MICRO_SYNC_LOG_THRESHOLD_FRAMES &&
+      trimmedFrames < MICRO_SYNC_LOG_THRESHOLD_FRAMES &&
+      blockedGapFrames <= 0
+    ) {
+      return;
+    }
+
+    self.postMessage({
+      type: 'producer-micro-sync-correction',
+      sessionId: activeSessionId,
+      trackIndex: this.track.trackIndex,
+      trackId: this.track.id,
+      trackName: this.track.name,
+      paddedFrames,
+      trimmedFrames,
+      blockedGapFrames,
+      absoluteStartSample: details.absoluteStartSample,
+      absoluteEndSample: details.absoluteEndSample,
+      availableRead: this.ringWriter.availableRead(),
+      availableWrite: this.ringWriter.availableWrite(),
+    });
   }
 
   postSeekReadyIfAvailable() {

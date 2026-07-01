@@ -327,6 +327,21 @@ type ProducerTrackProgressMessage = {
   frameCount?: number;
 };
 
+type ProducerMicroSyncCorrectionMessage = {
+  type: 'producer-micro-sync-correction';
+  sessionId: number | null;
+  trackIndex: number;
+  trackId?: string;
+  trackName?: string;
+  paddedFrames: number;
+  trimmedFrames: number;
+  blockedGapFrames?: number;
+  absoluteStartSample?: number;
+  absoluteEndSample?: number;
+  availableRead?: number;
+  availableWrite?: number;
+};
+
 type ProducerSampleDroppedMessage = {
   type: 'producer-sample-dropped';
   reason: string;
@@ -446,6 +461,7 @@ type ProducerInboundMessage =
   | ProducerPongMessage
   | ProducerTrackReadyMessage
   | ProducerTrackProgressMessage
+  | ProducerMicroSyncCorrectionMessage
   | ProducerSampleDroppedMessage
   | ProducerRingBackpressureMessage
   | ProducerFetchRetryMessage
@@ -1954,6 +1970,11 @@ export class StreamingMultitrackEngine {
 
     if (message.type === 'producer-sample-dropped') {
       warnLiveDiagnostic('streaming:producer-sample-dropped', { message });
+      return;
+    }
+
+    if (message.type === 'producer-micro-sync-correction') {
+      warnLiveDiagnostic('streaming:producer-micro-sync-correction', { message });
       return;
     }
 
