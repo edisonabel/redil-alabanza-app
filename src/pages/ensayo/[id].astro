@@ -727,10 +727,6 @@ const resolvedColorTokens = {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content={pageDescription} />
-    <script is:inline>
-      window.__REDIL_ENSAYO_LOADING_STARTED_AT__ = Date.now();
-      document.documentElement.classList.add('ensayo-loading');
-    </script>
     <link rel="icon" type="image/x-icon" href="/favicon.ico?v=20260403" />
     <link rel="shortcut icon" href="/favicon.ico?v=20260403" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20260403" />
@@ -754,7 +750,6 @@ const resolvedColorTokens = {
           --text-muted: 100 116 139;
           --color-brand: ${resolvedColorTokens.brand};
           --color-action: ${resolvedColorTokens.action};
-          --ensayo-loading-accent: ${resolvedColorTokens.rehearsalAccent};
           --color-danger: ${resolvedColorTokens.danger};
           --color-success: ${resolvedColorTokens.success};
           --color-warning: ${resolvedColorTokens.warning};
@@ -782,110 +777,6 @@ const resolvedColorTokens = {
           background: rgb(var(--bg-background));
         }
 
-        #ensayo-page-loading {
-          position: fixed;
-          inset: 0;
-          z-index: 90;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 24px;
-          background:
-            radial-gradient(circle at top, rgba(var(--ensayo-loading-accent), 0.18), transparent 44%),
-            linear-gradient(180deg, rgba(var(--bg-background), 0.96), rgba(var(--bg-background), 0.98));
-          opacity: 0;
-          visibility: hidden;
-          pointer-events: none;
-          transition: opacity 220ms ease, visibility 220ms ease;
-          backdrop-filter: blur(12px);
-        }
-
-        .ensayo-loading #ensayo-page-loading {
-          opacity: 1;
-          visibility: visible;
-          pointer-events: auto;
-        }
-
-        .ensayo-loading-card {
-          width: min(100%, 420px);
-          border-radius: 28px;
-          border: 1px solid rgba(var(--border-base), 0.9);
-          background:
-            radial-gradient(circle at top, rgba(var(--ensayo-loading-accent), 0.16), transparent 48%),
-            rgba(var(--bg-surface), 0.96);
-          padding: 28px 24px;
-          box-shadow: 0 28px 80px rgba(15, 23, 42, 0.14);
-        }
-
-        .ensayo-loading-chip {
-          display: inline-flex;
-          align-items: center;
-          gap: 10px;
-          padding: 10px 14px;
-          border-radius: 999px;
-          border: 1px solid rgba(var(--ensayo-loading-accent), 0.22);
-          background: rgba(var(--ensayo-loading-accent), 0.1);
-          color: rgba(var(--ensayo-loading-accent), 1);
-          font-size: 12px;
-          font-weight: 800;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-        }
-
-        .ensayo-loading-chip img {
-          width: 20px;
-          height: 20px;
-          border-radius: 6px;
-        }
-
-        .ensayo-loading-spinner {
-          width: 44px;
-          height: 44px;
-          margin-top: 18px;
-          border-radius: 999px;
-          border: 3px solid rgba(var(--ensayo-loading-accent), 0.2);
-          border-top-color: rgba(var(--ensayo-loading-accent), 1);
-          animation: ensayo-loading-spin 0.9s linear infinite;
-        }
-
-        .ensayo-loading-title {
-          margin: 18px 0 8px;
-          font-size: clamp(1.45rem, 4vw, 2rem);
-          line-height: 1.04;
-          letter-spacing: -0.04em;
-          font-weight: 900;
-          color: rgb(var(--text-base));
-        }
-
-        .ensayo-loading-copy {
-          margin: 0;
-          color: rgb(var(--text-muted));
-          line-height: 1.55;
-        }
-
-        .ensayo-loading-context {
-          margin-top: 18px;
-          padding-top: 14px;
-          border-top: 1px solid rgba(var(--border-base), 0.85);
-          color: rgb(var(--text-muted));
-          font-size: 12px;
-          line-height: 1.5;
-        }
-
-        .ensayo-loading-context strong {
-          display: block;
-          margin-bottom: 6px;
-          color: rgb(var(--text-base));
-          font-size: 11px;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-        }
-
-        @keyframes ensayo-loading-spin {
-          to {
-            transform: rotate(360deg);
-          }
-        }
       `}
     />
     <script is:inline>
@@ -902,21 +793,6 @@ const resolvedColorTokens = {
     </script>
   </head>
   <body class="min-h-screen overflow-hidden bg-white dark:bg-zinc-950">
-    <div id="ensayo-page-loading" aria-hidden="true">
-      <section class="ensayo-loading-card" aria-live="polite">
-        <div class="ensayo-loading-chip">
-          <img src="/icon-192.png" alt="" />
-          <span>Modo Ensayo</span>
-        </div>
-        <div class="ensayo-loading-spinner" aria-hidden="true"></div>
-        <h1 class="ensayo-loading-title">Abriendo ensayo...</h1>
-        <p class="ensayo-loading-copy">Preparando setlist, acordes y recursos para esta vista.</p>
-        <div class="ensayo-loading-context">
-          <strong>Servicio</strong>
-          {buildEventHeadline(eventData || {}, contextTitle)}
-        </div>
-      </section>
-    </div>
     <EnsayoHub
       client:only="react"
       playlist={rehearsalSongs}
@@ -933,26 +809,5 @@ const resolvedColorTokens = {
     />
     <ProPlayerGlobal />
     <VocesModalGlobal />
-    <script is:inline>
-      (() => {
-        const finish = () => {
-          const startedAt = window.__REDIL_ENSAYO_LOADING_STARTED_AT__ || Date.now();
-          const elapsed = Date.now() - startedAt;
-          const wait = Math.max(0, 180 - elapsed);
-
-          window.setTimeout(() => {
-            document.documentElement.classList.remove('ensayo-loading');
-          }, wait);
-        };
-
-        if (document.readyState === 'complete' || document.readyState === 'interactive') {
-          window.requestAnimationFrame(finish);
-        } else {
-          document.addEventListener('DOMContentLoaded', () => window.requestAnimationFrame(finish), { once: true });
-        }
-
-        window.addEventListener('pageshow', finish, { once: true });
-      })();
-    </script>
   </body>
 </html>

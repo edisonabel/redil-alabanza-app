@@ -650,6 +650,7 @@ export default function EnsayoHub({
   const [personalSongSettings, setPersonalSongSettings] = useState({});
   const [isGeneratingSetlistPdf, setIsGeneratingSetlistPdf] = useState(false);
   const [setlistPrintError, setSetlistPrintError] = useState('');
+  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
 
   const queueSongsRef = useRef([]);
   const queueIndexRef = useRef(-1);
@@ -657,6 +658,12 @@ export default function EnsayoHub({
   const voiceAssignmentFeedbackTimeoutRef = useRef(null);
   const setlistPdfObjectUrlsRef = useRef([]);
   const songActionScrollerRefs = useRef(new Map());
+  const mainScrollRef = useRef(null);
+  const lastMainScrollTopRef = useRef(0);
+  const pendingMainScrollTopRef = useRef(0);
+  const headerScrollFrameRef = useRef(0);
+  const headerCollapsedRef = useRef(false);
+  const headerTransitionLockUntilRef = useRef(0);
   const [overflowingSongActionIds, setOverflowingSongActionIds] = useState(() => new Set());
   const [insertAfterIndex, setInsertAfterIndex] = useState(-1);
 
@@ -705,6 +712,74 @@ export default function EnsayoHub({
       }
     });
     setlistPdfObjectUrlsRef.current = [];
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const getScrollTop = () => {
+      const scrollNode = mainScrollRef.current;
+      if (scrollNode && scrollNode.scrollHeight > scrollNode.clientHeight) {
+        return Math.max(0, scrollNode.scrollTop || 0);
+      }
+
+      return Math.max(
+        0,
+        window.scrollY || document.documentElement?.scrollTop || document.body?.scrollTop || 0,
+      );
+    };
+
+    lastMainScrollTopRef.current = getScrollTop();
+    pendingMainScrollTopRef.current = lastMainScrollTopRef.current;
+
+    const setHeaderCollapsedSafely = (nextCollapsed) => {
+      if (headerCollapsedRef.current === nextCollapsed) return;
+      headerCollapsedRef.current = nextCollapsed;
+      headerTransitionLockUntilRef.current = window.performance.now() + 380;
+      setIsHeaderCollapsed(nextCollapsed);
+    };
+
+    const updateHeaderVisibility = () => {
+      headerScrollFrameRef.current = 0;
+      const nextScrollTop = pendingMainScrollTopRef.current;
+      const previousScrollTop = lastMainScrollTopRef.current;
+      const delta = nextScrollTop - previousScrollTop;
+      const now = window.performance.now();
+
+      if (now < headerTransitionLockUntilRef.current) {
+        lastMainScrollTopRef.current = nextScrollTop;
+        return;
+      }
+
+      if (nextScrollTop <= 24) {
+        setHeaderCollapsedSafely(false);
+      } else if (delta > 12) {
+        setHeaderCollapsedSafely(true);
+      } else if (delta < -44) {
+        setHeaderCollapsedSafely(false);
+      }
+
+      lastMainScrollTopRef.current = nextScrollTop;
+    };
+
+    const scheduleHeaderVisibility = () => {
+      pendingMainScrollTopRef.current = getScrollTop();
+      if (headerScrollFrameRef.current) return;
+      headerScrollFrameRef.current = window.requestAnimationFrame(updateHeaderVisibility);
+    };
+
+    const scrollNode = mainScrollRef.current;
+    scrollNode?.addEventListener('scroll', scheduleHeaderVisibility, { passive: true });
+    window.addEventListener('scroll', scheduleHeaderVisibility, { passive: true });
+
+    return () => {
+      if (headerScrollFrameRef.current) {
+        window.cancelAnimationFrame(headerScrollFrameRef.current);
+        headerScrollFrameRef.current = 0;
+      }
+      scrollNode?.removeEventListener('scroll', scheduleHeaderVisibility);
+      window.removeEventListener('scroll', scheduleHeaderVisibility);
+    };
   }, []);
 
   useEffect(() => {
@@ -1515,7 +1590,15 @@ export default function EnsayoHub({
 
   return (
     <div className="flex h-screen w-full flex-col bg-white text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
-      <header className="border-b border-zinc-200/80 bg-white/95 px-4 pb-4 pt-[calc(env(safe-area-inset-top)+0.8rem)] backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/96">
+      <header
+        aria-hidden={isHeaderCollapsed}
+        inert={isHeaderCollapsed ? '' : undefined}
+        className={`ensayo-hub-header shrink-0 overflow-hidden border-b bg-white/95 backdrop-blur-xl transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[max-height,transform,opacity] motion-reduce:transition-none dark:bg-zinc-950/96 ${
+          isHeaderCollapsed
+            ? 'pointer-events-none max-h-0 -translate-y-4 border-transparent px-4 pb-0 pt-0 opacity-0'
+            : 'max-h-[28rem] translate-y-0 border-zinc-200/80 px-4 pb-4 pt-[calc(env(safe-area-inset-top)+0.8rem)] opacity-100 dark:border-white/10'
+        }`}
+      >
         <div className="mx-auto max-w-5xl">
           <div className="rounded-[2rem] border border-zinc-200/80 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_38%),linear-gradient(180deg,_rgba(255,255,255,0.98),_rgba(244,244,245,0.96))] px-5 py-5 shadow-[0_24px_80px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.22),_transparent_34%),linear-gradient(180deg,_rgba(9,9,11,0.98),_rgba(15,23,42,0.94))] dark:shadow-[0_28px_80px_rgba(2,6,23,0.5)]">
             <div className="grid grid-cols-[auto_1fr] items-start gap-4 md:grid-cols-[auto_1fr_auto] md:gap-5">
@@ -1579,7 +1662,7 @@ export default function EnsayoHub({
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto px-0 pb-28 pt-4">
+      <main ref={mainScrollRef} className="min-h-0 flex-1 overflow-y-auto px-0 pb-28 pt-4">
         <div className="mx-auto w-full max-w-5xl">
           <div className="overflow-hidden">
             {(playableSongs.length > 0 || printableSongs.length > 0) && (
