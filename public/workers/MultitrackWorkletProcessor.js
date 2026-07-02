@@ -36,7 +36,6 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.telemetry = null;
     this.telemetryBaseSeconds = 0;
     this.telemetryBaseRenderedFrames = 0;
-    this.contextAnchorTime = 0;
     this.soloCount = 0;
     this.loopEnabled = false;
     this.loopStartSample = 0;
@@ -193,7 +192,6 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       this.fadeInFramesRemaining = 0;
       this.telemetryBaseSeconds = positionSeconds;
       this.telemetryBaseRenderedFrames = this.renderedFrames;
-      this.contextAnchorTime = this.getAudioContextTime();
       this.flushAllBuffers(message);
       const debugTrack = this.tracks[0] || null;
       const debugReadIndex =
@@ -232,7 +230,6 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
           : this.telemetryBaseSeconds;
       this.telemetryBaseSeconds = positionSeconds;
       this.telemetryBaseRenderedFrames = this.renderedFrames;
-      this.contextAnchorTime = this.getAudioContextTime();
       this.syncTracksToTransportPosition(positionSeconds);
       this.readingBlocked = false;
       this.loopJumpCrossfadeBlocked = false;
@@ -258,7 +255,6 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       if (typeof message.positionSeconds === 'number' && Number.isFinite(message.positionSeconds)) {
         this.telemetryBaseSeconds = Math.max(0, message.positionSeconds);
         this.telemetryBaseRenderedFrames = this.renderedFrames;
-        this.contextAnchorTime = this.getAudioContextTime();
         this.syncTracksToTransportPosition(this.telemetryBaseSeconds);
       }
       if (message.playing === true) {
@@ -276,7 +272,6 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     if (type === 'PLAY') {
       this.telemetryBaseSeconds = this.getTelemetryPositionSeconds();
       this.telemetryBaseRenderedFrames = this.renderedFrames;
-      this.contextAnchorTime = this.getAudioContextTime();
       this.playing = true;
       this.postTransportDebug();
       return;
@@ -285,7 +280,6 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     if (type === 'PAUSE') {
       this.telemetryBaseSeconds = this.getTelemetryPositionSeconds();
       this.telemetryBaseRenderedFrames = this.renderedFrames;
-      this.contextAnchorTime = this.getAudioContextTime();
       this.playing = false;
       this.postTransportDebug();
     }
@@ -335,7 +329,6 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.loopJumpCrossfadeBlocked = true;
     this.telemetryBaseSeconds = 0;
     this.telemetryBaseRenderedFrames = this.renderedFrames;
-    this.contextAnchorTime = this.getAudioContextTime();
     this.writeTelemetrySnapshot(0);
   }
 
@@ -927,7 +920,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
 
     this.applySeekResumeFade(output, outputChannelCount, frameCount);
-    this.writeTelemetrySnapshot(this.getTelemetryPositionSeconds(frameCount));
+    this.writeTelemetrySnapshot(this.getTelemetryPositionSeconds());
 
     if (this.publishMeterMessages && this.meterPublishCountdown <= 0) {
       this.port.postMessage(this.meterMessage);
@@ -977,26 +970,18 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     return this.getMasterPositionSeconds(frameOffset || 0);
   }
 
-  getAudioContextTime() {
-    if (typeof currentTime === 'number' && Number.isFinite(currentTime)) {
-      return currentTime;
-    }
-
-    return this.renderedFrames / (sampleRate || 48000);
-  }
-
   getMasterPositionSeconds(frameOffset) {
     const rate = sampleRate || 48000;
-    const offsetSeconds =
+    const offsetFrames =
       typeof frameOffset === 'number' && Number.isFinite(frameOffset)
-        ? frameOffset / rate
+        ? frameOffset
         : 0;
-    const elapsedSeconds = Math.max(
+    const elapsedFrames = Math.max(
       0,
-      this.getAudioContextTime() + offsetSeconds - this.contextAnchorTime,
+      this.renderedFrames + offsetFrames - this.telemetryBaseRenderedFrames,
     );
 
-    return Math.max(0, this.telemetryBaseSeconds + elapsedSeconds);
+    return Math.max(0, this.telemetryBaseSeconds + elapsedFrames / rate);
   }
 
   getMasterFrameForTrack(track, frameOffset) {
@@ -1016,7 +1001,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       return readIndex;
     }
 
-    const renderOffset = renderStartFrame - this.renderedFrames + frameCount;
+    const renderOffset = renderStartFrame - this.renderedFrames;
     const masterFrame = this.getMasterFrameForTrack(track, renderOffset);
     const driftFrames = track.absoluteReadFrame - masterFrame;
     const absoluteDriftFrames = driftFrames >= 0 ? driftFrames : -driftFrames;
