@@ -619,6 +619,8 @@ export function LiveDirectorView({
     setHasResolvedEngineCapability(true);
   }, [isIOSNativeEngineSurface]);
 
+  const canRunAdvancedStreamingEngine = !isIOSNativeEngineSurface && canUseAdvancedStreamingEngine();
+
   const suspendNativeMeters = useCallback(() => {
     if (resumeNativeMetersTimeoutRef.current !== null) {
       window.clearTimeout(resumeNativeMetersTimeoutRef.current);
@@ -785,7 +787,7 @@ export function LiveDirectorView({
   );
 
   const activeTrackWarningThreshold = useMemo(() => {
-    if (useStreamingEngine) {
+    if (useStreamingEngine || canRunAdvancedStreamingEngine) {
       return Number.MAX_SAFE_INTEGER;
     }
 
@@ -811,9 +813,9 @@ export function LiveDirectorView({
       return SAFARI_WEB_MAX_ACTIVE_TRACKS;
     }
     return WEB_ENGINE_MAX_ACTIVE_TRACKS;
-  }, [isIOSNativeEngineSurface, maxWebActiveTracks, useStreamingEngine]);
+  }, [canRunAdvancedStreamingEngine, isIOSNativeEngineSurface, maxWebActiveTracks, useStreamingEngine]);
   const sessionActiveTrackLimit = Math.max(1, activeTrackWarningThreshold);
-  const trackLoadGuidanceText = useStreamingEngine
+  const trackLoadGuidanceText = useStreamingEngine || canRunAdvancedStreamingEngine
     ? 'Motor avanzado activo: puedes cargar todos los stems.'
     : `Desactiva stems que no vas a usar. Más de ${sessionActiveTrackLimit} puede ser inestable según el equipo.`;
 
