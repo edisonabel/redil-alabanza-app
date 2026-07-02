@@ -1558,9 +1558,6 @@ export class StreamingMultitrackEngine {
       });
       const seekSerial = pendingSeek.serial;
       this.activeSeekSerial = seekSerial;
-      console.log(
-        `[SEEK-DEBUG] Engine: Seek start -> serial: ${seekSerial}, target: ${targetSample}, wasPlaying: ${wasPlaying}`,
-      );
       this.postWorkletMessage({
         type: 'PAUSE_AND_FLUSH',
         targetSample,
@@ -1602,8 +1599,6 @@ export class StreamingMultitrackEngine {
       if (!seekStartBarrierReady) {
         return;
       }
-      await this.runSyncAudit({ reason: 'seek-resume', seekSerial });
-      console.log(`[SEEK-DEBUG] Engine: Resume reading -> serial: ${seekSerial}`);
       this.postWorkletMessage({
         type: 'RESUME_READING',
         playing: wasPlaying,
@@ -2506,9 +2501,9 @@ export class StreamingMultitrackEngine {
     }
 
     if (message.type === 'producer-debug-log') {
-      const logger =
-        message.level === 'error' ? console.error : message.level === 'warn' ? console.warn : console.log;
-      logger('[PRODUCER-DEBUG]', ...(Array.isArray(message.args) ? message.args : []));
+      if (message.level === 'error') {
+        console.error('[StreamingMultitrackEngine]', ...(Array.isArray(message.args) ? message.args : []));
+      }
       return;
     }
 
@@ -2595,10 +2590,7 @@ export class StreamingMultitrackEngine {
       return;
     }
 
-    if (message.type === 'producer-seek-debug') {
-      console.log(message.message, message);
-      return;
-    }
+    if (message.type === 'producer-seek-debug') return;
 
     if (message.type === 'producer-next-track-warmed') {
       logLiveDiagnostic('streaming:producer-next-track-warmed', { message });
@@ -2729,20 +2721,16 @@ export class StreamingMultitrackEngine {
       // Ignore readonly harnesses.
     }
 
-    console.groupCollapsed(
-      `[SYNC-AUDIT] ${options.reason} session=${result.sessionId ?? 'n/a'} ` +
-        `seekSerial=${options.seekSerial ?? 'n/a'} spread=${spreadFrames ?? 'n/a'} frames`,
-    );
-    console.table(rows);
-    console.log('[SYNC-AUDIT] summary', {
-      reason: options.reason,
-      seekSerial: options.seekSerial,
-      minFirstSample,
-      maxFirstSample,
-      spreadFrames,
-      trackCount: rows.length,
-    });
-    console.groupEnd();
+    if (spreadFrames !== null && Math.abs(spreadFrames) > 0) {
+      warnLiveDiagnostic('streaming:sync-audit-drift', {
+        reason: options.reason,
+        seekSerial: options.seekSerial,
+        minFirstSample,
+        maxFirstSample,
+        spreadFrames,
+        trackCount: rows.length,
+      });
+    }
   }
 
   private createProducerSeekHandshake(options: {
@@ -2819,9 +2807,6 @@ export class StreamingMultitrackEngine {
       return;
     }
 
-    console.log(
-      `[SEEK-DEBUG] Engine: Seek ready <- serial: ${message.seekSerial ?? pending.serial}, track: ${message.trackIndex}`,
-    );
     pending.readyTracks.add(message.trackIndex);
     if (pending.readyTracks.size >= pending.expectedTrackCount) {
       window.clearTimeout(pending.timeoutId);
@@ -3125,10 +3110,7 @@ export class StreamingMultitrackEngine {
       return;
     }
 
-    if (message.type === 'seek-debug') {
-      console.log(message.message, message);
-      return;
-    }
+    if (message.type === 'seek-debug') return;
 
     if (message.type === 'audio-underflow') {
       warnLiveDiagnostic('streaming:audio-underflow', { message });

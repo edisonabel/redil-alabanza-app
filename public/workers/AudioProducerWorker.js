@@ -64,15 +64,9 @@ const postDebugLog = (level, args) => {
   }
 };
 
-const debugLog = (...args) => {
-  console.log(...args);
-  postDebugLog('log', args);
-};
+const debugLog = () => {};
 
-const debugWarn = (...args) => {
-  console.warn(...args);
-  postDebugLog('warn', args);
-};
+const debugWarn = () => {};
 
 const debugError = (...args) => {
   console.error(...args);
@@ -1068,7 +1062,7 @@ class Mp4TrackDemuxer {
 
     this.file.onError = (_errorCode, message) => {
       debugError(
-        '[DEMUX-DEBUG] Error MP4Box para:',
+        '[AudioProducerWorker] MP4Box demuxer error for:',
         track.name || track.id || track.url,
         'code:',
         _errorCode,
@@ -1099,15 +1093,6 @@ class Mp4TrackDemuxer {
 
   append(bytes, fileStart) {
     this.throwPendingErrorIfNeeded();
-
-    debugLog(
-      '[DEMUX-DEBUG] Inyectando chunk en MP4Box para:',
-      this.track.name || this.track.id || this.track.url,
-      'bytes:',
-      bytes ? bytes.byteLength : 0,
-      'fileStart:',
-      fileStart,
-    );
     const nextFileStart = this.file.appendBuffer(this.toAppendableBuffer(bytes, fileStart));
 
     this.throwPendingErrorIfNeeded();
@@ -1638,14 +1623,6 @@ class ProducerTrackPipeline {
 
     this.postSeekReadyFallback(sessionId, 'superseded-by-new-seek');
     this.currentSeekSerial = safeSeekSerial;
-    self.postMessage({
-      type: 'producer-seek-debug',
-      message: `[SEEK-DEBUG] Worker: Seek start -> serial: ${safeSeekSerial}, target: ${safeTargetSample}, track: ${this.track.name || this.track.id || this.track.trackIndex}`,
-      sessionId,
-      seekSerial: safeSeekSerial,
-      targetSample: safeTargetSample,
-      trackIndex: this.track.trackIndex,
-    });
     this.stopLookAhead();
     this.prepareToken += 1;
     this.fetcher.abort();
@@ -2141,13 +2118,6 @@ class ProducerTrackPipeline {
       }
 
       if (typeof seekSerial === 'number' && seekSerial !== this.currentSeekSerial) {
-        self.postMessage({
-          type: 'producer-seek-debug',
-          message: `[SEEK-DEBUG] Worker: Drop stale PCM -> viejoSerial: ${seekSerial}, actualSerial: ${this.currentSeekSerial}, track: ${this.track.name || this.track.id || this.track.trackIndex}`,
-          seekSerial,
-          currentSeekSerial: this.currentSeekSerial,
-          trackIndex: this.track.trackIndex,
-        });
         return;
       }
 
@@ -2242,13 +2212,6 @@ class ProducerTrackPipeline {
     }
 
     if (seekSerial !== this.currentSeekSerial) {
-      self.postMessage({
-        type: 'producer-seek-debug',
-        message: `[SEEK-DEBUG] Worker: Drop stale PCM -> viejoSerial: ${seekSerial}, actualSerial: ${this.currentSeekSerial}, track: ${this.track.name || this.track.id || this.track.trackIndex}`,
-        seekSerial,
-        currentSeekSerial: this.currentSeekSerial,
-        trackIndex: this.track.trackIndex,
-      });
       return;
     }
 
@@ -2450,13 +2413,6 @@ class ProducerTrackPipeline {
 
       const entry = this.pendingNormalPcm[0];
       if (entry.seekSerial !== this.currentSeekSerial) {
-        self.postMessage({
-          type: 'producer-seek-debug',
-          message: `[SEEK-DEBUG] Worker: Drop stale PCM -> viejoSerial: ${entry.seekSerial}, actualSerial: ${this.currentSeekSerial}, track: ${this.track.name || this.track.id || this.track.trackIndex}`,
-          seekSerial: entry.seekSerial,
-          currentSeekSerial: this.currentSeekSerial,
-          trackIndex: this.track.trackIndex,
-        });
         this.pendingNormalFrameCount = Math.max(
           0,
           this.pendingNormalFrameCount - Math.max(0, entry.pcm.length - entry.offset),
@@ -2586,14 +2542,6 @@ class ProducerTrackPipeline {
 
     this.pendingSeekReady = null;
     self.postMessage({
-      type: 'producer-seek-debug',
-      message: `[SEEK-DEBUG] Worker: Seek ready -> serial: ${pending.seekSerial}, track: ${this.track.name || this.track.id || this.track.trackIndex}`,
-      sessionId: pending.sessionId,
-      seekSerial: pending.seekSerial,
-      targetSample: pending.targetSample,
-      trackIndex: this.track.trackIndex,
-    });
-    self.postMessage({
       type: 'producer-seek-ready',
       sessionId: pending.sessionId,
       seekSerial: pending.seekSerial,
@@ -2618,16 +2566,6 @@ class ProducerTrackPipeline {
     }
 
     this.pendingSeekReady = null;
-    self.postMessage({
-      type: 'producer-seek-debug',
-      message: `[SEEK-DEBUG] Worker: Seek ready -> serial: ${pending.seekSerial}, track: ${this.track.name || this.track.id || this.track.trackIndex}, fallback: ${reason}`,
-      sessionId: pending.sessionId,
-      seekSerial: pending.seekSerial,
-      targetSample: pending.targetSample,
-      trackIndex: this.track.trackIndex,
-      fallback: true,
-      reason,
-    });
     self.postMessage({
       type: 'producer-seek-ready',
       sessionId: pending.sessionId,

@@ -182,7 +182,6 @@ const ANDROID_MAX_ACTIVE_TRACKS = 10;
 const IOS_SAFARI_WEB_MAX_ACTIVE_TRACKS = 4;
 const SAFARI_WEB_MAX_ACTIVE_TRACKS = 9;
 const WEB_ENGINE_MAX_ACTIVE_TRACKS = 11;
-const FORCE_SPSC_ENGINE_FOR_PRODUCTION_STRESS_TEST = true;
 const INTERNAL_PAD_TRACK_ID = '__internal-pad__';
 // The internal pad masters are intentionally lush, but their raw gain is too hot
 // for live control. Apply a fixed -8 dB trim before the pad reaches either engine.
@@ -537,14 +536,14 @@ export function LiveDirectorView({
   const [useStreamingEngine, setUseStreamingEngine] = useState(() => (
     engineSurface !== 'ios-native' &&
     !isNativeLiveDirectorEngineAvailable() &&
-    (FORCE_SPSC_ENGINE_FOR_PRODUCTION_STRESS_TEST || canUseAdvancedStreamingEngine())
+    canUseAdvancedStreamingEngine()
   ));
   const [hasResolvedEngineCapability, setHasResolvedEngineCapability] = useState(false);
   const passiveStreamingTelemetryEnabled = !isIOSNativeEngineSurface && useStreamingEngine;
   const webMultitrackEngine = useMultitrackEngine({
     useStreamingEngine,
     passiveTelemetry: passiveStreamingTelemetryEnabled,
-    allowStreamingFallback: !FORCE_SPSC_ENGINE_FOR_PRODUCTION_STRESS_TEST,
+    allowStreamingFallback: true,
   });
   const nativeIOSMultitrackEngine = useNativeIOSMultitrackEngine();
   const selectedMultitrackEngine = isIOSNativeEngineSurface
@@ -616,16 +615,11 @@ export function LiveDirectorView({
   }, [engineSurface]);
 
   useEffect(() => {
-    setUseStreamingEngine(
-      !isIOSNativeEngineSurface &&
-      (FORCE_SPSC_ENGINE_FOR_PRODUCTION_STRESS_TEST || canUseAdvancedStreamingEngine()),
-    );
+    setUseStreamingEngine(!isIOSNativeEngineSurface && canUseAdvancedStreamingEngine());
     setHasResolvedEngineCapability(true);
   }, [isIOSNativeEngineSurface]);
 
-  const canRunAdvancedStreamingEngine =
-    !isIOSNativeEngineSurface &&
-    (FORCE_SPSC_ENGINE_FOR_PRODUCTION_STRESS_TEST || canUseAdvancedStreamingEngine());
+  const canRunAdvancedStreamingEngine = !isIOSNativeEngineSurface && canUseAdvancedStreamingEngine();
 
   const suspendNativeMeters = useCallback(() => {
     if (resumeNativeMetersTimeoutRef.current !== null) {
