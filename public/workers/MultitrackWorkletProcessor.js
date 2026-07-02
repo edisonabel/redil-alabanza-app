@@ -10,6 +10,9 @@ const SEEK_RESUME_FADE_FRAMES = 768;
 const UNDERFLOW_ALERT_INTERVAL_FRAMES = 48000;
 const SYNC_DRIFT_ALERT_MS = 40;
 const SYNC_DRIFT_ALERT_INTERVAL_FRAMES = 96000;
+const SYNC_FINE_DRIFT_MS = 15;
+const SYNC_HARD_DRIFT_MS = 40;
+const SYNC_HARD_REALIGN_INTERVAL_FRAMES = 4800;
 
 class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -33,6 +36,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.telemetry = null;
     this.telemetryBaseSeconds = 0;
     this.telemetryBaseRenderedFrames = 0;
+    this.contextAnchorTime = 0;
     this.soloCount = 0;
     this.loopEnabled = false;
     this.loopStartSample = 0;
@@ -189,6 +193,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       this.fadeInFramesRemaining = 0;
       this.telemetryBaseSeconds = positionSeconds;
       this.telemetryBaseRenderedFrames = this.renderedFrames;
+      this.contextAnchorTime = this.getAudioContextTime();
       this.flushAllBuffers(message);
       const debugTrack = this.tracks[0] || null;
       const debugReadIndex =
@@ -227,6 +232,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
           : this.telemetryBaseSeconds;
       this.telemetryBaseSeconds = positionSeconds;
       this.telemetryBaseRenderedFrames = this.renderedFrames;
+      this.contextAnchorTime = this.getAudioContextTime();
       this.syncTracksToTransportPosition(positionSeconds);
       this.readingBlocked = false;
       this.loopJumpCrossfadeBlocked = false;
@@ -252,6 +258,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       if (typeof message.positionSeconds === 'number' && Number.isFinite(message.positionSeconds)) {
         this.telemetryBaseSeconds = Math.max(0, message.positionSeconds);
         this.telemetryBaseRenderedFrames = this.renderedFrames;
+        this.contextAnchorTime = this.getAudioContextTime();
         this.syncTracksToTransportPosition(this.telemetryBaseSeconds);
       }
       if (message.playing === true) {
@@ -267,12 +274,18 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
 
     if (type === 'PLAY') {
+      this.telemetryBaseSeconds = this.getTelemetryPositionSeconds();
+      this.telemetryBaseRenderedFrames = this.renderedFrames;
+      this.contextAnchorTime = this.getAudioContextTime();
       this.playing = true;
       this.postTransportDebug();
       return;
     }
 
     if (type === 'PAUSE') {
+      this.telemetryBaseSeconds = this.getTelemetryPositionSeconds();
+      this.telemetryBaseRenderedFrames = this.renderedFrames;
+      this.contextAnchorTime = this.getAudioContextTime();
       this.playing = false;
       this.postTransportDebug();
     }
@@ -322,6 +335,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.loopJumpCrossfadeBlocked = true;
     this.telemetryBaseSeconds = 0;
     this.telemetryBaseRenderedFrames = this.renderedFrames;
+    this.contextAnchorTime = this.getAudioContextTime();
     this.writeTelemetrySnapshot(0);
   }
 
@@ -358,6 +372,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       track.underrunFrames = 0;
       track.lastDropDebugFrame = 0;
       track.lastUnderflowAlertFrame = 0;
+      track.lastHardSyncFrame = 0;
+      track.lastFineSyncFrame = 0;
+      track.driftHoldFrames = 0;
       track.lastSyncDriftAlertFrame = 0;
       track.consumedFramesSinceReport = 0;
       if (track.trackIndex < this.meterLevels.length) {
@@ -435,6 +452,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         lastDropDebugFrame: 0,
         lastUnderflowAlertFrame: 0,
         lastSyncDriftAlertFrame: 0,
+        lastHardSyncFrame: 0,
+        lastFineSyncFrame: 0,
+        driftHoldFrames: 0,
         consumedFramesSinceReport: 0,
       };
       this.tracks[trackIndex] = track;
@@ -488,6 +508,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       track.lastDropDebugFrame = 0;
       track.lastUnderflowAlertFrame = 0;
       track.lastSyncDriftAlertFrame = 0;
+      track.lastHardSyncFrame = 0;
+      track.lastFineSyncFrame = 0;
+      track.driftHoldFrames = 0;
       track.consumedFramesSinceReport = 0;
     }
 
@@ -648,6 +671,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       track.absoluteReadFrame = nextFrame;
       track.indexBaseFrame = nextFrame;
       track.indexBaseIndex = nextReadIndex;
+      track.driftHoldFrames = 0;
+      track.lastFineSyncFrame = this.renderedFrames;
+      track.lastHardSyncFrame = this.renderedFrames;
       this.applyLoopToTrack(track);
       this.resetLoopJumpFade(track);
     }
@@ -869,6 +895,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
 
     this.renderedFrames += frameCount;
+    const renderStartFrame = this.renderedFrames - frameCount;
 
     try {
       for (let trackIndex = 0; trackIndex < this.trackCount; trackIndex += 1) {
@@ -879,11 +906,11 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         }
 
         if (track.usesSharedMemory && track.samples && track.indices) {
-          this.mixSharedTrack(track, output, outputChannelCount, frameCount);
+          this.mixSharedTrack(track, output, outputChannelCount, frameCount, renderStartFrame);
           continue;
         }
 
-        this.mixLocalTrack(track, output, outputChannelCount, frameCount);
+        this.mixLocalTrack(track, output, outputChannelCount, frameCount, renderStartFrame);
       }
     } catch (_error) {
       for (let channelIndex = 0; channelIndex < outputChannelCount; channelIndex += 1) {
@@ -900,7 +927,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
 
     this.applySeekResumeFade(output, outputChannelCount, frameCount);
-    this.writeTelemetrySnapshot(this.getTelemetryPositionSeconds());
+    this.writeTelemetrySnapshot(this.getTelemetryPositionSeconds(frameCount));
 
     if (this.publishMeterMessages && this.meterPublishCountdown <= 0) {
       this.port.postMessage(this.meterMessage);
@@ -946,34 +973,151 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     Atomics.store(sequence, 0, (nextSequence + 1) | 0);
   }
 
-  getTelemetryPositionSeconds() {
-    for (let trackIndex = 0; trackIndex < this.trackCount; trackIndex += 1) {
-      const track = this.tracks[trackIndex];
-
-      if (track && track.sampleRate > 0) {
-        return track.absoluteReadFrame / track.sampleRate;
-      }
-    }
-
-    return (
-      this.telemetryBaseSeconds +
-      (this.renderedFrames - this.telemetryBaseRenderedFrames) /
-        (sampleRate || 48000)
-    );
+  getTelemetryPositionSeconds(frameOffset) {
+    return this.getMasterPositionSeconds(frameOffset || 0);
   }
 
-  mixSharedTrack(track, output, outputChannelCount, frameCount) {
+  getAudioContextTime() {
+    if (typeof currentTime === 'number' && Number.isFinite(currentTime)) {
+      return currentTime;
+    }
+
+    return this.renderedFrames / (sampleRate || 48000);
+  }
+
+  getMasterPositionSeconds(frameOffset) {
+    const rate = sampleRate || 48000;
+    const offsetSeconds =
+      typeof frameOffset === 'number' && Number.isFinite(frameOffset)
+        ? frameOffset / rate
+        : 0;
+    const elapsedSeconds = Math.max(
+      0,
+      this.getAudioContextTime() + offsetSeconds - this.contextAnchorTime,
+    );
+
+    return Math.max(0, this.telemetryBaseSeconds + elapsedSeconds);
+  }
+
+  getMasterFrameForTrack(track, frameOffset) {
+    const trackRate = track && track.sampleRate > 0 ? track.sampleRate : sampleRate || 48000;
+
+    return Math.max(0, Math.round(this.getMasterPositionSeconds(frameOffset || 0) * trackRate));
+  }
+
+  applyMasterDriftCorrection(track, readIndex, availableRead, frameCount, renderStartFrame) {
+    if (
+      !track ||
+      this.readingBlocked ||
+      track.loopEnabled ||
+      !(track.sampleRate > 0) ||
+      !(track.indexCapacity > 0)
+    ) {
+      return readIndex;
+    }
+
+    const renderOffset = renderStartFrame - this.renderedFrames + frameCount;
+    const masterFrame = this.getMasterFrameForTrack(track, renderOffset);
+    const driftFrames = track.absoluteReadFrame - masterFrame;
+    const absoluteDriftFrames = driftFrames >= 0 ? driftFrames : -driftFrames;
+    const fineDriftFrames = Math.max(1, Math.round((track.sampleRate * SYNC_FINE_DRIFT_MS) / 1000));
+    const hardDriftFrames = Math.max(
+      fineDriftFrames + 1,
+      Math.round((track.sampleRate * SYNC_HARD_DRIFT_MS) / 1000),
+    );
+
+    track.driftHoldFrames = 0;
+
+    if (absoluteDriftFrames < fineDriftFrames) {
+      return readIndex;
+    }
+
+    if (
+      absoluteDriftFrames >= hardDriftFrames &&
+      this.renderedFrames - track.lastHardSyncFrame >= SYNC_HARD_REALIGN_INTERVAL_FRAMES
+    ) {
+      track.lastHardSyncFrame = this.renderedFrames;
+
+      if (driftFrames < 0) {
+        const maxSafeJump = Math.max(0, availableRead - frameCount);
+        const jumpFrames = Math.min(-driftFrames, maxSafeJump);
+
+        if (jumpFrames > 0) {
+          const nextReadIndex = this.advanceIndex(readIndex, jumpFrames, track.indexCapacity);
+          track.absoluteReadFrame += jumpFrames;
+          track.indexBaseFrame = track.absoluteReadFrame;
+          track.indexBaseIndex = nextReadIndex;
+          this.resetLoopJumpFade(track);
+          return nextReadIndex;
+        }
+      } else {
+        track.driftHoldFrames = Math.min(frameCount, Math.max(1, Math.min(driftFrames, 2)));
+      }
+
+      this.maybePostSyncDrift(
+        track,
+        availableRead,
+        this.getTrackPositionSeconds(track),
+        masterFrame / track.sampleRate,
+        (this.getTrackPositionSeconds(track) - masterFrame / track.sampleRate) * 1000,
+      );
+      return readIndex;
+    }
+
+    if (this.renderedFrames - track.lastFineSyncFrame < BASE_RENDER_FRAME_COUNT) {
+      return readIndex;
+    }
+
+    track.lastFineSyncFrame = this.renderedFrames;
+
+    if (driftFrames < 0 && availableRead > frameCount + 1) {
+      const nextReadIndex = this.advanceIndex(readIndex, 1, track.indexCapacity);
+      track.absoluteReadFrame += 1;
+      track.indexBaseFrame = track.absoluteReadFrame;
+      track.indexBaseIndex = nextReadIndex;
+      return nextReadIndex;
+    }
+
+    if (driftFrames > 0) {
+      track.driftHoldFrames = 1;
+    }
+
+    return readIndex;
+  }
+
+  advanceTrackReadFrame(track, readIndex) {
+    if (track.driftHoldFrames > 0) {
+      track.driftHoldFrames -= 1;
+      return readIndex;
+    }
+
+    track.absoluteReadFrame += 1;
+    return this.advanceIndex(readIndex, 1, track.indexCapacity);
+  }
+
+  mixSharedTrack(track, output, outputChannelCount, frameCount, renderStartFrame) {
     const indices = track.indices;
     const samples = track.samples;
     const readIndex = Atomics.load(indices, READ_INDEX_SLOT);
     const writeIndex = Atomics.load(indices, WRITE_INDEX_SLOT);
-    const availableRead = this.computeAvailableRead(
+    let availableRead = this.computeAvailableRead(
       readIndex,
       writeIndex,
       track.indexCapacity,
     );
+    let nextReadIndex = this.applyMasterDriftCorrection(
+      track,
+      readIndex,
+      availableRead,
+      frameCount,
+      renderStartFrame,
+    );
+    availableRead = this.computeAvailableRead(
+      nextReadIndex,
+      writeIndex,
+      track.indexCapacity,
+    );
     const framesToRead = Math.min(frameCount, BASE_RENDER_FRAME_COUNT, availableRead);
-    let nextReadIndex = readIndex;
 
     this.noteUnderrun(track, frameCount - framesToRead, availableRead);
 
@@ -999,8 +1143,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
           peakSample = absoluteSample;
         }
         left[frameIndex] += sample;
-        nextReadIndex = this.advanceIndex(nextReadIndex, 1, track.indexCapacity);
-        track.absoluteReadFrame += 1;
+        nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
         if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
           this.armLoopJumpCrossfade(track);
           track.absoluteReadFrame = track.loopStartFrame;
@@ -1029,8 +1172,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
           left[frameIndex] += sample;
           right[frameIndex] += sample;
         }
-        nextReadIndex = this.advanceIndex(nextReadIndex, 1, track.indexCapacity);
-        track.absoluteReadFrame += 1;
+        nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
         if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
           this.armLoopJumpCrossfade(track);
           track.absoluteReadFrame = track.loopStartFrame;
@@ -1052,8 +1194,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
           output[channelIndex][frameIndex] += sample;
         }
 
-        nextReadIndex = this.advanceIndex(nextReadIndex, 1, track.indexCapacity);
-        track.absoluteReadFrame += 1;
+        nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
         if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
           this.armLoopJumpCrossfade(track);
           track.absoluteReadFrame = track.loopStartFrame;
@@ -1067,14 +1208,25 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.meterLevels[track.trackIndex] = track.lastMeterLevel;
   }
 
-  mixLocalTrack(track, output, outputChannelCount, frameCount) {
-    const availableRead = this.computeAvailableRead(
+  mixLocalTrack(track, output, outputChannelCount, frameCount, renderStartFrame) {
+    let availableRead = this.computeAvailableRead(
       track.localReadIndex,
       track.localWriteIndex,
       track.indexCapacity,
     );
+    let nextReadIndex = this.applyMasterDriftCorrection(
+      track,
+      track.localReadIndex,
+      availableRead,
+      frameCount,
+      renderStartFrame,
+    );
+    availableRead = this.computeAvailableRead(
+      nextReadIndex,
+      track.localWriteIndex,
+      track.indexCapacity,
+    );
     const framesToRead = Math.min(frameCount, BASE_RENDER_FRAME_COUNT, availableRead);
-    let nextReadIndex = track.localReadIndex;
 
     this.noteUnderrun(track, frameCount - framesToRead, availableRead);
 
@@ -1101,8 +1253,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
           peakSample = absoluteSample;
         }
         left[frameIndex] += sample;
-        nextReadIndex = this.advanceIndex(nextReadIndex, 1, track.indexCapacity);
-        track.absoluteReadFrame += 1;
+        nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
         if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
           this.armLoopJumpCrossfade(track);
           track.absoluteReadFrame = track.loopStartFrame;
@@ -1131,8 +1282,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
           left[frameIndex] += sample;
           right[frameIndex] += sample;
         }
-        nextReadIndex = this.advanceIndex(nextReadIndex, 1, track.indexCapacity);
-        track.absoluteReadFrame += 1;
+        nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
         if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
           this.armLoopJumpCrossfade(track);
           track.absoluteReadFrame = track.loopStartFrame;
@@ -1154,8 +1304,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
           output[channelIndex][frameIndex] += sample;
         }
 
-        nextReadIndex = this.advanceIndex(nextReadIndex, 1, track.indexCapacity);
-        track.absoluteReadFrame += 1;
+        nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
         if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
           this.armLoopJumpCrossfade(track);
           track.absoluteReadFrame = track.loopStartFrame;
