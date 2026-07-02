@@ -126,7 +126,7 @@ const getSongArtworkUrl = (song = {}) => {
     if (directArtwork) return directArtwork;
     if (!song.mp3) return '';
 
-    return `/api/mp3-cover-art?src=${encodeURIComponent(song.mp3)}`;
+    return `/api/mp3-cover-art?v=2&src=${encodeURIComponent(song.mp3)}`;
 };
 
 function SongArtwork({ song }) {

@@ -390,7 +390,7 @@ export const GET: APIRoute = async ({ request, url }) => {
     return new Response(null, {
       status: 204,
       headers: {
-        'cache-control': 'public, max-age=86400',
+        'cache-control': 'public, max-age=300',
         etag,
       },
     });

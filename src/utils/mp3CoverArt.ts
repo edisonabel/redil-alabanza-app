@@ -10,7 +10,7 @@ export const extractCoverArtFromMp3 = async (mp3Url: string): Promise<string | n
   }
 
   try {
-    const coverArtUrl = `/api/mp3-cover-art?src=${encodeURIComponent(mp3Url)}`;
+    const coverArtUrl = `/api/mp3-cover-art?v=2&src=${encodeURIComponent(mp3Url)}`;
     const response = await fetch(coverArtUrl, {
       cache: 'force-cache',
       credentials: 'same-origin',

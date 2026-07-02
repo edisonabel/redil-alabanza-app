@@ -569,7 +569,7 @@ const getSongArtworkUrl = (song = {}) => {
   if (directArtwork) return directArtwork;
   if (!song.mp3) return '';
 
-  return `/api/mp3-cover-art?src=${encodeURIComponent(song.mp3)}`;
+  return `/api/mp3-cover-art?v=2&src=${encodeURIComponent(song.mp3)}`;
 };
 
 function SongArtworkThumb({ song, index }) {
@@ -650,8 +650,6 @@ export default function EnsayoHub({
   const [personalSongSettings, setPersonalSongSettings] = useState({});
   const [isGeneratingSetlistPdf, setIsGeneratingSetlistPdf] = useState(false);
   const [setlistPrintError, setSetlistPrintError] = useState('');
-  const [headerReveal, setHeaderReveal] = useState(1);
-  const [headerNaturalHeight, setHeaderNaturalHeight] = useState(320);
 
   const queueSongsRef = useRef([]);
   const queueIndexRef = useRef(-1);
@@ -659,11 +657,6 @@ export default function EnsayoHub({
   const voiceAssignmentFeedbackTimeoutRef = useRef(null);
   const setlistPdfObjectUrlsRef = useRef([]);
   const songActionScrollerRefs = useRef(new Map());
-  const headerContentRef = useRef(null);
-  const mainScrollRef = useRef(null);
-  const lastMainScrollTopRef = useRef(0);
-  const headerRevealRef = useRef(1);
-  const lastTouchYRef = useRef(0);
   const [overflowingSongActionIds, setOverflowingSongActionIds] = useState(() => new Set());
   const [insertAfterIndex, setInsertAfterIndex] = useState(-1);
 
@@ -713,83 +706,6 @@ export default function EnsayoHub({
     });
     setlistPdfObjectUrlsRef.current = [];
   }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-
-    const measureHeader = () => {
-      const nextHeight = Math.ceil(headerContentRef.current?.scrollHeight || 320);
-      setHeaderNaturalHeight((currentHeight) => (
-        Math.abs(currentHeight - nextHeight) > 2 ? nextHeight : currentHeight
-      ));
-    };
-
-    measureHeader();
-    window.addEventListener('resize', measureHeader, { passive: true });
-
-    let resizeObserver = null;
-    if (typeof window.ResizeObserver === 'function' && headerContentRef.current) {
-      resizeObserver = new window.ResizeObserver(measureHeader);
-      resizeObserver.observe(headerContentRef.current);
-    }
-
-    return () => {
-      window.removeEventListener('resize', measureHeader);
-      resizeObserver?.disconnect();
-    };
-  }, [eventMeta, contextTitle, songs.length, canEdit, isEditMode]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-
-    const scrollNode = mainScrollRef.current;
-    if (!scrollNode) return undefined;
-
-    const getScrollTop = () => Math.max(0, scrollNode.scrollTop || 0);
-    const setReveal = (nextReveal) => {
-      const clampedReveal = Math.max(0, Math.min(1, nextReveal));
-      if (Math.abs(clampedReveal - headerRevealRef.current) < 0.006) return;
-      headerRevealRef.current = clampedReveal;
-      setHeaderReveal(clampedReveal);
-    };
-    const applyGestureDelta = (deltaY) => {
-      if (!Number.isFinite(deltaY) || Math.abs(deltaY) < 0.5) return;
-      const revealDistance = Math.max(220, headerNaturalHeight * 1.18);
-      setReveal(headerRevealRef.current - (deltaY / revealDistance));
-    };
-    const handleWheel = (event) => {
-      applyGestureDelta(event.deltaY || 0);
-    };
-    const handleTouchStart = (event) => {
-      lastTouchYRef.current = event.touches?.[0]?.clientY || 0;
-    };
-    const handleTouchMove = (event) => {
-      const nextTouchY = event.touches?.[0]?.clientY || lastTouchYRef.current;
-      const deltaY = lastTouchYRef.current - nextTouchY;
-      lastTouchYRef.current = nextTouchY;
-      applyGestureDelta(deltaY);
-    };
-    const handleScroll = () => {
-      const nextScrollTop = getScrollTop();
-      if (nextScrollTop <= 24) setReveal(1);
-      lastMainScrollTopRef.current = nextScrollTop;
-    };
-
-    headerRevealRef.current = headerReveal;
-    lastMainScrollTopRef.current = getScrollTop();
-
-    scrollNode.addEventListener('wheel', handleWheel, { passive: true });
-    scrollNode.addEventListener('touchstart', handleTouchStart, { passive: true });
-    scrollNode.addEventListener('touchmove', handleTouchMove, { passive: true });
-    scrollNode.addEventListener('scroll', handleScroll, { passive: true });
-
-    return () => {
-      scrollNode.removeEventListener('wheel', handleWheel);
-      scrollNode.removeEventListener('touchstart', handleTouchStart);
-      scrollNode.removeEventListener('touchmove', handleTouchMove);
-      scrollNode.removeEventListener('scroll', handleScroll);
-    };
-  }, [headerNaturalHeight]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -1596,28 +1512,12 @@ export default function EnsayoHub({
     0,
     Math.min(7, Number(setlistCapos[setlistPickerSongId] || 0))
   );
-  const headerIsHidden = headerReveal <= 0.035;
-  const headerOpacity = headerReveal <= 0.02 ? 0 : Math.min(1, headerReveal * 1.45);
-  const headerMaxHeight = Math.max(0, Math.round(headerNaturalHeight * headerReveal));
-  const headerTranslateY = Math.round(-18 * (1 - headerReveal));
 
   return (
     <div className="flex h-screen w-full flex-col bg-white text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
-      <header
-        aria-hidden={headerIsHidden}
-        inert={headerIsHidden ? '' : undefined}
-        className={`ensayo-hub-header shrink-0 overflow-hidden border-b bg-white/95 backdrop-blur-xl will-change-[max-height,transform,opacity] motion-reduce:transition-none dark:bg-zinc-950/96 ${
-          headerIsHidden
-            ? 'pointer-events-none border-transparent'
-            : 'border-zinc-200/80 dark:border-white/10'
-        }`}
-        style={{
-          maxHeight: `${headerMaxHeight}px`,
-          opacity: headerOpacity,
-          transform: `translateY(${headerTranslateY}px)`,
-        }}
-      >
-        <div ref={headerContentRef} className="mx-auto max-w-5xl px-4 pb-4 pt-[calc(env(safe-area-inset-top)+0.8rem)]">
+      <main className="min-h-0 flex-1 overflow-y-auto px-0 pb-28 pt-0">
+        <header className="ensayo-hub-header border-b border-zinc-200/80 bg-white/95 dark:border-white/10 dark:bg-zinc-950/96">
+        <div className="mx-auto max-w-5xl px-4 pb-4 pt-[calc(env(safe-area-inset-top)+0.8rem)]">
           <div className="rounded-[2rem] border border-zinc-200/80 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.18),_transparent_38%),linear-gradient(180deg,_rgba(255,255,255,0.98),_rgba(244,244,245,0.96))] px-5 py-5 shadow-[0_24px_80px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.22),_transparent_34%),linear-gradient(180deg,_rgba(9,9,11,0.98),_rgba(15,23,42,0.94))] dark:shadow-[0_28px_80px_rgba(2,6,23,0.5)]">
             <div className="grid grid-cols-[auto_1fr] items-start gap-4 md:grid-cols-[auto_1fr_auto] md:gap-5">
             <button
@@ -1678,10 +1578,9 @@ export default function EnsayoHub({
               </div>
             </div>
         </div>
-      </header>
+        </header>
 
-      <main ref={mainScrollRef} className="min-h-0 flex-1 overflow-y-auto px-0 pb-28 pt-4">
-        <div className="mx-auto w-full max-w-5xl">
+        <div className="mx-auto w-full max-w-5xl pt-4">
           <div className="overflow-hidden">
             {(playableSongs.length > 0 || printableSongs.length > 0) && (
               <section className="border-y border-zinc-200/90 px-4 py-3.5 dark:border-white/10 sm:px-5">

@@ -628,7 +628,7 @@
     const toEmbeddedCoverApiUrl = (rawUrl = '') => {
       const cleanUrl = String(rawUrl || '').trim();
       if (!cleanUrl) return '';
-      return `${window.location.origin}/api/mp3-cover-art?src=${encodeURIComponent(cleanUrl)}`;
+      return `${window.location.origin}/api/mp3-cover-art?v=2&src=${encodeURIComponent(cleanUrl)}`;
     };
 
     const setArtworkFromSource = (rawUrl, title, artist, artworkUrl = '') => {
