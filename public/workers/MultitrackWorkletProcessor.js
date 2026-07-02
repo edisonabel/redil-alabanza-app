@@ -659,11 +659,6 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         continue;
       }
 
-      const nextFrame = Math.max(0, Math.floor(positionSeconds * track.sampleRate));
-      const nextReadIndex = this.getTrackReadIndex(track);
-      track.absoluteReadFrame = nextFrame;
-      track.indexBaseFrame = nextFrame;
-      track.indexBaseIndex = nextReadIndex;
       track.driftHoldFrames = 0;
       track.lastFineSyncFrame = this.renderedFrames;
       track.lastHardSyncFrame = this.renderedFrames;

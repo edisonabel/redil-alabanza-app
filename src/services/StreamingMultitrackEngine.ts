@@ -1458,11 +1458,6 @@ export class StreamingMultitrackEngine {
       reason: 'startup',
       seekSerial: this.activeSeekSerial,
     });
-    this.postWorkletMessage({
-      type: 'transport',
-      playing: true,
-      positionSeconds: this.pauseTime,
-    });
   }
 
   pause(): void {
@@ -2876,7 +2871,11 @@ export class StreamingMultitrackEngine {
       trackState.abortController.abort();
     }
 
-    this.postWorkletMessage({ type: 'FLUSH_BUFFERS', reason: 'seek' });
+    this.postWorkletMessage({
+      type: 'FLUSH_BUFFERS',
+      reason: 'seek',
+      targetSample: Math.max(0, Math.round(targetTimeInSeconds * this.context.sampleRate)),
+    });
 
     for (let trackIndex = 0; trackIndex < this.trackStates.length; trackIndex += 1) {
       this.trackStates[trackIndex].ringBuffer.reset();
