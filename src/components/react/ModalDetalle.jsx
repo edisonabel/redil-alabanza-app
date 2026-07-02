@@ -163,6 +163,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
     const [focusSection, setFocusSection] = useState(null);
     const [activeTab, setActiveTab] = useState('repertorio');
     const [flashPlaylistSection, setFlashPlaylistSection] = useState(false);
+    const [openingRehearsal, setOpeningRehearsal] = useState(false);
     const playlistSectionRef = useRef(null);
     const previousBottomNavHiddenRef = useRef(null);
     const bottomNavInlineStylesRef = useRef([]);
@@ -174,6 +175,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
             setEventData(cardData);
             setFocusSection(options?.focusSection || null);
             setActiveTab(options?.focusSection === 'equipo' ? 'equipo' : 'repertorio');
+            setOpeningRehearsal(false);
             setIsOpen(true);
             document.body.style.overflow = 'hidden';
             fetchPlaylist(cardData.dbData?.id);
@@ -283,6 +285,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
     };
 
     const handleClose = () => {
+        setOpeningRehearsal(false);
         setIsOpen(false);
         document.body.style.overflow = '';
         // Wait for animation before clearing data
@@ -341,6 +344,26 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
     const manageRepertorioLabel = playlistItems.length > 0 ? 'Editar repertorio' : 'Armar repertorio';
 
     const rehearsalHref = eventoId ? `/ensayo/${eventoId}` : '/ensayo/demo';
+
+    const handleOpenRehearsal = (event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+        event.preventDefault();
+        if (openingRehearsal) return;
+
+        setOpeningRehearsal(true);
+
+        window.setTimeout(() => {
+            const targetUrl = new URL(rehearsalHref, window.location.href);
+            const currentUrl = new URL(window.location.href);
+
+            if (targetUrl.pathname === currentUrl.pathname) {
+                handleClose();
+                return;
+            }
+
+            window.location.href = targetUrl.toString();
+        }, 180);
+    };
 
     const handleManageRepertorio = () => {
         if (!eventoId) return;
@@ -401,15 +424,37 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                             </span>
                             <a
                                 href={rehearsalHref}
-                                className="group relative inline-flex min-h-[48px] w-full items-center justify-center gap-3 overflow-hidden rounded-2xl border border-blue-200/45 bg-[linear-gradient(135deg,#3b82f6,#1d4ed8)] px-4 py-2.5 text-base font-black text-white shadow-[0_16px_34px_rgba(37,99,235,0.34)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_22px_46px_rgba(37,99,235,0.44)] min-[390px]:min-h-[52px] min-[390px]:text-[1.05rem] sm:min-h-[58px] sm:px-6 sm:py-3 sm:text-lg lg:min-h-[52px] lg:px-7 lg:text-[1.05rem]"
+                                onClick={handleOpenRehearsal}
+                                aria-busy={openingRehearsal ? 'true' : 'false'}
+                                className={`group relative inline-flex min-h-[48px] w-full items-center justify-center gap-3 overflow-hidden rounded-2xl border border-blue-200/45 bg-[linear-gradient(135deg,#3b82f6,#1d4ed8)] px-4 py-2.5 text-base font-black text-white shadow-[0_16px_34px_rgba(37,99,235,0.34)] transition-all duration-300 min-[390px]:min-h-[52px] min-[390px]:text-[1.05rem] sm:min-h-[58px] sm:px-6 sm:py-3 sm:text-lg lg:min-h-[52px] lg:px-7 lg:text-[1.05rem] ${openingRehearsal
+                                    ? 'pointer-events-none scale-[0.985] shadow-[0_10px_26px_rgba(37,99,235,0.26)] brightness-110'
+                                    : 'hover:-translate-y-0.5 hover:shadow-[0_22px_46px_rgba(37,99,235,0.44)]'
+                                    }`}
                             >
                                 <span className="absolute inset-0 translate-y-full bg-white/14 transition-transform duration-300 group-hover:translate-y-0" />
-                                <Icon icon={musicNoteIcon} className="relative z-10 h-5 w-5 sm:h-7 sm:w-7 lg:h-5 lg:w-5" aria-hidden="true" />
-                                <span className="relative z-10">Entrar a Modo Ensayo</span>
+                                {openingRehearsal ? (
+                                    <span className="relative z-10 h-5 w-5 rounded-full border-2 border-white/35 border-t-white motion-safe:animate-spin sm:h-6 sm:w-6 lg:h-5 lg:w-5" aria-hidden="true" />
+                                ) : (
+                                    <Icon icon={musicNoteIcon} className="relative z-10 h-5 w-5 sm:h-7 sm:w-7 lg:h-5 lg:w-5" aria-hidden="true" />
+                                )}
+                                <span className="relative z-10">{openingRehearsal ? 'Abriendo Modo Ensayo' : 'Entrar a Modo Ensayo'}</span>
                             </a>
                         </div>
                     </div>
                 </div>
+
+                {openingRehearsal && (
+                    <div className="fixed inset-0 z-[260] flex items-center justify-center bg-slate-950/70 px-6 backdrop-blur-2xl">
+                        <div className="w-full max-w-[20rem] rounded-[2rem] border border-white/12 bg-white/12 p-5 text-center text-white shadow-[0_28px_90px_rgba(0,0,0,0.42)]">
+                            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/12 bg-white/10 shadow-inner">
+                                <span className="h-7 w-7 rounded-full border-[3px] border-white/25 border-t-white motion-safe:animate-spin" aria-hidden="true" />
+                            </div>
+                            <p className="text-[0.72rem] font-black uppercase tracking-[0.28em] text-blue-100/80">Modo Ensayo</p>
+                            <p className="mt-1 text-xl font-black tracking-tight">Abriendo ensayo...</p>
+                            <p className="mt-2 text-sm font-semibold leading-5 text-white/68">Preparando repertorio, acordes y recursos.</p>
+                        </div>
+                    </div>
+                )}
 
                 <div className="relative z-10 flex min-h-0 flex-1 flex-col">
                     <div className="grid grid-cols-2 border-b border-slate-200/80 px-4 dark:border-white/10 sm:px-7 lg:px-8">
