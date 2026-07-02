@@ -20,17 +20,7 @@ const crossOriginIsolationHeaders = {
   'Cross-Origin-Embedder-Policy': 'require-corp',
 };
 
-const shouldApplyCrossOriginIsolation = (path) => (
-  path === '/herramientas/live-director-preview' ||
-  path === '/audio-lab' ||
-  path.startsWith('/audio-lab/')
-);
-
-const withCrossOriginIsolation = (response, path) => {
-  if (!shouldApplyCrossOriginIsolation(path)) {
-    return response;
-  }
-
+const withCrossOriginIsolation = (response) => {
   for (const [header, value] of Object.entries(crossOriginIsolationHeaders)) {
     response.headers.set(header, value);
   }
@@ -66,6 +56,7 @@ const redirectTo = (location, status = 302) => new Response(null, {
   headers: {
     Location: location,
     'Cache-Control': 'no-cache',
+    ...crossOriginIsolationHeaders,
   },
 });
 
@@ -126,7 +117,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     path.startsWith('/workbox-') ||
     staticAssetRegex.test(path)
   ) {
-    return next();
+    return withCrossOriginIsolation(await next());
   }
 
   const protectedPath = isProtectedRoute(path);
@@ -136,7 +127,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     if (authState?.accessToken) {
       return redirectTo('/');
     }
-    return withCrossOriginIsolation(await next(), path);
+    return withCrossOriginIsolation(await next());
   }
 
   if (protectedPath && !authState?.accessToken) {
@@ -178,5 +169,5 @@ export const onRequest = defineMiddleware(async (context, next) => {
     }
   }
 
-  return withCrossOriginIsolation(await next(), path);
+  return withCrossOriginIsolation(await next());
 });
