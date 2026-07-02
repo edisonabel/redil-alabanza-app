@@ -183,7 +183,7 @@ function AvatarCell({ name, avatarUrl, subtitle = '', size = 'md' }) {
   return (
     <div className="flex min-w-0 items-center gap-3">
       {avatarUrl ? (
-        <img src={avatarUrl} alt={name || 'Avatar'} className={`${avatarClassName} shrink-0 rounded-full border border-white/70 object-cover shadow-sm dark:border-zinc-800`} />
+        <img src={avatarUrl} alt={name || 'Avatar'} crossOrigin="anonymous" className={`${avatarClassName} shrink-0 rounded-full border border-white/70 object-cover shadow-sm dark:border-zinc-800`} />
       ) : (
         <div className={`flex ${avatarClassName} shrink-0 items-center justify-center rounded-full border border-zinc-200 bg-zinc-100 font-semibold text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300`}>
           {getInitials(name)}
@@ -204,7 +204,7 @@ function PersonBubble({ person }) {
   return (
     <div className="inline-flex max-w-full items-center gap-2 rounded-full border border-zinc-200 bg-white py-1 pl-1 pr-3 dark:border-zinc-800 dark:bg-zinc-950">
       {avatarUrl ? (
-        <img src={avatarUrl} alt={name} className="h-8 w-8 shrink-0 rounded-full object-cover" />
+        <img src={avatarUrl} alt={name} crossOrigin="anonymous" className="h-8 w-8 shrink-0 rounded-full object-cover" />
       ) : (
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-[10px] font-semibold text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
           {getInitials(name)}

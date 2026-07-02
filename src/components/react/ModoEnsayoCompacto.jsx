@@ -1629,11 +1629,18 @@ export default function ModoEnsayoCompacto({
       }) || source.url,
     }))
   ), [guideCueSources]);
-  const hasGuideCueSources = processedGuideCueSources.length > 0;
+  const hasPersistedGuideCueSources = processedGuideCueSources.length > 0;
   const guideCueDisplayLabel = useMemo(() => getGuideCueLabel(guideCueSources), [guideCueSources]);
+  const originalPlaybackSource = useMemo(() => (
+    playbackSources.find((source) => source.kind === 'original') || null
+  ), [playbackSources]);
   const activePlaybackSource = useMemo(() => (
-    playbackSources.find((source) => source.id === selectedPlaybackSourceId) || playbackSources[0] || null
-  ), [playbackSources, selectedPlaybackSourceId]);
+    playbackSources.find((source) => source.id === selectedPlaybackSourceId) || originalPlaybackSource || null
+  ), [originalPlaybackSource, playbackSources, selectedPlaybackSourceId]);
+  const hasGuideCueSources = Boolean(
+    hasPersistedGuideCueSources &&
+    activePlaybackSource?.kind !== 'original'
+  );
   const activePlaybackUrl = activePlaybackSource?.url || '';
   const processedActivePlaybackUrl = useMemo(() => (
     resolveFetchableAudioUrl(activePlaybackUrl, {
@@ -1657,6 +1664,9 @@ export default function ModoEnsayoCompacto({
       ? Number(session.sectionOffsetSeconds)
       : 0;
   }, [currentSong]);
+  const playbackSectionOffsetSeconds = activePlaybackSource && activePlaybackSource.kind !== 'original'
+    ? liveDirectorSectionOffsetSeconds
+    : 0;
   const currentSongMarkers = useMemo(() => (
     Array.isArray(currentSong?.sectionMarkers)
       ? (() => {
@@ -1666,8 +1676,8 @@ export default function ModoEnsayoCompacto({
           .map((marker, index) => ({
             id: marker?.id || `${currentSongKey}-marker-${index}`,
             sectionName: String(marker?.sectionName || '').trim(),
-            startSec: Math.max(0, (Number(marker?.startSec) || 0) + liveDirectorSectionOffsetSeconds),
-            endSec: Number.isFinite(Number(marker?.endSec)) ? Math.max(0, Number(marker.endSec) + liveDirectorSectionOffsetSeconds) : null,
+            startSec: Math.max(0, (Number(marker?.startSec) || 0) + playbackSectionOffsetSeconds),
+            endSec: Number.isFinite(Number(marker?.endSec)) ? Math.max(0, Number(marker.endSec) + playbackSectionOffsetSeconds) : null,
             originalOrder: index,
             rawSectionIndex: Number.isInteger(Number(marker?.sectionIndex)) ? Number(marker.sectionIndex) : null,
             rawSectionOccurrence: Number.isInteger(Number(marker?.sectionOccurrence)) ? Number(marker.sectionOccurrence) : null,
@@ -1710,7 +1720,7 @@ export default function ModoEnsayoCompacto({
         return repairMarkerTimeline(mappedMarkers, Math.max(0, currentSong?.duration || 0));
       })()
       : []
-  ), [currentSections, currentSong?.duration, currentSong?.sectionMarkers, currentSongKey, liveDirectorSectionOffsetSeconds]);
+  ), [currentSections, currentSong?.duration, currentSong?.sectionMarkers, currentSongKey, playbackSectionOffsetSeconds]);
   const hasAudio = typeof processedActivePlaybackUrl === 'string' && processedActivePlaybackUrl.trim() !== '';
   const shouldUseRehearsalMixCandidate = Boolean(
     hasAudio &&
@@ -1844,13 +1854,13 @@ export default function ModoEnsayoCompacto({
       payload: {
         songId: String(snapshot.songId),
         sectionIndex: Number.isFinite(Number(snapshot.sectionIndex)) ? Number(snapshot.sectionIndex) : 0,
-        currentTime: Math.max(0, (Number(snapshot.currentTime) || 0) - liveDirectorSectionOffsetSeconds),
+        currentTime: Math.max(0, (Number(snapshot.currentTime) || 0) - playbackSectionOffsetSeconds),
         currentTimeRaw: Math.max(0, Number(snapshot.currentTime) || 0),
-        sectionOffsetSeconds: liveDirectorSectionOffsetSeconds,
+        sectionOffsetSeconds: playbackSectionOffsetSeconds,
         isPlaying: Boolean(snapshot.isPlaying),
       },
     }).catch((error) => console.warn('[LiveSync] Error enviando snapshot:', error));
-  }, [liveDirectorSectionOffsetSeconds, syncRole]);
+  }, [playbackSectionOffsetSeconds, syncRole]);
   const playbackSectionStrip = useMemo(() => (
     currentSections.map((section, index) => {
       const marker = markerBySectionIndex.get(index) || null;
@@ -2501,9 +2511,9 @@ export default function ModoEnsayoCompacto({
     if (playbackSources.length === 0) return;
     const hasSelectedSource = playbackSources.some((source) => source.id === selectedPlaybackSourceId);
     if (!hasSelectedSource) {
-      setSelectedPlaybackSourceId(playbackSources[0].id);
+      setSelectedPlaybackSourceId(originalPlaybackSource?.id || 'original');
     }
-  }, [playbackSources, selectedPlaybackSourceId]);
+  }, [originalPlaybackSource?.id, playbackSources, selectedPlaybackSourceId]);
   useEffect(() => {
     if (!showOptionsMenu || typeof window === 'undefined') return undefined;
     const handlePointerDown = (event) => {
@@ -3052,7 +3062,7 @@ export default function ModoEnsayoCompacto({
           setAudioDuration(0);
         }}
       />
-      {!shouldUseRehearsalMix && processedGuideCueSources.map((source, index) => (
+      {!shouldUseRehearsalMix && hasGuideCueSources && processedGuideCueSources.map((source, index) => (
         <audio
           key={`${currentSongKey}-${source.id}-${source.playbackUrl || source.url}`}
           ref={(element) => {

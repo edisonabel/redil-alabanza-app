@@ -254,8 +254,8 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                             className="rounded-xl border border-border bg-surface/90 p-1 shadow-sm"
                             aria-label="Inicio Redil"
                         >
-                            <img src="/LOGO%20REDIL%20LIGHT.png" alt="Redil" decoding="async" className="w-12 h-auto dark:hidden md:w-14" />
-                            <img src="/LOGO%20REDIL.png" alt="Redil" decoding="async" className="hidden w-12 h-auto dark:block md:w-14" />
+                            <img src="/LOGO%20REDIL%20LIGHT.png" alt="Redil" crossOrigin="anonymous" decoding="async" className="w-12 h-auto dark:hidden md:w-14" />
+                            <img src="/LOGO%20REDIL.png" alt="Redil" crossOrigin="anonymous" decoding="async" className="hidden w-12 h-auto dark:block md:w-14" />
                         </a>
                     </div>
                 </header>
@@ -638,6 +638,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                                                 <img
                                                     src={persona.avatar_url}
                                                     alt={persona.nombre}
+                                                    crossOrigin="anonymous"
                                                     loading="lazy"
                                                     decoding="async"
                                                     className="w-11 h-11 rounded-xl object-cover border border-white/10 shadow-sm shrink-0"
@@ -759,6 +760,7 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
                                                         <img
                                                             src={persona.avatar_url}
                                                             alt={persona.nombre}
+                                                            crossOrigin="anonymous"
                                                             loading="lazy"
                                                             decoding="async"
                                                             className="w-12 h-12 rounded-2xl object-cover border border-white/10 shadow-sm shrink-0"

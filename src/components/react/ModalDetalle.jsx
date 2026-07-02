@@ -145,6 +145,7 @@ function SongArtwork({ song }) {
         <img
             src={artworkUrl}
             alt=""
+            crossOrigin="anonymous"
             loading="lazy"
             decoding="async"
             className="h-full w-full object-cover"
@@ -516,6 +517,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                                                                 <img
                                                                     src={profile.avatar_url}
                                                                     alt={profile.nombre}
+                                                                    crossOrigin="anonymous"
                                                                     loading="lazy"
                                                                     decoding="async"
                                                                     className="h-full w-full rounded-full border border-slate-200 object-cover shadow-[0_8px_18px_rgba(15,23,42,0.16)] dark:border-white/14 dark:shadow-[0_8px_20px_rgba(0,0,0,0.30)]"

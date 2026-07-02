@@ -46,7 +46,7 @@ export const EnsayoQueueCard = memo(function EnsayoQueueCard({
     >
       <div className="absolute inset-0 overflow-hidden rounded-[1rem]">
         {coverUrl ? (
-          <img src={coverUrl} alt="" className="h-full w-full object-cover" />
+          <img src={coverUrl} alt="" crossOrigin="anonymous" className="h-full w-full object-cover" />
         ) : (
           <div className="h-full w-full bg-[radial-gradient(circle_at_top,_rgba(129,221,245,0.14),_transparent_34%),linear-gradient(180deg,rgba(43,47,50,0.96),rgba(17,19,21,0.98))]" />
         )}

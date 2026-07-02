@@ -582,6 +582,7 @@ function SongArtworkThumb({ song, index }) {
         <img
           src={artworkUrl}
           alt=""
+          crossOrigin="anonymous"
           loading="lazy"
           decoding="async"
           className="h-full w-full object-cover"

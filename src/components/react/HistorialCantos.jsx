@@ -203,6 +203,7 @@ function ServiceCard({ service }) {
                                             <img
                                                 src={person.avatarUrl}
                                                 alt=""
+                                                crossOrigin="anonymous"
                                                 loading="lazy"
                                                 decoding="async"
                                                 className="h-7 w-7 shrink-0 rounded-full object-cover sm:h-8 sm:w-8"

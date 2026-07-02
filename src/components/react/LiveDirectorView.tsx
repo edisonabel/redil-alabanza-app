@@ -3824,6 +3824,7 @@ export function LiveDirectorView({
                       <img
                         src={songCoverArtUrl}
                         alt={`Portada de ${songCardTitle}`}
+                        crossOrigin="anonymous"
                         className="h-full w-full object-cover"
                       />
                     ) : (
