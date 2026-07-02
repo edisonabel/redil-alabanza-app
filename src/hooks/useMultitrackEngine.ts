@@ -221,8 +221,7 @@ export function useMultitrackEngine(
   options: UseMultitrackEngineOptions = {},
 ): UseMultitrackEngineReturn {
   const requestedStreamingEngine = options.useStreamingEngine ?? canUseAdvancedStreamingEngine();
-  const requestedEngineKind: EngineKind =
-    requestedStreamingEngine && canUseAdvancedStreamingEngine() ? 'streaming' : 'buffer';
+  const requestedEngineKind: EngineKind = requestedStreamingEngine ? 'streaming' : 'buffer';
   const passiveTelemetry = Boolean(options.passiveTelemetry);
   const allowStreamingFallback = options.allowStreamingFallback !== false;
   const engineRef = useRef<EngineInstance | null>(null);
@@ -313,6 +312,25 @@ export function useMultitrackEngine(
   }, []);
 
   const getEngine = useCallback((targetKind: EngineKind) => {
+    if (targetKind === 'streaming' && !canUseAdvancedStreamingEngine()) {
+      const details = {
+        sharedArrayBuffer: typeof SharedArrayBuffer,
+        crossOriginIsolated: globalThis.crossOriginIsolated,
+        browser: readLiveBrowserCapabilities(),
+      };
+
+      if (!allowStreamingFallback) {
+        console.error(
+          '[useMultitrackEngine] SPSC strict mode blocked legacy fallback because the page is not cross-origin isolated.',
+          details,
+        );
+        throw new Error(
+          `SPSC strict mode requires SharedArrayBuffer and crossOriginIsolated=true. ` +
+          `Current: SharedArrayBuffer=${details.sharedArrayBuffer}, crossOriginIsolated=${String(details.crossOriginIsolated)}.`,
+        );
+      }
+    }
+
     const safeTargetKind =
       targetKind === 'streaming' && !canUseAdvancedStreamingEngine() ? 'buffer' : targetKind;
 
@@ -341,7 +359,7 @@ export function useMultitrackEngine(
       setTrackLevels(trackLevelsRef.current);
     };
     return engineRef.current;
-  }, [commitDuration, passiveTelemetry, teardownEngine]);
+  }, [allowStreamingFallback, commitDuration, passiveTelemetry, teardownEngine]);
 
   const commitTrackLevels = useCallback((nextLevels: TrackLevelsState) => {
     const nextKeys = Object.keys(nextLevels);
@@ -480,6 +498,14 @@ export function useMultitrackEngine(
         });
 
         if (!allowStreamingFallback) {
+          console.error(
+            '[useMultitrackEngine] SPSC strict mode disabled legacy fallback. Streaming startup failed.',
+            {
+              trackCount: nextTracks.length,
+              reason: error instanceof Error ? error.message : String(error),
+              browser: readLiveBrowserCapabilities(),
+            },
+          );
           warnLiveDiagnostic('engine:streaming-strict-mode-blocked-fallback', {
             trackCount: nextTracks.length,
             reason: error instanceof Error ? error.message : String(error),
