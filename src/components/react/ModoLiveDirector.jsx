@@ -152,7 +152,7 @@ const extractCoverArt = async (mp3Url) => {
 const OndaAudioPattern = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='60' viewBox='0 0 100 60'%3E%3Cpath fill='%23ffffff' opacity='0.4' d='M0 30 C 5 10, 10 50, 15 30 S 25 10, 30 30 S 40 50, 45 30 S 55 10, 60 30 S 70 50, 75 30 S 85 10, 90 30 S 98 50, 100 30 V 60 H 0 Z'/%3E%3Cpath fill='%23ffffff' opacity='0.2' d='M0 30 C 5 20, 10 40, 15 30 S 25 20, 30 30 S 40 40, 45 30 S 55 20, 60 30 S 70 40, 75 30 S 85 20, 90 30 S 98 40, 100 30 V 60 H 0 Z'/%3E%3C/svg%3E")`;
 
 // ── Pad Ambiental: Omnisphere (Mayor + Relativo Menor) ──
-const PAD_BASE_URL = 'https://pub-4faa87e319a345c38e4f3be570797088.r2.dev/pads';
+const PAD_BASE_URL = 'https://stems.alabanzaredilestadio.com/pads';
 
 // Mapeo de raíces latinas → americano (sin 'm' de menor)
 const LATIN_ROOTS_PAD = {

@@ -215,6 +215,7 @@ function stemPriorityRank(track: { name?: string; label?: string; id?: string })
   }
   return 10;
 }
+
 type MixerTrackView = MixerTrackMeta & {
   volume: number;
   level: number;

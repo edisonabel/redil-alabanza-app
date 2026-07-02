@@ -77,6 +77,11 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       return;
     }
 
+    if (type === 'reset-tracks') {
+      this.resetTracks();
+      return;
+    }
+
     if (type === 'configure-telemetry') {
       this.configureTelemetry(message);
       return;
@@ -298,6 +303,26 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     };
     this.publishMeterMessages = message.publishMeterMessages !== false;
     this.writeTelemetrySnapshot(this.telemetryBaseSeconds);
+  }
+
+  resetTracks() {
+    this.tracks = [];
+    this.trackCount = 0;
+    this.meterLevels = new Float32Array(0);
+    this.meterMessage = {
+      type: 'track-levels',
+      levels: this.meterLevels,
+    };
+    this.soloCount = 0;
+    this.loopEnabled = false;
+    this.loopStartSample = 0;
+    this.loopEndSample = 0;
+    this.readingBlocked = true;
+    this.fadeInFramesRemaining = 0;
+    this.loopJumpCrossfadeBlocked = true;
+    this.telemetryBaseSeconds = 0;
+    this.telemetryBaseRenderedFrames = this.renderedFrames;
+    this.writeTelemetrySnapshot(0);
   }
 
   flushAllBuffers(message) {

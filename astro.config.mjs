@@ -27,6 +27,8 @@ const shouldApplyCrossOriginIsolation = (url = '') => {
 
   return (
     pathname === '/herramientas/live-director-preview' ||
+    pathname === '/ensayo' ||
+    pathname.startsWith('/ensayo/') ||
     pathname === '/audio-lab' ||
     pathname.startsWith('/audio-lab/')
   );

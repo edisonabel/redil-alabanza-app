@@ -21,6 +21,18 @@
     Cross-Origin-Embedder-Policy = "require-corp"
 
 [[headers]]
+  for = "/ensayo"
+  [headers.values]
+    Cross-Origin-Opener-Policy = "same-origin"
+    Cross-Origin-Embedder-Policy = "require-corp"
+
+[[headers]]
+  for = "/ensayo/*"
+  [headers.values]
+    Cross-Origin-Opener-Policy = "same-origin"
+    Cross-Origin-Embedder-Policy = "require-corp"
+
+[[headers]]
   for = "/audio-lab"
   [headers.values]
     Cross-Origin-Opener-Policy = "same-origin"

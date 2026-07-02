@@ -10,6 +10,8 @@ import { getSupabaseServerEnv, readEnv } from '../../lib/server/supabase-env.js'
 const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const PUBLIC_R2_HOST = 'stems.alabanzaredilestadio.com';
+const PUBLIC_R2_BASE_URL = `https://${PUBLIC_R2_HOST}`;
 
 const jsonResponse = (body, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -17,12 +19,29 @@ const jsonResponse = (body, status = 200) =>
     headers: { 'Content-Type': 'application/json' },
   });
 
+const normalizePublicR2BaseUrl = (value = '') => {
+  const fallback = PUBLIC_R2_BASE_URL;
+  const rawValue = String(value || fallback).trim() || fallback;
+
+  try {
+    const parsed = new URL(rawValue);
+    if (parsed.hostname.toLowerCase().endsWith('.r2.dev')) {
+      parsed.protocol = 'https:';
+      parsed.hostname = PUBLIC_R2_HOST;
+      parsed.port = '';
+    }
+    return parsed.href.replace(/\/+$/, '');
+  } catch {
+    return fallback;
+  }
+};
+
 const createR2Client = () => {
   const endpoint = readEnv('R2_ENDPOINT');
   const accessKeyId = readEnv('R2_ACCESS_KEY_ID');
   const secretAccessKey = readEnv('R2_SECRET_ACCESS_KEY');
   const bucket = readEnv('R2_BUCKET_NAME');
-  const publicBaseUrl = readEnv('PUBLIC_R2_URL').replace(/\/+$/, '');
+  const publicBaseUrl = normalizePublicR2BaseUrl(readEnv('PUBLIC_R2_URL', 'R2_PUBLIC_URL'));
 
   if (!endpoint || !accessKeyId || !secretAccessKey || !bucket || !publicBaseUrl) {
     throw new Error('Faltan variables de Cloudflare R2 para Live Director.');

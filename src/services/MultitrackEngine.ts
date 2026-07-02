@@ -117,7 +117,7 @@ const MOBILE_BUFFER_TRACK_LIMIT = 12;
 const AUDIO_BUFFER_LOAD_BATCH_SIZE = 4;
 const TRACK_FETCH_TIMEOUT_MS = 20_000;
 const TRACK_DECODE_TIMEOUT_MS = 12_000;
-const MEDIA_METADATA_TIMEOUT_MS = 12_000;
+const MEDIA_METADATA_TIMEOUT_MS = 30_000;
 const MEDIA_MONITOR_INTERVAL_FAST_MS = 120;
 const MEDIA_MONITOR_INTERVAL_MEDIUM_MS = 180;
 const MEDIA_MONITOR_INTERVAL_SLOW_MS = 250;
@@ -831,6 +831,17 @@ export class MultitrackEngine {
     );
   }
 
+  private isSkippableTrackMediaPreparationError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message.toLowerCase() : String(error ?? '').toLowerCase();
+
+    return (
+      message.includes('timed out preparing') ||
+      message.includes('failed to load metadata') ||
+      message.includes('could not prepare the media element') ||
+      message.includes('media preparation failed')
+    );
+  }
+
   private getTrackFileExtension(track: TrackData): string | undefined {
     const source = `${track.sourceFileName || ''} ${track.url || ''}`.trim();
     const match = source.match(/\.([a-z0-9]{2,5})(?:[?#\s]|$)/i);
@@ -965,9 +976,9 @@ export class MultitrackEngine {
     const total = trackList.length;
     let completed = 0;
 
-    return runWithConcurrency(
+    const loadedTracks = await runWithConcurrency(
       trackList,
-      AUDIO_BUFFER_LOAD_BATCH_SIZE,
+      this.getAudioBufferLoadBatchSize(),
       async (track) => {
         console.log(`[MultitrackEngine] Preparing streaming track "${track.name}" from ${track.url}`);
 
@@ -1003,6 +1014,22 @@ export class MultitrackEngine {
           console.log(`[MultitrackEngine] Ready "${track.name}" successfully.`);
           return track;
         } catch (error) {
+          if (this.isSkippableTrackMediaPreparationError(error)) {
+            const message = error instanceof Error ? error.message : String(error || 'Media preparation failed');
+            console.warn(
+              `[MultitrackEngine] Skipping "${track.name}" after media preparation failure. Continuing with the remaining tracks.`,
+              error,
+            );
+            this.loadWarnings.push({
+              trackId: track.id,
+              trackName: track.name,
+              reason: 'decode',
+              message,
+              playExtension: this.getTrackFileExtension(track),
+            });
+            return null;
+          }
+
           console.error(`[MultitrackEngine] Error preparing "${track.name}".`, error);
           throw error;
         }
@@ -1018,13 +1045,20 @@ export class MultitrackEngine {
         }
       },
     );
+    const playableTracks = loadedTracks.filter((track): track is TrackData => track !== null);
+
+    if (trackList.length > 0 && playableTracks.length === 0) {
+      throw new Error('No se pudo preparar ningún stem de la sesión en modo media.');
+    }
+
+    return playableTracks;
   }
 
   private createMediaElement(track: TrackData): Promise<HTMLAudioElement> {
     const mediaElement = new Audio();
-    mediaElement.src = track.url;
     mediaElement.crossOrigin = 'anonymous';
     mediaElement.preload = 'auto';
+    mediaElement.src = track.url;
 
     const releaseMediaElement = () => {
       try {

@@ -1,4 +1,4 @@
-const PAD_BASE_URL = 'https://pub-4faa87e319a345c38e4f3be570797088.r2.dev/pads';
+const PAD_BASE_URL = 'https://stems.alabanzaredilestadio.com/pads';
 
 const LATIN_ROOTS_PAD: Record<string, string> = {
   Do: 'C',

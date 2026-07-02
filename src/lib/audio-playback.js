@@ -4,7 +4,7 @@ const DRIVE_HOSTS = new Set([
   'docs.google.com',
   'drive.usercontent.google.com',
 ]);
-const R2_AUDIO_HOST = 'pub-4faa87e319a345c38e4f3be570797088.r2.dev';
+const R2_AUDIO_HOST = 'stems.alabanzaredilestadio.com';
 const AUDIO_API_PATHS = new Set(['/api/audio', '/api/mp3-proxy']);
 const AUDIO_PROXY_VERSION = '2';
 const R2_DIRECT_CORS_HOSTS = new Set([
@@ -18,6 +18,27 @@ const resolveBaseOrigin = (origin = '') => {
     return window.location.origin;
   }
   return 'https://alabanzaredilestadio.com';
+};
+
+const normalizeR2PublicUrl = (rawUrl) => {
+  try {
+    const parsed = new URL(rawUrl);
+    const host = parsed.hostname.toLowerCase();
+    if (host === R2_AUDIO_HOST) {
+      return parsed.href;
+    }
+
+    if (host.endsWith('.r2.dev')) {
+      parsed.protocol = 'https:';
+      parsed.hostname = R2_AUDIO_HOST;
+      parsed.port = '';
+      return parsed.href;
+    }
+  } catch {
+    return rawUrl;
+  }
+
+  return rawUrl;
 };
 
 export const normalizeExternalAudioUrl = (rawUrl, { origin = '' } = {}) => {
@@ -35,7 +56,7 @@ export const normalizeExternalAudioUrl = (rawUrl, { origin = '' } = {}) => {
   }
 
   try {
-    return new URL(normalized, resolveBaseOrigin(origin)).href;
+    return normalizeR2PublicUrl(new URL(normalized, resolveBaseOrigin(origin)).href);
   } catch {
     return '';
   }

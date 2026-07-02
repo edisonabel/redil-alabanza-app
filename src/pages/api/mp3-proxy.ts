@@ -5,7 +5,7 @@ const DRIVE_HOSTS = new Set([
   'docs.google.com',
   'drive.usercontent.google.com',
 ]);
-const R2_AUDIO_HOST = 'pub-4faa87e319a345c38e4f3be570797088.r2.dev';
+const R2_AUDIO_HOST = 'stems.alabanzaredilestadio.com';
 
 const extractGoogleDriveId = (rawUrl: string) => {
   if (!rawUrl) return '';

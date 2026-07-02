@@ -10,6 +10,8 @@ import { getSupabaseServerEnv, readEnv } from '../../lib/server/supabase-env.js'
 const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const PUBLIC_R2_HOST = 'stems.alabanzaredilestadio.com';
+const PUBLIC_R2_BASE_URL = `https://${PUBLIC_R2_HOST}`;
 
 const jsonResponse = (body, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -17,7 +19,22 @@ const jsonResponse = (body, status = 200) =>
     headers: { 'Content-Type': 'application/json' },
   });
 
-const normalizePublicBaseUrl = (value = '') => String(value || '').trim().replace(/\/+$/, '');
+const normalizePublicBaseUrl = (value = '') => {
+  const fallback = PUBLIC_R2_BASE_URL;
+  const rawValue = String(value || fallback).trim() || fallback;
+
+  try {
+    const parsed = new URL(rawValue);
+    if (parsed.hostname.toLowerCase().endsWith('.r2.dev')) {
+      parsed.protocol = 'https:';
+      parsed.hostname = PUBLIC_R2_HOST;
+      parsed.port = '';
+    }
+    return parsed.href.replace(/\/+$/, '');
+  } catch {
+    return fallback;
+  }
+};
 
 const getR2ObjectKeyFromUrl = (fileUrl = '', publicBaseUrl = '') => {
   const normalizedFileUrl = String(fileUrl || '').trim();
@@ -25,9 +42,18 @@ const getR2ObjectKeyFromUrl = (fileUrl = '', publicBaseUrl = '') => {
 
   if (!normalizedFileUrl || !normalizedPublicBaseUrl) return null;
 
+  try {
+    const parsedFileUrl = new URL(normalizedFileUrl);
+    const fileHost = parsedFileUrl.hostname.toLowerCase();
+    if (fileHost === PUBLIC_R2_HOST || fileHost.endsWith('.r2.dev')) {
+      return decodeURIComponent(parsedFileUrl.pathname.replace(/^\/+/, '').split('?')[0] || '');
+    }
+  } catch {
+    // Fall back to exact-prefix parsing below.
+  }
+
   const expectedPrefix = `${normalizedPublicBaseUrl}/`;
   if (!normalizedFileUrl.startsWith(expectedPrefix)) return null;
-
   return decodeURIComponent(normalizedFileUrl.slice(expectedPrefix.length).split('?')[0] || '');
 };
 
@@ -36,7 +62,7 @@ const createR2Context = () => {
   const accessKeyId = readEnv('R2_ACCESS_KEY_ID');
   const secretAccessKey = readEnv('R2_SECRET_ACCESS_KEY');
   const bucket = readEnv('R2_BUCKET_NAME');
-  const publicBaseUrl = normalizePublicBaseUrl(readEnv('PUBLIC_R2_URL'));
+  const publicBaseUrl = normalizePublicBaseUrl(readEnv('PUBLIC_R2_URL', 'R2_PUBLIC_URL'));
 
   if (!endpoint || !accessKeyId || !secretAccessKey || !bucket || !publicBaseUrl) {
     throw new Error('Faltan variables de Cloudflare R2 para Live Director.');

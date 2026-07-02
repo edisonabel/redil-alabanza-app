@@ -10,7 +10,7 @@ const isAllowedCoverHost = (hostname: string) => {
   const host = hostname.toLowerCase();
   return (
     DRIVE_HOSTS.has(host) ||
-    host === 'pub-4faa87e319a345c38e4f3be570797088.r2.dev' ||
+    host === 'stems.alabanzaredilestadio.com' ||
     host.endsWith('.r2.dev')
   );
 };
@@ -149,7 +149,13 @@ export const GET: APIRoute = async ({ request, url }) => {
 
   const coverArt = extractCoverArt(await upstream.arrayBuffer());
   if (!coverArt) {
-    return new Response('No embedded cover art', { status: 404 });
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'cache-control': 'public, max-age=86400',
+        etag,
+      },
+    });
   }
 
   return new Response(coverArt.bytes, {

@@ -22,6 +22,7 @@ const UI_UPDATE_INTERVAL_MS = 1000 / 24;
 const DIAGNOSTICS_UPDATE_INTERVAL_MS = 1000;
 const TRACK_LEVEL_UPDATE_THRESHOLD = 0.006;
 const MAX_TRACK_VOLUME = 2;
+const STREAMING_STEMS_HOST = 'stems.alabanzaredilestadio.com';
 type EngineKind = 'buffer' | 'streaming';
 type EngineInstance = MultitrackEngine | StreamingMultitrackEngine;
 export type LiveDirectorEngineDiagnostics = {
@@ -89,6 +90,63 @@ const buildTrackLevels = (tracks: TrackData[]): TrackLevelsState => {
     return levels;
   }, {});
 };
+
+const unwrapAudioProxyUrl = (rawUrl: string | undefined): string => {
+  const candidate = String(rawUrl || '').trim();
+  if (!candidate) {
+    return '';
+  }
+
+  try {
+    const baseOrigin =
+      typeof window !== 'undefined' && window.location?.origin
+        ? window.location.origin
+        : 'https://alabanzaredilestadio.com';
+    const parsed = new URL(candidate, baseOrigin);
+
+    if (parsed.pathname === '/api/mp3-proxy') {
+      const source = parsed.searchParams.get('src');
+      if (source) {
+        return rewriteStreamingStemUrl(source);
+      }
+    }
+
+    return rewriteStreamingStemUrl(parsed.href);
+  } catch {
+    return rewriteStreamingStemUrl(candidate);
+  }
+};
+
+const rewriteStreamingStemUrl = (rawUrl: string): string => {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.hostname.toLowerCase().endsWith('.r2.dev')) {
+      parsed.protocol = 'https:';
+      parsed.hostname = STREAMING_STEMS_HOST;
+      parsed.port = '';
+      return parsed.href;
+    }
+    return parsed.href;
+  } catch {
+    return rawUrl;
+  }
+};
+
+const buildStreamingWorkerTracks = (tracks: TrackData[]): TrackData[] => (
+  tracks.map((track) => {
+    const directUrl = unwrapAudioProxyUrl(
+      track.optimizedUrl ||
+      track.url ||
+      track.iosUrl ||
+      track.nativeUrl,
+    );
+
+    return {
+      ...track,
+      url: directUrl || track.url,
+    };
+  })
+);
 
 const cloneTracks = (tracks: TrackData[]): TrackData[] => (
   tracks.map((track) => ({
@@ -368,12 +426,16 @@ export function useMultitrackEngine(
 
     try {
       engine = getEngine(targetKind);
+      const engineTracks =
+        targetKind === 'streaming'
+          ? buildStreamingWorkerTracks(nextTracks)
+          : nextTracks;
       const loadedTracks =
         targetKind === 'buffer'
-          ? await (engine as MultitrackEngine).loadTracks(nextTracks, {
+          ? await (engine as MultitrackEngine).loadTracks(engineTracks, {
             onProgress: handleProgress,
           })
-          : await engine.loadTracks(nextTracks, { onProgress: handleProgress });
+          : await engine.loadTracks(engineTracks, { onProgress: handleProgress });
       if (initializationToken !== initializationTokenRef.current || engine !== engineRef.current) {
         return;
       }

@@ -13,7 +13,25 @@ const jsonResponse = (body, status = 200) => (
   })
 );
 
-const normalizePublicBaseUrl = (value = '') => String(value || '').trim().replace(/\/+$/, '');
+const PUBLIC_R2_HOST = 'stems.alabanzaredilestadio.com';
+const PUBLIC_R2_BASE_URL = `https://${PUBLIC_R2_HOST}`;
+
+const normalizePublicBaseUrl = (value = '') => {
+  const fallback = PUBLIC_R2_BASE_URL;
+  const rawValue = String(value || fallback).trim() || fallback;
+
+  try {
+    const parsed = new URL(rawValue);
+    if (parsed.hostname.toLowerCase().endsWith('.r2.dev')) {
+      parsed.protocol = 'https:';
+      parsed.hostname = PUBLIC_R2_HOST;
+      parsed.port = '';
+    }
+    return parsed.href.replace(/\/+$/, '');
+  } catch {
+    return fallback;
+  }
+};
 
 const getR2ObjectKeyFromUrl = (fileUrl = '', publicBaseUrl = '') => {
   const normalizedFileUrl = String(fileUrl || '').trim();
@@ -21,9 +39,18 @@ const getR2ObjectKeyFromUrl = (fileUrl = '', publicBaseUrl = '') => {
 
   if (!normalizedFileUrl || !normalizedPublicBaseUrl) return null;
 
+  try {
+    const parsedFileUrl = new URL(normalizedFileUrl);
+    const fileHost = parsedFileUrl.hostname.toLowerCase();
+    if (fileHost === PUBLIC_R2_HOST || fileHost.endsWith('.r2.dev')) {
+      return decodeURIComponent(parsedFileUrl.pathname.replace(/^\/+/, '').split('?')[0] || '');
+    }
+  } catch {
+    // Fall back to exact-prefix parsing below.
+  }
+
   const expectedPrefix = `${normalizedPublicBaseUrl}/`;
   if (!normalizedFileUrl.startsWith(expectedPrefix)) return null;
-
   return decodeURIComponent(normalizedFileUrl.slice(expectedPrefix.length).split('?')[0] || '');
 };
 
@@ -46,7 +73,7 @@ export const POST = async ({ request, cookies }) => {
       return jsonResponse({ error: 'Se requiere la URL actual del archivo.' }, 400);
     }
 
-    const publicR2Url = normalizePublicBaseUrl(readEnv('PUBLIC_R2_URL'));
+    const publicR2Url = normalizePublicBaseUrl(readEnv('PUBLIC_R2_URL', 'R2_PUBLIC_URL'));
     const objectKey = getR2ObjectKeyFromUrl(fileUrl, publicR2Url);
 
     if (!objectKey) {

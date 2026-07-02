@@ -6,6 +6,25 @@ import { getSupabaseServerEnv, readEnv } from '../../lib/server/supabase-env.js'
 const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const PUBLIC_R2_HOST = 'stems.alabanzaredilestadio.com';
+const PUBLIC_R2_BASE_URL = `https://${PUBLIC_R2_HOST}`;
+
+const normalizePublicR2BaseUrl = (value = '') => {
+  const fallback = PUBLIC_R2_BASE_URL;
+  const rawValue = String(value || fallback).trim() || fallback;
+
+  try {
+    const parsed = new URL(rawValue);
+    if (parsed.hostname.toLowerCase().endsWith('.r2.dev')) {
+      parsed.protocol = 'https:';
+      parsed.hostname = PUBLIC_R2_HOST;
+      parsed.port = '';
+    }
+    return parsed.href.replace(/\/+$/, '');
+  } catch {
+    return fallback;
+  }
+};
 
 function limpiarNombreArchivo(nombre) {
   return nombre
@@ -22,7 +41,7 @@ export const POST = async ({ request, cookies }) => {
     const r2AccessKey = readEnv('R2_ACCESS_KEY_ID');
     const r2SecretKey = readEnv('R2_SECRET_ACCESS_KEY');
     const r2Bucket = readEnv('R2_BUCKET_NAME');
-    const publicR2Url = readEnv('PUBLIC_R2_URL');
+    const publicR2Url = normalizePublicR2BaseUrl(readEnv('PUBLIC_R2_URL', 'R2_PUBLIC_URL'));
 
     // Verificación de seguridad en consola
     console.log("[API R2] Endpoint Limpio:", r2Endpoint);

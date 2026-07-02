@@ -22,7 +22,7 @@ const MIN_RING_WRITE_FRAMES = 1024;
 const DECODER_RECOVERY_SAMPLE_LIMIT = 8;
 const SEEK_READY_SECONDS = 0.5;
 const SEEK_HANDSHAKE_SOFT_TIMEOUT_MS = 2500;
-const TRACK_READY_WATCHDOG_MS = 18000;
+const TRACK_READY_WATCHDOG_MS = 60000;
 const RANGE_FETCH_MAX_RETRIES = 3;
 const RANGE_FETCH_BASE_RETRY_DELAY_MS = 500;
 const RANGE_FETCH_INITIAL_JITTER_MIN_MS = 10;
@@ -30,6 +30,54 @@ const RANGE_FETCH_INITIAL_JITTER_MAX_MS = 50;
 const MICRO_SYNC_LOG_THRESHOLD_FRAMES = 8;
 
 let mp4BoxModulePromise = null;
+
+const postDebugLog = (level, args) => {
+  try {
+    self.postMessage({
+      type: 'producer-debug-log',
+      level,
+      args: Array.from(args, (arg) => {
+        if (arg instanceof Error) {
+          return {
+            name: arg.name,
+            message: arg.message,
+          };
+        }
+
+        if (arg === undefined || arg === null) {
+          return arg;
+        }
+
+        if (typeof arg === 'string' || typeof arg === 'number' || typeof arg === 'boolean') {
+          return arg;
+        }
+
+        try {
+          return JSON.parse(JSON.stringify(arg));
+        } catch (_error) {
+          return String(arg);
+        }
+      }),
+    });
+  } catch (_error) {
+    // Debug telemetry must never disturb the audio pipeline.
+  }
+};
+
+const debugLog = (...args) => {
+  console.log(...args);
+  postDebugLog('log', args);
+};
+
+const debugWarn = (...args) => {
+  console.warn(...args);
+  postDebugLog('warn', args);
+};
+
+const debugError = (...args) => {
+  console.error(...args);
+  postDebugLog('error', args);
+};
 
 const AAC_SAMPLE_RATE_INDEXES = new Map([
   [96000, 0],
@@ -122,6 +170,30 @@ const cloneArrayBuffer = (bufferSource) => {
   const copy = new Uint8Array(view.byteLength);
   copy.set(view);
   return copy.buffer;
+};
+
+const urlLooksLikeMp3 = (url) => {
+  const normalizedUrl = String(url || '').toLowerCase();
+
+  if (normalizedUrl.endsWith('.mp3')) {
+    return true;
+  }
+
+  try {
+    const parsedUrl = new URL(url, self.location.href);
+    const proxiedSource = parsedUrl.searchParams.get('src');
+    if (proxiedSource && decodeURIComponent(proxiedSource).toLowerCase().endsWith('.mp3')) {
+      return true;
+    }
+  } catch (_error) {
+    try {
+      return decodeURIComponent(normalizedUrl).includes('.mp3');
+    } catch (_decodeError) {
+      return normalizedUrl.includes('.mp3');
+    }
+  }
+
+  return false;
 };
 
 const descriptionsMatch = (left, right) => {
@@ -513,6 +585,10 @@ class RangeFetcher {
     this.fetchSerial = 0;
     this.aborted = false;
     this.hasAppliedInitialJitter = false;
+
+    if (urlLooksLikeMp3(this.url)) {
+      debugError('[ALERTA FORMATO] Intentando cargar un MP3 en MP4Box:', this.url);
+    }
   }
 
   async fetchChunk(byteStart) {
@@ -588,6 +664,16 @@ class RangeFetcher {
         }
 
         const delayMs = this.getRetryDelayMs(attempt + 1);
+        debugWarn(
+          '[FETCH-DEBUG] Reintentando red para:',
+          this.trackName || this.url,
+          'Intento:',
+          attempt + 1,
+          'bytes:',
+          `${safeByteStart}-${byteEnd}`,
+          'error:',
+          error && error.message ? error.message : String(error),
+        );
         self.postMessage({
           type: 'producer-fetch-retry',
           reason: 'range-fetch-retry',
@@ -719,6 +805,30 @@ class SharedRingWriter {
 
   availableWrite() {
     return Math.max(0, Math.min(this.capacity, this.capacity - this.availableRead()));
+  }
+
+  getAuditSnapshot() {
+    if (!this.isReady()) {
+      return {
+        readIndex: 0,
+        writeIndex: 0,
+        availableRead: 0,
+        availableWrite: 0,
+        capacity: this.capacity || 0,
+      };
+    }
+
+    const readIndex = Atomics.load(this.indices, READ_INDEX_SLOT);
+    const writeIndex = Atomics.load(this.indices, WRITE_INDEX_SLOT);
+    const availableRead = this.computeAvailableRead(readIndex, writeIndex);
+
+    return {
+      readIndex: this.normalizeIndex(readIndex, this.indexCapacity),
+      writeIndex: this.normalizeIndex(writeIndex, this.indexCapacity),
+      availableRead,
+      availableWrite: Math.max(0, Math.min(this.capacity, this.capacity - availableRead)),
+      capacity: this.capacity,
+    };
   }
 
   targetAheadFrames() {
@@ -957,6 +1067,14 @@ class Mp4TrackDemuxer {
     this.droppedLavcSampleCount = 0;
 
     this.file.onError = (_errorCode, message) => {
+      debugError(
+        '[DEMUX-DEBUG] Error MP4Box para:',
+        track.name || track.id || track.url,
+        'code:',
+        _errorCode,
+        'message:',
+        message,
+      );
       this.pendingError = new Error(`[AudioProducerWorker] MP4 demuxer error for ${track.url}: ${message}`);
     };
 
@@ -982,6 +1100,14 @@ class Mp4TrackDemuxer {
   append(bytes, fileStart) {
     this.throwPendingErrorIfNeeded();
 
+    debugLog(
+      '[DEMUX-DEBUG] Inyectando chunk en MP4Box para:',
+      this.track.name || this.track.id || this.track.url,
+      'bytes:',
+      bytes ? bytes.byteLength : 0,
+      'fileStart:',
+      fileStart,
+    );
     const nextFileStart = this.file.appendBuffer(this.toAppendableBuffer(bytes, fileStart));
 
     this.throwPendingErrorIfNeeded();
@@ -1226,6 +1352,7 @@ class ProducerTrackPipeline {
     this.pendingNormalPcm = [];
     this.pendingNormalFrameCount = 0;
     this.normalTimelineInitialized = false;
+    this.firstNormalWriteStartSample = null;
     this.lastNormalWriteEndSample = 0;
     this.decoderVariants = [];
     this.decoderVariantIndex = 0;
@@ -1233,9 +1360,14 @@ class ProducerTrackPipeline {
     this.decoderRecoveryInFlight = false;
     this.pendingSeekReady = null;
     this.currentSeekSerial = 0;
+    this.preWarmedSamples = [];
+    this.preWarmedDecoderConfig = null;
+    this.preWarmedNextFileStart = 0;
+    this.preWarmedDurationSeconds = undefined;
     this.readyWatchdogId = 0;
     this.decoderQueueOverloadStartedAt = 0;
     this.lastDecoderQueueAlertAt = 0;
+    this.lastRingBackpressurePostAt = 0;
     this.isDestroyed = false;
   }
 
@@ -1264,6 +1396,10 @@ class ProducerTrackPipeline {
     this.decoderVariants = [];
     this.decoderVariantIndex = 0;
     this.decoderRecoveryInFlight = false;
+    this.preWarmedSamples = [];
+    this.preWarmedDecoderConfig = null;
+    this.preWarmedNextFileStart = 0;
+    this.preWarmedDurationSeconds = undefined;
     this.ready = false;
     this.normalReadyPosted = false;
     this.endOfFileReached = true;
@@ -1333,6 +1469,92 @@ class ProducerTrackPipeline {
     }
 
     this.ready = true;
+  }
+
+  async prewarmHeader(sessionId) {
+    this.assertAlive();
+
+    if (!this.demuxer) {
+      const mp4box = await loadMp4Box();
+      this.assertAlive();
+      this.demuxer = new Mp4TrackDemuxer(mp4box, this.track);
+    }
+
+    const chunk = await this.fetcher.fetchChunk(0);
+    this.assertAlive();
+    const result = this.demuxer.append(chunk.bytes, chunk.byteStart);
+    this.preWarmedDecoderConfig = result.decoderConfig || this.preWarmedDecoderConfig;
+    this.preWarmedSamples = Array.isArray(result.samples) ? result.samples.slice() : [];
+    this.preWarmedNextFileStart = this.resolveNextFileStart(result, chunk);
+    this.preWarmedDurationSeconds =
+      this.demuxer && typeof this.demuxer.durationSeconds === 'number'
+        ? this.demuxer.durationSeconds
+        : undefined;
+    this.nextFileStart = this.preWarmedNextFileStart;
+    this.decoderConfig = this.preWarmedDecoderConfig || this.decoderConfig;
+    this.ready = !!(this.demuxer && this.demuxer.trackReady);
+
+    self.postMessage({
+      type: 'producer-next-track-warmed',
+      sessionId,
+      trackIndex: this.track.trackIndex,
+      trackId: this.track.id,
+      trackName: this.track.name,
+      ready: this.ready,
+      nextFileStart: this.preWarmedNextFileStart,
+      sampleCount: this.preWarmedSamples.length,
+      durationSeconds: this.preWarmedDurationSeconds,
+      codec: this.preWarmedDecoderConfig ? this.preWarmedDecoderConfig.codec : this.track.codec,
+      sampleRate: this.preWarmedDecoderConfig ? this.preWarmedDecoderConfig.sampleRate : this.track.sampleRate,
+      channelCount: this.preWarmedDecoderConfig
+        ? this.preWarmedDecoderConfig.numberOfChannels
+        : this.track.channelCount,
+    });
+
+    return this.ready;
+  }
+
+  attachActiveTrack(track) {
+    this.track = {
+      ...this.track,
+      ...(track || {}),
+    };
+    this.ringWriter = new SharedRingWriter(this.track);
+  }
+
+  async activatePrewarmed(sessionId) {
+    this.assertAlive();
+
+    this.stopLookAhead();
+    this.prepareToken += 1;
+    this.currentSeekSerial = 0;
+    this.decodedUntilSample = 0;
+    this.clearPendingNormalPcm();
+    this.recentDecodeSamples = [];
+    this.decoderRecoveryInFlight = false;
+    this.endOfFileReached = false;
+    this.normalReadyPosted = false;
+    this.pendingSeekReady = null;
+    this.resetNormalWriteTimeline(0);
+    this.ringWriter.flushToSample(0);
+
+    if (this.preWarmedDecoderConfig) {
+      this.decoderConfig = this.preWarmedDecoderConfig;
+    }
+
+    this.nextFileStart = Math.max(0, Math.floor(Number(this.preWarmedNextFileStart) || 0));
+    this.ready = !!(this.demuxer && this.demuxer.trackReady);
+
+    if (this.preWarmedSamples.length > 0 || this.decoderConfig) {
+      await this.feedDemuxedSamples({
+        decoderConfig: this.decoderConfig,
+        samples: this.preWarmedSamples,
+      });
+      this.preWarmedSamples = [];
+      this.assertAlive();
+    }
+
+    this.startLookAhead(sessionId, this.currentSeekSerial);
   }
 
   startLookAhead(sessionId, seekSerial = this.currentSeekSerial) {
@@ -2169,6 +2391,9 @@ class ProducerTrackPipeline {
     const consumedFrames = sourceOffset + writtenFrames;
 
     if (writtenFrames > 0) {
+      if (this.firstNormalWriteStartSample === null) {
+        this.firstNormalWriteStartSample = pcmStartSample;
+      }
       this.lastNormalWriteEndSample = pcmStartSample + writtenFrames;
     }
 
@@ -2284,7 +2509,28 @@ class ProducerTrackPipeline {
 
   resetNormalWriteTimeline(targetSample) {
     this.normalTimelineInitialized = true;
+    this.firstNormalWriteStartSample = null;
     this.lastNormalWriteEndSample = Math.max(0, Math.floor(Number(targetSample) || 0));
+  }
+
+  getSyncAuditSnapshot() {
+    const ring = this.ringWriter.getAuditSnapshot();
+
+    return {
+      trackIndex: this.track.trackIndex,
+      trackId: this.track.id,
+      trackName: this.track.name,
+      absoluteStartSample: this.firstNormalWriteStartSample,
+      lastNormalWriteEndSample: this.lastNormalWriteEndSample,
+      readIndex: ring.readIndex,
+      writeIndex: ring.writeIndex,
+      availableRead: ring.availableRead,
+      availableWrite: ring.availableWrite,
+      capacity: ring.capacity,
+      normalTimelineInitialized: this.normalTimelineInitialized,
+      decodedUntilSample: this.decodedUntilSample,
+      endOfFileReached: this.endOfFileReached,
+    };
   }
 
   postMicroSyncCorrection(details) {
@@ -2410,6 +2656,12 @@ class ProducerTrackPipeline {
   }
 
   postRingBackpressure(frameCount, mode) {
+    const now = Date.now();
+    if (now - this.lastRingBackpressurePostAt < 1500) {
+      return;
+    }
+
+    this.lastRingBackpressurePostAt = now;
     self.postMessage({
       type: 'producer-ring-backpressure',
       sessionId: activeSessionId,
@@ -2498,6 +2750,7 @@ const loopCacheManager = new LoopCacheManager({
   maxPinnedLoopMemoryBytes: MAX_PINNED_LOOP_MEMORY_BYTES,
 });
 const trackPipelines = new Map();
+const prewarmedSessions = new Map();
 let activeSessionId = 0;
 
 const resetTrackPipelines = () => {
@@ -2507,9 +2760,30 @@ const resetTrackPipelines = () => {
   trackPipelines.clear();
 };
 
+const destroyPrewarmedSession = (session) => {
+  if (!session || !session.pipelines) {
+    return;
+  }
+
+  for (const pipeline of session.pipelines.values()) {
+    pipeline.destroy();
+  }
+};
+
+const clearPrewarmedSessionsExcept = (sessionId) => {
+  for (const [candidateSessionId, session] of prewarmedSessions.entries()) {
+    if (candidateSessionId === sessionId) {
+      continue;
+    }
+    destroyPrewarmedSession(session);
+    prewarmedSessions.delete(candidateSessionId);
+  }
+};
+
 const configureSession = (message) => {
   activeSessionId = message.sessionId || 0;
   resetTrackPipelines();
+  clearPrewarmedSessionsExcept(null);
   loopCacheManager.configureSession(message);
 
   for (let index = 0; index < loopCacheManager.tracks.length; index += 1) {
@@ -2527,6 +2801,132 @@ const configureSession = (message) => {
 
   for (const pipeline of trackPipelines.values()) {
     pipeline.startLookAhead(activeSessionId);
+  }
+};
+
+const warmNextSession = async (message) => {
+  const sessionId = Math.max(0, Math.floor(Number(message.sessionId) || 0));
+  const tracks = Array.isArray(message.tracks) ? message.tracks.slice() : [];
+  const sampleRate =
+    typeof message.sampleRate === 'number' && message.sampleRate > 0
+      ? message.sampleRate
+      : 48000;
+
+  if (sessionId <= 0 || tracks.length === 0) {
+    throw new Error('warm-next-session requires a positive sessionId and at least one track.');
+  }
+
+  const previousSession = prewarmedSessions.get(sessionId);
+  if (previousSession) {
+    destroyPrewarmedSession(previousSession);
+    prewarmedSessions.delete(sessionId);
+  }
+
+  clearPrewarmedSessionsExcept(sessionId);
+
+  const pipelines = new Map();
+  for (let index = 0; index < tracks.length; index += 1) {
+    const track = tracks[index];
+    pipelines.set(track.trackIndex, new ProducerTrackPipeline(track, loopCacheManager));
+  }
+
+  const tasks = [];
+  for (const pipeline of pipelines.values()) {
+    tasks.push(pipeline.prewarmHeader(sessionId));
+  }
+
+  const results = await Promise.allSettled(tasks);
+  const rejected = results.find((result) => result.status === 'rejected');
+
+  if (rejected) {
+    for (const pipeline of pipelines.values()) {
+      pipeline.destroy();
+    }
+    throw rejected.reason;
+  }
+
+  prewarmedSessions.set(sessionId, {
+    sessionId,
+    sampleRate,
+    tracks,
+    pipelines,
+  });
+
+  self.postMessage({
+    type: 'producer-next-session-warmed',
+    sessionId,
+    trackCount: tracks.length,
+    readyTrackCount: results.filter((result) => result.status === 'fulfilled' && result.value === true).length,
+    sampleRate,
+  });
+};
+
+const swapActiveSession = async (message) => {
+  const nextSessionId = Math.max(0, Math.floor(Number(message.nextSessionId) || 0));
+  const warmedSession = prewarmedSessions.get(nextSessionId);
+
+  if (!warmedSession) {
+    configureSession({
+      type: 'init-session',
+      sessionId: nextSessionId,
+      sampleRate: message.sampleRate,
+      tracks: message.tracks || [],
+    });
+    return;
+  }
+
+  resetTrackPipelines();
+  activeSessionId = nextSessionId;
+  const activeTracks = Array.isArray(message.tracks) && message.tracks.length > 0
+    ? message.tracks
+    : warmedSession.tracks;
+  loopCacheManager.configureSession({
+    sessionId: nextSessionId,
+    sampleRate: message.sampleRate || warmedSession.sampleRate,
+    tracks: activeTracks,
+  });
+
+  for (const pipeline of warmedSession.pipelines.values()) {
+    const activeTrack =
+      activeTracks.find((track) => track.trackIndex === pipeline.track.trackIndex) ||
+      activeTracks[pipeline.track.trackIndex] ||
+      pipeline.track;
+    pipeline.attachActiveTrack(activeTrack);
+    trackPipelines.set(pipeline.track.trackIndex, pipeline);
+  }
+
+  prewarmedSessions.delete(nextSessionId);
+  clearPrewarmedSessionsExcept(null);
+
+  self.postMessage({
+    type: 'producer-ready',
+    sessionId: activeSessionId,
+    maxPinnedLoopMemoryBytes: loopCacheManager.maxPinnedLoopMemoryBytes,
+    trackCount: activeTracks.length,
+    sampleRate: loopCacheManager.sampleRate,
+  });
+
+  self.postMessage({
+    type: 'producer-session-swapped',
+    sessionId: activeSessionId,
+    trackCount: activeTracks.length,
+    sampleRate: loopCacheManager.sampleRate,
+  });
+
+  for (const pipeline of trackPipelines.values()) {
+    pipeline.activatePrewarmed(activeSessionId).catch((error) => {
+      if (pipeline.isDestroyed || isAbortError(error)) {
+        return;
+      }
+
+      postProducerError('activate-prewarmed-session-failed', error, {
+        sessionId: activeSessionId,
+        trackIndex: pipeline.track.trackIndex,
+        trackId: pipeline.track.id,
+        trackName: pipeline.track.name,
+        ...pipeline.getStartupDiagnostic('activate-prewarmed-session-failed'),
+      });
+    });
   }
 };
 
@@ -2586,6 +2986,27 @@ const seekAllPipelines = async (targetSample, sessionId, seekSerial) => {
   });
 };
 
+const auditSync = (message) => {
+  const requestedSessionId =
+    typeof message.sessionId === 'number' && Number.isFinite(message.sessionId)
+      ? Math.floor(message.sessionId)
+      : activeSessionId;
+
+  self.postMessage({
+    type: 'producer-sync-audit',
+    sessionId: activeSessionId,
+    requestedSessionId,
+    reason: message.reason || 'play',
+    seekSerial:
+      typeof message.seekSerial === 'number' && Number.isFinite(message.seekSerial)
+        ? Math.floor(message.seekSerial)
+        : undefined,
+    rows: Array.from(trackPipelines.values())
+      .sort((left, right) => left.track.trackIndex - right.track.trackIndex)
+      .map((pipeline) => pipeline.getSyncAuditSnapshot()),
+  });
+};
+
 self.onmessage = (event) => {
   const message = event && event.data ? event.data : null;
 
@@ -2601,6 +3022,32 @@ self.onmessage = (event) => {
         sessionId: message.sessionId || null,
       });
     }
+    return;
+  }
+
+  if (message.type === 'warm-next-session') {
+    warmNextSession(message).catch((error) => {
+      if (isAbortError(error)) {
+        return;
+      }
+
+      postProducerError('warm-next-session-failed', error, {
+        sessionId: message.sessionId || null,
+      });
+    });
+    return;
+  }
+
+  if (message.type === 'swap-active-session') {
+    swapActiveSession(message).catch((error) => {
+      if (isAbortError(error)) {
+        return;
+      }
+
+      postProducerError('swap-active-session-failed', error, {
+        sessionId: message.nextSessionId || null,
+      });
+    });
     return;
   }
 
@@ -2629,7 +3076,7 @@ self.onmessage = (event) => {
     return;
   }
 
-  if (message.type === 'seek') {
+	  if (message.type === 'seek') {
     const targetSample = Math.max(0, Math.floor(Number(message.targetSample) || 0));
     const seekSerial = Math.max(0, Math.floor(Number(message.seekSerial) || 0));
     seekAllPipelines(targetSample, message.sessionId || activeSessionId, seekSerial).catch((error) => {
@@ -2644,9 +3091,14 @@ self.onmessage = (event) => {
       });
     });
     return;
+	  }
+	
+  if (message.type === 'audit-sync') {
+    auditSync(message);
+    return;
   }
 
-  if (message.type === 'release-loop-cache') {
+	  if (message.type === 'release-loop-cache') {
     loopCacheManager.releasePinnedLoopMemory();
     self.postMessage(loopCacheManager.getStatus());
     return;
