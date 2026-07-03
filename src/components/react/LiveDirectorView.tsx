@@ -267,6 +267,9 @@ const SECTION_WAVE_BAR_INSET_PX = 16;
 const SECTION_WAVE_BAR_MIN_COUNT = 7;
 const SECTION_TRANSITION_FADE_OUT_MS = 170;
 const SECTION_TRANSITION_FADE_IN_MS = 180;
+const SECTIONS_AUTO_FOLLOW_RESUME_MS = 5000;
+const SECTION_DRAG_CLICK_SUPPRESS_THRESHOLD_PX = 8;
+const SECTION_DRAG_CLICK_SUPPRESS_MS = 350;
 const SEQUENCE_FILE_ACCEPT = '.aac,.m4a,audio/aac,audio/mp4,audio/x-m4a,audio/*';
 
 const CONTROL_CARD =
@@ -461,6 +464,7 @@ export function LiveDirectorView({
   // We set it right when the user-scroll timeout expires so the playhead
   // slides back to where it should be instead of snapping.
   const sectionsAutoFollowShouldSmoothRef = useRef(false);
+  const sectionsSuppressClickUntilRef = useRef(0);
   const mixerScrollRef = useRef<HTMLDivElement | null>(null);
   const mixerDragStateRef = useRef<DragScrollState>({
     active: false,
@@ -1738,6 +1742,18 @@ export function LiveDirectorView({
         return;
       }
 
+      isUserScrollingSectionsRef.current = true;
+      if (resumeSectionsAutoScrollTimeoutRef.current !== null) {
+        window.clearTimeout(resumeSectionsAutoScrollTimeoutRef.current);
+      }
+      setSectionsAutoFollowStatus('resuming');
+      resumeSectionsAutoScrollTimeoutRef.current = window.setTimeout(() => {
+        isUserScrollingSectionsRef.current = false;
+        sectionsAutoFollowShouldSmoothRef.current = true;
+        resumeSectionsAutoScrollTimeoutRef.current = null;
+        setSectionsAutoFollowStatus('auto');
+      }, SECTIONS_AUTO_FOLLOW_RESUME_MS);
+
       latest = scrollContainer.scrollLeft;
       if (rafId !== null) return;
       rafId = window.requestAnimationFrame(commit);
@@ -1749,6 +1765,10 @@ export function LiveDirectorView({
     return () => {
       scrollContainer.removeEventListener('scroll', onScroll);
       if (rafId !== null) window.cancelAnimationFrame(rafId);
+      if (resumeSectionsAutoScrollTimeoutRef.current !== null) {
+        window.clearTimeout(resumeSectionsAutoScrollTimeoutRef.current);
+        resumeSectionsAutoScrollTimeoutRef.current = null;
+      }
     };
   }, [showSectionsPanel]);
 
@@ -3291,11 +3311,6 @@ export function LiveDirectorView({
     endMixerDrag(event.pointerId);
   }, [endMixerDrag]);
 
-  // How long after the last user interaction with the sections lane we wait
-  // before auto-follow re-engages. 5s matches the user's request and is a
-  // comfortable window to explore without the playhead pulling you back.
-  const SECTIONS_AUTO_FOLLOW_RESUME_MS = 5000;
-
   // Internal: schedule (or cancel) the resume timer. When the timer fires,
   // the next auto-follow pass will smooth-scroll back to the playhead.
   const scheduleSectionsAutoFollowResume = useCallback(() => {
@@ -3365,7 +3380,6 @@ export function LiveDirectorView({
     const container = sectionsLaneScrollRef.current;
     if (!container) return;
     if (event.pointerType === 'mouse' && event.button !== 0) return;
-    if (shouldIgnoreDragScrollTarget(event.target)) return;
 
     // Hold (no timeout) — resume will be armed on pointerUp / endSectionsDrag.
     holdSectionsAutoFollow();
@@ -3393,6 +3407,10 @@ export function LiveDirectorView({
     const deltaX = event.clientX - dragState.startX;
     if (Math.abs(deltaX) < 2) return;
 
+    if (Math.abs(deltaX) >= SECTION_DRAG_CLICK_SUPPRESS_THRESHOLD_PX) {
+      sectionsSuppressClickUntilRef.current = performance.now() + SECTION_DRAG_CLICK_SUPPRESS_MS;
+    }
+
     container.scrollLeft = dragState.startScrollLeft - deltaX;
     event.preventDefault();
   }, []);
@@ -3408,6 +3426,7 @@ export function LiveDirectorView({
   const minimapTrackRef = useRef<HTMLDivElement | null>(null);
   const minimapDragActiveRef = useRef(false);
   const minimapDragPointerIdRef = useRef<number | null>(null);
+  const minimapPendingSeekTimeRef = useRef<number | null>(null);
   // When set, render a tooltip above the minimap showing the section name and
   // timestamp at the hovered/dragged position. Cleared when the finger lifts.
   const [minimapHoverTime, setMinimapHoverTime] = useState<number | null>(null);
@@ -3435,19 +3454,19 @@ export function LiveDirectorView({
     holdSectionsAutoFollow();
 
     const t = minimapXToTime(event.clientX);
+    minimapPendingSeekTimeRef.current = t;
     setMinimapHoverTime(t);
-    void handleSectionSeek(t);
     event.preventDefault();
-  }, [handleSectionSeek, holdSectionsAutoFollow, minimapXToTime]);
+  }, [holdSectionsAutoFollow, minimapXToTime]);
 
   const handleMinimapPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (!minimapDragActiveRef.current) return;
     if (minimapDragPointerIdRef.current !== event.pointerId) return;
     const t = minimapXToTime(event.clientX);
+    minimapPendingSeekTimeRef.current = t;
     setMinimapHoverTime(t);
-    void handleSectionSeek(t);
     event.preventDefault();
-  }, [handleSectionSeek, minimapXToTime]);
+  }, [minimapXToTime]);
 
   const endMinimapDrag = useCallback((event?: ReactPointerEvent<HTMLDivElement>) => {
     if (!minimapDragActiveRef.current) return;
@@ -3457,12 +3476,19 @@ export function LiveDirectorView({
     }
     minimapDragActiveRef.current = false;
     minimapDragPointerIdRef.current = null;
+    minimapPendingSeekTimeRef.current = null;
     setMinimapHoverTime(null);
     // Arm the 5s resume so the big lane auto-follow eventually retakes.
     scheduleSectionsAutoFollowResume();
   }, [scheduleSectionsAutoFollowResume]);
 
   const handleMinimapPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const seekTime = minimapPendingSeekTimeRef.current ?? minimapXToTime(event.clientX);
+    endMinimapDrag(event);
+    void handleSectionSeek(seekTime);
+  }, [endMinimapDrag, handleSectionSeek, minimapXToTime]);
+
+  const handleMinimapPointerCancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     endMinimapDrag(event);
   }, [endMinimapDrag]);
 
@@ -4133,6 +4159,9 @@ export function LiveDirectorView({
                           data-live-section-start={section.startTime}
                           data-live-section-end={section.endTime}
                           onClick={() => {
+                            if (performance.now() < sectionsSuppressClickUntilRef.current) {
+                              return;
+                            }
                             void handleSectionSeek(section.startTime);
                           }}
                           className="relative h-full shrink-0 rounded-[1.55rem] border text-left transition-all duration-200"
@@ -4234,7 +4263,7 @@ export function LiveDirectorView({
                       onPointerDown={handleMinimapPointerDown}
                       onPointerMove={handleMinimapPointerMove}
                       onPointerUp={handleMinimapPointerUp}
-                      onPointerCancel={handleMinimapPointerUp}
+                      onPointerCancel={handleMinimapPointerCancel}
                       className="pointer-events-auto relative h-full cursor-pointer overflow-hidden rounded-[10px] border border-white/10 bg-black/52 shadow-[0_6px_16px_rgba(0,0,0,0.38)]"
                       style={{ touchAction: 'none' }}
                       aria-label="Mini-mapa de la canción"

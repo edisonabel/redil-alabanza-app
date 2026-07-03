@@ -2,8 +2,13 @@ import { AudioRingBuffer } from './AudioRingBuffer';
 import type { TrackData } from './MultitrackEngine';
 import * as MP4Box from 'mp4box';
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
-import { normalizeTrackOutputRoute, resolveTrackOutputRoute } from '../utils/liveDirectorTrackRouting';
 import {
+  isGuideRoutingTrack,
+  normalizeTrackOutputRoute,
+  resolveTrackOutputRoute,
+} from '../utils/liveDirectorTrackRouting';
+import {
+  isLiveDiagnosticsEnabled,
   logLiveDiagnostic,
   readLiveBrowserCapabilities,
   warnLiveDiagnostic,
@@ -106,6 +111,11 @@ type WorkletResumeReadingMessage = {
   positionSeconds: number;
   reason?: 'seek' | 'startup';
   seekSerial?: number;
+};
+
+type WorkletDebugEnabledMessage = {
+  type: 'debug-enabled';
+  enabled: boolean;
 };
 
 type WorkletConfigureTelemetryMessage = {
@@ -223,6 +233,7 @@ type WorkletMessage =
   | WorkletFlushBuffersMessage
   | WorkletPauseAndFlushMessage
   | WorkletResumeReadingMessage
+  | WorkletDebugEnabledMessage
   | WorkletConfigureTelemetryMessage
   | WorkletLoopRegionMessage;
 
@@ -728,6 +739,20 @@ type TrackRuntime = {
   fallbackDrainScratch: Float32Array;
 };
 
+type ProducerTrackFlightState = {
+  messageType: string;
+  atMs: number;
+  availableRead?: number;
+  availableWrite?: number;
+  decodedUntilSample?: number;
+  targetEndSample?: number | null;
+  decoderQueueSize?: number;
+  startupPhase?: string;
+  action?: string;
+  code?: string;
+  message?: string;
+};
+
 type PreloadedStreamingSession = {
   sessionId: number;
   tracks: TrackData[];
@@ -854,6 +879,10 @@ export class StreamingMultitrackEngine {
   private pendingProducerSeek: PendingProducerSeek | null = null;
   private pendingSyncAudit: Deferred<ProducerSyncAuditMessage> | null = null;
   private preloadedNextSession: PreloadedStreamingSession | null = null;
+  private readonly latestWorkletTrackStatus = new Map<number, WorkletDebugTrackState>();
+  private readonly latestProducerTrackState = new Map<number, ProducerTrackFlightState>();
+  private readonly latestUnderflowByTrack = new Map<number, WorkletAudioUnderflowMessage & { atMs: number }>();
+  private lastFlightRecorderTableAt = 0;
 
   constructor(options: StreamingMultitrackEngineOptions = {}) {
     if (typeof window === 'undefined') {
@@ -2507,6 +2536,110 @@ export class StreamingMultitrackEngine {
     this.producerWorker.postMessage(message);
   }
 
+  private recordProducerTrackState(
+    trackIndex: number | undefined,
+    state: Omit<ProducerTrackFlightState, 'atMs'>,
+  ): void {
+    if (!isLiveDiagnosticsEnabled() || typeof trackIndex !== 'number') {
+      return;
+    }
+
+    this.latestProducerTrackState.set(trackIndex, {
+      ...state,
+      atMs: performance.now(),
+    });
+  }
+
+  private recordWorkletDebugStatus(message: WorkletDebugStatusMessage): void {
+    if (!isLiveDiagnosticsEnabled()) {
+      return;
+    }
+
+    message.tracks.forEach((trackStatus) => {
+      this.latestWorkletTrackStatus.set(trackStatus.index, trackStatus);
+    });
+  }
+
+  private maybePublishFlightRecorder(reason: string, force = false): void {
+    if (!isLiveDiagnosticsEnabled()) {
+      return;
+    }
+
+    const now = performance.now();
+    if (!force && now - this.lastFlightRecorderTableAt < 1000) {
+      return;
+    }
+
+    this.lastFlightRecorderTableAt = now;
+
+    const rows = this.tracks.map((track, index) => {
+      const state = this.trackStates[index];
+      const worklet = this.latestWorkletTrackStatus.get(index);
+      const producer = this.latestProducerTrackState.get(index);
+      const underflow = this.latestUnderflowByTrack.get(index);
+      const level = this.trackMeterLevels[track.id] ?? 0;
+      const volume = state?.volume ?? track.volume ?? 1;
+      const muted = Boolean(state?.muted ?? track.isMuted);
+      const solo = this.soloTrackIds.has(track.id);
+      const soloBlocked = this.soloTrackIds.size > 0 && !solo;
+      const outputRoute = state?.outputRoute ?? resolveTrackOutputRoute(track);
+      const guide = isGuideRoutingTrack(track);
+      const flags: string[] = [];
+
+      if (!state?.readyResolved) flags.push('NOT_READY');
+      if (muted) flags.push('MUTED');
+      if (volume <= 0.0001) flags.push('VOL_ZERO');
+      if (soloBlocked) flags.push('SOLO_BLOCKED');
+      if (guide && outputRoute !== 'stereo') flags.push(`GUIDE_${String(outputRoute).toUpperCase()}_ONLY`);
+      if (guide && this.transportPlaying && (worklet?.availableRead ?? Number.POSITIVE_INFINITY) <= 0) {
+        flags.push('GUIDE_NO_READ');
+      }
+      if (underflow && now - underflow.atMs < 5000) flags.push('RECENT_UNDERFLOW');
+      if (producer?.startupPhase) flags.push(`PHASE_${producer.startupPhase}`);
+      if (producer?.code) flags.push(`ERR_${producer.code}`);
+
+      return {
+        idx: index,
+        name: track.name || track.id,
+        guide,
+        ready: Boolean(state?.readyResolved),
+        route: outputRoute,
+        muted,
+        solo,
+        soloBlocked,
+        volume: Number(volume.toFixed(3)),
+        level: Number(level.toFixed(5)),
+        workletRead: worklet?.availableRead ?? null,
+        workletDriftMs: Number.isFinite(worklet?.syncDriftMs)
+          ? Number(worklet!.syncDriftMs!.toFixed(2))
+          : null,
+        producerRead: producer?.availableRead ?? null,
+        availableWrite: producer?.availableWrite ?? null,
+        decodedUntil: producer?.decodedUntilSample ?? null,
+        decoderQ: producer?.decoderQueueSize ?? null,
+        underruns: worklet?.underrunEvents ?? 0,
+        underflowAgeMs: underflow ? Math.round(now - underflow.atMs) : null,
+        producerEvent: producer?.messageType ?? null,
+        startupPhase: producer?.startupPhase ?? null,
+        flags: flags.join(', '),
+      };
+    });
+
+    const hasCriticalSignal = rows.some((row) => (
+      row.flags.includes('GUIDE_NO_READ') ||
+      row.flags.includes('RECENT_UNDERFLOW') ||
+      row.flags.includes('SOLO_BLOCKED') ||
+      row.flags.includes('NOT_READY') ||
+      row.flags.includes('ERR_')
+    ));
+    const groupMethod = hasCriticalSignal ? console.warn : console.info;
+
+    groupMethod(
+      `[SPSC-FLIGHT] ${reason} t=${this.getCurrentTime().toFixed(2)}s playing=${this.transportPlaying} tracks=${rows.length}`,
+    );
+    console.table(rows);
+  }
+
   private handleProducerMessage(message: ProducerInboundMessage | null): void {
     if (!message || typeof message !== 'object') {
       return;
@@ -2525,6 +2658,16 @@ export class StreamingMultitrackEngine {
     }
 
     if (message.type === 'producer-startup-retry') {
+      this.recordProducerTrackState(message.trackIndex, {
+        messageType: message.type,
+        availableRead: message.availableRead,
+        availableWrite: message.availableWrite,
+        decodedUntilSample: message.decodedUntilSample,
+        decoderQueueSize: message.decoderQueueSize,
+        startupPhase: message.startupPhase,
+        action: message.action,
+      });
+      this.maybePublishFlightRecorder('producer-startup-retry', true);
       const trackLabel =
         message.trackName ||
         this.tracks[message.trackIndex]?.name ||
@@ -2539,12 +2682,18 @@ export class StreamingMultitrackEngine {
     }
 
     if (message.type === 'producer-track-ready') {
+      this.recordProducerTrackState(message.trackIndex, {
+        messageType: message.type,
+        decodedUntilSample: message.decodedUntilSample,
+        targetEndSample: message.targetEndSample,
+      });
       const trackState = this.trackStates[message.trackIndex];
       if (trackState && !trackState.readyResolved) {
         trackState.readyResolved = true;
         trackState.ready.resolve();
       }
       logLiveDiagnostic('streaming:producer-track-ready', { message });
+      this.maybePublishFlightRecorder('producer-track-ready');
       return;
     }
 
@@ -2553,7 +2702,15 @@ export class StreamingMultitrackEngine {
       message.type === 'producer-lookahead-status' ||
       message.type === 'producer-ring-write'
     ) {
+      this.recordProducerTrackState(message.trackIndex, {
+        messageType: message.type,
+        availableRead: message.availableRead,
+        availableWrite: message.availableWrite,
+        decodedUntilSample: message.decodedUntilSample,
+        targetEndSample: message.targetEndSample,
+      });
       logLiveDiagnostic('streaming:producer-progress', { message });
+      this.maybePublishFlightRecorder(message.type);
       return;
     }
 
@@ -2568,6 +2725,12 @@ export class StreamingMultitrackEngine {
     }
 
     if (message.type === 'producer-ring-backpressure') {
+      this.recordProducerTrackState(message.trackIndex, {
+        messageType: message.type,
+        availableRead: message.availableRead,
+        availableWrite: message.availableWrite,
+      });
+      this.maybePublishFlightRecorder('producer-ring-backpressure', true);
       warnLiveDiagnostic('streaming:producer-ring-backpressure', { message });
       return;
     }
@@ -2578,11 +2741,30 @@ export class StreamingMultitrackEngine {
     }
 
     if (message.type === 'producer-decoder-overload') {
+      this.recordProducerTrackState(message.trackIndex, {
+        messageType: message.type,
+        availableRead: message.availableRead,
+        availableWrite: message.availableWrite,
+        decodedUntilSample: message.decodedUntilSample,
+        decoderQueueSize: message.decoderQueueSize,
+      });
+      this.maybePublishFlightRecorder('producer-decoder-overload', true);
       warnLiveDiagnostic('streaming:producer-decoder-overload', { message });
       return;
     }
 
     if (message.type === 'producer-error') {
+      this.recordProducerTrackState(message.trackIndex, {
+        messageType: message.type,
+        availableRead: message.availableRead,
+        availableWrite: message.availableWrite,
+        decodedUntilSample: message.decodedUntilSample,
+        decoderQueueSize: message.decoderQueueSize,
+        startupPhase: message.startupPhase,
+        code: message.code,
+        message: message.message,
+      });
+      this.maybePublishFlightRecorder('producer-error', true);
       warnLiveDiagnostic('streaming:producer-error', { message });
       this.rejectPendingProducerSeekForMessage(message);
       if (typeof message.trackIndex === 'number') {
@@ -3064,6 +3246,11 @@ export class StreamingMultitrackEngine {
   }
 
   private resetTracks(): void {
+    this.latestWorkletTrackStatus.clear();
+    this.latestProducerTrackState.clear();
+    this.latestUnderflowByTrack.clear();
+    this.lastFlightRecorderTableAt = 0;
+
     while (this.trackStates.length > 0) {
       const trackState = this.trackStates.pop();
       if (!trackState) {
@@ -3108,6 +3295,10 @@ export class StreamingMultitrackEngine {
         this.handleWorkletMessage(event.data as WorkletInboundMessage | null);
       };
       this.workletNode.connect(this.masterGain);
+      this.workletNode.port.postMessage({
+        type: 'debug-enabled',
+        enabled: isLiveDiagnosticsEnabled(),
+      });
     }
 
     return this.workletNode;
@@ -3124,6 +3315,7 @@ export class StreamingMultitrackEngine {
     }
 
     if (message.type === 'debug-status') {
+      this.recordWorkletDebugStatus(message);
       const shouldWarn =
         message.audibleZeroTracks > 0 ||
         (Number.isFinite(message.minAvailableRead) && message.minAvailableRead < AAC_FRAME_SIZE);
@@ -3132,6 +3324,7 @@ export class StreamingMultitrackEngine {
       } else {
         logLiveDiagnostic('streaming:worklet-status', { message });
       }
+      this.maybePublishFlightRecorder('worklet-status', shouldWarn);
       return;
     }
 
@@ -3148,6 +3341,13 @@ export class StreamingMultitrackEngine {
     if (message.type === 'seek-debug') return;
 
     if (message.type === 'audio-underflow') {
+      if (isLiveDiagnosticsEnabled()) {
+        this.latestUnderflowByTrack.set(message.trackIndex, {
+          ...message,
+          atMs: performance.now(),
+        });
+      }
+      this.maybePublishFlightRecorder('audio-underflow', true);
       warnLiveDiagnostic('streaming:audio-underflow', { message });
       return;
     }
