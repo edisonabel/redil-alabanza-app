@@ -672,36 +672,54 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
   }, [ensayoSongs, safeActiveSongIndex, sessionOverrides]);
 
   useEffect(() => {
-    const channel = supabase.channel('ensayo-live-sync', {
-      config: { broadcast: { self: false } },
-    });
+    let channel = null;
 
-    channel.on('broadcast', { event: 'DIRECTOR_CLAIMED' }, () => {
-      alert('Otro dispositivo ha tomado el control remoto del Modo Director. Has sido desconectado para evitar conflictos.');
-      if (typeof onExit === 'function') {
-        onExit();
+    const subscribeDirectorChannel = () => {
+      if (channel) {
+        supabase.removeChannel(channel);
       }
-    });
 
-    channel.subscribe((status) => {
-      setSyncConnected(status === 'SUBSCRIBED');
-      if (status === 'SUBSCRIBED') {
-        channel.send({
-          type: 'broadcast',
-          event: 'DIRECTOR_CLAIMED',
-          payload: { timestamp: Date.now() },
-        }).catch((error) => console.warn('[ModoEnsayoDirector] Failed to claim director lock.', error));
-      }
-    });
+      channel = supabase.channel('ensayo-live-sync', {
+        config: { broadcast: { self: false } },
+      });
 
-    syncChannelRef.current = channel;
+      channel.on('broadcast', { event: 'DIRECTOR_CLAIMED' }, () => {
+        alert('Otro dispositivo ha tomado el control remoto del Modo Director. Has sido desconectado para evitar conflictos.');
+        if (typeof onExit === 'function') {
+          onExit();
+        }
+      });
+
+      channel.subscribe((status) => {
+        setSyncConnected(status === 'SUBSCRIBED');
+        if (status === 'SUBSCRIBED') {
+          channel.send({
+            type: 'broadcast',
+            event: 'DIRECTOR_CLAIMED',
+            payload: { timestamp: Date.now() },
+          }).catch((error) => console.warn('[ModoEnsayoDirector] Failed to claim director lock.', error));
+        }
+      });
+
+      syncChannelRef.current = channel;
+    };
+
+    const handlePageShow = () => {
+      subscribeDirectorChannel();
+    };
+
+    subscribeDirectorChannel();
+    window.addEventListener('pageshow', handlePageShow);
 
     return () => {
-      supabase.removeChannel(channel);
+      window.removeEventListener('pageshow', handlePageShow);
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
       syncChannelRef.current = null;
       setSyncConnected(false);
     };
-  }, []);
+  }, [onExit]);
 
   useEffect(() => {
     if (!syncConnected || !syncChannelRef.current || !activeSongId) {

@@ -18,6 +18,11 @@ type TrackVolumesState = Record<string, number>;
 type TrackLevelsState = Record<string, number>;
 export type TrackEnvelopesState = Record<string, TrackActivityEnvelope>;
 type LoadProgressState = { loaded: number; total: number } | null;
+type SuspensionNoticeState = {
+  message: string;
+  reason: string;
+  at: number;
+} | null;
 const UI_UPDATE_INTERVAL_MS = 1000 / 24;
 const DIAGNOSTICS_UPDATE_INTERVAL_MS = 1000;
 const TRACK_LEVEL_UPDATE_THRESHOLD = 0.006;
@@ -52,10 +57,13 @@ export type UseMultitrackEngineReturn = {
   trackLevels: TrackLevelsState;
   trackEnvelopes: TrackEnvelopesState;
   diagnostics: EngineDiagnostics | null;
+  suspensionNotice: SuspensionNoticeState;
   initialize: (tracks: TrackData[]) => Promise<void>;
   play: () => Promise<void>;
   pause: () => void;
   stop: () => void;
+  reviveAfterSuspension: () => Promise<void>;
+  clearSuspensionNotice: () => void;
   setVolume: (trackId: string, volume: number) => void;
   setTrackOutputRoute: (trackId: string, outputRoute: TrackOutputRoute) => void;
   toggleMute: (trackId: string) => void;
@@ -246,6 +254,7 @@ export function useMultitrackEngine(
   const [trackEnvelopes, setTrackEnvelopes] = useState<TrackEnvelopesState>({});
   const [diagnostics, setDiagnostics] = useState<EngineDiagnostics | null>(null);
   const [loadWarnings, setLoadWarnings] = useState<MultitrackEngineLoadWarning[]>([]);
+  const [suspensionNotice, setSuspensionNotice] = useState<SuspensionNoticeState>(null);
 
   const cancelEngineUiLoops = useCallback(() => {
     if (frameRef.current !== null) {
@@ -415,6 +424,7 @@ export function useMultitrackEngine(
     setTrackLevels({});
     setTrackEnvelopes({});
     setLoadWarnings([]);
+    setSuspensionNotice(null);
     commitLoadProgress({ loaded: 0, total: nextTracks.length });
 
     const handleProgress = (loaded: number, total: number) => {
@@ -564,6 +574,30 @@ export function useMultitrackEngine(
     commitDiagnostics(engine.getDiagnostics());
   }, [commitCurrentTime, commitDiagnostics, commitDuration, commitTrackLevels]);
 
+  const reviveAfterSuspension = useCallback(async () => {
+    const engine = engineRef.current;
+    if (!(engine instanceof StreamingMultitrackEngine)) {
+      setSuspensionNotice(null);
+      return;
+    }
+
+    setIsReady(false);
+    commitLoadProgress({ loaded: 0, total: engine.getTracks().length });
+    await engine.reviveAfterSuspension();
+    setIsReady(true);
+    setIsPlaying(engine.getIsPlaying());
+    commitCurrentTime(engine.getCurrentTime());
+    commitDuration(Math.max(durationRef.current, engine.getDuration(), engine.getCurrentTime()));
+    commitTrackLevels(engine.getTrackMeterLevels());
+    commitDiagnostics(engine.getDiagnostics());
+    commitLoadProgress(null);
+    setSuspensionNotice(null);
+  }, [commitCurrentTime, commitDiagnostics, commitDuration, commitLoadProgress, commitTrackLevels]);
+
+  const clearSuspensionNotice = useCallback(() => {
+    setSuspensionNotice(null);
+  }, []);
+
   const stop = useCallback(() => {
     const engine = engineRef.current;
     if (!engine) {
@@ -702,6 +736,7 @@ export function useMultitrackEngine(
       trackLevelsRef.current = {};
       diagnosticsRef.current = null;
       loadProgressRef.current = null;
+      setSuspensionNotice(null);
     };
   }, [cancelEngineUiLoops, teardownEngine]);
 
@@ -726,8 +761,42 @@ export function useMultitrackEngine(
     setDiagnostics(null);
     loadProgressRef.current = null;
     setLoadProgress(null);
+    setSuspensionNotice(null);
     lastUiUpdateRef.current = 0;
   }, [cancelEngineUiLoops, requestedEngineKind, passiveTelemetry, teardownEngine]);
+
+  useEffect(() => {
+    const handleEngineSuspendedStale = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        engine?: EngineInstance;
+        reason?: string;
+      }>).detail || {};
+
+      if (detail.engine && detail.engine !== engineRef.current) {
+        return;
+      }
+
+      const engine = engineRef.current;
+      setIsPlaying(false);
+      setSuspensionNotice({
+        message: 'La sesión se pausó al salir de la app.',
+        reason: String(detail.reason || 'suspension'),
+        at: Date.now(),
+      });
+
+      if (engine) {
+        commitCurrentTime(engine.getCurrentTime());
+        commitDuration(Math.max(durationRef.current, engine.getDuration(), engine.getCurrentTime()));
+        commitTrackLevels(engine.getTrackMeterLevels());
+        commitDiagnostics(engine.getDiagnostics());
+      }
+    };
+
+    window.addEventListener('live-director:engine-suspended-stale', handleEngineSuspendedStale);
+    return () => {
+      window.removeEventListener('live-director:engine-suspended-stale', handleEngineSuspendedStale);
+    };
+  }, [commitCurrentTime, commitDiagnostics, commitDuration, commitTrackLevels]);
 
   useEffect(() => {
     if (passiveTelemetry) {
@@ -821,10 +890,13 @@ export function useMultitrackEngine(
       trackLevels,
       trackEnvelopes,
       diagnostics,
+      suspensionNotice,
       initialize,
       play,
       pause,
       stop,
+      reviveAfterSuspension,
+      clearSuspensionNotice,
       setVolume,
       setTrackOutputRoute,
       toggleMute,
@@ -841,6 +913,7 @@ export function useMultitrackEngine(
       currentTime,
       duration,
       diagnostics,
+      clearSuspensionNotice,
       initialize,
       isPlaying,
       isReady,
@@ -848,6 +921,7 @@ export function useMultitrackEngine(
       loadProgress,
       pause,
       play,
+      reviveAfterSuspension,
       seekTo,
       setLoopPoints,
       setMasterVolume,
@@ -863,6 +937,7 @@ export function useMultitrackEngine(
       trackVolumes,
       getSharedTelemetry,
       getCurrentTimeSnapshot,
+      suspensionNotice,
     ],
   );
 }

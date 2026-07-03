@@ -780,6 +780,8 @@ const MIN_START_BUFFER_SECONDS = 0.5;
 const START_BARRIER_POLL_INTERVAL_MS = 50;
 const START_BARRIER_BUFFERING_NOTICE_MS = 200;
 const START_BARRIER_TIMEOUT_MS = 30_000;
+const PRODUCER_STALE_MESSAGE_GRACE_MS = 5_000;
+const PRODUCER_STALE_RECHECK_DELAY_MS = 250;
 const AAC_SAMPLE_RATE_INDEXES = new Map<number, number>([
   [96000, 0],
   [88200, 1],
@@ -883,6 +885,24 @@ export class StreamingMultitrackEngine {
   private readonly latestProducerTrackState = new Map<number, ProducerTrackFlightState>();
   private readonly latestUnderflowByTrack = new Map<number, WorkletAudioUnderflowMessage & { atMs: number }>();
   private lastFlightRecorderTableAt = 0;
+  private lastProducerMessageAt = 0;
+  private suspensionStaleEmitted = false;
+  private suspensionCheckTimerId: number | null = null;
+  private disposed = false;
+  private readonly handlePageHide = () => {
+    this.handlePageSuspending('pagehide');
+  };
+  private readonly handlePageShow = (event: PageTransitionEvent) => {
+    this.scheduleProducerStaleCheck(event.persisted ? 'pageshow-bfcache' : 'pageshow');
+  };
+  private readonly handleVisibilityChange = () => {
+    if (document.hidden) {
+      this.handlePageSuspending('visibility-hidden');
+      return;
+    }
+
+    this.scheduleProducerStaleCheck('visibility-visible');
+  };
 
   constructor(options: StreamingMultitrackEngineOptions = {}) {
     if (typeof window === 'undefined') {
@@ -965,6 +985,149 @@ export class StreamingMultitrackEngine {
         currentTime: this.context.currentTime,
       });
     });
+
+    this.installPageLifecycleListeners();
+  }
+
+  private installPageLifecycleListeners(): void {
+    window.addEventListener('pagehide', this.handlePageHide);
+    window.addEventListener('pageshow', this.handlePageShow);
+    document.addEventListener('visibilitychange', this.handleVisibilityChange);
+  }
+
+  private removePageLifecycleListeners(): void {
+    window.removeEventListener('pagehide', this.handlePageHide);
+    window.removeEventListener('pageshow', this.handlePageShow);
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+  }
+
+  private handlePageSuspending(reason: string): void {
+    if (!this.transportPlaying) {
+      return;
+    }
+
+    console.warn('[SPSC-SUSPEND] page hidden while playing; pausing transport.', {
+      reason,
+      currentTime: this.getCurrentTime(),
+      contextState: this.context.state,
+      tracks: this.trackStates.length,
+    });
+    this.pause();
+  }
+
+  private scheduleProducerStaleCheck(reason: string): void {
+    if (this.disposed) {
+      return;
+    }
+
+    if (this.suspensionCheckTimerId !== null) {
+      window.clearTimeout(this.suspensionCheckTimerId);
+    }
+
+    this.suspensionCheckTimerId = window.setTimeout(() => {
+      this.suspensionCheckTimerId = null;
+      this.checkProducerStaleAfterSuspension(reason);
+    }, PRODUCER_STALE_RECHECK_DELAY_MS);
+  }
+
+  private checkProducerStaleAfterSuspension(reason: string): void {
+    if (this.disposed || this.trackStates.length === 0) {
+      return;
+    }
+
+    const now = performance.now();
+    const messageAgeMs = this.lastProducerMessageAt > 0 ? now - this.lastProducerMessageAt : Number.POSITIVE_INFINITY;
+    let readyTrackCount = 0;
+    let readyEmptyTrackCount = 0;
+
+    for (let index = 0; index < this.trackStates.length; index += 1) {
+      const trackState = this.trackStates[index];
+      if (!trackState.readyResolved) {
+        continue;
+      }
+
+      readyTrackCount += 1;
+      if (
+        trackState.ringBuffer.availableRead() <= 0 &&
+        trackState.ringBuffer.availableWrite() >= trackState.ringBuffer.capacity
+      ) {
+        readyEmptyTrackCount += 1;
+      }
+    }
+
+    const producerSilent = messageAgeMs > PRODUCER_STALE_MESSAGE_GRACE_MS;
+    const allReadyTracksEmpty = readyTrackCount > 0 && readyEmptyTrackCount === readyTrackCount;
+
+    if (!producerSilent && !allReadyTracksEmpty) {
+      this.suspensionStaleEmitted = false;
+      return;
+    }
+
+    this.emitEngineSuspendedStale({
+      reason,
+      messageAgeMs: Number.isFinite(messageAgeMs) ? Math.round(messageAgeMs) : null,
+      readyTrackCount,
+      readyEmptyTrackCount,
+      trackCount: this.trackStates.length,
+      producerSilent,
+      allReadyTracksEmpty,
+    });
+  }
+
+  private emitEngineSuspendedStale(detail: {
+    reason: string;
+    messageAgeMs: number | null;
+    readyTrackCount: number;
+    readyEmptyTrackCount: number;
+    trackCount: number;
+    producerSilent: boolean;
+    allReadyTracksEmpty: boolean;
+  }): void {
+    if (this.suspensionStaleEmitted) {
+      return;
+    }
+
+    this.suspensionStaleEmitted = true;
+    const payload = {
+      ...detail,
+      currentTime: this.getCurrentTime(),
+      contextState: this.context.state,
+    };
+
+    console.warn('[SPSC-SUSPEND] engine-suspended-stale', payload);
+    try {
+      window.dispatchEvent(new CustomEvent('live-director:engine-suspended-stale', {
+        detail: {
+          ...payload,
+          engine: this,
+        },
+      }));
+    } catch {
+      // Ignore CustomEvent failures in embedded test harnesses.
+    }
+  }
+
+  private terminateProducerWorker(reason: string): void {
+    if (!this.producerWorker) {
+      return;
+    }
+
+    try {
+      this.producerWorker.postMessage({
+        type: 'release-loop-cache',
+        sessionId: this.producerSessionId,
+      });
+    } catch {
+      // no-op
+    }
+
+    console.warn('[SPSC-SUSPEND] terminating producer worker.', {
+      reason,
+      sessionId: this.producerSessionId,
+    });
+    this.producerWorker.terminate();
+    this.producerWorker = null;
+    this.lastProducerMessageAt = 0;
   }
 
   async loadTracks(
@@ -1788,7 +1951,66 @@ export class StreamingMultitrackEngine {
     });
   }
 
+  async reviveAfterSuspension(): Promise<void> {
+    if (this.disposed) {
+      throw new Error('StreamingMultitrackEngine has already been disposed.');
+    }
+
+    const currentPosition = this.getCurrentTime();
+    const trackDefinitions = this.tracks.map((track) => this.buildStreamingTrackDefinition(track));
+
+    if (trackDefinitions.length === 0) {
+      return;
+    }
+
+    console.warn('[SPSC-SUSPEND] revive-after-suspension start', {
+      currentPosition,
+      tracks: trackDefinitions.length,
+      previousSessionId: this.producerSessionId,
+    });
+
+    this.suspensionStaleEmitted = false;
+    this.startBarrierSerial += 1;
+    this.cancelPendingProducerSeek();
+    this.transportPlaying = false;
+    this.startTime = 0;
+    this.pauseTime = Math.max(0, currentPosition);
+    this.terminateProducerWorker('revive-after-suspension');
+
+    await this.resumeContextIfNeeded();
+    await this.initialize(trackDefinitions);
+
+    if (currentPosition > 0.01) {
+      await this.seekTo(currentPosition);
+    } else {
+      this.pauseTime = 0;
+      this.postWorkletMessage({
+        type: 'FLUSH_BUFFERS',
+        reason: 'seek',
+        targetSample: 0,
+        seekSerial: this.activeSeekSerial,
+      });
+    }
+
+    this.transportPlaying = false;
+    this.startTime = 0;
+    this.pauseTime = Math.max(0, currentPosition);
+    this.suspensionStaleEmitted = false;
+
+    console.warn('[SPSC-SUSPEND] revive-after-suspension complete', {
+      currentPosition: this.pauseTime,
+      sessionId: this.producerSessionId,
+      tracks: this.trackStates.length,
+    });
+  }
+
   dispose(): void {
+    this.disposed = true;
+    this.removePageLifecycleListeners();
+    if (this.suspensionCheckTimerId !== null) {
+      window.clearTimeout(this.suspensionCheckTimerId);
+      this.suspensionCheckTimerId = null;
+    }
     this.cancelPendingProducerSeek();
     this.releasePreloadedNextSession();
     this.transportPlaying = false;
@@ -1804,18 +2026,7 @@ export class StreamingMultitrackEngine {
       this.workletNode.disconnect();
       this.workletNode = null;
     }
-    if (this.producerWorker) {
-      try {
-        this.producerWorker.postMessage({
-          type: 'release-loop-cache',
-          sessionId: this.producerSessionId,
-        });
-      } catch {
-        // no-op
-      }
-      this.producerWorker.terminate();
-      this.producerWorker = null;
-    }
+    this.terminateProducerWorker('dispose');
     this.tracks = [];
     this.trackIndexById.clear();
     this.sharedTelemetry = null;
@@ -2480,6 +2691,7 @@ export class StreamingMultitrackEngine {
         colno: event.colno,
       });
     };
+    this.lastProducerMessageAt = performance.now();
 
     return this.producerWorker;
   }
@@ -2644,6 +2856,8 @@ export class StreamingMultitrackEngine {
     if (!message || typeof message !== 'object') {
       return;
     }
+
+    this.lastProducerMessageAt = performance.now();
 
     if (message.type === 'producer-ready') {
       logLiveDiagnostic('streaming:producer-ready', { message });

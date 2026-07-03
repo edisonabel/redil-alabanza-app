@@ -191,12 +191,47 @@ const isRemoteChordProUrl = (value = '') => {
   return /^https?:\/\//i.test(s) && /\.(txt|pro|cho|chordpro)(\?.*)?$/i.test(s);
 };
 
+const ENSAYO_OPEN_TIMEOUT_MS = 10_000;
+const ENSAYO_OPEN_RETRY_DELAY_MS = 350;
+
+const wait = (ms) => new Promise((resolve) => {
+  window.setTimeout(resolve, ms);
+});
+
+const runWithTimeout = async (factory, label) => {
+  let timeoutId = null;
+  try {
+    return await Promise.race([
+      factory(),
+      new Promise((_, reject) => {
+        timeoutId = window.setTimeout(() => {
+          reject(new Error(`${label} tardó más de ${ENSAYO_OPEN_TIMEOUT_MS / 1000}s en responder.`));
+        }, ENSAYO_OPEN_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
+  }
+};
+
+const runWithOneRetry = async (factory, label) => {
+  try {
+    return await runWithTimeout(factory, label);
+  } catch (firstError) {
+    console.warn(`[EnsayoGlobalIsland] ${label} falló; reintentando una vez.`, firstError);
+    await wait(ENSAYO_OPEN_RETRY_DELAY_MS);
+    return runWithTimeout(factory, label);
+  }
+};
+
 const resolveChordPro = async (raw = '') => {
   const value = String(raw || '').trim();
   if (!value) return '';
   if (!isRemoteChordProUrl(value)) return value;
   try {
-    const res = await fetch(value);
+    const res = await runWithOneRetry(() => fetch(value), 'ChordPro remoto');
     if (!res.ok) return value;
     const text = (await res.text()).trim();
     return text || value;
@@ -213,7 +248,10 @@ const resolveMultitrackSession = async (song = {}) => {
   if (!songId || song?.hasMultitrackSession === false) return null;
 
   try {
-    return await fetchLiveDirectorSongSession(songId);
+    return await runWithOneRetry(
+      () => fetchLiveDirectorSongSession(songId),
+      'Sesión multitrack',
+    );
   } catch (error) {
     console.warn('[EnsayoGlobalIsland] No se pudo cargar la sesion multitrack guardada.', error);
     return null;
@@ -224,12 +262,16 @@ const resolveMultitrackSession = async (song = {}) => {
 
 export default function EnsayoGlobalIsland() {
   const [activeSong, setActiveSong] = useState(null);
+  const [openingSong, setOpeningSong] = useState(null);
+  const [openError, setOpenError] = useState('');
 
-  useEffect(() => {
-    const handleOpen = async (event) => {
-      const raw = event?.detail?.song;
-      if (!raw) return;
+  const openSong = useCallback(async (raw) => {
+    if (!raw) return;
 
+    setOpeningSong(raw);
+    setOpenError('');
+
+    try {
       const [chordproText, multitrackSession] = await Promise.all([
         resolveChordPro(raw.chordpro),
         resolveMultitrackSession(raw),
@@ -248,13 +290,65 @@ export default function EnsayoGlobalIsland() {
         sectionMarkers,
         ...(multitrackSession ? { multitrackSession } : {}),
       });
+      setOpeningSong(null);
+    } catch (error) {
+      console.error('[EnsayoGlobalIsland] No se pudo abrir el modo ensayo.', error);
+      setOpenError(error instanceof Error ? error.message : 'No se pudo abrir el modo ensayo.');
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleOpen = async (event) => {
+      const raw = event?.detail?.song;
+      if (!raw) return;
+      void openSong(raw);
     };
 
     window.addEventListener('open-ensayo-compacto', handleOpen);
     return () => window.removeEventListener('open-ensayo-compacto', handleOpen);
+  }, [openSong]);
+
+  const handleGoBack = useCallback(() => {
+    setActiveSong(null);
+    setOpenError('');
+    setOpeningSong(null);
   }, []);
 
-  const handleGoBack = useCallback(() => setActiveSong(null), []);
+  if (!activeSong && (openingSong || openError)) {
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/24 px-5 backdrop-blur-[10px]">
+        <div className="w-full max-w-sm rounded-[1.6rem] border border-white/12 bg-[linear-gradient(180deg,rgba(18,20,23,0.96),rgba(11,12,14,0.96))] px-5 py-5 text-white shadow-[0_28px_70px_rgba(0,0,0,0.34)]">
+          <p className="text-[0.72rem] font-black uppercase tracking-[0.24em] text-sky-100/68">
+            Modo ensayo
+          </p>
+          <h2 className="mt-2 text-[1.35rem] font-semibold tracking-tight">
+            {openError ? 'No pudimos abrir la sesión' : 'Abriendo ensayo...'}
+          </h2>
+          <p className="mt-2 text-[0.92rem] leading-relaxed text-white/62">
+            {openError || 'Preparando letras, carátulas y la sesión de audio.'}
+          </p>
+          {!openError && (
+            <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-white/8">
+              <div className="live-director-indeterminate h-full w-1/3 rounded-full bg-sky-300/90" />
+            </div>
+          )}
+          {openError && (
+            <button
+              type="button"
+              onClick={() => {
+                if (openingSong) {
+                  void openSong(openingSong);
+                }
+              }}
+              className="mt-5 rounded-[1rem] border border-sky-300/24 bg-sky-400/14 px-4 py-3 text-[0.78rem] font-black uppercase tracking-[0.16em] text-sky-50"
+            >
+              Reintentar
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (!activeSong) return null;
 

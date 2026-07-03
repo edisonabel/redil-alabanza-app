@@ -1,4 +1,5 @@
 ﻿import {
+  Activity,
   AlertTriangle,
   AudioWaveform,
   ChevronLeft,
@@ -581,6 +582,15 @@ export function LiveDirectorView({
   const getSharedTelemetry = 'getSharedTelemetry' in selectedMultitrackEngine
     ? selectedMultitrackEngine.getSharedTelemetry
     : nullSharedTelemetry;
+  const engineSuspensionNotice = 'suspensionNotice' in selectedMultitrackEngine
+    ? selectedMultitrackEngine.suspensionNotice
+    : null;
+  const reviveAfterSuspension = 'reviveAfterSuspension' in selectedMultitrackEngine
+    ? selectedMultitrackEngine.reviveAfterSuspension
+    : async () => {};
+  const clearSuspensionNotice = 'clearSuspensionNotice' in selectedMultitrackEngine
+    ? selectedMultitrackEngine.clearSuspensionNotice
+    : () => {};
   const getVisualClockTime = useCallback(() => {
     if ('getCurrentTimeSnapshot' in selectedMultitrackEngine) {
       return selectedMultitrackEngine.getCurrentTimeSnapshot();
@@ -4909,6 +4919,52 @@ export function LiveDirectorView({
           <audio ref={padAudioRefA} preload="none" className="hidden" />
           <audio ref={padAudioRefB} preload="none" className="hidden" />
         </>
+      )}
+
+      {engineSuspensionNotice && (
+        <div className="pointer-events-none absolute inset-x-0 top-3 z-[58] flex justify-center px-3">
+          <div className="pointer-events-auto w-full max-w-md rounded-[1.15rem] border border-emerald-300/22 bg-[linear-gradient(180deg,rgba(13,27,23,0.97),rgba(8,15,14,0.97))] px-4 py-3 shadow-[0_18px_36px_rgba(0,0,0,0.3)]">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.8rem] border border-emerald-300/20 bg-emerald-300/10 text-emerald-100">
+                <Activity className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[0.68rem] font-black uppercase tracking-[0.22em] text-emerald-100/72">
+                  Sesión pausada
+                </p>
+                <p className="mt-0.5 text-[0.86rem] leading-snug text-white/78">
+                  {engineSuspensionNotice.message}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  setBusyMessage('Reanudando sesión...');
+                  try {
+                    await reviveAfterSuspension();
+                    setLoadError(null);
+                  } catch (error) {
+                    setLoadError(error instanceof Error ? error.message : 'No se pudo reanudar la sesión.');
+                  } finally {
+                    setBusyMessage(null);
+                  }
+                }}
+                className="ui-pressable-soft shrink-0 rounded-[0.85rem] border border-emerald-300/28 bg-emerald-300/12 px-3 py-2 text-[0.72rem] font-black uppercase tracking-[0.16em] text-emerald-50 hover:bg-emerald-300/18"
+              >
+                Reanudar
+              </button>
+              <button
+                type="button"
+                onClick={clearSuspensionNotice}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[0.7rem] border border-white/10 bg-white/5 text-white/64 hover:bg-white/10 hover:text-white"
+                aria-label="Cerrar aviso de sesión pausada"
+                title="Cerrar"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showTrackLimitNotice && trackLimitNotice && (
