@@ -59,6 +59,7 @@ export type UseMultitrackEngineReturn = {
   diagnostics: EngineDiagnostics | null;
   suspensionNotice: SuspensionNoticeState;
   initialize: (tracks: TrackData[]) => Promise<void>;
+  unlockAudioForUserGesture: () => Promise<void>;
   play: () => Promise<void>;
   pause: () => void;
   stop: () => void;
@@ -560,6 +561,31 @@ export function useMultitrackEngine(
     commitDiagnostics(engine.getDiagnostics());
   }, [commitCurrentTime, commitDiagnostics, commitDuration, commitTrackLevels, isReady, passiveTelemetry]);
 
+  const unlockAudioForUserGesture = useCallback(async () => {
+    const engine = engineRef.current;
+    if (!engine) {
+      return;
+    }
+
+    const context = engine.context;
+    const contextState = String(context.state);
+    if (contextState !== 'suspended' && contextState !== 'interrupted') {
+      return;
+    }
+
+    try {
+      await context.resume();
+      const nextState = String(context.state);
+      if (nextState === 'suspended' || nextState === 'interrupted') {
+        console.warn('[useMultitrackEngine] AudioContext sigue bloqueado tras gesto de usuario.', {
+          state: nextState,
+        });
+      }
+    } catch (error) {
+      console.warn('[useMultitrackEngine] No se pudo reanudar AudioContext en gesto de usuario.', error);
+    }
+  }, []);
+
   const pause = useCallback(() => {
     const engine = engineRef.current;
     if (!engine) {
@@ -892,6 +918,7 @@ export function useMultitrackEngine(
       diagnostics,
       suspensionNotice,
       initialize,
+      unlockAudioForUserGesture,
       play,
       pause,
       stop,
@@ -915,6 +942,7 @@ export function useMultitrackEngine(
       diagnostics,
       clearSuspensionNotice,
       initialize,
+      unlockAudioForUserGesture,
       isPlaying,
       isReady,
       loadWarnings,

@@ -105,6 +105,7 @@ class AudioSessionService {
   private silentAudio: HTMLAudioElement | null = null;
   private installComplete = false;
   private activationCaptureInstalled = false;
+  private silentLoopUnlockedByGesture = false;
   private unlockPromise: Promise<boolean> | null = null;
   private controllers = new Map<string, AudioControllerRecord>();
   private activeControllerId: string | null = null;
@@ -175,6 +176,10 @@ class AudioSessionService {
     }
 
     this.unlockPromise = this.ensureSilentLoopPlaying()
+      .then((unlocked) => {
+        this.silentLoopUnlockedByGesture = this.silentLoopUnlockedByGesture || unlocked;
+        return unlocked;
+      })
       .catch(() => false)
       .finally(() => {
         this.unlockPromise = null;
@@ -190,12 +195,12 @@ class AudioSessionService {
         await controller.onPlay();
       } else if (controller?.audioElement) {
         await controller.audioElement.play();
-      } else if (!isNativeIOSRuntime()) {
+      } else if (!isNativeIOSRuntime() && this.silentLoopUnlockedByGesture) {
         await this.ensureSilentLoopPlaying();
       }
     } catch (error) {
       console.warn('[AudioSessionService] No se pudo reanudar el audio principal.', error);
-      if (!isNativeIOSRuntime()) {
+      if (!isNativeIOSRuntime() && this.silentLoopUnlockedByGesture) {
         await this.ensureSilentLoopPlaying().catch(() => false);
       }
     }
@@ -288,7 +293,7 @@ class AudioSessionService {
   };
 
   private async restoreVisibleSession() {
-    if (!isNativeIOSRuntime()) {
+    if (!isNativeIOSRuntime() && this.silentLoopUnlockedByGesture) {
       await this.ensureSilentLoopPlaying().catch(() => false);
     }
 
@@ -348,7 +353,10 @@ class AudioSessionService {
       this.updatePlaybackState();
       return true;
     } catch (error) {
-      console.warn('[AudioSessionService] No se pudo activar el bucle de silencio.', error);
+      const errorName = error instanceof Error ? error.name : '';
+      if (errorName !== 'NotAllowedError') {
+        console.warn('[AudioSessionService] No se pudo activar el bucle de silencio.', error);
+      }
       return false;
     }
   }

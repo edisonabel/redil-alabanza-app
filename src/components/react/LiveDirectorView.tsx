@@ -50,6 +50,7 @@ import {
   uploadFileToLiveDirectorTarget,
 } from '../../utils/liveDirectorUploadClient';
 import { resolveFetchableAudioUrl } from '../../lib/audio-playback.js';
+import { audioSessionService } from '../../services/AudioSessionService';
 import {
   isGuideRoutingTrack,
   resolveTrackOutputRoute,
@@ -591,6 +592,9 @@ export function LiveDirectorView({
   const clearSuspensionNotice = 'clearSuspensionNotice' in selectedMultitrackEngine
     ? selectedMultitrackEngine.clearSuspensionNotice
     : () => {};
+  const unlockAudioForUserGesture = 'unlockAudioForUserGesture' in selectedMultitrackEngine
+    ? selectedMultitrackEngine.unlockAudioForUserGesture
+    : async () => {};
   const getVisualClockTime = useCallback(() => {
     if ('getCurrentTimeSnapshot' in selectedMultitrackEngine) {
       return selectedMultitrackEngine.getCurrentTimeSnapshot();
@@ -598,6 +602,23 @@ export function LiveDirectorView({
 
     return selectedMultitrackEngine.currentTime;
   }, [selectedMultitrackEngine]);
+
+  const handleTogglePlaybackFromGesture = useCallback(() => {
+    if (isPlaying) {
+      pause();
+      return;
+    }
+
+    const contextUnlockPromise = unlockAudioForUserGesture();
+    const sessionUnlockPromise = audioSessionService.unlockFromUserGesture();
+
+    void (async () => {
+      await Promise.allSettled([contextUnlockPromise, sessionUnlockPromise]);
+      await play();
+    })().catch((error) => {
+      console.warn('[LiveDirectorView] No se pudo iniciar reproducción tras el gesto.', error);
+    });
+  }, [isPlaying, pause, play, unlockAudioForUserGesture]);
 
   useEffect(() => {
     visualClockReaderRef.current = getVisualClockTime;
@@ -3164,19 +3185,14 @@ export function LiveDirectorView({
 
       event.preventDefault();
 
-      if (isPlaying) {
-        pause();
-        return;
-      }
-
-      void play();
+      handleTogglePlaybackFromGesture();
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isPlaying, isReady, pause, play, showLoadPanel, showTrackLoadModal]);
+  }, [handleTogglePlaybackFromGesture, isReady, showLoadPanel, showTrackLoadModal]);
 
   const handleInternalPadVolumeChange = useCallback((nextVolume: number) => {
     const safeValue = clamp(nextVolume, 0, 1);
@@ -3731,14 +3747,7 @@ export function LiveDirectorView({
 
               <button
                 type="button"
-                onClick={() => {
-                  if (isPlaying) {
-                    pause();
-                    return;
-                  }
-
-                  void play();
-                }}
+                onClick={handleTogglePlaybackFromGesture}
                 disabled={!isReady}
                 className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-5' : isCompactLandscape ? 'h-12 px-6' : 'h-[var(--ld-control-height)] px-7'} justify-center ${isPlaying ? 'text-[#43c477] border-[#43c477]/35 bg-[#43c477]/10' : 'text-[#43c477] hover:text-[#4fe487]'} hover:bg-[#43c477]/12 disabled:cursor-not-allowed disabled:text-white/24 disabled:hover:bg-transparent`}
                 style={{ width: scaleRem(isUltraCompactLandscape ? (showSectionsPanel ? 7.35 : 8.85) : isCompactLandscape ? (showSectionsPanel ? 9.35 : 10.75) : showSectionsPanel ? 12.75 : 14.25, 6.85) }}
