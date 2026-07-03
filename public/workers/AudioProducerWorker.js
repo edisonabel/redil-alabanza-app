@@ -23,6 +23,13 @@ const DECODER_RECOVERY_SAMPLE_LIMIT = 8;
 const SEEK_READY_SECONDS = 0.5;
 const SEEK_HANDSHAKE_SOFT_TIMEOUT_MS = 2500;
 const TRACK_READY_WATCHDOG_MS = 60000;
+const STARTUP_DECODER_STAGGER_MS = 200;
+const STARTUP_RECOVERY_CHECKS_MS = [8000, 20000, 28000];
+const STARTUP_DECODER_RECOVERY_PHASES = [
+  'decoder-queued-no-output',
+  'decoder-config-missing',
+  'decoder-not-created',
+];
 const RANGE_FETCH_MAX_RETRIES = 3;
 const RANGE_FETCH_BASE_RETRY_DELAY_MS = 500;
 const RANGE_FETCH_INITIAL_JITTER_MIN_MS = 10;
@@ -1350,6 +1357,12 @@ class ProducerTrackPipeline {
     this.preWarmedNextFileStart = 0;
     this.preWarmedDurationSeconds = undefined;
     this.readyWatchdogId = 0;
+    this.startupRecoveryTimerIds = [];
+    this.startupRecoveryAttemptCount = 0;
+    this.startupTimeoutPosted = false;
+    this.decoderStartupStaggerMs =
+      Math.max(0, Math.floor(Number(track.trackIndex) || 0)) * STARTUP_DECODER_STAGGER_MS;
+    this.decoderStartupStaggerApplied = false;
     this.decoderQueueOverloadStartedAt = 0;
     this.lastDecoderQueueAlertAt = 0;
     this.lastRingBackpressurePostAt = 0;
@@ -1583,36 +1596,146 @@ class ProducerTrackPipeline {
       return;
     }
 
+    this.startupTimeoutPosted = false;
+    this.startupRecoveryAttemptCount = 0;
+    this.scheduleStartupRecoveryChecks(sessionId, token);
+
     this.readyWatchdogId = setTimeout(() => {
       if (this.isDestroyed || this.lookAheadToken !== token || this.normalReadyPosted) {
         return;
       }
 
-      const diagnostic = this.getStartupDiagnostic('track-ready-timeout');
-      postProducerError(
-        'track-ready-timeout',
-        new Error(`La pista no produjo PCM inicial (${diagnostic.startupPhase}).`),
-        {
-          sessionId,
-          trackIndex: this.track.trackIndex,
-          trackId: this.track.id,
-          trackName: this.track.name,
-          codec: diagnostic.codec,
-          sampleRate: diagnostic.sampleRate,
-          channelCount: diagnostic.channelCount,
-          ...diagnostic,
-        },
-      );
+      this.postTrackReadyTimeout(sessionId, 'track-ready-timeout');
     }, TRACK_READY_WATCHDOG_MS);
+  }
+
+  scheduleStartupRecoveryChecks(sessionId, token) {
+    this.startupRecoveryTimerIds = STARTUP_RECOVERY_CHECKS_MS.map((delayMs, index) => (
+      setTimeout(() => {
+        this.handleStartupRecoveryCheck(sessionId, token, index + 1).catch((error) => {
+          if (this.isDestroyed || this.lookAheadToken !== token || this.normalReadyPosted) {
+            return;
+          }
+
+          postProducerError('startup-retry-failed', error, {
+            sessionId,
+            trackIndex: this.track.trackIndex,
+            trackId: this.track.id,
+            trackName: this.track.name,
+            ...this.getStartupDiagnostic('startup-retry-failed'),
+          });
+        });
+      }, delayMs)
+    ));
+  }
+
+  async handleStartupRecoveryCheck(sessionId, token, checkNumber) {
+    if (
+      this.isDestroyed ||
+      this.lookAheadToken !== token ||
+      this.normalReadyPosted ||
+      this.startupTimeoutPosted
+    ) {
+      return;
+    }
+
+    const diagnostic = this.getStartupDiagnostic(`startup-check-${checkNumber}`);
+    const startupPhase = diagnostic.startupPhase;
+
+    if (checkNumber >= STARTUP_RECOVERY_CHECKS_MS.length) {
+      self.postMessage({
+        type: 'producer-startup-retry',
+        sessionId,
+        trackIndex: this.track.trackIndex,
+        trackId: this.track.id,
+        trackName: this.track.name,
+        attempt: this.startupRecoveryAttemptCount,
+        maxAttempts: 2,
+        startupPhase,
+        action: startupPhase === 'demuxer-not-ready' ? 'diagnostic-only' : 'timeout',
+        ...diagnostic,
+      });
+      this.postTrackReadyTimeout(sessionId, 'track-ready-timeout');
+      return;
+    }
+
+    if (startupPhase === 'demuxer-not-ready') {
+      self.postMessage({
+        type: 'producer-startup-retry',
+        sessionId,
+        trackIndex: this.track.trackIndex,
+        trackId: this.track.id,
+        trackName: this.track.name,
+        attempt: this.startupRecoveryAttemptCount,
+        maxAttempts: 2,
+        startupPhase,
+        action: 'diagnostic-only',
+        ...diagnostic,
+      });
+      return;
+    }
+
+    if (!STARTUP_DECODER_RECOVERY_PHASES.includes(startupPhase)) {
+      return;
+    }
+
+    this.startupRecoveryAttemptCount += 1;
+    self.postMessage({
+      type: 'producer-startup-retry',
+      sessionId,
+      trackIndex: this.track.trackIndex,
+      trackId: this.track.id,
+      trackName: this.track.name,
+      attempt: this.startupRecoveryAttemptCount,
+      maxAttempts: 2,
+      startupPhase,
+      action: 'decoder-reset',
+      ...diagnostic,
+    });
+
+    await this.recoverStartupDecoderSameVariant();
+  }
+
+  postTrackReadyTimeout(sessionId, reason) {
+    if (this.isDestroyed || this.normalReadyPosted || this.startupTimeoutPosted) {
+      return;
+    }
+
+    this.startupTimeoutPosted = true;
+    const diagnostic = this.getStartupDiagnostic(reason);
+    this.clearReadyWatchdog();
+    postProducerError(
+      'track-ready-timeout',
+      new Error(`La pista no produjo PCM inicial (${diagnostic.startupPhase}).`),
+      {
+        sessionId,
+        trackIndex: this.track.trackIndex,
+        trackId: this.track.id,
+        trackName: this.track.name,
+        codec: diagnostic.codec,
+        sampleRate: diagnostic.sampleRate,
+        channelCount: diagnostic.channelCount,
+        ...diagnostic,
+      },
+    );
   }
 
   clearReadyWatchdog() {
     if (!this.readyWatchdogId) {
+      this.clearStartupRecoveryTimers();
       return;
     }
 
     clearTimeout(this.readyWatchdogId);
     this.readyWatchdogId = 0;
+    this.clearStartupRecoveryTimers();
+  }
+
+  clearStartupRecoveryTimers() {
+    for (let index = 0; index < this.startupRecoveryTimerIds.length; index += 1) {
+      clearTimeout(this.startupRecoveryTimerIds[index]);
+    }
+    this.startupRecoveryTimerIds = [];
   }
 
   async seekToSample(targetSample, sessionId, seekSerial) {
@@ -1901,6 +2024,12 @@ class ProducerTrackPipeline {
       throw new Error('AudioDecoder is not available in AudioProducerWorker.');
     }
 
+    if (!this.decoderStartupStaggerApplied && this.decoderStartupStaggerMs > 0) {
+      this.decoderStartupStaggerApplied = true;
+      await sleep(this.decoderStartupStaggerMs);
+      this.assertAlive();
+    }
+
     const decoderConfig = this.decoderConfig;
     this.decoderVariants = buildDecoderConfigVariants(decoderConfig);
     this.decoderVariantIndex = 0;
@@ -1985,6 +2114,63 @@ class ProducerTrackPipeline {
       }
 
       this.decoderVariantIndex += 1;
+      await this.configureDecoderVariant();
+      this.assertAlive();
+
+      const samplesToReplay = this.recentDecodeSamples.slice();
+      this.recentDecodeSamples = [];
+
+      for (let index = 0; index < samplesToReplay.length; index += 1) {
+        if (!this.decodeSample(samplesToReplay[index])) {
+          break;
+        }
+      }
+    } finally {
+      this.decoderRecoveryInFlight = false;
+    }
+  }
+
+  async recoverStartupDecoderSameVariant() {
+    if (this.decoderRecoveryInFlight) {
+      return;
+    }
+
+    this.decoderRecoveryInFlight = true;
+    try {
+      this.assertAlive();
+
+      if (this.decoder) {
+        try {
+          if (this.decoder.state !== 'closed') {
+            this.decoder.reset();
+          }
+        } catch (_error) {
+          // Continue with a fresh decoder on the same variant.
+        }
+
+        try {
+          if (this.decoder.state !== 'closed') {
+            this.decoder.close();
+          }
+        } catch (_error) {
+          // Some WebKit builds throw while closing a reset decoder.
+        }
+
+        this.decoder = null;
+      }
+
+      if (!this.decoderConfig) {
+        return;
+      }
+
+      if (this.decoderVariants.length === 0) {
+        this.decoderVariants = buildDecoderConfigVariants(this.decoderConfig);
+      }
+
+      if (!this.decoderVariants[this.decoderVariantIndex]) {
+        this.decoderVariantIndex = 0;
+      }
+
       await this.configureDecoderVariant();
       this.assertAlive();
 

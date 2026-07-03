@@ -518,6 +518,27 @@ type ProducerDebugLogMessage = {
   args?: unknown[];
 };
 
+type ProducerStartupRetryMessage = {
+  type: 'producer-startup-retry';
+  sessionId?: number | null;
+  trackIndex: number;
+  trackId?: string;
+  trackName?: string;
+  attempt: number;
+  maxAttempts: number;
+  startupPhase: string;
+  action: 'decoder-reset' | 'diagnostic-only' | 'timeout';
+  demuxerReady?: boolean;
+  demuxerSeenSamples?: number;
+  decoderPresent?: boolean;
+  decoderQueueSize?: number;
+  decodedUntilSample?: number;
+  availableRead?: number;
+  availableWrite?: number;
+  nextFileStart?: number;
+  recentDecodeSampleCount?: number;
+};
+
 type ProducerNextSessionWarmedMessage = {
   type: 'producer-next-session-warmed';
   sessionId: number;
@@ -587,6 +608,7 @@ type ProducerInboundMessage =
   | ProducerSeekCompleteMessage
   | ProducerSeekDebugMessage
   | ProducerDebugLogMessage
+  | ProducerStartupRetryMessage
   | ProducerNextTrackWarmedMessage
   | ProducerNextSessionWarmedMessage
   | ProducerSessionSwappedMessage
@@ -728,7 +750,7 @@ const MAX_TRACK_VOLUME = 2;
 const AAC_FRAME_SIZE = 1024;
 const MP4_EXTRACTION_SAMPLE_BATCH_SIZE = 16;
 const DECODER_SPECIFIC_INFO_TAG = 0x05;
-const STREAMING_TRACK_READY_TIMEOUT_MS = 60_000;
+const STREAMING_TRACK_READY_TIMEOUT_MS = 30_000;
 const MIN_START_BUFFER_SECONDS = 0.5;
 const START_BARRIER_POLL_INTERVAL_MS = 50;
 const START_BARRIER_BUFFERING_NOTICE_MS = 200;
@@ -2499,6 +2521,20 @@ export class StreamingMultitrackEngine {
       if (message.level === 'error') {
         console.error('[StreamingMultitrackEngine]', ...(Array.isArray(message.args) ? message.args : []));
       }
+      return;
+    }
+
+    if (message.type === 'producer-startup-retry') {
+      const trackLabel =
+        message.trackName ||
+        this.tracks[message.trackIndex]?.name ||
+        message.trackId ||
+        `track ${message.trackIndex}`;
+      console.warn(
+        `[MultitrackEngine] Producer startup retry: "${trackLabel}" attempt ${message.attempt}/${message.maxAttempts} phase=${message.startupPhase} action=${message.action}`,
+        message,
+      );
+      warnLiveDiagnostic('streaming:producer-startup-retry', { message });
       return;
     }
 
