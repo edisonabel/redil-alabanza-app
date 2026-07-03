@@ -6,9 +6,13 @@ import { readChordProSetlistPdfPayloadToken } from "../../lib/chordproSetlistPdf
 export const prerender = false;
 
 const token = Astro.url.searchParams.get("token")?.trim() || "";
+const clientToken = Astro.url.searchParams.get("clientToken")?.trim() || "";
+const autoPrint =
+  Astro.url.searchParams.get("autoprint")?.trim() === "1" ||
+  Astro.url.searchParams.get("autoprint")?.trim() === "true";
 const payload = token ? await readChordProSetlistPdfPayloadToken(token) : null;
 
-if (!payload) {
+if (!payload && !clientToken) {
   Astro.response.status = 404;
 }
 ---
@@ -22,8 +26,13 @@ if (!payload) {
   </head>
   <body>
     {
-      payload ? (
-        <ChordProSetlistPdfDocument client:load payload={payload} />
+      payload || clientToken ? (
+        <ChordProSetlistPdfDocument
+          client:load
+          payload={payload}
+          clientToken={clientToken}
+          autoPrint={autoPrint}
+        />
       ) : (
         <div class="pdf-error-state">
           <h1>No pudimos abrir este setlist</h1>
@@ -82,6 +91,11 @@ if (!payload) {
     print-color-adjust: exact;
   }
 
+  .chordpro-print-action {
+    top: max(1rem, env(safe-area-inset-top));
+    right: max(1rem, env(safe-area-inset-right));
+  }
+
   astro-dev-toolbar,
   astro-dev-toolbar-window,
   astro-dev-toolbar-button,
@@ -122,5 +136,10 @@ if (!payload) {
     text-align: center;
     font-family: var(--font-ui, "Segoe UI", Arial, sans-serif);
   }
-</style>
 
+  @media print {
+    .chordpro-print-action {
+      display: none !important;
+    }
+  }
+</style>

@@ -8,6 +8,7 @@ import {
   loadRehearsalSongSettingsMap,
   sanitizeRehearsalSongSettings,
 } from '../../utils/rehearsalUserSongSettings';
+import { createChordProSetlistPdfBrowserToken } from '../../lib/chordproSetlistPdfBrowserStore';
 
 const ModoEnsayoDirector = React.lazy(() => import('./ModoEnsayoDirector.jsx'));
 
@@ -108,6 +109,26 @@ const buildSafePdfFileName = (value = 'setlist') => (
     .trim()
     .slice(0, 80) || 'setlist'
 );
+
+const isMobilePrintDevice = () => {
+  if (typeof window === 'undefined') return false;
+  const navigatorWithUserAgentData = window.navigator;
+
+  return (
+    Boolean(navigatorWithUserAgentData.userAgentData?.mobile) ||
+    /Android|iPad|iPhone|iPod/i.test(window.navigator.userAgent) ||
+    (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1)
+  );
+};
+
+const buildSetlistBrowserPrintUrl = (payload, { autoPrint = true } = {}) => {
+  const clientToken = createChordProSetlistPdfBrowserToken(payload);
+  const renderUrl = new URL('/render/chordpro-print-setlist-pdf-v2', window.location.origin);
+  renderUrl.searchParams.set('clientToken', clientToken);
+  renderUrl.searchParams.set('fallback', '1');
+  if (autoPrint) renderUrl.searchParams.set('autoprint', '1');
+  return renderUrl.toString();
+};
 
 const formatDateLabel = (value) => {
   if (!value) return '';
@@ -1290,10 +1311,30 @@ export default function EnsayoHub({
       previewWindow?.document?.write?.('<!doctype html><title>Generando PDF</title><body style="font-family:system-ui;margin:32px;color:#18181b">Generando PDF del setlist...</body>');
     }
 
+    let payload = null;
+    const openBrowserPrintFallback = (fallbackPayload) => {
+      const renderUrl = buildSetlistBrowserPrintUrl(fallbackPayload, {
+        autoPrint: !isMobilePrintDevice(),
+      });
+
+      if (previewWindow && !previewWindow.closed) {
+        previewWindow.location.href = renderUrl;
+        return;
+      }
+
+      if (isMobilePrintDevice()) {
+        window.location.href = renderUrl;
+        return;
+      }
+
+      const openedWindow = window.open(renderUrl, 'redil-setlist-pdf-v2');
+      if (!openedWindow) window.location.href = renderUrl;
+    };
+
     try {
       const subtitle = [serviceDate, serviceHour].filter(Boolean).join(' · ');
       const fileName = `${buildSafePdfFileName(displayContextTitle)} - setlist V2.pdf`;
-      const payload = {
+      payload = {
         title: displayContextTitle || 'Setlist de ensayo',
         subtitle,
         fileName,
@@ -1341,6 +1382,11 @@ export default function EnsayoHub({
         }),
       };
 
+      if (isMobilePrintDevice()) {
+        openBrowserPrintFallback(payload);
+        return;
+      }
+
       const response = await fetch('/api/chordpro-print-setlist-pdf-v2', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1348,8 +1394,7 @@ export default function EnsayoHub({
       });
 
       if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-        throw new Error(errorText || 'No se pudo generar el PDF del setlist.');
+        throw new Error(`La ruta PDF respondio ${response.status}.`);
       }
 
       const pdfBlob = await response.blob();
@@ -1363,10 +1408,17 @@ export default function EnsayoHub({
         if (!openedWindow) window.location.href = pdfUrl;
       }
     } catch (error) {
-      console.error('EnsayoHub setlist PDF error:', error);
-      setSetlistPrintError(error?.message || 'No se pudo generar el PDF del setlist.');
-      if (previewWindow && !previewWindow.closed) {
-        previewWindow.close();
+      console.error('EnsayoHub setlist PDF route failed; opening browser fallback:', error);
+
+      try {
+        if (!payload) throw error;
+        openBrowserPrintFallback(payload);
+      } catch (fallbackError) {
+        console.error('EnsayoHub setlist browser fallback failed:', fallbackError);
+        setSetlistPrintError(fallbackError?.message || 'No se pudo generar el PDF del setlist.');
+        if (previewWindow && !previewWindow.closed) {
+          previewWindow.close();
+        }
       }
     } finally {
       setIsGeneratingSetlistPdf(false);
