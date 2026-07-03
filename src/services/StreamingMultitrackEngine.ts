@@ -314,6 +314,12 @@ type ProducerAuditSyncMessage = {
   seekSerial?: number;
 };
 
+type ProducerTransportStateMessage = {
+  type: 'transport-state';
+  sessionId: number;
+  playing: boolean;
+};
+
 type ProducerOutboundMessage =
   | ProducerInitSessionMessage
   | ProducerConfigureLoopRegionMessage
@@ -321,7 +327,8 @@ type ProducerOutboundMessage =
   | ProducerSeekMessage
   | ProducerWarmNextSessionMessage
   | ProducerSwapActiveSessionMessage
-  | ProducerAuditSyncMessage;
+  | ProducerAuditSyncMessage
+  | ProducerTransportStateMessage;
 
 type ProducerReadyMessage = {
   type: 'producer-ready';
@@ -782,6 +789,8 @@ const START_BARRIER_BUFFERING_NOTICE_MS = 200;
 const START_BARRIER_TIMEOUT_MS = 30_000;
 const PRODUCER_STALE_MESSAGE_GRACE_MS = 5_000;
 const PRODUCER_STALE_RECHECK_DELAY_MS = 250;
+const PRODUCER_DIAGNOSTIC_RATE_LIMIT_MS = 10_000;
+const FLIGHT_RECORDER_MIN_INTERVAL_MS = 5_000;
 const AAC_SAMPLE_RATE_INDEXES = new Map<number, number>([
   [96000, 0],
   [88200, 1],
@@ -884,6 +893,7 @@ export class StreamingMultitrackEngine {
   private readonly latestWorkletTrackStatus = new Map<number, WorkletDebugTrackState>();
   private readonly latestProducerTrackState = new Map<number, ProducerTrackFlightState>();
   private readonly latestUnderflowByTrack = new Map<number, WorkletAudioUnderflowMessage & { atMs: number }>();
+  private readonly lastProducerDiagnosticByKey = new Map<string, number>();
   private lastFlightRecorderTableAt = 0;
   private lastProducerMessageAt = 0;
   private suspensionStaleEmitted = false;
@@ -1665,6 +1675,7 @@ export class StreamingMultitrackEngine {
       tracks: this.trackStates.length,
     });
     await this.runSyncAudit({ reason: 'play', seekSerial: this.activeSeekSerial });
+    this.postProducerTransportState(true);
     this.postWorkletMessage({
       type: 'RESUME_READING',
       playing: true,
@@ -1688,6 +1699,7 @@ export class StreamingMultitrackEngine {
       contextTime: this.context.currentTime,
       contextState: this.context.state,
     });
+    this.postProducerTransportState(false);
     if (this.workletNode) {
       this.workletNode.port.postMessage({
         type: 'transport',
@@ -1709,6 +1721,7 @@ export class StreamingMultitrackEngine {
       contextState: this.context.state,
       tracks: this.trackStates.length,
     });
+    this.postProducerTransportState(false);
     if (this.workletNode) {
       this.workletNode.port.postMessage({
         type: 'transport',
@@ -2017,6 +2030,7 @@ export class StreamingMultitrackEngine {
     this.startTime = 0;
     this.pauseTime = 0;
     this.restartFromHead = false;
+    this.postProducerTransportState(false);
     this.soloTrackIds.clear();
     this.loopEnabled = false;
     this.resetTrackMeterLevels();
@@ -2748,6 +2762,14 @@ export class StreamingMultitrackEngine {
     this.producerWorker.postMessage(message);
   }
 
+  private postProducerTransportState(playing: boolean): void {
+    this.postProducerMessage({
+      type: 'transport-state',
+      sessionId: this.producerSessionId,
+      playing,
+    });
+  }
+
   private recordProducerTrackState(
     trackIndex: number | undefined,
     state: Omit<ProducerTrackFlightState, 'atMs'>,
@@ -2772,13 +2794,35 @@ export class StreamingMultitrackEngine {
     });
   }
 
+  private shouldPublishProducerDiagnostic(
+    messageType: string,
+    trackIndex: number | undefined,
+    intervalMs = PRODUCER_DIAGNOSTIC_RATE_LIMIT_MS,
+  ): boolean {
+    if (typeof trackIndex !== 'number') {
+      return true;
+    }
+
+    const now = performance.now();
+    const key = `${messageType}:${trackIndex}`;
+    const previousAt = this.lastProducerDiagnosticByKey.get(key) || 0;
+
+    if (now - previousAt < intervalMs) {
+      return false;
+    }
+
+    this.lastProducerDiagnosticByKey.set(key, now);
+    return true;
+  }
+
   private maybePublishFlightRecorder(reason: string, force = false): void {
     if (!isLiveDiagnosticsEnabled()) {
       return;
     }
 
+    void force;
     const now = performance.now();
-    if (!force && now - this.lastFlightRecorderTableAt < 1000) {
+    if (now - this.lastFlightRecorderTableAt < FLIGHT_RECORDER_MIN_INTERVAL_MS) {
       return;
     }
 
@@ -2934,11 +2978,22 @@ export class StreamingMultitrackEngine {
     }
 
     if (message.type === 'producer-micro-sync-correction') {
+      if (!this.shouldPublishProducerDiagnostic(message.type, message.trackIndex)) {
+        return;
+      }
+
       warnLiveDiagnostic('streaming:producer-micro-sync-correction', { message });
       return;
     }
 
     if (message.type === 'producer-ring-backpressure') {
+      if (
+        !this.transportPlaying ||
+        !this.shouldPublishProducerDiagnostic(message.type, message.trackIndex)
+      ) {
+        return;
+      }
+
       this.recordProducerTrackState(message.trackIndex, {
         messageType: message.type,
         availableRead: message.availableRead,

@@ -35,6 +35,9 @@ const RANGE_FETCH_BASE_RETRY_DELAY_MS = 500;
 const RANGE_FETCH_INITIAL_JITTER_MIN_MS = 10;
 const RANGE_FETCH_INITIAL_JITTER_MAX_MS = 50;
 const MICRO_SYNC_LOG_THRESHOLD_FRAMES = 8;
+const MICRO_SYNC_DEADZONE_SECONDS = 0.025;
+const MICRO_SYNC_POST_COOLDOWN_MS = 2000;
+const RING_BACKPRESSURE_POST_INTERVAL_MS = 10000;
 
 let mp4BoxModulePromise = null;
 
@@ -1366,6 +1369,8 @@ class ProducerTrackPipeline {
     this.decoderQueueOverloadStartedAt = 0;
     this.lastDecoderQueueAlertAt = 0;
     this.lastRingBackpressurePostAt = 0;
+    this.lastMicroSyncCorrectionPostAt = 0;
+    this.startupWatchdogCompleted = false;
     this.isDestroyed = false;
   }
 
@@ -1532,6 +1537,7 @@ class ProducerTrackPipeline {
     this.decoderRecoveryInFlight = false;
     this.endOfFileReached = false;
     this.normalReadyPosted = false;
+    this.startupWatchdogCompleted = false;
     this.pendingSeekReady = null;
     this.resetNormalWriteTimeline(0);
     this.ringWriter.flushToSample(0);
@@ -1562,7 +1568,7 @@ class ProducerTrackPipeline {
 
     const token = this.lookAheadToken + 1;
     this.lookAheadToken = token;
-    this.startReadyWatchdog(sessionId, token);
+    this.startReadyWatchdog(sessionId, token, seekSerial);
     this.runLookAhead(sessionId, token).catch((error) => {
       if (this.isDestroyed) {
         return;
@@ -1590,9 +1596,17 @@ class ProducerTrackPipeline {
     this.clearReadyWatchdog();
   }
 
-  startReadyWatchdog(sessionId, token) {
+  startReadyWatchdog(sessionId, token, seekSerial = this.currentSeekSerial) {
     this.clearReadyWatchdog();
-    if (this.normalReadyPosted) {
+    if (
+      this.normalReadyPosted ||
+      this.startupWatchdogCompleted ||
+      Math.max(0, Math.floor(Number(seekSerial) || 0)) > 0
+    ) {
+      return;
+    }
+
+    if (this.resolveStartupReadyIfPcmAvailable(sessionId)) {
       return;
     }
 
@@ -1605,8 +1619,42 @@ class ProducerTrackPipeline {
         return;
       }
 
+      if (this.resolveStartupReadyIfPcmAvailable(sessionId)) {
+        return;
+      }
+
       this.postTrackReadyTimeout(sessionId, 'track-ready-timeout');
     }, TRACK_READY_WATCHDOG_MS);
+  }
+
+  hasStartupPcm(diagnostic = null) {
+    const availableRead = diagnostic ? Number(diagnostic.availableRead) : this.ringWriter.availableRead();
+    const decodedUntilSample = diagnostic ? Number(diagnostic.decodedUntilSample) : this.decodedUntilSample;
+
+    return availableRead > 0 || decodedUntilSample > 0;
+  }
+
+  resolveStartupReadyIfPcmAvailable(sessionId, diagnostic = null) {
+    if (this.normalReadyPosted || !this.hasStartupPcm(diagnostic)) {
+      return false;
+    }
+
+    const safeDiagnostic = diagnostic || this.getStartupDiagnostic('startup-pcm-ready');
+    this.normalReadyPosted = true;
+    this.startupWatchdogCompleted = true;
+    this.clearReadyWatchdog();
+    self.postMessage({
+      type: 'producer-track-ready',
+      sessionId,
+      trackIndex: this.track.trackIndex,
+      decodedUntilSample: Math.max(
+        0,
+        Number(safeDiagnostic.decodedUntilSample) || 0,
+        this.lastNormalWriteEndSample || 0,
+      ),
+      targetEndSample: null,
+    });
+    return true;
   }
 
   scheduleStartupRecoveryChecks(sessionId, token) {
@@ -1641,6 +1689,17 @@ class ProducerTrackPipeline {
 
     const diagnostic = this.getStartupDiagnostic(`startup-check-${checkNumber}`);
     const startupPhase = diagnostic.startupPhase;
+    const hasNoPcm = !this.hasStartupPcm(diagnostic);
+
+    if (this.resolveStartupReadyIfPcmAvailable(sessionId, diagnostic)) {
+      return;
+    }
+
+    if (startupPhase === 'ring-buffer-backpressure') {
+      this.startupWatchdogCompleted = true;
+      this.clearReadyWatchdog();
+      return;
+    }
 
     if (checkNumber >= STARTUP_RECOVERY_CHECKS_MS.length) {
       self.postMessage({
@@ -1655,7 +1714,12 @@ class ProducerTrackPipeline {
         action: startupPhase === 'demuxer-not-ready' ? 'diagnostic-only' : 'timeout',
         ...diagnostic,
       });
-      this.postTrackReadyTimeout(sessionId, 'track-ready-timeout');
+      if (hasNoPcm) {
+        this.postTrackReadyTimeout(sessionId, 'track-ready-timeout');
+      } else {
+        this.startupWatchdogCompleted = true;
+        this.clearReadyWatchdog();
+      }
       return;
     }
 
@@ -1701,8 +1765,20 @@ class ProducerTrackPipeline {
       return;
     }
 
-    this.startupTimeoutPosted = true;
     const diagnostic = this.getStartupDiagnostic(reason);
+
+    if (this.resolveStartupReadyIfPcmAvailable(sessionId, diagnostic)) {
+      return;
+    }
+
+    if (diagnostic.startupPhase === 'ring-buffer-backpressure') {
+      this.startupWatchdogCompleted = true;
+      this.clearReadyWatchdog();
+      return;
+    }
+
+    this.startupTimeoutPosted = true;
+    this.startupWatchdogCompleted = true;
     this.clearReadyWatchdog();
     postProducerError(
       'track-ready-timeout',
@@ -2414,6 +2490,7 @@ class ProducerTrackPipeline {
 
     if (writtenFrames > 0 && !this.normalReadyPosted) {
       this.normalReadyPosted = true;
+      this.startupWatchdogCompleted = true;
       this.clearReadyWatchdog();
       self.postMessage({
         type: 'producer-track-ready',
@@ -2683,15 +2760,28 @@ class ProducerTrackPipeline {
     const paddedFrames = Math.max(0, Math.floor(Number(details.paddedFrames) || 0));
     const trimmedFrames = Math.max(0, Math.floor(Number(details.trimmedFrames) || 0));
     const blockedGapFrames = Math.max(0, Math.floor(Number(details.blockedGapFrames) || 0));
+    const correctionFrames = Math.max(paddedFrames, trimmedFrames, blockedGapFrames);
+    const outputSampleRate = this.getOutputSampleRate();
+    const deadzoneFrames = Math.max(
+      MICRO_SYNC_LOG_THRESHOLD_FRAMES,
+      Math.round(outputSampleRate * MICRO_SYNC_DEADZONE_SECONDS),
+    );
 
-    if (
-      paddedFrames < MICRO_SYNC_LOG_THRESHOLD_FRAMES &&
-      trimmedFrames < MICRO_SYNC_LOG_THRESHOLD_FRAMES &&
-      blockedGapFrames <= 0
-    ) {
+    if (correctionFrames < deadzoneFrames) {
       return;
     }
 
+    const availableRead = this.ringWriter.availableRead();
+    if (availableRead < Math.max(1, correctionFrames)) {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - this.lastMicroSyncCorrectionPostAt < MICRO_SYNC_POST_COOLDOWN_MS) {
+      return;
+    }
+
+    this.lastMicroSyncCorrectionPostAt = now;
     self.postMessage({
       type: 'producer-micro-sync-correction',
       sessionId: activeSessionId,
@@ -2703,7 +2793,7 @@ class ProducerTrackPipeline {
       blockedGapFrames,
       absoluteStartSample: details.absoluteStartSample,
       absoluteEndSample: details.absoluteEndSample,
-      availableRead: this.ringWriter.availableRead(),
+      availableRead,
       availableWrite: this.ringWriter.availableWrite(),
     });
   }
@@ -2780,8 +2870,12 @@ class ProducerTrackPipeline {
   }
 
   postRingBackpressure(frameCount, mode) {
+    if (!producerTransportPlaying) {
+      return;
+    }
+
     const now = Date.now();
-    if (now - this.lastRingBackpressurePostAt < 1500) {
+    if (now - this.lastRingBackpressurePostAt < RING_BACKPRESSURE_POST_INTERVAL_MS) {
       return;
     }
 
@@ -2876,6 +2970,7 @@ const loopCacheManager = new LoopCacheManager({
 const trackPipelines = new Map();
 const prewarmedSessions = new Map();
 let activeSessionId = 0;
+let producerTransportPlaying = false;
 
 const resetTrackPipelines = () => {
   for (const pipeline of trackPipelines.values()) {
@@ -2906,6 +3001,7 @@ const clearPrewarmedSessionsExcept = (sessionId) => {
 
 const configureSession = (message) => {
   activeSessionId = message.sessionId || 0;
+  producerTransportPlaying = false;
   resetTrackPipelines();
   clearPrewarmedSessionsExcept(null);
   loopCacheManager.configureSession(message);
@@ -3219,6 +3315,11 @@ self.onmessage = (event) => {
 	
   if (message.type === 'audit-sync') {
     auditSync(message);
+    return;
+  }
+
+  if (message.type === 'transport-state') {
+    producerTransportPlaying = message.playing === true;
     return;
   }
 
