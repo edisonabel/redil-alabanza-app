@@ -184,6 +184,7 @@ const IOS_SAFARI_WEB_MAX_ACTIVE_TRACKS = 4;
 const SAFARI_WEB_MAX_ACTIVE_TRACKS = 9;
 const WEB_ENGINE_MAX_ACTIVE_TRACKS = 11;
 const INTERNAL_PAD_TRACK_ID = '__internal-pad__';
+const DISABLE_BACKWARD_SEEK_WHILE_PLAYING = false;
 // The internal pad masters are intentionally lush, but their raw gain is too hot
 // for live control. Apply a fixed -8 dB trim before the pad reaches either engine.
 const INTERNAL_PAD_GAIN_TRIM = Math.pow(10, -8 / 20);
@@ -526,6 +527,8 @@ export function LiveDirectorView({
   const mixerInteractionActiveRef = useRef(false);
   const sectionTransitionTokenRef = useRef(0);
   const isSectionTransitioningRef = useRef(false);
+  const sectionSeekInFlightRef = useRef(false);
+  const pendingSectionSeekTargetRef = useRef<number | null>(null);
   const sessionSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const pendingSilentSessionSaveRef = useRef<PendingLiveDirectorSessionSave | null>(null);
   const isFlushingSilentSessionSaveRef = useRef(false);
@@ -715,6 +718,7 @@ export function LiveDirectorView({
   const [dismissedTrackLimitNoticeKey, setDismissedTrackLimitNoticeKey] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [isInitializingSession, setIsInitializingSession] = useState(false);
+  const [isSectionSeekBusy, setIsSectionSeekBusy] = useState(false);
   const [showLoadPanel, setShowLoadPanel] = useState(canLoadManualSession && !initialSession);
   // When the user taps Back while audio is playing, defer the navigation and
   // show a confirmation modal. Prevents disastrous accidental exits live.
@@ -2399,42 +2403,71 @@ export function LiveDirectorView({
       return;
     }
 
-    const safeTargetTime = Math.max(0, nextTime);
-    setVisualSectionTime(safeTargetTime);
-    passiveCurrentTimeRef.current = safeTargetTime;
-    releaseSectionsAutoFollowNow();
-    snapSectionsLaneToTime(safeTargetTime);
+    const primeSectionVisuals = (targetTime: number) => {
+      setVisualSectionTime(targetTime);
+      passiveCurrentTimeRef.current = targetTime;
+      releaseSectionsAutoFollowNow();
+      snapSectionsLaneToTime(targetTime);
+    };
 
-    if (!isReady || !isPlaying) {
-      await seekTo(safeTargetTime);
+    const firstTargetTime = Math.max(0, nextTime);
+    primeSectionVisuals(firstTargetTime);
+
+    if (sectionSeekInFlightRef.current) {
+      pendingSectionSeekTargetRef.current = firstTargetTime;
+      setIsSectionSeekBusy(true);
       return;
     }
 
-    if (Math.abs(getLivePlaybackTime() - safeTargetTime) < 0.05) {
-      return;
-    }
-
-    const transitionToken = sectionTransitionTokenRef.current + 1;
-    sectionTransitionTokenRef.current = transitionToken;
-    isSectionTransitioningRef.current = true;
+    sectionSeekInFlightRef.current = true;
+    setIsSectionSeekBusy(true);
 
     try {
-      await fadeMasterVolume(0, SECTION_TRANSITION_FADE_OUT_MS, transitionToken);
-      if (sectionTransitionTokenRef.current !== transitionToken) {
-        return;
-      }
+      let targetTime: number | null = firstTargetTime;
 
-      await seekTo(safeTargetTime);
-      if (sectionTransitionTokenRef.current !== transitionToken) {
-        return;
-      }
+      while (targetTime !== null) {
+        const activeTargetTime = targetTime;
+        pendingSectionSeekTargetRef.current = null;
+        primeSectionVisuals(activeTargetTime);
 
-      await fadeMasterVolume(masterVolumeRef.current, SECTION_TRANSITION_FADE_IN_MS, transitionToken);
+        if (!isReady || !isPlaying) {
+          await seekTo(activeTargetTime);
+        } else if (Math.abs(getLivePlaybackTime() - activeTargetTime) >= 0.05) {
+          const transitionToken = sectionTransitionTokenRef.current + 1;
+          sectionTransitionTokenRef.current = transitionToken;
+          isSectionTransitioningRef.current = true;
+
+          try {
+            await fadeMasterVolume(0, SECTION_TRANSITION_FADE_OUT_MS, transitionToken);
+            if (sectionTransitionTokenRef.current !== transitionToken) {
+              return;
+            }
+
+            await seekTo(activeTargetTime);
+            if (sectionTransitionTokenRef.current !== transitionToken) {
+              return;
+            }
+
+            await fadeMasterVolume(masterVolumeRef.current, SECTION_TRANSITION_FADE_IN_MS, transitionToken);
+          } finally {
+            if (sectionTransitionTokenRef.current === transitionToken) {
+              isSectionTransitioningRef.current = false;
+              applyMasterVolume(masterVolumeRef.current);
+            }
+          }
+        }
+
+        const queuedTarget = pendingSectionSeekTargetRef.current;
+        targetTime = queuedTarget !== null && Math.abs(queuedTarget - activeTargetTime) >= 0.02
+          ? queuedTarget
+          : null;
+      }
+    } catch (error) {
+      console.warn('[LiveDirectorView] Section seek failed.', error);
     } finally {
-      if (sectionTransitionTokenRef.current === transitionToken) {
-        isSectionTransitioningRef.current = false;
-        applyMasterVolume(masterVolumeRef.current);
-      }
+      pendingSectionSeekTargetRef.current = null;
+      sectionSeekInFlightRef.current = false;
+      setIsSectionSeekBusy(false);
     }
   }, [
     applyMasterVolume,
@@ -3821,7 +3854,8 @@ export function LiveDirectorView({
                   <button
                     type="button"
                     onClick={handlePreviousSection}
-                    disabled={!hasTrackSession}
+                    disabled={!hasTrackSession || (DISABLE_BACKWARD_SEEK_WHILE_PLAYING && isPlaying)}
+                    aria-busy={isSectionSeekBusy || undefined}
                     className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-4' : isCompactLandscape ? 'h-12 px-5' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/82 hover:text-white hover:bg-white/6 disabled:cursor-not-allowed disabled:text-white/24`}
                     style={{ width: scaleRem(isUltraCompactLandscape ? 4.45 : isCompactLandscape ? 5.35 : 6.25, 3.75) }}
                     aria-label="Ir a la seccion anterior"
@@ -3833,6 +3867,7 @@ export function LiveDirectorView({
                   <button
                     type="button"
                     onClick={handleNextSection}
+                    aria-busy={isSectionSeekBusy || undefined}
                     disabled={!hasTrackSession || resolvedSections.length === 0 || activeSectionIndex >= resolvedSections.length - 1}
                     className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-4' : isCompactLandscape ? 'h-12 px-5' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/82 hover:text-white hover:bg-white/6 disabled:cursor-not-allowed disabled:text-white/24`}
                     style={{ width: scaleRem(isUltraCompactLandscape ? 4.45 : isCompactLandscape ? 5.35 : 6.25, 3.75) }}
@@ -4211,6 +4246,7 @@ export function LiveDirectorView({
                         <button
                           key={section.id}
                           type="button"
+                          aria-busy={isSectionSeekBusy || undefined}
                           data-live-chord-section="true"
                           data-live-section-index={index}
                           data-live-section-start={section.startTime}

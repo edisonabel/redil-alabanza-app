@@ -652,6 +652,46 @@ type PendingProducerSeek = {
   reject: (reason?: unknown) => void;
 };
 
+type SeekBackDirection = 'backward' | 'forward';
+
+type SeekBackDebugEvent = {
+  event: string;
+  atMs: number;
+  seekSerial: number;
+  fromTime: number;
+  toTime: number;
+  direction: SeekBackDirection;
+  wasPlaying: boolean;
+  trackIndex?: number;
+  trackName?: string;
+  availableRead?: number | null;
+  thresholdFrames?: number | null;
+  minAvailableRead?: number | null;
+  readyAudibleTracks?: number;
+  expectedAudibleTracks?: number;
+  readyTracks?: number;
+  expectedTracks?: number;
+};
+
+type SeekBackDebugBlock = {
+  seekSerial: number;
+  fromTime: number;
+  toTime: number;
+  direction: SeekBackDirection;
+  wasPlaying: boolean;
+  startedAt: number;
+  targetSample: number;
+  expectedAudibleTracks: Set<number>;
+  readyAudibleTracks: Set<number>;
+  readyTracks: Set<number>;
+  events: SeekBackDebugEvent[];
+  resumeSent: boolean;
+  firstMixedPosted: boolean;
+  finalized: boolean;
+  finalizeTimerId: number | null;
+  prematureResumeLogged: boolean;
+};
+
 type DemuxAppendResult = {
   chunks: EncodedAudioChunk[];
   decoderConfig?: AudioDecoderConfig;
@@ -888,6 +928,7 @@ export class StreamingMultitrackEngine {
   private producerSeekSerial = 0;
   private startBarrierSerial = 0;
   private pendingProducerSeek: PendingProducerSeek | null = null;
+  private activeSeekDebugBlock: SeekBackDebugBlock | null = null;
   private pendingSyncAudit: Deferred<ProducerSyncAuditMessage> | null = null;
   private preloadedNextSession: PreloadedStreamingSession | null = null;
   private readonly latestWorkletTrackStatus = new Map<number, WorkletDebugTrackState>();
@@ -1293,6 +1334,237 @@ export class StreamingMultitrackEngine {
     return this.tracks;
   }
 
+  private getAudibleTrackIndices(): Set<number> {
+    const audibleTrackIndices = new Set<number>();
+    const soloActive = this.soloTrackIds.size > 0;
+
+    for (let index = 0; index < this.trackStates.length; index += 1) {
+      const trackState = this.trackStates[index];
+      const track = this.tracks[trackState.index] || this.tracks[index];
+      const trackId = track?.id || `track-${trackState.index}`;
+      const muted = Boolean(trackState.muted);
+      const volume = Number.isFinite(trackState.volume) ? trackState.volume : 1;
+      const soloBlocked = soloActive && !this.soloTrackIds.has(trackId);
+
+      if (!muted && volume > 0.0001 && !soloBlocked) {
+        audibleTrackIndices.add(trackState.index);
+      }
+    }
+
+    return audibleTrackIndices;
+  }
+
+  private startSeekBackDebug(options: {
+    seekSerial: number;
+    fromTime: number;
+    toTime: number;
+    wasPlaying: boolean;
+    targetSample: number;
+  }): void {
+    if (!isLiveDiagnosticsEnabled()) {
+      this.activeSeekDebugBlock = null;
+      return;
+    }
+
+    if (this.activeSeekDebugBlock && !this.activeSeekDebugBlock.finalized) {
+      this.finalizeSeekBackDebug('superseded');
+    }
+
+    const direction: SeekBackDirection =
+      options.toTime < options.fromTime - 0.05 ? 'backward' : 'forward';
+
+    this.activeSeekDebugBlock = {
+      seekSerial: options.seekSerial,
+      fromTime: Number(options.fromTime.toFixed(3)),
+      toTime: Number(options.toTime.toFixed(3)),
+      direction,
+      wasPlaying: options.wasPlaying,
+      startedAt: performance.now(),
+      targetSample: options.targetSample,
+      expectedAudibleTracks: this.getAudibleTrackIndices(),
+      readyAudibleTracks: new Set<number>(),
+      readyTracks: new Set<number>(),
+      events: [],
+      resumeSent: false,
+      firstMixedPosted: false,
+      finalized: false,
+      finalizeTimerId: null,
+      prematureResumeLogged: false,
+    };
+
+    this.recordSeekBackDebugEvent('seek-start');
+  }
+
+  private recordSeekBackDebugEvent(
+    event: string,
+    detail: Partial<Omit<SeekBackDebugEvent, 'event' | 'atMs' | 'seekSerial' | 'fromTime' | 'toTime' | 'direction' | 'wasPlaying'>> = {},
+  ): void {
+    const block = this.activeSeekDebugBlock;
+    if (!block || block.finalized) {
+      return;
+    }
+
+    block.events.push({
+      event,
+      atMs: Math.round(performance.now() - block.startedAt),
+      seekSerial: block.seekSerial,
+      fromTime: block.fromTime,
+      toTime: block.toTime,
+      direction: block.direction,
+      wasPlaying: block.wasPlaying,
+      ...detail,
+    });
+  }
+
+  private recordSeekBackFlushConfirmed(seekSerial?: number): void {
+    const block = this.activeSeekDebugBlock;
+    if (!block || block.finalized || seekSerial !== block.seekSerial) {
+      return;
+    }
+
+    this.recordSeekBackDebugEvent('flush-confirmed');
+  }
+
+  private recordSeekBackProducerReady(
+    message: ProducerSeekReadyMessage,
+    pending: PendingProducerSeek,
+  ): void {
+    const block = this.activeSeekDebugBlock;
+    if (!block || block.finalized || pending.serial !== block.seekSerial) {
+      return;
+    }
+
+    block.readyTracks.add(message.trackIndex);
+    if (block.expectedAudibleTracks.has(message.trackIndex)) {
+      block.readyAudibleTracks.add(message.trackIndex);
+    }
+
+    this.recordSeekBackDebugEvent('producer-seek-ready', {
+      trackIndex: message.trackIndex,
+      trackName: this.tracks[message.trackIndex]?.name || this.tracks[message.trackIndex]?.id || `track ${message.trackIndex}`,
+      availableRead: Number.isFinite(message.availableRead) ? Number(message.availableRead) : null,
+      thresholdFrames: Number.isFinite(message.thresholdFrames) ? Number(message.thresholdFrames) : null,
+      readyAudibleTracks: block.readyAudibleTracks.size,
+      expectedAudibleTracks: block.expectedAudibleTracks.size,
+      readyTracks: block.readyTracks.size,
+      expectedTracks: pending.expectedTrackCount,
+    });
+  }
+
+  private recordSeekBackBarrierReady(detail: {
+    seekSerial?: number;
+    minAvailableRead: number;
+    thresholdFrames: number;
+  }): void {
+    const block = this.activeSeekDebugBlock;
+    if (!block || block.finalized || detail.seekSerial !== block.seekSerial) {
+      return;
+    }
+
+    this.recordSeekBackDebugEvent('barrier-ready', {
+      minAvailableRead: detail.minAvailableRead,
+      thresholdFrames: detail.thresholdFrames,
+      readyAudibleTracks: block.readyAudibleTracks.size,
+      expectedAudibleTracks: block.expectedAudibleTracks.size,
+    });
+  }
+
+  private recordSeekBackResumeSent(seekSerial: number): void {
+    const block = this.activeSeekDebugBlock;
+    if (!block || block.finalized || seekSerial !== block.seekSerial) {
+      return;
+    }
+
+    const readyAudibleTracks = block.readyAudibleTracks.size;
+    const expectedAudibleTracks = block.expectedAudibleTracks.size;
+    const isPremature =
+      expectedAudibleTracks > 0 &&
+      readyAudibleTracks < expectedAudibleTracks;
+
+    block.resumeSent = true;
+    this.recordSeekBackDebugEvent('resume-reading-sent', {
+      readyAudibleTracks,
+      expectedAudibleTracks,
+    });
+
+    if (isPremature && !block.prematureResumeLogged) {
+      block.prematureResumeLogged = true;
+      console.warn('[SEEK-BACK][PREMATURE-RESUME]', {
+        seekSerial: block.seekSerial,
+        fromTime: block.fromTime,
+        toTime: block.toTime,
+        direction: block.direction,
+        wasPlaying: block.wasPlaying,
+        readyAudibleTracks,
+        expectedAudibleTracks,
+      });
+    }
+
+    if (block.finalizeTimerId !== null) {
+      window.clearTimeout(block.finalizeTimerId);
+    }
+    block.finalizeTimerId = window.setTimeout(() => {
+      this.finalizeSeekBackDebug('post-resume-timeout');
+    }, 1500);
+  }
+
+  private recordSeekBackFirstMixedPostResume(): void {
+    const block = this.activeSeekDebugBlock;
+    if (!block || block.finalized || !block.resumeSent || block.firstMixedPosted) {
+      return;
+    }
+
+    block.firstMixedPosted = true;
+    this.recordSeekBackDebugEvent('first-mixed-post-resume');
+    this.finalizeSeekBackDebug('first-mixed-post-resume');
+  }
+
+  private finalizeSeekBackDebug(result: string): void {
+    const block = this.activeSeekDebugBlock;
+    if (!block || block.finalized) {
+      return;
+    }
+
+    block.finalized = true;
+    if (block.finalizeTimerId !== null) {
+      window.clearTimeout(block.finalizeTimerId);
+      block.finalizeTimerId = null;
+    }
+
+    const summary = {
+      result,
+      seekSerial: block.seekSerial,
+      fromTime: block.fromTime,
+      toTime: block.toTime,
+      direction: block.direction,
+      wasPlaying: block.wasPlaying,
+      targetSample: block.targetSample,
+      readyAudibleTracks: block.readyAudibleTracks.size,
+      expectedAudibleTracks: block.expectedAudibleTracks.size,
+      readyTracks: block.readyTracks.size,
+      events: block.events.length,
+      totalMs: Math.round(performance.now() - block.startedAt),
+    };
+    const logMethod = block.direction === 'backward' || block.prematureResumeLogged
+      ? (...args: unknown[]) => console.warn(...args)
+      : (...args: unknown[]) => console.info(...args);
+
+    try {
+      console.groupCollapsed(
+        `[SEEK-BACK] serial=${block.seekSerial} ${block.direction} ${block.fromTime.toFixed(2)}s→${block.toTime.toFixed(2)}s result=${result}`,
+      );
+      logMethod('[SEEK-BACK] summary', summary);
+      console.table(block.events);
+      console.groupEnd();
+    } catch {
+      logMethod('[SEEK-BACK]', summary, block.events);
+    }
+
+    if (this.activeSeekDebugBlock === block) {
+      this.activeSeekDebugBlock = null;
+    }
+  }
+
   getTracks(): TrackData[] {
     return this.tracks;
   }
@@ -1471,6 +1743,14 @@ export class StreamingMultitrackEngine {
           });
         }
 
+        if (options.reason === 'seek-resume') {
+          this.recordSeekBackBarrierReady({
+            seekSerial: options.seekSerial,
+            minAvailableRead: snapshot.minAvailableRead,
+            thresholdFrames: snapshot.thresholdFrames,
+          });
+        }
+
         logLiveDiagnostic('streaming:start-barrier-ready', {
           reason: options.reason,
           seekSerial: options.seekSerial,
@@ -1505,6 +1785,14 @@ export class StreamingMultitrackEngine {
           blockingTracks: snapshot.blockingTracks,
         });
 
+        if (options.reason === 'seek-resume') {
+          this.recordSeekBackDebugEvent('barrier-timeout', {
+            minAvailableRead: snapshot.minAvailableRead,
+            thresholdFrames: snapshot.thresholdFrames,
+          });
+          this.finalizeSeekBackDebug('barrier-timeout');
+        }
+
         const blockingNames = snapshot.blockingTracks
           .slice(0, 4)
           .map((track) => `${track.name} (${track.availableRead}/${track.thresholdFrames})`)
@@ -1522,6 +1810,10 @@ export class StreamingMultitrackEngine {
       reason: options.reason,
       seekSerial: options.seekSerial,
     });
+    if (options.reason === 'seek-resume') {
+      this.recordSeekBackDebugEvent('barrier-cancelled');
+      this.finalizeSeekBackDebug('barrier-cancelled');
+    }
     if (bufferingPosted) {
       this.publishStartBarrierState(false, {
         reason: options.reason,
@@ -1756,6 +2048,7 @@ export class StreamingMultitrackEngine {
       return;
     }
 
+    const fromTime = this.getCurrentTime();
     const clampedTime = Math.max(0, timeInSeconds);
     const wasPlaying = this.transportPlaying;
     const targetSample = Math.max(0, Math.round(clampedTime * this.context.sampleRate));
@@ -1780,6 +2073,13 @@ export class StreamingMultitrackEngine {
       });
       const seekSerial = pendingSeek.serial;
       this.activeSeekSerial = seekSerial;
+      this.startSeekBackDebug({
+        seekSerial,
+        fromTime,
+        toTime: clampedTime,
+        wasPlaying,
+        targetSample,
+      });
       this.postWorkletMessage({
         type: 'PAUSE_AND_FLUSH',
         targetSample,
@@ -1787,6 +2087,7 @@ export class StreamingMultitrackEngine {
         reason: 'seek',
         seekSerial,
       });
+      this.recordSeekBackDebugEvent('pause-and-flush-sent');
       this.postProducerMessage({
         type: 'seek',
         sessionId: this.producerSessionId,
@@ -1811,6 +2112,11 @@ export class StreamingMultitrackEngine {
           targetSample,
           targetTimeSeconds: clampedTime,
         });
+        this.recordSeekBackDebugEvent('paused-ready', {
+          readyAudibleTracks: this.activeSeekDebugBlock?.readyAudibleTracks.size,
+          expectedAudibleTracks: this.activeSeekDebugBlock?.expectedAudibleTracks.size,
+        });
+        this.finalizeSeekBackDebug('paused-ready');
         return;
       }
       const seekStartBarrierReady = await this.waitForStartBarrier({
@@ -1828,6 +2134,7 @@ export class StreamingMultitrackEngine {
         reason: 'seek',
         seekSerial,
       });
+      this.recordSeekBackResumeSent(seekSerial);
       return;
     }
 
@@ -3240,6 +3547,12 @@ export class StreamingMultitrackEngine {
         readyTracks: pending.readyTracks.size,
         expectedTrackCount: pending.expectedTrackCount,
       });
+      this.recordSeekBackDebugEvent('producer-seek-soft-timeout', {
+        readyTracks: pending.readyTracks.size,
+        expectedTracks: pending.expectedTrackCount,
+        readyAudibleTracks: this.activeSeekDebugBlock?.readyAudibleTracks.size,
+        expectedAudibleTracks: this.activeSeekDebugBlock?.expectedAudibleTracks.size,
+      });
       this.pendingProducerSeek = null;
       resolveSeek();
     }, 2500);
@@ -3290,6 +3603,7 @@ export class StreamingMultitrackEngine {
     }
 
     pending.readyTracks.add(message.trackIndex);
+    this.recordSeekBackProducerReady(message, pending);
     if (pending.readyTracks.size >= pending.expectedTrackCount) {
       window.clearTimeout(pending.timeoutId);
       pending.resolve();
@@ -3579,6 +3893,7 @@ export class StreamingMultitrackEngine {
     }
 
     if (message.type === 'track-levels') {
+      this.recordSeekBackFirstMixedPostResume();
       this.applyTrackLevelMessage(message.levels);
       return;
     }
@@ -3607,7 +3922,12 @@ export class StreamingMultitrackEngine {
       return;
     }
 
-    if (message.type === 'seek-debug') return;
+    if (message.type === 'seek-debug') {
+      if (typeof message.message === 'string' && message.message.includes('Worklet: Flush')) {
+        this.recordSeekBackFlushConfirmed(message.seekSerial);
+      }
+      return;
+    }
 
     if (message.type === 'audio-underflow') {
       if (isLiveDiagnosticsEnabled()) {
