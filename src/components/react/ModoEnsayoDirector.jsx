@@ -802,6 +802,7 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
       onInternalPadVolumeChange={setPadVolume}
       onPlaybackSnapshot={handlePlaybackSnapshot}
       onSessionPersisted={handleSessionPersisted}
+      onBack={onExit}
       title={`Modo Ensayo - ${contextTitle}`}
       bpm={Number(activeSong?.bpm || 0)}
     />

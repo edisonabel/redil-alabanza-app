@@ -1443,6 +1443,33 @@ export default function EnsayoHub({
     setCancionActiva(null);
   }, [stopMetronome, stopQueue]);
 
+  const resolveLiveReturnSong = useCallback(() => {
+    const lastViewedId = String(lastViewedSongId || '').trim();
+    const queuedSong = queueState.index >= 0 ? playableSongs[queueState.index] : null;
+    return (
+      (lastViewedId
+        ? songs.find((song) => String(song?.id || '') === lastViewedId)
+        : null) ||
+      queuedSong ||
+      playableSongs[0] ||
+      songs[0] ||
+      null
+    );
+  }, [lastViewedSongId, playableSongs, queueState.index, songs]);
+
+  const handleLiveModeExit = useCallback(() => {
+    const returnSong = resolveLiveReturnSong();
+    stopMetronome();
+    stopQueue();
+    setIsLiveMode(false);
+
+    if (returnSong) {
+      setCancionPersonalActiva(null);
+      setCancionActiva(returnSong);
+      setLastViewedSongId(String(returnSong?.id || ''));
+    }
+  }, [resolveLiveReturnSong, stopMetronome, stopQueue]);
+
   const handlePersonalViewBack = useCallback(() => {
     setCancionPersonalActiva(null);
   }, []);
@@ -1539,11 +1566,7 @@ export default function EnsayoHub({
         <ModoEnsayoDirector
           playlist={songs}
           contextTitle={contextTitle}
-          onExit={() => {
-            stopMetronome();
-            stopQueue();
-            setIsLiveMode(false);
-          }}
+          onExit={handleLiveModeExit}
         />
       </React.Suspense>
     );

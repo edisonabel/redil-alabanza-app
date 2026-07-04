@@ -9,7 +9,6 @@
   ListMusic,
   Pause,
   Play,
-  RotateCcw,
   SkipBack,
   SlidersVertical,
   Smartphone,
@@ -509,6 +508,7 @@ export function LiveDirectorView({
   const resumeNativeMetersTimeoutRef = useRef<number | null>(null);
   const passiveTelemetryFrameRef = useRef<number | null>(null);
   const passiveCurrentTimeRef = useRef(0);
+  const visualSectionTimeRef = useRef<number | null>(null);
   const passiveClockTextRef = useRef<HTMLSpanElement | null>(null);
   const passiveCompactClockTextRef = useRef<HTMLSpanElement | null>(null);
   const passiveProgressTextRef = useRef<HTMLSpanElement | null>(null);
@@ -700,6 +700,7 @@ export function LiveDirectorView({
   const [sectionsAutoFollowStatus, setSectionsAutoFollowStatus] = useState<
     'auto' | 'held' | 'resuming'
   >('auto');
+  const [visualSectionTime, setVisualSectionTimeState] = useState<number | null>(null);
   const [manualSession, setManualSession] = useState<LiveDirectorResolvedSession | null>(
     initialSession ? toResolvedSession(initialSession) : null,
   );
@@ -772,6 +773,10 @@ export function LiveDirectorView({
   const getLivePlaybackTime = useCallback(() => (
     passiveStreamingTelemetryEnabled ? passiveCurrentTimeRef.current : currentTime
   ), [currentTime, passiveStreamingTelemetryEnabled]);
+  const setVisualSectionTime = useCallback((nextTime: number | null) => {
+    visualSectionTimeRef.current = nextTime;
+    setVisualSectionTimeState(nextTime);
+  }, []);
   const isEnsayoMode = mode === 'ensayo';
   const resolvedInternalPadVolume = clamp(
     Number.isFinite(Number(internalPadVolume)) ? Number(internalPadVolume) : internalPadVolumeState,
@@ -1182,6 +1187,13 @@ export function LiveDirectorView({
         const progress = hasTrackSession ? clamp(nextTime / duration, 0, 1) * 100 : 0;
 
         passiveCurrentTimeRef.current = nextTime;
+        if (
+          visualSectionTimeRef.current !== null &&
+          Math.abs(nextTime - visualSectionTimeRef.current) < 0.25
+        ) {
+          visualSectionTimeRef.current = null;
+          setVisualSectionTimeState(null);
+        }
 
         if (passiveClockTextRef.current) {
           passiveClockTextRef.current.textContent = formatClock(nextTime);
@@ -1389,9 +1401,10 @@ export function LiveDirectorView({
     stopChordDomClock();
   }, [stopChordDomClock]);
 
+  const sectionVisualTime = visualSectionTime ?? currentTime;
   const activeSectionIndex = useMemo(
-    () => getSectionIndexAtTime(currentTime),
-    [currentTime, getSectionIndexAtTime],
+    () => getSectionIndexAtTime(sectionVisualTime),
+    [getSectionIndexAtTime, sectionVisualTime],
   );
   const activeSection = resolvedSections[activeSectionIndex] || resolvedSections[0] || null;
 
@@ -1408,7 +1421,7 @@ export function LiveDirectorView({
     if (!nextSection) {
       return null;
     }
-    const seconds = nextSection.startTime - currentTime;
+    const seconds = nextSection.startTime - sectionVisualTime;
     if (seconds <= 0 || seconds > NEXT_SECTION_LOOKAHEAD_S) {
       return null;
     }
@@ -1416,12 +1429,35 @@ export function LiveDirectorView({
       name: nextSection.name || `Seccion ${activeSectionIndex + 2}`,
       seconds: Math.max(1, Math.ceil(seconds)),
     };
-  }, [activeSectionIndex, currentTime, isPlaying, resolvedSections]);
+  }, [activeSectionIndex, isPlaying, resolvedSections, sectionVisualTime]);
 
   const sectionLaneProgressPx = useMemo(
-    () => getSectionLaneProgressPxAtTime(currentTime),
-    [currentTime, getSectionLaneProgressPxAtTime],
+    () => getSectionLaneProgressPxAtTime(sectionVisualTime),
+    [getSectionLaneProgressPxAtTime, sectionVisualTime],
   );
+
+  const releaseSectionsAutoFollowNow = useCallback(() => {
+    isUserScrollingSectionsRef.current = false;
+    sectionsAutoFollowShouldSmoothRef.current = false;
+    if (resumeSectionsAutoScrollTimeoutRef.current !== null) {
+      window.clearTimeout(resumeSectionsAutoScrollTimeoutRef.current);
+      resumeSectionsAutoScrollTimeoutRef.current = null;
+    }
+    setSectionsAutoFollowStatus('auto');
+  }, []);
+
+  const snapSectionsLaneToTime = useCallback((nextTime: number) => {
+    const scrollContainer = sectionsLaneScrollRef.current;
+    if (!scrollContainer) {
+      return;
+    }
+
+    const maxScrollLeft = Math.max(0, scrollContainer.scrollWidth - scrollContainer.clientWidth);
+    const targetScrollLeft = clamp(getSectionLaneProgressPxAtTime(nextTime), 0, maxScrollLeft);
+    programmaticSectionsScrollUntilRef.current = performance.now() + 160;
+    scrollContainer.scrollLeft = targetScrollLeft;
+    setSectionsLaneScrollLeft(targetScrollLeft);
+  }, [getSectionLaneProgressPxAtTime]);
 
   // ─── Mini-map derived data ────────────────────────────────────────────────
   // Precompute section blocks as percentages of the full playback timeline.
@@ -2364,6 +2400,11 @@ export function LiveDirectorView({
     }
 
     const safeTargetTime = Math.max(0, nextTime);
+    setVisualSectionTime(safeTargetTime);
+    passiveCurrentTimeRef.current = safeTargetTime;
+    releaseSectionsAutoFollowNow();
+    snapSectionsLaneToTime(safeTargetTime);
+
     if (!isReady || !isPlaying) {
       await seekTo(safeTargetTime);
       return;
@@ -2395,7 +2436,18 @@ export function LiveDirectorView({
         applyMasterVolume(masterVolumeRef.current);
       }
     }
-  }, [applyMasterVolume, fadeMasterVolume, getLivePlaybackTime, hasTrackSession, isPlaying, isReady, seekTo]);
+  }, [
+    applyMasterVolume,
+    fadeMasterVolume,
+    getLivePlaybackTime,
+    hasTrackSession,
+    isPlaying,
+    isReady,
+    releaseSectionsAutoFollowNow,
+    seekTo,
+    setVisualSectionTime,
+    snapSectionsLaneToTime,
+  ]);
 
   useEffect(() => {
     if (isIOSNativeEngineSurface) {
@@ -2981,7 +3033,7 @@ export function LiveDirectorView({
     }
 
     const currentSection = resolvedSections[activeSectionIndex];
-    if (currentSection && (currentTime - currentSection.startTime > 2.5)) {
+    if (currentSection && (getLivePlaybackTime() - currentSection.startTime > 2.5)) {
       void handleSectionSeek(currentSection.startTime);
       return;
     }
@@ -3731,20 +3783,6 @@ export function LiveDirectorView({
             </div>
 
             <div className={`flex min-w-0 items-center justify-center ${isUltraCompactLandscape ? 'gap-1.5 px-0' : isCompactLandscape ? 'gap-2.5 px-0.5' : 'gap-3 px-1'}`}>
-              <button
-                type="button"
-                onClick={() => {
-                  void seekTo(Math.max(0, getLivePlaybackTime() - 5));
-                }}
-                disabled={!hasTrackSession}
-                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-4' : isCompactLandscape ? 'h-12 px-5' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/80 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
-                style={{ width: scaleRem(isUltraCompactLandscape ? (showSectionsPanel ? 4.95 : 5.55) : isCompactLandscape ? (showSectionsPanel ? 6.1 : 6.75) : 7.25, 4.65) }}
-                aria-label="Retroceder cinco segundos"
-                title="Retroceder cinco segundos"
-              >
-                <RotateCcw className={`${isUltraCompactLandscape ? 'h-5 w-5' : isCompactLandscape ? 'h-6 w-6' : 'h-7 w-7'}`} />
-              </button>
-
               <button
                 type="button"
                 onClick={handleTogglePlaybackFromGesture}
