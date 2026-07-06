@@ -31,6 +31,37 @@ type PerformanceWithMemory = Performance & {
   memory?: PerformanceMemoryLike;
 };
 
+type FlatDiagnosticMethod = 'info' | 'warn' | 'error';
+
+const formatFlatDiagnosticValue = (value: unknown): string => {
+  if (value === undefined) return 'undefined';
+  if (value === null) return 'null';
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'null';
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+
+  const rawValue = typeof value === 'string'
+    ? value
+    : (() => {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return String(value);
+      }
+    })();
+
+  return /^\S+$/.test(rawValue) ? rawValue : JSON.stringify(rawValue);
+};
+
+const buildFlatDiagnosticLine = (
+  prefix: string,
+  fields: Record<string, unknown>,
+): string => {
+  const entries = Object.entries(fields)
+    .filter(([, value]) => value !== undefined)
+    .map(([key, value]) => `${key}=${formatFlatDiagnosticValue(value)}`);
+  return entries.length ? `${prefix} ${entries.join(' ')}` : prefix;
+};
+
 type TrackContainer = 'adts' | 'm4a' | 'custom';
 type SharedOrRegularBuffer = SharedArrayBuffer | ArrayBuffer;
 
@@ -674,6 +705,10 @@ type SeekBackDebugEvent = {
   expectedAudibleTracks?: number;
   readyTracks?: number;
   expectedTracks?: number;
+  minAvailableRead?: number | null;
+  workletPlaying?: boolean;
+  renderedFrames?: number;
+  result?: string;
 };
 
 type SeekBackDebugBlock = {
@@ -1042,6 +1077,7 @@ export class StreamingMultitrackEngine {
     });
 
     this.installPageLifecycleListeners();
+    this.installEngineStateDumper();
   }
 
   private installPageLifecycleListeners(): void {
@@ -1054,6 +1090,41 @@ export class StreamingMultitrackEngine {
     window.removeEventListener('pagehide', this.handlePageHide);
     window.removeEventListener('pageshow', this.handlePageShow);
     document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+  }
+
+  private installEngineStateDumper(): void {
+    const debugWindow = window as Window & {
+      __dumpEngineState?: () => void;
+      __streamingEngineDumpOwner?: StreamingMultitrackEngine;
+    };
+
+    debugWindow.__streamingEngineDumpOwner = this;
+    debugWindow.__dumpEngineState = () => {
+      const owner = debugWindow.__streamingEngineDumpOwner;
+      if (owner) {
+        owner.dumpEngineState();
+      }
+    };
+  }
+
+  private removeEngineStateDumper(): void {
+    const debugWindow = window as Window & {
+      __dumpEngineState?: () => void;
+      __streamingEngineDumpOwner?: StreamingMultitrackEngine;
+    };
+
+    if (debugWindow.__streamingEngineDumpOwner === this) {
+      delete debugWindow.__streamingEngineDumpOwner;
+      delete debugWindow.__dumpEngineState;
+    }
+  }
+
+  private logFlatDiagnostic(
+    prefix: string,
+    fields: Record<string, unknown>,
+    method: FlatDiagnosticMethod = 'info',
+  ): void {
+    console[method](buildFlatDiagnosticLine(prefix, fields));
   }
 
   private handlePageSuspending(reason: string): void {
@@ -1409,7 +1480,7 @@ export class StreamingMultitrackEngine {
       return;
     }
 
-    block.events.push({
+    const entry = {
       event,
       atMs: Math.round(performance.now() - block.startedAt),
       seekSerial: block.seekSerial,
@@ -1418,7 +1489,42 @@ export class StreamingMultitrackEngine {
       direction: block.direction,
       wasPlaying: block.wasPlaying,
       ...detail,
-    });
+    };
+
+    block.events.push(entry);
+    this.logSeekBackEvent(entry);
+  }
+
+  private logSeekBackEvent(event: SeekBackDebugEvent, forceWarn = false): void {
+    const track =
+      typeof event.trackIndex === 'number'
+        ? `${event.trackIndex}:${event.trackName || this.tracks[event.trackIndex]?.name || this.tracks[event.trackIndex]?.id || 'track'}`
+        : undefined;
+    const method: FlatDiagnosticMethod =
+      forceWarn || event.direction === 'backward' || event.event.includes('timeout')
+        ? 'warn'
+        : 'info';
+
+    this.logFlatDiagnostic('[SEEK-BACK]', {
+      serial: event.seekSerial,
+      dir: event.direction,
+      from: event.fromTime.toFixed(2),
+      to: event.toTime.toFixed(2),
+      wasPlaying: event.wasPlaying,
+      phase: event.event,
+      track,
+      availableRead: event.availableRead,
+      minAvailableRead: event.minAvailableRead,
+      thresholdFrames: event.thresholdFrames,
+      readyAudibleTracks: event.readyAudibleTracks,
+      expectedAudibleTracks: event.expectedAudibleTracks,
+      readyTracks: event.readyTracks,
+      expectedTracks: event.expectedTracks,
+      workletPlaying: event.workletPlaying,
+      renderedFrames: event.renderedFrames,
+      result: event.result,
+      tMs: event.atMs,
+    }, method);
   }
 
   private recordSeekBackFlushConfirmed(seekSerial?: number): void {
@@ -1466,7 +1572,7 @@ export class StreamingMultitrackEngine {
       return;
     }
 
-    this.recordSeekBackDebugEvent('barrier-ready', {
+    this.recordSeekBackDebugEvent('start-barrier-ready', {
       minAvailableRead: detail.minAvailableRead,
       thresholdFrames: detail.thresholdFrames,
       readyAudibleTracks: block.readyAudibleTracks.size,
@@ -1494,15 +1600,18 @@ export class StreamingMultitrackEngine {
 
     if (isPremature && !block.prematureResumeLogged) {
       block.prematureResumeLogged = true;
-      console.warn('[SEEK-BACK][PREMATURE-RESUME]', {
-        seekSerial: block.seekSerial,
-        fromTime: block.fromTime,
-        toTime: block.toTime,
-        direction: block.direction,
+      this.logFlatDiagnostic('[SEEK-BACK][PREMATURE-RESUME]', {
+        serial: block.seekSerial,
+        dir: block.direction,
+        from: block.fromTime.toFixed(2),
+        to: block.toTime.toFixed(2),
         wasPlaying: block.wasPlaying,
+        phase: 'PREMATURE-RESUME',
+        seekSerial: block.seekSerial,
         readyAudibleTracks,
         expectedAudibleTracks,
-      });
+        tMs: Math.round(performance.now() - block.startedAt),
+      }, 'warn');
     }
 
     if (block.finalizeTimerId !== null) {
@@ -1537,12 +1646,13 @@ export class StreamingMultitrackEngine {
     }
 
     const summary = {
-      result,
-      seekSerial: block.seekSerial,
-      fromTime: block.fromTime,
-      toTime: block.toTime,
-      direction: block.direction,
+      serial: block.seekSerial,
+      dir: block.direction,
+      from: block.fromTime.toFixed(2),
+      to: block.toTime.toFixed(2),
       wasPlaying: block.wasPlaying,
+      phase: 'summary',
+      result,
       targetSample: block.targetSample,
       readyAudibleTracks: block.readyAudibleTracks.size,
       expectedAudibleTracks: block.expectedAudibleTracks.size,
@@ -1550,20 +1660,9 @@ export class StreamingMultitrackEngine {
       events: block.events.length,
       totalMs: Math.round(performance.now() - block.startedAt),
     };
-    const logMethod = block.direction === 'backward' || block.prematureResumeLogged
-      ? (...args: unknown[]) => console.warn(...args)
-      : (...args: unknown[]) => console.info(...args);
-
-    try {
-      console.groupCollapsed(
-        `[SEEK-BACK] serial=${block.seekSerial} ${block.direction} ${block.fromTime.toFixed(2)}s→${block.toTime.toFixed(2)}s result=${result}`,
-      );
-      logMethod('[SEEK-BACK] summary', summary);
-      console.table(block.events);
-      console.groupEnd();
-    } catch {
-      logMethod('[SEEK-BACK]', summary, block.events);
-    }
+    const method: FlatDiagnosticMethod =
+      block.direction === 'backward' || block.prematureResumeLogged ? 'warn' : 'info';
+    this.logFlatDiagnostic('[SEEK-BACK]', summary, method);
 
     if (this.activeSeekDebugBlock === block) {
       this.activeSeekDebugBlock = null;
@@ -1851,14 +1950,15 @@ export class StreamingMultitrackEngine {
           });
         }
 
-        logLiveDiagnostic('streaming:start-barrier-ready', {
+        this.logFlatDiagnostic('[SPSC-BARRIER]', {
+          phase: 'start-barrier-ready',
           reason: options.reason,
           seekSerial: options.seekSerial,
           elapsedMs: Math.round(performance.now() - startedAt),
           thresholdFrames: snapshot.thresholdFrames,
           minAvailableRead: snapshot.minAvailableRead,
           trackCount: snapshot.checkedTrackCount,
-        });
+        }, 'info');
         return true;
       }
 
@@ -2427,6 +2527,7 @@ export class StreamingMultitrackEngine {
   dispose(): void {
     this.disposed = true;
     this.removePageLifecycleListeners();
+    this.removeEngineStateDumper();
     if (this.suspensionCheckTimerId !== null) {
       window.clearTimeout(this.suspensionCheckTimerId);
       this.suspensionCheckTimerId = null;
@@ -3223,20 +3324,8 @@ export class StreamingMultitrackEngine {
     return true;
   }
 
-  private maybePublishFlightRecorder(reason: string, force = false): void {
-    if (!isLiveDiagnosticsEnabled()) {
-      return;
-    }
-
-    void force;
-    const now = performance.now();
-    if (now - this.lastFlightRecorderTableAt < FLIGHT_RECORDER_MIN_INTERVAL_MS) {
-      return;
-    }
-
-    this.lastFlightRecorderTableAt = now;
-
-    const rows = this.tracks.map((track, index) => {
+  private buildDiagnosticTrackRows(now = performance.now()): Array<Record<string, unknown>> {
+    return this.tracks.map((track, index) => {
       const state = this.trackStates[index];
       const worklet = this.latestWorkletTrackStatus.get(index);
       const producer = this.latestProducerTrackState.get(index);
@@ -3263,8 +3352,8 @@ export class StreamingMultitrackEngine {
       if (producer?.code) flags.push(`ERR_${producer.code}`);
 
       return {
-        idx: index,
-        name: track.name || track.id,
+        trackIndex: index,
+        trackName: track.name || track.id,
         guide,
         ready: Boolean(state?.readyResolved),
         route: outputRoute,
@@ -3274,7 +3363,7 @@ export class StreamingMultitrackEngine {
         volume: Number(volume.toFixed(3)),
         level: Number(level.toFixed(5)),
         workletRead: worklet?.availableRead ?? null,
-        workletDriftMs: Number.isFinite(worklet?.syncDriftMs)
+        driftMs: Number.isFinite(worklet?.syncDriftMs)
           ? Number(worklet!.syncDriftMs!.toFixed(2))
           : null,
         producerRead: producer?.availableRead ?? null,
@@ -3285,23 +3374,68 @@ export class StreamingMultitrackEngine {
         underflowAgeMs: underflow ? Math.round(now - underflow.atMs) : null,
         producerEvent: producer?.messageType ?? null,
         startupPhase: producer?.startupPhase ?? null,
-        flags: flags.join(', '),
+        seekSerial: this.activeSeekSerial,
+        playing: this.transportPlaying,
+        position: Number(this.getCurrentTime().toFixed(3)),
+        flags: flags.join('|'),
       };
     });
+  }
+
+  private dumpEngineState(): void {
+    const now = performance.now();
+    const rows = this.buildDiagnosticTrackRows(now);
+    this.logFlatDiagnostic('[SPSC-DUMP]', {
+      phase: 'summary',
+      seekSerial: this.activeSeekSerial,
+      producerSeekSerial: this.producerSeekSerial,
+      sessionId: this.producerSessionId,
+      playing: this.transportPlaying,
+      position: Number(this.getCurrentTime().toFixed(3)),
+      contextState: this.context.state,
+      contextTime: Number(this.context.currentTime.toFixed(3)),
+      trackCount: rows.length,
+    }, 'warn');
+    rows.forEach((row) => {
+      this.logFlatDiagnostic('[SPSC-DUMP-TRACK]', row, 'warn');
+    });
+  }
+
+  private maybePublishFlightRecorder(reason: string, force = false): void {
+    if (!isLiveDiagnosticsEnabled()) {
+      return;
+    }
+
+    void force;
+    const now = performance.now();
+    if (now - this.lastFlightRecorderTableAt < FLIGHT_RECORDER_MIN_INTERVAL_MS) {
+      return;
+    }
+
+    this.lastFlightRecorderTableAt = now;
+    const rows = this.buildDiagnosticTrackRows(now);
 
     const hasCriticalSignal = rows.some((row) => (
-      row.flags.includes('GUIDE_NO_READ') ||
-      row.flags.includes('RECENT_UNDERFLOW') ||
-      row.flags.includes('SOLO_BLOCKED') ||
-      row.flags.includes('NOT_READY') ||
-      row.flags.includes('ERR_')
+      String(row.flags || '').includes('GUIDE_NO_READ') ||
+      String(row.flags || '').includes('RECENT_UNDERFLOW') ||
+      String(row.flags || '').includes('SOLO_BLOCKED') ||
+      String(row.flags || '').includes('NOT_READY') ||
+      String(row.flags || '').includes('ERR_')
     ));
-    const groupMethod = hasCriticalSignal ? console.warn : console.info;
+    const method: FlatDiagnosticMethod = hasCriticalSignal ? 'warn' : 'info';
 
-    groupMethod(
-      `[SPSC-FLIGHT] ${reason} t=${this.getCurrentTime().toFixed(2)}s playing=${this.transportPlaying} tracks=${rows.length}`,
-    );
-    console.table(rows);
+    this.logFlatDiagnostic('[SPSC-FLIGHT]', {
+      reason,
+      position: Number(this.getCurrentTime().toFixed(3)),
+      playing: this.transportPlaying,
+      tracks: rows.length,
+    }, method);
+    rows.forEach((row) => {
+      this.logFlatDiagnostic('[SPSC-FLIGHT-TRACK]', {
+        reason,
+        ...row,
+      }, method);
+    });
   }
 
   private handleProducerMessage(message: ProducerInboundMessage | null): void {
@@ -3390,7 +3524,22 @@ export class StreamingMultitrackEngine {
         return;
       }
 
-      warnLiveDiagnostic('streaming:producer-micro-sync-correction', { message });
+      const track = this.tracks[message.trackIndex];
+      this.logFlatDiagnostic('[SPSC-PRODUCER]', {
+        phase: 'producer-micro-sync-correction',
+        trackIndex: message.trackIndex,
+        trackName: message.trackName || track?.name || track?.id,
+        availableRead: message.availableRead,
+        availableWrite: message.availableWrite,
+        decodedUntil: message.absoluteEndSample,
+        drift: message.trimmedFrames
+          ? `trimmed:${message.trimmedFrames}`
+          : message.paddedFrames
+            ? `padded:${message.paddedFrames}`
+            : null,
+        paddedFrames: message.paddedFrames,
+        trimmedFrames: message.trimmedFrames,
+      }, 'warn');
       return;
     }
 
@@ -3408,7 +3557,23 @@ export class StreamingMultitrackEngine {
         availableWrite: message.availableWrite,
       });
       this.maybePublishFlightRecorder('producer-ring-backpressure', true);
-      warnLiveDiagnostic('streaming:producer-ring-backpressure', { message });
+      const track = this.tracks[message.trackIndex];
+      const producer = this.latestProducerTrackState.get(message.trackIndex);
+      const worklet = this.latestWorkletTrackStatus.get(message.trackIndex);
+      this.logFlatDiagnostic('[SPSC-PRODUCER]', {
+        phase: 'producer-ring-backpressure',
+        trackIndex: message.trackIndex,
+        trackName: track?.name || track?.id,
+        availableRead: message.availableRead,
+        availableWrite: message.availableWrite,
+        decodedUntil: producer?.decodedUntilSample ?? null,
+        drift: Number.isFinite(worklet?.syncDriftMs)
+          ? Number(worklet!.syncDriftMs!.toFixed(2))
+          : null,
+        mode: message.mode,
+        queuedFrames: message.queuedFrames,
+        pendingFrames: message.pendingFrames,
+      }, 'warn');
       return;
     }
 
@@ -3476,7 +3641,6 @@ export class StreamingMultitrackEngine {
     }
 
     if (message.type === 'producer-seek-ready') {
-      logLiveDiagnostic('streaming:producer-seek-ready', { message });
       this.handleProducerSeekReady(message);
       return;
     }
@@ -4021,7 +4185,19 @@ export class StreamingMultitrackEngine {
     }
 
     if (message.type === 'debug-transport') {
-      logLiveDiagnostic('streaming:worklet-transport', { message });
+      if (this.activeSeekDebugBlock && !this.activeSeekDebugBlock.finalized) {
+        this.recordSeekBackDebugEvent('worklet-transport', {
+          workletPlaying: message.playing,
+          renderedFrames: message.renderedFrames,
+        });
+      } else {
+        this.logFlatDiagnostic('[SPSC-WORKLET]', {
+          phase: 'worklet-transport',
+          playing: message.playing,
+          renderedFrames: message.renderedFrames,
+          seekSerial: this.activeSeekSerial,
+        }, 'info');
+      }
       return;
     }
 
@@ -4045,7 +4221,23 @@ export class StreamingMultitrackEngine {
         });
       }
       this.maybePublishFlightRecorder('audio-underflow', true);
-      warnLiveDiagnostic('streaming:audio-underflow', { message });
+      const track = this.tracks[message.trackIndex];
+      const producer = this.latestProducerTrackState.get(message.trackIndex);
+      const worklet = this.latestWorkletTrackStatus.get(message.trackIndex);
+      this.logFlatDiagnostic('[SPSC-WORKLET]', {
+        phase: 'audio-underflow',
+        trackIndex: message.trackIndex,
+        trackName: track?.name || message.trackId || track?.id,
+        availableRead: message.availableRead,
+        availableWrite: producer?.availableWrite ?? null,
+        decodedUntil: producer?.decodedUntilSample ?? null,
+        drift: Number.isFinite(worklet?.syncDriftMs)
+          ? Number(worklet!.syncDriftMs!.toFixed(2))
+          : null,
+        missingFrames: message.missingFrames,
+        underrunEvents: message.underrunEvents,
+        renderedFrames: message.renderedFrames,
+      }, 'warn');
       return;
     }
 
