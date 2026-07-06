@@ -403,6 +403,56 @@ const mergeMarkerNotesIntoSections = (sections = [], rawMarkers = []) => {
   });
 };
 
+const getVoicePayloadScore = (value) => {
+  const raw = typeof value === 'string'
+    ? value.trim()
+    : value == null
+      ? ''
+      : (() => {
+          try {
+            return JSON.stringify(value);
+          } catch {
+            return '';
+          }
+        })();
+
+  if (!raw || raw === '-') return 0;
+
+  const normalized = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (normalized === 'no esta') return 0;
+
+  const audioFilePattern = /\.(mp3|wav|m4a|aac|ogg|flac|mp4|mpeg|mpga|webm)(\?.*)?$/i;
+  if (/^https?:\/\//i.test(raw)) {
+    return audioFilePattern.test(raw) ? 3 : 1;
+  }
+
+  if (raw.includes('\n') || raw.includes('|')) return 3;
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.length > 0 ? 4 : 0;
+    if (parsed && typeof parsed === 'object') {
+      if (Array.isArray(parsed.entries) && parsed.entries.length > 0) return 4;
+      if (parsed.url || parsed.link || parsed.href || parsed.src || parsed.audio) return 3;
+      if (parsed.legacyUrl || parsed.folder || parsed.drive) return 1;
+    }
+  } catch {
+    // Keep the low score for unknown legacy text.
+  }
+
+  return 1;
+};
+
+const pickVoicePayload = (songRow) => {
+  const candidates = [songRow?.link_voces, songRow?.voces]
+    .map((value) => ({ value, score: getVoicePayloadScore(value) }))
+    .filter((candidate) => candidate.score > 0);
+
+  if (candidates.length === 0) return '';
+
+  return candidates.sort((left, right) => right.score - left.score)[0].value || '';
+};
+
 const buildSongFromRow = async (songRow, orderIndex = 0) => {
   const chordproContent = await readChordProContent(songRow);
   const rawSectionMarkers = Array.isArray(songRow?.section_markers) ? songRow.section_markers : [];
@@ -421,7 +471,7 @@ const buildSongFromRow = async (songRow, orderIndex = 0) => {
     category: songRow?.categoria || '',
     voz: songRow?.voz || '',
     mp3: songRow?.mp3 || '',
-    linkVoces: songRow?.link_voces || songRow?.voces || '',
+    linkVoces: pickVoicePayload(songRow),
     linkSecuencias: songRow?.link_secuencias || '',
     multitrackSession: songRow?.multitrack_session || null,
     chordpro: chordproContent,

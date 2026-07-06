@@ -969,24 +969,13 @@ export default function EnsayoHub({
   const openPersonalVoiceView = useCallback((song) => {
     if (!song) return;
 
-    const parsed = parseVoiceResources(song?.linkVoces);
-    const fallbackLegacyUrl =
-      parsed.legacyUrl ||
-      normalizeVoiceExternalUrl(serializeVoicePayload(song?.linkVoces)) ||
-      normalizeVoiceExternalUrl(song?.linkVoces?.legacyUrl || song?.linkVoces?.folder || song?.linkVoces?.drive || '');
-
-    if ((!parsed.entries || parsed.entries.length === 0) && fallbackLegacyUrl) {
-      openSongVoices(song);
-      return;
-    }
-
     stopMetronome();
     stopQueue();
     window.__REDIL_PRO_PLAYER__?.close?.();
     setCancionActiva(null);
     setCancionPersonalActiva(song);
     setLastViewedSongId(String(song?.id || ''));
-  }, [openSongVoices, stopMetronome, stopQueue]);
+  }, [stopMetronome, stopQueue]);
 
   const handlePersonalVoiceTrackPlay = useCallback((song, track) => {
     const safeUrl = normalizeVoiceExternalUrl(track?.url || track?.href || '');
