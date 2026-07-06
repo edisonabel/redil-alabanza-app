@@ -2299,6 +2299,11 @@ export function LiveDirectorView({
   const hasRecoveredSyntheticClick = Boolean(
     loadWarnings?.some((warning) => warning.reason === 'synthetic-click')
   );
+  const unsupportedFormatWarnings = useMemo(
+    () => loadWarnings?.filter((warning) => warning.reason === 'unsupported-format') || [],
+    [loadWarnings],
+  );
+  const hasUnsupportedStemFormat = unsupportedFormatWarnings.length > 0;
   const showTrackLimitNotice = Boolean(
     trackLimitNotice && dismissedTrackLimitNoticeKey !== trackLimitNotice.key
   );
@@ -5088,10 +5093,16 @@ export function LiveDirectorView({
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-[0.72rem] font-black uppercase tracking-[0.22em] text-amber-200/80">
-                  {hasRecoveredSyntheticClick ? 'Click recuperado' : `Stems omitidos (${loadWarnings.length})`}
+                  {hasUnsupportedStemFormat
+                    ? `Formato incompatible (${unsupportedFormatWarnings.length})`
+                    : hasRecoveredSyntheticClick
+                      ? 'Click recuperado'
+                      : `Stems omitidos (${loadWarnings.length})`}
                 </p>
                 <p className="mt-1 text-[0.88rem] leading-snug text-white/80">
-                  {hasRecoveredSyntheticClick
+                  {hasUnsupportedStemFormat
+                    ? 'Hay stems en MP3 que el motor en vivo no puede usar. La sesión continúa con las pistas compatibles.'
+                    : hasRecoveredSyntheticClick
                     ? 'Safari no pudo abrir el click original, así que generamos un click estable para mantener la guía.'
                     : 'La sesión cargó sin estos archivos porque el motor no pudo abrirlos:'}
                 </p>
@@ -5105,8 +5116,17 @@ export function LiveDirectorView({
                         : '';
                     return (
                       <li key={`${warning.trackId}:${warning.reason}`} className="truncate">
-                        <span className="font-semibold text-white/90">{warning.trackName || warning.trackId}</span>
-                        <span className="text-white/60">{ext}{code}</span>
+                        {warning.reason === 'unsupported-format' ? (
+                          <span>
+                            <span className="font-semibold text-white/90">{warning.trackName || warning.trackId}</span>
+                            <span className="text-white/60">{ext ? ` ${ext}` : ''}: {warning.message}</span>
+                          </span>
+                        ) : (
+                          <>
+                            <span className="font-semibold text-white/90">{warning.trackName || warning.trackId}</span>
+                            <span className="text-white/60">{ext}{code}</span>
+                          </>
+                        )}
                       </li>
                     );
                   })}
@@ -5115,7 +5135,9 @@ export function LiveDirectorView({
                   )}
                 </ul>
                 <p className="mt-2 text-[0.76rem] leading-snug text-amber-100/70">
-                  Consejo: re-exporta los stems problemáticos como <span className="font-semibold">AAC-LC (.m4a 256 kbps)</span> o <span className="font-semibold">FLAC</span>. Evita ALAC — no abre en Windows ni Android.
+                  {hasUnsupportedStemFormat
+                    ? <>Convierte esos stems a <span className="font-semibold">M4A/AAC-LC (.m4a 256 kbps)</span> y vuelve a subirlos.</>
+                    : <>Consejo: re-exporta los stems problemáticos como <span className="font-semibold">AAC-LC (.m4a 256 kbps)</span> o <span className="font-semibold">FLAC</span>. Evita ALAC — no abre en Windows ni Android.</>}
                 </p>
               </div>
               <button

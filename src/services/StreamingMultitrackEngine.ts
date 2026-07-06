@@ -1,5 +1,5 @@
 import { AudioRingBuffer } from './AudioRingBuffer';
-import type { TrackData } from './MultitrackEngine';
+import type { MultitrackEngineLoadWarning, TrackData } from './MultitrackEngine';
 import * as MP4Box from 'mp4box';
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
 import {
@@ -252,6 +252,7 @@ type ProducerLoopCacheStrategy = 'PINNED' | 'PREDICTIVE_DOUBLE_BUFFER';
 type ProducerTrackMetadata = {
   id: string;
   name?: string;
+  sourceFileName?: string;
   url: string;
   trackIndex: number;
   codec: string;
@@ -450,6 +451,8 @@ type ProducerDecoderOverloadMessage = {
   trackIndex: number;
   trackId?: string;
   trackName?: string;
+  sourceFileName?: string;
+  url?: string;
   codec?: string;
   sampleRate?: number;
   channelCount?: number;
@@ -914,6 +917,7 @@ export class StreamingMultitrackEngine {
   private readonly trackStates: TrackRuntime[] = [];
   private tracks: TrackData[] = [];
   private trackIndexById = new Map<string, number>();
+  private loadWarnings: MultitrackEngineLoadWarning[] = [];
   private trackMeterLevels: Record<string, number> = {};
   private sharedTelemetry: SharedStreamingTelemetry | null = null;
   private readonly soloTrackIds = new Set<string>();
@@ -1200,6 +1204,7 @@ export class StreamingMultitrackEngine {
     this.releasePreloadedNextSession();
     this.tracks = normalizedTracks;
     this.trackIndexById = new Map(normalizedTracks.map((track, index) => [track.id, index]));
+    this.loadWarnings = [];
     this.soloTrackIds.clear();
     this.loopEnabled = false;
     this.loopStartInSeconds = 0;
@@ -1567,6 +1572,101 @@ export class StreamingMultitrackEngine {
 
   getTracks(): TrackData[] {
     return this.tracks;
+  }
+
+  getLoadWarnings(): MultitrackEngineLoadWarning[] {
+    return [...this.loadWarnings];
+  }
+
+  private getWarningFileName(track: TrackData | undefined, message: ProducerErrorMessage): string {
+    const directName = message.sourceFileName || track?.sourceFileName;
+    if (directName) {
+      return directName;
+    }
+
+    const rawUrl = message.url || track?.url || '';
+    try {
+      const parsed = new URL(rawUrl, window.location.href);
+      const fileName = decodeURIComponent(parsed.pathname || '').split('/').filter(Boolean).pop();
+      return fileName || '';
+    } catch {
+      try {
+        return decodeURIComponent(rawUrl).split(/[/?#]/).filter(Boolean).pop() || '';
+      } catch {
+        return rawUrl.split(/[/?#]/).filter(Boolean).pop() || '';
+      }
+    }
+  }
+
+  private getWarningFileExtension(fileName: string, fallbackUrl: string | undefined): string | undefined {
+    const candidate = `${fileName || ''} ${fallbackUrl || ''}`;
+    const match = candidate.match(/\.([a-z0-9]+)(?:[?#\s]|$)/i);
+    return match ? match[1].toLowerCase() : undefined;
+  }
+
+  private omitTrackAfterProducerError(trackState: TrackRuntime, message: ProducerErrorMessage): void {
+    const track = this.tracks[trackState.index];
+    const trackId = message.trackId || track?.id || `track-${trackState.index}`;
+    const trackLabel = message.trackName || track?.name || trackId;
+    const fileName = this.getWarningFileName(track, message);
+    const playExtension = this.getWarningFileExtension(fileName, message.url || track?.url);
+    const unsupportedFormat = message.code === 'unsupported-format';
+    const warningMessage = unsupportedFormat
+      ? `El stem "${trackLabel}"${fileName ? ` (${fileName})` : ''} está en MP3 y no es compatible con el motor en vivo. Conviértelo a M4A/AAC y vuelve a subirlo.`
+      : message.message || `El motor en vivo no pudo abrir "${trackLabel}".`;
+
+    this.loadWarnings = this.loadWarnings.filter((warning) => warning.trackId !== trackId);
+    this.loadWarnings.push({
+      trackId,
+      trackName: trackLabel,
+      reason: unsupportedFormat ? 'unsupported-format' : message.code || 'producer-error',
+      message: warningMessage,
+      playExtension,
+    });
+
+    trackState.endOfStreamReached = true;
+    trackState.muted = true;
+    trackState.volume = 0;
+    if (track) {
+      track.enabled = false;
+      track.isMuted = true;
+      track.volume = 0;
+    }
+
+    this.postWorkletMessage({
+      type: 'track-volume',
+      trackIndex: trackState.index,
+      volume: 0,
+    });
+    this.postWorkletMessage({
+      type: 'track-mute',
+      trackIndex: trackState.index,
+      muted: true,
+    });
+
+    if (!trackState.readyResolved) {
+      trackState.readyResolved = true;
+      trackState.ready.resolve();
+    }
+
+    const pending = this.pendingProducerSeek;
+    if (pending && !pending.cancelled) {
+      pending.readyTracks.add(trackState.index);
+      if (pending.readyTracks.size >= pending.expectedTrackCount) {
+        window.clearTimeout(pending.timeoutId);
+        pending.resolve();
+      }
+    }
+
+    warnLiveDiagnostic('streaming:track-omitted', {
+      code: message.code,
+      trackIndex: trackState.index,
+      trackId,
+      trackName: trackLabel,
+      sourceFileName: fileName || null,
+      url: message.url || track?.url || null,
+      reason: warningMessage,
+    });
   }
 
   getTrackMeterLevels(): Record<string, number> {
@@ -3045,6 +3145,7 @@ export class StreamingMultitrackEngine {
       return {
         id: track?.id || `track-${index}`,
         name: track?.name,
+        sourceFileName: track?.sourceFileName,
         url: trackDefinition.url,
         trackIndex: index,
         codec: trackDefinition.codec,
@@ -3342,9 +3443,14 @@ export class StreamingMultitrackEngine {
       });
       this.maybePublishFlightRecorder('producer-error', true);
       warnLiveDiagnostic('streaming:producer-error', { message });
-      this.rejectPendingProducerSeekForMessage(message);
       if (typeof message.trackIndex === 'number') {
         const trackState = this.trackStates[message.trackIndex];
+        if (trackState && (!trackState.readyResolved || message.code === 'unsupported-format')) {
+          this.omitTrackAfterProducerError(trackState, message);
+          return;
+        }
+
+        this.rejectPendingProducerSeekForMessage(message);
         if (trackState && !trackState.readyResolved) {
           const trackLabel =
             message.trackName ||
@@ -3363,6 +3469,8 @@ export class StreamingMultitrackEngine {
             new Error(`${message.code} en "${trackLabel}"${codecLabel}${channelLabel}: ${message.message}${decoderDebug}${startupDebug}`),
           );
         }
+      } else {
+        this.rejectPendingProducerSeekForMessage(message);
       }
       return;
     }

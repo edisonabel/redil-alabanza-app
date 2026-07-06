@@ -200,6 +200,64 @@ const urlLooksLikeMp3 = (url) => {
   return false;
 };
 
+const bytesLookLikeMp3 = (bytes) => {
+  if (!bytes) {
+    return false;
+  }
+
+  const view =
+    bytes instanceof Uint8Array
+      ? bytes
+      : new Uint8Array(bytes.buffer || bytes, bytes.byteOffset || 0, bytes.byteLength || bytes.length || 0);
+
+  if (view.byteLength < 3) {
+    return false;
+  }
+
+  if (view[0] === 0x49 && view[1] === 0x44 && view[2] === 0x33) {
+    return true;
+  }
+
+  return view[0] === 0xff && (view[1] & 0xe0) === 0xe0;
+};
+
+const getFileNameFromUrl = (url) => {
+  try {
+    const parsedUrl = new URL(url, self.location.href);
+    const pathname = decodeURIComponent(parsedUrl.pathname || '');
+    const fileName = pathname.split('/').filter(Boolean).pop();
+    return fileName || '';
+  } catch (_error) {
+    try {
+      const decoded = decodeURIComponent(String(url || ''));
+      return decoded.split(/[/?#]/).filter(Boolean).pop() || '';
+    } catch (_decodeError) {
+      return String(url || '').split(/[/?#]/).filter(Boolean).pop() || '';
+    }
+  }
+};
+
+const createUnsupportedFormatError = (track, reason) => {
+  const fileName = track.sourceFileName || getFileNameFromUrl(track.url);
+  const trackName = track.name || track.id || fileName || 'stem';
+  const error = new Error(
+    `El stem "${trackName}"${fileName ? ` (${fileName})` : ''} está en MP3 y no es compatible con el motor en vivo. Convértelo a M4A/AAC y vuelve a subirlo.`,
+  );
+  error.name = 'UnsupportedStemFormatError';
+  error.code = 'unsupported-format';
+  error.reason = reason || 'mp3';
+  error.fileName = fileName;
+  return error;
+};
+
+const isUnsupportedFormatError = (error) => (
+  !!error &&
+  (
+    error.code === 'unsupported-format' ||
+    error.name === 'UnsupportedStemFormatError'
+  )
+);
+
 const descriptionsMatch = (left, right) => {
   if (!left && !right) {
     return true;
@@ -589,10 +647,7 @@ class RangeFetcher {
     this.fetchSerial = 0;
     this.aborted = false;
     this.hasAppliedInitialJitter = false;
-
-    if (urlLooksLikeMp3(this.url)) {
-      debugError('[ALERTA FORMATO] Intentando cargar un MP3 en MP4Box:', this.url);
-    }
+    this.unsupportedFormat = urlLooksLikeMp3(this.url);
   }
 
   async fetchChunk(byteStart) {
@@ -1371,6 +1426,7 @@ class ProducerTrackPipeline {
     this.lastRingBackpressurePostAt = 0;
     this.lastMicroSyncCorrectionPostAt = 0;
     this.startupWatchdogCompleted = false;
+    this.unsupportedFormat = this.fetcher.unsupportedFormat === true;
     this.isDestroyed = false;
   }
 
@@ -1382,6 +1438,17 @@ class ProducerTrackPipeline {
 
   isDecoderUsable() {
     return !!this.decoder && this.decoder.state !== 'closed';
+  }
+
+  assertSupportedFormat(bytes) {
+    if (this.unsupportedFormat) {
+      throw createUnsupportedFormatError(this.track, 'url-mp3');
+    }
+
+    if (bytesLookLikeMp3(bytes)) {
+      this.unsupportedFormat = true;
+      throw createUnsupportedFormatError(this.track, 'sniffed-mp3');
+    }
   }
 
   destroy() {
@@ -1443,17 +1510,20 @@ class ProducerTrackPipeline {
 
   async ensureReady() {
     this.assertAlive();
+    this.assertSupportedFormat(null);
 
-    if (!this.demuxer) {
-      const mp4box = await loadMp4Box();
-      this.assertAlive();
-      this.demuxer = new Mp4TrackDemuxer(mp4box, this.track);
-    }
-
-    while (!this.demuxer.trackReady) {
+    while (!this.demuxer || !this.demuxer.trackReady) {
       this.assertAlive();
       const chunk = await this.fetcher.fetchChunk(this.nextFileStart);
       this.assertAlive();
+      this.assertSupportedFormat(chunk.bytes);
+
+      if (!this.demuxer) {
+        const mp4box = await loadMp4Box();
+        this.assertAlive();
+        this.demuxer = new Mp4TrackDemuxer(mp4box, this.track);
+      }
+
       const result = this.demuxer.append(chunk.bytes, chunk.byteStart);
       this.nextFileStart = this.resolveNextFileStart(result, chunk);
 
@@ -1467,7 +1537,7 @@ class ProducerTrackPipeline {
       }
     }
 
-    if (!this.demuxer.trackReady) {
+    if (!this.demuxer || !this.demuxer.trackReady) {
       throw new Error(`Unable to initialize MP4 demuxer for ${this.track.url}`);
     }
 
@@ -1476,6 +1546,11 @@ class ProducerTrackPipeline {
 
   async prewarmHeader(sessionId) {
     this.assertAlive();
+    this.assertSupportedFormat(null);
+
+    const chunk = await this.fetcher.fetchChunk(0);
+    this.assertAlive();
+    this.assertSupportedFormat(chunk.bytes);
 
     if (!this.demuxer) {
       const mp4box = await loadMp4Box();
@@ -1483,8 +1558,6 @@ class ProducerTrackPipeline {
       this.demuxer = new Mp4TrackDemuxer(mp4box, this.track);
     }
 
-    const chunk = await this.fetcher.fetchChunk(0);
-    this.assertAlive();
     const result = this.demuxer.append(chunk.bytes, chunk.byteStart);
     this.preWarmedDecoderConfig = result.decoderConfig || this.preWarmedDecoderConfig;
     this.preWarmedSamples = Array.isArray(result.samples) ? result.samples.slice() : [];
@@ -1581,13 +1654,19 @@ class ProducerTrackPipeline {
 
       this.clearReadyWatchdog();
       this.rejectPendingSeekReady(error, sessionId);
-      postProducerError('look-ahead-failed', error, {
+      const unsupportedFormat = isUnsupportedFormatError(error);
+      postProducerError(unsupportedFormat ? 'unsupported-format' : 'look-ahead-failed', error, {
         sessionId,
         trackIndex: this.track.trackIndex,
         trackId: this.track.id,
         trackName: this.track.name,
+        url: this.track.url,
+        sourceFileName: this.track.sourceFileName,
         ...this.getStartupDiagnostic('look-ahead-failed'),
       });
+      if (unsupportedFormat) {
+        this.destroy();
+      }
     });
   }
 
@@ -1921,6 +2000,7 @@ class ProducerTrackPipeline {
 
       const chunk = await this.fetcher.fetchChunk(this.nextFileStart);
       this.assertAlive();
+      this.assertSupportedFormat(chunk.bytes);
       const result = this.demuxer.append(chunk.bytes, chunk.byteStart);
       this.nextFileStart = this.resolveNextFileStart(result, chunk);
 
@@ -1972,6 +2052,7 @@ class ProducerTrackPipeline {
     while (!this.isDestroyed && this.prepareToken === token && this.decodedUntilSample < endSample) {
       const chunk = await this.fetcher.fetchChunk(this.nextFileStart);
       this.assertAlive();
+      this.assertSupportedFormat(chunk.bytes);
       const result = this.demuxer.append(chunk.bytes, chunk.byteStart);
       this.nextFileStart = this.resolveNextFileStart(result, chunk);
 

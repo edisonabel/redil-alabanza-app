@@ -7,7 +7,6 @@ import {
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
 import type { TrackActivityEnvelope } from '../utils/audioActivityEnvelope';
 import {
-  errorLiveDiagnostic,
   readLiveBrowserCapabilities,
   warnLiveDiagnostic,
 } from '../utils/liveDiagnostics';
@@ -455,7 +454,11 @@ export function useMultitrackEngine(
       trackLevelsRef.current = buildTrackLevels(loadedTracks);
       setTrackLevels(trackLevelsRef.current);
       setTrackEnvelopes(buildTrackEnvelopes(loadedTracks));
-      setLoadWarnings(targetKind === 'buffer' ? (engine as MultitrackEngine).getLoadWarnings() : []);
+      setLoadWarnings(
+        targetKind === 'buffer'
+          ? (engine as MultitrackEngine).getLoadWarnings()
+          : (engine as StreamingMultitrackEngine).getLoadWarnings(),
+      );
       commitDuration(engine.getDuration());
       commitDiagnostics(engine.getDiagnostics());
       commitLoadProgress(null);
@@ -481,51 +484,15 @@ export function useMultitrackEngine(
         }
 
         console.warn(
-          '[useMultitrackEngine] Streaming engine failed decoding or crashed. Gracefully falling back to legacy buffer mode.',
+          '[useMultitrackEngine] Streaming engine failed during initialization. Legacy fallback is disabled for track/file errors.',
           error,
         );
-        warnLiveDiagnostic('engine:streaming-fallback-buffer', {
+        warnLiveDiagnostic('engine:streaming-no-legacy-fallback-for-track-error', {
           trackCount: nextTracks.length,
           reason: error instanceof Error ? error.message : String(error),
+          allowStreamingFallback,
           browser: readLiveBrowserCapabilities(),
         });
-
-        if (!allowStreamingFallback) {
-          warnLiveDiagnostic('engine:streaming-strict-mode-blocked-fallback', {
-            trackCount: nextTracks.length,
-            reason: error instanceof Error ? error.message : String(error),
-          });
-        } else {
-          try {
-            const fallbackEngine = getEngine('buffer') as MultitrackEngine;
-            commitLoadProgress({ loaded: 0, total: nextTracks.length });
-            const fallbackLoadedTracks = await fallbackEngine.loadTracks(nextTracks, {
-              onProgress: handleProgress,
-            });
-
-            if (initializationToken !== initializationTokenRef.current || fallbackEngine !== engineRef.current) {
-              return;
-            }
-
-            setTrackVolumes(buildTrackVolumes(fallbackLoadedTracks));
-            trackLevelsRef.current = buildTrackLevels(fallbackLoadedTracks);
-            setTrackLevels(trackLevelsRef.current);
-            setTrackEnvelopes(buildTrackEnvelopes(fallbackLoadedTracks));
-            setLoadWarnings(fallbackEngine.getLoadWarnings());
-            commitDuration(fallbackEngine.getDuration());
-            commitDiagnostics(fallbackEngine.getDiagnostics());
-            commitLoadProgress(null);
-            setIsReady(true);
-            return;
-          } catch (fallbackError) {
-            console.error('[useMultitrackEngine] Fallback buffer mode also failed.', fallbackError);
-            errorLiveDiagnostic('engine:fallback-buffer-failed', {
-              trackCount: nextTracks.length,
-              reason: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
-            });
-            error = fallbackError;
-          }
-        }
       }
 
       setIsReady(false);
