@@ -1127,6 +1127,23 @@ export class StreamingMultitrackEngine {
     console[method](buildFlatDiagnosticLine(prefix, fields));
   }
 
+  private logFlatLiveDiagnostic(
+    eventName: string,
+    fields: Record<string, unknown>,
+    method: FlatDiagnosticMethod = 'info',
+  ): void {
+    if (!isLiveDiagnosticsEnabled()) {
+      return;
+    }
+
+    this.logFlatDiagnostic(`[LiveDiagnostics] ${eventName}`, fields, method);
+  }
+
+  private getDiagnosticTrackLabel(trackIndex: number, fallbackName?: string | null): string {
+    const track = this.tracks[trackIndex];
+    return fallbackName || track?.name || track?.id || `track ${trackIndex}`;
+  }
+
   private handlePageSuspending(reason: string): void {
     if (!this.transportPlaying) {
       return;
@@ -2159,7 +2176,7 @@ export class StreamingMultitrackEngine {
     }
     this.startTime = this.context.currentTime - this.pauseTime;
     this.transportPlaying = true;
-    logLiveDiagnostic('streaming:transport-play', {
+    this.logFlatLiveDiagnostic('streaming:transport-play', {
       currentTime: this.context.currentTime,
       startTime: this.startTime,
       pauseTime: this.pauseTime,
@@ -2186,7 +2203,7 @@ export class StreamingMultitrackEngine {
     this.pauseTime = this.getCurrentTime();
     this.startTime = 0;
     this.transportPlaying = false;
-    logLiveDiagnostic('streaming:transport-pause', {
+    this.logFlatLiveDiagnostic('streaming:transport-pause', {
       pauseTime: this.pauseTime,
       contextTime: this.context.currentTime,
       contextState: this.context.state,
@@ -2307,7 +2324,7 @@ export class StreamingMultitrackEngine {
       this.startTime = wasPlaying ? this.context.currentTime - clampedTime : 0;
       this.transportPlaying = wasPlaying;
       if (!wasPlaying) {
-        logLiveDiagnostic('streaming:seek-paused-ready', {
+        this.logFlatLiveDiagnostic('streaming:seek-paused-ready', {
           seekSerial,
           targetSample,
           targetTimeSeconds: clampedTime,
@@ -3502,6 +3519,7 @@ export class StreamingMultitrackEngine {
       message.type === 'producer-lookahead-status' ||
       message.type === 'producer-ring-write'
     ) {
+      const trackName = this.getDiagnosticTrackLabel(message.trackIndex);
       this.recordProducerTrackState(message.trackIndex, {
         messageType: message.type,
         availableRead: message.availableRead,
@@ -3509,13 +3527,36 @@ export class StreamingMultitrackEngine {
         decodedUntilSample: message.decodedUntilSample,
         targetEndSample: message.targetEndSample,
       });
-      logLiveDiagnostic('streaming:producer-progress', { message });
+      if (this.shouldPublishProducerDiagnostic('streaming:producer-progress', message.trackIndex)) {
+        this.logFlatLiveDiagnostic('streaming:producer-progress', {
+          type: message.type,
+          sessionId: message.sessionId,
+          trackIndex: message.trackIndex,
+          trackName,
+          availableRead: message.availableRead,
+          availableWrite: message.availableWrite,
+          decodedUntilSample: message.decodedUntilSample,
+          targetEndSample: message.targetEndSample,
+          targetAheadFrames: message.targetAheadFrames,
+          absoluteStartSample: message.absoluteStartSample,
+          frameCount: message.frameCount,
+        });
+      }
       this.maybePublishFlightRecorder(message.type);
       return;
     }
 
     if (message.type === 'producer-sample-dropped') {
-      warnLiveDiagnostic('streaming:producer-sample-dropped', { message });
+      this.logFlatLiveDiagnostic('streaming:producer-sample-dropped', {
+        reason: message.reason,
+        trackIndex: message.trackIndex,
+        trackId: message.trackId,
+        trackName: this.getDiagnosticTrackLabel(message.trackIndex, message.trackName),
+        sampleNumber: message.sampleNumber,
+        timestampUs: message.timestampUs,
+        bytes: message.bytes,
+        hex: message.hex,
+      }, 'warn');
       return;
     }
 
@@ -3646,7 +3687,11 @@ export class StreamingMultitrackEngine {
     }
 
     if (message.type === 'producer-seek-complete') {
-      logLiveDiagnostic('streaming:producer-seek-complete', { message });
+      this.logFlatLiveDiagnostic('streaming:producer-seek-complete', {
+        sessionId: message.sessionId,
+        seekSerial: message.seekSerial,
+        targetSample: message.targetSample,
+      });
       this.handleProducerSeekComplete(message);
       return;
     }
@@ -3729,6 +3774,7 @@ export class StreamingMultitrackEngine {
 
     const deferred = this.createDeferred<ProducerSyncAuditMessage>();
     this.pendingSyncAudit = deferred;
+    const targetSample = Math.max(0, Math.round(this.pauseTime * this.context.sampleRate));
     this.postProducerMessage({
       type: 'audit-sync',
       sessionId: this.producerSessionId,
@@ -3783,14 +3829,30 @@ export class StreamingMultitrackEngine {
     }
 
     if (spreadFrames !== null && Math.abs(spreadFrames) > 0) {
-      warnLiveDiagnostic('streaming:sync-audit-drift', {
+      const auditFields: Record<string, unknown> = {
         reason: options.reason,
         seekSerial: options.seekSerial,
+        targetSample,
         minFirstSample,
         maxFirstSample,
         spreadFrames,
+        spreadMs: Number(((spreadFrames / this.context.sampleRate) * 1000).toFixed(3)),
+        targetToMinDeltaFrames:
+          minFirstSample !== null ? minFirstSample - targetSample : null,
         trackCount: rows.length,
+      };
+
+      rows.forEach((row) => {
+        const firstSample = row.firstAbs;
+        auditFields[`track${row.index}Name`] = row.track;
+        auditFields[`track${row.index}FirstSample`] = firstSample;
+        auditFields[`track${row.index}DeltaFrames`] =
+          typeof firstSample === 'number' && minFirstSample !== null
+            ? firstSample - minFirstSample
+            : null;
       });
+
+      this.logFlatLiveDiagnostic('streaming:sync-audit-drift', auditFields, 'warn');
     }
   }
 
@@ -4175,11 +4237,38 @@ export class StreamingMultitrackEngine {
       const shouldWarn =
         message.audibleZeroTracks > 0 ||
         (Number.isFinite(message.minAvailableRead) && message.minAvailableRead < AAC_FRAME_SIZE);
-      if (shouldWarn) {
-        warnLiveDiagnostic('streaming:worklet-status', { message });
-      } else {
-        logLiveDiagnostic('streaming:worklet-status', { message });
-      }
+      const workletStatusFields: Record<string, unknown> = {
+        playing: message.playing,
+        renderedFrames: message.renderedFrames,
+        sampleRate: message.sampleRate,
+        referenceSeconds: message.referenceSeconds,
+        audibleZeroTracks: message.audibleZeroTracks,
+        minAvailableRead: message.minAvailableRead,
+        trackCount: message.tracks.length,
+      };
+      message.tracks.forEach((trackStatus) => {
+        const prefix = `track${trackStatus.index}`;
+        workletStatusFields[`${prefix}Shared`] = trackStatus.shared;
+        workletStatusFields[`${prefix}Muted`] = trackStatus.muted;
+        workletStatusFields[`${prefix}Volume`] = Number(trackStatus.volume.toFixed(3));
+        workletStatusFields[`${prefix}AvailableRead`] = trackStatus.availableRead;
+        workletStatusFields[`${prefix}Capacity`] = trackStatus.capacity;
+        workletStatusFields[`${prefix}PositionSeconds`] =
+          typeof trackStatus.positionSeconds === 'number'
+            ? Number(trackStatus.positionSeconds.toFixed(3))
+            : null;
+        workletStatusFields[`${prefix}SyncDriftMs`] =
+          typeof trackStatus.syncDriftMs === 'number'
+            ? Number(trackStatus.syncDriftMs.toFixed(3))
+            : null;
+        workletStatusFields[`${prefix}UnderrunEvents`] = trackStatus.underrunEvents;
+        workletStatusFields[`${prefix}UnderrunFrames`] = trackStatus.underrunFrames;
+      });
+      this.logFlatLiveDiagnostic(
+        'streaming:worklet-status',
+        workletStatusFields,
+        shouldWarn ? 'warn' : 'info',
+      );
       this.maybePublishFlightRecorder('worklet-status', shouldWarn);
       return;
     }
