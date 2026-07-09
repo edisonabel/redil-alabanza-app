@@ -90,6 +90,7 @@ type SectionLaneSegment = {
 
 type DragScrollState = {
   active: boolean;
+  captured: boolean;
   pointerId: number | null;
   startX: number;
   startScrollLeft: number;
@@ -273,7 +274,6 @@ const SECTION_TRANSITION_FADE_OUT_MS = 170;
 const SECTION_TRANSITION_FADE_IN_MS = 180;
 const SECTIONS_AUTO_FOLLOW_RESUME_MS = 5000;
 const SECTION_DRAG_CLICK_SUPPRESS_THRESHOLD_PX = 8;
-const SECTION_DRAG_CLICK_SUPPRESS_MS = 350;
 const SEQUENCE_FILE_ACCEPT = '.aac,.m4a,audio/aac,audio/mp4,audio/x-m4a,audio/*';
 
 const CONTROL_CARD =
@@ -458,6 +458,7 @@ export function LiveDirectorView({
   const sectionsLaneScrollRef = useRef<HTMLDivElement | null>(null);
   const sectionsDragStateRef = useRef<DragScrollState>({
     active: false,
+    captured: false,
     pointerId: null,
     startX: 0,
     startScrollLeft: 0,
@@ -468,10 +469,11 @@ export function LiveDirectorView({
   // We set it right when the user-scroll timeout expires so the playhead
   // slides back to where it should be instead of snapping.
   const sectionsAutoFollowShouldSmoothRef = useRef(false);
-  const sectionsSuppressClickUntilRef = useRef(0);
+  const sectionsGestureExceededDragThresholdRef = useRef(false);
   const mixerScrollRef = useRef<HTMLDivElement | null>(null);
   const mixerDragStateRef = useRef<DragScrollState>({
     active: false,
+    captured: false,
     pointerId: null,
     startX: 0,
     startScrollLeft: 0,
@@ -3390,7 +3392,7 @@ export function LiveDirectorView({
       return;
     }
 
-    if (container && dragState.pointerId !== null) {
+    if (container && dragState.captured && dragState.pointerId !== null) {
       try {
         container.releasePointerCapture(dragState.pointerId);
       } catch {
@@ -3400,6 +3402,7 @@ export function LiveDirectorView({
 
     mixerDragStateRef.current = {
       active: false,
+      captured: false,
       pointerId: null,
       startX: 0,
       startScrollLeft: 0,
@@ -3424,6 +3427,7 @@ export function LiveDirectorView({
 
     mixerDragStateRef.current = {
       active: true,
+      captured: true,
       pointerId: event.pointerId,
       startX: event.clientX,
       startScrollLeft: container.scrollLeft,
@@ -3506,7 +3510,9 @@ export function LiveDirectorView({
       return;
     }
 
-    if (container && dragState.pointerId !== null) {
+    const shouldResumeAutoFollow = dragState.captured || sectionsGestureExceededDragThresholdRef.current;
+
+    if (container && dragState.captured && dragState.pointerId !== null) {
       try {
         container.releasePointerCapture(dragState.pointerId);
       } catch {
@@ -3516,12 +3522,16 @@ export function LiveDirectorView({
 
     sectionsDragStateRef.current = {
       active: false,
+      captured: false,
       pointerId: null,
       startX: 0,
       startScrollLeft: 0,
     };
-    // Drag finished: now start the 5s countdown to resume auto-follow.
-    scheduleSectionsAutoFollowResume();
+
+    if (shouldResumeAutoFollow) {
+      // Drag finished: now start the 5s countdown to resume auto-follow.
+      scheduleSectionsAutoFollowResume();
+    }
   }, [scheduleSectionsAutoFollowResume]);
 
   const handleSectionsPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
@@ -3529,22 +3539,15 @@ export function LiveDirectorView({
     if (!container) return;
     if (event.pointerType === 'mouse' && event.button !== 0) return;
 
-    // Hold (no timeout) — resume will be armed on pointerUp / endSectionsDrag.
-    holdSectionsAutoFollow();
-
     sectionsDragStateRef.current = {
       active: true,
+      captured: false,
       pointerId: event.pointerId,
       startX: event.clientX,
       startScrollLeft: container.scrollLeft,
     };
-
-    try {
-      container.setPointerCapture(event.pointerId);
-    } catch {
-      // no-op
-    }
-  }, [holdSectionsAutoFollow]);
+    sectionsGestureExceededDragThresholdRef.current = false;
+  }, []);
 
   const handleSectionsPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const container = sectionsLaneScrollRef.current;
@@ -3555,17 +3558,73 @@ export function LiveDirectorView({
     const deltaX = event.clientX - dragState.startX;
     if (Math.abs(deltaX) < 2) return;
 
+    if (!dragState.captured) {
+      // Hold (no timeout) once a real drag starts; a plain click must reach the
+      // section button without a pre-click state update cancelling it.
+      holdSectionsAutoFollow();
+
+      try {
+        container.setPointerCapture(event.pointerId);
+        sectionsDragStateRef.current = {
+          ...dragState,
+          captured: true,
+        };
+      } catch {
+        // no-op
+      }
+    }
+
     if (Math.abs(deltaX) >= SECTION_DRAG_CLICK_SUPPRESS_THRESHOLD_PX) {
-      sectionsSuppressClickUntilRef.current = performance.now() + SECTION_DRAG_CLICK_SUPPRESS_MS;
+      sectionsGestureExceededDragThresholdRef.current = true;
     }
 
     container.scrollLeft = dragState.startScrollLeft - deltaX;
     event.preventDefault();
-  }, []);
+  }, [holdSectionsAutoFollow]);
 
   const handleSectionsPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     endSectionsDrag(event.pointerId);
   }, [endSectionsDrag]);
+
+  useEffect(() => {
+    const container = sectionsLaneScrollRef.current;
+    if (!container) {
+      return undefined;
+    }
+
+    const handleNativeSectionPointerUp = (event: PointerEvent) => {
+      if (event.pointerType === 'mouse' && event.button !== 0) {
+        return;
+      }
+      if (!(event.target instanceof Element)) {
+        return;
+      }
+
+      const button = event.target.closest<HTMLButtonElement>('button[data-live-chord-section="true"]');
+      if (!button || !container.contains(button)) {
+        return;
+      }
+
+      const shouldSuppressClick = sectionsGestureExceededDragThresholdRef.current;
+      sectionsGestureExceededDragThresholdRef.current = false;
+      if (shouldSuppressClick) {
+        return;
+      }
+
+      const nextTime = Number(button.dataset.liveSectionStart);
+      if (!Number.isFinite(nextTime)) {
+        return;
+      }
+
+      event.preventDefault();
+      void handleSectionSeek(nextTime);
+    };
+
+    container.addEventListener('pointerup', handleNativeSectionPointerUp);
+    return () => {
+      container.removeEventListener('pointerup', handleNativeSectionPointerUp);
+    };
+  }, [handleSectionSeek, showSectionsPanel]);
 
   // ─── Minimap interaction ──────────────────────────────────────────────────
   // The minimap is a tap-and-drag scrub target. We convert clientX to a time
@@ -4288,8 +4347,8 @@ export function LiveDirectorView({
                           data-live-section-index={index}
                           data-live-section-start={section.startTime}
                           data-live-section-end={section.endTime}
-                          onClick={() => {
-                            if (performance.now() < sectionsSuppressClickUntilRef.current) {
+                          onClick={(event) => {
+                            if (event.detail > 0) {
                               return;
                             }
                             void handleSectionSeek(section.startTime);
