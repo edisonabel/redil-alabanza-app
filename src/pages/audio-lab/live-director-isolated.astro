@@ -1,0 +1,135 @@
+---
+import '../../styles/global.css';
+import LiveDirectorView from '../../components/react/LiveDirectorView';
+import LiveDirectorNativeRouteGate from '../../components/react/LiveDirectorNativeRouteGate';
+import { supabase } from '../../lib/supabase';
+import {
+  buildLiveDirectorSectionsFromMarkers,
+  normalizePersistedLiveDirectorSession,
+} from '../../utils/liveDirectorSongSession';
+
+const requestedSong = Astro.url.searchParams.get('song')?.trim() || 'Providencia';
+const pageTitle = `Audio Lab - ${requestedSong || 'Live Director'}`;
+
+let songRecord: {
+  id: string;
+  titulo: string;
+  cantante: string;
+  tonalidad: string;
+  bpm: number;
+  mp3: string;
+  sections: ReturnType<typeof buildLiveDirectorSectionsFromMarkers>;
+  session: ReturnType<typeof normalizePersistedLiveDirectorSession>;
+} | null = null;
+
+const fetchSongByRequest = async (lookupValue: string) => {
+  if (!lookupValue) {
+    return null;
+  }
+
+  const selectWithSession =
+    'id, titulo, cantante, tonalidad, bpm, mp3, section_markers, multitrack_session';
+  const selectFallback =
+    'id, titulo, cantante, tonalidad, bpm, mp3, section_markers';
+
+  const runSelect = async (selectClause: string, byTitle = false, partialTitle = false) => {
+    let query = supabase.from('canciones').select(selectClause);
+
+    if (byTitle) {
+      query = query.ilike('titulo', partialTitle ? `%${lookupValue}%` : lookupValue).limit(1);
+    } else {
+      query = query.eq('id', lookupValue);
+    }
+
+    return query.maybeSingle();
+  };
+
+  const tryStrategies = async (selectClause: string) => {
+    const byId = await runSelect(selectClause, false);
+    if (byId.data) return byId.data;
+
+    const exactTitle = await runSelect(selectClause, true, false);
+    if (exactTitle.data) return exactTitle.data;
+
+    const partialTitle = await runSelect(selectClause, true, true);
+    return partialTitle.data || null;
+  };
+
+  const withSessionResult = await tryStrategies(selectWithSession).catch(() => null);
+  if (withSessionResult) {
+    return withSessionResult;
+  }
+
+  return tryStrategies(selectFallback).catch(() => null);
+};
+
+if (requestedSong) {
+  try {
+    const row = await fetchSongByRequest(requestedSong);
+
+    if (row) {
+      const rawSession = 'multitrack_session' in row ? row.multitrack_session : null;
+      songRecord = {
+        id: String(row.id || ''),
+        titulo: String(row.titulo || ''),
+        cantante: String(row.cantante || ''),
+        tonalidad: String(row.tonalidad || ''),
+        bpm: Number.isFinite(Number(row.bpm)) ? Number(row.bpm) : 0,
+        mp3: String(row.mp3 || ''),
+        sections: buildLiveDirectorSectionsFromMarkers(row.section_markers),
+        session: normalizePersistedLiveDirectorSession(rawSession, {
+          songId: String(row.id || ''),
+          songTitle: String(row.titulo || ''),
+        }),
+      };
+    }
+  } catch (error) {
+    console.error('Audio Lab Live Director preload failed:', error);
+  }
+}
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <style is:inline>
+      html {
+        background: #101114;
+      }
+
+      body {
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <LiveDirectorNativeRouteGate client:load />
+    <LiveDirectorView
+      client:load
+      songId={songRecord?.id || ''}
+      songTitle={songRecord?.titulo || ''}
+      songMp3={songRecord?.mp3 || ''}
+      songKey={songRecord?.tonalidad || ''}
+      title={songRecord?.cantante ? `Audio Lab - ${songRecord.cantante}` : 'Audio Lab'}
+      subtitle={songRecord?.titulo || `No se encontró "${requestedSong}"`}
+      bpm={songRecord?.bpm || 81}
+      sections={songRecord?.sections || undefined}
+      initialSession={songRecord?.session || undefined}
+      requiresSongContext={true}
+    />
+
+    <script is:inline>
+      (() => {
+        console.log('[audio-lab-live-director] isolated=true');
+        console.log('[audio-lab-live-director] self.crossOriginIsolated:', self.crossOriginIsolated === true);
+        console.log(
+          '[audio-lab-live-director] SharedArrayBuffer available:',
+          typeof SharedArrayBuffer === 'function',
+        );
+      })();
+    </script>
+  </body>
+</html>
