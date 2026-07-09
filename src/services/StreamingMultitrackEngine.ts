@@ -115,6 +115,11 @@ type WorkletResetTracksMessage = {
   type: 'reset-tracks';
 };
 
+type WorkletRemoveTrackMessage = {
+  type: 'remove-track';
+  trackIndex: number;
+};
+
 type WorkletTrackOutputRouteMessage = {
   type: 'track-output-route';
   trackIndex: number;
@@ -260,6 +265,7 @@ type WorkletMessage =
   | WorkletTrackSoloMessage
   | WorkletClearSoloMessage
   | WorkletResetTracksMessage
+  | WorkletRemoveTrackMessage
   | WorkletTrackOutputRouteMessage
   | WorkletFlushBuffersMessage
   | WorkletPauseAndFlushMessage
@@ -819,6 +825,7 @@ type TrackRuntime = {
   channelScratch: Float32Array[];
   readyResolved: boolean;
   suppressDecodedOutput: boolean;
+  omitted: boolean;
   lastFetchWaitDebugAt: number;
   lastDecodeWaitDebugAt: number;
   fallbackDrainScratch: Float32Array;
@@ -1144,6 +1151,18 @@ export class StreamingMultitrackEngine {
     return fallbackName || track?.name || track?.id || `track ${trackIndex}`;
   }
 
+  private isTrackRuntimeOmitted(trackState: TrackRuntime | undefined): boolean {
+    return trackState?.omitted === true;
+  }
+
+  private isTrackIndexOmitted(trackIndex: number | undefined): boolean {
+    return typeof trackIndex === 'number' && this.isTrackRuntimeOmitted(this.trackStates[trackIndex]);
+  }
+
+  private getActiveTrackStates(): TrackRuntime[] {
+    return this.trackStates.filter((trackState) => !this.isTrackRuntimeOmitted(trackState));
+  }
+
   private handlePageSuspending(reason: string): void {
     if (!this.transportPlaying) {
       return;
@@ -1433,6 +1452,9 @@ export class StreamingMultitrackEngine {
 
     for (let index = 0; index < this.trackStates.length; index += 1) {
       const trackState = this.trackStates[index];
+      if (this.isTrackRuntimeOmitted(trackState)) {
+        continue;
+      }
       const track = this.tracks[trackState.index] || this.tracks[index];
       const trackId = track?.id || `track-${trackState.index}`;
       const muted = Boolean(trackState.muted);
@@ -1740,14 +1762,32 @@ export class StreamingMultitrackEngine {
       playExtension,
     });
 
+    trackState.omitted = true;
+    trackState.abortController.abort();
     trackState.endOfStreamReached = true;
     trackState.muted = true;
     trackState.volume = 0;
+    trackState.suppressDecodedOutput = true;
     if (track) {
       track.enabled = false;
       track.isMuted = true;
       track.volume = 0;
     }
+    this.trackMeterLevels[trackId] = 0;
+    this.latestProducerTrackState.delete(trackState.index);
+    this.latestWorkletTrackStatus.delete(trackState.index);
+    this.latestUnderflowByTrack.delete(trackState.index);
+    this.soloTrackIds.delete(trackId);
+    if (this.activeSeekDebugBlock && !this.activeSeekDebugBlock.finalized) {
+      this.activeSeekDebugBlock.expectedAudibleTracks.delete(trackState.index);
+      this.activeSeekDebugBlock.readyAudibleTracks.delete(trackState.index);
+      this.activeSeekDebugBlock.readyTracks.delete(trackState.index);
+    }
+
+    this.postWorkletMessage({
+      type: 'remove-track',
+      trackIndex: trackState.index,
+    });
 
     this.postWorkletMessage({
       type: 'track-volume',
@@ -1767,7 +1807,8 @@ export class StreamingMultitrackEngine {
 
     const pending = this.pendingProducerSeek;
     if (pending && !pending.cancelled) {
-      pending.readyTracks.add(trackState.index);
+      pending.expectedTrackCount = this.getActiveTrackStates().length;
+      pending.readyTracks.delete(trackState.index);
       if (pending.readyTracks.size >= pending.expectedTrackCount) {
         window.clearTimeout(pending.timeoutId);
         pending.resolve();
@@ -1936,7 +1977,7 @@ export class StreamingMultitrackEngine {
     reason: 'play' | 'seek-resume';
     seekSerial?: number;
   }): Promise<boolean> {
-    if (this.trackStates.length === 0) {
+    if (this.getActiveTrackStates().length === 0) {
       return true;
     }
 
@@ -2077,6 +2118,9 @@ export class StreamingMultitrackEngine {
 
     for (let index = 0; index < this.trackStates.length; index += 1) {
       const trackState = this.trackStates[index];
+      if (this.isTrackRuntimeOmitted(trackState)) {
+        continue;
+      }
       const track = this.tracks[trackState.index] || this.tracks[index];
       const trackId = track?.id || `track-${trackState.index}`;
 
@@ -2260,7 +2304,10 @@ export class StreamingMultitrackEngine {
     }, 0);
   }
 
-  async seekTo(timeInSeconds: number): Promise<void> {
+  async seekTo(
+    timeInSeconds: number,
+    options?: { wasPlayingBeforeUiSeek?: boolean },
+  ): Promise<void> {
     if (!Number.isFinite(timeInSeconds)) {
       return;
     }
@@ -2268,6 +2315,10 @@ export class StreamingMultitrackEngine {
     const fromTime = this.getCurrentTime();
     const clampedTime = Math.max(0, timeInSeconds);
     const wasPlaying = this.transportPlaying;
+    const diagnosticWasPlaying =
+      typeof options?.wasPlayingBeforeUiSeek === 'boolean'
+        ? options.wasPlayingBeforeUiSeek
+        : wasPlaying;
     const targetSample = Math.max(0, Math.round(clampedTime * this.context.sampleRate));
     this.startBarrierSerial += 1;
 
@@ -2294,7 +2345,7 @@ export class StreamingMultitrackEngine {
         seekSerial,
         fromTime,
         toTime: clampedTime,
-        wasPlaying,
+        wasPlaying: diagnosticWasPlaying,
         targetSample,
       });
       this.postWorkletMessage({
@@ -2465,7 +2516,7 @@ export class StreamingMultitrackEngine {
   soloTrack(trackId: string): void {
     const trackIndex = this.trackIndexById.get(trackId);
 
-    if (typeof trackIndex !== 'number') {
+    if (typeof trackIndex !== 'number' || this.isTrackIndexOmitted(trackIndex)) {
       return;
     }
 
@@ -2665,6 +2716,7 @@ export class StreamingMultitrackEngine {
       channelScratch: [],
       readyResolved: false,
       suppressDecodedOutput: false,
+      omitted: false,
       lastFetchWaitDebugAt: 0,
       lastDecodeWaitDebugAt: 0,
       fallbackDrainScratch: new Float32Array(AAC_FRAME_SIZE),
@@ -2730,6 +2782,7 @@ export class StreamingMultitrackEngine {
       channelScratch: [],
       readyResolved: false,
       suppressDecodedOutput: true,
+      omitted: false,
       lastFetchWaitDebugAt: 0,
       lastDecodeWaitDebugAt: 0,
       fallbackDrainScratch: new Float32Array(AAC_FRAME_SIZE),
@@ -2970,7 +3023,11 @@ export class StreamingMultitrackEngine {
     chunks: EncodedAudioChunk[],
   ): Promise<void> {
     for (let index = 0; index < chunks.length; index += 1) {
-      if (trackState.abortController.signal.aborted || trackState.suppressDecodedOutput) {
+      if (
+        trackState.abortController.signal.aborted ||
+        trackState.suppressDecodedOutput ||
+        trackState.omitted
+      ) {
         return;
       }
 
@@ -2991,7 +3048,7 @@ export class StreamingMultitrackEngine {
 
   private handleDecodedAudioData(trackState: TrackRuntime, audioData: AudioData): void {
     try {
-      if (trackState.suppressDecodedOutput) {
+      if (trackState.suppressDecodedOutput || trackState.omitted) {
         return;
       }
 
@@ -3300,7 +3357,11 @@ export class StreamingMultitrackEngine {
     trackIndex: number | undefined,
     state: Omit<ProducerTrackFlightState, 'atMs'>,
   ): void {
-    if (!isLiveDiagnosticsEnabled() || typeof trackIndex !== 'number') {
+    if (
+      !isLiveDiagnosticsEnabled() ||
+      typeof trackIndex !== 'number' ||
+      this.isTrackIndexOmitted(trackIndex)
+    ) {
       return;
     }
 
@@ -3316,6 +3377,9 @@ export class StreamingMultitrackEngine {
     }
 
     message.tracks.forEach((trackStatus) => {
+      if (this.isTrackIndexOmitted(trackStatus.index)) {
+        return;
+      }
       this.latestWorkletTrackStatus.set(trackStatus.index, trackStatus);
     });
   }
@@ -3342,8 +3406,11 @@ export class StreamingMultitrackEngine {
   }
 
   private buildDiagnosticTrackRows(now = performance.now()): Array<Record<string, unknown>> {
-    return this.tracks.map((track, index) => {
+    return this.tracks.flatMap((track, index) => {
       const state = this.trackStates[index];
+      if (this.isTrackRuntimeOmitted(state)) {
+        return [];
+      }
       const worklet = this.latestWorkletTrackStatus.get(index);
       const producer = this.latestProducerTrackState.get(index);
       const underflow = this.latestUnderflowByTrack.get(index);
@@ -3368,7 +3435,7 @@ export class StreamingMultitrackEngine {
       if (producer?.startupPhase) flags.push(`PHASE_${producer.startupPhase}`);
       if (producer?.code) flags.push(`ERR_${producer.code}`);
 
-      return {
+      return [{
         trackIndex: index,
         trackName: track.name || track.id,
         guide,
@@ -3395,7 +3462,7 @@ export class StreamingMultitrackEngine {
         playing: this.transportPlaying,
         position: Number(this.getCurrentTime().toFixed(3)),
         flags: flags.join('|'),
-      };
+      }];
     });
   }
 
@@ -3471,6 +3538,11 @@ export class StreamingMultitrackEngine {
       if (message.level === 'error') {
         console.error('[StreamingMultitrackEngine]', ...(Array.isArray(message.args) ? message.args : []));
       }
+      return;
+    }
+
+    const messageTrackIndex = 'trackIndex' in message ? message.trackIndex : undefined;
+    if (typeof messageTrackIndex === 'number' && this.isTrackIndexOmitted(messageTrackIndex)) {
       return;
     }
 
@@ -3800,19 +3872,21 @@ export class StreamingMultitrackEngine {
       return;
     }
 
-    const rows = result.rows.map((row) => ({
-      track: row.trackName || row.trackId || `track ${row.trackIndex}`,
-      index: row.trackIndex,
-      firstAbs: row.absoluteStartSample,
-      writeEndAbs: row.lastNormalWriteEndSample,
-      readIndex: row.readIndex,
-      writeIndex: row.writeIndex,
-      availableRead: row.availableRead,
-      availableWrite: row.availableWrite,
-      decodedUntil: row.decodedUntilSample,
-      initialized: row.normalTimelineInitialized,
-      eof: row.endOfFileReached,
-    }));
+    const rows = result.rows
+      .filter((row) => !this.isTrackIndexOmitted(row.trackIndex))
+      .map((row) => ({
+        track: row.trackName || row.trackId || `track ${row.trackIndex}`,
+        index: row.trackIndex,
+        firstAbs: row.absoluteStartSample,
+        writeEndAbs: row.lastNormalWriteEndSample,
+        readIndex: row.readIndex,
+        writeIndex: row.writeIndex,
+        availableRead: row.availableRead,
+        availableWrite: row.availableWrite,
+        decodedUntil: row.decodedUntilSample,
+        initialized: row.normalTimelineInitialized,
+        eof: row.endOfFileReached,
+      }));
     const firstSamples = rows
       .map((row) => row.firstAbs)
       .filter((sample): sample is number => typeof sample === 'number' && Number.isFinite(sample));
@@ -3867,7 +3941,7 @@ export class StreamingMultitrackEngine {
 
     let resolveSeek!: () => void;
     let rejectSeek!: (reason?: unknown) => void;
-    const expectedTrackCount = Math.max(1, this.trackStates.length);
+    const expectedTrackCount = this.getActiveTrackStates().length;
     const timeoutId = window.setTimeout(() => {
       const pending = this.pendingProducerSeek;
       if (!pending || pending.serial !== serial) {
@@ -3909,6 +3983,10 @@ export class StreamingMultitrackEngine {
     };
 
     this.pendingProducerSeek = pendingSeek;
+    if (expectedTrackCount === 0) {
+      window.clearTimeout(timeoutId);
+      pendingSeek.resolve();
+    }
     return pendingSeek;
   }
 
@@ -3933,6 +4011,11 @@ export class StreamingMultitrackEngine {
       message.targetSample !== pending.targetSample ||
       (typeof message.seekSerial === 'number' && message.seekSerial !== pending.serial)
     ) {
+      return;
+    }
+
+    if (this.isTrackIndexOmitted(message.trackIndex)) {
+      pending.readyTracks.delete(message.trackIndex);
       return;
     }
 
@@ -4133,7 +4216,11 @@ export class StreamingMultitrackEngine {
 
   private getTrackStateOrNull(trackIdOrIndex: string | number, action: string): TrackRuntime | null {
     try {
-      return this.getTrackState(trackIdOrIndex);
+      const trackState = this.getTrackState(trackIdOrIndex);
+      if (this.isTrackRuntimeOmitted(trackState)) {
+        return null;
+      }
+      return trackState;
     } catch {
       console.warn(
         `[StreamingMultitrackEngine] Track reference "${String(trackIdOrIndex)}" not found for ${action}.`,
@@ -4244,9 +4331,12 @@ export class StreamingMultitrackEngine {
         referenceSeconds: message.referenceSeconds,
         audibleZeroTracks: message.audibleZeroTracks,
         minAvailableRead: message.minAvailableRead,
-        trackCount: message.tracks.length,
+        trackCount: message.tracks.filter((trackStatus) => !this.isTrackIndexOmitted(trackStatus.index)).length,
       };
       message.tracks.forEach((trackStatus) => {
+        if (this.isTrackIndexOmitted(trackStatus.index)) {
+          return;
+        }
         const prefix = `track${trackStatus.index}`;
         workletStatusFields[`${prefix}Shared`] = trackStatus.shared;
         workletStatusFields[`${prefix}Muted`] = trackStatus.muted;
@@ -4303,6 +4393,9 @@ export class StreamingMultitrackEngine {
     }
 
     if (message.type === 'audio-underflow') {
+      if (this.isTrackIndexOmitted(message.trackIndex)) {
+        return;
+      }
       if (isLiveDiagnosticsEnabled()) {
         this.latestUnderflowByTrack.set(message.trackIndex, {
           ...message,
@@ -4331,19 +4424,22 @@ export class StreamingMultitrackEngine {
     }
 
     if (message.type === 'audio-sync-drift') {
-      const direction = message.driftMs < 0 ? 'lagging' : 'leading';
+      if (
+        this.isTrackIndexOmitted(message.trackIndex) ||
+        !this.shouldPublishProducerDiagnostic('streaming:audio-sync-drift', message.trackIndex)
+      ) {
+        return;
+      }
+
       const track = this.tracks[message.trackIndex];
-      warnLiveDiagnostic('streaming:audio-sync-drift', {
-        message: {
-          ...message,
-          trackName: track?.name || message.trackId || `track ${message.trackIndex}`,
-          direction,
-          explanation:
-            direction === 'lagging'
-              ? 'Esta pista se quedó atrás respecto al reloj mediano audible.'
-              : 'Esta pista se adelantó respecto al reloj mediano audible.',
-        },
-      });
+      this.logFlatLiveDiagnostic('streaming:audio-sync-drift', {
+        trackIndex: message.trackIndex,
+        trackName: track?.name || message.trackId || `track ${message.trackIndex}`,
+        driftMs: message.driftMs,
+        availableRead: message.availableRead,
+        workletRead: message.readIndex,
+        masterPosition: message.referenceSeconds,
+      }, 'warn');
       return;
     }
 
@@ -4378,7 +4474,7 @@ export class StreamingMultitrackEngine {
 
     for (let index = 0; index < trackCount; index += 1) {
       const track = this.tracks[index];
-      if (!track) {
+      if (!track || this.isTrackIndexOmitted(index)) {
         continue;
       }
 

@@ -29,6 +29,9 @@ const MAX_TRACK_VOLUME = 2;
 const STREAMING_STEMS_HOST = 'stems.alabanzaredilestadio.com';
 type EngineKind = 'buffer' | 'streaming';
 type EngineInstance = MultitrackEngine | StreamingMultitrackEngine;
+export type SeekToOptions = {
+  wasPlayingBeforeUiSeek?: boolean;
+};
 export type LiveDirectorEngineDiagnostics = {
   engineMode: 'buffer' | 'media' | 'streaming' | 'ios-native';
   trackCount: number;
@@ -71,7 +74,7 @@ export type UseMultitrackEngineReturn = {
   setMetersEnabled: (enabled: boolean) => void;
   toggleLoop: () => void;
   setLoopPoints: (startInSeconds: number, endInSeconds: number) => void;
-  seekTo: (timeInSeconds: number) => Promise<void>;
+  seekTo: (timeInSeconds: number, options?: SeekToOptions) => Promise<void>;
   soloTrack: (trackId: string) => void;
   getSharedTelemetry: () => SharedStreamingTelemetry | null;
   getCurrentTimeSnapshot: () => number;
@@ -671,13 +674,17 @@ export function useMultitrackEngine(
     engine.setLoopPoints(startInSeconds, endInSeconds);
   }, []);
 
-  const seekTo = useCallback(async (timeInSeconds: number) => {
+  const seekTo = useCallback(async (timeInSeconds: number, options?: SeekToOptions) => {
     const engine = engineRef.current;
     if (!engine) {
       return;
     }
 
-    await engine.seekTo(timeInSeconds);
+    if (engine instanceof StreamingMultitrackEngine) {
+      await engine.seekTo(timeInSeconds, options);
+    } else {
+      await engine.seekTo(timeInSeconds);
+    }
     commitCurrentTime(engine.getCurrentTime());
     setIsPlaying(engine.getIsPlaying());
     commitDuration(Math.max(durationRef.current, engine.getDuration(), engine.getCurrentTime()));

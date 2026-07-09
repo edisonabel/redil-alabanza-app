@@ -19,7 +19,7 @@ import { Capacitor } from '@capacitor/core';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { canUseAdvancedStreamingEngine, useMultitrackEngine } from '../../hooks/useMultitrackEngine';
 import { useNativeIOSMultitrackEngine } from '../../hooks/useNativeIOSMultitrackEngine';
-import type { SongStructure, TrackData } from '../../services/MultitrackEngine';
+import type { MultitrackEngineLoadWarning, SongStructure, TrackData } from '../../services/MultitrackEngine';
 import type { SharedStreamingTelemetry } from '../../services/StreamingMultitrackEngine';
 import { ChannelStrip, FaderThumb } from './live-director/ChannelStrip';
 import { EnsayoQueueCard } from './live-director/EnsayoQueueCard';
@@ -225,6 +225,8 @@ type MixerTrackView = MixerTrackMeta & {
   soloed: boolean;
   dimmed: boolean;
   disabled: boolean;
+  disabledReason?: string;
+  disabledTitle?: string;
   outputRoute: TrackOutputRoute;
   showRouteFlip: boolean;
 };
@@ -529,6 +531,7 @@ export function LiveDirectorView({
   const isSectionTransitioningRef = useRef(false);
   const sectionSeekInFlightRef = useRef(false);
   const pendingSectionSeekTargetRef = useRef<number | null>(null);
+  const pendingSectionSeekWasPlayingRef = useRef<boolean | null>(null);
   const sessionSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const pendingSilentSessionSaveRef = useRef<PendingLiveDirectorSessionSave | null>(null);
   const isFlushingSilentSessionSaveRef = useRef(false);
@@ -1523,6 +1526,16 @@ export function LiveDirectorView({
     sectionsLaneViewportWidth,
   ]);
 
+  const omittedWarningByTrackId = useMemo(() => {
+    const warningMap = new Map<string, MultitrackEngineLoadWarning>();
+    (loadWarnings || []).forEach((warning) => {
+      if (warning.trackId && warning.reason !== 'synthetic-click') {
+        warningMap.set(warning.trackId, warning);
+      }
+    });
+    return warningMap;
+  }, [loadWarnings]);
+
   const mixerView = useMemo<MixerTrackView[]>(() => {
     const sourceTracks =
       activeTracks.length > 0
@@ -1537,10 +1550,11 @@ export function LiveDirectorView({
 
     const resolvedMixerTracks = sourceTracks.map((track, index) => {
       const meta = buildMixerTrackMeta(track, index);
+      const omittedWarning = omittedWarningByTrackId.get(track.id);
       const outputRoute = trackOutputRoutes[track.id] ?? resolveTrackOutputRoute(track);
       const showRouteFlip = isGuideRoutingTrack(track);
       const volume = trackVolumes[track.id] ?? track.volume ?? meta.defaultVolume;
-      const muted = mutedTrackIds.has(track.id);
+      const muted = omittedWarning ? false : mutedTrackIds.has(track.id);
       const dimmed = Boolean(soloTrackId && soloTrackId !== track.id);
       // Activity derivation, in order of preference:
       //   1. Real-time meter level, if the engine is publishing one. On iOS
@@ -1558,11 +1572,17 @@ export function LiveDirectorView({
       return {
         ...meta,
         volume,
-        level: muted || dimmed ? 0 : rawLevel,
+        level: omittedWarning || muted || dimmed ? 0 : rawLevel,
         muted,
-        soloed: soloTrackId === track.id,
+        soloed: omittedWarning ? false : soloTrackId === track.id,
         dimmed,
-        disabled: activeTracks.length === 0,
+        disabled: activeTracks.length === 0 || Boolean(omittedWarning),
+        disabledReason: omittedWarning
+          ? omittedWarning.reason === 'unsupported-format'
+            ? 'Formato incompatible'
+            : 'Pista omitida'
+          : undefined,
+        disabledTitle: omittedWarning?.message,
         outputRoute,
         showRouteFlip,
       };
@@ -1585,6 +1605,8 @@ export function LiveDirectorView({
         soloed: false,
         dimmed: false,
         disabled: false,
+        disabledReason: undefined,
+        disabledTitle: undefined,
         outputRoute: 'stereo' as TrackOutputRoute,
         showRouteFlip: false,
       };
@@ -1604,7 +1626,7 @@ export function LiveDirectorView({
     }
 
     return resolvedMixerTracks;
-  }, [activeTracks, currentTime, isEnsayoMode, isPadActive, isPlaying, mutedTrackIds, resolvedInternalPadVolume, resolvedPadUrl, soloTrackId, trackEnvelopes, trackLevels, trackOutputRoutes, trackVolumes]);
+  }, [activeTracks, currentTime, isEnsayoMode, isPadActive, isPlaying, mutedTrackIds, omittedWarningByTrackId, resolvedInternalPadVolume, resolvedPadUrl, soloTrackId, trackEnvelopes, trackLevels, trackOutputRoutes, trackVolumes]);
 
   // Precompute the mixer scroll container style so it isn't re-created on
   // every tick of the visual clock. The grid template only actually changes
@@ -2408,6 +2430,8 @@ export function LiveDirectorView({
       return;
     }
 
+    const wasPlayingBeforeSectionSeek = isPlaying;
+
     const primeSectionVisuals = (targetTime: number) => {
       setVisualSectionTime(targetTime);
       passiveCurrentTimeRef.current = targetTime;
@@ -2420,6 +2444,7 @@ export function LiveDirectorView({
 
     if (sectionSeekInFlightRef.current) {
       pendingSectionSeekTargetRef.current = firstTargetTime;
+      pendingSectionSeekWasPlayingRef.current = wasPlayingBeforeSectionSeek;
       setIsSectionSeekBusy(true);
       return;
     }
@@ -2429,14 +2454,17 @@ export function LiveDirectorView({
 
     try {
       let targetTime: number | null = firstTargetTime;
+      let targetWasPlaying = wasPlayingBeforeSectionSeek;
 
       while (targetTime !== null) {
         const activeTargetTime = targetTime;
+        const activeWasPlaying = targetWasPlaying;
         pendingSectionSeekTargetRef.current = null;
+        pendingSectionSeekWasPlayingRef.current = null;
         primeSectionVisuals(activeTargetTime);
 
         if (!isReady || !isPlaying) {
-          await seekTo(activeTargetTime);
+          await seekTo(activeTargetTime, { wasPlayingBeforeUiSeek: activeWasPlaying });
         } else if (Math.abs(getLivePlaybackTime() - activeTargetTime) >= 0.05) {
           const transitionToken = sectionTransitionTokenRef.current + 1;
           sectionTransitionTokenRef.current = transitionToken;
@@ -2448,7 +2476,7 @@ export function LiveDirectorView({
               return;
             }
 
-            await seekTo(activeTargetTime);
+            await seekTo(activeTargetTime, { wasPlayingBeforeUiSeek: activeWasPlaying });
             if (sectionTransitionTokenRef.current !== transitionToken) {
               return;
             }
@@ -2463,14 +2491,18 @@ export function LiveDirectorView({
         }
 
         const queuedTarget = pendingSectionSeekTargetRef.current;
-        targetTime = queuedTarget !== null && Math.abs(queuedTarget - activeTargetTime) >= 0.02
-          ? queuedTarget
-          : null;
+        if (queuedTarget !== null && Math.abs(queuedTarget - activeTargetTime) >= 0.02) {
+          targetWasPlaying = pendingSectionSeekWasPlayingRef.current ?? isPlaying;
+          targetTime = queuedTarget;
+        } else {
+          targetTime = null;
+        }
       }
     } catch (error) {
       console.warn('[LiveDirectorView] Section seek failed.', error);
     } finally {
       pendingSectionSeekTargetRef.current = null;
+      pendingSectionSeekWasPlayingRef.current = null;
       sectionSeekInFlightRef.current = false;
       setIsSectionSeekBusy(false);
     }
@@ -4496,6 +4528,8 @@ export function LiveDirectorView({
                       soloed={track.soloed}
                       dimmed={track.dimmed}
                       disabled={track.disabled}
+                      disabledReason={track.disabledReason}
+                      disabledTitle={track.disabledTitle}
                       outputRoute={track.outputRoute}
                       showRouteFlip={track.showRouteFlip}
                       compact={isCompactLandscape}

@@ -421,7 +421,7 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
     // Loop regions will land after the first native playback baseline is stable.
   }, []);
 
-  const seekTo = useCallback(async (timeInSeconds: number) => {
+  const seekTo = useCallback(async (timeInSeconds: number, _options?: { wasPlayingBeforeUiSeek?: boolean }) => {
     const wasPlayingBeforeSeek = transportSnapshotRef.current.isPlaying;
     const state = await NativeLiveDirectorEngine.seekTo({ time: Math.max(0, timeInSeconds) });
     applyNativeState(state);

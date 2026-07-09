@@ -33,6 +33,8 @@ export type ChannelStripProps = {
   soloed: boolean;
   dimmed: boolean;
   disabled: boolean;
+  disabledReason?: string;
+  disabledTitle?: string;
   outputRoute?: TrackOutputRoute;
   showRouteFlip?: boolean;
   compact?: boolean;
@@ -108,6 +110,8 @@ export const ChannelStrip = memo(function ChannelStrip({
   soloed,
   dimmed,
   disabled,
+  disabledReason,
+  disabledTitle,
   outputRoute = 'stereo',
   showRouteFlip = false,
   compact = false,
@@ -121,14 +125,14 @@ export const ChannelStrip = memo(function ChannelStrip({
 }: ChannelStripProps) {
   const [draftVolume, setDraftVolume] = useState<number | null>(null);
   const displayVolume = draftVolume ?? volume;
-  const displayLevel = muted ? 0 : clamp(level);
+  const displayLevel = muted || disabled ? 0 : clamp(level);
   const hasLiveSignal = displayLevel > 0.002;
   const isAudiblyActive = isPlaying && !muted && !dimmed && !disabled && displayVolume > 0.015 && hasLiveSignal;
   const visualActivityLevel = displayLevel > 0.002
     ? displayLevel
     : 0;
   const levelBottom = `${10 + displayVolume * 78}%`;
-  const knobGlow = muted ? 'rgba(120, 128, 140, 0.15)' : `${accent}30`;
+  const knobGlow = muted || disabled ? 'rgba(120, 128, 140, 0.15)' : `${accent}30`;
   const fallbackVuLevel = visualActivityLevel > 0.002
     ? Math.min(1, 0.08 + Math.pow(visualActivityLevel, 0.72) * 0.92)
     : 0;
@@ -378,8 +382,10 @@ export const ChannelStrip = memo(function ChannelStrip({
 
   return (
     <div
-      className={`live-director-track-strip relative flex h-full min-w-0 flex-col items-center overflow-hidden border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] transition-opacity duration-200 ${shellRadiusClass} ${shellPaddingClass} ${dimmed ? 'opacity-45' : 'opacity-100'}`}
+      className={`live-director-track-strip relative flex h-full min-w-0 flex-col items-center overflow-hidden border bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] transition-opacity duration-200 ${shellRadiusClass} ${shellPaddingClass} ${disabled ? 'border-amber-200/18 opacity-[0.62] saturate-50' : 'border-white/7'} ${dimmed ? 'opacity-45' : ''}`}
       style={trackBreathStyle}
+      aria-disabled={disabled}
+      title={disabledTitle || disabledReason}
     >
       <span
         aria-hidden="true"
@@ -447,7 +453,7 @@ export const ChannelStrip = memo(function ChannelStrip({
           <div
             className={`live-director-track-activity-meter pointer-events-none absolute left-1/2 rounded-full opacity-75 transition-transform duration-75 ease-linear will-change-transform ${ultraCompact ? 'top-[8%] bottom-[12%] w-[0.3rem]' : compact ? 'top-[7%] bottom-[11%] w-[0.38rem]' : 'top-[4.5%] bottom-[6.5%] w-[0.38rem]'}`}
             style={{
-              backgroundColor: muted ? 'rgba(136, 144, 158, 0.42)' : 'var(--track-accent)',
+              backgroundColor: muted || disabled ? 'rgba(136, 144, 158, 0.42)' : 'var(--track-accent)',
               transform: `translateX(-50%) scaleY(var(--ld-vu-level, ${fallbackVuLevel.toFixed(4)}))`,
               transformOrigin: 'bottom center',
             }}
@@ -455,7 +461,7 @@ export const ChannelStrip = memo(function ChannelStrip({
           <FaderThumb
             accent={accent}
             level={0}
-            muted={muted}
+            muted={muted || disabled}
             className={`live-director-track-thumb ${ultraCompact ? 'h-[1.85rem]' : compact ? 'h-[2.2rem]' : 'h-[4.35rem]'} w-full ${stripThumbWidthClass} transition-[bottom,opacity,transform] duration-300 ease-out`}
             style={{
               bottom: `calc(${levelBottom} - ${ultraCompact ? '0.92rem' : compact ? '1.1rem' : '1.75rem'})`,
@@ -500,6 +506,11 @@ export const ChannelStrip = memo(function ChannelStrip({
         </div>
         {!compact && <p className="text-[0.62rem] font-black uppercase tracking-[0.3em] text-white/28">{shortLabel}</p>}
         <p className={`leading-tight text-white/88 ${ultraCompact ? 'text-[10px] font-semibold' : compact ? 'text-[11px] font-semibold' : 'mt-1 text-[1.03rem] font-semibold'}`}>{label}</p>
+        {disabledReason ? (
+          <p className={`mx-auto max-w-full truncate font-black uppercase tracking-[0.12em] text-amber-100/72 ${ultraCompact ? 'mt-0.5 text-[7px]' : compact ? 'mt-0.5 text-[8px]' : 'mt-1 text-[0.58rem]'}`}>
+            {disabledReason}
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -515,6 +526,8 @@ export const ChannelStrip = memo(function ChannelStrip({
   previousProps.soloed === nextProps.soloed &&
   previousProps.dimmed === nextProps.dimmed &&
   previousProps.disabled === nextProps.disabled &&
+  previousProps.disabledReason === nextProps.disabledReason &&
+  previousProps.disabledTitle === nextProps.disabledTitle &&
   previousProps.outputRoute === nextProps.outputRoute &&
   previousProps.showRouteFlip === nextProps.showRouteFlip &&
   previousProps.compact === nextProps.compact &&
