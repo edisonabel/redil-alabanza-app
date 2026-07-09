@@ -4394,7 +4394,7 @@ export function LiveDirectorView({
                       const isBackwardSectionDisabled =
                         DISABLE_BACKWARD_SEEK_WHILE_PLAYING &&
                         isPlaying &&
-                        section.startTime < getLivePlaybackTime() - 0.05;
+                        section.endTime <= getLivePlaybackTime() - 0.05;
 
                       return (
                         <button

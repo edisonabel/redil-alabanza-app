@@ -742,6 +742,20 @@ type PlaybackContentCheck = {
   targetTimeSeconds: number;
 };
 
+type SyncAuditRowSummary = {
+  track: string;
+  index: number;
+  firstAbs: number | null;
+  writeEndAbs: number;
+  readIndex: number;
+  writeIndex: number;
+  availableRead: number;
+  availableWrite: number;
+  decodedUntil: number;
+  initialized: boolean;
+  eof: boolean;
+};
+
 type SyncAuditSummary = {
   reason: 'play' | 'seek-resume';
   seekSerial?: number;
@@ -753,6 +767,7 @@ type SyncAuditSummary = {
   targetToMinDeltaFrames: number | null;
   targetToMaxDeltaFrames: number | null;
   trackCount: number;
+  rows: SyncAuditRowSummary[];
 };
 
 type DemuxAppendResult = {
@@ -3974,6 +3989,7 @@ export class StreamingMultitrackEngine {
       targetToMinDeltaFrames,
       targetToMaxDeltaFrames,
       trackCount: rows.length,
+      rows,
     };
 
     try {
@@ -4023,15 +4039,32 @@ export class StreamingMultitrackEngine {
     const minFirstSample = summary.minFirstSample;
     const maxFirstSample = summary.maxFirstSample;
     if (minFirstSample === null || maxFirstSample === null) {
-      this.logFlatDiagnostic('[SPSC-BARRIER][CONTENT-AUDIT-EMPTY]', {
+      const fields: Record<string, unknown> = {
         reason: summary.reason,
         seekSerial: pendingCheck.seekSerial,
+        auditSeekSerial: summary.seekSerial,
         targetSample: pendingCheck.targetSample,
         targetTimeSeconds: Number(pendingCheck.targetTimeSeconds.toFixed(3)),
         trackCount: summary.trackCount,
-        action: 'allow-play',
-      }, 'warn');
-      return false;
+        action: 'blocked-play',
+      };
+
+      summary.rows.forEach((row) => {
+        const prefix = `track${row.index}`;
+        fields[`${prefix}Name`] = row.track;
+        fields[`${prefix}FirstSample`] = row.firstAbs;
+        fields[`${prefix}WriteEnd`] = row.writeEndAbs;
+        fields[`${prefix}ReadIndex`] = row.readIndex;
+        fields[`${prefix}WriteIndex`] = row.writeIndex;
+        fields[`${prefix}AvailableRead`] = row.availableRead;
+        fields[`${prefix}AvailableWrite`] = row.availableWrite;
+        fields[`${prefix}DecodedUntil`] = row.decodedUntil;
+        fields[`${prefix}Initialized`] = row.initialized;
+        fields[`${prefix}Eof`] = row.eof;
+      });
+
+      this.logFlatDiagnostic('[SPSC-BARRIER][CONTENT-AUDIT-EMPTY]', fields, 'warn');
+      return true;
     }
 
     const spreadFrames = summary.spreadFrames ?? 0;
