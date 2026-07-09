@@ -5,6 +5,15 @@ const WRITE_INDEX_SLOT = 1;
 const INDEX_SLOT_COUNT = 2;
 const MAX_CAPACITY = 0x3fffffff;
 
+export type AudioRingBufferSnapshot = {
+  readIndex: number;
+  writeIndex: number;
+  availableRead: number;
+  availableWrite: number;
+  capacity: number;
+  indexCapacity: number;
+};
+
 export class AudioRingBuffer {
   public readonly capacity: number;
   public readonly sampleStorage: SharedOrRegularBuffer;
@@ -51,6 +60,21 @@ export class AudioRingBuffer {
 
   availableWrite(): number {
     return this.capacity - this.availableRead();
+  }
+
+  debugSnapshot(): AudioRingBufferSnapshot {
+    const readIndex = this.loadIndex(READ_INDEX_SLOT);
+    const writeIndex = this.loadIndex(WRITE_INDEX_SLOT);
+    const availableRead = this.computeAvailableRead(readIndex, writeIndex);
+
+    return {
+      readIndex,
+      writeIndex,
+      availableRead,
+      availableWrite: Math.max(0, Math.min(this.capacity, this.capacity - availableRead)),
+      capacity: this.capacity,
+      indexCapacity: this.indexCapacity,
+    };
   }
 
   reset(): void {

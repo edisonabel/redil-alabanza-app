@@ -45,6 +45,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.fadeInTotalFrames = SEEK_RESUME_FADE_FRAMES;
     this.loopJumpCrossfadeBlocked = false;
     this.activeSeekSerial = 0;
+    this.lastAppliedControlSerial = 0;
 
     this.port.onmessage = (event) => {
       const data = event && event.data ? event.data : null;
@@ -173,12 +174,15 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
 
     if (type === 'FLUSH_BUFFERS') {
-      if (typeof message.seekSerial === 'number' && Number.isFinite(message.seekSerial)) {
-        this.activeSeekSerial = message.seekSerial;
+      if (this.shouldIgnoreStaleControlMessage(message, 'seek')) {
+        return;
       }
+      this.applyControlSerial(message);
+      this.postControlTrackDiagnostics(message, 'before', 'seek');
       this.resetAllLoopJumpFades();
       this.fadeInFramesRemaining = 0;
       this.flushAllBuffers(message);
+      this.postControlTrackDiagnostics(message, 'after', 'seek');
       return;
     }
 
@@ -187,9 +191,11 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         typeof message.positionSeconds === 'number' && Number.isFinite(message.positionSeconds)
           ? Math.max(0, message.positionSeconds)
           : 0;
-      if (typeof message.seekSerial === 'number' && Number.isFinite(message.seekSerial)) {
-        this.activeSeekSerial = message.seekSerial;
+      if (this.shouldIgnoreStaleControlMessage(message, 'seek')) {
+        return;
       }
+      this.applyControlSerial(message);
+      this.postControlTrackDiagnostics(message, 'before', 'seek');
       this.readingBlocked = true;
       this.playing = false;
       this.loopJumpCrossfadeBlocked = true;
@@ -198,6 +204,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       this.telemetryBaseSeconds = positionSeconds;
       this.telemetryBaseRenderedFrames = this.renderedFrames;
       this.flushAllBuffers(message);
+      this.postControlTrackDiagnostics(message, 'after', 'seek');
       const debugTrack = this.tracks[0] || null;
       const debugReadIndex =
         debugTrack && debugTrack.usesSharedMemory && debugTrack.indices
@@ -216,23 +223,15 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
 
     if (type === 'RESUME_READING') {
-      if (
-        typeof message.seekSerial === 'number' &&
-        Number.isFinite(message.seekSerial) &&
-        message.seekSerial !== this.activeSeekSerial
-      ) {
-        this.port.postMessage({
-          type: 'seek-debug',
-          message: `[SEEK-DEBUG] Worklet: Ignore stale resume -> serial: ${message.seekSerial}, active: ${this.activeSeekSerial}`,
-          seekSerial: message.seekSerial,
-          activeSeekSerial: this.activeSeekSerial,
-        });
+      if (this.shouldIgnoreStaleControlMessage(message, 'resume')) {
         return;
       }
+      this.applyControlSerial(message);
       const positionSeconds =
         typeof message.positionSeconds === 'number' && Number.isFinite(message.positionSeconds)
           ? Math.max(0, message.positionSeconds)
           : this.telemetryBaseSeconds;
+      this.postControlTrackDiagnostics(message, 'before', 'resume', positionSeconds);
       this.telemetryBaseSeconds = positionSeconds;
       this.telemetryBaseRenderedFrames = this.renderedFrames;
       this.syncTracksToTransportPosition(positionSeconds);
@@ -243,6 +242,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       this.playing = !!message.playing;
       this.writeTelemetrySnapshot(positionSeconds);
       this.postTransportDebug();
+      this.postControlTrackDiagnostics(message, 'after', 'resume', positionSeconds);
       return;
     }
 
@@ -257,6 +257,21 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
 
     if (type === 'transport') {
+      const transportOrigin =
+        typeof message.reason === 'string'
+          ? message.reason
+          : message.playing === true
+            ? 'resume'
+            : 'pause';
+      if (this.shouldIgnoreStaleControlMessage(message, transportOrigin)) {
+        return;
+      }
+      this.applyControlSerial(message);
+      const diagnosticPositionSeconds =
+        typeof message.positionSeconds === 'number' && Number.isFinite(message.positionSeconds)
+          ? Math.max(0, message.positionSeconds)
+          : this.telemetryBaseSeconds;
+      this.postControlTrackDiagnostics(message, 'before', transportOrigin, diagnosticPositionSeconds);
       if (typeof message.positionSeconds === 'number' && Number.isFinite(message.positionSeconds)) {
         this.telemetryBaseSeconds = Math.max(0, message.positionSeconds);
         this.telemetryBaseRenderedFrames = this.renderedFrames;
@@ -271,6 +286,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       this.playing = !!message.playing;
       this.writeTelemetrySnapshot(this.telemetryBaseSeconds);
       this.postTransportDebug();
+      this.postControlTrackDiagnostics(message, 'after', transportOrigin, this.telemetryBaseSeconds);
       return;
     }
 
@@ -363,6 +379,139 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     while (this.trackCount > 0 && !this.tracks[this.trackCount - 1]) {
       this.trackCount -= 1;
     }
+  }
+
+  getControlSerial(message) {
+    return message && typeof message.seekSerial === 'number' && Number.isFinite(message.seekSerial)
+      ? Math.max(0, Math.floor(message.seekSerial))
+      : null;
+  }
+
+  getControlSerialLabel(message) {
+    const serial = this.getControlSerial(message);
+    return serial === null ? 'none' : serial;
+  }
+
+  applyControlSerial(message) {
+    const serial = this.getControlSerial(message);
+    if (serial === null) {
+      return;
+    }
+
+    this.activeSeekSerial = serial;
+    if (serial > this.lastAppliedControlSerial) {
+      this.lastAppliedControlSerial = serial;
+    }
+  }
+
+  shouldIgnoreStaleControlMessage(message, fallbackOrigin) {
+    const serial = this.getControlSerial(message);
+    const comparableSerial = serial === null ? 0 : serial;
+
+    if (comparableSerial >= this.lastAppliedControlSerial) {
+      return false;
+    }
+
+    this.postSeekBackLine('[SEEK-BACK][STALE-FLUSH-IGNORED]', {
+      serial: serial === null ? 'none' : serial,
+      lastSerial: this.lastAppliedControlSerial,
+      origin: this.getControlOrigin(message, fallbackOrigin),
+      type: message && message.type,
+    }, true);
+    return true;
+  }
+
+  getControlOrigin(message, fallbackOrigin) {
+    if (message && message.type === 'RESUME_READING') {
+      return 'resume';
+    }
+
+    if (message && typeof message.reason === 'string' && message.reason.length > 0) {
+      return message.reason;
+    }
+
+    return fallbackOrigin || 'none';
+  }
+
+  getControlTargetSample(message, fallbackPositionSeconds) {
+    if (message && typeof message.targetSample === 'number' && Number.isFinite(message.targetSample)) {
+      return Math.max(0, Math.floor(message.targetSample));
+    }
+
+    const positionSeconds =
+      typeof fallbackPositionSeconds === 'number' && Number.isFinite(fallbackPositionSeconds)
+        ? Math.max(0, fallbackPositionSeconds)
+        : message && typeof message.positionSeconds === 'number' && Number.isFinite(message.positionSeconds)
+          ? Math.max(0, message.positionSeconds)
+          : this.telemetryBaseSeconds;
+
+    return Math.max(0, Math.round(positionSeconds * (sampleRate || 48000)));
+  }
+
+  postControlTrackDiagnostics(message, phase, fallbackOrigin, fallbackPositionSeconds) {
+    if (!this.publishDebugMessages) {
+      return;
+    }
+
+    const origin = this.getControlOrigin(message, fallbackOrigin);
+    const serial = this.getControlSerialLabel(message);
+    const targetSample = this.getControlTargetSample(message, fallbackPositionSeconds);
+
+    for (let trackIndex = 0; trackIndex < this.trackCount; trackIndex += 1) {
+      const track = this.tracks[trackIndex];
+
+      if (!track) {
+        continue;
+      }
+
+      const snapshot = this.getTrackReadWriteSnapshot(track);
+      const availableRead = this.computeAvailableRead(
+        snapshot.readIndex,
+        snapshot.writeIndex,
+        track.indexCapacity,
+      );
+
+      this.postSeekBackLine('[SEEK-BACK][WORKLET-CONTROL]', {
+        phase,
+        type: message && message.type,
+        origin,
+        serial,
+        targetSample,
+        targetIndex: this.frameToIndex(targetSample, track.indexCapacity),
+        trackIndex: track.trackIndex,
+        readIndex: snapshot.readIndex,
+        writeIndex: snapshot.writeIndex,
+        availableRead,
+      });
+    }
+  }
+
+  formatFlatDiagnosticValue(value) {
+    if (value === undefined) return 'undefined';
+    if (value === null) return 'null';
+    if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'null';
+    if (typeof value === 'boolean') return value ? 'true' : 'false';
+
+    const rawValue = typeof value === 'string' ? value : String(value);
+    return /^\S+$/.test(rawValue) ? rawValue : JSON.stringify(rawValue);
+  }
+
+  postSeekBackLine(prefix, fields, force) {
+    if (!force && !this.publishDebugMessages) {
+      return;
+    }
+
+    const entries = Object.entries(fields || {})
+      .filter((entry) => entry[1] !== undefined)
+      .map((entry) => `${entry[0]}=${this.formatFlatDiagnosticValue(entry[1])}`);
+    const line = entries.length > 0 ? `${prefix} ${entries.join(' ')}` : prefix;
+
+    this.port.postMessage({
+      type: 'seek-debug',
+      message: line,
+      seekSerial: this.activeSeekSerial,
+      activeSeekSerial: this.activeSeekSerial,
+    });
   }
 
   flushAllBuffers(message) {
