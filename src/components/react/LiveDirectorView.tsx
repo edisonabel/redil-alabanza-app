@@ -775,6 +775,7 @@ export function LiveDirectorView({
   const [showTrackLoadModal, setShowTrackLoadModal] = useState(false);
   const [pendingEnabledMap, setPendingEnabledMap] = useState<Record<string, boolean> | null>(null);
   const [isReturnToStartBusy, setIsReturnToStartBusy] = useState(false);
+  const isTransportCueBusy = isReturnToStartBusy || isSectionSeekBusy;
   const offsetModalInitialValueRef = useRef<number | null>(null);
   const [isPadActive, setIsPadActive] = useState(false);
   const [internalPadVolumeState, setInternalPadVolumeState] = useState(0.34);
@@ -2533,7 +2534,7 @@ export function LiveDirectorView({
   ]);
 
   const handleReturnToStart = useCallback(async () => {
-    if (!hasTrackSession || isReturnToStartBusy) {
+    if (!hasTrackSession || isTransportCueBusy) {
       return;
     }
 
@@ -2549,7 +2550,7 @@ export function LiveDirectorView({
     } finally {
       setIsReturnToStartBusy(false);
     }
-  }, [hasTrackSession, isPlaying, isReturnToStartBusy, seekTo, setVisualSectionTime]);
+  }, [hasTrackSession, isPlaying, isTransportCueBusy, seekTo, setVisualSectionTime]);
 
   useEffect(() => {
     if (isIOSNativeEngineSurface) {
@@ -3125,7 +3126,7 @@ export function LiveDirectorView({
   };
 
   const handlePreviousSection = () => {
-    if (!hasTrackSession) {
+    if (!hasTrackSession || isTransportCueBusy) {
       return;
     }
 
@@ -3945,8 +3946,8 @@ export function LiveDirectorView({
               <button
                 type="button"
                 onClick={handleTogglePlaybackFromGesture}
-                disabled={!isReady || isReturnToStartBusy}
-                aria-busy={isReturnToStartBusy || undefined}
+                disabled={!isReady || isTransportCueBusy}
+                aria-busy={isTransportCueBusy || undefined}
                 className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-5' : isCompactLandscape ? 'h-12 px-6' : 'h-[var(--ld-control-height)] px-7'} justify-center ${isPlaying ? 'text-[#43c477] border-[#43c477]/35 bg-[#43c477]/10' : 'text-[#43c477] hover:text-[#4fe487]'} hover:bg-[#43c477]/12 disabled:cursor-not-allowed disabled:text-white/24 disabled:hover:bg-transparent`}
                 style={{ width: scaleRem(isUltraCompactLandscape ? (showSectionsPanel ? 7.35 : 8.85) : isCompactLandscape ? (showSectionsPanel ? 9.35 : 10.75) : showSectionsPanel ? 12.75 : 14.25, 6.85) }}
                 aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
@@ -3965,8 +3966,8 @@ export function LiveDirectorView({
                 onClick={() => {
                   void handleReturnToStart();
                 }}
-                disabled={!hasTrackSession || isReturnToStartBusy}
-                aria-busy={isReturnToStartBusy || undefined}
+                disabled={!hasTrackSession || isTransportCueBusy}
+                aria-busy={isTransportCueBusy || undefined}
                 className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-4' : isCompactLandscape ? 'h-12 px-5' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/76 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
                 style={{ width: scaleRem(isUltraCompactLandscape ? (showSectionsPanel ? 4.85 : 5.3) : isCompactLandscape ? (showSectionsPanel ? 5.95 : 6.45) : 7.05, 4.45) }}
                 aria-label="Volver al inicio"
@@ -3982,7 +3983,7 @@ export function LiveDirectorView({
                   <button
                     type="button"
                     onClick={handlePreviousSection}
-                    disabled={!hasTrackSession || (DISABLE_BACKWARD_SEEK_WHILE_PLAYING && isPlaying)}
+                    disabled={!hasTrackSession || isTransportCueBusy || (DISABLE_BACKWARD_SEEK_WHILE_PLAYING && isPlaying)}
                     aria-busy={isSectionSeekBusy || undefined}
                     className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-4' : isCompactLandscape ? 'h-12 px-5' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/82 hover:text-white hover:bg-white/6 disabled:cursor-not-allowed disabled:text-white/24`}
                     style={{ width: scaleRem(isUltraCompactLandscape ? 4.45 : isCompactLandscape ? 5.35 : 6.25, 3.75) }}
