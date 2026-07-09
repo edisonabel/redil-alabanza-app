@@ -185,7 +185,7 @@ const IOS_SAFARI_WEB_MAX_ACTIVE_TRACKS = 4;
 const SAFARI_WEB_MAX_ACTIVE_TRACKS = 9;
 const WEB_ENGINE_MAX_ACTIVE_TRACKS = 11;
 const INTERNAL_PAD_TRACK_ID = '__internal-pad__';
-const DISABLE_BACKWARD_SEEK_WHILE_PLAYING = false;
+const DISABLE_BACKWARD_SEEK_WHILE_PLAYING = true;
 // The internal pad masters are intentionally lush, but their raw gain is too hot
 // for live control. Apply a fixed -8 dB trim before the pad reaches either engine.
 const INTERNAL_PAD_GAIN_TRIM = Math.pow(10, -8 / 20);
@@ -2440,8 +2440,16 @@ export function LiveDirectorView({
       return;
     }
 
+    const firstTargetTime = Math.max(0, nextTime);
     const wasPlayingBeforeSectionSeek = isPlaying;
     const playbackTimeBeforeFirstPrime = getLivePlaybackTime();
+    if (
+      DISABLE_BACKWARD_SEEK_WHILE_PLAYING &&
+      wasPlayingBeforeSectionSeek &&
+      firstTargetTime < playbackTimeBeforeFirstPrime - 0.05
+    ) {
+      return;
+    }
 
     const primeSectionVisuals = (targetTime: number) => {
       setVisualSectionTime(targetTime);
@@ -2450,7 +2458,6 @@ export function LiveDirectorView({
       snapSectionsLaneToTime(targetTime);
     };
 
-    const firstTargetTime = Math.max(0, nextTime);
     if (wasPlayingBeforeSectionSeek) {
       setVisualSectionTime(null);
     } else {
@@ -2540,7 +2547,11 @@ export function LiveDirectorView({
   ]);
 
   const handleReturnToStart = useCallback(async () => {
-    if (!hasTrackSession || isTransportCueBusy) {
+    if (
+      !hasTrackSession ||
+      isTransportCueBusy ||
+      (DISABLE_BACKWARD_SEEK_WHILE_PLAYING && isPlaying)
+    ) {
       return;
     }
 
@@ -3132,7 +3143,11 @@ export function LiveDirectorView({
   };
 
   const handlePreviousSection = () => {
-    if (!hasTrackSession || isTransportCueBusy) {
+    if (
+      !hasTrackSession ||
+      isTransportCueBusy ||
+      (DISABLE_BACKWARD_SEEK_WHILE_PLAYING && isPlaying)
+    ) {
       return;
     }
 
@@ -3972,12 +3987,12 @@ export function LiveDirectorView({
                 onClick={() => {
                   void handleReturnToStart();
                 }}
-                disabled={!hasTrackSession || isTransportCueBusy}
+                disabled={!hasTrackSession || isTransportCueBusy || (DISABLE_BACKWARD_SEEK_WHILE_PLAYING && isPlaying)}
                 aria-busy={isTransportCueBusy || undefined}
                 className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-4' : isCompactLandscape ? 'h-12 px-5' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/76 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
                 style={{ width: scaleRem(isUltraCompactLandscape ? (showSectionsPanel ? 4.85 : 5.3) : isCompactLandscape ? (showSectionsPanel ? 5.95 : 6.45) : 7.05, 4.45) }}
                 aria-label="Volver al inicio"
-                title="Volver al inicio"
+                title={isPlaying && DISABLE_BACKWARD_SEEK_WHILE_PLAYING ? 'Pausa para volver al inicio' : 'Volver al inicio'}
               >
                 <SkipBack className={`${isUltraCompactLandscape ? 'h-5 w-5' : isCompactLandscape ? 'h-6 w-6' : 'h-7 w-7'}`} />
               </button>
@@ -4376,23 +4391,29 @@ export function LiveDirectorView({
                     >
                     {sectionLaneSegments.map(({ section, waveBars, widthPx, leftPx, activeStyle, inactiveStyle }, index) => {
                       const isActive = index === activeSectionIndex;
+                      const isBackwardSectionDisabled =
+                        DISABLE_BACKWARD_SEEK_WHILE_PLAYING &&
+                        isPlaying &&
+                        section.startTime < getLivePlaybackTime() - 0.05;
 
                       return (
                         <button
                           key={section.id}
                           type="button"
+                          disabled={isBackwardSectionDisabled}
                           aria-busy={isSectionSeekBusy || undefined}
                           data-live-chord-section="true"
                           data-live-section-index={index}
                           data-live-section-start={section.startTime}
                           data-live-section-end={section.endTime}
+                          title={isBackwardSectionDisabled ? 'Pausa para volver a esta seccion' : undefined}
                           onClick={(event) => {
                             if (event.detail > 0) {
                               return;
                             }
                             void handleSectionSeek(section.startTime);
                           }}
-                          className="relative h-full shrink-0 rounded-[1.55rem] border text-left transition-all duration-200"
+                          className="relative h-full shrink-0 rounded-[1.55rem] border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45"
                           style={isActive ? activeStyle : inactiveStyle}
                         >
                           <div className="absolute inset-0 rounded-[1.5rem] bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.03)_0px,rgba(255,255,255,0.03)_2px,transparent_2px,transparent_20px)]" />
