@@ -736,6 +736,25 @@ type SeekBackDebugBlock = {
   prematureResumeLogged: boolean;
 };
 
+type PlaybackContentCheck = {
+  seekSerial: number;
+  targetSample: number;
+  targetTimeSeconds: number;
+};
+
+type SyncAuditSummary = {
+  reason: 'play' | 'seek-resume';
+  seekSerial?: number;
+  targetSample: number;
+  minFirstSample: number | null;
+  maxFirstSample: number | null;
+  spreadFrames: number | null;
+  spreadMs: number | null;
+  targetToMinDeltaFrames: number | null;
+  targetToMaxDeltaFrames: number | null;
+  trackCount: number;
+};
+
 type DemuxAppendResult = {
   chunks: EncodedAudioChunk[];
   decoderConfig?: AudioDecoderConfig;
@@ -875,6 +894,7 @@ const START_BARRIER_TIMEOUT_MS = 30_000;
 const PRODUCER_STALE_MESSAGE_GRACE_MS = 5_000;
 const PRODUCER_STALE_RECHECK_DELAY_MS = 250;
 const PRODUCER_DIAGNOSTIC_RATE_LIMIT_MS = 10_000;
+const CONTENT_ALIGNMENT_GUARD_SECONDS = 20;
 const FLIGHT_RECORDER_MIN_INTERVAL_MS = 5_000;
 const AAC_SAMPLE_RATE_INDEXES = new Map<number, number>([
   [96000, 0],
@@ -976,6 +996,7 @@ export class StreamingMultitrackEngine {
   private pendingProducerSeek: PendingProducerSeek | null = null;
   private activeSeekDebugBlock: SeekBackDebugBlock | null = null;
   private pendingSyncAudit: Deferred<ProducerSyncAuditMessage> | null = null;
+  private pendingPlaybackContentCheck: PlaybackContentCheck | null = null;
   private preloadedNextSession: PreloadedStreamingSession | null = null;
   private readonly latestWorkletTrackStatus = new Map<number, WorkletDebugTrackState>();
   private readonly latestProducerTrackState = new Map<number, ProducerTrackFlightState>();
@@ -2244,6 +2265,14 @@ export class StreamingMultitrackEngine {
     if (!startBarrierReady) {
       return;
     }
+
+    const auditSummary = await this.runSyncAudit({ reason: 'play', seekSerial: this.activeSeekSerial });
+    if (this.shouldBlockPlaybackForContentMismatch(auditSummary)) {
+      this.transportPlaying = false;
+      this.startTime = 0;
+      return;
+    }
+
     this.startTime = this.context.currentTime - this.pauseTime;
     this.transportPlaying = true;
     this.logFlatLiveDiagnostic('streaming:transport-play', {
@@ -2253,7 +2282,7 @@ export class StreamingMultitrackEngine {
       contextState: this.context.state,
       tracks: this.trackStates.length,
     });
-    await this.runSyncAudit({ reason: 'play', seekSerial: this.activeSeekSerial });
+    this.pendingPlaybackContentCheck = null;
     this.postProducerTransportState(true);
     this.postWorkletMessage({
       type: 'RESUME_READING',
@@ -2295,6 +2324,7 @@ export class StreamingMultitrackEngine {
     this.startTime = 0;
     this.restartFromHead = this.tracks.length > 0;
     this.transportPlaying = false;
+    this.pendingPlaybackContentCheck = null;
     logLiveDiagnostic('streaming:transport-stop', {
       contextTime: this.context.currentTime,
       contextState: this.context.state,
@@ -2356,6 +2386,7 @@ export class StreamingMultitrackEngine {
     }
 
     if (this.producerWorker) {
+      this.pendingPlaybackContentCheck = null;
       this.pauseTime = clampedTime;
       this.startTime = 0;
       this.transportPlaying = false;
@@ -2401,6 +2432,11 @@ export class StreamingMultitrackEngine {
       this.startTime = wasPlaying ? this.context.currentTime - clampedTime : 0;
       this.transportPlaying = wasPlaying;
       if (!wasPlaying) {
+        this.pendingPlaybackContentCheck = {
+          seekSerial,
+          targetSample,
+          targetTimeSeconds: clampedTime,
+        };
         this.logFlatLiveDiagnostic('streaming:seek-paused-ready', {
           seekSerial,
           targetSample,
@@ -3854,9 +3890,9 @@ export class StreamingMultitrackEngine {
   private async runSyncAudit(options: {
     reason: 'play' | 'seek-resume';
     seekSerial?: number;
-  }): Promise<void> {
+  }): Promise<SyncAuditSummary | null> {
     if (!this.producerWorker || this.trackStates.length === 0) {
-      return;
+      return null;
     }
 
     if (this.pendingSyncAudit) {
@@ -3895,7 +3931,7 @@ export class StreamingMultitrackEngine {
         reason: options.reason,
         seekSerial: options.seekSerial,
       });
-      return;
+      return null;
     }
 
     const rows = result.rows
@@ -3920,6 +3956,25 @@ export class StreamingMultitrackEngine {
     const maxFirstSample = firstSamples.length > 0 ? Math.max(...firstSamples) : null;
     const spreadFrames =
       minFirstSample !== null && maxFirstSample !== null ? maxFirstSample - minFirstSample : null;
+    const targetToMinDeltaFrames =
+      minFirstSample !== null ? minFirstSample - targetSample : null;
+    const targetToMaxDeltaFrames =
+      maxFirstSample !== null ? maxFirstSample - targetSample : null;
+    const summary: SyncAuditSummary = {
+      reason: options.reason,
+      seekSerial: options.seekSerial,
+      targetSample,
+      minFirstSample,
+      maxFirstSample,
+      spreadFrames,
+      spreadMs:
+        spreadFrames !== null
+          ? Number(((spreadFrames / this.context.sampleRate) * 1000).toFixed(3))
+          : null,
+      targetToMinDeltaFrames,
+      targetToMaxDeltaFrames,
+      trackCount: rows.length,
+    };
 
     try {
       (window as Window & { __lastStreamingSyncAudit?: ProducerSyncAuditMessage })
@@ -3936,9 +3991,9 @@ export class StreamingMultitrackEngine {
         minFirstSample,
         maxFirstSample,
         spreadFrames,
-        spreadMs: Number(((spreadFrames / this.context.sampleRate) * 1000).toFixed(3)),
-        targetToMinDeltaFrames:
-          minFirstSample !== null ? minFirstSample - targetSample : null,
+        spreadMs: summary.spreadMs,
+        targetToMinDeltaFrames,
+        targetToMaxDeltaFrames,
         trackCount: rows.length,
       };
 
@@ -3954,6 +4009,69 @@ export class StreamingMultitrackEngine {
 
       this.logFlatLiveDiagnostic('streaming:sync-audit-drift', auditFields, 'warn');
     }
+
+    return summary;
+  }
+
+  private shouldBlockPlaybackForContentMismatch(summary: SyncAuditSummary | null): boolean {
+    const pendingCheck = this.pendingPlaybackContentCheck;
+    if (!pendingCheck || !summary) {
+      return false;
+    }
+
+    const thresholdFrames = Math.round(this.context.sampleRate * CONTENT_ALIGNMENT_GUARD_SECONDS);
+    const minFirstSample = summary.minFirstSample;
+    const maxFirstSample = summary.maxFirstSample;
+    if (minFirstSample === null || maxFirstSample === null) {
+      this.logFlatDiagnostic('[SPSC-BARRIER][CONTENT-AUDIT-EMPTY]', {
+        reason: summary.reason,
+        seekSerial: pendingCheck.seekSerial,
+        targetSample: pendingCheck.targetSample,
+        targetTimeSeconds: Number(pendingCheck.targetTimeSeconds.toFixed(3)),
+        trackCount: summary.trackCount,
+        action: 'allow-play',
+      }, 'warn');
+      return false;
+    }
+
+    const spreadFrames = summary.spreadFrames ?? 0;
+    const targetToMinDeltaFrames = minFirstSample - pendingCheck.targetSample;
+    const targetToMaxDeltaFrames = maxFirstSample - pendingCheck.targetSample;
+    const staleBeforeTarget = targetToMinDeltaFrames < -thresholdFrames;
+    const allContentAfterTarget = targetToMinDeltaFrames > thresholdFrames;
+    const splitContentAfterStart =
+      pendingCheck.targetSample <= thresholdFrames &&
+      targetToMaxDeltaFrames > thresholdFrames &&
+      spreadFrames > thresholdFrames;
+    const shouldBlock = staleBeforeTarget || allContentAfterTarget || splitContentAfterStart;
+
+    const fields = {
+      reason: summary.reason,
+      seekSerial: pendingCheck.seekSerial,
+      auditSeekSerial: summary.seekSerial,
+      targetSample: pendingCheck.targetSample,
+      targetTimeSeconds: Number(pendingCheck.targetTimeSeconds.toFixed(3)),
+      minFirstSample,
+      maxFirstSample,
+      spreadFrames,
+      spreadMs: summary.spreadMs,
+      targetToMinDeltaFrames,
+      targetToMaxDeltaFrames,
+      thresholdFrames,
+      thresholdMs: CONTENT_ALIGNMENT_GUARD_SECONDS * 1000,
+      staleBeforeTarget,
+      allContentAfterTarget,
+      splitContentAfterStart,
+      action: shouldBlock ? 'blocked-play' : 'allow-play',
+    };
+
+    if (shouldBlock) {
+      this.logFlatDiagnostic('[SPSC-BARRIER][CONTENT-MISMATCH]', fields, 'warn');
+      return true;
+    }
+
+    this.logFlatDiagnostic('[SPSC-BARRIER][CONTENT-ALIGNED]', fields, 'info');
+    return false;
   }
 
   private createProducerSeekHandshake(options: {
@@ -4280,6 +4398,7 @@ export class StreamingMultitrackEngine {
     this.latestProducerTrackState.clear();
     this.latestUnderflowByTrack.clear();
     this.lastFlightRecorderTableAt = 0;
+    this.pendingPlaybackContentCheck = null;
 
     while (this.trackStates.length > 0) {
       const trackState = this.trackStates.pop();
