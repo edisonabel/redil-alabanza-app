@@ -3658,7 +3658,13 @@ export class StreamingMultitrackEngine {
         trackState.readyResolved = true;
         trackState.ready.resolve();
       }
-      logLiveDiagnostic('streaming:producer-track-ready', { message });
+      this.logFlatLiveDiagnostic('streaming:producer-track-ready', {
+        sessionId: message.sessionId,
+        trackIndex: message.trackIndex,
+        trackName: this.getDiagnosticTrackLabel(message.trackIndex),
+        decodedUntilSample: message.decodedUntilSample,
+        targetEndSample: message.targetEndSample,
+      });
       this.maybePublishFlightRecorder('producer-track-ready');
       return;
     }
@@ -3668,7 +3674,6 @@ export class StreamingMultitrackEngine {
       message.type === 'producer-lookahead-status' ||
       message.type === 'producer-ring-write'
     ) {
-      const trackName = this.getDiagnosticTrackLabel(message.trackIndex);
       this.recordProducerTrackState(message.trackIndex, {
         messageType: message.type,
         availableRead: message.availableRead,
@@ -3676,22 +3681,6 @@ export class StreamingMultitrackEngine {
         decodedUntilSample: message.decodedUntilSample,
         targetEndSample: message.targetEndSample,
       });
-      if (this.shouldPublishProducerDiagnostic('streaming:producer-progress', message.trackIndex)) {
-        this.logFlatLiveDiagnostic('streaming:producer-progress', {
-          type: message.type,
-          sessionId: message.sessionId,
-          trackIndex: message.trackIndex,
-          trackName,
-          availableRead: message.availableRead,
-          availableWrite: message.availableWrite,
-          decodedUntilSample: message.decodedUntilSample,
-          targetEndSample: message.targetEndSample,
-          targetAheadFrames: message.targetAheadFrames,
-          absoluteStartSample: message.absoluteStartSample,
-          frameCount: message.frameCount,
-        });
-      }
-      this.maybePublishFlightRecorder(message.type);
       return;
     }
 
