@@ -2433,6 +2433,7 @@ export function LiveDirectorView({
     }
 
     const wasPlayingBeforeSectionSeek = isPlaying;
+    const playbackTimeBeforeFirstPrime = getLivePlaybackTime();
 
     const primeSectionVisuals = (targetTime: number) => {
       setVisualSectionTime(targetTime);
@@ -2457,17 +2458,19 @@ export function LiveDirectorView({
     try {
       let targetTime: number | null = firstTargetTime;
       let targetWasPlaying = wasPlayingBeforeSectionSeek;
+      let comparisonPlaybackTime = playbackTimeBeforeFirstPrime;
 
       while (targetTime !== null) {
         const activeTargetTime = targetTime;
         const activeWasPlaying = targetWasPlaying;
+        const activeComparisonPlaybackTime = comparisonPlaybackTime;
         pendingSectionSeekTargetRef.current = null;
         pendingSectionSeekWasPlayingRef.current = null;
         primeSectionVisuals(activeTargetTime);
 
         if (!isReady || !isPlaying) {
           await seekTo(activeTargetTime, { wasPlayingBeforeUiSeek: activeWasPlaying });
-        } else if (Math.abs(getLivePlaybackTime() - activeTargetTime) >= 0.05) {
+        } else if (Math.abs(activeComparisonPlaybackTime - activeTargetTime) >= 0.05) {
           const transitionToken = sectionTransitionTokenRef.current + 1;
           sectionTransitionTokenRef.current = transitionToken;
           isSectionTransitioningRef.current = true;
@@ -2495,6 +2498,7 @@ export function LiveDirectorView({
         const queuedTarget = pendingSectionSeekTargetRef.current;
         if (queuedTarget !== null && Math.abs(queuedTarget - activeTargetTime) >= 0.02) {
           targetWasPlaying = pendingSectionSeekWasPlayingRef.current ?? isPlaying;
+          comparisonPlaybackTime = activeTargetTime;
           targetTime = queuedTarget;
         } else {
           targetTime = null;
