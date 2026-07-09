@@ -4058,9 +4058,32 @@ export class StreamingMultitrackEngine {
     }
 
     const thresholdFrames = Math.round(this.context.sampleRate * CONTENT_ALIGNMENT_GUARD_SECONDS);
+    const startBufferFrames = Math.round(this.context.sampleRate * MIN_START_BUFFER_SECONDS);
     const minFirstSample = summary.minFirstSample;
     const maxFirstSample = summary.maxFirstSample;
     if (minFirstSample === null || maxFirstSample === null) {
+      const silencePrerollRows = summary.rows.filter((row) => {
+        const writeEndAbs = row.writeEndAbs;
+        const availableRead = row.availableRead;
+        const bufferedFrames =
+          typeof writeEndAbs === 'number' && Number.isFinite(writeEndAbs)
+            ? writeEndAbs - pendingCheck.targetSample
+            : null;
+
+        return (
+          row.firstAbs === null &&
+          row.initialized === true &&
+          typeof availableRead === 'number' &&
+          Number.isFinite(availableRead) &&
+          availableRead >= startBufferFrames &&
+          bufferedFrames !== null &&
+          bufferedFrames >= startBufferFrames &&
+          bufferedFrames <= availableRead + AAC_FRAME_SIZE
+        );
+      });
+      const allRowsAreAlignedSilencePreroll =
+        summary.rows.length > 0 && silencePrerollRows.length === summary.rows.length;
+
       const fields: Record<string, unknown> = {
         reason: summary.reason,
         seekSerial: pendingCheck.seekSerial,
@@ -4068,7 +4091,8 @@ export class StreamingMultitrackEngine {
         targetSample: pendingCheck.targetSample,
         targetTimeSeconds: Number(pendingCheck.targetTimeSeconds.toFixed(3)),
         trackCount: summary.trackCount,
-        action: 'blocked-play',
+        startBufferFrames,
+        action: allRowsAreAlignedSilencePreroll ? 'allow-play' : 'blocked-play',
       };
 
       summary.rows.forEach((row) => {
@@ -4084,6 +4108,11 @@ export class StreamingMultitrackEngine {
         fields[`${prefix}Initialized`] = row.initialized;
         fields[`${prefix}Eof`] = row.eof;
       });
+
+      if (allRowsAreAlignedSilencePreroll) {
+        this.logFlatDiagnostic('[SPSC-BARRIER][CONTENT-SILENCE-PREROLL]', fields, 'info');
+        return false;
+      }
 
       this.logFlatDiagnostic('[SPSC-BARRIER][CONTENT-AUDIT-EMPTY]', fields, 'warn');
       return true;
