@@ -1672,6 +1672,32 @@ export class StreamingMultitrackEngine {
     this.finalizeSeekBackDebug('first-mixed-post-resume');
   }
 
+  private recordSeekBackHealthyWorkletPostResume(message: WorkletDebugStatusMessage): void {
+    const block = this.activeSeekDebugBlock;
+    if (!block || block.finalized || !block.resumeSent || block.firstMixedPosted) {
+      return;
+    }
+
+    const minAvailableRead = Number.isFinite(message.minAvailableRead)
+      ? message.minAvailableRead
+      : 0;
+    const isHealthyPostResume =
+      message.playing &&
+      message.audibleZeroTracks === 0 &&
+      minAvailableRead >= AAC_FRAME_SIZE;
+    if (!isHealthyPostResume) {
+      return;
+    }
+
+    block.firstMixedPosted = true;
+    this.recordSeekBackDebugEvent('healthy-worklet-post-resume', {
+      workletPlaying: message.playing,
+      renderedFrames: message.renderedFrames,
+      minAvailableRead,
+    });
+    this.finalizeSeekBackDebug('healthy-worklet-post-resume');
+  }
+
   private finalizeSeekBackDebug(result: string): void {
     const block = this.activeSeekDebugBlock;
     if (!block || block.finalized) {
@@ -4320,6 +4346,7 @@ export class StreamingMultitrackEngine {
     }
 
     if (message.type === 'debug-status') {
+      this.recordSeekBackHealthyWorkletPostResume(message);
       this.recordWorkletDebugStatus(message);
       const shouldWarn =
         message.audibleZeroTracks > 0 ||

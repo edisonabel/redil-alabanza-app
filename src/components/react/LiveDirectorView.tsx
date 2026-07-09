@@ -603,6 +603,7 @@ export function LiveDirectorView({
   const unlockAudioForUserGesture = 'unlockAudioForUserGesture' in selectedMultitrackEngine
     ? selectedMultitrackEngine.unlockAudioForUserGesture
     : async () => {};
+  const isTransportCueBusyRef = useRef(false);
   const getVisualClockTime = useCallback(() => {
     if ('getCurrentTimeSnapshot' in selectedMultitrackEngine) {
       return selectedMultitrackEngine.getCurrentTimeSnapshot();
@@ -612,6 +613,10 @@ export function LiveDirectorView({
   }, [selectedMultitrackEngine]);
 
   const handleTogglePlaybackFromGesture = useCallback(() => {
+    if (isTransportCueBusyRef.current) {
+      return;
+    }
+
     if (isPlaying) {
       pause();
       return;
@@ -776,6 +781,7 @@ export function LiveDirectorView({
   const [pendingEnabledMap, setPendingEnabledMap] = useState<Record<string, boolean> | null>(null);
   const [isReturnToStartBusy, setIsReturnToStartBusy] = useState(false);
   const isTransportCueBusy = isReturnToStartBusy || isSectionSeekBusy;
+  isTransportCueBusyRef.current = isTransportCueBusy;
   const offsetModalInitialValueRef = useRef<number | null>(null);
   const [isPadActive, setIsPadActive] = useState(false);
   const [internalPadVolumeState, setInternalPadVolumeState] = useState(0.34);
@@ -3334,7 +3340,7 @@ export function LiveDirectorView({
         return;
       }
 
-      if (!isReady) {
+      if (!isReady || isTransportCueBusy) {
         return;
       }
 
@@ -3347,7 +3353,7 @@ export function LiveDirectorView({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [handleTogglePlaybackFromGesture, isReady, showLoadPanel, showTrackLoadModal]);
+  }, [handleTogglePlaybackFromGesture, isReady, isTransportCueBusy, showLoadPanel, showTrackLoadModal]);
 
   const handleInternalPadVolumeChange = useCallback((nextVolume: number) => {
     const safeValue = clamp(nextVolume, 0, 1);
