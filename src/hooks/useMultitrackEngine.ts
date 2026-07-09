@@ -27,6 +27,10 @@ const DIAGNOSTICS_UPDATE_INTERVAL_MS = 1000;
 const TRACK_LEVEL_UPDATE_THRESHOLD = 0.006;
 const MAX_TRACK_VOLUME = 2;
 const STREAMING_STEMS_HOST = 'stems.alabanzaredilestadio.com';
+const STREAMING_DIRECT_CORS_HOSTS = new Set([
+  'alabanzaredilestadio.com',
+  'www.alabanzaredilestadio.com',
+]);
 type EngineKind = 'buffer' | 'streaming';
 type EngineInstance = MultitrackEngine | StreamingMultitrackEngine;
 export type SeekToOptions = {
@@ -114,11 +118,14 @@ const unwrapAudioProxyUrl = (rawUrl: string | undefined): string => {
         ? window.location.origin
         : 'https://alabanzaredilestadio.com';
     const parsed = new URL(candidate, baseOrigin);
+    const baseHost = new URL(baseOrigin).hostname.toLowerCase();
 
     if (parsed.pathname === '/api/mp3-proxy') {
       const source = parsed.searchParams.get('src');
       if (source) {
-        return rewriteStreamingStemUrl(source);
+        return STREAMING_DIRECT_CORS_HOSTS.has(baseHost)
+          ? rewriteStreamingStemUrl(source)
+          : parsed.href;
       }
     }
 

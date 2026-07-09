@@ -1877,7 +1877,7 @@ export class StreamingMultitrackEngine {
       }
     }
 
-    warnLiveDiagnostic('streaming:track-omitted', {
+    this.logFlatLiveDiagnostic('streaming:track-omitted', {
       code: message.code,
       trackIndex: trackState.index,
       trackId,
@@ -1885,7 +1885,7 @@ export class StreamingMultitrackEngine {
       sourceFileName: fileName || null,
       url: message.url || track?.url || null,
       reason: warningMessage,
-    });
+    }, 'warn');
   }
 
   getTrackMeterLevels(): Record<string, number> {
@@ -3768,7 +3768,19 @@ export class StreamingMultitrackEngine {
     }
 
     if (message.type === 'producer-fetch-retry') {
-      warnLiveDiagnostic('streaming:producer-fetch-retry', { message });
+      this.logFlatLiveDiagnostic('streaming:producer-fetch-retry', {
+        reason: message.reason,
+        trackIndex: message.trackIndex,
+        trackName: this.getDiagnosticTrackLabel(message.trackIndex, message.trackName),
+        byteStart: message.byteStart,
+        byteEnd: message.byteEnd,
+        attempt: message.attempt,
+        maxRetries: message.maxRetries,
+        delayMs: message.delayMs,
+        errorName: message.errorName,
+        errorMessage: message.errorMessage,
+        status: message.status,
+      }, 'warn');
       return;
     }
 
@@ -3797,7 +3809,28 @@ export class StreamingMultitrackEngine {
         message: message.message,
       });
       this.maybePublishFlightRecorder('producer-error', true);
-      warnLiveDiagnostic('streaming:producer-error', { message });
+      this.logFlatLiveDiagnostic('streaming:producer-error', {
+        code: message.code,
+        trackIndex: message.trackIndex,
+        trackId: message.trackId,
+        trackName: this.getDiagnosticTrackLabel(message.trackIndex, message.trackName),
+        url: message.url,
+        sourceFileName: message.sourceFileName,
+        errorName: message.errorName,
+        message: message.message,
+        codec: message.codec,
+        channelCount: message.channelCount,
+        availableRead: message.availableRead,
+        availableWrite: message.availableWrite,
+        decodedUntilSample: message.decodedUntilSample,
+        decoderQueueSize: message.decoderQueueSize,
+        startupPhase: message.startupPhase,
+        demuxerReady: message.demuxerReady,
+        demuxerSeenSamples: message.demuxerSeenSamples,
+        decoderPresent: message.decoderPresent,
+        endOfFileReached: message.endOfFileReached,
+        nextFileStart: message.nextFileStart,
+      }, 'warn');
       if (typeof message.trackIndex === 'number') {
         const trackState = this.trackStates[message.trackIndex];
         if (trackState && (!trackState.readyResolved || message.code === 'unsupported-format')) {
