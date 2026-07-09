@@ -2443,7 +2443,11 @@ export function LiveDirectorView({
     };
 
     const firstTargetTime = Math.max(0, nextTime);
-    primeSectionVisuals(firstTargetTime);
+    if (wasPlayingBeforeSectionSeek) {
+      setVisualSectionTime(null);
+    } else {
+      primeSectionVisuals(firstTargetTime);
+    }
 
     if (sectionSeekInFlightRef.current) {
       pendingSectionSeekTargetRef.current = firstTargetTime;
@@ -2466,7 +2470,9 @@ export function LiveDirectorView({
         const activeComparisonPlaybackTime = comparisonPlaybackTime;
         pendingSectionSeekTargetRef.current = null;
         pendingSectionSeekWasPlayingRef.current = null;
-        primeSectionVisuals(activeTargetTime);
+        if (!activeWasPlaying) {
+          primeSectionVisuals(activeTargetTime);
+        }
 
         if (!isReady || !isPlaying) {
           await seekTo(activeTargetTime, { wasPlayingBeforeUiSeek: activeWasPlaying });
