@@ -2291,7 +2291,7 @@ export class StreamingMultitrackEngine {
 
   getCurrentTime(): number {
     if (this.transportPlaying) {
-      return Math.max(0, this.pauseTime + (this.context.currentTime - this.startTime));
+      return Math.max(0, this.context.currentTime - this.startTime);
     }
 
     return Math.max(0, this.pauseTime);
