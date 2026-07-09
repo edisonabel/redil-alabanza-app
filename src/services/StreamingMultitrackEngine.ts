@@ -87,8 +87,6 @@ type WorkletTransportMessage = {
   type: 'transport';
   playing: boolean;
   positionSeconds?: number;
-  reason?: 'pause' | 'stop' | 'seek' | 'resume' | 'startup';
-  seekSerial?: number;
 };
 
 type WorkletTrackVolumeMessage = {
@@ -713,11 +711,7 @@ type SeekBackDebugEvent = {
   expectedAudibleTracks?: number;
   readyTracks?: number;
   expectedTracks?: number;
-  workletMinAvailableRead?: number | null;
-  workletCheckedTracks?: number;
-  workletAvailableReadByTrack?: string;
-  workletReadIndexByTrack?: string;
-  workletWriteIndexByTrack?: string;
+  minAvailableRead?: number | null;
   workletPlaying?: boolean;
   renderedFrames?: number;
   result?: string;
@@ -740,36 +734,6 @@ type SeekBackDebugBlock = {
   finalized: boolean;
   finalizeTimerId: number | null;
   prematureResumeLogged: boolean;
-  resumeSentAt: number | null;
-  postResumeTimeoutMs: number;
-};
-
-type WorkletAvailabilityTrackSnapshot = {
-  index: number;
-  id: string;
-  name: string;
-  readIndex: number;
-  writeIndex: number;
-  availableRead: number;
-  availableWrite: number;
-  thresholdFrames: number;
-  durationSeconds: number;
-};
-
-type WorkletAvailabilitySnapshot = {
-  thresholdFrames: number;
-  minAvailableRead: number;
-  checkedTrackCount: number;
-  tracks: WorkletAvailabilityTrackSnapshot[];
-};
-
-type LatestWorkletStatusSummary = {
-  atMs: number;
-  playing: boolean;
-  renderedFrames: number;
-  audibleZeroTracks: number;
-  minAvailableRead: number;
-  referenceSeconds?: number | null;
 };
 
 type DemuxAppendResult = {
@@ -1017,10 +981,6 @@ export class StreamingMultitrackEngine {
   private readonly latestProducerTrackState = new Map<number, ProducerTrackFlightState>();
   private readonly latestUnderflowByTrack = new Map<number, WorkletAudioUnderflowMessage & { atMs: number }>();
   private readonly lastProducerDiagnosticByKey = new Map<string, number>();
-  private latestWorkletStatusSummary: LatestWorkletStatusSummary | null = null;
-  private lastTrackLevelsAt = 0;
-  private lastTrackLevelsLength = 0;
-  private lastTrackLevelsPeak = 0;
   private lastFlightRecorderTableAt = 0;
   private lastProducerMessageAt = 0;
   private suspensionStaleEmitted = false;
@@ -1457,13 +1417,12 @@ export class StreamingMultitrackEngine {
       this.trackStates.push(trackState);
       this.postTrackConfiguration(trackState);
     });
-    const resetSerial = this.allocateControlSerial();
     this.postWorkletMessage({
       type: 'PAUSE_AND_FLUSH',
       targetSample: 0,
       positionSeconds: 0,
       reason: 'reset',
-      seekSerial: resetSerial,
+      seekSerial: this.activeSeekSerial,
     });
 
     this.postProducerMessage({
@@ -1510,143 +1469,6 @@ export class StreamingMultitrackEngine {
     return audibleTrackIndices;
   }
 
-  private allocateControlSerial(): number {
-    const nextSerial = Math.max(this.activeSeekSerial, this.producerSeekSerial) + 1;
-    this.activeSeekSerial = nextSerial;
-    this.producerSeekSerial = nextSerial;
-    return nextSerial;
-  }
-
-  private getStartBarrierNominalThreshold(): number {
-    return Math.max(
-      AAC_FRAME_SIZE,
-      Math.round(this.context.sampleRate * MIN_START_BUFFER_SECONDS),
-    );
-  }
-
-  private readWorkletAvailabilitySnapshot(positionSeconds: number): WorkletAvailabilitySnapshot {
-    const nominalThreshold = this.getStartBarrierNominalThreshold();
-    const tracks: WorkletAvailabilityTrackSnapshot[] = [];
-    let minAvailableRead = Number.POSITIVE_INFINITY;
-
-    for (let index = 0; index < this.trackStates.length; index += 1) {
-      const trackState = this.trackStates[index];
-      if (this.isTrackRuntimeOmitted(trackState)) {
-        continue;
-      }
-
-      const track = this.tracks[trackState.index] || this.tracks[index];
-      const trackId = track?.id || `track-${trackState.index}`;
-      const durationSeconds = Number.isFinite(track?.durationSeconds)
-        ? Number(track?.durationSeconds)
-        : 0;
-
-      if (durationSeconds > 0 && positionSeconds >= durationSeconds - 0.05) {
-        continue;
-      }
-
-      const ringSnapshot = trackState.ringBuffer.debugSnapshot();
-      const thresholdFrames = Math.max(
-        AAC_FRAME_SIZE,
-        Math.min(nominalThreshold, Math.floor(trackState.ringBuffer.capacity * 0.5)),
-      );
-
-      minAvailableRead = Math.min(minAvailableRead, ringSnapshot.availableRead);
-      tracks.push({
-        index: trackState.index,
-        id: trackId,
-        name: track?.name || trackId,
-        readIndex: ringSnapshot.readIndex,
-        writeIndex: ringSnapshot.writeIndex,
-        availableRead: ringSnapshot.availableRead,
-        availableWrite: ringSnapshot.availableWrite,
-        thresholdFrames,
-        durationSeconds,
-      });
-    }
-
-    return {
-      thresholdFrames: nominalThreshold,
-      minAvailableRead: Number.isFinite(minAvailableRead) ? minAvailableRead : 0,
-      checkedTrackCount: tracks.length,
-      tracks,
-    };
-  }
-
-  private buildWorkletAvailabilityDebugFields(
-    snapshot: WorkletAvailabilitySnapshot,
-  ): Pick<
-    SeekBackDebugEvent,
-    | 'workletMinAvailableRead'
-    | 'workletCheckedTracks'
-    | 'workletAvailableReadByTrack'
-    | 'workletReadIndexByTrack'
-    | 'workletWriteIndexByTrack'
-  > {
-    return {
-      workletMinAvailableRead: snapshot.minAvailableRead,
-      workletCheckedTracks: snapshot.checkedTrackCount,
-      workletAvailableReadByTrack: snapshot.tracks
-        .map((track) => `${track.index}:${track.availableRead}`)
-        .join(','),
-      workletReadIndexByTrack: snapshot.tracks
-        .map((track) => `${track.index}:${track.readIndex}`)
-        .join(','),
-      workletWriteIndexByTrack: snapshot.tracks
-        .map((track) => `${track.index}:${track.writeIndex}`)
-        .join(','),
-    };
-  }
-
-  private maybeLogWorkletViewMismatch(seekSerial: number, snapshot: WorkletAvailabilitySnapshot): void {
-    if (!isLiveDiagnosticsEnabled() || snapshot.checkedTrackCount === 0) {
-      return;
-    }
-
-    const producerReads = snapshot.tracks
-      .map((track) => ({
-        index: track.index,
-        availableRead: this.latestProducerTrackState.get(track.index)?.availableRead,
-      }))
-      .filter((track): track is { index: number; availableRead: number } =>
-        typeof track.availableRead === 'number' && Number.isFinite(track.availableRead),
-      );
-
-    if (producerReads.length === 0) {
-      return;
-    }
-
-    const minProducerAvailableRead = producerReads.reduce(
-      (minValue, track) => Math.min(minValue, track.availableRead),
-      Number.POSITIVE_INFINITY,
-    );
-    const producerSaysReady = minProducerAvailableRead >= snapshot.thresholdFrames;
-    const workletSaysBlocked = snapshot.minAvailableRead < snapshot.thresholdFrames;
-
-    if (!producerSaysReady || !workletSaysBlocked) {
-      return;
-    }
-
-    this.logFlatDiagnostic('[SEEK-BACK][WORKLET-VIEW-MISMATCH]', {
-      serial: seekSerial,
-      producerMinAvailableRead: minProducerAvailableRead,
-      workletMinAvailableRead: snapshot.minAvailableRead,
-      thresholdFrames: snapshot.thresholdFrames,
-      producerAvailableReadByTrack: producerReads
-        .map((track) => `${track.index}:${track.availableRead}`)
-        .join(','),
-      workletAvailableReadByTrack: snapshot.tracks
-        .map((track) => `${track.index}:${track.availableRead}`)
-        .join(','),
-      workletReadIndexByTrack: snapshot.tracks
-        .map((track) => `${track.index}:${track.readIndex}`)
-        .join(','),
-      workletWriteIndexByTrack: snapshot.tracks
-        .map((track) => `${track.index}:${track.writeIndex}`)
-        .join(','),
-    }, 'warn');
-  }
-
   private startSeekBackDebug(options: {
     seekSerial: number;
     fromTime: number;
@@ -1683,8 +1505,6 @@ export class StreamingMultitrackEngine {
       finalized: false,
       finalizeTimerId: null,
       prematureResumeLogged: false,
-      resumeSentAt: null,
-      postResumeTimeoutMs: 1500,
     };
 
     this.recordSeekBackDebugEvent('seek-start');
@@ -1739,11 +1559,6 @@ export class StreamingMultitrackEngine {
       expectedAudibleTracks: event.expectedAudibleTracks,
       readyTracks: event.readyTracks,
       expectedTracks: event.expectedTracks,
-      workletMinAvailableRead: event.workletMinAvailableRead,
-      workletCheckedTracks: event.workletCheckedTracks,
-      workletAvailableReadByTrack: event.workletAvailableReadByTrack,
-      workletReadIndexByTrack: event.workletReadIndexByTrack,
-      workletWriteIndexByTrack: event.workletWriteIndexByTrack,
       workletPlaying: event.workletPlaying,
       renderedFrames: event.renderedFrames,
       result: event.result,
@@ -1804,10 +1619,7 @@ export class StreamingMultitrackEngine {
     });
   }
 
-  private recordSeekBackResumeSent(
-    seekSerial: number,
-    workletAvailability?: WorkletAvailabilitySnapshot,
-  ): void {
+  private recordSeekBackResumeSent(seekSerial: number): void {
     const block = this.activeSeekDebugBlock;
     if (!block || block.finalized || seekSerial !== block.seekSerial) {
       return;
@@ -1820,17 +1632,10 @@ export class StreamingMultitrackEngine {
       readyAudibleTracks < expectedAudibleTracks;
 
     block.resumeSent = true;
-    block.resumeSentAt = performance.now();
     this.recordSeekBackDebugEvent('resume-reading-sent', {
       readyAudibleTracks,
       expectedAudibleTracks,
-      ...(workletAvailability
-        ? this.buildWorkletAvailabilityDebugFields(workletAvailability)
-        : {}),
     });
-    if (workletAvailability) {
-      this.maybeLogWorkletViewMismatch(seekSerial, workletAvailability);
-    }
 
     if (isPremature && !block.prematureResumeLogged) {
       block.prematureResumeLogged = true;
@@ -1853,7 +1658,7 @@ export class StreamingMultitrackEngine {
     }
     block.finalizeTimerId = window.setTimeout(() => {
       this.finalizeSeekBackDebug('post-resume-timeout');
-    }, block.postResumeTimeoutMs);
+    }, 1500);
   }
 
   private recordSeekBackFirstMixedPostResume(): void {
@@ -1873,16 +1678,11 @@ export class StreamingMultitrackEngine {
       return;
     }
 
-    const finalizedAt = performance.now();
     block.finalized = true;
     if (block.finalizeTimerId !== null) {
       window.clearTimeout(block.finalizeTimerId);
       block.finalizeTimerId = null;
     }
-
-    const lastTrackLevelsAfterResume =
-      block.resumeSentAt !== null && this.lastTrackLevelsAt >= block.resumeSentAt;
-    const latestWorkletStatus = this.latestWorkletStatusSummary;
 
     const summary = {
       serial: block.seekSerial,
@@ -1897,32 +1697,7 @@ export class StreamingMultitrackEngine {
       expectedAudibleTracks: block.expectedAudibleTracks.size,
       readyTracks: block.readyTracks.size,
       events: block.events.length,
-      totalMs: Math.round(finalizedAt - block.startedAt),
-      postResumeExpected: 'track-levels-message-after-resume',
-      postResumeTimeoutMs: block.postResumeTimeoutMs,
-      postResumeClock: 'performance.now',
-      postResumeUsesPositionClock: false,
-      postResumeObserved: block.firstMixedPosted
-        ? 'track-levels-message'
-        : lastTrackLevelsAfterResume
-          ? 'track-levels-message-after-resume'
-          : 'none',
-      postResumeObservedMs: lastTrackLevelsAfterResume
-        ? Math.round(this.lastTrackLevelsAt - block.startedAt)
-        : null,
-      lastTrackLevelsAgeMs: this.lastTrackLevelsAt > 0
-        ? Math.round(finalizedAt - this.lastTrackLevelsAt)
-        : null,
-      lastTrackLevelsLength: this.lastTrackLevelsLength || null,
-      lastTrackLevelsPeak: Number(this.lastTrackLevelsPeak.toFixed(5)),
-      latestWorkletStatusAgeMs: latestWorkletStatus
-        ? Math.round(finalizedAt - latestWorkletStatus.atMs)
-        : null,
-      latestWorkletPlaying: latestWorkletStatus?.playing,
-      latestWorkletAudibleZeroTracks: latestWorkletStatus?.audibleZeroTracks,
-      latestWorkletMinAvailableRead: latestWorkletStatus?.minAvailableRead,
-      latestWorkletRenderedFrames: latestWorkletStatus?.renderedFrames,
-      latestWorkletReferenceSeconds: latestWorkletStatus?.referenceSeconds,
+      totalMs: Math.round(performance.now() - block.startedAt),
     };
     const method: FlatDiagnosticMethod =
       block.direction === 'backward' || block.prematureResumeLogged ? 'warn' : 'info';
@@ -2443,7 +2218,6 @@ export class StreamingMultitrackEngine {
     if (!startBarrierReady) {
       return;
     }
-    const resumeSerial = this.allocateControlSerial();
     this.startTime = this.context.currentTime - this.pauseTime;
     this.transportPlaying = true;
     this.logFlatLiveDiagnostic('streaming:transport-play', {
@@ -2452,16 +2226,15 @@ export class StreamingMultitrackEngine {
       pauseTime: this.pauseTime,
       contextState: this.context.state,
       tracks: this.trackStates.length,
-      seekSerial: resumeSerial,
     });
-    await this.runSyncAudit({ reason: 'play', seekSerial: resumeSerial });
+    await this.runSyncAudit({ reason: 'play', seekSerial: this.activeSeekSerial });
     this.postProducerTransportState(true);
     this.postWorkletMessage({
       type: 'RESUME_READING',
       playing: true,
       positionSeconds: this.pauseTime,
       reason: 'startup',
-      seekSerial: resumeSerial,
+      seekSerial: this.activeSeekSerial,
     });
   }
 
@@ -2471,7 +2244,6 @@ export class StreamingMultitrackEngine {
     }
 
     this.startBarrierSerial += 1;
-    const pauseSerial = this.allocateControlSerial();
     this.pauseTime = this.getCurrentTime();
     this.startTime = 0;
     this.transportPlaying = false;
@@ -2479,7 +2251,6 @@ export class StreamingMultitrackEngine {
       pauseTime: this.pauseTime,
       contextTime: this.context.currentTime,
       contextState: this.context.state,
-      seekSerial: pauseSerial,
     });
     this.postProducerTransportState(false);
     if (this.workletNode) {
@@ -2487,8 +2258,6 @@ export class StreamingMultitrackEngine {
         type: 'transport',
         playing: false,
         positionSeconds: this.pauseTime,
-        reason: 'pause',
-        seekSerial: pauseSerial,
       });
     }
     this.resetTrackMeterLevels();
@@ -2496,7 +2265,6 @@ export class StreamingMultitrackEngine {
 
   stop(): void {
     this.startBarrierSerial += 1;
-    const stopSerial = this.allocateControlSerial();
     this.pauseTime = 0;
     this.startTime = 0;
     this.restartFromHead = this.tracks.length > 0;
@@ -2505,7 +2273,6 @@ export class StreamingMultitrackEngine {
       contextTime: this.context.currentTime,
       contextState: this.context.state,
       tracks: this.trackStates.length,
-      seekSerial: stopSerial,
     });
     this.postProducerTransportState(false);
     if (this.workletNode) {
@@ -2513,8 +2280,6 @@ export class StreamingMultitrackEngine {
         type: 'transport',
         playing: false,
         positionSeconds: 0,
-        reason: 'stop',
-        seekSerial: stopSerial,
       });
     }
     this.resetTrackMeterLevels();
@@ -2630,7 +2395,6 @@ export class StreamingMultitrackEngine {
       if (!seekStartBarrierReady) {
         return;
       }
-      const workletAvailability = this.readWorkletAvailabilitySnapshot(clampedTime);
       this.postWorkletMessage({
         type: 'RESUME_READING',
         playing: wasPlaying,
@@ -2638,12 +2402,11 @@ export class StreamingMultitrackEngine {
         reason: 'seek',
         seekSerial,
       });
-      this.recordSeekBackResumeSent(seekSerial, workletAvailability);
+      this.recordSeekBackResumeSent(seekSerial);
       return;
     }
 
-    const fallbackSeekSerial = this.allocateControlSerial();
-    const seekResults = await this.reseekTracks(clampedTime, fallbackSeekSerial);
+    const seekResults = await this.reseekTracks(clampedTime);
     const resolvedSeekTime = seekResults.reduce((lowestTime, seekResult) => {
       return seekResult.seekTimeInSeconds < lowestTime
         ? seekResult.seekTimeInSeconds
@@ -2657,8 +2420,6 @@ export class StreamingMultitrackEngine {
       type: 'transport',
       playing: wasPlaying,
       positionSeconds: resolvedSeekTime,
-      reason: 'seek',
-      seekSerial: fallbackSeekSerial,
     });
   }
 
@@ -2811,12 +2572,11 @@ export class StreamingMultitrackEngine {
       await this.seekTo(currentPosition);
     } else {
       this.pauseTime = 0;
-      const flushSerial = this.allocateControlSerial();
       this.postWorkletMessage({
         type: 'FLUSH_BUFFERS',
         reason: 'seek',
         targetSample: 0,
-        seekSerial: flushSerial,
+        seekSerial: this.activeSeekSerial,
       });
     }
 
@@ -3616,14 +3376,6 @@ export class StreamingMultitrackEngine {
       return;
     }
 
-    this.latestWorkletStatusSummary = {
-      atMs: performance.now(),
-      playing: message.playing,
-      renderedFrames: message.renderedFrames,
-      audibleZeroTracks: message.audibleZeroTracks,
-      minAvailableRead: message.minAvailableRead,
-      referenceSeconds: message.referenceSeconds,
-    };
     message.tracks.forEach((trackStatus) => {
       if (this.isTrackIndexOmitted(trackStatus.index)) {
         return;
@@ -4184,7 +3936,8 @@ export class StreamingMultitrackEngine {
   }): PendingProducerSeek {
     this.cancelPendingProducerSeek();
 
-    const serial = this.allocateControlSerial();
+    const serial = this.producerSeekSerial + 1;
+    this.producerSeekSerial = serial;
 
     let resolveSeek!: () => void;
     let rejectSeek!: (reason?: unknown) => void;
@@ -4329,10 +4082,7 @@ export class StreamingMultitrackEngine {
     });
   }
 
-  private async reseekTracks(
-    targetTimeInSeconds: number,
-    seekSerial = this.allocateControlSerial(),
-  ): Promise<DemuxSeekResult[]> {
+  private async reseekTracks(targetTimeInSeconds: number): Promise<DemuxSeekResult[]> {
     for (let trackIndex = 0; trackIndex < this.trackStates.length; trackIndex += 1) {
       const trackState = this.trackStates[trackIndex];
       trackState.suppressDecodedOutput = true;
@@ -4343,7 +4093,6 @@ export class StreamingMultitrackEngine {
       type: 'FLUSH_BUFFERS',
       reason: 'seek',
       targetSample: Math.max(0, Math.round(targetTimeInSeconds * this.context.sampleRate)),
-      seekSerial,
     });
 
     for (let trackIndex = 0; trackIndex < this.trackStates.length; trackIndex += 1) {
@@ -4504,10 +4253,6 @@ export class StreamingMultitrackEngine {
     this.latestWorkletTrackStatus.clear();
     this.latestProducerTrackState.clear();
     this.latestUnderflowByTrack.clear();
-    this.latestWorkletStatusSummary = null;
-    this.lastTrackLevelsAt = 0;
-    this.lastTrackLevelsLength = 0;
-    this.lastTrackLevelsPeak = 0;
     this.lastFlightRecorderTableAt = 0;
 
     while (this.trackStates.length > 0) {
@@ -4569,15 +4314,6 @@ export class StreamingMultitrackEngine {
     }
 
     if (message.type === 'track-levels') {
-      this.lastTrackLevelsAt = performance.now();
-      this.lastTrackLevelsLength =
-        typeof message.levels.length === 'number' ? message.levels.length : 0;
-      let peakLevel = 0;
-      for (let index = 0; index < this.lastTrackLevelsLength; index += 1) {
-        const level = Number(message.levels[index]) || 0;
-        peakLevel = Math.max(peakLevel, Math.abs(level));
-      }
-      this.lastTrackLevelsPeak = peakLevel;
       this.recordSeekBackFirstMixedPostResume();
       this.applyTrackLevelMessage(message.levels);
       return;
@@ -4650,16 +4386,7 @@ export class StreamingMultitrackEngine {
     }
 
     if (message.type === 'seek-debug') {
-      if (typeof message.message !== 'string') {
-        return;
-      }
-      if (message.message.startsWith('[SEEK-BACK]')) {
-        const method: FlatDiagnosticMethod = message.message.includes('STALE-FLUSH-IGNORED')
-          ? 'warn'
-          : 'info';
-        this.logFlatDiagnostic(message.message, {}, method);
-      }
-      if (message.message.includes('Worklet: Flush')) {
+      if (typeof message.message === 'string' && message.message.includes('Worklet: Flush')) {
         this.recordSeekBackFlushConfirmed(message.seekSerial);
       }
       return;
