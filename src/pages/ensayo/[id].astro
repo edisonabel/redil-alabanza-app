@@ -453,16 +453,50 @@ const pickVoicePayload = (songRow) => {
   return candidates.sort((left, right) => right.score - left.score)[0].value || '';
 };
 
+const extractVoiceTrackAnchorsFromPayload = (value) => {
+  const raw = typeof value === 'string'
+    ? value.trim()
+    : value == null
+      ? ''
+      : (() => {
+          try {
+            return JSON.stringify(value);
+          } catch {
+            return '';
+          }
+        })();
+
+  if (!raw || !raw.startsWith('{')) return {};
+
+  try {
+    const parsed = JSON.parse(raw);
+    const anchors =
+      parsed?.trackAnchors ||
+      parsed?.voiceTrackAnchors ||
+      parsed?.__trackAnchors ||
+      {};
+
+    return anchors && typeof anchors === 'object' && !Array.isArray(anchors) ? anchors : {};
+  } catch {
+    return {};
+  }
+};
+
 const buildSongFromRow = async (songRow, orderIndex = 0) => {
   const chordproContent = await readChordProContent(songRow);
   const rawSectionMarkers = Array.isArray(songRow?.section_markers) ? songRow.section_markers : [];
+  const voicePayload = pickVoicePayload(songRow);
+  const payloadVoiceTrackAnchors = extractVoiceTrackAnchorsFromPayload(voicePayload);
   const voiceTrackAnchors = (
     songRow?.voice_track_anchors &&
     typeof songRow.voice_track_anchors === 'object' &&
     !Array.isArray(songRow.voice_track_anchors)
   )
-    ? songRow.voice_track_anchors
-    : {};
+    ? {
+        ...payloadVoiceTrackAnchors,
+        ...songRow.voice_track_anchors,
+      }
+    : payloadVoiceTrackAnchors;
   const sections = mergeMarkerNotesIntoSections(
     parseChordProSections(chordproContent, songRow?.titulo || `Canci\u00f3n ${orderIndex + 1}`),
     rawSectionMarkers,
@@ -478,7 +512,7 @@ const buildSongFromRow = async (songRow, orderIndex = 0) => {
     category: songRow?.categoria || '',
     voz: songRow?.voz || '',
     mp3: songRow?.mp3 || '',
-    linkVoces: pickVoicePayload(songRow),
+    linkVoces: voicePayload,
     linkSecuencias: songRow?.link_secuencias || '',
     multitrackSession: songRow?.multitrack_session || null,
     chordpro: chordproContent,

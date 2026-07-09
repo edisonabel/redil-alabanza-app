@@ -39,3 +39,36 @@ SET voice_track_anchors = latest.anchors
 FROM latest
 WHERE c.id::text = latest.song_id
   AND COALESCE(c.voice_track_anchors, '{}'::jsonb) = '{}'::jsonb;
+
+CREATE OR REPLACE FUNCTION pg_temp.try_parse_jsonb(p_value TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN p_value::jsonb;
+EXCEPTION WHEN others THEN
+  RETURN NULL;
+END;
+$$;
+
+WITH parsed_payloads AS (
+  SELECT
+    id,
+    COALESCE(
+      pg_temp.try_parse_jsonb(link_voces) -> 'trackAnchors',
+      pg_temp.try_parse_jsonb(link_voces) -> 'voiceTrackAnchors',
+      pg_temp.try_parse_jsonb(link_voces) -> '__trackAnchors',
+      pg_temp.try_parse_jsonb(voces) -> 'trackAnchors',
+      pg_temp.try_parse_jsonb(voces) -> 'voiceTrackAnchors',
+      pg_temp.try_parse_jsonb(voces) -> '__trackAnchors'
+    ) AS anchors
+  FROM public.canciones
+)
+UPDATE public.canciones c
+SET voice_track_anchors = parsed_payloads.anchors
+FROM parsed_payloads
+WHERE c.id = parsed_payloads.id
+  AND parsed_payloads.anchors IS NOT NULL
+  AND jsonb_typeof(parsed_payloads.anchors) = 'object'
+  AND parsed_payloads.anchors <> '{}'::jsonb
+  AND COALESCE(c.voice_track_anchors, '{}'::jsonb) = '{}'::jsonb;

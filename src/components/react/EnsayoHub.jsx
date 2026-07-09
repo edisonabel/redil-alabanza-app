@@ -507,6 +507,38 @@ const parseVoiceResources = (value) => {
   return { hasResources: false, entries: [], legacyUrl: '' };
 };
 
+const extractVoiceTrackAnchorsFromPayload = (value) => {
+  const raw = serializeVoicePayload(value);
+  if (!raw || !raw.trim().startsWith('{')) return {};
+
+  try {
+    const parsed = JSON.parse(raw);
+    const anchors =
+      parsed?.trackAnchors ||
+      parsed?.voiceTrackAnchors ||
+      parsed?.__trackAnchors ||
+      {};
+
+    return sanitizeVoiceTrackAnchors(anchors);
+  } catch {
+    return {};
+  }
+};
+
+const buildVoicePayloadWithTrackAnchors = (value, trackAnchors = {}) => {
+  const parsed = parseVoiceResources(value);
+  const payload = {
+    entries: parsed.entries || [],
+    trackAnchors: sanitizeVoiceTrackAnchors(trackAnchors),
+  };
+
+  if (parsed.legacyUrl) {
+    payload.legacyUrl = parsed.legacyUrl;
+  }
+
+  return JSON.stringify(payload);
+};
+
 const normalizeVoiceLabel = (rawVoice = '') => {
   const source = String(rawVoice || '').trim();
   if (!source) return '';
@@ -576,7 +608,13 @@ const mergeRepertoireVoiceTrackAnchors = (assignments, songs = []) => {
     if (!safeSongId) return;
 
     const repertoireAnchors = sanitizeVoiceTrackAnchors(song?.voiceTrackAnchors);
-    if (Object.keys(repertoireAnchors).length === 0) return;
+    const payloadAnchors = extractVoiceTrackAnchorsFromPayload(song?.linkVoces);
+    const globalAnchors = {
+      ...payloadAnchors,
+      ...repertoireAnchors,
+    };
+
+    if (Object.keys(globalAnchors).length === 0) return;
 
     const songAssignments = sanitizeSongVoiceAssignments(nextAssignments[safeSongId]);
     const playlistAnchors = sanitizeVoiceTrackAnchors(songAssignments[VOICE_TRACK_ANCHORS_KEY]);
@@ -585,7 +623,7 @@ const mergeRepertoireVoiceTrackAnchors = (assignments, songs = []) => {
       ...songAssignments,
       [VOICE_TRACK_ANCHORS_KEY]: {
         ...playlistAnchors,
-        ...repertoireAnchors,
+        ...globalAnchors,
       },
     };
   });
@@ -1181,12 +1219,38 @@ export default function EnsayoHub({
     setIsSavingVoiceAssignments(true);
 
     try {
+      const songForFallback = localPlaylist.find((song) => String(song?.id || '') === safeSongId) || {};
       const { error } = await supabase
         .from('canciones')
         .update({ voice_track_anchors: nextTrackAnchors })
         .eq('id', safeSongId);
 
       if (error) {
+        if (error?.code === 'PGRST204' || error?.code === '42703') {
+          const fallbackVoicePayload = buildVoicePayloadWithTrackAnchors(songForFallback?.linkVoces, nextTrackAnchors);
+          const fallbackResponse = await supabase
+            .from('canciones')
+            .update({ link_voces: fallbackVoicePayload })
+            .eq('id', safeSongId);
+
+          if (fallbackResponse.error) {
+            console.error('EnsayoHub voice track anchor fallback save error:', fallbackResponse.error);
+            showVoiceAssignmentFeedback('error', 'No se pudo guardar el inicio de la pista en el repertorio.');
+            return;
+          }
+
+          setLocalPlaylist((currentPlaylist) => (
+            (Array.isArray(currentPlaylist) ? currentPlaylist : []).map((song) => (
+              String(song?.id || '') === safeSongId
+                ? { ...song, linkVoces: fallbackVoicePayload, voiceTrackAnchors: nextTrackAnchors }
+                : song
+            ))
+          ));
+          setSongVoiceAssignments(nextAssignments);
+          showVoiceAssignmentFeedback('success', 'Inicio de pista guardado.');
+          return;
+        }
+
         console.error('EnsayoHub voice track anchor save error:', error);
         showVoiceAssignmentFeedback('error', getVoiceAssignmentErrorMessage(error, 'No se pudo guardar el inicio de la pista en el repertorio.'));
         return;
