@@ -564,8 +564,37 @@ const sanitizeSongVoiceAssignments = (value) => (
   value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 );
 
+const sanitizeVoiceTrackAnchors = (value) => (
+  value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+);
+
+const mergeRepertoireVoiceTrackAnchors = (assignments, songs = []) => {
+  const nextAssignments = { ...sanitizeSongVoiceAssignments(assignments) };
+
+  (Array.isArray(songs) ? songs : []).forEach((song) => {
+    const safeSongId = String(song?.id || '').trim();
+    if (!safeSongId) return;
+
+    const repertoireAnchors = sanitizeVoiceTrackAnchors(song?.voiceTrackAnchors);
+    if (Object.keys(repertoireAnchors).length === 0) return;
+
+    const songAssignments = sanitizeSongVoiceAssignments(nextAssignments[safeSongId]);
+    const playlistAnchors = sanitizeVoiceTrackAnchors(songAssignments[VOICE_TRACK_ANCHORS_KEY]);
+
+    nextAssignments[safeSongId] = {
+      ...songAssignments,
+      [VOICE_TRACK_ANCHORS_KEY]: {
+        ...playlistAnchors,
+        ...repertoireAnchors,
+      },
+    };
+  });
+
+  return nextAssignments;
+};
+
 const getVoiceAssignmentErrorMessage = (error, fallbackMessage) => {
-  if (error?.code === 'PGRST205') {
+  if (error?.code === 'PGRST205' || error?.code === 'PGRST204' || error?.code === '42703') {
     return 'Falta aplicar la migracion de asignaciones vocales en Supabase.';
   }
 
@@ -659,7 +688,7 @@ export default function EnsayoHub({
   const [isSyncReceiver, setIsSyncReceiver] = useState(false);
   const [syncCountdown, setSyncCountdown] = useState(null); // null | 3 | 2 | 1 | 0
   const [songVoiceAssignments, setSongVoiceAssignments] = useState(() => (
-    sanitizeSongVoiceAssignments(initialSongVoiceAssignments)
+    mergeRepertoireVoiceTrackAnchors(initialSongVoiceAssignments, playlist)
   ));
   const [isSavingVoiceAssignments, setIsSavingVoiceAssignments] = useState(false);
   const [voiceAssignmentFeedback, setVoiceAssignmentFeedback] = useState(null);
@@ -706,8 +735,8 @@ export default function EnsayoHub({
   }, [userId, voiceMemberOptions]);
 
   useEffect(() => {
-    setSongVoiceAssignments(sanitizeSongVoiceAssignments(initialSongVoiceAssignments));
-  }, [initialSongVoiceAssignments]);
+    setSongVoiceAssignments(mergeRepertoireVoiceTrackAnchors(initialSongVoiceAssignments, playlist));
+  }, [initialSongVoiceAssignments, playlist]);
 
   useEffect(() => {
     return () => {
@@ -982,7 +1011,7 @@ export default function EnsayoHub({
     if (!safeUrl) return;
 
     const safeSongId = String(song?.id || '').trim();
-    const safeTrackName = String(track?.label || track?.name || track?.track_name || track?.title || '').trim();
+    const safeTrackName = normalizeVoiceTrackLabel(track?.label || track?.name || track?.track_name || track?.title || '');
     const songTitle = String(song?.title || 'Recursos de voz').trim() || 'Recursos de voz';
     const displayVoiceName = String(track?.__displayTitle || safeTrackName || 'Voz seleccionada').trim();
     const trackAnchors = songVoiceAssignments?.[safeSongId]?.[VOICE_TRACK_ANCHORS_KEY] || {};
@@ -1112,14 +1141,14 @@ export default function EnsayoHub({
 
   const handleSaveVoiceTrackAnchor = useCallback(async ({ songId, trackName, anchor }) => {
     const safeSongId = String(songId || '').trim();
-    const safeTrackName = String(trackName || '').trim();
+    const safeTrackName = normalizeVoiceTrackLabel(trackName || '');
     const safeStartSec = Number(anchor?.startSec);
     const safeSectionStartSec = Number(anchor?.sectionStartSec);
     const safePreRollSec = Number(anchor?.preRollSec);
 
     if (!safeSongId || !safeTrackName || !Number.isFinite(safeStartSec)) return;
-    if (!playlistId || !eventMeta?.id || !userId) {
-      showVoiceAssignmentFeedback('error', 'No pudimos identificar este setlist para guardar.');
+    if (!userId) {
+      showVoiceAssignmentFeedback('error', 'Inicia sesion para guardar el comienzo de la pista.');
       return;
     }
 
@@ -1130,20 +1159,22 @@ export default function EnsayoHub({
       ...(currentSongAssignments?.[VOICE_TRACK_ANCHORS_KEY] || {}),
     };
 
+    const nextTrackAnchors = {
+      ...currentAnchors,
+      [safeTrackName]: {
+        sectionId: String(anchor?.sectionId || ''),
+        sectionLabel: String(anchor?.sectionLabel || 'Seccion').trim() || 'Seccion',
+        sectionStartSec: Number.isFinite(safeSectionStartSec) ? safeSectionStartSec : safeStartSec,
+        preRollSec: Number.isFinite(safePreRollSec) ? Math.max(0, safePreRollSec) : 0,
+        startSec: safeStartSec,
+      },
+    };
+
     const nextAssignments = {
       ...sanitizeSongVoiceAssignments(songVoiceAssignments),
       [safeSongId]: {
         ...currentSongAssignments,
-        [VOICE_TRACK_ANCHORS_KEY]: {
-          ...currentAnchors,
-          [safeTrackName]: {
-            sectionId: String(anchor?.sectionId || ''),
-            sectionLabel: String(anchor?.sectionLabel || 'Seccion').trim() || 'Seccion',
-            sectionStartSec: Number.isFinite(safeSectionStartSec) ? safeSectionStartSec : safeStartSec,
-            preRollSec: Number.isFinite(safePreRollSec) ? Math.max(0, safePreRollSec) : 0,
-            startSec: safeStartSec,
-          },
-        },
+        [VOICE_TRACK_ANCHORS_KEY]: nextTrackAnchors,
       },
     };
 
@@ -1151,22 +1182,23 @@ export default function EnsayoHub({
 
     try {
       const { error } = await supabase
-        .from('playlist_voice_assignments')
-        .upsert({
-          playlist_id: playlistId,
-          evento_id: eventMeta.id,
-          assignments: nextAssignments,
-          updated_by: userId,
-        }, {
-          onConflict: 'playlist_id',
-        });
+        .from('canciones')
+        .update({ voice_track_anchors: nextTrackAnchors })
+        .eq('id', safeSongId);
 
       if (error) {
         console.error('EnsayoHub voice track anchor save error:', error);
-        showVoiceAssignmentFeedback('error', getVoiceAssignmentErrorMessage(error, 'No se pudo guardar el inicio de la pista.'));
+        showVoiceAssignmentFeedback('error', getVoiceAssignmentErrorMessage(error, 'No se pudo guardar el inicio de la pista en el repertorio.'));
         return;
       }
 
+      setLocalPlaylist((currentPlaylist) => (
+        (Array.isArray(currentPlaylist) ? currentPlaylist : []).map((song) => (
+          String(song?.id || '') === safeSongId
+            ? { ...song, voiceTrackAnchors: nextTrackAnchors }
+            : song
+        ))
+      ));
       setSongVoiceAssignments(nextAssignments);
       showVoiceAssignmentFeedback('success', 'Inicio de pista guardado.');
     } catch (error) {
@@ -1175,7 +1207,7 @@ export default function EnsayoHub({
     } finally {
       setIsSavingVoiceAssignments(false);
     }
-  }, [playlistId, eventMeta?.id, userId, songVoiceAssignments, showVoiceAssignmentFeedback]);
+  }, [userId, songVoiceAssignments, showVoiceAssignmentFeedback]);
 
   const playQueueItem = useCallback((index) => {
     const queueSongs = queueSongsRef.current;

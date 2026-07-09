@@ -456,6 +456,13 @@ const pickVoicePayload = (songRow) => {
 const buildSongFromRow = async (songRow, orderIndex = 0) => {
   const chordproContent = await readChordProContent(songRow);
   const rawSectionMarkers = Array.isArray(songRow?.section_markers) ? songRow.section_markers : [];
+  const voiceTrackAnchors = (
+    songRow?.voice_track_anchors &&
+    typeof songRow.voice_track_anchors === 'object' &&
+    !Array.isArray(songRow.voice_track_anchors)
+  )
+    ? songRow.voice_track_anchors
+    : {};
   const sections = mergeMarkerNotesIntoSections(
     parseChordProSections(chordproContent, songRow?.titulo || `Canci\u00f3n ${orderIndex + 1}`),
     rawSectionMarkers,
@@ -476,6 +483,7 @@ const buildSongFromRow = async (songRow, orderIndex = 0) => {
     multitrackSession: songRow?.multitrack_session || null,
     chordpro: chordproContent,
     sectionMarkers: rawSectionMarkers,
+    voiceTrackAnchors,
     duration: estimateDuration(sections),
     sections,
   };
@@ -694,19 +702,29 @@ if (!routeIsDemo) {
 
       const playlistQueryWithMarkers = await supabaseSSR
         .from('playlist_canciones')
-        .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, categoria, voz, mp3, voces, link_voces, link_secuencias, chordpro, section_markers, multitrack_session)')
+        .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, categoria, voz, mp3, voces, link_voces, link_secuencias, chordpro, section_markers, voice_track_anchors, multitrack_session)')
         .eq('playlist_id', playlistRow.id)
         .order('orden', { ascending: true });
 
       if (playlistQueryWithMarkers.error) {
-        const playlistQueryFallback = await supabaseSSR
+        const playlistQueryWithoutVoiceAnchors = await supabaseSSR
           .from('playlist_canciones')
-          .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, categoria, voz, mp3, voces, link_voces, link_secuencias, chordpro, multitrack_session)')
+          .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, categoria, voz, mp3, voces, link_voces, link_secuencias, chordpro, section_markers, multitrack_session)')
           .eq('playlist_id', playlistRow.id)
           .order('orden', { ascending: true });
 
-        playlistItems = playlistQueryFallback.data || [];
-        playlistItemsError = playlistQueryFallback.error;
+        if (playlistQueryWithoutVoiceAnchors.error) {
+          const playlistQueryFallback = await supabaseSSR
+            .from('playlist_canciones')
+            .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, categoria, voz, mp3, voces, link_voces, link_secuencias, chordpro, multitrack_session)')
+            .eq('playlist_id', playlistRow.id)
+            .order('orden', { ascending: true });
+
+          playlistItems = playlistQueryFallback.data || [];
+          playlistItemsError = playlistQueryFallback.error;
+        } else {
+          playlistItems = playlistQueryWithoutVoiceAnchors.data || [];
+        }
       } else {
         playlistItems = playlistQueryWithMarkers.data || [];
       }
