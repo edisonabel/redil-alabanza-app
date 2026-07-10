@@ -21,6 +21,8 @@ const MAX_AHEAD_SECONDS = 10;
 const MIN_RING_WRITE_FRAMES = 1024;
 const DECODER_RECOVERY_SAMPLE_LIMIT = 8;
 const SEEK_READY_SECONDS = 0.5;
+const HEAD_PCM_CACHE_SECONDS = 1;
+const SEEK_READY_CONTENT_TOLERANCE_FRAMES = MIN_RING_WRITE_FRAMES * 4;
 const SEEK_HANDSHAKE_SOFT_TIMEOUT_MS = 2500;
 const TRACK_READY_WATCHDOG_MS = 60000;
 const STARTUP_DECODER_STAGGER_MS = 200;
@@ -1410,6 +1412,9 @@ class ProducerTrackPipeline {
     this.decoderRecoveryInFlight = false;
     this.pendingSeekReady = null;
     this.currentSeekSerial = 0;
+    this.seekOperationToken = 0;
+    this.headPcmCache = null;
+    this.headPcmCachedUntilSample = 0;
     this.preWarmedSamples = [];
     this.preWarmedDecoderConfig = null;
     this.preWarmedNextFileStart = 0;
@@ -1457,6 +1462,7 @@ class ProducerTrackPipeline {
     }
 
     this.isDestroyed = true;
+    this.seekOperationToken += 1;
     this.lookAheadToken += 1;
     this.prepareToken += 1;
     this.clearReadyWatchdog();
@@ -1470,6 +1476,8 @@ class ProducerTrackPipeline {
     this.preWarmedDecoderConfig = null;
     this.preWarmedNextFileStart = 0;
     this.preWarmedDurationSeconds = undefined;
+    this.headPcmCache = null;
+    this.headPcmCachedUntilSample = 0;
     this.ready = false;
     this.normalReadyPosted = false;
     this.endOfFileReached = true;
@@ -1893,18 +1901,36 @@ class ProducerTrackPipeline {
     this.startupRecoveryTimerIds = [];
   }
 
-  async seekToSample(targetSample, sessionId, seekSerial) {
+  async seekToSample(
+    targetSample,
+    sessionId,
+    seekSerial,
+    decodePrerollFrames = 0,
+    hardReset = false,
+  ) {
     this.assertAlive();
 
     const safeTargetSample = Math.max(0, Math.floor(Number(targetSample) || 0));
     const safeSeekSerial = Math.max(0, Math.floor(Number(seekSerial) || 0));
+    const safeDecodePrerollFrames = Math.max(0, Math.floor(Number(decodePrerollFrames) || 0));
+    const demuxerTargetSample = Math.max(0, safeTargetSample - safeDecodePrerollFrames);
+    const operationToken = this.seekOperationToken + 1;
+    this.seekOperationToken = operationToken;
 
     this.postSeekReadyFallback(sessionId, 'superseded-by-new-seek');
     this.currentSeekSerial = safeSeekSerial;
     this.stopLookAhead();
     this.prepareToken += 1;
     this.fetcher.abort();
-    await this.flushDecoderForSeek();
+    if (hardReset) {
+      this.resetDecoderForHardSeek();
+      if (safeTargetSample > 0) {
+        this.resetDemuxerForHardSeek();
+      }
+    } else {
+      await this.flushDecoderForSeek();
+    }
+    this.assertCurrentSeekOperation(operationToken, safeSeekSerial);
 
     this.decodedUntilSample = safeTargetSample;
     this.clearPendingNormalPcm();
@@ -1917,9 +1943,9 @@ class ProducerTrackPipeline {
     this.ringWriter.flushToSample(safeTargetSample);
 
     await this.ensureReady();
-    this.assertAlive();
+    this.assertCurrentSeekOperation(operationToken, safeSeekSerial);
 
-    const seekTimeSeconds = safeTargetSample / this.getOutputSampleRate();
+    const seekTimeSeconds = demuxerTargetSample / this.getOutputSampleRate();
     const seekResult = this.demuxer.seek(seekTimeSeconds, true);
 
     if (this.demuxer) {
@@ -1944,23 +1970,83 @@ class ProducerTrackPipeline {
           MIN_RING_WRITE_FRAMES,
           Math.floor(this.getOutputSampleRate() * SEEK_READY_SECONDS),
         ),
+        decodePrerollFrames: safeDecodePrerollFrames,
+        demuxerTargetSample,
         resolve,
         reject,
       };
 
+      if (hardReset && safeTargetSample === 0) {
+        this.restoreHeadPcmForSeek();
+      }
       this.startLookAhead(sessionId, safeSeekSerial);
       this.postSeekReadyIfAvailable();
     });
   }
 
-  async flushDecoderForSeek() {
-    if (this.isDestroyed || !this.decoder) {
+  assertCurrentSeekOperation(operationToken, seekSerial) {
+    this.assertAlive();
+    if (
+      operationToken !== this.seekOperationToken ||
+      seekSerial !== this.currentSeekSerial
+    ) {
+      throw createAbortError('Producer seek superseded by a newer seek.');
+    }
+  }
+
+  resetDecoderForHardSeek() {
+    const decoderForSeek = this.decoder;
+    if (!decoderForSeek) {
       return;
     }
 
     try {
-      if (this.isDecoderUsable() && this.decoder.decodeQueueSize > 0) {
-        await this.decoder.flush();
+      if (decoderForSeek.state !== 'closed') {
+        decoderForSeek.reset();
+      }
+    } catch (_error) {
+      // Closing the captured decoder below still discards its queued output.
+    }
+
+    try {
+      if (decoderForSeek.state !== 'closed') {
+        decoderForSeek.close();
+      }
+    } catch (_error) {
+      // The decoder may already be closing after reset.
+    }
+
+    if (this.decoder === decoderForSeek) {
+      this.decoder = null;
+    }
+  }
+
+  resetDemuxerForHardSeek() {
+    if (this.demuxer) {
+      try {
+        this.demuxer.resetPending();
+      } catch (_error) {
+        // The old demuxer is discarded below even if its pending state is invalid.
+      }
+    }
+
+    this.demuxer = null;
+    this.decoderConfig = null;
+    this.decoderVariants = [];
+    this.decoderVariantIndex = 0;
+    this.nextFileStart = 0;
+    this.ready = false;
+  }
+
+  async flushDecoderForSeek() {
+    const decoderForSeek = this.decoder;
+    if (this.isDestroyed || !decoderForSeek) {
+      return;
+    }
+
+    try {
+      if (decoderForSeek.state !== 'closed' && decoderForSeek.decodeQueueSize > 0) {
+        await decoderForSeek.flush();
       }
     } catch (error) {
       if (!isAbortError(error)) {
@@ -1971,14 +2057,16 @@ class ProducerTrackPipeline {
     }
 
     try {
-      if (this.isDecoderUsable()) {
-        this.decoder.reset();
+      if (decoderForSeek.state !== 'closed') {
+        decoderForSeek.reset();
       }
     } catch (_error) {
       // Decoder may already be closed/reset by the browser; continue the seek.
     }
 
-    this.decoder = null;
+    if (this.decoder === decoderForSeek) {
+      this.decoder = null;
+    }
   }
 
   async runLookAhead(sessionId, token) {
@@ -2004,7 +2092,7 @@ class ProducerTrackPipeline {
       const result = this.demuxer.append(chunk.bytes, chunk.byteStart);
       this.nextFileStart = this.resolveNextFileStart(result, chunk);
 
-      await this.feedDemuxedSamples(result);
+      await this.feedDemuxedSamples(result, token);
       this.assertAlive();
 
       self.postMessage({
@@ -2019,7 +2107,7 @@ class ProducerTrackPipeline {
       if (chunk.endOfFile) {
         this.assertAlive();
         const flushResult = this.demuxer.flush();
-        await this.feedDemuxedSamples(flushResult);
+        await this.feedDemuxedSamples(flushResult, token);
         if (this.isDecoderUsable() && this.decoder.decodeQueueSize > 0) {
           await this.decoder.flush();
         }
@@ -2088,30 +2176,44 @@ class ProducerTrackPipeline {
     });
   }
 
-  async feedDemuxedSamples(result) {
+  async feedDemuxedSamples(result, expectedLookAheadToken = null) {
     this.assertAlive();
+    this.assertCurrentLookAhead(expectedLookAheadToken);
 
     if (result && result.decoderConfig) {
       this.decoderConfig = result.decoderConfig;
-      await this.ensureDecoder();
+      await this.ensureDecoder(expectedLookAheadToken);
       this.assertAlive();
+      this.assertCurrentLookAhead(expectedLookAheadToken);
     }
 
     if (!this.isDecoderUsable() && this.decoderConfig) {
-      await this.ensureDecoder();
+      await this.ensureDecoder(expectedLookAheadToken);
       this.assertAlive();
+      this.assertCurrentLookAhead(expectedLookAheadToken);
     }
 
     const samples = result && Array.isArray(result.samples) ? result.samples : [];
 
     for (let index = 0; index < samples.length; index += 1) {
       this.assertAlive();
+      this.assertCurrentLookAhead(expectedLookAheadToken);
       await this.waitForDecoderBackpressure();
+      this.assertCurrentLookAhead(expectedLookAheadToken);
 
       const sample = samples[index];
       if (!this.decodeSample(sample)) {
         break;
       }
+    }
+  }
+
+  assertCurrentLookAhead(expectedLookAheadToken) {
+    if (
+      typeof expectedLookAheadToken === 'number' &&
+      expectedLookAheadToken !== this.lookAheadToken
+    ) {
+      throw createAbortError('Producer lookahead superseded by a newer seek.');
     }
   }
 
@@ -2166,8 +2268,9 @@ class ProducerTrackPipeline {
     }
   }
 
-  async ensureDecoder() {
+  async ensureDecoder(expectedLookAheadToken = null) {
     this.assertAlive();
+    this.assertCurrentLookAhead(expectedLookAheadToken);
 
     if (this.isDecoderUsable()) {
       return;
@@ -2185,16 +2288,18 @@ class ProducerTrackPipeline {
       this.decoderStartupStaggerApplied = true;
       await sleep(this.decoderStartupStaggerMs);
       this.assertAlive();
+      this.assertCurrentLookAhead(expectedLookAheadToken);
     }
 
     const decoderConfig = this.decoderConfig;
     this.decoderVariants = buildDecoderConfigVariants(decoderConfig);
     this.decoderVariantIndex = 0;
-    await this.configureDecoderVariant();
+    await this.configureDecoderVariant(expectedLookAheadToken);
   }
 
-  async configureDecoderVariant() {
+  async configureDecoderVariant(expectedLookAheadToken = null) {
     this.assertAlive();
+    this.assertCurrentLookAhead(expectedLookAheadToken);
 
     const variant = this.decoderVariants[this.decoderVariantIndex];
     if (!variant) {
@@ -2215,6 +2320,7 @@ class ProducerTrackPipeline {
 
     const support = await AudioDecoder.isConfigSupported(decoderConfig);
     this.assertAlive();
+    this.assertCurrentLookAhead(expectedLookAheadToken);
 
     if (!support.supported) {
       throw new Error(
@@ -2469,6 +2575,10 @@ class ProducerTrackPipeline {
       const absoluteStartSample = Math.max(
         0,
         Math.round((audioData.timestamp * this.getOutputSampleRate()) / 1_000_000),
+      );
+      this.cacheHeadPcm(
+        absoluteStartSample,
+        pcm.subarray(0, audioData.numberOfFrames),
       );
       const writtenPinnedFrames = this.loopCacheManager.writePinnedPcm(
         this.track.trackIndex,
@@ -2813,6 +2923,77 @@ class ProducerTrackPipeline {
     this.lastNormalWriteEndSample = Math.max(0, Math.floor(Number(targetSample) || 0));
   }
 
+  cacheHeadPcm(absoluteStartSample, pcm) {
+    if (!pcm || pcm.length === 0) {
+      return;
+    }
+
+    const cacheCapacity = Math.max(
+      MIN_RING_WRITE_FRAMES,
+      Math.floor(this.getOutputSampleRate() * HEAD_PCM_CACHE_SECONDS),
+    );
+    if (!this.headPcmCache || this.headPcmCache.length !== cacheCapacity) {
+      if (this.headPcmCachedUntilSample > 0) {
+        return;
+      }
+      this.headPcmCache = new Float32Array(cacheCapacity);
+    }
+
+    const safeStartSample = Math.max(0, Math.floor(Number(absoluteStartSample) || 0));
+    if (safeStartSample >= cacheCapacity) {
+      return;
+    }
+
+    const frameCount = Math.min(pcm.length, cacheCapacity - safeStartSample);
+    if (frameCount <= 0) {
+      return;
+    }
+
+    this.headPcmCache.set(pcm.subarray(0, frameCount), safeStartSample);
+    this.headPcmCachedUntilSample = Math.max(
+      this.headPcmCachedUntilSample,
+      safeStartSample + frameCount,
+    );
+  }
+
+  restoreHeadPcmForSeek() {
+    if (!this.headPcmCache || this.headPcmCachedUntilSample <= 0) {
+      return 0;
+    }
+
+    const frameCount = Math.min(
+      this.headPcmCache.length,
+      this.headPcmCachedUntilSample,
+      this.ringWriter.availableWrite(),
+    );
+    if (frameCount <= 0) {
+      return 0;
+    }
+
+    const result = this.writeAnchoredNormalPcm(
+      0,
+      this.headPcmCache.subarray(0, frameCount),
+    );
+    if (result.writtenFrames > 0) {
+      this.decodedUntilSample = Math.max(this.decodedUntilSample, result.absoluteEndSample);
+      self.postMessage({
+        type: 'producer-ring-write',
+        sessionId: activeSessionId,
+        trackIndex: this.track.trackIndex,
+        absoluteStartSample: result.absolutePcmStartSample,
+        frameCount: result.writtenFrames,
+        paddedFrames: result.paddedFrames,
+        trimmedFrames: result.trimmedFrames,
+        absoluteWriteEndSample: result.absoluteEndSample,
+        availableRead: this.ringWriter.availableRead(),
+        availableWrite: this.ringWriter.availableWrite(),
+        source: 'head-cache',
+      });
+    }
+
+    return result.writtenFrames;
+  }
+
   getSyncAuditSnapshot() {
     const ring = this.ringWriter.getAuditSnapshot();
 
@@ -2891,9 +3072,20 @@ class ProducerTrackPipeline {
 
     const availableRead = this.ringWriter.availableRead();
     const hasEnoughAudio = availableRead >= pending.thresholdFrames;
+    const firstContentSample = this.firstNormalWriteStartSample;
+    const targetToFirstContentDelta =
+      typeof firstContentSample === 'number' ? firstContentSample - pending.targetSample : null;
+    const hasRealContentNearTarget =
+      targetToFirstContentDelta !== null &&
+      targetToFirstContentDelta <= SEEK_READY_CONTENT_TOLERANCE_FRAMES &&
+      this.lastNormalWriteEndSample - pending.targetSample >= pending.thresholdFrames;
+    const hasEnoughRealAudio = hasEnoughAudio && hasRealContentNearTarget;
+    const requiresRealContentNearTarget =
+      pending.decodePrerollFrames > 0 || pending.targetSample === 0;
+    const seekReady = requiresRealContentNearTarget ? hasEnoughRealAudio : hasEnoughAudio;
     const reachedEndWithAudio = this.endOfFileReached && availableRead > 0;
 
-    if (!hasEnoughAudio && !reachedEndWithAudio) {
+    if (!seekReady && !reachedEndWithAudio) {
       return;
     }
 
@@ -2908,6 +3100,12 @@ class ProducerTrackPipeline {
       availableRead,
       thresholdFrames: pending.thresholdFrames,
       decodedUntilSample: this.decodedUntilSample,
+      firstNormalWriteStartSample: this.firstNormalWriteStartSample,
+      lastNormalWriteEndSample: this.lastNormalWriteEndSample,
+      targetToFirstContentDelta,
+      decodePrerollFrames: pending.decodePrerollFrames,
+      demuxerTargetSample: pending.demuxerTargetSample,
+      realContentReady: hasEnoughRealAudio,
     });
     pending.resolve();
   }
@@ -2934,6 +3132,15 @@ class ProducerTrackPipeline {
       availableWrite: this.ringWriter.availableWrite(),
       thresholdFrames: pending.thresholdFrames,
       decodedUntilSample: this.decodedUntilSample,
+      firstNormalWriteStartSample: this.firstNormalWriteStartSample,
+      lastNormalWriteEndSample: this.lastNormalWriteEndSample,
+      targetToFirstContentDelta:
+        typeof this.firstNormalWriteStartSample === 'number'
+          ? this.firstNormalWriteStartSample - pending.targetSample
+          : null,
+      decodePrerollFrames: pending.decodePrerollFrames,
+      demuxerTargetSample: pending.demuxerTargetSample,
+      realContentReady: false,
       fallback: true,
       reason,
     });
@@ -3253,24 +3460,43 @@ const preparePinnedLoop = async (result, sessionId) => {
   });
 };
 
-const seekAllPipelines = async (targetSample, sessionId, seekSerial) => {
+const seekAllPipelines = async (
+  targetSample,
+  sessionId,
+  seekSerial,
+  decodePrerollFrames = 0,
+  hardReset = false,
+) => {
   const tasks = [];
   const safeSeekSerial = Math.max(0, Math.floor(Number(seekSerial) || 0));
+  const safeDecodePrerollFrames = Math.max(0, Math.floor(Number(decodePrerollFrames) || 0));
 
   for (const pipeline of trackPipelines.values()) {
-    const seekTask = pipeline.seekToSample(targetSample, sessionId, safeSeekSerial).catch((error) => {
-      if (isAbortError(error)) {
-        pipeline.postSeekReadyFallback(sessionId, 'abort', safeSeekSerial);
-        return;
-      }
+    const seekTask = pipeline
+      .seekToSample(
+        targetSample,
+        sessionId,
+        safeSeekSerial,
+        safeDecodePrerollFrames,
+        hardReset === true,
+      )
+      .catch((error) => {
+        if (isAbortError(error)) {
+          pipeline.postSeekReadyFallback(sessionId, 'abort', safeSeekSerial);
+          return;
+        }
 
-      throw error;
-    });
-    const softTimeoutTask = sleep(SEEK_HANDSHAKE_SOFT_TIMEOUT_MS).then(() => {
-      pipeline.postSeekReadyFallback(sessionId, 'soft-timeout', safeSeekSerial);
-    });
+        throw error;
+      });
+    if (safeDecodePrerollFrames > 0 || hardReset === true) {
+      tasks.push(seekTask);
+    } else {
+      const softTimeoutTask = sleep(SEEK_HANDSHAKE_SOFT_TIMEOUT_MS).then(() => {
+        pipeline.postSeekReadyFallback(sessionId, 'soft-timeout', safeSeekSerial);
+      });
 
-    tasks.push(Promise.race([seekTask, softTimeoutTask]));
+      tasks.push(Promise.race([seekTask, softTimeoutTask]));
+    }
   }
 
   const results = await Promise.allSettled(tasks);
@@ -3380,7 +3606,14 @@ self.onmessage = (event) => {
 	  if (message.type === 'seek') {
     const targetSample = Math.max(0, Math.floor(Number(message.targetSample) || 0));
     const seekSerial = Math.max(0, Math.floor(Number(message.seekSerial) || 0));
-    seekAllPipelines(targetSample, message.sessionId || activeSessionId, seekSerial).catch((error) => {
+    const decodePrerollFrames = Math.max(0, Math.floor(Number(message.decodePrerollFrames) || 0));
+    seekAllPipelines(
+      targetSample,
+      message.sessionId || activeSessionId,
+      seekSerial,
+      decodePrerollFrames,
+      message.hardReset === true,
+    ).catch((error) => {
       if (isAbortError(error)) {
         return;
       }

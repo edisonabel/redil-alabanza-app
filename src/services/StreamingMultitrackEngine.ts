@@ -329,6 +329,8 @@ type ProducerSeekMessage = {
   sessionId: number;
   targetSample: number;
   seekSerial: number;
+  decodePrerollFrames?: number;
+  hardReset?: boolean;
 };
 
 type ProducerWarmNextSessionMessage = {
@@ -549,6 +551,14 @@ type ProducerSeekReadyMessage = {
   availableRead?: number;
   thresholdFrames?: number;
   decodedUntilSample?: number;
+  firstNormalWriteStartSample?: number | null;
+  lastNormalWriteEndSample?: number;
+  targetToFirstContentDelta?: number | null;
+  decodePrerollFrames?: number;
+  demuxerTargetSample?: number;
+  realContentReady?: boolean;
+  fallback?: boolean;
+  reason?: string;
 };
 
 type ProducerSeekCompleteMessage = {
@@ -684,6 +694,7 @@ type PendingProducerSeek = {
   targetSample: number;
   targetTimeSeconds: number;
   expectedTrackCount: number;
+  requireCompleteReady: boolean;
   readyTracks: Set<number>;
   timeoutId: number;
   cancelled: boolean;
@@ -706,6 +717,14 @@ type SeekBackDebugEvent = {
   trackName?: string;
   availableRead?: number | null;
   thresholdFrames?: number | null;
+  firstSample?: number | null;
+  writeEnd?: number | null;
+  targetToFirstContentDelta?: number | null;
+  decodePrerollFrames?: number | null;
+  demuxerTargetSample?: number | null;
+  realContentReady?: boolean;
+  fallback?: boolean;
+  fallbackReason?: string;
   minAvailableRead?: number | null;
   readyAudibleTracks?: number;
   expectedAudibleTracks?: number;
@@ -910,6 +929,7 @@ const PRODUCER_STALE_MESSAGE_GRACE_MS = 5_000;
 const PRODUCER_STALE_RECHECK_DELAY_MS = 250;
 const PRODUCER_DIAGNOSTIC_RATE_LIMIT_MS = 10_000;
 const CONTENT_ALIGNMENT_GUARD_SECONDS = 20;
+const BACKWARD_SEEK_DECODE_PREROLL_SECONDS = 3;
 const FLIGHT_RECORDER_MIN_INTERVAL_MS = 5_000;
 const AAC_SAMPLE_RATE_INDEXES = new Map<number, number>([
   [96000, 0],
@@ -1591,6 +1611,14 @@ export class StreamingMultitrackEngine {
       availableRead: event.availableRead,
       minAvailableRead: event.minAvailableRead,
       thresholdFrames: event.thresholdFrames,
+      firstSample: event.firstSample,
+      writeEnd: event.writeEnd,
+      targetToFirstContentDelta: event.targetToFirstContentDelta,
+      decodePrerollFrames: event.decodePrerollFrames,
+      demuxerTargetSample: event.demuxerTargetSample,
+      realContentReady: event.realContentReady,
+      fallback: event.fallback,
+      fallbackReason: event.fallbackReason,
       readyAudibleTracks: event.readyAudibleTracks,
       expectedAudibleTracks: event.expectedAudibleTracks,
       readyTracks: event.readyTracks,
@@ -1630,6 +1658,24 @@ export class StreamingMultitrackEngine {
       trackName: this.tracks[message.trackIndex]?.name || this.tracks[message.trackIndex]?.id || `track ${message.trackIndex}`,
       availableRead: Number.isFinite(message.availableRead) ? Number(message.availableRead) : null,
       thresholdFrames: Number.isFinite(message.thresholdFrames) ? Number(message.thresholdFrames) : null,
+      firstSample: Number.isFinite(message.firstNormalWriteStartSample)
+        ? Number(message.firstNormalWriteStartSample)
+        : null,
+      writeEnd: Number.isFinite(message.lastNormalWriteEndSample)
+        ? Number(message.lastNormalWriteEndSample)
+        : null,
+      targetToFirstContentDelta: Number.isFinite(message.targetToFirstContentDelta)
+        ? Number(message.targetToFirstContentDelta)
+        : null,
+      decodePrerollFrames: Number.isFinite(message.decodePrerollFrames)
+        ? Number(message.decodePrerollFrames)
+        : 0,
+      demuxerTargetSample: Number.isFinite(message.demuxerTargetSample)
+        ? Number(message.demuxerTargetSample)
+        : null,
+      realContentReady: message.realContentReady === true,
+      fallback: message.fallback === true,
+      fallbackReason: message.reason,
       readyAudibleTracks: block.readyAudibleTracks.size,
       expectedAudibleTracks: block.expectedAudibleTracks.size,
       readyTracks: block.readyTracks.size,
@@ -2391,6 +2437,13 @@ export class StreamingMultitrackEngine {
         ? options.wasPlayingBeforeUiSeek
         : wasPlaying;
     const targetSample = Math.max(0, Math.round(clampedTime * this.context.sampleRate));
+    const isBackwardSeek = clampedTime < fromTime - 0.05;
+    const decodePrerollFrames = isBackwardSeek
+      ? Math.min(
+        targetSample,
+        Math.round(this.context.sampleRate * BACKWARD_SEEK_DECODE_PREROLL_SECONDS),
+      )
+      : 0;
     this.startBarrierSerial += 1;
 
     if (this.trackStates.length === 0) {
@@ -2410,6 +2463,7 @@ export class StreamingMultitrackEngine {
       const pendingSeek = this.createProducerSeekHandshake({
         targetSample,
         targetTimeSeconds: clampedTime,
+        requireCompleteReady: isBackwardSeek,
       });
       const seekSerial = pendingSeek.serial;
       this.activeSeekSerial = seekSerial;
@@ -2433,6 +2487,8 @@ export class StreamingMultitrackEngine {
         sessionId: this.producerSessionId,
         targetSample,
         seekSerial,
+        decodePrerollFrames,
+        hardReset: isBackwardSeek,
       });
       await pendingSeek.promise;
       if (
@@ -4061,6 +4117,23 @@ export class StreamingMultitrackEngine {
     const startBufferFrames = Math.round(this.context.sampleRate * MIN_START_BUFFER_SECONDS);
     const minFirstSample = summary.minFirstSample;
     const maxFirstSample = summary.maxFirstSample;
+
+    const appendTrackAuditFields = (fields: Record<string, unknown>) => {
+      summary.rows.forEach((row) => {
+        const prefix = `track${row.index}`;
+        fields[`${prefix}Name`] = row.track;
+        fields[`${prefix}FirstSample`] = row.firstAbs;
+        fields[`${prefix}WriteEnd`] = row.writeEndAbs;
+        fields[`${prefix}ReadIndex`] = row.readIndex;
+        fields[`${prefix}WriteIndex`] = row.writeIndex;
+        fields[`${prefix}AvailableRead`] = row.availableRead;
+        fields[`${prefix}AvailableWrite`] = row.availableWrite;
+        fields[`${prefix}DecodedUntil`] = row.decodedUntil;
+        fields[`${prefix}Initialized`] = row.initialized;
+        fields[`${prefix}Eof`] = row.eof;
+      });
+    };
+
     if (minFirstSample === null || maxFirstSample === null) {
       const silencePrerollRows = summary.rows.filter((row) => {
         const writeEndAbs = row.writeEndAbs;
@@ -4095,19 +4168,7 @@ export class StreamingMultitrackEngine {
         action: allRowsAreAlignedSilencePreroll ? 'allow-play' : 'blocked-play',
       };
 
-      summary.rows.forEach((row) => {
-        const prefix = `track${row.index}`;
-        fields[`${prefix}Name`] = row.track;
-        fields[`${prefix}FirstSample`] = row.firstAbs;
-        fields[`${prefix}WriteEnd`] = row.writeEndAbs;
-        fields[`${prefix}ReadIndex`] = row.readIndex;
-        fields[`${prefix}WriteIndex`] = row.writeIndex;
-        fields[`${prefix}AvailableRead`] = row.availableRead;
-        fields[`${prefix}AvailableWrite`] = row.availableWrite;
-        fields[`${prefix}DecodedUntil`] = row.decodedUntil;
-        fields[`${prefix}Initialized`] = row.initialized;
-        fields[`${prefix}Eof`] = row.eof;
-      });
+      appendTrackAuditFields(fields);
 
       if (allRowsAreAlignedSilencePreroll) {
         this.logFlatDiagnostic('[SPSC-BARRIER][CONTENT-SILENCE-PREROLL]', fields, 'info');
@@ -4161,6 +4222,7 @@ export class StreamingMultitrackEngine {
   private createProducerSeekHandshake(options: {
     targetSample: number;
     targetTimeSeconds: number;
+    requireCompleteReady?: boolean;
   }): PendingProducerSeek {
     this.cancelPendingProducerSeek();
 
@@ -4170,6 +4232,7 @@ export class StreamingMultitrackEngine {
     let resolveSeek!: () => void;
     let rejectSeek!: (reason?: unknown) => void;
     const expectedTrackCount = this.getActiveTrackStates().length;
+    const seekTimeoutMs = options.requireCompleteReady ? 8000 : 2500;
     const timeoutId = window.setTimeout(() => {
       const pending = this.pendingProducerSeek;
       if (!pending || pending.serial !== serial) {
@@ -4189,9 +4252,14 @@ export class StreamingMultitrackEngine {
         readyAudibleTracks: this.activeSeekDebugBlock?.readyAudibleTracks.size,
         expectedAudibleTracks: this.activeSeekDebugBlock?.expectedAudibleTracks.size,
       });
+      if (pending.requireCompleteReady) {
+        this.pendingProducerSeek = null;
+        rejectSeek(new Error('producer-seek-timeout: backward seek did not prepare all tracks.'));
+        return;
+      }
       this.pendingProducerSeek = null;
       resolveSeek();
-    }, 2500);
+    }, seekTimeoutMs);
 
     const pendingSeek: PendingProducerSeek = {
       serial,
@@ -4199,6 +4267,7 @@ export class StreamingMultitrackEngine {
       targetSample: options.targetSample,
       targetTimeSeconds: options.targetTimeSeconds,
       expectedTrackCount,
+      requireCompleteReady: options.requireCompleteReady === true,
       readyTracks: new Set<number>(),
       timeoutId,
       cancelled: false,
@@ -4244,6 +4313,10 @@ export class StreamingMultitrackEngine {
 
     if (this.isTrackIndexOmitted(message.trackIndex)) {
       pending.readyTracks.delete(message.trackIndex);
+      return;
+    }
+
+    if (pending.requireCompleteReady && message.fallback === true) {
       return;
     }
 

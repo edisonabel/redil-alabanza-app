@@ -151,6 +151,19 @@ export async function saveLiveDirectorSongSession(params: {
   return readJsonResponse(response);
 }
 
+export async function saveLiveDirectorSectionOffset(params: {
+  songId: string;
+  sectionOffsetSeconds: number;
+}): Promise<LiveDirectorPersistedSession> {
+  const response = await fetch('/api/live-director-song-session', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  return readJsonResponse(response);
+}
+
 export async function fetchLiveDirectorSongSession(
   songId: string,
 ): Promise<LiveDirectorPersistedSession | null> {

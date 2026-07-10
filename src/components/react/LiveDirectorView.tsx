@@ -45,6 +45,7 @@ import {
 import {
   deleteLiveDirectorSongSession,
   requestLiveDirectorUploadTarget,
+  saveLiveDirectorSectionOffset,
   saveLiveDirectorSongSession,
   uploadFileToLiveDirectorTarget,
 } from '../../utils/liveDirectorUploadClient';
@@ -544,14 +545,10 @@ export function LiveDirectorView({
   const lastChordScrollKeyRef = useRef('');
   const visualClockReaderRef = useRef<() => number>(() => 0);
   const [nativeEngineAvailable, setNativeEngineAvailable] = useState(() => (
-    engineSurface === 'ios-native' || isNativeLiveDirectorEngineAvailable()
+    engineSurface === 'ios-native'
   ));
   const isIOSNativeEngineSurface = engineSurface === 'ios-native' || nativeEngineAvailable;
-  const [useStreamingEngine, setUseStreamingEngine] = useState(() => (
-    engineSurface !== 'ios-native' &&
-    !isNativeLiveDirectorEngineAvailable() &&
-    canUseAdvancedStreamingEngine()
-  ));
+  const [useStreamingEngine, setUseStreamingEngine] = useState(false);
   const [hasResolvedEngineCapability, setHasResolvedEngineCapability] = useState(false);
   const passiveStreamingTelemetryEnabled = !isIOSNativeEngineSurface && useStreamingEngine;
   const webMultitrackEngine = useMultitrackEngine({
@@ -667,7 +664,8 @@ export function LiveDirectorView({
     setHasResolvedEngineCapability(true);
   }, [isIOSNativeEngineSurface]);
 
-  const canRunAdvancedStreamingEngine = !isIOSNativeEngineSurface && canUseAdvancedStreamingEngine();
+  const canRunAdvancedStreamingEngine =
+    hasResolvedEngineCapability && !isIOSNativeEngineSurface && canUseAdvancedStreamingEngine();
 
   const suspendNativeMeters = useCallback(() => {
     if (resumeNativeMetersTimeoutRef.current !== null) {
@@ -718,6 +716,7 @@ export function LiveDirectorView({
     initialSession ? toResolvedSession(initialSession) : null,
   );
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [sectionOffsetSaveError, setSectionOffsetSaveError] = useState<string | null>(null);
   const [dismissedLoadWarningKey, setDismissedLoadWarningKey] = useState<string | null>(null);
   const [trackLimitNotice, setTrackLimitNotice] = useState<{
     key: string;
@@ -787,9 +786,13 @@ export function LiveDirectorView({
   const [internalPadVolumeState, setInternalPadVolumeState] = useState(0.34);
   const [songCoverArtUrl, setSongCoverArtUrl] = useState<string | null>(null);
   const [queueSongCoverArtMap, setQueueSongCoverArtMap] = useState<Record<string, string | null>>({});
-  const getLivePlaybackTime = useCallback(() => (
-    passiveStreamingTelemetryEnabled ? passiveCurrentTimeRef.current : currentTime
-  ), [currentTime, passiveStreamingTelemetryEnabled]);
+  const getLivePlaybackTime = useCallback(() => {
+    if (visualSectionTimeRef.current !== null) {
+      return visualSectionTimeRef.current;
+    }
+
+    return passiveStreamingTelemetryEnabled ? passiveCurrentTimeRef.current : currentTime;
+  }, [currentTime, passiveStreamingTelemetryEnabled]);
   const setVisualSectionTime = useCallback((nextTime: number | null) => {
     visualSectionTimeRef.current = nextTime;
     setVisualSectionTimeState(nextTime);
@@ -848,6 +851,10 @@ export function LiveDirectorView({
       return Number.MAX_SAFE_INTEGER;
     }
 
+    if (!hasResolvedEngineCapability) {
+      return WEB_ENGINE_MAX_ACTIVE_TRACKS;
+    }
+
     const propLimit = Math.floor(Number(maxWebActiveTracks));
     if (Number.isFinite(propLimit) && propLimit > 0 && propLimit !== WEB_ENGINE_MAX_ACTIVE_TRACKS) {
       return propLimit;
@@ -870,7 +877,7 @@ export function LiveDirectorView({
       return SAFARI_WEB_MAX_ACTIVE_TRACKS;
     }
     return WEB_ENGINE_MAX_ACTIVE_TRACKS;
-  }, [canRunAdvancedStreamingEngine, isIOSNativeEngineSurface, maxWebActiveTracks, useStreamingEngine]);
+  }, [canRunAdvancedStreamingEngine, hasResolvedEngineCapability, isIOSNativeEngineSurface, maxWebActiveTracks, useStreamingEngine]);
   const sessionActiveTrackLimit = Math.max(1, activeTrackWarningThreshold);
   const trackLoadGuidanceText = useStreamingEngine || canRunAdvancedStreamingEngine
     ? 'Motor avanzado activo: puedes cargar todos los stems.'
@@ -1475,6 +1482,14 @@ export function LiveDirectorView({
     scrollContainer.scrollLeft = targetScrollLeft;
     setSectionsLaneScrollLeft(targetScrollLeft);
   }, [getSectionLaneProgressPxAtTime]);
+
+  const primeSectionVisuals = useCallback((targetTime: number) => {
+    const safeTargetTime = Math.max(0, Number(targetTime) || 0);
+    setVisualSectionTime(safeTargetTime);
+    passiveCurrentTimeRef.current = safeTargetTime;
+    releaseSectionsAutoFollowNow();
+    snapSectionsLaneToTime(safeTargetTime);
+  }, [releaseSectionsAutoFollowNow, setVisualSectionTime, snapSectionsLaneToTime]);
 
   // ─── Mini-map derived data ────────────────────────────────────────────────
   // Precompute section blocks as percentages of the full playback timeline.
@@ -2451,13 +2466,6 @@ export function LiveDirectorView({
       return;
     }
 
-    const primeSectionVisuals = (targetTime: number) => {
-      setVisualSectionTime(targetTime);
-      passiveCurrentTimeRef.current = targetTime;
-      releaseSectionsAutoFollowNow();
-      snapSectionsLaneToTime(targetTime);
-    };
-
     if (wasPlayingBeforeSectionSeek) {
       setVisualSectionTime(null);
     } else {
@@ -2540,10 +2548,9 @@ export function LiveDirectorView({
     hasTrackSession,
     isPlaying,
     isReady,
-    releaseSectionsAutoFollowNow,
+    primeSectionVisuals,
     seekTo,
     setVisualSectionTime,
-    snapSectionsLaneToTime,
   ]);
 
   const handleReturnToStart = useCallback(async () => {
@@ -2557,7 +2564,7 @@ export function LiveDirectorView({
 
     setIsReturnToStartBusy(true);
     if (!isPlaying) {
-      setVisualSectionTime(0);
+      primeSectionVisuals(0);
     }
 
     try {
@@ -2567,7 +2574,7 @@ export function LiveDirectorView({
     } finally {
       setIsReturnToStartBusy(false);
     }
-  }, [hasTrackSession, isPlaying, isTransportCueBusy, seekTo, setVisualSectionTime]);
+  }, [hasTrackSession, isPlaying, isTransportCueBusy, primeSectionVisuals, seekTo]);
 
   useEffect(() => {
     if (isIOSNativeEngineSurface) {
@@ -2762,42 +2769,39 @@ export function LiveDirectorView({
     ));
   }, []);
 
-  const commitSectionOffset = useCallback(async () => {
+  const commitSectionOffset = useCallback(async (): Promise<boolean> => {
     if (!hasPersistedSongContext || !manualSession) {
-      return;
+      return true;
     }
 
     const safeOffset = Number(manualSession.sectionOffsetSeconds) || 0;
-    const syncedTracks = manualSession.tracks.map((track) => ({
-      ...track,
-      volume: trackVolumes[track.id] ?? track.volume,
-      isMuted: mutedTrackIds.has(track.id),
-      outputRoute: trackOutputRoutes[track.id] ?? resolveTrackOutputRoute(track),
-    }));
-    const sessionPayload = buildSessionSavePayload({
-      mode: manualSession.mode,
-      tracks: syncedTracks,
-      unmatchedFiles: manualSession.unmatchedFiles || [],
-      sectionOffsetSeconds: safeOffset,
-    });
 
     try {
+      setSectionOffsetSaveError(null);
       setBusyMessage('Guardando desplazamiento de secciones...');
-      if (!sessionPayload) {
-        throw new Error('No se pudo preparar el guardado del desfase.');
-      }
-      const savedSession = await enqueueSessionSave(() => saveLiveDirectorSongSession({
+      const savedSession = await enqueueSessionSave(() => saveLiveDirectorSectionOffset({
         songId,
-        session: sessionPayload,
+        sectionOffsetSeconds: safeOffset,
       }));
-      syncManualSessionState(toResolvedSession(savedSession));
+      const savedOffset = Number.isFinite(Number(savedSession.sectionOffsetSeconds))
+        ? Number(savedSession.sectionOffsetSeconds)
+        : safeOffset;
+      setManualSession((previous) => (
+        previous ? { ...previous, sectionOffsetSeconds: savedOffset } : previous
+      ));
       onSessionPersisted?.(savedSession);
+      return true;
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : 'No se pudo guardar el offset de secciones.');
+      const message = error instanceof Error
+        ? error.message
+        : 'No se pudo guardar el offset de secciones.';
+      console.warn('[LiveDirectorView] Section offset save failed.', error);
+      setSectionOffsetSaveError(message);
+      return false;
     } finally {
       setBusyMessage(null);
     }
-  }, [buildSessionSavePayload, enqueueSessionSave, hasPersistedSongContext, manualSession, mutedTrackIds, onSessionPersisted, songId, syncManualSessionState, trackOutputRoutes, trackVolumes]);
+  }, [enqueueSessionSave, hasPersistedSongContext, manualSession, onSessionPersisted, songId]);
 
   const commitMixerStateSilent = useCallback((tracksOverride?: TrackData[]) => {
     if (!hasPersistedSongContext || !manualSession) {
@@ -2976,21 +2980,25 @@ export function LiveDirectorView({
   }, [capEnabledMapToTrackLimit, pendingEnabledMap, manualSession, hasPersistedSongContext, commitMixerStateSilent]);
 
   const handleOpenOffsetModal = useCallback(() => {
+    setSectionOffsetSaveError(null);
     offsetModalInitialValueRef.current = Number.isFinite(Number(manualSession?.sectionOffsetSeconds))
       ? Number(manualSession?.sectionOffsetSeconds)
       : 0;
     setShowOffsetModal(true);
   }, [manualSession?.sectionOffsetSeconds]);
 
-  const handleCloseOffsetModal = useCallback(() => {
-    setShowOffsetModal(false);
+  const handleCloseOffsetModal = useCallback(async () => {
     const currentOffset = Number.isFinite(Number(manualSession?.sectionOffsetSeconds))
       ? Number(manualSession?.sectionOffsetSeconds)
       : 0;
 
     if (offsetModalInitialValueRef.current !== null && offsetModalInitialValueRef.current !== currentOffset) {
-      void commitSectionOffset();
+      const saved = await commitSectionOffset();
+      if (!saved) {
+        return;
+      }
     }
+    setShowOffsetModal(false);
     offsetModalInitialValueRef.current = null;
   }, [commitSectionOffset, manualSession?.sectionOffsetSeconds]);
 
@@ -4295,7 +4303,7 @@ export function LiveDirectorView({
                 type="button"
                 onClick={() => {
                   if (showOffsetModal) {
-                    handleCloseOffsetModal();
+                    void handleCloseOffsetModal();
                   } else {
                     handleOpenOffsetModal();
                   }
@@ -4318,7 +4326,9 @@ export function LiveDirectorView({
                     </div>
                     <button
                       type="button"
-                      onClick={handleCloseOffsetModal}
+                      onClick={() => {
+                        void handleCloseOffsetModal();
+                      }}
                       className="ui-pressable-soft flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/26 text-white/58 hover:text-white"
                       aria-label="Cerrar ajuste de desfase"
                     >
@@ -4356,6 +4366,11 @@ export function LiveDirectorView({
                       +
                     </button>
                   </div>
+                  {sectionOffsetSaveError && (
+                    <p className="mt-2 text-[0.64rem] leading-snug text-rose-200/86" role="alert">
+                      {sectionOffsetSaveError}
+                    </p>
+                  )}
                 </div>
               )}
               <div className="relative h-full overflow-hidden bg-black/12">

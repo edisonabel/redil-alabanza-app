@@ -320,6 +320,81 @@ export const POST = async ({ request, cookies }) => {
   }
 };
 
+export const PATCH = async ({ request, cookies }) => {
+  try {
+    await requireAuthenticatedUser(cookies);
+
+    const body = await request.json().catch(() => ({}));
+    const songId = String(body?.songId || '').trim();
+    const rawOffset = Number(body?.sectionOffsetSeconds);
+
+    if (!songId) {
+      return jsonResponse({ error: 'Se requiere songId.' }, 400);
+    }
+
+    if (!Number.isFinite(rawOffset)) {
+      return jsonResponse({ error: 'sectionOffsetSeconds debe ser un numero valido.' }, 400);
+    }
+
+    const songRow = await fetchSongRow(songId);
+    if (!songRow) {
+      return jsonResponse({ error: 'La cancion solicitada no existe.' }, 404);
+    }
+
+    const currentSession = normalizePersistedLiveDirectorSession(songRow.multitrack_session, {
+      songId,
+      songTitle: String(songRow.titulo || ''),
+    });
+    if (!currentSession) {
+      return jsonResponse({ error: 'La cancion no tiene una sesion multitrack guardada.' }, 404);
+    }
+
+    const r2Context = createR2Context();
+    const folder = currentSession.folder || buildLiveDirectorSongFolder(songId, String(songRow.titulo || ''));
+    const manifestUrl = `${r2Context.publicBaseUrl}/${folder}/manifest.json`;
+    const persistedSession = {
+      ...currentSession,
+      version: 1,
+      songId,
+      songTitle: String(songRow.titulo || ''),
+      sectionOffsetSeconds: Math.round(rawOffset * 4) / 4,
+      folder,
+      manifestUrl,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await r2Context.client.send(
+      new PutObjectCommand({
+        Bucket: r2Context.bucket,
+        Key: `${folder}/manifest.json`,
+        ContentType: 'application/json',
+        Body: JSON.stringify(persistedSession, null, 2),
+      }),
+    );
+
+    const { error: updateError } = await supabase
+      .from('canciones')
+      .update({ multitrack_session: persistedSession })
+      .eq('id', songId);
+
+    if (updateError) {
+      if (String(updateError.message || '').toLowerCase().includes('multitrack_session')) {
+        throw new Error(
+          'La columna multitrack_session aun no existe. Ejecuta la migracion migrations/024_multitrack_session_canciones.sql.',
+        );
+      }
+      throw updateError;
+    }
+
+    return jsonResponse(persistedSession);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error interno del servidor.';
+    const status = message.startsWith('No autorizado') ? 401 : 500;
+    console.error('Live Director section offset save error:', error);
+    return jsonResponse({ error: message }, status);
+  }
+};
+
 export const DELETE = async ({ request, cookies }) => {
   try {
     await requireAuthenticatedUser(cookies);
