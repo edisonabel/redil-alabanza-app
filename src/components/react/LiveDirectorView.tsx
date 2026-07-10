@@ -522,7 +522,6 @@ export function LiveDirectorView({
   const passiveMixerLevelRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const passiveSectionPlayheadRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const passiveMinimapPlayheadRef = useRef<HTMLDivElement | null>(null);
-  const programmaticSectionsScrollUntilRef = useRef(0);
   const passiveFpsMonitorRef = useRef({
     lastSampleAt: 0,
     frames: 0,
@@ -1248,7 +1247,6 @@ export function LiveDirectorView({
             const targetScrollLeft = clamp(progressPx, 0, maxScrollLeft);
 
             if (Math.abs(scrollContainer.scrollLeft - targetScrollLeft) > 0.5) {
-              programmaticSectionsScrollUntilRef.current = frameTime + 80;
               scrollContainer.scrollLeft = targetScrollLeft;
             }
           }
@@ -1400,7 +1398,7 @@ export function LiveDirectorView({
           'is-active-section',
         );
 
-        const scrollTarget = nextLine || nextSection;
+        const scrollTarget = nextLine;
         const scrollKey =
           scrollTarget?.dataset.liveCueId ||
           scrollTarget?.dataset.liveSectionIndex ||
@@ -1478,7 +1476,6 @@ export function LiveDirectorView({
 
     const maxScrollLeft = Math.max(0, scrollContainer.scrollWidth - scrollContainer.clientWidth);
     const targetScrollLeft = clamp(getSectionLaneProgressPxAtTime(nextTime), 0, maxScrollLeft);
-    programmaticSectionsScrollUntilRef.current = performance.now() + 160;
     scrollContainer.scrollLeft = targetScrollLeft;
     setSectionsLaneScrollLeft(targetScrollLeft);
   }, [getSectionLaneProgressPxAtTime]);
@@ -1843,7 +1840,10 @@ export function LiveDirectorView({
   // big lane as the user pans. Throttled via rAF so intense drags don't spam
   // re-renders; state only commits once per frame.
   useEffect(() => {
-    if (!showSectionsPanel) return;
+    if (!showSectionsPanel) {
+      releaseSectionsAutoFollowNow();
+      return;
+    }
     const scrollContainer = sectionsLaneScrollRef.current;
     if (!scrollContainer) return;
 
@@ -1856,22 +1856,6 @@ export function LiveDirectorView({
     };
 
     const onScroll = () => {
-      if (performance.now() < programmaticSectionsScrollUntilRef.current) {
-        return;
-      }
-
-      isUserScrollingSectionsRef.current = true;
-      if (resumeSectionsAutoScrollTimeoutRef.current !== null) {
-        window.clearTimeout(resumeSectionsAutoScrollTimeoutRef.current);
-      }
-      setSectionsAutoFollowStatus('resuming');
-      resumeSectionsAutoScrollTimeoutRef.current = window.setTimeout(() => {
-        isUserScrollingSectionsRef.current = false;
-        sectionsAutoFollowShouldSmoothRef.current = true;
-        resumeSectionsAutoScrollTimeoutRef.current = null;
-        setSectionsAutoFollowStatus('auto');
-      }, SECTIONS_AUTO_FOLLOW_RESUME_MS);
-
       latest = scrollContainer.scrollLeft;
       if (rafId !== null) return;
       rafId = window.requestAnimationFrame(commit);
@@ -1883,12 +1867,8 @@ export function LiveDirectorView({
     return () => {
       scrollContainer.removeEventListener('scroll', onScroll);
       if (rafId !== null) window.cancelAnimationFrame(rafId);
-      if (resumeSectionsAutoScrollTimeoutRef.current !== null) {
-        window.clearTimeout(resumeSectionsAutoScrollTimeoutRef.current);
-        resumeSectionsAutoScrollTimeoutRef.current = null;
-      }
     };
-  }, [showSectionsPanel]);
+  }, [releaseSectionsAutoFollowNow, showSectionsPanel]);
 
   useEffect(() => {
     if (!showSectionsPanel) {
@@ -2455,6 +2435,7 @@ export function LiveDirectorView({
       return;
     }
 
+    releaseSectionsAutoFollowNow();
     const firstTargetTime = Math.max(0, nextTime);
     const wasPlayingBeforeSectionSeek = isPlaying;
     const playbackTimeBeforeFirstPrime = getLivePlaybackTime();
@@ -2549,6 +2530,7 @@ export function LiveDirectorView({
     isPlaying,
     isReady,
     primeSectionVisuals,
+    releaseSectionsAutoFollowNow,
     seekTo,
     setVisualSectionTime,
   ]);
@@ -2556,12 +2538,13 @@ export function LiveDirectorView({
   const handleReturnToStart = useCallback(async () => {
     if (
       !hasTrackSession ||
-      isTransportCueBusy ||
+      isTransportCueBusyRef.current ||
       (DISABLE_BACKWARD_SEEK_WHILE_PLAYING && isPlaying)
     ) {
       return;
     }
 
+    isTransportCueBusyRef.current = true;
     setIsReturnToStartBusy(true);
     if (!isPlaying) {
       primeSectionVisuals(0);
@@ -2572,9 +2555,10 @@ export function LiveDirectorView({
     } catch (error) {
       console.warn('[LiveDirectorView] Return to start failed.', error);
     } finally {
+      isTransportCueBusyRef.current = false;
       setIsReturnToStartBusy(false);
     }
-  }, [hasTrackSession, isPlaying, isTransportCueBusy, primeSectionVisuals, seekTo]);
+  }, [hasTrackSession, isPlaying, primeSectionVisuals, seekTo]);
 
   useEffect(() => {
     if (isIOSNativeEngineSurface) {
@@ -3570,7 +3554,7 @@ export function LiveDirectorView({
       return;
     }
 
-    const shouldResumeAutoFollow = dragState.captured || sectionsGestureExceededDragThresholdRef.current;
+    const shouldResumeAutoFollow = sectionsGestureExceededDragThresholdRef.current;
 
     if (container && dragState.captured && dragState.pointerId !== null) {
       try {
@@ -3616,7 +3600,7 @@ export function LiveDirectorView({
     if (!container || !dragState.active || dragState.pointerId !== event.pointerId) return;
 
     const deltaX = event.clientX - dragState.startX;
-    if (Math.abs(deltaX) < 2) return;
+    if (Math.abs(deltaX) < SECTION_DRAG_CLICK_SUPPRESS_THRESHOLD_PX) return;
 
     if (!dragState.captured) {
       // Hold (no timeout) once a real drag starts; a plain click must reach the
@@ -3634,9 +3618,7 @@ export function LiveDirectorView({
       }
     }
 
-    if (Math.abs(deltaX) >= SECTION_DRAG_CLICK_SUPPRESS_THRESHOLD_PX) {
-      sectionsGestureExceededDragThresholdRef.current = true;
-    }
+    sectionsGestureExceededDragThresholdRef.current = true;
 
     container.scrollLeft = dragState.startScrollLeft - deltaX;
     event.preventDefault();

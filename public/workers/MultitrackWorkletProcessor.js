@@ -453,7 +453,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
             : 1,
         samples: null,
         indices: null,
-        localSamples: new Float32Array(capacity),
+        localSamples: usesSharedMemory ? null : new Float32Array(capacity),
         localReadIndex: 0,
         localWriteIndex: 0,
         absoluteReadFrame: 0,
@@ -509,7 +509,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
           ? config.channelCount
           : track.channelCount;
 
-      if (!track.localSamples || track.localSamples.length !== capacity) {
+      if (usesSharedMemory) {
+        track.localSamples = null;
+      } else if (!track.localSamples || track.localSamples.length !== capacity) {
         track.localSamples = new Float32Array(capacity);
       }
 

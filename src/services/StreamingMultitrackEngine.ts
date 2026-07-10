@@ -703,6 +703,14 @@ type PendingProducerSeek = {
   reject: (reason?: unknown) => void;
 };
 
+type PendingWorkletFlush = {
+  serial: number;
+  timeoutId: number;
+  promise: Promise<void>;
+  resolve: () => void;
+  reject: (reason?: unknown) => void;
+};
+
 type SeekBackDirection = 'backward' | 'forward';
 
 type SeekBackDebugEvent = {
@@ -925,6 +933,7 @@ const MIN_START_BUFFER_SECONDS = 0.5;
 const START_BARRIER_POLL_INTERVAL_MS = 50;
 const START_BARRIER_BUFFERING_NOTICE_MS = 200;
 const START_BARRIER_TIMEOUT_MS = 30_000;
+const WORKLET_FLUSH_ACK_TIMEOUT_MS = 2_000;
 const PRODUCER_STALE_MESSAGE_GRACE_MS = 5_000;
 const PRODUCER_STALE_RECHECK_DELAY_MS = 250;
 const PRODUCER_DIAGNOSTIC_RATE_LIMIT_MS = 10_000;
@@ -1029,6 +1038,7 @@ export class StreamingMultitrackEngine {
   private producerSeekSerial = 0;
   private startBarrierSerial = 0;
   private pendingProducerSeek: PendingProducerSeek | null = null;
+  private pendingWorkletFlush: PendingWorkletFlush | null = null;
   private activeSeekDebugBlock: SeekBackDebugBlock | null = null;
   private pendingSyncAudit: Deferred<ProducerSyncAuditMessage> | null = null;
   private pendingPlaybackContentCheck: PlaybackContentCheck | null = null;
@@ -1447,6 +1457,7 @@ export class StreamingMultitrackEngine {
 
     await this.resumeContextIfNeeded();
     this.cancelPendingProducerSeek();
+    this.cancelPendingWorkletFlush();
     this.transportPlaying = false;
     this.startTime = 0;
     this.pauseTime = 0;
@@ -1631,6 +1642,8 @@ export class StreamingMultitrackEngine {
   }
 
   private recordSeekBackFlushConfirmed(seekSerial?: number): void {
+    this.resolvePendingWorkletFlush(seekSerial);
+
     const block = this.activeSeekDebugBlock;
     if (!block || block.finalized || seekSerial !== block.seekSerial) {
       return;
@@ -2438,6 +2451,7 @@ export class StreamingMultitrackEngine {
         : wasPlaying;
     const targetSample = Math.max(0, Math.round(clampedTime * this.context.sampleRate));
     const isBackwardSeek = clampedTime < fromTime - 0.05;
+    const requiresHardReset = isBackwardSeek || targetSample === 0;
     const decodePrerollFrames = isBackwardSeek
       ? Math.min(
         targetSample,
@@ -2463,9 +2477,10 @@ export class StreamingMultitrackEngine {
       const pendingSeek = this.createProducerSeekHandshake({
         targetSample,
         targetTimeSeconds: clampedTime,
-        requireCompleteReady: isBackwardSeek,
+        requireCompleteReady: requiresHardReset,
       });
       const seekSerial = pendingSeek.serial;
+      const pendingFlush = this.createWorkletFlushHandshake(seekSerial);
       this.activeSeekSerial = seekSerial;
       this.startSeekBackDebug({
         seekSerial,
@@ -2482,13 +2497,26 @@ export class StreamingMultitrackEngine {
         seekSerial,
       });
       this.recordSeekBackDebugEvent('pause-and-flush-sent');
+      try {
+        await pendingFlush.promise;
+      } catch (error) {
+        this.cancelPendingProducerSeek();
+        throw error;
+      }
+      if (
+        pendingSeek.cancelled ||
+        this.producerSeekSerial !== pendingSeek.serial ||
+        this.activeSeekSerial !== seekSerial
+      ) {
+        return;
+      }
       this.postProducerMessage({
         type: 'seek',
         sessionId: this.producerSessionId,
         targetSample,
         seekSerial,
         decodePrerollFrames,
-        hardReset: isBackwardSeek,
+        hardReset: requiresHardReset,
       });
       await pendingSeek.promise;
       if (
@@ -2693,6 +2721,7 @@ export class StreamingMultitrackEngine {
     this.suspensionStaleEmitted = false;
     this.startBarrierSerial += 1;
     this.cancelPendingProducerSeek();
+    this.cancelPendingWorkletFlush();
     this.transportPlaying = false;
     this.startTime = 0;
     this.pauseTime = Math.max(0, currentPosition);
@@ -2734,6 +2763,7 @@ export class StreamingMultitrackEngine {
       this.suspensionCheckTimerId = null;
     }
     this.cancelPendingProducerSeek();
+    this.cancelPendingWorkletFlush();
     this.releasePreloadedNextSession();
     this.transportPlaying = false;
     this.startTime = 0;
@@ -4285,6 +4315,58 @@ export class StreamingMultitrackEngine {
       pendingSeek.resolve();
     }
     return pendingSeek;
+  }
+
+  private createWorkletFlushHandshake(serial: number): PendingWorkletFlush {
+    this.cancelPendingWorkletFlush();
+
+    let resolveFlush!: () => void;
+    let rejectFlush!: (reason?: unknown) => void;
+    const timeoutId = window.setTimeout(() => {
+      const pending = this.pendingWorkletFlush;
+      if (!pending || pending.serial !== serial) {
+        return;
+      }
+
+      this.pendingWorkletFlush = null;
+      rejectFlush(new Error('worklet-flush-timeout: audio buffers were not cleared before seek.'));
+    }, WORKLET_FLUSH_ACK_TIMEOUT_MS);
+
+    const pendingFlush: PendingWorkletFlush = {
+      serial,
+      timeoutId,
+      promise: new Promise<void>((resolve, reject) => {
+        resolveFlush = resolve;
+        rejectFlush = reject;
+      }),
+      resolve: resolveFlush,
+      reject: rejectFlush,
+    };
+
+    this.pendingWorkletFlush = pendingFlush;
+    return pendingFlush;
+  }
+
+  private resolvePendingWorkletFlush(seekSerial?: number): void {
+    const pending = this.pendingWorkletFlush;
+    if (!pending || seekSerial !== pending.serial) {
+      return;
+    }
+
+    window.clearTimeout(pending.timeoutId);
+    this.pendingWorkletFlush = null;
+    pending.resolve();
+  }
+
+  private cancelPendingWorkletFlush(): void {
+    const pending = this.pendingWorkletFlush;
+    if (!pending) {
+      return;
+    }
+
+    window.clearTimeout(pending.timeoutId);
+    this.pendingWorkletFlush = null;
+    pending.resolve();
   }
 
   private cancelPendingProducerSeek(): void {

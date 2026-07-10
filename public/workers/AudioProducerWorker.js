@@ -21,7 +21,6 @@ const MAX_AHEAD_SECONDS = 10;
 const MIN_RING_WRITE_FRAMES = 1024;
 const DECODER_RECOVERY_SAMPLE_LIMIT = 8;
 const SEEK_READY_SECONDS = 0.5;
-const HEAD_PCM_CACHE_SECONDS = 1;
 const SEEK_READY_CONTENT_TOLERANCE_FRAMES = MIN_RING_WRITE_FRAMES * 4;
 const SEEK_HANDSHAKE_SOFT_TIMEOUT_MS = 2500;
 const TRACK_READY_WATCHDOG_MS = 60000;
@@ -40,6 +39,7 @@ const MICRO_SYNC_LOG_THRESHOLD_FRAMES = 8;
 const MICRO_SYNC_DEADZONE_SECONDS = 0.025;
 const MICRO_SYNC_POST_COOLDOWN_MS = 2000;
 const RING_BACKPRESSURE_POST_INTERVAL_MS = 10000;
+const RING_WRITE_STATUS_POST_INTERVAL_MS = 1000;
 
 let mp4BoxModulePromise = null;
 
@@ -1413,8 +1413,6 @@ class ProducerTrackPipeline {
     this.pendingSeekReady = null;
     this.currentSeekSerial = 0;
     this.seekOperationToken = 0;
-    this.headPcmCache = null;
-    this.headPcmCachedUntilSample = 0;
     this.preWarmedSamples = [];
     this.preWarmedDecoderConfig = null;
     this.preWarmedNextFileStart = 0;
@@ -1429,6 +1427,7 @@ class ProducerTrackPipeline {
     this.decoderQueueOverloadStartedAt = 0;
     this.lastDecoderQueueAlertAt = 0;
     this.lastRingBackpressurePostAt = 0;
+    this.lastRingWriteStatusPostAt = 0;
     this.lastMicroSyncCorrectionPostAt = 0;
     this.startupWatchdogCompleted = false;
     this.unsupportedFormat = this.fetcher.unsupportedFormat === true;
@@ -1476,8 +1475,6 @@ class ProducerTrackPipeline {
     this.preWarmedDecoderConfig = null;
     this.preWarmedNextFileStart = 0;
     this.preWarmedDurationSeconds = undefined;
-    this.headPcmCache = null;
-    this.headPcmCachedUntilSample = 0;
     this.ready = false;
     this.normalReadyPosted = false;
     this.endOfFileReached = true;
@@ -1924,9 +1921,7 @@ class ProducerTrackPipeline {
     this.fetcher.abort();
     if (hardReset) {
       this.resetDecoderForHardSeek();
-      if (safeTargetSample > 0) {
-        this.resetDemuxerForHardSeek();
-      }
+      this.resetDemuxerForHardSeek();
     } else {
       await this.flushDecoderForSeek();
     }
@@ -1945,15 +1940,18 @@ class ProducerTrackPipeline {
     await this.ensureReady();
     this.assertCurrentSeekOperation(operationToken, safeSeekSerial);
 
-    const seekTimeSeconds = demuxerTargetSample / this.getOutputSampleRate();
-    const seekResult = this.demuxer.seek(seekTimeSeconds, true);
+    const rebuiltFromHead = hardReset && safeTargetSample === 0;
+    if (!rebuiltFromHead) {
+      const seekTimeSeconds = demuxerTargetSample / this.getOutputSampleRate();
+      const seekResult = this.demuxer.seek(seekTimeSeconds, true);
 
-    if (this.demuxer) {
-      this.demuxer.resetPending();
-    }
+      if (this.demuxer) {
+        this.demuxer.resetPending();
+      }
 
-    if (seekResult && typeof seekResult.nextFileStart === 'number') {
-      this.nextFileStart = seekResult.nextFileStart;
+      if (seekResult && typeof seekResult.nextFileStart === 'number') {
+        this.nextFileStart = seekResult.nextFileStart;
+      }
     }
 
     return new Promise((resolve, reject) => {
@@ -1976,9 +1974,6 @@ class ProducerTrackPipeline {
         reject,
       };
 
-      if (hardReset && safeTargetSample === 0) {
-        this.restoreHeadPcmForSeek();
-      }
       this.startLookAhead(sessionId, safeSeekSerial);
       this.postSeekReadyIfAvailable();
     });
@@ -2034,6 +2029,7 @@ class ProducerTrackPipeline {
     this.decoderConfig = null;
     this.decoderVariants = [];
     this.decoderVariantIndex = 0;
+    this.decoderStartupStaggerApplied = false;
     this.nextFileStart = 0;
     this.ready = false;
   }
@@ -2576,10 +2572,6 @@ class ProducerTrackPipeline {
         0,
         Math.round((audioData.timestamp * this.getOutputSampleRate()) / 1_000_000),
       );
-      this.cacheHeadPcm(
-        absoluteStartSample,
-        pcm.subarray(0, audioData.numberOfFrames),
-      );
       const writtenPinnedFrames = this.loopCacheManager.writePinnedPcm(
         this.track.trackIndex,
         absoluteStartSample,
@@ -2693,18 +2685,7 @@ class ProducerTrackPipeline {
     }
 
     if (writtenFrames > 0) {
-      self.postMessage({
-        type: 'producer-ring-write',
-        sessionId: activeSessionId,
-        trackIndex: this.track.trackIndex,
-        absoluteStartSample: result.absolutePcmStartSample,
-        frameCount: writtenFrames,
-        paddedFrames: result.paddedFrames,
-        trimmedFrames: result.trimmedFrames,
-        absoluteWriteEndSample: result.absoluteEndSample,
-        availableRead: this.ringWriter.availableRead(),
-        availableWrite: this.ringWriter.availableWrite(),
-      });
+      this.postRingWriteStatus(result, writtenFrames);
       this.postSeekReadyIfAvailable();
     }
 
@@ -2888,18 +2869,7 @@ class ProducerTrackPipeline {
       );
 
       if (writtenFrames > 0) {
-        self.postMessage({
-          type: 'producer-ring-write',
-          sessionId: activeSessionId,
-          trackIndex: this.track.trackIndex,
-          absoluteStartSample: result.absolutePcmStartSample,
-          frameCount: writtenFrames,
-          paddedFrames: result.paddedFrames,
-          trimmedFrames: result.trimmedFrames,
-          absoluteWriteEndSample: result.absoluteEndSample,
-          availableRead: this.ringWriter.availableRead(),
-          availableWrite: this.ringWriter.availableWrite(),
-        });
+        this.postRingWriteStatus(result, writtenFrames);
         this.postSeekReadyIfAvailable();
       }
 
@@ -2923,75 +2893,25 @@ class ProducerTrackPipeline {
     this.lastNormalWriteEndSample = Math.max(0, Math.floor(Number(targetSample) || 0));
   }
 
-  cacheHeadPcm(absoluteStartSample, pcm) {
-    if (!pcm || pcm.length === 0) {
+  postRingWriteStatus(result, frameCount) {
+    const now = Date.now();
+    if (now - this.lastRingWriteStatusPostAt < RING_WRITE_STATUS_POST_INTERVAL_MS) {
       return;
     }
 
-    const cacheCapacity = Math.max(
-      MIN_RING_WRITE_FRAMES,
-      Math.floor(this.getOutputSampleRate() * HEAD_PCM_CACHE_SECONDS),
-    );
-    if (!this.headPcmCache || this.headPcmCache.length !== cacheCapacity) {
-      if (this.headPcmCachedUntilSample > 0) {
-        return;
-      }
-      this.headPcmCache = new Float32Array(cacheCapacity);
-    }
-
-    const safeStartSample = Math.max(0, Math.floor(Number(absoluteStartSample) || 0));
-    if (safeStartSample >= cacheCapacity) {
-      return;
-    }
-
-    const frameCount = Math.min(pcm.length, cacheCapacity - safeStartSample);
-    if (frameCount <= 0) {
-      return;
-    }
-
-    this.headPcmCache.set(pcm.subarray(0, frameCount), safeStartSample);
-    this.headPcmCachedUntilSample = Math.max(
-      this.headPcmCachedUntilSample,
-      safeStartSample + frameCount,
-    );
-  }
-
-  restoreHeadPcmForSeek() {
-    if (!this.headPcmCache || this.headPcmCachedUntilSample <= 0) {
-      return 0;
-    }
-
-    const frameCount = Math.min(
-      this.headPcmCache.length,
-      this.headPcmCachedUntilSample,
-      this.ringWriter.availableWrite(),
-    );
-    if (frameCount <= 0) {
-      return 0;
-    }
-
-    const result = this.writeAnchoredNormalPcm(
-      0,
-      this.headPcmCache.subarray(0, frameCount),
-    );
-    if (result.writtenFrames > 0) {
-      this.decodedUntilSample = Math.max(this.decodedUntilSample, result.absoluteEndSample);
-      self.postMessage({
-        type: 'producer-ring-write',
-        sessionId: activeSessionId,
-        trackIndex: this.track.trackIndex,
-        absoluteStartSample: result.absolutePcmStartSample,
-        frameCount: result.writtenFrames,
-        paddedFrames: result.paddedFrames,
-        trimmedFrames: result.trimmedFrames,
-        absoluteWriteEndSample: result.absoluteEndSample,
-        availableRead: this.ringWriter.availableRead(),
-        availableWrite: this.ringWriter.availableWrite(),
-        source: 'head-cache',
-      });
-    }
-
-    return result.writtenFrames;
+    this.lastRingWriteStatusPostAt = now;
+    self.postMessage({
+      type: 'producer-ring-write',
+      sessionId: activeSessionId,
+      trackIndex: this.track.trackIndex,
+      absoluteStartSample: result.absolutePcmStartSample,
+      frameCount,
+      paddedFrames: result.paddedFrames,
+      trimmedFrames: result.trimmedFrames,
+      absoluteWriteEndSample: result.absoluteEndSample,
+      availableRead: this.ringWriter.availableRead(),
+      availableWrite: this.ringWriter.availableWrite(),
+    });
   }
 
   getSyncAuditSnapshot() {
