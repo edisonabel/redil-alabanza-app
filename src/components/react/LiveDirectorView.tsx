@@ -3,9 +3,9 @@
   AlertTriangle,
   AudioWaveform,
   ChevronLeft,
-  ChevronsLeft,
-  ChevronsRight,
+  ChevronRight,
   FolderOpen,
+  Infinity,
   ListMusic,
   Pause,
   Play,
@@ -117,7 +117,6 @@ type LiveDirectorOperationalChip = {
 };
 
 const EMPTY_QUEUE_SONGS: LiveDirectorQueueSong[] = [];
-const EMPTY_OPERATIONAL_CHIPS: LiveDirectorOperationalChip[] = [];
 
 type LiveDirectorPlaybackSnapshot = {
   songId: string;
@@ -280,6 +279,14 @@ const SEQUENCE_FILE_ACCEPT = '.aac,.m4a,audio/aac,audio/mp4,audio/x-m4a,audio/*'
 
 const CONTROL_CARD =
   'ui-pressable-soft flex items-center justify-center rounded-[1.55rem] border border-white/8 bg-[linear-gradient(180deg,rgba(26,27,29,0.96),rgba(17,18,20,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_24px_40px_rgba(0,0,0,0.25)] transition-all duration-200';
+
+function KeyboardHint({ children }: { children: string }) {
+  return (
+    <span className="pointer-events-none absolute right-1.5 top-1.5 z-10 rounded-md border border-white/12 bg-black/58 px-1.5 py-0.5 text-[0.5rem] font-black leading-none text-white/76 opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+      {children}
+    </span>
+  );
+}
 
 function CongregationFadeIcon({ muted, fading }: { muted: boolean; fading: boolean }) {
   const fillClip = muted ? 'inset(0 100% 0 0)' : 'inset(0 0% 0 0)';
@@ -493,7 +500,6 @@ export function LiveDirectorView({
   queueSongs = EMPTY_QUEUE_SONGS,
   activeQueueSongId = '',
   onSelectQueueSong,
-  operationalChips = EMPTY_OPERATIONAL_CHIPS,
   internalPadVolume,
   onInternalPadVolumeChange,
   onPlaybackSnapshot,
@@ -835,6 +841,7 @@ export function LiveDirectorView({
   const [loopEnabled, setLoopEnabled] = useState(false);
   const [surfaceView, setSurfaceView] = useState<SurfaceView>('mix');
   const [showOffsetModal, setShowOffsetModal] = useState(false);
+  const [showStemsActionModal, setShowStemsActionModal] = useState(false);
   const [showTrackLoadModal, setShowTrackLoadModal] = useState(false);
   const [pendingEnabledMap, setPendingEnabledMap] = useState<Record<string, boolean> | null>(null);
   const [isReturnToStartBusy, setIsReturnToStartBusy] = useState(false);
@@ -877,7 +884,28 @@ export function LiveDirectorView({
       `${clamp(baseRem * layoutScale, minRem, maxRem).toFixed(3)}rem`,
     [layoutScale],
   );
-  const headerMinWidth = useMemo(() => scaleRem(52, 42), [scaleRem]);
+  const isToolbarCompactLandscape = viewportWidth > 0 && viewportWidth < 760;
+  const headerMinWidth = useMemo(
+    () => (
+      isUltraCompactLandscape
+        ? '30rem'
+        : isToolbarCompactLandscape
+          ? '34rem'
+          : scaleRem(58, 46)
+    ),
+    [isToolbarCompactLandscape, isUltraCompactLandscape, scaleRem],
+  );
+  const toolbarHeaderStyle = useMemo<CSSProperties>(
+    () => (
+      isToolbarCompactLandscape
+        ? { minWidth: headerMinWidth }
+        : {
+          minWidth: headerMinWidth,
+          gridTemplateColumns: '35% 3% 49% 5% 8%',
+        }
+    ),
+    [headerMinWidth, isToolbarCompactLandscape],
+  );
   const mixerLayoutColumns = useMemo(
     () =>
       isUltraCompactLandscape
@@ -1001,13 +1029,22 @@ export function LiveDirectorView({
       ? `${activeTracks.length} stem${activeTracks.length === 1 ? '' : 's'} activo${activeTracks.length === 1 ? '' : 's'}`
       : 'Secuencia unica';
   const canToggleTrackLoad = !hasProvidedTracks && manualSession?.mode === 'folder' && sessionTracks.length > 1;
+  const canUseStemsToolbar = sessionTracks.length > 1 && activeTracks.length > 0;
+  const areAllActiveTracksMuted =
+    hasTrackSession && activeTracks.length > 0 && activeTracks.every((track) => mutedTrackIds.has(track.id));
+  const isStemsToolbarActive = canToggleTrackLoad
+    ? enabledSessionTracks.length !== sessionTracks.length
+    : areAllActiveTracksMuted;
   const useWideTrackLoadModal = !isPortrait;
   const showSectionsPanel = surfaceView === 'sections';
   const displayBpm = Number.isFinite(Number(bpm)) ? Math.max(0, Math.round(Number(bpm))) : 0;
   const songCardTitle = songTitle || currentSessionLabel;
   const performerLabel = isEnsayoMode
     ? String(title || '').replace(/^Modo Ensayo\s*[-·]?\s*/i, '').trim()
-    : title?.replace(/^Live Director\s*-\s*/i, '').trim() || '';
+    : title
+      ?.replace(/^Live Director\s*-\s*/i, '')
+      .replace(/^Audio Lab\s*[-·]\s*/i, '')
+      .trim() || '';
   const songCardMeta = isEnsayoMode
     ? [subtitle, songKey].filter(Boolean).join(' · ') || sessionModeLabel
     : [performerLabel, songKey].filter(Boolean).join(' · ') || sessionModeLabel;
@@ -1037,13 +1074,6 @@ export function LiveDirectorView({
       },
     ];
   }, [isEnsayoMode, queueSongs, songId, songCardTitle, songCardMeta, songMp3]);
-  const headerOperationalChips = useMemo<LiveDirectorOperationalChip[]>(
-    () =>
-      isEnsayoMode
-        ? operationalChips.filter((chip) => chip.id === 'offline' && chip.value.includes('/'))
-        : [],
-    [isEnsayoMode, operationalChips],
-  );
   const sectionOffsetSeconds = Number.isFinite(Number(manualSession?.sectionOffsetSeconds))
     ? Number(manualSession?.sectionOffsetSeconds)
     : 0;
@@ -1672,14 +1702,14 @@ export function LiveDirectorView({
       };
     });
 
-    if (isEnsayoMode && (resolvedPadUrl || isPadActive)) {
+    if (resolvedPadUrl || isPadActive) {
       const padEnvelope = trackEnvelopes[INTERNAL_PAD_TRACK_ID];
       const padEnvelopeLevel = isPlaying && isPadActive
         ? sampleActivityEnvelope(padEnvelope, currentTime)
         : 0;
       const padTrack: MixerTrackView = {
         id: INTERNAL_PAD_TRACK_ID,
-        label: 'Pad Int.',
+        label: 'Pad tonal',
         shortLabel: 'PAD',
         accent: '#43c477',
         defaultVolume: resolvedInternalPadVolume,
@@ -1710,7 +1740,7 @@ export function LiveDirectorView({
     }
 
     return resolvedMixerTracks;
-  }, [activeTracks, currentTime, isEnsayoMode, isPadActive, isPlaying, mutedTrackIds, omittedWarningByTrackId, resolvedInternalPadVolume, resolvedPadUrl, soloTrackId, trackEnvelopes, trackLevels, trackOutputRoutes, trackVolumes]);
+  }, [activeTracks, currentTime, isPadActive, isPlaying, mutedTrackIds, omittedWarningByTrackId, resolvedInternalPadVolume, resolvedPadUrl, soloTrackId, trackEnvelopes, trackLevels, trackOutputRoutes, trackVolumes]);
 
   // Precompute the mixer scroll container style so it isn't re-created on
   // every tick of the visual clock. The grid template only actually changes
@@ -1860,6 +1890,7 @@ export function LiveDirectorView({
 
   useEffect(() => {
     if (!canToggleTrackLoad) {
+      setShowStemsActionModal(false);
       setShowTrackLoadModal(false);
     }
   }, [canToggleTrackLoad]);
@@ -3042,7 +3073,12 @@ export function LiveDirectorView({
     return nextMap;
   }, [sessionActiveTrackLimit, sessionTracks]);
 
-  const handleCloseTrackLoadModal = useCallback(() => {
+  const handleCancelTrackLoadModal = useCallback(() => {
+    setPendingEnabledMap(null);
+    setShowTrackLoadModal(false);
+  }, []);
+
+  const handleApplyTrackLoadModal = useCallback(() => {
     if (pendingEnabledMap && manualSession) {
       const cappedEnabledMap = capEnabledMapToTrackLimit(pendingEnabledMap);
       const nextTracks = manualSession.tracks.map((track) => {
@@ -3063,6 +3099,21 @@ export function LiveDirectorView({
     setPendingEnabledMap(null);
     setShowTrackLoadModal(false);
   }, [capEnabledMapToTrackLimit, pendingEnabledMap, manualSession, hasPersistedSongContext, commitMixerStateSilent]);
+
+  const handleOpenTrackLoadModal = useCallback(() => {
+    const initial: Record<string, boolean> = {};
+    (manualSession?.tracks || []).forEach((track) => { initial[track.id] = track.enabled !== false; });
+    setPendingEnabledMap(capEnabledMapToTrackLimit(initial));
+    setShowStemsActionModal(false);
+    setShowTrackLoadModal(true);
+  }, [capEnabledMapToTrackLimit, manualSession?.tracks]);
+
+  const handleOpenStemsLoader = useCallback(() => {
+    setShowStemsActionModal(false);
+    setShowTrackLoadModal(false);
+    setLoaderMode('folder');
+    setShowLoadPanel(true);
+  }, []);
 
   const handleOpenOffsetModal = useCallback(() => {
     setSectionOffsetSaveError(null);
@@ -3341,24 +3392,18 @@ export function LiveDirectorView({
     };
   }, [isIOSNativeEngineSurface, songCardTitle, songTitle, performerLabel, songKey]);
 
-  const handleLoopIn = () => {
-    if (activeSection) {
-      setLoopPoints(activeSection.startTime, activeSection.endTime);
-    } else {
-      const safeStart = clamp(currentTime, 0, playbackTimelineDuration);
-      setLoopPoints(safeStart, Math.min(playbackTimelineDuration, safeStart + 8));
-    }
+  const handleToggleLoop = () => {
     if (!loopEnabled) {
-      toggleLoop();
-      setLoopEnabled(true);
+      if (activeSection) {
+        setLoopPoints(activeSection.startTime, activeSection.endTime);
+      } else {
+        const safeStart = clamp(currentTime, 0, playbackTimelineDuration);
+        setLoopPoints(safeStart, Math.min(playbackTimelineDuration, safeStart + 8));
+      }
     }
-  };
 
-  const handleLoopOut = () => {
-    if (loopEnabled) {
-      toggleLoop();
-      setLoopEnabled(false);
-    }
+    toggleLoop();
+    setLoopEnabled((previous) => !previous);
   };
 
   const handleMuteTrack = (trackId: string) => {
@@ -3376,6 +3421,34 @@ export function LiveDirectorView({
       }
       return next;
     });
+  };
+
+  const handleToggleAllActiveStems = () => {
+    if (!hasTrackSession) {
+      return;
+    }
+
+    const nextMuteAll = !areAllActiveTracksMuted;
+    activeTracks.forEach((track) => {
+      const currentlyMuted = mutedTrackIds.has(track.id);
+      if (nextMuteAll !== currentlyMuted) {
+        toggleMute(track.id);
+      }
+    });
+    setMutedTrackIds(nextMuteAll ? new Set(activeTracks.map((track) => track.id)) : new Set());
+  };
+
+  const handleStemsToolbarAction = () => {
+    if (!canUseStemsToolbar) {
+      return;
+    }
+
+    if (canToggleTrackLoad) {
+      setShowStemsActionModal(true);
+      return;
+    }
+
+    handleToggleAllActiveStems();
   };
 
   const handleSoloTrack = (trackId: string) => {
@@ -3625,6 +3698,7 @@ export function LiveDirectorView({
 
       if (
         showLoadPanel ||
+        showStemsActionModal ||
         showTrackLoadModal ||
         showOffsetModal ||
         showBackConfirm
@@ -3640,6 +3714,67 @@ export function LiveDirectorView({
       const isRightSectionArrow = event.key === 'ArrowRight' || event.code === 'ArrowRight';
       const isSectionArrow = isLeftSectionArrow || isRightSectionArrow;
       const sectionShortcutTargetBlocked = shouldIgnoreSectionKeyboardTarget(event.target);
+      const globalShortcutTargetBlocked = shouldIgnoreSectionKeyboardTarget(event.target);
+
+      if (desktopSectionKeyboardEnabled && !globalShortcutTargetBlocked) {
+        if (event.code === 'BracketLeft') {
+          event.preventDefault();
+          handlePreviousSection();
+          return;
+        }
+
+        if (event.code === 'BracketRight') {
+          event.preventDefault();
+          handleNextSection();
+          return;
+        }
+
+        if (event.code === 'KeyV') {
+          event.preventDefault();
+          setSurfaceView((previous) => previous === 'mix' ? 'sections' : 'mix');
+          return;
+        }
+
+        if (event.code === 'KeyL' && hasTrackSession) {
+          event.preventDefault();
+          handleToggleLoop();
+          return;
+        }
+
+        if (event.code === 'KeyP' && resolvedPadUrl) {
+          event.preventDefault();
+          setIsPadActive((previous) => !previous);
+          return;
+        }
+
+        if (event.code === 'KeyR' && hasTrackSession && !isTransportCueBusy && !isCongregationFading) {
+          event.preventDefault();
+          void handleReturnToStart();
+          return;
+        }
+
+        if (event.code === 'KeyF' && hasTrackSession && isReady && !isTransportCueBusy) {
+          event.preventDefault();
+          handleToggleCongregationFade();
+          return;
+        }
+
+        if (event.code === 'KeyS' && canUseStemsToolbar) {
+          event.preventDefault();
+          handleStemsToolbarAction();
+          return;
+        }
+
+        if (event.code === 'KeyB') {
+          event.preventDefault();
+          if (isPlaying) {
+            setShowBackConfirm(true);
+          } else {
+            void exitLiveDirector();
+          }
+          return;
+        }
+      }
 
       if (
         desktopSectionKeyboardEnabled &&
@@ -3725,17 +3860,27 @@ export function LiveDirectorView({
       window.removeEventListener('keydown', handleKeyDown, true);
     };
   }, [
+    canUseStemsToolbar,
+    exitLiveDirector,
     getLivePlaybackTime,
     getSectionIndexAtTime,
+    handleNextSection,
+    handlePreviousSection,
     handleSectionSeek,
+    handleStemsToolbarAction,
+    handleReturnToStart,
+    handleToggleCongregationFade,
+    handleToggleLoop,
     handleTogglePlaybackFromGesture,
     hasTrackSession,
     isCongregationFading,
     isNativeIosShell,
+    isPlaying,
     isReady,
     isTransportCueBusy,
     keyboardSectionIndex,
     releaseSectionsAutoFollowNow,
+    resolvedPadUrl,
     resolvedSections,
     scheduleSectionsAutoFollowResume,
     setVisualSectionTime,
@@ -3743,6 +3888,7 @@ export function LiveDirectorView({
     showLoadPanel,
     showOffsetModal,
     showSectionsPanel,
+    showStemsActionModal,
     showTrackLoadModal,
     snapSectionsLaneToTime,
   ]);
@@ -4051,12 +4197,17 @@ export function LiveDirectorView({
     <div ref={liveDirectorRootRef} className={shellClassName}>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(93,214,240,0.08),_transparent_24%),linear-gradient(180deg,#232526_0%,#222425_46%,#202224_100%)]" />
       <div className="relative flex h-[100dvh] flex-col overflow-hidden" style={shellContentStyle}>
-        <div className={`hide-scrollbar -mx-1 shrink-0 overflow-x-auto ${isUltraCompactLandscape ? 'pb-0' : isCompactLandscape ? 'pb-0' : 'pb-1'}`}>
+        <div className={`hide-scrollbar -mx-1 shrink-0 overflow-x-auto ${isUltraCompactLandscape ? 'pb-0' : isToolbarCompactLandscape ? 'pb-0' : 'pb-1'}`}>
           <header
-            className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-center ${isUltraCompactLandscape ? 'gap-1 px-0' : isCompactLandscape ? 'gap-2 px-0.5' : 'gap-2.5 px-1'}`}
-            style={{ minWidth: headerMinWidth }}
+            className={isToolbarCompactLandscape
+              ? `flex items-stretch ${isUltraCompactLandscape ? 'gap-1 px-0' : 'gap-1.5 px-0.5'}`
+              : 'grid w-full items-stretch gap-0 px-1'}
+            style={toolbarHeaderStyle}
           >
-            <div className={`flex items-stretch ${isUltraCompactLandscape ? 'gap-1' : isCompactLandscape ? 'gap-2' : 'gap-2.5'}`}>
+            <div
+              data-live-director-control="status-group"
+              className={`flex min-w-0 items-stretch ${isToolbarCompactLandscape ? (isUltraCompactLandscape ? 'gap-1' : 'gap-1.5') : 'justify-start gap-1.5 pr-2'}`}
+            >
               <button
                 type="button"
                 onClick={() => {
@@ -4066,145 +4217,82 @@ export function LiveDirectorView({
                   }
                   void exitLiveDirector();
                 }}
-                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] w-[3.05rem] px-1.5' : isCompactLandscape ? 'h-12 w-[3.65rem] px-2' : 'h-[var(--ld-control-height)] w-[4.15rem] px-2.5'} shrink-0 items-center justify-center text-white/85 hover:text-white hover:bg-white/6`}
+                data-live-director-control="back"
+                className={`${CONTROL_CARD} group relative ${isUltraCompactLandscape ? 'h-11 w-11 px-1.5' : isToolbarCompactLandscape ? 'h-12 w-12 px-2' : 'h-[var(--ld-control-height)] w-[4.25rem] px-2.5'} shrink-0 items-center justify-center text-white/85 hover:bg-white/6 hover:text-white`}
+                style={isToolbarCompactLandscape ? undefined : { flex: '0 0 16%', width: '16%' }}
                 aria-label="Volver al repertorio"
-                title="Volver al repertorio"
+                aria-keyshortcuts="B"
+                title="Volver al repertorio (B)"
               >
-                <ChevronLeft className={`${isUltraCompactLandscape ? 'h-5 w-5' : isCompactLandscape ? 'h-6 w-6' : 'h-8 w-8'}`} strokeWidth={isCompactLandscape ? 2.1 : 2.45} />
+                <ChevronLeft className={`${isUltraCompactLandscape ? 'h-5 w-5' : isToolbarCompactLandscape ? 'h-6 w-6' : 'h-8 w-8'}`} strokeWidth={isToolbarCompactLandscape ? 2.1 : 2.45} />
+                <KeyboardHint>B</KeyboardHint>
               </button>
+
               <div
-                className={`flex ${isUltraCompactLandscape ? 'rounded-[0.8rem] px-1 py-0.5' : isCompactLandscape ? 'rounded-[1rem] py-1' : 'rounded-[1.45rem] py-3'} shrink-0 flex-col items-center justify-center gap-0.5 border border-white/8 bg-black/16 ${isUltraCompactLandscape ? '' : 'px-2'} text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]`}
-                style={{ width: scaleRem(isUltraCompactLandscape ? 2.95 : isCompactLandscape ? 4.15 : 4.6, 2.45) }}
+                data-live-director-control="bpm"
+                className={`flex ${isUltraCompactLandscape ? 'h-11 rounded-[0.8rem] px-1 py-0.5' : isToolbarCompactLandscape ? 'h-12 rounded-[1rem] px-1.5 py-1' : 'h-[var(--ld-control-height)] rounded-[1.45rem] px-2 py-3'} shrink-0 flex-col items-center justify-center gap-0.5 border border-white/8 bg-black/16 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]`}
+                style={isToolbarCompactLandscape
+                  ? { width: scaleRem(isUltraCompactLandscape ? 3.05 : 3.75, 2.75) }
+                  : { flex: '0 0 18%', width: '18%' }}
               >
-                <span className={`font-light leading-none tracking-tight text-white/92 ${isUltraCompactLandscape ? 'text-[1.12rem]' : isCompactLandscape ? 'text-[1.65rem]' : 'text-[2.05rem]'}`}>
+                <span className={`font-light leading-none tracking-tight text-white/92 ${isUltraCompactLandscape ? 'text-[1.08rem]' : isToolbarCompactLandscape ? 'text-[1.4rem]' : 'text-[2.05rem]'}`}>
                   {displayBpm || '--'}
                 </span>
                 <div className="h-px w-full bg-white/18" />
-                <span className={`${isUltraCompactLandscape ? 'text-[0.42rem]' : 'text-[0.6rem]'} font-black uppercase tracking-[0.24em] text-white/56`}>
+                <span className={`${isUltraCompactLandscape ? 'text-[0.42rem]' : 'text-[0.56rem]'} font-black uppercase tracking-[0.22em] text-white/56`}>
                   {displayBpm ? 'BPM' : 'SIN BPM'}
                 </span>
               </div>
 
               <div
-                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-1.5 py-0.5' : isCompactLandscape ? 'h-10 px-2 py-1' : 'h-[var(--ld-control-height)] px-4 py-3'} flex-col`}
-                style={{ width: scaleRem(isUltraCompactLandscape ? 6.25 : isCompactLandscape ? 8.45 : 9.25, 5.1) }}
+                data-live-director-control="clock"
+                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-11 px-1.5 py-0.5' : isToolbarCompactLandscape ? 'h-12 px-2 py-1' : 'h-[var(--ld-control-height)] px-4 py-3'} shrink-0 flex-col`}
+                style={isToolbarCompactLandscape
+                  ? { width: scaleRem(isUltraCompactLandscape ? 6.15 : 7.05, 5.6) }
+                  : { flex: '0 0 36%', width: '36%' }}
               >
-                <span ref={passiveClockTextRef} className={`font-light leading-none tracking-tight text-white ${isUltraCompactLandscape ? 'text-[1.45rem]' : isCompactLandscape ? 'text-[2.05rem]' : 'text-[2.65rem]'}`}>
+                <span ref={passiveClockTextRef} className={`font-light leading-none tracking-tight text-white ${isUltraCompactLandscape ? 'text-[1.28rem]' : isToolbarCompactLandscape ? 'text-[1.7rem]' : 'text-[2.65rem]'}`}>
                   {formatClock(currentTime)}
                 </span>
-                <span ref={passiveCompactClockTextRef} className={`font-medium tabular-nums text-white/58 ${isUltraCompactLandscape ? 'text-[0.58rem]' : isCompactLandscape ? 'text-[0.8rem]' : 'mt-1 text-[0.96rem]'}`}>
+                <span ref={passiveCompactClockTextRef} className={`font-medium tabular-nums text-white/58 ${isUltraCompactLandscape ? 'text-[0.56rem]' : isToolbarCompactLandscape ? 'text-[0.72rem]' : 'mt-1 text-[0.96rem]'}`}>
                   {formatCompact(currentTime)} / {formatCompact(playbackTimelineDuration)}
                 </span>
               </div>
 
-              {(resolvedPadUrl || isPadActive) && (
-                <button
-                  type="button"
-                  onClick={() => setIsPadActive((previous) => !previous)}
-                  className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-1 text-[0.62rem]' : isCompactLandscape ? 'h-10 px-2 text-[0.84rem]' : 'h-[var(--ld-control-height)] px-3 text-[0.84rem]'} flex-col font-semibold tracking-[0.18em] ${isPadActive
-                    ? 'border-[#43c477]/40 bg-[#43c477]/10 text-[#8af7b1]'
-                    : 'text-[#43c477]'
-                    }`}
-                  style={{ width: scaleRem(isUltraCompactLandscape ? 4.75 : isCompactLandscape ? 6.15 : 6.8, 4.1) }}
-                  aria-label={isPadActive ? `Stop pad for ${songKey}` : `Play pad for ${songKey}`}
-                >
-                  <span>PAD</span>
-                  <span className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.5rem]' : 'mt-1 text-[0.66rem]'} tracking-[0.22em] text-white/46`}>
-                    {isPadActive ? 'ACT' : (songKey || 'LISTO')}
-                  </span>
-                </button>
-              )}
-              {canToggleTrackLoad && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const initial: Record<string, boolean> = {};
-                    (manualSession?.tracks || []).forEach((t) => { initial[t.id] = t.enabled !== false; });
-                    setPendingEnabledMap(capEnabledMapToTrackLimit(initial));
-                    setShowTrackLoadModal(true);
-                  }}
-                  className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-1.5 text-[0.58rem]' : isCompactLandscape ? 'h-10 px-2 text-[0.74rem]' : 'h-[var(--ld-control-height)] px-3 text-[0.76rem]'} flex-col font-semibold tracking-[0.16em] text-cyan-50`}
-                  style={{ width: scaleRem(isUltraCompactLandscape ? 4.65 : isCompactLandscape ? 6.05 : 6.7, 4.1) }}
-                  aria-label="Abrir carga selectiva de stems"
-                  title="Elegir qué stems se cargan"
-                >
-                  <SlidersVertical className={`${isUltraCompactLandscape ? 'h-3 w-3' : isCompactLandscape ? 'h-4 w-4' : 'h-5 w-5'}`} />
-                  <span className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.46rem]' : 'mt-1 text-[0.58rem]'} tracking-[0.18em] text-white/46`}>
-                    STEMS
-                  </span>
-                </button>
-              )}
-              {isEnsayoMode && headerOperationalChips.length > 0 && (
-                <div className={`flex items-center ${isUltraCompactLandscape ? 'gap-1' : 'gap-1.5'}`}>
-                  {headerOperationalChips.map((chip) => (
-                    <div
-                      key={chip.id}
-                      className={`rounded-full border ${isUltraCompactLandscape ? 'px-1.5 py-1' : isCompactLandscape ? 'px-2 py-1.5' : 'px-3 py-2'} ${chip.tone === 'info'
-                        ? 'border-cyan-300/24 bg-cyan-300/8 text-cyan-50'
-                        : 'border-white/10 bg-black/16 text-white/80'
-                        }`}
-                    >
-                      <div className={`flex items-center ${isUltraCompactLandscape ? 'gap-1' : 'gap-1.5'}`}>
-                        <span className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : 'text-[0.56rem]'} font-black uppercase tracking-[0.18em] text-white/38`}>
-                          {chip.label}
-                        </span>
-                        <span className={`${isUltraCompactLandscape ? 'text-[0.62rem]' : isCompactLandscape ? 'text-[0.72rem]' : 'text-[0.82rem]'} font-semibold text-inherit`}>
-                          {chip.value}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!resolvedPadUrl) return;
+                  setIsPadActive((previous) => !previous);
+                }}
+                disabled={!resolvedPadUrl}
+                aria-pressed={isPadActive}
+                data-live-director-control="pad"
+                className={`${CONTROL_CARD} group relative ${isUltraCompactLandscape ? 'h-11 px-1 text-[0.6rem]' : isToolbarCompactLandscape ? 'h-12 px-2 text-[0.72rem]' : 'h-[var(--ld-control-height)] px-3 text-[0.84rem]'} shrink-0 flex-col font-semibold tracking-[0.16em] disabled:cursor-not-allowed disabled:text-white/28 ${isPadActive
+                  ? 'border-cyan-300/32 bg-cyan-300/10 text-cyan-100 shadow-[0_0_16px_rgba(103,232,249,0.10)]'
+                  : 'text-cyan-100/82 hover:border-cyan-300/22 hover:bg-cyan-300/7'
+                  }`}
+                style={isToolbarCompactLandscape
+                  ? { width: scaleRem(isUltraCompactLandscape ? 4.35 : 4.8, 3.75) }
+                  : { flex: '0 0 24%', width: '24%' }}
+                aria-label={isPadActive ? `Stop pad for ${songKey}` : `Play pad for ${songKey}`}
+                aria-keyshortcuts="P"
+                title={resolvedPadUrl ? `${isPadActive ? 'Apagar' : 'Activar'} pad (P)` : 'Pad no disponible'}
+              >
+                <span>PAD</span>
+                <span className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.48rem]' : 'mt-1 text-[0.62rem]'} tracking-[0.2em] text-white/46`}>
+                  {isPadActive ? 'ACT' : (songKey || '--')}
+                </span>
+                <KeyboardHint>P</KeyboardHint>
+              </button>
             </div>
 
-            <div className={`flex min-w-0 items-center justify-center ${isUltraCompactLandscape ? 'gap-1.5 px-0' : isCompactLandscape ? 'gap-2.5 px-0.5' : 'gap-3 px-1'}`}>
-              <button
-                type="button"
-                onClick={handleTogglePlaybackFromGesture}
-                disabled={!isReady || isTransportCueBusy}
-                aria-busy={isTransportCueBusy || undefined}
-                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-5' : isCompactLandscape ? 'h-12 px-6' : 'h-[var(--ld-control-height)] px-7'} justify-center ${isPlaying ? 'text-[#43c477] border-[#43c477]/35 bg-[#43c477]/10' : 'text-[#43c477] hover:text-[#4fe487]'} hover:bg-[#43c477]/12 disabled:cursor-not-allowed disabled:text-white/24 disabled:hover:bg-transparent`}
-                style={{ width: scaleRem(isUltraCompactLandscape ? (showSectionsPanel ? 7.35 : 8.85) : isCompactLandscape ? (showSectionsPanel ? 9.35 : 10.75) : showSectionsPanel ? 12.75 : 14.25, 6.85) }}
-                aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
-                aria-keyshortcuts="Space"
-                title={isPlaying ? 'Pausar · Espacio' : 'Reproducir · Espacio'}
-              >
-                {isPlaying ? (
-                  <Pause className={`${isUltraCompactLandscape ? 'h-[1.55rem] w-[1.55rem]' : isCompactLandscape ? 'h-8 w-8' : 'h-11 w-11'}`} strokeWidth={2.15} fill="currentColor" />
-                ) : (
-                  <Play className={`ml-0.5 ${isUltraCompactLandscape ? 'h-[1.55rem] w-[1.55rem]' : isCompactLandscape ? 'h-8 w-8' : 'h-11 w-11'}`} strokeWidth={2.15} fill="currentColor" />
-                )}
-              </button>
+            {!isToolbarCompactLandscape && <div aria-hidden="true" />}
 
-              <button
-                type="button"
-                onClick={handleToggleCongregationFade}
-                disabled={!hasTrackSession || !isReady || isTransportCueBusy}
-                aria-pressed={congregationFadeTargetMuted}
-                aria-label={congregationFadeTargetMuted
-                  ? 'Restaurar progresivamente el volumen de la secuencia'
-                  : 'Bajar progresivamente la secuencia para que cante la congregación'}
-                title={congregationFadeTargetMuted
-                  ? 'Restaurar secuencia · Fade 5s'
-                  : 'Modo congregación · Fade 5s'}
-                className={`${CONTROL_CARD} relative ${isUltraCompactLandscape ? 'h-[3.25rem] px-3' : isCompactLandscape ? 'h-12 px-4' : 'h-[var(--ld-control-height)] px-4'} justify-center disabled:cursor-not-allowed disabled:text-white/24 ${congregationFadeTargetMuted
-                  ? 'border-amber-300/28 bg-amber-300/8 text-amber-100'
-                  : 'text-cyan-100 hover:border-cyan-300/26 hover:bg-cyan-300/8'
-                  }`}
-                style={{ width: scaleRem(isUltraCompactLandscape ? 4.55 : isCompactLandscape ? 5.55 : 6.4, 3.85) }}
-              >
-                <CongregationFadeIcon
-                  muted={congregationFadeTargetMuted}
-                  fading={isCongregationFading}
-                />
-                <span className="sr-only">
-                  {isCongregationFading
-                    ? (congregationFadeTargetMuted ? 'Bajando secuencia' : 'Restaurando secuencia')
-                    : (congregationFadeTargetMuted ? 'Secuencia abajo' : 'Secuencia normal')}
-                </span>
-              </button>
-
+            <div
+              className={`flex shrink-0 items-stretch ${isToolbarCompactLandscape ? (isUltraCompactLandscape ? 'gap-1' : 'gap-1.5') : 'w-full justify-center gap-3'}`}
+              data-live-director-control="transport-group"
+            >
               <button
                 type="button"
                 onClick={() => {
@@ -4212,59 +4300,105 @@ export function LiveDirectorView({
                 }}
                 disabled={!hasTrackSession || isTransportCueBusy || isCongregationFading || (DISABLE_BACKWARD_SEEK_WHILE_PLAYING && isPlaying)}
                 aria-busy={isTransportCueBusy || undefined}
-                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-4' : isCompactLandscape ? 'h-12 px-5' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/76 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
-                style={{ width: scaleRem(isUltraCompactLandscape ? (showSectionsPanel ? 4.85 : 5.3) : isCompactLandscape ? (showSectionsPanel ? 5.95 : 6.45) : 7.05, 4.45) }}
+                data-live-director-control="return-start"
+                className={`${CONTROL_CARD} group relative ${isUltraCompactLandscape ? 'h-11 px-3' : isToolbarCompactLandscape ? 'h-12 px-4' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/76 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
+                style={isToolbarCompactLandscape
+                  ? { width: scaleRem(isUltraCompactLandscape ? 4.5 : 5.2, 4.15) }
+                  : { flex: '0 0 22%' }}
                 aria-label="Volver al inicio"
-                title={isPlaying && DISABLE_BACKWARD_SEEK_WHILE_PLAYING ? 'Pausa para volver al inicio' : 'Volver al inicio'}
+                aria-keyshortcuts="R"
+                title={isPlaying && DISABLE_BACKWARD_SEEK_WHILE_PLAYING ? 'Pausa para volver al inicio' : 'Volver al inicio (R)'}
               >
-                <SkipBack className={`${isUltraCompactLandscape ? 'h-5 w-5' : isCompactLandscape ? 'h-6 w-6' : 'h-7 w-7'}`} />
+                <SkipBack className={`${isUltraCompactLandscape ? 'h-5 w-5' : isToolbarCompactLandscape ? 'h-6 w-6' : 'h-7 w-7'}`} />
+                <KeyboardHint>R</KeyboardHint>
               </button>
-            </div>
-
-            <div className={`flex items-stretch justify-end ${isUltraCompactLandscape ? 'gap-2' : isCompactLandscape ? 'gap-2.5' : 'gap-3'}`}>
-              {showSectionsPanel && (
-                <>
-                  <button
-                    type="button"
-                    onClick={handlePreviousSection}
-                    disabled={!hasTrackSession || isTransportCueBusy || isCongregationFading}
-                    aria-busy={isSectionSeekBusy || undefined}
-                    className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-4' : isCompactLandscape ? 'h-12 px-5' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/82 hover:text-white hover:bg-white/6 disabled:cursor-not-allowed disabled:text-white/24`}
-                    style={{ width: scaleRem(isUltraCompactLandscape ? 4.45 : isCompactLandscape ? 5.35 : 6.25, 3.75) }}
-                    aria-label="Ir a la seccion anterior"
-                    aria-keyshortcuts="ArrowLeft"
-                    title="Ir a la sección anterior · Flecha izquierda en PC"
-                  >
-                    <ChevronsLeft className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-5 w-5' : 'h-7 w-7'}`} strokeWidth={isCompactLandscape ? 2 : 2.4} />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleNextSection}
-                    aria-busy={isSectionSeekBusy || undefined}
-                    disabled={!hasTrackSession || isTransportCueBusy || isCongregationFading || resolvedSections.length === 0 || activeSectionIndex >= resolvedSections.length - 1}
-                    className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-4' : isCompactLandscape ? 'h-12 px-5' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/82 hover:text-white hover:bg-white/6 disabled:cursor-not-allowed disabled:text-white/24`}
-                    style={{ width: scaleRem(isUltraCompactLandscape ? 4.45 : isCompactLandscape ? 5.35 : 6.25, 3.75) }}
-                    aria-label="Ir a la siguiente seccion"
-                    aria-keyshortcuts="ArrowRight"
-                    title="Ir a la siguiente sección · Flecha derecha en PC"
-                  >
-                    <ChevronsRight className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-5 w-5' : 'h-7 w-7'}`} strokeWidth={isCompactLandscape ? 2 : 2.4} />
-                  </button>
-                </>
-              )}
 
               <button
                 type="button"
-                onClick={() => setShowLoadPanel(true)}
-                className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[2.95rem] px-3' : isCompactLandscape ? 'h-10 px-3.5' : 'h-[var(--ld-control-height)] px-4'} justify-center text-white/70 hover:text-white`}
-                style={{ width: scaleRem(isUltraCompactLandscape ? 3.25 : isCompactLandscape ? 4.15 : 4.5, 2.8) }}
-                title="Cargar o reemplazar la sesión multitrack"
-                aria-label="Cargar o reemplazar la sesión multitrack"
+                onClick={handleTogglePlaybackFromGesture}
+                disabled={!isReady || isTransportCueBusy}
+                aria-busy={isTransportCueBusy || undefined}
+                data-live-director-control="play-pause"
+                className={`${CONTROL_CARD} group relative ${isUltraCompactLandscape ? 'h-11 px-6' : isToolbarCompactLandscape ? 'h-12 px-7' : 'h-[var(--ld-control-height)] px-8'} justify-center border-cyan-300/24 bg-cyan-300/[0.08] text-cyan-100 shadow-[0_0_18px_rgba(103,232,249,0.09)] hover:border-cyan-200/38 hover:bg-cyan-300/[0.11] disabled:cursor-not-allowed disabled:border-white/8 disabled:bg-black/12 disabled:text-white/24`}
+                style={isToolbarCompactLandscape
+                  ? { width: scaleRem(isUltraCompactLandscape ? 7.25 : 8.25, 6.7) }
+                  : { flex: '0 0 34%' }}
+                aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
+                aria-keyshortcuts="Space"
+                title={isPlaying ? 'Pausar · Espacio' : 'Reproducir · Espacio'}
               >
-                <Upload className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : 'h-5 w-5'}`} />
+                {isPlaying ? (
+                  <Pause className={`${isUltraCompactLandscape ? 'h-[1.45rem] w-[1.45rem]' : isToolbarCompactLandscape ? 'h-7 w-7' : 'h-11 w-11'}`} strokeWidth={2.15} fill="currentColor" />
+                ) : (
+                  <Play className={`ml-0.5 ${isUltraCompactLandscape ? 'h-[1.45rem] w-[1.45rem]' : isToolbarCompactLandscape ? 'h-7 w-7' : 'h-11 w-11'}`} strokeWidth={2.15} fill="currentColor" />
+                )}
+                <KeyboardHint>SPACE</KeyboardHint>
               </button>
 
+              <button
+                type="button"
+                onClick={handleToggleCongregationFade}
+                disabled={!hasTrackSession || !isReady || isTransportCueBusy}
+                aria-pressed={congregationFadeTargetMuted}
+                data-live-director-control="fade-out"
+                aria-label={congregationFadeTargetMuted
+                  ? 'Restaurar progresivamente el volumen de la secuencia'
+                  : 'Bajar progresivamente la secuencia para que cante la congregación'}
+                title={congregationFadeTargetMuted
+                  ? 'Restaurar secuencia · Fade 5s (F)'
+                  : 'Modo congregación · Fade 5s (F)'}
+                aria-keyshortcuts="F"
+                className={`${CONTROL_CARD} group relative ${isUltraCompactLandscape ? 'h-11 px-3' : isToolbarCompactLandscape ? 'h-12 px-4' : 'h-[var(--ld-control-height)] px-4'} justify-center disabled:cursor-not-allowed disabled:text-white/24 ${congregationFadeTargetMuted
+                  ? 'border-cyan-300/32 bg-cyan-300/10 text-cyan-100 shadow-[0_0_16px_rgba(103,232,249,0.10)]'
+                  : 'text-cyan-100/86 hover:border-cyan-300/26 hover:bg-cyan-300/8'
+                }`}
+                style={isToolbarCompactLandscape
+                  ? { width: scaleRem(isUltraCompactLandscape ? 4.5 : 5.2, 4.15) }
+                  : { flex: '0 0 22%' }}
+              >
+                <CongregationFadeIcon
+                  muted={congregationFadeTargetMuted}
+                  fading={isCongregationFading}
+                />
+                <KeyboardHint>F</KeyboardHint>
+                <span className="sr-only">
+                  {isCongregationFading
+                    ? (congregationFadeTargetMuted ? 'Bajando secuencia' : 'Restaurando secuencia')
+                    : (congregationFadeTargetMuted ? 'Secuencia abajo' : 'Secuencia normal')}
+                </span>
+              </button>
+            </div>
+
+            {!isToolbarCompactLandscape && <div aria-hidden="true" />}
+
+            <div className={`flex items-stretch ${isToolbarCompactLandscape ? '' : 'justify-end'}`}>
+              <button
+                type="button"
+                onClick={handleStemsToolbarAction}
+                disabled={!canUseStemsToolbar}
+                aria-pressed={isStemsToolbarActive}
+                data-live-director-control="stems"
+                aria-keyshortcuts="S"
+                className={`${CONTROL_CARD} group relative ${isUltraCompactLandscape ? 'h-11 px-1.5 text-[0.56rem]' : isToolbarCompactLandscape ? 'h-12 px-2 text-[0.68rem]' : 'h-[var(--ld-control-height)] px-3 text-[0.76rem]'} shrink-0 flex-col font-semibold tracking-[0.16em] disabled:cursor-not-allowed disabled:text-white/28 ${isStemsToolbarActive
+                  ? 'border-cyan-300/32 bg-cyan-300/10 text-cyan-100 shadow-[0_0_16px_rgba(103,232,249,0.10)]'
+                  : 'text-cyan-50 hover:border-cyan-300/22 hover:bg-cyan-300/7'
+                  }`}
+                style={isToolbarCompactLandscape
+                  ? { width: scaleRem(isUltraCompactLandscape ? 4.35 : 4.95, 3.75) }
+                  : { width: '100%' }}
+                aria-label={canToggleTrackLoad
+                  ? 'Abrir opciones de stems'
+                  : (areAllActiveTracksMuted ? 'Activar stems' : 'Apagar stems')}
+                title={canToggleTrackLoad
+                  ? 'Opciones de stems (S)'
+                  : `${areAllActiveTracksMuted ? 'Activar' : 'Apagar'} stems (S)`}
+              >
+                <SlidersVertical className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isToolbarCompactLandscape ? 'h-4 w-4' : 'h-5 w-5'}`} />
+                <span className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.46rem]' : 'mt-1 text-[0.58rem]'} tracking-[0.18em] text-white/52`}>
+                  STEMS
+                </span>
+                <KeyboardHint>S</KeyboardHint>
+              </button>
             </div>
           </header>
         </div>
@@ -4297,7 +4431,15 @@ export function LiveDirectorView({
                 </div>
               </div>
             ) : (
-              <div className={`flex h-full items-stretch ${isUltraCompactLandscape ? 'gap-1.5' : isCompactLandscape ? 'gap-2' : 'gap-4'}`}>
+              <div
+                className={`flex h-full items-stretch ${isUltraCompactLandscape ? 'gap-1.5' : isCompactLandscape ? 'gap-2' : 'gap-4'}`}
+                style={{
+                  minHeight: scaleRem(
+                    isUltraCompactLandscape ? 4.35 : isCompactLandscape ? 6.25 : 11.25,
+                    isUltraCompactLandscape ? 4.1 : isCompactLandscape ? 5.75 : 10.5,
+                  ),
+                }}
+              >
                 <button
                   type="button"
                   onClick={() => {
@@ -4349,117 +4491,76 @@ export function LiveDirectorView({
                 </button>
 
                 <div className={`min-w-0 flex-1 rounded-[1.5rem] border border-white/8 bg-black/16 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isUltraCompactLandscape ? 'px-2 py-1.5' : isCompactLandscape ? 'px-3 py-2' : 'px-5 py-4'}`}>
-                  <div className={`flex h-full flex-col justify-between ${isUltraCompactLandscape ? 'gap-1.5' : isCompactLandscape ? 'gap-2' : 'gap-4'}`}>
-                    {isEnsayoMode ? null : (
-                      <>
-                        <div className={`flex ${isUltraCompactLandscape ? 'items-center gap-2' : isCompactLandscape ? 'items-center gap-3' : 'items-start justify-between gap-4'}`}>
-                          <div className="min-w-0">
-                            <p className={`${isUltraCompactLandscape ? 'text-[0.52rem]' : 'text-[0.7rem]'} font-black uppercase tracking-[0.24em] text-white/34`}>
-                              {performerLabel ? `Live Director · ${performerLabel}` : 'Live Director'}
-                            </p>
-                            <div className={`flex min-w-0 items-center ${isUltraCompactLandscape ? 'mt-0.5 gap-1.5' : isCompactLandscape ? 'mt-1 gap-2' : 'mt-2 gap-2.5'}`}>
-                              <h1 className={`truncate font-semibold tracking-tight text-white ${isUltraCompactLandscape ? 'text-[0.92rem]' : isCompactLandscape ? 'text-sm' : 'text-[1.35rem]'}`}>
-                                {currentSessionLabel}
-                              </h1>
-                              {advancedStreamingActive && (
-                                <span
-                                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-emerald-300/18 bg-emerald-300/8 text-emerald-200/88 shadow-[0_0_14px_rgba(67,196,119,0.10)]"
-                                  aria-label="Motor avanzado activo"
-                                  title="Motor avanzado activo"
-                                >
-                                  <AudioWaveform className="h-3.5 w-3.5" aria-hidden="true" />
-                                </span>
-                              )}
-                            </div>
-                            <p className={`text-white/54 ${isUltraCompactLandscape ? 'mt-0.5 text-[0.58rem]' : isCompactLandscape ? 'mt-0.5 text-[0.68rem]' : 'mt-1 text-[0.92rem]'}`}>{songSupportMeta}</p>
-                            {autoDisabledTrackNames.length > 0 && (
-                              <p
-                                className={`text-amber-200/86 ${isUltraCompactLandscape ? 'mt-0.5 text-[0.56rem]' : isCompactLandscape ? 'mt-0.5 text-[0.66rem]' : 'mt-1 text-[0.78rem]'}`}
-                                title={`Omitidos para estabilidad: ${autoDisabledTrackNames.join(', ')}`}
-                              >
-                                Modo seguro: {activeTracks.length}/{enabledSessionTracks.length} stems
-                              </p>
-                            )}
-                          </div>
-
-                          <div className={`flex shrink-0 ${isUltraCompactLandscape ? 'items-center gap-1' : isCompactLandscape ? 'items-center gap-1.5' : 'items-start gap-2'}`}>
-                            <div className={`rounded-full border border-white/8 bg-black/18 ${isUltraCompactLandscape ? 'px-1.5 py-0.5' : isCompactLandscape ? 'px-2 py-1' : 'px-3 py-1.5'}`}>
-                              <p className={`${isUltraCompactLandscape ? 'text-[0.5rem]' : 'text-[0.68rem]'} font-black uppercase tracking-[0.18em] text-white/46`}>
-                                {surfaceBadgeLabel}
-                              </p>
-                            </div>
-                          </div>
+                  <div className={`flex h-full flex-col justify-center ${isUltraCompactLandscape ? 'gap-1.5' : isCompactLandscape ? 'gap-2.5' : 'gap-5'}`}>
+                    <div className="flex min-w-0 items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex min-w-0 items-baseline gap-2.5">
+                          <h1 className={`shrink-0 font-semibold tracking-tight text-white ${isUltraCompactLandscape ? 'text-[0.96rem]' : isCompactLandscape ? 'text-[1.15rem]' : 'text-[1.65rem]'}`}>
+                            {currentSessionLabel}
+                          </h1>
+                          {performerLabel && (
+                            <span className={`min-w-0 truncate font-medium text-white/42 ${isUltraCompactLandscape ? 'text-[0.56rem]' : isCompactLandscape ? 'text-[0.68rem]' : 'text-[0.9rem]'}`}>
+                              — {performerLabel}
+                            </span>
+                          )}
+                          {advancedStreamingActive && (
+                            <span
+                              className={`inline-flex shrink-0 self-center items-center justify-center rounded-full border border-emerald-300/18 bg-emerald-300/8 text-emerald-200/88 shadow-[0_0_14px_rgba(67,196,119,0.10)] ${isUltraCompactLandscape ? 'h-5 w-5' : 'h-6 w-6'}`}
+                              aria-label="Motor avanzado activo"
+                              title="Motor avanzado activo"
+                            >
+                              <AudioWaveform className={isUltraCompactLandscape ? 'h-3 w-3' : 'h-3.5 w-3.5'} aria-hidden="true" />
+                            </span>
+                          )}
                         </div>
+                        <p
+                          className={`font-medium text-white/58 ${isUltraCompactLandscape ? 'mt-0.5 text-[0.62rem]' : isCompactLandscape ? 'mt-1 text-[0.78rem]' : 'mt-1.5 text-[1rem]'}`}
+                          title={autoDisabledTrackNames.length > 0 ? `Omitidas por estabilidad: ${autoDisabledTrackNames.join(', ')}` : undefined}
+                        >
+                          {hasTrackSession
+                            ? `${activeTracks.length}${enabledSessionTracks.length !== activeTracks.length ? ` de ${enabledSessionTracks.length}` : ''} pistas activas`
+                            : 'Sin pistas activas'}
+                        </p>
+                      </div>
+                      <span ref={passiveProgressTextRef} className={`shrink-0 font-semibold tabular-nums tracking-[0.12em] text-white/52 ${isUltraCompactLandscape ? 'text-[0.58rem]' : isCompactLandscape ? 'text-[0.72rem]' : 'text-[0.88rem]'}`}>
+                        {formatCompact(currentTime)} / {formatCompact(playbackTimelineDuration)}
+                      </span>
+                    </div>
 
-                        <div className={`flex ${isUltraCompactLandscape ? 'items-center gap-1.5' : isCompactLandscape ? 'items-center gap-2' : 'items-end gap-4'}`}>
-                          <div className="min-w-0 flex-1">
-                            <div className={`flex items-center justify-between font-semibold uppercase tracking-[0.18em] text-white/46 ${isUltraCompactLandscape ? 'mb-0.5 text-[0.56rem]' : isCompactLandscape ? 'mb-1 text-[0.72rem]' : 'mb-2 text-[0.72rem]'}`}>
-                              <span>{hasTrackSession ? `${activeTracks.length} pistas` : 'Sin sesion'}</span>
-                              <span ref={passiveProgressTextRef}>{formatCompact(currentTime)} / {formatCompact(playbackTimelineDuration)}</span>
-                            </div>
-                            <div className={`${isUltraCompactLandscape ? 'h-1' : isCompactLandscape ? 'h-1.5' : 'h-2.5'} rounded-full bg-black/30`}>
+                    <div className="min-w-0">
+                      <div className={`${isUltraCompactLandscape ? 'h-1' : isCompactLandscape ? 'h-1.5' : 'h-2.5'} rounded-full bg-black/30`}>
+                        <div
+                          ref={passiveProgressBarRef}
+                          className="h-full origin-left rounded-full bg-[linear-gradient(90deg,#43c477_0%,#81ddf5_100%)] shadow-[0_0_14px_rgba(67,196,119,0.16)] transition-transform duration-200 will-change-transform"
+                          style={{
+                            transform: `scaleX(${Math.max(hasTrackSession ? progressPercent / 100 : 0, hasTrackSession ? 0.04 : 0)})`,
+                          }}
+                        />
+                      </div>
+                      {(resolvedSections.length > 0 || sectionTimelineTailDuration > 0) && (
+                        <div className={`flex w-full overflow-hidden ${isUltraCompactLandscape ? 'h-[2px] mt-0.5 rounded-[1px]' : isCompactLandscape ? 'h-[3px] mt-1 rounded-[2px]' : 'h-1 mt-1.5 rounded-full'} opacity-[0.62]`}>
+                          {resolvedSections.map((sec) => {
+                            const duration = sec.endTime - sec.startTime;
+                            const widthPercent = playbackTimelineDuration > 0 ? (duration / playbackTimelineDuration) * 100 : 0;
+                            return (
                               <div
-                                ref={passiveProgressBarRef}
-                                className="h-full origin-left rounded-full bg-[linear-gradient(90deg,#43c477_0%,#81ddf5_100%)] shadow-[0_0_14px_rgba(67,196,119,0.16)] transition-transform duration-200 will-change-transform"
-                                style={{
-                                  transform: `scaleX(${Math.max(hasTrackSession ? progressPercent / 100 : 0, hasTrackSession ? 0.04 : 0)})`,
-                                }}
+                                key={`minimap-${sec.id}`}
+                                className="h-full border-r border-[#181a1c] last:border-0"
+                                style={{ width: `${widthPercent}%`, backgroundColor: sec.accent }}
+                                title={sec.name}
                               />
-                            </div>
-                            {(resolvedSections.length > 0 || sectionTimelineTailDuration > 0) && (
-                              <div className={`flex w-full overflow-hidden ${isUltraCompactLandscape ? 'h-[2px] mt-0.5 rounded-[1px]' : isCompactLandscape ? 'h-[3px] mt-1 rounded-[2px]' : 'h-1 mt-1.5 rounded-full'} opacity-[0.62]`}>
-                                {resolvedSections.map((sec) => {
-                                  const duration = sec.endTime - sec.startTime;
-                                  const widthPercent = playbackTimelineDuration > 0 ? (duration / playbackTimelineDuration) * 100 : 0;
-                                  return (
-                                    <div
-                                      key={`minimap-${sec.id}`}
-                                      className="h-full border-r border-[#181a1c] last:border-0"
-                                      style={{
-                                        width: `${widthPercent}%`,
-                                        backgroundColor: sec.accent,
-                                      }}
-                                      title={sec.name}
-                                    />
-                                  );
-                                })}
-                                {sectionTimelineTailDuration > 0 && (
-                                  <div
-                                    className="h-full bg-white/14"
-                                    style={{
-                                      width: `${playbackTimelineDuration > 0 ? (sectionTimelineTailDuration / playbackTimelineDuration) * 100 : 0}%`,
-                                    }}
-                                    title="Audio sin seccion marcada"
-                                  />
-                                )}
-                              </div>
-                            )}
-                          </div>
-                          <div className={`grid grid-cols-2 ${isUltraCompactLandscape ? 'gap-1' : isCompactLandscape ? 'gap-1.5' : 'gap-2'}`}>
-                            <button
-                              type="button"
-                              onClick={() => setSurfaceView('mix')}
-                              className={`ui-pressable-soft min-w-[5.5rem] rounded-[1rem] border ${isUltraCompactLandscape ? 'px-1.5 py-1 text-[0.56rem]' : isCompactLandscape ? 'px-2 py-1.5 text-[0.64rem]' : 'px-3 py-2 text-[0.7rem]'} font-black uppercase tracking-[0.18em] transition-all ${surfaceView === 'mix'
-                                ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50'
-                                : 'border-white/8 bg-black/18 text-white/58'
-                                }`}
-                            >
-                              Mezcla
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setSurfaceView('sections')}
-                              className={`ui-pressable-soft min-w-[5.5rem] rounded-[1rem] border ${isUltraCompactLandscape ? 'px-1.5 py-1 text-[0.56rem]' : isCompactLandscape ? 'px-2 py-1.5 text-[0.64rem]' : 'px-3 py-2 text-[0.7rem]'} font-black uppercase tracking-[0.18em] transition-all ${surfaceView === 'sections'
-                                ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50'
-                                : 'border-white/8 bg-black/18 text-white/58'
-                                }`}
-                            >
-                              Secciones
-                            </button>
-                          </div>
+                            );
+                          })}
+                          {sectionTimelineTailDuration > 0 && (
+                            <div
+                              className="h-full bg-white/14"
+                              style={{ width: `${playbackTimelineDuration > 0 ? (sectionTimelineTailDuration / playbackTimelineDuration) * 100 : 0}%` }}
+                              title="Audio sin seccion marcada"
+                            />
+                          )}
                         </div>
-                      </>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>)}
@@ -4910,90 +5011,96 @@ export function LiveDirectorView({
                   <span className="h-1.5 w-1.5 rounded-full bg-current" />
                 </div>
               )}
-              <div className={`grid ${isUltraCompactLandscape ? 'gap-0.75' : isCompactLandscape ? 'gap-1' : 'gap-3'}`}>
-                <button
-                  type="button"
-                  onClick={() => setSurfaceView('mix')}
-                  className={`ui-pressable-soft flex flex-col items-center justify-center gap-1 rounded-[1.2rem] border transition-all ${isUltraCompactLandscape ? 'h-[2.6rem] w-full rounded-[1rem] gap-0.5' : isCompactLandscape ? 'h-[3.15rem] w-full' : 'h-16'
-                    } ${surfaceView === 'mix'
-                      ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50 shadow-[0_0_20px_rgba(129,221,245,0.14)]'
-                      : 'border-white/8 bg-black/24 text-white/62'
-                    }`}
-                >
-                  <SlidersVertical className={isUltraCompactLandscape ? 'h-2.75 w-2.75' : isCompactLandscape ? 'h-3.25 w-3.25' : 'h-6 w-6'} />
-                  {!isCompactLandscape && <span className="text-[0.66rem] font-black uppercase tracking-[0.18em]">Mezcla</span>}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSurfaceView('sections')}
-                  className={`ui-pressable-soft flex flex-col items-center justify-center gap-1 rounded-[1.2rem] border transition-all ${isUltraCompactLandscape ? 'h-[2.6rem] w-full rounded-[1rem] gap-0.5' : isCompactLandscape ? 'h-[3.15rem] w-full' : 'h-16'
-                    } ${surfaceView === 'sections'
-                      ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50 shadow-[0_0_20px_rgba(129,221,245,0.14)]'
-                      : 'border-white/8 bg-black/24 text-white/62'
-                    }`}
-                >
-                  <ListMusic className={isUltraCompactLandscape ? 'h-2.75 w-2.75' : isCompactLandscape ? 'h-3.25 w-3.25' : 'h-6 w-6'} />
-                  {!isCompactLandscape && <span className="text-[0.6rem] font-black uppercase tracking-[0.16em]">Secciones</span>}
-                </button>
-              </div>
               <button
                 type="button"
-                onClick={() => {
-                  if (!hasTrackSession) {
-                    return;
-                  }
-
-                  const nextMuteAll = mutedTrackIds.size !== activeTracks.length;
-                  activeTracks.forEach((track) => {
-                    const currentlyMuted = mutedTrackIds.has(track.id);
-                    if (nextMuteAll !== currentlyMuted) {
-                      toggleMute(track.id);
-                    }
-                  });
-                  setMutedTrackIds(nextMuteAll ? new Set(activeTracks.map((track) => track.id)) : new Set());
-                }}
-                disabled={!hasTrackSession}
-                className={`ui-pressable-soft rounded-[1.2rem] border border-white/8 bg-black/24 px-2 text-center ${isUltraCompactLandscape ? 'h-[3.25rem] w-full rounded-[1rem] text-[0.48rem]' : isCompactLandscape ? 'h-[4.2rem] w-full text-[0.54rem]' : 'text-[0.78rem] py-5'} font-semibold tracking-[0.18em] leading-[1.1] text-white/62`}
+                onClick={handlePreviousSection}
+                disabled={!hasTrackSession || isTransportCueBusy || isCongregationFading}
+                aria-label="Ir a la sección anterior"
+                aria-keyshortcuts="["
+                title="Sección anterior ([)"
+                className={`group relative ui-pressable-soft flex min-h-0 w-full flex-1 flex-col items-center justify-center rounded-[1.2rem] border border-white/8 bg-black/24 px-1 text-white/62 transition-all disabled:cursor-not-allowed disabled:opacity-35 ${isUltraCompactLandscape ? 'rounded-[1rem]' : ''}`}
               >
-                SILEN.
-                <br />
-                TODO
+                <ChevronLeft className={isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-4 w-4' : 'h-6 w-6'} strokeWidth={2.2} />
+                <span className={`${isUltraCompactLandscape ? 'text-[0.42rem]' : isCompactLandscape ? 'text-[0.48rem]' : 'text-[0.6rem]'} mt-1 font-black uppercase tracking-[0.13em]`}>
+                  Anterior
+                </span>
+                <span className="pointer-events-none absolute right-1.5 top-1.5 rounded-md border border-white/12 bg-white/8 px-1.5 py-0.5 text-[0.5rem] font-black text-white/72 opacity-0 transition-opacity group-hover:opacity-100">
+                  [
+                </span>
               </button>
               <button
                 type="button"
-                onClick={handleLoopIn}
+                onClick={handleNextSection}
+                disabled={!hasTrackSession || isTransportCueBusy || isCongregationFading}
+                aria-label="Ir a la sección siguiente"
+                aria-keyshortcuts="]"
+                title="Sección siguiente (])"
+                className={`group relative ui-pressable-soft flex min-h-0 w-full flex-1 flex-col items-center justify-center rounded-[1.2rem] border border-white/8 bg-black/24 px-1 text-white/62 transition-all disabled:cursor-not-allowed disabled:opacity-35 ${isUltraCompactLandscape ? 'rounded-[1rem]' : ''}`}
+              >
+                <ChevronRight className={isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-4 w-4' : 'h-6 w-6'} strokeWidth={2.2} />
+                <span className={`${isUltraCompactLandscape ? 'text-[0.42rem]' : isCompactLandscape ? 'text-[0.48rem]' : 'text-[0.6rem]'} mt-1 font-black uppercase tracking-[0.13em]`}>
+                  Siguiente
+                </span>
+                <span className="pointer-events-none absolute right-1.5 top-1.5 rounded-md border border-white/12 bg-white/8 px-1.5 py-0.5 text-[0.5rem] font-black text-white/72 opacity-0 transition-opacity group-hover:opacity-100">
+                  ]
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSurfaceView((previous) => previous === 'mix' ? 'sections' : 'mix')}
+                aria-pressed={showSectionsPanel}
+                aria-label={showSectionsPanel ? 'Mostrar faders de mezcla' : 'Mostrar secciones'}
+                aria-keyshortcuts="V"
+                title={`${showSectionsPanel ? 'Mostrar mezcla' : 'Mostrar secciones'} (V)`}
+                className={`group relative ui-pressable-soft flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-1 rounded-[1.2rem] border transition-all ${isUltraCompactLandscape ? 'rounded-[1rem] gap-0.5' : ''
+                  } ${showSectionsPanel
+                    ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50 shadow-[0_0_20px_rgba(129,221,245,0.14)]'
+                    : 'border-white/8 bg-black/24 text-white/62'
+                  }`}
+              >
+                {showSectionsPanel ? (
+                  <SlidersVertical className={isUltraCompactLandscape ? 'h-3 w-3' : isCompactLandscape ? 'h-3.5 w-3.5' : 'h-6 w-6'} />
+                ) : (
+                  <ListMusic className={isUltraCompactLandscape ? 'h-3 w-3' : isCompactLandscape ? 'h-3.5 w-3.5' : 'h-6 w-6'} />
+                )}
+                <span className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : isCompactLandscape ? 'text-[0.52rem]' : 'text-[0.66rem]'} font-black uppercase tracking-[0.16em]`}>
+                  {showSectionsPanel ? 'Mezcla' : 'Secciones'}
+                </span>
+                <span className="pointer-events-none absolute right-1.5 top-1.5 rounded-md border border-white/12 bg-white/8 px-1.5 py-0.5 text-[0.5rem] font-black text-white/72 opacity-0 transition-opacity group-hover:opacity-100">
+                  V
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={handleToggleLoop}
                 disabled={!hasTrackSession}
-                className={`ui-pressable-soft rounded-[1.2rem] border px-2 text-center ${isUltraCompactLandscape ? 'h-[3.25rem] w-full rounded-[1rem] text-[0.48rem]' : isCompactLandscape ? 'h-[4.2rem] w-full text-[0.54rem]' : 'text-[0.78rem] py-5'} font-semibold tracking-[0.18em] leading-[1.1] ${loopEnabled
+                aria-pressed={loopEnabled}
+                aria-label={loopEnabled ? 'Desactivar bucle' : 'Activar bucle en la sección actual'}
+                aria-keyshortcuts="L"
+                title={`${loopEnabled ? 'Desactivar' : 'Activar'} bucle (L)`}
+                className={`group relative ui-pressable-soft flex min-h-0 w-full flex-1 flex-col items-center justify-center rounded-[1.2rem] border px-2 text-center ${isUltraCompactLandscape ? 'rounded-[1rem] text-[0.46rem]' : isCompactLandscape ? 'text-[0.52rem]' : 'text-[0.68rem]'} font-semibold tracking-[0.16em] leading-[1.1] ${loopEnabled
                   ? 'border-[#43c477]/50 bg-[#43c477]/14 text-[#9effc4]'
                   : 'border-white/8 bg-black/24 text-white/62'
                   }`}
               >
-                BUCLE
-                <br />
-                ON
-              </button>
-              <button
-                type="button"
-                onClick={handleLoopOut}
-                disabled={!hasTrackSession}
-                className={`ui-pressable-soft rounded-[1.2rem] border border-white/8 bg-black/24 px-2 text-center ${isUltraCompactLandscape ? 'h-[3.25rem] w-full rounded-[1rem] text-[0.48rem]' : isCompactLandscape ? 'h-[4.2rem] w-full text-[0.54rem]' : 'text-[0.78rem] py-5'} font-semibold tracking-[0.18em] leading-[1.1] text-white/62`}
-              >
-                BUCLE
-                <br />
-                OFF
+                <Infinity className={isUltraCompactLandscape ? 'mb-0.5 h-3.5 w-3.5' : isCompactLandscape ? 'mb-1 h-4 w-4' : 'mb-1.5 h-6 w-6'} strokeWidth={2.2} />
+                <span>BUCLE {loopEnabled ? 'ON' : 'OFF'}</span>
+                <span className="pointer-events-none absolute right-1.5 top-1.5 rounded-md border border-white/12 bg-white/8 px-1.5 py-0.5 text-[0.5rem] font-black text-white/72 opacity-0 transition-opacity group-hover:opacity-100">
+                  L
+                </span>
               </button>
             </div>
           </div>
 
           <div className={`rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isUltraCompactLandscape ? 'px-0.5 py-0.5' : isCompactLandscape ? 'px-1 py-0.5' : 'px-3 py-4'}`}>
             <div className={`relative flex h-full flex-col items-center border border-white/7 bg-[linear-gradient(180deg,rgba(34,35,37,0.92),rgba(26,27,29,0.94))] ${isUltraCompactLandscape ? 'rounded-[1.18rem] px-0.75 pb-0.75 pt-0.85' : isCompactLandscape ? 'rounded-[1.38rem] px-1.25 pb-1.25 pt-0.95' : 'rounded-[1.75rem] px-3 pb-4 pt-3'}`}>
-              <div className={`flex items-center justify-center border border-white/8 bg-black/28 text-white/62 ${isUltraCompactLandscape ? 'mb-1 min-h-[2.5rem] min-w-[2.5rem] rounded-[0.95rem]' : isCompactLandscape ? 'mb-1.5 min-h-[2.75rem] min-w-[2.75rem] rounded-[1.05rem]' : 'mb-3 h-11 w-11 rounded-full'}`}>
+              <div className={`flex items-center justify-center border border-white/8 bg-black/28 text-white/62 ${isUltraCompactLandscape ? 'mb-1 min-h-[1.75rem] min-w-[1.75rem] rounded-[0.95rem]' : isCompactLandscape ? 'mb-1.5 min-h-[2rem] min-w-[2rem] rounded-[1.05rem]' : 'mb-2 h-10 w-10 rounded-full'}`}>
                 <span className={`font-black tracking-[0.18em] ${isUltraCompactLandscape ? 'text-[0.54rem]' : isCompactLandscape ? 'text-[0.65rem]' : 'text-[0.82rem]'}`}>M</span>
               </div>
 
               <div className="relative flex w-full flex-1 items-center justify-center">
                 <div className={`relative h-full w-full ${isUltraCompactLandscape ? 'max-w-[5.2rem]' : isCompactLandscape ? 'max-w-[5.95rem]' : 'max-w-[5.8rem]'}`}>
-                  <div className={`absolute left-1/2 -translate-x-1/2 rounded-full bg-[#050607] ${isUltraCompactLandscape ? 'top-[8%] bottom-[12%] w-[0.5rem]' : isCompactLandscape ? 'top-[7%] bottom-[10%] w-[0.56rem]' : 'top-[5%] bottom-[7%] w-[0.72rem]'}`} />
+                  <div className={`absolute left-1/2 -translate-x-1/2 rounded-full bg-[#050607] ${isUltraCompactLandscape ? 'top-[8%] bottom-[12%] w-[0.5rem]' : isCompactLandscape ? 'top-[7%] bottom-[11%] w-[0.56rem]' : 'top-[4.5%] bottom-[6.5%] w-[0.72rem]'}`} />
                   {Array.from({ length: 7 }).map((_, index) => (
                     <div
                       key={`master-mark-${index}`}
@@ -5054,7 +5161,7 @@ export function LiveDirectorView({
               <button
                 type="button"
                 onClick={() => setShowLoadPanel(false)}
-                className="ui-pressable-soft flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-black/28 text-white/64 hover:text-white"
+                className="ui-pressable-soft fixed right-4 top-4 z-[70] flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/70 text-white/64 backdrop-blur hover:text-white"
                 aria-label="Cerrar cargador de sesion"
               >
                 <X className="h-5 w-5" />
@@ -5245,103 +5352,218 @@ export function LiveDirectorView({
         </>
       )}
 
-      {showTrackLoadModal && canToggleTrackLoad && (
-        <div className="absolute inset-0 z-[58] flex items-center justify-center bg-black/44 px-4 py-4 backdrop-blur-[10px]">
-          <div className={`w-full rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,22,0.98),rgba(13,15,17,0.98))] shadow-[0_32px_64px_rgba(0,0,0,0.38)] ${useWideTrackLoadModal ? 'max-w-[44rem] p-4' : 'max-w-[34rem] p-5'}`}>
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-[0.7rem] font-black uppercase tracking-[0.22em] text-cyan-100/56">Carga selectiva</p>
-                <h3 className={`font-semibold text-white ${useWideTrackLoadModal ? 'mt-1 text-[0.96rem] leading-tight' : 'mt-1.5 text-[1.2rem]'}`}>
-                  {currentSessionLabel}
-                </h3>
-                <p className={`text-white/54 ${useWideTrackLoadModal ? 'mt-1 text-[0.74rem]' : 'mt-1.5 text-sm'}`}>
-                  {trackLoadGuidanceText}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleCloseTrackLoadModal}
-                className="ui-pressable-soft flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/26 text-white/58 hover:text-white"
-                aria-label="Cerrar configuracion de carga"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className={`mt-4 flex items-center justify-between gap-3 rounded-[1rem] border border-white/8 bg-black/24 ${useWideTrackLoadModal ? 'px-3 py-2' : 'px-3 py-2.5'}`}>
-              <div>
-                <p className="text-[0.6rem] font-black uppercase tracking-[0.18em] text-white/36">Resumen</p>
-                <p className={`${useWideTrackLoadModal ? 'mt-0.5 text-[0.92rem]' : 'mt-1 text-sm'} font-semibold text-white/88`}>
-                  {pendingEnabledCount} de {sessionTracks.length} activos{pendingEnabledCount > sessionActiveTrackLimit ? ` (sobre ${sessionActiveTrackLimit})` : ''}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!pendingEnabledMap) return;
-                  const nextMap: Record<string, boolean> = {};
-                  const rankedTracks = sessionTracks
-                    .map((track, index) => ({ track, index, rank: stemPriorityRank(track) }))
-                    .sort((a, b) => (a.rank - b.rank) || (a.index - b.index));
-                  let enabledCount = 0;
-                  rankedTracks.forEach(({ track }) => {
-                    const canEnable = enabledCount < sessionActiveTrackLimit;
-                    nextMap[track.id] = canEnable;
-                    if (canEnable) {
-                      enabledCount += 1;
-                    }
-                  });
-                  setPendingEnabledMap(nextMap);
-                }}
-                className={`ui-pressable-soft rounded-full border border-white/10 bg-white/[0.05] font-black uppercase tracking-[0.18em] text-white/76 ${useWideTrackLoadModal ? 'px-3 py-1.5 text-[0.58rem]' : 'px-3 py-2 text-[0.62rem]'}`}
-              >
-                Auto elegir
-              </button>
-            </div>
-
-            <div className={`mt-4 overflow-y-auto pr-1 ${useWideTrackLoadModal ? 'max-h-[56dvh]' : 'max-h-[52dvh]'}`}>
-              <div className={`grid ${useWideTrackLoadModal ? 'grid-cols-2 gap-2' : 'grid-cols-1 gap-2'}`}>
-              {mappedTrackDetails.map((track) => {
-                const pendingEnabled = pendingEnabledMap ? (pendingEnabledMap[track.id] !== false) : track.enabled;
-                return (
-                  <button
-                    key={`toggle-track-load-${track.id}`}
-                    type="button"
-                    onClick={() => {
-                      if (!pendingEnabledMap) return;
-                      const isEnabling = pendingEnabledMap[track.id] === false;
-                      const enabledCount = Object.values(pendingEnabledMap).filter(Boolean).length;
-                      if (isEnabling && enabledCount >= sessionActiveTrackLimit) {
-                        window.alert(`Para estabilidad, no cargues más de ${sessionActiveTrackLimit} stems. Desactiva uno antes de activar otro.`);
-                        return;
-                      }
-
-                      const next = { ...pendingEnabledMap, [track.id]: !pendingEnabledMap[track.id] };
-                      const hasAny = Object.values(next).some(Boolean);
-                      if (hasAny) setPendingEnabledMap(next);
-                    }}
-                    className={`w-full rounded-[1rem] border text-left transition-all ${useWideTrackLoadModal ? 'px-3 py-2.5' : 'px-3 py-3'} ${pendingEnabled
-                      ? 'border-white/8 bg-white/[0.035]'
-                      : 'border-white/6 bg-black/20 opacity-72'
-                      }`}
+      {showStemsActionModal && canToggleTrackLoad && (
+        <div
+          className="absolute inset-0 z-[57] flex items-center justify-center bg-black/48 px-4 py-4 backdrop-blur-[10px]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="live-director-stems-action-title"
+        >
+          <div className={`w-full overflow-hidden rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,22,0.98),rgba(13,15,17,0.98))] shadow-[0_32px_72px_rgba(0,0,0,0.44)] ${useWideTrackLoadModal ? 'max-w-[42rem]' : 'max-w-[25rem]'}`}>
+            <div className={`${useWideTrackLoadModal ? 'px-5 py-4' : 'px-4 py-4'}`}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[0.66rem] font-black uppercase tracking-[0.24em] text-cyan-100/58">STEMS</p>
+                  <h3
+                    id="live-director-stems-action-title"
+                    className={`font-semibold tracking-tight text-white ${useWideTrackLoadModal ? 'mt-1 text-[1.28rem]' : 'mt-1 text-[1.08rem]'}`}
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className={`truncate font-semibold text-white/88 ${useWideTrackLoadModal ? 'text-[0.9rem]' : 'text-sm'}`}>{track.sourceFileName}</p>
-                        <p className={`uppercase tracking-[0.16em] ${useWideTrackLoadModal ? 'mt-0.5 text-[0.62rem]' : 'mt-1 text-[0.7rem]'} ${pendingEnabled ? 'text-cyan-100/56' : 'text-white/34'}`}>
-                          {track.trackName}
-                        </p>
+                    ¿Qué quieres hacer?
+                  </h3>
+                  <p className={`max-w-2xl text-white/54 ${useWideTrackLoadModal ? 'mt-1 text-[0.8rem]' : 'mt-1 text-[0.74rem]'}`}>
+                    Gestiona los stems actuales o carga/reemplaza la secuencia sin recargar la interfaz principal.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowStemsActionModal(false)}
+                  className="ui-pressable-soft flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/26 text-white/58 hover:text-white"
+                  aria-label="Cerrar opciones de stems"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className={`mt-4 grid ${useWideTrackLoadModal ? 'grid-cols-2 gap-3' : 'grid-cols-1 gap-2.5'}`}>
+                <button
+                  type="button"
+                  onClick={handleOpenTrackLoadModal}
+                  className="ui-pressable-soft group min-h-[8.2rem] rounded-[1.35rem] border border-cyan-300/18 bg-cyan-300/[0.075] p-4 text-left text-cyan-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-cyan-300/30 hover:bg-cyan-300/[0.10]"
+                >
+                  <span className="flex h-11 w-11 items-center justify-center rounded-[1rem] border border-cyan-300/22 bg-black/24 text-cyan-100">
+                    <SlidersVertical className="h-5 w-5" />
+                  </span>
+                  <span className="mt-4 block text-[0.96rem] font-semibold tracking-tight text-white">
+                    Gestionar stems
+                  </span>
+                  <span className="mt-1 block text-[0.74rem] leading-relaxed text-white/54">
+                    Prende o apaga pistas antes de aplicar. Ahora: {activeTracks.length}/{sessionTracks.length} activas.
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleOpenStemsLoader}
+                  className="ui-pressable-soft group min-h-[8.2rem] rounded-[1.35rem] border border-white/10 bg-white/[0.045] p-4 text-left text-white/82 hover:border-cyan-300/22 hover:bg-white/[0.065]"
+                >
+                  <span className="flex h-11 w-11 items-center justify-center rounded-[1rem] border border-white/10 bg-black/24 text-cyan-100/86">
+                    <FolderOpen className="h-5 w-5" />
+                  </span>
+                  <span className="mt-4 block text-[0.96rem] font-semibold tracking-tight text-white">
+                    Cargar / reemplazar
+                  </span>
+                  <span className="mt-1 block text-[0.74rem] leading-relaxed text-white/52">
+                    Abre el cargador para escoger una secuencia única o una carpeta multitrack.
+                  </span>
+                </button>
+              </div>
+
+              <div className="mt-3 rounded-[1rem] border border-white/8 bg-black/22 px-3 py-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="truncate text-[0.72rem] font-semibold text-white/74">{currentSessionLabel}</p>
+                  <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[0.58rem] font-black uppercase tracking-[0.16em] text-white/46">
+                    {hasSessionTracks ? `${sessionTracks.length} stems` : 'Sin stems'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTrackLoadModal && canToggleTrackLoad && (
+        <div
+          className="absolute inset-0 z-[58] flex items-center justify-center bg-black/50 px-4 py-4 backdrop-blur-[10px]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="live-director-stems-modal-title"
+        >
+          <div className={`flex w-full max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,22,0.98),rgba(13,15,17,0.98))] shadow-[0_32px_72px_rgba(0,0,0,0.44)] ${useWideTrackLoadModal ? 'max-w-[48rem]' : 'max-w-[34rem]'}`}>
+            <div className={`shrink-0 border-b border-white/8 ${useWideTrackLoadModal ? 'px-5 py-4' : 'px-4 py-4'}`}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[0.66rem] font-black uppercase tracking-[0.24em] text-cyan-100/58">STEMS</p>
+                  <h3
+                    id="live-director-stems-modal-title"
+                    className={`truncate font-semibold tracking-tight text-white ${useWideTrackLoadModal ? 'mt-1 text-[1.18rem]' : 'mt-1 text-[1.05rem]'}`}
+                  >
+                    {currentSessionLabel}
+                  </h3>
+                  <p className={`max-w-2xl text-white/54 ${useWideTrackLoadModal ? 'mt-1 text-[0.78rem]' : 'mt-1 text-[0.74rem]'}`}>
+                    {trackLoadGuidanceText}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCancelTrackLoadModal}
+                  className="ui-pressable-soft flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-black/26 text-white/58 hover:text-white"
+                  aria-label="Cancelar configuracion de stems"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className={`mt-4 grid gap-2 ${useWideTrackLoadModal ? 'grid-cols-[1fr_1fr_auto] items-stretch' : 'grid-cols-2'}`}>
+                <div className="rounded-[1rem] border border-cyan-300/14 bg-cyan-300/[0.07] px-3 py-2.5">
+                  <p className="text-[0.56rem] font-black uppercase tracking-[0.18em] text-cyan-100/52">Activos</p>
+                  <p className="mt-0.5 text-[1.15rem] font-semibold leading-none text-cyan-50">
+                    {pendingEnabledCount}/{sessionTracks.length}
+                  </p>
+                </div>
+                <div className="rounded-[1rem] border border-white/8 bg-black/24 px-3 py-2.5">
+                  <p className="text-[0.56rem] font-black uppercase tracking-[0.18em] text-white/36">Seguro</p>
+                  <p className="mt-0.5 text-[1.15rem] font-semibold leading-none text-white/88">
+                    {sessionActiveTrackLimit >= sessionTracks.length ? 'Todos' : sessionActiveTrackLimit}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!pendingEnabledMap) return;
+                    const nextMap: Record<string, boolean> = {};
+                    const rankedTracks = sessionTracks
+                      .map((track, index) => ({ track, index, rank: stemPriorityRank(track) }))
+                      .sort((a, b) => (a.rank - b.rank) || (a.index - b.index));
+                    let enabledCount = 0;
+                    rankedTracks.forEach(({ track }) => {
+                      const canEnable = enabledCount < sessionActiveTrackLimit;
+                      nextMap[track.id] = canEnable;
+                      if (canEnable) {
+                        enabledCount += 1;
+                      }
+                    });
+                    setPendingEnabledMap(nextMap);
+                  }}
+                  className={`ui-pressable-soft rounded-[1rem] border border-white/10 bg-white/[0.05] font-black uppercase tracking-[0.16em] text-white/78 hover:bg-white/[0.08] ${useWideTrackLoadModal ? 'px-4 text-[0.62rem]' : 'col-span-2 px-3 py-2.5 text-[0.62rem]'}`}
+                >
+                  Seleccion segura
+                </button>
+              </div>
+            </div>
+
+            <div className={`min-h-0 flex-1 overflow-y-auto ${useWideTrackLoadModal ? 'px-5 py-4' : 'px-4 py-3'}`}>
+              <div className={`grid ${useWideTrackLoadModal ? 'grid-cols-2 gap-2.5' : 'grid-cols-1 gap-2'}`}>
+                {mappedTrackDetails.map((track) => {
+                  const pendingEnabled = pendingEnabledMap ? (pendingEnabledMap[track.id] !== false) : track.enabled;
+                  return (
+                    <button
+                      key={`toggle-track-load-${track.id}`}
+                      type="button"
+                      onClick={() => {
+                        if (!pendingEnabledMap) return;
+                        const isEnabling = pendingEnabledMap[track.id] === false;
+                        const enabledCount = Object.values(pendingEnabledMap).filter(Boolean).length;
+                        if (isEnabling && enabledCount >= sessionActiveTrackLimit) {
+                          window.alert(`Para estabilidad, no cargues más de ${sessionActiveTrackLimit} stems. Desactiva uno antes de activar otro.`);
+                          return;
+                        }
+
+                        const next = { ...pendingEnabledMap, [track.id]: !pendingEnabledMap[track.id] };
+                        const hasAny = Object.values(next).some(Boolean);
+                        if (hasAny) setPendingEnabledMap(next);
+                      }}
+                      aria-pressed={pendingEnabled}
+                      className={`group w-full rounded-[1.05rem] border text-left transition-all ${useWideTrackLoadModal ? 'px-3.5 py-3' : 'px-3 py-3'} ${pendingEnabled
+                        ? 'border-cyan-300/18 bg-cyan-300/[0.06] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'
+                        : 'border-white/7 bg-black/22 opacity-72'
+                        }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${pendingEnabled ? 'bg-cyan-200 shadow-[0_0_12px_rgba(103,232,249,0.35)]' : 'bg-white/18'}`} />
+                        <div className="min-w-0 flex-1">
+                          <p className={`truncate font-semibold ${useWideTrackLoadModal ? 'text-[0.92rem]' : 'text-[0.86rem]'} ${pendingEnabled ? 'text-white/92' : 'text-white/58'}`}>
+                            {track.sourceFileName}
+                          </p>
+                          <p className={`mt-0.5 truncate uppercase tracking-[0.16em] ${useWideTrackLoadModal ? 'text-[0.62rem]' : 'text-[0.58rem]'} ${pendingEnabled ? 'text-cyan-100/58' : 'text-white/32'}`}>
+                            {track.trackName}
+                          </p>
+                        </div>
+                        <span className={`relative h-7 w-12 shrink-0 rounded-full border transition-all ${pendingEnabled ? 'border-cyan-300/28 bg-cyan-300/16' : 'border-white/10 bg-black/28'}`}>
+                          <span className={`absolute top-1 h-5 w-5 rounded-full transition-all ${pendingEnabled ? 'left-6 bg-cyan-100' : 'left-1 bg-white/38'}`} />
+                        </span>
                       </div>
-                      <span className={`shrink-0 rounded-full border font-black uppercase tracking-[0.18em] ${useWideTrackLoadModal ? 'px-2.5 py-1 text-[0.52rem]' : 'px-3 py-1.5 text-[0.58rem]'} ${pendingEnabled
-                        ? 'border-emerald-300/18 bg-emerald-300/[0.09] text-emerald-100/84'
-                        : 'border-white/10 bg-black/26 text-white/54'
-                        }`}>
-                        {pendingEnabled ? 'Activa' : 'Omitida'}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className={`shrink-0 border-t border-white/8 bg-black/16 ${useWideTrackLoadModal ? 'px-5 py-4' : 'px-4 py-3'}`}>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleCancelTrackLoadModal}
+                  className="ui-pressable-soft h-12 flex-1 rounded-[1rem] border border-white/10 bg-white/[0.04] text-[0.82rem] font-semibold uppercase tracking-[0.14em] text-white/70 hover:bg-white/[0.07] hover:text-white"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApplyTrackLoadModal}
+                  className="ui-pressable-soft h-12 flex-[1.25] rounded-[1rem] border border-cyan-300/30 bg-cyan-300/[0.12] text-[0.82rem] font-semibold uppercase tracking-[0.14em] text-cyan-50 shadow-[0_0_18px_rgba(103,232,249,0.10)] hover:bg-cyan-300/[0.16]"
+                >
+                  Aplicar
+                </button>
               </div>
             </div>
           </div>
