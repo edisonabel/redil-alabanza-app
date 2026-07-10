@@ -273,12 +273,53 @@ const SECTION_WAVE_BAR_INSET_PX = 16;
 const SECTION_WAVE_BAR_MIN_COUNT = 7;
 const SECTION_TRANSITION_FADE_OUT_MS = 170;
 const SECTION_TRANSITION_FADE_IN_MS = 180;
+const CONGREGATION_FADE_MS = 5000;
 const SECTIONS_AUTO_FOLLOW_RESUME_MS = 5000;
 const SECTION_DRAG_CLICK_SUPPRESS_THRESHOLD_PX = 8;
 const SEQUENCE_FILE_ACCEPT = '.aac,.m4a,audio/aac,audio/mp4,audio/x-m4a,audio/*';
 
 const CONTROL_CARD =
   'ui-pressable-soft flex items-center justify-center rounded-[1.55rem] border border-white/8 bg-[linear-gradient(180deg,rgba(26,27,29,0.96),rgba(17,18,20,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_24px_40px_rgba(0,0,0,0.25)] transition-all duration-200';
+
+function CongregationFadeIcon({ muted, fading }: { muted: boolean; fading: boolean }) {
+  const fillClip = muted ? 'inset(0 100% 0 0)' : 'inset(0 0% 0 0)';
+
+  return (
+    <span className="relative block h-7 w-9" aria-hidden="true">
+      <svg viewBox="0 0 36 28" className="absolute inset-0 h-full w-full text-white/28">
+        <path
+          d="M4 4 C10 4 12 8 17 13 C22 18 26 21 32 22"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+        />
+        <path d="M4 4 C10 4 12 8 17 13 C22 18 26 21 32 22 L32 24 L4 24 Z" fill="currentColor" opacity="0.2" />
+        <path d="M4 24 H32" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+      <svg
+        viewBox="0 0 36 28"
+        className={`absolute inset-0 h-full w-full text-cyan-200 ${fading ? 'drop-shadow-[0_0_7px_rgba(129,221,245,0.62)]' : ''}`}
+        style={{
+          clipPath: fillClip,
+          transitionProperty: 'clip-path',
+          transitionDuration: `${CONGREGATION_FADE_MS}ms`,
+          transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
+        }}
+      >
+        <path
+          d="M4 4 C10 4 12 8 17 13 C22 18 26 21 32 22"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+        />
+        <path d="M4 4 C10 4 12 8 17 13 C22 18 26 21 32 22 L32 24 L4 24 Z" fill="currentColor" opacity="0.34" />
+        <path d="M4 24 H32" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
+}
 
 const GENERIC_TRACK_ACCENTS = ['#81ddf5', '#7ed8e7', '#9f7cff', '#43c477', '#c98bff', '#73d1f8'];
 const TRACK_META_BY_ID = new Map(MIXER_TRACKS.map((track) => [track.id, track]));
@@ -331,6 +372,15 @@ const shouldIgnoreKeyboardShortcutTarget = (target: EventTarget | null) => {
     Boolean(
       target.closest(
         'input, textarea, select, button, a, [contenteditable="true"], [role="textbox"], [data-live-director-shortcuts="off"]',
+      ),
+    );
+};
+
+const shouldIgnoreSectionKeyboardTarget = (target: EventTarget | null) => {
+  return target instanceof Element &&
+    Boolean(
+      target.closest(
+        'input, textarea, select, [contenteditable="true"], [role="textbox"], [role="slider"], [data-live-director-shortcuts="off"]',
       ),
     );
 };
@@ -471,6 +521,7 @@ export function LiveDirectorView({
   // slides back to where it should be instead of snapping.
   const sectionsAutoFollowShouldSmoothRef = useRef(false);
   const sectionsGestureExceededDragThresholdRef = useRef(false);
+  const keyboardSectionIndexRef = useRef<number | null>(null);
   const mixerScrollRef = useRef<HTMLDivElement | null>(null);
   const mixerDragStateRef = useRef<DragScrollState>({
     active: false,
@@ -511,6 +562,7 @@ export function LiveDirectorView({
   const appliedMasterVolumeRef = useRef(0.82);
   const masterVolumeFadeFrameRef = useRef<number | null>(null);
   const masterVolumeFadeResolveRef = useRef<(() => void) | null>(null);
+  const congregationMutedRef = useRef(false);
   const resumeNativeMetersTimeoutRef = useRef<number | null>(null);
   const passiveTelemetryFrameRef = useRef<number | null>(null);
   const passiveCurrentTimeRef = useRef(0);
@@ -710,6 +762,7 @@ export function LiveDirectorView({
   const [sectionsAutoFollowStatus, setSectionsAutoFollowStatus] = useState<
     'auto' | 'held' | 'resuming'
   >('auto');
+  const [keyboardSectionIndex, setKeyboardSectionIndex] = useState<number | null>(null);
   const [visualSectionTime, setVisualSectionTimeState] = useState<number | null>(null);
   const [manualSession, setManualSession] = useState<LiveDirectorResolvedSession | null>(
     initialSession ? toResolvedSession(initialSession) : null,
@@ -772,6 +825,13 @@ export function LiveDirectorView({
   const [trackOutputRoutes, setTrackOutputRoutes] = useState<Record<string, TrackOutputRoute>>({});
   const [soloTrackId, setSoloTrackId] = useState<string | null>(null);
   const [masterVolume, setMasterVolumeState] = useState(0.82);
+  const [congregationFadeState, setCongregationFadeState] = useState<
+    'normal' | 'fading-out' | 'muted' | 'fading-in'
+  >('normal');
+  const isCongregationFading =
+    congregationFadeState === 'fading-out' || congregationFadeState === 'fading-in';
+  const congregationFadeTargetMuted =
+    congregationFadeState === 'fading-out' || congregationFadeState === 'muted';
   const [loopEnabled, setLoopEnabled] = useState(false);
   const [surfaceView, setSurfaceView] = useState<SurfaceView>('mix');
   const [showOffsetModal, setShowOffsetModal] = useState(false);
@@ -1465,6 +1525,8 @@ export function LiveDirectorView({
       window.clearTimeout(resumeSectionsAutoScrollTimeoutRef.current);
       resumeSectionsAutoScrollTimeoutRef.current = null;
     }
+    keyboardSectionIndexRef.current = null;
+    setKeyboardSectionIndex(null);
     setSectionsAutoFollowStatus('auto');
   }, []);
 
@@ -2415,14 +2477,58 @@ export function LiveDirectorView({
     })
   ), [applyMasterVolume, stopMasterVolumeFade]);
 
+  const handleToggleCongregationFade = useCallback(() => {
+    if (
+      !hasTrackSession ||
+      !isReady ||
+      isTransportCueBusyRef.current ||
+      sectionSeekInFlightRef.current
+    ) {
+      return;
+    }
+
+    const nextMuted = !congregationMutedRef.current;
+    const transitionToken = sectionTransitionTokenRef.current + 1;
+    congregationMutedRef.current = nextMuted;
+    sectionTransitionTokenRef.current = transitionToken;
+    isSectionTransitioningRef.current = true;
+    setCongregationFadeState(nextMuted ? 'fading-out' : 'fading-in');
+
+    void (async () => {
+      await fadeMasterVolume(
+        nextMuted ? 0 : masterVolumeRef.current,
+        CONGREGATION_FADE_MS,
+        transitionToken,
+      );
+
+      if (sectionTransitionTokenRef.current !== transitionToken) {
+        return;
+      }
+
+      const finalVolume = nextMuted ? 0 : masterVolumeRef.current;
+      isSectionTransitioningRef.current = false;
+      applyMasterVolume(finalVolume);
+      setCongregationFadeState(nextMuted ? 'muted' : 'normal');
+    })();
+  }, [applyMasterVolume, fadeMasterVolume, hasTrackSession, isReady]);
+
   useEffect(() => {
     masterVolumeRef.current = masterVolume;
 
     if (!isSectionTransitioningRef.current) {
       stopMasterVolumeFade();
-      applyMasterVolume(masterVolume);
+      applyMasterVolume(congregationMutedRef.current ? 0 : masterVolume);
     }
   }, [applyMasterVolume, masterVolume, stopMasterVolumeFade]);
+
+  useEffect(() => {
+    sectionTransitionTokenRef.current += 1;
+    congregationMutedRef.current = false;
+    isSectionTransitioningRef.current = false;
+    setCongregationFadeState('normal');
+    stopMasterVolumeFade();
+    applyMasterVolume(masterVolumeRef.current);
+  }, [applyMasterVolume, stopMasterVolumeFade, trackSignature]);
 
   useEffect(() => () => {
     sectionTransitionTokenRef.current += 1;
@@ -2431,7 +2537,7 @@ export function LiveDirectorView({
   }, [stopMasterVolumeFade]);
 
   const handleSectionSeek = useCallback(async (nextTime: number) => {
-    if (!hasTrackSession) {
+    if (!hasTrackSession || isCongregationFading) {
       return;
     }
 
@@ -2439,14 +2545,6 @@ export function LiveDirectorView({
     const firstTargetTime = Math.max(0, nextTime);
     const wasPlayingBeforeSectionSeek = isPlaying;
     const playbackTimeBeforeFirstPrime = getLivePlaybackTime();
-    if (
-      DISABLE_BACKWARD_SEEK_WHILE_PLAYING &&
-      wasPlayingBeforeSectionSeek &&
-      firstTargetTime < playbackTimeBeforeFirstPrime - 0.05
-    ) {
-      return;
-    }
-
     if (wasPlayingBeforeSectionSeek) {
       setVisualSectionTime(null);
     } else {
@@ -2496,11 +2594,12 @@ export function LiveDirectorView({
               return;
             }
 
-            await fadeMasterVolume(masterVolumeRef.current, SECTION_TRANSITION_FADE_IN_MS, transitionToken);
+            const restoredVolume = congregationMutedRef.current ? 0 : masterVolumeRef.current;
+            await fadeMasterVolume(restoredVolume, SECTION_TRANSITION_FADE_IN_MS, transitionToken);
           } finally {
             if (sectionTransitionTokenRef.current === transitionToken) {
               isSectionTransitioningRef.current = false;
-              applyMasterVolume(masterVolumeRef.current);
+              applyMasterVolume(congregationMutedRef.current ? 0 : masterVolumeRef.current);
             }
           }
         }
@@ -2527,6 +2626,7 @@ export function LiveDirectorView({
     fadeMasterVolume,
     getLivePlaybackTime,
     hasTrackSession,
+    isCongregationFading,
     isPlaying,
     isReady,
     primeSectionVisuals,
@@ -2539,6 +2639,7 @@ export function LiveDirectorView({
     if (
       !hasTrackSession ||
       isTransportCueBusyRef.current ||
+      isCongregationFading ||
       (DISABLE_BACKWARD_SEEK_WHILE_PLAYING && isPlaying)
     ) {
       return;
@@ -2558,7 +2659,7 @@ export function LiveDirectorView({
       isTransportCueBusyRef.current = false;
       setIsReturnToStartBusy(false);
     }
-  }, [hasTrackSession, isPlaying, primeSectionVisuals, seekTo]);
+  }, [hasTrackSession, isCongregationFading, isPlaying, primeSectionVisuals, seekTo]);
 
   useEffect(() => {
     if (isIOSNativeEngineSurface) {
@@ -3138,7 +3239,7 @@ export function LiveDirectorView({
     if (
       !hasTrackSession ||
       isTransportCueBusy ||
-      (DISABLE_BACKWARD_SEEK_WHILE_PLAYING && isPlaying)
+      isCongregationFading
     ) {
       return;
     }
@@ -3160,7 +3261,7 @@ export function LiveDirectorView({
   };
 
   const handleNextSection = () => {
-    if (!hasTrackSession) {
+    if (!hasTrackSession || isTransportCueBusy || isCongregationFading) {
       return;
     }
 
@@ -3329,39 +3430,6 @@ export function LiveDirectorView({
     }
   }, [commitMixerStateSilent, hasPersistedSongContext, hasProvidedTracks, hasTrackSession, manualSession, sessionTracks, setTrackOutputRoute, trackOutputRoutes]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey) {
-        return;
-      }
-
-      if (showLoadPanel || showTrackLoadModal || shouldIgnoreKeyboardShortcutTarget(event.target)) {
-        return;
-      }
-
-      if (event.code !== 'Space' && event.key !== ' ') {
-        return;
-      }
-
-      if (!isReady || isTransportCueBusy) {
-        return;
-      }
-
-      event.preventDefault();
-
-      handleTogglePlaybackFromGesture();
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [handleTogglePlaybackFromGesture, isReady, isTransportCueBusy, showLoadPanel, showTrackLoadModal]);
-
   const handleInternalPadVolumeChange = useCallback((nextVolume: number) => {
     const safeValue = clamp(nextVolume, 0, 1);
 
@@ -3518,9 +3586,12 @@ export function LiveDirectorView({
       isUserScrollingSectionsRef.current = false;
       sectionsAutoFollowShouldSmoothRef.current = true;
       resumeSectionsAutoScrollTimeoutRef.current = null;
+      keyboardSectionIndexRef.current = null;
+      setKeyboardSectionIndex(null);
+      setVisualSectionTime(null);
       setSectionsAutoFollowStatus('auto');
     }, SECTIONS_AUTO_FOLLOW_RESUME_MS);
-  }, []);
+  }, [setVisualSectionTime]);
 
   // Used while the user is actively dragging / wheel-scrolling: blocks the
   // auto-follow and cancels any pending resume. The resume is programmed when
@@ -3541,6 +3612,140 @@ export function LiveDirectorView({
     isUserScrollingSectionsRef.current = true;
     scheduleSectionsAutoFollowResume();
   }, [scheduleSectionsAutoFollowResume]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey) {
+        return;
+      }
+
+      if (
+        showLoadPanel ||
+        showTrackLoadModal ||
+        showOffsetModal ||
+        showBackConfirm
+      ) {
+        return;
+      }
+
+      const desktopSectionKeyboardEnabled =
+        !isNativeIosShell &&
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+      const isLeftSectionArrow = event.key === 'ArrowLeft' || event.code === 'ArrowLeft';
+      const isRightSectionArrow = event.key === 'ArrowRight' || event.code === 'ArrowRight';
+      const isSectionArrow = isLeftSectionArrow || isRightSectionArrow;
+      const sectionShortcutTargetBlocked = shouldIgnoreSectionKeyboardTarget(event.target);
+
+      if (
+        desktopSectionKeyboardEnabled &&
+        !sectionShortcutTargetBlocked &&
+        isSectionArrow &&
+        showSectionsPanel &&
+        hasTrackSession &&
+        resolvedSections.length > 0 &&
+        !isTransportCueBusy &&
+        !isCongregationFading
+      ) {
+        event.preventDefault();
+        const playbackSectionIndex = getSectionIndexAtTime(getLivePlaybackTime());
+        const sourceIndex = keyboardSectionIndexRef.current ?? playbackSectionIndex;
+        const direction = isLeftSectionArrow ? -1 : 1;
+        const nextIndex = clamp(sourceIndex + direction, 0, resolvedSections.length - 1);
+        const targetSection = resolvedSections[nextIndex];
+
+        if (!targetSection) {
+          return;
+        }
+
+        isUserScrollingSectionsRef.current = true;
+        keyboardSectionIndexRef.current = nextIndex;
+        setKeyboardSectionIndex(nextIndex);
+        setVisualSectionTime(targetSection.startTime);
+        snapSectionsLaneToTime(targetSection.startTime);
+        scheduleSectionsAutoFollowResume();
+        return;
+      }
+
+      const pendingKeyboardSectionIndex =
+        keyboardSectionIndexRef.current ?? keyboardSectionIndex;
+
+      if (
+        desktopSectionKeyboardEnabled &&
+        !sectionShortcutTargetBlocked &&
+        (event.key === 'Enter' || event.code === 'Enter') &&
+        pendingKeyboardSectionIndex !== null
+      ) {
+        const targetSection = resolvedSections[pendingKeyboardSectionIndex];
+        if (!targetSection || isTransportCueBusy || isCongregationFading) {
+          return;
+        }
+
+        event.preventDefault();
+        setVisualSectionTime(null);
+        releaseSectionsAutoFollowNow();
+        void handleSectionSeek(targetSection.startTime);
+        return;
+      }
+
+      if (
+        desktopSectionKeyboardEnabled &&
+        !sectionShortcutTargetBlocked &&
+        (event.key === 'Escape' || event.code === 'Escape') &&
+        pendingKeyboardSectionIndex !== null
+      ) {
+        event.preventDefault();
+        setVisualSectionTime(null);
+        releaseSectionsAutoFollowNow();
+        return;
+      }
+
+      if (event.code !== 'Space' && event.key !== ' ') {
+        return;
+      }
+
+      if (
+        shouldIgnoreKeyboardShortcutTarget(event.target) ||
+        !isReady ||
+        isTransportCueBusy
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      handleTogglePlaybackFromGesture();
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, [
+    getLivePlaybackTime,
+    getSectionIndexAtTime,
+    handleSectionSeek,
+    handleTogglePlaybackFromGesture,
+    hasTrackSession,
+    isCongregationFading,
+    isNativeIosShell,
+    isReady,
+    isTransportCueBusy,
+    keyboardSectionIndex,
+    releaseSectionsAutoFollowNow,
+    resolvedSections,
+    scheduleSectionsAutoFollowResume,
+    setVisualSectionTime,
+    showBackConfirm,
+    showLoadPanel,
+    showOffsetModal,
+    showSectionsPanel,
+    showTrackLoadModal,
+    snapSectionsLaneToTime,
+  ]);
 
   const endSectionsDrag = useCallback((pointerId?: number) => {
     const container = sectionsLaneScrollRef.current;
@@ -3974,10 +4179,38 @@ export function LiveDirectorView({
 
               <button
                 type="button"
+                onClick={handleToggleCongregationFade}
+                disabled={!hasTrackSession || !isReady || isTransportCueBusy}
+                aria-pressed={congregationFadeTargetMuted}
+                aria-label={congregationFadeTargetMuted
+                  ? 'Restaurar progresivamente el volumen de la secuencia'
+                  : 'Bajar progresivamente la secuencia para que cante la congregación'}
+                title={congregationFadeTargetMuted
+                  ? 'Restaurar secuencia · Fade 5s'
+                  : 'Modo congregación · Fade 5s'}
+                className={`${CONTROL_CARD} relative ${isUltraCompactLandscape ? 'h-[3.25rem] px-3' : isCompactLandscape ? 'h-12 px-4' : 'h-[var(--ld-control-height)] px-4'} justify-center disabled:cursor-not-allowed disabled:text-white/24 ${congregationFadeTargetMuted
+                  ? 'border-amber-300/28 bg-amber-300/8 text-amber-100'
+                  : 'text-cyan-100 hover:border-cyan-300/26 hover:bg-cyan-300/8'
+                  }`}
+                style={{ width: scaleRem(isUltraCompactLandscape ? 4.55 : isCompactLandscape ? 5.55 : 6.4, 3.85) }}
+              >
+                <CongregationFadeIcon
+                  muted={congregationFadeTargetMuted}
+                  fading={isCongregationFading}
+                />
+                <span className="sr-only">
+                  {isCongregationFading
+                    ? (congregationFadeTargetMuted ? 'Bajando secuencia' : 'Restaurando secuencia')
+                    : (congregationFadeTargetMuted ? 'Secuencia abajo' : 'Secuencia normal')}
+                </span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => {
                   void handleReturnToStart();
                 }}
-                disabled={!hasTrackSession || isTransportCueBusy || (DISABLE_BACKWARD_SEEK_WHILE_PLAYING && isPlaying)}
+                disabled={!hasTrackSession || isTransportCueBusy || isCongregationFading || (DISABLE_BACKWARD_SEEK_WHILE_PLAYING && isPlaying)}
                 aria-busy={isTransportCueBusy || undefined}
                 className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-4' : isCompactLandscape ? 'h-12 px-5' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/76 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
                 style={{ width: scaleRem(isUltraCompactLandscape ? (showSectionsPanel ? 4.85 : 5.3) : isCompactLandscape ? (showSectionsPanel ? 5.95 : 6.45) : 7.05, 4.45) }}
@@ -3994,12 +4227,13 @@ export function LiveDirectorView({
                   <button
                     type="button"
                     onClick={handlePreviousSection}
-                    disabled={!hasTrackSession || isTransportCueBusy || (DISABLE_BACKWARD_SEEK_WHILE_PLAYING && isPlaying)}
+                    disabled={!hasTrackSession || isTransportCueBusy || isCongregationFading}
                     aria-busy={isSectionSeekBusy || undefined}
                     className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-4' : isCompactLandscape ? 'h-12 px-5' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/82 hover:text-white hover:bg-white/6 disabled:cursor-not-allowed disabled:text-white/24`}
                     style={{ width: scaleRem(isUltraCompactLandscape ? 4.45 : isCompactLandscape ? 5.35 : 6.25, 3.75) }}
                     aria-label="Ir a la seccion anterior"
-                    title="Ir a la seccion anterior"
+                    aria-keyshortcuts="ArrowLeft"
+                    title="Ir a la sección anterior · Flecha izquierda en PC"
                   >
                     <ChevronsLeft className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-5 w-5' : 'h-7 w-7'}`} strokeWidth={isCompactLandscape ? 2 : 2.4} />
                   </button>
@@ -4008,11 +4242,12 @@ export function LiveDirectorView({
                     type="button"
                     onClick={handleNextSection}
                     aria-busy={isSectionSeekBusy || undefined}
-                    disabled={!hasTrackSession || resolvedSections.length === 0 || activeSectionIndex >= resolvedSections.length - 1}
+                    disabled={!hasTrackSession || isTransportCueBusy || isCongregationFading || resolvedSections.length === 0 || activeSectionIndex >= resolvedSections.length - 1}
                     className={`${CONTROL_CARD} ${isUltraCompactLandscape ? 'h-[3.25rem] px-4' : isCompactLandscape ? 'h-12 px-5' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/82 hover:text-white hover:bg-white/6 disabled:cursor-not-allowed disabled:text-white/24`}
                     style={{ width: scaleRem(isUltraCompactLandscape ? 4.45 : isCompactLandscape ? 5.35 : 6.25, 3.75) }}
                     aria-label="Ir a la siguiente seccion"
-                    title="Ir a la siguiente seccion"
+                    aria-keyshortcuts="ArrowRight"
+                    title="Ir a la siguiente sección · Flecha derecha en PC"
                   >
                     <ChevronsRight className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isCompactLandscape ? 'h-5 w-5' : 'h-7 w-7'}`} strokeWidth={isCompactLandscape ? 2 : 2.4} />
                   </button>
@@ -4261,7 +4496,10 @@ export function LiveDirectorView({
                 </div>
               )}
               {sectionsAutoFollowStatus !== 'auto' && (
-                <div className="pointer-events-none absolute left-4 top-[3.4rem] z-40 flex items-center gap-2 rounded-full border border-amber-300/28 bg-black/62 px-2.5 py-1 shadow-[0_6px_18px_rgba(0,0,0,0.28)]">
+                <div
+                  className="pointer-events-none absolute left-4 top-[3.4rem] z-40 flex items-center gap-2 rounded-full border border-amber-300/28 bg-black/62 px-2.5 py-1 shadow-[0_6px_18px_rgba(0,0,0,0.28)]"
+                  aria-live={keyboardSectionIndex !== null ? 'polite' : undefined}
+                >
                   <span
                     className={`h-1.5 w-1.5 rounded-full bg-amber-300 ${
                       sectionsAutoFollowStatus === 'held' ? 'animate-pulse' : ''
@@ -4269,7 +4507,11 @@ export function LiveDirectorView({
                     aria-hidden="true"
                   />
                   <span className="text-[0.58rem] font-black uppercase tracking-[0.22em] text-amber-100/86">
-                    {sectionsAutoFollowStatus === 'held' ? 'Scroll libre' : 'Auto en 5s'}
+                    {keyboardSectionIndex !== null
+                      ? 'Enter para ir · Auto en 5s'
+                      : sectionsAutoFollowStatus === 'held'
+                        ? 'Scroll libre'
+                        : 'Auto en 5s'}
                   </span>
                   {sectionsAutoFollowStatus === 'resuming' && (
                     <span className="relative ml-0.5 h-1 w-10 overflow-hidden rounded-full bg-white/10">
@@ -4388,22 +4630,18 @@ export function LiveDirectorView({
                     >
                     {sectionLaneSegments.map(({ section, waveBars, widthPx, leftPx, activeStyle, inactiveStyle }, index) => {
                       const isActive = index === activeSectionIndex;
-                      const isBackwardSectionDisabled =
-                        DISABLE_BACKWARD_SEEK_WHILE_PLAYING &&
-                        isPlaying &&
-                        section.endTime <= getLivePlaybackTime() - 0.05;
 
                       return (
                         <button
                           key={section.id}
                           type="button"
-                          disabled={isBackwardSectionDisabled}
+                          disabled={isCongregationFading}
                           aria-busy={isSectionSeekBusy || undefined}
                           data-live-chord-section="true"
                           data-live-section-index={index}
                           data-live-section-start={section.startTime}
                           data-live-section-end={section.endTime}
-                          title={isBackwardSectionDisabled ? 'Pausa para volver a esta seccion' : undefined}
+                          title={isCongregationFading ? 'Espera a que termine el fade de congregación' : undefined}
                           onClick={(event) => {
                             if (event.detail > 0) {
                               return;
