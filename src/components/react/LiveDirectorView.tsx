@@ -2551,7 +2551,7 @@ export function LiveDirectorView({
     }
 
     try {
-      await seekTo(0);
+      await seekTo(0, { forceFreshStart: true });
     } catch (error) {
       console.warn('[LiveDirectorView] Return to start failed.', error);
     } finally {

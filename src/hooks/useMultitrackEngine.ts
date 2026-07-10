@@ -35,6 +35,7 @@ type EngineKind = 'buffer' | 'streaming';
 type EngineInstance = MultitrackEngine | StreamingMultitrackEngine;
 export type SeekToOptions = {
   wasPlayingBeforeUiSeek?: boolean;
+  forceFreshStart?: boolean;
 };
 export type LiveDirectorEngineDiagnostics = {
   engineMode: 'buffer' | 'media' | 'streaming' | 'ios-native';

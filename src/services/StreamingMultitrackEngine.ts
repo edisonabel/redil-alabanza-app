@@ -2436,7 +2436,7 @@ export class StreamingMultitrackEngine {
 
   async seekTo(
     timeInSeconds: number,
-    options?: { wasPlayingBeforeUiSeek?: boolean },
+    options?: { wasPlayingBeforeUiSeek?: boolean; forceFreshStart?: boolean },
   ): Promise<void> {
     if (!Number.isFinite(timeInSeconds)) {
       return;
@@ -2464,6 +2464,52 @@ export class StreamingMultitrackEngine {
       this.pauseTime = clampedTime;
       this.startTime = wasPlaying ? this.context.currentTime - clampedTime : 0;
       this.restartFromHead = false;
+      return;
+    }
+
+    if (this.producerWorker && options?.forceFreshStart === true && targetSample === 0) {
+      const trackDefinitions = this.tracks.map((track) =>
+        this.buildStreamingTrackDefinition(track),
+      );
+
+      this.cancelPendingProducerSeek();
+      this.cancelPendingWorkletFlush();
+      this.pendingPlaybackContentCheck = null;
+      this.transportPlaying = false;
+      this.startTime = 0;
+      this.pauseTime = 0;
+      this.restartFromHead = false;
+      this.postProducerTransportState(false);
+      this.postWorkletMessage({
+        type: 'transport',
+        playing: false,
+        positionSeconds: 0,
+      });
+      this.resetTrackMeterLevels();
+
+      await this.initialize(trackDefinitions);
+
+      for (const soloTrackId of this.soloTrackIds) {
+        const soloTrackIndex = this.trackIndexById.get(soloTrackId);
+        if (typeof soloTrackIndex !== 'number' || this.isTrackIndexOmitted(soloTrackIndex)) {
+          continue;
+        }
+        this.postWorkletMessage({
+          type: 'track-solo',
+          trackIndex: soloTrackIndex,
+          solo: true,
+        });
+      }
+      this.postLoopRegion();
+
+      this.pauseTime = 0;
+      this.startTime = 0;
+      this.transportPlaying = false;
+      this.restartFromHead = false;
+      this.logFlatLiveDiagnostic('streaming:fresh-start-ready', {
+        sessionId: this.producerSessionId,
+        tracks: this.trackStates.length,
+      });
       return;
     }
 
