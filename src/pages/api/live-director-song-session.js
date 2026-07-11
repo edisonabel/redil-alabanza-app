@@ -5,11 +5,26 @@ import {
   normalizePersistedLiveDirectorSession,
 } from '../../utils/liveDirectorSongSession.ts';
 import { resolveTrackOutputRoute } from '../../utils/liveDirectorTrackRouting.ts';
-import { getSupabaseServerEnv, readEnv } from '../../lib/server/supabase-env.js';
+import { assertCanManageLiveDirectorUploads } from '../../lib/server/live-director-permissions.js';
+import { getSupabaseServerEnv, getSupabaseServiceRoleKey, readEnv } from '../../lib/server/supabase-env.js';
 
 const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
+const supabaseServiceRoleKey = getSupabaseServiceRoleKey();
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const authClient = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+});
+const serviceRoleClient = supabaseServiceRoleKey
+  ? createClient(supabaseUrl, supabaseServiceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  })
+  : null;
 const PUBLIC_R2_HOST = 'stems.alabanzaredilestadio.com';
 const PUBLIC_R2_BASE_URL = `https://${PUBLIC_R2_HOST}`;
 
@@ -91,7 +106,7 @@ const requireAuthenticatedUser = async (cookies) => {
   const {
     data: { user },
     error,
-  } = await supabase.auth.getUser(token);
+  } = await authClient.auth.getUser(token);
 
   if (error || !user) {
     throw new Error('No autorizado. Token invalido o expirado.');
@@ -177,7 +192,8 @@ const deleteSessionFiles = async (sessionRecord, r2Context, { keepUrls = [] } = 
 };
 
 const fetchSongRow = async (songId) => {
-  const withSession = await supabase
+  const client = serviceRoleClient || authClient;
+  const withSession = await client
     .from('canciones')
     .select('id, titulo, multitrack_session')
     .eq('id', songId)
@@ -187,7 +203,7 @@ const fetchSongRow = async (songId) => {
     return withSession.data;
   }
 
-  const fallback = await supabase
+  const fallback = await client
     .from('canciones')
     .select('id, titulo')
     .eq('id', songId)
@@ -233,7 +249,15 @@ export const GET = async ({ request, cookies }) => {
 
 export const POST = async ({ request, cookies }) => {
   try {
-    await requireAuthenticatedUser(cookies);
+    if (!serviceRoleClient) {
+      return jsonResponse({ error: 'Falta SUPABASE_SERVICE_ROLE_KEY para validar permisos.' }, 500);
+    }
+
+    const user = await requireAuthenticatedUser(cookies);
+    await assertCanManageLiveDirectorUploads({
+      serviceRoleClient,
+      userId: user.id,
+    });
 
     const body = await request.json().catch(() => ({}));
     const songId = String(body?.songId || '').trim();
@@ -283,7 +307,7 @@ export const POST = async ({ request, cookies }) => {
       }),
     );
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await serviceRoleClient
       .from('canciones')
       .update({ multitrack_session: persistedSession })
       .eq('id', songId);
@@ -314,7 +338,11 @@ export const POST = async ({ request, cookies }) => {
     return jsonResponse(persistedSession);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Error interno del servidor.';
-    const status = message.startsWith('No autorizado') ? 401 : 500;
+    const status = Number.isInteger(error?.status)
+      ? error.status
+      : message.startsWith('No autorizado')
+        ? 401
+        : 500;
     console.error('Live Director session save error:', error);
     return jsonResponse({ error: message }, status);
   }
@@ -322,7 +350,15 @@ export const POST = async ({ request, cookies }) => {
 
 export const PATCH = async ({ request, cookies }) => {
   try {
-    await requireAuthenticatedUser(cookies);
+    if (!serviceRoleClient) {
+      return jsonResponse({ error: 'Falta SUPABASE_SERVICE_ROLE_KEY para validar permisos.' }, 500);
+    }
+
+    const user = await requireAuthenticatedUser(cookies);
+    await assertCanManageLiveDirectorUploads({
+      serviceRoleClient,
+      userId: user.id,
+    });
 
     const body = await request.json().catch(() => ({}));
     const songId = String(body?.songId || '').trim();
@@ -372,7 +408,7 @@ export const PATCH = async ({ request, cookies }) => {
       }),
     );
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await serviceRoleClient
       .from('canciones')
       .update({ multitrack_session: persistedSession })
       .eq('id', songId);
@@ -389,7 +425,11 @@ export const PATCH = async ({ request, cookies }) => {
     return jsonResponse(persistedSession);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Error interno del servidor.';
-    const status = message.startsWith('No autorizado') ? 401 : 500;
+    const status = Number.isInteger(error?.status)
+      ? error.status
+      : message.startsWith('No autorizado')
+        ? 401
+        : 500;
     console.error('Live Director section offset save error:', error);
     return jsonResponse({ error: message }, status);
   }
@@ -397,7 +437,15 @@ export const PATCH = async ({ request, cookies }) => {
 
 export const DELETE = async ({ request, cookies }) => {
   try {
-    await requireAuthenticatedUser(cookies);
+    if (!serviceRoleClient) {
+      return jsonResponse({ error: 'Falta SUPABASE_SERVICE_ROLE_KEY para validar permisos.' }, 500);
+    }
+
+    const user = await requireAuthenticatedUser(cookies);
+    await assertCanManageLiveDirectorUploads({
+      serviceRoleClient,
+      userId: user.id,
+    });
 
     const body = await request.json().catch(() => ({}));
     const songId = String(body?.songId || '').trim();
@@ -415,7 +463,7 @@ export const DELETE = async ({ request, cookies }) => {
     const r2Context = createR2Context();
     await deleteSessionFiles(songRow.multitrack_session, r2Context);
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await serviceRoleClient
       .from('canciones')
       .update({ multitrack_session: null })
       .eq('id', songId);
@@ -432,7 +480,11 @@ export const DELETE = async ({ request, cookies }) => {
     return jsonResponse({ success: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Error interno del servidor.';
-    const status = message.startsWith('No autorizado') ? 401 : 500;
+    const status = Number.isInteger(error?.status)
+      ? error.status
+      : message.startsWith('No autorizado')
+        ? 401
+        : 500;
     console.error('Live Director session delete error:', error);
     return jsonResponse({ error: message }, status);
   }

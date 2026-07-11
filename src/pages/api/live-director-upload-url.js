@@ -5,11 +5,26 @@ import {
   buildLiveDirectorSongFolder,
   sanitizeLiveDirectorFileName,
 } from '../../utils/liveDirectorSongSession.ts';
-import { getSupabaseServerEnv, readEnv } from '../../lib/server/supabase-env.js';
+import { assertCanManageLiveDirectorUploads } from '../../lib/server/live-director-permissions.js';
+import { getSupabaseServerEnv, getSupabaseServiceRoleKey, readEnv } from '../../lib/server/supabase-env.js';
 
 const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
+const supabaseServiceRoleKey = getSupabaseServiceRoleKey();
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const authClient = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+});
+const serviceRoleClient = supabaseServiceRoleKey
+  ? createClient(supabaseUrl, supabaseServiceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  })
+  : null;
 const PUBLIC_R2_HOST = 'stems.alabanzaredilestadio.com';
 const PUBLIC_R2_BASE_URL = `https://${PUBLIC_R2_HOST}`;
 
@@ -70,7 +85,7 @@ const requireAuthenticatedUser = async (cookies) => {
   const {
     data: { user },
     error,
-  } = await supabase.auth.getUser(token);
+  } = await authClient.auth.getUser(token);
 
   if (error || !user) {
     throw new Error('No autorizado. Token invalido o expirado.');
@@ -81,7 +96,15 @@ const requireAuthenticatedUser = async (cookies) => {
 
 export const POST = async ({ request, cookies }) => {
   try {
-    await requireAuthenticatedUser(cookies);
+    if (!serviceRoleClient) {
+      return jsonResponse({ error: 'Falta SUPABASE_SERVICE_ROLE_KEY para validar permisos.' }, 500);
+    }
+
+    const user = await requireAuthenticatedUser(cookies);
+    await assertCanManageLiveDirectorUploads({
+      serviceRoleClient,
+      userId: user.id,
+    });
 
     const body = await request.json().catch(() => ({}));
     const songId = String(body?.songId || '').trim();
@@ -97,7 +120,7 @@ export const POST = async ({ request, cookies }) => {
       return jsonResponse({ error: 'Se requiere fileName.' }, 400);
     }
 
-    const { data: songRow, error: songError } = await supabase
+    const { data: songRow, error: songError } = await serviceRoleClient
       .from('canciones')
       .select('id, titulo')
       .eq('id', songId)
@@ -132,7 +155,11 @@ export const POST = async ({ request, cookies }) => {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Error interno del servidor.';
-    const status = message.startsWith('No autorizado') ? 401 : 500;
+    const status = Number.isInteger(error?.status)
+      ? error.status
+      : message.startsWith('No autorizado')
+        ? 401
+        : 500;
     console.error('Live Director upload-url error:', error);
     return jsonResponse({ error: message }, status);
   }

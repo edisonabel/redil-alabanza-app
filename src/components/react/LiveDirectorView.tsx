@@ -43,6 +43,7 @@ import {
 } from '../../utils/audioActivityEnvelope';
 import {
   deleteLiveDirectorSongSession,
+  fetchLiveDirectorUploadPermission,
   requestLiveDirectorUploadTarget,
   saveLiveDirectorSectionOffset,
   saveLiveDirectorSongSession,
@@ -793,7 +794,10 @@ export function LiveDirectorView({
   const [reloadKey, setReloadKey] = useState(0);
   const [isInitializingSession, setIsInitializingSession] = useState(false);
   const [isSectionSeekBusy, setIsSectionSeekBusy] = useState(false);
-  const [showLoadPanel, setShowLoadPanel] = useState(canLoadManualSession && !initialSession);
+  const [canManageLiveDirectorUploads, setCanManageLiveDirectorUploads] = useState(!hasPersistedSongContext);
+  const canManagePersistedSongSession = !hasPersistedSongContext || canManageLiveDirectorUploads;
+  const canOpenLoadPanel = canLoadManualSession && canManagePersistedSongSession;
+  const [showLoadPanel, setShowLoadPanel] = useState(canOpenLoadPanel && !initialSession);
   // When the user taps Back while audio is playing, defer the navigation and
   // show a confirmation modal. Prevents disastrous accidental exits live.
   const [showBackConfirm, setShowBackConfirm] = useState(false);
@@ -1040,7 +1044,8 @@ export function LiveDirectorView({
       ? `${activeTracks.length} stem${activeTracks.length === 1 ? '' : 's'} activo${activeTracks.length === 1 ? '' : 's'}`
       : 'Secuencia unica';
   const canToggleTrackLoad = !hasProvidedTracks && manualSession?.mode === 'folder' && sessionTracks.length > 1;
-  const canUseStemsToolbar = sessionTracks.length > 1 && activeTracks.length > 0;
+  const canOpenStemsActionModal = !hasProvidedTracks && canManagePersistedSongSession && hasPersistedSongContext;
+  const canUseStemsToolbar = (sessionTracks.length > 1 && activeTracks.length > 0) || canOpenStemsActionModal;
   const areAllActiveTracksMuted =
     hasTrackSession && activeTracks.length > 0 && activeTracks.every((track) => mutedTrackIds.has(track.id));
   const isStemsToolbarActive = canToggleTrackLoad
@@ -1875,6 +1880,32 @@ export function LiveDirectorView({
   }, []);
 
   useEffect(() => {
+    if (!hasPersistedSongContext) {
+      setCanManageLiveDirectorUploads(true);
+      return;
+    }
+
+    let cancelled = false;
+    setCanManageLiveDirectorUploads(false);
+
+    fetchLiveDirectorUploadPermission()
+      .then((allowed) => {
+        if (!cancelled) {
+          setCanManageLiveDirectorUploads(allowed);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCanManageLiveDirectorUploads(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasPersistedSongContext, songId]);
+
+  useEffect(() => {
     if (hasProvidedTracks) {
       return;
     }
@@ -1895,16 +1926,22 @@ export function LiveDirectorView({
       setUnmatchedFiles([]);
       setMutedTrackIds(new Set());
       setSoloTrackId(null);
-      setShowLoadPanel(canLoadManualSession);
+      setShowLoadPanel(canOpenLoadPanel);
     }
-  }, [canLoadManualSession, hasProvidedTracks, initialSession, isSongBoundView, replaceOwnedObjectUrls, requiresSongContext, songId]);
+  }, [canOpenLoadPanel, hasProvidedTracks, initialSession, isSongBoundView, replaceOwnedObjectUrls, requiresSongContext, songId]);
 
   useEffect(() => {
-    if (!canToggleTrackLoad) {
+    if (!canOpenStemsActionModal) {
       setShowStemsActionModal(false);
       setShowTrackLoadModal(false);
     }
-  }, [canToggleTrackLoad]);
+  }, [canOpenStemsActionModal]);
+
+  useEffect(() => {
+    if (!canOpenLoadPanel) {
+      setShowLoadPanel(false);
+    }
+  }, [canOpenLoadPanel]);
 
   useEffect(() => {
     if (!showSectionsPanel) {
@@ -2181,7 +2218,7 @@ export function LiveDirectorView({
   }, [manualSession, trackEnvelopes]);
 
   const flushSilentSessionSaveQueue = useCallback(async () => {
-    if (!hasPersistedSongContext || isFlushingSilentSessionSaveRef.current) {
+    if (!hasPersistedSongContext || !canManagePersistedSongSession || isFlushingSilentSessionSaveRef.current) {
       return;
     }
 
@@ -2205,10 +2242,10 @@ export function LiveDirectorView({
     } finally {
       isFlushingSilentSessionSaveRef.current = false;
     }
-  }, [enqueueSessionSave, hasPersistedSongContext, onSessionPersisted, songId]);
+  }, [canManagePersistedSongSession, enqueueSessionSave, hasPersistedSongContext, onSessionPersisted, songId]);
 
   const queueSilentSessionSave = useCallback((payload: LiveDirectorSessionSavePayload | null) => {
-    if (!hasPersistedSongContext || !payload) {
+    if (!hasPersistedSongContext || !canManagePersistedSongSession || !payload) {
       return;
     }
 
@@ -2217,9 +2254,14 @@ export function LiveDirectorView({
       payload,
     };
     void flushSilentSessionSaveQueue();
-  }, [flushSilentSessionSaveQueue, hasPersistedSongContext, songId]);
+  }, [canManagePersistedSongSession, flushSilentSessionSaveQueue, hasPersistedSongContext, songId]);
 
   const clearManualSession = useCallback(async () => {
+    if (hasPersistedSongContext && !canManagePersistedSongSession) {
+      setLoadError('Necesitas el rol Gestor de Secuencias para borrar esta sesion.');
+      return;
+    }
+
     stop();
     setLoadError(null);
     setBusyMessage(hasPersistedSongContext ? 'Borrando sesion y archivos de R2...' : null);
@@ -2233,7 +2275,7 @@ export function LiveDirectorView({
       setMutedTrackIds(new Set());
       setSoloTrackId(null);
       setManualSession(null);
-      setShowLoadPanel(true);
+      setShowLoadPanel(canOpenLoadPanel);
       replaceOwnedObjectUrls([]);
       setReloadKey((previous) => previous + 1);
     } catch (error) {
@@ -2241,7 +2283,7 @@ export function LiveDirectorView({
     } finally {
       setBusyMessage(null);
     }
-  }, [hasPersistedSongContext, replaceOwnedObjectUrls, songId, stop]);
+  }, [canManagePersistedSongSession, canOpenLoadPanel, hasPersistedSongContext, replaceOwnedObjectUrls, songId, stop]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -2973,6 +3015,9 @@ export function LiveDirectorView({
     if (!hasPersistedSongContext) {
       throw new Error('No hay una cancion seleccionada para guardar esta sesion.');
     }
+    if (!canManagePersistedSongSession) {
+      throw new Error('Necesitas el rol Gestor de Secuencias para cargar o reemplazar secuencias.');
+    }
 
     setBusyMessage('Guardando sesion multitrack...');
     try {
@@ -3000,7 +3045,7 @@ export function LiveDirectorView({
     } finally {
       setBusyMessage(null);
     }
-  }, [applyManualSession, buildSessionSavePayload, enqueueSessionSave, hasPersistedSongContext, onSessionPersisted, sectionOffsetSeconds, songId]);
+  }, [applyManualSession, buildSessionSavePayload, canManagePersistedSongSession, enqueueSessionSave, hasPersistedSongContext, onSessionPersisted, sectionOffsetSeconds, songId]);
 
   const updateSectionOffsetLocally = useCallback((nextOffset: number) => {
     const safeOffset = Math.round(nextOffset * 4) / 4;
@@ -3016,6 +3061,9 @@ export function LiveDirectorView({
 
   const commitSectionOffset = useCallback(async (): Promise<boolean> => {
     if (!hasPersistedSongContext || !manualSession) {
+      return true;
+    }
+    if (!canManagePersistedSongSession) {
       return true;
     }
 
@@ -3046,7 +3094,7 @@ export function LiveDirectorView({
     } finally {
       setBusyMessage(null);
     }
-  }, [enqueueSessionSave, hasPersistedSongContext, manualSession, onSessionPersisted, songId]);
+  }, [canManagePersistedSongSession, enqueueSessionSave, hasPersistedSongContext, manualSession, onSessionPersisted, songId]);
 
   const commitMixerStateSilent = useCallback((tracksOverride?: TrackData[]) => {
     if (!hasPersistedSongContext || !manualSession) {
@@ -3240,19 +3288,27 @@ export function LiveDirectorView({
   }, [capEnabledMapToTrackLimit, pendingEnabledMap, manualSession, hasPersistedSongContext, commitMixerStateSilent]);
 
   const handleOpenTrackLoadModal = useCallback(() => {
+    if (!canOpenStemsActionModal || !canToggleTrackLoad) {
+      return;
+    }
+
     const initial: Record<string, boolean> = {};
     (manualSession?.tracks || []).forEach((track) => { initial[track.id] = track.enabled !== false; });
     setPendingEnabledMap(capEnabledMapToTrackLimit(initial));
     setShowStemsActionModal(false);
     setShowTrackLoadModal(true);
-  }, [capEnabledMapToTrackLimit, manualSession?.tracks]);
+  }, [canOpenStemsActionModal, canToggleTrackLoad, capEnabledMapToTrackLimit, manualSession?.tracks]);
 
   const handleOpenStemsLoader = useCallback(() => {
+    if (!canOpenLoadPanel) {
+      return;
+    }
+
     setShowStemsActionModal(false);
     setShowTrackLoadModal(false);
     setLoaderMode('folder');
     setShowLoadPanel(true);
-  }, []);
+  }, [canOpenLoadPanel]);
 
   const handleOpenOffsetModal = useCallback(() => {
     setSectionOffsetSaveError(null);
@@ -3568,7 +3624,7 @@ export function LiveDirectorView({
       return;
     }
 
-    if (canToggleTrackLoad) {
+    if (canOpenStemsActionModal) {
       setShowStemsActionModal(true);
       return;
     }
@@ -4504,10 +4560,10 @@ export function LiveDirectorView({
                 style={isToolbarCompactLandscape
                   ? { width: scaleRem(isUltraCompactLandscape ? 4.35 : 4.95, 3.75) }
                   : { width: '100%' }}
-                aria-label={canToggleTrackLoad
+                aria-label={canOpenStemsActionModal
                   ? 'Abrir opciones de stems'
                   : (areAllActiveTracksMuted ? 'Activar stems' : 'Apagar stems')}
-                title={canToggleTrackLoad
+                title={canOpenStemsActionModal
                   ? 'Opciones de stems (S)'
                   : `${areAllActiveTracksMuted ? 'Activar' : 'Apagar'} stems (S)`}
               >
@@ -4566,7 +4622,9 @@ export function LiveDirectorView({
                       return;
                     }
 
-                    setShowLoadPanel(true);
+                    if (canOpenLoadPanel) {
+                      setShowLoadPanel(true);
+                    }
                   }}
                   className={`ui-pressable-card group relative flex shrink-0 overflow-hidden rounded-[1.35rem] border border-white/10 bg-[linear-gradient(180deg,rgba(35,37,39,0.98),rgba(24,26,28,0.98))] text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200 hover:border-white/20 ${isUltraCompactLandscape ? 'p-1' : isCompactLandscape ? 'p-1.5' : 'p-3'}`}
                   style={{ width: scaleRem(isUltraCompactLandscape ? 11.6 : isCompactLandscape ? 13.4 : 15, 9.8) }}
@@ -5250,7 +5308,7 @@ export function LiveDirectorView({
         </section>
       </div>
 
-      {!hasProvidedTracks && showLoadPanel && (
+      {!hasProvidedTracks && showLoadPanel && canOpenLoadPanel && (
         <div className={`absolute inset-0 z-[45] flex items-center justify-center bg-black/26 backdrop-blur-[8px] ${isCompactLandscape ? 'px-2 py-2' : 'px-6'}`}>
           <div className={`w-full overflow-y-auto rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(17,19,21,0.96),rgba(13,15,16,0.96))] shadow-[0_34px_70px_rgba(0,0,0,0.34)] ${isCompactLandscape ? 'max-h-[calc(100dvh-1rem)] max-w-[46rem] p-3' : 'max-w-[62rem] p-6'}`}>
             <div className={`flex items-start justify-between ${isCompactLandscape ? 'gap-3' : 'gap-6'}`}>
@@ -5460,7 +5518,7 @@ export function LiveDirectorView({
         </>
       )}
 
-      {showStemsActionModal && canToggleTrackLoad && (
+      {showStemsActionModal && canOpenStemsActionModal && (
         <div
           className="absolute inset-0 z-[57] flex items-center justify-center bg-black/48 px-4 py-4 backdrop-blur-[10px]"
           role="dialog"
@@ -5496,7 +5554,8 @@ export function LiveDirectorView({
                 <button
                   type="button"
                   onClick={handleOpenTrackLoadModal}
-                  className="ui-pressable-soft group min-h-[8.2rem] rounded-[1.35rem] border border-cyan-300/18 bg-cyan-300/[0.075] p-4 text-left text-cyan-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-cyan-300/30 hover:bg-cyan-300/[0.10]"
+                  disabled={!canToggleTrackLoad}
+                  className="ui-pressable-soft group min-h-[8.2rem] rounded-[1.35rem] border border-cyan-300/18 bg-cyan-300/[0.075] p-4 text-left text-cyan-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-cyan-300/30 hover:bg-cyan-300/[0.10] disabled:cursor-not-allowed disabled:border-white/8 disabled:bg-white/[0.025] disabled:text-white/38"
                 >
                   <span className="flex h-11 w-11 items-center justify-center rounded-[1rem] border border-cyan-300/22 bg-black/24 text-cyan-100">
                     <SlidersVertical className="h-5 w-5" />
@@ -5505,7 +5564,9 @@ export function LiveDirectorView({
                     Gestionar stems
                   </span>
                   <span className="mt-1 block text-[0.74rem] leading-relaxed text-white/54">
-                    Prende o apaga pistas antes de aplicar. Ahora: {activeTracks.length}/{sessionTracks.length} activas.
+                    {canToggleTrackLoad
+                      ? `Prende o apaga pistas antes de aplicar. Ahora: ${activeTracks.length}/${sessionTracks.length} activas.`
+                      : 'Disponible cuando la cancion tenga una carpeta multitrack cargada.'}
                   </span>
                 </button>
 
@@ -5539,7 +5600,7 @@ export function LiveDirectorView({
         </div>
       )}
 
-      {showTrackLoadModal && canToggleTrackLoad && (
+      {showTrackLoadModal && canOpenStemsActionModal && (
         <div
           className="absolute inset-0 z-[58] flex items-center justify-center bg-black/50 px-4 py-4 backdrop-blur-[10px]"
           role="dialog"
@@ -5954,7 +6015,9 @@ export function LiveDirectorView({
                 }
 
                 setLoadError(null);
-                setShowLoadPanel(true);
+                if (canOpenLoadPanel) {
+                  setShowLoadPanel(true);
+                }
               }}
               className="ui-pressable mt-5 rounded-[1rem] border border-white/10 bg-white/8 px-5 py-3 text-sm tracking-[0.18em] text-white"
             >

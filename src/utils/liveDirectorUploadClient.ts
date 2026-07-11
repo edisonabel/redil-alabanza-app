@@ -174,6 +174,16 @@ export async function fetchLiveDirectorSongSession(
   return payload?.session || null;
 }
 
+export async function fetchLiveDirectorUploadPermission(): Promise<boolean> {
+  const response = await fetch('/api/live-director-upload-permission');
+  if (!response.ok) {
+    return false;
+  }
+
+  const payload = await response.json().catch(() => null);
+  return Boolean(payload?.canManageUploads);
+}
+
 export async function deleteLiveDirectorSongSession(songId: string): Promise<void> {
   const response = await fetch('/api/live-director-song-session', {
     method: 'DELETE',
