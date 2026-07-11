@@ -379,6 +379,8 @@ export default function EnsayoPersonalView({
   songVoiceAssignments = {},
   memberOptions = [],
   canEdit = false,
+  canAssignVoices = canEdit,
+  canEditVoiceStarts = canEdit,
   isSavingAssignments = false,
   saveFeedback = null,
   onBack,
@@ -501,7 +503,13 @@ export default function EnsayoPersonalView({
   const [anchorPreRollSec, setAnchorPreRollSec] = useState(0);
   const [hasManualMemberSelection, setHasManualMemberSelection] = useState(false);
   const [showAssignmentPanel, setShowAssignmentPanel] = useState(false);
-  const canManageAssignments = canEdit && safeMembers.length > 0 && availableTrackNames.length > 0;
+  const canManageVoiceAssignments = Boolean(canAssignVoices) && safeMembers.length > 0 && availableTrackNames.length > 0;
+  const canManageVoiceStarts = Boolean(canEditVoiceStarts) && availableTrackNames.length > 0;
+  const canManageAssignments = canManageVoiceAssignments || canManageVoiceStarts;
+  const assignmentModes = useMemo(() => ([
+    canManageVoiceAssignments ? ['voices', 'Asignar voces'] : null,
+    canManageVoiceStarts ? ['starts', 'Comienzos'] : null,
+  ].filter(Boolean)), [canManageVoiceAssignments, canManageVoiceStarts]);
   const selectedTrackAnchor = voiceTrackAnchors?.[selectedAnchorTrackName] || null;
 
   useEffect(() => {
@@ -567,6 +575,14 @@ export default function EnsayoPersonalView({
     }
   }, [canManageAssignments, showAssignmentPanel]);
 
+  useEffect(() => {
+    if (assignmentModes.some(([mode]) => mode === assignmentPanelMode)) {
+      return;
+    }
+
+    setAssignmentPanelMode(assignmentModes[0]?.[0] || 'voices');
+  }, [assignmentModes, assignmentPanelMode]);
+
   const selectedTrackAssignmentOwnerId = useMemo(() => {
     return Object.keys(validSongAssignments).find((memberId) => (
       normalizeCanonicalVoiceLabel(validSongAssignments?.[memberId]?.trackName || '') === normalizeCanonicalVoiceLabel(selectedTrackName || '')
@@ -611,6 +627,7 @@ export default function EnsayoPersonalView({
   };
 
   const handleSaveAssignment = async () => {
+    if (!canManageVoiceAssignments) return;
     if (!songId || !selectedMemberId || !selectedTrackName) return;
     await onSaveAssignment?.({
       songId,
@@ -621,6 +638,7 @@ export default function EnsayoPersonalView({
   };
 
   const handleClearAssignment = async () => {
+    if (!canManageVoiceAssignments) return;
     if (!songId || !selectedMemberId) return;
     await onClearAssignment?.({
       songId,
@@ -637,6 +655,7 @@ export default function EnsayoPersonalView({
   };
 
   const handleSaveTrackAnchor = async () => {
+    if (!canManageVoiceStarts) return;
     if (!songId || !selectedAnchorTrackName || !selectedAnchorSection) return;
     const safePreRollSec = Math.max(0, Math.min(12, Number(anchorPreRollSec) || 0));
     const sectionStartSec = Number(selectedAnchorSection.startSec) || 0;
@@ -728,11 +747,9 @@ export default function EnsayoPersonalView({
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/8 bg-black/20 p-1">
-                  {[
-                    ['voices', 'Asignar voces'],
-                    ['starts', 'Comienzos'],
-                  ].map(([mode, label]) => (
+                {assignmentModes.length > 1 && (
+                  <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/8 bg-black/20 p-1">
+                    {assignmentModes.map(([mode, label]) => (
                     <button
                       key={mode}
                       type="button"
@@ -745,10 +762,11 @@ export default function EnsayoPersonalView({
                     >
                       {label}
                     </button>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
 
-                {assignmentPanelMode === 'voices' ? (
+                {assignmentPanelMode === 'voices' && canManageVoiceAssignments ? (
                   <>
                     <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
                       <p className="text-[10px] font-black uppercase tracking-[0.16em] text-zinc-500">
@@ -827,7 +845,7 @@ export default function EnsayoPersonalView({
                       )}
                     </div>
                   </>
-                ) : (
+                ) : canManageVoiceStarts ? (
                   <>
                     <div className="rounded-2xl border border-white/8 bg-black/20 px-4 py-3">
                       <p className="text-[10px] font-black uppercase tracking-[0.16em] text-zinc-500">
@@ -939,7 +957,7 @@ export default function EnsayoPersonalView({
                       </p>
                     )}
                   </>
-                )}
+                ) : null}
               </div>
             </div>
           </div>

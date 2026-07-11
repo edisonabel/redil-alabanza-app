@@ -28,6 +28,9 @@ export const isEventRepertoryManagerRoleCode = (value) =>
 export const isVoiceAssignmentManagerRoleCode = (value) =>
   VOICE_ASSIGNMENT_MANAGER_ROLE_CODES.has(normalizeRoleCode(value));
 
+export const isEventVoiceRoleCode = (value) =>
+  normalizeRoleCode(value).startsWith('voz_');
+
 export const isVocalLeaderRoleCode = (value) =>
   normalizeRoleCode(value) === VOCAL_LEADER_ROLE_CODE;
 

@@ -10,6 +10,7 @@ import { buildEventDateSlug, isUuidLike, parseEventDateSlug } from '../../lib/ev
 import { isPredicadorColumnMissingError, withPredicadorFallbackRow } from '../../lib/predicador-compat.js';
 import {
   isEventRepertoryManagerRoleCode,
+  isEventVoiceRoleCode,
   isVocalLeaderRoleCode,
 } from '../../lib/role-permissions.js';
 import { getSupabaseServerEnv } from '../../lib/server/supabase-env.js';
@@ -685,6 +686,8 @@ if (!routeIsDemo) {
 
       if (currentUserEventRoleCodes.some(isEventRepertoryManagerRoleCode)) {
         canEditSetlist = true;
+        canAssignVoices = true;
+      } else if (currentUserEventRoleCodes.some(isEventVoiceRoleCode)) {
         canAssignVoices = true;
       }
     }

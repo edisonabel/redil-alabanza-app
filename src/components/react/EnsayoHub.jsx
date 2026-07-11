@@ -1086,6 +1086,10 @@ export default function EnsayoHub({
       showVoiceAssignmentFeedback('error', 'No pudimos identificar este setlist para guardar.');
       return;
     }
+    if (!canEdit && !canAssignVoices) {
+      showVoiceAssignmentFeedback('error', 'No tienes permiso para asignar voces en este evento.');
+      return;
+    }
 
     const nextAssignments = {
       ...sanitizeSongVoiceAssignments(songVoiceAssignments),
@@ -1125,7 +1129,7 @@ export default function EnsayoHub({
     } finally {
       setIsSavingVoiceAssignments(false);
     }
-  }, [playlistId, eventMeta?.id, userId, songVoiceAssignments, showVoiceAssignmentFeedback]);
+  }, [canAssignVoices, canEdit, playlistId, eventMeta?.id, userId, songVoiceAssignments, showVoiceAssignmentFeedback]);
 
   const handleClearVoiceAssignment = useCallback(async ({ songId, targetUserId }) => {
     const safeSongId = String(songId || '').trim();
@@ -1134,6 +1138,10 @@ export default function EnsayoHub({
     if (!safeSongId || !safeTargetUserId) return;
     if (!playlistId || !eventMeta?.id || !userId) {
       showVoiceAssignmentFeedback('error', 'No pudimos identificar este setlist para guardar.');
+      return;
+    }
+    if (!canEdit && !canAssignVoices) {
+      showVoiceAssignmentFeedback('error', 'No tienes permiso para asignar voces en este evento.');
       return;
     }
 
@@ -1175,7 +1183,7 @@ export default function EnsayoHub({
     } finally {
       setIsSavingVoiceAssignments(false);
     }
-  }, [playlistId, eventMeta?.id, userId, songVoiceAssignments, showVoiceAssignmentFeedback]);
+  }, [canAssignVoices, canEdit, playlistId, eventMeta?.id, userId, songVoiceAssignments, showVoiceAssignmentFeedback]);
 
   const handleSaveVoiceTrackAnchor = useCallback(async ({ songId, trackName, anchor }) => {
     const safeSongId = String(songId || '').trim();
@@ -1187,6 +1195,10 @@ export default function EnsayoHub({
     if (!safeSongId || !safeTrackName || !Number.isFinite(safeStartSec)) return;
     if (!userId) {
       showVoiceAssignmentFeedback('error', 'Inicia sesion para guardar el comienzo de la pista.');
+      return;
+    }
+    if (!canEdit) {
+      showVoiceAssignmentFeedback('error', 'Solo lideres pueden editar comienzos de pistas.');
       return;
     }
 
@@ -1271,7 +1283,7 @@ export default function EnsayoHub({
     } finally {
       setIsSavingVoiceAssignments(false);
     }
-  }, [userId, songVoiceAssignments, showVoiceAssignmentFeedback]);
+  }, [canEdit, userId, songVoiceAssignments, showVoiceAssignmentFeedback]);
 
   const playQueueItem = useCallback((index) => {
     const queueSongs = queueSongsRef.current;
@@ -1608,6 +1620,8 @@ export default function EnsayoHub({
         songVoiceAssignments={songVoiceAssignments}
         memberOptions={voiceMemberOptions}
         canEdit={canEdit || canAssignVoices}
+        canAssignVoices={canEdit || canAssignVoices}
+        canEditVoiceStarts={canEdit}
         isSavingAssignments={isSavingVoiceAssignments}
         saveFeedback={voiceAssignmentFeedback}
         onBack={handlePersonalViewBack}
