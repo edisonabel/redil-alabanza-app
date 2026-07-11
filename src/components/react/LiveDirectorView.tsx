@@ -5,7 +5,6 @@
   ChevronLeft,
   ChevronRight,
   FolderOpen,
-  Infinity,
   ListMusic,
   Pause,
   Play,
@@ -217,6 +216,10 @@ function stemPriorityRank(track: { name?: string; label?: string; id?: string })
     if (rule.pattern.test(haystack)) return rule.rank;
   }
   return 10;
+}
+
+function isCongregationCueTrack(track: { name?: string; label?: string; id?: string }): boolean {
+  return stemPriorityRank(track) <= 1;
 }
 
 type MixerTrackView = MixerTrackMeta & {
@@ -569,6 +572,12 @@ export function LiveDirectorView({
   const masterVolumeFadeFrameRef = useRef<number | null>(null);
   const masterVolumeFadeResolveRef = useRef<(() => void) | null>(null);
   const congregationMutedRef = useRef(false);
+  const congregationFadeFrameRef = useRef<number | null>(null);
+  const congregationFadeResolveRef = useRef<(() => void) | null>(null);
+  const congregationFadeTokenRef = useRef(0);
+  const congregationOriginalVolumesRef = useRef<Map<string, number>>(new Map());
+  const congregationAppliedVolumesRef = useRef<Map<string, number>>(new Map());
+  const congregationPadGainRef = useRef(1);
   const resumeNativeMetersTimeoutRef = useRef<number | null>(null);
   const passiveTelemetryFrameRef = useRef<number | null>(null);
   const passiveCurrentTimeRef = useRef(0);
@@ -627,7 +636,6 @@ export function LiveDirectorView({
     play,
     pause,
     seekTo,
-    setLoopPoints,
     setMasterVolume,
     setTrackOutputRoute,
     setVolume,
@@ -635,7 +643,6 @@ export function LiveDirectorView({
     stop,
     trackLevels,
     trackEnvelopes,
-    toggleLoop,
     toggleMute,
     trackVolumes,
     loadProgress,
@@ -838,7 +845,7 @@ export function LiveDirectorView({
     congregationFadeState === 'fading-out' || congregationFadeState === 'fading-in';
   const congregationFadeTargetMuted =
     congregationFadeState === 'fading-out' || congregationFadeState === 'muted';
-  const [loopEnabled, setLoopEnabled] = useState(false);
+  const [congregationPadGain, setCongregationPadGain] = useState(1);
   const [surfaceView, setSurfaceView] = useState<SurfaceView>('mix');
   const [showOffsetModal, setShowOffsetModal] = useState(false);
   const [showStemsActionModal, setShowStemsActionModal] = useState(false);
@@ -869,7 +876,11 @@ export function LiveDirectorView({
     0,
     1,
   );
-  const effectiveInternalPadVolume = clamp(resolvedInternalPadVolume * INTERNAL_PAD_GAIN_TRIM, 0, 1);
+  const effectiveInternalPadVolume = clamp(
+    resolvedInternalPadVolume * INTERNAL_PAD_GAIN_TRIM * congregationPadGain,
+    0,
+    1,
+  );
   const resolvedPadUrl = useMemo(() => getPadUrlForSongKey(songKey), [songKey]);
   const shouldUseNativePadBridge = Boolean(isIOSNativeEngineSurface && isEnsayoMode && resolvedPadUrl);
   const layoutScale = useMemo(() => {
@@ -1713,7 +1724,7 @@ export function LiveDirectorView({
         shortLabel: 'PAD',
         accent: '#43c477',
         defaultVolume: resolvedInternalPadVolume,
-        volume: resolvedInternalPadVolume,
+        volume: resolvedInternalPadVolume * congregationPadGain,
         level: padEnvelopeLevel,
         muted: !isPadActive || resolvedInternalPadVolume <= 0.001,
         soloed: false,
@@ -1740,7 +1751,7 @@ export function LiveDirectorView({
     }
 
     return resolvedMixerTracks;
-  }, [activeTracks, currentTime, isPadActive, isPlaying, mutedTrackIds, omittedWarningByTrackId, resolvedInternalPadVolume, resolvedPadUrl, soloTrackId, trackEnvelopes, trackLevels, trackOutputRoutes, trackVolumes]);
+  }, [activeTracks, congregationPadGain, currentTime, isPadActive, isPlaying, mutedTrackIds, omittedWarningByTrackId, resolvedInternalPadVolume, resolvedPadUrl, soloTrackId, trackEnvelopes, trackLevels, trackOutputRoutes, trackVolumes]);
 
   // Precompute the mixer scroll container style so it isn't re-created on
   // every tick of the visual clock. The grid template only actually changes
@@ -2508,6 +2519,101 @@ export function LiveDirectorView({
     })
   ), [applyMasterVolume, stopMasterVolumeFade]);
 
+  const stopCongregationTrackFade = useCallback(() => {
+    if (congregationFadeFrameRef.current !== null) {
+      window.cancelAnimationFrame(congregationFadeFrameRef.current);
+      congregationFadeFrameRef.current = null;
+    }
+
+    if (congregationFadeResolveRef.current) {
+      const resolveFade = congregationFadeResolveRef.current;
+      congregationFadeResolveRef.current = null;
+      resolveFade();
+    }
+  }, []);
+
+  const fadeCongregationMix = useCallback((
+    nextMuted: boolean,
+    startVolumes: Map<string, number>,
+    transitionToken: number,
+  ) => (
+    new Promise<void>((resolve) => {
+      stopCongregationTrackFade();
+
+      const fadeTracks = activeTracks.filter((track) => !isCongregationCueTrack(track));
+      const startPadGain = congregationPadGainRef.current;
+      const targetPadGain = nextMuted ? 0 : 1;
+      let startTime: number | null = null;
+      let lastAppliedAt = Number.NEGATIVE_INFINITY;
+
+      const complete = () => {
+        if (congregationFadeResolveRef.current === complete) {
+          congregationFadeResolveRef.current = null;
+        }
+        congregationFadeFrameRef.current = null;
+        resolve();
+      };
+
+      const applyProgress = (easedProgress: number) => {
+        for (const track of fadeTracks) {
+          const startVolume = startVolumes.get(track.id) ?? 0;
+          const targetVolume = nextMuted
+            ? 0
+            : (congregationOriginalVolumesRef.current.get(track.id) ?? startVolume);
+          const nextVolume = clamp(
+            startVolume + (targetVolume - startVolume) * easedProgress,
+            0,
+            1,
+          );
+
+          congregationAppliedVolumesRef.current.set(track.id, nextVolume);
+          setVolume(track.id, nextVolume);
+        }
+
+        const nextPadGain = clamp(
+          startPadGain + (targetPadGain - startPadGain) * easedProgress,
+          0,
+          1,
+        );
+        congregationPadGainRef.current = nextPadGain;
+        setCongregationPadGain(nextPadGain);
+      };
+
+      const animate = (frameTime: number) => {
+        if (congregationFadeTokenRef.current !== transitionToken) {
+          complete();
+          return;
+        }
+
+        if (startTime === null) {
+          startTime = frameTime;
+        }
+
+        const progress = clamp((frameTime - startTime) / CONGREGATION_FADE_MS, 0, 1);
+
+        // Twenty control updates per second keep the bridge and React light;
+        // ChannelStrip smooths the visible fader movement between updates.
+        if (progress >= 1 || frameTime - lastAppliedAt >= 50) {
+          const easedProgress = progress < 0.5
+            ? 4 * progress * progress * progress
+            : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+          applyProgress(easedProgress);
+          lastAppliedAt = frameTime;
+        }
+
+        if (progress >= 1) {
+          complete();
+          return;
+        }
+
+        congregationFadeFrameRef.current = window.requestAnimationFrame(animate);
+      };
+
+      congregationFadeResolveRef.current = complete;
+      congregationFadeFrameRef.current = window.requestAnimationFrame(animate);
+    })
+  ), [activeTracks, setVolume, stopCongregationTrackFade]);
+
   const handleToggleCongregationFade = useCallback(() => {
     if (
       !hasTrackSession ||
@@ -2519,53 +2625,76 @@ export function LiveDirectorView({
     }
 
     const nextMuted = !congregationMutedRef.current;
-    const transitionToken = sectionTransitionTokenRef.current + 1;
+    const transitionToken = congregationFadeTokenRef.current + 1;
+    const fadeTracks = activeTracks.filter((track) => !isCongregationCueTrack(track));
+    const startVolumes = new Map<string, number>();
+
+    for (const track of fadeTracks) {
+      const currentVolume = clamp(
+        congregationAppliedVolumesRef.current.get(track.id) ??
+          trackVolumes[track.id] ??
+          track.volume ??
+          1,
+        0,
+        1,
+      );
+      startVolumes.set(track.id, currentVolume);
+
+      if (nextMuted && !congregationOriginalVolumesRef.current.has(track.id)) {
+        congregationOriginalVolumesRef.current.set(track.id, currentVolume);
+      }
+    }
+
     congregationMutedRef.current = nextMuted;
-    sectionTransitionTokenRef.current = transitionToken;
-    isSectionTransitioningRef.current = true;
+    congregationFadeTokenRef.current = transitionToken;
     setCongregationFadeState(nextMuted ? 'fading-out' : 'fading-in');
 
     void (async () => {
-      await fadeMasterVolume(
-        nextMuted ? 0 : masterVolumeRef.current,
-        CONGREGATION_FADE_MS,
-        transitionToken,
-      );
+      await fadeCongregationMix(nextMuted, startVolumes, transitionToken);
 
-      if (sectionTransitionTokenRef.current !== transitionToken) {
+      if (congregationFadeTokenRef.current !== transitionToken) {
         return;
       }
 
-      const finalVolume = nextMuted ? 0 : masterVolumeRef.current;
-      isSectionTransitioningRef.current = false;
-      applyMasterVolume(finalVolume);
+      if (!nextMuted) {
+        congregationOriginalVolumesRef.current.clear();
+        congregationAppliedVolumesRef.current.clear();
+      }
       setCongregationFadeState(nextMuted ? 'muted' : 'normal');
     })();
-  }, [applyMasterVolume, fadeMasterVolume, hasTrackSession, isReady]);
+  }, [activeTracks, fadeCongregationMix, hasTrackSession, isReady, trackVolumes]);
 
   useEffect(() => {
     masterVolumeRef.current = masterVolume;
 
     if (!isSectionTransitioningRef.current) {
       stopMasterVolumeFade();
-      applyMasterVolume(congregationMutedRef.current ? 0 : masterVolume);
+      applyMasterVolume(masterVolume);
     }
   }, [applyMasterVolume, masterVolume, stopMasterVolumeFade]);
 
   useEffect(() => {
     sectionTransitionTokenRef.current += 1;
+    congregationFadeTokenRef.current += 1;
     congregationMutedRef.current = false;
     isSectionTransitioningRef.current = false;
     setCongregationFadeState('normal');
+    congregationOriginalVolumesRef.current.clear();
+    congregationAppliedVolumesRef.current.clear();
+    congregationPadGainRef.current = 1;
+    setCongregationPadGain(1);
+    stopCongregationTrackFade();
     stopMasterVolumeFade();
     applyMasterVolume(masterVolumeRef.current);
-  }, [applyMasterVolume, stopMasterVolumeFade, trackSignature]);
+  }, [applyMasterVolume, stopCongregationTrackFade, stopMasterVolumeFade, trackSignature]);
 
   useEffect(() => () => {
     sectionTransitionTokenRef.current += 1;
+    congregationFadeTokenRef.current += 1;
     isSectionTransitioningRef.current = false;
+    stopCongregationTrackFade();
     stopMasterVolumeFade();
-  }, [stopMasterVolumeFade]);
+  }, [stopCongregationTrackFade, stopMasterVolumeFade]);
 
   const handleSectionSeek = useCallback(async (nextTime: number) => {
     if (!hasTrackSession || isCongregationFading) {
@@ -2625,12 +2754,12 @@ export function LiveDirectorView({
               return;
             }
 
-            const restoredVolume = congregationMutedRef.current ? 0 : masterVolumeRef.current;
+            const restoredVolume = masterVolumeRef.current;
             await fadeMasterVolume(restoredVolume, SECTION_TRANSITION_FADE_IN_MS, transitionToken);
           } finally {
             if (sectionTransitionTokenRef.current === transitionToken) {
               isSectionTransitioningRef.current = false;
-              applyMasterVolume(congregationMutedRef.current ? 0 : masterVolumeRef.current);
+              applyMasterVolume(masterVolumeRef.current);
             }
           }
         }
@@ -2924,7 +3053,12 @@ export function LiveDirectorView({
       return;
     }
 
-    const currentVolumes = trackVolumes;
+    const currentVolumes = congregationOriginalVolumesRef.current.size > 0
+      ? {
+        ...trackVolumes,
+        ...Object.fromEntries(congregationOriginalVolumesRef.current),
+      }
+      : trackVolumes;
     const currentMutes = mutedTrackIds;
 
     const sourceTracks = tracksOverride || manualSession.tracks;
@@ -2966,7 +3100,12 @@ export function LiveDirectorView({
   const mixerAutosaveTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!hasPersistedSongContext || !manualSession || isInitializingSession) return;
+    if (
+      !hasPersistedSongContext ||
+      !manualSession ||
+      isInitializingSession ||
+      congregationFadeState !== 'normal'
+    ) return;
 
     const isDirty = manualSession.tracks.some(
       (t) => (trackVolumes[t.id] !== undefined && trackVolumes[t.id] !== t.volume) ||
@@ -2997,7 +3136,7 @@ export function LiveDirectorView({
         window.clearTimeout(mixerAutosaveTimerRef.current);
       }
     };
-  }, [trackOutputRoutes, trackVolumes, mutedTrackIds, manualSession, commitMixerStateSilent, hasPersistedSongContext, isInitializingSession]);
+  }, [trackOutputRoutes, trackVolumes, mutedTrackIds, manualSession, commitMixerStateSilent, congregationFadeState, hasPersistedSongContext, isInitializingSession]);
 
   // Persist newly-computed activity envelopes exactly once. When either the
   // iOS native engine or the web engine finishes loading tracks it hands us a
@@ -3392,20 +3531,6 @@ export function LiveDirectorView({
     };
   }, [isIOSNativeEngineSurface, songCardTitle, songTitle, performerLabel, songKey]);
 
-  const handleToggleLoop = () => {
-    if (!loopEnabled) {
-      if (activeSection) {
-        setLoopPoints(activeSection.startTime, activeSection.endTime);
-      } else {
-        const safeStart = clamp(currentTime, 0, playbackTimelineDuration);
-        setLoopPoints(safeStart, Math.min(playbackTimelineDuration, safeStart + 8));
-      }
-    }
-
-    toggleLoop();
-    setLoopEnabled((previous) => !previous);
-  };
-
   const handleMuteTrack = (trackId: string) => {
     if (!hasTrackSession) {
       return;
@@ -3735,12 +3860,6 @@ export function LiveDirectorView({
           return;
         }
 
-        if (event.code === 'KeyL' && hasTrackSession) {
-          event.preventDefault();
-          handleToggleLoop();
-          return;
-        }
-
         if (event.code === 'KeyP' && resolvedPadUrl) {
           event.preventDefault();
           setIsPadActive((previous) => !previous);
@@ -3870,7 +3989,6 @@ export function LiveDirectorView({
     handleStemsToolbarAction,
     handleReturnToStart,
     handleToggleCongregationFade,
-    handleToggleLoop,
     handleTogglePlaybackFromGesture,
     hasTrackSession,
     isCongregationFading,
@@ -4342,11 +4460,11 @@ export function LiveDirectorView({
                 aria-pressed={congregationFadeTargetMuted}
                 data-live-director-control="fade-out"
                 aria-label={congregationFadeTargetMuted
-                  ? 'Restaurar progresivamente el volumen de la secuencia'
-                  : 'Bajar progresivamente la secuencia para que cante la congregación'}
+                  ? 'Restaurar progresivamente los instrumentos'
+                  : 'Bajar progresivamente los instrumentos y mantener Click y Guide'}
                 title={congregationFadeTargetMuted
-                  ? 'Restaurar secuencia · Fade 5s (F)'
-                  : 'Modo congregación · Fade 5s (F)'}
+                  ? 'Restaurar instrumentos · Fade 5s (F)'
+                  : 'Modo congregación · Instrumentos abajo, Click y Guide activos (F)'}
                 aria-keyshortcuts="F"
                 className={`${CONTROL_CARD} group relative ${isUltraCompactLandscape ? 'h-11 px-3' : isToolbarCompactLandscape ? 'h-12 px-4' : 'h-[var(--ld-control-height)] px-4'} justify-center disabled:cursor-not-allowed disabled:text-white/24 ${congregationFadeTargetMuted
                   ? 'border-cyan-300/32 bg-cyan-300/10 text-cyan-100 shadow-[0_0_16px_rgba(103,232,249,0.10)]'
@@ -4363,8 +4481,8 @@ export function LiveDirectorView({
                 <KeyboardHint>F</KeyboardHint>
                 <span className="sr-only">
                   {isCongregationFading
-                    ? (congregationFadeTargetMuted ? 'Bajando secuencia' : 'Restaurando secuencia')
-                    : (congregationFadeTargetMuted ? 'Secuencia abajo' : 'Secuencia normal')}
+                    ? (congregationFadeTargetMuted ? 'Bajando instrumentos' : 'Restaurando instrumentos')
+                    : (congregationFadeTargetMuted ? 'Instrumentos abajo' : 'Instrumentos normales')}
                 </span>
               </button>
             </div>
@@ -4958,6 +5076,8 @@ export function LiveDirectorView({
             >
               {mixerView.map((track) => {
                 const isInternalPadTrack = track.id === INTERNAL_PAD_TRACK_ID;
+                const lockedByCongregation =
+                  congregationFadeState !== 'normal' && !isCongregationCueTrack(track);
                 const stableCallbacks = getChannelStripCallbacks(track.id);
                 return (
                   <div
@@ -4982,9 +5102,11 @@ export function LiveDirectorView({
                       muted={track.muted}
                       soloed={track.soloed}
                       dimmed={track.dimmed}
-                      disabled={track.disabled}
+                      disabled={track.disabled || lockedByCongregation}
                       disabledReason={track.disabledReason}
-                      disabledTitle={track.disabledTitle}
+                      disabledTitle={lockedByCongregation
+                        ? 'Modo congregación activo: restaura los instrumentos para ajustar este fader.'
+                        : track.disabledTitle}
                       outputRoute={track.outputRoute}
                       showRouteFlip={track.showRouteFlip}
                       compact={isCompactLandscape}
@@ -5070,25 +5192,11 @@ export function LiveDirectorView({
                   V
                 </span>
               </button>
-              <button
-                type="button"
-                onClick={handleToggleLoop}
-                disabled={!hasTrackSession}
-                aria-pressed={loopEnabled}
-                aria-label={loopEnabled ? 'Desactivar bucle' : 'Activar bucle en la sección actual'}
-                aria-keyshortcuts="L"
-                title={`${loopEnabled ? 'Desactivar' : 'Activar'} bucle (L)`}
-                className={`group relative ui-pressable-soft flex min-h-0 w-full flex-1 flex-col items-center justify-center rounded-[1.2rem] border px-2 text-center ${isUltraCompactLandscape ? 'rounded-[1rem] text-[0.46rem]' : isCompactLandscape ? 'text-[0.52rem]' : 'text-[0.68rem]'} font-semibold tracking-[0.16em] leading-[1.1] ${loopEnabled
-                  ? 'border-[#43c477]/50 bg-[#43c477]/14 text-[#9effc4]'
-                  : 'border-white/8 bg-black/24 text-white/62'
-                  }`}
-              >
-                <Infinity className={isUltraCompactLandscape ? 'mb-0.5 h-3.5 w-3.5' : isCompactLandscape ? 'mb-1 h-4 w-4' : 'mb-1.5 h-6 w-6'} strokeWidth={2.2} />
-                <span>BUCLE {loopEnabled ? 'ON' : 'OFF'}</span>
-                <span className="pointer-events-none absolute right-1.5 top-1.5 rounded-md border border-white/12 bg-white/8 px-1.5 py-0.5 text-[0.5rem] font-black text-white/72 opacity-0 transition-opacity group-hover:opacity-100">
-                  L
-                </span>
-              </button>
+              <div
+                aria-hidden="true"
+                className="min-h-0 w-full flex-1"
+                data-live-director-control-slot="reserved"
+              />
             </div>
           </div>
 
