@@ -171,6 +171,8 @@ type LiveDirectorViewProps = {
   onPlaybackSnapshot?: (snapshot: LiveDirectorPlaybackSnapshot) => void;
   onSessionPersisted?: (session: LiveDirectorPersistedSession) => void;
   onBack?: () => void;
+  backLabel?: string;
+  returnHref?: string;
 };
 
 // Per-platform active stem limits for reliable live playback.
@@ -510,6 +512,8 @@ export function LiveDirectorView({
   onPlaybackSnapshot,
   onSessionPersisted,
   onBack,
+  backLabel,
+  returnHref,
 }: LiveDirectorViewProps) {
   const hasProvidedTracks = Boolean(tracks && tracks.length > 0);
   const hasPersistedSongContext = Boolean(songId);
@@ -825,9 +829,16 @@ export function LiveDirectorView({
     if (onBack) {
       onBack();
     } else if (typeof window !== 'undefined') {
-      window.history.back();
+      const safeReturnHref = String(returnHref || '').trim();
+      if (safeReturnHref.startsWith('/')) {
+        window.location.replace(safeReturnHref);
+      } else if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        window.location.replace('/repertorio');
+      }
     }
-  }, [onBack, stop]);
+  }, [onBack, returnHref, stop]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -877,6 +888,10 @@ export function LiveDirectorView({
     setVisualSectionTimeState(nextTime);
   }, []);
   const isEnsayoMode = mode === 'ensayo';
+  const resolvedBackLabel = String(
+    backLabel || (isEnsayoMode ? 'Volver al modo ensayo' : 'Volver al repertorio'),
+  ).trim();
+  const resolvedBackActionLabel = isEnsayoMode ? 'Volver al ensayo' : 'Ir a repertorio';
   const resolvedInternalPadVolume = clamp(
     Number.isFinite(Number(internalPadVolume)) ? Number(internalPadVolume) : internalPadVolumeState,
     0,
@@ -4410,9 +4425,9 @@ export function LiveDirectorView({
                 data-live-director-control="back"
                 className={`${CONTROL_CARD} group relative ${isUltraCompactLandscape ? 'h-11 w-11 px-1.5' : isToolbarCompactLandscape ? 'h-12 w-12 px-2' : 'h-[var(--ld-control-height)] w-[4.25rem] px-2.5'} shrink-0 items-center justify-center text-white/85 hover:bg-white/6 hover:text-white`}
                 style={isToolbarCompactLandscape ? undefined : { flex: '0 0 16%', width: '16%' }}
-                aria-label="Volver al repertorio"
+                aria-label={resolvedBackLabel}
                 aria-keyshortcuts="B"
-                title="Volver al repertorio (B)"
+                title={`${resolvedBackLabel} (B)`}
               >
                 <ChevronLeft className={`${isUltraCompactLandscape ? 'h-5 w-5' : isToolbarCompactLandscape ? 'h-6 w-6' : 'h-8 w-8'}`} strokeWidth={isToolbarCompactLandscape ? 2.1 : 2.45} />
                 <KeyboardHint>B</KeyboardHint>
@@ -5790,7 +5805,7 @@ export function LiveDirectorView({
                 }}
                 className="ui-pressable-soft flex-1 rounded-[1rem] border border-amber-300/38 bg-amber-300/12 px-4 py-3 text-[0.92rem] font-semibold text-amber-50 hover:bg-amber-300/18"
               >
-                Salir
+                {resolvedBackActionLabel}
               </button>
             </div>
           </div>

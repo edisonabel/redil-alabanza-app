@@ -803,6 +803,7 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
       onPlaybackSnapshot={handlePlaybackSnapshot}
       onSessionPersisted={handleSessionPersisted}
       onBack={onExit}
+      backLabel="Volver al modo ensayo"
       title={`Modo Ensayo - ${contextTitle}`}
       bpm={Number(activeSong?.bpm || 0)}
     />
