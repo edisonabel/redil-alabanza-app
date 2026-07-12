@@ -24,6 +24,10 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Redil Alabanza usa el micrófono para seguir localmente las palabras cantadas durante el ensayo.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Redil Alabanza usa el reconocimiento de voz en el dispositivo para resaltar la letra mientras cantas.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

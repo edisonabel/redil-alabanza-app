@@ -18,6 +18,7 @@
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		B4E71A012DB18D0100A00001 /* NativeLiveDirectorEnginePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4E71A002DB18D0100A00001 /* NativeLiveDirectorEnginePlugin.swift */; };
 		B4E71A032DB18D0100A00001 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4E71A022DB18D0100A00001 /* MainViewController.swift */; };
+		B4E71A072DB18D0100A00001 /* NativeVoiceFollowerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4E71A062DB18D0100A00001 /* NativeVoiceFollowerPlugin.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -34,6 +35,7 @@
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		B4E71A002DB18D0100A00001 /* NativeLiveDirectorEnginePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLiveDirectorEnginePlugin.swift; sourceTree = "<group>"; };
 		B4E71A022DB18D0100A00001 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
+		B4E71A062DB18D0100A00001 /* NativeVoiceFollowerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeVoiceFollowerPlugin.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -73,6 +75,7 @@
 				B4E71A042DB18D0100A00001 /* SceneDelegate.swift */,
 				B4E71A022DB18D0100A00001 /* MainViewController.swift */,
 				B4E71A002DB18D0100A00001 /* NativeLiveDirectorEnginePlugin.swift */,
+				B4E71A062DB18D0100A00001 /* NativeVoiceFollowerPlugin.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -168,6 +171,7 @@
 				B4E71A052DB18D0100A00001 /* SceneDelegate.swift in Sources */,
 				B4E71A032DB18D0100A00001 /* MainViewController.swift in Sources */,
 				B4E71A012DB18D0100A00001 /* NativeLiveDirectorEnginePlugin.swift in Sources */,
+				B4E71A072DB18D0100A00001 /* NativeVoiceFollowerPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

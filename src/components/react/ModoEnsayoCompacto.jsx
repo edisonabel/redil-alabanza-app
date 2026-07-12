@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, Pause, Play, Radio, RadioReceiver, Repeat, Repeat1, SlidersHorizontal, X } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, LoaderCircle, Mic, MicOff, Pause, Play, Radio, RadioReceiver, Repeat, Repeat1, SlidersHorizontal, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { audioSessionService } from '../../services/AudioSessionService';
 import { metronomeService } from '../../services/MetronomeEngine';
@@ -25,6 +25,17 @@ import {
   toRgba,
 } from '../../utils/sectionVisuals';
 import { readLiveBrowserCapabilities } from '../../utils/liveDiagnostics';
+import {
+  VoiceFollower,
+  isVoiceFollowerAvailable,
+} from '../../services/VoiceFollowerService';
+import {
+  buildVoiceContextPhrases,
+  buildVoiceLyricIndex,
+  findBestVoiceLyricMatch,
+  findVoiceAnchorIndex,
+  normalizeVoiceToken,
+} from '../../utils/voiceLyricFollower';
 const FONT_PRESETS = {
   grande: {
     section: 'text-[0.78rem] sm:text-[0.82rem] tracking-[0.3em]',
@@ -910,6 +921,8 @@ function ChordOverlayLine({
   lineKey,
   interactiveChords = false,
   onChordPreview,
+  activeVoiceWordIndex = -1,
+  voiceActive = false,
 }) {
   const renderChord = (chord, key) => (
     interactiveChords ? (
@@ -927,6 +940,8 @@ function ChordOverlayLine({
       />
     )
   );
+
+  let lyricWordIndex = -1;
 
   return (
     <div className="overflow-visible">
@@ -953,12 +968,18 @@ function ChordOverlayLine({
           }
 
           // type === 'word'
+          lyricWordIndex += 1;
+          const isVoiceWord = voiceActive && lyricWordIndex === activeVoiceWordIndex;
           return (
             <React.Fragment key={`${lineKey}-wg-${i}`}>
               {i > 0 && ' '}
               <span
-                className="inline-block relative align-top"
+                className={`inline-block relative align-top rounded-[0.35em] px-[0.08em] transition-colors duration-150 ${isVoiceWord
+                  ? 'bg-sky-200/55 text-sky-950 shadow-[0_0_0_0.1em_rgba(125,211,252,0.18)] dark:bg-sky-300/20 dark:text-sky-50'
+                  : ''
+                  }`}
                 style={{ paddingTop: '1.3em', lineHeight: '1.3' }}
+                aria-current={isVoiceWord ? 'true' : undefined}
               >
                 {token.chords.length > 0 && (
                   <span className={`${interactiveChords ? 'pointer-events-auto' : 'pointer-events-none'} absolute top-0 flex w-max h-0 overflow-visible`} style={{ left: '50%', transform: 'translateX(-50%)', gap: '0.4em' }}>
@@ -979,6 +1000,33 @@ function ChordOverlayLine({
         })}
       </div>
     </div>
+  );
+}
+
+function PlainVoiceLine({ text, fontPreset, activeVoiceWordIndex = -1, voiceActive = false }) {
+  let wordIndex = -1;
+  return (
+    <p className={`leading-[1.3] text-zinc-900 dark:text-zinc-50 ${fontPreset.lyric}`}>
+      {String(text || '').split(/(\s+)/).map((part, partIndex) => {
+        if (!part || /^\s+$/.test(part)) {
+          return <React.Fragment key={`plain-space-${partIndex}`}>{part}</React.Fragment>;
+        }
+        if (normalizeVoiceToken(part)) wordIndex += 1;
+        const isVoiceWord = voiceActive && wordIndex === activeVoiceWordIndex;
+        return (
+          <span
+            key={`plain-word-${partIndex}`}
+            className={`rounded-[0.35em] px-[0.08em] transition-colors duration-150 ${isVoiceWord
+              ? 'bg-sky-200/55 text-sky-950 shadow-[0_0_0_0.1em_rgba(125,211,252,0.18)] dark:bg-sky-300/20 dark:text-sky-50'
+              : ''
+              }`}
+            aria-current={isVoiceWord ? 'true' : undefined}
+          >
+            {part}
+          </span>
+        );
+      })}
+    </p>
   );
 }
 function GuitarChordDiagram({ chord, variation }) {
@@ -1399,6 +1447,11 @@ export default function ModoEnsayoCompacto({
   const [panValue, setPanValue] = useState(0);
   const [guideCueEnabled, setGuideCueEnabled] = useState(true);
   const [guideCueVolume, setGuideCueVolume] = useState(0.72);
+  const [voiceFollowerEnabled, setVoiceFollowerEnabled] = useState(false);
+  const [voiceFollowerStatus, setVoiceFollowerStatus] = useState('idle');
+  const [voiceFollowerError, setVoiceFollowerError] = useState('');
+  const [voiceFollowerLocale, setVoiceFollowerLocale] = useState('');
+  const [voiceMatch, setVoiceMatch] = useState(null);
   const syncChannelRef = useRef(null);
   const syncSnapshotRef = useRef({
     songId: '',
@@ -1412,6 +1465,7 @@ export default function ModoEnsayoCompacto({
   const scrollRef = useRef(null);
   const lastScrollTop = useRef(0);
   const sectionRefs = useRef([]);
+  const lineRefs = useRef([]);
   const optionsMenuRef = useRef(null);
   const playbackOptionsRef = useRef(null);
   const chordPreviewRef = useRef(null);
@@ -1420,6 +1474,10 @@ export default function ModoEnsayoCompacto({
   const personalSettingsToastTimeoutRef = useRef(null);
   const pendingPlaybackResumeRef = useRef(false);
   const lastRehearsalMixSourceRef = useRef('');
+  const voiceLyricWordsRef = useRef([]);
+  const voiceFollowerEnabledRef = useRef(false);
+  const voiceProgressIndexRef = useRef(0);
+  const voiceCandidateRef = useRef({ globalIndex: -1, hits: 0 });
   const audioCtxRef = useRef(null);
   const trackSourceRef = useRef(null);
   const trackGainRef = useRef(null);
@@ -1520,6 +1578,7 @@ export default function ModoEnsayoCompacto({
         : [],
     }))
   ), [currentSong?.sections, displayTransposeSteps]);
+  const voiceLyricWords = useMemo(() => buildVoiceLyricIndex(currentSections), [currentSections]);
   const currentChordLibrary = useMemo(() => (
     buildChordLibrary(extractChordTokensFromSections(currentSections))
   ), [currentSections]);
@@ -1588,6 +1647,88 @@ export default function ModoEnsayoCompacto({
   }, [currentSections]);
   const fontPreset = FONT_PRESETS[fontScale] || FONT_PRESETS.grande;
   const currentSongKey = String(currentSong?.id || 'demo');
+  useEffect(() => {
+    voiceLyricWordsRef.current = voiceLyricWords;
+  }, [voiceLyricWords]);
+  useEffect(() => {
+    voiceFollowerEnabledRef.current = voiceFollowerEnabled;
+  }, [voiceFollowerEnabled]);
+  useEffect(() => {
+    if (!isVoiceFollowerAvailable()) setVoiceFollowerStatus('unavailable');
+  }, []);
+  useEffect(() => {
+    if (!isVoiceFollowerAvailable()) return undefined;
+
+    let disposed = false;
+    let transcriptListener = null;
+    let errorListener = null;
+
+    void VoiceFollower.addListener('transcript', (result) => {
+      if (!voiceFollowerEnabledRef.current) return;
+      const words = voiceLyricWordsRef.current;
+      const match = findBestVoiceLyricMatch({
+        transcript: result?.text || '',
+        lyricWords: words,
+        currentIndex: voiceProgressIndexRef.current,
+      });
+      if (!match) return;
+
+      const jump = match.globalIndex - voiceProgressIndexRef.current;
+      const previousCandidate = voiceCandidateRef.current;
+      const sameCandidate = Math.abs(previousCandidate.globalIndex - match.globalIndex) <= 1;
+      const hits = sameCandidate ? previousCandidate.hits + 1 : 1;
+      voiceCandidateRef.current = { globalIndex: match.globalIndex, hits };
+
+      const requiredHits = jump > 5 ? 2 : 1;
+      if (hits < requiredHits) return;
+
+      const nextIndex = Math.max(voiceProgressIndexRef.current, match.globalIndex);
+      const word = words[nextIndex];
+      if (!word) return;
+
+      voiceProgressIndexRef.current = nextIndex;
+      setVoiceMatch({
+        ...word,
+        confidence: match.score,
+        transcript: String(result?.text || ''),
+      });
+    }).then((listener) => {
+      if (disposed) {
+        void listener.remove();
+      } else {
+        transcriptListener = listener;
+      }
+    });
+
+    void VoiceFollower.addListener('voiceError', (error) => {
+      setVoiceFollowerEnabled(false);
+      setVoiceFollowerStatus('error');
+      setVoiceFollowerError(error?.message || 'El seguimiento de voz se detuvo.');
+    }).then((listener) => {
+      if (disposed) {
+        void listener.remove();
+      } else {
+        errorListener = listener;
+      }
+    });
+
+    return () => {
+      disposed = true;
+      if (transcriptListener) void transcriptListener.remove();
+      if (errorListener) void errorListener.remove();
+      void VoiceFollower.stop().catch(() => undefined);
+    };
+  }, []);
+  useEffect(() => {
+    if (!voiceFollowerEnabled) return;
+    setVoiceFollowerEnabled(false);
+    setVoiceFollowerStatus('idle');
+    setVoiceFollowerError('');
+    setVoiceMatch(null);
+    voiceProgressIndexRef.current = 0;
+    voiceCandidateRef.current = { globalIndex: -1, hits: 0 };
+    void VoiceFollower.stop().catch(() => undefined);
+  }, [currentSongKey]);
   const personalSettingsContext = useMemo(() => ({
     userId,
     eventId,
@@ -1832,7 +1973,14 @@ export default function ModoEnsayoCompacto({
       isActive: markerIndex === activeMarkerIndex,
     }))
   ), [activeMarkerIndex, currentSongMarkers, timelineDuration]);
-  const activeSectionIndex = activeSectionByAudioIndex >= 0 ? activeSectionByAudioIndex : activeSectionManualIndex;
+  const activeSectionByVoiceIndex = voiceFollowerEnabled && Number.isInteger(voiceMatch?.sectionIndex)
+    ? voiceMatch.sectionIndex
+    : -1;
+  const activeSectionIndex = activeSectionByVoiceIndex >= 0
+    ? activeSectionByVoiceIndex
+    : activeSectionByAudioIndex >= 0
+      ? activeSectionByAudioIndex
+      : activeSectionManualIndex;
   useEffect(() => {
     syncSnapshotRef.current = {
       songId: String(currentSongKey || ''),
@@ -2650,19 +2798,22 @@ export default function ModoEnsayoCompacto({
     return () => scroller.removeEventListener('scroll', handleScroll);
   }, [currentHeaderOffset, currentSections.length, isLandscapeCompact]);
   useEffect(() => {
-    if (activeSectionByAudioIndex < 0 || !scrollRef.current) return;
+    const sectionIndex = activeSectionByVoiceIndex >= 0
+      ? activeSectionByVoiceIndex
+      : activeSectionByAudioIndex;
+    if (sectionIndex < 0 || !scrollRef.current) return;
     setCollapsedSections((prev) => {
       const songState = prev[currentSongKey] || {};
-      if (songState[activeSectionByAudioIndex] === false) return prev;
+      if (songState[sectionIndex] === false) return prev;
       return {
         ...prev,
         [currentSongKey]: {
           ...songState,
-          [activeSectionByAudioIndex]: false,
+          [sectionIndex]: false,
         },
       };
     });
-  }, [activeSectionByAudioIndex, currentSongKey]);
+  }, [activeSectionByAudioIndex, activeSectionByVoiceIndex, currentSongKey]);
   const getSectionScrollTop = (index) => {
     const scroller = scrollRef.current;
     const node = sectionRefs.current[index];
@@ -2686,11 +2837,32 @@ export default function ModoEnsayoCompacto({
     });
   };
   useEffect(() => {
-    if (activeSectionByAudioIndex < 0) return;
+    const sectionIndex = activeSectionByVoiceIndex >= 0
+      ? activeSectionByVoiceIndex
+      : activeSectionByAudioIndex;
+    if (sectionIndex < 0) return;
     window.requestAnimationFrame(() => {
-      scrollToSectionIndex(activeSectionByAudioIndex, 'smooth');
+      scrollToSectionIndex(sectionIndex, 'smooth');
     });
-  }, [activeSectionByAudioIndex]);
+  }, [activeSectionByAudioIndex, activeSectionByVoiceIndex]);
+  useEffect(() => {
+    if (!voiceFollowerEnabled || !voiceMatch || !scrollRef.current) return;
+    const scroller = scrollRef.current;
+    const lineNode = lineRefs.current[voiceMatch.sectionIndex]?.[voiceMatch.lineIndex];
+    if (!lineNode) return;
+
+    const scrollerRect = scroller.getBoundingClientRect();
+    const lineRect = lineNode.getBoundingClientRect();
+    const visibleTop = scrollerRect.top + currentHeaderOffset + 18;
+    const visibleBottom = scrollerRect.bottom - 92;
+    if (lineRect.top >= visibleTop && lineRect.bottom <= visibleBottom) return;
+
+    const targetTop = Math.max(
+      0,
+      scroller.scrollTop + (lineRect.top - scrollerRect.top) - currentHeaderOffset - 28,
+    );
+    scroller.scrollTo({ top: targetTop, behavior: 'smooth' });
+  }, [currentHeaderOffset, voiceFollowerEnabled, voiceMatch?.lineIndex, voiceMatch?.sectionIndex]);
   useEffect(() => {
     if (shouldUseRehearsalMix) return undefined;
     if (loopState !== 2 || !isPlaying || !audioRef.current || !activeLoopSection) return undefined;
@@ -2884,6 +3056,11 @@ export default function ModoEnsayoCompacto({
 
   const selectSection = (index, { seekAudio = true, scrollBehavior = 'smooth' } = {}) => {
     setActiveSectionManualIndex(index);
+    if (voiceFollowerEnabled) {
+      voiceProgressIndexRef.current = findVoiceAnchorIndex(voiceLyricWords, index, 0);
+      voiceCandidateRef.current = { globalIndex: -1, hits: 0 };
+      setVoiceMatch(null);
+    }
     setCollapsedSections((prev) => ({
       ...prev,
       [currentSongKey]: {
@@ -2926,6 +3103,54 @@ export default function ModoEnsayoCompacto({
     window.requestAnimationFrame(() => {
       scrollToSectionIndex(index, scrollBehavior);
     });
+  };
+  const handleToggleVoiceFollower = async () => {
+    if (voiceFollowerStatus === 'starting' || voiceFollowerStatus === 'unavailable') return;
+
+    if (voiceFollowerEnabled) {
+      setVoiceFollowerEnabled(false);
+      setVoiceFollowerStatus('idle');
+      setVoiceFollowerError('');
+      setVoiceMatch(null);
+      voiceCandidateRef.current = { globalIndex: -1, hits: 0 };
+      await VoiceFollower.stop().catch(() => undefined);
+      return;
+    }
+
+    if (!isVoiceFollowerAvailable()) {
+      setVoiceFollowerStatus('unavailable');
+      setVoiceFollowerError('Este navegador no ofrece reconocimiento de voz compatible.');
+      return;
+    }
+
+    const anchorIndex = findVoiceAnchorIndex(
+      voiceLyricWords,
+      activeSectionIndex,
+      voiceMatch?.lineIndex || 0,
+    );
+    voiceProgressIndexRef.current = anchorIndex;
+    voiceCandidateRef.current = { globalIndex: -1, hits: 0 };
+    setVoiceMatch(null);
+    setVoiceFollowerStatus('starting');
+    setVoiceFollowerError('');
+
+    try {
+      const result = await VoiceFollower.start({
+        locales: ['es-CO', 'es-ES', 'es-US'],
+        contextualStrings: buildVoiceContextPhrases(voiceLyricWords, anchorIndex),
+      });
+      setVoiceFollowerLocale(result.locale || 'es');
+      setVoiceFollowerEnabled(true);
+      setVoiceFollowerStatus('listening');
+    } catch (error) {
+      setVoiceFollowerEnabled(false);
+      setVoiceFollowerStatus('error');
+      setVoiceFollowerError(
+        error instanceof Error
+          ? error.message
+          : 'No se pudo iniciar el reconocimiento de voz.',
+      );
+    }
   };
   const handleTogglePlayback = async () => {
     if (!hasAudio) return;
@@ -3012,6 +3237,17 @@ export default function ModoEnsayoCompacto({
     setSelectedPlaybackSourceId(sourceId);
     setShowPlaybackOptions(false);
   };
+  const voiceFollowerStatusLabel = voiceFollowerStatus === 'starting'
+    ? 'Preparando micrófono…'
+    : voiceFollowerStatus === 'listening'
+      ? voiceMatch
+        ? `${currentSections[voiceMatch.sectionIndex]?.name || 'Siguiendo'} · ${voiceMatch.display}`
+        : `Escuchando${voiceFollowerLocale ? ` · ${voiceFollowerLocale}` : ''}`
+      : voiceFollowerStatus === 'error'
+        ? 'Necesita atención'
+        : voiceFollowerStatus === 'unavailable'
+          ? 'Navegador no compatible'
+          : 'Resalta la letra mientras cantas';
   return (
     <div className="ensayo-mobile-shell relative flex h-screen w-full flex-col overflow-hidden bg-white text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
       <audio
@@ -3204,18 +3440,29 @@ export default function ModoEnsayoCompacto({
                       <div className="grid grid-cols-4 gap-1.5">
                         {transposeKeyOptions.map((option, optionIndex) => {
                           const active = option.steps === transposeSteps;
+                          const original = option.steps === 0;
                           return (
                             <button
                               key={`transpose-option-${option.steps}-${optionIndex}`}
                               type="button"
                               onClick={() => setTransposeSteps(option.steps)}
-                              className={`rounded-[0.85rem] border px-2 py-2.5 text-center text-sm font-black leading-none transition-all ${active
+                              className={`flex min-h-[3.15rem] flex-col items-center justify-center rounded-[0.85rem] border px-1.5 py-2 text-center text-sm font-black leading-none transition-all ${active
                                 ? 'border-brand bg-brand text-white shadow-[0_8px_20px_rgba(59,130,246,0.32)]'
                                 : 'border-zinc-200 bg-white text-zinc-900 hover:border-zinc-300 hover:bg-zinc-50 dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-50 dark:hover:bg-zinc-800'
                                 }`}
                               aria-pressed={active}
+                              aria-label={`${formatChordAccidentals(option.label)}${original ? ', tono original' : ''}`}
+                              title={original ? 'Tono original' : undefined}
                             >
-                              {formatChordAccidentals(option.label)}
+                              <span>{formatChordAccidentals(option.label)}</span>
+                              {original && (
+                                <span className={`mt-1 text-[0.48rem] font-black uppercase tracking-[0.08em] ${active
+                                  ? 'text-white/80'
+                                  : 'text-amber-600 dark:text-amber-300'
+                                  }`}>
+                                  Orig
+                                </span>
+                              )}
                             </button>
                           );
                         })}
@@ -3344,6 +3591,70 @@ export default function ModoEnsayoCompacto({
                         );
                       })}
                     </div>
+                  </div>
+                  <div className={`rounded-[1rem] border p-1 transition-colors ${voiceFollowerEnabled
+                    ? 'border-sky-200/70 bg-sky-50/35 dark:border-sky-300/20 dark:bg-sky-400/5'
+                    : voiceFollowerStatus === 'error'
+                      ? 'border-red-300/70 bg-red-50/80 dark:border-red-400/30 dark:bg-red-400/8'
+                      : 'border-zinc-200 bg-white dark:border-white/10 dark:bg-zinc-900'
+                    }`}>
+                    <button
+                      type="button"
+                      onClick={() => void handleToggleVoiceFollower()}
+                      disabled={voiceFollowerStatus === 'starting' || voiceFollowerStatus === 'unavailable'}
+                      className="flex min-h-14 w-full items-center gap-3 rounded-[0.8rem] px-2.5 py-2 text-left transition-colors hover:bg-black/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/45 disabled:cursor-not-allowed disabled:opacity-65 dark:hover:bg-white/[0.035]"
+                      aria-pressed={voiceFollowerEnabled}
+                      aria-describedby="voice-follower-status"
+                    >
+                      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${voiceFollowerEnabled
+                        ? 'bg-sky-100/75 text-sky-700 dark:bg-sky-300/12 dark:text-sky-200'
+                        : voiceFollowerStatus === 'error'
+                          ? 'bg-red-100 text-red-600 dark:bg-red-400/15 dark:text-red-300'
+                          : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
+                        }`}>
+                        {voiceFollowerStatus === 'starting' ? (
+                          <LoaderCircle className="h-5 w-5 animate-spin" />
+                        ) : voiceFollowerStatus === 'error' || voiceFollowerStatus === 'unavailable' ? (
+                          <MicOff className="h-5 w-5" />
+                        ) : (
+                          <Mic className={`h-5 w-5 ${voiceFollowerEnabled ? 'animate-pulse' : ''}`} />
+                        )}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-black leading-tight text-zinc-950 dark:text-zinc-50">
+                          Seguir voz
+                        </span>
+                        <span
+                          id="voice-follower-status"
+                          className={`mt-0.5 block truncate text-[0.68rem] font-semibold leading-tight ${voiceFollowerStatus === 'error'
+                            ? 'text-red-600 dark:text-red-300'
+                            : voiceFollowerEnabled
+                              ? 'text-sky-700 dark:text-sky-200'
+                              : 'text-zinc-500 dark:text-zinc-400'
+                            }`}
+                          aria-live="polite"
+                        >
+                          {voiceFollowerStatusLabel}
+                        </span>
+                      </span>
+                      <span
+                        className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${voiceFollowerEnabled
+                          ? 'bg-sky-300/80 dark:bg-sky-400/65'
+                          : 'bg-zinc-300 dark:bg-zinc-700'
+                          }`}
+                        aria-hidden="true"
+                      >
+                        <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${voiceFollowerEnabled
+                          ? 'translate-x-5'
+                          : 'translate-x-1'
+                          }`} />
+                      </span>
+                    </button>
+                    {voiceFollowerError && voiceFollowerStatus === 'error' && (
+                      <p className="px-3 pb-2 pt-1 text-[0.68rem] font-semibold leading-snug text-red-600 dark:text-red-300" role="alert">
+                        {voiceFollowerError}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <p className="mb-2 px-1 text-[0.72rem] font-black uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
@@ -3496,12 +3807,30 @@ export default function ModoEnsayoCompacto({
                   >
                     {section.lines.map((line, lineIndex) => {
                       const renderedLine = buildChordOverlayLine(line);
+                      const isVoiceLine = Boolean(
+                        voiceFollowerEnabled &&
+                        voiceMatch?.sectionIndex === sectionIndex &&
+                        voiceMatch?.lineIndex === lineIndex
+                      );
                       return (
-                        <div key={`${section.name}-${lineIndex}`} className={`grid ${fontPreset.lineGap}`}>
+                        <div
+                          key={`${section.name}-${lineIndex}`}
+                          ref={(node) => {
+                            if (!lineRefs.current[sectionIndex]) lineRefs.current[sectionIndex] = [];
+                            lineRefs.current[sectionIndex][lineIndex] = node;
+                          }}
+                          className={`grid rounded-lg px-1 py-0.5 transition-colors ${fontPreset.lineGap} ${isVoiceLine
+                            ? 'bg-sky-100/30 dark:bg-sky-400/5'
+                            : ''
+                            }`}
+                        >
                           {renderedLine.mode === 'plain' && (
-                            <p className={`leading-[1.3] text-zinc-900 dark:text-zinc-50 ${fontPreset.lyric}`}>
-                              {renderedLine.text}
-                            </p>
+                            <PlainVoiceLine
+                              text={renderedLine.text}
+                              fontPreset={fontPreset}
+                              activeVoiceWordIndex={isVoiceLine ? voiceMatch.wordIndex : -1}
+                              voiceActive={isVoiceLine}
+                            />
                           )}
                           {renderedLine.mode === 'instrumental' && (
                             <div className="flex flex-row flex-wrap gap-2">
@@ -3530,6 +3859,8 @@ export default function ModoEnsayoCompacto({
                               lineKey={`${section.name}-${lineIndex}`}
                               interactiveChords={tapChordPreviewEnabled}
                               onChordPreview={handleChordPreviewOpen}
+                              activeVoiceWordIndex={isVoiceLine ? voiceMatch.wordIndex : -1}
+                              voiceActive={isVoiceLine}
                             />
                           )}
                         </div>
