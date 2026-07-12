@@ -334,6 +334,7 @@ function CongregationFadeIcon({ muted, fading }: { muted: boolean; fading: boole
 
 const GENERIC_TRACK_ACCENTS = ['#81ddf5', '#7ed8e7', '#9f7cff', '#43c477', '#c98bff', '#73d1f8'];
 const TRACK_META_BY_ID = new Map(MIXER_TRACKS.map((track) => [track.id, track]));
+const PASSIVE_LIVE_SYNC_SNAPSHOT_INTERVAL_MS = 250;
 
 const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 
@@ -582,6 +583,7 @@ export function LiveDirectorView({
   const resumeNativeMetersTimeoutRef = useRef<number | null>(null);
   const passiveTelemetryFrameRef = useRef<number | null>(null);
   const passiveCurrentTimeRef = useRef(0);
+  const lastPassiveLiveSyncSnapshotAtRef = useRef(0);
   const visualSectionTimeRef = useRef<number | null>(null);
   const passiveClockTextRef = useRef<HTMLSpanElement | null>(null);
   const passiveCompactClockTextRef = useRef<HTMLSpanElement | null>(null);
@@ -1220,6 +1222,22 @@ export function LiveDirectorView({
     return 0;
   }, [resolvedSections, sectionTimelineDuration]);
 
+  const publishPlaybackSnapshot = useCallback((timeInSeconds: number, playing: boolean) => {
+    if (!songId || !onPlaybackSnapshot) {
+      return;
+    }
+
+    const rawTime = Math.max(0, Number(timeInSeconds) || 0);
+    onPlaybackSnapshot({
+      songId,
+      sectionIndex: getSectionIndexAtTime(rawTime),
+      currentTime: Math.max(0, rawTime - sectionOffsetSeconds),
+      currentTimeRaw: rawTime,
+      sectionOffsetSeconds,
+      isPlaying: playing,
+    });
+  }, [getSectionIndexAtTime, onPlaybackSnapshot, sectionOffsetSeconds, songId]);
+
   const getSectionLaneProgressPxAtTime = useCallback((timeInSeconds: number) => {
     const safeTime = Math.max(0, Number(timeInSeconds) || 0);
 
@@ -1277,6 +1295,7 @@ export function LiveDirectorView({
       lowSamples: 0,
       lastAlertAt: 0,
     };
+    lastPassiveLiveSyncSnapshotAtRef.current = 0;
 
     const drawPassiveTelemetry = (frameTime: number) => {
       const fpsMonitor = passiveFpsMonitorRef.current;
@@ -1316,6 +1335,13 @@ export function LiveDirectorView({
         const progress = hasTrackSession ? clamp(nextTime / duration, 0, 1) * 100 : 0;
 
         passiveCurrentTimeRef.current = nextTime;
+        if (
+          frameTime - lastPassiveLiveSyncSnapshotAtRef.current >=
+          PASSIVE_LIVE_SYNC_SNAPSHOT_INTERVAL_MS
+        ) {
+          lastPassiveLiveSyncSnapshotAtRef.current = frameTime;
+          publishPlaybackSnapshot(nextTime, true);
+        }
         if (
           visualSectionTimeRef.current !== null &&
           Math.abs(nextTime - visualSectionTimeRef.current) < 0.25
@@ -1408,6 +1434,7 @@ export function LiveDirectorView({
     getSectionLaneProgressPxAtTime,
     passiveStreamingTelemetryEnabled,
     playbackTimelineDuration,
+    publishPlaybackSnapshot,
     sectionLaneSegments,
     showSectionsPanel,
     stopPassiveTelemetryLoop,
@@ -2104,19 +2131,8 @@ export function LiveDirectorView({
   }, [ensayoQueueSongs]);
 
   useEffect(() => {
-    if (!songId || !onPlaybackSnapshot) {
-      return;
-    }
-
-    onPlaybackSnapshot({
-      songId,
-      sectionIndex: activeSectionIndex,
-      currentTime: Math.max(0, currentTime - sectionOffsetSeconds),
-      currentTimeRaw: currentTime,
-      sectionOffsetSeconds,
-      isPlaying,
-    });
-  }, [activeSectionIndex, currentTime, isPlaying, onPlaybackSnapshot, sectionOffsetSeconds, songId]);
+    publishPlaybackSnapshot(currentTime, isPlaying);
+  }, [currentTime, isPlaying, publishPlaybackSnapshot]);
 
   // Haptic feedback on section transitions — eyes-free awareness of where the
   // song is going. Uses navigator.vibrate as a best-effort (works on Android /
