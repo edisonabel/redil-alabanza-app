@@ -54,6 +54,10 @@ const FONT_SCALE_SEQUENCE = ['grande', 'enorme'];
 const SHARP_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLAT_TO_SHARP = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#' };
 const TRANSPOSE_OPTIONS = [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6];
+const VOICE_READING_ANCHOR_RATIO = 0.28;
+const VOICE_NEXT_SECTION_PREVIEW_RATIO = 0.64;
+const VOICE_SECTION_LEAD_WORDS = 3;
+const VOICE_SCROLL_DEAD_ZONE_PX = 12;
 const CAPO_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7];
 const OPEN_SHAPE_ROOTS = new Set(['C', 'D', 'E', 'G', 'A']);
 const OPEN_MINOR_ROOTS = new Set(['A', 'D', 'E']);
@@ -2855,14 +2859,55 @@ export default function ModoEnsayoCompacto({
     const lineRect = lineNode.getBoundingClientRect();
     const visibleTop = scrollerRect.top + currentHeaderOffset + 18;
     const visibleBottom = scrollerRect.bottom - 92;
-    if (lineRect.top >= visibleTop && lineRect.bottom <= visibleBottom) return;
+    const readableHeight = Math.max(160, visibleBottom - visibleTop);
+    const readingAnchor = visibleTop + (readableHeight * VOICE_READING_ANCHOR_RATIO);
+    let targetTop = scroller.scrollTop + (lineRect.top - readingAnchor);
 
-    const targetTop = Math.max(
-      0,
-      scroller.scrollTop + (lineRect.top - scrollerRect.top) - currentHeaderOffset - 28,
+    const lyricWords = voiceLyricWordsRef.current;
+    const matchedWordIndex = Number(voiceMatch.globalIndex);
+    let remainingSectionWords = Number.POSITIVE_INFINITY;
+    if (Number.isInteger(matchedWordIndex) && lyricWords[matchedWordIndex]) {
+      remainingSectionWords = 0;
+      for (let index = matchedWordIndex + 1; index < lyricWords.length; index += 1) {
+        if (lyricWords[index].sectionIndex !== voiceMatch.sectionIndex) break;
+        remainingSectionWords += 1;
+      }
+    }
+
+    if (remainingSectionWords <= VOICE_SECTION_LEAD_WORDS) {
+      const nextSectionNode = sectionRefs.current[voiceMatch.sectionIndex + 1];
+      if (nextSectionNode) {
+        const nextSectionRect = nextSectionNode.getBoundingClientRect();
+        const nextSectionPreviewAnchor = visibleTop + (
+          readableHeight * VOICE_NEXT_SECTION_PREVIEW_RATIO
+        );
+        const previewTargetTop = scroller.scrollTop + (
+          nextSectionRect.top - nextSectionPreviewAnchor
+        );
+        targetTop = Math.max(targetTop, previewTargetTop);
+      }
+    }
+
+    // A teleprompter should reveal what comes next without pulling the singer backward.
+    targetTop = Math.max(scroller.scrollTop, targetTop);
+    targetTop = Math.min(
+      Math.max(0, targetTop),
+      Math.max(0, scroller.scrollHeight - scroller.clientHeight),
     );
-    scroller.scrollTo({ top: targetTop, behavior: 'smooth' });
-  }, [currentHeaderOffset, voiceFollowerEnabled, voiceMatch?.lineIndex, voiceMatch?.sectionIndex]);
+    if (targetTop - scroller.scrollTop < VOICE_SCROLL_DEAD_ZONE_PX) return;
+
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    scroller.scrollTo({
+      top: targetTop,
+      behavior: reduceMotion ? 'auto' : 'smooth',
+    });
+  }, [
+    currentHeaderOffset,
+    voiceFollowerEnabled,
+    voiceMatch?.globalIndex,
+    voiceMatch?.lineIndex,
+    voiceMatch?.sectionIndex,
+  ]);
   useEffect(() => {
     if (shouldUseRehearsalMix) return undefined;
     if (loopState !== 2 || !isPlaying || !audioRef.current || !activeLoopSection) return undefined;
