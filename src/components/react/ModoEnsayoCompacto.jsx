@@ -34,6 +34,7 @@ import {
   buildVoiceLyricIndex,
   findBestVoiceLyricMatch,
   findVoiceAnchorIndex,
+  getVoiceSectionGate,
   normalizeVoiceToken,
 } from '../../utils/voiceLyricFollower';
 const FONT_PRESETS = {
@@ -57,7 +58,9 @@ const TRANSPOSE_OPTIONS = [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6];
 const VOICE_READING_ANCHOR_RATIO = 0.28;
 const VOICE_NEXT_SECTION_PREVIEW_RATIO = 0.64;
 const VOICE_SECTION_LEAD_WORDS = 3;
+const VOICE_MAX_FORWARD_WORDS = 12;
 const VOICE_SCROLL_DEAD_ZONE_PX = 12;
+const VOICE_MANUAL_SCROLL_PAUSE_MS = 900;
 const CAPO_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7];
 const OPEN_SHAPE_ROOTS = new Set(['C', 'D', 'E', 'G', 'A']);
 const OPEN_MINOR_ROOTS = new Set(['A', 'D', 'E']);
@@ -1481,6 +1484,8 @@ export default function ModoEnsayoCompacto({
   const voiceLyricWordsRef = useRef([]);
   const voiceFollowerEnabledRef = useRef(false);
   const voiceProgressIndexRef = useRef(0);
+  const voiceAuthorizedSectionRef = useRef(0);
+  const voiceManualScrollUntilRef = useRef(0);
   const voiceCandidateRef = useRef({ globalIndex: -1, hits: 0 });
   const audioCtxRef = useRef(null);
   const trackSourceRef = useRef(null);
@@ -1669,13 +1674,40 @@ export default function ModoEnsayoCompacto({
 
     void VoiceFollower.addListener('transcript', (result) => {
       if (!voiceFollowerEnabledRef.current) return;
+      if (Date.now() < voiceManualScrollUntilRef.current) return;
       const words = voiceLyricWordsRef.current;
+      const authorizedSectionIndex = voiceAuthorizedSectionRef.current;
+      const gate = getVoiceSectionGate({
+        words,
+        sectionIndex: authorizedSectionIndex,
+        currentIndex: voiceProgressIndexRef.current,
+        leadWords: VOICE_SECTION_LEAD_WORDS,
+        maxForwardWords: VOICE_MAX_FORWARD_WORDS,
+      });
+      if (!gate) return;
+
       const match = findBestVoiceLyricMatch({
         transcript: result?.text || '',
         lyricWords: words,
         currentIndex: voiceProgressIndexRef.current,
+        backwardWindow: 1,
+        forwardWindow: gate.forwardWindow,
       });
       if (!match) return;
+
+      const candidateWord = words[match.globalIndex];
+      if (!candidateWord) return;
+      const isSectionTransition = candidateWord.sectionIndex !== authorizedSectionIndex;
+      if (
+        candidateWord.sectionIndex < authorizedSectionIndex ||
+        candidateWord.sectionIndex > authorizedSectionIndex + 1 ||
+        (isSectionTransition && (
+          !gate.nextSectionUnlocked ||
+          candidateWord.sectionIndex !== gate.allowedSectionIndex
+        ))
+      ) {
+        return;
+      }
 
       const jump = match.globalIndex - voiceProgressIndexRef.current;
       const previousCandidate = voiceCandidateRef.current;
@@ -1683,13 +1715,16 @@ export default function ModoEnsayoCompacto({
       const hits = sameCandidate ? previousCandidate.hits + 1 : 1;
       voiceCandidateRef.current = { globalIndex: match.globalIndex, hits };
 
-      const requiredHits = jump > 5 ? 2 : 1;
+      const requiredHits = isSectionTransition || jump > 4 ? 2 : 1;
       if (hits < requiredHits) return;
 
       const nextIndex = Math.max(voiceProgressIndexRef.current, match.globalIndex);
       const word = words[nextIndex];
       if (!word) return;
 
+      if (isSectionTransition) {
+        voiceAuthorizedSectionRef.current = word.sectionIndex;
+      }
       voiceProgressIndexRef.current = nextIndex;
       setVoiceMatch({
         ...word,
@@ -1730,6 +1765,8 @@ export default function ModoEnsayoCompacto({
     setVoiceFollowerError('');
     setVoiceMatch(null);
     voiceProgressIndexRef.current = 0;
+    voiceAuthorizedSectionRef.current = 0;
+    voiceManualScrollUntilRef.current = 0;
     voiceCandidateRef.current = { globalIndex: -1, hits: 0 };
     void VoiceFollower.stop().catch(() => undefined);
   }, [currentSongKey]);
@@ -2776,6 +2813,10 @@ export default function ModoEnsayoCompacto({
   useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return undefined;
+    const beginManualScroll = () => {
+      if (!voiceFollowerEnabledRef.current) return;
+      voiceManualScrollUntilRef.current = Date.now() + VOICE_MANUAL_SCROLL_PAUSE_MS;
+    };
     const handleScroll = () => {
       const currentTop = scroller.scrollTop;
       if (isLandscapeCompact) {
@@ -2797,9 +2838,34 @@ export default function ModoEnsayoCompacto({
         }
       });
       setActiveSectionManualIndex((prev) => (prev === nextSectionIndex ? prev : nextSectionIndex));
+
+      if (
+        voiceFollowerEnabledRef.current &&
+        Date.now() < voiceManualScrollUntilRef.current
+      ) {
+        voiceManualScrollUntilRef.current = Date.now() + VOICE_MANUAL_SCROLL_PAUSE_MS;
+        if (voiceAuthorizedSectionRef.current !== nextSectionIndex) {
+          voiceAuthorizedSectionRef.current = nextSectionIndex;
+          voiceProgressIndexRef.current = findVoiceAnchorIndex(
+            voiceLyricWordsRef.current,
+            nextSectionIndex,
+            0,
+          );
+          voiceCandidateRef.current = { globalIndex: -1, hits: 0 };
+          setVoiceMatch(null);
+        }
+      }
     };
+    scroller.addEventListener('pointerdown', beginManualScroll, { passive: true });
+    scroller.addEventListener('touchstart', beginManualScroll, { passive: true });
+    scroller.addEventListener('wheel', beginManualScroll, { passive: true });
     scroller.addEventListener('scroll', handleScroll, { passive: true });
-    return () => scroller.removeEventListener('scroll', handleScroll);
+    return () => {
+      scroller.removeEventListener('pointerdown', beginManualScroll);
+      scroller.removeEventListener('touchstart', beginManualScroll);
+      scroller.removeEventListener('wheel', beginManualScroll);
+      scroller.removeEventListener('scroll', handleScroll);
+    };
   }, [currentHeaderOffset, currentSections.length, isLandscapeCompact]);
   useEffect(() => {
     const sectionIndex = activeSectionByVoiceIndex >= 0
@@ -3103,6 +3169,8 @@ export default function ModoEnsayoCompacto({
     setActiveSectionManualIndex(index);
     if (voiceFollowerEnabled) {
       voiceProgressIndexRef.current = findVoiceAnchorIndex(voiceLyricWords, index, 0);
+      voiceAuthorizedSectionRef.current = index;
+      voiceManualScrollUntilRef.current = Date.now() + VOICE_MANUAL_SCROLL_PAUSE_MS;
       voiceCandidateRef.current = { globalIndex: -1, hits: 0 };
       setVoiceMatch(null);
     }
@@ -3174,6 +3242,8 @@ export default function ModoEnsayoCompacto({
       voiceMatch?.lineIndex || 0,
     );
     voiceProgressIndexRef.current = anchorIndex;
+    voiceAuthorizedSectionRef.current = activeSectionIndex;
+    voiceManualScrollUntilRef.current = 0;
     voiceCandidateRef.current = { globalIndex: -1, hits: 0 };
     setVoiceMatch(null);
     setVoiceFollowerStatus('starting');

@@ -53,6 +53,42 @@ export const findVoiceAnchorIndex = (words = [], sectionIndex = 0, lineIndex = 0
   return sectionStart?.globalIndex ?? 0;
 };
 
+export const getVoiceSectionGate = ({
+  words = [],
+  sectionIndex = 0,
+  currentIndex = 0,
+  leadWords = 3,
+  maxForwardWords = 12,
+} = {}) => {
+  const sectionWords = words.filter((word) => word.sectionIndex === sectionIndex);
+  if (sectionWords.length === 0) return null;
+
+  const sectionStartIndex = sectionWords[0].globalIndex;
+  const sectionEndIndex = sectionWords[sectionWords.length - 1].globalIndex;
+  const boundedCurrentIndex = Math.min(
+    sectionEndIndex,
+    Math.max(sectionStartIndex, Number(currentIndex) || sectionStartIndex),
+  );
+  const remainingWords = Math.max(0, sectionEndIndex - boundedCurrentIndex);
+  const nextSectionWords = words.filter((word) => word.sectionIndex === sectionIndex + 1);
+  const nextSectionUnlocked = remainingWords <= leadWords && nextSectionWords.length > 0;
+  const allowedEndIndex = nextSectionUnlocked
+    ? nextSectionWords[nextSectionWords.length - 1].globalIndex
+    : sectionEndIndex;
+
+  return {
+    sectionStartIndex,
+    sectionEndIndex,
+    remainingWords,
+    nextSectionUnlocked,
+    allowedSectionIndex: nextSectionUnlocked ? sectionIndex + 1 : sectionIndex,
+    forwardWindow: Math.max(
+      0,
+      Math.min(maxForwardWords, allowedEndIndex - boundedCurrentIndex),
+    ),
+  };
+};
+
 export const buildVoiceContextPhrases = (words = [], startIndex = 0, limit = 90) => {
   const phrases = [];
   const seen = new Set();
