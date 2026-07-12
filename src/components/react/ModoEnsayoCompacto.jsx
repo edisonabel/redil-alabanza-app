@@ -1685,6 +1685,13 @@ export default function ModoEnsayoCompacto({
         maxForwardWords: VOICE_MAX_FORWARD_WORDS,
       });
       if (!gate) return;
+      if (voiceAuthorizedSectionRef.current !== gate.sectionIndex) {
+        voiceAuthorizedSectionRef.current = gate.sectionIndex;
+        voiceProgressIndexRef.current = Math.max(
+          voiceProgressIndexRef.current,
+          gate.sectionStartIndex,
+        );
+      }
 
       const match = findBestVoiceLyricMatch({
         transcript: result?.text || '',
@@ -1697,10 +1704,9 @@ export default function ModoEnsayoCompacto({
 
       const candidateWord = words[match.globalIndex];
       if (!candidateWord) return;
-      const isSectionTransition = candidateWord.sectionIndex !== authorizedSectionIndex;
+      const isSectionTransition = candidateWord.sectionIndex !== gate.sectionIndex;
       if (
-        candidateWord.sectionIndex < authorizedSectionIndex ||
-        candidateWord.sectionIndex > authorizedSectionIndex + 1 ||
+        candidateWord.sectionIndex < gate.sectionIndex ||
         (isSectionTransition && (
           !gate.nextSectionUnlocked ||
           candidateWord.sectionIndex !== gate.allowedSectionIndex

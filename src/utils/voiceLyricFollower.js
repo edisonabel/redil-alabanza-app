@@ -9,10 +9,12 @@ export const normalizeVoiceToken = (value = '') => (
     .replace(/[^a-z0-9ñ]+/g, '')
 );
 
-const stripChordProChords = (line = '') => String(line || '').replace(/\[[^\]]+\]/g, '');
+const stripChordProMarkup = (line = '') => String(line || '')
+  .replace(/\[[^\]]+\]/g, '')
+  .replace(/\{[^}]+\}/g, '');
 
 export const extractVoiceWordsFromLine = (line = '') => (
-  stripChordProChords(line)
+  stripChordProMarkup(line)
     .trim()
     .split(/\s+/)
     .map((display, wordIndex) => ({
@@ -50,7 +52,10 @@ export const findVoiceAnchorIndex = (words = [], sectionIndex = 0, lineIndex = 0
   if (exact) return exact.globalIndex;
 
   const sectionStart = words.find((word) => word.sectionIndex === sectionIndex);
-  return sectionStart?.globalIndex ?? 0;
+  if (sectionStart) return sectionStart.globalIndex;
+
+  const nextLyricSection = words.find((word) => word.sectionIndex > sectionIndex);
+  return nextLyricSection?.globalIndex ?? Math.max(0, words.length - 1);
 };
 
 export const getVoiceSectionGate = ({
@@ -60,7 +65,12 @@ export const getVoiceSectionGate = ({
   leadWords = 3,
   maxForwardWords = 12,
 } = {}) => {
-  const sectionWords = words.filter((word) => word.sectionIndex === sectionIndex);
+  const lyricSectionIndexes = [...new Set(words.map((word) => word.sectionIndex))]
+    .sort((left, right) => left - right);
+  const resolvedSectionIndex = lyricSectionIndexes.find((index) => index >= sectionIndex);
+  if (!Number.isInteger(resolvedSectionIndex)) return null;
+
+  const sectionWords = words.filter((word) => word.sectionIndex === resolvedSectionIndex);
   if (sectionWords.length === 0) return null;
 
   const sectionStartIndex = sectionWords[0].globalIndex;
@@ -70,18 +80,22 @@ export const getVoiceSectionGate = ({
     Math.max(sectionStartIndex, Number(currentIndex) || sectionStartIndex),
   );
   const remainingWords = Math.max(0, sectionEndIndex - boundedCurrentIndex);
-  const nextSectionWords = words.filter((word) => word.sectionIndex === sectionIndex + 1);
+  const nextSectionIndex = lyricSectionIndexes.find((index) => index > resolvedSectionIndex);
+  const nextSectionWords = Number.isInteger(nextSectionIndex)
+    ? words.filter((word) => word.sectionIndex === nextSectionIndex)
+    : [];
   const nextSectionUnlocked = remainingWords <= leadWords && nextSectionWords.length > 0;
   const allowedEndIndex = nextSectionUnlocked
     ? nextSectionWords[nextSectionWords.length - 1].globalIndex
     : sectionEndIndex;
 
   return {
+    sectionIndex: resolvedSectionIndex,
     sectionStartIndex,
     sectionEndIndex,
     remainingWords,
     nextSectionUnlocked,
-    allowedSectionIndex: nextSectionUnlocked ? sectionIndex + 1 : sectionIndex,
+    allowedSectionIndex: nextSectionUnlocked ? nextSectionIndex : resolvedSectionIndex,
     forwardWindow: Math.max(
       0,
       Math.min(maxForwardWords, allowedEndIndex - boundedCurrentIndex),
