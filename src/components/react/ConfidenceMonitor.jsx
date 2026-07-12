@@ -240,6 +240,7 @@ function MonitorChordOverlayLine({
   chordColor,
   lyricColor,
   lineHeight,
+  allowWrap = false,
 }) {
   const lyricText = segments.map((segment) => segment.lyric || '').join('');
   const hasChord = segments.some((segment) => Boolean(segment.chord));
@@ -253,7 +254,11 @@ function MonitorChordOverlayLine({
           fontWeight: 700,
           lineHeight,
           color: lyricColor,
-          whiteSpace: 'nowrap',
+          width: allowWrap ? '100%' : undefined,
+          textAlign: allowWrap ? 'center' : undefined,
+          whiteSpace: allowWrap ? 'normal' : 'nowrap',
+          overflowWrap: allowWrap ? 'anywhere' : 'normal',
+          textWrap: allowWrap ? 'balance' : 'nowrap',
         }}
       >
         {lyricText}
@@ -268,7 +273,10 @@ function MonitorChordOverlayLine({
           display: 'flex',
           gap: Math.max(14, Math.round(chordFontSize * 0.34)),
           alignItems: 'center',
-          whiteSpace: 'nowrap',
+          justifyContent: allowWrap ? 'center' : undefined,
+          flexWrap: allowWrap ? 'wrap' : 'nowrap',
+          width: allowWrap ? '100%' : undefined,
+          whiteSpace: allowWrap ? 'normal' : 'nowrap',
         }}
       >
         {segments
@@ -297,7 +305,10 @@ function MonitorChordOverlayLine({
         fontWeight: 700,
         lineHeight,
         color: lyricColor,
-        whiteSpace: 'nowrap',
+        width: allowWrap ? '100%' : undefined,
+        textAlign: allowWrap ? 'center' : undefined,
+        whiteSpace: allowWrap ? 'normal' : 'nowrap',
+        textWrap: allowWrap ? 'balance' : 'nowrap',
       }}
     >
       {wordGroups.map((token, index) => {
@@ -315,6 +326,8 @@ function MonitorChordOverlayLine({
                     Math.round(formatChordAccidentals(token.name).length * chordFontSize * 0.64),
                     Math.round(chordFontSize * 0.95),
                   ),
+                  maxWidth: allowWrap ? '100%' : undefined,
+                  overflowWrap: allowWrap ? 'anywhere' : 'normal',
                   lineHeight,
                 }}
               >
@@ -344,8 +357,10 @@ function MonitorChordOverlayLine({
               style={{
                 display: 'inline-block',
                 position: 'relative',
-                verticalAlign: 'top',
-                paddingTop: chordLaneHeight,
+                verticalAlign: allowWrap ? 'bottom' : 'top',
+                paddingTop: allowWrap && token.chords.length === 0 ? 0 : chordLaneHeight,
+                maxWidth: allowWrap ? '100%' : undefined,
+                overflowWrap: allowWrap ? 'anywhere' : 'normal',
                 lineHeight,
               }}
             >
@@ -1030,14 +1045,28 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     };
   }, []);
 
+  const isMobile = Math.min(viewport.width, viewport.height) < 500;
+  const isMobilePortrait = isMobile && viewport.height >= viewport.width;
+  const shouldWrapMobileLyrics = isMobilePortrait;
   const fontScale = FONT_SIZES[settings.fontSize] || FONT_SIZES.standard;
   const bpmLabel = formatBpmLabel(activeTrack?.bpm);
   const cueLineCount = activeCue?.lines?.length || activeCue?.rawLines?.length || 0;
   const longestCueLineLength = getLongestCueLineLength(activeCue);
   const cueDensityScale = cueLineCount <= 2 ? 1.24 : cueLineCount === 3 ? 1.12 : 1;
+  const mobileFontCaps = settings.fontSize === 'large'
+    ? { lyrics: 46, chords: 32 }
+    : settings.fontSize === 'compact'
+      ? { lyrics: 34, chords: 24 }
+      : { lyrics: 40, chords: 28 };
   const displayFontScale = {
-    lyrics: Math.min(Math.round(fontScale.lyrics * cueDensityScale), 82),
-    chords: Math.min(Math.round(fontScale.chords * Math.min(cueDensityScale * 1.12, 1.3)), 60),
+    lyrics: Math.min(
+      Math.round(fontScale.lyrics * cueDensityScale),
+      isMobile ? mobileFontCaps.lyrics : 82,
+    ),
+    chords: Math.min(
+      Math.round(fontScale.chords * Math.min(cueDensityScale * 1.12, 1.3)),
+      isMobile ? mobileFontCaps.chords : 60,
+    ),
     next: fontScale.next,
     countdown: fontScale.countdown,
   };
@@ -1082,9 +1111,20 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
         return;
       }
 
-      const widthScale = (readableWidth || availableWidth) / naturalWidth;
+      const widthScale = shouldWrapMobileLyrics
+        ? 1
+        : (readableWidth || availableWidth) / naturalWidth;
       const heightScale = availableHeight / naturalHeight;
-      const nextScale = Math.max(0.72, Math.min(widthScale, heightScale, 2.4));
+      const landscapeTwoLineMinimumScale = Math.min(
+        1,
+        18 / Math.max(displayFontScale.lyrics, 1),
+      );
+      const minimumScale = isMobilePortrait
+        ? 0.78
+        : isMobile
+          ? landscapeTwoLineMinimumScale
+          : 0.72;
+      const nextScale = Math.max(minimumScale, Math.min(widthScale, heightScale, 2.4));
 
       setHeroScale((current) => (Math.abs(current - nextScale) > 0.02 ? nextScale : current));
     };
@@ -1116,6 +1156,9 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     showBottomPreview,
     displayFontScale.lyrics,
     displayFontScale.chords,
+    isMobile,
+    isMobilePortrait,
+    shouldWrapMobileLyrics,
     viewport.width,
     viewport.height,
   ]);
@@ -1174,10 +1217,9 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     viewport.height,
   ]);
 
-  const isMobile = Math.min(viewport.width, viewport.height) < 500;
-
   return (
     <div
+      lang="es"
       style={{
         width: '100vw',
         height: '100dvh',
@@ -1392,8 +1434,8 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                 transformOrigin: mainTransformOrigin,
                 willChange: 'transform',
                 backfaceVisibility: 'hidden',
-                width: 'fit-content',
-                maxWidth: '100%',
+                width: shouldWrapMobileLyrics ? '100%' : isMobile ? 'max-content' : 'fit-content',
+                maxWidth: shouldWrapMobileLyrics || !isMobile ? '100%' : 'none',
               }}
             >
               <div
@@ -1401,13 +1443,20 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
-                  width: 'fit-content',
-                  maxWidth: 'min(1580px, 100%)',
+                  width: shouldWrapMobileLyrics ? '100%' : isMobile ? 'max-content' : 'fit-content',
+                  maxWidth: shouldWrapMobileLyrics || !isMobile ? 'min(1580px, 100%)' : 'none',
                 }}
               >
                 {activeCue.type === 'lyrics' &&
                   activeCue.lines.map((segments, lineIndex) => (
-                    <div key={`${activeCue.id}-line-${lineIndex}`} style={{ marginBottom: 10 }}>
+                    <div
+                      key={`${activeCue.id}-line-${lineIndex}`}
+                      style={{
+                        marginBottom: isMobile ? 7 : 10,
+                        width: shouldWrapMobileLyrics ? '100%' : isMobile ? 'max-content' : undefined,
+                        minWidth: 0,
+                      }}
+                    >
                       <MonitorChordOverlayLine
                         segments={
                           settings.showChords
@@ -1423,6 +1472,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                         chordColor={toRgba(activeCue.sectionColor, 0.86)}
                         lyricColor="#f0f0f0"
                         lineHeight={cueLineCount <= 2 ? 1.12 : 1.18}
+                        allowWrap={shouldWrapMobileLyrics}
                       />
                     </div>
                   ))}
@@ -1446,6 +1496,10 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                         fontWeight: 900,
                         color: toRgba(activeCue.sectionColor, 0.86),
                         lineHeight: 1.2,
+                        maxWidth: '100%',
+                        whiteSpace: shouldWrapMobileLyrics ? 'normal' : 'nowrap',
+                        overflowWrap: shouldWrapMobileLyrics ? 'anywhere' : 'normal',
+                        textWrap: shouldWrapMobileLyrics ? 'balance' : 'nowrap',
                       }}
                     >
                       {activeCue.rawLines.map((l) => transposeLineBySteps(l, personalChordShift)).join('   ')}
