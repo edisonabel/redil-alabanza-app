@@ -43,67 +43,70 @@ const fetchFutureLimit = new Date(now);
 fetchFutureLimit.setDate(fetchFutureLimit.getDate() + 120);
 const upcomingAbsenceFloor = new Date(now);
 upcomingAbsenceFloor.setDate(upcomingAbsenceFloor.getDate() - 7);
-const panelPeriods = [
+const panelPeriods: PanelPeriod[] = [
   { id: 'proximos_45', label: 'Proximos 45 dias', mode: 'future', days: 45 },
   { id: 'ultimos_30', label: 'Ultimos 30 dias', mode: 'past', days: 30 },
   { id: 'ultimos_90', label: 'Ultimos 90 dias', mode: 'past', days: 90 },
   { id: 'ultimos_365', label: 'Ultimos 12 meses', mode: 'past', days: 365 },
 ];
 
-const hasText = (value) => typeof value === 'string' && value.trim() !== '';
-const safeText = (value, fallback = '') => (hasText(value) ? value.trim() : fallback);
-const normalizeFold = (value) =>
+type AnyRecord = Record<string, any>;
+type PanelPeriod = { id: string; label: string; mode: 'future' | 'past'; days: number };
+
+const hasText = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
+const safeText = (value: unknown, fallback = '') => (hasText(value) ? value.trim() : fallback);
+const normalizeFold = (value: unknown) =>
   String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
     .toLowerCase();
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-const pluralizeSpanish = (singular) => {
+const pluralizeSpanish = (singular: string) => {
   if (singular.endsWith('cion')) return `${singular.slice(0, -3)}iones`;
   return `${singular}s`;
 };
-const formatCountLabel = (count, singular, plural = pluralizeSpanish(singular)) => `${count} ${count === 1 ? singular : plural}`;
+const formatCountLabel = (count: number, singular: string, plural = pluralizeSpanish(singular)) => `${count} ${count === 1 ? singular : plural}`;
 
-const isServiceStateExcludedFromUsage = (value) => {
+const isServiceStateExcludedFromUsage = (value: unknown) => {
   const text = normalizeFold(value);
   return text.includes('borrador') || text.includes('cancel') || text.includes('eliminad');
 };
 
-const isRealizedService = (evento) => {
+const isRealizedService = (evento: AnyRecord) => {
   const eventDate = new Date(evento?.dateIso || evento?.fecha_hora || '');
   if (Number.isNaN(eventDate.getTime())) return false;
   return eventDate <= now && !isServiceStateExcludedFromUsage(evento?.rawStatus || evento?.estado);
 };
 
-const formatDateKey = (dateValue) => {
+const formatDateKey = (dateValue: string | Date | null | undefined) => {
   if (!dateValue) return null;
   const safeDate = dateValue instanceof Date ? dateValue : new Date(dateValue);
   if (Number.isNaN(safeDate.getTime())) return null;
   return safeDate.toISOString().slice(0, 10);
 };
 
-const toDateStart = (value) => {
+const toDateStart = (value: string | null | undefined) => {
   if (!value) return null;
   const safe = new Date(`${value}T00:00:00`);
   return Number.isNaN(safe.getTime()) ? null : safe;
 };
 
-const toDateEnd = (value) => {
+const toDateEnd = (value: string | null | undefined) => {
   if (!value) return null;
   const safe = new Date(`${value}T23:59:59`);
   return Number.isNaN(safe.getTime()) ? null : safe;
 };
 
-const inAbsenceRange = (eventDate, absence) => {
+const inAbsenceRange = (eventDate: Date, absence: AnyRecord) => {
   const start = toDateStart(absence?.fecha_inicio);
   const end = toDateEnd(absence?.fecha_fin || absence?.fecha_inicio);
   if (!start || !end || !(eventDate instanceof Date) || Number.isNaN(eventDate.getTime())) return false;
   return eventDate >= start && eventDate <= end;
 };
 
-const getSongVoiceLabel = (voiceValue) => {
+const getSongVoiceLabel = (voiceValue: unknown) => {
   const text = normalizeFold(voiceValue);
   if (!text) return 'Sin definir';
   const hasMale = ['hombre', 'masculino', 'male', 'tenor'].some((alias) => text.includes(alias));
@@ -116,7 +119,7 @@ const getSongVoiceLabel = (voiceValue) => {
   return safeText(voiceValue, 'Sin definir');
 };
 
-const getSongCategoryLabel = (categoryValue) => {
+const getSongCategoryLabel = (categoryValue: unknown) => {
   const text = normalizeFold(categoryValue);
   if (!text) return 'Sin categoria';
   if (text.startsWith('rapid')) return 'Rapida';
@@ -125,8 +128,8 @@ const getSongCategoryLabel = (categoryValue) => {
   return safeText(categoryValue, 'Sin categoria');
 };
 
-const histogram = (items, getLabel, { limit = 8 } = {}) => {
-  const counts = new Map();
+const histogram = (items: AnyRecord[], getLabel: (item: AnyRecord) => unknown, { limit = 8 }: { limit?: number } = {}) => {
+  const counts = new Map<string, number>();
   items.forEach((item) => {
     const label = safeText(getLabel(item), 'Sin definir');
     counts.set(label, (counts.get(label) || 0) + 1);
@@ -137,7 +140,7 @@ const histogram = (items, getLabel, { limit = 8 } = {}) => {
     .slice(0, limit);
 };
 
-const resourceCoverageItem = (label, count, total, detail = '') => ({
+const resourceCoverageItem = (label: string, count: number, total: number, detail = '') => ({
   label,
   count,
   total,
@@ -147,7 +150,7 @@ const resourceCoverageItem = (label, count, total, detail = '') => ({
 
 const fetchSongs = async () => {
   const baseSelect = 'id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, mp3, voces, link_voces, link_secuencias, chordpro';
-  const candidates = [
+  const candidates: Array<{ select: string; warnings: string[]; normalize: (rows: AnyRecord[]) => AnyRecord[] }> = [
     {
       select: `${baseSelect}, section_markers, multitrack_session`,
       warnings: [],
@@ -246,7 +249,7 @@ const [
   fetchSongs(),
 ]);
 
-const warnings = [];
+const warnings: string[] = [];
 
 if (perfilesResp.error) warnings.push(`Perfiles: ${perfilesResp.error.message}`);
 if (rolesResp.error) warnings.push(`Roles: ${rolesResp.error.message}`);
@@ -257,33 +260,33 @@ if (playlistCancionesResp.error) warnings.push(`Playlist canciones: ${playlistCa
 if (ausenciasResp.error) warnings.push(`Ausencias: ${ausenciasResp.error.message}`);
 warnings.push(...(songsBundle.warnings || []));
 
-const perfiles = perfilesResp.data || [];
-const roles = rolesResp.data || [];
-const perfilRoles = perfilRolesResp.data || [];
-let eventos = withPredicadorFallbackRows(eventosResp.data || []);
+const perfiles: AnyRecord[] = perfilesResp.data || [];
+const roles: AnyRecord[] = rolesResp.data || [];
+const perfilRoles: AnyRecord[] = perfilRolesResp.data || [];
+let eventos: AnyRecord[] = withPredicadorFallbackRows(eventosResp.data || []);
 
 if (isPredicadorColumnMissingError(eventosResp.error)) {
   const fallbackEventosResp = await buildEventosQuery(false);
   if (!fallbackEventosResp.error) {
     eventos = withPredicadorFallbackRows(fallbackEventosResp.data || []);
-    const warningIndex = warnings.findIndex((warning) => warning === `Eventos: ${eventosResp.error.message}`);
+    const warningIndex = warnings.findIndex((warning) => warning === `Eventos: ${eventosResp.error?.message || ''}`);
     if (warningIndex >= 0) warnings.splice(warningIndex, 1);
     console.warn('Panel eventos query: usando fallback sin columna predicador.');
   } else {
     if (fallbackEventosResp.error) warnings.push(`Eventos fallback: ${fallbackEventosResp.error.message}`);
   }
 }
-const playlists = playlistsResp.data || [];
-const playlistCanciones = playlistCancionesResp.data || [];
-const ausencias = ausenciasResp.data || [];
-const cancionesRaw = songsBundle.data || [];
+const playlists: AnyRecord[] = playlistsResp.data || [];
+const playlistCanciones: AnyRecord[] = playlistCancionesResp.data || [];
+const ausencias: AnyRecord[] = ausenciasResp.data || [];
+const cancionesRaw: AnyRecord[] = songsBundle.data || [];
 
 const canciones = cancionesRaw.filter((song) => normalizeFold(song?.estado) !== 'archivada');
 const perfilesById = new Map(perfiles.map((perfil) => [String(perfil.id), perfil]));
 const rolesById = new Map(roles.map((rol) => [String(rol.id), rol]));
 const cancionesById = new Map(canciones.map((song) => [String(song.id), song]));
 
-const normalizeMultitrackSession = (rawValue) => {
+const normalizeMultitrackSession = (rawValue: any) => {
   if (!rawValue) return null;
 
   let parsedValue = rawValue;
@@ -298,13 +301,13 @@ const normalizeMultitrackSession = (rawValue) => {
   if (!parsedValue || typeof parsedValue !== 'object') return null;
 
   const tracks = (Array.isArray(parsedValue.tracks) ? parsedValue.tracks : [])
-    .map((track) => ({
+    .map((track: AnyRecord) => ({
       id: safeText(track?.id),
       name: safeText(track?.name, 'Pista'),
       url: safeText(track?.url),
       enabled: track?.enabled !== false,
     }))
-    .filter((track) => track.id && track.name && track.url);
+    .filter((track: AnyRecord) => track.id && track.name && track.url);
 
   if (!tracks.length) return null;
 
@@ -315,9 +318,9 @@ const normalizeMultitrackSession = (rawValue) => {
   };
 };
 
-const getSongSequenceProfile = (song) => {
+const getSongSequenceProfile = (song: AnyRecord) => {
   const session = normalizeMultitrackSession(song?.multitrack_session);
-  const enabledTracks = (session?.tracks || []).filter((track) => track.enabled !== false);
+  const enabledTracks = (session?.tracks || []).filter((track: AnyRecord) => track.enabled !== false);
   const trackCount = enabledTracks.length;
   const hasExternalSequence = hasText(song?.link_secuencias);
 
@@ -360,18 +363,18 @@ const sequenceProfileBySongId = new Map(
   canciones.map((song) => [String(song.id), getSongSequenceProfile(song)]),
 );
 
-const getSequenceProfileForSong = (song) =>
+const getSequenceProfileForSong = (song: AnyRecord) =>
   sequenceProfileBySongId.get(String(song?.id || '')) || getSongSequenceProfile(song);
 
-const playlistsByEventId = new Map();
+const playlistsByEventId = new Map<string, AnyRecord>();
 playlists.forEach((playlist) => {
   if (playlist?.evento_id) {
     playlistsByEventId.set(String(playlist.evento_id), playlist);
   }
 });
 
-const playlistSongsByPlaylistId = new Map();
-const usageBySongId = new Map();
+const playlistSongsByPlaylistId = new Map<string, AnyRecord[]>();
+const usageBySongId = new Map<string, number>();
 playlistCanciones.forEach((item) => {
   const playlistId = String(item?.playlist_id || '');
   const songId = String(item?.cancion_id || '');
@@ -382,7 +385,7 @@ playlistCanciones.forEach((item) => {
   usageBySongId.set(songId, (usageBySongId.get(songId) || 0) + 1);
 });
 
-const absencesByProfileId = new Map();
+const absencesByProfileId = new Map<string, AnyRecord[]>();
 ausencias.forEach((absence) => {
   const profileId = String(absence?.perfil_id || '');
   if (!profileId) return;
@@ -394,7 +397,7 @@ ausencias.forEach((absence) => {
 const directionRoleCodes = ['lider_alabanza', 'director_musical', 'talkback'];
 const lyricsRoleCodes = ['encargado_letras', 'letra_y_notas', 'produccion_visual', 'letras'];
 
-const operationalEvents = eventos
+const operationalEvents: AnyRecord[] = eventos
   .map((evento) => {
     const eventDate = new Date(evento.fecha_hora);
     if (Number.isNaN(eventDate.getTime())) return null;
@@ -405,7 +408,7 @@ const operationalEvents = eventos
       : [];
     const setlistSongs = playlistItems
       .map((item) => cancionesById.get(String(item.cancion_id)))
-      .filter(Boolean);
+      .filter((song): song is AnyRecord => song !== undefined);
 
     const roster = (Array.isArray(evento.asignaciones) ? evento.asignaciones : []).map((asig) => {
       const role = rolesById.get(String(asig?.rol_id || '')) || null;
@@ -436,8 +439,8 @@ const operationalEvents = eventos
           reason: safeText(activeAbsence?.motivo, 'Sin motivo'),
         };
       })
-      .filter(Boolean)
-      .reduce((unique, current) => {
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+      .reduce<AnyRecord[]>((unique, current) => {
         if (!unique.some((item) => item.profileId === current.profileId)) unique.push(current);
         return unique;
       }, []);
@@ -523,15 +526,15 @@ const operationalEvents = eventos
       repertorioHref: `/repertorio?seleccionar_para=${evento.id}`,
     };
   })
-  .filter(Boolean)
+  .filter((evento): evento is NonNullable<typeof evento> => evento !== null)
   .sort((a, b) => new Date(a.dateIso).getTime() - new Date(b.dateIso).getTime());
 
 const activeSongIds = new Set(canciones.map((song) => String(song.id)));
 
-const hasVoiceResource = (song) => hasText(song?.link_voces) || hasText(song?.voces);
-const hasSequenceResource = (song) => getSequenceProfileForSong(song).type !== 'missing';
-const hasCompleteSequenceResource = (song) => getSequenceProfileForSong(song).type === 'complete';
-const hasMarkers = (song) => Array.isArray(song?.section_markers) && song.section_markers.length > 0;
+const hasVoiceResource = (song: AnyRecord) => hasText(song?.link_voces) || hasText(song?.voces);
+const hasSequenceResource = (song: AnyRecord) => getSequenceProfileForSong(song).type !== 'missing';
+const hasCompleteSequenceResource = (song: AnyRecord) => getSequenceProfileForSong(song).type === 'complete';
+const hasMarkers = (song: AnyRecord) => Array.isArray(song?.section_markers) && song.section_markers.length > 0;
 
 const chordproReadyCount = canciones.filter((song) => hasText(song?.chordpro)).length;
 const mp3ReadyCount = canciones.filter((song) => hasText(song?.mp3)).length;
@@ -547,10 +550,10 @@ const baseResourceCoverage = [
   resourceCoverageItem('Guia por secciones', markersReadyCount, canciones.length, 'Markers para navegar la cancion por partes en ensayo/Live Director.'),
 ];
 
-const getUniqueSongIdsForEvents = (events) => {
-  const songIds = new Set();
+const getUniqueSongIdsForEvents = (events: AnyRecord[]) => {
+  const songIds = new Set<string>();
   events.forEach((evento) => {
-    (evento?.setlistSongIds || []).forEach((songId) => {
+    (evento?.setlistSongIds || []).forEach((songId: unknown) => {
       const key = String(songId || '');
       if (key && activeSongIds.has(key)) songIds.add(key);
     });
@@ -573,17 +576,17 @@ const rehearsalReadyCount = [...upcomingRehearsalSongIds].filter((songId) => {
   return song && hasText(song?.chordpro) && hasText(song?.mp3);
 }).length;
 
-const buildSongUsageRanking = ({ events, limit = 10 } = {}) => {
-  const usageByServiceSong = new Map();
+const buildSongUsageRanking = ({ events = [], limit = 10 }: { events?: AnyRecord[]; limit?: number } = {}): AnyRecord[] => {
+  const usageByServiceSong = new Map<string, AnyRecord>();
   const repeatWindowMs = 60 * 24 * 60 * 60 * 1000;
 
-  const getRepeatAlert = (history = []) => {
+  const getRepeatAlert = (history: AnyRecord[] = []) => {
     const sortedAsc = history
       .map((item) => ({ ...item, date: new Date(item.dateIso) }))
       .filter((item) => !Number.isNaN(item.date.getTime()))
       .sort((a, b) => a.date.getTime() - b.date.getTime());
 
-    let bestWindow = null;
+    let bestWindow: AnyRecord | null = null;
     for (let startIndex = 0; startIndex < sortedAsc.length; startIndex += 1) {
       const start = sortedAsc[startIndex];
       const inWindow = sortedAsc.filter((item) => item.date.getTime() >= start.date.getTime() && item.date.getTime() - start.date.getTime() <= repeatWindowMs);
@@ -608,7 +611,7 @@ const buildSongUsageRanking = ({ events, limit = 10 } = {}) => {
     if (Number.isNaN(eventDate.getTime())) return;
 
     // Cada cancion cuenta una sola vez por servicio aunque este duplicada en la playlist.
-    const uniqueServiceSongIds = new Set(evento?.setlistSongIds || []);
+    const uniqueServiceSongIds = new Set<string>((evento?.setlistSongIds || []).map((songId: unknown) => String(songId || '')));
     uniqueServiceSongIds.forEach((songId) => {
       const key = String(songId || '');
       if (!key || !activeSongIds.has(key)) return;
@@ -642,9 +645,9 @@ const buildSongUsageRanking = ({ events, limit = 10 } = {}) => {
   return [...usageByServiceSong.values()]
     .sort((a, b) => (b.usage_count - a.usage_count) || a.title.localeCompare(b.title, 'es'))
     .slice(0, limit)
-    .map((item, index, ranking) => ({
+    .map((item, index, ranking): AnyRecord => ({
       ...item,
-      history: (item.history || []).sort((a, b) => new Date(b.dateIso).getTime() - new Date(a.dateIso).getTime()),
+      history: (item.history || []).sort((a: AnyRecord, b: AnyRecord) => new Date(b.dateIso).getTime() - new Date(a.dateIso).getTime()),
       repeatAlert: getRepeatAlert(item.history || []),
       rank: index + 1,
       max_count: ranking[0]?.usage_count || item.usage_count || 1,
@@ -660,12 +663,12 @@ const currentYearUsageEvents = operationalEvents.filter((evento) => {
 });
 const topSongsCurrentYear = buildSongUsageRanking({ events: currentYearUsageEvents, limit: 10 });
 const currentYearRepeatWatch = buildSongUsageRanking({ events: currentYearUsageEvents, limit: canciones.length })
-  .filter((song) => song.repeatAlert)
+  .filter((song) => song.repeatAlert != null)
   .sort((a, b) => (b.repeatAlert.count - a.repeatAlert.count) || (b.usage_count - a.usage_count) || a.title.localeCompare(b.title, 'es'))
   .slice(0, 8);
 const currentYearUsedSongIds = getUniqueSongIdsForEvents(currentYearUsageEvents);
 
-const profileRolesByProfileId = new Map();
+const profileRolesByProfileId = new Map<string, AnyRecord[]>();
 perfilRoles.forEach((entry) => {
   const profileId = String(entry?.perfil_id || '');
   if (!profileId) return;
@@ -675,7 +678,7 @@ perfilRoles.forEach((entry) => {
   profileRolesByProfileId.set(profileId, bucket);
 });
 
-const roleMembersByRoleId = new Map();
+const roleMembersByRoleId = new Map<string, AnyRecord[]>();
 perfilRoles.forEach((entry) => {
   const roleId = String(entry?.rol_id || '');
   const profile = perfilesById.get(String(entry?.perfil_id || ''));
@@ -710,7 +713,7 @@ const completeProfilesCount = perfiles.filter(
 
 const profileGaps = perfiles
   .map((profile) => {
-    const missing = [];
+    const missing: string[] = [];
     if (!hasText(profile?.avatar_url)) missing.push('foto');
     if (!hasText(profile?.telefono)) missing.push('telefono');
     if (!hasText(profile?.fecha_nacimiento)) missing.push('cumpleanos');
@@ -747,14 +750,14 @@ const systemSongGaps = [
   },
 ];
 
-const absenceIntersectsWindow = (absence, windowStart, windowEnd) => {
+const absenceIntersectsWindow = (absence: AnyRecord, windowStart: Date, windowEnd: Date) => {
   const start = toDateStart(absence?.fecha_inicio);
   const end = toDateEnd(absence?.fecha_fin || absence?.fecha_inicio);
   if (!start || !end || !windowStart || !windowEnd) return false;
   return start <= windowEnd && end >= windowStart;
 };
 
-const getPeriodEvents = ({ mode, days }) => {
+const getPeriodEvents = ({ mode, days }: Pick<PanelPeriod, 'mode' | 'days'>): AnyRecord[] => {
   const windowStart = new Date(now);
   const windowEnd = new Date(now);
 
@@ -779,7 +782,7 @@ const getPeriodEvents = ({ mode, days }) => {
     );
 };
 
-const buildPanelSnapshot = ({ label, mode, days }) => {
+const buildPanelSnapshot = ({ label, mode, days }: Omit<PanelPeriod, 'id'>) => {
   const periodEvents = getPeriodEvents({ mode, days });
   const focusService = periodEvents[0] || null;
   const servicesReadyCount = periodEvents.filter((evento) => evento.status === 'listo').length;
@@ -800,7 +803,7 @@ const buildPanelSnapshot = ({ label, mode, days }) => {
 
   const operationAlerts = periodEvents
     .flatMap((evento) =>
-      evento.alerts.map((alert) => ({
+      evento.alerts.map((alert: AnyRecord) => ({
         id: `${evento.id}-${alert.title}`,
         level: alert.level,
         title: alert.title,
@@ -815,7 +818,7 @@ const buildPanelSnapshot = ({ label, mode, days }) => {
     ? [
         {
           label: 'Roles faltantes',
-          value: formatCountLabel(focusService.alerts.filter((alert) => alert.title.includes('Falta')).length, 'alerta'),
+          value: formatCountLabel(focusService.alerts.filter((alert: AnyRecord) => alert.title.includes('Falta')).length, 'alerta'),
           detail: 'Direccion y letras son prioridad.',
         },
         {
@@ -839,9 +842,9 @@ const buildPanelSnapshot = ({ label, mode, days }) => {
   const repertoireUsageEvents = mode === 'future'
     ? periodEvents.filter((evento) => !isServiceStateExcludedFromUsage(evento.rawStatus))
     : periodEvents.filter((evento) => isRealizedService(evento));
-  const periodUsageBySongId = new Map();
+  const periodUsageBySongId = new Map<string, number>();
   repertoireUsageEvents.forEach((evento) => {
-    (evento.setlistSongIds || []).forEach((songId) => {
+    (evento.setlistSongIds || []).forEach((songId: unknown) => {
       const key = String(songId || '');
       if (!key) return;
       periodUsageBySongId.set(key, (periodUsageBySongId.get(key) || 0) + 1);
@@ -902,14 +905,14 @@ const buildPanelSnapshot = ({ label, mode, days }) => {
     }))
     .filter((item) => item.type !== 'complete')
     .sort((a, b) => {
-      const order = { missing: 0, simple: 1, partial: 2, complete: 3 };
+      const order: Record<string, number> = { missing: 0, simple: 1, partial: 2, complete: 3 };
       return (order[a.type] - order[b.type]) || a.title.localeCompare(b.title, 'es');
     })
     .slice(0, 10);
 
-  const teamAssignmentsByProfile = new Map();
+  const teamAssignmentsByProfile = new Map<string, AnyRecord>();
   periodEvents.forEach((evento) => {
-    (evento.rosterMembers || []).forEach((member) => {
+    (evento.rosterMembers || []).forEach((member: AnyRecord) => {
       const profileId = String(member?.profileId || '');
       if (!profileId) return;
       const bucket = teamAssignmentsByProfile.get(profileId) || {
@@ -917,9 +920,9 @@ const buildPanelSnapshot = ({ label, mode, days }) => {
         name: safeText(member?.name, 'Sin nombre'),
         avatarUrl: safeText(member?.avatarUrl),
         assignments: 0,
-        eventIds: new Set(),
-        roles: new Set(),
-        servicesByEvent: new Map(),
+        eventIds: new Set<string>(),
+        roles: new Set<string>(),
+        servicesByEvent: new Map<string, AnyRecord>(),
       };
       bucket.assignments += 1;
       bucket.eventIds.add(evento.id);
@@ -929,7 +932,7 @@ const buildPanelSnapshot = ({ label, mode, days }) => {
         title: evento.title,
         dateIso: evento.dateIso,
         href: evento.programacionHref,
-        roles: new Set(),
+        roles: new Set<string>(),
       };
       if (member?.roleName) service.roles.add(member.roleName);
       bucket.servicesByEvent.set(evento.id, service);
@@ -970,20 +973,20 @@ const buildPanelSnapshot = ({ label, mode, days }) => {
     }))
     .slice(0, 8);
 
-  const roleDemandByRoleId = new Map();
+  const roleDemandByRoleId = new Map<string, number>();
   periodEvents.forEach((evento) => {
-    const roleIdsInEvent = new Set((evento.rosterMembers || []).map((member) => member.roleId).filter(Boolean));
+    const roleIdsInEvent = new Set<string>((evento.rosterMembers || []).map((member: AnyRecord) => String(member.roleId || '')).filter(Boolean));
     roleIdsInEvent.forEach((roleId) => {
       roleDemandByRoleId.set(roleId, (roleDemandByRoleId.get(roleId) || 0) + 1);
     });
   });
 
-  const isLowerPriorityRole = (role) => {
+  const isLowerPriorityRole = (role: AnyRecord) => {
     const text = normalizeFold(`${role.label} ${role.code}`);
     return ['letra', 'visual', 'proyeccion', 'produccion'].some((alias) => text.includes(alias));
   };
 
-  const isMusicalCriticalRole = (role) => {
+  const isMusicalCriticalRole = (role: AnyRecord) => {
     const text = normalizeFold(`${role.label} ${role.code}`);
     return [
       'guitarra electrica',
@@ -1024,7 +1027,7 @@ const buildPanelSnapshot = ({ label, mode, days }) => {
 
   const teamConflicts = periodEvents
     .flatMap((evento) =>
-      evento.conflictingAbsences.map((conflict) => ({
+      evento.conflictingAbsences.map((conflict: AnyRecord) => ({
         id: `${evento.id}-${conflict.profileId}`,
         name: conflict.profileName,
         serviceTitle: evento.title,
@@ -1040,7 +1043,7 @@ const buildPanelSnapshot = ({ label, mode, days }) => {
       id: evento.id,
       title: evento.title,
       dateIso: evento.dateIso,
-      detail: evento.alerts.map((alert) => alert.title).join(' | '),
+      detail: evento.alerts.map((alert: AnyRecord) => alert.title).join(' | '),
     }))
     .slice(0, 10);
 
@@ -1076,7 +1079,7 @@ const buildPanelSnapshot = ({ label, mode, days }) => {
         {
           label: mode === 'future' ? 'Readiness proximo servicio' : 'Readiness ultimo servicio',
           value: focusService ? `${focusService.readinessScore}%` : '--',
-          detail: focusService ? `${focusService.readinessChecks.filter((check) => check.ok).length}/${focusService.readinessChecks.length} checks` : 'Sin servicios en la ventana',
+          detail: focusService ? `${focusService.readinessChecks.filter((check: AnyRecord) => check.ok).length}/${focusService.readinessChecks.length} checks` : 'Sin servicios en la ventana',
           tone: 'brand',
         },
         {

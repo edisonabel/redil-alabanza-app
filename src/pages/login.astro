@@ -651,22 +651,38 @@ import Layout from "../layouts/Layout.astro";
           .order("nombre");
         if (error) throw error;
         if (data && registerRolesGrid) {
-          registerRolesGrid.innerHTML = data
-            .map(
-              (r) => `
- <label class="flex items-center gap-2 p-2 rounded-lg border border-transparent hover:bg-surface hover:border-border transition-colors cursor-pointer text-sm text-content-muted">
- <input type="checkbox" name="register_role" value="${r.id}" class="w-4 h-4 text-brand rounded border-border focus:ring-brand cursor-pointer">
- <span class="truncate">${r.nombre}</span>
- </label>
- `,
-            )
-            .join("");
+          const rolesFragment = document.createDocumentFragment();
+
+          data.forEach((role: { id: string; nombre: string }) => {
+            const label = document.createElement("label");
+            label.className =
+              "flex items-center gap-2 p-2 rounded-lg border border-transparent hover:bg-surface hover:border-border transition-colors cursor-pointer text-sm text-content-muted";
+
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.name = "register_role";
+            input.value = String(role.id || "");
+            input.className =
+              "w-4 h-4 text-brand rounded border-border focus:ring-brand cursor-pointer";
+
+            const roleName = document.createElement("span");
+            roleName.className = "truncate";
+            roleName.textContent = String(role.nombre || "Sin nombre");
+
+            label.append(input, roleName);
+            rolesFragment.appendChild(label);
+          });
+
+          registerRolesGrid.replaceChildren(rolesFragment);
         }
       } catch (err) {
         console.error("Error cargando roles:", err);
-        if (registerRolesGrid)
-          registerRolesGrid.innerHTML =
-            '<div class="col-span-2 text-center text-xs text-danger py-2">Error cargando roles</div>';
+        if (registerRolesGrid) {
+          const errorState = document.createElement("div");
+          errorState.className = "col-span-2 text-center text-xs text-danger py-2";
+          errorState.textContent = "Error cargando roles";
+          registerRolesGrid.replaceChildren(errorState);
+        }
       }
     };
 

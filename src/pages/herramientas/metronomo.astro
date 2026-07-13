@@ -334,12 +334,12 @@ const bootMetronomePage = async () => {
   on(btnSubdivision2, 'click', () => setSubdivision(2));
 
   if (knob) {
-    on(knob, 'mousedown', startDrag);
-    on(window, 'mousemove', doDrag, { passive: false });
-    on(window, 'mouseup', stopDrag);
-    on(knob, 'touchstart', startDrag, { passive: true });
-    on(window, 'touchmove', doDrag, { passive: false });
-    on(window, 'touchend', stopDrag);
+    on(knob, 'mousedown', startDrag as EventListener);
+    on(window, 'mousemove', doDrag as EventListener, { passive: false });
+    on(window, 'mouseup', stopDrag as EventListener);
+    on(knob, 'touchstart', startDrag as EventListener, { passive: true });
+    on(window, 'touchmove', doDrag as EventListener, { passive: false });
+    on(window, 'touchend', stopDrag as EventListener);
   }
 
   let tapTimes: number[] = [];

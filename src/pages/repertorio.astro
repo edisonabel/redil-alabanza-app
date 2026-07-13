@@ -13,7 +13,27 @@ const supabaseSSR = createSupabaseUserClient(accessToken);
 try {
   const { data, error } = await supabaseSSR
     .from('canciones')
-    .select('*')
+    .select(`
+      id,
+      titulo,
+      cantante,
+      tonalidad,
+      bpm,
+      categoria,
+      estado,
+      tema,
+      voz,
+      chordpro,
+      link_acordes,
+      link_letras,
+      link_secuencias,
+      link_voces,
+      link_youtube,
+      mp3,
+      multitrack_session,
+      section_markers,
+      voces
+    `)
     .order('titulo');
 
   if (error) {
@@ -588,14 +608,14 @@ if (sessionError) {
  const isSelectionMode = !!seleccionarPara;
  const isSetlistSemana = !!setlistParam;
 
- let selectedSongs = [];
+ let selectedSongs: string[] = [];
  const playlistBar = document.getElementById('playlistBar');
  const playlistCountEl = document.getElementById('playlistCount');
  const btnClearPlaylistSelection = document.getElementById('btn-clear-playlist-selection');
  const btnClearPlaylistSelectionMobile = document.getElementById('btn-clear-playlist-selection-mobile');
 
  // Helper local para setlist normal
- let setlist = JSON.parse(localStorage.getItem('setlist') || '[]');
+ let setlist: string[] = JSON.parse(localStorage.getItem('setlist') || '[]');
 
  function updateSetlistUI() {
  if (setlistCount) setlistCount.textContent = setlist.length.toString();
@@ -615,7 +635,7 @@ if (sessionError) {
  if (playlistCountEl) playlistCountEl.textContent = selectedSongs.length.toString();
  }
 
- function setSelectionButtonState(btn, isSelected) {
+ function setSelectionButtonState(btn: HTMLElement | null, isSelected: boolean) {
   if (!btn) return;
   const iconPlus = btn.querySelector('.setlist-icon-plus');
   const iconCheck = btn.querySelector('.setlist-icon-check');
@@ -647,7 +667,7 @@ if (sessionError) {
   btn.classList.toggle('dark:text-zinc-500', !isSelected);
  }
 
- function sortSongsByOriginalIndex(songCards) {
+ function sortSongsByOriginalIndex(songCards: Iterable<HTMLElement>) {
   return [...songCards].sort((a, b) => {
    const aIndex = Number(a.dataset.originalIndex || '0');
    const bIndex = Number(b.dataset.originalIndex || '0');
@@ -703,7 +723,7 @@ if (sessionError) {
   lastFilterScrollY = Math.max(0, currentY);
  }, { passive: true });
 
- function sortSongsSelectedFirst(songCards) {
+ function sortSongsSelectedFirst(songCards: Iterable<HTMLElement>) {
   if (isSelectionMode && !hasActiveSongFilters()) {
    return [...songCards].sort((a, b) => {
     const aId = String(a.getAttribute('data-id') || '');
@@ -740,9 +760,9 @@ if (sessionError) {
   return [...songCards];
  }
 
- function applySongOrder(songCards) {
+function applySongOrder(songCards: Iterable<HTMLElement>) {
   if (!gridCanciones) return;
-  songCards.forEach((card) => gridCanciones.appendChild(card));
+  for (const card of songCards) gridCanciones.appendChild(card);
  }
 
  function syncSelectionButtons() {
@@ -765,6 +785,7 @@ if (sessionError) {
   songId?: string;
   chordpro?: string;
   sectionMarkers?: any[];
+  artworkUrl?: string;
  }) => {
   const url = (payload?.url || '').trim();
   if (!url) return;
@@ -778,6 +799,7 @@ if (sessionError) {
     songId: payload.songId,
     chordpro: payload.chordpro,
     sectionMarkers: payload.sectionMarkers,
+    artworkUrl: payload.artworkUrl,
    });
    return;
   }
@@ -971,7 +993,7 @@ if (sessionError) {
  if (setlistArray.includes(cancionTitulo)) {
  card.classList.remove('cancion-oculta'); // Critical FIX: Remover clase !important
  card.style.display = 'block';
- const addBtn = card.querySelector('.btn-add-setlist');
+ const addBtn = card.querySelector<HTMLElement>('.btn-add-setlist');
  if(addBtn) addBtn.style.display = 'none';
  } else {
  card.classList.add('cancion-oculta');
@@ -981,6 +1003,7 @@ if (sessionError) {
  
  // Cargar SortableJS dinámicamente solo cuando se necesita
  if (gridCanciones) {
+   // @ts-expect-error SortableJS se carga como ESM remoto solo en este modo compartido.
    import('https://cdn.jsdelivr.net/npm/sortablejs@latest/+esm').then(({ default: Sortable }) => {
      new Sortable(gridCanciones, {
        animation: 150,
@@ -1040,7 +1063,7 @@ const clearPlaylistSelection = () => {
  addListener(btnClearPlaylistSelectionMobile, 'click', clearPlaylistSelection);
  
  addListener(document.getElementById('btn-save-playlist'), 'click', async () => {
- const btn = document.getElementById('btn-save-playlist');
+ const btn = document.getElementById('btn-save-playlist') as HTMLButtonElement;
  btn.disabled = true;
  btn.innerHTML = 'Guardando...';
 
@@ -1061,7 +1084,7 @@ const clearPlaylistSelection = () => {
  }
  }
  window.location.href = '/programacion';
- } catch (err) {
+ } catch (err: any) {
  alert('Error al guardar: ' + (err.message || 'Error desconocido'));
  btn.disabled = false;
  btn.innerHTML = 'Guardar Setlist';
@@ -1115,7 +1138,7 @@ const clearPlaylistSelection = () => {
 
  // Listener Universal para el boton + de las tarjetas
  addListener(document, 'click', (e) => {
- const btn = e.target.closest('.btn-add-setlist');
+ const btn = (e.target as Element | null)?.closest<HTMLElement>('.btn-add-setlist');
  if (!btn) return;
  e.preventDefault();
  e.stopPropagation();
@@ -1244,9 +1267,9 @@ const clearPlaylistSelection = () => {
  
  if (sentinel) observer.observe(sentinel);
 
-const normalizeStr = (str) => str ? str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() : '';
+const normalizeStr = (str: string) => str ? str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() : '';
 
-const matchVoz = (vozValue, vozFilter) => {
+const matchVoz = (vozValue: string, vozFilter: string) => {
  const v = normalizeStr(vozValue);
  const f = normalizeStr(vozFilter);
  if (f === 'todas') return true;
@@ -1277,7 +1300,7 @@ const formatTime = (seconds: number) => {
    return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
  };
 
-const matchCategoria = (categoriaValue, categoriaFilter) => {
+const matchCategoria = (categoriaValue: string, categoriaFilter: string) => {
  const c = normalizeStr(categoriaValue);
  const f = normalizeStr(categoriaFilter);
  if (f === 'todas') return true;
@@ -1289,9 +1312,9 @@ const matchCategoria = (categoriaValue, categoriaFilter) => {
  return c.includes(f);
 };
 
- function debounce(func, wait) {
- let timeout;
- return function(...args) {
+ function debounce<T extends (...args: any[]) => void>(func: T, wait: number) {
+ let timeout: ReturnType<typeof setTimeout> | undefined;
+ return function(...args: Parameters<T>) {
  clearTimeout(timeout);
  timeout = setTimeout(() => func(...args), wait);
  };
@@ -1377,10 +1400,6 @@ function filterCards() {
  syncFilterMenuState();
 
 
- // Helper para Playlist modular
- function updatePlaylistCount() {
- if (playlistCountEl) playlistCountEl.textContent = selectedSongs.length.toString();
- }
  }
 
  if (!repertorioWindow.__REPERTORIO_INIT_BOUND__) {

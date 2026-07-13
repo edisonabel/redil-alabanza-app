@@ -86,6 +86,7 @@ function SongHistoryEntry() {
     );
 }
 
+/** @param {{ usuario?: any; proximosServicios?: any[]; eventosEspeciales?: any[]; cumpleanerosMes?: any[]; cumpleanerosTodos?: any[] }} props */
 const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = [], cumpleanerosMes = [], cumpleanerosTodos = [] }) => {
     const [dismissUpcomingHint, setDismissUpcomingHint] = useState(false);
     const [dismissEnvironmentHint, setDismissEnvironmentHint] = useState(false);

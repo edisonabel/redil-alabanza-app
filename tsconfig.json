@@ -2,13 +2,18 @@
   "extends": "astro/tsconfigs/strict",
   "include": [
     ".astro/types.d.ts",
-    "**/*"
+    "src/**/*",
+    "scripts/**/*",
+    "astro.config.mjs",
+    "capacitor.config.ts"
   ],
   "exclude": [
     "node_modules",
     "src/archivos_legacy/**/*",
     "src/scripts-prueba/**/*",
-    "dist"
+    "dist",
+    "ios/App/build/**/*",
+    "ios/App/App/public/**/*"
   ],
   "compilerOptions": {
     "jsx": "react-jsx",

@@ -16,10 +16,14 @@ export const SECTION_VISUALS = {
   prechorus: { short: 'Pr', rgb: [234, 179, 8] },
   chorus: { short: 'C', rgb: [249, 115, 22] },
   interlude: { short: 'It', rgb: [239, 68, 68] },
+  instrumental: { short: 'In', rgb: [239, 68, 68] },
   bridge: { short: 'P', rgb: [236, 72, 153] },
   refrain: { short: 'Rf', rgb: [34, 197, 94] },
+  tag: { short: 'T', rgb: [34, 197, 94] },
   outro: { short: 'F', rgb: [14, 165, 233] },
+  final: { short: 'F', rgb: [14, 165, 233] },
   vamp: { short: 'Vp', rgb: [248, 113, 113] },
+  section: { short: 'S', rgb: [148, 163, 184] },
   default: { short: 'S', rgb: [148, 163, 184] },
 } as const;
 
@@ -72,10 +76,14 @@ export const buildSectionShortLabel = (
   if (kind === 'prechorus') return 'Pr';
   if (kind === 'chorus') return 'C';
   if (kind === 'interlude') return 'It';
+  if (kind === 'instrumental') return 'In';
   if (kind === 'bridge') return 'P';
   if (kind === 'refrain') return 'Rf';
+  if (kind === 'tag') return 'T';
   if (kind === 'outro') return 'F';
+  if (kind === 'final') return 'F';
   if (kind === 'vamp') return 'Vp';
+  if (kind === 'section') return `S${fallbackNumber}`;
   const compact = source.replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase();
   return compact || `S${fallbackNumber}`;
 };

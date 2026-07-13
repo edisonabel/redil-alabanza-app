@@ -96,18 +96,18 @@ if (requestedSongId) {
  <!-- Metadatos para Impresión y Auto-Formatear -->
  <div class="col-span-1 lg:col-span-2">
  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-3 mb-2">
- <input type="text" id="print-titulo" placeholder="Título" value={initialSong?.titulo || ''} class="p-3 bg- border border-neutral-200 rounded-xl $2text-white font-bold w-full focus:outline-none focus:border-blue-500">
- <input type="text" id="print-artista" placeholder="Artista (Opcional)" value={initialSong?.artista || ''} class="p-3 bg- border border-neutral-200 rounded-xl $2text-white w-full focus:outline-none focus:border-blue-500">
- <input type="text" id="print-tono" placeholder="Tono (Ej: G)" value={initialSong?.tono || ''} class="p-3 bg- border border-neutral-200 rounded-xl $2text-white w-full focus:outline-none focus:border-blue-500">
- <input type="text" id="print-capo" placeholder="Capo (Ej: 0)" value={initialSong?.capo || ''} class="p-3 bg- border border-neutral-200 rounded-xl $2text-white w-full focus:outline-none focus:border-blue-500">
- <input type="text" id="print-time" placeholder="Time (Ej: 4/4)" value={initialSong?.time || ''} class="p-3 bg- border border-neutral-200 rounded-xl $2text-white w-full focus:outline-none focus:border-blue-500">
+ <input type="text" id="print-titulo" placeholder="Título" value={initialSong?.titulo || ''} class="p-3 bg-white border border-neutral-200 rounded-xl text-neutral-900 font-bold w-full focus:outline-none focus:border-blue-500">
+ <input type="text" id="print-artista" placeholder="Artista (Opcional)" value={initialSong?.artista || ''} class="p-3 bg-white border border-neutral-200 rounded-xl text-neutral-900 w-full focus:outline-none focus:border-blue-500">
+ <input type="text" id="print-tono" placeholder="Tono (Ej: G)" value={initialSong?.tono || ''} class="p-3 bg-white border border-neutral-200 rounded-xl text-neutral-900 w-full focus:outline-none focus:border-blue-500">
+ <input type="text" id="print-capo" placeholder="Capo (Ej: 0)" value={initialSong?.capo || ''} class="p-3 bg-white border border-neutral-200 rounded-xl text-neutral-900 w-full focus:outline-none focus:border-blue-500">
+ <input type="text" id="print-time" placeholder="Time (Ej: 4/4)" value={initialSong?.time || ''} class="p-3 bg-white border border-neutral-200 rounded-xl text-neutral-900 w-full focus:outline-none focus:border-blue-500">
  <div class="relative w-full">
- <input type="text" id="print-bpm" placeholder="BPM (Ej: 162)" value={initialSong?.tempo || ''} class="p-3 bg- border border-neutral-200 rounded-xl $2text-white w-full pr-12 focus:outline-none focus:border-blue-500">
- <button id="btn-metronomo" class="absolute right-2 top-2 p-1.5 bg- hover:bg-green-600 rounded-lg transition-colors $2text-white" title="Activar Metrónomo">
+ <input type="text" id="print-bpm" placeholder="BPM (Ej: 162)" value={initialSong?.tempo || ''} class="p-3 bg-white border border-neutral-200 rounded-xl text-neutral-900 w-full pr-12 focus:outline-none focus:border-blue-500">
+ <button id="btn-metronomo" class="absolute right-2 top-2 p-1.5 bg-neutral-100 hover:bg-green-600 rounded-lg transition-colors text-neutral-700 hover:text-white" title="Activar Metrónomo">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
  </button>
  </div>
- <button id="btn-autoconvertir" class="w-full px-4 py-3 bg- hover:bg-purple-500 $2text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2 shadow-lg shadow-purple-500/20">
+ <button id="btn-autoconvertir" class="w-full px-4 py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2 shadow-lg shadow-purple-500/20">
  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg> Auto-Formato
  </button>
  </div>
@@ -128,15 +128,15 @@ if (requestedSongId) {
 
  <!-- Barra de Controles -->
  <div class="flex flex-wrap items-center justify-center gap-3 mt-6 pb-12">
- <button id="btn-bajar" class="px-4 py-2 bg- hover:bg-neutral-100 border border-neutral-200 $2text-white rounded-lg transition font-medium">-1 Semitono</button>
- <button id="btn-reset" class="px-4 py-2 bg- hover:bg-neutral-100 border border-neutral-200 $2text-white rounded-lg transition font-medium">Original</button>
- <button id="btn-subir" class="px-4 py-2 bg- hover:bg-neutral-100 border border-neutral-200 $2text-white rounded-lg transition font-medium">+1 Semitono</button>
+ <button id="btn-bajar" class="px-4 py-2 bg-white hover:bg-neutral-100 border border-neutral-200 text-neutral-700 rounded-lg transition font-medium">-1 Semitono</button>
+ <button id="btn-reset" class="px-4 py-2 bg-white hover:bg-neutral-100 border border-neutral-200 text-neutral-700 rounded-lg transition font-medium">Original</button>
+ <button id="btn-subir" class="px-4 py-2 bg-white hover:bg-neutral-100 border border-neutral-200 text-neutral-700 rounded-lg transition font-medium">+1 Semitono</button>
  <div class="w-2 hidden sm:block"></div> <!-- Separador visual -->
- <button id="btn-copiar" class="px-6 py-2 bg- hover:bg-blue-500 $2text-white font-bold rounded-lg transition flex items-center gap-2">
+ <button id="btn-copiar" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg transition flex items-center gap-2">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg> 
  Copiar
  </button>
- <button id="btn-atril" class="print:hidden px-6 py-3 bg- hover:bg-neutral-100 $2text-white font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2">
+ <button id="btn-atril" class="print:hidden px-6 py-3 bg-neutral-900 hover:bg-neutral-800 text-white font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2">
  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h20"/><path d="M12 2v20"/><path d="m20 16-4 4-4-4"/><path d="m4 8 4-4 4 4"/></svg> 
  Modo Atril
  </button>
@@ -172,7 +172,7 @@ if (requestedSongId) {
 
  <!-- Contenedor Modo Atril -->
  <div id="stage-mode-container" class="hidden fixed inset-0 bg-black text-white z-[9999] overflow-y-auto px-4 py-8 sm:p-12 font-sans">
- <button id="btn-cerrar-atril" class="fixed top-4 right-4 bg-/20 hover:bg-red-600 text-red-500 hover:$2text-white p-2 rounded-full transition-all backdrop-blur-md">
+ <button id="btn-cerrar-atril" class="fixed top-4 right-4 bg-white/10 hover:bg-red-600 text-red-400 hover:text-white p-2 rounded-full transition-all backdrop-blur-md" aria-label="Cerrar modo atril">
  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
  </button>
  <div class="max-w-4xl mx-auto">
@@ -407,6 +407,17 @@ if (requestedSongId) {
   import { metronomeService } from '../../services/MetronomeEngine';
   import { screenWakeLockService } from '../../services/ScreenWakeLockService';
 
+  const escapeHtml = (value: unknown) => String(value ?? '').replace(
+    /[&<>"']/g,
+    (character) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;',
+    })[character] || character,
+  );
+
   document.addEventListener('DOMContentLoaded', async () => {
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     
@@ -637,181 +648,6 @@ if (requestedSongId) {
  window.setTimeout(() => {
  window.print();
  }, 140);
- return;
-
- const inputTitulo = document.getElementById('print-titulo') as HTMLInputElement;
- const inputArtista = document.getElementById('print-artista') as HTMLInputElement;
- const inputTono = document.getElementById('print-tono') as HTMLInputElement;
- const inputCapo = document.getElementById('print-capo') as HTMLInputElement;
- const inputBpm = document.getElementById('print-bpm') as HTMLInputElement;
- const inputTime = document.getElementById('print-time') as HTMLInputElement;
- 
- const titulo = inputTitulo?.value.trim() || 'SIN TÍTULO';
- const artista = inputArtista?.value.trim() || '';
- const tono = inputTono?.value.trim() || '';
- const capo = inputCapo?.value.trim() || '';
- const bpm = inputBpm?.value.trim() || '';
- const time = inputTime?.value.trim() || '';
- 
- const outputBox = (document.getElementById('output-chordpro') as HTMLTextAreaElement)?.value;
- const inputBox = (document.getElementById('input-chordpro') as HTMLTextAreaElement)?.value;
- 
- // Tomar el texto del output (procesado). Si está vacío, tomar el input.
- let contenido = (outputBox && outputBox.trim() !== '') ? outputBox : (inputBox || '');
- 
- // Defensa: Si el texto no tiene corchetes, forzar auto-formateo en memoria para que no salga plano
- if (!contenido.includes('[') && typeof (window as any).autoConvertirAChordPro === 'function') {
- contenido = (window as any).autoConvertirAChordPro(contenido);
- }
-
- const lineas = contenido.split('\n');
- const totalLines = lineas.length;
-
- // MOTOR DE ESCALA Y MÁRGENES ANTI-NAVEGADOR
- let rootFontSize = '16px';
- let bodyPadding = '15mm 20mm'; // El padding reemplaza el margin de @page
-
- if (totalLines > 35) { rootFontSize = '14px'; bodyPadding = '12mm 15mm'; }
- if (totalLines > 55) { rootFontSize = '11.5px'; bodyPadding = '10mm 12mm'; }
- if (totalLines > 75) { rootFontSize = '9.5px'; bodyPadding = '8mm 10mm'; }
-
- let bodyHtml = '';
- let inSection = false;
-
- lineas.forEach(linea => {
- if (linea.trim() === '') {
- if (inSection) bodyHtml += `<div class="spacer"></div>`;
- return;
- }
-
- const cleanText = linea.replace(/\[.*?\]/g, '').trim();
- const regexSeccion = /^(VERSO\s*\d*|CORO\s*\d*|PUENTE\s*\d*|INTRO\s*\d*|OUTRO|FINAL|PRE-CORO|PRECORO|ESTR|INSTRUMENTAL|TAG)[\s\:\-]*(.*)$/i;
- const matchSeccion = cleanText.match(regexSeccion);
- let lineaRestante = linea;
-
- if (matchSeccion) {
- if (inSection) bodyHtml += `</div></div>`;
- const nombreSeccion = matchSeccion[1].toUpperCase();
- const textoDespues = matchSeccion[2];
- 
- bodyHtml += `<div class="song-section"><div class="section-label">${nombreSeccion}</div><div class="section-content">`;
- inSection = true;
-
- let content = '';
- let inBracket = false;
- let dropped = 0;
- let charsToDrop = cleanText.length - textoDespues.length;
- for (let i = 0; i < linea.length; i++) {
- let char = linea[i];
- if (char === '[') inBracket = true;
-
- if (inBracket) {
- content += char;
- if (char === ']') inBracket = false;
- } else {
- if (dropped < charsToDrop) dropped++;
- else content += char;
- }
- }
- lineaRestante = content.trim();
- 
- // FIX CRÍTICO: Si no quedó texto (ej. la línea solo decía "INTRO"), 
- // NO retornamos (return), simplemente saltamos el renderizado de acordes para esta línea.
- if (lineaRestante === '') return; 
- 
- // FIX: Si solo quedaron acordes huérfanos sin texto (ej: [G] [C])
- if (/^(\s*\[.*?\]\s*)+$/.test(lineaRestante)) {
- bodyHtml += `<div class="chord-line">`;
- const partes = lineaRestante.split(/\[(.*?)\]/);
- for (let j = 1; j < partes.length; j += 2) {
- bodyHtml += `<div class="chord-pair"><div class="chord">${partes[j]}</div><div class="lyric"> </div></div>`;
- }
- bodyHtml += `</div>`;
- return;
- }
- } else if (!inSection) {
- bodyHtml += `<div class="song-section"><div class="section-label"></div><div class="section-content">`;
- inSection = true;
- }
-
- // Renderizar Acordes y Letra
- if (lineaRestante.includes('[')) {
- bodyHtml += `<div class="chord-line">`;
- const partes = lineaRestante.split(/\[(.*?)\]/);
- if (partes[0]) bodyHtml += `<div class="chord-pair"><div class="chord"></div><div class="lyric">${partes[0]}</div></div>`;
- 
- for (let i = 1; i < partes.length; i += 2) {
- const acorde = partes[i];
- const letra = partes[i+1] || '';
- bodyHtml += `<div class="chord-pair"><div class="chord">${acorde}</div><div class="lyric">${letra}</div></div>`;
- }
- bodyHtml += `</div>`;
- } else {
- bodyHtml += `<div class="lyric-line">${lineaRestante}</div>`;
- }
- });
-
- if (inSection) bodyHtml += `</div></div>`;
-
- // GENERAR VENTANA Y APLICAR CSS
- const printWindow = window.open('', '_blank');
- if (!printWindow) {
- alert("Por favor, permite las ventanas emergentes (pop-ups) para imprimir.");
- return;
- }
-
- printWindow.document.write(`
-<!DOCTYPE html>
-<html>
- <head>
- <meta charset="UTF-8">
- <title>${titulo} - Acordes</title>
- <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,500;0,700;0,800;1,500&display=swap" rel="stylesheet">
- <style>
- html { font-size: ${rootFontSize}; }
- @page { margin: 0; size: letter; }
- body { font-family: 'Montserrat', Arial, sans-serif; color: black; background: white; margin: 0; padding: ${bodyPadding}; box-sizing: border-box; }
- 
- header { border-bottom: 0.2rem solid black; display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem; padding-bottom: 0.5rem; }
- .header-left h1 { font-weight: 800; font-size: 2.2rem; text-transform: uppercase; margin: 0; letter-spacing: -0.02rem; }
- .header-left h2 { font-weight: 500; font-style: italic; color: #444; margin: 0.3rem 0 0 0; }
- .header-right { text-align: right; font-weight: 800; font-size: 1rem; }
- .header-right div { margin-bottom: 0.2rem; }
- 
- .song-section { display: flex; width: 100%; page-break-inside: avoid; margin-bottom: 1.5rem; }
- .section-label { font-weight: 800; font-size: 0.95rem; width: 8.5rem; flex-shrink: 0; padding-right: 1rem; }
- .section-content { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
- 
- .chord-line { display: flex; flex-wrap: wrap; align-items: flex-end; margin-bottom: 0.3rem; }
- .chord-pair { display: inline-flex; flex-direction: column; justify-content: flex-end; margin-right: 0.15rem; }
- 
- .chord { font-weight: 800; font-size: 0.9rem; min-height: 1rem; margin-bottom: 0.1rem; color: #000; }
- .lyric { font-weight: 500; font-size: 1.1rem; white-space: pre; color: #111; }
- .lyric-line { font-weight: 500; font-size: 1.1rem; margin-bottom: 0.3rem; white-space: pre-wrap; color: #111; }
- .spacer { height: 1rem; }
- </style>
- </head>
- <body>
- <header>
- <div class="header-left">
- <h1>${titulo}</h1>
- ${artista ? `<h2>${artista}</h2>` : ''}
- </div>
- <div class="header-right">
- ${tono ? `<div>Tono: ${tono}</div>` : ''}
- ${capo ? `<div>Capo: ${capo}</div>` : ''}
- ${bpm ? `<div>Tempo: ${bpm}</div>` : ''}
- ${time ? `<div>Time: ${time}</div>` : ''}
- </div>
- </header>
- <main>${bodyHtml}</main>
- </body>
-</html>
- `);
-
- printWindow.document.close();
- printWindow.focus();
- setTimeout(() => { printWindow.print(); printWindow.close(); }, 1200);
  });
 
  // ---------------- METRÓNOMO AUDIO API ---------------- //
@@ -823,6 +659,7 @@ if (requestedSongId) {
   if (isPlaying) {
   metronomeService.stop();
   btnMetronomo.classList.replace('bg-green-600', 'bg-neutral-100');
+  btnMetronomo.classList.replace('text-white', 'text-neutral-700');
   btnMetronomo.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`;
   isPlaying = false;
   } else {
@@ -840,6 +677,7 @@ if (requestedSongId) {
   });
  
  btnMetronomo.classList.replace('bg-neutral-100', 'bg-green-600');
+ btnMetronomo.classList.replace('text-neutral-700', 'text-white');
  btnMetronomo.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; 
   isPlaying = true;
   }
@@ -881,21 +719,21 @@ if (requestedSongId) {
  const isSection = /^(VERSO|CORO|PUENTE|INTRO|OUTRO|FINAL|PRE-CORO|ESTR|TAG)/i.test(cleanText);
 
  if (isSection) {
- html += `<div class="text-blue-400 font-bold mt-8 mb-2 text-lg sm:text-xl uppercase tracking-wider">${linea.trim()}</div>`;
+ html += `<div class="text-blue-400 font-bold mt-8 mb-2 text-lg sm:text-xl uppercase tracking-wider">${escapeHtml(linea.trim())}</div>`;
  } else if (linea.includes('[')) {
  html += `<div class="flex flex-wrap items-end mb-2">`;
  const partes = linea.split(/\[(.*?)\]/);
  
  if (partes[0]) {
- html += `<div class="inline-flex flex-col"><div class="text-yellow-400 font-bold text-lg sm:text-xl h-6"></div><div class="text-white whitespace-pre">${partes[0]}</div></div>`;
+ html += `<div class="inline-flex flex-col"><div class="text-yellow-400 font-bold text-lg sm:text-xl h-6"></div><div class="text-white whitespace-pre">${escapeHtml(partes[0])}</div></div>`;
  }
  
  for (let i = 1; i < partes.length; i += 2) {
- html += `<div class="inline-flex flex-col mr-1.5"><div class="text-yellow-400 font-bold text-lg sm:text-xl h-6 -mb-1">${partes[i]}</div><div class="text-white whitespace-pre">${partes[i+1] || ''}</div></div>`;
+ html += `<div class="inline-flex flex-col mr-1.5"><div class="text-yellow-400 font-bold text-lg sm:text-xl h-6 -mb-1">${escapeHtml(partes[i])}</div><div class="text-white whitespace-pre">${escapeHtml(partes[i+1] || '')}</div></div>`;
  }
  html += `</div>`;
  } else {
- html += `<div class="text-white mb-2">${linea}</div>`;
+ html += `<div class="text-white mb-2">${escapeHtml(linea)}</div>`;
  }
  });
 

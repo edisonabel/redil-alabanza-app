@@ -402,6 +402,7 @@ function MonitorChordOverlayLine({
   );
 }
 
+/** @param {{ songs?: any[]; eventId?: string; eventTitle?: string; userId?: string }} props */
 export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle = '', userId = '' }) {
   const [activeTrackIndex, setActiveTrackIndex] = useState(0);
   const [activeSectionIndex, setActiveSectionIndex] = useState(0);

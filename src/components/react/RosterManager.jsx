@@ -86,7 +86,7 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
                 setRoles(cachedRoles);
                 return;
             }
-            const { data } = await supabase.from('roles').select('*').order('nombre');
+            const { data } = await supabase.from('roles').select('id, nombre, codigo').order('nombre');
             if (data) {
                 setRoles(data);
                 window.appStateRoles = data;

@@ -64,7 +64,7 @@ const fetchSongByRequest = async (lookupValue: string) => {
 
 if (requestedSong) {
   try {
-    const row = await fetchSongByRequest(requestedSong);
+    const row: any = await fetchSongByRequest(requestedSong);
 
     if (row) {
       const rawSession = 'multitrack_session' in row ? row.multitrack_session : null;

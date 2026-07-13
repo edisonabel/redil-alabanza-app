@@ -17,7 +17,7 @@ initialFetchLimit.setHours(23, 59, 59, 999);
 
 const accessToken = Astro.locals.accessToken || Astro.cookies.get('sb-access-token')?.value || '';
 let ssrUser = Astro.locals.user || null;
-let ssrRoles = [];
+let ssrRoles: any[] = [];
 let ssrEventos = [];
 let queryError = null;
 let ssrAdmin = false;
@@ -42,7 +42,7 @@ const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
 });
 
 if (ssrUser) {
-  const rolesPromise = supabaseSSR.from('roles').select('*').order('nombre');
+  const rolesPromise = supabaseSSR.from('roles').select('id, nombre, codigo').order('nombre');
   const perfilPromise = supabaseSSR.from('perfiles').select('is_admin').eq('id', ssrUser.id).maybeSingle();
   const canEditTemaPromise = supabaseSSR.rpc('has_sermon_edit_role');
   const eventosPromise = perfilPromise.then(({ data: perfil }) => {

@@ -6,7 +6,7 @@ import Layout from '../layouts/Layout.astro';
  <!-- Navbar base similar to other tools for consistency -->
  <header class="w-full flex items-center justify-between py-6 px-4 md:px-8 mb-4 border-b border-border ">
  <div class="flex items-center gap-4">
- <a href="/programacion" class="text-content-muted hover:text-content :text-white transition-colors">
+ <a href="/programacion" class="text-content-muted hover:text-content dark:text-white transition-colors">
  <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
  <path d="m15 18-6-6 6-6"/>
  </svg>
@@ -24,7 +24,7 @@ import Layout from '../layouts/Layout.astro';
  </div>
  <div class="flex items-center gap-3">
  <span id="equipos-counter-top" class="hidden text-xs font-bold text-content-muted bg-background px-2 py-1 rounded-full">0/10 Equipos</span>
- <button id="btn-open-team-builder" class="hidden md:flex items-center gap-2 bg-neutral-900 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-neutral-800 :bg-background transition-colors shadow-sm text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-neutral-900 disabled::bg-surface">
+ <button id="btn-open-team-builder" class="hidden md:flex items-center gap-2 bg-neutral-900 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-neutral-800 dark:bg-background transition-colors shadow-sm text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-neutral-900 dark:disabled:bg-surface">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" class="opacity-80" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
  Crear Equipo
  </button>
@@ -148,8 +148,8 @@ import Layout from '../layouts/Layout.astro';
  <p class="text-xs text-content-muted mt-1">Crea moldes de equipo para cargarlos rÃ¡pidamente.</p>
  </div>
  <div class="flex gap-2">
- <button type="button" id="btn-tb-cancelar" class="p-2 sm:px-4 sm:py-2 text-content-muted hover:text-neutral :text-neutral-200 hover:bg-background :bg-neutral-800 rounded-xl transition-colors font-bold text-sm hidden sm:block">Cancelar</button>
- <button type="button" id="btn-tb-close" class="p-2 -mr-2 text-content-muted hover:text-neutral-700 :text-neutral-200 hover:bg-background :bg-neutral-800 rounded-full transition-colors sm:hidden">
+ <button type="button" id="btn-tb-cancelar" class="p-2 sm:px-4 sm:py-2 text-content-muted hover:text-neutral dark:text-neutral-200 hover:bg-background dark:bg-neutral-800 rounded-xl transition-colors font-bold text-sm hidden sm:block">Cancelar</button>
+ <button type="button" id="btn-tb-close" class="p-2 -mr-2 text-content-muted hover:text-neutral-700 dark:text-neutral-200 hover:bg-background dark:bg-neutral-800 rounded-full transition-colors sm:hidden">
  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
  </button>
  </div>
@@ -216,7 +216,7 @@ import Layout from '../layouts/Layout.astro';
  
  <!-- Footer Form -->
  <div class="px-5 sm:px-6 py-4 bg-background border-t border-neutral-100 dark:border-neutral-700 sticky bottom-0 z-10 flex gap-3 shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
- <button type="submit" id="btn-tb-submit" class="flex-1 bg-neutral-900 text-white py-3 rounded-xl font-bold hover:bg-neutral-800 :bg-background transition-colors shadow-sm relative overflow-hidden flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+ <button type="submit" id="btn-tb-submit" class="flex-1 bg-neutral-900 text-white py-3 rounded-xl font-bold hover:bg-neutral-800 dark:bg-background transition-colors shadow-sm relative overflow-hidden flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
  <svg id="tb-spinner" class="animate-spin -ml-1 mr-2 h-4 w-4 hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
  <span id="tb-submit-text">Guardar Equipo</span>
  </button>
@@ -240,7 +240,7 @@ import Layout from '../layouts/Layout.astro';
  <p class="text-xs text-content-muted font-bold uppercase tracking-widest mt-1">ConfiguraciÃ³n Base</p>
  </div>
  </div>
- <button type="button" id="btn-close-detalles" class="p-2 -mr-2 bg-background text-content-muted hover:text-content :text-white rounded-full transition-colors">
+ <button type="button" id="btn-close-detalles" class="p-2 -mr-2 bg-background text-content-muted hover:text-content dark:text-white rounded-full transition-colors">
  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
  </button>
  </div>
@@ -297,7 +297,7 @@ import Layout from '../layouts/Layout.astro';
  </div>
  <p class="text-xs text-content-muted bg-background rounded-lg p-3 border border-border ">Los integrantes del equipo se perder&aacute;n. Los eventos de domingos anteriores NO se afectan.</p>
  <div class="flex gap-3">
- <button id="confirm-delete-cancel" type="button" class="flex-1 py-2.5 px-4 rounded-xl border border-border text-neutral-700 font-semibold text-sm hover:bg-background :bg-neutral-800 transition-colors">Cancelar</button>
+ <button id="confirm-delete-cancel" type="button" class="flex-1 py-2.5 px-4 rounded-xl border border-border text-neutral-700 font-semibold text-sm hover:bg-background dark:bg-neutral-800 transition-colors">Cancelar</button>
  <button id="confirm-delete-ok" type="button" class="flex-1 py-2.5 px-4 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-colors flex items-center justify-center gap-2">
  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
  Eliminar
@@ -316,7 +316,7 @@ import Layout from '../layouts/Layout.astro';
  <h3 class="text-lg font-bold text-content ">Seleccionar M&uacute;sico</h3>
 <p class="text-[10px] font-bold uppercase tracking-widest text-action mt-1 flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span id="picker-role-name">Buscando...</span></p>
  </div>
- <button type="button" id="picker-close" class="p-2 -mr-2 bg-background text-content-muted hover:text-content :text-white rounded-full transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+ <button type="button" id="picker-close" class="p-2 -mr-2 bg-background text-content-muted hover:text-content dark:text-white rounded-full transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
  </div>
  <div class="p-4 overflow-y-auto flex-1 custom-scrollbar">
  <div id="picker-spinner" class="flex justify-center items-center py-10 hidden">
@@ -339,7 +339,7 @@ import Layout from '../layouts/Layout.astro';
  <h3 class="text-lg font-bold text-content ">A&#241;adir M&#250;sico</h3>
  <p class="text-xs text-content-muted mt-0.5">Registra un nuevo integrante del equipo.</p>
  </div>
- <button type="button" id="btn-close-add-musico" class="p-2 -mr-2 bg-background text-content-muted hover:text-content :text-white rounded-full transition-colors">
+ <button type="button" id="btn-close-add-musico" class="p-2 -mr-2 bg-background text-content-muted hover:text-content dark:text-white rounded-full transition-colors">
  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
  </button>
  </div>
@@ -358,7 +358,7 @@ import Layout from '../layouts/Layout.astro';
  </div>
  </div>
  <div class="p-6 pt-0 flex gap-3">
- <button type="button" id="btn-cancel-add-musico" class="flex-1 py-3 rounded-xl border border-border text-content-muted font-bold text-sm hover:bg-background :bg-neutral-800 transition-colors">Cancelar</button>
+ <button type="button" id="btn-cancel-add-musico" class="flex-1 py-3 rounded-xl border border-border text-content-muted font-bold text-sm hover:bg-background dark:bg-neutral-800 transition-colors">Cancelar</button>
  <button type="button" id="btn-submit-add-musico" class="flex-1 py-3 rounded-xl bg-action text-white font-bold text-sm hover:bg-action/80 transition-all shadow-md">
  <span id="add-musico-text">Registrar</span>
  <svg id="add-musico-spinner" class="animate-spin h-5 w-5 text-white mx-auto hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
@@ -381,7 +381,7 @@ import Layout from '../layouts/Layout.astro';
  };
  window.appStateRoles = []; // Cache rÃ¡pido para Picker
 
- const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
  const getStableSession = async () => {
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -400,7 +400,7 @@ import Layout from '../layouts/Layout.astro';
   if (pageRoot.dataset.equipoInitialized === 'true') return;
   pageRoot.dataset.equipoInitialized = 'true';
  const loadingState = document.getElementById('loading-state');
- const equipoGrid = document.getElementById('equipo-grid');
+ const equipoGrid = document.getElementById('equipo-grid')!;
  const emptyState = document.getElementById('empty-state');
 
  // 1. VerificaciÃ³n de Seguridad y SesiÃ³n
@@ -461,10 +461,10 @@ import Layout from '../layouts/Layout.astro';
 
  // Renderizar Plantillas
  const secPlantillas = document.getElementById('seccion-plantillas');
- const plantillasGrid = document.getElementById('plantillas-grid');
+ const plantillasGrid = document.getElementById('plantillas-grid')!;
  const headCounter = document.getElementById('equipos-counter-top');
- const btnBuilderBig = document.getElementById('btn-open-team-builder');
- const btnBuilderFab = document.getElementById('fab-team-builder');
+ const btnBuilderBig = document.getElementById('btn-open-team-builder') as HTMLButtonElement;
+ const btnBuilderFab = document.getElementById('fab-team-builder')!;
 
  window.renderPlantillasGlobally = () => {
  const currentCount = equiposMaster ? equiposMaster.length : 0;
@@ -491,7 +491,7 @@ import Layout from '../layouts/Layout.astro';
  }
  
  // Scroll hint visual detection 
- const scrollHint = document.getElementById('scroll-hint-right');
+ const scrollHint = document.getElementById('scroll-hint-right')!;
  const checkScroll = () => {
  if (plantillasGrid.scrollWidth > plantillasGrid.clientWidth && 
  plantillasGrid.scrollLeft < plantillasGrid.scrollWidth - plantillasGrid.clientWidth - 10) {
@@ -507,11 +507,11 @@ import Layout from '../layouts/Layout.astro';
  plantillasGrid.innerHTML = '';
  equiposMaster.forEach(eq => {
  // UX Color Map por Letra
- const colorMap = {
+ const colorMap: Record<string, string> = {
  A:'bg-red-500', B:'bg-blue-500', C:'bg-emerald-500', D:'bg-purple-500', E:'bg-amber-500',
  F:'bg-brand', G:'bg-rose-500', H:'bg-indigo-500', I:'bg-orange-500', J:'bg-cyan-500'
  };
- const baseColor = colorMap[eq.letra || 'A'] || 'bg-background0';
+ const baseColor = colorMap[eq.letra || 'A'] || 'bg-background';
 
  // Extraer LÃ­deres con Safe Checks
  const myTeam = window.appStateTeamMembers.filter((m:any) => m.equipo_id === eq.id);
@@ -523,7 +523,7 @@ import Layout from '../layouts/Layout.astro';
  const r = window.appStateRoles.find((rol:any) => rol.id === m.rol_maestro);
  return r && r.codigo === 'talkback';
  });
- const vName = (id) => { const p = perfiles.find(x=>x.id===id); return p ? p.nombre.split(' ')[0] : 'Nadie'; };
+ const vName = (id: string | undefined) => { const p = perfiles.find(x=>x.id===id); return p ? p.nombre.split(' ')[0] : 'Nadie'; };
  const dText = `Dirige: ${vName(lid?.perfil_id)} | Talkback: ${vName(tlk?.perfil_id)}`;
 
  const card = document.createElement('div');
@@ -545,7 +545,7 @@ import Layout from '../layouts/Layout.astro';
  ${dText}
  </p>
  </div>
- <button class="absolute top-3 right-3 opacity-90 transition-opacity p-2 text-content-muted hover:text-red-500 hover:bg-red-50 :bg-red-900/40 rounded-lg btn-del-plantilla" data-id="${eq.id}" data-letra="${eq.letra || 'T'}" data-nombre="${eq.nombre}" title="Eliminar Equipo">
+ <button class="absolute top-3 right-3 opacity-90 transition-opacity p-2 text-content-muted hover:text-red-500 hover:bg-red-50 dark:bg-red-900/40 rounded-lg btn-del-plantilla" data-id="${eq.id}" data-letra="${eq.letra || 'T'}" data-nombre="${eq.nombre}" title="Eliminar Equipo">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="pointer-events-none"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
  </button>
  `;
@@ -650,18 +650,18 @@ import Layout from '../layouts/Layout.astro';
  const panelDetalles = document.getElementById('panel-detalles-equipo');
  const btnCloseDetalles = document.getElementById('btn-close-detalles');
 
- window.openModalEquipoDetalles = (equipoId) => {
+ window.openModalEquipoDetalles = (equipoId: string) => {
  const eq = equiposMaster.find((x:any) => x.id === equipoId);
  if (!eq) return;
 
  // 1. Configurar Header
  document.getElementById('detalle-nombre')!.textContent = eq.nombre;
  
- const colorMap = {
+ const colorMap: Record<string, string> = {
  A:'bg-red-500', B:'bg-blue-500', C:'bg-emerald-500', D:'bg-purple-500', E:'bg-amber-500',
  F:'bg-brand', G:'bg-rose-500', H:'bg-indigo-500', I:'bg-orange-500', J:'bg-cyan-500'
  };
- const baseColor = colorMap[eq.letra || 'A'] || 'bg-background0';
+ const baseColor = colorMap[eq.letra || 'A'] || 'bg-background';
  
  const circle = document.getElementById('detalle-letra-circle');
  circle!.className = `w-10 h-10 rounded-full ${baseColor} text-white flex items-center justify-center font-bold text-lg shadow-sm shrink-0`;
@@ -671,7 +671,7 @@ import Layout from '../layouts/Layout.astro';
  const myTeam = window.appStateTeamMembers.filter((m:any) => m.equipo_id === equipoId);
 
  // 3. Helper para generar tarjeta de perfil
- const buildProfileSlot = (rolName, perfilId) => {
+ const buildProfileSlot = (rolName: string, perfilId: string) => {
  const p = perfiles.find(x => x.id === perfilId);
  if (!p) return '';
  
@@ -766,7 +766,7 @@ import Layout from '../layouts/Layout.astro';
  const togglesHTML = roles.map(r => {
  const isActive = currentRoles.has(r.id);
  return `
- <label class="flex items-center justify-between p-2 rounded-lg hover:bg-background :bg-neutral-800 transition-colors cursor-pointer border border-transparent ${isActive ? 'border-border bg-background ' : ''}">
+ <label class="flex items-center justify-between p-2 rounded-lg hover:bg-background dark:bg-neutral-800 transition-colors cursor-pointer border border-transparent ${isActive ? 'border-border bg-background ' : ''}">
  <span class="text-sm font-medium ${isActive ? 'text-content ' : 'text-content-muted '}">
  ${r.nombre}
  </span>
@@ -779,7 +779,7 @@ import Layout from '../layouts/Layout.astro';
  }).join('');
 
  const cleanName = p.nombre.replace(/\s*\(.*?\)\s*/g, '').trim();
- const iniciales = cleanName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+ const iniciales = cleanName.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
  const telefono = (p.telefono || '').trim();
  const telefonoHref = telefono ? `tel:${telefono.replace(/[^\d+]/g, '')}` : '';
 
@@ -820,7 +820,7 @@ import Layout from '../layouts/Layout.astro';
  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
  Editar Roles
  </button>
- <button type="button" class="btn-eliminar-perfil w-9 h-9 flex items-center justify-center bg-red-50 hover:bg-red-100 :bg-red-900/40 text-red-400 hover:text-red-600 :text-red-400 transition-all rounded-xl border border-red-200/60 shrink-0" data-perfil="${p.id}" data-nombre="${p.nombre}" title="Eliminar m\u00FAsico">
+ <button type="button" class="btn-eliminar-perfil w-9 h-9 flex items-center justify-center bg-red-50 hover:bg-red-100 dark:bg-red-900/40 text-red-400 hover:text-red-600 dark:text-red-400 transition-all rounded-xl border border-red-200/60 shrink-0" data-perfil="${p.id}" data-nombre="${p.nombre}" title="Eliminar m\u00FAsico">
  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
  </button>
  </div>
@@ -841,11 +841,11 @@ import Layout from '../layouts/Layout.astro';
  const modalRoles = document.getElementById('modal-roles-global');
  const modalRolesBackdrop = document.getElementById('modal-roles-backdrop');
  const modalRolesPanel = document.getElementById('modal-roles-panel');
- const modalRolesTitle = document.getElementById('modal-roles-title');
- const modalRolesContainer = document.getElementById('modal-roles-container');
+ const modalRolesTitle = document.getElementById('modal-roles-title')!;
+ const modalRolesContainer = document.getElementById('modal-roles-container')!;
  const btnCloseModalRoles = document.getElementById('btn-close-modal-roles');
- const btnRolesSubmit = document.getElementById('btn-roles-submit');
- let currentPerfilId = null;
+ const btnRolesSubmit = document.getElementById('btn-roles-submit') as HTMLButtonElement;
+ let currentPerfilId: string | null = null;
 
  btnRolesSubmit?.addEventListener('click', async () => {
  if(!currentPerfilId) return;
@@ -878,7 +878,7 @@ import Layout from '../layouts/Layout.astro';
  }
  });
 
- const toggleModalRoles = (show) => {
+ const toggleModalRoles = (show: boolean) => {
  if (show) {
  modalRoles?.classList.remove('hidden');
  modalRoles?.classList.add('flex');
@@ -910,7 +910,7 @@ import Layout from '../layouts/Layout.astro';
  btnTarget.blur();
  currentPerfilId = perfilId;
 
- modalRolesTitle.textContent = `Roles: ${perfilNombre.split(' ')[0]}`;
+ modalRolesTitle.textContent = `Roles: ${(perfilNombre || 'Músico').split(' ')[0]}`;
  
  // Volcar la data virtual al modal
  const togglesRawData = document.getElementById(`raw-toggles-${perfilId}`)?.innerHTML || '';
@@ -923,8 +923,8 @@ import Layout from '../layouts/Layout.astro';
  const isChecked = el.checked;
 
  // UI OptimÃ­stica Modal
- const labelParent = el.closest('label');
- const spanText = labelParent.querySelector('span');
+ const labelParent = el.closest('label')!;
+ const spanText = labelParent.querySelector('span')!;
  if (isChecked) {
  labelParent.classList.add('border-border', 'bg-background');
  labelParent.classList.remove('border-transparent');
@@ -945,7 +945,7 @@ import Layout from '../layouts/Layout.astro';
  // Event Listeners para Eliminar Perfil (papelera)
  document.querySelectorAll('.btn-eliminar-perfil').forEach(btn => {
  btn.addEventListener('click', async (e) => {
- const btnTarget = e.currentTarget;
+ const btnTarget = e.currentTarget as HTMLButtonElement;
  const perfilId = btnTarget.getAttribute('data-perfil');
  const perfilNombre = btnTarget.getAttribute('data-nombre');
 
@@ -962,16 +962,16 @@ import Layout from '../layouts/Layout.astro';
  <p class="text-sm text-content-muted leading-relaxed">Se eliminar\u00E1 este m\u00FAsico y todas sus asignaciones. Esta acci\u00F3n no se puede deshacer.</p>
  </div>
  <div class="flex border-t border-border ">
- <button id="del-cancel" class="flex-1 py-3.5 text-sm font-bold text-content-muted hover:bg-background :bg-neutral-800 transition-colors">Cancelar</button>
- <button id="del-accept" class="flex-1 py-3.5 text-sm font-bold text-red-600 hover:bg-red-50 :bg-red-950/30 transition-colors border-l border-border ">Eliminar</button>
+ <button id="del-cancel" class="flex-1 py-3.5 text-sm font-bold text-content-muted hover:bg-background dark:bg-neutral-800 transition-colors">Cancelar</button>
+ <button id="del-accept" class="flex-1 py-3.5 text-sm font-bold text-red-600 hover:bg-red-50 dark:bg-red-950/30 transition-colors border-l border-border ">Eliminar</button>
  </div>
  </div>
  `;
  document.body.appendChild(overlay);
 
  const result = await new Promise((resolve) => {
- overlay.querySelector('#del-cancel').addEventListener('click', () => resolve(false));
- overlay.querySelector('#del-accept').addEventListener('click', () => resolve(true));
+ overlay.querySelector('#del-cancel')!.addEventListener('click', () => resolve(false));
+ overlay.querySelector('#del-accept')!.addEventListener('click', () => resolve(true));
  overlay.addEventListener('click', (ev) => { if (ev.target === overlay) resolve(false); });
  });
 
@@ -985,7 +985,7 @@ import Layout from '../layouts/Layout.astro';
  const { error } = await supabase.from('perfiles').delete().eq('id', perfilId);
  if (error) throw error;
 
- const card = btnTarget.closest('.equipo-card');
+ const card = btnTarget.closest<HTMLElement>('.equipo-card');
  if (card) {
  card.style.transition = 'all 0.3s ease-in-out';
  card.style.opacity = '0';
@@ -998,7 +998,7 @@ import Layout from '../layouts/Layout.astro';
  toast.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg> M\u00FAsico eliminado';
  document.body.appendChild(toast);
  setTimeout(() => toast.remove(), 3000);
- } catch(err) {
+ } catch(err: any) {
  alert('Error al eliminar: ' + (err.message || 'Error desconocido'));
  }
  });
@@ -1012,7 +1012,7 @@ import Layout from '../layouts/Layout.astro';
  const addMusicoPanel = document.getElementById('add-musico-panel');
  const fabAddMusico = document.getElementById('fab-add-musico');
 
- const toggleAddMusico = (show) => {
+ const toggleAddMusico = (show: boolean) => {
  if (show) {
  modalAddMusico?.classList.remove('hidden');
  modalAddMusico?.classList.add('flex');
@@ -1037,14 +1037,14 @@ import Layout from '../layouts/Layout.astro';
  addMusicoBackdrop?.addEventListener('click', () => toggleAddMusico(false));
 
  document.getElementById('btn-submit-add-musico')?.addEventListener('click', async () => {
- const nombre = (document.getElementById('add-musico-nombre')).value.trim();
- const email = (document.getElementById('add-musico-email')).value.trim();
- const telefono = (document.getElementById('add-musico-telefono')).value.trim();
+ const nombre = (document.getElementById('add-musico-nombre') as HTMLInputElement).value.trim();
+ const email = (document.getElementById('add-musico-email') as HTMLInputElement).value.trim();
+ const telefono = (document.getElementById('add-musico-telefono') as HTMLInputElement).value.trim();
 
  if (!nombre) { document.getElementById('add-musico-nombre')?.focus(); return; }
  if (!email || !email.includes('@')) { document.getElementById('add-musico-email')?.focus(); return; }
 
- const submitBtn = document.getElementById('btn-submit-add-musico');
+ const submitBtn = document.getElementById('btn-submit-add-musico') as HTMLButtonElement;
  const submitText = document.getElementById('add-musico-text');
  const submitSpinner = document.getElementById('add-musico-spinner');
  submitBtn.disabled = true;
@@ -1072,7 +1072,7 @@ import Layout from '../layouts/Layout.astro';
  // Refresh para ver el nuevo mÃºsico
  setTimeout(() => window.location.reload(), 1500);
 
- } catch(err) {
+ } catch(err: any) {
  alert('Error al registrar: ' + (err.message || 'Error desconocido'));
  submitBtn.disabled = false;
  submitText?.classList.remove('hidden');
@@ -1108,9 +1108,9 @@ import Layout from '../layouts/Layout.astro';
  const btnTbClose = document.getElementById('btn-tb-close');
  const btnTbCancel = document.getElementById('btn-tb-cancelar');
  const formTb = document.getElementById('form-team-builder');
- const tbCounterLabel = document.getElementById('tb-counter-label');
+ const tbCounterLabel = document.getElementById('tb-counter-label')!;
 
- const toggleTbModal = (show) => {
+ const toggleTbModal = (show: boolean) => {
  if (show) {
  tbModal?.classList.remove('hidden');
  tbModal?.classList.add('flex');
@@ -1148,10 +1148,10 @@ import Layout from '../layouts/Layout.astro';
  if(!n1 || !n2 || !n3) return;
  n1.innerHTML = ''; n2.innerHTML = ''; n3.innerHTML = '';
 
- const buildSlotHtml = (rolId, rolNombre, codigo) => {
+ const buildSlotHtml = (rolId: string, rolNombre: string, codigo: string) => {
  const assigned = window.tbState.assignments.filter((a:any) => a.rol_id === rolId);
  let html = '';
- assigned.forEach((asig, idx) => {
+ assigned.forEach((asig: any) => {
  const avatarUI = asig.avatar_url 
  ? `<img src="${asig.avatar_url}" alt="${asig.perfil_nombre}" crossorigin="anonymous" loading="lazy" decoding="async" class="w-8 h-8 rounded-full object-cover shadow-sm bg-neutral/20 shrink-0">`
  : `<div class="w-8 h-8 rounded-full bg-neutral/20 flex items-center justify-center font-bold text-[10px] text-content-muted shadow-sm shrink-0">${asig.perfil_nombre.substring(0,2).toUpperCase()}</div>`;
@@ -1159,7 +1159,7 @@ import Layout from '../layouts/Layout.astro';
  <div class="flex items-center gap-2 px-2 h-[42px] bg-surface border border-border/60 shadow-sm rounded-xl hover:shadow-md transition-shadow group shrink-0 w-full relative">
  ${avatarUI}
  <span class="text-[11px] font-bold text-neutral truncate pr-6 flex-1">${asig.perfil_nombre.split(' ')[0]}</span>
- <button type="button" class="btn-tb-remove text-content-muted hover:text-red-500 hover:bg-red-50 :bg-red-900/40 p-1.5 rounded-lg transition-colors absolute right-1" data-rol="${rolId}" data-perfil="${asig.perfil_id}">
+ <button type="button" class="btn-tb-remove text-content-muted hover:text-red-500 hover:bg-red-50 dark:bg-red-900/40 p-1.5 rounded-lg transition-colors absolute right-1" data-rol="${rolId}" data-perfil="${asig.perfil_id}">
  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" class="pointer-events-none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
  </button>
  </div>`;
@@ -1198,7 +1198,7 @@ import Layout from '../layouts/Layout.astro';
  <div class="flex items-center gap-2 px-2 h-[42px] bg-surface border border-border/60 shadow-sm rounded-xl hover:shadow-md transition-shadow group shrink-0 w-full relative">
  ${avatarUI}
  <span class="text-[11px] font-bold text-neutral truncate pr-6 flex-1">${asig.perfil_nombre.split(' ')[0]}</span>
- <button type="button" class="btn-tb-remove text-content-muted hover:text-red-500 hover:bg-red-50 :bg-red-900/40 p-1.5 rounded-lg transition-colors absolute right-1" data-rol="${asig.rol_id}" data-perfil="${asig.perfil_id}">
+ <button type="button" class="btn-tb-remove text-content-muted hover:text-red-500 hover:bg-red-50 dark:bg-red-900/40 p-1.5 rounded-lg transition-colors absolute right-1" data-rol="${asig.rol_id}" data-perfil="${asig.perfil_id}">
  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" class="pointer-events-none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
  </button>
  </div>`;
@@ -1248,11 +1248,11 @@ import Layout from '../layouts/Layout.astro';
  // Picker Inyectado
  const modalPicker = document.getElementById('picker-modal');
  window.openTbPicker = async (rolId, rolName) => {
- document.getElementById('picker-role-name').textContent = rolName;
+ document.getElementById('picker-role-name')!.textContent = rolName || 'Rol';
  modalPicker!.style.display = 'flex';
  void modalPicker?.offsetWidth; 
  
- const list = document.getElementById('picker-list');
+ const list = document.getElementById('picker-list')!;
  const spinner = document.getElementById('picker-spinner');
  list.innerHTML = '';
  spinner?.classList.remove('hidden');
@@ -1264,7 +1264,7 @@ import Layout from '../layouts/Layout.astro';
  if (isVozPool) {
  const vozRoles = window.appStateRoles.filter((r:any) => String(r.codigo || '').startsWith('voz_'));
  const vozRoleIds = vozRoles.map((r:any) => r.id);
- const seen = new Set();
+ const seen = new Set<string>();
  vozRoleIds.forEach((voiceRoleId:any) => {
  const perfilesMap = perfilesPorRol.get(voiceRoleId);
  if (!perfilesMap) return;
@@ -1351,7 +1351,7 @@ import Layout from '../layouts/Layout.astro';
 
  const btnSubmit = document.getElementById('btn-tb-submit') as HTMLButtonElement;
  const spinner = document.getElementById('tb-spinner');
- const submitText = document.getElementById('tb-submit-text');
+ const submitText = document.getElementById('tb-submit-text')!;
  const nombrePlan = (document.getElementById('tb-nombre') as HTMLInputElement).value;
  const latraE = (document.getElementById('tb-letra') as HTMLSelectElement).value;
 
@@ -1390,7 +1390,7 @@ import Layout from '../layouts/Layout.astro';
  toggleTbModal(false);
  setTimeout(() => alert('Equipo Guardado ExitÃ³samente.'), 350);
  
- } catch (err) {
+ } catch (err: any) {
  console.error('Error insertando equipo:', err);
  alert('Error CrÃ­tico: ' + (err.message || 'No se pudo guardar el equipo'));
  } finally {
@@ -1400,7 +1400,7 @@ import Layout from '../layouts/Layout.astro';
  }
  });
 
- } catch (err) {
+ } catch (err: any) {
  console.error('âŒ Error CrÃ­tico cargando equipo:', err.message || err);
  
  // Destruir Infinite Loader
@@ -1413,7 +1413,7 @@ import Layout from '../layouts/Layout.astro';
  <h3 class="text-lg font-bold text-red-700 mb-2">Error de SincronizaciÃ³n</h3>
  <code class="text-sm text-red-600 block max-w-xl mx-auto break-all">${err.message || 'Error desconocido parseando Supabase'}</code>
  `;
- document.querySelector('main').appendChild(errorDisplay);
+ document.querySelector('main')!.appendChild(errorDisplay);
  }
 
  };

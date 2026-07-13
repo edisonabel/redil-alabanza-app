@@ -29,7 +29,12 @@ const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
   }
 });
 
-const emptyHomeData = {
+const emptyHomeData: {
+  perfil: any;
+  eventosEspecialesData: any[];
+  perfilesCumplesData: any[];
+  rolesCatalog: any[];
+} = {
   perfil: Astro.locals.perfil || null,
   eventosEspecialesData: [],
   perfilesCumplesData: [],
@@ -111,15 +116,14 @@ const cumpleanerosTodos = (perfilesCumplesData || [])
     }
     return {
       id: perfilCumple.id,
-      nombre: perfilCumple.nombre || 'Músico',
       dia: day,
-      nombre: perfilCumple.nombre || 'Musico',
+      nombre: perfilCumple.nombre || 'Músico',
       mes: month,
       avatar_url: perfilCumple.avatar_url || '',
       proximo_cumple_ts: proximoCumple.getTime()
     };
   })
-  .filter(Boolean)
+  .filter((persona): persona is NonNullable<typeof persona> => persona !== null)
   .sort((a, b) => a.proximo_cumple_ts - b.proximo_cumple_ts);
 
 const cumpleanerosMes = cumpleanerosTodos
@@ -168,8 +172,8 @@ const buildEventosQuery = (includePredicador = true) => {
   return query;
 };
 
-let eventosData = [];
-let eventosError = null;
+let eventosData: any[] = [];
+let eventosError: unknown = null;
 
 try {
   const eventosResp = await buildEventosQuery(true);
@@ -204,7 +208,7 @@ if (eventosError) {
 }
 
 const eventoIds = (eventosData || []).map((evento) => evento.id).filter(Boolean);
-const playlistByEvento = new Map();
+const playlistByEvento = new Map<string, { id: string; count: number }>();
 
 if (eventoIds.length > 0) {
   try {
@@ -233,7 +237,7 @@ const proximosServicios = (eventosData || [])
   .map((evento) => {
     const playlistMeta = playlistByEvento.get(evento.id) || null;
     const roster = Array.isArray(evento.asignaciones) ? evento.asignaciones : [];
-    const misAsignaciones = roster.filter((asig) => {
+    const misAsignaciones = roster.filter((asig: any) => {
       const perfilAsignado = asig?.perfiles;
       return asig?.perfil_id === user.id
         || perfilAsignado?.id === user.id
@@ -242,8 +246,8 @@ const proximosServicios = (eventosData || [])
 
     if (misAsignaciones.length === 0) return null;
 
-    const misRoles = [];
-    const miRolCodigos = [];
+    const misRoles: string[] = [];
+    const miRolCodigos: string[] = [];
 
     for (const miAsig of misAsignaciones) {
       const rol = rolesById.get(miAsig.rol_id);
@@ -258,7 +262,7 @@ const proximosServicios = (eventosData || [])
       }
     }
 
-    const rosterConRoles = roster.map((asig) => ({
+    const rosterConRoles = roster.map((asig: any) => ({
       ...asig,
       roles: rolesById.get(asig.rol_id) || null
     }));
@@ -274,7 +278,7 @@ const proximosServicios = (eventosData || [])
       crear_setlist_href: `/repertorio?seleccionar_para=${evento.id}`
     };
   })
-  .filter(Boolean);
+  .filter((evento): evento is NonNullable<typeof evento> => evento !== null);
 
 
 ---
@@ -304,7 +308,6 @@ const proximosServicios = (eventosData || [])
       />
       <DashboardShortcuts client:idle userId={user.id} isAdmin={Boolean(perfil?.is_admin)} />
       <ModalDetalle client:only="react" initialRoles={rolesCatalog || []} sessionUser={user} isAdmin={Boolean(perfil?.is_admin)} />
-    </div>
     </div>
   </div>
 

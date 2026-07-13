@@ -95,7 +95,7 @@ import Layout from '../../layouts/Layout.astro';
  const tarjeta = `
  <div class="flex items-center justify-between p-2 sm:p-4 border rounded-xl transition-all duration-300 hover:scale-[1.02] ${cardClass}">
  <div class="flex items-center gap-2 sm:gap-3">
- <div class="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full ${esAmigable ? 'bg- $2text-white' : 'bg-neutral-50/80 text-neutral-600 border border-neutral-200'} text-xs sm:text-sm font-bold shadow-sm">
+ <div class="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full ${esAmigable ? 'bg-blue-600 text-white' : 'bg-neutral-50/80 text-neutral-600 border border-neutral-200'} text-xs sm:text-sm font-bold shadow-sm">
  T${traste}
  </div>
  <div class="font-medium ${esAmigable ? 'text-neutral-900' : 'text-neutral-700'} text-sm sm:text-base whitespace-nowrap">
@@ -119,4 +119,3 @@ import Layout from '../../layouts/Layout.astro';
  calcularCapo();
  });
 </script>
-

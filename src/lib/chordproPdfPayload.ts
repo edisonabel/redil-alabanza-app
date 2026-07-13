@@ -123,8 +123,8 @@ export const normalizeChordProPdfPayload = (
       showSectionDividers: true,
     },
     fileName: `${buildChordProPdfFileName(
-      source.title,
-      source.artist
+      typeof source.title === 'string' ? source.title : undefined,
+      typeof source.artist === 'string' ? source.artist : undefined
     )}.pdf`,
   };
 };

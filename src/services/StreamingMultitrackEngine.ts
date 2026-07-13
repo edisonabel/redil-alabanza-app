@@ -513,6 +513,9 @@ type ProducerErrorMessage = {
   trackIndex?: number;
   trackId?: string;
   trackName?: string;
+  sourceFileName?: string;
+  url?: string;
+  errorName?: string;
   codec?: string;
   sampleRate?: number;
   channelCount?: number;
@@ -738,7 +741,6 @@ type SeekBackDebugEvent = {
   expectedAudibleTracks?: number;
   readyTracks?: number;
   expectedTracks?: number;
-  minAvailableRead?: number | null;
   workletPlaying?: boolean;
   renderedFrames?: number;
   result?: string;
@@ -1213,9 +1215,9 @@ export class StreamingMultitrackEngine {
     this.logFlatDiagnostic(`[LiveDiagnostics] ${eventName}`, fields, method);
   }
 
-  private getDiagnosticTrackLabel(trackIndex: number, fallbackName?: string | null): string {
-    const track = this.tracks[trackIndex];
-    return fallbackName || track?.name || track?.id || `track ${trackIndex}`;
+  private getDiagnosticTrackLabel(trackIndex: number | null | undefined, fallbackName?: string | null): string {
+    const track = typeof trackIndex === 'number' ? this.tracks[trackIndex] : undefined;
+    return fallbackName || track?.name || track?.id || (typeof trackIndex === 'number' ? `track ${trackIndex}` : 'track');
   }
 
   private isTrackRuntimeOmitted(trackState: TrackRuntime | undefined): boolean {

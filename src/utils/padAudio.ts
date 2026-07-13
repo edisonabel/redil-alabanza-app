@@ -87,7 +87,7 @@ export const normalizeSongKeyForPad = (rawKey = '') => {
     }
   }
 
-  let americanRoot = LATIN_ROOTS_PAD[root];
+  let americanRoot: string | null = LATIN_ROOTS_PAD[root] || null;
 
   if (!americanRoot) {
     const normalizedRoot = root.charAt(0).toUpperCase() + root.slice(1);

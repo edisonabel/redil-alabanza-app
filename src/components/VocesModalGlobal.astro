@@ -29,6 +29,9 @@
 </div>
 
 <script>
+  type VoiceEntry = { label: string; url: string; [key: string]: unknown };
+  type VoiceDatasetResult = { type: string; entries: VoiceEntry[]; legacyUrl: string };
+
   (() => {
     const alreadyInit = Boolean(window.__REDIL_VOCES_MODAL_READY__);
     if (alreadyInit) {
@@ -51,7 +54,7 @@
       vocesOptions: document.getElementById('vocesOptions'),
     });
 
-    const animateModalOpen = (modal, backdrop, panel) => {
+    const animateModalOpen = (modal: HTMLElement | null, backdrop: HTMLElement | null, panel: HTMLElement | null) => {
       if (!modal || !backdrop || !panel) return;
       modal.classList.remove('hidden');
       modal.setAttribute('aria-hidden', 'false');
@@ -66,7 +69,7 @@
       });
     };
 
-    const animateModalClose = (modal, backdrop, panel, onAfterClose = () => {}) => {
+    const animateModalClose = (modal: HTMLElement | null, backdrop: HTMLElement | null, panel: HTMLElement | null, onAfterClose: () => void = () => {}) => {
       if (!modal || !backdrop || !panel || modal.classList.contains('hidden')) {
         onAfterClose();
         return;
@@ -81,7 +84,7 @@
       }, MODAL_PREMIUM_MS);
     };
 
-    const normalizeExternalUrl = (rawUrl) => {
+    const normalizeExternalUrl = (rawUrl: unknown) => {
       if (!rawUrl) return '';
       let normalized = String(rawUrl).trim();
       if (!normalized) return '';
@@ -128,13 +131,13 @@
       window.scrollTo({ top: vocesLockedScrollY, behavior: 'auto' });
     };
 
-    const dispatchProPlayerEvent = (payload) => {
+    const dispatchProPlayerEvent = (payload: Record<string, any>) => {
       const url = String(payload?.url || '').trim();
       if (!url) return;
       window.dispatchEvent(new CustomEvent('play-pro-audio', { detail: payload }));
     };
 
-    const getVoiceColor = (label) => {
+    const getVoiceColor = (label: string) => {
       const text = (label || '').toLowerCase();
       if (text.includes('guia') || text.includes('guía') || text.includes('principal')) return '#2563EB';
       if (text.includes('tercera')) return '#16A34A';
@@ -160,7 +163,7 @@
       return 'Pista';
     };
 
-    const sortVoiceEntries = (entries = []) => (
+    const sortVoiceEntries = (entries: any[] = []): VoiceEntry[] => (
       (Array.isArray(entries) ? entries : [])
         .map((entry, index) => ({ entry: { ...entry, label: normalizeVoiceLabel(entry?.label || entry?.name || '') }, index }))
         .sort((left, right) => {
@@ -171,9 +174,9 @@
         .map(({ entry }) => entry)
     );
 
-    const mergeVoiceEntriesByUrl = (...entryGroups) => {
-      const seenUrls = new Set();
-      const mergedEntries = [];
+    const mergeVoiceEntriesByUrl = (...entryGroups: any[][]): VoiceEntry[] => {
+      const seenUrls = new Set<string>();
+      const mergedEntries: VoiceEntry[] = [];
 
       entryGroups.flat().forEach((entry) => {
         if (!entry || typeof entry !== 'object') return;
@@ -201,7 +204,7 @@
       });
     };
 
-    const playAudio = (rawUrl, voiceName = '') => {
+    const playAudio = (rawUrl: unknown, voiceName = '') => {
       const normalized = normalizeExternalUrl(rawUrl);
       if (!normalized) return;
 
@@ -226,7 +229,7 @@
       });
     };
 
-    const openVocesModal = (title, artist, entries, legacyUrl = '') => {
+    const openVocesModal = (title: string, artist: string, entries: any[], legacyUrl = '') => {
       const { vocesModal, vocesBackdrop, vocesPanel, vocesTitle, vocesArtist, vocesOptions } = getRefs();
       if (!vocesModal || !vocesBackdrop || !vocesPanel || !vocesOptions || !vocesTitle || !vocesArtist) return;
 
@@ -267,7 +270,7 @@
           if (!url) return null;
           return { label, url };
         })
-        .filter(Boolean);
+        .filter((entry): entry is VoiceEntry => entry !== null);
       const orderedEntries = sortVoiceEntries(validEntries);
 
       if (!orderedEntries.length) {
@@ -337,12 +340,12 @@
       animateModalOpen(vocesModal, vocesBackdrop, vocesPanel);
     };
 
-    const parseDatasetVoces = (rawVoces) => {
+    const parseDatasetVoces = (rawVoces: unknown): VoiceDatasetResult | null => {
       const value = String(rawVoces || '').trim();
       if (!value || value === 'null') return null;
 
       const audioFilePattern = /\.(mp3|wav|m4a|aac|ogg|flac|mp4|mpeg|mpga|webm)(\?.*)?$/i;
-      const toVoiceEntry = (candidate, index = 0, forcedLabel = '') => {
+      const toVoiceEntry = (candidate: any, index = 0, forcedLabel = ''): VoiceEntry | null => {
         if (typeof candidate === 'string') {
           const url = normalizeExternalUrl(candidate);
           if (!url) return null;
@@ -370,7 +373,7 @@
             const [labelPart, ...urlParts] = trimmed.includes('|') ? trimmed.split('|') : [`Voz ${index + 1}`, trimmed];
             return toVoiceEntry(urlParts.join('|').trim(), index, String(labelPart || '').trim());
           })
-          .filter(Boolean);
+          .filter((entry): entry is VoiceEntry => entry !== null);
 
         if (entries.length > 0) {
           return { type: 'lines', entries: sortVoiceEntries(entries), legacyUrl: '' };
@@ -388,22 +391,22 @@
         try {
           const parsed = JSON.parse(value);
           if (Array.isArray(parsed)) {
-            return { type: 'json', entries: sortVoiceEntries(parsed.map((entry, index) => toVoiceEntry(entry, index)).filter(Boolean)), legacyUrl: '' };
+            return { type: 'json', entries: sortVoiceEntries(parsed.map((entry, index) => toVoiceEntry(entry, index)).filter((entry): entry is VoiceEntry => entry !== null)), legacyUrl: '' };
           }
           if (parsed && typeof parsed === 'object') {
             const directEntry = Array.isArray(parsed.entries)
               ? null
               : toVoiceEntry(parsed, 0, parsed.label || parsed.nombre || parsed.name || parsed.title || 'Voz guía');
-            const sourceEntries = Array.isArray(parsed.entries)
+            const sourceEntries: Array<{ label: string; url: unknown }> = Array.isArray(parsed.entries)
               ? parsed.entries
               : Object.entries(parsed)
                 .map(([key, candidate]) => (
                   ['legacyUrl', 'folder', 'drive'].includes(key) ? null : { label: key, url: candidate }
                 ))
-                .filter(Boolean);
+                .filter((entry): entry is { label: string; url: unknown } => entry !== null);
             const entries = directEntry
               ? [directEntry]
-              : sourceEntries.map((entry, index) => toVoiceEntry(entry, index)).filter(Boolean);
+              : sourceEntries.map((entry: { label: string; url: unknown }, index: number) => toVoiceEntry(entry, index)).filter((entry: VoiceEntry | null): entry is VoiceEntry => entry !== null);
             const nestedLegacy = parseDatasetVoces(parsed.legacyUrl || parsed.folder || parsed.drive || '');
             const legacyUrl = nestedLegacy?.legacyUrl || normalizeExternalUrl(parsed.legacyUrl || parsed.folder || parsed.drive || '');
             return {
@@ -420,7 +423,7 @@
       return null;
     };
 
-    const handleDocumentClick = (event) => {
+    const handleDocumentClick = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target : null;
       if (!target) return;
 
@@ -454,7 +457,7 @@
       openVocesModal(songTitle, songArtist, parsed.entries || []);
     };
 
-    const handleEscape = (event) => {
+    const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       const { vocesModal } = getRefs();
       if (!vocesModal || vocesModal.classList.contains('hidden')) return;
@@ -465,7 +468,7 @@
     document.addEventListener('keydown', handleEscape);
 
     window.addEventListener('open-voces-modal', (event) => {
-      const detail = event?.detail || {};
+      const detail = (event as CustomEvent<Record<string, any>>).detail || {};
       openVocesModal(detail.title || 'Recursos de voz', detail.artist || '', detail.entries || [], detail.legacyUrl || '');
     });
 

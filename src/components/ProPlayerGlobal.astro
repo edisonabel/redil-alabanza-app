@@ -174,6 +174,55 @@
     shouldPreferNativeBackgroundPlayback,
   } from '../lib/audio-playback.js';
 
+  type RawSectionMarker = {
+    id?: string | number;
+    sectionName?: unknown;
+    name?: unknown;
+    label?: unknown;
+    title?: unknown;
+    startSec?: unknown;
+    start_sec?: unknown;
+    time?: unknown;
+    seconds?: unknown;
+    endSec?: unknown;
+    end_sec?: unknown;
+  };
+
+  type PlayerSection = {
+    id: string;
+    label: string;
+    startSec: number;
+    endSec: number;
+    lyricIndex: number;
+  };
+  type PreparedSection = Omit<PlayerSection, 'endSec'> & { endSec: number | null };
+
+  type LyricSection = { name: string; lines: string[] };
+  type LyricCue = {
+    text: string;
+    label?: string;
+    startSec: number;
+    endSec: number;
+    sectionIndex: number;
+    instrumental?: boolean;
+  };
+
+  type PlayerPayload = {
+    url: string;
+    title?: string;
+    artist?: string;
+    subtitle?: string;
+    mediaKind?: string;
+    voiceName?: string;
+    voiceColor?: string;
+    autoPlay?: boolean;
+    chordpro?: string;
+    sectionMarkers?: RawSectionMarker[];
+    artworkUrl?: string;
+    expand?: boolean;
+    startAtSec?: number | null;
+  };
+
   (() => {
     if (window.__REDIL_PRO_PLAYER_READY__) return;
     window.__REDIL_PRO_PLAYER_READY__ = true;
@@ -186,7 +235,7 @@
     const backdrop = document.getElementById('mp3PlayerBackdrop');
     const panel = document.getElementById('mp3PlayerPanel');
     const mini = document.getElementById('mp3MiniPlayer');
-    const audio = document.getElementById('mp3Audio');
+    const audio = document.getElementById('mp3Audio') as HTMLAudioElement | null;
 
     const titleEl = document.getElementById('mp3Title');
     const artistEl = document.getElementById('mp3Artist');
@@ -195,10 +244,10 @@
     const miniArtistEl = document.getElementById('mp3MiniArtist');
     const miniTimeEl = document.getElementById('mp3MiniTime');
     const miniProgressEl = document.getElementById('mp3MiniProgress');
-    const miniSeek = document.getElementById('mp3MiniSeek');
+    const miniSeek = document.getElementById('mp3MiniSeek') as HTMLInputElement | null;
     const miniProgressShell = miniSeek?.parentElement;
-    const artworkEl = document.getElementById('mp3Artwork');
-    const miniArtworkEl = document.getElementById('mp3MiniArtwork');
+    const artworkEl = document.getElementById('mp3Artwork') as HTMLImageElement | null;
+    const miniArtworkEl = document.getElementById('mp3MiniArtwork') as HTMLImageElement | null;
     const artworkFallbackEl = document.getElementById('mp3ArtworkFallback');
     const miniArtworkFallbackEl = document.getElementById('mp3MiniArtworkFallback');
     const liveIndicatorEl = document.getElementById('mp3LiveIndicator');
@@ -224,24 +273,24 @@
     const playLabel = document.getElementById('mp3PlayLabel');
 
     const timelineWrap = document.getElementById('mp3TimelineWrap');
-    const waveformCanvas = document.getElementById('mp3Waveform');
-    const seek = document.getElementById('mp3Seek');
+    const waveformCanvas = document.getElementById('mp3Waveform') as HTMLCanvasElement | null;
+    const seek = document.getElementById('mp3Seek') as HTMLInputElement | null;
     const volumeRow = document.getElementById('mp3VolumeRow');
-    const volume = document.getElementById('mp3Volume');
-    const miniVolume = document.getElementById('mp3MiniVolume');
+    const volume = document.getElementById('mp3Volume') as HTMLInputElement | null;
+    const miniVolume = document.getElementById('mp3MiniVolume') as HTMLInputElement | null;
     const currentEl = document.getElementById('mp3CurrentTime');
     const durationEl = document.getElementById('mp3Duration');
 
-    const chkLoop = document.getElementById('chkLoopRange');
+    const chkLoop = document.getElementById('chkLoopRange') as HTMLInputElement | null;
     const loopInfo = document.getElementById('mp3LoopInfo');
     const loopBracket = document.getElementById('mp3LoopBracket');
     const loopFill = document.getElementById('mp3LoopRangeFill');
     const handleA = document.getElementById('mp3LoopHandleA');
     const handleB = document.getElementById('mp3LoopHandleB');
     const btnClearLoop = document.getElementById('btnClearLoopRange');
-    const btnPrevSection = document.getElementById('btnMp3PrevSection');
-    const btnNextSection = document.getElementById('btnMp3NextSection');
-    const btnLoopSection = document.getElementById('btnMp3LoopSection');
+    const btnPrevSection = document.getElementById('btnMp3PrevSection') as HTMLButtonElement | null;
+    const btnNextSection = document.getElementById('btnMp3NextSection') as HTMLButtonElement | null;
+    const btnLoopSection = document.getElementById('btnMp3LoopSection') as HTMLButtonElement | null;
     const sectionStrip = document.getElementById('mp3SectionStrip');
     const activeSectionTitle = document.getElementById('mp3ActiveSectionTitle');
     const karaokeEmpty = document.getElementById('mp3KaraokeEmpty');
@@ -291,18 +340,18 @@
     let loopEndSec = 0;
     let isSeekingAudio = false;
     let isSeekingMiniAudio = false;
-    let draggingLoopHandle = null;
-    let pendingStartAtSec = null;
+    let draggingLoopHandle: 'A' | 'B' | null = null;
+    let pendingStartAtSec: number | null = null;
 
-    let sourceCandidates = [];
+    let sourceCandidates: string[] = [];
     let sourceIndex = 0;
     let requestedPlay = false;
     let activeSectionIndex = -1;
     let activeCueIndex = -1;
-    let currentSections = [];
-    let lyricSections = [];
-    let lyricCues = [];
-    let karaokeMode = 'lyrics';
+    let currentSections: PlayerSection[] = [];
+    let lyricSections: LyricSection[] = [];
+    let lyricCues: LyricCue[] = [];
+    let karaokeMode: 'lyrics' | 'map' = 'lyrics';
     let activeMediaKind = '';
     let closingPlayer = false;
     let repeatEnabled = false;
@@ -310,17 +359,17 @@
     let artworkRequestId = 0;
 
     let waveRaf = 0;
-    let waveCtx = null;
-    let waveSource = null;
-    let waveAnalyser = null;
-    let waveData = null;
+    let waveCtx: AudioContext | null = null;
+    let waveSource: MediaElementAudioSourceNode | null = null;
+    let waveAnalyser: AnalyserNode | null = null;
+    let waveData: Uint8Array<ArrayBuffer> | null = null;
     let lockedScrollY = 0;
     let manualLyricScrollUntil = 0;
     let manualLyricScrollTimer = 0;
     let programmaticLyricScrollTimer = 0;
     let isProgrammaticLyricScroll = false;
 
-    const formatTime = (seconds) => {
+    const formatTime = (seconds: number) => {
       if (!Number.isFinite(seconds) || seconds < 0) return '00:00';
       const total = Math.floor(seconds);
       const min = Math.floor(total / 60);
@@ -328,7 +377,7 @@
       return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
     };
 
-    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+    const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
     const normalizeLabel = (value = '') => String(value || '')
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
@@ -336,7 +385,7 @@
       .replace(/[^a-z0-9]+/g, ' ')
       .trim();
 
-    const buildSourceCandidates = (rawUrl) => buildPlaybackSourceCandidates(rawUrl, { origin: window.location.origin });
+    const buildSourceCandidates = (rawUrl: string) => buildPlaybackSourceCandidates(rawUrl, { origin: window.location.origin });
 
     const isManualLyricScrollReleased = () => Date.now() < manualLyricScrollUntil;
 
@@ -348,7 +397,7 @@
       }, durationMs);
     };
 
-    const scrollKaraokePanelTo = ({ top, behavior = 'smooth' }) => {
+    const scrollKaraokePanelTo = ({ top, behavior = 'smooth' }: { top: number; behavior?: ScrollBehavior }) => {
       markProgrammaticLyricScroll(behavior === 'smooth' ? 760 : 220);
       karaokePanel.scrollTo({ top: Math.max(0, top), behavior });
     };
@@ -395,8 +444,8 @@
       const source = String(rawChordpro || '').replace(/\r\n/g, '\n');
       if (!source.trim()) return [];
 
-      const sections = [];
-      let current = { name: 'Letra', lines: [] };
+      const sections: LyricSection[] = [];
+      let current: LyricSection = { name: 'Letra', lines: [] };
       const pushCurrent = () => {
         if (current.name !== 'Letra' || current.lines.some(Boolean)) {
           sections.push({ ...current, lines: current.lines.filter(Boolean) });
@@ -440,26 +489,26 @@
       return sections;
     };
 
-    const normalizeSectionMarkers = (markers = [], duration = 0) => {
+    const normalizeSectionMarkers = (markers: RawSectionMarker[] = [], duration = 0): PlayerSection[] => {
       if (!Array.isArray(markers)) return [];
       const normalized = markers
         .map((marker, index) => {
           const start = Number(marker?.startSec ?? marker?.start_sec ?? marker?.time ?? marker?.seconds);
           if (!Number.isFinite(start) || start < 0) return null;
           return {
-            id: marker?.id || `section-${index}`,
+            id: String(marker?.id || `section-${index}`),
             label: String(marker?.sectionName || marker?.name || marker?.label || marker?.title || `Seccion ${index + 1}`).trim() || `Seccion ${index + 1}`,
             startSec: start,
             endSec: Number.isFinite(Number(marker?.endSec ?? marker?.end_sec)) ? Number(marker?.endSec ?? marker?.end_sec) : null,
             lyricIndex: -1,
           };
         })
-        .filter(Boolean)
+        .filter((marker): marker is PreparedSection => marker !== null)
         .sort((a, b) => a.startSec - b.startSec);
 
       return normalized.map((marker, index) => ({
         ...marker,
-        endSec: Number.isFinite(marker.endSec) && marker.endSec > marker.startSec
+        endSec: marker.endSec !== null && Number.isFinite(marker.endSec) && marker.endSec > marker.startSec
           ? marker.endSec
           : (normalized[index + 1]?.startSec ?? duration ?? 0),
       }));
@@ -475,8 +524,8 @@
       return /(?:^|\s)(intro|entrada|interludio|interlude|instrumental|musica|music|musical|solo|break|outro|salida|final)(?:\s|$)/.test(label);
     };
 
-    const attachLyricsToSections = (sections, lyrics) => {
-      const usedLyrics = new Set();
+    const attachLyricsToSections = (sections: PlayerSection[], lyrics: LyricSection[]): PlayerSection[] => {
+      const usedLyrics = new Set<number>();
       return sections.map((section, index) => {
         const sectionKey = normalizeLabel(section.label);
         const sectionBase = baseSectionLabel(section.label);
@@ -494,7 +543,7 @@
       });
     };
 
-    const trimVoiceSectionsToDuration = (sections = [], duration = 0) => {
+    const trimVoiceSectionsToDuration = (sections: PlayerSection[] = [], duration = 0): PlayerSection[] => {
       if (activeMediaKind !== 'voice' || !Number.isFinite(duration) || duration <= 0) return sections;
 
       return sections
@@ -507,10 +556,10 @@
         }));
     };
 
-    const buildLyricCues = (sections, lyrics, duration = 0) => {
-      const cues = [];
+    const buildLyricCues = (sections: PlayerSection[], lyrics: LyricSection[], duration = 0): LyricCue[] => {
+      const cues: LyricCue[] = [];
       const hasAnyLyricLines = lyrics.some((section) => (section.lines || []).some((line) => String(line || '').trim()));
-      const pushLines = (lines, startSec, endSec, sectionIndex = -1) => {
+      const pushLines = (lines: string[], startSec: number, endSec: number, sectionIndex = -1) => {
         const cleanLines = (lines || []).map((line) => String(line || '').trim()).filter(Boolean);
         if (!cleanLines.length) return;
         const safeStart = Number.isFinite(startSec) ? Math.max(0, startSec) : 0;
@@ -528,7 +577,7 @@
           });
         });
       };
-      const pushInstrumentalCue = (section, sectionIndex = -1) => {
+      const pushInstrumentalCue = (section: PlayerSection, sectionIndex = -1) => {
         if (!hasAnyLyricLines || !section) return;
         const safeStart = Number.isFinite(section.startSec) ? Math.max(0, section.startSec) : 0;
         const fallbackEnd = Number.isFinite(duration) && duration > safeStart ? duration : safeStart + 8;
@@ -558,7 +607,7 @@
       return cues.sort((a, b) => a.startSec - b.startSec);
     };
 
-    const setSource = (index) => {
+    const setSource = (index: number) => {
       const nextUrl = sourceCandidates[index] || '';
       if (!nextUrl) return false;
       audio.src = nextUrl;
@@ -595,7 +644,7 @@
       miniArtworkFallbackEl.setAttribute('aria-label', `${title || 'Cancion'} ${artist || ''}`.trim());
     };
 
-    const setArtworkImage = (src, title, artist) => {
+    const setArtworkImage = (src: string, title: string, artist: string) => {
       const artworkSrc = String(src || '').trim();
       if (!artworkSrc) {
         setArtworkFallback(title, artist);
@@ -631,7 +680,7 @@
       return `${window.location.origin}/api/mp3-cover-art?v=2&src=${encodeURIComponent(cleanUrl)}`;
     };
 
-    const setArtworkFromSource = (rawUrl, title, artist, artworkUrl = '') => {
+    const setArtworkFromSource = (rawUrl: string, title: string, artist: string, artworkUrl = '') => {
       const requestId = artworkRequestId + 1;
       artworkRequestId = requestId;
       const explicitArtwork = toArtworkSrc(artworkUrl);
@@ -721,11 +770,11 @@
       if (waveAnalyser) drawWaveformFrame();
     };
 
-    const setLiveIndicatorState = (isPlaying) => {
+    const setLiveIndicatorState = (isPlaying: boolean) => {
       liveIndicatorEl.classList.toggle('mp3-live-on', isPlaying);
     };
 
-    const renderPlayIcon = (isPlaying) => {
+    const renderPlayIcon = (isPlaying: boolean) => {
       const html = isPlaying
         ? '<path d="M8 5h3v14H8zM13 5h3v14h-3z"></path>'
         : '<path d="M8 5v14l11-7z"></path>';
@@ -733,7 +782,7 @@
       miniPlayIcon.innerHTML = html;
     };
 
-    const setPlayButtonState = (isPlaying) => {
+    const setPlayButtonState = (isPlaying: boolean) => {
       modal.classList.toggle('mp3-playing', isPlaying);
       mini.classList.toggle('mp3-playing', isPlaying);
       setLiveIndicatorState(isPlaying);
@@ -747,7 +796,7 @@
       else drawWaveformFrame();
     };
 
-    const setRepeatState = (enabled) => {
+    const setRepeatState = (enabled: boolean) => {
       repeatEnabled = Boolean(enabled);
       audio.loop = repeatEnabled;
       btnRepeat.classList.toggle('is-active', repeatEnabled);
@@ -775,7 +824,7 @@
       renderVolumeIcon();
     };
 
-    const setVolume = (value, { remember = true } = {}) => {
+    const setVolume = (value: string | number, { remember = true }: { remember?: boolean } = {}) => {
       const next = clamp(Number(value), 0, 1);
       audio.volume = next;
       audio.muted = next <= 0.01;
@@ -901,13 +950,13 @@
       syncPlaybackWaveform();
     };
 
-    const secondsFromPointer = (clientX) => {
+    const secondsFromPointer = (clientX: number) => {
       const rect = timelineWrap.getBoundingClientRect();
       if (!rect.width || !totalDuration) return 0;
       return clamp((clientX - rect.left) / rect.width, 0, 1) * totalDuration;
     };
 
-    const miniSecondsFromPointer = (clientX) => {
+    const miniSecondsFromPointer = (clientX: number) => {
       const rect = miniProgressShell.getBoundingClientRect();
       const duration = Number.isFinite(totalDuration) && totalDuration > 0
         ? totalDuration
@@ -916,7 +965,7 @@
       return clamp((clientX - rect.left) / rect.width, 0, 1) * duration;
     };
 
-    const seekMiniPlayerTo = (seconds) => {
+    const seekMiniPlayerTo = (seconds: number) => {
       const duration = Number.isFinite(totalDuration) && totalDuration > 0
         ? totalDuration
         : (Number.isFinite(audio.duration) ? audio.duration : 0);
@@ -929,7 +978,7 @@
       syncPlaybackWaveform();
     };
 
-    const updateLoopHandlePosition = (which, clientX) => {
+    const updateLoopHandlePosition = (which: 'A' | 'B', clientX: number) => {
       if (!totalDuration) return;
       const nextSec = secondsFromPointer(clientX);
       if (which === 'A') loopStartSec = clamp(nextSec, 0, Math.max(0, loopEndSec - 0.1));
@@ -1044,14 +1093,14 @@
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
 
-    const setKaraokeMode = (mode) => {
+    const setKaraokeMode = (mode: 'lyrics' | 'map') => {
       karaokeMode = mode === 'map' ? 'map' : 'lyrics';
       btnModeLyrics.classList.toggle('is-active', karaokeMode === 'lyrics');
       btnModeMap.classList.toggle('is-active', karaokeMode === 'map');
       renderSections();
     };
 
-    const seekToSection = (index) => {
+    const seekToSection = (index: number) => {
       const section = currentSections[index];
       if (!section) return;
       resumeLyricAutoScroll();
@@ -1062,7 +1111,7 @@
       if (audio.paused && requestedPlay) void audio.play().catch(() => {});
     };
 
-    const seekToCue = (index) => {
+    const seekToCue = (index: number) => {
       const cue = lyricCues[index];
       if (!cue) return;
       resumeLyricAutoScroll();
@@ -1104,7 +1153,7 @@
       const active = currentSections[activeSectionIndex];
       activeSectionTitle.textContent = active?.label || 'Seccion actual';
 
-      [...sectionStrip.querySelectorAll('[data-section-index]'), ...karaokeMap.querySelectorAll('[data-section-index]')]
+      [...sectionStrip.querySelectorAll<HTMLElement>('[data-section-index]'), ...karaokeMap.querySelectorAll<HTMLElement>('[data-section-index]')]
         .forEach((node) => {
           node.classList.toggle('is-active', Number(node.dataset.sectionIndex) === activeSectionIndex);
         });
@@ -1127,7 +1176,7 @@
       const safeIndex = nextIndex === -1
         ? (current < lyricCues[0].startSec ? 0 : lyricCues.length - 1)
         : nextIndex;
-      karaokeLyrics.querySelectorAll('.mp3-instrumental-cue[data-cue-index]').forEach((node) => {
+      karaokeLyrics.querySelectorAll<HTMLElement>('.mp3-instrumental-cue[data-cue-index]').forEach((node) => {
         const index = Number(node.dataset.cueIndex);
         const cue = lyricCues[index] || null;
         if (!cue?.instrumental) return;
@@ -1142,7 +1191,7 @@
       if (safeIndex === -1 || (!forceScroll && safeIndex === activeCueIndex)) return;
       activeCueIndex = safeIndex;
 
-      karaokeLyrics.querySelectorAll('[data-cue-index]').forEach((node) => {
+      karaokeLyrics.querySelectorAll<HTMLElement>('[data-cue-index]').forEach((node) => {
         const index = Number(node.dataset.cueIndex);
         node.classList.toggle('is-active', index === activeCueIndex);
         node.classList.toggle('is-past', index < activeCueIndex);
@@ -1178,7 +1227,7 @@
       miniSeek.style.setProperty('--mp3-mini-seek-pct', `${progress}%`);
     };
 
-    const onLoopPointerMove = (event) => {
+    const onLoopPointerMove = (event: PointerEvent) => {
       if (!draggingLoopHandle || !chkLoop.checked) return;
       event.preventDefault();
       updateLoopHandlePosition(draggingLoopHandle, event.clientX);
@@ -1190,7 +1239,7 @@
       window.removeEventListener('pointerup', onLoopPointerUp);
     };
 
-    const startLoopDrag = (which, event) => {
+    const startLoopDrag = (which: 'A' | 'B', event: PointerEvent) => {
       if (!chkLoop.checked) return;
       draggingLoopHandle = which;
       updateLoopHandlePosition(which, event.clientX);
@@ -1246,7 +1295,7 @@
       artworkUrl = '',
       expand = false,
       startAtSec = null,
-    }) => {
+    }: PlayerPayload) => {
       const playableCandidates = buildSourceCandidates(url);
       if (!playableCandidates.length) return;
 
@@ -1382,13 +1431,13 @@
     };
 
     window.__REDIL_PRO_PLAYER__ = {
-      open: (payload) => openPlayer({ ...payload, autoPlay: payload?.autoPlay !== false }),
+      open: (payload: PlayerPayload) => openPlayer({ ...payload, autoPlay: payload?.autoPlay !== false }),
       close: closePlayer,
       expand: openExpanded,
     };
 
     window.addEventListener('play-pro-audio', (event) => {
-      const detail = event?.detail || {};
+      const detail = (event as CustomEvent<PlayerPayload>).detail || ({} as PlayerPayload);
       if (!detail.url) return;
       void openPlayer({
         url: detail.url,
@@ -1496,7 +1545,7 @@
       isSeekingAudio = false;
     });
 
-    const onMiniSeekPointerMove = (event) => {
+    const onMiniSeekPointerMove = (event: PointerEvent) => {
       if (!isSeekingMiniAudio) return;
       event.preventDefault();
       seekMiniPlayerTo(miniSecondsFromPointer(event.clientX));
@@ -1509,7 +1558,7 @@
       window.removeEventListener('pointerup', onMiniSeekPointerUp);
     };
 
-    const startMiniSeekDrag = (event) => {
+    const startMiniSeekDrag = (event: PointerEvent) => {
       if (!mini.classList.contains('mp3-vocal-mode')) return;
       event.preventDefault();
       isSeekingMiniAudio = true;
@@ -1588,13 +1637,13 @@
     karaokePanel.addEventListener('touchstart', beginManualLyricScroll, { passive: true });
     karaokePanel.addEventListener('pointerdown', beginManualLyricScroll, { passive: true });
     karaokeLyrics.addEventListener('click', (event) => {
-      const cueNode = event.target?.closest?.('[data-cue-index]');
+      const cueNode = (event.target as Element | null)?.closest<HTMLElement>('[data-cue-index]');
       if (!cueNode || !karaokeLyrics.contains(cueNode)) return;
       seekToCue(Number(cueNode.dataset.cueIndex));
     });
     karaokeLyrics.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
-      const cueNode = event.target?.closest?.('[data-cue-index]');
+      const cueNode = (event.target as Element | null)?.closest<HTMLElement>('[data-cue-index]');
       if (!cueNode || !karaokeLyrics.contains(cueNode)) return;
       event.preventDefault();
       seekToCue(Number(cueNode.dataset.cueIndex));

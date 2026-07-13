@@ -89,7 +89,9 @@ const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-const hexToRgbString = (hex) => {
+type EventFetchResult = { data: any; error: any; multipleMatches: boolean };
+
+const hexToRgbString = (hex: unknown) => {
   if (!hex || typeof hex !== 'string') return '';
   const value = hex.trim();
 
@@ -194,6 +196,13 @@ const createFallbackSong = ({
   key = '-',
   bpm = 0,
   message = 'Todav\u00eda no hay una gu\u00eda ChordPro disponible para esta canci\u00f3n.',
+}: {
+  songId?: string;
+  title?: string;
+  artist?: string;
+  key?: string;
+  bpm?: number;
+  message?: string;
 } = {}) => ({
   id: songId,
   title,
@@ -213,7 +222,7 @@ const createFallbackSong = ({
   ],
 });
 
-const estimateDuration = (sections = []) => {
+const estimateDuration = (sections: any[] = []) => {
   const totalLines = sections.reduce((acc, section) => acc + (section?.lines?.length || 0), 0);
   return Math.max(120, Math.min(480, totalLines * 7 + 36));
 };
@@ -227,8 +236,8 @@ const parseChordProSections = (rawChordpro = '', fallbackTitle = 'Letra') => {
     }).sections;
   }
 
-  const sections = [];
-  let currentSection = { name: 'Letra', note: '', lines: [] };
+  const sections: any[] = [];
+  let currentSection: { name: string; note: string; lines: string[] } = { name: 'Letra', note: '', lines: [] };
 
   const pushCurrentSection = () => {
     const sectionName = String(currentSection.name || '').trim();
@@ -349,7 +358,7 @@ const parseChordProSections = (rawChordpro = '', fallbackTitle = 'Letra') => {
   return sections;
 };
 
-const readChordProContent = async (songRow) => {
+const readChordProContent = async (songRow: any) => {
   const rawChordpro = String(songRow?.chordpro || '').trim();
   if (!rawChordpro) return '';
 
@@ -375,7 +384,7 @@ const readChordProContent = async (songRow) => {
   }
 };
 
-const mergeMarkerNotesIntoSections = (sections = [], rawMarkers = []) => {
+const mergeMarkerNotesIntoSections = (sections: any[] = [], rawMarkers: any[] = []) => {
   const markers = Array.isArray(rawMarkers) ? rawMarkers.filter(Boolean) : [];
   if (markers.length === 0) return sections;
 
@@ -384,9 +393,9 @@ const mergeMarkerNotesIntoSections = (sections = [], rawMarkers = []) => {
     if (!acc.has(key)) acc.set(key, []);
     acc.get(key).push(marker);
     return acc;
-  }, new Map());
+  }, new Map<string, any[]>());
 
-  const markerOccurrences = new Map();
+  const markerOccurrences = new Map<string, number>();
 
   return sections.map((section, index) => {
     const existingSectionNote = String(section?.note || '').trim();
@@ -405,7 +414,7 @@ const mergeMarkerNotesIntoSections = (sections = [], rawMarkers = []) => {
   });
 };
 
-const extractVoiceTrackAnchorsFromPayload = (value) => {
+const extractVoiceTrackAnchorsFromPayload = (value: unknown): Record<string, any> => {
   const raw = typeof value === 'string'
     ? value.trim()
     : value == null
@@ -434,7 +443,7 @@ const extractVoiceTrackAnchorsFromPayload = (value) => {
   }
 };
 
-const buildSongFromRow = async (songRow, orderIndex = 0) => {
+const buildSongFromRow = async (songRow: any, orderIndex = 0) => {
   const chordproContent = await readChordProContent(songRow);
   const rawSectionMarkers = Array.isArray(songRow?.section_markers) ? songRow.section_markers : [];
   const voicePayload = pickPreferredVoicePayload(songRow?.link_voces, songRow?.voces);
@@ -475,11 +484,11 @@ const buildSongFromRow = async (songRow, orderIndex = 0) => {
   };
 };
 
-let eventData = null;
-let playlistSongs = [];
-let playlistDbId = null;
-let rosterMembers = [];
-let initialSongVoiceAssignments = {};
+let eventData: any = null;
+let playlistSongs: any[] = [];
+let playlistDbId: string | null = null;
+let rosterMembers: any[] = [];
+let initialSongVoiceAssignments: Record<string, any> = {};
 let canAssignVoices = false;
 
 // ── Verificar si el usuario puede editar el setlist ──
@@ -504,7 +513,7 @@ if (user?.id) {
 const EVENT_SELECT_WITH_PREACHER = 'id, titulo, tema_predicacion, predicador, fecha_hora, hora_fin';
 const EVENT_SELECT_BASE = 'id, titulo, tema_predicacion, fecha_hora, hora_fin';
 
-const fetchEventBySlug = async (slugValue, includePredicador = true) => {
+const fetchEventBySlug = async (slugValue: string, includePredicador = true): Promise<EventFetchResult> => {
   const parsedSlug = parseEventDateSlug(slugValue);
   if (!parsedSlug) {
     return { data: null, error: null, multipleMatches: false };
@@ -526,7 +535,7 @@ const fetchEventBySlug = async (slugValue, includePredicador = true) => {
 };
 
 if (!routeIsDemo) {
-  const fetchEventRow = async (includePredicador = true) => {
+  const fetchEventRow = async (includePredicador = true): Promise<EventFetchResult> => {
     if (routeIsUuid) {
       const { data, error } = await supabaseSSR
         .from('eventos')
@@ -592,10 +601,10 @@ if (!routeIsDemo) {
     if (rosterError) {
       console.error('Ensayo roster query error:', rosterError);
     } else if (Array.isArray(rosterRows)) {
-      const rosterMap = new Map();
-      const currentUserEventRoleCodes = [];
+      const rosterMap = new Map<string, any>();
+      const currentUserEventRoleCodes: string[] = [];
 
-      rosterRows.forEach((row) => {
+      rosterRows.forEach((row: any) => {
         const profileId = String(row?.perfil_id || row?.perfiles?.id || '').trim();
         if (!profileId) return;
 
@@ -652,7 +661,7 @@ if (!routeIsDemo) {
       if (perfilRolesError) {
         console.error('Ensayo perfil_roles permission query error:', perfilRolesError);
       } else if (perfilRoles) {
-        const roleCodes = perfilRoles.map((pr) => pr.roles?.codigo).filter(Boolean);
+        const roleCodes = perfilRoles.map((pr: any) => pr.roles?.codigo).filter(Boolean);
         canAssignVoices = roleCodes.some(isVocalLeaderRoleCode);
       }
     }
@@ -685,8 +694,8 @@ if (!routeIsDemo) {
         initialSongVoiceAssignments = voiceAssignmentsRow.assignments;
       }
 
-      let playlistItems = [];
-      let playlistItemsError = null;
+      let playlistItems: any[] = [];
+      let playlistItemsError: any = null;
 
       const playlistQueryWithMarkers = await supabaseSSR
         .from('playlist_canciones')
@@ -721,15 +730,16 @@ if (!routeIsDemo) {
         console.error('Ensayo playlist_canciones query error:', playlistItemsError);
       }
 
-      const seenSongs = new Set();
+      const seenSongs = new Set<string>();
       playlistSongs = await Promise.all((playlistItems || [])
-        .filter((item) => {
+        .filter((item: any) => {
           const songId = item?.cancion_id || item?.canciones?.id;
-          if (!songId || seenSongs.has(songId)) return false;
-          seenSongs.add(songId);
+          const songKey = String(songId || '');
+          if (!songKey || seenSongs.has(songKey)) return false;
+          seenSongs.add(songKey);
           return true;
         })
-        .map((item, index) => buildSongFromRow(item.canciones, index)));
+        .map((item: any, index: number) => buildSongFromRow(item.canciones, index)));
     }
   }
 }

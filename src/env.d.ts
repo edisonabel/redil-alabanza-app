@@ -7,3 +7,14 @@ declare namespace App {
     accessToken: string | null;
   }
 }
+
+interface Window {
+  [key: `__REDIL_${string}`]: any;
+  appStateRoles: any[];
+  appStateTeamMembers: any[];
+  tbState: { assignments: any[] };
+  renderPlantillasGlobally: () => void;
+  openModalEquipoDetalles: (equipoId: string) => void;
+  openTbPicker: (rolId: string | null, rolName: string | null) => void | Promise<void>;
+  webkitAudioContext?: typeof AudioContext;
+}

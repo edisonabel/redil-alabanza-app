@@ -42,7 +42,7 @@ const premiumPageTransition = {
   },
 };
 
-const hexToRgbString = (hex) => {
+const hexToRgbString = (hex: unknown) => {
   if (!hex || typeof hex !== 'string') return '';
   const value = hex.trim();
 
@@ -645,7 +645,7 @@ const themeColors = brandingData;
 
     const isNativeApp = () => Capacitor.isNativePlatform();
 
-    const toInternalPath = (rawUrl) => {
+    const toInternalPath = (rawUrl: unknown) => {
       if (!rawUrl || typeof rawUrl !== 'string') return null;
       if (/^(mailto:|tel:|sms:|blob:|data:|javascript:)/i.test(rawUrl)) return null;
 
@@ -698,7 +698,7 @@ const themeColors = brandingData;
 
   const AUTH_COOKIE_REGEX = /^(sb-|__Host-sb-|__Secure-sb-|supabase-)/i;
 
-  const syncServerSession = async (session) => {
+  const syncServerSession = async (session: any) => {
     if (!session?.access_token || !session?.refresh_token) return;
     const response = await fetch('/api/auth/session', {
       method: 'POST',
@@ -715,7 +715,7 @@ const themeColors = brandingData;
     }
   };
 
-  const expireCookie = (name) => {
+  const expireCookie = (name: string) => {
     if (!name) return;
     const secureFlag = window.location.protocol === 'https:' ? '; Secure' : '';
     document.cookie = `${name}=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=Lax${secureFlag}`;
@@ -723,7 +723,7 @@ const themeColors = brandingData;
   };
 
   const clearSessionCookies = async () => {
-    const names = new Set();
+    const names = new Set<string>();
     const rawCookies = document.cookie ? document.cookie.split(';') : [];
     rawCookies.forEach((cookiePart) => {
       const [rawName] = cookiePart.trim().split('=');

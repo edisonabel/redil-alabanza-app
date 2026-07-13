@@ -368,7 +368,7 @@ export const pitchShiftAudioBuffer = async (
     const result = ctx.createBuffer(numChannels, usableLength || 1, sampleRate);
     for (let c = 0; c < numChannels; c += 1) {
       const trimmed = outputChannels[c].subarray(startDelay, startDelay + usableLength);
-      result.copyToChannel(trimmed, c);
+      result.copyToChannel(Float32Array.from(trimmed), c);
     }
     return result;
   } finally {

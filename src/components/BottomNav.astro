@@ -45,7 +45,7 @@ const navItems = [
 ];
 
 // Helper to determine exact or path-based active states natively on server
-const isActive = (href) => {
+const isActive = (href: string) => {
  if (href === '/') return pathname === '/';
  return pathname.startsWith(href);
 };
@@ -60,7 +60,6 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  const active = isActive(item.href);
  return (
  <a 
- key={`nav-item-${item.href}`}
  href={item.href} 
  id={`nav-item-${item.name.toLowerCase()}`}
  data-nav-link="true"
@@ -244,8 +243,8 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
 
 <script>
  const initBottomNav = async () => {
- const navLinks = Array.from(document.querySelectorAll('a[data-nav-link="true"]'));
- const bottomNav = document.querySelector('nav[data-bottom-nav="true"]');
+ const navLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[data-nav-link="true"]'));
+ const bottomNav = document.querySelector<HTMLElement>('nav[data-bottom-nav="true"]');
  if (!navLinks.length || !bottomNav) return;
 
  const triggerHaptic = () => {
@@ -258,7 +257,7 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  }
  };
 
- const prefetchedHrefs = window.__REDIL_PREFETCHED_HREFS__ || new Set();
+ const prefetchedHrefs: Set<string> = window.__REDIL_PREFETCHED_HREFS__ || new Set<string>();
  window.__REDIL_PREFETCHED_HREFS__ = prefetchedHrefs;
 
  const supportsPrefetch = (() => {
@@ -289,7 +288,7 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  });
  };
 
- const setBottomNavHiddenState = (hidden) => {
+ const setBottomNavHiddenState = (hidden: boolean) => {
  const nav = document.querySelector('nav[data-bottom-nav="true"]');
  document.documentElement.dataset.bottomNavHidden = hidden ? 'true' : 'false';
  if (nav) nav.classList.toggle('is-hidden', hidden);
@@ -302,10 +301,10 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
 
  if (!window.__REDIL_BOTTOM_NAV_SCROLL_BOUND__) {
  let lastWindowScrollY = Math.max(window.scrollY, 0);
- const scrollPositions = new WeakMap();
+ const scrollPositions = new WeakMap<Element, number>();
  let ticking = false;
 
- const getScrollTarget = (event) => {
+ const getScrollTarget = (event: Event): Window | Element => {
  const target = event?.target;
  if (
  target instanceof Element &&
@@ -318,25 +317,22 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  return window;
  };
 
- const getCurrentScrollY = (scrollTarget) => {
- if (scrollTarget === window) return Math.max(window.scrollY, 0);
- return Math.max(scrollTarget.scrollTop, 0);
+ const getCurrentScrollY = (scrollTarget: Window | Element) => {
+ if (scrollTarget instanceof Element) return Math.max(scrollTarget.scrollTop, 0);
+ return Math.max(window.scrollY, 0);
  };
 
- const getLastScrollY = (scrollTarget) => {
- if (scrollTarget === window) return lastWindowScrollY;
- return scrollPositions.get(scrollTarget) ?? 0;
+ const getLastScrollY = (scrollTarget: Window | Element) => {
+ if (scrollTarget instanceof Element) return scrollPositions.get(scrollTarget) ?? 0;
+ return lastWindowScrollY;
  };
 
- const setLastScrollY = (scrollTarget, currentScrollY) => {
- if (scrollTarget === window) {
- lastWindowScrollY = currentScrollY;
- return;
- }
- scrollPositions.set(scrollTarget, currentScrollY);
+ const setLastScrollY = (scrollTarget: Window | Element, currentScrollY: number) => {
+ if (scrollTarget instanceof Element) scrollPositions.set(scrollTarget, currentScrollY);
+ else lastWindowScrollY = currentScrollY;
  };
 
- const handleScroll = (event) => {
+ const handleScroll = (event: Event) => {
  if (ticking) return;
  ticking = true;
 
@@ -370,10 +366,10 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  });
  };
 
- const scrollListenerTargets = new WeakSet();
+ const scrollListenerTargets = new WeakSet<Element>();
  let scrollBindingScheduled = false;
- let scrollContainerObserver = null;
- let observedScrollObserverBody = null;
+ let scrollContainerObserver: MutationObserver | null = null;
+ let observedScrollObserverBody: HTMLElement | null = null;
  const scrollContainerSelector = [
  '[data-bottom-nav-scroll-root]',
  '[id$="scroll-root"]',
@@ -383,7 +379,7 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  'main'
  ].join(',');
 
- const isVerticalScrollContainer = (element) => {
+ const isVerticalScrollContainer = (element: Element) => {
  if (!(element instanceof Element)) return false;
  if (element === document.documentElement || element === document.body) return false;
  if (element.scrollHeight - element.clientHeight <= 1) return false;
@@ -391,14 +387,14 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  return /(auto|scroll|overlay)/.test(style.overflowY);
  };
 
- const bindScrollTarget = (element) => {
+ const bindScrollTarget = (element: Element) => {
  if (!isVerticalScrollContainer(element) || scrollListenerTargets.has(element)) return;
  element.addEventListener('scroll', handleScroll, { passive: true });
  scrollListenerTargets.add(element);
  };
 
  const bindScrollableContainers = () => {
- document.querySelectorAll(scrollContainerSelector).forEach(bindScrollTarget);
+ document.querySelectorAll<Element>(scrollContainerSelector).forEach(bindScrollTarget);
  };
 
  const scheduleScrollableContainerBinding = () => {
@@ -461,7 +457,7 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  }
  };
 
- const setLoadingState = (targetLink) => {
+ const setLoadingState = (targetLink: HTMLAnchorElement) => {
  clearLoadingState();
  targetLink.classList.add('nav-link-loading');
  targetLink.dataset.navLoading = 'true';
@@ -470,7 +466,7 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  }
  };
 
- const prefetchRoute = (href) => {
+ const prefetchRoute = (href: string) => {
  if (!href) return;
 
  let targetUrl;

@@ -69,8 +69,9 @@ export const buildWordGroups = (segments: ChordProLineSegment[] = []): ChordWord
   let i = 0;
 
   while (i < classified.length) {
-    if (classified[i].type === 'chord-only') {
-      result.push({ type: 'chord-only', name: classified[i].name });
+    const current = classified[i];
+    if (current.type === 'chord-only') {
+      result.push({ type: 'chord-only', name: current.name });
       i += 1;
       continue;
     }
@@ -78,11 +79,14 @@ export const buildWordGroups = (segments: ChordProLineSegment[] = []): ChordWord
     let groupText = '';
     const groupChords: Array<{ name: string; pos: number }> = [];
 
-    while (i < classified.length && classified[i].type === 'chord-lyric') {
-      if (classified[i].chord) {
-        groupChords.push({ name: classified[i].chord, pos: groupText.length });
+    while (i < classified.length) {
+      const lyricGroup = classified[i];
+      if (lyricGroup.type !== 'chord-lyric') break;
+
+      if (lyricGroup.chord) {
+        groupChords.push({ name: lyricGroup.chord, pos: groupText.length });
       }
-      groupText += classified[i].lyric;
+      groupText += lyricGroup.lyric;
       i += 1;
     }
 

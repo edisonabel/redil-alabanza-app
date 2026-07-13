@@ -405,7 +405,7 @@ export const GET: APIRoute = async ({ request, url, cookies }) => {
     });
   }
 
-  return new Response(coverArt.bytes, {
+  return new Response(Uint8Array.from(coverArt.bytes).buffer, {
     status: 200,
     headers: {
       'content-type': coverArt.mimeType,

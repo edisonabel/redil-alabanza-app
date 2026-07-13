@@ -1,6 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import HistorialCantos from '../components/react/HistorialCantos.jsx';
+import HistorialCantosView from '../components/react/HistorialCantos.jsx';
 import { createClient } from '@supabase/supabase-js';
 import { buildEventHeadline, getEventThemeAndPreacher } from '../lib/event-display.js';
 import { isPredicadorColumnMissingError, withPredicadorFallbackRows } from '../lib/predicador-compat.js';
@@ -54,7 +54,9 @@ const buildHistoryEventsQuery = (includePredicador = true) =>
     .order('fecha_hora', { ascending: false })
     .limit(80);
 
-let { data: historyEventsData, error: historyEventsError } = await buildHistoryEventsQuery(true);
+const historyEventsResp = await buildHistoryEventsQuery(true);
+let historyEventsData: any[] = (historyEventsResp.data as any[]) || [];
+let historyEventsError: any = historyEventsResp.error;
 
 const { data: rolesCatalog, error: rolesError } = await supabaseSSR
   .from('roles')
@@ -69,11 +71,11 @@ const rolesById = new Map((rolesCatalog || []).map((role) => [role.id, role]));
 if (isPredicadorColumnMissingError(historyEventsError)) {
   const fallbackResp = await buildHistoryEventsQuery(false);
   if (!fallbackResp.error) {
-    historyEventsData = withPredicadorFallbackRows(fallbackResp.data || []);
+    historyEventsData = withPredicadorFallbackRows((fallbackResp.data as any[]) || []);
     historyEventsError = null;
     console.warn('Historial de cantos: usando fallback sin columna predicador.');
   } else {
-    historyEventsData = fallbackResp.data;
+    historyEventsData = (fallbackResp.data as unknown as any[]) || [];
     historyEventsError = fallbackResp.error;
   }
 } else {
@@ -85,9 +87,9 @@ if (historyEventsError) {
 }
 
 const historyEventIds = (historyEventsData || []).map((event) => event.id).filter(Boolean);
-const playlistByEvent = new Map();
-const itemsByPlaylist = new Map();
-const songsById = new Map();
+const playlistByEvent = new Map<string, any>();
+const itemsByPlaylist = new Map<string, any[]>();
+const songsById = new Map<string, any>();
 
 if (historyEventIds.length > 0) {
   const { data: playlistsData, error: playlistsError } = await supabaseSSR
@@ -98,7 +100,7 @@ if (historyEventIds.length > 0) {
   if (playlistsError) {
     console.error('Historial de cantos playlists query error:', playlistsError);
   } else {
-    const playlistIds = [];
+    const playlistIds: string[] = [];
 
     for (const playlist of playlistsData || []) {
       if (!playlist?.id || !playlist?.evento_id) continue;
@@ -116,7 +118,7 @@ if (historyEventIds.length > 0) {
       if (playlistItemsError) {
         console.error('Historial de cantos playlist_canciones query error:', playlistItemsError);
       } else {
-        const songIds = new Set();
+        const songIds = new Set<string>();
 
         for (const item of playlistItemsData || []) {
           const playlistId = item?.playlist_id;
@@ -148,10 +150,10 @@ if (historyEventIds.length > 0) {
   }
 }
 
-const getSongsForEvent = (event) => {
+const getSongsForEvent = (event: any) => {
   const playlist = playlistByEvent.get(event.id);
   if (!playlist?.id) return [];
-  const seenSongs = new Set();
+  const seenSongs = new Set<string>();
 
   return (itemsByPlaylist.get(playlist.id) || [])
     .slice()
@@ -168,12 +170,12 @@ const getSongsForEvent = (event) => {
         title: song.titulo || 'Cancion sin titulo',
       };
     })
-    .filter(Boolean);
+    .filter((song): song is { id: string; title: any } => song !== null);
 };
 
-const getTeamForEvent = (event) => {
+const getTeamForEvent = (event: any) => {
   const assignments = Array.isArray(event?.asignaciones) ? event.asignaciones : [];
-  const people = new Map();
+  const people = new Map<string, any>();
 
   for (const assignment of assignments) {
     const profile = assignment?.perfiles;
@@ -213,13 +215,13 @@ const servicesWithSongs = (historyEventsData || [])
   .filter((service) => service.songs.length > 0);
 
 const currentYearStart = new Date(new Date().getFullYear(), 0, 1);
-const songUsage = new Map();
+const songUsage = new Map<string, any>();
 
 for (const event of historyEventsData || []) {
   const eventDate = new Date(event?.fecha_hora || '');
   if (Number.isNaN(eventDate.getTime()) || eventDate < currentYearStart) continue;
 
-  const uniqueSongs = new Map();
+  const uniqueSongs = new Map<string, { id: string; title: any }>();
   for (const song of getSongsForEvent(event)) {
     if (!uniqueSongs.has(song.id)) uniqueSongs.set(song.id, song);
   }
@@ -246,7 +248,7 @@ for (const event of historyEventsData || []) {
 const topSongs = [...songUsage.values()]
   .map((song) => ({
     ...song,
-    history: song.history.sort((a, b) => new Date(b.dateIso).getTime() - new Date(a.dateIso).getTime()),
+    history: song.history.sort((a: any, b: any) => new Date(b.dateIso).getTime() - new Date(a.dateIso).getTime()),
   }))
   .sort((a, b) => (b.count - a.count) || a.title.localeCompare(b.title, 'es'))
   .slice(0, 12);
@@ -269,7 +271,7 @@ const historyMeta = {
       Inicio
     </a>
 
-    <HistorialCantos
+    <HistorialCantosView
       client:idle
       recentServices={servicesWithSongs.slice(0, 15)}
       topSongs={topSongs}

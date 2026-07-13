@@ -688,6 +688,21 @@ function SongArtworkThumb({ song, index }) {
   );
 }
 
+/**
+ * @param {{
+ *   playlist?: any[];
+ *   contextTitle?: string;
+ *   eventMeta?: any;
+ *   initialSongId?: string | null;
+ *   monitorUrl?: string;
+ *   playlistId?: string | null;
+ *   canEdit?: boolean;
+ *   canAssignVoices?: boolean;
+ *   userId?: string;
+ *   rosterMembers?: any[];
+ *   initialSongVoiceAssignments?: Record<string, any>;
+ * }} props
+ */
 export default function EnsayoHub({
   playlist = [],
   contextTitle = 'Modo Ensayo',

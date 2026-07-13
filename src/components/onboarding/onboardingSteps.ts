@@ -228,5 +228,8 @@ export function getOnboardingConfig(page: OnboardingPageKey): OnboardingConfig {
 export function getOnboardingSteps(page: OnboardingPageKey): DriveStep[] {
   if (typeof document === 'undefined') return [];
 
-  return onboardingConfigs[page].steps.filter((step) => document.querySelector(step.element));
+  return onboardingConfigs[page].steps.filter((step) => {
+    const target = typeof step.element === 'function' ? step.element() : step.element;
+    return typeof target === 'string' ? Boolean(document.querySelector(target)) : Boolean(target);
+  });
 }

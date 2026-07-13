@@ -141,7 +141,7 @@ const userId = Astro.locals.user?.id ?? null;
  </div>
  
  <div class="flex flex-col sm:flex-row gap-4 mt-6">
- <button id="btn-change-password" class="flex-1 py-3 px-4 rounded-xl border border-border bg-surface text-neutral-700 font-ui-strong text-sm hover:bg-background :bg-neutral-700 transition-colors flex items-center justify-center gap-2">
+ <button id="btn-change-password" class="flex-1 py-3 px-4 rounded-xl border border-border bg-surface text-neutral-700 font-ui-strong text-sm hover:bg-background dark:bg-neutral-700 transition-colors flex items-center justify-center gap-2">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
  Cambiar Contrase&ntilde;a
  </button>
@@ -161,7 +161,7 @@ const userId = Astro.locals.user?.id ?? null;
  <div id="cropper-content" class="bg-surface rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl scale-95 transition-transform duration-300">
  <div class="px-6 py-4 border-b border-border flex justify-between items-center">
  <h3 class="text-lg font-bold text-content ">Ajustar Foto de Perfil</h3>
- <button id="btn-close-cropper" class="text-content-muted hover:text-content-muted :text-neutral-200 transition-colors">
+ <button id="btn-close-cropper" class="text-content-muted hover:text-content-muted dark:text-neutral-200 transition-colors">
  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
  </button>
  </div>
@@ -182,7 +182,7 @@ const userId = Astro.locals.user?.id ?? null;
  </div>
  </div>
  <div class="px-6 py-4 border-t border-border flex justify-end gap-3 bg-background ">
- <button id="btn-cancel-cropper" class="px-5 py-2.5 rounded-xl font-bold text-sm text-content-muted hover:bg-neutral/20 :bg-neutral-800 transition-colors">Cancelar</button>
+ <button id="btn-cancel-cropper" class="px-5 py-2.5 rounded-xl font-bold text-sm text-content-muted hover:bg-neutral/20 dark:bg-neutral-800 transition-colors">Cancelar</button>
  <button id="btn-save-cropper" class="px-5 py-2.5 rounded-xl font-ui-strong text-sm bg-action hover:bg-action/80 text-white shadow-md transition-all flex items-center gap-2">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
  Guardar Foto
@@ -293,11 +293,11 @@ const userId = Astro.locals.user?.id ?? null;
  };
 
  // Init global vars
- let currentUserId = null;
+ let currentUserId: string | null = null;
  let currentAvatarUrl: string | null = null;
 
- const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
- const getCookieValue = (name) => {
+ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+ const getCookieValue = (name: string) => {
  try {
  const cookiePart = document.cookie
  .split(';')
@@ -599,7 +599,7 @@ const avatarPreviewText = document.getElementById('avatar-preview-text');
  });
 
  const blob = await new Promise<Blob | null>((resolve) => {
- canvas.toBlob((b) => resolve(b), outputMimeType, useWebP ? 0.9 : 0.88);
+ canvas.toBlob((b: Blob | null) => resolve(b), outputMimeType, useWebP ? 0.9 : 0.88);
  });
 
  if (!blob) throw new Error("No se pudo generar el recorte de la imagen.");
@@ -822,7 +822,7 @@ const avatarPreviewText = document.getElementById('avatar-preview-text');
  }
  });
 
- const btnChangePassword = document.getElementById('btn-change-password');
+ const btnChangePassword = document.getElementById('btn-change-password') as HTMLButtonElement;
  on(btnChangePassword, 'click', async () => {
    const { user } = await getStableAuth();
    if (!user?.email) { alert('No se pudo obtener tu email. Recarga la página.'); return; }
@@ -978,7 +978,7 @@ const avatarPreviewText = document.getElementById('avatar-preview-text');
  </p>
  ${motivoHtml}
  </div>
- <button type="button" class="p-2 rounded-lg text-content-muted hover:text-red-500 hover:bg-red-50 :bg-red-950/30 transition-colors" title="Eliminar">
+ <button type="button" class="p-2 rounded-lg text-content-muted hover:text-red-500 hover:bg-red-50 dark:bg-red-950/30 transition-colors" title="Eliminar">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
  </button>
  `;

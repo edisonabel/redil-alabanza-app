@@ -140,6 +140,8 @@ const repararChordProCorrupto = (rawValue = '') => {
     .join('\n');
 };
 
+type EventFetchResult = { data: any; error: any; multipleMatches: boolean };
+
 const createFallbackSong = ({
   songId = 'fallback',
   title = 'Setlist pendiente',
@@ -147,6 +149,13 @@ const createFallbackSong = ({
   key = '-',
   bpm = 0,
   message = 'Todavía no hay una guía ChordPro disponible para esta canción.',
+}: {
+  songId?: string;
+  title?: string;
+  artist?: string;
+  key?: string;
+  bpm?: number;
+  message?: string;
 } = {}) => ({
   id: songId,
   title,
@@ -166,7 +175,7 @@ const createFallbackSong = ({
   ],
 });
 
-const estimateDuration = (sections = []) => {
+const estimateDuration = (sections: any[] = []) => {
   const totalLines = sections.reduce((acc, section) => acc + (section?.lines?.length || 0), 0);
   return Math.max(120, Math.min(480, totalLines * 7 + 36));
 };
@@ -180,8 +189,8 @@ const parseChordProSections = (rawChordpro = '', fallbackTitle = 'Letra') => {
     }).sections;
   }
 
-  const sections = [];
-  let currentSection = { name: 'Letra', note: '', lines: [] };
+  const sections: any[] = [];
+  let currentSection: { name: string; note: string; lines: string[] } = { name: 'Letra', note: '', lines: [] };
 
   const pushCurrentSection = () => {
     const sectionName = String(currentSection.name || '').trim();
@@ -309,7 +318,7 @@ const parseChordProSections = (rawChordpro = '', fallbackTitle = 'Letra') => {
   return sections;
 };
 
-const readChordProContent = async (songRow) => {
+const readChordProContent = async (songRow: any) => {
   const rawChordpro = String(songRow?.chordpro || '').trim();
   if (!rawChordpro) return '';
 
@@ -335,7 +344,7 @@ const readChordProContent = async (songRow) => {
   }
 };
 
-const mergeMarkerNotesIntoSections = (sections = [], rawMarkers = []) => {
+const mergeMarkerNotesIntoSections = (sections: any[] = [], rawMarkers: any[] = []) => {
   const markers = Array.isArray(rawMarkers) ? rawMarkers.filter(Boolean) : [];
   if (markers.length === 0) return sections;
 
@@ -344,9 +353,9 @@ const mergeMarkerNotesIntoSections = (sections = [], rawMarkers = []) => {
     if (!acc.has(key)) acc.set(key, []);
     acc.get(key).push(marker);
     return acc;
-  }, new Map());
+  }, new Map<string, any[]>());
 
-  const markerOccurrences = new Map();
+  const markerOccurrences = new Map<string, number>();
 
   return sections.map((section, index) => {
     const existingSectionNote = String(section?.note || '').trim();
@@ -365,7 +374,7 @@ const mergeMarkerNotesIntoSections = (sections = [], rawMarkers = []) => {
   });
 };
 
-const buildSongFromRow = async (songRow, orderIndex = 0) => {
+const buildSongFromRow = async (songRow: any, orderIndex = 0) => {
   const chordproContent = await readChordProContent(songRow);
   const rawSectionMarkers = Array.isArray(songRow?.section_markers) ? songRow.section_markers : [];
   const sections = mergeMarkerNotesIntoSections(
@@ -415,13 +424,13 @@ const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-let eventData = null;
-let playlistSongs = [];
+let eventData: any = null;
+let playlistSongs: any[] = [];
 
 const EVENT_SELECT_WITH_PREACHER = 'id, titulo, tema_predicacion, predicador, fecha_hora, hora_fin';
 const EVENT_SELECT_BASE = 'id, titulo, tema_predicacion, fecha_hora, hora_fin';
 
-const fetchEventBySlug = async (slugValue, includePredicador = true) => {
+const fetchEventBySlug = async (slugValue: string, includePredicador = true): Promise<EventFetchResult> => {
   const parsedSlug = parseEventDateSlug(slugValue);
   if (!parsedSlug) {
     return { data: null, error: null, multipleMatches: false };
@@ -443,7 +452,7 @@ const fetchEventBySlug = async (slugValue, includePredicador = true) => {
 };
 
 if (!routeIsDemo) {
-  const fetchEventRow = async (includePredicador = true) => {
+  const fetchEventRow = async (includePredicador = true): Promise<EventFetchResult> => {
     if (routeIsUuid) {
       const { data, error } = await supabaseSSR
         .from('eventos')
@@ -512,8 +521,8 @@ if (!routeIsDemo) {
     }
 
     if (playlistRow?.id) {
-      let playlistItems = [];
-      let playlistItemsError = null;
+      let playlistItems: any[] = [];
+      let playlistItemsError: any = null;
 
       const playlistQueryWithMarkers = await supabaseSSR
         .from('playlist_canciones')
@@ -538,16 +547,17 @@ if (!routeIsDemo) {
         console.error('Monitor playlist_canciones query error:', playlistItemsError);
       }
 
-      const seenSongs = new Set();
+      const seenSongs = new Set<string>();
       playlistSongs = await Promise.all(
         (playlistItems || [])
-          .filter((item) => {
+          .filter((item: any) => {
             const songId = item?.cancion_id || item?.canciones?.id;
-            if (!songId || seenSongs.has(songId)) return false;
-            seenSongs.add(songId);
+            const songKey = String(songId || '');
+            if (!songKey || seenSongs.has(songKey)) return false;
+            seenSongs.add(songKey);
             return true;
           })
-          .map((item, index) => buildSongFromRow(item.canciones, index)),
+          .map((item: any, index: number) => buildSongFromRow(item.canciones, index)),
       );
     }
   }

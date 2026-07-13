@@ -672,11 +672,7 @@ export function LiveDirectorView({
     : async () => {};
   const isTransportCueBusyRef = useRef(false);
   const getVisualClockTime = useCallback(() => {
-    if ('getCurrentTimeSnapshot' in selectedMultitrackEngine) {
-      return selectedMultitrackEngine.getCurrentTimeSnapshot();
-    }
-
-    return selectedMultitrackEngine.currentTime;
+    return selectedMultitrackEngine.getCurrentTimeSnapshot();
   }, [selectedMultitrackEngine]);
 
   const handleTogglePlaybackFromGesture = useCallback(() => {
@@ -1720,7 +1716,7 @@ export function LiveDirectorView({
           isMuted: false,
         }));
 
-    const resolvedMixerTracks = sourceTracks.map((track, index) => {
+    const resolvedMixerTracks: MixerTrackView[] = sourceTracks.map((track, index) => {
       const meta = buildMixerTrackMeta(track, index);
       const omittedWarning = omittedWarningByTrackId.get(track.id);
       const outputRoute = trackOutputRoutes[track.id] ?? resolveTrackOutputRoute(track);

@@ -293,6 +293,7 @@ function SongRankCard({ song, index, maxCount, expanded, onToggle }) {
     );
 }
 
+/** @param {{ recentServices?: any[]; topSongs?: any[]; meta?: Record<string, any> }} props */
 export default function HistorialCantos({ recentServices = [], topSongs = [], meta = {} }) {
     const [activeTab, setActiveTab] = useState('servicios');
     const [expandedSongId, setExpandedSongId] = useState(null);

@@ -446,6 +446,14 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
     void NativeLiveDirectorEngine.soloTrack({ trackId }).catch(() => undefined);
   }, []);
 
+  // El motor nativo no expone estados de suspensión de Web Audio; conserva el
+  // mismo contrato del hook web con operaciones seguras sin efecto secundario.
+  const unlockAudioForUserGesture = useCallback(async () => {}, []);
+  const reviveAfterSuspension = useCallback(async () => {}, []);
+  const clearSuspensionNotice = useCallback(() => {}, []);
+  const getSharedTelemetry = useCallback(() => null, []);
+  const getCurrentTimeSnapshot = useCallback(() => currentTimeRef.current, []);
+
   return useMemo(
     () => ({
       isPlaying,
@@ -458,10 +466,14 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
       trackEnvelopes,
       diagnostics,
       loadWarnings,
+      suspensionNotice: null,
       initialize,
+      unlockAudioForUserGesture,
       play,
       pause,
       stop,
+      reviveAfterSuspension,
+      clearSuspensionNotice,
       setVolume,
       setTrackOutputRoute,
       toggleMute,
@@ -471,18 +483,24 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
       setLoopPoints,
       seekTo,
       soloTrack,
+      getSharedTelemetry,
+      getCurrentTimeSnapshot,
     }),
     [
       currentTime,
+      clearSuspensionNotice,
       diagnostics,
       duration,
       initialize,
       isPlaying,
       isReady,
+      getCurrentTimeSnapshot,
+      getSharedTelemetry,
       loadProgress,
       loadWarnings,
       pause,
       play,
+      reviveAfterSuspension,
       seekTo,
       setLoopPoints,
       setMasterVolume,
@@ -496,6 +514,7 @@ export function useNativeIOSMultitrackEngine(): UseMultitrackEngineReturn {
       trackEnvelopes,
       trackLevels,
       trackVolumes,
+      unlockAudioForUserGesture,
     ],
   );
 }

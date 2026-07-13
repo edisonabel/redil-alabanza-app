@@ -710,45 +710,26 @@ Ejemplos relevantes:
 - `inspect_policies_asignaciones.cjs`
 - `generate_icons.mjs`
 
-### Scripts ad hoc / one-shot visibles
+### Limpieza de scripts y artefactos
 
-La raiz todavia contiene varios archivos de reparacion y pruebas temporales:
+El 13 de julio de 2026 se retiraron de la raiz los parches `fix_*`, copias de
+scripts de Programacion, pruebas diagnosticas con consultas abiertas y logs UTF-8.
+Los nuevos controles mantenidos viven en `scripts/`:
 
-- `fix_badge.cjs`
-- `fix_detalle_badges.cjs`
-- `fix_detalle_badges2.cjs`
-- `fix_detalle_layout_lines.cjs`
-- `fix_layout_padding.cjs`
-- `fix_lista_card.cjs`
-- `fix_lista_card2.cjs`
-- `fix_modal_mobile.cjs`
-- `fix_modal_mobile_layout.cjs`
-- `fix_perfil.cjs`
-- `fix_policies.cjs`
-- `fix_programacion_btn.cjs`
-- `fix_song_card_layout_final.cjs`
-- `fix_tools.cjs`
-- `remove_logout.cjs`
-- `update_colors.cjs`
+- `test-authorization-boundaries.mjs`
+- `check-migration-history.mjs`
+- `test-voice-lyric-follower.mjs`
 
-### Artefactos temporales o de depuracion
+Permanecen siete artefactos historicos con codificacion heredada que no forman
+parte del runtime y deben eliminarse en una limpieza exclusiva de archivos binarios:
 
-Tambien hay archivos que no forman parte del runtime:
-
-- `.tmp-dev-err.log`
-- `.tmp-dev-out.log`
-- `.tmp-supa-debug.cjs`
+- `.tmp_repertorio_51f508e.astro`
 - `astro_errors.txt`
 - `old_history.txt`
-- `schema.json`
-- `script_test.js`
 - `server.log`
-- `test.js`
-- `tmp-dev-log.txt`
 - `tmp_chordpro_test.txt`
 - `tmp_modoensayo.txt`
 - `tmp_parse_test.cjs`
-- `tmp_repertorio_51f508e.astro`
 
 ## 14. Legacy y hotspots tecnicos
 

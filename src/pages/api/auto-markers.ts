@@ -1347,7 +1347,18 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     }
     const { data: song, error: songError } = await serviceRoleClient
       .from('canciones')
-      .select('*')
+      .select(`
+        id,
+        chordpro,
+        link_acordes,
+        link_letras,
+        link_secuencias,
+        link_voces,
+        link_youtube,
+        mp3,
+        multitrack_session,
+        voces
+      `)
       .eq('id', songContext.songId)
       .maybeSingle();
     if (songError) throw songError;

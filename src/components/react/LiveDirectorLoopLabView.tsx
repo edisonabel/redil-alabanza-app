@@ -17,7 +17,7 @@
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react';
-import { canUseAdvancedStreamingEngine, useLoopLabMultitrackEngine } from '../../hooks/useLoopLabMultitrackEngine';
+import { canUseAdvancedStreamingEngine, useLoopLabMultitrackEngine, type LoopLabUiState } from '../../hooks/useLoopLabMultitrackEngine';
 import { useNativeIOSMultitrackEngine } from '../../hooks/useNativeIOSMultitrackEngine';
 import type { MultitrackEngineLoadWarning, SongStructure, TrackData } from '../../services/MultitrackEngine';
 import type { SharedStreamingTelemetry } from '../../services/LoopLabStreamingMultitrackEngine';
@@ -654,21 +654,20 @@ export function LiveDirectorLoopLabView({
   const unlockAudioForUserGesture = 'unlockAudioForUserGesture' in selectedMultitrackEngine
     ? selectedMultitrackEngine.unlockAudioForUserGesture
     : async () => {};
-  const loopLabState = 'loopState' in selectedMultitrackEngine
-    ? selectedMultitrackEngine.loopState
-    : { status: 'off' as const, region: null, error: null };
-  const configureLoopRegion = 'configureLoopRegion' in selectedMultitrackEngine
-    ? selectedMultitrackEngine.configureLoopRegion
+  const loopExtensions = selectedMultitrackEngine as typeof selectedMultitrackEngine & {
+    loopState?: LoopLabUiState;
+    configureLoopRegion?: (startInSeconds: number, endInSeconds: number, enabled: boolean) => Promise<void>;
+  };
+  const loopLabState: LoopLabUiState = loopExtensions.loopState
+    ?? { status: 'off', region: null, error: null };
+  const configureLoopRegion = loopExtensions.configureLoopRegion
+    ? loopExtensions.configureLoopRegion
     : async () => {
       throw new Error('El motor seleccionado no admite el laboratorio de bucle.');
     };
   const isTransportCueBusyRef = useRef(false);
   const getVisualClockTime = useCallback(() => {
-    if ('getCurrentTimeSnapshot' in selectedMultitrackEngine) {
-      return selectedMultitrackEngine.getCurrentTimeSnapshot();
-    }
-
-    return selectedMultitrackEngine.currentTime;
+    return selectedMultitrackEngine.getCurrentTimeSnapshot();
   }, [selectedMultitrackEngine]);
 
   const handleTogglePlaybackFromGesture = useCallback(() => {
@@ -1670,7 +1669,7 @@ export function LiveDirectorLoopLabView({
           isMuted: false,
         }));
 
-    const resolvedMixerTracks = sourceTracks.map((track, index) => {
+    const resolvedMixerTracks: MixerTrackView[] = sourceTracks.map((track, index) => {
       const meta = buildMixerTrackMeta(track, index);
       const omittedWarning = omittedWarningByTrackId.get(track.id);
       const outputRoute = trackOutputRoutes[track.id] ?? resolveTrackOutputRoute(track);

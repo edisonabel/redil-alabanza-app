@@ -321,7 +321,6 @@ class AudioSessionService {
     audio.preload = 'auto';
     audio.autoplay = false;
     audio.volume = 1;
-    audio.playsInline = true;
     audio.setAttribute('playsinline', '');
     audio.setAttribute('webkit-playsinline', '');
     audio.setAttribute('aria-hidden', 'true');
