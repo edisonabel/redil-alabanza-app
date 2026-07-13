@@ -113,12 +113,22 @@ type SectionAnchorMatch = PhraseMatch & {
   fingerprint: string;
   relaxed: boolean;
   textOnly?: boolean;
+  estimatedFromLaterLine?: boolean;
 };
 
-const MIN_SECTION_PROGRESS_SEC = 1;
+const MIN_SECTION_PROGRESS_SEC = 0.05;
 const MIN_REPEAT_PROGRESS_SEC = 4;
 const MIN_MATCH_CONFIDENCE = 0.4;
 const MATCH_CONFIDENCE_TIE_WINDOW = 0.12;
+const VOCAL_MARKER_PRE_ROLL_SEC = 0.12;
+
+const toPreciseSeconds = (value: number) => (
+  Math.round((Number(value) || 0) * 1000) / 1000
+);
+
+const applyVocalPreRoll = (value: number) => (
+  Math.max(0, toPreciseSeconds(value - VOCAL_MARKER_PRE_ROLL_SEC))
+);
 
 const stripAccents = (value = '') =>
   String(value || '')
@@ -721,14 +731,14 @@ const findPhraseMatchesInTranscript = (
     const normalizedScore = searchWords.length > 0 ? score / searchWords.length : 0;
     if (matchCount >= Math.ceil(searchWords.length * 0.6) && normalizedScore > MIN_MATCH_CONFIDENCE) {
       const nextCandidate: PhraseMatch = {
-        startSec: Math.round(words[i].start),
+        startSec: toPreciseSeconds(words[i].start),
         confidence: Math.min(1, normalizedScore),
         matchCount,
         searchWordCount: searchWords.length,
       };
 
       const previousCandidate = candidates[candidates.length - 1];
-      if (previousCandidate && Math.abs(previousCandidate.startSec - nextCandidate.startSec) <= 1) {
+      if (previousCandidate && Math.abs(previousCandidate.startSec - nextCandidate.startSec) <= 0.25) {
         if (nextCandidate.confidence > previousCandidate.confidence) {
           candidates[candidates.length - 1] = nextCandidate;
         }
@@ -798,10 +808,11 @@ const selectSectionAnchorMatch = ({
     findPhraseMatchesInTranscript(transcriptWords, anchor.phrase, startSec)
       .map((match) => ({
         ...match,
-        startSec: Math.max(0, Math.round(match.startSec - anchor.startOffsetSec)),
+        startSec: Math.max(0, toPreciseSeconds(match.startSec - anchor.startOffsetSec)),
         confidence: Math.max(0, Math.min(1, (match.confidence * anchor.weight) - (anchorIndex * 0.015) - (relaxed ? 0.05 : 0))),
         fingerprint: anchor.fingerprint,
         relaxed,
+        estimatedFromLaterLine: anchor.startOffsetSec > 0,
       }))
   ));
 
@@ -835,10 +846,11 @@ const selectCueAnchorMatch = ({
     findPhraseMatchesInTranscript(transcriptWords, anchor.phrase, startSec, endBefore)
       .map((match) => ({
         ...match,
-        startSec: Math.max(0, Math.round(match.startSec - anchor.startOffsetSec)),
+        startSec: Math.max(0, toPreciseSeconds(match.startSec - anchor.startOffsetSec)),
         confidence: Math.max(0, Math.min(1, (match.confidence * anchor.weight) - (anchorIndex * 0.012) - (relaxed ? 0.04 : 0))),
         fingerprint: anchor.fingerprint,
         relaxed,
+        estimatedFromLaterLine: anchor.startOffsetSec > 0,
       }))
   ));
 
@@ -1012,7 +1024,7 @@ const applyCorrectionOffset = (markers: SuggestedMarker[], correctionSummary: Co
         ? marker
         : {
           ...marker,
-          startSec: Math.max(0, Math.round(marker.startSec + offset)),
+          startSec: Math.max(0, toPreciseSeconds(marker.startSec + offset)),
           confidence: Math.max(0, Math.min(1, marker.confidence + 0.03)),
         }
     )),
@@ -1186,7 +1198,7 @@ const buildCueMarkersForSection = ({
       ? Math.max(searchStartSec, Number(expectedCueStarts[cueIndex]))
       : searchStartSec;
 
-    let match = selectCueAnchorMatch({
+    const match = selectCueAnchorMatch({
       transcriptWords,
       anchors: cueAnchors,
       searchStartSec,
@@ -1197,24 +1209,16 @@ const buildCueMarkersForSection = ({
       endBefore: sectionEndCap,
     });
 
-    if (!match && sectionDurationGuess != null && cueAnchors.some((anchor) => getPhraseSearchWords(anchor.phrase).length >= 2)) {
-      match = {
-        startSec: expectedStartSec,
-        confidence: 0.28,
-        matchCount: 0,
-        searchWordCount: 0,
-        fingerprint: phraseKey,
-        relaxed: true,
-      };
-    }
-
     if (!match) continue;
-    if (match.startSec <= sectionStartSec) continue;
-    if (Number.isFinite(sectionEndCap) && match.startSec >= sectionEndCap) continue;
+    if (match.estimatedFromLaterLine) continue;
 
-    cuePhraseLastMatchedStart.set(match.fingerprint || phraseKey, match.startSec);
-    lastCueStart = match.startSec;
-    cueMarkers.push(match.startSec);
+    const anticipatedStartSec = applyVocalPreRoll(match.startSec);
+    if (anticipatedStartSec <= sectionStartSec) continue;
+    if (Number.isFinite(sectionEndCap) && anticipatedStartSec >= sectionEndCap) continue;
+
+    cuePhraseLastMatchedStart.set(match.fingerprint || phraseKey, anticipatedStartSec);
+    lastCueStart = anticipatedStartSec;
+    cueMarkers.push(anticipatedStartSec);
   }
 
   return [...new Set(cueMarkers)]
@@ -1267,7 +1271,7 @@ const fillMarkerGapWithStructure = ({
 
     markers[index] = {
       ...markers[index],
-      startSec: Math.max(0, Math.round(relativeStart)),
+      startSec: Math.max(0, toPreciseSeconds(relativeStart)),
       confidence: Math.max(markers[index]?.confidence || 0, method === 'hybrid-structure' ? 0.5 : 0.3),
       method,
     };
@@ -1429,9 +1433,9 @@ export const POST: APIRoute = async ({ request, cookies }) => {
 
     const transcriptPreview = String(transcript.text || '').slice(0, 200);
     const durationSec = Number(transcript.duration) > 0
-      ? Math.round(Number(transcript.duration))
+      ? toPreciseSeconds(Number(transcript.duration))
       : (transcriptWords[transcriptWords.length - 1]?.end
-        ? Math.round(transcriptWords[transcriptWords.length - 1].end)
+        ? toPreciseSeconds(transcriptWords[transcriptWords.length - 1].end)
         : null);
     let deepTranscriptText = '';
     let deepTranscriptionStatus: 'skipped' | 'ok' | 'failed' = deepAnalysis ? 'failed' : 'skipped';
@@ -1498,7 +1502,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
 
     const phraseLastMatchedStart = new Map<string, number>();
     const expectedSectionStarts = buildExpectedSectionStarts(sections, durationSec);
-    let lastStartSec = 0;
+    let lastStartSec = -MIN_SECTION_PROGRESS_SEC;
     let suggestedMarkers: SuggestedMarker[] = sections.map((section: any, index: number) => {
       const anchorPhrases = buildSectionAnchorPhrases(section);
 
@@ -1549,13 +1553,21 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       const match = whisperMatch || deepMatch;
 
       if (match) {
-        lastStartSec = match.startSec;
-        phraseLastMatchedStart.set(match.fingerprint, match.startSec);
+        const isWordAligned = !match.textOnly && !match.estimatedFromLaterLine;
+        const markerStartSec = isWordAligned
+          ? applyVocalPreRoll(match.startSec)
+          : toPreciseSeconds(match.startSec);
+        lastStartSec = markerStartSec;
+        phraseLastMatchedStart.set(match.fingerprint, markerStartSec);
         return {
           sectionName: section.name,
-          startSec: match.startSec,
-          confidence: Math.max(0, Math.min(1, match.confidence)),
-          method: match.textOnly ? 'deep-text-structure' : 'whisper-match',
+          startSec: markerStartSec,
+          confidence: Math.max(0, Math.min(1, isWordAligned ? match.confidence : match.confidence - 0.12)),
+          method: match.textOnly
+            ? 'deep-text-structure'
+            : match.estimatedFromLaterLine
+              ? 'hybrid-structure'
+              : 'whisper-match',
         };
       }
 
@@ -1598,7 +1610,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         toIndex: suggestedMarkers.length - 1,
         rangeStartSec: Math.max(
           (suggestedMarkers[normalizedLastDetectedIndex]?.startSec ?? 0) + MIN_SECTION_PROGRESS_SEC,
-          Math.round(lastWordEndSec),
+          toPreciseSeconds(lastWordEndSec),
         ),
         rangeEndSec: resolvedDuration,
         method: 'hybrid-structure',
@@ -1646,7 +1658,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
 
       suggestedMarkers[index] = {
         ...suggestedMarkers[index],
-        startSec: Math.round(previousSec + ((nextSec - previousSec) * (relativePosition / sectionCountInsideGap))),
+        startSec: toPreciseSeconds(previousSec + ((nextSec - previousSec) * (relativePosition / sectionCountInsideGap))),
         confidence: 0.3,
         method: 'interpolated',
       };
@@ -1691,6 +1703,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       durationSec,
       wordCount: transcriptWords.length,
       transcriptPreview,
+      preRollMs: Math.round(VOCAL_MARKER_PRE_ROLL_SEC * 1000),
     });
   } catch (error) {
     if (error instanceof ApiSecurityError) {

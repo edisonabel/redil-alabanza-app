@@ -246,11 +246,16 @@ const parseChordProSections = (rawChordpro = '') => {
   return sections;
 };
 
+const toPreciseSeconds = (value) => Math.round(Math.max(0, Number(value) || 0) * 1000) / 1000;
+
 const formatMarkerTime = (value) => {
-  const totalSeconds = Math.floor(Math.max(0, Number(value) || 0));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  const preciseSeconds = toPreciseSeconds(value);
+  const totalWholeSeconds = Math.floor(preciseSeconds);
+  const minutes = Math.floor(totalWholeSeconds / 60);
+  const seconds = totalWholeSeconds % 60;
+  const milliseconds = Math.round((preciseSeconds - totalWholeSeconds) * 1000);
+  const baseTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  return `${baseTime}.${String(milliseconds).padStart(3, '0')}`;
 };
 
 const parseMarkerTime = (rawValue) => {
@@ -258,16 +263,21 @@ const parseMarkerTime = (rawValue) => {
   if (!value) return null;
 
   if (/^\d+(\.\d+)?$/.test(value)) {
-    return Math.max(0, Math.round(Number(value)));
+    return toPreciseSeconds(Number(value));
   }
 
   const parts = value.split(':').map((part) => part.trim());
-  if (parts.length === 2 && parts.every((part) => /^\d+$/.test(part))) {
-    return Math.max(0, Number(parts[0]) * 60 + Number(parts[1]));
+  if (parts.length === 2 && /^\d+$/.test(parts[0]) && /^\d+(\.\d+)?$/.test(parts[1])) {
+    return toPreciseSeconds(Number(parts[0]) * 60 + Number(parts[1]));
   }
 
-  if (parts.length === 3 && parts.every((part) => /^\d+$/.test(part))) {
-    return Math.max(0, Number(parts[0]) * 3600 + Number(parts[1]) * 60 + Number(parts[2]));
+  if (
+    parts.length === 3 &&
+    /^\d+$/.test(parts[0]) &&
+    /^\d+$/.test(parts[1]) &&
+    /^\d+(\.\d+)?$/.test(parts[2])
+  ) {
+    return toPreciseSeconds(Number(parts[0]) * 3600 + Number(parts[1]) * 60 + Number(parts[2]));
   }
 
   return null;
@@ -283,7 +293,7 @@ const normalizeCueMarkerTimes = (rawCueMarkers = [], sectionStartSec = null) => 
       return Number(marker);
     })
     .filter((value) => Number.isFinite(value))
-    .map((value) => Math.max(0, Math.round(Number(value))))
+    .map((value) => toPreciseSeconds(value))
     .filter((value) => (sectionFloor == null ? true : value > sectionFloor))
     .sort((left, right) => left - right);
 
@@ -334,7 +344,7 @@ const normalizeSectionMarkers = (sections = [], rawMarkers = []) => {
       sectionIndex: index,
       sectionOccurrence,
       sectionKey: `${slugBase}__${sectionOccurrence}`,
-      startSec: Number.isFinite(startSec) ? Math.max(0, Math.round(startSec)) : null,
+      startSec: Number.isFinite(startSec) ? toPreciseSeconds(startSec) : null,
       note: String(existingMarker?.note || section?.note || '').trim(),
       cueMarkers: normalizeCueMarkerTimes(existingMarker?.cueMarkers, Number.isFinite(startSec) ? startSec : null),
       _autoDetected: Boolean(existingMarker?._autoDetected),
@@ -369,7 +379,7 @@ const buildUniformAutoDetectedMarkers = (markers = [], totalDurationSec = 0) => 
   const divisor = Math.max(markerCount, 1);
   return markers.map((marker, index) => ({
     ...marker,
-    startSec: Math.max(0, Math.round((safeDuration * index) / divisor)),
+    startSec: toPreciseSeconds((safeDuration * index) / divisor),
     _autoDetected: true,
     _confidence: 0.25,
     _method: 'uniform',
@@ -841,12 +851,13 @@ const CueMarkersInput = ({ value = [], sectionStartSec = null, onCommit, placeho
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       placeholder={placeholder}
+      aria-label="Tiempos de cambio de pantalla en minutos, segundos y milisegundos"
       className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
     />
   );
 };
 
-const MarkerTimeInput = ({ value = null, onCommit, placeholder = '00:00' }) => {
+const MarkerTimeInput = ({ value = null, onCommit, placeholder = '00:00.000' }) => {
   const formattedValue = value == null ? '' : formatMarkerTime(value);
   const [draft, setDraft] = useState(formattedValue);
   const [isFocused, setIsFocused] = useState(false);
@@ -871,7 +882,7 @@ const MarkerTimeInput = ({ value = null, onCommit, placeholder = '00:00' }) => {
   return (
     <input
       type="text"
-      inputMode="numeric"
+      inputMode="decimal"
       value={draft}
       onFocus={() => setIsFocused(true)}
       onChange={(event) => setDraft(event.target.value)}
@@ -895,7 +906,8 @@ const MarkerTimeInput = ({ value = null, onCommit, placeholder = '00:00' }) => {
         }
       }}
       placeholder={placeholder}
-      className="h-9 w-[4.75rem] rounded-lg border border-border bg-background px-2.5 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+      aria-label="Tiempo del marker en minutos, segundos y milisegundos"
+      className="h-9 w-[6.3rem] rounded-lg border border-border bg-background px-2.5 text-sm tabular-nums text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
     />
   );
 };
@@ -2069,7 +2081,7 @@ export default function AdminRepertorio() {
   const capturarMarkerActual = (markerIndex) => {
     setEditorSectionMarkers((prev) => prev.map((item, itemIndex) => (
       itemIndex === markerIndex
-        ? { ...item, ...toManualMarkerPatch({ startSec: Math.round(editorAudioCurrentTimeRef.current) }) }
+        ? { ...item, ...toManualMarkerPatch({ startSec: toPreciseSeconds(editorAudioCurrentTimeRef.current) }) }
         : item
     )));
   };
@@ -2081,7 +2093,7 @@ export default function AdminRepertorio() {
     const previousStartSec = Number(marker?.startSec);
     const correctedStartSec = Number(patch?.startSec);
     if (!Number.isFinite(previousStartSec) || !Number.isFinite(correctedStartSec)) return;
-    if (Math.abs(previousStartSec - correctedStartSec) < 1) return;
+    if (Math.abs(previousStartSec - correctedStartSec) < 0.05) return;
 
     saveAutoMarkerCorrection({
       songId: editorChordproCancion?.id || '',
@@ -2109,7 +2121,7 @@ export default function AdminRepertorio() {
         ...item,
         ...toManualMarkerPatch({
           cueMarkers: normalizeCueMarkerTimes(
-            [...(Array.isArray(item?.cueMarkers) ? item.cueMarkers : []), Math.round(editorAudioCurrentTimeRef.current)],
+            [...(Array.isArray(item?.cueMarkers) ? item.cueMarkers : []), toPreciseSeconds(editorAudioCurrentTimeRef.current)],
             item?.startSec ?? null,
           ),
         }),
@@ -2273,7 +2285,7 @@ export default function AdminRepertorio() {
 
     nextRawMarkers.splice(markerInsertionIndex, 0, {
       sectionName: String(suggestion?.suggestedName || 'Repeticion'),
-      startSec: Number.isFinite(suggestedStartSec) ? Math.round(suggestedStartSec) : null,
+      startSec: Number.isFinite(suggestedStartSec) ? toPreciseSeconds(suggestedStartSec) : null,
       cueMarkers: [],
       note: '',
       _autoDetected: true,
@@ -2974,7 +2986,7 @@ export default function AdminRepertorio() {
                                 type="range"
                                 min="0"
                                 max={Math.max(editorAudioDuration, 1)}
-                                step="0.1"
+                                step="0.01"
                                 value={Math.min(editorAudioCurrentTime, Math.max(editorAudioDuration, 1))}
                                 onChange={(e) => handleEditorAudioSeek(e.target.value)}
                                 className="admin-marker-range w-full"
@@ -3034,7 +3046,7 @@ export default function AdminRepertorio() {
                             </div>
                           ) : (
                             <span className="text-[11px] text-content-muted">
-                              Usa Whisper para sugerir tiempos y revisa los markers amarillos o rojos antes de guardar.
+                              Whisper alinea palabras con 120 ms de anticipacion. Revisa los markers estimados antes de guardar.
                             </span>
                           )}
                         </div>
@@ -3068,7 +3080,7 @@ export default function AdminRepertorio() {
 
                       return (
                         <div id={`marker-card-${index}`} key={marker.id || `${marker.sectionName}-${index}`} className="rounded-xl border border-border bg-surface px-2.5 py-2 scroll-mt-36">
-                          <div className="grid grid-cols-[minmax(6.75rem,0.9fr)_4.75rem_minmax(0,1fr)_auto_auto] items-center gap-1.5">
+                          <div className="grid grid-cols-[minmax(0,1fr)_6.3rem] items-center gap-1.5 sm:grid-cols-[minmax(6.75rem,0.9fr)_6.3rem_minmax(0,1fr)_auto_auto]">
                             <div className="min-w-0">
                               <p className="truncate text-sm font-semibold text-content">{marker.sectionName}</p>
                               {marker._autoDetected && (
@@ -3110,7 +3122,7 @@ export default function AdminRepertorio() {
                                   cueMarkers: normalizeCueMarkerTimes(marker?.cueMarkers, nextValue),
                                 }));
                               }}
-                              placeholder="00:00"
+                              placeholder="00:00.000"
                             />
                             <input
                               type="text"
@@ -3119,14 +3131,14 @@ export default function AdminRepertorio() {
                                 actualizarEditorSectionMarker(index, { note: e.target.value });
                               }}
                               placeholder="Nota de seccion"
-                              className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                              className="col-span-2 h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 sm:col-span-1"
                             />
                             <button
                               type="button"
                               onClick={() => {
                                 actualizarEditorSectionMarker(index, toManualMarkerPatch({ startSec: null, cueMarkers: [] }));
                               }}
-                              className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-surface px-2.5 text-[11px] font-bold text-content-muted transition-colors hover:bg-background hover:text-content"
+                              className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-border bg-surface px-2.5 text-[11px] font-bold text-content-muted transition-colors hover:bg-background hover:text-content sm:w-auto"
                             >
                               Limpiar
                             </button>
@@ -3134,7 +3146,7 @@ export default function AdminRepertorio() {
                               type="button"
                               onClick={() => capturarMarkerActual(index)}
                               disabled={!editorChordproCancion?.mp3}
-                              className="inline-flex h-9 items-center justify-center rounded-lg border border-brand/25 bg-brand/10 px-2.5 text-[11px] font-bold text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted"
+                              className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-brand/25 bg-brand/10 px-2.5 text-[11px] font-bold text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted sm:w-auto"
                             >
                               <span className="sm:hidden">Marcar</span>
                               <span className="hidden sm:inline">Marcar ahora</span>
@@ -3178,7 +3190,7 @@ export default function AdminRepertorio() {
                                   value={marker.cueMarkers}
                                   sectionStartSec={marker.startSec}
                                   onCommit={(nextCueMarkers) => actualizarEditorSectionMarker(index, toManualMarkerPatch({ cueMarkers: nextCueMarkers }))}
-                                  placeholder={cueTransitionCount > 1 ? 'Ej: 01:12, 01:18' : 'Ej: 01:12'}
+                                  placeholder={cueTransitionCount > 1 ? 'Ej: 01:12.350, 01:18.120' : 'Ej: 01:12.350'}
                                 />
 
                                 {cueDraft.cueMarkerPreview.length > 0 && (
