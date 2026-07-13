@@ -56,11 +56,13 @@ const audioProxyResponse = (body: BodyInit | null, init: ResponseInit = {}) => {
 
 export const prerender = false;
 
-export const GET: APIRoute = async ({ request, url, cookies }) => {
-  try {
-    await requireAuthenticatedUser(cookies);
-  } catch (error) {
-    return securityErrorResponse(error);
+export const GET: APIRoute = async ({ request, url, cookies, locals }) => {
+  if (!locals.user) {
+    try {
+      await requireAuthenticatedUser(cookies);
+    } catch (error) {
+      return securityErrorResponse(error);
+    }
   }
 
   const src = url.searchParams.get('src');

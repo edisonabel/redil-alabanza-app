@@ -17,6 +17,11 @@ const supabaseServer = createClient(supabaseUrl, supabaseAnonKey, {
 });
 
 const protectedRoutes = ['/', '/admin', '/programacion', '/repertorio', '/historial-cantos', '/perfil', '/equipo', '/herramientas', '/configuracion', '/ensayo', '/monitor', '/panel', '/audio-lab'];
+const authenticatedMediaApiRoutes = new Set([
+  '/api/audio',
+  '/api/mp3-proxy',
+  '/api/mp3-cover-art',
+]);
 
 const staticAssetRegex = /\.(png|ico|svg|webmanifest|css|js|txt|map|woff2?|ttf|eot|json)$/i;
 const crossOriginIsolationHeaders = {
@@ -101,7 +106,9 @@ export const onRequest = defineMiddleware(async (context, next) => {
   }
 
   const protectedPath = isProtectedRoute(path);
-  const authState = protectedPath || path === '/login' ? await resolveAuthState(cookies, isSecure) : null;
+  const authState = protectedPath || path === '/login' || authenticatedMediaApiRoutes.has(path)
+    ? await resolveAuthState(cookies, isSecure)
+    : null;
 
   if (path === '/login') {
     if (authState?.accessToken) {

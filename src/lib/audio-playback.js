@@ -6,7 +6,7 @@ const DRIVE_HOSTS = new Set([
 ]);
 const R2_AUDIO_HOST = 'stems.alabanzaredilestadio.com';
 const AUDIO_API_PATHS = new Set(['/api/audio', '/api/mp3-proxy']);
-const AUDIO_PROXY_VERSION = '2';
+const AUDIO_PROXY_VERSION = '3';
 const R2_DIRECT_CORS_HOSTS = new Set([
   'alabanzaredilestadio.com',
   'www.alabanzaredilestadio.com',
@@ -151,6 +151,9 @@ export const toAudioApiUrl = (rawUrl, { origin = '' } = {}) => {
       (parsed.pathname === '/api/audio' && parsed.searchParams.get('id')) ||
       (parsed.pathname === '/api/mp3-proxy' && parsed.searchParams.get('src'))
     ) {
+      const currentOrigin = new URL(resolveBaseOrigin(origin));
+      parsed.protocol = currentOrigin.protocol;
+      parsed.host = currentOrigin.host;
       parsed.searchParams.set('v', AUDIO_PROXY_VERSION);
       return parsed.href;
     }
@@ -177,12 +180,9 @@ export const buildPlaybackSourceCandidates = (rawUrl, { origin = '' } = {}) => {
     return [normalized];
   }
 
-  return [...new Set([
-    toAudioApiUrl(normalized, { origin }),
-    toDriveStreamUrl(normalized),
-    toDriveDirectDownloadUrl(normalized),
-    normalized,
-  ].filter(Boolean))];
+  // The app is cross-origin isolated. Direct Drive responses do not provide the
+  // required CORP/CORS headers, so every Drive playback must stay on our proxy.
+  return [toAudioApiUrl(normalized, { origin })].filter(Boolean);
 };
 
 export const resolvePreferredAudioUrl = (rawUrl, { origin = '' } = {}) => (

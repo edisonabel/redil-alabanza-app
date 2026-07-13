@@ -252,11 +252,13 @@ const fetchDriveStream = async (request: Request, id: string) => {
   return audioErrorResponse(lastErrorMessage, lastErrorStatus);
 };
 
-export const GET: APIRoute = async ({ request, url, cookies }) => {
-  try {
-    await requireAuthenticatedUser(cookies);
-  } catch (error) {
-    return securityErrorResponse(error);
+export const GET: APIRoute = async ({ request, url, cookies, locals }) => {
+  if (!locals.user) {
+    try {
+      await requireAuthenticatedUser(cookies);
+    } catch (error) {
+      return securityErrorResponse(error);
+    }
   }
 
   const id = (url.searchParams.get('id') || '').trim();
