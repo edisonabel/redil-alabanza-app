@@ -20,7 +20,7 @@ const idSuggestion = `${idInput}-suggestion`;
     class="input-ghost-main relative h-11 w-full bg-transparent border border-border text-content rounded-xl pl-4 pr-4 text-sm md:text-base focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/40 transition-colors placeholder:text-content-muted z-10" autocomplete="off" />
 </div>
 
-<script define:vars={{ idInput, idSuggestion }}>
+<script is:inline define:vars={{ idInput, idSuggestion }}>
   document.addEventListener('DOMContentLoaded', () => {
     const searchInput = document.getElementById(idInput);
     const suggestionInput = document.getElementById(idSuggestion);

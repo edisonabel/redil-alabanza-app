@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Icon } from '@iconify/react';
 import microphoneIcon from '@iconify-icons/mdi/microphone';
 import guitarAcousticIcon from '@iconify-icons/mdi/guitar-acoustic';

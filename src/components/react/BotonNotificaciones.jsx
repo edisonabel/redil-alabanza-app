@@ -105,7 +105,7 @@ export default function BotonNotificaciones({
         const userAgent = window.navigator.userAgent.toLowerCase();
         const isIOS =
           /iphone|ipad|ipod/.test(userAgent) ||
-          (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1);
+          (/macintosh/.test(userAgent) && window.navigator.maxTouchPoints > 1);
         const standalone =
           window.matchMedia('(display-mode: standalone)').matches ||
           window.navigator.standalone === true;

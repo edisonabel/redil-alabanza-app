@@ -24,7 +24,7 @@ const isMobilePrintDevice = () => {
   return (
     Boolean(navigatorWithUserAgentData.userAgentData?.mobile) ||
     /Android|iPad|iPhone|iPod/i.test(window.navigator.userAgent) ||
-    (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1)
+    (/Macintosh/i.test(window.navigator.userAgent) && window.navigator.maxTouchPoints > 1)
   );
 };
 
@@ -227,11 +227,6 @@ const scoreCapoKey = (key: string) => {
   if (norm === 'F' || norm === 'B') return -2.2;
   if (norm.includes('#')) return -4.2;
   return -0.6;
-};
-
-const formatDelta = (steps: number) => {
-  if (steps === 0) return 'Original';
-  return steps > 0 ? `+${steps}` : String(steps);
 };
 
 const formatTransposeSummary = (steps: number) => {
@@ -559,7 +554,6 @@ export default function ChordProPrintWorkspace({
     : 'border-zinc-200/80 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.12),_transparent_26%),linear-gradient(180deg,_rgba(255,255,255,0.98),_rgba(248,250,252,0.98))] text-zinc-950 shadow-[0_30px_80px_rgba(148,163,184,0.16)]';
   const eyebrowTextClasses = isDarkTheme ? 'text-zinc-400' : 'text-slate-500';
   const titleTextClasses = isDarkTheme ? 'text-white' : 'text-slate-950';
-  const bodyTextClasses = isDarkTheme ? 'text-zinc-400' : 'text-slate-600';
   const fieldClasses = isDarkTheme
     ? 'border-white/10 bg-white/5 text-white placeholder:text-zinc-500 focus:border-sky-400/60 focus:bg-white/8'
     : 'border-zinc-200 bg-white/88 text-zinc-950 placeholder:text-zinc-400 focus:border-sky-500/60 focus:bg-white';
@@ -568,7 +562,6 @@ export default function ChordProPrintWorkspace({
     : 'border-zinc-200 bg-white/84 shadow-[0_10px_28px_rgba(148,163,184,0.08)]';
   const metricLabelClasses = isDarkTheme ? 'text-zinc-500' : 'text-slate-400';
   const metricValueClasses = isDarkTheme ? 'text-white' : 'text-slate-950';
-  const metricHintClasses = isDarkTheme ? 'text-zinc-400' : 'text-slate-500';
   const structurePanelClasses = isDarkTheme
     ? 'border-white/10 bg-white/5'
     : 'border-zinc-200 bg-white/80 shadow-[0_10px_28px_rgba(148,163,184,0.08)]';

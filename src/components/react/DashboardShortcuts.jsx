@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import NotificationBell from './NotificationBell.jsx';
 import BotonNotificaciones from './BotonNotificaciones.jsx';

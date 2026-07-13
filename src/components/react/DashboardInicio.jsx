@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { buildEventHeadline, getEventThemeAndPreacher } from '../../lib/event-display.js';
 import { isEventRepertoryManagerRoleCode } from '../../lib/role-permissions.js';
 
@@ -146,10 +146,14 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
             syncStandalone();
         };
 
+        const legacyMediaStandalone = /** @type {{
+         * addListener?: (listener: (event: MediaQueryListEvent) => void) => void,
+         * removeListener?: (listener: (event: MediaQueryListEvent) => void) => void
+         * }} */ (mediaStandalone);
         if (typeof mediaStandalone.addEventListener === 'function') {
             mediaStandalone.addEventListener('change', syncStandalone);
-        } else if (typeof mediaStandalone.addListener === 'function') {
-            mediaStandalone.addListener(syncStandalone);
+        } else if (typeof legacyMediaStandalone.addListener === 'function') {
+            legacyMediaStandalone.addListener(syncStandalone);
         }
 
         window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt);
@@ -160,8 +164,8 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
             window.removeEventListener('appinstalled', onAppInstalled);
             if (typeof mediaStandalone.removeEventListener === 'function') {
                 mediaStandalone.removeEventListener('change', syncStandalone);
-            } else if (typeof mediaStandalone.removeListener === 'function') {
-                mediaStandalone.removeListener(syncStandalone);
+            } else if (typeof legacyMediaStandalone.removeListener === 'function') {
+                legacyMediaStandalone.removeListener(syncStandalone);
             }
         };
     }, []);

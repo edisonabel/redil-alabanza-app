@@ -9,7 +9,6 @@ import { getBrandingConfig, invalidarCacheBranding } from '../lib/branding';
 import { ClientRouter } from 'astro:transitions';
 
 const user = Astro.locals.user;
-const perfil = Astro.locals.perfil;
 
 const premiumPageTransition = {
   forwards: {
@@ -208,10 +207,13 @@ const themeColors = brandingData;
           syncTheme();
         };
 
+        const legacyMediaQuery = /** @type {{
+         * addListener?: (listener: (event: MediaQueryListEvent) => void) => void
+         * }} */ (mediaQuery);
         if (typeof mediaQuery.addEventListener === 'function') {
           mediaQuery.addEventListener('change', syncWithSystem);
-        } else if (typeof mediaQuery.addListener === 'function') {
-          mediaQuery.addListener(syncWithSystem);
+        } else if (typeof legacyMediaQuery.addListener === 'function') {
+          legacyMediaQuery.addListener(syncWithSystem);
         }
 
         document.addEventListener('astro:after-swap', syncTheme);

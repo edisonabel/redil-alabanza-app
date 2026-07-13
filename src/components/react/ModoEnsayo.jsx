@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Minus, Pause, Play, Plus, Type } from 'lucide-react';
 
 const MOCK_CANCION_ENSAYO = {

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   ArrowLeft,
   Play,
@@ -267,7 +267,7 @@ const parseSequenceSourceEntries = (rawValue = '') => {
     try { const p = JSON.parse(source); return Array.isArray(p) ? p : (p && typeof p === 'object' ? [p] : []); } catch {}
   }
   if (isAudioSourceUrl(source)) return [source];
-  return source.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map((line, i) => {
+  return source.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map((line) => {
     const [maybeLabel, ...rest] = line.split('|');
     return rest.length === 0 ? line : { label: maybeLabel.trim(), url: rest.join('|').trim() };
   });
@@ -346,8 +346,6 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
   }, []);
 
   const activeSong = playlist[activeSongIndex] || null;
-  const sections = Array.isArray(activeSong?.sectionMarkers) ? activeSong.sectionMarkers : [];
-  const hasSections = sections.length > 0;
   const activeCover = activeSong?.mp3 ? coverArts[activeSong.mp3] : null;
 
   // ── Playback Sources: fuentes de audio disponibles ──
@@ -364,12 +362,6 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
   ), [activeSourceUrl]);
   const prefersNativeBackgroundPlayback = useMemo(() => shouldPreferNativeBackgroundPlayback(), []);
   const shouldUseTrackWebAudio = panValue !== 0 || !prefersNativeBackgroundPlayback;
-
-  // Marcadores filtrados (solo válidos)
-  const markers = useMemo(() => {
-    if (!sections.length) return [];
-    return sections.filter(m => Number.isFinite(Number(m.startSec ?? m.start_sec)));
-  }, [sections]);
 
   // ── Visual Markers: cruce sectionMarkers × sections reales ──
   const timelineDuration = duration || 1;
@@ -978,7 +970,7 @@ export default function ModoLiveDirector({ playlist = [], contextTitle = 'Setlis
     }
   }, [activeSongIndex, currentTime]);
 
-  const handleSeekSection = useCallback((sec, index) => {
+  const handleSeekSection = useCallback((sec) => {
     const audio = audioRef.current;
     if (!audio) return;
     const startSec = Number(sec.startSec ?? sec.start_sec ?? 0);

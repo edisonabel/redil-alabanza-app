@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import RosterManager from './RosterManager.jsx';
 import { getEventThemeAndPreacher } from '../../lib/event-display.js';
@@ -36,7 +36,6 @@ export default function ModalEvento() {
     const [isSaving, setIsSaving] = useState(false);
     const [isDeletingSerie, setIsDeletingSerie] = useState(false);
 
-    const [rosterHtml, setRosterHtml] = useState('');
     const [dbData, setDbData] = useState(null);
     const [showPlaylistBtn, setShowPlaylistBtn] = useState(false);
     const [hasPlaylist, setHasPlaylist] = useState(false);
@@ -74,7 +73,6 @@ export default function ModalEvento() {
                 setSerieId('');
                 setApplySerie(false);
                 setIsStrictModerator(false);
-                setRosterHtml('');
                 setDbData(null);
                 setShowPlaylistBtn(false);
                 setHasPlaylist(false);
@@ -126,7 +124,6 @@ export default function ModalEvento() {
                     setSerieId('');
                 }
 
-                setRosterHtml(data.rosterHtml || '');
                 setDbData(data.dbData || null);
 
                 // RBAC simulado para Playlist

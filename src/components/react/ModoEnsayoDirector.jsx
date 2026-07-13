@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { screenWakeLockService } from '../../services/ScreenWakeLockService';
 import { LiveDirectorView } from './LiveDirectorView';

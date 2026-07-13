@@ -1,4 +1,4 @@
-﻿import React, { useCallback } from 'react';
+﻿import { useCallback } from 'react';
 import 'driver.js/dist/driver.css';
 import './onboarding.css';
 import type { DriveStep, Driver } from 'driver.js';

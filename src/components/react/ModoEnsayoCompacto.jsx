@@ -846,71 +846,6 @@ const scoreCapoPlayableKey = (key = '') => {
   if (normalizedKey.includes('#')) return -4.2;
   return -0.6;
 };
-/* ── Word-group builder: splits segments into per-word tokens ── */
-const buildWordGroupsLegacy = (segments) => {
-  // Step 1: classify each segment.
-  // Whitespace-only (or empty) lyric → standalone chord-only token, not added to text.
-  // Lyric with real text → chord-lyric item (chord marks position 0 of this lyric chunk).
-  const classified = [];
-  segments.forEach((seg) => {
-    const lyric = seg.lyric || '';
-    const chord = seg.chord || '';
-    if (!lyric.trim()) {
-      if (chord) classified.push({ type: 'chord-only', name: chord });
-    } else {
-      classified.push({ type: 'chord-lyric', chord: chord || null, lyric });
-    }
-  });
-
-  // Step 2: process in order. Consecutive chord-lyric items are merged into one
-  // text group so mid-word chord splits (e.g. "ado[F#m7]remos") are kept intact.
-  const result = [];
-  let i = 0;
-  while (i < classified.length) {
-    if (classified[i].type === 'chord-only') {
-      result.push({ type: 'chord-only', name: classified[i].name });
-      i++;
-      continue;
-    }
-    // Collect consecutive chord-lyric items
-    let groupText = '';
-    const groupChords = [];
-    while (i < classified.length && classified[i].type === 'chord-lyric') {
-      if (classified[i].chord) groupChords.push({ name: classified[i].chord, pos: groupText.length });
-      groupText += classified[i].lyric;
-      i++;
-    }
-    // Build word list from the merged text
-    const words = [];
-    const wordRegex = /\S+/g;
-    let m;
-    while ((m = wordRegex.exec(groupText)) !== null) {
-      words.push({ type: 'word', word: m[0], start: m.index, end: m.index + m[0].length, chords: [] });
-    }
-    // Assign each chord to the word that contains its position.
-    // Chords that fall in whitespace become chord-only tokens inserted before the next word.
-    const insertBefore = new Map(); // wordIndex → [chord names]
-    groupChords.forEach((c) => {
-      const inIdx = words.findIndex((w) => c.pos >= w.start && c.pos < w.end);
-      if (inIdx >= 0) {
-        words[inIdx].chords.push({ name: c.name, charOffset: c.pos - words[inIdx].start });
-        return;
-      }
-      const nextIdx = words.findIndex((w) => w.start > c.pos);
-      const key = nextIdx >= 0 ? nextIdx : words.length;
-      if (!insertBefore.has(key)) insertBefore.set(key, []);
-      insertBefore.get(key).push(c.name);
-    });
-    // Emit words with inline chord-only tokens at the right positions
-    words.forEach((w, idx) => {
-      (insertBefore.get(idx) || []).forEach((name) => result.push({ type: 'chord-only', name }));
-      result.push(w);
-    });
-    (insertBefore.get(words.length) || []).forEach((name) => result.push({ type: 'chord-only', name }));
-  }
-  return result;
-};
-
 const buildChordOverlayLine = (line) => {
   const sanitizedLine = String(line || '').replace(/\{[^}]+\}/g, '');
   const segments = parseChordProLine(sanitizedLine);
@@ -1441,7 +1376,7 @@ export default function ModoEnsayoCompacto({
   const [fontScale, setFontScale] = useState('enorme');
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeSectionManualIndex, setActiveSectionManualIndex] = useState(0);
-  const [collapsedSections, setCollapsedSections] = useState({});
+  const [, setCollapsedSections] = useState({});
   const [audioCurrentTime, setAudioCurrentTime] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
   const [audioReady, setAudioReady] = useState(false);
@@ -1545,7 +1480,6 @@ export default function ModoEnsayoCompacto({
   }, [globalSyncMode]);
 
   const currentSong = song;
-  const activeSongIndex = 0;
   const currentSongBpm = Number.isFinite(Number(currentSong?.bpm)) ? Math.max(0, Math.round(Number(currentSong.bpm))) : 0;
   const songChordTokens = useMemo(() => extractChordTokensFromSections(currentSong?.sections || []), [currentSong?.sections]);
   const explicitSongKey = normalizeKeyToAmerican(currentSong?.originalKey || currentSong?.key || '-');
@@ -2092,14 +2026,6 @@ export default function ModoEnsayoCompacto({
         : Math.min(activeMarkerIndex, currentSections.length - 1)
     )
     : -1;
-  const playbackMarkers = useMemo(() => (
-    currentSongMarkers.map((marker, markerIndex) => ({
-      ...marker,
-      markerIndex,
-      percent: Math.min(99.5, Math.max(0.5, (marker.startSec / timelineDuration) * 100)),
-      isActive: markerIndex === activeMarkerIndex,
-    }))
-  ), [activeMarkerIndex, currentSongMarkers, timelineDuration]);
   const activeSectionByVoiceIndex = voiceFollowerEnabled && Number.isInteger(voiceMatch?.sectionIndex)
     ? voiceMatch.sectionIndex
     : -1;
@@ -2868,8 +2794,12 @@ export default function ModoEnsayoCompacto({
       mediaQuery.addEventListener('change', syncLandscapeCompact);
       return () => mediaQuery.removeEventListener('change', syncLandscapeCompact);
     }
-    mediaQuery.addListener(syncLandscapeCompact);
-    return () => mediaQuery.removeListener(syncLandscapeCompact);
+    const legacyMediaQuery = /** @type {{
+     * addListener: (listener: (event: MediaQueryListEvent) => void) => void,
+     * removeListener: (listener: (event: MediaQueryListEvent) => void) => void
+     * }} */ (mediaQuery);
+    legacyMediaQuery.addListener(syncLandscapeCompact);
+    return () => legacyMediaQuery.removeListener(syncLandscapeCompact);
   }, []);
   useEffect(() => {
     const headerNode = headerRef.current;
@@ -3446,13 +3376,6 @@ export default function ModoEnsayoCompacto({
       audioRef.current.currentTime = nextTime;
     }
     syncGuideCueTracks(nextTime, { force: true });
-  };
-  const cycleFontScale = () => {
-    setFontScale((current) => {
-      const currentIndex = FONT_SCALE_SEQUENCE.indexOf(current);
-      const nextIndex = currentIndex === -1 ? 1 : (currentIndex + 1) % FONT_SCALE_SEQUENCE.length;
-      return FONT_SCALE_SEQUENCE[nextIndex];
-    });
   };
   const handleSelectPlaybackSource = (sourceId) => {
     if (sourceId === selectedPlaybackSourceId) {

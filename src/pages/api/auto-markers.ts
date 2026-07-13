@@ -152,15 +152,6 @@ const buildPhraseFingerprint = (phrase = '') => {
   return normalizeText(stripChords(phrase));
 };
 
-const buildCueSearchPhrase = (lines: string[] = []) => {
-  const meaningfulLines = (Array.isArray(lines) ? lines : [])
-    .map((line) => stripChords(line))
-    .filter(Boolean)
-    .slice(0, 2);
-
-  return meaningfulLines.join(' ');
-};
-
 const buildCueAnchorPhrases = (lines: string[] = []): SectionAnchorPhrase[] => {
   const meaningfulLines = (Array.isArray(lines) ? lines : [])
     .map((line) => stripChords(line).replace(/\s+/g, ' ').trim())
@@ -232,9 +223,6 @@ const buildSectionAnchorPhrases = (section: SectionPayload): SectionAnchorPhrase
 };
 
 const countChordTokens = (line = '') => Array.from(String(line || '').matchAll(/\[([^\]]+)\]/g)).length;
-
-const sectionHasLyrics = (section: SectionPayload) =>
-  (Array.isArray(section?.lines) ? section.lines : []).some((line) => stripChords(line).length > 0);
 
 const estimateSectionStructureWeight = (section: SectionPayload) => {
   const kind = getSectionKind(String(section?.name || ''));

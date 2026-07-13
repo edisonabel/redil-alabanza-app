@@ -1724,38 +1724,6 @@ export class MultitrackEngine {
     return this.tracks.find((track) => track.id === trackId);
   }
 
-  private getTrackPan(track: TrackData): number {
-    const normalizedId = String(track.id || '').trim().toLowerCase();
-    const normalizedName = String(track.name || '').trim().toLowerCase();
-
-    const isPanLeft = (str: string) => {
-      if (!str) return false;
-      return (
-        str === 'click' ||
-        str.startsWith('click-') ||
-        str.endsWith('-click') ||
-        str === 'clcik' ||
-        str === 'cue' ||
-        str === 'cues' ||
-        str.startsWith('cue-') ||
-        str.startsWith('cues-') ||
-        str === 'guia' ||
-        str === 'guía' ||
-        str === 'guide' ||
-        str.startsWith('guide-') ||
-        str === 'metro' ||
-        str === 'metronomo' ||
-        str === 'metrónomo'
-      );
-    };
-
-    if (isPanLeft(normalizedId) || isPanLeft(normalizedName)) {
-      return -1;
-    }
-
-    return 0;
-  }
-
   private getLongestTrackDuration(): number {
     return this.tracks.reduce((maxDuration, track) => {
       return Math.max(

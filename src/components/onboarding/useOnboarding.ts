@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { driver, type Driver, type DriveStep } from 'driver.js';
+import type { Driver, DriveStep } from 'driver.js';
 import type { OnboardingPageKey } from './onboardingSteps';
 import { supabase } from '../../lib/supabase';
 

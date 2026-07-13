@@ -40,7 +40,6 @@ import type {
 import { applyLiveDirectorSectionOffset } from '../../utils/liveDirectorSongSession';
 import {
   sampleActivityEnvelope,
-  type TrackActivityEnvelope,
 } from '../../utils/audioActivityEnvelope';
 import {
   deleteLiveDirectorSongSession,
@@ -1055,16 +1054,6 @@ export function LiveDirectorLoopLabView({
   const songCardMeta = isEnsayoMode
     ? [subtitle, songKey].filter(Boolean).join(' · ') || sessionModeLabel
     : [performerLabel, songKey].filter(Boolean).join(' · ') || sessionModeLabel;
-  const songSupportMeta = hasSessionTracks
-    ? isWebTrackLimitExceeded
-      ? `${activeTracks.length} de ${enabledSessionTracks.length} pistas activas (seguro ${sessionActiveTrackLimit}${shouldUseNativePadBridge ? ' + pad' : ''})`
-      : inferredSessionMode === 'folder' && activeTracks.length !== sessionTracks.length
-      ? `${activeTracks.length} de ${sessionTracks.length} pistas activas`
-      : sessionModeLabel
-    : hasPersistedSongContext
-      ? 'Carga una sesion real para esta cancion'
-      : 'Abre esta superficie desde repertorio';
-  const surfaceBadgeLabel = showSectionsPanel ? 'Secciones' : 'Mezcla';
   const ensayoQueueSongs = useMemo(
     () => (isEnsayoMode ? queueSongs.slice(0, 6) : []),
     [isEnsayoMode, queueSongs],
@@ -2249,7 +2238,7 @@ export function LiveDirectorLoopLabView({
     const isNativeRuntime = Boolean(capacitorBridge?.isNativePlatform?.()) || platform === 'ios';
     const isIosDevice =
       /iP(hone|ad|od)/.test(window.navigator.userAgent) ||
-      (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1);
+      (/Macintosh/i.test(window.navigator.userAgent) && window.navigator.maxTouchPoints > 1);
 
     setIsNativeIosShell(isNativeRuntime && isIosDevice);
   }, []);
@@ -3048,31 +3037,6 @@ export function LiveDirectorLoopLabView({
     );
     commitMixerStateSilent();
   }, [commitMixerStateSilent, hasPersistedSongContext, isInitializingSession, manualSession, trackEnvelopes]);
-
-  const handleToggleTrackEnabled = useCallback((trackId: string) => {
-    if (!manualSession || manualSession.mode !== 'folder' || manualSession.tracks.length <= 1) {
-      return;
-    }
-
-    const nextTracks = manualSession.tracks.map((track) => (
-      track.id === trackId
-        ? { ...track, enabled: track.enabled === false ? true : false }
-        : track
-    ));
-
-    const hasAnyEnabledTrack = nextTracks.some((track) => track.enabled !== false);
-    if (!hasAnyEnabledTrack) {
-      return;
-    }
-
-    setManualSession((previous) => (
-      previous ? { ...previous, tracks: nextTracks } : previous
-    ));
-
-    if (hasPersistedSongContext) {
-      void commitMixerStateSilent(nextTracks);
-    }
-  }, [commitMixerStateSilent, hasPersistedSongContext, manualSession]);
 
   const capEnabledMapToTrackLimit = useCallback((enabledMap: Record<string, boolean>) => {
     const nextMap: Record<string, boolean> = {};
@@ -4430,7 +4394,7 @@ export function LiveDirectorLoopLabView({
               <div className="flex h-full items-center">
                 <div className="hide-scrollbar -mx-0.5 -my-4 overflow-x-auto overflow-y-hidden">
                   <div className={`flex py-4 ${isUltraCompactLandscape ? 'gap-1 px-0.5' : 'gap-1.5 px-0.5'}`}>
-                    {ensayoSlotSongs.map((queueSong, index) => (
+                    {ensayoSlotSongs.map((queueSong) => (
                       <EnsayoQueueCard
                         key={queueSong.id}
                         song={queueSong}

@@ -30,8 +30,8 @@ if (!isAdmin) {
       </div>
     </header>
 
-    <PanelModoExperto client:load />
-    <PanelBranding client:load />
-    <PanelAdminPush client:load isAdmin={isAdmin} />
+    <PanelModoExperto client:idle />
+    <PanelBranding client:idle />
+    <PanelAdminPush client:idle isAdmin={isAdmin} />
   </section>
 </Layout>

@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+﻿import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Icon } from '@iconify/react';
 import microphoneIcon from '@iconify-icons/mdi/microphone';
 import guitarAcousticIcon from '@iconify-icons/mdi/guitar-acoustic';
@@ -15,7 +15,7 @@ import { buildEventHeadline, getEventThemeAndPreacher } from '../../lib/event-di
 import { isEventRepertoryManagerRoleCode } from '../../lib/role-permissions.js';
 
 const MONTH_CHUNK_SIZE = 2;
-const EVENT_SELECT = '*, asignaciones(id, rol_id, perfiles(id, nombre, email, avatar_url))';
+const EVENT_SELECT = 'id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, predicador, serie_id, asignaciones(id, rol_id, perfiles(id, nombre, email, avatar_url))';
 
 const getMonthStart = (date) => {
     const next = new Date(date);
@@ -63,7 +63,6 @@ export default function CalendarioGrid({
     initialEvents,
     sessionUser,
     initialRoles,
-    ssrError,
     isAdmin,
     canEditTema = false,
     initialLoadUntil,
@@ -102,8 +101,6 @@ export default function CalendarioGrid({
     // --- ESTADOS REACTIVOS PRINCIPALES ---
     const [eventos, setEventos] = useState(initialEvents || []);
     const [viewMode, setViewMode] = useState('tarjeta'); // 'tarjeta', 'lista', 'calendario'
-    const [filtro, setFiltro] = useState('Todos');
-    const [isLoading, setIsLoading] = useState(false);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [hasMoreEventos, setHasMoreEventos] = useState(Boolean(hasMoreInitialEvents));
     const [calendarDate, setCalendarDate] = useState(new Date());
@@ -412,8 +409,6 @@ export default function CalendarioGrid({
             const isN1 = isEventRepertoryManagerRoleCode(rolMatch.codigo);
             const isN2 = ['encargado_letras'].includes(rolMatch.codigo);
             const isVoz = String(rolMatch.codigo || '').startsWith('voz_');
-
-            const bgColor = isN1 ? 'bg-rol-dir' : (isN2 ? 'bg-rol-let' : 'bg-rol-ban');
 
             const badgeIcon = getRoleBadgeIcon(rolMatch);
             const isPianoBadge = ['piano', 'piano_teclado'].includes(String(rolMatch.codigo || '').toLowerCase()) || String(rolMatch.nombre || '').toLowerCase().includes('teclado');

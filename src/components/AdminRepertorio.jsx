@@ -1305,7 +1305,7 @@ export default function AdminRepertorio() {
       const { data, error } = await supabase
         .from('canciones')
         .insert([nuevaCancion])
-        .select()
+        .select('id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, link_youtube, mp3, link_acordes, link_letras, voces, link_voces, link_secuencias, chordpro, section_markers, multitrack_session')
         .single();
 
       if (error) throw error;

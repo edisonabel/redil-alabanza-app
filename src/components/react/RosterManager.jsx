@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+﻿import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import { getAssignmentProfileId, getVisibleVoiceAssignments, normalizeRosterAssignments } from '../../lib/roster-utils';
 import { isEventRepertoryManagerRoleCode, isHiddenEventAssignmentRoleCode } from '../../lib/role-permissions.js';
@@ -60,7 +60,7 @@ const notifyAssignmentRecipients = async ({ eventoId, perfilIds }) => {
     }
 };
 
-export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr, evEstadoStr, esAcustico = false, isStrictModerator, canEditRoster = !isStrictModerator, dbData, onRosterChange }) {
+export default function RosterManager({ evId, evFechaStr, esAcustico = false, isStrictModerator, canEditRoster = !isStrictModerator, dbData, onRosterChange }) {
     const [asignaciones, setAsignaciones] = useState(dbData?.asignaciones || []);
     const [roles, setRoles] = useState([]);
 
@@ -365,11 +365,11 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
         const perfilesRoles = isVoicePool
             ? await supabase
                 .from('perfil_roles')
-                .select('rol_id, perfiles!inner(*)')
+                .select('rol_id, perfiles!inner(id, nombre, email, avatar_url)')
                 .in('rol_id', voiceRoleIds)
             : await supabase
                 .from('perfil_roles')
-                .select('rol_id, perfiles!inner(*)')
+                .select('rol_id, perfiles!inner(id, nombre, email, avatar_url)')
                 .eq('rol_id', rId);
 
         setPickerLoading(false);
@@ -728,7 +728,6 @@ export default function RosterManager({ evId, evFechaStr, evTituloStr, evTemaStr
     const letras = [];
     const banda = [];
     const voiceRoles = assignableRoles.filter(rol => String(rol.codigo || '').startsWith('voz_'));
-    const voiceRoleIds = new Set(voiceRoles.map((rol) => rol.id));
     const voicePoolRole = { id: '_voz_pool', nombre: 'Voz' };
     const vocesAsignadas = getVisibleVoiceAssignments(normalizedAssignments, assignableRoles, { maxVoiceSlots: MAX_VOZ_SLOTS })
         .map((asig) => {

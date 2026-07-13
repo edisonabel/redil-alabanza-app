@@ -110,7 +110,8 @@ Aunque `scripts/` solo tiene 3 utilidades estructuradas, la raiz del repo sigue 
   - mapea colores semanticos a CSS variables: `background`, `surface`, `brand`, `action`, `danger`, `success`, `warning`, `info`, `accent`, `neutral`, `overlay` y colores por rol
 - `tsconfig.json`
   - extiende `astro/tsconfigs/strict`
-  - excluye `src/archivos_legacy` y `dist`
+  - limita la comprobacion al codigo fuente, scripts y configuracion activa
+  - excluye artefactos generados de `dist` e iOS
 - `netlify.toml`
   - build con `npm run build`
   - cache headers para fuentes, assets Astro, imagenes, `sw.js` y `manifest.webmanifest`
@@ -720,27 +721,24 @@ Los nuevos controles mantenidos viven en `scripts/`:
 - `check-migration-history.mjs`
 - `test-voice-lyric-follower.mjs`
 
-Permanecen siete artefactos historicos con codificacion heredada que no forman
-parte del runtime y deben eliminarse en una limpieza exclusiva de archivos binarios:
+El 13 de julio de 2026 tambien se retiraron los siete artefactos historicos con
+codificacion heredada y las tres copias antiguas de Programacion. Ninguno formaba
+parte del runtime.
 
-- `.tmp_repertorio_51f508e.astro`
-- `astro_errors.txt`
-- `old_history.txt`
-- `server.log`
-- `tmp_chordpro_test.txt`
-- `tmp_modoensayo.txt`
-- `tmp_parse_test.cjs`
+### Optimizacion verificada
+
+El mismo cierre sustituyo lecturas amplias por proyecciones explicitas en
+Programacion, el selector de integrantes, Equipo, Perfil y el alta de canciones.
+Las islas secundarias de Perfil, Programacion y Configuracion se hidratan en
+tiempo ocioso. El build limpio queda en aproximadamente 4.7 MB sin duplicados
+locales; el CSS global generado pesa cerca de 386 KB (50 KB comprimido con gzip).
 
 ## 14. Legacy y hotspots tecnicos
 
 ### Legacy
 
-- `src/archivos_legacy/`
-  - `old_programacion.astro`
-  - `old_programacion2.astro`
-  - `old_programacion_utf8.astro`
-  - conserva versiones viejas del flujo de Programacion
-  - esta excluido por `tsconfig.json`
+Las copias antiguas del flujo de Programacion fueron eliminadas. El historial
+aplicado de base de datos se conserva intacto dentro de `migrations/`.
 
 ### Hotspots actuales por tamano/acoplamiento
 

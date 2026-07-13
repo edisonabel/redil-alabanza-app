@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
 import { fetchLiveDirectorSongSession } from '../../utils/liveDirectorUploadClient';
 

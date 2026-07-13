@@ -1,6 +1,7 @@
 type NavigatorWithMemoryAndStandalone = Navigator & {
   deviceMemory?: number;
   standalone?: boolean;
+  userAgentData?: { platform?: string };
 };
 
 type PerformanceMemoryLike = {
@@ -96,7 +97,7 @@ export const readLiveBrowserCapabilities = () => {
 
   return {
     userAgent,
-    platform: navigator.platform || null,
+    platform: navigatorWithMemory.userAgentData?.platform || null,
     maxTouchPoints: navigator.maxTouchPoints || 0,
     isIOS: /iPhone|iPad|iPod/i.test(userAgent) || isTouchMac,
     isAndroid: /Android/i.test(userAgent),

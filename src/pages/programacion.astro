@@ -18,8 +18,7 @@ initialFetchLimit.setHours(23, 59, 59, 999);
 const accessToken = Astro.locals.accessToken || Astro.cookies.get('sb-access-token')?.value || '';
 let ssrUser = Astro.locals.user || null;
 let ssrRoles: any[] = [];
-let ssrEventos = [];
-let queryError = null;
+let ssrEventos: any[] = [];
 let ssrAdmin = false;
 let ssrCanEditTema = false;
 let ssrHasMoreEventos = false;
@@ -50,7 +49,7 @@ if (ssrUser) {
 
     let query = supabaseSSR
       .from('eventos')
-      .select('*, asignaciones(rol_id, perfiles(id, nombre, email, avatar_url))')
+      .select('id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, predicador, serie_id, asignaciones(id, rol_id, perfiles(id, nombre, email, avatar_url))')
       .gte('fecha_hora', initialFetchFloor.toISOString())
       .lte('fecha_hora', initialFetchLimit.toISOString())
       .order('fecha_hora', { ascending: true });
@@ -88,20 +87,10 @@ if (ssrUser) {
   ssrAdmin = perfil?.is_admin || false;
   ssrCanEditTema = ssrAdmin || (hasSermonRole === true);
   ssrHasMoreEventos = (moreEventosCount || 0) > 0;
-  queryError = err || perfilError || rolesError || moreEventosError;
-  
-  /* console.log("=== PROGRAMACION QUERY LOG ===", { 
-    error: queryError, 
-    rowsCount: eventosDb?.length, 
-    sample: eventosDb?.[0] ? {
-        id: eventosDb[0].id,
-        titulo: eventosDb[0].titulo,
-        tema_predicacion: eventosDb[0].tema_predicacion,
-        fecha_hora: eventosDb[0].fecha_hora,
-        estado: eventosDb[0].estado,
-        playlists: eventosDb[0].playlists
-    } : null 
-  }); */
+  const queryError = err || perfilError || rolesError || moreEventosError;
+  if (queryError) {
+    console.error('[programacion] SSR query failed', queryError);
+  }
   
   ssrEventos = eventosDb || [];
 }
@@ -131,7 +120,6 @@ if (ssrUser) {
         initialEvents={ssrEventos}
         sessionUser={ssrUser}
         initialRoles={ssrRoles}
-        ssrError={queryError?.message || null}
         isAdmin={ssrAdmin}
         canEditTema={ssrCanEditTema}
         initialLoadUntil={initialFetchLimit.toISOString()}
@@ -146,7 +134,7 @@ if (ssrUser) {
 
     <!-- MODAL GENERADOR DE SERIES -->
     <ModalSerie client:only="react" sessionUser={ssrUser} />
-    <OnboardingRoot client:load page="programacion" userId={ssrUser?.id ?? null} />
+    <OnboardingRoot client:idle page="programacion" userId={ssrUser?.id ?? null} />
   </div>
 
   <style is:global>

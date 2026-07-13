@@ -756,7 +756,7 @@ import Layout from '../layouts/Layout.astro';
 
  // 3. Render Cards
  equipoGrid.innerHTML = '';
- perfiles.forEach((p, index) => {
+ perfiles.forEach((p) => {
  const currentRoles = rolesPorPerfil.get(p.id) || new Set();
  
  const article = document.createElement('article');
@@ -1052,11 +1052,9 @@ import Layout from '../layouts/Layout.astro';
  submitSpinner?.classList.remove('hidden');
 
  try {
- const { data: newPerfil, error } = await supabase
+ const { error } = await supabase
  .from('perfiles')
- .insert([{ nombre, email, telefono: telefono || null, is_admin: false }])
- .select()
- .single();
+ .insert([{ nombre, email, telefono: telefono || null, is_admin: false }]);
 
  if (error) throw error;
 
@@ -1190,7 +1188,6 @@ import Layout from '../layouts/Layout.astro';
  
  // Slots ocupados
  allVoices.forEach((asig:any) => {
- const rolNombreVoz = vozRoles.find((r:any) => r.id === asig.rol_id)?.nombre || 'Voz';
  const avatarUI = asig.avatar_url 
  ? `<img src="${asig.avatar_url}" alt="${asig.perfil_nombre}" crossorigin="anonymous" loading="lazy" decoding="async" class="w-8 h-8 rounded-full object-cover shadow-sm bg-neutral/20 shrink-0">`
  : `<div class="w-8 h-8 rounded-full bg-neutral/20 flex items-center justify-center font-bold text-[10px] text-content-muted shadow-sm shrink-0">${asig.perfil_nombre.substring(0,2).toUpperCase()}</div>`;
@@ -1364,7 +1361,7 @@ import Layout from '../layouts/Layout.astro';
  const { data: equipoRes, error: equipoErr } = await supabase
  .from('equipos')
  .insert([{ nombre: nombrePlan, letra: latraE }])
- .select()
+ .select('id, created_at')
  .single();
  
  if (equipoErr) throw equipoErr;

@@ -137,7 +137,7 @@ const userId = Astro.locals.user?.id ?? null;
  Seguridad
  </h3>
  <div class="mb-5">
- <BotonNotificaciones client:load userId={userId} />
+ <BotonNotificaciones client:idle userId={userId} />
  </div>
  
  <div class="flex flex-col sm:flex-row gap-4 mt-6">
@@ -154,7 +154,7 @@ const userId = Astro.locals.user?.id ?? null;
  </div>
  </main>
 
- <OnboardingRoot client:load page="perfil" userId={userId} />
+ <OnboardingRoot client:idle page="perfil" userId={userId} />
 
  {/* Modal para Recortar Foto */}
  <div id="cropper-modal" class="fixed inset-0 z-50 bg-black/80 hidden items-center justify-center p-4 backdrop-blur-sm transition-opacity opacity-0 duration-300">
@@ -379,8 +379,6 @@ const userId = Astro.locals.user?.id ?? null;
  const btnCloseAvatarLock = document.getElementById('btn-close-avatar-lock');
  const btnConfirmAvatarLock = document.getElementById('btn-confirm-avatar-lock');
  
-const avatarPreview = document.getElementById('avatar-preview') as HTMLImageElement;
-const avatarPreviewText = document.getElementById('avatar-preview-text');
  let canChangeAvatar = false;
  let isPreparingAvatar = false;
 
@@ -1079,7 +1077,7 @@ const avatarPreviewText = document.getElementById('avatar-preview-text');
  .from('perfiles')
  .update(updates)
  .eq('id', userId)
- .select();
+ .select('id');
 
  if (error) throw error;
 

@@ -28,7 +28,7 @@ const readThemeColor = (cssVariable, fallback) => {
   }
 };
 
-const buildLoadingDocument = ({ url, title, subtitle, badge }) => {
+const buildLoadingDocument = ({ title, subtitle, badge }) => {
   const origin = window.location.origin;
   const iconVersion = '20260403';
   const faviconSvg = new URL(`/favicon.svg?v=${iconVersion}`, origin).toString();
@@ -202,8 +202,8 @@ export const openBrandedTab = ({
 
   try {
     newTab.document.open();
-    newTab.document.write(buildLoadingDocument({
-      url: resolvedUrl,
+    const writableDocument = /** @type {{ write: (html: string) => void }} */ (newTab.document);
+    writableDocument.write(buildLoadingDocument({
       title,
       subtitle,
       badge,

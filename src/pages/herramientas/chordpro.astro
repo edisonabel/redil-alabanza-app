@@ -549,7 +549,7 @@ if (requestedSongId) {
  
  // Buscar todo lo que esté entre corchetes [Acorde]
  const regex = /\[(.*?)\]/g;
- output.value = texto.replace(regex, (match, p1) => {
+ output.value = texto.replace(regex, (_match, p1) => {
  return '[' + transponerAcorde(p1, pasosActuales) + ']';
  });
  notificarPreview();

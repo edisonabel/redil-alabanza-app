@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Clock3, ExternalLink, GripVertical, ListMusic, Loader2, Mic2, Play, Plus, Printer, RadioReceiver, X, Zap } from 'lucide-react';
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
 import EnsayoPersonalView from './EnsayoPersonalView.jsx';
@@ -84,7 +84,7 @@ const transposeChordProText = (chordProText = '', semitones = 0) => {
   const source = String(chordProText || '');
   if (!source || semitones === 0) return source;
 
-  return source.replace(/\[([^\]]+)\]/g, (fullMatch, chordGroup) => {
+  return source.replace(/\[([^\]]+)\]/g, (_fullMatch, chordGroup) => {
     const parts = String(chordGroup || '').split(/(\s+)/);
     const transposed = parts.map((part) => (
       /\s+/.test(part) ? part : transposeChordSymbol(part, semitones)
@@ -117,7 +117,7 @@ const isMobilePrintDevice = () => {
   return (
     Boolean(navigatorWithUserAgentData.userAgentData?.mobile) ||
     /Android|iPad|iPhone|iPod/i.test(window.navigator.userAgent) ||
-    (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1)
+    (/Macintosh/i.test(window.navigator.userAgent) && window.navigator.maxTouchPoints > 1)
   );
 };
 
@@ -565,33 +565,6 @@ const formatCompactMetaLabel = (value = '') => {
   return lower.charAt(0).toLocaleUpperCase('es-CO') + lower.slice(1);
 };
 
-const hasValidVoicePayload = (value) => {
-  const raw = serializeVoicePayload(value);
-  const normalized = raw
-    ? raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-    : '';
-
-  return Boolean(raw && raw !== '-' && normalized !== 'no esta');
-};
-
-const openVoicesModal = ({ title, artist, entries = [], legacyUrl = '' }) => {
-  if (typeof window === 'undefined') return;
-
-  if (window.__REDIL_VOCES_MODAL__?.open) {
-    window.__REDIL_VOCES_MODAL__.open(title || 'Recursos de voz', artist || '', entries, legacyUrl || '');
-    return;
-  }
-
-  window.dispatchEvent(new CustomEvent('open-voces-modal', {
-    detail: {
-      title,
-      artist,
-      entries,
-      legacyUrl,
-    },
-  }));
-};
-
 const sanitizeSongVoiceAssignments = (value) => (
   value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 );
@@ -1017,37 +990,6 @@ export default function EnsayoHub({
     });
   }, []);
 
-  const openSongVoices = useCallback((song) => {
-    if (typeof window === 'undefined') return;
-    console.log('[EnsayoHub] 🎤 Iniciando openSongVoices para:', song?.title);
-
-    const rawVoicePayload = serializeVoicePayload(song?.linkVoces);
-    const parsed = parseVoiceResources(rawVoicePayload);
-    console.log('[EnsayoHub] ⚙️ Payload procesado:', parsed);
-
-    const fallbackLegacyUrl =
-      parsed.legacyUrl ||
-      normalizeVoiceExternalUrl(rawVoicePayload) ||
-      normalizeVoiceExternalUrl(song?.linkVoces?.legacyUrl || song?.linkVoces?.folder || song?.linkVoces?.drive || '');
-
-    if (!parsed.hasResources && !fallbackLegacyUrl) {
-      console.warn('[EnsayoHub] ⚠️ No se encontraron recursos de voz válidos.');
-      return;
-    }
-
-    stopMetronome();
-    stopQueue();
-    window.__REDIL_PRO_PLAYER__?.close?.();
-
-    console.log('[EnsayoHub] 🚀 Disparando evento/modal de voces...');
-    openVoicesModal({
-      title: song?.title || 'Recursos de voz',
-      artist: song?.artist || '',
-      entries: parsed.entries || [],
-      legacyUrl: fallbackLegacyUrl || '',
-    });
-  }, [stopMetronome, stopQueue]);
-
   const openPersonalVoiceView = useCallback((song) => {
     if (!song) return;
 
@@ -1420,7 +1362,8 @@ export default function EnsayoHub({
     let previewWindow = null;
     if (typeof window !== 'undefined') {
       previewWindow = window.open('', 'redil-setlist-pdf-v2');
-      previewWindow?.document?.write?.('<!doctype html><title>Generando PDF</title><body style="font-family:system-ui;margin:32px;color:#18181b">Generando PDF del setlist...</body>');
+      const writableDocument = /** @type {{ write?: (html: string) => void }} */ (previewWindow?.document);
+      writableDocument?.write?.('<!doctype html><title>Generando PDF</title><body style="font-family:system-ui;margin:32px;color:#18181b">Generando PDF del setlist...</body>');
     }
 
     let payload = null;
@@ -1838,7 +1781,6 @@ export default function EnsayoHub({
               const hasSongAudio = typeof song?.mp3 === 'string' && song.mp3.trim() !== '';
               const parsedVoices = parseVoiceResources(song?.linkVoces);
               const hasVoiceResources = parsedVoices.hasResources || Boolean(parsedVoices.legacyUrl);
-              const hasStructuredVoiceEntries = parsedVoices.entries.length > 0;
               const voiceLabel = normalizeVoiceLabel(song?.voz);
               const isLastViewed = String(song?.id || index) === String(lastViewedSongId || '');
               const currentUserAssignedTrackName = String(

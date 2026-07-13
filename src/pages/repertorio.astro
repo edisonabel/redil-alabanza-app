@@ -1146,8 +1146,6 @@ const clearPlaylistSelection = () => {
  const card = btn.closest('article');
  const cancionId = btn.getAttribute('data-id') || card?.getAttribute('data-id') || '';
  const cancion = btn.getAttribute('data-cancion') || '';
- const svg = btn.querySelector('svg');
-
  if (isSelectionMode) {
  if (!cancionId) return;
  const idx = selectedSongs.indexOf(String(cancionId));
@@ -1291,14 +1289,6 @@ const matchVoz = (vozValue: string, vozFilter: string) => {
 
  return v.includes(f);
 };
-
-const formatTime = (seconds: number) => {
-   if (!Number.isFinite(seconds) || seconds < 0) return '00:00';
-   const total = Math.floor(seconds);
-   const min = Math.floor(total / 60);
-   const sec = total % 60;
-   return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
- };
 
 const matchCategoria = (categoriaValue: string, categoriaFilter: string) => {
  const c = normalizeStr(categoriaValue);

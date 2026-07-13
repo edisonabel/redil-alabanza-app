@@ -49,7 +49,6 @@ const PAGE_MAP_HEIGHT_PT = 20;
 const PAGE_MAP_GAP_PT = 10;
 const PAGE_BOTTOM_BUFFER_PT = 14;
 const COLUMN_BLOCK_GAP_PT = 8;
-const SCALE_SAFETY = 0.95;
 const MIN_SCALE_FACTOR = 0.62;
 const SCALE_RETRY_LIMIT = 8;
 
@@ -290,15 +289,6 @@ const getColumnGapHeight = (blockCount: number, scaleFactor: number) =>
 const getScaledColumnHeight = (blocks: PdfPreparedBlock[], scaleFactor: number) =>
   blocks.reduce((total, block) => total + block.estimatedHeight * scaleFactor, 0) +
   getColumnGapHeight(blocks.length, scaleFactor);
-
-const getScaledTotalHeight = (
-  blocks: PdfPreparedBlock[],
-  options: ChordProPdfSheetOptions,
-  scaleFactor: number
-) =>
-  blocks.reduce((total, block) => total + block.estimatedHeight * scaleFactor, 0) +
-  getColumnGapHeight(blocks.length, scaleFactor) +
-  getChromeHeight(options) * scaleFactor * options.columnCount;
 
 const getRawBlocksHeight = (blocks: PdfPreparedBlock[], scaleFactor: number) =>
   blocks.reduce((total, block) => total + block.estimatedHeight * scaleFactor, 0) +

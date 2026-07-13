@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, MapPin, Mic2, Save, Settings2, UserRound, Volume2 } from 'lucide-react';
 
 const TRACK_ANCHORS_KEY = '__trackAnchors';
