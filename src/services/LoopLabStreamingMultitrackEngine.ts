@@ -145,7 +145,7 @@ type WorkletResumeReadingMessage = {
   type: 'RESUME_READING';
   playing: boolean;
   positionSeconds: number;
-  reason?: 'seek' | 'startup';
+  reason?: 'seek' | 'startup' | 'loop-cache';
   seekSerial?: number;
 };
 
@@ -392,6 +392,26 @@ type ProducerLoopCacheStatusMessage = {
   maxPinnedLoopMemoryBytes: number;
   bytesPerSample: number;
   pinnedBuffers?: unknown[];
+};
+
+type ProducerPinnedLoopBuffer = {
+  trackId: string;
+  trackIndex: number;
+  sampleRate: number;
+  channelCount: number;
+  frameCount: number;
+  sampleBuffer: SharedArrayBuffer;
+  stateBuffer: SharedArrayBuffer;
+};
+
+type ProducerLoopCacheReadyMessage = {
+  type: 'loop-cache-ready';
+  sessionId: number | null;
+  strategy: 'PINNED';
+  startSample: number;
+  endSample: number;
+  frameCount: number;
+  pinnedBuffers: ProducerPinnedLoopBuffer[];
 };
 
 type ProducerStatusMessage = {
@@ -662,6 +682,7 @@ type ProducerSyncAuditMessage = {
 type ProducerInboundMessage =
   | ProducerReadyMessage
   | ProducerLoopCacheStatusMessage
+  | ProducerLoopCacheReadyMessage
   | ProducerStatusMessage
   | ProducerPongMessage
   | ProducerTrackReadyMessage
@@ -844,6 +865,16 @@ export interface StreamingMultitrackEngineOptions {
   publishMeterMessages?: boolean;
 }
 
+export type LoopLabRegionState = {
+  enabled: boolean;
+  startInSeconds: number;
+  endInSeconds: number;
+  durationInSeconds: number;
+  estimatedBytes: number;
+  maxPinnedLoopMemoryBytes: number;
+  strategy: 'PINNED';
+};
+
 export type SharedStreamingTelemetry = {
   sequence: Int32Array;
   currentTime: Float64Array;
@@ -913,8 +944,8 @@ type PreloadedStreamingSession = {
   trackStates: TrackRuntime[];
 };
 
-const DEFAULT_WORKLET_MODULE_URL = '/workers/MultitrackWorkletProcessor.js';
-const DEFAULT_PRODUCER_WORKER_URL = '/workers/AudioProducerWorker.js';
+const DEFAULT_WORKLET_MODULE_URL = '/workers/LoopLabMultitrackWorkletProcessor.js';
+const DEFAULT_PRODUCER_WORKER_URL = '/workers/LoopLabAudioProducerWorker.js';
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
 const DEFAULT_SAMPLE_RATE = 48_000;
 const DEFAULT_CHANNEL_COUNT = 1;
@@ -1030,6 +1061,9 @@ export class StreamingMultitrackEngine {
   private loopEnabled = false;
   private loopStartInSeconds = 0;
   private loopEndInSeconds = 0;
+  private loopOperationSerial = 0;
+  private pendingLoopStatus: Deferred<ProducerLoopCacheStatusMessage> | null = null;
+  private pendingLoopReady: Deferred<ProducerLoopCacheReadyMessage> | null = null;
   private transportPlaying = false;
   private startTime = 0;
   private pauseTime = 0;
@@ -1260,6 +1294,11 @@ export class StreamingMultitrackEngine {
 
   private checkProducerStaleAfterSuspension(reason: string): void {
     if (this.disposed || this.trackStates.length === 0) {
+      return;
+    }
+
+    if (this.loopEnabled) {
+      this.suspensionStaleEmitted = false;
       return;
     }
 
@@ -2325,6 +2364,22 @@ export class StreamingMultitrackEngine {
       return;
     }
 
+    if (this.loopEnabled) {
+      await this.resumeContextIfNeeded();
+      this.startTime = this.context.currentTime - this.pauseTime;
+      this.transportPlaying = true;
+      this.pendingPlaybackContentCheck = null;
+      this.postProducerTransportState(false);
+      this.postWorkletMessage({
+        type: 'RESUME_READING',
+        playing: true,
+        positionSeconds: this.pauseTime,
+        reason: 'loop-cache',
+        seekSerial: this.activeSeekSerial,
+      });
+      return;
+    }
+
     if (this.restartFromHead && this.tracks.length > 0) {
       await this.initialize(this.tracks.map((track) => this.buildStreamingTrackDefinition(track)));
       this.restartFromHead = false;
@@ -2420,11 +2475,11 @@ export class StreamingMultitrackEngine {
   }
 
   getCurrentTime(): number {
-    if (this.transportPlaying) {
-      return Math.max(0, this.context.currentTime - this.startTime);
-    }
+    const linearTime = this.transportPlaying
+      ? Math.max(0, this.context.currentTime - this.startTime)
+      : Math.max(0, this.pauseTime);
 
-    return Math.max(0, this.pauseTime);
+    return this.resolveLoopTime(linearTime);
   }
 
   getDuration(): number {
@@ -2693,6 +2748,217 @@ export class StreamingMultitrackEngine {
 
   setMasterVolume(volume: number): void {
     this.masterGain.gain.value = this.clampVolume(volume);
+  }
+
+  async configureLoopRegion(
+    startInSeconds: number,
+    endInSeconds: number,
+    enabled: boolean,
+  ): Promise<LoopLabRegionState | null> {
+    const operationSerial = this.loopOperationSerial + 1;
+    this.loopOperationSerial = operationSerial;
+    const wasPlaying = this.transportPlaying;
+    const currentPosition = this.getCurrentTime();
+
+    if (wasPlaying) {
+      this.pause();
+    }
+
+    if (!enabled) {
+      const trackDefinitions = this.tracks.map((track) =>
+        this.buildStreamingTrackDefinition(track),
+      );
+      this.loopEnabled = false;
+      this.loopStartInSeconds = 0;
+      this.loopEndInSeconds = 0;
+      this.pendingLoopStatus = null;
+      this.pendingLoopReady = null;
+      this.postWorkletLoopCache(null);
+      this.postLoopRegion(false);
+      this.postProducerMessage({
+        type: 'configure-loop-region',
+        sessionId: this.producerSessionId,
+        enabled: false,
+        startSample: 0,
+        endSample: 0,
+      });
+
+      if (trackDefinitions.length > 0) {
+        this.cancelPendingProducerSeek();
+        this.cancelPendingWorkletFlush();
+        this.pendingPlaybackContentCheck = null;
+        this.transportPlaying = false;
+        this.startTime = 0;
+        this.pauseTime = Math.max(0, currentPosition);
+        this.postProducerTransportState(false);
+        this.terminateProducerWorker('loop-exit-rebuild');
+
+        await this.initialize(trackDefinitions);
+        for (const soloTrackId of this.soloTrackIds) {
+          const soloTrackIndex = this.trackIndexById.get(soloTrackId);
+          if (typeof soloTrackIndex !== 'number' || this.isTrackIndexOmitted(soloTrackIndex)) {
+            continue;
+          }
+          this.postWorkletMessage({
+            type: 'track-solo',
+            trackIndex: soloTrackIndex,
+            solo: true,
+          });
+        }
+
+        if (currentPosition > 0.01) {
+          await this.seekTo(currentPosition);
+        } else {
+          this.pauseTime = 0;
+          this.startTime = 0;
+          this.transportPlaying = false;
+        }
+      }
+      if (wasPlaying && operationSerial === this.loopOperationSerial) {
+        await this.play();
+      }
+      return null;
+    }
+
+    const start = Number(startInSeconds);
+    const end = Number(endInSeconds);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+      throw new Error('La región de bucle no contiene tiempos válidos.');
+    }
+
+    const safeStart = Math.max(0, Math.min(start, end));
+    const safeEnd = Math.max(0, Math.max(start, end));
+    if (safeEnd - safeStart < 0.25) {
+      throw new Error('La región de bucle debe durar al menos 0.25 segundos.');
+    }
+    if (!this.producerWorker || !this.workletNode) {
+      throw new Error('El motor experimental todavía no está listo para preparar el bucle.');
+    }
+
+    this.loopEnabled = false;
+    this.loopStartInSeconds = safeStart;
+    this.loopEndInSeconds = safeEnd;
+    this.postWorkletLoopCache(null);
+    this.postLoopRegion(false);
+
+    const statusDeferred = this.createDeferred<ProducerLoopCacheStatusMessage>();
+    const readyDeferred = this.createDeferred<ProducerLoopCacheReadyMessage>();
+    this.pendingLoopStatus = statusDeferred;
+    this.pendingLoopReady = readyDeferred;
+
+    const startSample = Math.round(safeStart * this.context.sampleRate);
+    const endSample = Math.round(safeEnd * this.context.sampleRate);
+    this.postProducerMessage({
+      type: 'configure-loop-region',
+      sessionId: this.producerSessionId,
+      enabled: true,
+      startSample,
+      endSample,
+    });
+
+    const timeout = <T>(promise: Promise<T>, label: string): Promise<T> => (
+      Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          window.setTimeout(() => reject(new Error(label)), 120_000);
+        }),
+      ])
+    );
+
+    try {
+      const status = await timeout(
+        statusDeferred.promise,
+        'La evaluación de memoria del bucle tardó demasiado.',
+      );
+      if (operationSerial !== this.loopOperationSerial) {
+        throw new Error('La preparación del bucle fue reemplazada por otra operación.');
+      }
+      if (status.strategy !== 'PINNED') {
+        throw new Error(
+          `La sección necesita ${this.formatBytes(status.estimatedBytes)} y el laboratorio admite ${this.formatBytes(status.maxPinnedLoopMemoryBytes)}. Prueba una sección más corta o menos stems.`,
+        );
+      }
+
+      const ready = await timeout(
+        readyDeferred.promise,
+        'La decodificación de la región de bucle tardó demasiado.',
+      );
+      if (operationSerial !== this.loopOperationSerial) {
+        throw new Error('La preparación del bucle fue reemplazada por otra operación.');
+      }
+      if (!Array.isArray(ready.pinnedBuffers) || ready.pinnedBuffers.length === 0) {
+        throw new Error('El worker no entregó audio preparado para el bucle.');
+      }
+
+      const incompleteTracks = ready.pinnedBuffers.filter((buffer) => {
+        if (!(buffer.stateBuffer instanceof SharedArrayBuffer)) {
+          return true;
+        }
+        return Atomics.load(new Int32Array(buffer.stateBuffer), 0) !== 1;
+      });
+      if (ready.pinnedBuffers.length !== this.getActiveTrackStates().length || incompleteTracks.length > 0) {
+        throw new Error(
+          `La caché del bucle quedó incompleta (${ready.pinnedBuffers.length - incompleteTracks.length}/${this.getActiveTrackStates().length} pistas). No se activó para evitar desincronización.`,
+        );
+      }
+
+      this.postWorkletLoopCache(ready);
+      this.loopEnabled = true;
+      this.postLoopRegion(false);
+      this.pauseTime = safeStart;
+      this.startTime = 0;
+      this.transportPlaying = false;
+      this.restartFromHead = false;
+      this.pendingPlaybackContentCheck = null;
+      this.postProducerTransportState(false);
+      this.postWorkletMessage({
+        type: 'transport',
+        playing: false,
+        positionSeconds: safeStart,
+      });
+      this.resetTrackMeterLevels();
+
+      if (wasPlaying && operationSerial === this.loopOperationSerial) {
+        await this.play();
+      }
+
+      return {
+        enabled: true,
+        startInSeconds: safeStart,
+        endInSeconds: safeEnd,
+        durationInSeconds: safeEnd - safeStart,
+        estimatedBytes: status.estimatedBytes,
+        maxPinnedLoopMemoryBytes: status.maxPinnedLoopMemoryBytes,
+        strategy: 'PINNED',
+      };
+    } catch (error) {
+      this.loopEnabled = false;
+      this.loopStartInSeconds = 0;
+      this.loopEndInSeconds = 0;
+      this.postWorkletLoopCache(null);
+      this.postLoopRegion(false);
+      this.postProducerMessage({
+        type: 'configure-loop-region',
+        sessionId: this.producerSessionId,
+        enabled: false,
+        startSample: 0,
+        endSample: 0,
+      });
+      if (operationSerial === this.loopOperationSerial) {
+        await this.seekTo(currentPosition).catch(() => undefined);
+        if (wasPlaying) {
+          await this.play().catch(() => undefined);
+        }
+      }
+      throw error;
+    } finally {
+      if (this.pendingLoopStatus === statusDeferred) {
+        this.pendingLoopStatus = null;
+      }
+      if (this.pendingLoopReady === readyDeferred) {
+        this.pendingLoopReady = null;
+      }
+    }
   }
 
   toggleLoop(): void {
@@ -4029,7 +4295,28 @@ export class StreamingMultitrackEngine {
       return;
     }
 
+    if (message.type === 'loop-cache-ready') {
+      if (
+        this.pendingLoopReady &&
+        (message.sessionId === null || message.sessionId === this.producerSessionId)
+      ) {
+        this.pendingLoopReady.resolve(message);
+      }
+      logLiveDiagnostic('loop-lab:cache-ready', {
+        sessionId: message.sessionId,
+        frameCount: message.frameCount,
+        pinnedBufferCount: message.pinnedBuffers.length,
+      });
+      return;
+    }
+
     if (message.type === 'loop-cache-status') {
+      if (
+        this.pendingLoopStatus &&
+        (message.sessionId === null || message.sessionId === this.producerSessionId)
+      ) {
+        this.pendingLoopStatus.resolve(message);
+      }
       const shouldWarn =
         message.strategy === 'PREDICTIVE_DOUBLE_BUFFER' ||
         message.estimatedBytes > message.maxPinnedLoopMemoryBytes;
@@ -4490,7 +4777,7 @@ export class StreamingMultitrackEngine {
     pending.reject(new Error(`${message.code}: ${message.message}`));
   }
 
-  private postLoopRegion(): void {
+  private postLoopRegion(notifyProducer = true): void {
     const startSample = Math.max(0, Math.round(this.loopStartInSeconds * this.context.sampleRate));
     const endSample = Math.max(0, Math.round(this.loopEndInSeconds * this.context.sampleRate));
     const enabled = this.loopEnabled && endSample > startSample + 1;
@@ -4504,13 +4791,42 @@ export class StreamingMultitrackEngine {
       });
     }
 
-    this.postProducerMessage({
-      type: 'configure-loop-region',
-      sessionId: this.producerSessionId,
-      enabled,
-      startSample,
-      endSample,
+    if (notifyProducer) {
+      this.postProducerMessage({
+        type: 'configure-loop-region',
+        sessionId: this.producerSessionId,
+        enabled,
+        startSample,
+        endSample,
+      });
+    }
+  }
+
+  private postWorkletLoopCache(message: ProducerLoopCacheReadyMessage | null): void {
+    if (!this.workletNode) {
+      return;
+    }
+
+    this.workletNode.port.postMessage({
+      type: 'loop-cache-data',
+      enabled: Boolean(message),
+      startSample: message?.startSample ?? 0,
+      endSample: message?.endSample ?? 0,
+      tracks: message?.pinnedBuffers ?? [],
     });
+  }
+
+  private resolveLoopTime(linearTime: number): number {
+    if (!this.loopEnabled || this.loopEndInSeconds <= this.loopStartInSeconds) {
+      return Math.max(0, linearTime);
+    }
+
+    if (linearTime < this.loopStartInSeconds) {
+      return Math.max(0, linearTime);
+    }
+
+    const duration = this.loopEndInSeconds - this.loopStartInSeconds;
+    return this.loopStartInSeconds + ((linearTime - this.loopStartInSeconds) % duration);
   }
 
   private async reseekTracks(targetTimeInSeconds: number): Promise<DemuxSeekResult[]> {
@@ -4931,6 +5247,13 @@ export class StreamingMultitrackEngine {
     }
 
     return Math.min(maxVolume, Math.max(0, volume));
+  }
+
+  private formatBytes(value: number): string {
+    if (!Number.isFinite(value) || value <= 0) {
+      return '0 MiB';
+    }
+    return `${(value / (1024 * 1024)).toFixed(1)} MiB`;
   }
 
   private createDeferred<T>(): Deferred<T> {

@@ -248,6 +248,7 @@ const userId = Astro.locals.user?.id ?? null;
 <script>
  import { supabase, uploadAvatarAtomic } from '../lib/supabase';
  import { getSafeImageForCropper } from '../utils/safeImageProcessor';
+ import { safeHtml, toSafeMediaUrl } from '../lib/client/html-safety.js';
 
  const revokePerfilSafeCropperUrl = () => {
  const safeUrl = (window as any).__perfilSafeCropperUrl as string | null | undefined;
@@ -618,7 +619,10 @@ const avatarPreviewText = document.getElementById('avatar-preview-text');
  const avatarContainerToUpdate = document.getElementById('avatar-container');
  if (avatarContainerToUpdate) {
  avatarContainerToUpdate.classList.remove('bg-brand/10');
- avatarContainerToUpdate.innerHTML = `<img src="${publicUrl}" alt="Avatar" class="w-full h-full object-cover" id="avatar-preview" />`;
+ const safePublicUrl = toSafeMediaUrl(publicUrl);
+ avatarContainerToUpdate.innerHTML = safePublicUrl
+ ? safeHtml`<img src="${safePublicUrl}" alt="Avatar" class="w-full h-full object-cover" id="avatar-preview" />`
+ : '';
  }
 
  closeCropperModal();
@@ -852,7 +856,7 @@ const avatarPreviewText = document.getElementById('avatar-preview-text');
  const email = user.email;
  
  if (inputCorreo) inputCorreo.value = email || '';
- if (uiUserEmail) uiUserEmail.innerHTML = email || '';
+ if (uiUserEmail) uiUserEmail.textContent = email || '';
 
  // 1. Fetch Perfil
  const { data: perfilData, error: perfilError } = await supabase
@@ -867,12 +871,12 @@ const avatarPreviewText = document.getElementById('avatar-preview-text');
  
  if (uiUserName) {
  uiUserName.classList.remove('bg-neutral/20', 'animate-pulse', 'h-7', 'min-w-[120px]', 'flex', 'items-center', 'justify-center');
- uiUserName.innerHTML = perfilData.nombre;
+ uiUserName.textContent = perfilData.nombre;
  }
  
  if (uiUserEmail) {
  uiUserEmail.classList.remove('bg-neutral/20', 'animate-pulse', 'h-5', 'min-w-[160px]', 'flex', 'items-center', 'justify-center');
- uiUserEmail.innerHTML = email || '';
+ uiUserEmail.textContent = email || '';
  }
 
  // Set vocal key and birthday
@@ -901,11 +905,14 @@ const avatarPreviewText = document.getElementById('avatar-preview-text');
  if (perfilData.avatar_url) {
  currentAvatarUrl = perfilData.avatar_url;
  avatarContainer.classList.remove('bg-brand/10');
- avatarContainer.innerHTML = `<img src="${perfilData.avatar_url}" alt="${perfilData.nombre}" class="w-full h-full object-cover" id="avatar-preview" />`;
+ const safeAvatarUrl = toSafeMediaUrl(perfilData.avatar_url);
+ avatarContainer.innerHTML = safeAvatarUrl
+ ? safeHtml`<img src="${safeAvatarUrl}" alt="${perfilData.nombre}" class="w-full h-full object-cover" id="avatar-preview" />`
+ : '';
  } else {
  currentAvatarUrl = null;
  const initials = perfilData.nombre.split(' ').map((n: string) => n[0]).join('').substring(0,2).toUpperCase();
- avatarContainer.innerHTML = `<span id="avatar-preview-text" class="text-brand">${initials}</span>`;
+ avatarContainer.innerHTML = safeHtml`<span id="avatar-preview-text" class="text-brand">${initials}</span>`;
  avatarContainer.classList.add('bg-brand/10');
  }
  }
@@ -930,7 +937,7 @@ const avatarPreviewText = document.getElementById('avatar-preview-text');
  uiRolesContainer.innerHTML = '<span class="text-xs text-content-muted italic">Sin roles asignados</span>';
  } else {
  userRoles.forEach((rol: string) => {
- uiRolesContainer.innerHTML += `<span class="px-2.5 py-1 text-xs font-bold uppercase tracking-wider rounded-md bg-background border border-border text-content-muted shadow-sm">${rol}</span>`;
+ uiRolesContainer.insertAdjacentHTML('beforeend', safeHtml`<span class="px-2.5 py-1 text-xs font-bold uppercase tracking-wider rounded-md bg-background border border-border text-content-muted shadow-sm">${rol}</span>`);
  });
  }
  }
@@ -964,17 +971,19 @@ const avatarPreviewText = document.getElementById('avatar-preview-text');
  const div = document.createElement('div');
  div.className = "flex items-center justify-between p-3 rounded-lg border border-neutral-100 bg-background group shrink-0 transition-opacity";
  div.setAttribute('data-ausencia-id', aus.id);
- div.innerHTML = `
+ div.innerHTML = safeHtml`
  <div>
  <p class="text-sm font-bold text-content ">
  ${inicio} <span class="text-content-muted mx-1">-</span> ${fin}
  </p>
  ${motivoHtml}
  </div>
- <button type="button" class="p-2 rounded-lg text-content-muted hover:text-red-500 hover:bg-red-50 :bg-red-950/30 transition-colors" title="Eliminar" onclick="window._deleteAusencia('${aus.id}')">
+ <button type="button" class="p-2 rounded-lg text-content-muted hover:text-red-500 hover:bg-red-50 :bg-red-950/30 transition-colors" title="Eliminar">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
  </button>
  `;
+ const deleteAbsenceButton = div.querySelector('button');
+ on(deleteAbsenceButton, 'click', () => (window as any)._deleteAusencia(String(aus.id)));
  ausenciasListEl.appendChild(div);
  });
  }
@@ -1145,6 +1154,3 @@ const avatarPreviewText = document.getElementById('avatar-preview-text');
  document.addEventListener('astro:page-load', initPerfilPage);
  document.addEventListener('astro:after-swap', onPerfilAfterSwap);
 </script>
-
-
-

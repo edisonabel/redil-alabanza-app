@@ -1,20 +1,30 @@
-import { createClient } from '@supabase/supabase-js';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { getSupabaseServerEnv, readEnv } from '../../lib/server/supabase-env.js';
+import {
+  assertRequestBodySize,
+  consumeRateLimit,
+  requireAdminUser,
+  securityErrorResponse,
+  serviceRoleClient,
+} from '../../lib/server/api-security.js';
+import { readEnv } from '../../lib/server/supabase-env.js';
 
-const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
-
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const MAX_UPLOAD_BYTES = 150 * 1024 * 1024;
 const PUBLIC_R2_HOST = 'stems.alabanzaredilestadio.com';
-const PUBLIC_R2_BASE_URL = `https://${PUBLIC_R2_HOST}`;
+const ALLOWED_PURPOSES = new Set(['mp3', 'acordes', 'voces', 'secuencia', 'otro']);
+
+const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), {
+  status,
+  headers: {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+  },
+});
 
 const normalizePublicR2BaseUrl = (value = '') => {
-  const fallback = PUBLIC_R2_BASE_URL;
-  const rawValue = String(value || fallback).trim() || fallback;
-
+  const fallback = `https://${PUBLIC_R2_HOST}`;
   try {
-    const parsed = new URL(rawValue);
+    const parsed = new URL(String(value || fallback).trim() || fallback);
     if (parsed.hostname.toLowerCase().endsWith('.r2.dev')) {
       parsed.protocol = 'https:';
       parsed.hostname = PUBLIC_R2_HOST;
@@ -26,82 +36,91 @@ const normalizePublicR2BaseUrl = (value = '') => {
   }
 };
 
-function limpiarNombreArchivo(nombre) {
-  return nombre
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // Quitar tildes y diacríticos
-    .replace(/[^a-zA-Z0-9.-]/g, '_')   // Remueve espacios y caracteres especiales
-    .toLowerCase();
-}
+const sanitizeFileName = (value = '') => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^a-zA-Z0-9._-]/g, '_')
+  .replace(/^\.+/, '')
+  .slice(0, 120)
+  .toLowerCase();
+
+const isAllowedContentType = (value = '') => {
+  const contentType = String(value || '').toLowerCase();
+  return contentType.startsWith('audio/')
+    || contentType === 'application/pdf'
+    || contentType === 'text/plain'
+    || contentType === 'application/octet-stream';
+};
 
 export const POST = async ({ request, cookies }) => {
   try {
-    // 1. Extracción y limpieza extrema de variables (quita espacios ocultos y evita undefined)
-    const r2Endpoint = readEnv('R2_ENDPOINT');
-    const r2AccessKey = readEnv('R2_ACCESS_KEY_ID');
-    const r2SecretKey = readEnv('R2_SECRET_ACCESS_KEY');
-    const r2Bucket = readEnv('R2_BUCKET_NAME');
-    const publicR2Url = normalizePublicR2BaseUrl(readEnv('PUBLIC_R2_URL', 'R2_PUBLIC_URL'));
-
-    // Verificación de seguridad en consola
-    console.log("[API R2] Endpoint Limpio:", r2Endpoint);
-    console.log("[API R2] Bucket Limpio:", r2Bucket);
-
-    if (!r2Endpoint || !r2Bucket) {
-      throw new Error("Faltan variables vitales de Cloudflare en el .env");
-    }
-
-    // 2. Autenticación Supabase
-    const token = cookies.get('sb-access-token')?.value;
-    if (!token) {
-      return new Response(JSON.stringify({ error: 'No autorizado. Falta token de acceso.' }), { status: 401 });
-    }
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'No autorizado. Token inválido o expirado.' }), { status: 401 });
-    }
-
-    const body = await request.json();
-    const { fileName, fileType } = body;
-
-    if (!fileName) {
-      return new Response(JSON.stringify({ error: 'Se requiere el nombre del archivo (fileName).' }), { status: 400 });
-    }
-
-    // 3. Inicializar cliente S3
-    const s3Client = new S3Client({
-      region: "auto",
-      endpoint: r2Endpoint,
-      credentials: {
-        accessKeyId: r2AccessKey,
-        secretAccessKey: r2SecretKey,
-      },
+    assertRequestBodySize(request, 16 * 1024);
+    const user = await requireAdminUser(cookies);
+    await consumeRateLimit({
+      bucket: 'r2-upload-url',
+      actorId: user.id,
+      windowSeconds: 60 * 60,
+      maxRequests: 60,
     });
 
-    const cleanedFileName = limpiarNombreArchivo(fileName);
-    const uniqueFileName = `${Date.now()}_${cleanedFileName}`;
+    const body = await request.json().catch(() => ({}));
+    const songId = String(body?.songId || '').trim();
+    const fileName = sanitizeFileName(body?.fileName);
+    const fileType = String(body?.fileType || 'application/octet-stream').trim().toLowerCase();
+    const fileSize = Number(body?.fileSize);
+    const purpose = ALLOWED_PURPOSES.has(String(body?.purpose || ''))
+      ? String(body.purpose)
+      : 'otro';
 
-    // 4. Crear el comando con el Bucket limpio
+    if (!songId || !fileName) {
+      return jsonResponse({ error: 'Se requieren songId y fileName.' }, 400);
+    }
+    if (!Number.isFinite(fileSize) || fileSize < 1 || fileSize > MAX_UPLOAD_BYTES) {
+      return jsonResponse({ error: 'Tamano de archivo invalido o superior a 150 MB.' }, 413);
+    }
+    if (!isAllowedContentType(fileType)) {
+      return jsonResponse({ error: 'Tipo de archivo no permitido.' }, 415);
+    }
+
+    const { data: song, error: songError } = await serviceRoleClient
+      .from('canciones')
+      .select('id')
+      .eq('id', songId)
+      .maybeSingle();
+    if (songError) throw songError;
+    if (!song) return jsonResponse({ error: 'La cancion no existe.' }, 404);
+
+    const endpoint = readEnv('R2_ENDPOINT');
+    const accessKeyId = readEnv('R2_ACCESS_KEY_ID');
+    const secretAccessKey = readEnv('R2_SECRET_ACCESS_KEY');
+    const bucket = readEnv('R2_BUCKET_NAME');
+    if (!endpoint || !accessKeyId || !secretAccessKey || !bucket) {
+      return jsonResponse({ error: 'Almacenamiento no configurado.' }, 503);
+    }
+
+    const objectKey = `songs/${songId}/${purpose}/${Date.now()}-${fileName}`;
+    const client = new S3Client({
+      region: 'auto',
+      endpoint,
+      credentials: { accessKeyId, secretAccessKey },
+    });
     const command = new PutObjectCommand({
-      Bucket: r2Bucket,
-      Key: uniqueFileName,
-      ContentType: fileType || 'application/octet-stream', 
+      Bucket: bucket,
+      Key: objectKey,
+      ContentType: fileType,
+      ContentLength: fileSize,
     });
+    const presignedUrl = await getSignedUrl(client, command, { expiresIn: 600 });
+    const publicBaseUrl = normalizePublicR2BaseUrl(readEnv('PUBLIC_R2_URL', 'R2_PUBLIC_URL'));
 
-    // 5. Generar URL (Aquí es donde explotaba antes, ya no lo hará)
-    const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
-    const publicUrl = `${publicR2Url}/${uniqueFileName}`;
-
-    return new Response(JSON.stringify({ presignedUrl, publicUrl }), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json'
-      }
+    return jsonResponse({
+      presignedUrl,
+      publicUrl: `${publicBaseUrl}/${objectKey}`,
+      expiresIn: 600,
     });
-
   } catch (error) {
-    console.error('Error generando Presigned URL:', error);
-    return new Response(JSON.stringify({ error: 'Error interno del servidor detallado: ' + error.message }), { status: 500 });
+    if (error?.name === 'ApiSecurityError') return securityErrorResponse(error);
+    console.error('[get-upload-url] request failed:', error);
+    return securityErrorResponse(error);
   }
 };

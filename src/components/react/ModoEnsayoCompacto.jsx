@@ -30,11 +30,14 @@ import {
   isVoiceFollowerAvailable,
 } from '../../services/VoiceFollowerService';
 import {
+  appendVoiceTransitionVote,
   buildVoiceContextPhrases,
   buildVoiceLyricIndex,
+  evaluateVoiceSectionTransition,
   findBestVoiceLyricMatch,
   findVoiceAnchorIndex,
   getVoiceSectionGate,
+  hasVoiceTransitionConsensus,
   normalizeVoiceToken,
 } from '../../utils/voiceLyricFollower';
 const FONT_PRESETS = {
@@ -59,6 +62,13 @@ const VOICE_READING_ANCHOR_RATIO = 0.28;
 const VOICE_NEXT_SECTION_PREVIEW_RATIO = 0.64;
 const VOICE_SECTION_LEAD_WORDS = 3;
 const VOICE_MAX_FORWARD_WORDS = 12;
+const VOICE_NEXT_SECTION_HEAD_WORDS = 8;
+const VOICE_NEAR_END_PROGRESS = 0.68;
+const VOICE_TRANSITION_EVIDENCE_TTL_MS = 3200;
+const VOICE_TRANSITION_FLEX_MIN_SCORE = 0.74;
+const VOICE_TRANSITION_FLEX_MIN_MARGIN = 0.08;
+const VOICE_TRANSITION_BOUNDARY_MIN_SCORE = 0.68;
+const VOICE_TRANSITION_BOUNDARY_MIN_MARGIN = 0.04;
 const VOICE_SCROLL_DEAD_ZONE_PX = 12;
 const VOICE_MANUAL_SCROLL_PAUSE_MS = 900;
 const CAPO_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7];
@@ -902,15 +912,16 @@ const buildWordGroupsLegacy = (segments) => {
 };
 
 const buildChordOverlayLine = (line) => {
-  const segments = parseChordProLine(line);
+  const sanitizedLine = String(line || '').replace(/\{[^}]+\}/g, '');
+  const segments = parseChordProLine(sanitizedLine);
   if (!segments.length) {
-    return { mode: 'plain', text: line || '' };
+    return { mode: 'plain', text: sanitizedLine };
   }
   const hasChord = segments.some((segment) => segment.chord);
   const lyricLine = segments.map((segment) => segment.lyric || '').join('');
   const hasVisibleLyric = lyricLine.trim().length > 0;
   if (!hasChord) {
-    return { mode: 'plain', text: lyricLine || line || '' };
+    return { mode: 'plain', text: lyricLine || sanitizedLine };
   }
   if (!hasVisibleLyric) {
     return {
@@ -975,8 +986,9 @@ function ChordOverlayLine({
           }
 
           // type === 'word'
-          lyricWordIndex += 1;
-          const isVoiceWord = voiceActive && lyricWordIndex === activeVoiceWordIndex;
+          const isLyricWord = Boolean(normalizeVoiceToken(token.word));
+          if (isLyricWord) lyricWordIndex += 1;
+          const isVoiceWord = isLyricWord && voiceActive && lyricWordIndex === activeVoiceWordIndex;
           return (
             <React.Fragment key={`${lineKey}-wg-${i}`}>
               {i > 0 && ' '}
@@ -1484,9 +1496,12 @@ export default function ModoEnsayoCompacto({
   const voiceLyricWordsRef = useRef([]);
   const voiceFollowerEnabledRef = useRef(false);
   const voiceProgressIndexRef = useRef(0);
+  const voiceHasConfirmedWordRef = useRef(false);
   const voiceAuthorizedSectionRef = useRef(0);
   const voiceManualScrollUntilRef = useRef(0);
+  const voiceManualGestureActiveRef = useRef(false);
   const voiceCandidateRef = useRef({ globalIndex: -1, hits: 0 });
+  const voiceTransitionVotesRef = useRef([]);
   const audioCtxRef = useRef(null);
   const trackSourceRef = useRef(null);
   const trackGainRef = useRef(null);
@@ -1683,6 +1698,8 @@ export default function ModoEnsayoCompacto({
         currentIndex: voiceProgressIndexRef.current,
         leadWords: VOICE_SECTION_LEAD_WORDS,
         maxForwardWords: VOICE_MAX_FORWARD_WORDS,
+        nearEndProgress: VOICE_NEAR_END_PROGRESS,
+        hasConfirmedWord: voiceHasConfirmedWordRef.current,
       });
       if (!gate) return;
       if (voiceAuthorizedSectionRef.current !== gate.sectionIndex) {
@@ -1692,49 +1709,109 @@ export default function ModoEnsayoCompacto({
           gate.sectionStartIndex,
         );
       }
+      if (!gate.nextSectionPrepared) voiceTransitionVotesRef.current = [];
 
-      const match = findBestVoiceLyricMatch({
+      const currentMatch = findBestVoiceLyricMatch({
         transcript: result?.text || '',
         lyricWords: words,
         currentIndex: voiceProgressIndexRef.current,
-        backwardWindow: 1,
-        forwardWindow: gate.forwardWindow,
+        searchStartIndex: Math.max(
+          gate.sectionStartIndex,
+          voiceProgressIndexRef.current - 8,
+        ),
+        searchEndIndex: Math.min(
+          gate.sectionEndIndex,
+          voiceProgressIndexRef.current + VOICE_MAX_FORWARD_WORDS,
+        ),
       });
-      if (!match) return;
+      const nextMatch = gate.nextSectionPrepared &&
+        Number.isInteger(gate.nextSectionStartIndex) &&
+        Number.isInteger(gate.nextSectionEndIndex)
+        ? findBestVoiceLyricMatch({
+          transcript: result?.text || '',
+          lyricWords: words,
+          currentIndex: voiceProgressIndexRef.current,
+          searchStartIndex: gate.nextSectionStartIndex,
+          searchEndIndex: Math.min(
+            gate.nextSectionEndIndex,
+            gate.nextSectionStartIndex + VOICE_NEXT_SECTION_HEAD_WORDS - 1,
+          ),
+          minimumScoreOverride: 0.58,
+          singleWordMaxJump: gate.nextSectionUnlocked ? VOICE_SECTION_LEAD_WORDS + 1 : 0,
+        })
+        : null;
 
-      const candidateWord = words[match.globalIndex];
-      if (!candidateWord) return;
-      const isSectionTransition = candidateWord.sectionIndex !== gate.sectionIndex;
-      if (
-        candidateWord.sectionIndex < gate.sectionIndex ||
-        (isSectionTransition && (
-          !gate.nextSectionUnlocked ||
-          candidateWord.sectionIndex !== gate.allowedSectionIndex
-        ))
-      ) {
-        return;
+      if (gate.nextSectionPrepared && (currentMatch || nextMatch)) {
+        const transitionDecision = evaluateVoiceSectionTransition({
+          gate,
+          currentMatch,
+          nextMatch,
+          isFinal: Boolean(result?.isFinal),
+          flexMinScore: VOICE_TRANSITION_FLEX_MIN_SCORE,
+          flexMinMargin: VOICE_TRANSITION_FLEX_MIN_MARGIN,
+          boundaryMinScore: VOICE_TRANSITION_BOUNDARY_MIN_SCORE,
+          boundaryMinMargin: VOICE_TRANSITION_BOUNDARY_MIN_MARGIN,
+        });
+
+        voiceTransitionVotesRef.current = appendVoiceTransitionVote({
+          votes: voiceTransitionVotesRef.current,
+          sectionIndex: gate.nextSectionIndex,
+          supportsNext: transitionDecision.supportsNext,
+          ambiguous: transitionDecision.ambiguous,
+          transcript: result?.text || '',
+          ttlMs: VOICE_TRANSITION_EVIDENCE_TTL_MS,
+        });
+
+        const transitionConfirmed = Boolean(
+          transitionDecision.supportsNext &&
+          nextMatch &&
+          hasVoiceTransitionConsensus({
+            votes: voiceTransitionVotesRef.current,
+            sectionIndex: gate.nextSectionIndex,
+            requiredVotes: transitionDecision.requiredVotes,
+          })
+        );
+
+        if (transitionConfirmed) {
+          const transitionWord = words[nextMatch.globalIndex];
+          if (transitionWord?.sectionIndex === gate.nextSectionIndex) {
+            voiceAuthorizedSectionRef.current = transitionWord.sectionIndex;
+            voiceProgressIndexRef.current = nextMatch.globalIndex;
+            voiceHasConfirmedWordRef.current = true;
+            voiceCandidateRef.current = { globalIndex: -1, hits: 0 };
+            voiceTransitionVotesRef.current = [];
+            setVoiceMatch({
+              ...transitionWord,
+              confidence: nextMatch.score,
+              transcript: String(result?.text || ''),
+            });
+            return;
+          }
+        }
       }
 
-      const jump = match.globalIndex - voiceProgressIndexRef.current;
-      const previousCandidate = voiceCandidateRef.current;
-      const sameCandidate = Math.abs(previousCandidate.globalIndex - match.globalIndex) <= 1;
-      const hits = sameCandidate ? previousCandidate.hits + 1 : 1;
-      voiceCandidateRef.current = { globalIndex: match.globalIndex, hits };
+      if (!currentMatch) return;
+      const candidateWord = words[currentMatch.globalIndex];
+      if (!candidateWord || candidateWord.sectionIndex !== gate.sectionIndex) return;
 
-      const requiredHits = isSectionTransition || jump > 4 ? 2 : 1;
+      const jump = currentMatch.globalIndex - voiceProgressIndexRef.current;
+      const previousCandidate = voiceCandidateRef.current;
+      const sameCandidate = Math.abs(previousCandidate.globalIndex - currentMatch.globalIndex) <= 3;
+      const hits = sameCandidate ? previousCandidate.hits + 1 : 1;
+      voiceCandidateRef.current = { globalIndex: currentMatch.globalIndex, hits };
+
+      const requiredHits = jump > 4 ? 2 : 1;
       if (hits < requiredHits) return;
 
-      const nextIndex = Math.max(voiceProgressIndexRef.current, match.globalIndex);
+      const nextIndex = Math.max(voiceProgressIndexRef.current, currentMatch.globalIndex);
       const word = words[nextIndex];
       if (!word) return;
 
-      if (isSectionTransition) {
-        voiceAuthorizedSectionRef.current = word.sectionIndex;
-      }
       voiceProgressIndexRef.current = nextIndex;
+      voiceHasConfirmedWordRef.current = true;
       setVoiceMatch({
         ...word,
-        confidence: match.score,
+        confidence: currentMatch.score,
         transcript: String(result?.text || ''),
       });
     }).then((listener) => {
@@ -1771,9 +1848,12 @@ export default function ModoEnsayoCompacto({
     setVoiceFollowerError('');
     setVoiceMatch(null);
     voiceProgressIndexRef.current = 0;
+    voiceHasConfirmedWordRef.current = false;
     voiceAuthorizedSectionRef.current = 0;
     voiceManualScrollUntilRef.current = 0;
+    voiceManualGestureActiveRef.current = false;
     voiceCandidateRef.current = { globalIndex: -1, hits: 0 };
+    voiceTransitionVotesRef.current = [];
     void VoiceFollower.stop().catch(() => undefined);
   }, [currentSongKey]);
   const personalSettingsContext = useMemo(() => ({
@@ -2821,6 +2901,7 @@ export default function ModoEnsayoCompacto({
     if (!scroller) return undefined;
     const beginManualScroll = () => {
       if (!voiceFollowerEnabledRef.current) return;
+      voiceManualGestureActiveRef.current = true;
       voiceManualScrollUntilRef.current = Date.now() + VOICE_MANUAL_SCROLL_PAUSE_MS;
     };
     const handleScroll = () => {
@@ -2847,17 +2928,35 @@ export default function ModoEnsayoCompacto({
 
       if (
         voiceFollowerEnabledRef.current &&
+        voiceManualGestureActiveRef.current &&
         Date.now() < voiceManualScrollUntilRef.current
       ) {
         voiceManualScrollUntilRef.current = Date.now() + VOICE_MANUAL_SCROLL_PAUSE_MS;
-        if (voiceAuthorizedSectionRef.current !== nextSectionIndex) {
+        const scrollerRect = scroller.getBoundingClientRect();
+        const readingAnchorY = scrollerRect.top + currentHeaderOffset + Math.max(
+          56,
+          (scroller.clientHeight - currentHeaderOffset) * VOICE_READING_ANCHOR_RATIO,
+        );
+        let nextLineIndex = 0;
+        (lineRefs.current[nextSectionIndex] || []).forEach((lineNode, lineIndex) => {
+          if (lineNode?.getBoundingClientRect().top <= readingAnchorY) {
+            nextLineIndex = lineIndex;
+          }
+        });
+        const manualAnchorIndex = findVoiceAnchorIndex(
+          voiceLyricWordsRef.current,
+          nextSectionIndex,
+          nextLineIndex,
+        );
+        if (
+          voiceAuthorizedSectionRef.current !== nextSectionIndex ||
+          voiceProgressIndexRef.current !== manualAnchorIndex
+        ) {
           voiceAuthorizedSectionRef.current = nextSectionIndex;
-          voiceProgressIndexRef.current = findVoiceAnchorIndex(
-            voiceLyricWordsRef.current,
-            nextSectionIndex,
-            0,
-          );
+          voiceProgressIndexRef.current = manualAnchorIndex;
+          voiceHasConfirmedWordRef.current = false;
           voiceCandidateRef.current = { globalIndex: -1, hits: 0 };
+          voiceTransitionVotesRef.current = [];
           setVoiceMatch(null);
         }
       }
@@ -2913,6 +3012,7 @@ export default function ModoEnsayoCompacto({
     });
   };
   useEffect(() => {
+    if (activeSectionByVoiceIndex >= 0) return;
     const sectionIndex = activeSectionByVoiceIndex >= 0
       ? activeSectionByVoiceIndex
       : activeSectionByAudioIndex;
@@ -2937,16 +3037,19 @@ export default function ModoEnsayoCompacto({
 
     const lyricWords = voiceLyricWordsRef.current;
     const matchedWordIndex = Number(voiceMatch.globalIndex);
-    let remainingSectionWords = Number.POSITIVE_INFINITY;
-    if (Number.isInteger(matchedWordIndex) && lyricWords[matchedWordIndex]) {
-      remainingSectionWords = 0;
-      for (let index = matchedWordIndex + 1; index < lyricWords.length; index += 1) {
-        if (lyricWords[index].sectionIndex !== voiceMatch.sectionIndex) break;
-        remainingSectionWords += 1;
-      }
-    }
+    const previewGate = Number.isInteger(matchedWordIndex)
+      ? getVoiceSectionGate({
+        words: lyricWords,
+        sectionIndex: voiceMatch.sectionIndex,
+        currentIndex: matchedWordIndex,
+        leadWords: VOICE_SECTION_LEAD_WORDS,
+        maxForwardWords: VOICE_MAX_FORWARD_WORDS,
+        nearEndProgress: VOICE_NEAR_END_PROGRESS,
+        hasConfirmedWord: true,
+      })
+      : null;
 
-    if (remainingSectionWords <= VOICE_SECTION_LEAD_WORDS) {
+    if (previewGate?.nextSectionPrepared) {
       const nextSectionNode = sectionRefs.current[voiceMatch.sectionIndex + 1];
       if (nextSectionNode) {
         const nextSectionRect = nextSectionNode.getBoundingClientRect();
@@ -3171,13 +3274,20 @@ export default function ModoEnsayoCompacto({
     }
   }, [remotePayload, currentSongKey, syncRole]);
 
-  const selectSection = (index, { seekAudio = true, scrollBehavior = 'smooth' } = {}) => {
+  const selectSection = (index, {
+    seekAudio = true,
+    scrollBehavior = 'smooth',
+    lineIndex = 0,
+  } = {}) => {
     setActiveSectionManualIndex(index);
     if (voiceFollowerEnabled) {
-      voiceProgressIndexRef.current = findVoiceAnchorIndex(voiceLyricWords, index, 0);
+      voiceProgressIndexRef.current = findVoiceAnchorIndex(voiceLyricWords, index, lineIndex);
+      voiceHasConfirmedWordRef.current = false;
       voiceAuthorizedSectionRef.current = index;
+      voiceManualGestureActiveRef.current = false;
       voiceManualScrollUntilRef.current = Date.now() + VOICE_MANUAL_SCROLL_PAUSE_MS;
       voiceCandidateRef.current = { globalIndex: -1, hits: 0 };
+      voiceTransitionVotesRef.current = [];
       setVoiceMatch(null);
     }
     setCollapsedSections((prev) => ({
@@ -3231,7 +3341,10 @@ export default function ModoEnsayoCompacto({
       setVoiceFollowerStatus('idle');
       setVoiceFollowerError('');
       setVoiceMatch(null);
+      voiceHasConfirmedWordRef.current = false;
+      voiceManualGestureActiveRef.current = false;
       voiceCandidateRef.current = { globalIndex: -1, hits: 0 };
+      voiceTransitionVotesRef.current = [];
       await VoiceFollower.stop().catch(() => undefined);
       return;
     }
@@ -3248,9 +3361,12 @@ export default function ModoEnsayoCompacto({
       voiceMatch?.lineIndex || 0,
     );
     voiceProgressIndexRef.current = anchorIndex;
+    voiceHasConfirmedWordRef.current = false;
     voiceAuthorizedSectionRef.current = activeSectionIndex;
     voiceManualScrollUntilRef.current = 0;
+    voiceManualGestureActiveRef.current = false;
     voiceCandidateRef.current = { globalIndex: -1, hits: 0 };
+    voiceTransitionVotesRef.current = [];
     setVoiceMatch(null);
     setVoiceFollowerStatus('starting');
     setVoiceFollowerError('');
@@ -3877,7 +3993,13 @@ export default function ModoEnsayoCompacto({
                 } : undefined}
                 onClick={(event) => {
                   if (event.target.closest('summary')) return;
-                  selectSection(sectionIndex, { seekAudio: true, scrollBehavior: 'smooth' });
+                  const lineNode = event.target.closest('[data-voice-line-index]');
+                  const selectedLineIndex = Number(lineNode?.dataset?.voiceLineIndex);
+                  selectSection(sectionIndex, {
+                    seekAudio: true,
+                    scrollBehavior: 'smooth',
+                    lineIndex: Number.isInteger(selectedLineIndex) ? selectedLineIndex : 0,
+                  });
                 }}
               >
                 <summary
@@ -3922,10 +4044,7 @@ export default function ModoEnsayoCompacto({
                   </div>
                 </summary>
                 {!isCollapsed && (
-                  <div
-                    className="space-y-1.5 pt-2"
-                    onClick={() => selectSection(sectionIndex, { seekAudio: true, scrollBehavior: 'smooth' })}
-                  >
+                  <div className="space-y-1.5 pt-2">
                     {section.lines.map((line, lineIndex) => {
                       const renderedLine = buildChordOverlayLine(line);
                       const isVoiceLine = Boolean(
@@ -3940,6 +4059,7 @@ export default function ModoEnsayoCompacto({
                             if (!lineRefs.current[sectionIndex]) lineRefs.current[sectionIndex] = [];
                             lineRefs.current[sectionIndex][lineIndex] = node;
                           }}
+                          data-voice-line-index={lineIndex}
                           className={`grid rounded-lg px-1 py-0.5 transition-colors ${fontPreset.lineGap} ${isVoiceLine
                             ? 'bg-sky-100/30 dark:bg-sky-400/5'
                             : ''

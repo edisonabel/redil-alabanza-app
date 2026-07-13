@@ -10,6 +10,11 @@ import {
   deleteChordProPdfPayloadToken,
 } from '../../lib/chordproPdfPayloadStore';
 import { readEnv } from '../../lib/server/supabase-env.js';
+import {
+  ApiSecurityError,
+  protectPdfGenerationRequest,
+  securityErrorResponse,
+} from '../../lib/server/api-security.js';
 
 export const prerender = false;
 
@@ -122,7 +127,7 @@ const buildRenderUrl = (request: Request, token: string) => {
 const buildPdfFileName = (payload: ChordProPdfPayload) =>
   payload.fileName?.trim() || `${buildChordProPdfFileName(payload.title, payload.artist)}.pdf`;
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, cookies }) => {
   let browser: Browser | null = null;
   let token = '';
   let failureStage = 'payload';
@@ -141,6 +146,7 @@ export const POST: APIRoute = async ({ request }) => {
   })();
 
   try {
+    await protectPdfGenerationRequest({ request, cookies, bucket: 'pdf-chordpro-v1' });
     const payload = await readIncomingPayload(request);
     if (!payload) {
       return new Response(
@@ -197,7 +203,7 @@ export const POST: APIRoute = async ({ request }) => {
       margin: { top: 0, right: 0, bottom: 0, left: 0 },
     });
 
-    return new Response(pdfBuffer, {
+    return new Response(pdfBuffer as unknown as BodyInit, {
       status: 200,
       headers: {
         'content-type': 'application/pdf',
@@ -206,6 +212,9 @@ export const POST: APIRoute = async ({ request }) => {
       },
     });
   } catch (error) {
+    if (error instanceof ApiSecurityError) {
+      return securityErrorResponse(error);
+    }
     console.error(`ChordPro PDF generation failed at stage "${failureStage}":`, error);
 
     const errorMessage =

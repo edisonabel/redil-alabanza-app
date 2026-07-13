@@ -3,12 +3,15 @@ import Layout from '../layouts/Layout.astro';
 import CardCancion from '../components/CardCancion.astro';
 import BuscadorPredictivo from '../components/BuscadorPredictivo.astro';
 import OnboardingRoot from '../components/onboarding/OnboardingRoot';
-import { supabase } from '../lib/supabase';
+import { createSupabaseUserClient } from '../lib/server/supabase-user-client.js';
+import { pickPreferredVoicePayload } from '../utils/voicePayload.js';
 
 let canciones: any[] = [];
 const userId = Astro.locals.user?.id ?? null;
+const accessToken = Astro.locals.accessToken || '';
+const supabaseSSR = createSupabaseUserClient(accessToken);
 try {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseSSR
     .from('canciones')
     .select('*')
     .order('titulo');
@@ -137,7 +140,7 @@ const firstTourResourcesId =
   bpm={cancion.bpm || 0}
  linkLetra={cancion.link_letras || ''}
   linkAcordes={cancion.link_acordes || ''}
-  linkVoces={cancion.link_voces || cancion.voces || ''}
+  linkVoces={pickPreferredVoicePayload(cancion.link_voces, cancion.voces)}
   linkYoutube={cancion.link_youtube || ''}
   linkSecuencias={cancion.link_secuencias || ''}
  linkMp3={cancion.mp3 || ''}
@@ -239,6 +242,7 @@ const firstTourResourcesId =
 <script>
 import { supabase } from '../lib/supabase';
 import { metronomeService } from '../services/MetronomeEngine';
+import { safeHtml } from '../lib/client/html-safety.js';
 
  type RepertorioWindow = Window & {
   __REPERTORIO_INIT_BOUND__?: boolean;
@@ -947,14 +951,14 @@ if (sessionError) {
        const titleText = setlistTema && setlistTema !== 'Sin t\u00edtulo' ? setlistTema : 'Sin tema asignado';
        const badgeHTML = esEnsayo ? '<span class="ml-2 md:ml-3 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] md:text-xs font-medium bg-yellow-100 text-yellow-800 tracking-wide align-middle">?? Ensayo</span>' : '';
        
-       headerContainer.innerHTML = `
+       headerContainer.innerHTML = safeHtml`
          <p class="text-[11px] md:text-sm font-semibold text-brand uppercase tracking-wider mb-0 md:mb-1">${diaStr}</p>
          <h1 class="text-2xl sm:text-3xl md:text-4xl font-extrabold text-content tracking-tight leading-none">${titleText}</h1>
          <h2 class="text-sm md:text-lg font-medium text-content-muted mt-1 md:mt-2">${fechaStr}${badgeHTML}</h2>
        `;
      } else {
        // Escenario B: Setlist Custom / Enlace Manual (Sin datos)
-       headerContainer.innerHTML = `
+       headerContainer.innerHTML = safeHtml`
          <h1 class="text-3xl sm:text-4xl font-extrabold text-content tracking-tight">Setlist Personalizada</h1>
        `;
      }

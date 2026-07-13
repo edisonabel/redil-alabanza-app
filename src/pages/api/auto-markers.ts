@@ -1,29 +1,23 @@
 import type { APIRoute } from 'astro';
-import { createClient } from '@supabase/supabase-js';
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import { splitSectionIntoCues } from '../../utils/splitSectionIntoCues';
 import { getSectionKind } from '../../utils/sectionVisuals';
+import { readEnv } from '../../lib/server/supabase-env.js';
 import {
-  getSupabaseServerEnv,
-  getSupabaseServiceRoleKey,
-  readEnv,
-} from '../../lib/server/supabase-env.js';
+  ApiSecurityError,
+  assertRequestBodySize,
+  consumeRateLimit,
+  requireAdminUser,
+  securityErrorResponse,
+  serviceRoleClient,
+} from '../../lib/server/api-security.js';
 
 export const prerender = false;
 
-const { supabaseUrl } = getSupabaseServerEnv();
-const supabaseServiceRoleKey = getSupabaseServiceRoleKey();
 const openAiApiKey = readEnv('OPENAI_API_KEY');
 const whisperModel = readEnv('OPENAI_WHISPER_MODEL') || 'whisper-1';
 const deepTranscribeModel = readEnv('OPENAI_DEEP_TRANSCRIBE_MODEL') || 'gpt-4o-mini-transcribe';
-
-const authClient = supabaseUrl && supabaseServiceRoleKey
-  ? createClient(supabaseUrl, supabaseServiceRoleKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  })
-  : null;
 
 const DRIVE_HOSTS = new Set([
   'drive.google.com',
@@ -470,6 +464,42 @@ const extractConfirmationUrl = (html = '', baseUrl = '') => {
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 const AUDIO_DOWNLOAD_TIMEOUT_MS = 60_000;
 
+const isPrivateNetworkAddress = (rawAddress: string) => {
+  const address = rawAddress.toLowerCase();
+  if (address === '::1' || address === '0:0:0:0:0:0:0:1') return true;
+  if (address.startsWith('fc') || address.startsWith('fd') || address.startsWith('fe8') || address.startsWith('fe9') || address.startsWith('fea') || address.startsWith('feb')) return true;
+
+  const normalizedIpv4 = address.startsWith('::ffff:') ? address.slice(7) : address;
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(normalizedIpv4)) return false;
+  const [a, b] = normalizedIpv4.split('.').map(Number);
+  return a === 0
+    || a === 10
+    || a === 127
+    || (a === 169 && b === 254)
+    || (a === 172 && b >= 16 && b <= 31)
+    || (a === 192 && b === 168)
+    || (a === 100 && b >= 64 && b <= 127)
+    || a >= 224;
+};
+
+const assertSafeRemoteAudioUrl = async (rawUrl: string) => {
+  const parsed = new URL(rawUrl);
+  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
+  if (parsed.protocol !== 'https:') {
+    throw new ApiSecurityError('La fuente de audio debe usar HTTPS.', 400);
+  }
+  if (!hostname || hostname === 'localhost' || hostname.endsWith('.local')) {
+    throw new ApiSecurityError('Host de audio no permitido.', 400);
+  }
+
+  const addresses = isIP(hostname)
+    ? [{ address: hostname }]
+    : await lookup(hostname, { all: true, verbatim: true });
+  if (addresses.length === 0 || addresses.some(({ address }) => isPrivateNetworkAddress(address))) {
+    throw new ApiSecurityError('La fuente de audio resuelve a una red no permitida.', 400);
+  }
+};
+
 const isAudioContentType = (contentType: string) => {
   const ct = contentType.toLowerCase();
   return (
@@ -486,15 +516,24 @@ const fetchAudioResponse = async (
   depth = 0,
   signal?: AbortSignal,
 ): Promise<Response> => {
+  await assertSafeRemoteAudioUrl(url);
   const response = await fetch(url, {
     method: 'GET',
     headers: {
       'user-agent': 'Mozilla/5.0',
       ...(cookieHeader ? { cookie: cookieHeader } : {}),
     },
-    redirect: 'follow',
+    redirect: 'manual',
     signal,
   });
+
+  if (response.status >= 300 && response.status < 400) {
+    if (depth >= 5) throw new Error('Demasiadas redirecciones al descargar audio.');
+    const location = response.headers.get('location');
+    if (!location) throw new Error('Redireccion de audio sin destino.');
+    const nextUrl = new URL(location, url).href;
+    return fetchAudioResponse(nextUrl, cookieHeader, depth + 1, signal);
+  }
 
   if (!response.ok) {
     throw new Error(`Error descargando audio: ${response.status}`);
@@ -505,7 +544,7 @@ const fetchAudioResponse = async (
     return response;
   }
 
-  if (depth >= 2) {
+  if (depth >= 5) {
     throw new Error('Google Drive siguio respondiendo HTML en vez del audio.');
   }
 
@@ -1249,23 +1288,14 @@ const fillMarkerGapWithStructure = ({
 
 export const POST: APIRoute = async ({ request, cookies }) => {
   try {
-    if (!authClient || !supabaseUrl) {
-      return jsonResponse({ error: 'Faltan variables de entorno de Supabase.' }, 500);
-    }
-
-    const token = cookies.get('sb-access-token')?.value || '';
-    if (!token) {
-      return jsonResponse({ error: 'No autenticado.' }, 401);
-    }
-
-    const {
-      data: { user },
-      error: authError,
-    } = await authClient.auth.getUser(token);
-
-    if (authError || !user) {
-      return jsonResponse({ error: 'Sesion invalida.' }, 401);
-    }
+    assertRequestBodySize(request, 256 * 1024);
+    const user = await requireAdminUser(cookies);
+    await consumeRateLimit({
+      bucket: 'auto-markers',
+      actorId: user.id,
+      windowSeconds: 60 * 60,
+      maxRequests: 12,
+    });
 
     const body = await request.json().catch(() => ({}));
     const mp3Url = String(body?.mp3Url || '').trim();
@@ -1299,6 +1329,10 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       return jsonResponse({ error: 'Se requiere mp3Url.' }, 400);
     }
 
+    if (!songContext.songId) {
+      return jsonResponse({ error: 'Se requiere songContext.songId.' }, 400);
+    }
+
     if (sections.length === 0) {
       return jsonResponse({ error: 'Se requiere al menos una seccion.' }, 400);
     }
@@ -1308,6 +1342,23 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     }
 
     const audioCandidates = normalizeAudioCandidates(body?.audioCandidates, mp3Url);
+    if (!serviceRoleClient) {
+      throw new ApiSecurityError('Servicio de autorizacion no configurado.', 503);
+    }
+    const { data: song, error: songError } = await serviceRoleClient
+      .from('canciones')
+      .select('*')
+      .eq('id', songContext.songId)
+      .maybeSingle();
+    if (songError) throw songError;
+    if (!song) return jsonResponse({ error: 'La cancion no existe.' }, 404);
+
+    const serializedSong = JSON.stringify(song);
+    const unreferencedCandidate = audioCandidates.find((candidate) => !serializedSong.includes(String(candidate.url || '')));
+    if (unreferencedCandidate) {
+      return jsonResponse({ error: 'La fuente de audio no pertenece a la cancion indicada.' }, 403);
+    }
+
     const { blob: audioBlob, candidate: selectedAudioCandidate } = await downloadBestAudioCandidate({
       candidates: audioCandidates,
       requestUrl: new URL(request.url),
@@ -1643,6 +1694,9 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       transcriptPreview,
     });
   } catch (error) {
+    if (error instanceof ApiSecurityError) {
+      return securityErrorResponse(error);
+    }
     console.error('[auto-markers] Server error:', error);
     return jsonResponse({
       error: error instanceof Error ? error.message : 'Error desconocido del servidor.',

@@ -1,4 +1,9 @@
 import type { APIRoute } from 'astro';
+import {
+  requireAuthenticatedUser,
+  securityErrorResponse,
+} from '../../lib/server/api-security.js';
+import { fetchAllowedMediaUrl } from '../../lib/server/media-proxy-security';
 
 export const prerender = false;
 
@@ -179,10 +184,9 @@ const fetchDriveStreamCandidate = async (
   let upstream: Response;
 
   try {
-    upstream = await fetch(url, {
+    upstream = await fetchAllowedMediaUrl(url, {
       method: 'GET',
       headers: buildFetchHeaders(request, cookieHeader),
-      redirect: 'follow',
     });
   } catch {
     return {
@@ -215,7 +219,7 @@ const fetchDriveStreamCandidate = async (
   }
 
   const html = await upstream.text().catch(() => '');
-  const confirmUrl = extractConfirmationUrl(html, url);
+  const confirmUrl = extractConfirmationUrl(html, upstream.url || url);
 
   if (!confirmUrl || confirmUrl === url) {
     return {
@@ -248,7 +252,13 @@ const fetchDriveStream = async (request: Request, id: string) => {
   return audioErrorResponse(lastErrorMessage, lastErrorStatus);
 };
 
-export const GET: APIRoute = async ({ request, url }) => {
+export const GET: APIRoute = async ({ request, url, cookies }) => {
+  try {
+    await requireAuthenticatedUser(cookies);
+  } catch (error) {
+    return securityErrorResponse(error);
+  }
+
   const id = (url.searchParams.get('id') || '').trim();
 
   if (!id) {

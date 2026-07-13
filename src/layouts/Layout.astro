@@ -696,16 +696,22 @@ const themeColors = brandingData;
  <script>
   import { supabase } from '../lib/supabase';
 
-  const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
   const AUTH_COOKIE_REGEX = /^(sb-|__Host-sb-|__Secure-sb-|supabase-)/i;
 
-  const writeSessionCookies = (session) => {
-    const secureFlag = window.location.protocol === 'https:' ? '; Secure' : '';
-    if (!session?.access_token) return;
+  const syncServerSession = async (session) => {
+    if (!session?.access_token || !session?.refresh_token) return;
+    const response = await fetch('/api/auth/session', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+      }),
+    });
 
-    document.cookie = `sb-access-token=${session.access_token}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax${secureFlag}`;
-    if (session.refresh_token) {
-      document.cookie = `sb-refresh-token=${session.refresh_token}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax${secureFlag}`;
+    if (!response.ok) {
+      throw new Error('No se pudo sincronizar la sesion segura.');
     }
   };
 
@@ -716,8 +722,8 @@ const themeColors = brandingData;
     document.cookie = `${name}=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=None${secureFlag}`;
   };
 
-  const clearSessionCookies = () => {
-    const names = new Set(['sb-access-token', 'sb-refresh-token']);
+  const clearSessionCookies = async () => {
+    const names = new Set();
     const rawCookies = document.cookie ? document.cookie.split(';') : [];
     rawCookies.forEach((cookiePart) => {
       const [rawName] = cookiePart.trim().split('=');
@@ -738,6 +744,16 @@ const themeColors = brandingData;
     } catch {
       // no-op
     }
+
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'cache-control': 'no-store' },
+      });
+    } catch {
+      // El middleware invalidara cualquier cookie expirada en la siguiente carga.
+    }
   };
 
   window.__REDIL_AUTH_MANAGER__ = {
@@ -747,7 +763,7 @@ const themeColors = brandingData;
   const bootstrapSessionCookieSync = async () => {
     try {
       const { data } = await supabase.auth.getSession();
-      if (data?.session) writeSessionCookies(data.session);
+      if (data?.session) await syncServerSession(data.session);
     } catch {
       // no-op
     }
@@ -757,20 +773,21 @@ const themeColors = brandingData;
 
   supabase.auth.onAuthStateChange((event, session) => {
     if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') && session) {
-      writeSessionCookies(session);
+      void syncServerSession(session).catch((error) => console.error('[auth] session sync failed', error));
       return;
     }
 
     if (event === 'INITIAL_SESSION' && session) {
-      writeSessionCookies(session);
+      void syncServerSession(session).catch((error) => console.error('[auth] initial session sync failed', error));
       return;
     }
 
     if (event === 'SIGNED_OUT') {
-      clearSessionCookies();
-      if (window.location.pathname !== '/login') {
-        window.location.assign('/login');
-      }
+      void clearSessionCookies().finally(() => {
+        if (window.location.pathname !== '/login') {
+          window.location.assign('/login');
+        }
+      });
     }
  });
  </script>

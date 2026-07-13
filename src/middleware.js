@@ -1,6 +1,11 @@
 import { defineMiddleware } from 'astro:middleware';
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseServerEnv } from './lib/server/supabase-env.js';
+import {
+  clearServerAuthCookies,
+  getServerAuthTokens,
+  setServerAuthCookies,
+} from './lib/server/auth-cookies.js';
 
 const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
 
@@ -11,8 +16,7 @@ const supabaseServer = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
-const protectedRoutes = ['/', '/admin', '/programacion', '/repertorio', '/historial-cantos', '/perfil', '/equipo', '/herramientas', '/configuracion', '/ensayo', '/monitor', '/panel'];
+const protectedRoutes = ['/', '/admin', '/programacion', '/repertorio', '/historial-cantos', '/perfil', '/equipo', '/herramientas', '/configuracion', '/ensayo', '/monitor', '/panel', '/audio-lab'];
 
 const staticAssetRegex = /\.(png|ico|svg|webmanifest|css|js|txt|map|woff2?|ttf|eot|json)$/i;
 const crossOriginIsolationHeaders = {
@@ -28,29 +32,6 @@ const withCrossOriginIsolation = (response) => {
   return response;
 };
 
-const setAuthCookies = (cookies, session, isSecure) => {
-  const options = {
-    path: '/',
-    maxAge: COOKIE_MAX_AGE,
-  };
-
-  if (isSecure) {
-    options.sameSite = 'lax';
-    options.secure = true;
-  }
-
-  cookies.set('sb-access-token', session.access_token, options);
-
-  if (session.refresh_token) {
-    cookies.set('sb-refresh-token', session.refresh_token, options);
-  }
-};
-
-const clearAuthCookies = (cookies) => {
-  cookies.delete('sb-access-token', { path: '/' });
-  cookies.delete('sb-refresh-token', { path: '/' });
-};
-
 const redirectTo = (location, status = 302) => new Response(null, {
   status,
   headers: {
@@ -64,8 +45,7 @@ const isProtectedRoute = (path) =>
   protectedRoutes.some((route) => path === route || path.startsWith(`${route}/`));
 
 const resolveAuthState = async (cookies, isSecure) => {
-  const accessToken = cookies.get('sb-access-token')?.value || null;
-  const refreshToken = cookies.get('sb-refresh-token')?.value || null;
+  const { accessToken, refreshToken } = getServerAuthTokens(cookies);
 
   if (accessToken) {
     try {
@@ -83,7 +63,7 @@ const resolveAuthState = async (cookies, isSecure) => {
       const { data, error } = await supabaseServer.auth.refreshSession({ refresh_token: refreshToken });
       const session = data?.session;
       if (!error && session?.access_token) {
-        setAuthCookies(cookies, session, isSecure);
+        setServerAuthCookies(cookies, session, isSecure);
 
         if (data?.user) {
           return { user: data.user, accessToken: session.access_token, refreshed: true };
@@ -131,7 +111,12 @@ export const onRequest = defineMiddleware(async (context, next) => {
   }
 
   if (protectedPath && !authState?.accessToken) {
-    clearAuthCookies(cookies);
+    clearServerAuthCookies(cookies, isSecure);
+    return redirectTo('/login');
+  }
+
+  if (path === '/admin' && !authState?.user) {
+    clearServerAuthCookies(cookies, isSecure);
     return redirectTo('/login');
   }
 
@@ -163,9 +148,17 @@ export const onRequest = defineMiddleware(async (context, next) => {
       }
 
       locals.perfil = perfil || null;
+
+      if (path === '/admin' && !perfil?.is_admin) {
+        return redirectTo('/repertorio', 303);
+      }
     } catch (perfilQueryError) {
       console.error('Middleware perfil query error:', perfilQueryError);
       locals.perfil = null;
+    }
+
+    if (path === '/admin' && !locals.perfil?.is_admin) {
+      return redirectTo('/repertorio', 303);
     }
   }
 

@@ -17,12 +17,15 @@ export const extractVoiceWordsFromLine = (line = '') => (
   stripChordProMarkup(line)
     .trim()
     .split(/\s+/)
-    .map((display, wordIndex) => ({
+    .map((display) => ({
       display,
       normalized: normalizeVoiceToken(display),
-      wordIndex,
     }))
     .filter((word) => word.normalized)
+    .map((word, wordIndex) => ({
+      ...word,
+      wordIndex,
+    }))
 );
 
 export const buildVoiceLyricIndex = (sections = []) => {
@@ -64,6 +67,8 @@ export const getVoiceSectionGate = ({
   currentIndex = 0,
   leadWords = 3,
   maxForwardWords = 12,
+  nearEndProgress = 0.68,
+  hasConfirmedWord = true,
 } = {}) => {
   const lyricSectionIndexes = [...new Set(words.map((word) => word.sectionIndex))]
     .sort((left, right) => left - right);
@@ -79,13 +84,37 @@ export const getVoiceSectionGate = ({
     sectionEndIndex,
     Math.max(sectionStartIndex, Number(currentIndex) || sectionStartIndex),
   );
-  const remainingWords = Math.max(0, sectionEndIndex - boundedCurrentIndex);
+  const remainingWords = hasConfirmedWord
+    ? Math.max(0, sectionEndIndex - boundedCurrentIndex)
+    : sectionWords.length;
+  const sectionWordCount = sectionWords.length;
+  const sectionProgress = hasConfirmedWord
+    ? Math.min(
+      1,
+      Math.max(0, ((boundedCurrentIndex - sectionStartIndex) + 1) / sectionWordCount),
+    )
+    : 0;
+  const currentWord = hasConfirmedWord ? words[boundedCurrentIndex] : null;
+  const lastLyricLineIndex = sectionWords[sectionWords.length - 1].lineIndex;
+  const onLastLyricLine = currentWord?.lineIndex === lastLyricLineIndex;
   const nextSectionIndex = lyricSectionIndexes.find((index) => index > resolvedSectionIndex);
   const nextSectionWords = Number.isInteger(nextSectionIndex)
     ? words.filter((word) => word.sectionIndex === nextSectionIndex)
     : [];
-  const nextSectionUnlocked = remainingWords <= leadWords && nextSectionWords.length > 0;
-  const allowedEndIndex = nextSectionUnlocked
+  const nextSectionStartIndex = nextSectionWords[0]?.globalIndex ?? null;
+  const nextSectionEndIndex = nextSectionWords[nextSectionWords.length - 1]?.globalIndex ?? null;
+  const boundaryMinProgress = sectionWordCount <= 2 ? 0.5 : 0.55;
+  const nextSectionUnlocked = (
+    remainingWords <= leadWords &&
+    sectionProgress >= boundaryMinProgress &&
+    nextSectionWords.length > 0
+  );
+  const nextSectionPrepared = nextSectionWords.length > 0 && (
+    nextSectionUnlocked ||
+    (onLastLyricLine && sectionProgress >= nearEndProgress) ||
+    sectionProgress >= 0.9
+  );
+  const allowedEndIndex = nextSectionPrepared
     ? nextSectionWords[nextSectionWords.length - 1].globalIndex
     : sectionEndIndex;
 
@@ -93,9 +122,16 @@ export const getVoiceSectionGate = ({
     sectionIndex: resolvedSectionIndex,
     sectionStartIndex,
     sectionEndIndex,
+    sectionWordCount,
+    sectionProgress,
+    onLastLyricLine,
     remainingWords,
     nextSectionUnlocked,
-    allowedSectionIndex: nextSectionUnlocked ? nextSectionIndex : resolvedSectionIndex,
+    nextSectionPrepared,
+    nextSectionIndex: Number.isInteger(nextSectionIndex) ? nextSectionIndex : null,
+    nextSectionStartIndex,
+    nextSectionEndIndex,
+    allowedSectionIndex: nextSectionPrepared ? nextSectionIndex : resolvedSectionIndex,
     forwardWindow: Math.max(
       0,
       Math.min(maxForwardWords, allowedEndIndex - boundedCurrentIndex),
@@ -201,6 +237,10 @@ export const findBestVoiceLyricMatch = ({
   currentIndex = 0,
   backwardWindow = 2,
   forwardWindow = 64,
+  singleWordMaxJump = 3,
+  searchStartIndex = null,
+  searchEndIndex = null,
+  minimumScoreOverride = null,
 } = {}) => {
   const spoken = String(transcript || '')
     .trim()
@@ -211,8 +251,12 @@ export const findBestVoiceLyricMatch = ({
 
   if (spoken.length === 0 || lyricWords.length === 0) return null;
 
-  const searchStart = Math.max(0, currentIndex - backwardWindow);
-  const searchEnd = Math.min(lyricWords.length - 1, currentIndex + forwardWindow);
+  const searchStart = Number.isInteger(searchStartIndex)
+    ? Math.max(0, Math.min(lyricWords.length - 1, searchStartIndex))
+    : Math.max(0, currentIndex - backwardWindow);
+  const searchEnd = Number.isInteger(searchEndIndex)
+    ? Math.max(searchStart, Math.min(lyricWords.length - 1, searchEndIndex))
+    : Math.min(lyricWords.length - 1, currentIndex + forwardWindow);
   let best = null;
 
   for (let candidateEnd = searchStart; candidateEnd <= searchEnd; candidateEnd += 1) {
@@ -231,10 +275,11 @@ export const findBestVoiceLyricMatch = ({
       if (distanceFromCurrent >= 0 && distanceFromCurrent <= 5) score += 0.035;
       if (distanceFromCurrent > 20) score -= Math.min(0.12, distanceFromCurrent * 0.0025);
 
-      if (!best || score > best.score) {
+      if (!best || score > best.rawScore + Number.EPSILON) {
         best = {
           globalIndex: candidateEnd,
           score: Math.max(0, Math.min(1, score)),
+          rawScore: score,
           spokenWordCount: spoken.length,
         };
       }
@@ -243,13 +288,139 @@ export const findBestVoiceLyricMatch = ({
 
   if (!best) return null;
   const jump = best.globalIndex - currentIndex;
-  const minimumScore = spoken.length === 1
-    ? (jump <= 3 ? 0.97 : 1.01)
-    : spoken.length === 2
-      ? 0.72
-      : jump > 8
-        ? 0.78
-        : 0.6;
+  const minimumScore = Number.isFinite(minimumScoreOverride)
+    ? minimumScoreOverride
+    : spoken.length === 1
+      ? (jump <= singleWordMaxJump ? 0.97 : 1.01)
+      : spoken.length === 2
+        ? 0.72
+        : jump > 8
+          ? 0.78
+          : 0.6;
 
   return best.score >= minimumScore ? best : null;
+};
+
+export const appendVoiceTransitionVote = ({
+  votes = [],
+  sectionIndex,
+  supportsNext,
+  transcript = '',
+  ambiguous = false,
+  now = Date.now(),
+  ttlMs = 3200,
+  limit = 3,
+} = {}) => {
+  const transcriptKey = String(transcript || '')
+    .trim()
+    .split(/\s+/)
+    .map(normalizeVoiceToken)
+    .filter(Boolean)
+    .join(' ');
+  const recentVotes = (Array.isArray(votes) ? votes : [])
+    .filter((vote) => now - Number(vote?.timestamp || 0) <= ttlMs);
+  const previousVote = recentVotes[recentVotes.length - 1];
+  if (!transcriptKey) return recentVotes;
+  if (previousVote?.transcriptKey === transcriptKey) {
+    if (supportsNext && !previousVote.supportsNext) {
+      return [
+        ...recentVotes.slice(0, -1),
+        {
+          ...previousVote,
+          sectionIndex,
+          supportsNext: true,
+          ambiguous: Boolean(ambiguous),
+          timestamp: now,
+        },
+      ];
+    }
+    return recentVotes;
+  }
+
+  return [
+    ...recentVotes,
+    {
+      sectionIndex,
+      supportsNext: Boolean(supportsNext),
+      ambiguous: Boolean(ambiguous),
+      transcriptKey,
+      timestamp: now,
+    },
+  ].slice(-Math.max(1, limit));
+};
+
+export const hasVoiceTransitionConsensus = ({
+  votes = [],
+  sectionIndex,
+  requiredVotes = 2,
+} = {}) => (
+  (Array.isArray(votes) ? votes : [])
+    .filter((vote) => vote?.sectionIndex === sectionIndex && vote?.supportsNext)
+    .length >= requiredVotes
+);
+
+export const evaluateVoiceSectionTransition = ({
+  gate,
+  currentMatch,
+  nextMatch,
+  isFinal = false,
+  flexMinScore = 0.74,
+  flexMinMargin = 0.08,
+  boundaryMinScore = 0.68,
+  boundaryMinMargin = 0.04,
+} = {}) => {
+  if (!gate?.nextSectionPrepared || !nextMatch) {
+    return {
+      supportsNext: false,
+      ambiguous: false,
+      strongFinal: false,
+      requiredVotes: 2,
+      currentScore: currentMatch?.score ?? 0,
+      nextScore: nextMatch?.score ?? 0,
+      scoreMargin: 0,
+    };
+  }
+
+  const currentScore = currentMatch?.score ?? 0;
+  const nextScore = nextMatch.score ?? 0;
+  const scoreMargin = nextScore - currentScore;
+  const spokenWordCount = nextMatch.spokenWordCount ?? 0;
+  const enoughWords = spokenWordCount >= 2 || (
+    gate.nextSectionUnlocked && spokenWordCount === 1 && nextScore >= 0.97
+  );
+  const regularSupport = enoughWords && (
+    gate.nextSectionUnlocked
+      ? nextScore >= boundaryMinScore && scoreMargin >= boundaryMinMargin
+      : nextScore >= flexMinScore && scoreMargin >= flexMinMargin
+  );
+  const ambiguous = Boolean(
+    gate.nextSectionUnlocked &&
+    spokenWordCount >= 2 &&
+    nextScore >= 0.9 &&
+    scoreMargin >= -0.02 &&
+    scoreMargin < boundaryMinMargin
+  );
+  const supportsNext = regularSupport || ambiguous;
+  const strongFinal = Boolean(
+    isFinal &&
+    regularSupport &&
+    (
+      gate.nextSectionUnlocked
+        ? nextScore >= 0.86 && scoreMargin >= 0.08
+        : gate.sectionProgress >= 0.78 &&
+          spokenWordCount >= 3 &&
+          nextScore >= 0.9 &&
+          scoreMargin >= 0.12
+    )
+  );
+
+  return {
+    supportsNext,
+    ambiguous,
+    strongFinal,
+    requiredVotes: strongFinal ? 1 : ambiguous ? 3 : 2,
+    currentScore,
+    nextScore,
+    scoreMargin,
+  };
 };

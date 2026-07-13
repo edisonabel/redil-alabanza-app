@@ -1,13 +1,14 @@
 ---
 import Layout from '../../layouts/Layout.astro';
 import LiveDirectorView from '../../components/react/LiveDirectorView';
-import { supabase } from '../../lib/supabase';
+import { createSupabaseUserClient } from '../../lib/server/supabase-user-client.js';
 import {
   buildLiveDirectorSectionsFromMarkers,
   normalizePersistedLiveDirectorSession,
 } from '../../utils/liveDirectorSongSession';
 
 const requestedSong = Astro.url.searchParams.get('song')?.trim() || '';
+const supabase = createSupabaseUserClient(Astro.locals.accessToken || '');
 
 let songRecord: {
   id: string;

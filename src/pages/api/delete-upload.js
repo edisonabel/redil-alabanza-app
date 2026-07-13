@@ -1,27 +1,27 @@
-import { createClient } from '@supabase/supabase-js';
 import { DeleteObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { getSupabaseServerEnv, readEnv } from '../../lib/server/supabase-env.js';
-
-const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
-
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-const jsonResponse = (body, status = 200) => (
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  })
-);
+import {
+  assertRequestBodySize,
+  consumeRateLimit,
+  requireAdminUser,
+  securityErrorResponse,
+  serviceRoleClient,
+} from '../../lib/server/api-security.js';
+import { readEnv } from '../../lib/server/supabase-env.js';
 
 const PUBLIC_R2_HOST = 'stems.alabanzaredilestadio.com';
-const PUBLIC_R2_BASE_URL = `https://${PUBLIC_R2_HOST}`;
+
+const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), {
+  status,
+  headers: {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+  },
+});
 
 const normalizePublicBaseUrl = (value = '') => {
-  const fallback = PUBLIC_R2_BASE_URL;
-  const rawValue = String(value || fallback).trim() || fallback;
-
+  const fallback = `https://${PUBLIC_R2_HOST}`;
   try {
-    const parsed = new URL(rawValue);
+    const parsed = new URL(String(value || fallback).trim() || fallback);
     if (parsed.hostname.toLowerCase().endsWith('.r2.dev')) {
       parsed.protocol = 'https:';
       parsed.hostname = PUBLIC_R2_HOST;
@@ -33,79 +33,78 @@ const normalizePublicBaseUrl = (value = '') => {
   }
 };
 
-const getR2ObjectKeyFromUrl = (fileUrl = '', publicBaseUrl = '') => {
-  const normalizedFileUrl = String(fileUrl || '').trim();
-  const normalizedPublicBaseUrl = normalizePublicBaseUrl(publicBaseUrl);
-
-  if (!normalizedFileUrl || !normalizedPublicBaseUrl) return null;
-
+const getR2ObjectKeyFromUrl = (fileUrl, publicBaseUrl) => {
   try {
-    const parsedFileUrl = new URL(normalizedFileUrl);
-    const fileHost = parsedFileUrl.hostname.toLowerCase();
-    if (fileHost === PUBLIC_R2_HOST || fileHost.endsWith('.r2.dev')) {
-      return decodeURIComponent(parsedFileUrl.pathname.replace(/^\/+/, '').split('?')[0] || '');
+    const parsed = new URL(String(fileUrl || '').trim());
+    const allowedHost = new URL(publicBaseUrl).hostname.toLowerCase();
+    const fileHost = parsed.hostname.toLowerCase();
+    if (fileHost !== allowedHost && fileHost !== PUBLIC_R2_HOST && !fileHost.endsWith('.r2.dev')) {
+      return '';
     }
+    const key = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
+    if (!key || key.includes('..') || key.length > 1024) return '';
+    return key;
   } catch {
-    // Fall back to exact-prefix parsing below.
+    return '';
   }
-
-  const expectedPrefix = `${normalizedPublicBaseUrl}/`;
-  if (!normalizedFileUrl.startsWith(expectedPrefix)) return null;
-  return decodeURIComponent(normalizedFileUrl.slice(expectedPrefix.length).split('?')[0] || '');
 };
 
 export const POST = async ({ request, cookies }) => {
   try {
-    const token = cookies.get('sb-access-token')?.value;
-    if (!token) {
-      return jsonResponse({ error: 'No autorizado. Falta token de acceso.' }, 401);
-    }
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) {
-      return jsonResponse({ error: 'No autorizado. Token invalido o expirado.' }, 401);
-    }
-
-    const body = await request.json().catch(() => ({}));
-    const fileUrl = String(body?.fileUrl || '').trim();
-
-    if (!fileUrl) {
-      return jsonResponse({ error: 'Se requiere la URL actual del archivo.' }, 400);
-    }
-
-    const publicR2Url = normalizePublicBaseUrl(readEnv('PUBLIC_R2_URL', 'R2_PUBLIC_URL'));
-    const objectKey = getR2ObjectKeyFromUrl(fileUrl, publicR2Url);
-
-    if (!objectKey) {
-      return jsonResponse({ deleted: false, skipped: true, reason: 'external-or-legacy-url' });
-    }
-
-    const r2Endpoint = readEnv('R2_ENDPOINT');
-    const r2AccessKey = readEnv('R2_ACCESS_KEY_ID');
-    const r2SecretKey = readEnv('R2_SECRET_ACCESS_KEY');
-    const r2Bucket = readEnv('R2_BUCKET_NAME');
-
-    if (!r2Endpoint || !r2AccessKey || !r2SecretKey || !r2Bucket) {
-      return jsonResponse({ deleted: false, skipped: true, reason: 'missing-r2-config' });
-    }
-
-    const s3Client = new S3Client({
-      region: 'auto',
-      endpoint: r2Endpoint,
-      credentials: {
-        accessKeyId: r2AccessKey,
-        secretAccessKey: r2SecretKey,
-      },
+    assertRequestBodySize(request, 16 * 1024);
+    const user = await requireAdminUser(cookies);
+    await consumeRateLimit({
+      bucket: 'r2-delete',
+      actorId: user.id,
+      windowSeconds: 60 * 60,
+      maxRequests: 120,
     });
 
-    await s3Client.send(new DeleteObjectCommand({
-      Bucket: r2Bucket,
-      Key: objectKey,
-    }));
+    const body = await request.json().catch(() => ({}));
+    const songId = String(body?.songId || '').trim();
+    const fileUrl = String(body?.fileUrl || '').trim();
+    if (!songId || !fileUrl) {
+      return jsonResponse({ error: 'Se requieren songId y fileUrl.' }, 400);
+    }
 
-    return jsonResponse({ deleted: true, key: objectKey });
+    const { data: song, error: songError } = await serviceRoleClient
+      .from('canciones')
+      .select('*')
+      .eq('id', songId)
+      .maybeSingle();
+    if (songError) throw songError;
+    if (!song) return jsonResponse({ error: 'La cancion no existe.' }, 404);
+
+    // Solo se puede borrar un objeto que aun este referenciado por la cancion.
+    if (!JSON.stringify(song).includes(fileUrl)) {
+      return jsonResponse({ error: 'El archivo no pertenece a la cancion indicada.' }, 403);
+    }
+
+    const publicBaseUrl = normalizePublicBaseUrl(readEnv('PUBLIC_R2_URL', 'R2_PUBLIC_URL'));
+    const objectKey = getR2ObjectKeyFromUrl(fileUrl, publicBaseUrl);
+    if (!objectKey) {
+      return jsonResponse({ deleted: false, skipped: true, reason: 'external-or-invalid-url' });
+    }
+
+    const endpoint = readEnv('R2_ENDPOINT');
+    const accessKeyId = readEnv('R2_ACCESS_KEY_ID');
+    const secretAccessKey = readEnv('R2_SECRET_ACCESS_KEY');
+    const bucket = readEnv('R2_BUCKET_NAME');
+    if (!endpoint || !accessKeyId || !secretAccessKey || !bucket) {
+      return jsonResponse({ error: 'Almacenamiento no configurado.' }, 503);
+    }
+
+    const client = new S3Client({
+      region: 'auto',
+      endpoint,
+      credentials: { accessKeyId, secretAccessKey },
+    });
+    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: objectKey }));
+
+    return jsonResponse({ deleted: true });
   } catch (error) {
-    console.error('Error eliminando archivo remoto:', error);
-    return jsonResponse({ error: `Error interno del servidor: ${error.message}` }, 500);
+    if (error?.name === 'ApiSecurityError') return securityErrorResponse(error);
+    console.error('[delete-upload] request failed:', error);
+    return securityErrorResponse(error);
   }
 };

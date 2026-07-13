@@ -1,4 +1,9 @@
 import type { APIRoute } from 'astro';
+import {
+  requireAuthenticatedUser,
+  securityErrorResponse,
+} from '../../lib/server/api-security.js';
+import { fetchAllowedMediaUrl } from '../../lib/server/media-proxy-security';
 
 const DRIVE_HOSTS = new Set([
   'drive.google.com',
@@ -51,7 +56,13 @@ const audioProxyResponse = (body: BodyInit | null, init: ResponseInit = {}) => {
 
 export const prerender = false;
 
-export const GET: APIRoute = async ({ request, url }) => {
+export const GET: APIRoute = async ({ request, url, cookies }) => {
+  try {
+    await requireAuthenticatedUser(cookies);
+  } catch (error) {
+    return securityErrorResponse(error);
+  }
+
   const src = url.searchParams.get('src');
   if (!src) {
     return audioProxyResponse('Missing src', { status: 400 });
@@ -77,10 +88,9 @@ export const GET: APIRoute = async ({ request, url }) => {
 
   let upstream: Response;
   try {
-    upstream = await fetch(targetUrl, {
+    upstream = await fetchAllowedMediaUrl(targetUrl, {
       method: 'GET',
       headers: forwardHeaders,
-      redirect: 'follow',
     });
   } catch {
     return audioProxyResponse('Failed to fetch source audio', { status: 502 });

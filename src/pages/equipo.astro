@@ -373,6 +373,7 @@ import Layout from '../layouts/Layout.astro';
 <script>
  import { supabase } from '../lib/supabase';
  import { isEventRepertoryManagerRoleCode, isHiddenEventAssignmentRoleCode } from '../lib/role-permissions.js';
+ import { safeHtml } from '../lib/client/html-safety.js';
 
  // Estado reactivo temporal de la Plantilla de Equipo
  window.tbState = {
@@ -528,7 +529,7 @@ import Layout from '../layouts/Layout.astro';
  const card = document.createElement('div');
  card.className = 'team-card-dashboard bg-surface border border-border rounded-2xl p-4 flex flex-col justify-between shadow-sm min-w-[240px] shrink-0 snap-start group relative transition-shadow hover:shadow-md cursor-pointer';
  card.setAttribute('data-equipo-id', eq.id);
- card.innerHTML = `
+ card.innerHTML = safeHtml`
  <div class="flex items-center gap-3 mb-3">
  <div class="w-10 h-10 rounded-full ${baseColor} text-white flex items-center justify-center shrink-0 font-bold font-mono text-lg shadow-sm">
  ${eq.letra || 'T'}
@@ -619,7 +620,7 @@ import Layout from '../layouts/Layout.astro';
  // Mostrar Toast de Ã©xito
  const toast = document.createElement('div');
  toast.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 z-[300] bg-neutral-900 text-white text-sm font-semibold px-5 py-3 rounded-full shadow-2xl flex items-center gap-2 animate-bounce';
- toast.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg> Equipo "${nomEq}" eliminado`;
+ toast.innerHTML = safeHtml`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg> Equipo "${nomEq}" eliminado`;
  document.body.appendChild(toast);
  setTimeout(() => toast.remove(), 3000);
  
@@ -704,11 +705,11 @@ import Layout from '../layouts/Layout.astro';
  const markup = buildProfileSlot(rolObj.nombre, member.perfil_id);
  
  if (isEventRepertoryManagerRoleCode(rolObj.codigo)) {
- n1!.insertAdjacentHTML('beforeend', markup);
+ n1!.insertAdjacentHTML('beforeend', safeHtml(markup));
  } else if (['encargado_letras', 'letra_y_notas', 'produccion_visual', 'letras'].includes(rolObj.codigo)) {
- n2!.insertAdjacentHTML('beforeend', markup);
+ n2!.insertAdjacentHTML('beforeend', safeHtml(markup));
  } else {
- n3!.insertAdjacentHTML('beforeend', markup);
+ n3!.insertAdjacentHTML('beforeend', safeHtml(markup));
  }
  });
 
@@ -788,7 +789,7 @@ import Layout from '../layouts/Layout.astro';
  return `<span class="px-2 py-0.5 bg-background border border-border text-content-muted text-[10px] font-bold uppercase tracking-wider rounded-md">${rolData.nombre}</span>`;
  }).join('');
 
- article.innerHTML = `
+ article.innerHTML = safeHtml`
  <div>
  <div class="flex items-center gap-4 mb-4">
  <div class="w-12 h-12 flex-shrink-0 bg-brand/10 border border-brand/25 rounded-full flex items-center justify-center text-brand font-bold text-lg shadow-inner z-10 relative">
@@ -913,7 +914,7 @@ import Layout from '../layouts/Layout.astro';
  
  // Volcar la data virtual al modal
  const togglesRawData = document.getElementById(`raw-toggles-${perfilId}`)?.innerHTML || '';
- modalRolesContainer.innerHTML = togglesRawData;
+ modalRolesContainer.innerHTML = safeHtml(togglesRawData);
 
  // Enganchar listeners AL VUELO a estos toggles inyectados
  modalRolesContainer.querySelectorAll('.role-toggle').forEach(box => {
@@ -951,13 +952,8 @@ import Layout from '../layouts/Layout.astro';
  // Modal de confirmaciÃ³n premium inline
  const overlay = document.createElement('div');
  overlay.className = 'fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm';
- overlay.style.animation = 'fadeIn 0.2s ease-in-out';
- overlay.innerHTML = `
- <style>
- @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
- @keyframes scaleIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
- </style>
- <div class="bg-surface rounded-3xl shadow-2xl max-w-sm w-[90%] overflow-hidden border border-border " style="animation: scaleIn 0.25s ease-in-out">
+ overlay.innerHTML = safeHtml`
+ <div class="bg-surface rounded-3xl shadow-2xl max-w-sm w-[90%] overflow-hidden border border-border">
  <div class="p-6 text-center">
  <div class="w-14 h-14 rounded-full flex items-center justify-center text-2xl mx-auto mb-4 bg-red-100 text-red-500">
  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
@@ -1224,13 +1220,13 @@ import Layout from '../layouts/Layout.astro';
  if (isHiddenEventAssignmentRoleCode(rol.codigo)) return;
  
  const markup = buildSlotHtml(rol.id, rol.nombre, rol.codigo);
- if (isEventRepertoryManagerRoleCode(rol.codigo)) n1.insertAdjacentHTML('beforeend', markup);
- else if (['encargado_letras', 'letra_y_notas', 'produccion_visual', 'letras'].includes(rol.codigo)) n2.insertAdjacentHTML('beforeend', markup);
- else n3.insertAdjacentHTML('beforeend', markup);
+ if (isEventRepertoryManagerRoleCode(rol.codigo)) n1.insertAdjacentHTML('beforeend', safeHtml(markup));
+ else if (['encargado_letras', 'letra_y_notas', 'produccion_visual', 'letras'].includes(rol.codigo)) n2.insertAdjacentHTML('beforeend', safeHtml(markup));
+ else n3.insertAdjacentHTML('beforeend', safeHtml(markup));
  });
  
  // Renderizar secciÃ³n de voces unificada al final de n3
- n3.insertAdjacentHTML('beforeend', buildVoicePoolHtml());
+ n3.insertAdjacentHTML('beforeend', safeHtml(buildVoicePoolHtml()));
 
  // Listeners Bindings Re-Inject
 
@@ -1314,7 +1310,7 @@ import Layout from '../layouts/Layout.astro';
  btn.type = 'button';
  btn.disabled = isDisabled;
  btn.className = `w-full text-left bg-surface border ${isSelected ? 'border-brand/30 ring-1 ring-brand' : isDisabled ? 'border-border opacity-40 cursor-not-allowed' : 'border-border hover:border-action/50'} rounded-xl p-3 flex items-center gap-3 transition-all group`;
- btn.innerHTML = `
+ btn.innerHTML = safeHtml`
  ${avatarUI}
  <div class="flex-1 min-w-0">
  <p class="font-bold text-content truncate">${p.nombre}</p>
@@ -1413,7 +1409,7 @@ import Layout from '../layouts/Layout.astro';
  // Construir UI de Error Fatal
  const errorDisplay = document.createElement('div');
  errorDisplay.className = 'w-full p-6 bg-red-50 border border-red-200 rounded-xl text-center';
- errorDisplay.innerHTML = `
+ errorDisplay.innerHTML = safeHtml`
  <h3 class="text-lg font-bold text-red-700 mb-2">Error de SincronizaciÃ³n</h3>
  <code class="text-sm text-red-600 block max-w-xl mx-auto break-all">${err.message || 'Error desconocido parseando Supabase'}</code>
  `;

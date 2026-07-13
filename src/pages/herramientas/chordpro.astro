@@ -1,9 +1,10 @@
 ---
 import Layout from '../../layouts/Layout.astro';
 import { ChordProPreview } from '../../components/react/ChordProPreview';
-import { supabase } from '../../lib/supabase';
+import { createSupabaseUserClient } from '../../lib/server/supabase-user-client.js';
 
 const requestedSongId = Astro.url.searchParams.get('song')?.trim() || '';
+const supabase = createSupabaseUserClient(Astro.locals.accessToken || '');
 let initialSong: {
   id: string;
   titulo: string;

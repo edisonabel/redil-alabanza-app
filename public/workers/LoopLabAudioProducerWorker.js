@@ -1,10 +1,13 @@
 const MAX_PINNED_LOOP_MEMORY_BYTES = 50 * 1024 * 1024;
-const BYTES_PER_SAMPLE = Float32Array.BYTES_PER_ELEMENT;
+const BYTES_PER_SAMPLE = Int16Array.BYTES_PER_ELEMENT;
 const LOOP_CACHE_STATE_SLOTS = 8;
 const LOOP_CACHE_STATE_READY_SLOT = 0;
 const LOOP_CACHE_STATE_WRITTEN_FRAMES_SLOT = 1;
 const LOOP_CACHE_STATE_START_SAMPLE_SLOT = 2;
 const LOOP_CACHE_STATE_END_SAMPLE_SLOT = 3;
+const LOOP_CACHE_STATE_FIRST_OFFSET_SLOT = 4;
+const LOOP_CACHE_STATE_DECODED_SAMPLE_RATE_SLOT = 5;
+const LOOP_CACHE_STATE_ACTUAL_WRITTEN_FRAMES_SLOT = 6;
 const LOOP_CACHE_STRATEGY_PINNED = 'PINNED';
 const LOOP_CACHE_STRATEGY_PREDICTIVE_DOUBLE_BUFFER = 'PREDICTIVE_DOUBLE_BUFFER';
 const DEFAULT_FETCH_CHUNK_BYTES = 256 * 1024;
@@ -541,6 +544,9 @@ class LoopCacheManager {
       Atomics.store(state, LOOP_CACHE_STATE_WRITTEN_FRAMES_SLOT, 0);
       Atomics.store(state, LOOP_CACHE_STATE_START_SAMPLE_SLOT, this.activeLoop.startSample);
       Atomics.store(state, LOOP_CACHE_STATE_END_SAMPLE_SLOT, this.activeLoop.endSample);
+      Atomics.store(state, LOOP_CACHE_STATE_FIRST_OFFSET_SLOT, -1);
+      Atomics.store(state, LOOP_CACHE_STATE_DECODED_SAMPLE_RATE_SLOT, 0);
+      Atomics.store(state, LOOP_CACHE_STATE_ACTUAL_WRITTEN_FRAMES_SLOT, 0);
 
       buffers.push({
         trackId: String(track.id || 'track-' + index),
@@ -556,13 +562,15 @@ class LoopCacheManager {
         frameCount: safeFrameCount,
         sampleBuffer,
         stateBuffer,
+        writeCursor: 0,
+        hasStartedWriting: false,
       });
     }
 
     return buffers;
   }
 
-  writePinnedPcm(trackIndex, absoluteStartSample, pcm) {
+  writePinnedPcm(trackIndex, absoluteStartSample, pcm, decodedSampleRate = 0) {
     const activeLoop = this.activeLoop;
 
     if (
@@ -581,22 +589,46 @@ class LoopCacheManager {
     }
 
     const absoluteEndSample = absoluteStartSample + pcm.length;
-    const writeStartSample = Math.max(absoluteStartSample, activeLoop.startSample);
-    const writeEndSample = Math.min(absoluteEndSample, activeLoop.endSample);
-    const framesToWrite = Math.max(0, writeEndSample - writeStartSample);
+    if (!pinnedBuffer.hasStartedWriting && absoluteEndSample <= activeLoop.startSample) {
+      return 0;
+    }
+
+    let sourceOffset = 0;
+    if (!pinnedBuffer.hasStartedWriting) {
+      sourceOffset = Math.max(0, activeLoop.startSample - absoluteStartSample);
+      pinnedBuffer.writeCursor = Math.max(0, absoluteStartSample - activeLoop.startSample);
+      pinnedBuffer.hasStartedWriting = true;
+    }
+
+    const targetOffset = Math.max(0, Math.floor(pinnedBuffer.writeCursor));
+    const framesToWrite = Math.max(
+      0,
+      Math.min(pcm.length - sourceOffset, activeLoop.frameCount - targetOffset),
+    );
 
     if (framesToWrite <= 0) {
       return 0;
     }
 
-    const sourceOffset = writeStartSample - absoluteStartSample;
-    const targetOffset = writeStartSample - activeLoop.startSample;
-    const samples = new Float32Array(pinnedBuffer.sampleBuffer);
+    const samples = new Int16Array(pinnedBuffer.sampleBuffer);
     const state = new Int32Array(pinnedBuffer.stateBuffer);
 
-    for (let frameIndex = 0; frameIndex < framesToWrite; frameIndex += 1) {
-      samples[targetOffset + frameIndex] = pcm[sourceOffset + frameIndex];
+    if (Atomics.load(state, LOOP_CACHE_STATE_FIRST_OFFSET_SLOT) < 0) {
+      Atomics.store(state, LOOP_CACHE_STATE_FIRST_OFFSET_SLOT, targetOffset);
     }
+    if (decodedSampleRate > 0) {
+      Atomics.store(
+        state,
+        LOOP_CACHE_STATE_DECODED_SAMPLE_RATE_SLOT,
+        Math.floor(decodedSampleRate),
+      );
+    }
+
+    for (let frameIndex = 0; frameIndex < framesToWrite; frameIndex += 1) {
+      const sample = Math.max(-1, Math.min(1, pcm[sourceOffset + frameIndex] || 0));
+      samples[targetOffset + frameIndex] = Math.round(sample * 32767);
+    }
+    pinnedBuffer.writeCursor = targetOffset + framesToWrite;
 
     const previousWrittenFrames = Atomics.load(state, LOOP_CACHE_STATE_WRITTEN_FRAMES_SLOT);
     const nextWrittenFrames = Math.max(previousWrittenFrames, targetOffset + framesToWrite);
@@ -607,6 +639,30 @@ class LoopCacheManager {
     }
 
     return framesToWrite;
+  }
+
+  finalizePinnedTrack(trackIndex) {
+    const activeLoop = this.activeLoop;
+    const pinnedBuffer = this.pinnedBufferByTrackIndex.get(trackIndex);
+
+    if (
+      !activeLoop ||
+      !activeLoop.enabled ||
+      activeLoop.strategy !== LOOP_CACHE_STRATEGY_PINNED ||
+      !pinnedBuffer
+    ) {
+      return false;
+    }
+
+    const state = new Int32Array(pinnedBuffer.stateBuffer);
+    const writtenFrames = Atomics.load(state, LOOP_CACHE_STATE_WRITTEN_FRAMES_SLOT);
+    if (writtenFrames <= 0) {
+      return false;
+    }
+    Atomics.store(state, LOOP_CACHE_STATE_ACTUAL_WRITTEN_FRAMES_SLOT, writtenFrames);
+    Atomics.store(state, LOOP_CACHE_STATE_WRITTEN_FRAMES_SLOT, activeLoop.frameCount);
+    Atomics.store(state, LOOP_CACHE_STATE_READY_SLOT, 1);
+    return true;
   }
 
   releasePinnedLoopMemory() {
@@ -1393,11 +1449,13 @@ class ProducerTrackPipeline {
     this.ringWriter = new SharedRingWriter(track);
     this.demuxer = null;
     this.decoder = null;
+    this.decoderOutputGeneration = 0;
     this.decoderConfig = null;
     this.nextFileStart = 0;
     this.ready = false;
     this.decodedUntilSample = 0;
     this.prepareToken = 0;
+    this.preparingLoopCache = false;
     this.lookAheadToken = 0;
     this.endOfFileReached = false;
     this.normalReadyPosted = false;
@@ -1992,6 +2050,7 @@ class ProducerTrackPipeline {
   }
 
   resetDecoderForHardSeek() {
+    this.decoderOutputGeneration += 1;
     const decoderForSeek = this.decoder;
     if (!decoderForSeek) {
       return;
@@ -2037,6 +2096,7 @@ class ProducerTrackPipeline {
   }
 
   async flushDecoderForSeek() {
+    this.decoderOutputGeneration += 1;
     const decoderForSeek = this.decoder;
     if (this.isDestroyed || !decoderForSeek) {
       return;
@@ -2115,63 +2175,92 @@ class ProducerTrackPipeline {
     }
   }
 
+  suspendForLoopPreparation() {
+    if (this.isDestroyed) {
+      return;
+    }
+
+    this.prepareToken += 1;
+    this.stopLookAhead();
+    this.fetcher.abort();
+    this.clearPendingNormalPcm();
+    this.preparingLoopCache = true;
+  }
+
   async prepareLoopRegion(startSample, endSample, sessionId) {
     this.assertAlive();
 
     const token = this.prepareToken + 1;
     this.prepareToken = token;
+    this.stopLookAhead();
+    this.fetcher.abort();
+    this.clearPendingNormalPcm();
+    this.preparingLoopCache = true;
 
-    await this.ensureReady();
-    this.assertAlive();
-
-    const seekTimeSeconds = startSample / this.getOutputSampleRate();
-    const seekResult = this.demuxer.seek(seekTimeSeconds, true);
-
-    if (seekResult && typeof seekResult.nextFileStart === 'number') {
-      this.nextFileStart = seekResult.nextFileStart;
-    }
-
-    this.decodedUntilSample = Math.max(0, startSample);
-    this.resetNormalWriteTimeline(startSample);
-    await this.ensureDecoder();
-
-    while (!this.isDestroyed && this.prepareToken === token && this.decodedUntilSample < endSample) {
-      const chunk = await this.fetcher.fetchChunk(this.nextFileStart);
+    try {
+      await this.flushDecoderForSeek();
+      this.resetDemuxerForHardSeek();
+      await this.ensureReady();
       this.assertAlive();
-      this.assertSupportedFormat(chunk.bytes);
-      const result = this.demuxer.append(chunk.bytes, chunk.byteStart);
-      this.nextFileStart = this.resolveNextFileStart(result, chunk);
 
-      await this.feedDemuxedSamples(result);
-      this.assertAlive();
+      const seekTimeSeconds = startSample / this.getOutputSampleRate();
+      const seekResult = this.demuxer.seek(seekTimeSeconds, true);
+
+      if (this.demuxer) {
+        this.demuxer.resetPending();
+      }
+
+      if (seekResult && typeof seekResult.nextFileStart === 'number') {
+        this.nextFileStart = seekResult.nextFileStart;
+      }
+
+      this.decodedUntilSample = Math.max(0, startSample);
+      await this.ensureDecoder();
+
+      while (!this.isDestroyed && this.prepareToken === token && this.decodedUntilSample < endSample) {
+        const chunk = await this.fetcher.fetchChunk(this.nextFileStart);
+        this.assertAlive();
+        this.assertSupportedFormat(chunk.bytes);
+        const result = this.demuxer.append(chunk.bytes, chunk.byteStart);
+        this.nextFileStart = this.resolveNextFileStart(result, chunk);
+
+        await this.feedDemuxedSamples(result);
+        this.assertAlive();
+
+        self.postMessage({
+          type: 'producer-track-progress',
+          sessionId,
+          trackIndex: this.track.trackIndex,
+          decodedUntilSample: this.decodedUntilSample,
+          targetEndSample: endSample,
+        });
+
+        if (chunk.endOfFile) {
+          this.assertAlive();
+          const flushResult = this.demuxer.flush();
+          await this.feedDemuxedSamples(flushResult);
+          break;
+        }
+      }
+
+      if (this.isDecoderUsable() && this.decoder.decodeQueueSize > 0) {
+        await this.decoder.flush();
+      }
+
+      this.loopCacheManager.finalizePinnedTrack(this.track.trackIndex);
 
       self.postMessage({
-        type: 'producer-track-progress',
+        type: 'producer-track-ready',
         sessionId,
         trackIndex: this.track.trackIndex,
         decodedUntilSample: this.decodedUntilSample,
         targetEndSample: endSample,
       });
-
-      if (chunk.endOfFile) {
-        this.assertAlive();
-        const flushResult = this.demuxer.flush();
-        await this.feedDemuxedSamples(flushResult);
-        break;
+    } finally {
+      if (this.prepareToken === token) {
+        this.preparingLoopCache = false;
       }
     }
-
-    if (this.isDecoderUsable() && this.decoder.decodeQueueSize > 0) {
-      await this.decoder.flush();
-    }
-
-    self.postMessage({
-      type: 'producer-track-ready',
-      sessionId,
-      trackIndex: this.track.trackIndex,
-      decodedUntilSample: this.decodedUntilSample,
-      targetEndSample: endSample,
-    });
   }
 
   async feedDemuxedSamples(result, expectedLookAheadToken = null) {
@@ -2327,13 +2416,14 @@ class ProducerTrackPipeline {
     }
 
     const decoderSeekSerial = this.currentSeekSerial;
+    const decoderOutputGeneration = this.decoderOutputGeneration;
     this.decoder = new AudioDecoder({
       output: (audioData) => {
         if (this.isDestroyed) {
           audioData.close();
           return;
         }
-        this.handleDecodedAudioData(audioData, decoderSeekSerial);
+        this.handleDecodedAudioData(audioData, decoderSeekSerial, decoderOutputGeneration);
       },
       error: (error) => {
         if (this.isDestroyed) {
@@ -2490,9 +2580,11 @@ class ProducerTrackPipeline {
     while (
       !this.isDestroyed &&
       (
-        this.pendingNormalFrameCount > 0 ||
+        (!this.preparingLoopCache && this.pendingNormalFrameCount > 0) ||
         (this.decoder && this.decoder.decodeQueueSize > MAX_DECODER_QUEUE_SIZE) ||
-        (this.ringWriter.isReady() && this.ringWriter.availableWrite() < MIN_RING_WRITE_FRAMES)
+        (!this.preparingLoopCache &&
+          this.ringWriter.isReady() &&
+          this.ringWriter.availableWrite() < MIN_RING_WRITE_FRAMES)
       )
     ) {
       guard += 1;
@@ -2558,13 +2650,17 @@ class ProducerTrackPipeline {
     });
   }
 
-  handleDecodedAudioData(audioData, seekSerial) {
+  handleDecodedAudioData(audioData, seekSerial, decoderOutputGeneration = this.decoderOutputGeneration) {
     try {
       if (this.isDestroyed) {
         return;
       }
 
       if (typeof seekSerial === 'number' && seekSerial !== this.currentSeekSerial) {
+        return;
+      }
+
+      if (decoderOutputGeneration !== this.decoderOutputGeneration) {
         return;
       }
 
@@ -2578,13 +2674,16 @@ class ProducerTrackPipeline {
         this.track.trackIndex,
         absoluteStartSample,
         pcm.subarray(0, audioData.numberOfFrames),
+        audioData.sampleRate,
       );
 
-      this.writeNormalRingBufferIfAvailable(
-        absoluteStartSample,
-        pcm.subarray(0, audioData.numberOfFrames),
-        seekSerial,
-      );
+      if (!this.preparingLoopCache) {
+        this.writeNormalRingBufferIfAvailable(
+          absoluteStartSample,
+          pcm.subarray(0, audioData.numberOfFrames),
+          seekSerial,
+        );
+      }
 
       this.decodedUntilSample = Math.max(
         this.decodedUntilSample,
@@ -3365,12 +3464,19 @@ const preparePinnedLoop = async (result, sessionId) => {
     return;
   }
 
-  const tasks = [];
-  for (const pipeline of trackPipelines.values()) {
-    tasks.push(pipeline.prepareLoopRegion(result.startSample, result.endSample, sessionId));
+  const pipelines = Array.from(trackPipelines.values());
+  for (const pipeline of pipelines) {
+    pipeline.suspendForLoopPreparation();
   }
 
-  await Promise.all(tasks);
+  const batchSize = 3;
+  for (let index = 0; index < pipelines.length; index += batchSize) {
+    await Promise.all(
+      pipelines
+        .slice(index, index + batchSize)
+        .map((pipeline) => pipeline.prepareLoopRegion(result.startSample, result.endSample, sessionId)),
+    );
+  }
   self.postMessage({
     type: 'loop-cache-ready',
     sessionId,
@@ -3547,8 +3653,8 @@ self.onmessage = (event) => {
       });
     });
     return;
-	  }
-	
+  }
+
   if (message.type === 'audit-sync') {
     auditSync(message);
     return;

@@ -1349,11 +1349,17 @@ export default function AdminRepertorio() {
     }
   };
 
-  const subirArchivoR2 = async (file) => {
+  const subirArchivoR2 = async (file, songId, purpose = 'otro') => {
     const response = await fetch('/api/get-upload-url', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileName: file.name, fileType: file.type }),
+      body: JSON.stringify({
+        songId,
+        purpose,
+        fileName: file.name,
+        fileType: file.type || 'application/octet-stream',
+        fileSize: file.size,
+      }),
     });
 
     if (!response.ok) throw new Error('No estas autorizado o hubo un error en el servidor.');
@@ -1379,7 +1385,8 @@ export default function AdminRepertorio() {
     setUploading(prev => ({ ...prev, [keyContext]: true }));
 
     try {
-      const publicUrl = await subirArchivoR2(file);
+      const purpose = campoBd === 'mp3' ? 'mp3' : campoBd === 'link_acordes' ? 'acordes' : 'otro';
+      const publicUrl = await subirArchivoR2(file, cancionId, purpose);
 
       const updateData = { [campoBd]: publicUrl };
       const { error: updateError } = await supabase
@@ -1595,7 +1602,7 @@ export default function AdminRepertorio() {
     return [...new Set(urls)];
   };
 
-  const limpiarVocesRemovidas = async (previousPayload = '', nextPayload = '') => {
+  const limpiarVocesRemovidas = async (songId, previousPayload = '', nextPayload = '') => {
     const previous = parseVoiceAdminPayload(previousPayload);
     const next = parseVoiceAdminPayload(nextPayload);
     const previousUrls = obtenerUrlsVoces(previous.entries, previous.legacyUrl);
@@ -1606,7 +1613,7 @@ export default function AdminRepertorio() {
       const cleanupResponse = await fetch('/api/delete-upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileUrl }),
+        body: JSON.stringify({ songId, fileUrl }),
       });
 
       if (!cleanupResponse.ok) {
@@ -1643,7 +1650,7 @@ export default function AdminRepertorio() {
 
       for (const entry of sortVoiceEntries(vocesDraftEntries)) {
         if (entry.source === 'local' && entry.file) {
-          const publicUrl = await subirArchivoR2(entry.file);
+          const publicUrl = await subirArchivoR2(entry.file, vocesModalCancion.id, 'voces');
           preparedEntries.push({
             ...entry,
             source: 'remote',
@@ -1663,7 +1670,11 @@ export default function AdminRepertorio() {
       const payloadLegacyUrl = parsedLegacyDraft.legacyUrl || '';
       const payload = serializeVoiceAdminPayload(payloadEntries, payloadLegacyUrl);
       setVocesFeedback('Guardando voces...');
-      await limpiarVocesRemovidas(vocesModalCancion.link_voces || vocesModalCancion.voces || '', payload);
+      await limpiarVocesRemovidas(
+        vocesModalCancion.id,
+        vocesModalCancion.link_voces || vocesModalCancion.voces || '',
+        payload,
+      );
 
       const { error: updateError } = await supabase
         .from('canciones')
@@ -1718,7 +1729,7 @@ export default function AdminRepertorio() {
       const cleanupResponse = await fetch('/api/delete-upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileUrl: valorActual }),
+        body: JSON.stringify({ songId: cancion.id, fileUrl: valorActual }),
       });
 
       if (!cleanupResponse.ok) {

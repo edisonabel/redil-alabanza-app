@@ -1,14 +1,15 @@
 ---
 import '../../styles/global.css';
-import LiveDirectorView from '../../components/react/LiveDirectorView';
+import LiveDirectorLoopLabView from '../../components/react/LiveDirectorLoopLabView';
 import LiveDirectorNativeRouteGate from '../../components/react/LiveDirectorNativeRouteGate';
-import { supabase } from '../../lib/supabase';
+import { createSupabaseUserClient } from '../../lib/server/supabase-user-client.js';
 import {
   buildLiveDirectorSectionsFromMarkers,
   normalizePersistedLiveDirectorSession,
 } from '../../utils/liveDirectorSongSession';
 
 const requestedSong = Astro.url.searchParams.get('song')?.trim() || 'Providencia';
+const supabase = createSupabaseUserClient(Astro.locals.accessToken || '');
 const pageTitle = `Audio Lab - ${requestedSong || 'Live Director'}`;
 
 let songRecord: {
@@ -107,7 +108,7 @@ if (requestedSong) {
   </head>
   <body>
     <LiveDirectorNativeRouteGate client:load />
-    <LiveDirectorView
+    <LiveDirectorLoopLabView
       client:load
       songId={songRecord?.id || ''}
       songTitle={songRecord?.titulo || ''}

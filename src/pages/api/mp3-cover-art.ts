@@ -1,4 +1,9 @@
 import type { APIRoute } from 'astro';
+import {
+  requireAuthenticatedUser,
+  securityErrorResponse,
+} from '../../lib/server/api-security.js';
+import { fetchAllowedMediaUrl } from '../../lib/server/media-proxy-security';
 
 const COVER_SCAN_BYTES = 2 * 1024 * 1024;
 
@@ -331,7 +336,13 @@ const parseTotalBytesFromContentRange = (contentRange: string | null) => {
 
 export const prerender = false;
 
-export const GET: APIRoute = async ({ request, url }) => {
+export const GET: APIRoute = async ({ request, url, cookies }) => {
+  try {
+    await requireAuthenticatedUser(cookies);
+  } catch (error) {
+    return securityErrorResponse(error);
+  }
+
   const src = url.searchParams.get('src') || '';
   if (!src) return new Response('Missing src', { status: 400 });
 
@@ -354,9 +365,8 @@ export const GET: APIRoute = async ({ request, url }) => {
 
   let upstream: Response;
   try {
-    upstream = await fetch(toFetchableAudioUrl(src), {
+    upstream = await fetchAllowedMediaUrl(toFetchableAudioUrl(src), {
       headers: { Range: `bytes=0-${COVER_SCAN_BYTES - 1}` },
-      redirect: 'follow',
     });
   } catch {
     return new Response('Could not fetch audio', { status: 502 });
@@ -373,9 +383,8 @@ export const GET: APIRoute = async ({ request, url }) => {
   if (!coverArt && totalBytes > firstBuffer.byteLength && totalBytes > COVER_SCAN_BYTES) {
     const tailStart = Math.max(0, totalBytes - COVER_SCAN_BYTES);
     try {
-      const tailResponse = await fetch(toFetchableAudioUrl(src), {
+      const tailResponse = await fetchAllowedMediaUrl(toFetchableAudioUrl(src), {
         headers: { Range: `bytes=${tailStart}-${totalBytes - 1}` },
-        redirect: 'follow',
       });
 
       if (tailResponse.ok || tailResponse.status === 206) {

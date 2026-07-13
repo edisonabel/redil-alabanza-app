@@ -4,5 +4,6 @@ declare namespace App {
   interface Locals {
     user: any | null;
     perfil: any | null;
+    accessToken: string | null;
   }
 }
