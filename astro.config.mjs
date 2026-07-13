@@ -1,6 +1,8 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import tailwindcss from '@tailwindcss/vite';
 
@@ -9,6 +11,7 @@ import netlify from '@astrojs/netlify';
 import react from '@astrojs/react';
 
 const isDevCommand = process.argv.includes('dev');
+const devViteCacheDir = join(tmpdir(), 'redil-alabanza-app-vite');
 
 const reactAliases = [
   {
@@ -94,10 +97,16 @@ export default defineConfig({
     prefetchAll: false,
     defaultStrategy: 'hover',
   },
+  devToolbar: {
+    enabled: false,
+  },
 
   integrations: [react()],
 
   vite: {
+    // Keep Vite's volatile optimizer cache outside iCloud-synced Documents.
+    // File-provider renames there can leave stale `entrypoint.js` URLs (504).
+    cacheDir: isDevCommand ? devViteCacheDir : undefined,
     plugins: [
       /** @type {any} */ (crossOriginIsolationPlugin()),
       /** @type {any} */ (tailwindcss()),
@@ -115,7 +124,7 @@ export default defineConfig({
     optimizeDeps: {
       include: ['react-dom/client'],
       needsInterop: ['react-dom/client'],
-      exclude: ['@supabase/supabase-js', 'lucide-react'],
+      exclude: ['@supabase/supabase-js', '@capacitor/core', 'lucide-react'],
     },
     resolve: {
       alias: reactAliases

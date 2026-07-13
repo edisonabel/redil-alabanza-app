@@ -56,7 +56,6 @@ type EngineDiagnostics = LiveDirectorEngineDiagnostics;
 type UseMultitrackEngineOptions = {
   useStreamingEngine?: boolean;
   passiveTelemetry?: boolean;
-  allowStreamingFallback?: boolean;
 };
 
 export type UseMultitrackEngineReturn = {
@@ -251,7 +250,6 @@ export function useLoopLabMultitrackEngine(
   const requestedEngineKind: EngineKind =
     requestedStreamingEngine && canUseAdvancedStreamingEngine() ? 'streaming' : 'buffer';
   const passiveTelemetry = Boolean(options.passiveTelemetry);
-  const allowStreamingFallback = options.allowStreamingFallback !== false;
   const engineRef = useRef<EngineInstance | null>(null);
   const engineKindRef = useRef<EngineKind>(requestedEngineKind);
   const frameRef = useRef<number | null>(null);
@@ -509,13 +507,12 @@ export function useLoopLabMultitrackEngine(
         }
 
         console.warn(
-          '[useMultitrackEngine] Streaming engine failed during initialization. Legacy fallback is disabled for track/file errors.',
+          '[useMultitrackEngine] Streaming engine failed during initialization; playback was not switched to the legacy engine.',
           error,
         );
-        warnLiveDiagnostic('engine:streaming-no-legacy-fallback-for-track-error', {
+        warnLiveDiagnostic('engine:streaming-initialization-failed', {
           trackCount: nextTracks.length,
           reason: error instanceof Error ? error.message : String(error),
-          allowStreamingFallback,
           browser: readLiveBrowserCapabilities(),
         });
       }
@@ -529,7 +526,7 @@ export function useLoopLabMultitrackEngine(
       commitLoadProgress(null);
       throw error;
     }
-  }, [allowStreamingFallback, commitDiagnostics, commitDuration, commitLoadProgress, getEngine, requestedEngineKind]);
+  }, [commitDiagnostics, commitDuration, commitLoadProgress, getEngine, requestedEngineKind]);
 
   const play = useCallback(async () => {
     if (!isReady) {

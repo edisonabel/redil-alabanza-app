@@ -627,7 +627,6 @@ export function LiveDirectorView({
   const webMultitrackEngine = useMultitrackEngine({
     useStreamingEngine,
     passiveTelemetry: passiveStreamingTelemetryEnabled,
-    allowStreamingFallback: true,
   });
   const nativeIOSMultitrackEngine = useNativeIOSMultitrackEngine();
   const selectedMultitrackEngine = isIOSNativeEngineSurface
@@ -693,12 +692,13 @@ export function LiveDirectorView({
     const contextUnlockPromise = unlockAudioForUserGesture();
     const sessionUnlockPromise = audioSessionService.unlockFromUserGesture();
 
-    void (async () => {
-      await Promise.allSettled([contextUnlockPromise, sessionUnlockPromise]);
-      await play();
-    })().catch((error) => {
+    // Start playback while the browser still considers this a user gesture.
+    // Waiting for the silent-session unlock first can consume Safari/WebKit's
+    // transient activation and leave otherwise valid media tracks silent.
+    void play().catch((error) => {
       console.warn('[LiveDirectorView] No se pudo iniciar reproducción tras el gesto.', error);
     });
+    void Promise.allSettled([contextUnlockPromise, sessionUnlockPromise]);
   }, [isPlaying, pause, play, unlockAudioForUserGesture]);
 
   useEffect(() => {
@@ -3179,11 +3179,15 @@ export function LiveDirectorView({
   const mixerAutosaveTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
+    // Congregation mode changes live faders temporarily. The originals map is
+    // populated synchronously, so it also closes the gap before React commits
+    // the visible fade state.
     if (
       !hasPersistedSongContext ||
       !manualSession ||
       isInitializingSession ||
-      congregationFadeState !== 'normal'
+      congregationFadeState !== 'normal' ||
+      congregationOriginalVolumesRef.current.size > 0
     ) return;
 
     const isDirty = manualSession.tracks.some(

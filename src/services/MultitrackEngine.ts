@@ -432,15 +432,20 @@ export class MultitrackEngine {
       return;
     }
 
-    if (this.context.state === 'suspended') {
-      await this.context.resume();
-    }
+    const contextState = String(this.context.state);
+    const contextResumePromise = contextState === 'running'
+      ? Promise.resolve()
+      : this.context.resume();
 
     if (this.mode === 'media') {
-      await this.playMediaTracks();
+      // Invoke HTMLMediaElement.play() before yielding so WebKit preserves the
+      // transient user activation. The AudioContext may resume in parallel.
+      const mediaPlaybackPromise = this.playMediaTracks();
+      await Promise.all([contextResumePromise, mediaPlaybackPromise]);
       return;
     }
 
+    await contextResumePromise;
     await this.playBufferTracks();
   }
 

@@ -3457,7 +3457,8 @@ export class StreamingMultitrackEngine {
   }
 
   private async resumeContextIfNeeded(): Promise<void> {
-    if (this.context.state === 'suspended') {
+    const state = String(this.context.state);
+    if (state === 'suspended' || state === 'interrupted') {
       await this.context.resume();
     }
   }

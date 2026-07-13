@@ -91,6 +91,8 @@ export const readLiveBrowserCapabilities = () => {
   const performanceWithMemory = window.performance as PerformanceWithMemory;
   const userAgent = navigator.userAgent || '';
   const isTouchMac = /Macintosh/i.test(userAgent) && navigator.maxTouchPoints > 1;
+  const isChromeFamily = /Chrome|Chromium|CriOS|Edg/i.test(userAgent);
+  const isWebKit = /AppleWebKit/i.test(userAgent) && !isChromeFamily;
 
   return {
     userAgent,
@@ -98,8 +100,9 @@ export const readLiveBrowserCapabilities = () => {
     maxTouchPoints: navigator.maxTouchPoints || 0,
     isIOS: /iPhone|iPad|iPod/i.test(userAgent) || isTouchMac,
     isAndroid: /Android/i.test(userAgent),
-    isSafari: /Safari/i.test(userAgent) && !/Chrome|Chromium|CriOS|Edg/i.test(userAgent),
-    isChromeFamily: /Chrome|Chromium|CriOS|Edg/i.test(userAgent),
+    isSafari: /Safari/i.test(userAgent) && !isChromeFamily,
+    isWebKit,
+    isChromeFamily,
     standaloneDisplay:
       window.matchMedia?.('(display-mode: standalone)').matches ||
       navigatorWithMemory.standalone === true,

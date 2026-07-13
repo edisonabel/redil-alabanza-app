@@ -611,7 +611,6 @@ export function LiveDirectorLoopLabView({
   const webMultitrackEngine = useLoopLabMultitrackEngine({
     useStreamingEngine,
     passiveTelemetry: passiveStreamingTelemetryEnabled,
-    allowStreamingFallback: true,
   });
   const nativeIOSMultitrackEngine = useNativeIOSMultitrackEngine();
   const selectedMultitrackEngine = isIOSNativeEngineSurface
@@ -685,12 +684,13 @@ export function LiveDirectorLoopLabView({
     const contextUnlockPromise = unlockAudioForUserGesture();
     const sessionUnlockPromise = audioSessionService.unlockFromUserGesture();
 
-    void (async () => {
-      await Promise.allSettled([contextUnlockPromise, sessionUnlockPromise]);
-      await play();
-    })().catch((error) => {
+    // Start playback while the browser still considers this a user gesture.
+    // Waiting for the silent-session unlock first can consume Safari/WebKit's
+    // transient activation and leave otherwise valid media tracks silent.
+    void play().catch((error) => {
       console.warn('[LiveDirectorView] No se pudo iniciar reproducción tras el gesto.', error);
     });
+    void Promise.allSettled([contextUnlockPromise, sessionUnlockPromise]);
   }, [isPlaying, pause, play, unlockAudioForUserGesture]);
 
   useEffect(() => {
