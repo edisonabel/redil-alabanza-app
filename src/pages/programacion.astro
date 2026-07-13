@@ -49,7 +49,7 @@ if (ssrUser) {
 
     let query = supabaseSSR
       .from('eventos')
-      .select('id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, predicador, serie_id, asignaciones(id, rol_id, perfiles(id, nombre, email, avatar_url))')
+      .select('id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, serie_id, asignaciones(id, rol_id, perfiles(id, nombre, email, avatar_url))')
       .gte('fecha_hora', initialFetchFloor.toISOString())
       .lte('fecha_hora', initialFetchLimit.toISOString())
       .order('fecha_hora', { ascending: true });

@@ -15,7 +15,7 @@ import { buildEventHeadline, getEventThemeAndPreacher } from '../../lib/event-di
 import { isEventRepertoryManagerRoleCode } from '../../lib/role-permissions.js';
 
 const MONTH_CHUNK_SIZE = 2;
-const EVENT_SELECT = 'id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, predicador, serie_id, asignaciones(id, rol_id, perfiles(id, nombre, email, avatar_url))';
+const EVENT_SELECT = 'id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, serie_id, asignaciones(id, rol_id, perfiles(id, nombre, email, avatar_url))';
 
 const getMonthStart = (date) => {
     const next = new Date(date);
@@ -102,6 +102,7 @@ export default function CalendarioGrid({
     const [eventos, setEventos] = useState(initialEvents || []);
     const [viewMode, setViewMode] = useState('tarjeta'); // 'tarjeta', 'lista', 'calendario'
     const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const [loadMoreError, setLoadMoreError] = useState('');
     const [hasMoreEventos, setHasMoreEventos] = useState(Boolean(hasMoreInitialEvents));
     const [calendarDate, setCalendarDate] = useState(new Date());
     const [dismissedMonthHints, setDismissedMonthHints] = useState({});
@@ -232,7 +233,7 @@ export default function CalendarioGrid({
     }, [buildVisibilityQuery]);
 
     const loadMoreEvents = useCallback(async (targetDate = null) => {
-        if (isLoadingMore || !loadedUntil || !hasMoreEventos) return;
+        if (isLoadingMore || loadMoreError || !loadedUntil || !hasMoreEventos) return;
 
         const nextStart = getMonthStart(new Date(loadedUntil.getFullYear(), loadedUntil.getMonth() + 1, 1));
         const nextTarget = targetDate ? getMonthEnd(targetDate) : null;
@@ -261,12 +262,14 @@ export default function CalendarioGrid({
 
             setLoadedUntil(nextEnd);
             setHasMoreEventos((remainingCount || 0) > 0);
+            setLoadMoreError('');
         } catch (error) {
             console.error('Programación: no se pudieron cargar más eventos', error);
+            setLoadMoreError('No pudimos cargar más eventos. Intenta nuevamente.');
         } finally {
             setIsLoadingMore(false);
         }
-    }, [fetchMoreWindow, fetchRemainingCount, hasMoreEventos, isLoadingMore, loadedUntil]);
+    }, [fetchMoreWindow, fetchRemainingCount, hasMoreEventos, isLoadingMore, loadMoreError, loadedUntil]);
 
     useEffect(() => {
         if (autoOpenHandledRef.current || typeof window === 'undefined') return;
@@ -1156,12 +1159,25 @@ export default function CalendarioGrid({
                     {(viewMode === 'tarjeta' || viewMode === 'lista') && (
                         <div className="max-w-7xl mx-auto w-full px-4">
                             <div ref={loadMoreSentinelRef} className="h-4 w-full" aria-hidden="true" />
-                            {isLoadingMore && (
-                                <div className="flex items-center justify-center gap-3 py-6 text-sm text-content-muted">
-                                    <div className="w-5 h-5 rounded-full border-2 border-border border-t-brand animate-spin"></div>
-                                    <span>Cargando más eventos...</span>
-                                </div>
-                            )}
+                        </div>
+                    )}
+
+                    {isLoadingMore && (
+                        <div className="flex items-center justify-center gap-3 py-6 text-sm text-content-muted" role="status">
+                            <div className="w-5 h-5 rounded-full border-2 border-border border-t-brand animate-spin" aria-hidden="true"></div>
+                            <span>Cargando más eventos...</span>
+                        </div>
+                    )}
+                    {loadMoreError && (
+                        <div role="alert" className="flex flex-col items-center justify-center gap-3 py-6 text-center text-sm text-content-muted">
+                            <span>{loadMoreError}</span>
+                            <button
+                                type="button"
+                                onClick={() => setLoadMoreError('')}
+                                className="min-h-11 rounded-xl border border-border bg-surface px-4 py-2 font-bold text-content transition-colors hover:border-brand/40 hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
+                            >
+                                Reintentar
+                            </button>
                         </div>
                     )}
 
