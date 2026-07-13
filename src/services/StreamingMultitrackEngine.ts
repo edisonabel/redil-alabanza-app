@@ -1060,7 +1060,8 @@ export class StreamingMultitrackEngine {
   };
   private readonly handleVisibilityChange = () => {
     if (document.hidden) {
-      this.handlePageSuspending('visibility-hidden');
+      // Live playback must survive opening DevTools or briefly switching tabs.
+      // A real navigation still pauses through the pagehide handler.
       return;
     }
 
