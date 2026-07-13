@@ -1,6 +1,7 @@
 import type { DisplayCue, DisplaySection, DisplayTrack } from '../types/confidenceMonitor';
 import { parseChordProLine } from './chordProLineUtils';
 import { buildSectionShortLabel, getSectionKind, SECTION_VISUALS } from './sectionVisuals';
+import { resolveSectionMarkersByIdentity } from './sectionMarkerIdentity';
 
 const MAX_LINES_PER_CUE = 2;
 const PREFERRED_LINES = 2;
@@ -349,6 +350,9 @@ export function buildDisplayTrack(song: {
     startSec?: number;
     endSec?: number;
     sectionName?: string;
+    sectionIndex?: number;
+    sectionOccurrence?: number;
+    sectionKey?: string;
     cueMarkers?: Array<number | { startSec?: number; time?: number }>;
   }>;
   duration?: number;
@@ -365,14 +369,15 @@ export function buildDisplayTrack(song: {
   const trustedTotalDurationSec = Number.isFinite(Number(song?.actualDurationSec))
     ? Number(song.actualDurationSec)
     : null;
+  const resolvedMarkers = resolveSectionMarkersByIdentity(sections, markers);
 
   sections.forEach((section, idx) => {
     const kind = getSectionKind(section.name);
     const count = (kindCounts.get(kind) || 0) + 1;
     kindCounts.set(kind, count);
 
-    const marker = markers[idx];
-    const nextMarker = markers[idx + 1];
+    const marker = resolvedMarkers[idx];
+    const nextMarker = resolvedMarkers[idx + 1];
     const startSec = Number.isFinite(Number(marker?.startSec)) ? Number(marker?.startSec) : null;
     const explicitEndSec = Number.isFinite(Number(marker?.endSec))
       ? Number(marker?.endSec)

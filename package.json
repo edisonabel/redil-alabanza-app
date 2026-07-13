@@ -14,6 +14,7 @@
     "test:authorization": "node scripts/test-authorization-boundaries.mjs",
     "test:migrations": "node scripts/check-migration-history.mjs",
     "test:voice-follower": "node scripts/test-voice-lyric-follower.mjs",
+    "test:section-alignment": "node --experimental-strip-types scripts/test-global-section-alignment.mjs",
     "ios:sync": "npm run build && npx cap sync ios",
     "ios:open": "npm run ios:sync && npx cap open ios",
     "astro": "astro"

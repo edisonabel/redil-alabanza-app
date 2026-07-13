@@ -2,6 +2,10 @@ import type { APIRoute } from 'astro';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { splitSectionIntoCues } from '../../utils/splitSectionIntoCues';
+import {
+  alignSectionCandidateSequence,
+  type GlobalAlignmentCandidate,
+} from '../../utils/globalSectionAlignment';
 import { getSectionKind } from '../../utils/sectionVisuals';
 import { readEnv } from '../../lib/server/supabase-env.js';
 import {
@@ -116,8 +120,12 @@ type SectionAnchorMatch = PhraseMatch & {
   estimatedFromLaterLine?: boolean;
 };
 
+type SectionOccurrenceCandidate = SectionAnchorMatch & GlobalAlignmentCandidate & {
+  evidenceCount: number;
+  exactStart: boolean;
+};
+
 const MIN_SECTION_PROGRESS_SEC = 0.05;
-const MIN_REPEAT_PROGRESS_SEC = 4;
 const MIN_MATCH_CONFIDENCE = 0.4;
 const MATCH_CONFIDENCE_TIE_WINDOW = 0.12;
 const VOCAL_MARKER_PRE_ROLL_SEC = 0.12;
@@ -151,7 +159,7 @@ const getPhraseSearchWords = (phrase = '') =>
   normalizeText(stripChords(phrase))
     .split(/\s+/)
     .filter((word) => word.length > 1)
-    .slice(0, 6);
+    .slice(0, 12);
 
 const buildPhraseFingerprint = (phrase = '') => {
   const searchWords = getPhraseSearchWords(phrase);
@@ -176,12 +184,13 @@ const buildCueAnchorPhrases = (lines: string[] = []): SectionAnchorPhrase[] => {
     anchors.push({ phrase, fingerprint, weight, startOffsetSec });
   };
 
+  addAnchor(meaningfulLines[0] || '', 1, 0);
   if (meaningfulLines.length >= 2) {
-    addAnchor(meaningfulLines.slice(0, 2).join(' '), 1, 0);
+    addAnchor(meaningfulLines.slice(0, 2).join(' '), 0.98, 0);
   }
 
-  meaningfulLines.slice(0, 3).forEach((line, index) => {
-    addAnchor(line, Math.max(0.86, 0.96 - index * 0.05), index * 3);
+  meaningfulLines.slice(1, 3).forEach((line, index) => {
+    addAnchor(line, Math.max(0.86, 0.92 - index * 0.05), (index + 1) * 3);
   });
 
   return anchors;
@@ -710,26 +719,55 @@ const findPhraseMatchesInTranscript = (
   }
 
   const candidates: PhraseMatch[] = [];
+  const minimumWordSimilarity = searchWords.length <= 2 ? 0.72 : 0.58;
+  const requiredCoverage = searchWords.length <= 2 ? 1 : 0.62;
 
   for (let i = 0; i < words.length; i += 1) {
     if (words[i].start < startAfter) continue;
     if (Number.isFinite(endBefore) && words[i].start >= endBefore) break;
 
+    const firstTranscriptWord = normalizeText(words[i].word);
+    if (levenshteinSimilarity(firstTranscriptWord, searchWords[0]) < minimumWordSimilarity) continue;
+
     let score = 0;
     let matchCount = 0;
+    let transcriptOffset = 0;
+    let gapPenalty = 0;
 
-    for (let j = 0; j < searchWords.length && i + j < words.length; j += 1) {
-      const transcriptWord = normalizeText(words[i + j].word);
-      const similarity = levenshteinSimilarity(transcriptWord, searchWords[j]);
+    for (let j = 0; j < searchWords.length && i + transcriptOffset < words.length; j += 1) {
+      let bestSimilarity = 0;
+      let bestLookahead = 0;
+      const maximumLookahead = j === 0 ? 0 : 2;
 
-      if (similarity > 0.6) {
-        score += similarity;
+      for (let lookahead = 0; lookahead <= maximumLookahead; lookahead += 1) {
+        const transcriptIndex = i + transcriptOffset + lookahead;
+        if (transcriptIndex >= words.length) break;
+        if (Number.isFinite(endBefore) && words[transcriptIndex].start >= endBefore) break;
+        const similarity = levenshteinSimilarity(
+          normalizeText(words[transcriptIndex].word),
+          searchWords[j],
+        );
+        if (similarity > bestSimilarity) {
+          bestSimilarity = similarity;
+          bestLookahead = lookahead;
+        }
+      }
+
+      if (bestSimilarity >= minimumWordSimilarity) {
+        score += bestSimilarity;
         matchCount += 1;
+        transcriptOffset += bestLookahead + 1;
+        gapPenalty += bestLookahead * 0.035;
+      } else {
+        gapPenalty += 0.055;
       }
     }
 
-    const normalizedScore = searchWords.length > 0 ? score / searchWords.length : 0;
-    if (matchCount >= Math.ceil(searchWords.length * 0.6) && normalizedScore > MIN_MATCH_CONFIDENCE) {
+    const coverage = matchCount / searchWords.length;
+    const normalizedScore = searchWords.length > 0
+      ? Math.max(0, (score / searchWords.length) - gapPenalty + coverage * 0.08)
+      : 0;
+    if (coverage >= requiredCoverage && normalizedScore > MIN_MATCH_CONFIDENCE) {
       const nextCandidate: PhraseMatch = {
         startSec: toPreciseSeconds(words[i].start),
         confidence: Math.min(1, normalizedScore),
@@ -791,78 +829,110 @@ const selectPhraseMatch = (
   };
 };
 
-const selectSectionAnchorMatch = ({
+const buildSectionOccurrenceCandidates = ({
   transcriptWords,
   anchors,
-  searchStartSec,
-  relaxedSearchStartSec,
   expectedStartSec,
+  durationSec,
 }: {
   transcriptWords: TranscriptWord[];
   anchors: SectionAnchorPhrase[];
-  searchStartSec: number;
-  relaxedSearchStartSec: number | null;
   expectedStartSec: number | null;
-}): SectionAnchorMatch | null => {
-  const collectMatches = (startSec: number, relaxed: boolean) => anchors.flatMap((anchor, anchorIndex) => (
-    findPhraseMatchesInTranscript(transcriptWords, anchor.phrase, startSec)
-      .map((match) => ({
-        ...match,
-        startSec: Math.max(0, toPreciseSeconds(match.startSec - anchor.startOffsetSec)),
-        confidence: Math.max(0, Math.min(1, (match.confidence * anchor.weight) - (anchorIndex * 0.015) - (relaxed ? 0.05 : 0))),
-        fingerprint: anchor.fingerprint,
-        relaxed,
-        estimatedFromLaterLine: anchor.startOffsetSec > 0,
-      }))
+  durationSec: number | null;
+}): SectionOccurrenceCandidate[] => {
+  if (anchors.length === 0) return [];
+
+  const matchesByAnchor = anchors.map((anchor) => (
+    findPhraseMatchesInTranscript(transcriptWords, anchor.phrase, 0)
   ));
+  const primaryMatches = matchesByAnchor[0].slice(0, 80);
+  const anchorWordCount = anchors.reduce(
+    (sum, anchor) => sum + getPhraseSearchWords(anchor.phrase).length,
+    0,
+  );
+  const contentBasedWindow = Math.max(12, Math.min(58, anchorWordCount * 0.72 + anchors.length * 2.4));
+  const estimatedOccurrenceWindow = Number.isFinite(Number(durationSec))
+    ? Math.min(contentBasedWindow, Math.max(12, Number(durationSec) * 0.55))
+    : contentBasedWindow;
 
-  const directMatches = collectMatches(searchStartSec, false);
-  const relaxedMatches = directMatches.length === 0 && relaxedSearchStartSec != null
-    ? collectMatches(relaxedSearchStartSec, true)
-    : [];
+  const candidates = primaryMatches.map((primaryMatch) => {
+    const occurrenceEnd = primaryMatch.startSec + estimatedOccurrenceWindow;
+    const supportingConfidences = [primaryMatch.confidence];
+    let evidenceCount = 1;
+    let evidenceCursor = primaryMatch.startSec + 0.1;
 
-  return selectPhraseMatch(
-    directMatches.length > 0 ? directMatches : relaxedMatches,
-    expectedStartSec,
-  ) as SectionAnchorMatch | null;
-};
+    for (let anchorIndex = 1; anchorIndex < anchors.length; anchorIndex += 1) {
+      const minimumEvidenceStart = anchors[anchorIndex].startOffsetSec === 0
+        ? primaryMatch.startSec - 0.05
+        : evidenceCursor;
+      const supportingMatch = matchesByAnchor[anchorIndex]
+        .filter((match) => match.startSec >= minimumEvidenceStart && match.startSec < occurrenceEnd)
+        .reduce<PhraseMatch | null>((best, match) => {
+          if (!best) return match;
+          const bestScore = best.confidence - Math.min(0.18, Math.max(0, best.startSec - minimumEvidenceStart) * 0.0025);
+          const matchScore = match.confidence - Math.min(0.18, Math.max(0, match.startSec - minimumEvidenceStart) * 0.0025);
+          return matchScore > bestScore ? match : best;
+        }, null);
 
-const selectCueAnchorMatch = ({
-  transcriptWords,
-  anchors,
-  searchStartSec,
-  relaxedSearchStartSec,
-  expectedStartSec,
-  endBefore,
-}: {
-  transcriptWords: TranscriptWord[];
-  anchors: SectionAnchorPhrase[];
-  searchStartSec: number;
-  relaxedSearchStartSec: number | null;
-  expectedStartSec: number | null;
-  endBefore: number;
-}): SectionAnchorMatch | null => {
-  const collectMatches = (startSec: number, relaxed: boolean) => anchors.flatMap((anchor, anchorIndex) => (
-    findPhraseMatchesInTranscript(transcriptWords, anchor.phrase, startSec, endBefore)
-      .map((match) => ({
-        ...match,
-        startSec: Math.max(0, toPreciseSeconds(match.startSec - anchor.startOffsetSec)),
-        confidence: Math.max(0, Math.min(1, (match.confidence * anchor.weight) - (anchorIndex * 0.012) - (relaxed ? 0.04 : 0))),
-        fingerprint: anchor.fingerprint,
-        relaxed,
-        estimatedFromLaterLine: anchor.startOffsetSec > 0,
-      }))
-  ));
+      if (!supportingMatch) continue;
+      evidenceCount += 1;
+      supportingConfidences.push(supportingMatch.confidence * anchors[anchorIndex].weight);
+      evidenceCursor = Math.max(evidenceCursor, supportingMatch.startSec + 0.1);
+    }
 
-  const directMatches = collectMatches(searchStartSec, false);
-  const relaxedMatches = directMatches.length === 0 && relaxedSearchStartSec != null
-    ? collectMatches(relaxedSearchStartSec, true)
-    : [];
+    const supportAverage = supportingConfidences.reduce((sum, value) => sum + value, 0)
+      / supportingConfidences.length;
+    const missingEvidencePenalty = anchors.length >= 3 && evidenceCount === 1 ? 0.14 : 0;
+    const expectedDistancePenalty = Number.isFinite(expectedStartSec) && Number.isFinite(Number(durationSec))
+      ? Math.min(0.1, (Math.abs(primaryMatch.startSec - Number(expectedStartSec)) / Math.max(1, Number(durationSec))) * 0.4)
+      : 0;
+    let confidence = Math.max(0, Math.min(1,
+      primaryMatch.confidence * 0.62
+      + supportAverage * 0.28
+      + Math.min(0.12, (evidenceCount - 1) * 0.045)
+      - missingEvidencePenalty
+      - expectedDistancePenalty,
+    ));
+    if (evidenceCount === 1 && primaryMatch.searchWordCount <= 2) {
+      confidence = Math.min(confidence, primaryMatch.searchWordCount === 1 ? 0.55 : 0.66);
+    }
 
-  return selectPhraseMatch(
-    directMatches.length > 0 ? directMatches : relaxedMatches,
-    expectedStartSec,
-  ) as SectionAnchorMatch | null;
+    return {
+      ...primaryMatch,
+      confidence,
+      fingerprint: anchors[0].fingerprint,
+      relaxed: false,
+      estimatedFromLaterLine: false,
+      evidenceCount,
+      exactStart: true,
+    };
+  });
+
+  // If Whisper missed the first line completely, retain carefully capped structural
+  // candidates from later lines. They can fill a gap but are never labeled exact.
+  if (candidates.length === 0) {
+    anchors.slice(1).forEach((anchor, offset) => {
+      matchesByAnchor[offset + 1].slice(0, 30).forEach((match) => {
+        candidates.push({
+          ...match,
+          startSec: Math.max(0, toPreciseSeconds(match.startSec - anchor.startOffsetSec)),
+          confidence: Math.min(0.5, match.confidence * anchor.weight - 0.16),
+          fingerprint: anchor.fingerprint,
+          relaxed: true,
+          estimatedFromLaterLine: true,
+          evidenceCount: 1,
+          exactStart: false,
+        });
+      });
+    });
+  }
+
+  return candidates
+    .filter((candidate) => candidate.confidence >= 0.36)
+    .sort((left, right) => left.startSec - right.startSec)
+    .filter((candidate, index, source) => (
+      index === 0 || Math.abs(candidate.startSec - source[index - 1].startSec) > 0.35
+    ));
 };
 
 const selectTextOnlyAnchorMatch = ({
@@ -954,36 +1024,44 @@ const detectMissingRepeatSuggestions = ({
     const kind = getSectionKind(String(section?.name || ''));
     if (kind === 'intro' || kind === 'outro' || kind === 'interlude') return;
 
-    const anchors = buildSectionAnchorPhrases(section).slice(0, 2);
+    const anchors = buildSectionAnchorPhrases(section);
     if (anchors.length === 0) return;
 
-    const sectionCandidates = anchors.flatMap((anchor, anchorIndex) => (
-      findPhraseMatchesInTranscript(transcriptWords, anchor.phrase, 0)
-        .map((match) => ({
-          ...match,
-          confidence: Math.max(0, Math.min(1, (match.confidence * anchor.weight) - anchorIndex * 0.02)),
-        }))
-    ))
-      .filter((match) => match.confidence >= 0.62)
+    const requiredEvidence = Math.min(2, anchors.length);
+    const sectionCandidates = buildSectionOccurrenceCandidates({
+      transcriptWords,
+      anchors,
+      expectedStartSec: null,
+      durationSec: transcriptWords[transcriptWords.length - 1]?.end ?? null,
+    })
+      .filter((match) => (
+        match.exactStart
+        && match.confidence >= 0.64
+        && (
+          match.evidenceCount >= requiredEvidence
+          || (anchors.length === 1 && match.searchWordCount >= 5 && match.confidence >= 0.82)
+        )
+      ))
       .sort((left, right) => left.startSec - right.startSec);
 
     sectionCandidates.forEach((candidate) => {
-      const isNearExistingMarker = existingStarts.some((startSec) => Math.abs(startSec - candidate.startSec) <= 7);
+      const anticipatedStartSec = applyVocalPreRoll(candidate.startSec);
+      const isNearExistingMarker = existingStarts.some((startSec) => Math.abs(startSec - anticipatedStartSec) <= 4);
       if (isNearExistingMarker) return;
 
-      const isNearSuggestion = suggestions.some((suggestion) => Math.abs(suggestion.startSec - candidate.startSec) <= 10);
+      const isNearSuggestion = suggestions.some((suggestion) => Math.abs(suggestion.startSec - anticipatedStartSec) <= 6);
       if (isNearSuggestion) return;
 
       const insertAfterIndex = markers.reduce((lastIndex, marker, markerIndex) => (
-        marker.startSec != null && marker.startSec < candidate.startSec ? markerIndex : lastIndex
+        marker.startSec != null && marker.startSec < anticipatedStartSec ? markerIndex : lastIndex
       ), -1);
 
       suggestions.push({
         sourceIndex: sectionIndex,
         sourceSectionName: String(section?.name || `Seccion ${sectionIndex + 1}`),
         suggestedName: buildRepeatSuggestionName(String(section?.name || `Seccion ${sectionIndex + 1}`), sections),
-        startSec: candidate.startSec,
-        confidence: candidate.confidence,
+        startSec: anticipatedStartSec,
+        confidence: Math.min(1, candidate.confidence + Math.min(0.08, (candidate.evidenceCount - 1) * 0.03)),
         insertAfterIndex,
         lines: Array.isArray(section?.lines) ? section.lines : [],
       });
@@ -1162,64 +1240,33 @@ const buildCueMarkersForSection = ({
     ? Math.max(0, sectionEndCap - sectionStartSec)
     : null;
 
-  const cuePhraseUsageCounts = new Map<string, number>();
-  const cuePhraseLastMatchedStart = new Map<string, number>();
-  let lastCueStart = sectionStartSec;
-  const cueMarkers: number[] = [];
   const expectedCueStarts = cueDrafts.map((_, cueIndex) => (
     sectionDurationGuess != null
       ? Math.round(sectionStartSec + ((sectionDurationGuess * cueIndex) / cueDrafts.length))
       : null
   ));
-
-  for (let cueIndex = 1; cueIndex < cueDrafts.length; cueIndex += 1) {
-    const cue = cueDrafts[cueIndex];
-    const cueAnchors = buildCueAnchorPhrases(cue?.rawLines || []);
-    if (cueAnchors.length === 0) continue;
-
-    const phraseKey = cueAnchors[0].fingerprint;
-    const occurrence = (cuePhraseUsageCounts.get(phraseKey) || 0) + 1;
-    cuePhraseUsageCounts.set(phraseKey, occurrence);
-
-    const previousSamePhraseStart = cueAnchors.reduce<number | null>((latestStart, anchor) => {
-      const lastAnchorStart = cuePhraseLastMatchedStart.get(anchor.fingerprint);
-      if (lastAnchorStart == null) return latestStart;
-      if (latestStart == null) return lastAnchorStart;
-      return Math.max(latestStart, lastAnchorStart);
-    }, null);
-    const repeatAwareFloor = previousSamePhraseStart == null
-      ? 0
-      : previousSamePhraseStart + Math.max(
-        MIN_REPEAT_PROGRESS_SEC,
-        Math.round(Math.max(...cueAnchors.map((anchor) => getPhraseSearchWords(anchor.phrase).length)) * 0.75),
-      );
-    const searchStartSec = Math.max(lastCueStart + MIN_SECTION_PROGRESS_SEC, repeatAwareFloor);
-    const expectedStartSec = expectedCueStarts[cueIndex] != null
-      ? Math.max(searchStartSec, Number(expectedCueStarts[cueIndex]))
-      : searchStartSec;
-
-    const match = selectCueAnchorMatch({
+  const cueIndexes = cueDrafts.map((_, index) => index).slice(1);
+  const cueCandidateSets = cueIndexes.map((cueIndex) => {
+    const cueAnchors = buildCueAnchorPhrases(cueDrafts[cueIndex]?.rawLines || []);
+    return buildSectionOccurrenceCandidates({
       transcriptWords,
       anchors: cueAnchors,
-      searchStartSec,
-      relaxedSearchStartSec: previousSamePhraseStart == null
-        ? Math.max(lastCueStart + MIN_SECTION_PROGRESS_SEC, expectedStartSec - 5)
-        : Math.max(lastCueStart + MIN_SECTION_PROGRESS_SEC, previousSamePhraseStart + 1),
-      expectedStartSec,
-      endBefore: sectionEndCap,
-    });
-
-    if (!match) continue;
-    if (match.estimatedFromLaterLine) continue;
-
-    const anticipatedStartSec = applyVocalPreRoll(match.startSec);
-    if (anticipatedStartSec <= sectionStartSec) continue;
-    if (Number.isFinite(sectionEndCap) && anticipatedStartSec >= sectionEndCap) continue;
-
-    cuePhraseLastMatchedStart.set(match.fingerprint || phraseKey, anticipatedStartSec);
-    lastCueStart = anticipatedStartSec;
-    cueMarkers.push(anticipatedStartSec);
-  }
+      expectedStartSec: expectedCueStarts[cueIndex],
+      durationSec: sectionDurationGuess,
+    }).filter((candidate) => (
+      candidate.exactStart
+      && candidate.startSec > sectionStartSec
+      && (!Number.isFinite(sectionEndCap) || candidate.startSec < sectionEndCap)
+    ));
+  });
+  const alignedCues = alignSectionCandidateSequence({
+    candidateSets: cueCandidateSets,
+    expectedStarts: cueIndexes.map((cueIndex) => expectedCueStarts[cueIndex]),
+    durationSec: sectionDurationGuess,
+  });
+  const cueMarkers = alignedCues
+    .filter((match): match is SectionOccurrenceCandidate => Boolean(match?.exactStart))
+    .map((match) => applyVocalPreRoll(match.startSec));
 
   return [...new Set(cueMarkers)]
     .sort((left, right) => left - right)
@@ -1500,84 +1547,81 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       });
     }
 
-    const phraseLastMatchedStart = new Map<string, number>();
     const expectedSectionStarts = buildExpectedSectionStarts(sections, durationSec);
-    let lastStartSec = -MIN_SECTION_PROGRESS_SEC;
-    let suggestedMarkers: SuggestedMarker[] = sections.map((section: any, index: number) => {
-      const anchorPhrases = buildSectionAnchorPhrases(section);
+    const sectionAnchors = sections.map((section) => buildSectionAnchorPhrases(section));
+    const sectionCandidateSets = sections.map((_, index) => buildSectionOccurrenceCandidates({
+      transcriptWords,
+      anchors: sectionAnchors[index],
+      expectedStartSec: expectedSectionStarts[index],
+      durationSec,
+    }));
+    const globallyAlignedMatches = alignSectionCandidateSequence({
+      candidateSets: sectionCandidateSets,
+      expectedStarts: expectedSectionStarts,
+      durationSec,
+    });
 
-      if (anchorPhrases.length === 0) {
+    let suggestedMarkers: SuggestedMarker[] = sections.map((section, index) => {
+      const anchors = sectionAnchors[index];
+      const match = globallyAlignedMatches[index];
+      if (anchors.length === 0) {
         return {
-          sectionName: section.name,
+          sectionName: String(section.name || `Seccion ${index + 1}`),
           startSec: null,
           confidence: 0,
           method: 'no-lyrics',
         };
       }
-
-      const previousSamePhraseStart = anchorPhrases.reduce<number | null>((latestStart, anchor) => {
-        const lastAnchorStart = phraseLastMatchedStart.get(anchor.fingerprint);
-        if (lastAnchorStart == null) return latestStart;
-        if (latestStart == null) return lastAnchorStart;
-        return Math.max(latestStart, lastAnchorStart);
-      }, null);
-      const repeatAwareFloor = previousSamePhraseStart == null
-        ? 0
-        : previousSamePhraseStart + Math.max(
-          MIN_REPEAT_PROGRESS_SEC,
-          Math.round(Math.max(...anchorPhrases.map((anchor) => getPhraseSearchWords(anchor.phrase).length)) * 0.75),
-        );
-      const searchStartSec = Math.max(lastStartSec + MIN_SECTION_PROGRESS_SEC, repeatAwareFloor);
-      const expectedStartSec = expectedSectionStarts[index] != null
-        ? Math.max(searchStartSec, Number(expectedSectionStarts[index]))
-        : searchStartSec;
-
-      const whisperMatch = selectSectionAnchorMatch({
-        transcriptWords,
-        anchors: anchorPhrases,
-        searchStartSec,
-        relaxedSearchStartSec: previousSamePhraseStart == null
-          ? null
-          : Math.max(lastStartSec + MIN_SECTION_PROGRESS_SEC, previousSamePhraseStart + 1),
-        expectedStartSec,
-      });
-      const deepMatch = !whisperMatch && deepTranscriptText
-        ? selectTextOnlyAnchorMatch({
-          transcriptText: deepTranscriptText,
-          anchors: anchorPhrases,
-          searchStartSec,
-          expectedStartSec,
-          durationSec,
-        })
-        : null;
-      const match = whisperMatch || deepMatch;
-
-      if (match) {
-        const isWordAligned = !match.textOnly && !match.estimatedFromLaterLine;
-        const markerStartSec = isWordAligned
-          ? applyVocalPreRoll(match.startSec)
-          : toPreciseSeconds(match.startSec);
-        lastStartSec = markerStartSec;
-        phraseLastMatchedStart.set(match.fingerprint, markerStartSec);
+      if (!match) {
         return {
-          sectionName: section.name,
-          startSec: markerStartSec,
-          confidence: Math.max(0, Math.min(1, isWordAligned ? match.confidence : match.confidence - 0.12)),
-          method: match.textOnly
-            ? 'deep-text-structure'
-            : match.estimatedFromLaterLine
-              ? 'hybrid-structure'
-              : 'whisper-match',
+          sectionName: String(section.name || `Seccion ${index + 1}`),
+          startSec: null,
+          confidence: 0,
+          method: 'no-match',
         };
       }
 
+      const isWordAligned = Boolean(match.exactStart && !match.estimatedFromLaterLine);
       return {
-        sectionName: section.name,
-        startSec: null,
-        confidence: 0,
-        method: 'no-match',
+        sectionName: String(section.name || `Seccion ${index + 1}`),
+        startSec: isWordAligned
+          ? applyVocalPreRoll(Number(match.startSec))
+          : toPreciseSeconds(Number(match.startSec)),
+        confidence: Math.max(0, Math.min(1,
+          Number(match.confidence) - (isWordAligned ? 0 : 0.12),
+        )),
+        method: isWordAligned ? 'whisper-match' : 'hybrid-structure',
       };
     });
+
+    // Deep transcription has no word timestamps. Use it only inside gaps left by
+    // the global Whisper path, and never let it cross a confirmed neighbor.
+    if (deepTranscriptText) {
+      suggestedMarkers = suggestedMarkers.map((marker, index, source) => {
+        if (marker.startSec != null || sectionAnchors[index].length === 0) return marker;
+        const previousIndex = findPreviousDetectedIndex(source, index);
+        const nextIndex = findNextDetectedIndex(source, index);
+        const searchStartSec = previousIndex >= 0
+          ? Number(source[previousIndex].startSec) + MIN_SECTION_PROGRESS_SEC
+          : 0;
+        const nextStartSec = nextIndex >= 0 ? Number(source[nextIndex].startSec) : Number.POSITIVE_INFINITY;
+        const deepMatch = selectTextOnlyAnchorMatch({
+          transcriptText: deepTranscriptText,
+          anchors: sectionAnchors[index],
+          searchStartSec,
+          expectedStartSec: expectedSectionStarts[index],
+          durationSec,
+        });
+        if (!deepMatch || deepMatch.startSec >= nextStartSec) return marker;
+
+        return {
+          ...marker,
+          startSec: toPreciseSeconds(deepMatch.startSec),
+          confidence: Math.min(0.5, deepMatch.confidence),
+          method: 'deep-text-structure',
+        };
+      });
+    }
     const correctedMarkerResult = applyCorrectionOffset(suggestedMarkers, correctionSummary);
     suggestedMarkers = correctedMarkerResult.markers;
 
