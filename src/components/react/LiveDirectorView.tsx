@@ -16,7 +16,11 @@
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react';
-import { canUseAdvancedStreamingEngine, useMultitrackEngine } from '../../hooks/useMultitrackEngine';
+import {
+  canUseAdvancedStreamingEngine,
+  canUseSharedStreamingTelemetry,
+  useMultitrackEngine,
+} from '../../hooks/useMultitrackEngine';
 import { useNativeIOSMultitrackEngine } from '../../hooks/useNativeIOSMultitrackEngine';
 import type { MultitrackEngineLoadWarning, SongStructure, TrackData } from '../../services/MultitrackEngine';
 import type { SharedStreamingTelemetry } from '../../services/StreamingMultitrackEngine';
@@ -622,7 +626,8 @@ export function LiveDirectorView({
   const isIOSNativeEngineSurface = engineSurface === 'ios-native' || nativeEngineAvailable;
   const [useStreamingEngine, setUseStreamingEngine] = useState(false);
   const [hasResolvedEngineCapability, setHasResolvedEngineCapability] = useState(false);
-  const passiveStreamingTelemetryEnabled = !isIOSNativeEngineSurface && useStreamingEngine;
+  const passiveStreamingTelemetryEnabled =
+    !isIOSNativeEngineSurface && useStreamingEngine && canUseSharedStreamingTelemetry();
   const webMultitrackEngine = useMultitrackEngine({
     useStreamingEngine,
     passiveTelemetry: passiveStreamingTelemetryEnabled,

@@ -2026,7 +2026,19 @@ export class StreamingMultitrackEngine {
       this.postTrackConfiguration(trackState);
     });
 
-    const producerStarted = this.configureAudioProducerWorker(normalizedTracks);
+    const canUseSharedProducer = this.trackStates.every(
+      (trackState) => trackState.ringBuffer.usesSharedMemory,
+    );
+    const producerStarted = canUseSharedProducer
+      ? this.configureAudioProducerWorker(normalizedTracks)
+      : false;
+
+    if (!canUseSharedProducer) {
+      warnLiveDiagnostic('streaming:main-thread-producer', {
+        trackCount: this.trackStates.length,
+        reason: 'SharedArrayBuffer unavailable; using transferable PCM queues.',
+      });
+    }
 
     if (producerStarted) {
       await this.recoverFromStalledProducerStartup();

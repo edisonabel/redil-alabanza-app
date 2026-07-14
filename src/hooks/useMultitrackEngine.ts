@@ -229,10 +229,16 @@ const isUnsupportedStreamingConfigError = (error: unknown) => {
   );
 };
 
-export const canUseAdvancedStreamingEngine = () => (
+export const canUseSharedStreamingTelemetry = () => (
   typeof globalThis !== 'undefined' &&
   typeof SharedArrayBuffer !== 'undefined' &&
   globalThis.crossOriginIsolated === true
+);
+
+export const canUseAdvancedStreamingEngine = () => (
+  typeof window !== 'undefined' &&
+  typeof AudioDecoder === 'function' &&
+  typeof AudioWorkletNode === 'function'
 );
 
 export function useMultitrackEngine(

@@ -17,7 +17,12 @@
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react';
-import { canUseAdvancedStreamingEngine, useLoopLabMultitrackEngine, type LoopLabUiState } from '../../hooks/useLoopLabMultitrackEngine';
+import {
+  canUseAdvancedStreamingEngine,
+  canUseSharedStreamingTelemetry,
+  useLoopLabMultitrackEngine,
+  type LoopLabUiState,
+} from '../../hooks/useLoopLabMultitrackEngine';
 import { useNativeIOSMultitrackEngine } from '../../hooks/useNativeIOSMultitrackEngine';
 import type { MultitrackEngineLoadWarning, SongStructure, TrackData } from '../../services/MultitrackEngine';
 import type { SharedStreamingTelemetry } from '../../services/LoopLabStreamingMultitrackEngine';
@@ -606,7 +611,8 @@ export function LiveDirectorLoopLabView({
   const isIOSNativeEngineSurface = engineSurface === 'ios-native' || nativeEngineAvailable;
   const [useStreamingEngine, setUseStreamingEngine] = useState(false);
   const [hasResolvedEngineCapability, setHasResolvedEngineCapability] = useState(false);
-  const passiveStreamingTelemetryEnabled = !isIOSNativeEngineSurface && useStreamingEngine;
+  const passiveStreamingTelemetryEnabled =
+    !isIOSNativeEngineSurface && useStreamingEngine && canUseSharedStreamingTelemetry();
   const webMultitrackEngine = useLoopLabMultitrackEngine({
     useStreamingEngine,
     passiveTelemetry: passiveStreamingTelemetryEnabled,
