@@ -6,6 +6,10 @@ import {
   alignSectionCandidateSequence,
   type GlobalAlignmentCandidate,
 } from '../../utils/globalSectionAlignment';
+import {
+  buildGuideSectionMarkers,
+  hasUsefulGuideMarkerCoverage,
+} from '../../utils/guideSectionMarkers';
 import { getSectionKind } from '../../utils/sectionVisuals';
 import { readEnv } from '../../lib/server/supabase-env.js';
 import {
@@ -75,6 +79,7 @@ type TranscriptResponse = {
 
 type SuggestedMarkerMethod =
   | 'whisper-match'
+  | 'guide-cue'
   | 'deep-text-structure'
   | 'hybrid-structure'
   | 'interpolated'
@@ -626,6 +631,16 @@ const normalizeAudioCandidateUrl = (value = '') => {
   return url;
 };
 
+const getTranscriptionFileName = (candidate: AudioCandidatePayload, audioBlob: Blob) => {
+  const url = String(candidate?.url || '');
+  const extension = url.match(/\.(mp3|wav|m4a|aac|ogg|flac|mp4|mpeg|mpga|webm)(?:[?#]|$)/i)?.[1]
+    || (audioBlob.type.includes('m4a') ? 'm4a' : '')
+    || (audioBlob.type.includes('wav') ? 'wav' : '')
+    || (audioBlob.type.includes('ogg') ? 'ogg' : '')
+    || 'mp3';
+  return `audio.${extension.toLowerCase()}`;
+};
+
 const normalizeAudioCandidates = (rawCandidates: unknown, fallbackUrl: string): AudioCandidatePayload[] => {
   const candidates = (Array.isArray(rawCandidates) ? rawCandidates : [])
     .map((candidate) => ({
@@ -704,6 +719,17 @@ const buildWhisperPrompt = ({
     .filter(Boolean)
     .join('\n')
     .slice(0, 1400);
+};
+
+const buildGuideWhisperPrompt = (sections: SectionPayload[], language: string) => {
+  const labels = [...new Set(sections.map((section) => String(section?.name || '').trim()).filter(Boolean))];
+  const languageHint = language === 'en' ? 'English' : 'espanol';
+  return [
+    `Pista guia musical en ${languageHint}.`,
+    'Transcribe literalmente los anuncios de estructura y conteos.',
+    'Los anuncios pueden incluir Intro, Verso, Pre-coro, Coro, Interludio, Puente, Solo, Salida y Final.',
+    labels.length > 0 ? `Estructura esperada: ${labels.join(', ')}.` : '',
+  ].filter(Boolean).join('\n').slice(0, 900);
 };
 
 const findPhraseMatchesInTranscript = (
@@ -1126,6 +1152,7 @@ const buildQualitySummary = ({
 }) => {
   const total = markers.length || 1;
   const matched = markers.filter((marker) => marker.method === 'whisper-match').length;
+  const guideMatched = markers.filter((marker) => marker.method === 'guide-cue').length;
   const deepMatched = markers.filter((marker) => marker.method === 'deep-text-structure').length;
   const hybrid = markers.filter((marker) => marker.method === 'hybrid-structure').length;
   const interpolated = markers.filter((marker) => marker.method === 'interpolated').length;
@@ -1136,7 +1163,7 @@ const buildQualitySummary = ({
   const correctionBonus = correctionSamples >= 2 ? 0.03 : 0;
   const score = Math.max(0, Math.min(1,
     averageConfidence * 0.62
-    + ((matched + deepMatched) / total) * 0.24
+    + ((matched + guideMatched + deepMatched) / total) * 0.24
     + sourceBonus
     + deepBonus
     + correctionBonus
@@ -1150,6 +1177,7 @@ const buildQualitySummary = ({
     label: level === 'high' ? 'Alta confianza' : level === 'medium' ? 'Confianza media' : 'Baja confianza',
     score: Math.round(score * 100),
     matched,
+    guideMatched,
     deepMatched,
     hybrid,
     interpolated,
@@ -1419,20 +1447,23 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     }
 
     const language = detectLanguage(sections);
+    const transcriptionFileName = getTranscriptionFileName(selectedAudioCandidate, audioBlob);
     const formData = new FormData();
-    formData.append('file', audioBlob, 'audio.mp3');
+    formData.append('file', audioBlob, transcriptionFileName);
     formData.append('model', whisperModel);
     formData.append('response_format', 'verbose_json');
     formData.append('timestamp_granularities[]', 'word');
-    formData.append('timestamp_granularities[]', 'segment');
     formData.append('language', language);
 
-    const promptText = buildWhisperPrompt({ sections, songContext, language });
+    const isGuideSource = selectedAudioCandidate?.kind === 'stem-guide';
+    const promptText = isGuideSource
+      ? buildGuideWhisperPrompt(sections, language)
+      : buildWhisperPrompt({ sections, songContext, language });
 
     if (promptText) {
       formData.append('prompt', promptText);
     }
-    formData.append('temperature', '0.2');
+    formData.append('temperature', isGuideSource ? '0' : '0.2');
 
     const WHISPER_TIMEOUT_MS = 120_000;
     const RETRYABLE_STATUSES = new Set([429, 503]);
@@ -1484,12 +1515,45 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       : (transcriptWords[transcriptWords.length - 1]?.end
         ? toPreciseSeconds(transcriptWords[transcriptWords.length - 1].end)
         : null);
+
+    if (isGuideSource) {
+      const guideMarkers = buildGuideSectionMarkers({ sections, transcriptWords });
+      if (hasUsefulGuideMarkerCoverage(guideMarkers)) {
+        const correctedGuideResult = applyCorrectionOffset(guideMarkers as SuggestedMarker[], correctionSummary);
+        const repeatSuggestions: RepeatSuggestion[] = [];
+        const quality = buildQualitySummary({
+          markers: correctedGuideResult.markers,
+          repeatSuggestions,
+          deepAnalysis: false,
+          audioSource: selectedAudioCandidate,
+          correctionSamples: Number(correctionSummary.sampleCount) || 0,
+          correctionOffsetSec: correctedGuideResult.appliedOffsetSec,
+        });
+
+        return jsonResponse({
+          success: true,
+          markers: correctedGuideResult.markers,
+          repeatSuggestions,
+          quality,
+          audioSource: selectedAudioCandidate,
+          deepAnalysis: false,
+          deepTranscriptionStatus: 'skipped',
+          language,
+          durationSec,
+          wordCount: transcriptWords.length,
+          transcriptPreview,
+          guideCueDetected: true,
+          preRollMs: Math.round(VOCAL_MARKER_PRE_ROLL_SEC * 1000),
+        });
+      }
+    }
+
     let deepTranscriptText = '';
     let deepTranscriptionStatus: 'skipped' | 'ok' | 'failed' = deepAnalysis ? 'failed' : 'skipped';
 
     if (deepAnalysis && deepTranscribeModel && deepTranscribeModel !== whisperModel) {
       const deepFormData = new FormData();
-      deepFormData.append('file', audioBlob, 'audio.mp3');
+      deepFormData.append('file', audioBlob, transcriptionFileName);
       deepFormData.append('model', deepTranscribeModel);
       deepFormData.append('response_format', 'json');
       deepFormData.append('language', language);

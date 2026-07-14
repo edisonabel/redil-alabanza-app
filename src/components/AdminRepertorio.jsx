@@ -754,7 +754,7 @@ const getAutoMarkerAudioCandidates = (song = {}) => {
     if (/(vocal|vocals|voz|voces|lead|coros|choir)/i.test(name)) {
       pushCandidate({ label: `Stem ${track.name || 'Voces'}`, url, kind: 'stem-voices', priority: 92 });
     } else if (/(guide|guia|guía|cues?)/i.test(name)) {
-      pushCandidate({ label: `Stem ${track.name || 'Guia'}`, url, kind: 'stem-guide', priority: 76 });
+      pushCandidate({ label: `Stem ${track.name || 'Guia'}`, url, kind: 'stem-guide', priority: 110 });
     }
   });
 
@@ -2218,6 +2218,7 @@ export default function AdminRepertorio() {
         setAutoDetectResult({
           total: currentSections.length,
           matched: 0,
+          guideMatched: 0,
           deepMatched: 0,
           interpolated: currentSections.length,
           failed: 0,
@@ -2253,6 +2254,7 @@ export default function AdminRepertorio() {
         setAutoDetectResult({
           total: result.markers.length,
           matched: result.markers.filter((marker) => marker?.method === 'whisper-match').length,
+          guideMatched: result.markers.filter((marker) => marker?.method === 'guide-cue').length,
           deepMatched: result.markers.filter((marker) => marker?.method === 'deep-text-structure').length,
           interpolated: result.markers.filter((marker) => marker?.method === 'interpolated').length,
           hybrid: result.markers.filter((marker) => marker?.method === 'hybrid-structure').length,
@@ -3042,7 +3044,7 @@ export default function AdminRepertorio() {
                           {autoDetectError ? (
                             <span role="alert" className="text-xs font-medium text-red-400">{autoDetectError}</span>
                           ) : autoDetectResult ? (
-                            <div className="flex flex-wrap items-center gap-1.5">
+                            <div role="status" className="flex flex-wrap items-center gap-1.5">
                               <span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] ${
                                 autoDetectResult.quality?.level === 'high'
                                   ? 'bg-emerald-500/15 text-emerald-300'
@@ -3055,7 +3057,7 @@ export default function AdminRepertorio() {
                               <span className="text-xs font-medium text-emerald-400">
                                 {autoDetectResult.fallback === 'uniform'
                                   ? `Distribucion uniforme aplicada (${autoDetectResult.language})`
-                                  : `${autoDetectResult.matched} detectados${autoDetectResult.deepMatched > 0 ? `, ${autoDetectResult.deepMatched} profundos` : ''}${autoDetectResult.hybrid > 0 ? `, ${autoDetectResult.hybrid} hibridos` : ''}${autoDetectResult.interpolated > 0 ? `, ${autoDetectResult.interpolated} interpolados` : ''}${autoDetectResult.failed > 0 ? `, ${autoDetectResult.failed} sin match` : ''}${autoDetectResult.cueMarkersDetected > 0 ? `, ${autoDetectResult.cueMarkersDetected} cues` : ''}${Array.isArray(autoDetectResult.repeatSuggestions) && autoDetectResult.repeatSuggestions.length > 0 ? `, ${autoDetectResult.repeatSuggestions.length} repeticiones sugeridas` : ''}${autoDetectResult.deepAnalysis ? ', profundo' : ''}${autoDetectResult.audioSource?.label ? ` · ${autoDetectResult.audioSource.label}` : ''} (${autoDetectResult.language})`}
+                                  : `${autoDetectResult.guideMatched > 0 ? `${autoDetectResult.guideMatched} por guia` : `${autoDetectResult.matched} detectados`}${autoDetectResult.deepMatched > 0 ? `, ${autoDetectResult.deepMatched} profundos` : ''}${autoDetectResult.hybrid > 0 ? `, ${autoDetectResult.hybrid} hibridos` : ''}${autoDetectResult.interpolated > 0 ? `, ${autoDetectResult.interpolated} interpolados` : ''}${autoDetectResult.failed > 0 ? `, ${autoDetectResult.failed} sin match` : ''}${autoDetectResult.cueMarkersDetected > 0 ? `, ${autoDetectResult.cueMarkersDetected} cues` : ''}${Array.isArray(autoDetectResult.repeatSuggestions) && autoDetectResult.repeatSuggestions.length > 0 ? `, ${autoDetectResult.repeatSuggestions.length} repeticiones sugeridas` : ''}${autoDetectResult.deepAnalysis ? ', profundo' : ''}${autoDetectResult.audioSource?.label ? ` · ${autoDetectResult.audioSource.label}` : ''} (${autoDetectResult.language})`}
                               </span>
                             </div>
                           ) : (
@@ -3098,8 +3100,10 @@ export default function AdminRepertorio() {
                             <div className="min-w-0">
                               <p className="truncate text-sm font-semibold text-content">{marker.sectionName}</p>
                               {marker._autoDetected && (
-                                <span className={`mt-1 inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${marker._method === 'whisper-match' && marker._confidence > 0.7
+                                <span className={`mt-1 inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${marker._method === 'guide-cue'
                                   ? 'bg-emerald-950/70 text-emerald-400'
+                                  : marker._method === 'whisper-match' && marker._confidence > 0.7
+                                    ? 'bg-emerald-950/70 text-emerald-400'
                                   : marker._method === 'whisper-match' && marker._confidence > 0.4
                                     ? 'bg-yellow-950/70 text-yellow-400'
                                     : marker._method === 'deep-text-structure'
@@ -3112,8 +3116,10 @@ export default function AdminRepertorio() {
                                         ? 'bg-yellow-950/70 text-yellow-400'
                                         : 'bg-red-950/70 text-red-400'
                                   }`}>
-                                  {marker._method === 'whisper-match'
-                                    ? `IA ${Math.round((marker._confidence || 0) * 100)}%`
+                                  {marker._method === 'guide-cue'
+                                    ? `Guia ${Math.round((marker._confidence || 0) * 100)}%`
+                                    : marker._method === 'whisper-match'
+                                      ? `IA ${Math.round((marker._confidence || 0) * 100)}%`
                                     : marker._method === 'deep-text-structure'
                                       ? 'Profundo'
                                     : marker._method === 'hybrid-structure'
