@@ -619,7 +619,7 @@ const userId = Astro.locals.user?.id ?? null;
  avatarContainerToUpdate.classList.remove('bg-brand/10');
  const safePublicUrl = toSafeMediaUrl(publicUrl);
  avatarContainerToUpdate.innerHTML = safePublicUrl
- ? safeHtml`<img src="${safePublicUrl}" alt="Avatar" class="w-full h-full object-cover" id="avatar-preview" />`
+ ? safeHtml`<img src="${safePublicUrl}" alt="Avatar" crossorigin="anonymous" class="w-full h-full object-cover" id="avatar-preview" />`
  : '';
  }
 
@@ -905,7 +905,7 @@ const userId = Astro.locals.user?.id ?? null;
  avatarContainer.classList.remove('bg-brand/10');
  const safeAvatarUrl = toSafeMediaUrl(perfilData.avatar_url);
  avatarContainer.innerHTML = safeAvatarUrl
- ? safeHtml`<img src="${safeAvatarUrl}" alt="${perfilData.nombre}" class="w-full h-full object-cover" id="avatar-preview" />`
+ ? safeHtml`<img src="${safeAvatarUrl}" alt="${perfilData.nombre}" crossorigin="anonymous" class="w-full h-full object-cover" id="avatar-preview" />`
  : '';
  } else {
  currentAvatarUrl = null;
