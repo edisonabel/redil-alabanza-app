@@ -1517,7 +1517,24 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         : null);
 
     if (isGuideSource) {
-      const guideMarkers = buildGuideSectionMarkers({ sections, transcriptWords });
+      const guideSections = sections.map((section, sectionIndex) => ({
+        ...section,
+        cueCount: splitSectionIntoCues(
+          'auto-markers-guide',
+          sectionIndex,
+          {
+            name: String(section?.name || `Seccion ${sectionIndex + 1}`),
+            lines: Array.isArray(section?.lines) ? section.lines : [],
+          },
+          null,
+          1,
+        ).length,
+      }));
+      const guideMarkers = buildGuideSectionMarkers({
+        sections: guideSections,
+        transcriptWords,
+        durationSec,
+      });
       if (hasUsefulGuideMarkerCoverage(guideMarkers)) {
         const correctedGuideResult = applyCorrectionOffset(guideMarkers as SuggestedMarker[], correctionSummary);
         const repeatSuggestions: RepeatSuggestion[] = [];

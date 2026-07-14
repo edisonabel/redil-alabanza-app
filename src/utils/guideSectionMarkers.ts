@@ -8,6 +8,7 @@ type GuideTranscriptWord = {
 
 type GuideSection = {
   name?: string;
+  cueCount?: number;
 };
 
 type GuideCueKind = 'intro' | 'verse' | 'prechorus' | 'chorus' | 'interlude' | 'bridge' | 'outro';
@@ -96,14 +97,16 @@ const toGuideKind = (sectionName = ''): GuideCueKind | null => {
 export const buildGuideSectionMarkers = ({
   sections,
   transcriptWords,
+  durationSec = null,
 }: {
   sections: GuideSection[];
   transcriptWords: GuideTranscriptWord[];
+  durationSec?: number | null;
 }): GuideSectionMarker[] => {
   const cues = extractGuideSectionCues(transcriptWords);
   let cursorSec = -1;
 
-  return (Array.isArray(sections) ? sections : []).map((section, index) => {
+  const markers = (Array.isArray(sections) ? sections : []).map((section, index) => {
     const sectionName = String(section?.name || `Seccion ${index + 1}`);
     const kind = toGuideKind(sectionName);
 
@@ -141,6 +144,57 @@ export const buildGuideSectionMarkers = ({
       method: 'guide-cue',
       cueMarkers: [],
     };
+  });
+
+  return markers.map((marker, index) => {
+    if (marker.startSec == null) return marker;
+    const cueCount = Math.max(1, Math.round(Number(sections[index]?.cueCount) || 1));
+    const transitionCount = cueCount - 1;
+    if (transitionCount <= 0) return marker;
+
+    const nextMarker = markers.slice(index + 1).find((candidate) => candidate.startSec != null);
+    const markerKind = toGuideKind(marker.sectionName);
+    const nextDifferentCue = cues.find((cue) => (
+      cue.startSec > Number(marker.startSec) + 0.45
+      && cue.kind !== markerKind
+    ));
+    const rawEndSec = nextMarker?.startSec
+      ?? (nextDifferentCue ? nextDifferentCue.startSec - GUIDE_PRE_ROLL_SEC : null)
+      ?? (Number.isFinite(Number(durationSec)) ? Number(durationSec) : null);
+
+    if (!Number.isFinite(Number(rawEndSec)) || Number(rawEndSec) <= Number(marker.startSec) + 0.75) {
+      return marker;
+    }
+
+    const endSec = Number(rawEndSec);
+    const interval = (endSec - Number(marker.startSec)) / cueCount;
+    const expectedStarts = Array.from({ length: transitionCount }, (_, cueIndex) => (
+      Number(marker.startSec) + interval * (cueIndex + 1)
+    ));
+    const availableCues = cues
+      .map((cue) => Math.max(0, Math.round((cue.startSec - GUIDE_PRE_ROLL_SEC) * 1000) / 1000))
+      .filter((cueStart) => (
+        cueStart > Number(marker.startSec) + 0.45
+        && cueStart < endSec - 0.45
+      ));
+    const maxCandidateDistance = Math.max(4, interval * 0.66);
+    let previousCueStart = Number(marker.startSec);
+
+    const cueMarkers = expectedStarts.map((expectedStart) => {
+      const nearest = availableCues
+        .filter((cueStart) => cueStart > previousCueStart + 0.75)
+        .reduce<number | null>((best, cueStart) => {
+          if (best == null) return cueStart;
+          return Math.abs(cueStart - expectedStart) < Math.abs(best - expectedStart) ? cueStart : best;
+        }, null);
+      const selected = nearest != null && Math.abs(nearest - expectedStart) <= maxCandidateDistance
+        ? nearest
+        : Math.round(expectedStart * 1000) / 1000;
+      previousCueStart = selected;
+      return selected;
+    });
+
+    return { ...marker, cueMarkers };
   });
 };
 
