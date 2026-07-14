@@ -848,7 +848,7 @@ export function LiveDirectorView({
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
   const [mutedTrackIds, setMutedTrackIds] = useState<Set<string>>(new Set());
   const [trackOutputRoutes, setTrackOutputRoutes] = useState<Record<string, TrackOutputRoute>>({});
-  const [soloTrackId, setSoloTrackId] = useState<string | null>(null);
+  const [soloTrackIds, setSoloTrackIds] = useState<Set<string>>(() => new Set());
   const [masterVolume, setMasterVolumeState] = useState(0.82);
   const [congregationFadeState, setCongregationFadeState] = useState<
     'normal' | 'fading-out' | 'muted' | 'fading-in'
@@ -1712,7 +1712,7 @@ export function LiveDirectorView({
       const showRouteFlip = isGuideRoutingTrack(track);
       const volume = trackVolumes[track.id] ?? track.volume ?? meta.defaultVolume;
       const muted = omittedWarning ? false : mutedTrackIds.has(track.id);
-      const dimmed = Boolean(soloTrackId && soloTrackId !== track.id);
+      const dimmed = soloTrackIds.size > 0 && !soloTrackIds.has(track.id);
       // Activity derivation, in order of preference:
       //   1. Real-time meter level, if the engine is publishing one. On iOS
       //      we keep meters disabled for thermal/stability, so this stays 0
@@ -1731,7 +1731,7 @@ export function LiveDirectorView({
         volume,
         level: omittedWarning || muted || dimmed ? 0 : rawLevel,
         muted,
-        soloed: omittedWarning ? false : soloTrackId === track.id,
+        soloed: omittedWarning ? false : soloTrackIds.has(track.id),
         dimmed,
         disabled: activeTracks.length === 0 || Boolean(omittedWarning),
         disabledReason: omittedWarning
@@ -1783,7 +1783,7 @@ export function LiveDirectorView({
     }
 
     return resolvedMixerTracks;
-  }, [activeTracks, congregationPadGain, currentTime, isPadActive, isPlaying, mutedTrackIds, omittedWarningByTrackId, resolvedInternalPadVolume, resolvedPadUrl, soloTrackId, trackEnvelopes, trackLevels, trackOutputRoutes, trackVolumes]);
+  }, [activeTracks, congregationPadGain, currentTime, isPadActive, isPlaying, mutedTrackIds, omittedWarningByTrackId, resolvedInternalPadVolume, resolvedPadUrl, soloTrackIds, trackEnvelopes, trackLevels, trackOutputRoutes, trackVolumes]);
 
   // Precompute the mixer scroll container style so it isn't re-created on
   // every tick of the visual clock. The grid template only actually changes
@@ -1952,7 +1952,7 @@ export function LiveDirectorView({
       setManualSession(null);
       setUnmatchedFiles([]);
       setMutedTrackIds(new Set());
-      setSoloTrackId(null);
+      setSoloTrackIds(new Set());
       setShowLoadPanel(canOpenLoadPanel);
     }
   }, [canOpenLoadPanel, hasProvidedTracks, initialSession, isSongBoundView, replaceOwnedObjectUrls, requiresSongContext, songId]);
@@ -2172,7 +2172,7 @@ export function LiveDirectorView({
   const applyManualSession = useCallback((session: LiveDirectorResolvedSession) => {
     stop();
     setMutedTrackIds(new Set(session.tracks.filter((track) => track.isMuted).map((track) => track.id)));
-    setSoloTrackId(null);
+    setSoloTrackIds(new Set());
     setShowLoadPanel(false);
     replaceOwnedObjectUrls(session.objectUrls);
     syncManualSessionState(session);
@@ -2289,7 +2289,7 @@ export function LiveDirectorView({
 
       setUnmatchedFiles([]);
       setMutedTrackIds(new Set());
-      setSoloTrackId(null);
+      setSoloTrackIds(new Set());
       setManualSession(null);
       setShowLoadPanel(canOpenLoadPanel);
       replaceOwnedObjectUrls([]);
@@ -2425,7 +2425,7 @@ export function LiveDirectorView({
       setIsInitializingSession(true);
       setBusyMessage(isIOSNativeEngineSurface ? 'Iniciando motor Apple...' : useStreamingEngine ? 'Iniciando motor en flujo...' : 'Cargando buffers de audio...');
       setMutedTrackIds(new Set(activeTracks.filter((track) => track.isMuted).map((track) => track.id)));
-      setSoloTrackId(null);
+      setSoloTrackIds(new Set());
 
       const disabledCount = Math.max(0, sessionTracks.length - enabledSessionTracks.length);
       console.info(
@@ -3633,7 +3633,15 @@ export function LiveDirectorView({
     }
 
     soloTrack(trackId);
-    setSoloTrackId((previous) => (previous === trackId ? null : trackId));
+    setSoloTrackIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(trackId)) {
+        next.delete(trackId);
+      } else {
+        next.add(trackId);
+      }
+      return next;
+    });
   };
 
   const handleToggleGuideTrackRoute = useCallback((trackId: string) => {

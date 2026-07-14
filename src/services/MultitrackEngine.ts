@@ -264,7 +264,7 @@ export class MultitrackEngine {
 
   private tracks: TrackData[] = [];
   private mode: EngineMode = 'buffer';
-  private soloTrackId: string | null = null;
+  private readonly soloTrackIds = new Set<string>();
   private isPlaying = false;
   private startTime = 0;
   private pauseTime = 0;
@@ -303,6 +303,7 @@ export class MultitrackEngine {
     console.log(`[MultitrackEngine] Loading ${trackList.length} track(s).`);
 
     this.stop();
+    this.soloTrackIds.clear();
     this.abortPendingLoads();
     this.loadWarnings = [];
     this.cleanupTrackResources([...this.tracks, ...trackList]);
@@ -336,10 +337,6 @@ export class MultitrackEngine {
         this.mode === 'media'
           ? await this.loadTracksWithMediaElements(trackList, onProgress)
           : await this.loadTracksWithAudioBuffers(trackList, onProgress);
-
-      if (this.soloTrackId && !loadedTracks.some((track) => track.id === this.soloTrackId)) {
-        this.soloTrackId = null;
-      }
 
       this.tracks = loadedTracks;
       this.syncAllTrackGains();
@@ -476,7 +473,7 @@ export class MultitrackEngine {
     this.abortPendingLoads();
     this.cleanupTrackResources(this.tracks);
     this.tracks = [];
-    this.soloTrackId = null;
+    this.soloTrackIds.clear();
 
     try {
       this.masterGain.disconnect();
@@ -571,7 +568,11 @@ export class MultitrackEngine {
       return;
     }
 
-    this.soloTrackId = this.soloTrackId === trackId ? null : trackId;
+    if (this.soloTrackIds.has(trackId)) {
+      this.soloTrackIds.delete(trackId);
+    } else {
+      this.soloTrackIds.add(trackId);
+    }
     this.syncAllTrackGains();
   }
 
@@ -1589,7 +1590,7 @@ export class MultitrackEngine {
     }
 
     const nextGain =
-      this.soloTrackId && track.id !== this.soloTrackId
+      this.soloTrackIds.size > 0 && !this.soloTrackIds.has(track.id)
         ? 0
         : track.isMuted
           ? 0
@@ -1698,7 +1699,7 @@ export class MultitrackEngine {
       return 0;
     }
 
-    if (track.isMuted || (this.soloTrackId !== null && this.soloTrackId !== track.id)) {
+    if (track.isMuted || (this.soloTrackIds.size > 0 && !this.soloTrackIds.has(track.id))) {
       return 0;
     }
 

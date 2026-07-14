@@ -112,7 +112,10 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private var duration: Double = 0
     private var playbackStopDuration: Double = 0
     private var masterVolume: Float = 1
-    private var soloTrackId: String?
+    private var soloTrackIds = Set<String>()
+    private var soloTrackSummary: String {
+        soloTrackIds.isEmpty ? "none" : soloTrackIds.sorted().joined(separator: ",")
+    }
     private var internalPadFadeScale: Float = 1
     private var lastSyncDebugLogElapsed: Double = -Double.greatestFiniteMagnitude
     private var lastCapacityDebugLogElapsed: Double = -Double.greatestFiniteMagnitude
@@ -449,7 +452,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             CAPLog.print("NativeLiveDirectorEngine setTrackVolume id=\(trackId) volume=\(volume)")
             self.applyTrackMixState(track)
             if self.isSyncDebugTrack(track) {
-                CAPLog.print("NLDE SYNCDBG MIX index=\(track.loadIndex) id=\(track.id) name=\(track.name) setTrackVolume requested=\(volume) applied=\(track.player.volume) muted=\(track.isMuted) solo=\(self.soloTrackId ?? "none")")
+                CAPLog.print("NLDE SYNCDBG MIX index=\(track.loadIndex) id=\(track.id) name=\(track.name) setTrackVolume requested=\(volume) applied=\(track.player.volume) muted=\(track.isMuted) solo=\(self.soloTrackSummary)")
             }
             DispatchQueue.main.async {
                 call.resolve()
@@ -516,16 +519,20 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         }
 
         engineQueue.async {
-            self.soloTrackId = self.soloTrackId == trackId ? nil : trackId
+            if self.soloTrackIds.contains(trackId) {
+                self.soloTrackIds.remove(trackId)
+            } else {
+                self.soloTrackIds.insert(trackId)
+            }
             self.tracks.forEach { self.applyTrackMixState($0) }
             self.tracks
                 .filter { self.isSyncDebugTrack($0) }
                 .forEach {
-                    CAPLog.print("NLDE SYNCDBG MIX index=\($0.loadIndex) id=\($0.id) name=\($0.name) soloTrack=\(self.soloTrackId ?? "none") appliedVolume=\($0.player.volume) muted=\($0.isMuted)")
+                    CAPLog.print("NLDE SYNCDBG MIX index=\($0.loadIndex) id=\($0.id) name=\($0.name) soloTracks=\(self.soloTrackSummary) appliedVolume=\($0.player.volume) muted=\($0.isMuted)")
                 }
             self.logCapacitySnapshot("soloTrack", includeTracks: false)
             DispatchQueue.main.async {
-                call.resolve(["soloTrackId": self.soloTrackId as Any])
+                call.resolve(["soloTrackIds": Array(self.soloTrackIds).sorted()])
             }
         }
     }
@@ -934,6 +941,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                 self.engine.stop()
                 self.engine.reset()
                 self.tracks = nextTracks
+                self.soloTrackIds.removeAll()
                 let timelineTracks = nextTracks.filter { !self.isInternalPadTrack($0) }
                 self.duration = (timelineTracks.isEmpty ? nextTracks : timelineTracks).map(\.duration).max() ?? 0
                 self.playbackStopDuration = self.duration + (nextTracks.contains(where: { self.isInternalPadTrack($0) }) ? self.internalPadTailSeconds : 0)
@@ -1208,7 +1216,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     }
 
     private func applyTrackMixState(_ track: NativeTrack) {
-        let soloAllowsTrack = soloTrackId == nil || soloTrackId == track.id
+        let soloAllowsTrack = soloTrackIds.isEmpty || soloTrackIds.contains(track.id)
         let fadeScale = isInternalPadTrack(track) ? internalPadFadeScale : 1
         track.player.volume = track.isMuted || !soloAllowsTrack ? 0 : track.volume * fadeScale
 
@@ -1562,7 +1570,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         let processInfo = ProcessInfo.processInfo
 
         CAPLog.print(
-            "NLDE CAPACITY[\(tag)] elapsed=\(elapsedText) loaded=\(tracks.count) timeline=\(timelineTracks.count) pads=\(padTracks.count) audibleTimeline=\(audibleTimelineTracks.count) audiblePads=\(audiblePadTracks.count) mutedOrSilent=\(mutedOrSilentTracks) solo=\(soloTrackId ?? "none") compressed=\(compressedTracks.count) pcm=\(pcmTracks) channels=\(totalChannels) localMB=\(String(format: "%.1f", totalLocalMB)) estPCMFloatMB=\(String(format: "%.1f", estimatedPcmFloatMB)) rssMB=\(rssText) thermal=\(thermalStateName(processInfo.thermalState)) lowPower=\(processInfo.isLowPowerModeEnabled) duration=\(String(format: "%.3f", duration)) stopDuration=\(String(format: "%.3f", playbackStopDuration)) sessionRate=\(String(format: "%.0f", session.sampleRate)) bufferMs=\(String(format: "%.2f", session.ioBufferDuration * 1000)) engineRunning=\(engine.isRunning) isPlaying=\(isPlaying)"
+            "NLDE CAPACITY[\(tag)] elapsed=\(elapsedText) loaded=\(tracks.count) timeline=\(timelineTracks.count) pads=\(padTracks.count) audibleTimeline=\(audibleTimelineTracks.count) audiblePads=\(audiblePadTracks.count) mutedOrSilent=\(mutedOrSilentTracks) solo=\(soloTrackSummary) compressed=\(compressedTracks.count) pcm=\(pcmTracks) channels=\(totalChannels) localMB=\(String(format: "%.1f", totalLocalMB)) estPCMFloatMB=\(String(format: "%.1f", estimatedPcmFloatMB)) rssMB=\(rssText) thermal=\(thermalStateName(processInfo.thermalState)) lowPower=\(processInfo.isLowPowerModeEnabled) duration=\(String(format: "%.3f", duration)) stopDuration=\(String(format: "%.3f", playbackStopDuration)) sessionRate=\(String(format: "%.0f", session.sampleRate)) bufferMs=\(String(format: "%.2f", session.ioBufferDuration * 1000)) engineRunning=\(engine.isRunning) isPlaying=\(isPlaying)"
         )
 
         guard includeTracks else {

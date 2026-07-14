@@ -55,6 +55,13 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
+# Worker filenames are stable across deploys. Force revalidation so Chrome
+# never pairs a newly hashed app bundle with an older audio worker protocol.
+[[headers]]
+  for = "/workers/*"
+  [headers.values]
+    Cache-Control = "no-store, max-age=0, must-revalidate"
+
 [[headers]]
   for = "/*.webp"
   [headers.values]

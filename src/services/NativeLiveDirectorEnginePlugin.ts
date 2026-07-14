@@ -87,7 +87,7 @@ export interface NativeLiveDirectorEnginePlugin {
   setTrackVolume(options: { trackId: string; volume: number }): Promise<void>;
   setTrackOutputRoute(options: { trackId: string; outputRoute: TrackOutputRoute }): Promise<void>;
   toggleMute(options: { trackId: string }): Promise<{ muted: boolean }>;
-  soloTrack(options: { trackId: string }): Promise<{ soloTrackId: string | null }>;
+  soloTrack(options: { trackId: string }): Promise<{ soloTrackIds: string[] }>;
   setMasterVolume(options: { volume: number }): Promise<void>;
   setMetersEnabled(options: { enabled: boolean }): Promise<{ enabled: boolean }>;
   getState(): Promise<NativeLiveDirectorEngineState>;

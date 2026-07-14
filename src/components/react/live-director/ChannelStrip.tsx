@@ -400,6 +400,7 @@ export const ChannelStrip = memo(function ChannelStrip({
           type="button"
           onClick={onSolo}
           disabled={disabled}
+          aria-pressed={soloed}
           aria-label={`Solo ${label}`}
           className={`ui-pressable-soft flex items-center justify-center border font-black transition-all duration-150 ${topButtonRadiusClass} ${sideButtonSizeClass} ${soloed
               ? 'border-cyan-300/60 bg-cyan-300/16 text-cyan-100 shadow-[0_0_18px_rgba(103,210,242,0.24)]'

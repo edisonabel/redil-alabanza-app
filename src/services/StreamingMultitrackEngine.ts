@@ -915,8 +915,9 @@ type PreloadedStreamingSession = {
   trackStates: TrackRuntime[];
 };
 
-const DEFAULT_WORKLET_MODULE_URL = '/workers/MultitrackWorkletProcessor.js';
-const DEFAULT_PRODUCER_WORKER_URL = '/workers/AudioProducerWorker.js';
+const AUDIO_WORKER_ASSET_VERSION = '20260714-1';
+const DEFAULT_WORKLET_MODULE_URL = `/workers/MultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
+const DEFAULT_PRODUCER_WORKER_URL = `/workers/AudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
 const DEFAULT_SAMPLE_RATE = 48_000;
 const DEFAULT_CHANNEL_COUNT = 1;
@@ -931,6 +932,7 @@ const AAC_FRAME_SIZE = 1024;
 const MP4_EXTRACTION_SAMPLE_BATCH_SIZE = 16;
 const DECODER_SPECIFIC_INFO_TAG = 0x05;
 const STREAMING_TRACK_READY_TIMEOUT_MS = 30_000;
+const PRODUCER_STARTUP_FALLBACK_TIMEOUT_MS = 8_000;
 const MIN_START_BUFFER_SECONDS = 0.5;
 const START_BARRIER_POLL_INTERVAL_MS = 50;
 const START_BARRIER_BUFFERING_NOTICE_MS = 200;
@@ -2026,7 +2028,9 @@ export class StreamingMultitrackEngine {
 
     const producerStarted = this.configureAudioProducerWorker(normalizedTracks);
 
-    if (!producerStarted) {
+    if (producerStarted) {
+      await this.recoverFromStalledProducerStartup();
+    } else {
       this.trackStates.forEach((trackState) => {
         this.startTrackPipeline(trackState);
       });
@@ -2062,6 +2066,53 @@ export class StreamingMultitrackEngine {
     );
   }
 
+  private async recoverFromStalledProducerStartup(): Promise<void> {
+    if (!this.producerWorker || this.trackStates.length === 0) {
+      return;
+    }
+
+    const firstTrackSettled = await Promise.race([
+      Promise.race(
+        this.trackStates.map((trackState) =>
+          trackState.ready.promise.then(
+            () => true,
+            () => true,
+          ),
+        ),
+      ),
+      this.sleep(PRODUCER_STARTUP_FALLBACK_TIMEOUT_MS).then(() => false),
+    ]);
+
+    if (
+      firstTrackSettled ||
+      !this.producerWorker ||
+      this.trackStates.some((trackState) => trackState.readyResolved || trackState.omitted)
+    ) {
+      return;
+    }
+
+    warnLiveDiagnostic('streaming:producer-startup-fallback', {
+      timeoutMs: PRODUCER_STARTUP_FALLBACK_TIMEOUT_MS,
+      sessionId: this.producerSessionId,
+      trackCount: this.trackStates.length,
+      reason: 'No track produced initial audio; switching to the main-thread pipeline.',
+    });
+    this.terminateProducerWorker('startup-timeout-no-track-ready');
+
+    this.trackStates.forEach((trackState) => {
+      if (trackState.omitted || trackState.fetchTask) {
+        return;
+      }
+
+      trackState.ringBuffer.reset();
+      trackState.fetchOffset = 0;
+      trackState.totalBytes = null;
+      trackState.endOfStreamReached = false;
+      trackState.suppressDecodedOutput = false;
+      this.startTrackPipeline(trackState);
+    });
+  }
+
   private waitForTrackReady(trackState: TrackRuntime): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const timeoutId = window.setTimeout(() => {
@@ -2072,15 +2123,35 @@ export class StreamingMultitrackEngine {
 
         const track = this.tracks[trackState.index];
         const trackLabel = track?.name || track?.id || `track ${trackState.index}`;
-        reject(
-          new Error(
-            `track-ready-timeout en "${trackLabel}" (index ${trackState.index}): ` +
-              `el Producer no emitió producer-track-ready en ${STREAMING_TRACK_READY_TIMEOUT_MS}ms. ` +
-              `ring availableRead=${trackState.ringBuffer.availableRead()}, ` +
-              `availableWrite=${trackState.ringBuffer.availableWrite()}, ` +
-              `capacity=${trackState.ringBuffer.capacity}, url=${trackState.config.url}`,
-          ),
-        );
+        const startupSource = this.producerWorker ? 'el Producer' : 'el pipeline alternativo';
+        const timeoutDetail =
+          `${startupSource} no produjo audio inicial en ${STREAMING_TRACK_READY_TIMEOUT_MS}ms. ` +
+          `ring availableRead=${trackState.ringBuffer.availableRead()}, ` +
+          `availableWrite=${trackState.ringBuffer.availableWrite()}, ` +
+          `capacity=${trackState.ringBuffer.capacity}, url=${trackState.config.url}`;
+
+        // A single stalled stem must not prevent every healthy stem from loading.
+        // Keep one active track as the minimum so the engine never reports ready
+        // with an empty session.
+        if (!trackState.omitted && this.getActiveTrackStates().length > 1) {
+          this.omitTrackAfterProducerError(trackState, {
+            type: 'producer-error',
+            code: 'track-ready-timeout',
+            message: `La pista "${trackLabel}" no produjo audio inicial a tiempo. Se omitió para cargar las demás pistas.`,
+            sessionId: this.producerSessionId,
+            trackIndex: trackState.index,
+            trackId: track?.id,
+            trackName: trackLabel,
+            sourceFileName: track?.sourceFileName,
+            url: trackState.config.url,
+            availableRead: trackState.ringBuffer.availableRead(),
+            availableWrite: trackState.ringBuffer.availableWrite(),
+          });
+          resolve();
+          return;
+        }
+
+        reject(new Error(`track-ready-timeout en "${trackLabel}" (index ${trackState.index}): ${timeoutDetail}`));
       }, STREAMING_TRACK_READY_TIMEOUT_MS);
 
       trackState.ready.promise.then(
