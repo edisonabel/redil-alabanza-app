@@ -2162,6 +2162,7 @@ export default function AdminRepertorio() {
 
       const response = await fetch('/api/auto-markers', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -2181,9 +2182,22 @@ export default function AdminRepertorio() {
         }),
       });
 
-      const result = await response.json().catch(() => ({}));
+      const rawResponse = await response.text();
+      let result = {};
+      try {
+        result = rawResponse ? JSON.parse(rawResponse) : {};
+      } catch (_error) {
+        result = {};
+      }
+
       if (!response.ok || result?.error) {
-        setAutoDetectError(result?.error || 'No se pudieron detectar markers automaticamente.');
+        const statusLabel = response.status ? `HTTP ${response.status}` : 'sin respuesta';
+        const fallbackMessage = response.status === 401
+          ? 'Tu sesion expiro. Recarga la pagina e intenta de nuevo.'
+          : response.status === 502 || response.status === 504
+            ? 'El servidor no completo el analisis de audio. Intenta de nuevo en unos segundos.'
+            : `No se pudieron detectar markers automaticamente (${statusLabel}).`;
+        setAutoDetectError(response.status === 401 ? fallbackMessage : result?.error || fallbackMessage);
         return;
       }
 
@@ -3026,7 +3040,7 @@ export default function AdminRepertorio() {
                           </button>
 
                           {autoDetectError ? (
-                            <span className="text-xs font-medium text-red-400">{autoDetectError}</span>
+                            <span role="alert" className="text-xs font-medium text-red-400">{autoDetectError}</span>
                           ) : autoDetectResult ? (
                             <div className="flex flex-wrap items-center gap-1.5">
                               <span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] ${
