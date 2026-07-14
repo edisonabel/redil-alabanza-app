@@ -1408,7 +1408,17 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       return jsonResponse({ error: 'OPENAI_API_KEY no configurada en el servidor.' }, 500);
     }
 
-    const audioCandidates = normalizeAudioCandidates(body?.audioCandidates, mp3Url);
+    // La fuente autoritativa es el MP3 que usa el editor. Un Guide/BGVS puede
+    // tener count-in o cola propios; sus timestamps no pertenecen al mismo reloj.
+    // Si el MP3 falla, es preferible informar el error que guardar markers falsos.
+    const audioCandidates = normalizeAudioCandidates([
+      {
+        label: 'Audio de reproduccion',
+        url: mp3Url,
+        kind: 'mix',
+        priority: 120,
+      },
+    ], mp3Url);
     if (!serviceRoleClient) {
       throw new ApiSecurityError('Servicio de autorizacion no configurado.', 503);
     }
@@ -1610,7 +1620,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     if (transcriptWords.length === 0) {
       return jsonResponse({
         success: true,
-        fallback: 'uniform',
+        fallback: 'no-lyrics',
         language,
         durationSec,
         wordCount: 0,

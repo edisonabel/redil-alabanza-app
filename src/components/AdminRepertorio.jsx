@@ -369,23 +369,6 @@ const getFirstMeaningfulSectionLine = (section) => {
   return lines.find((line) => String(line || '').trim()) || '';
 };
 
-const buildUniformAutoDetectedMarkers = (markers = [], totalDurationSec = 0) => {
-  const markerCount = Array.isArray(markers) ? markers.length : 0;
-  const safeDuration = Number(totalDurationSec);
-  if (markerCount === 0 || !Number.isFinite(safeDuration) || safeDuration <= 0) {
-    return Array.isArray(markers) ? markers : [];
-  }
-
-  const divisor = Math.max(markerCount, 1);
-  return markers.map((marker, index) => ({
-    ...marker,
-    startSec: toPreciseSeconds((safeDuration * index) / divisor),
-    _autoDetected: true,
-    _confidence: 0.25,
-    _method: 'uniform',
-  }));
-};
-
 const areTimesClose = (left, right, precision = 0.25) => (
   Math.abs((Number(left) || 0) - (Number(right) || 0)) < precision
 );
@@ -429,13 +412,6 @@ const insertChordProSectionAfterIndex = (rawValue = '', afterSectionIndex = -1, 
   return [before, sectionBlock.trim(), after]
     .filter(Boolean)
     .join('\n\n');
-};
-
-const normalizeAudioCandidateUrl = (value = '') => {
-  const url = String(value || '').trim();
-  if (!url || !/^https?:\/\//i.test(url)) return '';
-  if (!/\.(mp3|wav|m4a|aac|ogg|flac|mp4|mpeg|mpga|webm)(\?.*)?$/i.test(url)) return '';
-  return url;
 };
 
 const normalizeExternalVoiceUrl = (rawUrl = '') => {
@@ -725,43 +701,6 @@ const createLocalVoiceEntry = (file, index = 0) => ({
   previewUrl: URL.createObjectURL(file),
 });
 
-const parseMultitrackSession = (rawValue) => {
-  if (!rawValue) return null;
-  if (typeof rawValue === 'object') return rawValue;
-  if (typeof rawValue !== 'string') return null;
-  try {
-    return JSON.parse(rawValue);
-  } catch {
-    return null;
-  }
-};
-
-const getAutoMarkerAudioCandidates = (song = {}) => {
-  const candidates = [];
-  const pushCandidate = ({ label, url, kind, priority }) => {
-    const safeUrl = normalizeAudioCandidateUrl(url);
-    if (!safeUrl || candidates.some((item) => item.url === safeUrl)) return;
-    candidates.push({ label, url: safeUrl, kind, priority });
-  };
-
-  pushCandidate({ label: 'Voces', url: song?.link_voces || song?.voces, kind: 'voices', priority: 100 });
-
-  const session = parseMultitrackSession(song?.multitrack_session);
-  const tracks = Array.isArray(session?.tracks) ? session.tracks : [];
-  tracks.forEach((track) => {
-    const name = String(track?.name || track?.sourceFileName || '').toLowerCase();
-    const url = track?.url || track?.optimizedUrl || track?.iosUrl || track?.nativeUrl;
-    if (/(vocal|vocals|voz|voces|lead|coros|choir)/i.test(name)) {
-      pushCandidate({ label: `Stem ${track.name || 'Voces'}`, url, kind: 'stem-voices', priority: 92 });
-    } else if (/(guide|guia|guía|cues?)/i.test(name)) {
-      pushCandidate({ label: `Stem ${track.name || 'Guia'}`, url, kind: 'stem-guide', priority: 110 });
-    }
-  });
-
-  pushCandidate({ label: 'MP3 completo', url: song?.mp3, kind: 'mix', priority: 10 });
-  return candidates.sort((left, right) => right.priority - left.priority);
-};
-
 const loadAutoMarkerCorrections = () => {
   if (typeof window === 'undefined') return [];
   try {
@@ -942,7 +881,6 @@ export default function AdminRepertorio() {
   const [guardandoVoces, setGuardandoVoces] = useState(false);
   const [voicePreview, setVoicePreview] = useState({ id: '', url: '' });
   const editorAudioCurrentTimeRef = useRef(0);
-  const editorAudioDurationRef = useRef(0);
   const editorAudioFrameRef = useRef(null);
   const voicePreviewAudioRef = useRef(null);
   const tableScrollRef = useRef(null);
@@ -1155,7 +1093,6 @@ export default function AdminRepertorio() {
 
     const handleLoadedMetadata = () => {
       const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
-      editorAudioDurationRef.current = duration;
       setEditorAudioDuration((prev) => (areTimesClose(prev, duration, 0.1) ? prev : duration));
     };
 
@@ -1768,7 +1705,6 @@ export default function AdminRepertorio() {
         setEditorAudioDuration(0);
         setEditorAudioPlaying(false);
         editorAudioCurrentTimeRef.current = 0;
-        editorAudioDurationRef.current = 0;
       }
     } catch (err) {
       console.error('Error eliminando archivo:', err);
@@ -1827,7 +1763,6 @@ export default function AdminRepertorio() {
     setEditorAudioDuration(0);
     setEditorAudioPlaying(false);
     editorAudioCurrentTimeRef.current = 0;
-    editorAudioDurationRef.current = 0;
     setEditorChordproAviso(aviso);
     setEditorChordproCargando(false);
   };
@@ -1847,7 +1782,6 @@ export default function AdminRepertorio() {
     setEditorAudioDuration(0);
     setEditorAudioPlaying(false);
     editorAudioCurrentTimeRef.current = 0;
-    editorAudioDurationRef.current = 0;
   };
 
   const guardarChordproDesdeEditor = async () => {
@@ -2169,7 +2103,6 @@ export default function AdminRepertorio() {
         body: JSON.stringify({
           mp3Url: editorChordproCancion.mp3,
           deepAnalysis,
-          audioCandidates: getAutoMarkerAudioCandidates(editorChordproCancion),
           correctionSummary: getAutoMarkerCorrectionSummary(editorChordproCancion?.id),
           songContext: {
             songId: editorChordproCancion?.id || '',
@@ -2201,35 +2134,8 @@ export default function AdminRepertorio() {
         return;
       }
 
-      if (result?.fallback === 'uniform') {
-        const fallbackDuration = Number(result?.durationSec) > 0
-          ? Number(result.durationSec)
-          : editorAudioDurationRef.current;
-
-        if (!(fallbackDuration > 0)) {
-          setAutoDetectError('La IA no detecto palabras y no se pudo estimar la duracion para repartir secciones.');
-          return;
-        }
-
-        setEditorSectionMarkers((prev) => buildUniformAutoDetectedMarkers(
-          normalizeSectionMarkers(currentSections, prev),
-          fallbackDuration,
-        ));
-        setAutoDetectResult({
-          total: currentSections.length,
-          matched: 0,
-          guideMatched: 0,
-          deepMatched: 0,
-          interpolated: currentSections.length,
-          failed: 0,
-          cueMarkersDetected: 0,
-          language: String(result?.language || 'es').toUpperCase(),
-          fallback: 'uniform',
-          repeatSuggestions: [],
-          quality: result?.quality || null,
-          audioSource: result?.audioSource || null,
-          deepAnalysis: Boolean(result?.deepAnalysis),
-        });
+      if (result?.fallback === 'no-lyrics') {
+        setAutoDetectError('No se reconocio suficiente letra en el audio. No se modificaron los markers.');
         return;
       }
 
