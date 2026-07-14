@@ -16,8 +16,6 @@ const LEADING_CHORD_SECTION_RE = new RegExp(`^\\[(${CHORD_BODY_PATTERN})\\|`, 'i
 const BROKEN_INLINE_CHORD_RE = new RegExp(`\\[(${CHORD_BODY_PATTERN})\\s*\\|\\s*`, 'gi');
 const EDITOR_MODAL_MAX_HEIGHT = 'min(94vh, calc(100dvh - 4.75rem - env(safe-area-inset-bottom)))';
 const ARCHIVO_ELIMINABLE_FIELDS = new Set(['mp3', 'link_acordes']);
-const AUTO_MARKER_CORRECTION_STORAGE_KEY = 'redil:auto-marker-corrections:v1';
-const AUTO_MARKER_CORRECTION_LIMIT = 120;
 
 const normalizeSectionName = (rawValue = '') => {
   const cleaned = String(rawValue).trim();
@@ -700,42 +698,6 @@ const createLocalVoiceEntry = (file, index = 0) => ({
   fileName: file?.name || `Audio ${index + 1}`,
   previewUrl: URL.createObjectURL(file),
 });
-
-const loadAutoMarkerCorrections = () => {
-  if (typeof window === 'undefined') return [];
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(AUTO_MARKER_CORRECTION_STORAGE_KEY) || '[]');
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-};
-
-const saveAutoMarkerCorrection = (entry) => {
-  if (typeof window === 'undefined') return;
-  const corrections = loadAutoMarkerCorrections();
-  corrections.unshift(entry);
-  window.localStorage.setItem(
-    AUTO_MARKER_CORRECTION_STORAGE_KEY,
-    JSON.stringify(corrections.slice(0, AUTO_MARKER_CORRECTION_LIMIT)),
-  );
-};
-
-const getAutoMarkerCorrectionSummary = (songId) => {
-  const relevant = loadAutoMarkerCorrections()
-    .filter((entry) => String(entry?.songId || '') === String(songId || ''))
-    .slice(0, 20);
-
-  if (relevant.length < 2) {
-    return { sampleCount: relevant.length, averageDeltaSec: 0 };
-  }
-
-  const averageDeltaSec = relevant.reduce((sum, entry) => sum + (Number(entry?.deltaSec) || 0), 0) / relevant.length;
-  return {
-    sampleCount: relevant.length,
-    averageDeltaSec: Math.max(-6, Math.min(6, averageDeltaSec)),
-  };
-};
 
 const EditableCell = ({ cancionId, campoBd, valorInicial, onSave, isSaving, anchoClases = "min-w-[8rem]", customInputClasses = "" }) => {
   const [valor, setValor] = useState(valorInicial || '');
@@ -2020,30 +1982,9 @@ export default function AdminRepertorio() {
     )));
   };
 
-  const registrarCorreccionAutoMarker = (marker, patch) => {
-    if (!marker?._autoDetected) return;
-    if (!Object.prototype.hasOwnProperty.call(patch || {}, 'startSec')) return;
-
-    const previousStartSec = Number(marker?.startSec);
-    const correctedStartSec = Number(patch?.startSec);
-    if (!Number.isFinite(previousStartSec) || !Number.isFinite(correctedStartSec)) return;
-    if (Math.abs(previousStartSec - correctedStartSec) < 0.05) return;
-
-    saveAutoMarkerCorrection({
-      songId: editorChordproCancion?.id || '',
-      songTitle: editorChordproCancion?.titulo || '',
-      sectionName: marker?.sectionName || '',
-      method: marker?._method || '',
-      previousStartSec,
-      correctedStartSec,
-      deltaSec: correctedStartSec - previousStartSec,
-      createdAt: new Date().toISOString(),
-    });
-  };
-
   const actualizarEditorSectionMarker = (markerIndex, patch) => {
     setEditorSectionMarkers((prev) => prev.map((item, itemIndex) => (
-      itemIndex === markerIndex ? (registrarCorreccionAutoMarker(item, patch), { ...item, ...patch }) : item
+      itemIndex === markerIndex ? { ...item, ...patch } : item
     )));
   };
 
@@ -2103,7 +2044,6 @@ export default function AdminRepertorio() {
         body: JSON.stringify({
           mp3Url: editorChordproCancion.mp3,
           deepAnalysis,
-          correctionSummary: getAutoMarkerCorrectionSummary(editorChordproCancion?.id),
           songContext: {
             songId: editorChordproCancion?.id || '',
             title: editorChordproCancion?.titulo || '',

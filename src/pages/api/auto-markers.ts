@@ -60,11 +60,6 @@ type AudioCandidatePayload = {
   priority?: number;
 };
 
-type CorrectionSummaryPayload = {
-  sampleCount?: number;
-  averageDeltaSec?: number;
-};
-
 type TranscriptWord = {
   word: string;
   start: number;
@@ -1114,41 +1109,16 @@ const detectMissingRepeatSuggestions = ({
     });
 };
 
-const applyCorrectionOffset = (markers: SuggestedMarker[], correctionSummary: CorrectionSummaryPayload) => {
-  const sampleCount = Number(correctionSummary?.sampleCount) || 0;
-  const offset = Number(correctionSummary?.averageDeltaSec) || 0;
-  if (sampleCount < 2 || Math.abs(offset) < 0.5) {
-    return { markers, appliedOffsetSec: 0 };
-  }
-
-  return {
-    appliedOffsetSec: offset,
-    markers: markers.map((marker) => (
-      marker.startSec == null
-        ? marker
-        : {
-          ...marker,
-          startSec: Math.max(0, toPreciseSeconds(marker.startSec + offset)),
-          confidence: Math.max(0, Math.min(1, marker.confidence + 0.03)),
-        }
-    )),
-  };
-};
-
 const buildQualitySummary = ({
   markers,
   repeatSuggestions,
   deepAnalysis,
   audioSource,
-  correctionSamples,
-  correctionOffsetSec,
 }: {
   markers: SuggestedMarker[];
   repeatSuggestions: RepeatSuggestion[];
   deepAnalysis: boolean;
   audioSource: AudioCandidatePayload;
-  correctionSamples: number;
-  correctionOffsetSec: number;
 }) => {
   const total = markers.length || 1;
   const matched = markers.filter((marker) => marker.method === 'whisper-match').length;
@@ -1160,13 +1130,11 @@ const buildQualitySummary = ({
   const averageConfidence = markers.reduce((sum, marker) => sum + (Number(marker.confidence) || 0), 0) / total;
   const sourceBonus = ['voices', 'stem-voices', 'stem-guide'].includes(String(audioSource?.kind || '')) ? 0.08 : 0;
   const deepBonus = deepAnalysis && deepMatched > 0 ? 0.06 : 0;
-  const correctionBonus = correctionSamples >= 2 ? 0.03 : 0;
   const score = Math.max(0, Math.min(1,
     averageConfidence * 0.62
     + ((matched + guideMatched + deepMatched) / total) * 0.24
     + sourceBonus
     + deepBonus
-    + correctionBonus
     - (interpolated / total) * 0.08
     - (failed / total) * 0.16,
   ));
@@ -1184,8 +1152,6 @@ const buildQualitySummary = ({
     failed,
     repeatSuggestions: repeatSuggestions.length,
     averageConfidence: Math.round(averageConfidence * 100),
-    correctionSamples,
-    correctionOffsetSec: Number(correctionOffsetSec.toFixed(2)),
   };
 };
 
@@ -1367,14 +1333,6 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     const body = await request.json().catch(() => ({}));
     const mp3Url = String(body?.mp3Url || '').trim();
     const deepAnalysis = Boolean(body?.deepAnalysis);
-    const correctionSummary: CorrectionSummaryPayload = {
-      sampleCount: Number.isFinite(Number(body?.correctionSummary?.sampleCount))
-        ? Number(body.correctionSummary.sampleCount)
-        : 0,
-      averageDeltaSec: Number.isFinite(Number(body?.correctionSummary?.averageDeltaSec))
-        ? Math.max(-6, Math.min(6, Number(body.correctionSummary.averageDeltaSec)))
-        : 0,
-    };
     const songContext: SongContextPayload = {
       songId: compactContextValue(body?.songContext?.songId, 80),
       title: compactContextValue(body?.songContext?.title),
@@ -1546,20 +1504,17 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         durationSec,
       });
       if (hasUsefulGuideMarkerCoverage(guideMarkers)) {
-        const correctedGuideResult = applyCorrectionOffset(guideMarkers as SuggestedMarker[], correctionSummary);
         const repeatSuggestions: RepeatSuggestion[] = [];
         const quality = buildQualitySummary({
-          markers: correctedGuideResult.markers,
+          markers: guideMarkers as SuggestedMarker[],
           repeatSuggestions,
           deepAnalysis: false,
           audioSource: selectedAudioCandidate,
-          correctionSamples: Number(correctionSummary.sampleCount) || 0,
-          correctionOffsetSec: correctedGuideResult.appliedOffsetSec,
         });
 
         return jsonResponse({
           success: true,
-          markers: correctedGuideResult.markers,
+          markers: guideMarkers,
           repeatSuggestions,
           quality,
           audioSource: selectedAudioCandidate,
@@ -1713,9 +1668,6 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         };
       });
     }
-    const correctedMarkerResult = applyCorrectionOffset(suggestedMarkers, correctionSummary);
-    suggestedMarkers = correctedMarkerResult.markers;
-
     const resolvedDuration = durationSec || 0;
     const firstWordStartSec = transcriptWords[0]?.start ?? 0;
     const lastWordEndSec = transcriptWords[transcriptWords.length - 1]?.end ?? resolvedDuration;
@@ -1822,8 +1774,6 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       repeatSuggestions,
       deepAnalysis,
       audioSource: selectedAudioCandidate,
-      correctionSamples: Number(correctionSummary.sampleCount) || 0,
-      correctionOffsetSec: correctedMarkerResult.appliedOffsetSec,
     });
 
     return jsonResponse({
