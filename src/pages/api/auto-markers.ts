@@ -161,6 +161,33 @@ const getPhraseSearchWords = (phrase = '') =>
     .filter((word) => word.length > 1)
     .slice(0, 12);
 
+const getLeadingPhraseWords = (phrase = '') => {
+  const words = normalizeText(stripChords(phrase))
+    .split(/\s+/)
+    .filter(Boolean);
+  const firstSearchWordIndex = words.findIndex((word) => word.length > 1);
+  return firstSearchWordIndex > 0 ? words.slice(0, firstSearchWordIndex) : [];
+};
+
+const recoverLeadingPhraseStart = (
+  transcriptWords: TranscriptWord[],
+  matchedWordIndex: number,
+  leadingPhraseWords: string[],
+) => {
+  if (leadingPhraseWords.length === 0 || matchedWordIndex < leadingPhraseWords.length) {
+    return Number(transcriptWords[matchedWordIndex]?.start) || 0;
+  }
+
+  const firstLeadingIndex = matchedWordIndex - leadingPhraseWords.length;
+  const hasExactLeadingSequence = leadingPhraseWords.every((expectedWord, offset) => (
+    normalizeText(transcriptWords[firstLeadingIndex + offset]?.word || '') === expectedWord
+  ));
+
+  return hasExactLeadingSequence
+    ? Number(transcriptWords[firstLeadingIndex]?.start) || 0
+    : Number(transcriptWords[matchedWordIndex]?.start) || 0;
+};
+
 const buildPhraseFingerprint = (phrase = '') => {
   const searchWords = getPhraseSearchWords(phrase);
   if (searchWords.length > 0) {
@@ -168,32 +195,6 @@ const buildPhraseFingerprint = (phrase = '') => {
   }
 
   return normalizeText(stripChords(phrase));
-};
-
-const buildCueAnchorPhrases = (lines: string[] = []): SectionAnchorPhrase[] => {
-  const meaningfulLines = (Array.isArray(lines) ? lines : [])
-    .map((line) => stripChords(line).replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
-  const anchors: SectionAnchorPhrase[] = [];
-  const seen = new Set<string>();
-
-  const addAnchor = (phrase = '', weight = 1, startOffsetSec = 0) => {
-    const fingerprint = buildPhraseFingerprint(phrase);
-    if (!phrase || !fingerprint || seen.has(fingerprint)) return;
-    seen.add(fingerprint);
-    anchors.push({ phrase, fingerprint, weight, startOffsetSec });
-  };
-
-  addAnchor(meaningfulLines[0] || '', 1, 0);
-  if (meaningfulLines.length >= 2) {
-    addAnchor(meaningfulLines.slice(0, 2).join(' '), 0.98, 0);
-  }
-
-  meaningfulLines.slice(1, 3).forEach((line, index) => {
-    addAnchor(line, Math.max(0.86, 0.92 - index * 0.05), (index + 1) * 3);
-  });
-
-  return anchors;
 };
 
 const getMeaningfulLyricLines = (section: SectionPayload, maxLines = 4) => {
@@ -734,6 +735,7 @@ const findPhraseMatchesInTranscript = (
   endBefore = Number.POSITIVE_INFINITY,
 ) => {
   const searchWords = getPhraseSearchWords(phrase);
+  const leadingPhraseWords = getLeadingPhraseWords(phrase);
 
   if (searchWords.length === 0) {
     return [];
@@ -790,7 +792,7 @@ const findPhraseMatchesInTranscript = (
       : 0;
     if (coverage >= requiredCoverage && normalizedScore > MIN_MATCH_CONFIDENCE) {
       const nextCandidate: PhraseMatch = {
-        startSec: toPreciseSeconds(words[i].start),
+        startSec: toPreciseSeconds(recoverLeadingPhraseStart(words, i, leadingPhraseWords)),
         confidence: Math.min(1, normalizedScore),
         matchCount,
         searchWordCount: searchWords.length,
@@ -1233,6 +1235,9 @@ const buildCueMarkersForSection = ({
   const sectionDurationGuess = Number.isFinite(sectionEndCap)
     ? Math.max(0, sectionEndCap - sectionStartSec)
     : null;
+  const timelineDurationSec = transcriptWords.reduce((duration, word) => (
+    Math.max(duration, Number(word?.start) || 0, Number(word?.end) || 0)
+  ), Number.isFinite(sectionEndCap) ? Number(sectionEndCap) : 0);
 
   const expectedCueStarts = cueDrafts.map((_, cueIndex) => (
     sectionDurationGuess != null
@@ -1241,22 +1246,29 @@ const buildCueMarkersForSection = ({
   ));
   const cueIndexes = cueDrafts.map((_, index) => index).slice(1);
   const cueCandidateSets = cueIndexes.map((cueIndex) => {
-    const cueAnchors = buildCueAnchorPhrases(cueDrafts[cueIndex]?.rawLines || []);
+    const cueLines = Array.isArray(cueDrafts[cueIndex]?.rawLines)
+      ? cueDrafts[cueIndex].rawLines
+      : [];
+    const cueAnchors = buildSectionAnchorPhrases({
+      name: `${section?.name || 'Seccion'} cue ${cueIndex + 1}`,
+      firstLine: cueLines[0] || '',
+      lines: cueLines,
+    });
     return buildSectionOccurrenceCandidates({
       transcriptWords,
       anchors: cueAnchors,
       expectedStartSec: expectedCueStarts[cueIndex],
-      durationSec: sectionDurationGuess,
+      durationSec: timelineDurationSec,
     }).filter((candidate) => (
       candidate.exactStart
-      && candidate.startSec > sectionStartSec
+      && candidate.startSec > sectionStartSec + 0.45
       && (!Number.isFinite(sectionEndCap) || candidate.startSec < sectionEndCap)
     ));
   });
   const alignedCues = alignSectionCandidateSequence({
     candidateSets: cueCandidateSets,
     expectedStarts: cueIndexes.map((cueIndex) => expectedCueStarts[cueIndex]),
-    durationSec: sectionDurationGuess,
+    durationSec: timelineDurationSec,
   });
   const cueMarkers = alignedCues
     .filter((match): match is SectionOccurrenceCandidate => Boolean(match?.exactStart))
