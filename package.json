@@ -17,6 +17,8 @@
     "test:section-alignment": "node --experimental-strip-types scripts/test-global-section-alignment.mjs",
     "test:guide-markers": "node --experimental-strip-types scripts/test-guide-section-markers.mjs",
     "test:audio-routing": "node scripts/test-audio-playback-routing.mjs",
+    "test:artwork": "node scripts/test-song-artwork.mjs",
+    "backfill:artwork": "node --experimental-strip-types scripts/backfill-song-artwork.mjs",
     "ios:sync": "npm run build && npx cap sync ios",
     "ios:open": "npm run ios:sync && npx cap open ios",
     "astro": "astro"
@@ -48,6 +50,7 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "rubberband-wasm": "^3.3.0",
+    "sharp": "^0.34.5",
     "tailwindcss": "^4.2.1",
     "web-push": "^3.6.7"
   },

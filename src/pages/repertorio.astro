@@ -5,6 +5,7 @@ import BuscadorPredictivo from '../components/BuscadorPredictivo.astro';
 import OnboardingRoot from '../components/onboarding/OnboardingRoot';
 import { createSupabaseUserClient } from '../lib/server/supabase-user-client.js';
 import { pickPreferredVoicePayload } from '../utils/voicePayload.js';
+import { buildStoredSongArtworkUrl } from '../utils/songArtwork.js';
 
 let canciones: any[] = [];
 const userId = Astro.locals.user?.id ?? null;
@@ -77,12 +78,13 @@ const estadosUnicos = [...new Set(canciones.map((c: any) => c.estado).filter(Boo
 const songRegistry = canciones.reduce((acc: Record<string, any>, cancion: any) => {
   const artwork = cancion.portada || cancion.imagen || cancion.image || cancion.cover || cancion.thumbnail
     || cancion.artwork || cancion.album_art || cancion.albumArt || cancion.caratula || cancion.foto || '';
-  if (!cancion.chordpro && !artwork && !Array.isArray(cancion.section_markers)) return acc;
+  const resolvedArtwork = artwork || buildStoredSongArtworkUrl(cancion);
+  if (!cancion.chordpro && !resolvedArtwork && !Array.isArray(cancion.section_markers)) return acc;
 
   const entry: Record<string, any> = {};
   if (cancion.chordpro) entry.c = cancion.chordpro;
   if (Array.isArray(cancion.section_markers) && cancion.section_markers.length) entry.m = cancion.section_markers;
-  if (artwork) entry.a = artwork;
+  if (resolvedArtwork) entry.a = resolvedArtwork;
   if (Object.keys(entry).length) acc[String(cancion.id)] = entry;
   return acc;
 }, {});
@@ -787,10 +789,17 @@ if (sessionError) {
   }, { once: true });
 
   addListener(image, 'error', () => {
+   const fallbackSource = image.dataset.selectionArtworkFallbackSrc || '';
+   if (fallbackSource && image.dataset.selectionArtworkFallbackRequested !== 'true') {
+    image.dataset.selectionArtworkFallbackRequested = 'true';
+    image.src = fallbackSource;
+    return;
+   }
+
    shell?.classList.remove('is-loading');
    shell?.classList.add('is-fallback');
    image.removeAttribute('src');
-  }, { once: true });
+  });
 
   image.src = source;
  };
@@ -1977,6 +1986,22 @@ function filterCards() {
    background: linear-gradient(145deg, rgba(39, 39, 42, 0.96), rgba(24, 24, 27, 0.82));
    color: rgba(244, 244, 245, 0.54);
  }
+ @keyframes selection-artwork-loading {
+   from { transform: translateX(-115%); }
+   to { transform: translateX(115%); }
+ }
+ .compact-song-list .selection-artwork.is-loading::after {
+   content: "";
+   position: absolute;
+   inset: 0;
+   z-index: 2;
+   background: linear-gradient(100deg, transparent 12%, rgba(255, 255, 255, 0.50) 48%, transparent 84%);
+   animation: selection-artwork-loading 1.25s ease-in-out infinite;
+   pointer-events: none;
+ }
+ .dark .compact-song-list .selection-artwork.is-loading::after {
+   background: linear-gradient(100deg, transparent 12%, rgba(255, 255, 255, 0.12) 48%, transparent 84%);
+ }
  .compact-song-list .selection-artwork-image {
    position: absolute;
    inset: 0;
@@ -1999,6 +2024,12 @@ function filterCards() {
  }
  .compact-song-list .selection-artwork.is-loaded .selection-artwork-fallback {
    opacity: 0;
+ }
+ @media (prefers-reduced-motion: reduce) {
+   .compact-song-list .selection-artwork.is-loading::after {
+     animation: none;
+     opacity: 0.35;
+   }
  }
  .compact-song-list .card-title {
    grid-area: title;

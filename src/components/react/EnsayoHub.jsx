@@ -9,6 +9,7 @@ import {
   sanitizeRehearsalSongSettings,
 } from '../../utils/rehearsalUserSongSettings';
 import { createChordProSetlistPdfBrowserToken } from '../../lib/chordproSetlistPdfBrowserStore';
+import { getSongArtworkCandidates } from '../../utils/songArtwork.js';
 
 const ModoEnsayoDirector = React.lazy(() => import('./ModoEnsayoDirector.jsx'));
 
@@ -612,45 +613,29 @@ const getVoiceAssignmentErrorMessage = (error, fallbackMessage) => {
   return fallbackMessage;
 };
 
-const getSongArtworkUrl = (song = {}) => {
-  const directArtwork =
-    song.artworkUrl ||
-    song.portada ||
-    song.imagen ||
-    song.image ||
-    song.cover ||
-    song.thumbnail ||
-    song.artwork ||
-    song.album_art ||
-    song.albumArt ||
-    song.caratula ||
-    song.foto ||
-    '';
-
-  if (directArtwork) return directArtwork;
-  if (!song.mp3) return '';
-
-  return `/api/mp3-cover-art?v=2&src=${encodeURIComponent(song.mp3)}`;
-};
-
 function SongArtworkThumb({ song, index }) {
-  const [failed, setFailed] = useState(false);
-  const artworkUrl = getSongArtworkUrl(song);
+  const candidates = getSongArtworkCandidates(song);
+  const candidatesKey = candidates.join('|');
+  const [candidateIndex, setCandidateIndex] = useState(0);
+  const artworkUrl = candidates[candidateIndex] || '';
+
+  useEffect(() => {
+    setCandidateIndex(0);
+  }, [candidatesKey]);
 
   return (
     <div className="relative h-[clamp(84px,23vw,99px)] w-[clamp(84px,23vw,99px)] shrink-0 overflow-hidden rounded-[18px] border border-zinc-200 bg-zinc-100 shadow-sm dark:border-white/10 dark:bg-zinc-900 sm:h-[107px] sm:w-[107px] md:h-[131px] md:w-[131px] lg:h-[147px] lg:w-[147px]">
-      {artworkUrl && !failed ? (
+      {artworkUrl ? (
         <img
           src={artworkUrl}
           alt=""
-          crossOrigin="anonymous"
           loading={index < 3 ? 'eager' : 'lazy'}
           decoding="async"
           fetchPriority={index < 3 ? 'high' : 'low'}
           width="147"
           height="147"
           className="h-full w-full object-cover"
-          onError={() => setFailed(true)}
+          onError={() => setCandidateIndex((current) => current + 1)}
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_30%_20%,rgba(59,130,246,0.20),transparent_38%),linear-gradient(135deg,rgba(248,250,252,0.96),rgba(226,232,240,0.74))] text-zinc-400 dark:bg-[radial-gradient(circle_at_30%_20%,rgba(59,130,246,0.30),transparent_38%),linear-gradient(135deg,rgba(255,255,255,0.10),rgba(255,255,255,0.02))] dark:text-white/52">

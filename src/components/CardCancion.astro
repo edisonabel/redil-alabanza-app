@@ -1,4 +1,9 @@
 ---
+import {
+  buildLegacySongArtworkUrl,
+  buildStoredSongArtworkUrl,
+} from '../utils/songArtwork.js';
+
 interface Props {
 	cancionId?: string | number;
 	titulo: string;
@@ -66,9 +71,9 @@ const hasChordpro = typeof hasChordproOverride === 'boolean' ? hasChordproOverri
 const hasYoutube = linkYoutube.trim() !== '';
 const hasAcordes = linkAcordes.trim() !== '';
 const hasLetra = linkLetra.trim() !== '';
-const selectionArtworkUrl = hasMp3
-  ? `/api/mp3-cover-art?v=2&src=${encodeURIComponent(linkMp3.trim())}`
-  : '';
+const artworkSong = { id: cancionId, mp3: linkMp3.trim() };
+const selectionArtworkUrl = hasMp3 ? buildStoredSongArtworkUrl(artworkSong) : '';
+const selectionArtworkFallbackUrl = hasMp3 ? buildLegacySongArtworkUrl(artworkSong) : '';
 
 /* Primary CTA logic: Reproducir > Ensayar */
 const primaryIsMp3 = hasMp3;
@@ -100,6 +105,7 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
        <img
          class="selection-artwork-image"
          data-selection-artwork-src={selectionArtworkUrl}
+         data-selection-artwork-fallback-src={selectionArtworkFallbackUrl}
          alt=""
          width="56"
          height="56"

@@ -12,6 +12,7 @@ import musicNoteIcon from '@iconify-icons/mdi/music-note';
 import { normalizeRosterAssignments } from '../../lib/roster-utils';
 import { getEventThemeAndPreacher } from '../../lib/event-display.js';
 import { isEventRepertoryManagerRoleCode } from '../../lib/role-permissions.js';
+import { getSongArtworkCandidates } from '../../utils/songArtwork.js';
 
 const getRoleBadgeIcon = (role) => {
     const codigo = String(role?.codigo || '').toLowerCase();
@@ -109,30 +110,17 @@ const getRoleSection = (role = {}) => {
     return { key: 'banda', label: 'Banda', accent: 'text-teal-300', line: 'bg-teal-300/24' };
 };
 
-const getSongArtworkUrl = (song = {}) => {
-    const directArtwork =
-        song.portada ||
-        song.imagen ||
-        song.image ||
-        song.cover ||
-        song.thumbnail ||
-        song.artwork ||
-        song.album_art ||
-        song.albumArt ||
-        song.caratula ||
-        '';
-
-    if (directArtwork) return directArtwork;
-    if (!song.mp3) return '';
-
-    return `/api/mp3-cover-art?v=2&src=${encodeURIComponent(song.mp3)}`;
-};
-
 function SongArtwork({ song }) {
-    const [failed, setFailed] = useState(false);
-    const artworkUrl = getSongArtworkUrl(song);
+    const candidates = getSongArtworkCandidates(song);
+    const candidatesKey = candidates.join('|');
+    const [candidateIndex, setCandidateIndex] = useState(0);
+    const artworkUrl = candidates[candidateIndex] || '';
 
-    if (!artworkUrl || failed) {
+    useEffect(() => {
+        setCandidateIndex(0);
+    }, [candidatesKey]);
+
+    if (!artworkUrl) {
         return (
             <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_30%_20%,rgba(59,130,246,0.20),transparent_36%),linear-gradient(135deg,rgba(239,246,255,0.95),rgba(226,232,240,0.72))] text-slate-400 dark:bg-[radial-gradient(circle_at_30%_20%,rgba(59,130,246,0.38),transparent_36%),linear-gradient(135deg,rgba(255,255,255,0.14),rgba(255,255,255,0.03))] dark:text-white/74">
                 <Icon icon={musicNoteIcon} className="h-7 w-7" aria-hidden="true" />
@@ -144,11 +132,10 @@ function SongArtwork({ song }) {
         <img
             src={artworkUrl}
             alt=""
-            crossOrigin="anonymous"
             loading="lazy"
             decoding="async"
             className="h-full w-full object-cover"
-            onError={() => setFailed(true)}
+            onError={() => setCandidateIndex((current) => current + 1)}
         />
     );
 }

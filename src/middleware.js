@@ -21,6 +21,7 @@ const authenticatedApiRoutes = new Set([
   '/api/audio',
   '/api/mp3-proxy',
   '/api/mp3-cover-art',
+  '/api/song-artwork',
   '/api/auto-markers',
   '/api/event-playlist',
 ]);

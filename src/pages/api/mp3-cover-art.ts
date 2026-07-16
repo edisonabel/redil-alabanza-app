@@ -1,9 +1,10 @@
 import type { APIRoute } from 'astro';
+import { createHash } from 'node:crypto';
 import {
   requireAuthenticatedUser,
   securityErrorResponse,
 } from '../../lib/server/api-security.js';
-import { fetchAllowedMediaUrl } from '../../lib/server/media-proxy-security';
+import { fetchAllowedMediaUrl } from '../../lib/server/media-proxy-security.ts';
 
 const COVER_SCAN_BYTES = 2 * 1024 * 1024;
 const COVER_BROWSER_CACHE = 'public, max-age=86400, stale-while-revalidate=604800';
@@ -51,6 +52,11 @@ const readSynchsafeInt = (view: DataView, offset: number) => (
 type CoverArt = {
   bytes: Uint8Array;
   mimeType: string;
+};
+
+export type EmbeddedCoverArtResult = {
+  coverArt: CoverArt | null;
+  status: number;
 };
 
 const readAtomType = (view: DataView, offset: number) => {
@@ -338,42 +344,16 @@ const parseTotalBytesFromContentRange = (contentRange: string | null) => {
   return Number.isFinite(total) && total > 0 ? total : 0;
 };
 
-export const prerender = false;
-
-export const GET: APIRoute = async ({ request, url, cookies, locals }) => {
-  if (!locals.user) {
-    try {
-      await requireAuthenticatedUser(cookies);
-    } catch (error) {
-      return securityErrorResponse(error);
-    }
-  }
-
-  const src = url.searchParams.get('src') || '';
-  if (!src) return new Response('Missing src', { status: 400 });
-
+export const loadEmbeddedCoverArt = async (src: string): Promise<EmbeddedCoverArtResult> => {
   let parsed: URL;
   try {
     parsed = new URL(src);
   } catch {
-    return new Response('Invalid src URL', { status: 400 });
+    return { coverArt: null, status: 400 };
   }
 
   if (parsed.protocol !== 'https:' || !isAllowedCoverHost(parsed.hostname)) {
-    return new Response('Host not allowed', { status: 403 });
-  }
-
-  const ifNoneMatch = request.headers.get('if-none-match');
-  const etag = `"mp3-cover-${Buffer.from(src).toString('base64url').slice(0, 32)}"`;
-  if (ifNoneMatch === etag) {
-    return new Response(null, {
-      status: 304,
-      headers: {
-        'cache-control': COVER_BROWSER_CACHE,
-        'netlify-cdn-cache-control': COVER_EDGE_CACHE,
-        etag,
-      },
-    });
+    return { coverArt: null, status: 403 };
   }
 
   let upstream: Response;
@@ -382,11 +362,11 @@ export const GET: APIRoute = async ({ request, url, cookies, locals }) => {
       headers: { Range: `bytes=0-${COVER_SCAN_BYTES - 1}` },
     });
   } catch {
-    return new Response('Could not fetch audio', { status: 502 });
+    return { coverArt: null, status: 502 };
   }
 
   if (!upstream.ok && upstream.status !== 206) {
-    return new Response('Audio unavailable', { status: upstream.status });
+    return { coverArt: null, status: upstream.status };
   }
 
   const firstBuffer = await upstream.arrayBuffer();
@@ -404,9 +384,45 @@ export const GET: APIRoute = async ({ request, url, cookies, locals }) => {
         coverArt = extractCoverArt(await tailResponse.arrayBuffer());
       }
     } catch {
-      // The first scan already succeeded as an audio fetch; missing tail metadata is non-fatal.
+      // La lectura inicial ya funciono; la ausencia de metadatos al final no es fatal.
     }
   }
+
+  return { coverArt, status: coverArt ? 200 : 204 };
+};
+
+export const prerender = false;
+
+export const GET: APIRoute = async ({ request, url, cookies, locals }) => {
+  if (!locals.user) {
+    try {
+      await requireAuthenticatedUser(cookies);
+    } catch (error) {
+      return securityErrorResponse(error);
+    }
+  }
+
+  const src = url.searchParams.get('src') || '';
+  if (!src) return new Response('Missing src', { status: 400 });
+
+  const ifNoneMatch = request.headers.get('if-none-match');
+  const etag = `"mp3-cover-${createHash('sha256').update(src).digest('base64url').slice(0, 24)}"`;
+  if (ifNoneMatch === etag) {
+    return new Response(null, {
+      status: 304,
+      headers: {
+        'cache-control': COVER_BROWSER_CACHE,
+        'netlify-cdn-cache-control': COVER_EDGE_CACHE,
+        etag,
+      },
+    });
+  }
+
+  const { coverArt, status } = await loadEmbeddedCoverArt(src);
+
+  if (status === 400) return new Response('Invalid src URL', { status });
+  if (status === 403) return new Response('Host not allowed', { status });
+  if (status >= 400) return new Response('Audio unavailable', { status });
 
   if (!coverArt) {
     return new Response(null, {

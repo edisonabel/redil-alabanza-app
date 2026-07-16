@@ -1232,6 +1232,18 @@ export default function AdminRepertorio() {
     }
   };
 
+  const generarMiniaturaCancion = async (songId) => {
+    const response = await fetch('/api/song-artwork', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ songId }),
+    });
+
+    if (response.ok || response.status === 422) return;
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.error || 'No se pudo generar la miniatura.');
+  };
+
   const guardarMetadata = async (cancionId, campoBd, nuevoValor) => {
     const keyContext = `${cancionId}_${campoBd}`;
     setSavingCell(prev => ({ ...prev, [keyContext]: true }));
@@ -1251,6 +1263,14 @@ export default function AdminRepertorio() {
         }
         return c;
       }));
+
+      if (campoBd === 'mp3' && String(nuevoValor || '').trim()) {
+        try {
+          await generarMiniaturaCancion(cancionId);
+        } catch (artworkError) {
+          console.warn('El audio se guardo, pero su miniatura no pudo generarse:', artworkError);
+        }
+      }
     } catch (err) {
       console.error('Error al guardar:', err);
       alert(`Error al guardar ${campoBd}`);
@@ -1313,6 +1333,14 @@ export default function AdminRepertorio() {
         }
         return c;
       }));
+
+      if (campoBd === 'mp3') {
+        try {
+          await generarMiniaturaCancion(cancionId);
+        } catch (artworkError) {
+          console.warn('El audio se subio, pero su miniatura no pudo generarse:', artworkError);
+        }
+      }
     } catch (err) {
       console.error('Error subida:', err);
       alert(`Error multimedia: ${err.message}`);
