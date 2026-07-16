@@ -282,21 +282,18 @@ const firstTourResourcesId =
  <div class="playlist-summary-copy min-w-0">
  <div class="playlist-summary-heading flex flex-wrap items-center gap-2">
  <p id="playlistCountBadge" role="status" aria-live="polite" aria-atomic="true" class="playlist-summary-title text-content font-bold text-base md:text-lg leading-tight"><span id="playlistCount">0</span>&nbsp;<span id="playlistCountLabel">canciones seleccionadas</span></p>
- <button id="btn-clear-playlist-selection" type="button" class="hidden md:inline-flex items-center rounded-full border border-border bg-background/80 px-2.5 py-1 text-[11px] font-bold text-content-muted hover:bg-background hover:text-content transition-colors">
- Limpiar lista
- </button>
  </div>
  <p class="playlist-summary-hint text-content-muted text-sm leading-tight truncate">Usa el + para agregar o quitar canciones</p>
  </div>
  </div>
  <div class="playlist-actions flex items-center gap-2">
- <button id="btn-clear-playlist-selection-mobile" class="playlist-action inline-flex md:hidden px-3 py-2.5 rounded-xl border border-border text-content-muted text-sm font-bold hover:bg-background transition-colors">
- Limpiar
+ <button id="btn-clear-playlist-selection" type="button" class="playlist-action inline-flex px-3 py-2.5 rounded-xl border border-border text-content-muted text-sm font-bold hover:bg-background hover:text-content transition-colors">
+ <span class="md:hidden">Limpiar</span><span class="hidden md:inline">Limpiar lista</span>
  </button>
  <button id="btn-cancel-playlist" class="playlist-action flex-1 sm:flex-none px-4 py-2.5 rounded-xl border border-border text-content-muted text-sm font-bold hover:bg-background transition-colors">
  Cancelar
  </button>
- <button id="btn-save-playlist" class="playlist-action flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-action text-white text-sm font-bold hover:bg-action/80 transition-all shadow-lg flex items-center justify-center gap-2">
+ <button id="btn-save-playlist" class="playlist-action flex-1 sm:flex-none px-5 py-2.5 rounded-xl border border-transparent bg-action text-white text-sm font-bold hover:bg-action/80 transition-all shadow-lg flex items-center justify-center gap-2">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
  <span>Guardar<span class="hidden sm:inline"> Setlist</span></span>
  </button>
@@ -708,7 +705,6 @@ if (sessionError) {
  const playlistCountEl = document.getElementById('playlistCount');
  const playlistCountLabelEl = document.getElementById('playlistCountLabel');
  const btnClearPlaylistSelection = document.getElementById('btn-clear-playlist-selection');
- const btnClearPlaylistSelectionMobile = document.getElementById('btn-clear-playlist-selection-mobile');
 
  // Helper local para setlist normal
  let setlist: string[] = JSON.parse(localStorage.getItem('setlist') || '[]');
@@ -1272,7 +1268,6 @@ const clearPlaylistSelection = () => {
  // Listeners de Guardar y Cancelar Playlist
  addListener(document.getElementById('btn-cancel-playlist'), 'click', () => { window.location.href = '/programacion'; });
  addListener(btnClearPlaylistSelection, 'click', clearPlaylistSelection);
- addListener(btnClearPlaylistSelectionMobile, 'click', clearPlaylistSelection);
  
  addListener(document.getElementById('btn-save-playlist'), 'click', async () => {
  const btn = document.getElementById('btn-save-playlist') as HTMLButtonElement;
