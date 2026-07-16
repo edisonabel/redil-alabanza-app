@@ -61,6 +61,13 @@
   for = "/workers/*"
   [headers.values]
     Cache-Control = "no-store, max-age=0, must-revalidate"
+    Cross-Origin-Resource-Policy = "same-origin"
+    Cross-Origin-Embedder-Policy = "require-corp"
+
+[[headers]]
+  for = "/vendor/*"
+  [headers.values]
+    Cross-Origin-Resource-Policy = "same-origin"
 
 [[headers]]
   for = "/*.webp"

@@ -37,12 +37,24 @@ const shouldApplyCrossOriginIsolation = (url = '') => {
   );
 };
 
+const shouldApplyCrossOriginResourcePolicy = (url = '') => {
+  const pathname = String(url || '').split('?')[0];
+  return pathname.startsWith('/workers/') || pathname.startsWith('/vendor/');
+};
+
 /**
  * @param {any} request
  * @param {any} response
  * @param {() => void} next
  */
 const applyCrossOriginIsolationHeaders = (request, response, next) => {
+  if (shouldApplyCrossOriginResourcePolicy(request.url)) {
+    response.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  }
+  if (String(request.url || '').split('?')[0].startsWith('/workers/')) {
+    response.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+  }
+
   if (shouldApplyCrossOriginIsolation(request.url)) {
     for (const [header, value] of Object.entries(crossOriginIsolationHeaders)) {
       response.setHeader(header, value);

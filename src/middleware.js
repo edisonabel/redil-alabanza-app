@@ -39,6 +39,13 @@ const shouldApplyCrossOriginIsolation = (path = '') => (
 );
 
 const withRouteHeaders = (response, path) => {
+  if (path.startsWith('/workers/') || path.startsWith('/vendor/')) {
+    response.headers.set('Cross-Origin-Resource-Policy', 'same-origin');
+  }
+  if (path.startsWith('/workers/')) {
+    response.headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
+  }
+
   if (!shouldApplyCrossOriginIsolation(path)) return response;
 
   for (const [header, value] of Object.entries(crossOriginIsolationHeaders)) {

@@ -511,9 +511,15 @@ export function useMultitrackEngine(
 
         try {
           const fallbackEngine = getEngine('buffer') as MultitrackEngine;
+          const fallbackCapabilities = readLiveBrowserCapabilities();
+          const forceSynchronizedBufferFallback =
+            fallbackCapabilities.isSafari &&
+            !fallbackCapabilities.isIOS &&
+            nextTracks.length > 1;
           commitLoadProgress({ loaded: 0, total: nextTracks.length });
           const fallbackLoadedTracks = await fallbackEngine.loadTracks(nextTracks, {
             onProgress: handleProgress,
+            ...(forceSynchronizedBufferFallback ? { forceMode: 'buffer' as const } : {}),
           });
 
           if (

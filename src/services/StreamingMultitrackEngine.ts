@@ -1,5 +1,11 @@
 import { AudioRingBuffer } from './AudioRingBuffer';
 import { AacAdtsDemuxer } from './AacAdtsDemuxer';
+import {
+  containsLavcMarker,
+  createChunkForDecoderVariant,
+  probeAudioDecoderVariant,
+  type AudioDecoderVariant,
+} from './AacDecoderCompatibility';
 import type { MultitrackEngineLoadWarning, TrackData } from './MultitrackEngine';
 import * as MP4Box from 'mp4box';
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
@@ -882,6 +888,9 @@ type TrackRuntime = {
   endOfStreamReached: boolean;
   decoderConfigured: boolean;
   decoderConfig: AudioDecoderConfig;
+  decoderVariant: AudioDecoderVariant | null;
+  decoderGeneration: number;
+  firstOutputTimestampUs: number | null;
   muted: boolean;
   volume: number;
   outputRoute: TrackOutputRoute;
@@ -916,7 +925,7 @@ type PreloadedStreamingSession = {
   trackStates: TrackRuntime[];
 };
 
-const AUDIO_WORKER_ASSET_VERSION = '20260714-1';
+const AUDIO_WORKER_ASSET_VERSION = '20260715-2';
 const DEFAULT_WORKLET_MODULE_URL = `/workers/MultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_PRODUCER_WORKER_URL = `/workers/AudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
@@ -1012,6 +1021,7 @@ export class StreamingMultitrackEngine {
   public onEnded: (() => void) | null = null;
   private producerWorker: Worker | null = null;
   private producerSessionId = 0;
+  private decoderProbeQueue: Promise<void> = Promise.resolve();
 
   private readonly processorName: string;
   private readonly workletModuleUrl: string;
@@ -2111,9 +2121,32 @@ export class StreamingMultitrackEngine {
       timeoutMs: PRODUCER_STARTUP_FALLBACK_TIMEOUT_MS,
       sessionId: this.producerSessionId,
       trackCount: this.trackStates.length,
-      reason: 'No track produced initial audio; requesting the compatible media/buffer engine.',
+      reason: readLiveBrowserCapabilities().isSafari
+        ? 'No track produced initial audio in Safari; switching to the synchronized main-thread pipeline.'
+        : 'No track produced initial audio; requesting the compatible media/buffer engine.',
     });
     this.terminateProducerWorker('startup-timeout-no-track-ready');
+
+    // Safari can reject the dedicated worker under COEP even though the same
+    // WebCodecs + AudioWorklet path is valid on the main thread. Keep every stem
+    // on the shared AudioWorklet transport clock instead of falling through to
+    // independent HTMLMediaElement clocks (or decoding every full stem in RAM).
+    if (readLiveBrowserCapabilities().isSafari) {
+      this.trackStates.forEach((trackState) => {
+        if (trackState.omitted || trackState.fetchTask) {
+          return;
+        }
+
+        trackState.ringBuffer.reset();
+        trackState.fetchOffset = 0;
+        trackState.totalBytes = null;
+        trackState.endOfStreamReached = false;
+        trackState.suppressDecodedOutput = false;
+        this.startTrackPipeline(trackState);
+      });
+      return;
+    }
+
     throw new Error(
       'Unsupported configuration: the streaming producer did not deliver startup audio; ' +
       'use the compatible media/buffer engine.',
@@ -2694,21 +2727,75 @@ export class StreamingMultitrackEngine {
       return;
     }
 
-    const seekResults = await this.reseekTracks(clampedTime);
-    const resolvedSeekTime = seekResults.reduce((lowestTime, seekResult) => {
-      return seekResult.seekTimeInSeconds < lowestTime
-        ? seekResult.seekTimeInSeconds
-        : lowestTime;
-    }, clampedTime);
-
-    this.pauseTime = resolvedSeekTime;
-    this.startTime = wasPlaying ? this.context.currentTime - resolvedSeekTime : 0;
+    // The main-thread Safari path must use the same atomic seek barrier as the
+    // producer path. Keeping the worklet running while each decoder refills its
+    // ring lets faster stems become audible before slower stems and permanently
+    // offsets them after a section jump.
+    const seekSerial = this.producerSeekSerial + 1;
+    this.producerSeekSerial = seekSerial;
+    this.activeSeekSerial = seekSerial;
+    this.pendingPlaybackContentCheck = null;
+    this.pauseTime = clampedTime;
+    this.startTime = 0;
+    this.transportPlaying = false;
     this.restartFromHead = false;
-    this.postWorkletMessage({
-      type: 'transport',
-      playing: wasPlaying,
-      positionSeconds: resolvedSeekTime,
+    this.resetTrackMeterLevels();
+    this.startSeekBackDebug({
+      seekSerial,
+      fromTime,
+      toTime: clampedTime,
+      wasPlaying: diagnosticWasPlaying,
+      targetSample,
     });
+
+    const pendingFlush = this.createWorkletFlushHandshake(seekSerial);
+    this.postWorkletMessage({
+      type: 'PAUSE_AND_FLUSH',
+      targetSample,
+      positionSeconds: clampedTime,
+      reason: 'seek',
+      seekSerial,
+    });
+    this.recordSeekBackDebugEvent('pause-and-flush-sent');
+    await pendingFlush.promise;
+
+    if (this.activeSeekSerial !== seekSerial) {
+      return;
+    }
+
+    await this.reseekTracks(clampedTime);
+
+    if (this.activeSeekSerial !== seekSerial) {
+      return;
+    }
+
+    const seekStartBarrierReady = await this.waitForStartBarrier({
+      positionSeconds: clampedTime,
+      reason: 'seek-resume',
+      seekSerial,
+    });
+    if (!seekStartBarrierReady || this.activeSeekSerial !== seekSerial) {
+      return;
+    }
+
+    this.pauseTime = clampedTime;
+    this.startTime = wasPlaying ? this.context.currentTime - clampedTime : 0;
+    this.transportPlaying = wasPlaying;
+
+    if (!wasPlaying) {
+      this.recordSeekBackDebugEvent('paused-ready');
+      this.finalizeSeekBackDebug('paused-ready');
+      return;
+    }
+
+    this.postWorkletMessage({
+      type: 'RESUME_READING',
+      playing: true,
+      positionSeconds: clampedTime,
+      reason: 'seek',
+      seekSerial,
+    });
+    this.recordSeekBackResumeSent(seekSerial);
   }
 
   setTrackVolume(trackIdOrIndex: string | number, volume: number): void {
@@ -2972,24 +3059,11 @@ export class StreamingMultitrackEngine {
       description: trackDefinition.decoderDescription,
     };
 
-    const decoder = new AudioDecoder({
-      output: (audioData) => {
-        this.handleDecodedAudioData(trackState, audioData);
-      },
-      error: (error) => {
-        ready.reject(error);
-        console.error(
-          `[StreamingMultitrackEngine] Decoder error on track ${index}.`,
-          error,
-        );
-      },
-    });
-
     const trackState: TrackRuntime = {
       index,
       config: trackDefinition,
       ringBuffer,
-      decoder,
+      decoder: null,
       demuxer: this.createDemuxer(trackDefinition),
       abortController: new AbortController(),
       ready,
@@ -2999,6 +3073,9 @@ export class StreamingMultitrackEngine {
       endOfStreamReached: false,
       decoderConfigured: false,
       decoderConfig,
+      decoderVariant: null,
+      decoderGeneration: 0,
+      firstOutputTimestampUs: null,
       muted: trackDefinition.initiallyMuted,
       volume: trackDefinition.initialVolume,
       outputRoute: trackDefinition.initialOutputRoute,
@@ -3011,6 +3088,7 @@ export class StreamingMultitrackEngine {
       lastDecodeWaitDebugAt: 0,
       fallbackDrainScratch: new Float32Array(AAC_FRAME_SIZE),
     };
+    trackState.decoder = this.createAudioDecoder(trackState);
 
     logLiveDiagnostic('streaming:track-create', {
       index,
@@ -3032,6 +3110,30 @@ export class StreamingMultitrackEngine {
     }
 
     return trackState;
+  }
+
+  private createAudioDecoder(trackState: TrackRuntime): AudioDecoder {
+    const decoderGeneration = trackState.decoderGeneration;
+
+    return new AudioDecoder({
+      output: (audioData) => {
+        if (decoderGeneration !== trackState.decoderGeneration) {
+          audioData.close();
+          return;
+        }
+        this.handleDecodedAudioData(trackState, audioData);
+      },
+      error: (error) => {
+        if (decoderGeneration !== trackState.decoderGeneration) {
+          return;
+        }
+        trackState.ready.reject(error);
+        console.error(
+          `[StreamingMultitrackEngine] Decoder error on track ${trackState.index}.`,
+          error,
+        );
+      },
+    });
   }
 
   private createProducerOnlyTrackRuntime(
@@ -3065,6 +3167,9 @@ export class StreamingMultitrackEngine {
       endOfStreamReached: false,
       decoderConfigured: false,
       decoderConfig,
+      decoderVariant: null,
+      decoderGeneration: 0,
+      firstOutputTimestampUs: null,
       muted: trackDefinition.initiallyMuted,
       volume: trackDefinition.initialVolume,
       outputRoute: trackDefinition.initialOutputRoute,
@@ -3247,7 +3352,11 @@ export class StreamingMultitrackEngine {
 
       const remainingChunks = trackState.demuxer.flush();
       this.applyDemuxedMetadata(trackState, remainingChunks);
-      await this.applyDecoderConfigIfNeeded(trackState, remainingChunks.decoderConfig);
+      await this.applyDecoderConfigIfNeeded(
+        trackState,
+        remainingChunks.decoderConfig,
+        remainingChunks.chunks,
+      );
       await this.feedEncodedChunks(trackState, remainingChunks.chunks);
 
       if (trackState.decoder && trackState.decoder.decodeQueueSize > 0) {
@@ -3271,7 +3380,7 @@ export class StreamingMultitrackEngine {
     await this.waitForDecodeWindow(trackState);
     const demuxed = trackState.demuxer.append(bytes, endOfStream, fileStart);
     this.applyDemuxedMetadata(trackState, demuxed);
-    await this.applyDecoderConfigIfNeeded(trackState, demuxed.decoderConfig);
+    await this.applyDecoderConfigIfNeeded(trackState, demuxed.decoderConfig, demuxed.chunks);
     await this.feedEncodedChunks(trackState, demuxed.chunks);
     return demuxed;
   }
@@ -3296,8 +3405,29 @@ export class StreamingMultitrackEngine {
   private async applyDecoderConfigIfNeeded(
     trackState: TrackRuntime,
     nextDecoderConfig?: AudioDecoderConfig,
+    probeChunks: EncodedAudioChunk[] = [],
   ): Promise<void> {
-    const decoderConfig = nextDecoderConfig || trackState.decoderConfig;
+    let decoderConfig = nextDecoderConfig || trackState.decoderConfig;
+
+    if (
+      !trackState.decoderVariant &&
+      !trackState.decoderConfigured &&
+      probeChunks.length > 0 &&
+      readLiveBrowserCapabilities().isSafari
+    ) {
+      trackState.decoderVariant = await this.enqueueDecoderProbe(decoderConfig, probeChunks);
+      logLiveDiagnostic('streaming:decoder-variant-selected', {
+        index: trackState.index,
+        variant: trackState.decoderVariant.label,
+        wrapAdts: trackState.decoderVariant.wrapAdts,
+        sampleRate: trackState.decoderVariant.config.sampleRate,
+        channelCount: trackState.decoderVariant.config.numberOfChannels,
+      });
+    }
+
+    if (trackState.decoderVariant) {
+      decoderConfig = trackState.decoderVariant.config;
+    }
     const decoderSampleRate = Number(decoderConfig.sampleRate);
 
     if (
@@ -3320,6 +3450,20 @@ export class StreamingMultitrackEngine {
       trackState.decoderConfigured = true;
       trackState.decoderConfig = decoderConfig;
     }
+  }
+
+  private enqueueDecoderProbe(
+    decoderConfig: AudioDecoderConfig,
+    chunks: EncodedAudioChunk[],
+  ): Promise<AudioDecoderVariant> {
+    const probeTask = this.decoderProbeQueue.then(() =>
+      probeAudioDecoderVariant(decoderConfig, chunks),
+    );
+    this.decoderProbeQueue = probeTask.then(
+      () => undefined,
+      () => undefined,
+    );
+    return probeTask;
   }
 
   private async feedEncodedChunks(
@@ -3346,7 +3490,9 @@ export class StreamingMultitrackEngine {
       if (!trackState.decoder) {
         throw new Error(`Decoder unavailable for track ${trackState.index}.`);
       }
-      trackState.decoder.decode(chunk);
+      trackState.decoder.decode(
+        createChunkForDecoderVariant(chunk, trackState.decoderVariant || undefined),
+      );
     }
   }
 
@@ -3354,6 +3500,17 @@ export class StreamingMultitrackEngine {
     try {
       if (trackState.suppressDecodedOutput || trackState.omitted) {
         return;
+      }
+
+      if (trackState.firstOutputTimestampUs === null) {
+        trackState.firstOutputTimestampUs = audioData.timestamp;
+        logLiveDiagnostic('streaming:decoder-first-output', {
+          index: trackState.index,
+          generation: trackState.decoderGeneration,
+          timestampUs: audioData.timestamp,
+          frames: audioData.numberOfFrames,
+          sampleRate: audioData.sampleRate,
+        });
       }
 
       const monoPcm = this.copyAudioDataToMono(trackState, audioData);
@@ -4648,6 +4805,7 @@ export class StreamingMultitrackEngine {
       trackState.endOfStreamReached = false;
       trackState.readyResolved = false;
       trackState.ready = this.createDeferred<void>();
+      trackState.firstOutputTimestampUs = null;
       trackState.suppressDecodedOutput = false;
       this.startTrackPipeline(trackState);
     }
@@ -4656,29 +4814,17 @@ export class StreamingMultitrackEngine {
   }
 
   private async flushDecoderForSeek(trackState: TrackRuntime): Promise<void> {
-    if (!trackState.decoder || trackState.decoder.state === 'closed') {
-      return;
-    }
-
-    try {
-      if (trackState.decoderConfigured || trackState.decoder.decodeQueueSize > 0) {
-        await trackState.decoder.flush();
-      }
-    } catch (error) {
-      if (!this.isAbortError(error)) {
-        console.warn(
-          `[StreamingMultitrackEngine] Decoder flush during seek failed for track ${trackState.index}.`,
-          error,
-        );
+    const previousDecoder = trackState.decoder;
+    trackState.decoderGeneration += 1;
+    trackState.decoder = null;
+    if (previousDecoder && previousDecoder.state !== 'closed') {
+      try {
+        previousDecoder.close();
+      } catch {
+        // WebKit can close a failed decoder before the seek cleanup runs.
       }
     }
-
-    try {
-      trackState.decoder.reset();
-    } catch {
-      // no-op
-    }
-
+    trackState.decoder = this.createAudioDecoder(trackState);
     trackState.decoderConfigured = false;
   }
 
@@ -5135,6 +5281,7 @@ class Mp4BoxDemuxer implements EncodedAudioChunkDemuxer {
   private extractionStarted = false;
   private trackReady = false;
   private durationSeconds: number | undefined;
+  private seenSampleCount = 0;
 
   constructor(private readonly trackDefinition: NormalizedTrackDefinition) {
     this.file.onError = (_errorCode, message) => {
@@ -5194,6 +5341,9 @@ class Mp4BoxDemuxer implements EncodedAudioChunkDemuxer {
 
     this.pendingChunks = [];
     this.pendingDecoderConfig = undefined;
+    if (timeInSeconds <= 0.001) {
+      this.seenSampleCount = 0;
+    }
     this.file.stop();
 
     const rawSeekResult = (
@@ -5222,6 +5372,7 @@ class Mp4BoxDemuxer implements EncodedAudioChunkDemuxer {
   reset(): void {
     this.pendingChunks = [];
     this.pendingDecoderConfig = undefined;
+    this.seenSampleCount = 0;
   }
 
   private handleReady(info: Parameters<NonNullable<typeof this.file.onReady>>[0]): void {
@@ -5297,6 +5448,20 @@ class Mp4BoxDemuxer implements EncodedAudioChunkDemuxer {
       const sampleData = sample.data;
 
       if (!sampleData || sampleData.byteLength === 0) {
+        this.seenSampleCount += 1;
+        continue;
+      }
+
+      const shouldDropLavcSample =
+        this.seenSampleCount < 2 && containsLavcMarker(sampleData);
+      this.seenSampleCount += 1;
+
+      if (shouldDropLavcSample) {
+        logLiveDiagnostic('streaming:sample-dropped', {
+          reason: 'lavc-metadata-sample',
+          url: this.trackDefinition.url,
+          sampleNumber: sample.number,
+        });
         continue;
       }
 

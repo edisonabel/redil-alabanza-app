@@ -145,6 +145,16 @@ const delay = (durationMs: number) => new Promise((resolve) => {
   globalThis.setTimeout(resolve, durationMs);
 });
 
+const isSameOriginAudioUrl = (rawUrl: string): boolean => {
+  try {
+    return new URL(rawUrl, window.location.href).origin === window.location.origin;
+  } catch {
+    // Relative application URLs are same-origin. Treat an unparseable value the
+    // same way so an authenticated local proxy never silently loses its session.
+    return true;
+  }
+};
+
 /**
  * Apple Lossless (ALAC) in an .m4a/.caf container is a common multitrack
  * export default for DAWs like Logic Pro and GarageBand, but Web Audio in
@@ -665,7 +675,7 @@ export class MultitrackEngine {
       const response = await withTimeout(
         fetch(track.url, {
           mode: 'cors',
-          credentials: 'omit',
+          credentials: isSameOriginAudioUrl(track.url) ? 'same-origin' : 'omit',
           signal: controller.signal,
         }),
         TRACK_FETCH_TIMEOUT_MS,
@@ -1062,7 +1072,9 @@ export class MultitrackEngine {
 
   private createMediaElement(track: TrackData): Promise<HTMLAudioElement> {
     const mediaElement = new Audio();
-    mediaElement.crossOrigin = 'anonymous';
+    if (!isSameOriginAudioUrl(track.url)) {
+      mediaElement.crossOrigin = 'anonymous';
+    }
     mediaElement.preload = 'auto';
     mediaElement.src = track.url;
 
