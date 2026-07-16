@@ -7,6 +7,7 @@ import {
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
 import type { TrackActivityEnvelope } from '../utils/audioActivityEnvelope';
 import {
+  errorLiveDiagnostic,
   readLiveBrowserCapabilities,
   warnLiveDiagnostic,
 } from '../utils/liveDiagnostics';
@@ -499,14 +500,52 @@ export function useMultitrackEngine(
         }
 
         console.warn(
-          '[useMultitrackEngine] Streaming engine failed during initialization; playback was not switched to the legacy engine.',
+          '[useMultitrackEngine] Streaming engine failed during initialization. Switching to the compatible media/buffer engine.',
           error,
         );
-        warnLiveDiagnostic('engine:streaming-initialization-failed', {
+        warnLiveDiagnostic('engine:streaming-fallback-buffer', {
           trackCount: nextTracks.length,
           reason: error instanceof Error ? error.message : String(error),
           browser: readLiveBrowserCapabilities(),
         });
+
+        try {
+          const fallbackEngine = getEngine('buffer') as MultitrackEngine;
+          commitLoadProgress({ loaded: 0, total: nextTracks.length });
+          const fallbackLoadedTracks = await fallbackEngine.loadTracks(nextTracks, {
+            onProgress: handleProgress,
+          });
+
+          if (
+            initializationToken !== initializationTokenRef.current ||
+            fallbackEngine !== engineRef.current
+          ) {
+            return;
+          }
+
+          setTrackVolumes(buildTrackVolumes(fallbackLoadedTracks));
+          trackLevelsRef.current = buildTrackLevels(fallbackLoadedTracks);
+          setTrackLevels(trackLevelsRef.current);
+          setTrackEnvelopes(buildTrackEnvelopes(fallbackLoadedTracks));
+          setLoadWarnings(fallbackEngine.getLoadWarnings());
+          commitDuration(fallbackEngine.getDuration());
+          commitDiagnostics(fallbackEngine.getDiagnostics());
+          commitLoadProgress(null);
+          setIsReady(true);
+          return;
+        } catch (fallbackError) {
+          console.error(
+            '[useMultitrackEngine] Compatible media/buffer fallback also failed.',
+            fallbackError,
+          );
+          errorLiveDiagnostic('engine:fallback-buffer-failed', {
+            trackCount: nextTracks.length,
+            streamingReason: error instanceof Error ? error.message : String(error),
+            fallbackReason:
+              fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+          });
+          error = fallbackError;
+        }
       }
 
       setIsReady(false);
@@ -532,11 +571,13 @@ export function useMultitrackEngine(
 
     await engine.play();
     setIsPlaying(engine.getIsPlaying());
-    if (!passiveTelemetry) {
+    const usesPassiveStreamingTelemetry =
+      passiveTelemetry && engine instanceof StreamingMultitrackEngine;
+    if (!usesPassiveStreamingTelemetry) {
       commitCurrentTime(engine.getCurrentTime());
     }
     commitDuration(Math.max(durationRef.current, engine.getDuration(), engine.getCurrentTime()));
-    if (!passiveTelemetry) {
+    if (!usesPassiveStreamingTelemetry) {
       commitTrackLevels(engine.getTrackMeterLevels());
     }
     commitDiagnostics(engine.getDiagnostics());
@@ -810,7 +851,8 @@ export function useMultitrackEngine(
   }, [commitCurrentTime, commitDiagnostics, commitDuration, commitTrackLevels]);
 
   useEffect(() => {
-    if (passiveTelemetry) {
+    const engine = engineRef.current;
+    if (passiveTelemetry && engine instanceof StreamingMultitrackEngine) {
       return;
     }
 
@@ -832,7 +874,7 @@ export function useMultitrackEngine(
         diagnosticsIntervalRef.current = null;
       }
     };
-  }, [commitDiagnostics, passiveTelemetry]);
+  }, [commitDiagnostics, isReady, passiveTelemetry]);
 
   useEffect(() => {
     const engine = engineRef.current;

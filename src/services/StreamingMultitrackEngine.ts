@@ -1,4 +1,5 @@
 import { AudioRingBuffer } from './AudioRingBuffer';
+import { AacAdtsDemuxer } from './AacAdtsDemuxer';
 import type { MultitrackEngineLoadWarning, TrackData } from './MultitrackEngine';
 import * as MP4Box from 'mp4box';
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
@@ -2027,7 +2028,8 @@ export class StreamingMultitrackEngine {
     });
 
     const canUseSharedProducer = this.trackStates.every(
-      (trackState) => trackState.ringBuffer.usesSharedMemory,
+      (trackState) =>
+        trackState.ringBuffer.usesSharedMemory && trackState.config.container !== 'adts',
     );
     const producerStarted = canUseSharedProducer
       ? this.configureAudioProducerWorker(normalizedTracks)
@@ -2036,7 +2038,9 @@ export class StreamingMultitrackEngine {
     if (!canUseSharedProducer) {
       warnLiveDiagnostic('streaming:main-thread-producer', {
         trackCount: this.trackStates.length,
-        reason: 'SharedArrayBuffer unavailable; using transferable PCM queues.',
+        reason: this.trackStates.some((trackState) => trackState.config.container === 'adts')
+          ? 'Raw ADTS uses the main-thread demuxer; the producer worker handles MP4 containers.'
+          : 'SharedArrayBuffer unavailable; using transferable PCM queues.',
       });
     }
 
@@ -2107,22 +2111,13 @@ export class StreamingMultitrackEngine {
       timeoutMs: PRODUCER_STARTUP_FALLBACK_TIMEOUT_MS,
       sessionId: this.producerSessionId,
       trackCount: this.trackStates.length,
-      reason: 'No track produced initial audio; switching to the main-thread pipeline.',
+      reason: 'No track produced initial audio; requesting the compatible media/buffer engine.',
     });
     this.terminateProducerWorker('startup-timeout-no-track-ready');
-
-    this.trackStates.forEach((trackState) => {
-      if (trackState.omitted || trackState.fetchTask) {
-        return;
-      }
-
-      trackState.ringBuffer.reset();
-      trackState.fetchOffset = 0;
-      trackState.totalBytes = null;
-      trackState.endOfStreamReached = false;
-      trackState.suppressDecodedOutput = false;
-      this.startTrackPipeline(trackState);
-    });
+    throw new Error(
+      'Unsupported configuration: the streaming producer did not deliver startup audio; ' +
+      'use the compatible media/buffer engine.',
+    );
   }
 
   private waitForTrackReady(trackState: TrackRuntime): Promise<void> {
@@ -3303,6 +3298,18 @@ export class StreamingMultitrackEngine {
     nextDecoderConfig?: AudioDecoderConfig,
   ): Promise<void> {
     const decoderConfig = nextDecoderConfig || trackState.decoderConfig;
+    const decoderSampleRate = Number(decoderConfig.sampleRate);
+
+    if (
+      Number.isFinite(decoderSampleRate) &&
+      decoderSampleRate > 0 &&
+      Math.abs(decoderSampleRate - this.context.sampleRate) > 1
+    ) {
+      throw new Error(
+        `Unsupported configuration: source sample rate ${decoderSampleRate} Hz does not match ` +
+        `the audio output rate ${this.context.sampleRate} Hz. The compatible engine must resample it.`,
+      );
+    }
 
     if (!trackState.decoderConfigured || nextDecoderConfig) {
       await this.ensureDecoderConfigSupported(decoderConfig);
@@ -5095,122 +5102,6 @@ export class StreamingMultitrackEngine {
     }
 
     return value;
-  }
-}
-
-class AacAdtsDemuxer implements EncodedAudioChunkDemuxer {
-  private pendingBytes = new Uint8Array(0);
-  private emittedDecoderConfig = false;
-  private nextTimestampUs = 0;
-
-  constructor(private readonly trackDefinition: NormalizedTrackDefinition) {}
-
-  append(bytes: Uint8Array, endOfStream: boolean, _fileStart: number): DemuxAppendResult {
-    const mergedBytes =
-      this.pendingBytes.length > 0
-        ? this.concatBytes(this.pendingBytes, bytes)
-        : bytes;
-    const chunks: EncodedAudioChunk[] = [];
-    let decoderConfig: AudioDecoderConfig | undefined;
-    let cursor = 0;
-
-    while (cursor + 7 <= mergedBytes.length) {
-      if (mergedBytes[cursor] !== 0xff || (mergedBytes[cursor + 1] & 0xf0) !== 0xf0) {
-        cursor += 1;
-        continue;
-      }
-
-      const protectionAbsent = mergedBytes[cursor + 1] & 0x01;
-      const headerLength = protectionAbsent ? 7 : 9;
-      const frameLength =
-        ((mergedBytes[cursor + 3] & 0x03) << 11) |
-        (mergedBytes[cursor + 4] << 3) |
-        ((mergedBytes[cursor + 5] & 0xe0) >> 5);
-
-      if (frameLength <= headerLength || cursor + frameLength > mergedBytes.length) {
-        break;
-      }
-
-      if (!this.emittedDecoderConfig) {
-        decoderConfig = this.buildDecoderConfigFromHeader(mergedBytes, cursor);
-        this.emittedDecoderConfig = true;
-      }
-
-      const accessUnit = mergedBytes.slice(cursor + headerLength, cursor + frameLength);
-      const durationUs = Math.round((AAC_FRAME_SIZE / this.trackDefinition.sampleRate) * 1_000_000);
-
-      chunks.push(
-        new EncodedAudioChunk({
-          type: 'key',
-          timestamp: this.nextTimestampUs,
-          duration: durationUs,
-          data: accessUnit,
-        }),
-      );
-
-      this.nextTimestampUs += durationUs;
-      cursor += frameLength;
-    }
-
-    this.pendingBytes = cursor < mergedBytes.length ? mergedBytes.slice(cursor) : new Uint8Array(0);
-
-    if (endOfStream && this.pendingBytes.length > 0) {
-      throw new Error('Incomplete ADTS AAC frame at end of stream.');
-    }
-
-    return { chunks, decoderConfig };
-  }
-
-  flush(): DemuxAppendResult {
-    if (this.pendingBytes.length > 0) {
-      throw new Error('Cannot flush ADTS demuxer with incomplete trailing bytes.');
-    }
-
-    return { chunks: [] };
-  }
-
-  seek(timeInSeconds: number): DemuxSeekResult | null {
-    if (timeInSeconds > 0.001) {
-      return null;
-    }
-
-    this.reset();
-    return {
-      nextFileStart: 0,
-      seekTimeInSeconds: 0,
-    };
-  }
-
-  reset(): void {
-    this.pendingBytes = new Uint8Array(0);
-    this.emittedDecoderConfig = false;
-    this.nextTimestampUs = 0;
-  }
-
-  private buildDecoderConfigFromHeader(bytes: Uint8Array, offset: number): AudioDecoderConfig {
-    const audioObjectType = ((bytes[offset + 2] & 0xc0) >> 6) + 1;
-    const samplingFrequencyIndex = (bytes[offset + 2] & 0x3c) >> 2;
-    const channelConfiguration =
-      ((bytes[offset + 2] & 0x01) << 2) | ((bytes[offset + 3] & 0xc0) >> 6);
-    const audioSpecificConfig = new Uint8Array(2);
-
-    audioSpecificConfig[0] = (audioObjectType << 3) | (samplingFrequencyIndex >> 1);
-    audioSpecificConfig[1] = ((samplingFrequencyIndex & 0x01) << 7) | (channelConfiguration << 3);
-
-    return {
-      codec: this.trackDefinition.codec,
-      sampleRate: this.trackDefinition.sampleRate,
-      numberOfChannels: this.trackDefinition.channelCount,
-      description: audioSpecificConfig.buffer,
-    };
-  }
-
-  private concatBytes(left: Uint8Array, right: Uint8Array): Uint8Array {
-    const merged = new Uint8Array(left.length + right.length);
-
-    merged.set(left, 0);
-    merged.set(right, left.length);
-    return merged;
   }
 }
 

@@ -658,6 +658,8 @@ export function LiveDirectorView({
     loadProgress,
     loadWarnings,
   } = selectedMultitrackEngine;
+  const passiveStreamingTelemetryActive =
+    passiveStreamingTelemetryEnabled && diagnostics?.engineMode === 'streaming';
   const nullSharedTelemetry = useCallback(() => null, []);
   const getSharedTelemetry = 'getSharedTelemetry' in selectedMultitrackEngine
     ? selectedMultitrackEngine.getSharedTelemetry
@@ -881,8 +883,8 @@ export function LiveDirectorView({
       return visualSectionTimeRef.current;
     }
 
-    return passiveStreamingTelemetryEnabled ? passiveCurrentTimeRef.current : currentTime;
-  }, [currentTime, passiveStreamingTelemetryEnabled]);
+    return passiveStreamingTelemetryActive ? passiveCurrentTimeRef.current : currentTime;
+  }, [currentTime, passiveStreamingTelemetryActive]);
   const setVisualSectionTime = useCallback((nextTime: number | null) => {
     visualSectionTimeRef.current = nextTime;
     setVisualSectionTimeState(nextTime);
@@ -1289,7 +1291,7 @@ export function LiveDirectorView({
   }, []);
 
   useEffect(() => {
-    if (!passiveStreamingTelemetryEnabled || !isPlaying) {
+    if (!passiveStreamingTelemetryActive || !isPlaying) {
       stopPassiveTelemetryLoop();
       return undefined;
     }
@@ -1437,7 +1439,7 @@ export function LiveDirectorView({
     activeTracks.length,
     getSectionIndexAtTime,
     getSectionLaneProgressPxAtTime,
-    passiveStreamingTelemetryEnabled,
+    passiveStreamingTelemetryActive,
     playbackTimelineDuration,
     publishPlaybackSnapshot,
     sectionLaneSegments,
