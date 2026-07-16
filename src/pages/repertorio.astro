@@ -2549,12 +2549,26 @@ function filterCards() {
    font-weight: 900;
    line-height: 1;
    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.06);
+   transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .shared-setlist-bpm:not(:disabled):hover {
+   border-color: rgba(59, 130, 246, 0.30);
+   background: rgba(255, 255, 255, 0.94);
+   box-shadow: 0 5px 14px rgba(15, 23, 42, 0.10);
+   transform: translateY(-1px);
  }
 
  .dark .repertorio-shared-setlist-mode .repertorio-shared-setlist .shared-setlist-bpm {
    border-color: rgba(255, 255, 255, 0.10);
    background: rgba(39, 39, 42, 0.72);
    color: rgb(250, 250, 250);
+ }
+
+ .dark .repertorio-shared-setlist-mode .repertorio-shared-setlist .shared-setlist-bpm:not(:disabled):hover {
+   border-color: rgba(59, 130, 246, 0.34);
+   background: rgba(39, 39, 42, 0.96);
+   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.24);
  }
 
  .repertorio-shared-setlist-mode .repertorio-shared-setlist .shared-setlist-bpm:disabled {
@@ -2574,6 +2588,42 @@ function filterCards() {
 
  .repertorio-shared-setlist-mode .repertorio-shared-setlist .list-play-btn {
    align-self: center;
+   border: 1px solid rgba(113, 113, 122, 0.22);
+   background: rgba(255, 255, 255, 0.74);
+   color: rgb(39, 39, 42);
+   box-shadow: 0 3px 10px rgba(15, 23, 42, 0.06);
+   transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, color 160ms ease, transform 160ms ease !important;
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .list-play-btn:hover {
+   border-color: rgba(59, 130, 246, 0.30);
+   background: rgba(255, 255, 255, 0.94);
+   color: rgb(59, 130, 246);
+   box-shadow: 0 5px 14px rgba(15, 23, 42, 0.10);
+   transform: translateY(-1px) !important;
+ }
+
+ .dark .repertorio-shared-setlist-mode .repertorio-shared-setlist .list-play-btn {
+   border-color: rgba(255, 255, 255, 0.10);
+   background: rgba(39, 39, 42, 0.72);
+   color: rgb(250, 250, 250);
+   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+ }
+
+ .dark .repertorio-shared-setlist-mode .repertorio-shared-setlist .list-play-btn:hover {
+   border-color: rgba(59, 130, 246, 0.34);
+   background: rgba(39, 39, 42, 0.96);
+   color: rgb(96, 165, 250);
+   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.24);
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .list-play-btn svg {
+   width: 1.1rem;
+   height: 1.1rem;
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .btn-open-mp3 svg {
+   margin-left: 0.1rem;
  }
 
  .repertorio-shared-setlist-mode .repertorio-shared-setlist .btn-add-setlist {
