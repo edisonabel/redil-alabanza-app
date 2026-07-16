@@ -644,8 +644,11 @@ function SongArtworkThumb({ song, index }) {
           src={artworkUrl}
           alt=""
           crossOrigin="anonymous"
-          loading="lazy"
+          loading={index < 3 ? 'eager' : 'lazy'}
           decoding="async"
+          fetchPriority={index < 3 ? 'high' : 'low'}
+          width="147"
+          height="147"
           className="h-full w-full object-cover"
           onError={() => setFailed(true)}
         />

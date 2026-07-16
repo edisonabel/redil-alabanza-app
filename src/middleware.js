@@ -22,6 +22,7 @@ const authenticatedApiRoutes = new Set([
   '/api/mp3-proxy',
   '/api/mp3-cover-art',
   '/api/auto-markers',
+  '/api/event-playlist',
 ]);
 
 const staticAssetRegex = /\.(png|ico|svg|webmanifest|css|js|txt|map|woff2?|ttf|eot|json)$/i;

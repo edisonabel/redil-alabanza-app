@@ -6,6 +6,10 @@ import {
 import { fetchAllowedMediaUrl } from '../../lib/server/media-proxy-security';
 
 const COVER_SCAN_BYTES = 2 * 1024 * 1024;
+const COVER_BROWSER_CACHE = 'public, max-age=86400, stale-while-revalidate=604800';
+const COVER_EDGE_CACHE = 'public, durable, max-age=604800, stale-while-revalidate=2592000';
+const MISSING_COVER_BROWSER_CACHE = 'public, max-age=300, stale-while-revalidate=3600';
+const MISSING_COVER_EDGE_CACHE = 'public, durable, max-age=3600, stale-while-revalidate=86400';
 
 const DRIVE_HOSTS = new Set([
   'drive.google.com',
@@ -362,7 +366,14 @@ export const GET: APIRoute = async ({ request, url, cookies, locals }) => {
   const ifNoneMatch = request.headers.get('if-none-match');
   const etag = `"mp3-cover-${Buffer.from(src).toString('base64url').slice(0, 32)}"`;
   if (ifNoneMatch === etag) {
-    return new Response(null, { status: 304 });
+    return new Response(null, {
+      status: 304,
+      headers: {
+        'cache-control': COVER_BROWSER_CACHE,
+        'netlify-cdn-cache-control': COVER_EDGE_CACHE,
+        etag,
+      },
+    });
   }
 
   let upstream: Response;
@@ -401,7 +412,8 @@ export const GET: APIRoute = async ({ request, url, cookies, locals }) => {
     return new Response(null, {
       status: 204,
       headers: {
-        'cache-control': 'public, max-age=300',
+        'cache-control': MISSING_COVER_BROWSER_CACHE,
+        'netlify-cdn-cache-control': MISSING_COVER_EDGE_CACHE,
         etag,
       },
     });
@@ -411,7 +423,8 @@ export const GET: APIRoute = async ({ request, url, cookies, locals }) => {
     status: 200,
     headers: {
       'content-type': coverArt.mimeType,
-      'cache-control': 'public, max-age=86400',
+      'cache-control': COVER_BROWSER_CACHE,
+      'netlify-cdn-cache-control': COVER_EDGE_CACHE,
       etag,
     },
   });

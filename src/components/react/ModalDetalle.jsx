@@ -9,7 +9,6 @@ import violinIcon from '@iconify-icons/mdi/violin';
 import speakerIcon from '@iconify-icons/mdi/speaker';
 import scriptTextIcon from '@iconify-icons/mdi/script-text';
 import musicNoteIcon from '@iconify-icons/mdi/music-note';
-import { supabase } from '../../lib/supabase';
 import { normalizeRosterAssignments } from '../../lib/roster-utils';
 import { getEventThemeAndPreacher } from '../../lib/event-display.js';
 import { isEventRepertoryManagerRoleCode } from '../../lib/role-permissions.js';
@@ -160,11 +159,13 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
     const [playlist, setPlaylist] = useState(null);
     const [playlistItems, setPlaylistItems] = useState([]);
     const [loadingPlaylist, setLoadingPlaylist] = useState(false);
+    const [playlistError, setPlaylistError] = useState('');
     const [focusSection, setFocusSection] = useState(null);
     const [activeTab, setActiveTab] = useState('repertorio');
     const [flashPlaylistSection, setFlashPlaylistSection] = useState(false);
     const [openingRehearsal, setOpeningRehearsal] = useState(false);
     const playlistSectionRef = useRef(null);
+    const playlistRequestRef = useRef(0);
     const previousBottomNavHiddenRef = useRef(null);
     const bottomNavInlineStylesRef = useRef([]);
 
@@ -244,31 +245,32 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
 
     const fetchPlaylist = async (eventoId) => {
         if (!eventoId) return;
+        const requestId = playlistRequestRef.current + 1;
+        playlistRequestRef.current = requestId;
         setLoadingPlaylist(true);
+        setPlaylistError('');
         try {
-            const { data: pl } = await supabase
-                .from('playlists')
-                .select('id, created_at, updated_at')
-                .eq('evento_id', eventoId)
-                .single();
+            const response = await fetch(`/api/event-playlist?evento_id=${encodeURIComponent(eventoId)}`, {
+                credentials: 'same-origin',
+                headers: { accept: 'application/json' },
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(result?.error || 'No se pudo cargar el repertorio.');
+            }
+            if (playlistRequestRef.current !== requestId) return;
 
-            if (!pl) {
+            if (!result?.playlist) {
                 setPlaylist(null);
                 setPlaylistItems([]);
                 return;
             }
-            setPlaylist(pl);
-
-            const { data: items } = await supabase
-                .from('playlist_canciones')
-                .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, mp3, link_youtube, link_acordes, link_letras, link_voces, link_secuencias)')
-                .eq('playlist_id', pl.id)
-                .order('orden');
+            setPlaylist(result.playlist);
 
             const uniqueItems = [];
             const seenSongs = new Set();
 
-            (items || []).forEach((item) => {
+            (Array.isArray(result.items) ? result.items : []).forEach((item) => {
                 const c = item?.canciones || {};
                 const dedupeKey = item?.cancion_id || c?.id || `${(c?.titulo || '').trim().toLowerCase()}::${(c?.cantante || '').trim().toLowerCase()}`;
                 if (!dedupeKey || seenSongs.has(dedupeKey)) return;
@@ -279,12 +281,19 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
             setPlaylistItems(uniqueItems);
         } catch (err) {
             console.error('Error fetching playlist:', err);
+            if (playlistRequestRef.current !== requestId) return;
+            setPlaylist(null);
+            setPlaylistItems([]);
+            setPlaylistError(err instanceof Error ? err.message : 'No se pudo cargar el repertorio.');
         } finally {
-            setLoadingPlaylist(false);
+            if (playlistRequestRef.current === requestId) {
+                setLoadingPlaylist(false);
+            }
         }
     };
 
     const handleClose = () => {
+        playlistRequestRef.current += 1;
         setOpeningRehearsal(false);
         setIsOpen(false);
         document.body.style.overflow = '';
@@ -293,6 +302,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
             setEventData(null);
             setPlaylist(null);
             setPlaylistItems([]);
+            setPlaylistError('');
             setFocusSection(null);
             setFlashPlaylistSection(false);
         }, 300);
@@ -479,6 +489,19 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                             <div ref={playlistSectionRef} className={`grid gap-3 rounded-2xl transition-shadow sm:gap-4 ${flashPlaylistSection ? 'shadow-[0_0_0_2px_rgba(59,130,246,0.48)]' : ''}`}>
                                 {loadingPlaylist ? (
                                     <div className="flex justify-center py-14"><div className="h-9 w-9 animate-spin rounded-full border-4 border-blue-400/25 border-t-blue-400" /></div>
+                                ) : playlistError ? (
+                                    <div role="alert" className="flex flex-col items-center justify-center rounded-3xl border border-amber-300/70 bg-amber-50/90 px-5 py-12 text-center dark:border-amber-300/20 dark:bg-amber-300/[0.06]">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="mb-3 text-amber-600 dark:text-amber-300" aria-hidden="true"><circle cx="12" cy="12" r="10" /><path d="M12 8v4" /><path d="M12 16h.01" /></svg>
+                                        <p className="text-base font-black text-slate-700 dark:text-white/82">No pudimos cargar el repertorio</p>
+                                        <p className="mt-1 max-w-md text-sm font-medium text-slate-500 dark:text-white/58">{playlistError}</p>
+                                        <button
+                                            type="button"
+                                            onClick={() => fetchPlaylist(eventoId)}
+                                            className="mt-5 inline-flex min-h-[46px] items-center justify-center rounded-2xl border border-action/60 px-5 py-3 text-base font-bold text-action transition-colors hover:bg-action/10"
+                                        >
+                                            Reintentar
+                                        </button>
+                                    </div>
                                 ) : !playlist ? (
                                     <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-slate-50/80 px-5 py-12 text-center dark:border-white/14 dark:bg-white/[0.035]">
                                         <Icon icon={musicNoteIcon} className="mb-3 h-9 w-9 text-slate-400 dark:text-white/40" aria-hidden="true" />

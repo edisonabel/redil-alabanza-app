@@ -66,6 +66,9 @@ const hasChordpro = typeof hasChordproOverride === 'boolean' ? hasChordproOverri
 const hasYoutube = linkYoutube.trim() !== '';
 const hasAcordes = linkAcordes.trim() !== '';
 const hasLetra = linkLetra.trim() !== '';
+const selectionArtworkUrl = hasMp3
+  ? `/api/mp3-cover-art?v=2&src=${encodeURIComponent(linkMp3.trim())}`
+  : '';
 
 /* Primary CTA logic: Reproducir > Ensayar */
 const primaryIsMp3 = hasMp3;
@@ -91,11 +94,24 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
  )}
 
  <div class="card-header cursor-pointer relative z-10 flex flex-col pt-4 px-4 pb-3 md:px-5">
-   {/* Botón setlist */}
-   <button class="btn-add-setlist absolute top-4 right-4 h-10 w-10 flex items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-400 shadow-sm hover:bg-zinc-50 hover:text-zinc-700 transition-all dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" title="A&ntilde;adir a Setlist" data-id={String(cancionId || '')} data-cancion={titulo}>
-     <svg class="setlist-icon-plus" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-     <svg class="setlist-icon-check hidden" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-   </button>
+   {/* La portada solo se solicita en el selector compacto, al acercarse al viewport. */}
+   <div class="selection-artwork" aria-hidden="true">
+     {selectionArtworkUrl && (
+       <img
+         class="selection-artwork-image"
+         data-selection-artwork-src={selectionArtworkUrl}
+         alt=""
+         width="56"
+         height="56"
+         loading="lazy"
+         decoding="async"
+         fetchpriority="low"
+       />
+     )}
+     <span class="selection-artwork-fallback">
+       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+     </span>
+   </div>
 
    {/* Botón de play rápido — solo visible en modo lista */}
    {hasMp3 && (
@@ -105,7 +121,8 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
      data-title={titulo}
      data-artist={cantante || ''}
      class="list-play-btn btn-open-mp3 hidden absolute top-4 right-16 h-10 w-10 items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-600 shadow-sm hover:bg-zinc-50 hover:text-zinc-900 transition-all dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
-     title="Reproducir">
+     title="Reproducir"
+     aria-label={`Reproducir ${titulo}`}>
      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"></path></svg>
    </button>
    )}
@@ -125,14 +142,23 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
      data-has-multitrack={hasMultitrackSession ? 'true' : 'false'}
      data-section-markers={sectionMarkersPayload}
      class="list-play-btn btn-open-ensayo hidden absolute top-4 right-16 h-10 w-10 items-center justify-center rounded-2xl border border-brand/30 bg-brand/10 text-brand shadow-sm hover:bg-brand/15 transition-all dark:border-brand/25 dark:bg-brand/10 dark:text-brand"
-     title="Ensayar">
+     title="Ensayar"
+     aria-label={`Ensayar ${titulo}`}>
      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
    </button>
    )}
 
-   <h3 class="text-lg md:text-xl font-black tracking-tight text-zinc-950 mb-0.5 pr-14 transition-all card-title dark:text-zinc-50">{titulo}</h3>
-   {cantante && <p class="text-sm text-zinc-500 mb-2.5 line-clamp-1 pr-14 dark:text-zinc-400">{cantante}</p>}
-   {!cantante && <div class="mb-2.5"></div>}
+   {/* Botón setlist: queda después de reproducción también en el orden de teclado. */}
+   <button type="button" class="btn-add-setlist absolute top-4 right-4 h-10 w-10 flex items-center justify-center rounded-2xl border border-zinc-200 bg-white text-zinc-400 shadow-sm hover:bg-zinc-50 hover:text-zinc-700 transition-all dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200" title="A&ntilde;adir a Setlist" aria-label={`Agregar ${titulo} al setlist`} aria-pressed="false" data-id={String(cancionId || '')} data-cancion={titulo}>
+     <svg class="setlist-icon-plus" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+     <svg class="setlist-icon-check hidden" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+   </button>
+
+   <h3 class="text-lg md:text-xl font-black tracking-tight text-zinc-950 mb-0.5 pr-14 transition-all card-title dark:text-zinc-50">
+     <span class="card-title-marquee">{titulo}</span>
+   </h3>
+   {cantante && <p class="card-artist text-sm text-zinc-500 mb-2.5 line-clamp-1 pr-14 dark:text-zinc-400"><span class="card-artist-marquee">{cantante}</span></p>}
+   {!cantante && <div class="card-artist mb-2.5" aria-hidden="true"></div>}
 
    <div class="flex items-center gap-0 overflow-x-auto pb-0.5 card-badges repertorio-meta-row transition-all [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
      <button type="button" class="repertorio-meta-item inline-flex h-7 shrink-0 items-center rounded-lg border border-transparent bg-transparent px-1.5 text-[12px] font-semibold text-zinc-600 badge-tono cursor-pointer transition-colors hover:text-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 dark:text-zinc-300 dark:hover:text-white" data-tono={tonalidad || ""}>
