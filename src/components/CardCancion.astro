@@ -28,9 +28,10 @@ interface Props {
 	tourCard?: string;
 	tourAudio?: string;
 	tourResources?: string;
+	compact?: boolean;
 }
 
-const { cancionId = "", titulo = "", cantante = "", tonalidad = "", bpm = 0, linkLetra = "", linkAcordes = "", linkVoces = "", linkYoutube = "", linkSecuencias = "", linkMp3 = "", chordpro = "", hasChordproOverride, hasMultitrackSession = false, categoria = "", voz = "", tema = "", sectionMarkers = [], estado = "", oculta = false, tourCard = "", tourAudio = "", tourResources = "" } = Astro.props;
+const { cancionId = "", titulo = "", cantante = "", tonalidad = "", bpm = 0, linkLetra = "", linkAcordes = "", linkVoces = "", linkYoutube = "", linkSecuencias = "", linkMp3 = "", chordpro = "", hasChordproOverride, hasMultitrackSession = false, categoria = "", voz = "", tema = "", sectionMarkers = [], estado = "", oculta = false, tourCard = "", tourAudio = "", tourResources = "", compact = false } = Astro.props;
 
 const sectionMarkersPayload = (() => {
   try { return JSON.stringify(Array.isArray(sectionMarkers) ? sectionMarkers : []); }
@@ -80,7 +81,7 @@ const primaryIsMp3 = hasMp3;
 const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
 ---
 
-<article class:list={["relative border border-zinc-200/80 rounded-[2rem] transition-all duration-300 shadow-[0_24px_80px_rgba(15,23,42,0.06)] hover:shadow-[0_24px_80px_rgba(15,23,42,0.12)] hover:scale-[1.01] active:scale-[0.99] overflow-visible card-container card-cancion bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.10),_transparent_40%),linear-gradient(180deg,_rgba(255,255,255,0.99),_rgba(244,244,245,0.97))] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.22),_transparent_34%),linear-gradient(180deg,_rgba(9,9,11,0.98),_rgba(15,23,42,0.94))] dark:backdrop-blur-xl dark:shadow-[0_28px_80px_rgba(2,6,23,0.5)]", { "cancion-oculta": oculta }]}
+<article class:list={["relative border border-zinc-200/80 rounded-[2rem] transition-all duration-300 shadow-[0_24px_80px_rgba(15,23,42,0.06)] hover:shadow-[0_24px_80px_rgba(15,23,42,0.12)] hover:scale-[1.01] active:scale-[0.99] overflow-visible card-container card-cancion bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.10),_transparent_40%),linear-gradient(180deg,_rgba(255,255,255,0.99),_rgba(244,244,245,0.97))] dark:border-white/10 dark:bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.22),_transparent_34%),linear-gradient(180deg,_rgba(9,9,11,0.98),_rgba(15,23,42,0.94))] dark:backdrop-blur-xl dark:shadow-[0_28px_80px_rgba(2,6,23,0.5)]", { "cancion-oculta": oculta, "modo-lista": compact }]}
  data-id={String(cancionId || '')}
  data-titulo={(titulo || '').toLowerCase()}
  data-cancion={titulo || ''}
@@ -196,6 +197,31 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
 
  <div class="card-content px-4 pb-4 md:px-5" data-tour={tourResources || undefined}>
   <div class="card-content-inner min-h-0">
+
+   <div class="compact-expanded-meta" role="list" aria-label="Datos musicales">
+     <span class="compact-expanded-meta-item" role="listitem" aria-label={`Tonalidad ${tonalidad || 'sin definir'}`}>
+       <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+       <strong>{tonalidad || '—'}</strong>
+     </span>
+     {Number(bpm) > 0 && (
+       <span class="compact-expanded-meta-item" role="listitem" aria-label={`${bpm} pulsaciones por minuto`}>
+         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+         <strong>{bpm}</strong>
+         <span class="compact-expanded-meta-unit">BPM</span>
+       </span>
+     )}
+     {voz && (
+       <span class="compact-expanded-meta-item" role="listitem" aria-label={`Voz ${voz}`}>
+         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg>
+         <strong>{voz}</strong>
+       </span>
+     )}
+     {categoria && (
+       <span class="compact-expanded-meta-item" role="listitem" aria-label={`Categoría ${categoria}`}>
+         <strong>{categoria}</strong>
+       </span>
+     )}
+   </div>
 
    {/* ── Primary CTA ─────────────────────────────── */}
    {primaryIsMp3 && (

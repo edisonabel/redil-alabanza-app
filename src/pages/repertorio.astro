@@ -178,23 +178,10 @@ const firstTourResourcesId =
  </div>
  </section>
 
- <!-- Encabezado de Resultados y Vista -->
- <div class="max-w-7xl mx-auto mb-2 md:mb-4 mt-2 md:mt-8 flex justify-between items-center px-2 md:px-0 anim-fade-in-up anim-stagger" style="--delay: 280ms">
- <h3 class="text-xl font-bold text-content mb-2 md:mb-4">Setlist</h3>
- <div id="viewToggleContainer" class="flex bg-zinc-100 dark:bg-zinc-800 flex-shrink-0 mb-2 md:mb-4 rounded-lg p-1 border border-zinc-300 dark:border-zinc-700 h-fit shadow-inner">
- <button id="btnViewGrid" class="p-1.5 rounded-md view-btn-active transition-all" title="Vista de Cuadr&iacute;cula">
- <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
- </button>
- <button id="btnViewList" class="p-1.5 rounded-md text-content-muted hover:text-content transition-all" title="Vista de Lista">
- <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
- </button>
- </div>
- </div>
-
- <!-- Grid de Canciones -->
+ <!-- Lista compacta de canciones -->
  <div
   id="gridCanciones"
-  class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto"
+  class="compact-song-list repertorio-compact-list flex flex-col gap-0 max-w-7xl mx-auto"
   data-initial-playlist-song-ids={JSON.stringify(initialPlaylistSongIds)}
  >
  {canciones.map((cancion: any, index: number) => (
@@ -219,9 +206,10 @@ const firstTourResourcesId =
  sectionMarkers={[]}
  estado={cancion.estado || ''}
  oculta={index >= 15}
- tourCard={String(cancion.id) === String(firstTourCardId) ? 'repertorio-card' : undefined}
- tourAudio={String(cancion.id) === String(firstTourAudioId) ? 'repertorio-audio' : undefined}
- tourResources={String(cancion.id) === String(firstTourResourcesId) ? 'repertorio-resources' : undefined}
+  tourCard={String(cancion.id) === String(firstTourCardId) ? 'repertorio-card' : undefined}
+  tourAudio={String(cancion.id) === String(firstTourAudioId) ? 'repertorio-audio' : undefined}
+  tourResources={String(cancion.id) === String(firstTourResourcesId) ? 'repertorio-resources' : undefined}
+  compact={true}
  />
  ))}
  </div>
@@ -492,8 +480,6 @@ if (sessionError) {
  const btnCopySetlist = document.getElementById('btnCopySetlist');
  const btnClearSetlist = document.getElementById('btnClearSetlist');
  
- const btnViewGrid = document.getElementById('btnViewGrid');
- const btnViewList = document.getElementById('btnViewList');
  const gridCanciones = document.getElementById('gridCanciones');
  const emptyFilterState = document.getElementById('emptyFilterState');
  const btnResetFilters = document.getElementById('btnResetFilters');
@@ -533,6 +519,9 @@ if (sessionError) {
    if (el.dataset.resourceHintBound === 'true') return;
    el.dataset.resourceHintBound = 'true';
    addListener(el, 'scroll', scheduleResourceActionHints, { passive: true });
+   cleanupFns.push(() => {
+    delete el.dataset.resourceHintBound;
+   });
 
    const shell = el.closest('.resource-actions-shell') as HTMLElement | null;
    shell?.querySelectorAll('[data-resource-scroll]').forEach((button) => {
@@ -552,10 +541,14 @@ if (sessionError) {
      scheduleResourceActionHints();
      window.setTimeout(scheduleResourceActionHints, reducedMotion ? 30 : 320);
     });
+    cleanupFns.push(() => {
+     delete control.dataset.resourceScrollBound;
+    });
    });
   });
   scheduleResourceActionHints();
  };
+ requestAnimationFrame(bindResourceActionHints);
  addListener(window, 'resize', scheduleResourceActionHints, { passive: true });
 
  let lastSearchScrollY = Math.max(window.scrollY, 0);
@@ -609,52 +602,17 @@ if (sessionError) {
  addListener(searchControls, 'focusin', keepSearchControlsVisible);
  addListener(searchControls, 'pointerdown', keepSearchControlsVisible);
 
- // ----- View Toggle Logic -----
- let isListView = false;
+ // El repertorio usa una única vista compacta; los recursos viven en el acordeón.
+ let isListView = true;
 
- function setGridView() {
- if (!gridCanciones) return;
- isListView = false;
- document.body.classList.remove('repertorio-compact-list-mode');
- // Crossfade: opacity 0 → swap → opacity 1
- gridCanciones.style.opacity = '0';
- requestAnimationFrame(() => {
-  gridCanciones.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto';
-  cards.forEach(card => card.classList.remove('modo-lista', 'expandido'));
-  scheduleSelectionMarqueeMeasurement();
-  if (btnViewGrid && btnViewList) {
-   btnViewGrid.classList.add('view-btn-active');
-   btnViewGrid.classList.remove('text-content-muted');
-   btnViewList.classList.remove('view-btn-active');
-   btnViewList.classList.add('text-content-muted');
-  }
-  requestAnimationFrame(() => { gridCanciones.style.opacity = '1'; });
- });
- }
-
- function setListView() {
- if (!gridCanciones) return;
- isListView = true;
- document.body.classList.add('repertorio-compact-list-mode');
- // Crossfade: opacity 0 → swap → opacity 1
- gridCanciones.style.opacity = '0';
- requestAnimationFrame(() => {
+ function activateCompactListView() {
+  if (!gridCanciones) return;
+  document.body.classList.add('repertorio-compact-list-mode');
   gridCanciones.className = 'compact-song-list repertorio-compact-list flex flex-col gap-0 max-w-7xl mx-auto';
   cards.forEach(card => card.classList.add('modo-lista'));
   initializeSelectionArtwork();
   scheduleSelectionMarqueeMeasurement();
-  if (btnViewGrid && btnViewList) {
-   btnViewList.classList.add('view-btn-active');
-   btnViewList.classList.remove('text-content-muted');
-   btnViewGrid.classList.remove('view-btn-active');
-   btnViewGrid.classList.add('text-content-muted');
-  }
-  requestAnimationFrame(() => { gridCanciones.style.opacity = '1'; });
- });
  }
-
- if(btnViewGrid) addListener(btnViewGrid, 'click', setGridView);
- if(btnViewList) addListener(btnViewList, 'click', setListView);
 
  // Accordion logic for list view
  cards.forEach(card => {
@@ -665,7 +623,7 @@ if (sessionError) {
  const target = e.target as Element;
  if (target.closest('.btn-add-setlist') || target.closest('.list-play-btn') || target.closest('.btn-open-mp3') || target.closest('.btn-open-ensayo')) return;
 
- if (isListView) {
+ if (isListView && !document.body.classList.contains('repertorio-selection-mode')) {
  const wasExpanded = card.classList.contains('expandido');
  // Collapse all other cards first
  cards.forEach(c => { if (c !== card) c.classList.remove('expandido'); });
@@ -1296,6 +1254,7 @@ const clearPlaylistSelection = () => {
 
  } else {
  // Modo local / Setlist normal temporal
+ activateCompactListView();
  updateSetlistUI();
 
  // Sync visual state of setlist buttons from localStorage on page load
@@ -1758,11 +1717,20 @@ function filterCards() {
 
  @media (hover: hover) and (pointer: fine) {
    .resource-actions-shell.has-overflow {
-     padding-inline: 1.85rem;
+     padding-inline: 0;
+   }
+
+   .resource-actions-shell.has-overflow.can-scroll-back {
+     padding-left: 1.85rem;
+   }
+
+   .resource-actions-shell.has-overflow.can-scroll-forward {
+     padding-right: 1.85rem;
    }
 
    .resource-actions-shell.has-overflow .resource-actions {
-     margin-inline: 0;
+     margin-left: -0.25rem;
+     margin-right: 0;
      padding-inline: 0.25rem;
      scroll-padding-inline: 0.25rem;
    }
@@ -1868,13 +1836,6 @@ function filterCards() {
  body.tema-claro .bg-surface { background-color: #ffffff; border-color: #e5e7eb; }
  body.tema-claro #btn-theme-toggle { background-color: #ffffff; color: #111827; border-color: #d1d5db; }
  body.tema-claro #btn-theme-toggle:hover { background-color: #f3f4f6; }
- body.tema-claro #viewToggleContainer { background-color: #e5e7eb; border-color: #d1d5db; }
- /* Toggle activo: zinc-900 fondo siempre legible en claro y oscuro */
- .view-btn-active { background-color: #18181b; color: #ffffff; box-shadow: 0 1px 4px rgba(0,0,0,0.25); border-radius: 0.375rem; }
- body.tema-claro .view-btn-active { background-color: #18181b; color: #ffffff; }
- body.tema-claro #btnViewGrid.text-content-muted, body.tema-claro #btnViewList.text-content-muted { color: #6b7280; }
- body.tema-claro #btnViewGrid.text-content-muted:hover, body.tema-claro #btnViewList.text-content-muted:hover { color: #111827; }
- 
  @keyframes pulse-beat { 
  0% { transform: scale(1); background-color: #10b981; } 
  50% { transform: scale(1.5); background-color: #34d399; box-shadow: 0 0 8px #34d399; } 
@@ -1906,9 +1867,6 @@ function filterCards() {
  /* Selector de setlist: lista editorial compacta, sin tarjetas ni recursos secundarios. */
  .selection-artwork {
    display: none;
- }
- .repertorio-selection-mode #viewToggleContainer {
-   display: none !important;
  }
  .compact-song-list {
    border-top: 1px solid rgba(113, 113, 122, 0.22);
@@ -2297,17 +2255,74 @@ function filterCards() {
    grid-template-rows: 0fr;
    opacity: 0;
    transition: grid-template-rows 350ms cubic-bezier(0.22,1,0.36,1), opacity 300ms ease, padding 300ms ease;
-   padding: 0 0.5rem 0 3.5rem;
+   padding: 0 0.25rem;
    overflow: hidden;
  }
  .modo-lista .card-content .card-content-inner {
    min-height: 0;
    overflow: hidden;
  }
+ .compact-expanded-meta {
+   display: none;
+ }
+ .repertorio-compact-list-mode .compact-song-list .modo-lista.expandido .compact-expanded-meta {
+   display: flex;
+   min-width: 0;
+   align-items: center;
+   gap: 0.6rem;
+   overflow-x: auto;
+   padding: 0 0.2rem 0.45rem;
+   color: rgba(82, 82, 91, 0.78);
+   font-size: 0.78rem;
+   line-height: 1;
+   scrollbar-width: none;
+ }
+ .repertorio-compact-list-mode .compact-song-list .modo-lista.expandido .compact-expanded-meta::-webkit-scrollbar {
+   display: none;
+ }
+ .dark .repertorio-compact-list-mode .compact-song-list .modo-lista.expandido .compact-expanded-meta {
+   color: rgba(228, 228, 231, 0.76);
+ }
+ .compact-expanded-meta-item {
+   display: inline-flex;
+   flex: 0 0 auto;
+   align-items: center;
+   gap: 0.32rem;
+   white-space: nowrap;
+ }
+ .compact-expanded-meta-item + .compact-expanded-meta-item::before {
+   content: "";
+   width: 0.22rem;
+   height: 0.22rem;
+   margin-right: 0.25rem;
+   border-radius: 9999px;
+   background: currentColor;
+   opacity: 0.32;
+ }
+ .compact-expanded-meta-item svg {
+   flex: 0 0 auto;
+   opacity: 0.62;
+ }
+ .compact-expanded-meta-item strong {
+   font-weight: 750;
+ }
+ .compact-expanded-meta-unit {
+   font-size: 0.67rem;
+   font-weight: 800;
+   letter-spacing: 0.06em;
+   opacity: 0.7;
+ }
+ .repertorio-compact-list-mode .compact-song-list .modo-lista .card-content-inner > .btn-open-mp3,
+ .repertorio-compact-list-mode .compact-song-list .modo-lista .card-content-inner > .btn-open-ensayo {
+   display: none !important;
+ }
+ .repertorio-compact-list-mode .compact-song-list .modo-lista .resource-actions {
+   margin-top: 0.25rem;
+ }
  .modo-lista.expandido .card-content {
    grid-template-rows: 1fr;
    opacity: 1;
-   padding: 0.7rem 0.5rem 0.9rem 3.5rem;
+   padding: 0.7rem 0.25rem 0.9rem;
    border-top: 1px solid rgba(228,228,231,0.5);
  }
  :global(.dark) .modo-lista.expandido .card-content {
@@ -2322,11 +2337,11 @@ function filterCards() {
 
  @media (min-width: 768px) {
    .modo-lista .card-content {
-     padding-left: 4.72rem;
+     padding-inline: 0.5rem;
    }
 
    .modo-lista.expandido .card-content {
-     padding-left: 4.72rem;
+     padding-inline: 0.5rem;
    }
  }
 
