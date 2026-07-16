@@ -7,6 +7,7 @@ import {
 } from '../services/LoopLabStreamingMultitrackEngine';
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
 import type { TrackActivityEnvelope } from '../utils/audioActivityEnvelope';
+import { primeLiveDirectorStemConnection } from '../utils/liveDirectorStemTransport';
 import {
   errorLiveDiagnostic,
   readLiveBrowserCapabilities,
@@ -465,6 +466,9 @@ export function useLoopLabMultitrackEngine(
     };
 
     try {
+      if (targetKind === 'streaming') {
+        primeLiveDirectorStemConnection();
+      }
       engine = getEngine(targetKind);
       const engineTracks =
         targetKind === 'streaming'

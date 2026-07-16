@@ -6,6 +6,7 @@ import {
 } from '../services/StreamingMultitrackEngine';
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
 import type { TrackActivityEnvelope } from '../utils/audioActivityEnvelope';
+import { primeLiveDirectorStemConnection } from '../utils/liveDirectorStemTransport';
 import {
   errorLiveDiagnostic,
   readLiveBrowserCapabilities,
@@ -451,6 +452,9 @@ export function useMultitrackEngine(
     };
 
     try {
+      if (targetKind === 'streaming') {
+        primeLiveDirectorStemConnection();
+      }
       engine = getEngine(targetKind);
       const engineTracks =
         targetKind === 'streaming'

@@ -20,6 +20,7 @@ import {
   readLiveBrowserCapabilities,
   warnLiveDiagnostic,
 } from '../utils/liveDiagnostics';
+import { isLiveDirectorMp3Track } from '../utils/liveDirectorStemFormat';
 
 type WindowWithWebkitAudio = Window & typeof globalThis & {
   webkitAudioContext?: typeof AudioContext;
@@ -319,6 +320,10 @@ type ProducerInitSessionMessage = {
   tracks: ProducerTrackMetadata[];
 };
 
+type ProducerWarmRuntimeMessage = {
+  type: 'warm-runtime';
+};
+
 type ProducerConfigureLoopRegionMessage = {
   type: 'configure-loop-region';
   sessionId: number;
@@ -370,6 +375,7 @@ type ProducerTransportStateMessage = {
 };
 
 type ProducerOutboundMessage =
+  | ProducerWarmRuntimeMessage
   | ProducerInitSessionMessage
   | ProducerConfigureLoopRegionMessage
   | ProducerReleaseLoopCacheMessage
@@ -958,7 +964,7 @@ type PreloadedStreamingSession = {
   trackStates: TrackRuntime[];
 };
 
-const AUDIO_WORKER_ASSET_VERSION = '20260716-1';
+const AUDIO_WORKER_ASSET_VERSION = '20260716-2';
 const DEFAULT_WORKLET_MODULE_URL = `/workers/LoopLabMultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_PRODUCER_WORKER_URL = `/workers/LoopLabAudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
@@ -1053,6 +1059,7 @@ export class StreamingMultitrackEngine {
   public workletNode: AudioWorkletNode | null = null;
   public onEnded: (() => void) | null = null;
   private producerWorker: Worker | null = null;
+  private producerRuntimeWarmRequested = false;
   private producerSessionId = 0;
   private decoderProbeQueue: Promise<void> = Promise.resolve();
 
@@ -1415,6 +1422,7 @@ export class StreamingMultitrackEngine {
     });
     this.producerWorker.terminate();
     this.producerWorker = null;
+    this.producerRuntimeWarmRequested = false;
     this.lastProducerMessageAt = 0;
   }
 
@@ -1428,6 +1436,8 @@ export class StreamingMultitrackEngine {
       isMuted: Boolean(track.isMuted),
       outputRoute: resolveTrackOutputRoute(track),
     }));
+    const unsupportedMp3Tracks = normalizedTracks.filter(isLiveDirectorMp3Track);
+    const compatibleTracks = normalizedTracks.filter((track) => !isLiveDirectorMp3Track(track));
 
     this.transportPlaying = false;
     this.startTime = 0;
@@ -1435,14 +1445,20 @@ export class StreamingMultitrackEngine {
     this.restartFromHead = false;
     this.startBarrierSerial += 1;
     this.releasePreloadedNextSession();
-    this.tracks = normalizedTracks;
-    this.trackIndexById = new Map(normalizedTracks.map((track, index) => [track.id, index]));
-    this.loadWarnings = [];
+    this.tracks = compatibleTracks;
+    this.trackIndexById = new Map(compatibleTracks.map((track, index) => [track.id, index]));
+    this.loadWarnings = unsupportedMp3Tracks.map((track) => ({
+      trackId: track.id,
+      trackName: track.name,
+      reason: 'unsupported-format',
+      message: `El stem "${track.name}" está en MP3. Live Director solo admite M4A/AAC-LC con Fast Start.`,
+      playExtension: 'mp3',
+    }));
     this.soloTrackIds.clear();
     this.loopEnabled = false;
     this.loopStartInSeconds = 0;
     this.loopEndInSeconds = 0;
-    this.trackMeterLevels = normalizedTracks.reduce<Record<string, number>>((levels, track) => {
+    this.trackMeterLevels = compatibleTracks.reduce<Record<string, number>>((levels, track) => {
       levels[track.id] = 0;
       return levels;
     }, {});
@@ -1450,15 +1466,23 @@ export class StreamingMultitrackEngine {
     const onProgress = options?.onProgress;
     if (onProgress) {
       try {
-        onProgress(0, normalizedTracks.length);
+        onProgress(unsupportedMp3Tracks.length, normalizedTracks.length);
       } catch {
         // ignore progress callback errors
       }
     }
 
+    if (compatibleTracks.length === 0) {
+      this.resetTracks();
+      this.setMasterVolume(this.masterGain.gain.value);
+      return this.tracks;
+    }
+
     await this.initialize(
-      normalizedTracks.map((track) => this.buildStreamingTrackDefinition(track)),
-      onProgress,
+      compatibleTracks.map((track) => this.buildStreamingTrackDefinition(track)),
+      onProgress
+        ? (loaded) => onProgress(unsupportedMp3Tracks.length + loaded, normalizedTracks.length)
+        : undefined,
     );
     this.setMasterVolume(this.masterGain.gain.value);
     return this.tracks;
@@ -2055,6 +2079,7 @@ export class StreamingMultitrackEngine {
       throw new Error('AudioWorklet is not supported in this browser.');
     }
 
+    this.warmAudioProducerRuntime();
     await this.context.audioWorklet.addModule(this.workletModuleUrl);
     this.ensureWorkletNode();
     this.resetTracks();
@@ -4024,6 +4049,26 @@ export class StreamingMultitrackEngine {
     this.lastProducerMessageAt = performance.now();
 
     return this.producerWorker;
+  }
+
+  private warmAudioProducerRuntime(): void {
+    if (this.producerRuntimeWarmRequested) {
+      return;
+    }
+
+    const worker = this.ensureAudioProducerWorker();
+    if (!worker) {
+      return;
+    }
+
+    try {
+      worker.postMessage({ type: 'warm-runtime' } satisfies ProducerWarmRuntimeMessage);
+      this.producerRuntimeWarmRequested = true;
+    } catch (error) {
+      warnLiveDiagnostic('streaming:producer-runtime-warmup-failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private configureAudioProducerWorker(trackDefinitions: NormalizedTrackDefinition[]): boolean {

@@ -64,6 +64,10 @@ import {
 import { getPadUrlForSongKey } from '../../utils/padAudio';
 import { extractCoverArtFromMp3 } from '../../utils/mp3CoverArt';
 import { logLiveDiagnostic, readLiveBrowserCapabilities } from '../../utils/liveDiagnostics';
+import {
+  assertLiveDirectorM4aFiles,
+  LIVE_DIRECTOR_M4A_ACCEPT,
+} from '../../utils/liveDirectorStemFormat';
 
 type MixerTrackMeta = {
   id: string;
@@ -279,7 +283,7 @@ const SECTION_TRANSITION_FADE_IN_MS = 180;
 const CONGREGATION_FADE_MS = 5000;
 const SECTIONS_AUTO_FOLLOW_RESUME_MS = 5000;
 const SECTION_DRAG_CLICK_SUPPRESS_THRESHOLD_PX = 8;
-const SEQUENCE_FILE_ACCEPT = '.aac,.m4a,audio/aac,audio/mp4,audio/x-m4a,audio/*';
+const SEQUENCE_FILE_ACCEPT = LIVE_DIRECTOR_M4A_ACCEPT;
 
 const CONTROL_CARD =
   'ui-pressable-soft flex items-center justify-center rounded-[1.55rem] border border-white/8 bg-[linear-gradient(180deg,rgba(26,27,29,0.96),rgba(17,18,20,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_24px_40px_rgba(0,0,0,0.25)] transition-all duration-200';
@@ -3141,6 +3145,8 @@ export function LiveDirectorLoopLabView({
     }
 
     try {
+      await assertLiveDirectorM4aFiles([file]);
+
       if (hasPersistedSongContext) {
         setBusyMessage(`Uploading ${file.name}...`);
         const uploadTarget = await requestLiveDirectorUploadTarget({
@@ -3183,6 +3189,8 @@ export function LiveDirectorLoopLabView({
     }
 
     try {
+      await assertLiveDirectorM4aFiles(files);
+
       console.info('[LiveDirectorView] Stem folder selected.', {
         songId,
         totalFiles: files.length,
@@ -5167,7 +5175,7 @@ export function LiveDirectorLoopLabView({
                   Elige una pista unica o una carpeta multitrack.
                 </p>
                 <p className={`max-w-3xl text-amber-200/70 ${isCompactLandscape ? 'mt-1 text-[0.7rem]' : 'mt-2 text-[0.82rem]'}`}>
-                  Formatos recomendados: <span className="font-semibold">AAC-LC (.m4a)</span> o <span className="font-semibold">FLAC</span>. Evita <span className="font-semibold">ALAC</span> (.m4a lossless de Apple) — no abre en Windows ni Android.
+                  Formato requerido: <span className="font-semibold">M4A/AAC-LC · 256 kbps · 48 kHz · Fast Start</span>. Convierte MP3, FLAC o ALAC antes de cargar.
                 </p>
               </div>
               <button
@@ -5357,6 +5365,7 @@ export function LiveDirectorLoopLabView({
           <input
             ref={folderInputRef}
             type="file"
+            accept={LIVE_DIRECTOR_M4A_ACCEPT}
             multiple
             onChange={handleStemFolderSelection}
             className="hidden"
@@ -5759,7 +5768,7 @@ export function LiveDirectorLoopLabView({
                 <p className="mt-2 text-[0.76rem] leading-snug text-amber-100/70">
                   {hasUnsupportedStemFormat
                     ? <>Convierte esos stems a <span className="font-semibold">M4A/AAC-LC (.m4a 256 kbps)</span> y vuelve a subirlos.</>
-                    : <>Consejo: re-exporta los stems problemáticos como <span className="font-semibold">AAC-LC (.m4a 256 kbps)</span> o <span className="font-semibold">FLAC</span>. Evita ALAC — no abre en Windows ni Android.</>}
+                    : <>Consejo: pasa los stems problemáticos por el conversor y expórtalos como <span className="font-semibold">M4A/AAC-LC · 256 kbps · 48 kHz · Fast Start</span>.</>}
                 </p>
               </div>
               <button

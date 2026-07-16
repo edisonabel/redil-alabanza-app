@@ -120,6 +120,12 @@ export const POST = async ({ request, cookies }) => {
       return jsonResponse({ error: 'Se requiere fileName.' }, 400);
     }
 
+    if (!/\.m4a$/i.test(fileName)) {
+      return jsonResponse({
+        error: 'Live Director solo admite archivos M4A/AAC-LC con Fast Start.',
+      }, 415);
+    }
+
     const { data: songRow, error: songError } = await serviceRoleClient
       .from('canciones')
       .select('id, titulo')

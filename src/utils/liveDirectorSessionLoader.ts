@@ -1,4 +1,5 @@
 import type { TrackData } from '../services/MultitrackEngine';
+import { isLiveDirectorM4aFile } from './liveDirectorStemFormat';
 
 export type LiveDirectorResolvedSession = {
   mode: 'sequence' | 'folder';
@@ -28,8 +29,6 @@ type StemAliasGroup = {
   defaultVolume: number;
   aliases: string[];
 };
-
-const AUDIO_FILE_PATTERN = /\.(mp3|wav|m4a|aac|ogg|flac|aif|aiff|caf)$/i;
 
 const STEM_ALIAS_GROUPS: StemAliasGroup[] = [
   { id: 'click', label: 'Click', defaultVolume: 0.34, aliases: ['click', 'clic', 'metro', 'metronome', 'cue click'] },
@@ -87,7 +86,7 @@ const normalizeName = (value: string) =>
     .trim();
 
 const isAudioFile = (file: File) => {
-  return file.type.startsWith('audio/') || AUDIO_FILE_PATTERN.test(file.name);
+  return isLiveDirectorM4aFile(file);
 };
 
 const inferTrackGroup = (filename: string): StemAliasGroup | null => {
@@ -135,13 +134,20 @@ const inferTrackGroup = (filename: string): StemAliasGroup | null => {
   return null;
 };
 
-const buildTrack = (id: string, name: string, url: string, volume: number): TrackData => ({
+const buildTrack = (
+  id: string,
+  name: string,
+  url: string,
+  volume: number,
+  sourceFileName?: string,
+): TrackData => ({
   id,
   name,
   url,
   volume,
   isMuted: false,
   enabled: true,
+  sourceFileName,
 });
 
 export function inferStemTracksFromFiles(
@@ -150,7 +156,13 @@ export function inferStemTracksFromFiles(
   const files = Array.from(filesInput).filter(isAudioFile);
 
   if (files.length === 0) {
-    throw new Error('No se encontraron archivos de audio validos dentro de la carpeta.');
+    throw new Error('No se encontraron stems M4A/AAC-LC válidos dentro de la carpeta.');
+  }
+
+  if (files.length !== Array.from(filesInput).length) {
+    throw new Error(
+      'Live Director solo admite stems M4A/AAC-LC con Fast Start. Convierte la carpeta completa antes de cargarla.',
+    );
   }
 
   const duplicates = new Map<string, number>();
@@ -230,7 +242,7 @@ export function createSequenceSessionFromUrl(
   return {
     mode: 'sequence',
     sessionLabel,
-    tracks: [buildTrack('sequence', 'Sequence', safeUrl, 0.84)],
+    tracks: [buildTrack('sequence', 'Sequence', safeUrl, 0.84, safeUrl.split(/[/?#]/).filter(Boolean).pop())],
     objectUrls: [],
     unmatchedFiles: [],
   };
@@ -241,7 +253,7 @@ export function createSequenceSessionFromFile(
   sessionLabel?: string,
 ): LiveDirectorResolvedSession {
   if (!file || !isAudioFile(file)) {
-    throw new Error('Selecciona un archivo de audio valido para la secuencia.');
+    throw new Error('Selecciona una secuencia M4A/AAC-LC con Fast Start.');
   }
 
   const objectUrl = URL.createObjectURL(file);
@@ -249,7 +261,7 @@ export function createSequenceSessionFromFile(
   return {
     mode: 'sequence',
     sessionLabel: sessionLabel || file.name.replace(/\.[^.]+$/, ''),
-    tracks: [buildTrack('sequence', 'Sequence', objectUrl, 0.84)],
+    tracks: [buildTrack('sequence', 'Sequence', objectUrl, 0.84, file.name)],
     objectUrls: [objectUrl],
     unmatchedFiles: [],
   };
@@ -269,6 +281,7 @@ export function createStemSessionFromFolder(
       matchedFile.trackName,
       objectUrl,
       matchedFile.defaultVolume,
+      matchedFile.file.name,
     );
   });
 

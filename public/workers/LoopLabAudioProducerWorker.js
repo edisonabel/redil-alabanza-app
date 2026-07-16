@@ -3573,6 +3573,13 @@ self.onmessage = (event) => {
     return;
   }
 
+  if (message.type === 'warm-runtime') {
+    loadMp4Box().catch((error) => {
+      debugError('[AudioProducerWorker] Runtime warmup failed.', error);
+    });
+    return;
+  }
+
   if (message.type === 'init-session') {
     try {
       configureSession(message);
