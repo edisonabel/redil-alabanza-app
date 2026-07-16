@@ -357,6 +357,7 @@ import { safeHtml } from '../lib/client/html-safety.js';
 
   let observer: IntersectionObserver | null = null;
   let selectionArtworkObserver: IntersectionObserver | null = null;
+  const selectionArtworkTimeouts = new Map<HTMLImageElement, number>();
   let selectionMarqueeFrame = 0;
   let selectionMarqueeResizeTimer: ReturnType<typeof setTimeout> | null = null;
   const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -402,6 +403,9 @@ import { safeHtml } from '../lib/client/html-safety.js';
    selectionArtworkObserver.disconnect();
    selectionArtworkObserver = null;
   }
+
+  selectionArtworkTimeouts.forEach((timeoutId) => window.clearTimeout(timeoutId));
+  selectionArtworkTimeouts.clear();
 
   if (selectionMarqueeFrame) {
    cancelAnimationFrame(selectionMarqueeFrame);
@@ -731,18 +735,30 @@ if (sessionError) {
 
  const requestSelectionArtwork = (image: HTMLImageElement) => {
   const source = image.dataset.selectionArtworkSrc || '';
-  if (!source || image.dataset.selectionArtworkRequested === 'true') return;
-
-  image.dataset.selectionArtworkRequested = 'true';
   const shell = image.closest('.selection-artwork');
-  shell?.classList.add('is-loading');
 
-  addListener(image, 'load', () => {
+  const clearArtworkTimeout = () => {
+   const timeoutId = selectionArtworkTimeouts.get(image);
+   if (timeoutId) window.clearTimeout(timeoutId);
+   selectionArtworkTimeouts.delete(image);
+  };
+
+  const markArtworkLoaded = () => {
+   clearArtworkTimeout();
    shell?.classList.remove('is-loading');
+   shell?.classList.remove('is-fallback');
    shell?.classList.add('is-loaded');
-  }, { once: true });
+  };
 
-  addListener(image, 'error', () => {
+  const markArtworkFallback = () => {
+   clearArtworkTimeout();
+   shell?.classList.remove('is-loading');
+   shell?.classList.remove('is-loaded');
+   shell?.classList.add('is-fallback');
+   image.removeAttribute('src');
+  };
+
+  const handleArtworkError = () => {
    const fallbackSource = image.dataset.selectionArtworkFallbackSrc || '';
    if (fallbackSource && image.dataset.selectionArtworkFallbackRequested !== 'true') {
     image.dataset.selectionArtworkFallbackRequested = 'true';
@@ -750,12 +766,49 @@ if (sessionError) {
     return;
    }
 
-   shell?.classList.remove('is-loading');
-   shell?.classList.add('is-fallback');
-   image.removeAttribute('src');
-  });
+   markArtworkFallback();
+  };
 
-  image.src = source;
+  if (image.dataset.selectionArtworkListenersBound !== 'true') {
+   image.dataset.selectionArtworkListenersBound = 'true';
+   addListener(image, 'load', markArtworkLoaded);
+   addListener(image, 'error', handleArtworkError);
+   cleanupFns.push(() => {
+    delete image.dataset.selectionArtworkListenersBound;
+   });
+  }
+
+  if (!source) {
+   markArtworkFallback();
+   return;
+  }
+
+  if (!shell?.classList.contains('is-loaded')) {
+   shell?.classList.remove('is-fallback');
+   shell?.classList.add('is-loading');
+  }
+
+  clearArtworkTimeout();
+  const timeoutId = window.setTimeout(() => {
+   if (!shell?.classList.contains('is-loaded')) markArtworkFallback();
+  }, 12000);
+  selectionArtworkTimeouts.set(image, timeoutId);
+
+  if (image.dataset.selectionArtworkRequested !== 'true') {
+   image.dataset.selectionArtworkRequested = 'true';
+   image.src = source;
+  } else if (!image.getAttribute('src')) {
+   const fallbackSource = image.dataset.selectionArtworkFallbackSrc || '';
+   image.src = image.dataset.selectionArtworkFallbackRequested === 'true' && fallbackSource
+    ? fallbackSource
+    : source;
+  }
+
+  queueMicrotask(() => {
+   if (!image.complete) return;
+   if (image.naturalWidth > 0) markArtworkLoaded();
+   else handleArtworkError();
+  });
  };
 
  const initializeSelectionArtwork = () => {
