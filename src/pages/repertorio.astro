@@ -102,7 +102,7 @@ const firstTourResourcesId =
 ---
 
 <Layout>
- <header class="mb-1.5 mt-2 md:mb-10 md:mt-6 px-2 md:px-4 max-w-7xl mx-auto anim-fade-in-up anim-stagger" style="--delay: 60ms">
+ <header id="repertorioHeader" class="mb-1.5 mt-2 md:mb-10 md:mt-6 px-2 md:px-4 max-w-7xl mx-auto anim-fade-in-up anim-stagger" style="--delay: 60ms">
  <div class="text-left flex flex-col justify-center">
  <div class="page-title-row mb-1.5">
   <span class="page-title-icon" aria-hidden="true">
@@ -416,7 +416,11 @@ import { safeHtml } from '../lib/client/html-safety.js';
    selectionMarqueeResizeTimer = null;
   }
 
-  document.body.classList.remove('repertorio-selection-mode', 'repertorio-compact-list-mode');
+  document.body.classList.remove(
+   'repertorio-selection-mode',
+   'repertorio-compact-list-mode',
+   'repertorio-shared-setlist-mode',
+  );
 
   stopMetronome();
 
@@ -627,7 +631,11 @@ if (sessionError) {
  const target = e.target as Element;
  if (target.closest('.btn-add-setlist') || target.closest('.list-play-btn') || target.closest('.btn-open-mp3') || target.closest('.btn-open-ensayo')) return;
 
- if (isListView && !document.body.classList.contains('repertorio-selection-mode')) {
+ if (
+  isListView
+  && !document.body.classList.contains('repertorio-selection-mode')
+  && !document.body.classList.contains('repertorio-shared-setlist-mode')
+ ) {
  const wasExpanded = card.classList.contains('expandido');
  // Collapse all other cards first
  cards.forEach(c => { if (c !== card) c.classList.remove('expandido'); });
@@ -1174,7 +1182,11 @@ function applySongOrder(songCards: Iterable<HTMLElement>) {
  if (isSetlistSemana) {
  try {
  const decodedData = decodeURIComponent(atob(setlistParam));
- const setlistArray = JSON.parse(decodedData);
+ const parsedSetlist = JSON.parse(decodedData);
+ if (!Array.isArray(parsedSetlist)) throw new Error('El setlist compartido no es válido.');
+ const setlistArray = parsedSetlist
+  .map((title: unknown) => String(title || '').trim())
+  .filter(Boolean);
  
  const setlistFechaIso = urlParams.get('fechaIso');
  const setlistTema = urlParams.get('tema');
@@ -1182,6 +1194,10 @@ function applySongOrder(songCards: Iterable<HTMLElement>) {
  
  if (searchControls) searchControls.style.display = 'none';
  if (setlistPanel) setlistPanel.style.display = 'none';
+ document.body.classList.add('repertorio-shared-setlist-mode');
+ if (pageSubtitle) {
+  pageSubtitle.textContent = `${setlistArray.length} ${setlistArray.length === 1 ? 'canción' : 'canciones'} en este setlist.`;
+ }
  
  if (mainTitle) {
    const headerContainer = mainTitle.parentElement;
@@ -1209,32 +1225,45 @@ function applySongOrder(songCards: Iterable<HTMLElement>) {
    }
  }
 
- cards.forEach(card => {
- const cancionTitulo = card.getAttribute('data-cancion') || '';
- 
- if (setlistArray.includes(cancionTitulo)) {
- card.classList.remove('cancion-oculta'); // Critical FIX: Remover clase !important
- card.style.display = 'block';
- const addBtn = card.querySelector<HTMLElement>('.btn-add-setlist');
- if(addBtn) addBtn.style.display = 'none';
- } else {
- card.classList.add('cancion-oculta');
- card.style.display = 'none';
- }
+ const selectedTitles = new Set(setlistArray);
+ const cardsByTitle = new Map<string, HTMLElement>();
+ cards.forEach((card) => {
+  const title = String(card.getAttribute('data-cancion') || '').trim();
+  if (title && !cardsByTitle.has(title)) cardsByTitle.set(title, card);
  });
- 
- // Cargar SortableJS dinámicamente solo cuando se necesita
+ const orderedSetlistCards = setlistArray
+  .map((title: string) => cardsByTitle.get(title) || null)
+  .filter((card: HTMLElement | null): card is HTMLElement => Boolean(card));
+ const hiddenCards: HTMLElement[] = [];
+
+ cards.forEach((card) => {
+  const cancionTitulo = card.getAttribute('data-cancion') || '';
+
+  if (selectedTitles.has(cancionTitulo)) {
+   card.classList.remove('cancion-oculta');
+   card.classList.remove('expandido');
+   card.style.display = 'block';
+   const addBtn = card.querySelector<HTMLElement>('.btn-add-setlist');
+   if (addBtn) addBtn.style.display = 'none';
+  } else {
+   card.classList.add('cancion-oculta');
+   card.style.display = 'none';
+   hiddenCards.push(card);
+  }
+ });
+
+ orderedSetlistCards.forEach((card, index) => {
+  const orderBadge = card.querySelector<HTMLElement>('.shared-setlist-order');
+  if (orderBadge) orderBadge.textContent = String(index + 1);
+ });
+
  if (gridCanciones) {
-   // @ts-expect-error SortableJS se carga como ESM remoto solo en este modo compartido.
-   import('https://cdn.jsdelivr.net/npm/sortablejs@latest/+esm').then(({ default: Sortable }) => {
-     new Sortable(gridCanciones, {
-       animation: 150,
-       ghostClass: 'opacity-50',
-       delay: 100,
-       delayOnTouchOnly: true,
-     });
-   }).catch(err => console.warn('SortableJS load failed:', err));
+  for (const card of [...orderedSetlistCards, ...hiddenCards]) gridCanciones.appendChild(card);
+  activateCompactListView();
+  gridCanciones.className = 'compact-song-list repertorio-shared-setlist flex flex-col gap-0 max-w-5xl mx-auto';
  }
+ scheduleResourceActionHints();
+ scheduleSelectionMarqueeMeasurement();
  
  // Detenemos la ejecucion aqui porque no necesitamos modo infinito ni filtros
  return; 
@@ -2395,6 +2424,260 @@ function filterCards() {
 
    .modo-lista.expandido .card-content {
      padding-inline: 0.5rem;
+   }
+ }
+
+ /* Setlist compartido: misma jerarquía visual del listado del modo ensayo. */
+ .shared-setlist-order,
+ .shared-setlist-bpm {
+   display: none;
+ }
+
+ .repertorio-shared-setlist-mode #repertorioHeader {
+   max-width: 64rem;
+   margin-bottom: 1rem;
+   padding-inline: 1rem;
+ }
+
+ .repertorio-shared-setlist-mode #repertorioSubtitle {
+   margin-top: 0.35rem;
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .card-cancion {
+   --shared-setlist-artwork-size: clamp(5.5rem, 22vw, 7.25rem);
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .card-cancion::after {
+   right: 0;
+   left: 0;
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .card-header {
+   min-height: calc(var(--shared-setlist-artwork-size) + 1.5rem);
+   grid-template-columns: var(--shared-setlist-artwork-size) minmax(0, 1fr) 2.75rem 2.75rem;
+   grid-template-rows: auto auto auto;
+   grid-template-areas:
+     "artwork title bpm play"
+     "artwork artist bpm play"
+     "artwork meta bpm play";
+   align-items: start;
+   column-gap: 0.65rem;
+   row-gap: 0.28rem;
+   padding: 0.75rem 0.75rem 0.35rem;
+   cursor: default;
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .selection-artwork {
+   width: var(--shared-setlist-artwork-size);
+   height: var(--shared-setlist-artwork-size);
+   align-self: start;
+   border-radius: 1.1rem;
+   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.10);
+ }
+
+ .dark .repertorio-shared-setlist-mode .repertorio-shared-setlist .selection-artwork {
+   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .shared-setlist-order {
+   position: absolute;
+   bottom: 0.35rem;
+   left: 0.35rem;
+   z-index: 4;
+   display: inline-flex;
+   min-width: 1.5rem;
+   height: 1.5rem;
+   align-items: center;
+   justify-content: center;
+   padding-inline: 0.35rem;
+   border: 1px solid rgba(255, 255, 255, 0.28);
+   border-radius: 0.5rem;
+   background: rgba(9, 9, 11, 0.76);
+   color: #fff;
+   font-size: 0.72rem;
+   font-weight: 900;
+   line-height: 1;
+   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.24);
+   backdrop-filter: blur(8px);
+   -webkit-backdrop-filter: blur(8px);
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .card-title {
+   align-self: end;
+   font-size: 1rem;
+   line-height: 1.2;
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .card-artist {
+   align-self: center;
+   font-size: 0.84rem;
+   line-height: 1.25;
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .card-badges {
+   grid-area: meta;
+   display: flex !important;
+   min-width: 0;
+   align-self: start;
+   overflow-x: auto;
+   padding: 0.15rem 0 0;
+   scrollbar-width: none;
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .card-badges::-webkit-scrollbar {
+   display: none;
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .card-badges .badge-bpm {
+   display: none;
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .shared-setlist-bpm {
+   position: relative;
+   grid-area: bpm;
+   display: inline-flex;
+   width: 2.75rem;
+   height: 2.75rem;
+   align-self: center;
+   align-items: center;
+   justify-content: center;
+   border: 1px solid rgba(113, 113, 122, 0.22);
+   border-radius: 1rem;
+   background: rgba(255, 255, 255, 0.74);
+   color: rgb(39, 39, 42);
+   font-size: 0.78rem;
+   font-weight: 900;
+   line-height: 1;
+   box-shadow: 0 3px 10px rgba(15, 23, 42, 0.06);
+ }
+
+ .dark .repertorio-shared-setlist-mode .repertorio-shared-setlist .shared-setlist-bpm {
+   border-color: rgba(255, 255, 255, 0.10);
+   background: rgba(39, 39, 42, 0.72);
+   color: rgb(250, 250, 250);
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .shared-setlist-bpm:disabled {
+   cursor: not-allowed;
+   color: rgb(161, 161, 170);
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .shared-setlist-bpm .metronomo-dot {
+   position: absolute;
+   right: 0.3rem;
+   bottom: 0.3rem;
+   width: 0.3rem;
+   height: 0.3rem;
+   border-radius: 9999px;
+   background: rgb(161, 161, 170);
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .list-play-btn {
+   align-self: center;
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .btn-add-setlist {
+   display: none !important;
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .modo-lista .card-content {
+   display: grid;
+   min-width: 0;
+   grid-template-rows: 1fr;
+   opacity: 1;
+   overflow: hidden;
+   padding: 0.2rem 0.75rem 1rem;
+   border-top: 0;
+   transition: none;
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .modo-lista .card-content .card-content-inner {
+   width: 100%;
+   min-width: 0;
+   overflow: hidden;
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .compact-expanded-meta {
+   display: none !important;
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .resource-actions {
+   width: 100%;
+   min-width: 0;
+   max-width: 100%;
+   margin-top: 0;
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .resource-actions-shell {
+   min-width: 0;
+   max-width: 100%;
+   overflow: hidden;
+ }
+
+ .repertorio-shared-setlist-mode .repertorio-shared-setlist .card-title.is-overflowing .card-title-marquee {
+   display: block;
+   width: auto;
+   max-width: 100%;
+   overflow: hidden;
+   padding-right: 0;
+   text-overflow: ellipsis;
+   animation: none;
+   transform: none;
+   will-change: auto;
+ }
+
+ @media (max-width: 380px) {
+   .repertorio-shared-setlist-mode .repertorio-shared-setlist .card-cancion {
+     --shared-setlist-artwork-size: 4.75rem;
+   }
+
+   .repertorio-shared-setlist-mode .repertorio-shared-setlist .card-header {
+     grid-template-columns: var(--shared-setlist-artwork-size) minmax(0, 1fr) 2.75rem;
+     grid-template-areas:
+       "artwork title play"
+       "artwork artist play"
+       "artwork meta play";
+     column-gap: 0.55rem;
+     padding-inline: 0.6rem;
+   }
+
+   .repertorio-shared-setlist-mode .repertorio-shared-setlist .shared-setlist-bpm {
+     display: none;
+   }
+
+   .repertorio-shared-setlist-mode .repertorio-shared-setlist .card-badges .badge-bpm {
+     display: inline-flex;
+   }
+
+   .repertorio-shared-setlist-mode .repertorio-shared-setlist .modo-lista .card-content {
+     padding-right: 0.6rem;
+     padding-left: 0.6rem;
+   }
+ }
+
+ @media (min-width: 768px) {
+   .repertorio-shared-setlist-mode .repertorio-shared-setlist .card-cancion {
+     --shared-setlist-artwork-size: 7.5rem;
+   }
+
+   .repertorio-shared-setlist-mode .repertorio-shared-setlist .card-header {
+     min-height: calc(var(--shared-setlist-artwork-size) + 2rem);
+     column-gap: 1rem;
+     padding: 1rem 1.25rem 0.4rem;
+   }
+
+   .repertorio-shared-setlist-mode .repertorio-shared-setlist .card-title {
+     font-size: 1.2rem;
+   }
+
+   .repertorio-shared-setlist-mode .repertorio-shared-setlist .card-artist {
+     font-size: 0.95rem;
+   }
+
+   .repertorio-shared-setlist-mode .repertorio-shared-setlist .modo-lista .card-content {
+     padding-right: 1.25rem;
+     padding-bottom: 1.25rem;
+     padding-left: calc(var(--shared-setlist-artwork-size) + 2.25rem);
    }
  }
 

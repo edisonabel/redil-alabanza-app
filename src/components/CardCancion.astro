@@ -118,7 +118,19 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
      <span class="selection-artwork-fallback">
        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
      </span>
+     <span class="shared-setlist-order"></span>
    </div>
+
+   <button
+     type="button"
+     class="shared-setlist-bpm badge-bpm"
+     data-bpm={bpm || 0}
+     disabled={Number(bpm) <= 0}
+     aria-label={Number(bpm) > 0 ? `Activar metrónomo ${bpm} BPM` : 'Sin BPM'}
+     title={Number(bpm) > 0 ? `${bpm} BPM` : 'Sin BPM'}>
+     <span>{Number(bpm) > 0 ? bpm : '--'}</span>
+     <span class="metronomo-dot"></span>
+   </button>
 
    {/* Botón de play rápido — solo visible en modo lista */}
    {hasMp3 && (
