@@ -3080,7 +3080,7 @@ class ProducerTrackPipeline {
   }
 
   postRingBackpressure(frameCount, mode) {
-    if (!producerTransportPlaying) {
+    if (!producerTransportPlaying || !producerDiagnosticsEnabled) {
       return;
     }
 
@@ -3181,6 +3181,7 @@ const trackPipelines = new Map();
 const prewarmedSessions = new Map();
 let activeSessionId = 0;
 let producerTransportPlaying = false;
+let producerDiagnosticsEnabled = false;
 
 const resetTrackPipelines = () => {
   for (const pipeline of trackPipelines.values()) {
@@ -3212,6 +3213,7 @@ const clearPrewarmedSessionsExcept = (sessionId) => {
 const configureSession = (message) => {
   activeSessionId = message.sessionId || 0;
   producerTransportPlaying = false;
+  producerDiagnosticsEnabled = message.diagnosticsEnabled === true;
   resetTrackPipelines();
   clearPrewarmedSessionsExcept(null);
   loopCacheManager.configureSession(message);
@@ -3300,6 +3302,7 @@ const swapActiveSession = async (message) => {
       type: 'init-session',
       sessionId: nextSessionId,
       sampleRate: message.sampleRate,
+      diagnosticsEnabled: message.diagnosticsEnabled === true,
       tracks: message.tracks || [],
     });
     return;
@@ -3307,6 +3310,7 @@ const swapActiveSession = async (message) => {
 
   resetTrackPipelines();
   activeSessionId = nextSessionId;
+  producerDiagnosticsEnabled = message.diagnosticsEnabled === true;
   const activeTracks = Array.isArray(message.tracks) && message.tracks.length > 0
     ? message.tracks
     : warmedSession.tracks;

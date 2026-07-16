@@ -21,7 +21,6 @@ type DiagnosticMethod = 'info' | 'warn' | 'error';
 type DiagnosticPayload = Record<string, unknown>;
 
 const DEBUG_QUERY_KEYS = ['debug', 'debugLive', 'liveDebug', 'lddebug'];
-const DEBUG_STORAGE_KEY = 'live-director:debug';
 const DISABLED_VALUES = new Set(['0', 'false', 'off', 'no']);
 
 const isTruthyDebugValue = (value: string | null) => {
@@ -47,14 +46,7 @@ export const isLiveDiagnosticsEnabled = () => {
     // Ignore URL parsing issues and keep diagnostics opt-in.
   }
 
-  try {
-    const storedValue =
-      window.sessionStorage.getItem(DEBUG_STORAGE_KEY) ||
-      window.localStorage.getItem(DEBUG_STORAGE_KEY);
-    return isTruthyDebugValue(storedValue);
-  } catch {
-    return false;
-  }
+  return false;
 };
 
 const writeLiveDiagnostic = (

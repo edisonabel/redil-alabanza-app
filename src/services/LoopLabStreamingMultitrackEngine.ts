@@ -315,6 +315,7 @@ type ProducerInitSessionMessage = {
   type: 'init-session';
   sessionId: number;
   sampleRate: number;
+  diagnosticsEnabled: boolean;
   tracks: ProducerTrackMetadata[];
 };
 
@@ -351,6 +352,7 @@ type ProducerSwapActiveSessionMessage = {
   type: 'swap-active-session';
   nextSessionId: number;
   sampleRate: number;
+  diagnosticsEnabled: boolean;
   tracks: ProducerTrackMetadata[];
 };
 
@@ -956,7 +958,7 @@ type PreloadedStreamingSession = {
   trackStates: TrackRuntime[];
 };
 
-const AUDIO_WORKER_ASSET_VERSION = '20260715-2';
+const AUDIO_WORKER_ASSET_VERSION = '20260716-1';
 const DEFAULT_WORKLET_MODULE_URL = `/workers/LoopLabMultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_PRODUCER_WORKER_URL = `/workers/LoopLabAudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
@@ -1247,6 +1249,9 @@ export class StreamingMultitrackEngine {
     fields: Record<string, unknown>,
     method: FlatDiagnosticMethod = 'info',
   ): void {
+    if (!isLiveDiagnosticsEnabled()) {
+      return;
+    }
     console[method](buildFlatDiagnosticLine(prefix, fields));
   }
 
@@ -1551,6 +1556,7 @@ export class StreamingMultitrackEngine {
       type: 'swap-active-session',
       nextSessionId: preloaded.sessionId,
       sampleRate: this.context.sampleRate,
+      diagnosticsEnabled: isLiveDiagnosticsEnabled(),
       tracks: this.buildProducerTrackMetadata(
         preloaded.trackDefinitions,
         preloaded.tracks,
@@ -4031,6 +4037,7 @@ export class StreamingMultitrackEngine {
       type: 'init-session',
       sessionId: this.producerSessionId,
       sampleRate: this.context.sampleRate,
+      diagnosticsEnabled: isLiveDiagnosticsEnabled(),
       tracks: this.buildProducerTrackMetadata(trackDefinitions),
     });
     return true;
@@ -4117,6 +4124,10 @@ export class StreamingMultitrackEngine {
     trackIndex: number | undefined,
     intervalMs = PRODUCER_DIAGNOSTIC_RATE_LIMIT_MS,
   ): boolean {
+    if (!isLiveDiagnosticsEnabled()) {
+      return false;
+    }
+
     if (typeof trackIndex !== 'number') {
       return true;
     }

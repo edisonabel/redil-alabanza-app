@@ -63,7 +63,7 @@ import {
 } from '../../utils/liveDirectorTrackRouting';
 import { getPadUrlForSongKey } from '../../utils/padAudio';
 import { extractCoverArtFromMp3 } from '../../utils/mp3CoverArt';
-import { readLiveBrowserCapabilities } from '../../utils/liveDiagnostics';
+import { logLiveDiagnostic, readLiveBrowserCapabilities } from '../../utils/liveDiagnostics';
 
 type MixerTrackMeta = {
   id: string;
@@ -2363,11 +2363,14 @@ export function LiveDirectorLoopLabView({
       setSoloTrackIds(new Set());
 
       const disabledCount = Math.max(0, sessionTracks.length - enabledSessionTracks.length);
-      console.info(
-        `[LiveDirectorView] Loading ${activeTracks.length}/${enabledSessionTracks.length} enabled tracks${shouldUseNativePadBridge ? ' + pad bridge' : ''}` +
-          (isWebTrackLimitExceeded ? ` (above recommended ${sessionActiveTrackLimit}-stem threshold).` : '') +
-          (disabledCount > 0 ? ` (${disabledCount} already disabled).` : '.'),
-      );
+      logLiveDiagnostic('live-director:tracks-loading', {
+        activeTracks: activeTracks.length,
+        enabledTracks: enabledSessionTracks.length,
+        disabledTracks: disabledCount,
+        nativePadBridge: shouldUseNativePadBridge,
+        recommendedTrackLimit: sessionActiveTrackLimit,
+        aboveRecommendedLimit: isWebTrackLimitExceeded,
+      });
 
       try {
         await initializeEngineRef.current(activeEngineTracks);
@@ -2377,7 +2380,10 @@ export function LiveDirectorLoopLabView({
 
         setIsInitializingSession(false);
         setBusyMessage(null);
-        console.log(`[LiveDirectorView] Initialized ${activeEngineTracks.length} ${isIOSNativeEngineSurface ? 'native' : 'web'} track(s).`);
+        logLiveDiagnostic('live-director:tracks-initialized', {
+          trackCount: activeEngineTracks.length,
+          engineSurface: isIOSNativeEngineSurface ? 'native' : 'web',
+        });
       } catch (error) {
         if (cancelled) {
           return;
