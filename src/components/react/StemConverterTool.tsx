@@ -7,7 +7,9 @@ import {
   Loader2,
   Music2,
   Music4,
+  ShieldCheck,
   UploadCloud,
+  Volume2,
   XCircle,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
@@ -29,6 +31,10 @@ const TARGET_STEMS = 10;
 const DEFAULT_BITRATE = '256k';
 const TARGET_SAMPLE_RATE = 48_000;
 const TARGET_SAMPLE_RATE_FILTER = `aresample=${TARGET_SAMPLE_RATE},aformat=sample_rates=${TARGET_SAMPLE_RATE}`;
+const TARGET_PEAK_DB = -3;
+const TARGET_PEAK_LINEAR = 10 ** (TARGET_PEAK_DB / 20);
+const MAX_AUTO_GAIN_DB = 12;
+const MAX_MANUAL_GAIN_DB = 12;
 const FFMPEG_LOAD_TIMEOUT_MS = 45_000;
 const FFMPEG_WORKER_CACHE_VERSION = '2026-07-16-csp-wasm-v2';
 const FFMPEG_WORKER_URL = `${ffmpegWorkerURL}${ffmpegWorkerURL.includes('?') ? '&' : '?'}v=${FFMPEG_WORKER_CACHE_VERSION}`;
@@ -42,6 +48,7 @@ type StemStatus = 'queued' | 'processing' | 'done' | 'error';
 type StemCategory = 'clickGuide' | 'drums' | 'bass' | 'piano' | 'keys' | 'acoustic' | 'electric' | 'percussion' | 'vocals' | 'pads' | 'misc' | 'unknown';
 type PlanAction = 'keep' | 'merge' | 'skip';
 type ChannelMode = 'mono' | 'stereo';
+type VolumeMode = 'auto' | 'manual';
 
 type SourceStem = {
   id: string;
@@ -65,6 +72,7 @@ type StemItem = {
   error?: string;
   channelMode?: ChannelMode;
   channelNote?: string;
+  levelNote?: string;
 };
 
 type SmartPlanGroup = {
@@ -141,6 +149,32 @@ const formatBytes = (bytes: number) => {
 
   return `${value >= 10 ? value.toFixed(1) : value.toFixed(2)} ${units[unitIndex]}`;
 };
+
+const formatDb = (value: number, includePlus = false) => {
+  const normalized = Math.abs(value) < 0.05 ? 0 : value;
+  const prefix = includePlus && normalized > 0 ? '+' : '';
+  return `${prefix}${normalized.toFixed(1).replace('.0', '')} dB`;
+};
+
+const parseDetectedPeakDb = (logs: string[]) => {
+  for (let index = logs.length - 1; index >= 0; index -= 1) {
+    const match = /max_volume:\s*(-?inf|[-+]?\d+(?:\.\d+)?)\s*dB/i.exec(logs[index]);
+    if (!match) continue;
+    if (match[1].toLowerCase() === '-inf') return Number.NEGATIVE_INFINITY;
+    const value = Number(match[1]);
+    if (Number.isFinite(value)) return value;
+  }
+  return null;
+};
+
+const getAutomaticGainDb = (peakDb: number) => {
+  if (!Number.isFinite(peakDb)) return 0;
+  return Math.max(0, Math.min(MAX_AUTO_GAIN_DB, TARGET_PEAK_DB - peakDb));
+};
+
+const buildSafeLevelFilter = (gainDb: number) => (
+  `volume=${gainDb.toFixed(2)}dB,alimiter=limit=${TARGET_PEAK_LINEAR.toFixed(6)}:attack=5:release=100:level=0`
+);
 
 const getFileExtension = (name: string) => {
   const match = /\.([^.]+)$/.exec(name.toLowerCase());
@@ -784,6 +818,13 @@ export default function StemConverterTool() {
   const [keyDetectionStatus, setKeyDetectionStatus] = useState<'idle' | 'running' | 'done' | 'failed' | 'unavailable'>('idle');
   const [isPitchModalOpen, setIsPitchModalOpen] = useState(false);
 
+  // Leveling is enabled by default because the converter is commonly used
+  // with low-volume sequence exports. It remains opt-out so an engineer can
+  // preserve the source gain through the encode chain.
+  const [isLevelingEnabled, setIsLevelingEnabled] = useState(true);
+  const [volumeMode, setVolumeMode] = useState<VolumeMode>('auto');
+  const [manualGainDb, setManualGainDb] = useState(3);
+
   const selectedTotalBytes = useMemo(
     () => stems.reduce((total, item) => total + item.size, 0),
     [stems],
@@ -841,6 +882,15 @@ export default function StemConverterTool() {
       { label: 'Salida', value: 'M4A 48k' },
       { label: 'Canales', value: 'Auto mono' },
     ];
+    rows.push({
+      label: 'Nivel',
+      value: isLevelingEnabled
+        ? volumeMode === 'auto'
+          ? `Auto · ${TARGET_PEAK_DB} dBFS`
+          : `${formatDb(manualGainDb, true)} · ${TARGET_PEAK_DB} dBFS`
+        : 'Original',
+      tone: isLevelingEnabled ? 'brand' : undefined,
+    });
     if (detectedKey || pitchShiftSemitones !== 0) {
       const detected = detectedKey ? detectedKey.label : '—';
       const shift = pitchShiftSemitones === 0
@@ -858,7 +908,7 @@ export default function StemConverterTool() {
       tone: convertedTotalBytes ? 'success' : undefined,
     });
     return rows;
-  }, [convertedTotalBytes, detectedKey, pitchShiftSemitones, selectedTotalBytes, stems.length]);
+  }, [convertedTotalBytes, detectedKey, isLevelingEnabled, manualGainDb, pitchShiftSemitones, selectedTotalBytes, stems.length, volumeMode]);
 
   const revokeZipUrl = useCallback(() => {
     if (zipUrlRef.current) {
@@ -1127,6 +1177,10 @@ export default function StemConverterTool() {
     index: number,
   ): Promise<StemConversionResult> => {
     const needsPitchShift = pitchShiftSemitones !== 0;
+    const shouldMeasureLevel = isLevelingEnabled && volumeMode === 'auto';
+    const pitchProgressShare = needsPitchShift ? (shouldMeasureLevel ? 0.7 : 0.8) : 0;
+    const measurementProgressShare = shouldMeasureLevel ? (needsPitchShift ? 0.1 : 0.15) : 0;
+    const encodeProgressOffset = pitchProgressShare + measurementProgressShare;
     // When pitch-shifting we hand FFmpeg a self-describing 32-bit float WAV;
     // otherwise we keep the original container so the encoder can decode
     // whatever native format the user supplied.
@@ -1151,6 +1205,11 @@ export default function StemConverterTool() {
       outputSize: undefined,
       channelMode: undefined,
       channelNote: shouldForceMono ? 'Mono forzado: click, guia y cues.' : shouldAnalyzeChannels ? 'Analizando L/R...' : 'Stereo preservado.',
+      levelNote: isLevelingEnabled
+        ? volumeMode === 'auto'
+          ? 'Nivel automático listo para medir.'
+          : `Ganancia ${formatDb(manualGainDb, true)} · límite ${TARGET_PEAK_DB} dBFS.`
+        : undefined,
     });
 
     try {
@@ -1164,12 +1223,12 @@ export default function StemConverterTool() {
 
       if (needsPitchShift) {
         const material = getStemMaterial(stem);
-        // Reserve 0..80% of the bar for the pitch shift (the heaviest step
-        // when the R3 engine runs offline). FFmpeg encode fills 80..100%.
-        ffmpegProgressRangeRef.current = { offset: 0.8, scale: 0.2 };
+        // Pitch shifting is the heaviest phase. Automatic leveling reserves a
+        // small slice after it for peak measurement before the final encode.
+        ffmpegProgressRangeRef.current = { offset: encodeProgressOffset, scale: 1 - encodeProgressOffset };
         for (let sourceIndex = 0; sourceIndex < stem.sources.length; sourceIndex += 1) {
           const file = stem.sources[sourceIndex].file;
-          const sourceShare = 0.8 / stem.sources.length;
+          const sourceShare = pitchProgressShare / stem.sources.length;
           const sourceOffset = sourceShare * sourceIndex;
 
           const audioBuffer = await decodeFileToAudioBuffer(file);
@@ -1193,7 +1252,7 @@ export default function StemConverterTool() {
           const wavBytes = encodeAudioBufferToFloat32Wav(shifted);
           await ffmpeg.writeFile(inputNames[sourceIndex], wavBytes);
         }
-        updateStem(stem.id, { progress: 80 });
+        updateStem(stem.id, { progress: Math.round(pitchProgressShare * 100) });
       } else {
         for (let sourceIndex = 0; sourceIndex < stem.sources.length; sourceIndex += 1) {
           const inputBytes = new Uint8Array(await stem.sources[sourceIndex].file.arrayBuffer());
@@ -1202,7 +1261,66 @@ export default function StemConverterTool() {
       }
 
       const inputArgs = inputNames.flatMap((inputName) => ['-i', inputName]);
+      const mixedInputFilter = `${inputNames.map((_, sourceIndex) => `[${sourceIndex}:a:0]`).join('')}amix=inputs=${inputNames.length}:duration=longest:normalize=1`;
+      let appliedGainDb = isLevelingEnabled && volumeMode === 'manual' ? manualGainDb : 0;
+
+      if (shouldMeasureLevel) {
+        updateStem(stem.id, { levelNote: 'Midiendo el pico real...' });
+        ffmpegProgressRangeRef.current = {
+          offset: pitchProgressShare,
+          scale: measurementProgressShare,
+        };
+        const measurementCommand = inputNames.length === 1
+          ? [
+            '-hide_banner',
+            ...inputArgs,
+            '-map',
+            '0:a:0',
+            '-af',
+            `${TARGET_SAMPLE_RATE_FILTER},volumedetect`,
+            '-f',
+            'null',
+            '-',
+          ]
+          : [
+            '-hide_banner',
+            ...inputArgs,
+            '-filter_complex',
+            `${mixedInputFilter},${TARGET_SAMPLE_RATE_FILTER},volumedetect[a]`,
+            '-map',
+            '[a]',
+            '-f',
+            'null',
+            '-',
+          ];
+
+        ffmpegLogsRef.current = [];
+        const measurementExitCode = await ffmpeg.exec(measurementCommand);
+        const detectedPeakDb = measurementExitCode === 0
+          ? parseDetectedPeakDb(ffmpegLogsRef.current)
+          : null;
+
+        if (detectedPeakDb === Number.NEGATIVE_INFINITY) {
+          updateStem(stem.id, { levelNote: `Audio en silencio · límite ${TARGET_PEAK_DB} dBFS.` });
+        } else if (detectedPeakDb === null) {
+          updateStem(stem.id, { levelNote: `No se pudo medir · limitador ${TARGET_PEAK_DB} dBFS activo.` });
+        } else {
+          appliedGainDb = getAutomaticGainDb(detectedPeakDb);
+          const reachedTarget = detectedPeakDb + appliedGainDb >= TARGET_PEAK_DB - 0.05;
+          updateStem(stem.id, {
+            levelNote: reachedTarget
+              ? `Pico ${formatDb(detectedPeakDb)} · ganancia ${formatDb(appliedGainDb, true)} · límite ${TARGET_PEAK_DB} dBFS.`
+              : `Pico ${formatDb(detectedPeakDb)} · máximo ${formatDb(appliedGainDb, true)} · límite ${TARGET_PEAK_DB} dBFS.`,
+          });
+        }
+      }
+
+      ffmpegProgressRangeRef.current = {
+        offset: encodeProgressOffset,
+        scale: 1 - encodeProgressOffset,
+      };
       const channelArgs = channelAnalysis.mode === 'mono' ? ['-ac', '1'] : [];
+      const safeLevelFilter = isLevelingEnabled ? buildSafeLevelFilter(appliedGainDb) : '';
       const outputArgs = [
         '-vn',
         '-map_metadata',
@@ -1228,7 +1346,9 @@ export default function StemConverterTool() {
           '-map',
           '0:a:0',
           '-af',
-          TARGET_SAMPLE_RATE_FILTER,
+          isLevelingEnabled
+            ? `${TARGET_SAMPLE_RATE_FILTER},${safeLevelFilter}`
+            : TARGET_SAMPLE_RATE_FILTER,
           ...outputArgs,
         ]
         : [
@@ -1236,7 +1356,9 @@ export default function StemConverterTool() {
           '-y',
           ...inputArgs,
           '-filter_complex',
-          `${inputNames.map((_, sourceIndex) => `[${sourceIndex}:a:0]`).join('')}amix=inputs=${inputNames.length}:duration=longest:normalize=1,alimiter=limit=0.95,${TARGET_SAMPLE_RATE_FILTER}[a]`,
+          isLevelingEnabled
+            ? `${mixedInputFilter},${TARGET_SAMPLE_RATE_FILTER},${safeLevelFilter}[a]`
+            : `${mixedInputFilter},alimiter=limit=0.95,${TARGET_SAMPLE_RATE_FILTER}[a]`,
           '-map',
           '[a]',
           ...outputArgs,
@@ -1283,7 +1405,7 @@ export default function StemConverterTool() {
       await Promise.all(inputNames.map((inputName) => cleanupFfmpegFile(ffmpeg, inputName)));
       await cleanupFfmpegFile(ffmpeg, outputName);
     }
-  }, [cleanupFfmpegFile, pitchShiftSemitones, updateStem]);
+  }, [cleanupFfmpegFile, isLevelingEnabled, manualGainDb, pitchShiftSemitones, updateStem, volumeMode]);
 
   const buildZip = useCallback(async () => {
     const outputs = outputsRef.current;
@@ -1334,6 +1456,7 @@ export default function StemConverterTool() {
       outputSize: undefined,
       channelMode: undefined,
       channelNote: undefined,
+      levelNote: undefined,
     })));
 
     try {
@@ -1653,6 +1776,105 @@ export default function StemConverterTool() {
               </div>
             </div>
 
+            <div className="border-t border-border bg-background/35 px-5 py-5 md:px-7">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className={`mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${isLevelingEnabled ? 'bg-brand/12 text-brand' : 'bg-surface text-content-muted'}`}>
+                    <Volume2 className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-black text-content">Nivelar volumen</h3>
+                    <p className="mt-1 text-sm leading-relaxed text-content-muted">
+                      Sube secuencias bajas y controla los picos sin cambiar el tono ni el tempo.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isLevelingEnabled}
+                  aria-label="Activar nivelación de volumen"
+                  onClick={() => setIsLevelingEnabled((current) => !current)}
+                  disabled={isConverting}
+                  className={`relative inline-flex min-h-11 w-16 shrink-0 items-center rounded-full border p-1 transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                    isLevelingEnabled
+                      ? 'border-brand bg-brand'
+                      : 'border-border bg-surface'
+                  }`}
+                >
+                  <span
+                    className={`h-8 w-8 rounded-full bg-white shadow-md transition-transform ${isLevelingEnabled ? 'translate-x-5' : 'translate-x-0'}`}
+                  />
+                </button>
+              </div>
+
+              {isLevelingEnabled ? (
+                <div className="mt-4 rounded-2xl border border-border bg-surface p-3 md:p-4">
+                  <div className="grid grid-cols-2 gap-2 rounded-xl bg-background p-1" aria-label="Modo de nivelación">
+                    {([
+                      { value: 'auto' as const, label: 'Automático' },
+                      { value: 'manual' as const, label: 'Manual' },
+                    ]).map((option) => {
+                      const isSelected = volumeMode === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          aria-pressed={isSelected}
+                          onClick={() => setVolumeMode(option.value)}
+                          disabled={isConverting}
+                          className={`min-h-11 rounded-lg px-3 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                            isSelected
+                              ? 'bg-brand text-white shadow-sm'
+                              : 'text-content-muted hover:text-content'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {volumeMode === 'auto' ? (
+                    <p className="mt-3 text-sm leading-relaxed text-content-muted">
+                      Mide cada salida y la acerca a {TARGET_PEAK_DB} dBFS, con un máximo de +{MAX_AUTO_GAIN_DB} dB.
+                    </p>
+                  ) : (
+                    <div className="mt-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <label htmlFor="stem-manual-gain" className="text-sm font-bold text-content">
+                          Ganancia adicional
+                        </label>
+                        <output htmlFor="stem-manual-gain" className="rounded-full border border-brand/25 bg-brand/10 px-3 py-1 text-sm font-black text-brand">
+                          {formatDb(manualGainDb, true)}
+                        </output>
+                      </div>
+                      <input
+                        id="stem-manual-gain"
+                        type="range"
+                        min="0"
+                        max={MAX_MANUAL_GAIN_DB}
+                        step="1"
+                        value={manualGainDb}
+                        onChange={(event) => setManualGainDb(Number(event.target.value))}
+                        disabled={isConverting}
+                        className="mt-3 h-11 w-full cursor-pointer accent-[var(--color-brand)] disabled:cursor-not-allowed disabled:opacity-50"
+                      />
+                      <div className="flex justify-between text-xs font-bold text-content-muted" aria-hidden="true">
+                        <span>0 dB</span>
+                        <span>+{MAX_MANUAL_GAIN_DB} dB</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-3 flex items-center gap-2 rounded-xl border border-success/25 bg-success/10 px-3 py-2.5 text-xs font-bold text-success">
+                    <ShieldCheck className="h-4 w-4 shrink-0" />
+                    Limitador de seguridad fijo en {TARGET_PEAK_DB} dBFS
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
             <div className="flex flex-col gap-3 border-t border-border px-5 py-4 sm:flex-row sm:flex-wrap md:px-7">
               <button
                 type="button"
@@ -1783,6 +2005,11 @@ export default function StemConverterTool() {
                         {stem.channelNote ? (
                           <p className={`mt-2 text-xs font-semibold ${stem.channelMode === 'mono' ? 'text-success' : 'text-content-muted'}`}>
                             {stem.channelNote}
+                          </p>
+                        ) : null}
+                        {stem.levelNote ? (
+                          <p className="mt-1 text-xs font-semibold text-brand">
+                            {stem.levelNote}
                           </p>
                         ) : null}
                       </div>
