@@ -344,8 +344,9 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
  const activeElement = document.activeElement;
  const nav = document.querySelector('nav[data-bottom-nav="true"]');
  const navFocused = Boolean(activeElement && nav?.contains(activeElement));
+ const repertorioInteractionBusy = document.body.classList.contains('repertorio-accordion-busy');
 
- if (currentScrollY <= 80 || navFocused) {
+ if (currentScrollY <= 80 || navFocused || repertorioInteractionBusy) {
  setBottomNavHiddenState(false);
  setLastScrollY(scrollTarget, currentScrollY);
  ticking = false;

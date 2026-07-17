@@ -121,7 +121,7 @@ const firstTourResourcesId =
  <label for="search-input" class="hidden md:block text-sm font-medium text-content mb-1.5">Buscar</label>
   <BuscadorPredictivo idInput="searchInput" placeholder="Buscar canci&oacute;n o artista..." />
  </div>
- <button id="btnToggleFilters" type="button" aria-expanded="false" aria-controls="advancedFilters" class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 text-sm font-bold text-content transition-colors hover:bg-surface md:hidden">
+ <button id="btnToggleFilters" type="button" aria-expanded="false" aria-controls="mobileFiltersDialog" class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 text-sm font-bold text-content transition-colors hover:bg-surface md:hidden">
   <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18"/><path d="M6 12h12"/><path d="M10 19h4"/></svg>
   <span>Filtros</span>
   <span id="activeFiltersBadge" class="hidden min-w-5 rounded-full bg-brand px-1.5 py-0.5 text-[10px] font-black leading-none text-white">0</span>
@@ -177,6 +177,71 @@ const firstTourResourcesId =
  <div id="futureScriptureFilters" class="hidden" aria-hidden="true" data-ready="scripture-reference book psalm verse"></div>
  </div>
  </section>
+
+ <dialog id="mobileFiltersDialog" class="mobile-filters-dialog" aria-labelledby="mobileFiltersTitle">
+  <div class="mobile-filters-layout">
+   <header class="mobile-filters-header">
+    <div class="min-w-0">
+     <p class="text-[11px] font-black uppercase tracking-[0.18em] text-brand">Repertorio</p>
+     <h2 id="mobileFiltersTitle" class="mt-1 text-2xl font-black tracking-tight text-content">Filtrar canciones</h2>
+     <p class="mt-1 text-sm text-content-muted">Elige los criterios y apl&iacute;calos cuando est&eacute;s listo.</p>
+    </div>
+    <button id="btnCloseMobileFilters" type="button" class="mobile-filters-close" aria-label="Cerrar filtros">
+     <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+   </header>
+
+   <div class="mobile-filters-fields">
+    <div>
+     <label for="mobileFilterVoz" class="mobile-filter-label">Voz</label>
+     <select id="mobileFilterVoz" class="mobile-filter-select">
+      <option value="Todas">Todas</option>
+      <option value="Hombre">Hombre</option>
+      <option value="Mujer">Mujer</option>
+      <option value="Hombre y Mujer">Hombre y Mujer</option>
+     </select>
+    </div>
+
+    <div>
+     <label for="mobileFilterCategoria" class="mobile-filter-label">Categor&iacute;a</label>
+     <select id="mobileFilterCategoria" class="mobile-filter-select">
+      <option value="Todas">Todas</option>
+      <option value="Lenta">Lenta</option>
+      <option value="R&aacute;pida">R&aacute;pida</option>
+      <option value="Transici&oacute;n">Transici&oacute;n</option>
+     </select>
+    </div>
+
+    <div>
+     <label for="mobileFilterTema" class="mobile-filter-label">Tema</label>
+     <select id="mobileFilterTema" class="mobile-filter-select">
+      <option value="Todas">Todas</option>
+      {temasUnicos.map(tema => (
+       <option value={tema}>{tema}</option>
+      ))}
+     </select>
+    </div>
+
+    <div>
+     <label for="mobileFilterEstado" class="mobile-filter-label">Estado</label>
+     <select id="mobileFilterEstado" class="mobile-filter-select">
+      <option value="Todas">Todos</option>
+      {estadosUnicos.map(estado => (
+       <option value={estado}>{estado}</option>
+      ))}
+     </select>
+    </div>
+   </div>
+
+   <footer class="mobile-filters-actions">
+    <button id="btnResetMobileFilters" type="button" class="mobile-filters-secondary">Limpiar</button>
+    <button id="btnApplyMobileFilters" type="button" class="mobile-filters-primary">
+     <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18"/><path d="M6 12h12"/><path d="M10 19h4"/></svg>
+     Aplicar filtros
+    </button>
+   </footer>
+  </div>
+ </dialog>
 
  <!-- Lista compacta de canciones -->
  <div
@@ -360,6 +425,7 @@ import { safeHtml } from '../lib/client/html-safety.js';
   const selectionArtworkTimeouts = new Map<HTMLImageElement, number>();
   let selectionMarqueeFrame = 0;
   let selectionMarqueeResizeTimer: ReturnType<typeof setTimeout> | null = null;
+  let accordionBusyTimer: ReturnType<typeof setTimeout> | null = null;
   const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
   const metronomeState = repertorioWindow.__REPERTORIO_METRONOME__ || {
    activeDot: null,
@@ -415,12 +481,21 @@ import { safeHtml } from '../lib/client/html-safety.js';
    clearTimeout(selectionMarqueeResizeTimer);
    selectionMarqueeResizeTimer = null;
   }
+  if (accordionBusyTimer) {
+   clearTimeout(accordionBusyTimer);
+   accordionBusyTimer = null;
+  }
 
   document.body.classList.remove(
    'repertorio-selection-mode',
    'repertorio-compact-list-mode',
    'repertorio-shared-setlist-mode',
+   'repertorio-accordion-busy',
+   'mobile-filters-open',
   );
+
+  const mobileFiltersDialog = document.getElementById('mobileFiltersDialog') as HTMLDialogElement | null;
+  if (mobileFiltersDialog?.open) mobileFiltersDialog.close();
 
   stopMetronome();
 
@@ -479,6 +554,14 @@ if (sessionError) {
  const btnToggleFilters = document.getElementById('btnToggleFilters') as HTMLButtonElement | null;
  const advancedFilters = document.getElementById('advancedFilters') as HTMLElement | null;
  const activeFiltersBadge = document.getElementById('activeFiltersBadge') as HTMLElement | null;
+ const mobileFiltersDialog = document.getElementById('mobileFiltersDialog') as HTMLDialogElement | null;
+ const mobileFilterVoz = document.getElementById('mobileFilterVoz') as HTMLSelectElement | null;
+ const mobileFilterCategoria = document.getElementById('mobileFilterCategoria') as HTMLSelectElement | null;
+ const mobileFilterTema = document.getElementById('mobileFilterTema') as HTMLSelectElement | null;
+ const mobileFilterEstado = document.getElementById('mobileFilterEstado') as HTMLSelectElement | null;
+ const btnCloseMobileFilters = document.getElementById('btnCloseMobileFilters') as HTMLButtonElement | null;
+ const btnResetMobileFilters = document.getElementById('btnResetMobileFilters') as HTMLButtonElement | null;
+ const btnApplyMobileFilters = document.getElementById('btnApplyMobileFilters') as HTMLButtonElement | null;
  
  const mainTitle = document.getElementById('mainTitle');
  const pageSubtitle = document.getElementById('repertorioSubtitle');
@@ -583,9 +666,10 @@ if (sessionError) {
    const diff = currentScrollY - lastSearchScrollY;
    const focusedElement = document.activeElement;
    const controlsFocused = Boolean(focusedElement && searchControls.contains(focusedElement));
-   const filtersOpen = advancedFilters?.dataset.open === 'true';
+   const filtersOpen = advancedFilters?.dataset.open === 'true' || Boolean(mobileFiltersDialog?.open);
+   const accordionBusy = document.body.classList.contains('repertorio-accordion-busy');
 
-   if (currentScrollY <= 80 || controlsFocused || filtersOpen) {
+   if (currentScrollY <= 80 || controlsFocused || filtersOpen || accordionBusy) {
     setSearchControlsHidden(false);
     lastSearchScrollY = currentScrollY;
     searchScrollTicking = false;
@@ -612,6 +696,16 @@ if (sessionError) {
 
  // El repertorio usa una única vista compacta; los recursos viven en el acordeón.
  let isListView = true;
+ let expandedCard = document.querySelector<HTMLElement>('#gridCanciones article.expandido');
+
+ const holdNavigationDuringAccordion = () => {
+  document.body.classList.add('repertorio-accordion-busy');
+  if (accordionBusyTimer) clearTimeout(accordionBusyTimer);
+  accordionBusyTimer = setTimeout(() => {
+   document.body.classList.remove('repertorio-accordion-busy');
+   accordionBusyTimer = null;
+  }, 280);
+ };
 
  function activateCompactListView() {
   if (!gridCanciones) return;
@@ -636,16 +730,15 @@ if (sessionError) {
   && !document.body.classList.contains('repertorio-selection-mode')
   && !document.body.classList.contains('repertorio-shared-setlist-mode')
  ) {
- const wasExpanded = card.classList.contains('expandido');
- // Collapse all other cards first
- cards.forEach(c => { if (c !== card) c.classList.remove('expandido'); });
- card.classList.toggle('expandido');
- // Smooth scroll into view if expanding
- if (!wasExpanded) {
-  requestAnimationFrame(() => {
-   card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  });
+ const willExpand = !card.classList.contains('expandido');
+ holdNavigationDuringAccordion();
+
+ if (expandedCard && expandedCard !== card) {
+  expandedCard.classList.remove('expandido');
  }
+
+ card.classList.toggle('expandido', willExpand);
+ expandedCard = willExpand ? card : null;
  }
  });
  }
@@ -923,9 +1016,25 @@ if (sessionError) {
   return [vozTerm !== 'todas', categoriaTerm !== 'todas', temaTerm !== 'todas', estadoTerm !== 'todas'].filter(Boolean).length;
  }
 
+ function syncMobileFilterDraft() {
+  if (mobileFilterVoz) mobileFilterVoz.value = filterVoz?.value || 'Todas';
+  if (mobileFilterCategoria) mobileFilterCategoria.value = filterCategoria?.value || 'Todas';
+  if (mobileFilterTema) mobileFilterTema.value = filterTema?.value || 'Todas';
+  if (mobileFilterEstado) mobileFilterEstado.value = filterEstado?.value || 'Todas';
+ }
+
  function setMobileFiltersOpen(isOpen: boolean) {
-  if (!advancedFilters || !btnToggleFilters) return;
-  advancedFilters.dataset.open = isOpen ? 'true' : 'false';
+  if (!mobileFiltersDialog || !btnToggleFilters) return;
+
+  if (isOpen) {
+   syncMobileFilterDraft();
+   if (!mobileFiltersDialog.open) mobileFiltersDialog.showModal();
+   document.body.classList.add('mobile-filters-open');
+  } else {
+   if (mobileFiltersDialog.open) mobileFiltersDialog.close();
+   document.body.classList.remove('mobile-filters-open');
+  }
+
   btnToggleFilters.setAttribute('aria-expanded', String(isOpen));
  }
 
@@ -939,18 +1048,42 @@ if (sessionError) {
 
  if (btnToggleFilters) {
   addListener(btnToggleFilters, 'click', () => {
-   const isOpen = advancedFilters?.dataset.open === 'true';
+   const isOpen = Boolean(mobileFiltersDialog?.open);
    setMobileFiltersOpen(!isOpen);
   });
  }
 
- let lastFilterScrollY = window.scrollY || 0;
- addListener(window, 'scroll', () => {
-  const currentY = window.scrollY || 0;
-  if (currentY > lastFilterScrollY + 8 && advancedFilters?.dataset.open === 'true') {
-   setMobileFiltersOpen(false);
-  }
-  lastFilterScrollY = Math.max(0, currentY);
+ addListener(btnCloseMobileFilters, 'click', () => setMobileFiltersOpen(false));
+ addListener(mobileFiltersDialog, 'cancel', (event) => {
+  event.preventDefault();
+  setMobileFiltersOpen(false);
+ });
+ addListener(mobileFiltersDialog, 'click', (event) => {
+  if (event.target === mobileFiltersDialog) setMobileFiltersOpen(false);
+ });
+ addListener(mobileFiltersDialog, 'close', () => {
+  document.body.classList.remove('mobile-filters-open');
+  btnToggleFilters?.setAttribute('aria-expanded', 'false');
+ });
+
+ addListener(btnResetMobileFilters, 'click', () => {
+  if (mobileFilterVoz) mobileFilterVoz.value = 'Todas';
+  if (mobileFilterCategoria) mobileFilterCategoria.value = 'Todas';
+  if (mobileFilterTema) mobileFilterTema.value = 'Todas';
+  if (mobileFilterEstado) mobileFilterEstado.value = 'Todas';
+ });
+
+ addListener(btnApplyMobileFilters, 'click', () => {
+  if (filterVoz && mobileFilterVoz) filterVoz.value = mobileFilterVoz.value;
+  if (filterCategoria && mobileFilterCategoria) filterCategoria.value = mobileFilterCategoria.value;
+  if (filterTema && mobileFilterTema) filterTema.value = mobileFilterTema.value;
+  if (filterEstado && mobileFilterEstado) filterEstado.value = mobileFilterEstado.value;
+  setMobileFiltersOpen(false);
+  filterCards();
+ });
+
+ addListener(window, 'resize', () => {
+  if (window.innerWidth >= 768 && mobileFiltersDialog?.open) setMobileFiltersOpen(false);
  }, { passive: true });
 
  function sortSongsSelectedFirst(songCards: Iterable<HTMLElement>) {
@@ -1350,15 +1483,6 @@ const clearPlaylistSelection = () => {
  }
  syncSetlistButtons();
 
- // Premium stagger entrance for initially visible cards
- requestAnimationFrame(() => {
-  const visibleCards = Array.from(cards).filter(c => !c.classList.contains('cancion-oculta'));
-  visibleCards.forEach((card, i) => {
-   card.style.setProperty('--delay', `${i * 55}ms`);
-   card.classList.add('anim-fade-in-up', 'anim-stagger');
-  });
- });
-
  if (btnCopySetlist) {
  addListener(btnCopySetlist, 'click', () => {
  const base64Str = btoa(encodeURIComponent(JSON.stringify(setlist)));
@@ -1461,9 +1585,18 @@ const clearPlaylistSelection = () => {
  });
  let cancionesFiltradas = sortSongsSelectedFirst([...todasLasCanciones]);
  applySongOrder(cancionesFiltradas);
- let indiceActual = 0;
  const limite = 15;
+ let indiceActual = Math.min(limite, cancionesFiltradas.length);
  let isLoading = false;
+
+ const initialVisibleCards = new Set(cancionesFiltradas.slice(0, indiceActual));
+ todasLasCanciones.forEach((card) => {
+  const isInitiallyVisible = initialVisibleCards.has(card);
+  card.classList.toggle('cancion-oculta', !isInitiallyVisible);
+  card.classList.remove('anim-fade-in-up', 'anim-stagger');
+  card.style.removeProperty('--delay');
+  card.style.display = isInitiallyVisible ? '' : 'none';
+ });
  
  function cargarMasCanciones() {
  if (isLoading) return;
@@ -1476,14 +1609,11 @@ const clearPlaylistSelection = () => {
  return;
  }
  
- fragmento.forEach((card, i) => {
- card.classList.remove('cancion-oculta');
- card.style.display = '';
- // Stagger entrance for scroll-loaded cards
- card.style.setProperty('--delay', `${i * 45}ms`);
- card.classList.remove('anim-fade-in-up');
- void (card as HTMLElement).offsetWidth; // reflow to re-trigger
- card.classList.add('anim-fade-in-up', 'anim-stagger');
+ fragmento.forEach((card) => {
+  card.classList.remove('cancion-oculta');
+  card.style.display = '';
+  card.classList.remove('anim-fade-in-up', 'anim-stagger');
+  card.style.removeProperty('--delay');
  });
  requestAnimationFrame(bindResourceActionHints);
  if (isSelectionMode || document.body.classList.contains('repertorio-compact-list-mode')) {
@@ -1565,8 +1695,14 @@ function filterCards() {
  const estadoTerm = normalizeStr(filterEstado.value);
  syncFilterMenuState();
 
- todasLasCanciones.forEach(card => card.classList.add('cancion-oculta'));
+ todasLasCanciones.forEach((card) => {
+  card.classList.add('cancion-oculta');
+  card.classList.remove('anim-fade-in-up', 'anim-stagger');
+  card.style.removeProperty('--delay');
+  card.style.display = 'none';
+ });
  indiceActual = 0;
+ isLoading = false;
 
  cancionesFiltradas = todasLasCanciones.filter(card => {
  const titulo = normalizeStr(card.getAttribute('data-titulo') || '');
@@ -1588,7 +1724,6 @@ function filterCards() {
  cancionesFiltradas = sortSongsSelectedFirst(cancionesFiltradas);
  applySongOrder(cancionesFiltradas);
 
- todasLasCanciones.forEach(card => card.style.display = 'none');
  cargarMasCanciones();
  requestAnimationFrame(bindResourceActionHints);
 
@@ -1614,7 +1749,7 @@ function filterCards() {
  }
  }
 
- const debouncedFilterCards = debounce(filterCards, 300);
+ const debouncedFilterCards = debounce(filterCards, 140);
 
  // Limpiar filtros button
  if (btnResetFilters) {
@@ -1624,16 +1759,17 @@ function filterCards() {
    if (filterCategoria) (filterCategoria as HTMLSelectElement).value = 'Todas';
    if (filterTema) (filterTema as HTMLSelectElement).value = 'Todas';
    if (filterEstado) (filterEstado as HTMLSelectElement).value = 'Todas';
+   syncMobileFilterDraft();
    setMobileFiltersOpen(false);
    filterCards();
   });
  }
 
  if(searchInput) addListener(searchInput, 'input', debouncedFilterCards);
- if(filterVoz) addListener(filterVoz, 'change', debouncedFilterCards);
- if(filterCategoria) addListener(filterCategoria, 'change', debouncedFilterCards);
- if(filterTema) addListener(filterTema, 'change', debouncedFilterCards);
- if(filterEstado) addListener(filterEstado, 'change', debouncedFilterCards);
+ if(filterVoz) addListener(filterVoz, 'change', filterCards);
+ if(filterCategoria) addListener(filterCategoria, 'change', filterCards);
+ if(filterTema) addListener(filterTema, 'change', filterCards);
+ if(filterEstado) addListener(filterEstado, 'change', filterCards);
  syncFilterMenuState();
 
 
@@ -1662,12 +1798,12 @@ function filterCards() {
 
  .repertoire-search-bar {
    animation: none;
-   transform: translate3d(0, 0, 0);
+   transform: none;
    opacity: 1;
    will-change: transform, opacity;
    transition:
-     transform 700ms cubic-bezier(0.22, 1, 0.36, 1),
-     opacity 700ms cubic-bezier(0.22, 1, 0.36, 1);
+     transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
+     opacity 160ms ease;
  }
  .repertoire-search-bar.is-hidden {
    transform: translate3d(0, calc(-100% - 1.25rem), 0);
@@ -1881,7 +2017,148 @@ function filterCards() {
    transform: translateY(0);
    margin-top: 0.65rem;
  }
+
+ .mobile-filters-dialog {
+   width: 100%;
+   max-width: none;
+   height: 100dvh;
+   max-height: none;
+   margin: 0;
+   padding: 0;
+   border: 0;
+   background: rgb(var(--bg-background));
+   color: rgb(var(--text-base));
+ }
+
+ .mobile-filters-dialog::backdrop {
+   background: rgba(3, 7, 18, 0.72);
+   backdrop-filter: blur(4px);
+   -webkit-backdrop-filter: blur(4px);
+ }
+
+ .mobile-filters-dialog[open] {
+   animation: mobile-filters-enter 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+ }
+
+ .mobile-filters-layout {
+   display: grid;
+   min-height: 100dvh;
+   grid-template-rows: auto 1fr auto;
+   background:
+     radial-gradient(circle at 100% 0%, rgb(var(--color-brand) / 0.10), transparent 34%),
+     rgb(var(--bg-background));
+ }
+
+ .mobile-filters-header {
+   display: flex;
+   align-items: flex-start;
+   justify-content: space-between;
+   gap: 1rem;
+   padding: calc(env(safe-area-inset-top) + 1.25rem) 1.25rem 1.1rem;
+   border-bottom: 1px solid rgb(var(--border-base));
+ }
+
+ .mobile-filters-close {
+   display: inline-flex;
+   width: 2.75rem;
+   height: 2.75rem;
+   flex: 0 0 auto;
+   align-items: center;
+   justify-content: center;
+   border: 1px solid rgb(var(--border-base));
+   border-radius: 0.9rem;
+   background: rgb(var(--bg-surface));
+   color: rgb(var(--text-base));
+ }
+
+ .mobile-filters-close:focus-visible,
+ .mobile-filter-select:focus-visible,
+ .mobile-filters-secondary:focus-visible,
+ .mobile-filters-primary:focus-visible {
+   outline: 2px solid rgb(var(--color-brand));
+   outline-offset: 2px;
+ }
+
+ .mobile-filters-fields {
+   display: grid;
+   align-content: start;
+   gap: 1.15rem;
+   overflow-y: auto;
+   padding: 1.35rem 1.25rem 2rem;
+   -webkit-overflow-scrolling: touch;
+ }
+
+ .mobile-filter-label {
+   display: block;
+   margin-bottom: 0.45rem;
+   color: rgb(var(--text-base));
+   font-size: 0.82rem;
+   font-weight: 800;
+ }
+
+ .mobile-filter-select {
+   width: 100%;
+   height: 3.25rem;
+   padding: 0 0.9rem;
+   border: 1px solid rgb(var(--border-base));
+   border-radius: 0.9rem;
+   background: rgb(var(--bg-surface));
+   color: rgb(var(--text-base));
+   font-size: 1rem;
+ }
+
+ .mobile-filters-actions {
+   display: grid;
+   grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr);
+   gap: 0.75rem;
+   padding: 1rem 1.25rem calc(env(safe-area-inset-bottom) + 1rem);
+   border-top: 1px solid rgb(var(--border-base));
+   background: rgb(var(--bg-background) / 0.96);
+ }
+
+ .mobile-filters-secondary,
+ .mobile-filters-primary {
+   display: inline-flex;
+   min-height: 3rem;
+   align-items: center;
+   justify-content: center;
+   gap: 0.5rem;
+   border-radius: 0.9rem;
+   font-size: 0.9rem;
+   font-weight: 850;
+ }
+
+ .mobile-filters-secondary {
+   border: 1px solid rgb(var(--border-base));
+   background: rgb(var(--bg-surface));
+   color: rgb(var(--text-muted));
+ }
+
+ .mobile-filters-primary {
+   border: 1px solid transparent;
+   background: rgb(var(--color-brand));
+   color: #fff;
+   box-shadow: 0 10px 24px rgb(var(--color-brand) / 0.22);
+ }
+
+ body.mobile-filters-open {
+   overflow: hidden;
+ }
+
+ body.repertorio-compact-list-mode nav[data-bottom-nav='true'] {
+   transition-duration: 240ms, 160ms;
+ }
+
+ @keyframes mobile-filters-enter {
+   from { opacity: 0; transform: translateY(0.75rem); }
+   to { opacity: 1; transform: translateY(0); }
+ }
+
  @media (min-width: 768px) {
+   .mobile-filters-dialog {
+     display: none;
+   }
+
    .repertorio-advanced-filters,
    .repertorio-advanced-filters[data-open='false'],
    .repertorio-advanced-filters[data-open='true'] {
@@ -2336,7 +2613,7 @@ function filterCards() {
    display: grid;
    grid-template-rows: 0fr;
    opacity: 0;
-   transition: grid-template-rows 350ms cubic-bezier(0.22,1,0.36,1), opacity 300ms ease, padding 300ms ease;
+   transition: grid-template-rows 220ms cubic-bezier(0.22,1,0.36,1), opacity 150ms ease, padding 180ms ease;
    padding: 0 0.25rem;
    overflow: hidden;
  }
@@ -2733,6 +3010,14 @@ function filterCards() {
 
  @media (prefers-reduced-motion: reduce) {
    .repertoire-search-bar {
+     transition-duration: 1ms;
+   }
+
+   .mobile-filters-dialog[open] {
+     animation: none;
+   }
+
+   .modo-lista .card-content {
      transition-duration: 1ms;
    }
 
