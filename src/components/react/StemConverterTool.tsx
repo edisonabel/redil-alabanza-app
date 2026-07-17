@@ -13,6 +13,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import ffmpegCoreURL from '@ffmpeg/core?url';
 import ffmpegCoreWasmURL from '@ffmpeg/core/wasm?url';
+import ffmpegWorkerURL from '../../workers/stemConverterFfmpegWorker?worker&url';
 
 import PitchShiftModal from './PitchShiftModal';
 import { detectKey, type DetectedKey } from '../../utils/pitchShift/keyDetection';
@@ -29,6 +30,8 @@ const DEFAULT_BITRATE = '256k';
 const TARGET_SAMPLE_RATE = 48_000;
 const TARGET_SAMPLE_RATE_FILTER = `aresample=${TARGET_SAMPLE_RATE},aformat=sample_rates=${TARGET_SAMPLE_RATE}`;
 const FFMPEG_LOAD_TIMEOUT_MS = 45_000;
+const FFMPEG_WORKER_CACHE_VERSION = '2026-07-16-csp-wasm-v2';
+const FFMPEG_WORKER_URL = `${ffmpegWorkerURL}${ffmpegWorkerURL.includes('?') ? '&' : '?'}v=${FFMPEG_WORKER_CACHE_VERSION}`;
 const MONO_ANALYSIS_SAMPLE_LIMIT = 120_000;
 const MONO_ANALYSIS_MAX_FILE_BYTES = 220 * 1024 * 1024;
 const MONO_CORRELATION_THRESHOLD = 0.997;
@@ -91,7 +94,7 @@ type StatRow = {
 
 type FFmpegInstance = {
   load: (
-    config: { coreURL: string; wasmURL: string },
+    config: { classWorkerURL?: string; coreURL: string; wasmURL: string },
     options?: { signal?: AbortSignal },
   ) => Promise<boolean | void>;
   writeFile: (path: string, data: Uint8Array) => Promise<boolean | void>;
@@ -1069,7 +1072,11 @@ export default function StemConverterTool() {
 
         await Promise.race([
           ffmpeg.load(
-            { coreURL: ffmpegCoreURL, wasmURL: ffmpegCoreWasmURL },
+            {
+              classWorkerURL: FFMPEG_WORKER_URL,
+              coreURL: ffmpegCoreURL,
+              wasmURL: ffmpegCoreWasmURL,
+            },
             { signal: abortController.signal },
           ),
           timeoutPromise,
