@@ -11,6 +11,8 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
+import ffmpegCoreURL from '@ffmpeg/core?url';
+import ffmpegCoreWasmURL from '@ffmpeg/core/wasm?url';
 
 import PitchShiftModal from './PitchShiftModal';
 import { detectKey, type DetectedKey } from '../../utils/pitchShift/keyDetection';
@@ -26,7 +28,7 @@ const TARGET_STEMS = 10;
 const DEFAULT_BITRATE = '256k';
 const TARGET_SAMPLE_RATE = 48_000;
 const TARGET_SAMPLE_RATE_FILTER = `aresample=${TARGET_SAMPLE_RATE},aformat=sample_rates=${TARGET_SAMPLE_RATE}`;
-const FFmpegCoreVersion = '0.12.10';
+const FFMPEG_LOAD_TIMEOUT_MS = 45_000;
 const MONO_ANALYSIS_SAMPLE_LIMIT = 120_000;
 const MONO_ANALYSIS_MAX_FILE_BYTES = 220 * 1024 * 1024;
 const MONO_CORRELATION_THRESHOLD = 0.997;
@@ -88,16 +90,24 @@ type StatRow = {
 };
 
 type FFmpegInstance = {
-  load: (config: { coreURL: string; wasmURL: string }) => Promise<boolean | void>;
+  load: (
+    config: { coreURL: string; wasmURL: string },
+    options?: { signal?: AbortSignal },
+  ) => Promise<boolean | void>;
   writeFile: (path: string, data: Uint8Array) => Promise<boolean | void>;
   readFile: (path: string) => Promise<Uint8Array | string>;
   deleteFile: (path: string) => Promise<boolean | void>;
   exec: (args: string[]) => Promise<number>;
+  terminate: () => void;
   on: (
     event: 'log' | 'progress',
     callback: (payload: { message?: string; progress?: number; time?: number }) => void,
   ) => void;
 };
+
+type StemConversionResult =
+  | { ok: true }
+  | { ok: false; message: string };
 
 const AUDIO_EXTENSIONS = new Set([
   'aac',
@@ -711,8 +721,34 @@ const createDownload = (blob: Blob, filename: string) => {
   window.setTimeout(() => URL.revokeObjectURL(url), 1500);
 };
 
+const getEngineErrorMessage = (error: unknown) => {
+  const rawMessage = error instanceof Error ? error.message : '';
+  if (rawMessage.includes('tardó demasiado')) {
+    return rawMessage;
+  }
+
+  return 'No se pudo iniciar el motor de audio. Pulsa Convertir para reintentar sin recargar la página.';
+};
+
+const getConversionFailureMessage = (stemName: string, exitCode: number, logs: string[]) => {
+  const detail = [...logs]
+    .reverse()
+    .find((line) => /(?:error|invalid|failed|unsupported|not found|could not|unable)/i.test(line));
+  const compactDetail = detail
+    ?.replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 180);
+
+  return compactDetail
+    ? `No se pudo convertir "${stemName}". ${compactDetail}`
+    : `No se pudo convertir "${stemName}" (código FFmpeg ${exitCode}).`;
+};
+
 export default function StemConverterTool() {
   const ffmpegRef = useRef<FFmpegInstance | null>(null);
+  const loadingFfmpegRef = useRef<FFmpegInstance | null>(null);
+  const engineLoadPromiseRef = useRef<Promise<FFmpegInstance> | null>(null);
+  const ffmpegLogsRef = useRef<string[]>([]);
   const activeStemIdRef = useRef<string | null>(null);
   const outputsRef = useRef<Map<string, OutputAsset>>(new Map());
   const zipUrlRef = useRef<string | null>(null);
@@ -832,6 +868,16 @@ export default function StemConverterTool() {
   useEffect(() => () => {
     revokeZipUrl();
   }, [revokeZipUrl]);
+
+  useEffect(() => () => {
+    loadingFfmpegRef.current?.terminate();
+    if (ffmpegRef.current !== loadingFfmpegRef.current) {
+      ffmpegRef.current?.terminate();
+    }
+    loadingFfmpegRef.current = null;
+    ffmpegRef.current = null;
+    engineLoadPromiseRef.current = null;
+  }, []);
 
   // Run automatic key detection any time the user loads a fresh batch of
   // sources. We pick the most tonal stem (bass first, then keyboards, then
@@ -972,48 +1018,92 @@ export default function StemConverterTool() {
     )));
   }, []);
 
-  const loadEngine = useCallback(async () => {
+  const loadEngine = useCallback(() => {
     if (ffmpegRef.current) {
-      return ffmpegRef.current;
+      return Promise.resolve(ffmpegRef.current);
+    }
+    if (engineLoadPromiseRef.current) {
+      return engineLoadPromiseRef.current;
     }
 
     setIsLoadingEngine(true);
+    setIsEngineReady(false);
     setErrorMessage('');
 
-    try {
-      const [{ FFmpeg }, { toBlobURL }] = await Promise.all([
-        import('@ffmpeg/ffmpeg'),
-        import('@ffmpeg/util'),
-      ]);
+    let loadPromise: Promise<FFmpegInstance>;
+    loadPromise = (async () => {
+      let ffmpeg: FFmpegInstance | null = null;
+      let timeoutId: number | undefined;
+      let didTimeout = false;
+      const abortController = new AbortController();
 
-      const ffmpeg = new FFmpeg() as FFmpegInstance;
-      ffmpeg.on('progress', ({ progress }) => {
-        const activeId = activeStemIdRef.current;
-        if (!activeId || typeof progress !== 'number') {
-          return;
+      try {
+        const { FFmpeg } = await import('@ffmpeg/ffmpeg');
+        ffmpeg = new FFmpeg() as FFmpegInstance;
+        loadingFfmpegRef.current = ffmpeg;
+        ffmpegLogsRef.current = [];
+
+        ffmpeg.on('log', ({ message }) => {
+          if (!message?.trim()) return;
+          ffmpegLogsRef.current = [...ffmpegLogsRef.current.slice(-19), message.trim()];
+        });
+        ffmpeg.on('progress', ({ progress }) => {
+          const activeId = activeStemIdRef.current;
+          if (!activeId || typeof progress !== 'number') {
+            return;
+          }
+          const { offset, scale } = ffmpegProgressRangeRef.current;
+          const clamped = Math.max(0, Math.min(1, progress));
+          const mapped = offset + clamped * scale;
+          updateStem(activeId, { progress: Math.round(Math.max(0, Math.min(1, mapped)) * 100) });
+        });
+
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timeoutId = window.setTimeout(() => {
+            didTimeout = true;
+            reject(new Error('El motor de audio tardó demasiado en iniciar. Pulsa Convertir para reintentar.'));
+            abortController.abort();
+            ffmpeg?.terminate();
+          }, FFMPEG_LOAD_TIMEOUT_MS);
+        });
+
+        await Promise.race([
+          ffmpeg.load(
+            { coreURL: ffmpegCoreURL, wasmURL: ffmpegCoreWasmURL },
+            { signal: abortController.signal },
+          ),
+          timeoutPromise,
+        ]);
+
+        ffmpegRef.current = ffmpeg;
+        loadingFfmpegRef.current = null;
+        setIsEngineReady(true);
+        return ffmpeg;
+      } catch (error) {
+        if (ffmpeg && ffmpegRef.current !== ffmpeg) {
+          ffmpeg.terminate();
         }
-        const { offset, scale } = ffmpegProgressRangeRef.current;
-        const clamped = Math.max(0, Math.min(1, progress));
-        const mapped = offset + clamped * scale;
-        updateStem(activeId, { progress: Math.round(Math.max(0, Math.min(1, mapped)) * 100) });
-      });
+        loadingFfmpegRef.current = null;
+        ffmpegRef.current = null;
+        setIsEngineReady(false);
 
-      const baseURL = `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${FFmpegCoreVersion}/dist/esm`;
-      await ffmpeg.load({
-        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-      });
+        const message = didTimeout
+          ? 'El motor de audio tardó demasiado en iniciar. Pulsa Convertir para reintentar.'
+          : getEngineErrorMessage(error);
+        console.error('[StemConverter] No se pudo iniciar FFmpeg.', error);
+        setErrorMessage(message);
+        throw new Error(message);
+      } finally {
+        if (typeof timeoutId === 'number') {
+          window.clearTimeout(timeoutId);
+        }
+        engineLoadPromiseRef.current = null;
+        setIsLoadingEngine(false);
+      }
+    })();
 
-      ffmpegRef.current = ffmpeg;
-      setIsEngineReady(true);
-      return ffmpeg;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'No se pudo cargar FFmpeg.';
-      setErrorMessage(message);
-      throw error;
-    } finally {
-      setIsLoadingEngine(false);
-    }
+    engineLoadPromiseRef.current = loadPromise;
+    return loadPromise;
   }, [updateStem]);
 
   const cleanupFfmpegFile = useCallback(async (ffmpeg: FFmpegInstance, path: string) => {
@@ -1024,7 +1114,11 @@ export default function StemConverterTool() {
     }
   }, []);
 
-  const convertOneStem = useCallback(async (ffmpeg: FFmpegInstance, stem: StemItem, index: number) => {
+  const convertOneStem = useCallback(async (
+    ffmpeg: FFmpegInstance,
+    stem: StemItem,
+    index: number,
+  ): Promise<StemConversionResult> => {
     const needsPitchShift = pitchShiftSemitones !== 0;
     // When pitch-shifting we hand FFmpeg a self-describing 32-bit float WAV;
     // otherwise we keep the original container so the encoder can decode
@@ -1141,7 +1235,11 @@ export default function StemConverterTool() {
           ...outputArgs,
         ];
 
-      await ffmpeg.exec(command);
+      ffmpegLogsRef.current = [];
+      const exitCode = await ffmpeg.exec(command);
+      if (exitCode !== 0) {
+        throw new Error(getConversionFailureMessage(stem.name, exitCode, ffmpegLogsRef.current));
+      }
 
       const result = await ffmpeg.readFile(outputName);
       if (typeof result === 'string') {
@@ -1161,13 +1259,17 @@ export default function StemConverterTool() {
         outputName,
         outputSize: blob.size,
       });
+      return { ok: true };
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Conversion fallida.';
+      const message = error instanceof Error
+        ? error.message
+        : `No se pudo convertir "${stem.name}".`;
       updateStem(stem.id, {
         status: 'error',
         error: message,
         progress: 0,
       });
+      return { ok: false, message };
     } finally {
       activeStemIdRef.current = null;
       ffmpegProgressRangeRef.current = { offset: 0, scale: 1 };
@@ -1179,7 +1281,7 @@ export default function StemConverterTool() {
   const buildZip = useCallback(async () => {
     const outputs = outputsRef.current;
     if (outputs.size === 0) {
-      return;
+      throw new Error('Ningún stem pudo convertirse. Revisa el error indicado en la cola y vuelve a intentar.');
     }
 
     const JSZip = (await import('jszip')).default;
@@ -1229,12 +1331,29 @@ export default function StemConverterTool() {
 
     try {
       const ffmpeg = await loadEngine();
+      const failures: string[] = [];
       for (let index = 0; index < stems.length; index += 1) {
-        await convertOneStem(ffmpeg, stems[index], index);
+        const result = await convertOneStem(ffmpeg, stems[index], index);
+        if (!result.ok) {
+          failures.push(result.message);
+        }
       }
+
+      if (outputsRef.current.size === 0) {
+        throw new Error(failures[0] || 'Ningún stem pudo convertirse. Vuelve a intentar.');
+      }
+
       await buildZip();
+      if (failures.length > 0) {
+        const successfulCount = outputsRef.current.size;
+        setErrorMessage(
+          `${successfulCount} ${successfulCount === 1 ? 'stem convertido' : 'stems convertidos'}; ${failures.length} no ${failures.length === 1 ? 'pudo' : 'pudieron'} convertirse. El ZIP incluye los archivos listos.`,
+        );
+      }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'No se pudo completar la conversion.';
+      const message = error instanceof Error
+        ? error.message
+        : 'No se pudo completar la conversión. Pulsa Convertir para reintentar.';
       setErrorMessage(message);
     } finally {
       activeStemIdRef.current = null;
@@ -1586,7 +1705,10 @@ export default function StemConverterTool() {
             </div>
 
             {errorMessage ? (
-              <div className="border-t border-danger/30 bg-danger/10 px-5 py-4 text-sm text-danger md:px-7">
+              <div
+                role="alert"
+                className="border-t border-danger/30 bg-danger/10 px-5 py-4 text-sm text-danger md:px-7"
+              >
                 {errorMessage}
               </div>
             ) : null}

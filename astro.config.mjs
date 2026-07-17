@@ -136,7 +136,13 @@ export default defineConfig({
     optimizeDeps: {
       include: ['react-dom/client'],
       needsInterop: ['react-dom/client'],
-      exclude: ['@supabase/supabase-js', '@capacitor/core', 'lucide-react'],
+      exclude: [
+        '@supabase/supabase-js',
+        '@capacitor/core',
+        '@ffmpeg/core',
+        '@ffmpeg/ffmpeg',
+        'lucide-react',
+      ],
     },
     resolve: {
       alias: reactAliases
