@@ -31,6 +31,20 @@ const crossOriginIsolationHeaders = {
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Embedder-Policy': 'require-corp',
 };
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "img-src 'self' https: data: blob:",
+  "media-src 'self' https: data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self' https: wss: blob:",
+  "worker-src 'self' blob:",
+  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob:",
+  "style-src 'self' 'unsafe-inline'",
+  "frame-src 'self' https://drive.google.com https://docs.google.com",
+].join('; ') + ';';
 
 const shouldApplyCrossOriginIsolation = (path = '') => (
   path === '/herramientas/live-director-preview'
@@ -41,6 +55,10 @@ const shouldApplyCrossOriginIsolation = (path = '') => (
 );
 
 const withRouteHeaders = (response, path) => {
+  // Netlify's static header rules do not consistently cover Astro SSR
+  // responses, so the document policy must also be set by the function.
+  response.headers.set('Content-Security-Policy', contentSecurityPolicy);
+
   if (path.startsWith('/workers/') || path.startsWith('/vendor/')) {
     response.headers.set('Cross-Origin-Resource-Policy', 'same-origin');
   }
