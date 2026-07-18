@@ -7,6 +7,13 @@ import {
   normalizePersistedLiveDirectorSession,
 } from '../../utils/liveDirectorSongSession';
 import { fetchLiveDirectorSongSession } from '../../utils/liveDirectorUploadClient';
+import {
+  applyLiveDirectorEventMix,
+  fetchLiveDirectorEventMix,
+  liveDirectorEventMixSignature,
+  normalizeLiveDirectorEventMix,
+  saveLiveDirectorEventMix,
+} from '../../utils/liveDirectorEventMix';
 import { getPadUrlForSongKey } from '../../utils/padAudio';
 import {
   isNativeLiveDirectorEngineAvailable,
@@ -340,7 +347,13 @@ const buildQueueSongs = (songs) =>
       mp3: String(song?.mp3 || '').trim(),
     }));
 
-export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo Ensayo', onExit }) {
+export default function ModoEnsayoDirector({
+  playlist = [],
+  contextTitle = 'Modo Ensayo',
+  eventId = '',
+  playlistId = '',
+  onExit,
+}) {
   const ensayoSongs = useMemo(
     () =>
       (Array.isArray(playlist) ? playlist : []).filter((song) => {
@@ -356,6 +369,9 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
   const [padVolume, setPadVolume] = useState(0.42);
   const [syncConnected, setSyncConnected] = useState(false);
   const [sessionOverrides, setSessionOverrides] = useState({});
+  const [eventMixOverrides, setEventMixOverrides] = useState({});
+  const [eventMixLoadedSongIds, setEventMixLoadedSongIds] = useState(() => new Set());
+  const [eventMixSaveStates, setEventMixSaveStates] = useState({});
   const playbackSnapshotRef = useRef({
     songId: '',
     sectionIndex: 0,
@@ -368,6 +384,9 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
   const autoCacheStartedRef = useRef(false);
   const prewarmedSongIdsRef = useRef(new Set());
   const prewarmInFlightUrlsRef = useRef(new Set());
+  const eventMixSaveQueueRef = useRef(Promise.resolve());
+  const eventMixSaveVersionsRef = useRef({});
+  const eventMixStatusTimersRef = useRef(new Map());
 
   const safeActiveSongIndex = Math.max(0, Math.min(activeSongIndex, Math.max(ensayoSongs.length - 1, 0)));
   const activeSong = ensayoSongs[safeActiveSongIndex] || null;
@@ -375,9 +394,15 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
   const activeSongSessionSource = activeSongId
     ? sessionOverrides[activeSongId] || activeSong?.multitrackSession || null
     : null;
+  const activeEventMix = activeSongId
+    ? eventMixOverrides[activeSongId] || null
+    : null;
   const activeSongSession = useMemo(
-    () => resolveSongSession(activeSong, activeSongSessionSource),
-    [activeSong, activeSongId, activeSongSessionSource],
+    () => applyLiveDirectorEventMix(
+      resolveSongSession(activeSong, activeSongSessionSource),
+      activeEventMix,
+    ),
+    [activeEventMix, activeSong, activeSongId, activeSongSessionSource],
   );
   const activeSongSections = useMemo(
     () => buildLiveDirectorSectionsFromMarkers(activeSong?.sectionMarkers || []) || undefined,
@@ -410,6 +435,17 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
 
     return chips;
   }, [downloadStatus.active, downloadStatus.done, downloadStatus.progress, downloadStatus.total, syncConnected]);
+
+  const hasEventMixContext = Boolean(String(eventId || '').trim() && String(playlistId || '').trim());
+  const activeEventMixSaveStatus = eventMixSaveStates[activeSongId] || 'idle';
+  const isActiveEventMixLoading = Boolean(
+    hasEventMixContext && activeSongId && !eventMixLoadedSongIds.has(activeSongId),
+  );
+
+  useEffect(() => () => {
+    eventMixStatusTimersRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    eventMixStatusTimersRef.current.clear();
+  }, []);
 
   useEffect(() => {
     if (!activeSongId) {
@@ -449,6 +485,42 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
       cancelled = true;
     };
   }, [activeSong?.multitrackSession, activeSongId]);
+
+  useEffect(() => {
+    if (!hasEventMixContext || !activeSongId || eventMixLoadedSongIds.has(activeSongId)) return;
+
+    let cancelled = false;
+    void fetchLiveDirectorEventMix({ eventId, songId: activeSongId })
+      .then((fetchedMix) => {
+        if (cancelled || !fetchedMix) return;
+        setEventMixOverrides((previous) => {
+          const currentMix = previous[activeSongId] || null;
+          if (liveDirectorEventMixSignature(currentMix) === liveDirectorEventMixSignature(fetchedMix)) {
+            return previous;
+          }
+          return { ...previous, [activeSongId]: fetchedMix };
+        });
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.warn('[ModoEnsayoDirector] No se pudo refrescar la mezcla del evento.', error);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setEventMixLoadedSongIds((previous) => {
+            if (previous.has(activeSongId)) return previous;
+            const next = new Set(previous);
+            next.add(activeSongId);
+            return next;
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSongId, eventId, eventMixLoadedSongIds, hasEventMixContext]);
 
   useEffect(() => {
     screenWakeLockService.setRequested('modo-ensayo-director', true);
@@ -776,10 +848,69 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
     }));
   }, []);
 
-  if (!activeSong) {
+  const handleEventMixChange = useCallback((rawMix) => {
+    const songId = activeSongId;
+    const mix = normalizeLiveDirectorEventMix(rawMix);
+    if (!hasEventMixContext || !songId || !mix) {
+      return Promise.resolve();
+    }
+
+    setEventMixOverrides((previous) => ({ ...previous, [songId]: mix }));
+    setEventMixLoadedSongIds((previous) => {
+      if (previous.has(songId)) return previous;
+      const next = new Set(previous);
+      next.add(songId);
+      return next;
+    });
+
+    const nextVersion = Number(eventMixSaveVersionsRef.current[songId] || 0) + 1;
+    eventMixSaveVersionsRef.current[songId] = nextVersion;
+    setEventMixSaveStates((previous) => ({ ...previous, [songId]: 'saving' }));
+
+    const existingTimer = eventMixStatusTimersRef.current.get(songId);
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+      eventMixStatusTimersRef.current.delete(songId);
+    }
+
+    const saveTask = eventMixSaveQueueRef.current
+      .catch(() => undefined)
+      .then(() => saveLiveDirectorEventMix({ eventId, songId, mix }));
+
+    eventMixSaveQueueRef.current = saveTask.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    return saveTask
+      .then((savedMix) => {
+        if (eventMixSaveVersionsRef.current[songId] !== nextVersion) return;
+
+        if (savedMix) {
+          setEventMixOverrides((previous) => ({ ...previous, [songId]: savedMix }));
+        }
+        setEventMixSaveStates((previous) => ({ ...previous, [songId]: 'saved' }));
+        const timeoutId = window.setTimeout(() => {
+          eventMixStatusTimersRef.current.delete(songId);
+          if (eventMixSaveVersionsRef.current[songId] !== nextVersion) return;
+          setEventMixSaveStates((previous) => ({ ...previous, [songId]: 'idle' }));
+        }, 2400);
+        eventMixStatusTimersRef.current.set(songId, timeoutId);
+      })
+      .catch((error) => {
+        if (eventMixSaveVersionsRef.current[songId] === nextVersion) {
+          setEventMixSaveStates((previous) => ({ ...previous, [songId]: 'error' }));
+        }
+        throw error;
+      });
+  }, [activeSongId, eventId, hasEventMixContext]);
+
+  if (!activeSong || isActiveEventMixLoading) {
     return (
       <div className="flex h-[100dvh] items-center justify-center bg-[#202223] text-white">
-        <p className="text-sm text-white/60">No hay canciones listas para Modo Ensayo Director.</p>
+        <p className="text-sm text-white/60">
+          {activeSong ? 'Cargando mezcla de este evento...' : 'No hay canciones listas para Modo Ensayo Director.'}
+        </p>
       </div>
     );
   }
@@ -802,6 +933,8 @@ export default function ModoEnsayoDirector({ playlist = [], contextTitle = 'Modo
       onInternalPadVolumeChange={setPadVolume}
       onPlaybackSnapshot={handlePlaybackSnapshot}
       onSessionPersisted={handleSessionPersisted}
+      onEventMixChange={hasEventMixContext ? handleEventMixChange : undefined}
+      eventMixSaveStatus={activeEventMixSaveStatus}
       onBack={onExit}
       backLabel="Volver al modo ensayo"
       title={`Modo Ensayo - ${contextTitle}`}

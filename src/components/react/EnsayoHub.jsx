@@ -1592,6 +1592,8 @@ export default function EnsayoHub({
         <ModoEnsayoDirector
           playlist={songs}
           contextTitle={contextTitle}
+          eventId={rehearsalEventId}
+          playlistId={String(playlistId || '')}
           onExit={handleLiveModeExit}
         />
       </React.Suspense>

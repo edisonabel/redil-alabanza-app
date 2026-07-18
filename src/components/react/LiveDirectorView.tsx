@@ -67,6 +67,7 @@ import {
   assertLiveDirectorM4aFiles,
   LIVE_DIRECTOR_M4A_ACCEPT,
 } from '../../utils/liveDirectorStemFormat';
+import { buildLiveDirectorEventMix } from '../../utils/liveDirectorEventMix';
 
 type MixerTrackMeta = {
   id: string;
@@ -153,6 +154,17 @@ type PendingLiveDirectorSessionSave = {
   payload: LiveDirectorSessionSavePayload;
 };
 
+type LiveDirectorEventMixPayload = {
+  version: 1;
+  tracks: Array<{
+    id: string;
+    enabled: boolean;
+    volume: number;
+  }>;
+};
+
+type EventMixSaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+
 type LiveDirectorViewProps = {
   tracks?: TrackData[];
   sections?: Array<SectionVisual | LiveDirectorSectionVisual>;
@@ -177,6 +189,8 @@ type LiveDirectorViewProps = {
   onInternalPadVolumeChange?: (volume: number) => void;
   onPlaybackSnapshot?: (snapshot: LiveDirectorPlaybackSnapshot) => void;
   onSessionPersisted?: (session: LiveDirectorPersistedSession) => void;
+  onEventMixChange?: (mix: LiveDirectorEventMixPayload) => Promise<void> | void;
+  eventMixSaveStatus?: EventMixSaveStatus;
   onBack?: () => void;
   backLabel?: string;
   returnHref?: string;
@@ -518,6 +532,8 @@ export function LiveDirectorView({
   onInternalPadVolumeChange,
   onPlaybackSnapshot,
   onSessionPersisted,
+  onEventMixChange,
+  eventMixSaveStatus = 'idle',
   onBack,
   backLabel,
   returnHref,
@@ -526,6 +542,7 @@ export function LiveDirectorView({
   const hasPersistedSongContext = Boolean(songId);
   const isSongBoundView = requiresSongContext || hasPersistedSongContext;
   const canLoadManualSession = !hasProvidedTracks && (!requiresSongContext || hasPersistedSongContext);
+  const usesEventMixPersistence = mode === 'ensayo' && Boolean(onEventMixChange);
   const sequenceFileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const sectionsLaneScrollRef = useRef<HTMLDivElement | null>(null);
@@ -618,6 +635,7 @@ export function LiveDirectorView({
   const sessionSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const pendingSilentSessionSaveRef = useRef<PendingLiveDirectorSessionSave | null>(null);
   const isFlushingSilentSessionSaveRef = useRef(false);
+  const eventMixFlushRef = useRef<() => void>(() => undefined);
   const liveDirectorRootRef = useRef<HTMLDivElement | null>(null);
   const chordClockFrameRef = useRef<number | null>(null);
   const activeChordLineRef = useRef<HTMLElement | null>(null);
@@ -816,6 +834,9 @@ export function LiveDirectorView({
 
   const exitLiveDirector = useCallback(async () => {
     setShowBackConfirm(false);
+    if (usesEventMixPersistence) {
+      eventMixFlushRef.current();
+    }
 
     try {
       if (isNativeLiveDirectorEngineAvailable()) {
@@ -844,7 +865,7 @@ export function LiveDirectorView({
         window.location.replace('/repertorio');
       }
     }
-  }, [onBack, returnHref, stop]);
+  }, [onBack, returnHref, stop, usesEventMixPersistence]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1068,12 +1089,9 @@ export function LiveDirectorView({
       : 'Secuencia unica';
   const canToggleTrackLoad = !hasProvidedTracks && manualSession?.mode === 'folder' && sessionTracks.length > 1;
   const canOpenStemsActionModal = !hasProvidedTracks && canManagePersistedSongSession && hasPersistedSongContext;
-  const canUseStemsToolbar = (sessionTracks.length > 1 && activeTracks.length > 0) || canOpenStemsActionModal;
-  const areAllActiveTracksMuted =
-    hasTrackSession && activeTracks.length > 0 && activeTracks.every((track) => mutedTrackIds.has(track.id));
-  const isStemsToolbarActive = canToggleTrackLoad
-    ? enabledSessionTracks.length !== sessionTracks.length
-    : areAllActiveTracksMuted;
+  const canManageStemSelection = !hasProvidedTracks && hasPersistedSongContext && canToggleTrackLoad;
+  const canUseStemsToolbar = canManageStemSelection || canOpenStemsActionModal;
+  const isStemsToolbarActive = canToggleTrackLoad && enabledSessionTracks.length !== sessionTracks.length;
   const useWideTrackLoadModal = !isPortrait;
   const showSectionsPanel = surfaceView === 'sections';
   const displayBpm = Number.isFinite(Number(bpm)) ? Math.max(0, Math.round(Number(bpm))) : 0;
@@ -1966,14 +1984,19 @@ export function LiveDirectorView({
       setSoloTrackIds(new Set());
       setShowLoadPanel(canOpenLoadPanel);
     }
-  }, [canOpenLoadPanel, hasProvidedTracks, initialSession, isSongBoundView, replaceOwnedObjectUrls, requiresSongContext, songId]);
+  }, [hasProvidedTracks, initialSession, isSongBoundView, replaceOwnedObjectUrls, requiresSongContext, songId]);
 
   useEffect(() => {
     if (!canOpenStemsActionModal) {
       setShowStemsActionModal(false);
-      setShowTrackLoadModal(false);
     }
   }, [canOpenStemsActionModal]);
+
+  useEffect(() => {
+    if (!canManageStemSelection) {
+      setShowTrackLoadModal(false);
+    }
+  }, [canManageStemSelection]);
 
   useEffect(() => {
     if (!canOpenLoadPanel) {
@@ -3154,13 +3177,37 @@ export function LiveDirectorView({
       previous ? { ...previous, tracks: nextTracks } : previous
     ));
 
+    if (usesEventMixPersistence && onEventMixChange) {
+      const eventMix = buildLiveDirectorEventMix(nextTracks) as LiveDirectorEventMixPayload | null;
+      if (eventMix) {
+        void Promise.resolve(onEventMixChange(eventMix)).catch((error) => {
+          console.warn('[LiveDirectorView] Event mixer autosave failed.', error);
+        });
+      }
+      return;
+    }
+
     queueSilentSessionSave(buildSessionSavePayload({
       mode: manualSession.mode,
       tracks: nextTracks,
       unmatchedFiles: manualSession.unmatchedFiles || [],
       sectionOffsetSeconds: Number(manualSession.sectionOffsetSeconds) || 0,
     }));
-  }, [buildSessionSavePayload, hasPersistedSongContext, manualSession, mutedTrackIds, queueSilentSessionSave, trackOutputRoutes, trackVolumes]);
+  }, [buildSessionSavePayload, hasPersistedSongContext, manualSession, mutedTrackIds, onEventMixChange, queueSilentSessionSave, trackOutputRoutes, trackVolumes, usesEventMixPersistence]);
+
+  useEffect(() => {
+    eventMixFlushRef.current = () => commitMixerStateSilent();
+    return () => {
+      eventMixFlushRef.current = () => undefined;
+    };
+  }, [commitMixerStateSilent]);
+
+  useEffect(() => {
+    if (!usesEventMixPersistence) return;
+    const flushEventMix = () => eventMixFlushRef.current();
+    window.addEventListener('pagehide', flushEventMix);
+    return () => window.removeEventListener('pagehide', flushEventMix);
+  }, [usesEventMixPersistence]);
 
   useEffect(() => {
     if (!hasSessionTracks || !isWebTrackLimitExceeded || autoDisabledTrackNames.length === 0) {
@@ -3192,11 +3239,13 @@ export function LiveDirectorView({
       congregationOriginalVolumesRef.current.size > 0
     ) return;
 
-    const isDirty = manualSession.tracks.some(
-      (t) => (trackVolumes[t.id] !== undefined && trackVolumes[t.id] !== t.volume) ||
+    const isDirty = manualSession.tracks.some((t) => (
+      (trackVolumes[t.id] !== undefined && trackVolumes[t.id] !== t.volume) ||
+      (!usesEventMixPersistence && (
         (mutedTrackIds.has(t.id) !== t.isMuted) ||
         ((trackOutputRoutes[t.id] ?? resolveTrackOutputRoute(t)) !== resolveTrackOutputRoute(t))
-    );
+      ))
+    ));
 
     if (isDirty) {
       if (mixerAutosaveTimerRef.current !== null) {
@@ -3221,7 +3270,7 @@ export function LiveDirectorView({
         window.clearTimeout(mixerAutosaveTimerRef.current);
       }
     };
-  }, [trackOutputRoutes, trackVolumes, mutedTrackIds, manualSession, commitMixerStateSilent, congregationFadeState, hasPersistedSongContext, isInitializingSession]);
+  }, [trackOutputRoutes, trackVolumes, mutedTrackIds, manualSession, commitMixerStateSilent, congregationFadeState, hasPersistedSongContext, isInitializingSession, usesEventMixPersistence]);
 
   // Persist newly-computed activity envelopes exactly once. When either the
   // iOS native engine or the web engine finishes loading tracks it hands us a
@@ -3230,7 +3279,7 @@ export function LiveDirectorView({
   // skip the per-track envelope computation entirely.
   const persistedEnvelopeSignatureRef = useRef<string>('');
   useEffect(() => {
-    if (!hasPersistedSongContext || !manualSession || isInitializingSession) return;
+    if (!hasPersistedSongContext || !manualSession || isInitializingSession || usesEventMixPersistence) return;
 
     const entries = manualSession.tracks
       .map((track) => {
@@ -3255,7 +3304,7 @@ export function LiveDirectorView({
       `[LiveDirectorView] Persisting activity envelopes for ${entries.length} track(s).`,
     );
     commitMixerStateSilent();
-  }, [commitMixerStateSilent, hasPersistedSongContext, isInitializingSession, manualSession, trackEnvelopes]);
+  }, [commitMixerStateSilent, hasPersistedSongContext, isInitializingSession, manualSession, trackEnvelopes, usesEventMixPersistence]);
 
   const capEnabledMapToTrackLimit = useCallback((enabledMap: Record<string, boolean>) => {
     const nextMap: Record<string, boolean> = {};
@@ -3300,7 +3349,7 @@ export function LiveDirectorView({
   }, [capEnabledMapToTrackLimit, pendingEnabledMap, manualSession, hasPersistedSongContext, commitMixerStateSilent]);
 
   const handleOpenTrackLoadModal = useCallback(() => {
-    if (!canOpenStemsActionModal || !canToggleTrackLoad) {
+    if (!canManageStemSelection) {
       return;
     }
 
@@ -3309,7 +3358,7 @@ export function LiveDirectorView({
     setPendingEnabledMap(capEnabledMapToTrackLimit(initial));
     setShowStemsActionModal(false);
     setShowTrackLoadModal(true);
-  }, [canOpenStemsActionModal, canToggleTrackLoad, capEnabledMapToTrackLimit, manualSession?.tracks]);
+  }, [canManageStemSelection, capEnabledMapToTrackLimit, manualSession?.tracks]);
 
   const handleOpenStemsLoader = useCallback(() => {
     if (!canOpenLoadPanel) {
@@ -3620,32 +3669,19 @@ export function LiveDirectorView({
     });
   };
 
-  const handleToggleAllActiveStems = () => {
-    if (!hasTrackSession) {
-      return;
-    }
-
-    const nextMuteAll = !areAllActiveTracksMuted;
-    activeTracks.forEach((track) => {
-      const currentlyMuted = mutedTrackIds.has(track.id);
-      if (nextMuteAll !== currentlyMuted) {
-        toggleMute(track.id);
-      }
-    });
-    setMutedTrackIds(nextMuteAll ? new Set(activeTracks.map((track) => track.id)) : new Set());
-  };
-
   const handleStemsToolbarAction = () => {
     if (!canUseStemsToolbar) {
       return;
     }
 
-    if (canOpenStemsActionModal) {
-      setShowStemsActionModal(true);
+    if (canManageStemSelection) {
+      handleOpenTrackLoadModal();
       return;
     }
 
-    handleToggleAllActiveStems();
+    if (canOpenStemsActionModal) {
+      setShowStemsActionModal(true);
+    }
   };
 
   const handleSoloTrack = (trackId: string) => {
@@ -4295,6 +4331,13 @@ export function LiveDirectorView({
     : activeTracks.length;
 
   const advancedStreamingActive = diagnostics?.engineMode === 'streaming';
+  const eventMixSaveNotice = eventMixSaveStatus === 'saving'
+    ? 'Guardando mezcla del evento...'
+    : eventMixSaveStatus === 'saved'
+      ? 'Mezcla del evento guardada'
+      : eventMixSaveStatus === 'error'
+        ? 'No se pudo guardar la mezcla del evento'
+        : '';
 
   const shellClassName = ['fixed inset-0 z-[70] overflow-hidden bg-[#202223] text-white', className]
     .filter(Boolean)
@@ -4584,12 +4627,8 @@ export function LiveDirectorView({
                 style={isToolbarCompactLandscape
                   ? { width: scaleRem(isUltraCompactLandscape ? 4.35 : 4.95, 3.75) }
                   : { width: '100%' }}
-                aria-label={canOpenStemsActionModal
-                  ? 'Abrir opciones de stems'
-                  : (areAllActiveTracksMuted ? 'Activar stems' : 'Apagar stems')}
-                title={canOpenStemsActionModal
-                  ? 'Opciones de stems (S)'
-                  : `${areAllActiveTracksMuted ? 'Activar' : 'Apagar'} stems (S)`}
+                aria-label="Administrar stems"
+                title="Administrar stems (S)"
               >
                 <SlidersVertical className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isToolbarCompactLandscape ? 'h-4 w-4' : 'h-5 w-5'}`} />
                 <span className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.46rem]' : 'mt-1 text-[0.58rem]'} tracking-[0.18em] text-white/52`}>
@@ -4621,6 +4660,9 @@ export function LiveDirectorView({
                             return;
                           }
 
+                          if (usesEventMixPersistence) {
+                            eventMixFlushRef.current();
+                          }
                           onSelectQueueSong?.(queueSong.id);
                         }}
                       />
@@ -5625,7 +5667,7 @@ export function LiveDirectorView({
         </div>
       )}
 
-      {showTrackLoadModal && canOpenStemsActionModal && (
+      {showTrackLoadModal && canManageStemSelection && (
         <div
           className="absolute inset-0 z-[58] flex items-center justify-center bg-black/50 px-4 py-4 backdrop-blur-[10px]"
           role="dialog"
@@ -5744,6 +5786,15 @@ export function LiveDirectorView({
 
             <div className={`shrink-0 border-t border-white/8 bg-black/16 ${useWideTrackLoadModal ? 'px-5 py-4' : 'px-4 py-3'}`}>
               <div className="flex items-center gap-3">
+                {!isEnsayoMode && canOpenLoadPanel && (
+                  <button
+                    type="button"
+                    onClick={handleOpenStemsLoader}
+                    className="ui-pressable-soft h-12 flex-1 rounded-[1rem] border border-white/10 bg-white/[0.04] px-3 text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-white/70 hover:bg-white/[0.07] hover:text-white"
+                  >
+                    Cargar / reemplazar
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleCancelTrackLoadModal}
@@ -5811,6 +5862,23 @@ export function LiveDirectorView({
           <audio ref={padAudioRefA} preload="none" className="hidden" />
           <audio ref={padAudioRefB} preload="none" className="hidden" />
         </>
+      )}
+
+      {usesEventMixPersistence && eventMixSaveNotice && (
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-3 z-[59] flex justify-center px-3"
+          role={eventMixSaveStatus === 'error' ? 'alert' : 'status'}
+          aria-live={eventMixSaveStatus === 'error' ? 'assertive' : 'polite'}
+        >
+          <div className={`rounded-full border px-3.5 py-2 text-[0.68rem] font-black uppercase tracking-[0.16em] shadow-[0_12px_28px_rgba(0,0,0,0.34)] backdrop-blur-xl ${eventMixSaveStatus === 'error'
+            ? 'border-rose-300/28 bg-rose-950/88 text-rose-100'
+            : eventMixSaveStatus === 'saved'
+              ? 'border-emerald-300/24 bg-emerald-950/86 text-emerald-100'
+              : 'border-cyan-300/24 bg-slate-950/88 text-cyan-100'
+          }`}>
+            {eventMixSaveNotice}
+          </div>
+        </div>
       )}
 
       {engineSuspensionNotice && (
