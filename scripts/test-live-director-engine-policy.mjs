@@ -7,12 +7,48 @@ import {
   resolveStreamingFallbackPolicy,
   resolveStreamingSeekPolicy,
 } from '../src/utils/liveDirectorEnginePolicy.ts';
+import { detectLiveChromeFamily } from '../src/utils/liveDiagnostics.ts';
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 
 const iosSafari = { isIOS: true, isSafari: true };
 const desktopSafari = { isIOS: false, isSafari: true };
 const chrome = { isAndroid: false, isChromeFamily: true, isIOS: false, isSafari: false };
+
+assert.equal(
+  detectLiveChromeFamily({
+    userAgent: 'Mozilla/5.0 AppleWebKit/537.36 Safari/537.36',
+    brands: [
+      { brand: 'Not/A)Brand' },
+      { brand: 'Chromium' },
+      { brand: 'Google Chrome' },
+    ],
+    vendor: 'Google Inc.',
+    hasChromeRuntime: true,
+  }),
+  true,
+  'Chrome must retain its synchronized route when its reduced user agent omits the Chrome token.',
+);
+assert.equal(
+  detectLiveChromeFamily({
+    userAgent: 'Mozilla/5.0 AppleWebKit/537.36 Safari/537.36',
+    brands: [],
+    vendor: '',
+    hasChromeRuntime: true,
+  }),
+  true,
+  'The native Chromium runtime marker must protect the route when every user-agent hint is hidden.',
+);
+assert.equal(
+  detectLiveChromeFamily({
+    userAgent: 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Version/18.5 Safari/605.1.15',
+    brands: [],
+    vendor: 'Apple Computer, Inc.',
+    hasChromeRuntime: false,
+  }),
+  false,
+  'Desktop Safari must not be moved onto the Chrome-specific path.',
+);
 
 assert.equal(
   requiresSynchronizedStreamingWorker(iosSafari, 15),
