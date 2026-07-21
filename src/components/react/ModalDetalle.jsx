@@ -373,7 +373,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
             aria-modal="true"
             aria-hidden={isOpen ? 'false' : 'true'}
             data-ui-modal="true"
-            className={`fixed inset-0 z-[140] min-h-[100dvh] items-start justify-center overflow-y-auto bg-slate-950/34 p-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-[calc(env(safe-area-inset-bottom)+1rem)] backdrop-blur-md transition-opacity duration-300 dark:bg-zinc-950/76 sm:p-4 sm:pt-6 lg:flex lg:items-start lg:px-6 lg:pb-6 lg:pt-[7vh] ${isOpen ? 'flex opacity-100' : 'pointer-events-none opacity-0'}`}
+            className={`fixed inset-0 ${openingRehearsal ? 'z-[9999]' : 'z-[140]'} min-h-[100dvh] items-start justify-center overflow-y-auto bg-slate-950/34 p-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-[calc(env(safe-area-inset-bottom)+1rem)] backdrop-blur-md transition-opacity duration-300 dark:bg-zinc-950/76 sm:p-4 sm:pt-6 lg:flex lg:items-start lg:px-6 lg:pb-6 lg:pt-[7vh] ${isOpen ? 'flex opacity-100' : 'pointer-events-none opacity-0'}`}
             onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
         >
             <div className={`relative my-0 flex max-h-[84dvh] w-[calc(100%-0.35rem)] max-w-2xl flex-col overflow-hidden rounded-[24px] border border-slate-200/90 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.98))] text-slate-950 shadow-[0_28px_80px_rgba(15,23,42,0.20)] transition-transform duration-300 dark:border-white/12 dark:bg-[linear-gradient(145deg,rgba(20,26,35,0.98),rgba(9,12,17,0.98))] dark:text-white dark:shadow-[0_30px_90px_rgba(0,0,0,0.54)] sm:max-h-[calc(100dvh-112px-env(safe-area-inset-bottom))] sm:w-full sm:rounded-[28px] lg:my-0 lg:max-h-[calc(100dvh-8.5rem)] lg:max-w-[1180px] xl:max-w-[1260px] ${isOpen ? 'scale-100' : 'scale-95'}`}>
@@ -439,19 +439,6 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                         </div>
                     </div>
                 </div>
-
-                {openingRehearsal && (
-                    <div className="fixed inset-0 z-[260] flex items-center justify-center bg-slate-950/70 px-6 backdrop-blur-2xl">
-                        <div className="w-full max-w-[20rem] rounded-[2rem] border border-white/12 bg-white/12 p-5 text-center text-white shadow-[0_28px_90px_rgba(0,0,0,0.42)]">
-                            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/12 bg-white/10 shadow-inner">
-                                <span className="h-7 w-7 rounded-full border-[3px] border-white/25 border-t-white motion-safe:animate-spin" aria-hidden="true" />
-                            </div>
-                            <p className="text-[0.72rem] font-black uppercase tracking-[0.28em] text-blue-100/80">Modo Ensayo</p>
-                            <p className="mt-1 text-xl font-black tracking-tight">Abriendo ensayo...</p>
-                            <p className="mt-2 text-sm font-semibold leading-5 text-white/68">Preparando repertorio, acordes y recursos.</p>
-                        </div>
-                    </div>
-                )}
 
                 <div className="relative z-10 flex min-h-0 flex-1 flex-col">
                     <div className="grid grid-cols-2 border-b border-slate-200/80 px-4 dark:border-white/10 sm:px-7 lg:px-8">
@@ -610,6 +597,20 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                     </div>
                 </div>
             </div>
+
+            {openingRehearsal && (
+                <div className="fixed inset-0 z-[260] flex min-h-[100dvh] items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_34%,rgba(59,130,246,0.13),transparent_32%),linear-gradient(180deg,#10151d_0%,#090c12_100%)] px-6 text-white">
+                    <div className="flex w-full max-w-md flex-col items-center text-center" role="status" aria-live="polite">
+                        <span className="h-12 w-12 rounded-full border-[3px] border-blue-200/20 border-t-blue-200 motion-safe:animate-spin" aria-hidden="true" />
+                        <p className="mt-7 text-[0.72rem] font-black uppercase tracking-[0.3em] text-blue-200/72">Modo Ensayo</p>
+                        <h2 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">Abriendo ensayo...</h2>
+                        <p className="mt-3 text-sm font-semibold leading-6 text-white/58 sm:text-base">Preparando repertorio, acordes y recursos.</p>
+                        <div className="mt-7 h-1.5 w-full max-w-64 overflow-hidden rounded-full bg-white/8" aria-hidden="true">
+                            <div className="live-director-indeterminate h-full w-1/3 rounded-full bg-blue-300/86" />
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
