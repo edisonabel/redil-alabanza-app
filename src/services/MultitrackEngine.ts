@@ -385,6 +385,7 @@ export class MultitrackEngine {
 
   getDiagnostics(): {
     engineMode: 'buffer' | 'media' | 'streaming';
+    engineRoute: 'legacy-buffer' | 'legacy-media';
     trackCount: number;
     estimatedAudioMemoryBytes: number;
     browserHeapUsedBytes: number | null;
@@ -410,6 +411,7 @@ export class MultitrackEngine {
 
     return {
       engineMode: this.mode,
+      engineRoute: this.mode === 'media' ? 'legacy-media' : 'legacy-buffer',
       trackCount: this.tracks.length,
       estimatedAudioMemoryBytes,
       ...readBrowserMemorySnapshot(),

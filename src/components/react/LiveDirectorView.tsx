@@ -62,7 +62,11 @@ import {
 } from '../../utils/liveDirectorTrackRouting';
 import { getPadUrlForSongKey } from '../../utils/padAudio';
 import { extractCoverArtFromMp3 } from '../../utils/mp3CoverArt';
-import { logLiveDiagnostic, readLiveBrowserCapabilities } from '../../utils/liveDiagnostics';
+import {
+  isLiveDiagnosticsEnabled,
+  logLiveDiagnostic,
+  readLiveBrowserCapabilities,
+} from '../../utils/liveDiagnostics';
 import {
   assertLiveDirectorM4aFiles,
   LIVE_DIRECTOR_M4A_ACCEPT,
@@ -358,6 +362,7 @@ function CongregationFadeIcon({ muted, fading }: { muted: boolean; fading: boole
 const GENERIC_TRACK_ACCENTS = ['#81ddf5', '#7ed8e7', '#9f7cff', '#43c477', '#c98bff', '#73d1f8'];
 const TRACK_META_BY_ID = new Map(MIXER_TRACKS.map((track) => [track.id, track]));
 const PASSIVE_LIVE_SYNC_SNAPSHOT_INTERVAL_MS = 250;
+const PASSIVE_TELEMETRY_UI_INTERVAL_MS = 1000 / 24;
 
 const clamp = (value: number, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 
@@ -611,6 +616,7 @@ export function LiveDirectorView({
   const resumeNativeMetersTimeoutRef = useRef<number | null>(null);
   const passiveTelemetryFrameRef = useRef<number | null>(null);
   const passiveCurrentTimeRef = useRef(0);
+  const lastPassiveUiFrameAtRef = useRef(0);
   const lastPassiveLiveSyncSnapshotAtRef = useRef(0);
   const visualSectionTimeRef = useRef<number | null>(null);
   const passiveClockTextRef = useRef<HTMLSpanElement | null>(null);
@@ -993,7 +999,11 @@ export function LiveDirectorView({
   );
 
   const activeTrackWarningThreshold = useMemo(() => {
-    if (useStreamingEngine || canRunAdvancedStreamingEngine) {
+    const synchronizedStreamingActive = diagnostics
+      ? diagnostics.engineRoute === 'streaming-worker'
+      : useStreamingEngine && canRunAdvancedStreamingEngine;
+
+    if (synchronizedStreamingActive) {
       return Number.MAX_SAFE_INTEGER;
     }
 
@@ -1023,9 +1033,12 @@ export function LiveDirectorView({
       return SAFARI_WEB_MAX_ACTIVE_TRACKS;
     }
     return WEB_ENGINE_MAX_ACTIVE_TRACKS;
-  }, [canRunAdvancedStreamingEngine, hasResolvedEngineCapability, isIOSNativeEngineSurface, maxWebActiveTracks, useStreamingEngine]);
+  }, [canRunAdvancedStreamingEngine, diagnostics, hasResolvedEngineCapability, isIOSNativeEngineSurface, maxWebActiveTracks, useStreamingEngine]);
   const sessionActiveTrackLimit = Math.max(1, activeTrackWarningThreshold);
-  const trackLoadGuidanceText = useStreamingEngine || canRunAdvancedStreamingEngine
+  const synchronizedStreamingExpected = diagnostics
+    ? diagnostics.engineRoute === 'streaming-worker'
+    : useStreamingEngine && canRunAdvancedStreamingEngine;
+  const trackLoadGuidanceText = synchronizedStreamingExpected
     ? 'Motor avanzado activo: puedes cargar todos los stems.'
     : `Desactiva stems que no vas a usar. Más de ${sessionActiveTrackLimit} puede ser inestable según el equipo.`;
 
@@ -1325,8 +1338,27 @@ export function LiveDirectorView({
       lastAlertAt: 0,
     };
     lastPassiveLiveSyncSnapshotAtRef.current = 0;
+    lastPassiveUiFrameAtRef.current = 0;
 
     const drawPassiveTelemetry = (frameTime: number) => {
+      passiveTelemetryFrameRef.current = window.requestAnimationFrame(drawPassiveTelemetry);
+
+      if (lastPassiveUiFrameAtRef.current > 0) {
+        const elapsedSinceUiFrame = frameTime - lastPassiveUiFrameAtRef.current;
+        if (elapsedSinceUiFrame < PASSIVE_TELEMETRY_UI_INTERVAL_MS) {
+          return;
+        }
+        lastPassiveUiFrameAtRef.current += PASSIVE_TELEMETRY_UI_INTERVAL_MS;
+        if (
+          frameTime - lastPassiveUiFrameAtRef.current >
+          PASSIVE_TELEMETRY_UI_INTERVAL_MS
+        ) {
+          lastPassiveUiFrameAtRef.current = frameTime;
+        }
+      } else {
+        lastPassiveUiFrameAtRef.current = frameTime;
+      }
+
       const fpsMonitor = passiveFpsMonitorRef.current;
       if (fpsMonitor.lastSampleAt <= 0) {
         fpsMonitor.lastSampleAt = frameTime;
@@ -1339,9 +1371,10 @@ export function LiveDirectorView({
           const fps = (fpsMonitor.frames * 1000) / elapsedMs;
           fpsMonitor.frames = 0;
           fpsMonitor.lastSampleAt = frameTime;
-          fpsMonitor.lowSamples = fps < 30 ? fpsMonitor.lowSamples + 1 : 0;
+          fpsMonitor.lowSamples = fps < 18 ? fpsMonitor.lowSamples + 1 : 0;
 
           if (
+            isLiveDiagnosticsEnabled() &&
             fpsMonitor.lowSamples >= 2 &&
             frameTime - fpsMonitor.lastAlertAt >= 5000
           ) {
@@ -1447,7 +1480,6 @@ export function LiveDirectorView({
         }
       }
 
-      passiveTelemetryFrameRef.current = window.requestAnimationFrame(drawPassiveTelemetry);
     };
 
     stopPassiveTelemetryLoop();
@@ -4330,7 +4362,7 @@ export function LiveDirectorView({
     ? Object.values(pendingEnabledMap).filter(Boolean).length
     : activeTracks.length;
 
-  const advancedStreamingActive = diagnostics?.engineMode === 'streaming';
+  const advancedStreamingActive = diagnostics?.engineRoute === 'streaming-worker';
   const eventMixSaveNotice = eventMixSaveStatus === 'saving'
     ? 'Guardando mezcla del evento...'
     : eventMixSaveStatus === 'saved'

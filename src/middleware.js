@@ -6,6 +6,7 @@ import {
   getServerAuthTokens,
   setServerAuthCookies,
 } from './lib/server/auth-cookies.js';
+import { normalizeSafeInternalReturnTo } from './utils/safeInternalReturnTo.ts';
 
 const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
 
@@ -149,14 +150,15 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   if (path === '/login') {
     if (authState?.accessToken) {
-      return redirectTo('/');
+      return redirectTo(normalizeSafeInternalReturnTo(url.searchParams.get('returnTo')));
     }
     return withRouteHeaders(await next(), path);
   }
 
   if (protectedPath && !authState?.accessToken) {
     clearServerAuthCookies(cookies, isSecure);
-    return redirectTo('/login');
+    const returnTo = `${url.pathname}${url.search}`;
+    return redirectTo(`/login?returnTo=${encodeURIComponent(returnTo)}`);
   }
 
   if (path === '/admin' && !authState?.user) {

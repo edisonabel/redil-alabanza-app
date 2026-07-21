@@ -21,6 +21,11 @@ import {
   warnLiveDiagnostic,
 } from '../utils/liveDiagnostics';
 import { isLiveDirectorMp3Track } from '../utils/liveDirectorStemFormat';
+import {
+  requiresSynchronizedStreamingWorker,
+  resolveStreamingSeekPolicy,
+  supportsDesktopExactSeekRoute,
+} from '../utils/liveDirectorEnginePolicy';
 
 type WindowWithWebkitAudio = Window & typeof globalThis & {
   webkitAudioContext?: typeof AudioContext;
@@ -82,6 +87,7 @@ type WorkletTrackBufferMessage = {
   usesSharedMemory: boolean;
   sampleBuffer: SharedOrRegularBuffer;
   indexBuffer: SharedOrRegularBuffer;
+  retainExtractedSamples?: boolean;
 };
 
 type WorkletPcmChunkMessage = {
@@ -146,6 +152,14 @@ type WorkletPauseAndFlushMessage = {
   targetSample: number;
   positionSeconds: number;
   reason?: 'seek' | 'reset';
+  seekSerial?: number;
+};
+
+type WorkletPauseAndAdvanceMessage = {
+  type: 'PAUSE_AND_ADVANCE';
+  targetSample: number;
+  positionSeconds: number;
+  reason?: 'seek';
   seekSerial?: number;
 };
 
@@ -277,6 +291,7 @@ type WorkletMessage =
   | WorkletTrackOutputRouteMessage
   | WorkletFlushBuffersMessage
   | WorkletPauseAndFlushMessage
+  | WorkletPauseAndAdvanceMessage
   | WorkletResumeReadingMessage
   | WorkletDebugEnabledMessage
   | WorkletConfigureTelemetryMessage
@@ -343,7 +358,10 @@ type ProducerSeekMessage = {
   targetSample: number;
   seekSerial: number;
   decodePrerollFrames?: number;
+  exactSampleSeek?: boolean;
   hardReset?: boolean;
+  requireCompleteReady?: boolean;
+  bufferedAdvance?: boolean;
 };
 
 type ProducerWarmNextSessionMessage = {
@@ -655,12 +673,7 @@ type ProducerSessionSwappedMessage = {
   sampleRate: number;
 };
 
-type ProducerSyncAuditMessage = {
-  type: 'producer-sync-audit';
-  sessionId: number | null;
-  reason?: 'play' | 'seek-resume';
-  seekSerial?: number;
-  rows: Array<{
+type ProducerSyncAuditRow = {
     trackIndex: number;
     trackId?: string;
     trackName?: string;
@@ -674,7 +687,23 @@ type ProducerSyncAuditMessage = {
     normalTimelineInitialized: boolean;
     decodedUntilSample: number;
     endOfFileReached: boolean;
-  }>;
+};
+
+type ProducerSyncAuditMessage = {
+  type: 'producer-sync-audit';
+  sessionId: number | null;
+  reason?: 'play' | 'seek-resume';
+  seekSerial?: number;
+  rows: ProducerSyncAuditRow[];
+};
+
+type PendingProducerSyncAudit = {
+  deferred: Deferred<ProducerSyncAuditMessage>;
+  expectedTrackCount: number;
+  rowsByTrack: Map<number, ProducerSyncAuditRow>;
+  sessionId: number;
+  reason: 'play' | 'seek-resume';
+  seekSerial?: number;
 };
 
 type ProducerInboundMessage =
@@ -933,13 +962,16 @@ type PreloadedStreamingSession = {
   trackStates: TrackRuntime[];
 };
 
-const AUDIO_WORKER_ASSET_VERSION = '20260716-2';
+const AUDIO_WORKER_ASSET_VERSION = '20260720-22';
 const DEFAULT_WORKLET_MODULE_URL = `/workers/MultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_PRODUCER_WORKER_URL = `/workers/AudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
 const DEFAULT_SAMPLE_RATE = 48_000;
 const DEFAULT_CHANNEL_COUNT = 1;
-const DEFAULT_BUFFER_SECONDS = 3;
+const DEFAULT_BUFFER_SECONDS = 6;
+const DESKTOP_EXACT_SEEK_BUFFER_SECONDS = 10;
+const DESKTOP_PRODUCER_POOL_TRACK_THRESHOLD = 8;
+const DESKTOP_PRODUCER_POOL_SIZE = 3;
 const DEFAULT_FETCH_CHUNK_BYTES = 512 * 1024;
 const DEFAULT_FETCH_PAUSE_WATERMARK_RATIO = 0.25;
 const DEFAULT_FETCH_RESUME_WATERMARK_RATIO = 0.55;
@@ -950,7 +982,6 @@ const AAC_FRAME_SIZE = 1024;
 const MP4_EXTRACTION_SAMPLE_BATCH_SIZE = 16;
 const DECODER_SPECIFIC_INFO_TAG = 0x05;
 const STREAMING_TRACK_READY_TIMEOUT_MS = 30_000;
-const PRODUCER_STARTUP_FALLBACK_TIMEOUT_MS = 8_000;
 const MIN_START_BUFFER_SECONDS = 0.5;
 const START_BARRIER_POLL_INTERVAL_MS = 50;
 const START_BARRIER_BUFFERING_NOTICE_MS = 200;
@@ -960,7 +991,8 @@ const PRODUCER_STALE_MESSAGE_GRACE_MS = 5_000;
 const PRODUCER_STALE_RECHECK_DELAY_MS = 250;
 const PRODUCER_DIAGNOSTIC_RATE_LIMIT_MS = 10_000;
 const CONTENT_ALIGNMENT_GUARD_SECONDS = 20;
-const BACKWARD_SEEK_DECODE_PREROLL_SECONDS = 3;
+const CONTENT_SYNC_SPREAD_TOLERANCE_FRAMES = AAC_FRAME_SIZE * 2;
+const SEEK_NO_OP_TOLERANCE_SECONDS = 0.015;
 const FLIGHT_RECORDER_MIN_INTERVAL_MS = 5_000;
 const AAC_SAMPLE_RATE_INDEXES = new Map<number, number>([
   [96000, 0],
@@ -1028,8 +1060,10 @@ export class StreamingMultitrackEngine {
   public workletNode: AudioWorkletNode | null = null;
   public onEnded: (() => void) | null = null;
   private producerWorker: Worker | null = null;
+  private readonly producerWorkers: Worker[] = [];
   private producerRuntimeWarmRequested = false;
   private producerSessionId = 0;
+  private streamingPath: 'worker' | 'main-thread' | 'uninitialized' = 'uninitialized';
   private decoderProbeQueue: Promise<void> = Promise.resolve();
 
   private readonly processorName: string;
@@ -1064,7 +1098,7 @@ export class StreamingMultitrackEngine {
   private pendingProducerSeek: PendingProducerSeek | null = null;
   private pendingWorkletFlush: PendingWorkletFlush | null = null;
   private activeSeekDebugBlock: SeekBackDebugBlock | null = null;
-  private pendingSyncAudit: Deferred<ProducerSyncAuditMessage> | null = null;
+  private pendingSyncAudit: PendingProducerSyncAudit | null = null;
   private pendingPlaybackContentCheck: PlaybackContentCheck | null = null;
   private preloadedNextSession: PreloadedStreamingSession | null = null;
   private readonly latestWorkletTrackStatus = new Map<number, WorkletDebugTrackState>();
@@ -1113,9 +1147,15 @@ export class StreamingMultitrackEngine {
       DEFAULT_SAMPLE_RATE,
       'sampleRate',
     );
+    const capabilities = readLiveBrowserCapabilities();
+    const desktopExactSeekRoute = supportsDesktopExactSeekRoute(capabilities);
+    const browserDefaultBufferSeconds =
+      desktopExactSeekRoute
+        ? DESKTOP_EXACT_SEEK_BUFFER_SECONDS
+        : DEFAULT_BUFFER_SECONDS;
     this.defaultBufferSeconds = this.normalizePositiveNumber(
       options.ringBufferSeconds,
-      DEFAULT_BUFFER_SECONDS,
+      browserDefaultBufferSeconds,
       'ringBufferSeconds',
     );
     this.fetchChunkBytes = this.normalizePositiveInteger(
@@ -1164,6 +1204,7 @@ export class StreamingMultitrackEngine {
       bufferSeconds: this.defaultBufferSeconds,
       sharedArrayBuffer: typeof SharedArrayBuffer === 'function',
       crossOriginIsolated: window.crossOriginIsolated === true,
+      desktopExactSeekRoute,
       browser: readLiveBrowserCapabilities(),
     });
 
@@ -1364,25 +1405,37 @@ export class StreamingMultitrackEngine {
   }
 
   private terminateProducerWorker(reason: string): void {
-    if (!this.producerWorker) {
+    if (this.producerWorkers.length === 0 && !this.producerWorker) {
       return;
     }
 
-    try {
-      this.producerWorker.postMessage({
-        type: 'release-loop-cache',
-        sessionId: this.producerSessionId,
-      });
-    } catch {
-      // no-op
+    const workers = this.producerWorkers.length > 0
+      ? this.producerWorkers.slice()
+      : this.producerWorker
+        ? [this.producerWorker]
+        : [];
+
+    for (const worker of workers) {
+      try {
+        worker.postMessage({
+          type: 'release-loop-cache',
+          sessionId: this.producerSessionId,
+        });
+      } catch {
+        // no-op
+      }
     }
 
     console.warn('[SPSC-SUSPEND] terminating producer worker.', {
       reason,
       sessionId: this.producerSessionId,
     });
-    this.producerWorker.terminate();
+    for (const worker of workers) {
+      worker.terminate();
+    }
+    this.producerWorkers.length = 0;
     this.producerWorker = null;
+    this.streamingPath = 'uninitialized';
     this.producerRuntimeWarmRequested = false;
     this.lastProducerMessageAt = 0;
   }
@@ -1548,6 +1601,7 @@ export class StreamingMultitrackEngine {
         preloaded.trackStates,
       ),
     });
+    this.streamingPath = 'worker';
     this.preloadedNextSession = null;
     this.postLoopRegion();
 
@@ -2003,6 +2057,8 @@ export class StreamingMultitrackEngine {
 
   getDiagnostics(): {
     engineMode: 'buffer' | 'media' | 'streaming';
+    engineRoute: 'streaming-worker' | 'streaming-main-thread' | 'streaming-uninitialized';
+    streamingPath: 'worker' | 'main-thread' | 'uninitialized';
     trackCount: number;
     estimatedAudioMemoryBytes: number;
     browserHeapUsedBytes: number | null;
@@ -2024,6 +2080,13 @@ export class StreamingMultitrackEngine {
 
     return {
       engineMode: 'streaming',
+      engineRoute:
+        this.streamingPath === 'worker'
+          ? 'streaming-worker'
+          : this.streamingPath === 'main-thread'
+            ? 'streaming-main-thread'
+            : 'streaming-uninitialized',
+      streamingPath: this.streamingPath,
       trackCount: this.tracks.length,
       estimatedAudioMemoryBytes,
       ...readBrowserMemorySnapshot(),
@@ -2075,6 +2138,11 @@ export class StreamingMultitrackEngine {
     const producerStarted = canUseSharedProducer
       ? this.configureAudioProducerWorker(normalizedTracks)
       : false;
+    const capabilities = readLiveBrowserCapabilities();
+    const synchronizedWorkerRequired = requiresSynchronizedStreamingWorker(
+      capabilities,
+      this.trackStates.length,
+    );
 
     if (!canUseSharedProducer) {
       warnLiveDiagnostic('streaming:main-thread-producer', {
@@ -2086,8 +2154,16 @@ export class StreamingMultitrackEngine {
     }
 
     if (producerStarted) {
-      await this.recoverFromStalledProducerStartup();
+      this.keepSynchronizedProducerDuringStartup();
     } else {
+      if (synchronizedWorkerRequired) {
+        throw new Error(
+          'Unsupported configuration: multi-stem playback requires the synchronized ' +
+          'SharedArrayBuffer producer worker. The main-thread decoder route was blocked.',
+        );
+      }
+
+      this.streamingPath = 'main-thread';
       this.trackStates.forEach((trackState) => {
         this.startTrackPipeline(trackState);
       });
@@ -2123,65 +2199,16 @@ export class StreamingMultitrackEngine {
     );
   }
 
-  private async recoverFromStalledProducerStartup(): Promise<void> {
-    if (!this.producerWorker || this.trackStates.length === 0) {
-      return;
-    }
-
-    const firstTrackSettled = await Promise.race([
-      Promise.race(
-        this.trackStates.map((trackState) =>
-          trackState.ready.promise.then(
-            () => true,
-            () => true,
-          ),
-        ),
-      ),
-      this.sleep(PRODUCER_STARTUP_FALLBACK_TIMEOUT_MS).then(() => false),
-    ]);
-
-    if (
-      firstTrackSettled ||
-      !this.producerWorker ||
-      this.trackStates.some((trackState) => trackState.readyResolved || trackState.omitted)
-    ) {
-      return;
-    }
-
-    warnLiveDiagnostic('streaming:producer-startup-fallback', {
-      timeoutMs: PRODUCER_STARTUP_FALLBACK_TIMEOUT_MS,
+  private keepSynchronizedProducerDuringStartup(): void {
+    // Restore the stable pre-July-13 contract: once the shared producer starts,
+    // keep it alive until the existing per-track readiness deadline. The 8 s
+    // fallback moved all 15 decoders onto Safari's main thread on slow devices.
+    logLiveDiagnostic('streaming:producer-startup-policy', {
+      policy: 'retain-shared-worker-until-track-deadline',
+      timeoutMs: STREAMING_TRACK_READY_TIMEOUT_MS,
       sessionId: this.producerSessionId,
       trackCount: this.trackStates.length,
-      reason: readLiveBrowserCapabilities().isSafari
-        ? 'No track produced initial audio in Safari; switching to the synchronized main-thread pipeline.'
-        : 'No track produced initial audio; requesting the compatible media/buffer engine.',
     });
-    this.terminateProducerWorker('startup-timeout-no-track-ready');
-
-    // Safari can reject the dedicated worker under COEP even though the same
-    // WebCodecs + AudioWorklet path is valid on the main thread. Keep every stem
-    // on the shared AudioWorklet transport clock instead of falling through to
-    // independent HTMLMediaElement clocks (or decoding every full stem in RAM).
-    if (readLiveBrowserCapabilities().isSafari) {
-      this.trackStates.forEach((trackState) => {
-        if (trackState.omitted || trackState.fetchTask) {
-          return;
-        }
-
-        trackState.ringBuffer.reset();
-        trackState.fetchOffset = 0;
-        trackState.totalBytes = null;
-        trackState.endOfStreamReached = false;
-        trackState.suppressDecodedOutput = false;
-        this.startTrackPipeline(trackState);
-      });
-      return;
-    }
-
-    throw new Error(
-      'Unsupported configuration: the streaming producer did not deliver startup audio; ' +
-      'use the compatible media/buffer engine.',
-    );
   }
 
   private waitForTrackReady(trackState: TrackRuntime): Promise<void> {
@@ -2200,6 +2227,15 @@ export class StreamingMultitrackEngine {
           `ring availableRead=${trackState.ringBuffer.availableRead()}, ` +
           `availableWrite=${trackState.ringBuffer.availableWrite()}, ` +
           `capacity=${trackState.ringBuffer.capacity}, url=${trackState.config.url}`;
+
+        if (this.streamingPath === 'worker') {
+          reject(
+            new Error(
+              `track-ready-timeout en "${trackLabel}" (index ${trackState.index}): ${timeoutDetail}`,
+            ),
+          );
+          return;
+        }
 
         // A single stalled stem must not prevent every healthy stem from loading.
         // Keep one active track as the minimum so the engine never reports ready
@@ -2589,6 +2625,13 @@ export class StreamingMultitrackEngine {
 
     const fromTime = this.getCurrentTime();
     const clampedTime = Math.max(0, timeInSeconds);
+    if (
+      options?.forceFreshStart !== true &&
+      Math.abs(clampedTime - fromTime) < SEEK_NO_OP_TOLERANCE_SECONDS
+    ) {
+      return;
+    }
+
     const wasPlaying = this.transportPlaying;
     const diagnosticWasPlaying =
       typeof options?.wasPlayingBeforeUiSeek === 'boolean'
@@ -2596,11 +2639,20 @@ export class StreamingMultitrackEngine {
         : wasPlaying;
     const targetSample = Math.max(0, Math.round(clampedTime * this.context.sampleRate));
     const isBackwardSeek = clampedTime < fromTime - 0.05;
-    const requiresHardReset = isBackwardSeek || targetSample === 0;
-    const decodePrerollFrames = isBackwardSeek
+    const seekPolicy = resolveStreamingSeekPolicy(readLiveBrowserCapabilities(), {
+      isBackwardSeek,
+      targetIsHead: targetSample === 0,
+    });
+    const requiresHardReset = seekPolicy.hardReset;
+    const fromSample = Math.max(0, Math.round(fromTime * this.context.sampleRate));
+    const canAdvanceInsideBufferedAudio =
+      seekPolicy.exactSampleSeek &&
+      !requiresHardReset &&
+      this.canUseBufferedForwardSeek(fromSample, targetSample);
+    const decodePrerollFrames = seekPolicy.decodePrerollSeconds > 0
       ? Math.min(
         targetSample,
-        Math.round(this.context.sampleRate * BACKWARD_SEEK_DECODE_PREROLL_SECONDS),
+        Math.round(this.context.sampleRate * seekPolicy.decodePrerollSeconds),
       )
       : 0;
     this.startBarrierSerial += 1;
@@ -2668,7 +2720,7 @@ export class StreamingMultitrackEngine {
       const pendingSeek = this.createProducerSeekHandshake({
         targetSample,
         targetTimeSeconds: clampedTime,
-        requireCompleteReady: requiresHardReset,
+        requireCompleteReady: seekPolicy.requireCompleteReady,
       });
       const seekSerial = pendingSeek.serial;
       const pendingFlush = this.createWorkletFlushHandshake(seekSerial);
@@ -2681,7 +2733,7 @@ export class StreamingMultitrackEngine {
         targetSample,
       });
       this.postWorkletMessage({
-        type: 'PAUSE_AND_FLUSH',
+        type: canAdvanceInsideBufferedAudio ? 'PAUSE_AND_ADVANCE' : 'PAUSE_AND_FLUSH',
         targetSample,
         positionSeconds: clampedTime,
         reason: 'seek',
@@ -2707,7 +2759,10 @@ export class StreamingMultitrackEngine {
         targetSample,
         seekSerial,
         decodePrerollFrames,
+        exactSampleSeek: seekPolicy.exactSampleSeek,
         hardReset: requiresHardReset,
+        requireCompleteReady: seekPolicy.requireCompleteReady,
+        bufferedAdvance: canAdvanceInsideBufferedAudio,
       });
       await pendingSeek.promise;
       if (
@@ -2719,8 +2774,11 @@ export class StreamingMultitrackEngine {
       }
       this.pendingProducerSeek = null;
       this.pauseTime = clampedTime;
-      this.startTime = wasPlaying ? this.context.currentTime - clampedTime : 0;
-      this.transportPlaying = wasPlaying;
+      const holdChromeTransportAtTarget = wasPlaying && seekPolicy.exactSampleSeek;
+      this.startTime = wasPlaying && !holdChromeTransportAtTarget
+        ? this.context.currentTime - clampedTime
+        : 0;
+      this.transportPlaying = wasPlaying && !holdChromeTransportAtTarget;
       if (!wasPlaying) {
         this.pendingPlaybackContentCheck = {
           seekSerial,
@@ -2746,6 +2804,27 @@ export class StreamingMultitrackEngine {
       });
       if (!seekStartBarrierReady) {
         return;
+      }
+      if (seekPolicy.exactSampleSeek) {
+        this.pendingPlaybackContentCheck = {
+          seekSerial,
+          targetSample,
+          targetTimeSeconds: clampedTime,
+        };
+        const auditSummary = await this.runSyncAudit({
+          reason: 'seek-resume',
+          seekSerial,
+        });
+        if (this.shouldBlockPlaybackForContentMismatch(auditSummary)) {
+          this.transportPlaying = false;
+          this.startTime = 0;
+          return;
+        }
+        this.pendingPlaybackContentCheck = null;
+      }
+      if (holdChromeTransportAtTarget) {
+        this.startTime = this.context.currentTime - clampedTime;
+        this.transportPlaying = true;
       }
       this.postWorkletMessage({
         type: 'RESUME_READING',
@@ -2827,6 +2906,33 @@ export class StreamingMultitrackEngine {
       seekSerial,
     });
     this.recordSeekBackResumeSent(seekSerial);
+  }
+
+  private canUseBufferedForwardSeek(fromSample: number, targetSample: number): boolean {
+    const capabilities = readLiveBrowserCapabilities();
+    if (
+      !supportsDesktopExactSeekRoute(capabilities) ||
+      targetSample <= fromSample
+    ) {
+      return false;
+    }
+
+    const activeTracks = this.getActiveTrackStates();
+    if (activeTracks.length === 0) {
+      return false;
+    }
+
+    const forwardFrames = targetSample - fromSample;
+    const startBufferFrames = Math.max(
+      AAC_FRAME_SIZE,
+      Math.round(this.context.sampleRate * MIN_START_BUFFER_SECONDS),
+    );
+    const schedulingMarginFrames = Math.round(this.context.sampleRate * 0.25);
+    const requiredFrames = forwardFrames + startBufferFrames + schedulingMarginFrames;
+
+    return activeTracks.every(
+      (trackState) => trackState.ringBuffer.availableRead() >= requiredFrames,
+    );
   }
 
   setTrackVolume(trackIdOrIndex: string | number, volume: number): void {
@@ -3759,21 +3865,35 @@ export class StreamingMultitrackEngine {
       return this.producerWorker;
     }
 
+    const worker = this.createAudioProducerWorker(0);
+    if (!worker) {
+      return null;
+    }
+
+    this.producerWorkers.push(worker);
+    this.producerWorker = worker;
+    return worker;
+  }
+
+  private createAudioProducerWorker(workerIndex: number): Worker | null {
+    let worker: Worker;
     try {
-      this.producerWorker = new Worker(this.producerWorkerUrl);
+      worker = new Worker(this.producerWorkerUrl);
     } catch (error) {
       warnLiveDiagnostic('streaming:producer-worker-unavailable', {
         url: this.producerWorkerUrl,
+        workerIndex,
         error: error instanceof Error ? error.message : String(error),
       });
       return null;
     }
 
-    this.producerWorker.onmessage = (event) => {
+    worker.onmessage = (event) => {
       this.handleProducerMessage(event.data as ProducerInboundMessage | null);
     };
-    this.producerWorker.onerror = (event) => {
+    worker.onerror = (event) => {
       warnLiveDiagnostic('streaming:producer-worker-error', {
+        workerIndex,
         message: event.message,
         filename: event.filename,
         lineno: event.lineno,
@@ -3782,7 +3902,51 @@ export class StreamingMultitrackEngine {
     };
     this.lastProducerMessageAt = performance.now();
 
-    return this.producerWorker;
+    if (this.producerRuntimeWarmRequested) {
+      try {
+        worker.postMessage({ type: 'warm-runtime' } satisfies ProducerWarmRuntimeMessage);
+      } catch {
+        // Session initialization will surface a worker that cannot receive messages.
+      }
+    }
+
+    return worker;
+  }
+
+  private resolveProducerWorkerCount(trackCount: number): number {
+    const capabilities = readLiveBrowserCapabilities();
+    if (
+      supportsDesktopExactSeekRoute(capabilities) &&
+      trackCount >= DESKTOP_PRODUCER_POOL_TRACK_THRESHOLD
+    ) {
+      return DESKTOP_PRODUCER_POOL_SIZE;
+    }
+
+    return 1;
+  }
+
+  private ensureAudioProducerWorkerPool(workerCount: number): Worker[] {
+    const safeWorkerCount = Math.max(1, Math.floor(workerCount));
+    const primaryWorker = this.ensureAudioProducerWorker();
+    if (!primaryWorker) {
+      return [];
+    }
+
+    while (this.producerWorkers.length < safeWorkerCount) {
+      const worker = this.createAudioProducerWorker(this.producerWorkers.length);
+      if (!worker) {
+        break;
+      }
+      this.producerWorkers.push(worker);
+    }
+
+    while (this.producerWorkers.length > safeWorkerCount) {
+      const worker = this.producerWorkers.pop();
+      worker?.terminate();
+    }
+
+    this.producerWorker = this.producerWorkers[0] || null;
+    return this.producerWorkers.slice();
   }
 
   private warmAudioProducerRuntime(): void {
@@ -3806,20 +3970,43 @@ export class StreamingMultitrackEngine {
   }
 
   private configureAudioProducerWorker(trackDefinitions: NormalizedTrackDefinition[]): boolean {
-    const worker = this.ensureAudioProducerWorker();
-    if (!worker) {
+    const requestedWorkerCount = this.resolveProducerWorkerCount(trackDefinitions.length);
+    const workers = this.ensureAudioProducerWorkerPool(requestedWorkerCount);
+    if (workers.length !== requestedWorkerCount) {
       return false;
     }
 
     this.producerSessionId += 1;
-    worker.postMessage({
-      type: 'init-session',
-      sessionId: this.producerSessionId,
-      sampleRate: this.context.sampleRate,
-      diagnosticsEnabled: isLiveDiagnosticsEnabled(),
-      tracks: this.buildProducerTrackMetadata(trackDefinitions),
-    });
-    return true;
+    try {
+      const tracks = this.buildProducerTrackMetadata(trackDefinitions);
+      workers.forEach((worker, workerIndex) => {
+        worker.postMessage({
+          type: 'init-session',
+          sessionId: this.producerSessionId,
+          sampleRate: this.context.sampleRate,
+          diagnosticsEnabled: isLiveDiagnosticsEnabled(),
+          tracks: tracks.filter((track) => track.trackIndex % workers.length === workerIndex),
+        });
+      });
+      this.streamingPath = 'worker';
+      logLiveDiagnostic('streaming:producer-worker-pool', {
+        sessionId: this.producerSessionId,
+        workerCount: workers.length,
+        trackCount: tracks.length,
+        tracksPerWorker: workers.map((_, workerIndex) =>
+          tracks.filter((track) => track.trackIndex % workers.length === workerIndex).length,
+        ),
+      });
+      return true;
+    } catch (error) {
+      warnLiveDiagnostic('streaming:producer-worker-configure-failed', {
+        sessionId: this.producerSessionId,
+        trackCount: trackDefinitions.length,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      this.terminateProducerWorker('configure-failed');
+      return false;
+    }
   }
 
   private buildProducerTrackMetadata(
@@ -3827,6 +4014,9 @@ export class StreamingMultitrackEngine {
     tracks: TrackData[] = this.tracks,
     trackStates: TrackRuntime[] = this.trackStates,
   ): ProducerTrackMetadata[] {
+    const capabilities = readLiveBrowserCapabilities();
+    const retainExtractedSamples = supportsDesktopExactSeekRoute(capabilities);
+
     return trackDefinitions.map((trackDefinition, index) => {
       const track = tracks[index];
       const trackState = trackStates[index];
@@ -3847,16 +4037,34 @@ export class StreamingMultitrackEngine {
         usesSharedMemory: trackState?.ringBuffer.usesSharedMemory === true,
         sampleBuffer: trackState?.ringBuffer.sampleStorage || new ArrayBuffer(0),
         indexBuffer: trackState?.ringBuffer.indexStorage || new ArrayBuffer(0),
+        retainExtractedSamples,
       };
     });
   }
 
   private postProducerMessage(message: ProducerOutboundMessage): void {
-    if (!this.producerWorker) {
+    const workers = this.producerWorkers.length > 0
+      ? this.producerWorkers
+      : this.producerWorker
+        ? [this.producerWorker]
+        : [];
+    if (workers.length === 0) {
       return;
     }
 
-    this.producerWorker.postMessage(message);
+    workers.forEach((worker, workerIndex) => {
+      if ('tracks' in message && Array.isArray(message.tracks)) {
+        worker.postMessage({
+          ...message,
+          tracks: message.tracks.filter(
+            (track) => track.trackIndex % workers.length === workerIndex,
+          ),
+        });
+        return;
+      }
+
+      worker.postMessage(message);
+    });
   }
 
   private postProducerTransportState(playing: boolean): void {
@@ -4024,13 +4232,18 @@ export class StreamingMultitrackEngine {
       String(row.flags || '').includes('NOT_READY') ||
       String(row.flags || '').includes('ERR_')
     ));
-    const method: FlatDiagnosticMethod = hasCriticalSignal ? 'warn' : 'info';
+    // Keep the realtime recorder informational even for critical snapshots.
+    // Chrome extensions commonly wrap console.warn with stack capture; an
+    // underflow could otherwise create a warning storm that steals time from
+    // the audio pipeline precisely while it is trying to recover.
+    const method: FlatDiagnosticMethod = 'info';
 
     this.logFlatDiagnostic('[SPSC-FLIGHT]', {
       reason,
       position: Number(this.getCurrentTime().toFixed(3)),
       playing: this.transportPlaying,
       tracks: rows.length,
+      critical: hasCriticalSignal,
     }, method);
     rows.forEach((row) => {
       this.logFlatDiagnostic('[SPSC-FLIGHT-TRACK]', {
@@ -4135,7 +4348,7 @@ export class StreamingMultitrackEngine {
         timestampUs: message.timestampUs,
         bytes: message.bytes,
         hex: message.hex,
-      }, 'warn');
+      }, 'info');
       return;
     }
 
@@ -4159,7 +4372,7 @@ export class StreamingMultitrackEngine {
             : null,
         paddedFrames: message.paddedFrames,
         trimmedFrames: message.trimmedFrames,
-      }, 'warn');
+      }, 'info');
       return;
     }
 
@@ -4193,7 +4406,7 @@ export class StreamingMultitrackEngine {
         mode: message.mode,
         queuedFrames: message.queuedFrames,
         pendingFrames: message.pendingFrames,
-      }, 'warn');
+      }, 'info');
       return;
     }
 
@@ -4327,11 +4540,25 @@ export class StreamingMultitrackEngine {
 
     if (message.type === 'producer-sync-audit') {
       const pending = this.pendingSyncAudit;
-      if (pending) {
-        this.pendingSyncAudit = null;
-        pending.resolve(message);
-      } else {
+      if (
+        !pending ||
+        message.sessionId !== pending.sessionId ||
+        message.reason !== pending.reason ||
+        message.seekSerial !== pending.seekSerial
+      ) {
         logLiveDiagnostic('streaming:producer-sync-audit', { message });
+        return;
+      }
+
+      message.rows.forEach((row) => {
+        pending.rowsByTrack.set(row.trackIndex, row);
+      });
+      if (pending.rowsByTrack.size >= pending.expectedTrackCount) {
+        this.pendingSyncAudit = null;
+        pending.deferred.resolve({
+          ...message,
+          rows: Array.from(pending.rowsByTrack.values()),
+        });
       }
       return;
     }
@@ -4374,18 +4601,26 @@ export class StreamingMultitrackEngine {
     }
 
     if (this.pendingSyncAudit) {
-      this.pendingSyncAudit.resolve({
+      this.pendingSyncAudit.deferred.resolve({
         type: 'producer-sync-audit',
         sessionId: this.producerSessionId,
-        reason: options.reason,
-        seekSerial: options.seekSerial,
-        rows: [],
+        reason: this.pendingSyncAudit.reason,
+        seekSerial: this.pendingSyncAudit.seekSerial,
+        rows: Array.from(this.pendingSyncAudit.rowsByTrack.values()),
       });
       this.pendingSyncAudit = null;
     }
 
     const deferred = this.createDeferred<ProducerSyncAuditMessage>();
-    this.pendingSyncAudit = deferred;
+    const pendingAudit: PendingProducerSyncAudit = {
+      deferred,
+      expectedTrackCount: this.getActiveTrackStates().length,
+      rowsByTrack: new Map<number, ProducerSyncAuditRow>(),
+      sessionId: this.producerSessionId,
+      reason: options.reason,
+      seekSerial: options.seekSerial,
+    };
+    this.pendingSyncAudit = pendingAudit;
     const targetSample = Math.max(0, Math.round(this.pauseTime * this.context.sampleRate));
     this.postProducerMessage({
       type: 'audit-sync',
@@ -4400,7 +4635,7 @@ export class StreamingMultitrackEngine {
       this.sleep(1200).then((): typeof timeoutResult => timeoutResult),
     ]);
 
-    if (this.pendingSyncAudit === deferred) {
+    if (this.pendingSyncAudit === pendingAudit) {
       this.pendingSyncAudit = null;
     }
 
@@ -4573,7 +4808,12 @@ export class StreamingMultitrackEngine {
       pendingCheck.targetSample <= thresholdFrames &&
       targetToMaxDeltaFrames > thresholdFrames &&
       spreadFrames > thresholdFrames;
-    const shouldBlock = staleBeforeTarget || allContentAfterTarget || splitContentAfterStart;
+    const spreadTooWide = spreadFrames > CONTENT_SYNC_SPREAD_TOLERANCE_FRAMES;
+    const shouldBlock =
+      staleBeforeTarget ||
+      allContentAfterTarget ||
+      splitContentAfterStart ||
+      spreadTooWide;
 
     const fields = {
       reason: summary.reason,
@@ -4592,6 +4832,8 @@ export class StreamingMultitrackEngine {
       staleBeforeTarget,
       allContentAfterTarget,
       splitContentAfterStart,
+      spreadToleranceFrames: CONTENT_SYNC_SPREAD_TOLERANCE_FRAMES,
+      spreadTooWide,
       action: shouldBlock ? 'blocked-play' : 'allow-play',
     };
 
@@ -4617,7 +4859,7 @@ export class StreamingMultitrackEngine {
     let resolveSeek!: () => void;
     let rejectSeek!: (reason?: unknown) => void;
     const expectedTrackCount = this.getActiveTrackStates().length;
-    const seekTimeoutMs = options.requireCompleteReady ? 8000 : 2500;
+    const seekTimeoutMs = options.requireCompleteReady ? 30_000 : 2500;
     const timeoutId = window.setTimeout(() => {
       const pending = this.pendingProducerSeek;
       if (!pending || pending.serial !== serial) {
@@ -4777,8 +5019,13 @@ export class StreamingMultitrackEngine {
       return;
     }
 
-    window.clearTimeout(pending.timeoutId);
-    pending.resolve();
+    // A Chrome producer pool reports completion once per worker. Only the
+    // per-track ready set can prove that every stem in the complete session is
+    // prepared; resolving on the first worker would recreate the 12/15 race.
+    if (pending.readyTracks.size >= pending.expectedTrackCount) {
+      window.clearTimeout(pending.timeoutId);
+      pending.resolve();
+    }
   }
 
   private rejectPendingProducerSeekForMessage(message: ProducerErrorMessage): void {
@@ -4977,6 +5224,7 @@ export class StreamingMultitrackEngine {
   }
 
   private resetTracks(): void {
+    this.streamingPath = 'uninitialized';
     this.latestWorkletTrackStatus.clear();
     this.latestProducerTrackState.clear();
     this.latestUnderflowByTrack.clear();
@@ -5086,7 +5334,7 @@ export class StreamingMultitrackEngine {
       this.logFlatLiveDiagnostic(
         'streaming:worklet-status',
         workletStatusFields,
-        shouldWarn ? 'warn' : 'info',
+        'info',
       );
       this.maybePublishFlightRecorder('worklet-status', shouldWarn);
       return;
@@ -5115,7 +5363,13 @@ export class StreamingMultitrackEngine {
     }
 
     if (message.type === 'seek-debug') {
-      if (typeof message.message === 'string' && message.message.includes('Worklet: Flush')) {
+      if (
+        typeof message.message === 'string' &&
+        (
+          message.message.includes('Worklet: Flush') ||
+          message.message.includes('Worklet: Buffered advance')
+        )
+      ) {
         this.recordSeekBackFlushConfirmed(message.seekSerial);
       }
       return;
@@ -5148,7 +5402,7 @@ export class StreamingMultitrackEngine {
         missingFrames: message.missingFrames,
         underrunEvents: message.underrunEvents,
         renderedFrames: message.renderedFrames,
-      }, 'warn');
+      }, 'info');
       return;
     }
 
@@ -5168,7 +5422,7 @@ export class StreamingMultitrackEngine {
         availableRead: message.availableRead,
         workletRead: message.readIndex,
         masterPosition: message.referenceSeconds,
-      }, 'warn');
+      }, 'info');
       return;
     }
 

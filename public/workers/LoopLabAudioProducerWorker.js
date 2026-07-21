@@ -2153,14 +2153,16 @@ class ProducerTrackPipeline {
       await this.feedDemuxedSamples(result, token);
       this.assertAlive();
 
-      self.postMessage({
-        type: 'producer-lookahead-status',
-        sessionId,
-        trackIndex: this.track.trackIndex,
-        availableRead: this.ringWriter.availableRead(),
-        availableWrite: this.ringWriter.availableWrite(),
-        targetAheadFrames: this.ringWriter.targetAheadFrames(),
-      });
+      if (producerDiagnosticsEnabled) {
+        self.postMessage({
+          type: 'producer-lookahead-status',
+          sessionId,
+          trackIndex: this.track.trackIndex,
+          availableRead: this.ringWriter.availableRead(),
+          availableWrite: this.ringWriter.availableWrite(),
+          targetAheadFrames: this.ringWriter.targetAheadFrames(),
+        });
+      }
 
       if (chunk.endOfFile) {
         this.assertAlive();
@@ -2227,13 +2229,15 @@ class ProducerTrackPipeline {
         await this.feedDemuxedSamples(result);
         this.assertAlive();
 
-        self.postMessage({
-          type: 'producer-track-progress',
-          sessionId,
-          trackIndex: this.track.trackIndex,
-          decodedUntilSample: this.decodedUntilSample,
-          targetEndSample: endSample,
-        });
+        if (producerDiagnosticsEnabled) {
+          self.postMessage({
+            type: 'producer-track-progress',
+            sessionId,
+            trackIndex: this.track.trackIndex,
+            decodedUntilSample: this.decodedUntilSample,
+            targetEndSample: endSample,
+          });
+        }
 
         if (chunk.endOfFile) {
           this.assertAlive();
@@ -2995,6 +2999,10 @@ class ProducerTrackPipeline {
   }
 
   postRingWriteStatus(result, frameCount) {
+    if (!producerDiagnosticsEnabled) {
+      return;
+    }
+
     const now = Date.now();
     if (now - this.lastRingWriteStatusPostAt < RING_WRITE_STATUS_POST_INTERVAL_MS) {
       return;
