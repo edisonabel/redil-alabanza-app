@@ -1906,6 +1906,7 @@ class ProducerTrackPipeline {
     seekSerial,
     decodePrerollFrames = 0,
     hardReset = false,
+    exactSampleSeek = false,
   ) {
     this.assertAlive();
 
@@ -1945,11 +1946,15 @@ class ProducerTrackPipeline {
     const rebuiltFromHead = hardReset && safeTargetSample === 0;
     if (!rebuiltFromHead) {
       const seekTimeSeconds = demuxerTargetSample / this.getOutputSampleRate();
-      const seekResult = this.demuxer.seek(seekTimeSeconds, true);
+      // AAC access units are independently decodable. Chromium needs an exact
+      // sample seek here; RAP seeking can skip already-read audio samples and
+      // start an individual stem hundreds of milliseconds after the target.
+      const seekResult = this.demuxer.seek(seekTimeSeconds, !exactSampleSeek);
 
-      if (this.demuxer) {
-        this.demuxer.resetPending();
-      }
+      // Mp4TrackDemuxer.seek() clears the old pending queue before file.start().
+      // file.start() may synchronously publish the first batch at the new
+      // position in Chromium, so clearing again here would discard precisely
+      // the target samples and make that stem begin late.
 
       if (seekResult && typeof seekResult.nextFileStart === 'number') {
         this.nextFileStart = seekResult.nextFileStart;
@@ -3400,6 +3405,7 @@ const seekAllPipelines = async (
   seekSerial,
   decodePrerollFrames = 0,
   hardReset = false,
+  exactSampleSeek = false,
 ) => {
   const tasks = [];
   const safeSeekSerial = Math.max(0, Math.floor(Number(seekSerial) || 0));
@@ -3413,6 +3419,7 @@ const seekAllPipelines = async (
         safeSeekSerial,
         safeDecodePrerollFrames,
         hardReset === true,
+        exactSampleSeek === true,
       )
       .catch((error) => {
         if (isAbortError(error)) {
@@ -3548,12 +3555,14 @@ self.onmessage = (event) => {
     const targetSample = Math.max(0, Math.floor(Number(message.targetSample) || 0));
     const seekSerial = Math.max(0, Math.floor(Number(message.seekSerial) || 0));
     const decodePrerollFrames = Math.max(0, Math.floor(Number(message.decodePrerollFrames) || 0));
+    const exactSampleSeek = message.exactSampleSeek === true;
     seekAllPipelines(
       targetSample,
       message.sessionId || activeSessionId,
       seekSerial,
       decodePrerollFrames,
       message.hardReset === true,
+      exactSampleSeek,
     ).catch((error) => {
       if (isAbortError(error)) {
         return;

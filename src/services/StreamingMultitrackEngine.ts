@@ -21,7 +21,10 @@ import {
   warnLiveDiagnostic,
 } from '../utils/liveDiagnostics';
 import { isLiveDirectorMp3Track } from '../utils/liveDirectorStemFormat';
-import { requiresSynchronizedStreamingWorker } from '../utils/liveDirectorEnginePolicy';
+import {
+  requiresSynchronizedStreamingWorker,
+  resolveStreamingSeekPolicy,
+} from '../utils/liveDirectorEnginePolicy';
 
 type WindowWithWebkitAudio = Window & typeof globalThis & {
   webkitAudioContext?: typeof AudioContext;
@@ -344,6 +347,7 @@ type ProducerSeekMessage = {
   targetSample: number;
   seekSerial: number;
   decodePrerollFrames?: number;
+  exactSampleSeek?: boolean;
   hardReset?: boolean;
 };
 
@@ -934,7 +938,7 @@ type PreloadedStreamingSession = {
   trackStates: TrackRuntime[];
 };
 
-const AUDIO_WORKER_ASSET_VERSION = '20260720-2';
+const AUDIO_WORKER_ASSET_VERSION = '20260720-6';
 const DEFAULT_WORKLET_MODULE_URL = `/workers/MultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_PRODUCER_WORKER_URL = `/workers/AudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
@@ -960,7 +964,7 @@ const PRODUCER_STALE_MESSAGE_GRACE_MS = 5_000;
 const PRODUCER_STALE_RECHECK_DELAY_MS = 250;
 const PRODUCER_DIAGNOSTIC_RATE_LIMIT_MS = 10_000;
 const CONTENT_ALIGNMENT_GUARD_SECONDS = 20;
-const BACKWARD_SEEK_DECODE_PREROLL_SECONDS = 3;
+const CONTENT_SYNC_SPREAD_TOLERANCE_FRAMES = AAC_FRAME_SIZE * 2;
 const SEEK_NO_OP_TOLERANCE_SECONDS = 0.015;
 const FLIGHT_RECORDER_MIN_INTERVAL_MS = 5_000;
 const AAC_SAMPLE_RATE_INDEXES = new Map<number, number>([
@@ -2108,7 +2112,7 @@ export class StreamingMultitrackEngine {
     } else {
       if (synchronizedWorkerRequired) {
         throw new Error(
-          'Unsupported configuration: iOS multi-stem playback requires the synchronized ' +
+          'Unsupported configuration: multi-stem playback requires the synchronized ' +
           'SharedArrayBuffer producer worker. The main-thread decoder route was blocked.',
         );
       }
@@ -2589,11 +2593,15 @@ export class StreamingMultitrackEngine {
         : wasPlaying;
     const targetSample = Math.max(0, Math.round(clampedTime * this.context.sampleRate));
     const isBackwardSeek = clampedTime < fromTime - 0.05;
-    const requiresHardReset = isBackwardSeek || targetSample === 0;
-    const decodePrerollFrames = isBackwardSeek
+    const seekPolicy = resolveStreamingSeekPolicy(readLiveBrowserCapabilities(), {
+      isBackwardSeek,
+      targetIsHead: targetSample === 0,
+    });
+    const requiresHardReset = seekPolicy.hardReset;
+    const decodePrerollFrames = seekPolicy.decodePrerollSeconds > 0
       ? Math.min(
         targetSample,
-        Math.round(this.context.sampleRate * BACKWARD_SEEK_DECODE_PREROLL_SECONDS),
+        Math.round(this.context.sampleRate * seekPolicy.decodePrerollSeconds),
       )
       : 0;
     this.startBarrierSerial += 1;
@@ -2661,7 +2669,7 @@ export class StreamingMultitrackEngine {
       const pendingSeek = this.createProducerSeekHandshake({
         targetSample,
         targetTimeSeconds: clampedTime,
-        requireCompleteReady: requiresHardReset,
+        requireCompleteReady: seekPolicy.requireCompleteReady,
       });
       const seekSerial = pendingSeek.serial;
       const pendingFlush = this.createWorkletFlushHandshake(seekSerial);
@@ -2700,6 +2708,7 @@ export class StreamingMultitrackEngine {
         targetSample,
         seekSerial,
         decodePrerollFrames,
+        exactSampleSeek: seekPolicy.exactSampleSeek,
         hardReset: requiresHardReset,
       });
       await pendingSeek.promise;
@@ -2712,8 +2721,11 @@ export class StreamingMultitrackEngine {
       }
       this.pendingProducerSeek = null;
       this.pauseTime = clampedTime;
-      this.startTime = wasPlaying ? this.context.currentTime - clampedTime : 0;
-      this.transportPlaying = wasPlaying;
+      const holdChromeTransportAtTarget = wasPlaying && seekPolicy.exactSampleSeek;
+      this.startTime = wasPlaying && !holdChromeTransportAtTarget
+        ? this.context.currentTime - clampedTime
+        : 0;
+      this.transportPlaying = wasPlaying && !holdChromeTransportAtTarget;
       if (!wasPlaying) {
         this.pendingPlaybackContentCheck = {
           seekSerial,
@@ -2739,6 +2751,27 @@ export class StreamingMultitrackEngine {
       });
       if (!seekStartBarrierReady) {
         return;
+      }
+      if (seekPolicy.exactSampleSeek) {
+        this.pendingPlaybackContentCheck = {
+          seekSerial,
+          targetSample,
+          targetTimeSeconds: clampedTime,
+        };
+        const auditSummary = await this.runSyncAudit({
+          reason: 'seek-resume',
+          seekSerial,
+        });
+        if (this.shouldBlockPlaybackForContentMismatch(auditSummary)) {
+          this.transportPlaying = false;
+          this.startTime = 0;
+          return;
+        }
+        this.pendingPlaybackContentCheck = null;
+      }
+      if (holdChromeTransportAtTarget) {
+        this.startTime = this.context.currentTime - clampedTime;
+        this.transportPlaying = true;
       }
       this.postWorkletMessage({
         type: 'RESUME_READING',
@@ -4577,7 +4610,12 @@ export class StreamingMultitrackEngine {
       pendingCheck.targetSample <= thresholdFrames &&
       targetToMaxDeltaFrames > thresholdFrames &&
       spreadFrames > thresholdFrames;
-    const shouldBlock = staleBeforeTarget || allContentAfterTarget || splitContentAfterStart;
+    const spreadTooWide = spreadFrames > CONTENT_SYNC_SPREAD_TOLERANCE_FRAMES;
+    const shouldBlock =
+      staleBeforeTarget ||
+      allContentAfterTarget ||
+      splitContentAfterStart ||
+      spreadTooWide;
 
     const fields = {
       reason: summary.reason,
@@ -4596,6 +4634,8 @@ export class StreamingMultitrackEngine {
       staleBeforeTarget,
       allContentAfterTarget,
       splitContentAfterStart,
+      spreadToleranceFrames: CONTENT_SYNC_SPREAD_TOLERANCE_FRAMES,
+      spreadTooWide,
       action: shouldBlock ? 'blocked-play' : 'allow-play',
     };
 

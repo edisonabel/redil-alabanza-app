@@ -522,7 +522,7 @@ export function useMultitrackEngine(
 
         console.warn(
           fallbackPolicy.action === 'block'
-            ? '[useMultitrackEngine] Streaming engine failed during initialization. Refusing the unstable iOS multi-element fallback.'
+            ? '[useMultitrackEngine] Streaming engine failed during initialization. Refusing an unstable multitrack fallback.'
             : '[useMultitrackEngine] Streaming engine failed during initialization. Switching to the compatible media/buffer engine.',
           error,
         );
@@ -544,8 +544,8 @@ export function useMultitrackEngine(
             engineRef.current = null;
           }
           error = new Error(
-            'Safari en iPhone necesita el productor sincronizado para reproducir varios stems. ' +
-            'La sesión se detuvo para evitar la ruta inestable de múltiples reproductores.',
+            'Esta sesión necesita el productor sincronizado para reproducir varios stems. ' +
+            'La carga se detuvo para evitar una ruta legacy incompleta o desincronizada.',
             { cause: error },
           );
         } else {

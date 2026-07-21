@@ -5,13 +5,14 @@ import { fileURLToPath } from 'node:url';
 import {
   requiresSynchronizedStreamingWorker,
   resolveStreamingFallbackPolicy,
+  resolveStreamingSeekPolicy,
 } from '../src/utils/liveDirectorEnginePolicy.ts';
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 
 const iosSafari = { isIOS: true, isSafari: true };
 const desktopSafari = { isIOS: false, isSafari: true };
-const chrome = { isIOS: false, isSafari: false };
+const chrome = { isAndroid: false, isChromeFamily: true, isIOS: false, isSafari: false };
 
 assert.equal(
   requiresSynchronizedStreamingWorker(iosSafari, 15),
@@ -35,8 +36,52 @@ assert.deepEqual(
 );
 assert.deepEqual(
   resolveStreamingFallbackPolicy(chrome, 15),
-  { action: 'auto', reason: 'compatible-fallback-allowed' },
-  'Non-Safari desktop browsers keep the existing compatible fallback.',
+  { action: 'block', reason: 'chrome-multitrack-requires-worker' },
+  'Chrome must not silently degrade 15 stems to the legacy engine.',
+);
+assert.equal(
+  requiresSynchronizedStreamingWorker(chrome, 15),
+  true,
+  'Chrome with many stems must retain the synchronized worker route.',
+);
+assert.deepEqual(
+  resolveStreamingSeekPolicy(chrome, {
+    isBackwardSeek: false,
+    targetIsHead: false,
+  }),
+  {
+    hardReset: false,
+    decodePrerollSeconds: 0,
+    exactSampleSeek: true,
+    requireCompleteReady: true,
+  },
+  'Chrome forward seeks must target exact samples and wait for every stem without a hard reset.',
+);
+assert.deepEqual(
+  resolveStreamingSeekPolicy(chrome, {
+    isBackwardSeek: true,
+    targetIsHead: false,
+  }),
+  {
+    hardReset: true,
+    decodePrerollSeconds: 3,
+    exactSampleSeek: false,
+    requireCompleteReady: true,
+  },
+  'Backward seeks keep the proven hard-reset path.',
+);
+assert.deepEqual(
+  resolveStreamingSeekPolicy(desktopSafari, {
+    isBackwardSeek: false,
+    targetIsHead: false,
+  }),
+  {
+    hardReset: false,
+    decodePrerollSeconds: 0,
+    exactSampleSeek: false,
+    requireCompleteReady: false,
+  },
+  'The validated Safari forward path must remain unchanged.',
 );
 
 const [hookSource, engineSource, workerSource] = await Promise.all([
@@ -53,7 +98,7 @@ assert.match(
 assert.match(
   engineSource,
   /requiresSynchronizedStreamingWorker[\s\S]+main-thread decoder route was blocked/,
-  'The streaming engine must block multi-stem main-thread decoding on iOS.',
+  'The streaming engine must block unstable multi-stem main-thread decoding.',
 );
 assert.match(
   engineSource,
@@ -81,6 +126,16 @@ assert.match(
   'Backward seeks must not fail before the synchronized producer finishes rebuilding.',
 );
 assert.match(
+  engineSource,
+  /spreadFrames > CONTENT_SYNC_SPREAD_TOLERANCE_FRAMES/,
+  'Playback must not be allowed when stems start hundreds of milliseconds apart.',
+);
+assert.match(
+  engineSource,
+  /holdChromeTransportAtTarget[\s\S]+reason: 'seek-resume'[\s\S]+shouldBlockPlaybackForContentMismatch/,
+  'Chrome must keep its clock at the section target until all stems pass the alignment audit.',
+);
+assert.match(
   workerSource,
   /postRingWriteStatus\(result, frameCount\) \{\s+if \(!producerDiagnosticsEnabled\)/,
   'High-frequency ring-write telemetry must remain disabled outside diagnostics.',
@@ -94,6 +149,16 @@ assert.match(
   workerSource,
   /resetDemuxerForHardSeek\(\)[\s\S]+this\.decoderStartupStaggerApplied = false/,
   'Backward hard resets retain the proven staggered decoder restart.',
+);
+assert.match(
+  workerSource,
+  /this\.demuxer\.seek\(seekTimeSeconds, !exactSampleSeek\)/,
+  'Chrome forward seeks must target exact AAC samples instead of RAP boundaries.',
+);
+assert.doesNotMatch(
+  workerSource,
+  /const seekResult = this\.demuxer\.seek\(seekTimeSeconds, !exactSampleSeek\);\s+if \(this\.demuxer\) \{\s+this\.demuxer\.resetPending\(\)/,
+  'The first synchronous Chromium sample batch must survive the demuxer seek.',
 );
 
 console.log('Live Director engine policy regression checks passed.');
