@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
 import { fetchLiveDirectorSongSession } from '../../utils/liveDirectorUploadClient';
+import { readLiveBrowserCapabilities } from '../../utils/liveDiagnostics';
 
 // ── ChordPro parser ──────────────────────────────────────────────────────────
 // Identical logic to AdminRepertorio so sections are compatible.
@@ -258,6 +259,25 @@ const resolveMultitrackSession = async (song = {}) => {
   }
 };
 
+const openIsolatedLiveDirectorForSafari = (song = {}) => {
+  if (typeof window === 'undefined') return false;
+
+  const capabilities = readLiveBrowserCapabilities();
+  if (!capabilities.isIOS && !capabilities.isSafari) return false;
+
+  const songId = String(song?.id || '').trim();
+  if (!songId) return false;
+
+  const targetUrl = new URL('/herramientas/live-director-preview', window.location.origin);
+  targetUrl.searchParams.set('song', songId);
+  if (new URLSearchParams(window.location.search).get('debug') === '1') {
+    targetUrl.searchParams.set('debug', '1');
+  }
+
+  window.location.assign(targetUrl.toString());
+  return true;
+};
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function EnsayoGlobalIsland() {
@@ -276,6 +296,11 @@ export default function EnsayoGlobalIsland() {
         resolveChordPro(raw.chordpro),
         resolveMultitrackSession(raw),
       ]);
+
+      if (multitrackSession && openIsolatedLiveDirectorForSafari(raw)) {
+        setOpeningSong(null);
+        return;
+      }
 
       const sections =
         Array.isArray(raw.sections) && raw.sections.length > 0
