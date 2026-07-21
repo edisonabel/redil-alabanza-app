@@ -3,10 +3,12 @@ import { randomBytes } from 'node:crypto';
 import {
   buildGoogleCalendarEventPayload,
   buildGoogleCalendarEventId,
+  createGoogleCalendarOAuthState,
   decryptCalendarToken,
   encryptCalendarToken,
   hashGoogleCalendarPayload,
   resolveGoogleCalendarRedirectUri,
+  verifyGoogleCalendarOAuthState,
 } from '../src/lib/server/google-calendar.js';
 
 const encryptionKey = randomBytes(32).toString('base64url');
@@ -53,5 +55,19 @@ const deterministicId = buildGoogleCalendarEventId({ profileId: 'profile-1', eve
 assert.match(deterministicId, /^redil[0-9a-f]{44}$/);
 assert.equal(deterministicId, buildGoogleCalendarEventId({ profileId: 'profile-1', eventId: 'event-1' }));
 assert.notEqual(deterministicId, buildGoogleCalendarEventId({ profileId: 'profile-2', eventId: 'event-1' }));
+
+const oauthState = createGoogleCalendarOAuthState({
+  profileId: 'profile-1',
+  returnPath: '/perfil',
+  rawKey: encryptionKey,
+  now: 1_000,
+  nonce: 'test-nonce',
+});
+assert.deepEqual(
+  verifyGoogleCalendarOAuthState(oauthState, { rawKey: encryptionKey, now: 2_000 }),
+  { profileId: 'profile-1', returnPath: '/perfil' },
+);
+assert.throws(() => verifyGoogleCalendarOAuthState(oauthState, { rawKey: otherKey, now: 2_000 }));
+assert.throws(() => verifyGoogleCalendarOAuthState(oauthState, { rawKey: encryptionKey, now: 700_000 }));
 
 console.log('google calendar sync tests: ok');

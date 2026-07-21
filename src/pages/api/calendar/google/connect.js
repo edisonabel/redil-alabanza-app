@@ -1,14 +1,11 @@
-import { randomBytes } from 'node:crypto';
 import { requireAuthenticatedUser, securityErrorResponse } from '../../../../lib/server/api-security.js';
 import {
   buildGoogleCalendarAuthorizationUrl,
+  createGoogleCalendarOAuthState,
   resolveGoogleCalendarRedirectUri,
 } from '../../../../lib/server/google-calendar.js';
 
 export const prerender = false;
-
-const STATE_COOKIE = 'redil-google-calendar-oauth-state';
-const RETURN_COOKIE = 'redil-google-calendar-oauth-return';
 
 const sanitizeReturnPath = (value) => {
   const raw = String(value || '').trim();
@@ -17,22 +14,22 @@ const sanitizeReturnPath = (value) => {
 
 export async function GET({ cookies, url }) {
   try {
-    await requireAuthenticatedUser(cookies);
-    const state = randomBytes(32).toString('base64url');
+    const user = await requireAuthenticatedUser(cookies);
+    const returnPath = sanitizeReturnPath(url.searchParams.get('return_to'));
+    const state = createGoogleCalendarOAuthState({
+      profileId: user.id,
+      returnPath,
+    });
     const redirectUri = resolveGoogleCalendarRedirectUri(url);
-    const isSecure = url.protocol === 'https:';
-    const cookieOptions = {
-      httpOnly: true,
-      secure: isSecure,
-      sameSite: 'lax',
-      path: '/api/calendar/google/callback',
-      maxAge: 10 * 60,
-    };
+    const authorizationUrl = buildGoogleCalendarAuthorizationUrl({ state, redirectUri });
 
-    cookies.set(STATE_COOKIE, state, cookieOptions);
-    cookies.set(RETURN_COOKIE, sanitizeReturnPath(url.searchParams.get('return_to')), cookieOptions);
-
-    return Response.redirect(buildGoogleCalendarAuthorizationUrl({ state, redirectUri }), 302);
+    return new Response(JSON.stringify({ ok: true, authorizationUrl }), {
+      status: 200,
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+        'cache-control': 'no-store, max-age=0',
+      },
+    });
   } catch (error) {
     console.error('[google-calendar] connect failed:', error);
     return securityErrorResponse(error);

@@ -2,7 +2,9 @@ import {
   createCipheriv,
   createDecipheriv,
   createHash,
+  createHmac,
   randomBytes,
+  timingSafeEqual,
 } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import {
@@ -20,6 +22,7 @@ const GOOGLE_REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
 const GOOGLE_CALENDAR_API_URL = 'https://www.googleapis.com/calendar/v3';
 const PRODUCTION_ORIGIN = 'https://alabanzaredilestadio.com';
 const TOKEN_REFRESH_LEEWAY_MS = 90 * 1000;
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
 const { supabaseUrl } = getSupabaseServerEnv();
 const serviceRoleKey = getSupabaseServiceRoleKey();
@@ -64,6 +67,73 @@ const decodeEncryptionKey = (rawKey) => {
     throw error;
   }
   return key;
+};
+
+const sanitizeOAuthReturnPath = (value) => {
+  const raw = String(value || '').trim();
+  return raw.startsWith('/') && !raw.startsWith('//') ? raw : '/perfil';
+};
+
+const signOAuthStatePayload = (encodedPayload, rawKey) => (
+  createHmac('sha256', decodeEncryptionKey(rawKey))
+    .update(encodedPayload)
+    .digest('base64url')
+);
+
+export const createGoogleCalendarOAuthState = ({
+  profileId,
+  returnPath = '/perfil',
+  rawKey = getGoogleCalendarEnv().tokenEncryptionKey,
+  now = Date.now(),
+  nonce = randomBytes(16).toString('base64url'),
+}) => {
+  const safeProfileId = String(profileId || '').trim();
+  if (!safeProfileId) throw new Error('No se pudo identificar el perfil para conectar Calendar.');
+
+  const encodedPayload = Buffer.from(JSON.stringify({
+    v: 1,
+    profileId: safeProfileId,
+    returnPath: sanitizeOAuthReturnPath(returnPath),
+    nonce,
+    exp: now + OAUTH_STATE_TTL_MS,
+  })).toString('base64url');
+  const signature = signOAuthStatePayload(encodedPayload, rawKey);
+  return `${encodedPayload}.${signature}`;
+};
+
+export const verifyGoogleCalendarOAuthState = (
+  state,
+  {
+    rawKey = getGoogleCalendarEnv().tokenEncryptionKey,
+    now = Date.now(),
+  } = {},
+) => {
+  const [encodedPayload, encodedSignature] = String(state || '').split('.');
+  if (!encodedPayload || !encodedSignature) throw new Error('Estado OAuth invalido.');
+
+  const expectedSignature = Buffer.from(signOAuthStatePayload(encodedPayload, rawKey), 'base64url');
+  const receivedSignature = Buffer.from(encodedSignature, 'base64url');
+  if (
+    expectedSignature.length !== receivedSignature.length
+    || !timingSafeEqual(expectedSignature, receivedSignature)
+  ) {
+    throw new Error('Firma OAuth invalida.');
+  }
+
+  const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8'));
+  if (
+    payload?.v !== 1
+    || !String(payload?.profileId || '').trim()
+    || !Number.isFinite(Number(payload?.exp))
+    || Number(payload.exp) < now
+  ) {
+    throw new Error('Estado OAuth vencido o incompleto.');
+  }
+
+  return {
+    profileId: String(payload.profileId),
+    returnPath: sanitizeOAuthReturnPath(payload.returnPath),
+  };
 };
 
 export const encryptCalendarToken = (plainText, rawKey = getGoogleCalendarEnv().tokenEncryptionKey) => {
