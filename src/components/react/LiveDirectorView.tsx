@@ -3613,7 +3613,8 @@ export function LiveDirectorView({
     }
 
     const lastIndex = resolvedSections.length - 1;
-    const targetIndex = Math.min(lastIndex, activeSectionIndex + 1);
+    const playbackSectionIndex = getSectionIndexAtTime(getLivePlaybackTime());
+    const targetIndex = Math.min(lastIndex, playbackSectionIndex + 1);
     const targetSection = resolvedSections[targetIndex];
     if (!targetSection) {
       return;

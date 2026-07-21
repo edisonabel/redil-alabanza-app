@@ -387,6 +387,7 @@ export default function ModoEnsayoDirector({
   const eventMixSaveQueueRef = useRef(Promise.resolve());
   const eventMixSaveVersionsRef = useRef({});
   const eventMixStatusTimersRef = useRef(new Map());
+  const queueSelectionTokenRef = useRef(0);
 
   const safeActiveSongIndex = Math.max(0, Math.min(activeSongIndex, Math.max(ensayoSongs.length - 1, 0)));
   const activeSong = ensayoSongs[safeActiveSongIndex] || null;
@@ -830,11 +831,45 @@ export default function ModoEnsayoDirector({
   }, []);
 
   const handleQueueSongSelect = useCallback((songId) => {
-    const nextIndex = ensayoSongs.findIndex((song) => resolveSongId(song) === String(songId || '').trim());
-    if (nextIndex !== -1) {
-      setActiveSongIndex(nextIndex);
+    const nextSongId = String(songId || '').trim();
+    const nextIndex = ensayoSongs.findIndex((song) => resolveSongId(song) === nextSongId);
+    if (nextIndex === -1) {
+      return;
     }
-  }, [ensayoSongs]);
+
+    const selectionToken = queueSelectionTokenRef.current + 1;
+    queueSelectionTokenRef.current = selectionToken;
+
+    if (!hasEventMixContext || eventMixLoadedSongIds.has(nextSongId)) {
+      setActiveSongIndex(nextIndex);
+      return;
+    }
+
+    void (async () => {
+      let fetchedMix = null;
+
+      try {
+        fetchedMix = await fetchLiveDirectorEventMix({ eventId, songId: nextSongId });
+      } catch (error) {
+        console.warn('[ModoEnsayoDirector] No se pudo preparar la mezcla de la siguiente cancion.', error);
+      }
+
+      if (queueSelectionTokenRef.current !== selectionToken) {
+        return;
+      }
+
+      if (fetchedMix) {
+        setEventMixOverrides((previous) => ({ ...previous, [nextSongId]: fetchedMix }));
+      }
+      setEventMixLoadedSongIds((previous) => {
+        if (previous.has(nextSongId)) return previous;
+        const next = new Set(previous);
+        next.add(nextSongId);
+        return next;
+      });
+      setActiveSongIndex(nextIndex);
+    })();
+  }, [ensayoSongs, eventId, eventMixLoadedSongIds, hasEventMixContext]);
 
   const handleSessionPersisted = useCallback((session) => {
     const songId = String(session?.songId || '').trim();
@@ -909,7 +944,7 @@ export default function ModoEnsayoDirector({
     return (
       <div className="flex h-[100dvh] items-center justify-center bg-[#202223] text-white">
         <p className="text-sm text-white/60">
-          {activeSong ? 'Cargando mezcla de este evento...' : 'No hay canciones listas para Modo Ensayo Director.'}
+          {activeSong ? 'Cargando stems...' : 'No hay canciones listas para Modo Ensayo Director.'}
         </p>
       </div>
     );
