@@ -383,6 +383,7 @@ import Layout from "../layouts/Layout.astro";
 
 <script>
   import { supabase } from "../lib/supabase";
+  import { normalizeSafeInternalReturnTo } from "../utils/safeInternalReturnTo";
 
   document.addEventListener("DOMContentLoaded", async () => {
     // Removido loop infinito de auto-sincronizaciÃ³n. El usuario debe hacer logout manual o login.
@@ -771,7 +772,9 @@ import Layout from "../layouts/Layout.astro";
                 throw new Error(sessionError?.error || 'No se pudo establecer la sesion del servidor.');
               }
 
-              window.location.href = "/";
+              window.location.href = normalizeSafeInternalReturnTo(
+                new URLSearchParams(window.location.search).get("returnTo"),
+              );
             } catch (cookieError) {
               console.error(
                 "[Seguridad Login] Error sincronizando la sesion del servidor:",
