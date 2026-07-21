@@ -62,6 +62,8 @@ assert.match(
   'LIVE ownership must be probed, renewed, and allowed to expire.',
 );
 assert.match(directorSource, /liveBroadcastState=\{broadcastState\}/);
+assert.match(directorSource, /sessionPreparationPending=\{isActiveEventMixLoading\}/);
+assert.doesNotMatch(directorSource, /activeSong \? 'Cargando stems\.\.\.'/);
 assert.match(directorSource, /takeoverCancelButtonRef\.current\?\.focus\(\)/);
 assert.match(directorSource, /event\.key === 'Escape'/);
 assert.match(hubSource, /buildLiveDirectorSyncChannelName\(\{/);
@@ -74,5 +76,11 @@ assert.ok(
 );
 assert.match(viewSource, /border-emerald-300\/55 bg-emerald-500\/24 text-emerald-200/);
 assert.doesNotMatch(viewSource, /shadow-\[0_0_8px_rgba\(253,164,175,0\.9\)\]/);
+assert.match(
+  viewSource,
+  /if \(sessionPreparationPending\) \{\s+return undefined;\s+\}[\s\S]+initializeEngineRef\.current/,
+  'The engine must wait for the event mix instead of loading a base session twice.',
+);
+assert.match(viewSource, /sessionPreparationPending \? 'Cargando stems\.\.\.' : busyMessage/);
 
 console.log('Live Director scoped sync lease checks passed.');

@@ -910,12 +910,10 @@ export default function ModoEnsayoDirector({
       });
   }, [activeSongId, eventId, hasEventMixContext]);
 
-  if (!activeSong || isActiveEventMixLoading) {
+  if (!activeSong) {
     return (
       <div className="flex h-[100dvh] items-center justify-center bg-[#202223] text-white">
-        <p className="text-sm text-white/60">
-          {activeSong ? 'Cargando stems...' : 'No hay canciones listas para Modo Ensayo Director.'}
-        </p>
+        <p className="text-sm text-white/60">No hay canciones listas para Modo Ensayo Director.</p>
       </div>
     );
   }
@@ -937,6 +935,7 @@ export default function ModoEnsayoDirector({
         operationalChips={operationalChips}
         liveBroadcastState={broadcastState}
         onToggleLiveBroadcast={toggleBroadcasting}
+        sessionPreparationPending={isActiveEventMixLoading}
         internalPadVolume={padVolume}
         onInternalPadVolumeChange={setPadVolume}
         onPlaybackSnapshot={handlePlaybackSnapshot}

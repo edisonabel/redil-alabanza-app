@@ -193,6 +193,7 @@ type LiveDirectorViewProps = {
   operationalChips?: LiveDirectorOperationalChip[];
   liveBroadcastState?: LiveDirectorBroadcastState;
   onToggleLiveBroadcast?: () => void;
+  sessionPreparationPending?: boolean;
   internalPadVolume?: number;
   onInternalPadVolumeChange?: (volume: number) => void;
   onPlaybackSnapshot?: (snapshot: LiveDirectorPlaybackSnapshot) => void;
@@ -539,6 +540,7 @@ export function LiveDirectorView({
   onSelectQueueSong,
   liveBroadcastState = 'off',
   onToggleLiveBroadcast,
+  sessionPreparationPending = false,
   internalPadVolume,
   onInternalPadVolumeChange,
   onPlaybackSnapshot,
@@ -2482,6 +2484,10 @@ export function LiveDirectorView({
   }, [isIOSNativeEngineSurface, isInitializingSession, loadProgress, useStreamingEngine]);
 
   useEffect(() => {
+    if (sessionPreparationPending) {
+      return undefined;
+    }
+
     let cancelled = false;
 
     const setup = async () => {
@@ -2543,7 +2549,7 @@ export function LiveDirectorView({
       stopEngineRef.current();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trackSignature, hasResolvedEngineCapability, isIOSNativeEngineSurface, isWebTrackLimitExceeded, reloadKey, sessionActiveTrackLimit, useStreamingEngine]);
+  }, [trackSignature, hasResolvedEngineCapability, isIOSNativeEngineSurface, isWebTrackLimitExceeded, reloadKey, sessionActiveTrackLimit, sessionPreparationPending, useStreamingEngine]);
 
   const loadWarningsKey = useMemo(() => {
     if (!loadWarnings || loadWarnings.length === 0) {
@@ -6114,13 +6120,14 @@ export function LiveDirectorView({
         </div>
       )}
 
-      {busyMessage && (() => {
+      {(sessionPreparationPending || busyMessage) && (() => {
+        const displayBusyMessage = sessionPreparationPending ? 'Cargando stems...' : busyMessage;
         // When we have real load progress, compute fill + counts so the
         // overlay becomes a live progress indicator instead of an opaque
         // "please wait" spinner. Fall back to indeterminate style when we
         // don't know the denominator yet.
         const hasDeterminateProgress =
-          !!loadProgress && loadProgress.total > 0 && loadProgress.loaded >= 0;
+          !sessionPreparationPending && !!loadProgress && loadProgress.total > 0 && loadProgress.loaded >= 0;
         const progressPct = hasDeterminateProgress
           ? clamp(loadProgress!.loaded / loadProgress!.total, 0, 1) * 100
           : 0;
@@ -6137,7 +6144,7 @@ export function LiveDirectorView({
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-[0.78rem] font-black uppercase tracking-[0.25em] text-cyan-100/72">En espera</p>
-                  <p className="mt-1 truncate text-[1.18rem] font-semibold text-white">{busyMessage}</p>
+                  <p className="mt-1 truncate text-[1.18rem] font-semibold text-white">{displayBusyMessage}</p>
                 </div>
                 {hasDeterminateProgress && (
                   <div className="shrink-0 rounded-full border border-cyan-300/22 bg-cyan-400/10 px-2.5 py-1 text-[0.62rem] font-black uppercase tracking-[0.2em] tabular-nums text-cyan-100/86">
