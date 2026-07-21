@@ -178,6 +178,11 @@ assert.match(
   /keepSynchronizedProducerDuringStartup[\s\S]+retain-shared-worker-until-track-deadline/,
   'A slow synchronized producer must remain alive until the track-ready deadline.',
 );
+assert.match(
+  engineSource,
+  /this\.resetTracks\(\);\s+\/\/[\s\S]*?this\.postWorkletMessage\(\{ type: 'reset-tracks' \}\);\s+this\.postWorkletMessage\(\{ type: 'clear-solo' \}\);/,
+  'Every song initialization must clear stale worklet indices before configuring the next session.',
+);
 assert.doesNotMatch(
   engineSource,
   /recoverFromStalledProducerStartup/,
@@ -352,6 +357,11 @@ assert.match(
   workletSource,
   /const UNDERFLOW_ALERT_INTERVAL_FRAMES = 96000/,
   'Realtime underflow telemetry must remain compact enough not to starve Chrome audio.',
+);
+assert.match(
+  workletSource,
+  /resetTracks\(\) \{\s+this\.tracks = \[\];\s+this\.trackCount = 0;/,
+  'The worklet reset must remove tracks left over when the next song has fewer stems.',
 );
 
 console.log('Live Director engine policy regression checks passed.');

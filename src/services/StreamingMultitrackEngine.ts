@@ -2107,6 +2107,10 @@ export class StreamingMultitrackEngine {
     await this.context.audioWorklet.addModule(this.workletModuleUrl);
     this.ensureWorkletNode();
     this.resetTracks();
+    // The worklet outlives individual song sessions. Clear its track table
+    // before registering the next song so indices left over from a larger
+    // session cannot become audible when the transport starts again.
+    this.postWorkletMessage({ type: 'reset-tracks' });
     this.postWorkletMessage({ type: 'clear-solo' });
     this.postLoopRegion();
 
