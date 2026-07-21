@@ -71,6 +71,12 @@ const isAdminRepertorioView = pathname === '/admin';
 const isRepertorioView = pathname === '/repertorio';
 const isChordProPrintView = pathname === '/herramientas/chordpro-print';
 const isLiveDirectorShellView = pathname === '/herramientas/live-director-preview' || pathname === '/herramientas/live-director-ios';
+const shouldBootstrapCrossOriginIsolation =
+  pathname === '/herramientas/live-director-preview' ||
+  pathname === '/ensayo' ||
+  pathname.startsWith('/ensayo/') ||
+  pathname === '/audio-lab' ||
+  pathname.startsWith('/audio-lab/');
 const isAuthView = pathname === '/login' || pathname === '/reset-password';
 const showBottomNav = !isAdminRepertorioView && !isChordProPrintView && !isLiveDirectorShellView && !isAuthView;
 const showGlobalRuntimeIslands = !isAuthView;
@@ -102,6 +108,34 @@ const themeColors = brandingData;
 <head>
  <meta charset="UTF-8" />
  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+ {shouldBootstrapCrossOriginIsolation && (
+  <script is:inline>
+   (() => {
+     const retryParameter = '__ld_coi_reload';
+     const currentUrl = new URL(window.location.href);
+     const isolationReady =
+       window.crossOriginIsolated === true &&
+       typeof SharedArrayBuffer === 'function';
+
+     if (isolationReady) {
+       if (currentUrl.searchParams.has(retryParameter)) {
+         currentUrl.searchParams.delete(retryParameter);
+         window.history.replaceState(
+           window.history.state,
+           '',
+           `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`,
+         );
+       }
+       return;
+     }
+
+     if (currentUrl.searchParams.get(retryParameter) === '1') return;
+
+     currentUrl.searchParams.set(retryParameter, '1');
+     window.location.replace(currentUrl.toString());
+   })();
+  </script>
+ )}
  <link rel="preload" href="/fonts/redil/adineuePRO-Regular.woff2" as="font" type="font/woff2" crossorigin />
  <link rel="preconnect" href="https://stems.alabanzaredilestadio.com" crossorigin />
  <link rel="dns-prefetch" href="https://stems.alabanzaredilestadio.com" />
