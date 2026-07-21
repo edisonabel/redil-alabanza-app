@@ -974,11 +974,12 @@ const themeColors = brandingData;
       window.location.hostname === '127.0.0.1';
     if (isLocalHost) return;
     window.__REDIL_MAIN_SW_SYNC__ = true;
+    const mainServiceWorkerUrl = '/sw.js?v=redil-sw-v4';
 
     // Defer SW registration to after page is interactive
     const doRegister = () => {
       navigator.serviceWorker
-        .register('/sw.js')
+        .register(mainServiceWorkerUrl, { updateViaCache: 'none' })
         .then((registration) => {
           registration.onupdatefound = () => {
             const installingWorker = registration.installing;

@@ -195,6 +195,7 @@ const isRemoteChordProUrl = (value = '') => {
 const ENSAYO_OPEN_TIMEOUT_MS = 10_000;
 const ENSAYO_OPEN_RETRY_DELAY_MS = 350;
 const PWA_ISOLATION_WORKER_VERSION = 'redil-sw-v4';
+const PWA_ISOLATION_WORKER_URL = `/sw.js?v=${PWA_ISOLATION_WORKER_VERSION}`;
 const PWA_ISOLATION_WORKER_TIMEOUT_MS = 5_000;
 
 const wait = (ms) => new Promise((resolve) => {
@@ -313,7 +314,7 @@ const waitForWorkerActivation = async (worker) => {
 const prepareStandaloneIsolationWorker = async () => {
   if (!('serviceWorker' in navigator) || window.crossOriginIsolated === true) return;
 
-  const registration = await navigator.serviceWorker.register('/sw.js', {
+  const registration = await navigator.serviceWorker.register(PWA_ISOLATION_WORKER_URL, {
     scope: '/',
     updateViaCache: 'none',
   });
