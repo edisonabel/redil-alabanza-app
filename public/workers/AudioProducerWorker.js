@@ -8,6 +8,7 @@ const LOOP_CACHE_STATE_END_SAMPLE_SLOT = 3;
 const LOOP_CACHE_STRATEGY_PINNED = 'PINNED';
 const LOOP_CACHE_STRATEGY_PREDICTIVE_DOUBLE_BUFFER = 'PREDICTIVE_DOUBLE_BUFFER';
 const DEFAULT_FETCH_CHUNK_BYTES = 256 * 1024;
+const EXACT_SEEK_FETCH_CHUNK_BYTES = 64 * 1024;
 const MP4_EXTRACTION_SAMPLE_BATCH_SIZE = 16;
 const DECODER_SPECIFIC_INFO_TAG = 0x05;
 const MAX_DECODER_QUEUE_SIZE = 6;
@@ -652,9 +653,13 @@ class RangeFetcher {
     this.unsupportedFormat = urlLooksLikeMp3(this.url);
   }
 
-  async fetchChunk(byteStart) {
+  async fetchChunk(byteStart, chunkBytesOverride = null) {
     const safeByteStart = Math.max(0, Math.floor(Number(byteStart) || 0));
-    const byteEnd = safeByteStart + this.chunkBytes - 1;
+    const requestChunkBytes =
+      typeof chunkBytesOverride === 'number' && chunkBytesOverride > 0
+        ? Math.floor(chunkBytesOverride)
+        : this.chunkBytes;
+    const byteEnd = safeByteStart + requestChunkBytes - 1;
     const fetchSerial = this.fetchSerial + 1;
     this.fetchSerial = fetchSerial;
     this.aborted = false;
@@ -1202,6 +1207,23 @@ class Mp4TrackDemuxer {
     this.pendingDecoderConfig = null;
     this.file.stop();
 
+    // MP4Box keeps an internal partial extraction batch that is not exposed
+    // through onSamples until it reaches nbSamples. Reusing that batch across
+    // a seek prepends frames from the old position to the exact target batch
+    // (for example 9.5 s followed by 28.5 s), forcing Chromium to decode and
+    // discard stale audio before every stem can become ready. Re-registering
+    // extraction clears only that private batch; seek() below then positions
+    // the shared track cursor at the requested sample.
+    if (
+      this.extractionTrackId !== null &&
+      typeof this.file.unsetExtractionOptions === 'function'
+    ) {
+      this.file.unsetExtractionOptions(this.extractionTrackId);
+      this.file.setExtractionOptions(this.extractionTrackId, this, {
+        nbSamples: MP4_EXTRACTION_SAMPLE_BATCH_SIZE,
+      });
+    }
+
     const rawSeekResult = this.file.seek(timeInSeconds, useRAP);
 
     this.file.start();
@@ -1231,6 +1253,25 @@ class Mp4TrackDemuxer {
     this.pendingSamples = [];
     this.pendingDecoderConfig = null;
     this.pendingError = null;
+  }
+
+  dispose() {
+    this.resetPending();
+    if (!this.file) {
+      return;
+    }
+
+    try {
+      this.file.stop();
+    } catch (_error) {
+      // A partially initialized MP4Box cursor can already be stopped.
+    }
+    this.file.onError = null;
+    this.file.onReady = null;
+    this.file.onSamples = null;
+    this.file = null;
+    this.trackReady = false;
+    this.extractionStarted = false;
   }
 
   handleReady(info) {
@@ -1440,6 +1481,7 @@ class ProducerTrackPipeline {
     this.preWarmedDurationSeconds = undefined;
     this.initializationChunk = null;
     this.seekStandbyDemuxerPromise = null;
+    this.nextFetchChunkBytes = null;
     this.readyWatchdogId = 0;
     this.startupRecoveryTimerIds = [];
     this.startupRecoveryAttemptCount = 0;
@@ -1467,12 +1509,15 @@ class ProducerTrackPipeline {
     return !!this.decoder && this.decoder.state !== 'closed';
   }
 
-  assertSupportedFormat(bytes) {
+  assertSupportedFormat(bytes, byteStart = null) {
     if (this.unsupportedFormat) {
       throw createUnsupportedFormatError(this.track, 'url-mp3');
     }
 
-    if (bytesLookLikeMp3(bytes)) {
+    // Only the first bytes of a file carry a meaningful format signature.
+    // Range chunks fetched after a seek can legitimately begin with FF Ex,
+    // which looks like an MP3 sync word by coincidence.
+    if (byteStart === 0 && bytesLookLikeMp3(bytes)) {
       this.unsupportedFormat = true;
       throw createUnsupportedFormatError(this.track, 'sniffed-mp3');
     }
@@ -1514,7 +1559,7 @@ class ProducerTrackPipeline {
 
     if (this.demuxer) {
       try {
-        this.demuxer.resetPending();
+        this.demuxer.dispose();
       } catch (_error) {
         // MP4Box may already be half torn down by an aborted append.
       }
@@ -1556,7 +1601,7 @@ class ProducerTrackPipeline {
         }
         : await this.fetcher.fetchChunk(this.nextFileStart);
       this.assertAlive();
-      this.assertSupportedFormat(chunk.bytes);
+      this.assertSupportedFormat(chunk.bytes, chunk.byteStart);
 
       if (
         this.track.retainExtractedSamples &&
@@ -1612,7 +1657,7 @@ class ProducerTrackPipeline {
 
     const chunk = await this.fetcher.fetchChunk(0);
     this.assertAlive();
-    this.assertSupportedFormat(chunk.bytes);
+    this.assertSupportedFormat(chunk.bytes, chunk.byteStart);
     if (
       this.track.retainExtractedSamples &&
       !this.initializationChunk &&
@@ -2028,7 +2073,15 @@ class ProducerTrackPipeline {
     this.fetcher.abort();
     if (hardReset) {
       this.resetDecoderForHardSeek();
-      this.resetDemuxerForHardSeek();
+      if (exactSampleSeek) {
+        // A desktop backward seek remains a hard reset: both the decoder and
+        // MP4 extraction cursor are replaced. Reuse only the immutable parsed
+        // header/index so we do not decode the beginning of every stem before
+        // jumping to the three-second preroll target.
+        await this.rotateExactSeekDemuxer();
+      } else {
+        this.resetDemuxerForHardSeek();
+      }
     } else {
       await this.flushDecoderForSeek();
       if (exactSampleSeek) {
@@ -2066,6 +2119,7 @@ class ProducerTrackPipeline {
       if (seekResult && typeof seekResult.nextFileStart === 'number') {
         this.nextFileStart = seekResult.nextFileStart;
       }
+      this.nextFetchChunkBytes = exactSampleSeek ? EXACT_SEEK_FETCH_CHUNK_BYTES : null;
 
       // When Chrome seeks into bytes already retained by MP4Box, file.start()
       // can synchronously emit the target AAC batch without another append.
@@ -2158,7 +2212,7 @@ class ProducerTrackPipeline {
   resetDemuxerForHardSeek() {
     if (this.demuxer) {
       try {
-        this.demuxer.resetPending();
+        this.demuxer.dispose();
       } catch (_error) {
         // The old demuxer is discarded below even if its pending state is invalid.
       }
@@ -2218,10 +2272,14 @@ class ProducerTrackPipeline {
     const standby = await standbyPromise;
     this.assertAlive();
     this.seekStandbyDemuxerPromise = null;
+    const previousDemuxer = this.demuxer;
     this.demuxer = standby.demuxer;
     this.decoderConfig = standby.decoderConfig || this.decoderConfig;
     this.nextFileStart = standby.nextFileStart;
     this.ready = true;
+    if (previousDemuxer && previousDemuxer !== this.demuxer) {
+      previousDemuxer.dispose();
+    }
   }
 
   async flushDecoderForSeek() {
@@ -2230,24 +2288,23 @@ class ProducerTrackPipeline {
       return;
     }
 
-    try {
-      if (decoderForSeek.state !== 'closed' && decoderForSeek.decodeQueueSize > 0) {
-        await decoderForSeek.flush();
-      }
-    } catch (error) {
-      if (!isAbortError(error)) {
-        postProducerError('decoder-flush-for-seek-failed', error, {
-          trackIndex: this.track.trackIndex,
-        });
-      }
-    }
-
+    // A seek discards every queued frame from the old position. Awaiting
+    // flush() here decodes stale audio before throwing it away and makes each
+    // consecutive section jump slower as that queue grows.
     try {
       if (decoderForSeek.state !== 'closed') {
         decoderForSeek.reset();
       }
     } catch (_error) {
       // Decoder may already be closed/reset by the browser; continue the seek.
+    }
+
+    try {
+      if (decoderForSeek.state !== 'closed') {
+        decoderForSeek.close();
+      }
+    } catch (_error) {
+      // A reset decoder can already be closing; its reference is dropped below.
     }
 
     if (this.decoder === decoderForSeek) {
@@ -2272,9 +2329,11 @@ class ProducerTrackPipeline {
         continue;
       }
 
-      const chunk = await this.fetcher.fetchChunk(this.nextFileStart);
+      const nextFetchChunkBytes = this.nextFetchChunkBytes;
+      this.nextFetchChunkBytes = null;
+      const chunk = await this.fetcher.fetchChunk(this.nextFileStart, nextFetchChunkBytes);
       this.assertAlive();
-      this.assertSupportedFormat(chunk.bytes);
+      this.assertSupportedFormat(chunk.bytes, chunk.byteStart);
       const result = this.demuxer.append(chunk.bytes, chunk.byteStart);
       this.nextFileStart = this.resolveNextFileStart(result, chunk);
 
@@ -2328,7 +2387,7 @@ class ProducerTrackPipeline {
     while (!this.isDestroyed && this.prepareToken === token && this.decodedUntilSample < endSample) {
       const chunk = await this.fetcher.fetchChunk(this.nextFileStart);
       this.assertAlive();
-      this.assertSupportedFormat(chunk.bytes);
+      this.assertSupportedFormat(chunk.bytes, chunk.byteStart);
       const result = this.demuxer.append(chunk.bytes, chunk.byteStart);
       this.nextFileStart = this.resolveNextFileStart(result, chunk);
 

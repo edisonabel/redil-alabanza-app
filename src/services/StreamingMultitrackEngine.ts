@@ -24,6 +24,7 @@ import { isLiveDirectorMp3Track } from '../utils/liveDirectorStemFormat';
 import {
   requiresSynchronizedStreamingWorker,
   resolveStreamingSeekPolicy,
+  supportsDesktopExactSeekRoute,
 } from '../utils/liveDirectorEnginePolicy';
 
 type WindowWithWebkitAudio = Window & typeof globalThis & {
@@ -961,16 +962,16 @@ type PreloadedStreamingSession = {
   trackStates: TrackRuntime[];
 };
 
-const AUDIO_WORKER_ASSET_VERSION = '20260720-16';
+const AUDIO_WORKER_ASSET_VERSION = '20260720-22';
 const DEFAULT_WORKLET_MODULE_URL = `/workers/MultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_PRODUCER_WORKER_URL = `/workers/AudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
 const DEFAULT_SAMPLE_RATE = 48_000;
 const DEFAULT_CHANNEL_COUNT = 1;
 const DEFAULT_BUFFER_SECONDS = 6;
-const CHROME_DESKTOP_BUFFER_SECONDS = 10;
-const CHROME_PRODUCER_POOL_TRACK_THRESHOLD = 8;
-const CHROME_PRODUCER_POOL_SIZE = 3;
+const DESKTOP_EXACT_SEEK_BUFFER_SECONDS = 10;
+const DESKTOP_PRODUCER_POOL_TRACK_THRESHOLD = 8;
+const DESKTOP_PRODUCER_POOL_SIZE = 3;
 const DEFAULT_FETCH_CHUNK_BYTES = 512 * 1024;
 const DEFAULT_FETCH_PAUSE_WATERMARK_RATIO = 0.25;
 const DEFAULT_FETCH_RESUME_WATERMARK_RATIO = 0.55;
@@ -1147,9 +1148,10 @@ export class StreamingMultitrackEngine {
       'sampleRate',
     );
     const capabilities = readLiveBrowserCapabilities();
+    const desktopExactSeekRoute = supportsDesktopExactSeekRoute(capabilities);
     const browserDefaultBufferSeconds =
-      capabilities.isChromeFamily && !capabilities.isAndroid && !capabilities.isIOS
-        ? CHROME_DESKTOP_BUFFER_SECONDS
+      desktopExactSeekRoute
+        ? DESKTOP_EXACT_SEEK_BUFFER_SECONDS
         : DEFAULT_BUFFER_SECONDS;
     this.defaultBufferSeconds = this.normalizePositiveNumber(
       options.ringBufferSeconds,
@@ -1202,6 +1204,7 @@ export class StreamingMultitrackEngine {
       bufferSeconds: this.defaultBufferSeconds,
       sharedArrayBuffer: typeof SharedArrayBuffer === 'function',
       crossOriginIsolated: window.crossOriginIsolated === true,
+      desktopExactSeekRoute,
       browser: readLiveBrowserCapabilities(),
     });
 
@@ -2908,9 +2911,7 @@ export class StreamingMultitrackEngine {
   private canUseBufferedForwardSeek(fromSample: number, targetSample: number): boolean {
     const capabilities = readLiveBrowserCapabilities();
     if (
-      !capabilities.isChromeFamily ||
-      capabilities.isAndroid ||
-      capabilities.isIOS ||
+      !supportsDesktopExactSeekRoute(capabilities) ||
       targetSample <= fromSample
     ) {
       return false;
@@ -3915,12 +3916,10 @@ export class StreamingMultitrackEngine {
   private resolveProducerWorkerCount(trackCount: number): number {
     const capabilities = readLiveBrowserCapabilities();
     if (
-      capabilities.isChromeFamily &&
-      !capabilities.isAndroid &&
-      !capabilities.isIOS &&
-      trackCount >= CHROME_PRODUCER_POOL_TRACK_THRESHOLD
+      supportsDesktopExactSeekRoute(capabilities) &&
+      trackCount >= DESKTOP_PRODUCER_POOL_TRACK_THRESHOLD
     ) {
-      return CHROME_PRODUCER_POOL_SIZE;
+      return DESKTOP_PRODUCER_POOL_SIZE;
     }
 
     return 1;
@@ -4016,8 +4015,7 @@ export class StreamingMultitrackEngine {
     trackStates: TrackRuntime[] = this.trackStates,
   ): ProducerTrackMetadata[] {
     const capabilities = readLiveBrowserCapabilities();
-    const retainExtractedSamples =
-      capabilities.isChromeFamily && !capabilities.isAndroid && !capabilities.isIOS;
+    const retainExtractedSamples = supportsDesktopExactSeekRoute(capabilities);
 
     return trackDefinitions.map((trackDefinition, index) => {
       const track = tracks[index];

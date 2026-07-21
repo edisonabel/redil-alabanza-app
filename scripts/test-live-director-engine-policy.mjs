@@ -6,6 +6,7 @@ import {
   requiresSynchronizedStreamingWorker,
   resolveStreamingFallbackPolicy,
   resolveStreamingSeekPolicy,
+  supportsDesktopExactSeekRoute,
 } from '../src/utils/liveDirectorEnginePolicy.ts';
 import { detectLiveChromeFamily } from '../src/utils/liveDiagnostics.ts';
 
@@ -14,6 +15,15 @@ const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 const iosSafari = { isIOS: true, isSafari: true };
 const desktopSafari = { isIOS: false, isSafari: true };
 const chrome = { isAndroid: false, isChromeFamily: true, isIOS: false, isSafari: false };
+const anonymousCapableDesktop = {
+  audioDecoder: true,
+  crossOriginIsolated: true,
+  isAndroid: false,
+  isChromeFamily: false,
+  isIOS: false,
+  isSafari: false,
+  sharedArrayBuffer: true,
+};
 
 assert.equal(
   detectLiveChromeFamily({
@@ -72,8 +82,34 @@ assert.deepEqual(
 );
 assert.deepEqual(
   resolveStreamingFallbackPolicy(chrome, 15),
-  { action: 'block', reason: 'chrome-multitrack-requires-worker' },
+  { action: 'block', reason: 'desktop-multitrack-requires-worker' },
   'Chrome must not silently degrade 15 stems to the legacy engine.',
+);
+assert.equal(
+  supportsDesktopExactSeekRoute(anonymousCapableDesktop),
+  true,
+  'An identity-hidden desktop must select the exact-seek route from its engine capabilities.',
+);
+assert.equal(
+  supportsDesktopExactSeekRoute({
+    ...anonymousCapableDesktop,
+    isSafari: true,
+  }),
+  false,
+  'Known desktop Safari must keep the already-validated Safari transport path.',
+);
+assert.deepEqual(
+  resolveStreamingSeekPolicy(anonymousCapableDesktop, {
+    isBackwardSeek: false,
+    targetIsHead: false,
+  }),
+  {
+    hardReset: false,
+    decodePrerollSeconds: 0,
+    exactSampleSeek: true,
+    requireCompleteReady: true,
+  },
+  'A capable embedded desktop must never resume a forward seek before every stem is ready.',
 );
 assert.equal(
   requiresSynchronizedStreamingWorker(chrome, 15),
@@ -101,10 +137,10 @@ assert.deepEqual(
   {
     hardReset: true,
     decodePrerollSeconds: 3,
-    exactSampleSeek: false,
+    exactSampleSeek: true,
     requireCompleteReady: true,
   },
-  'Backward seeks keep the proven hard-reset path.',
+  'Chrome backward seeks keep the hard reset while rebuilding from the exact preroll cursor.',
 );
 assert.deepEqual(
   resolveStreamingSeekPolicy(desktopSafari, {
@@ -159,13 +195,13 @@ assert.match(
 );
 assert.match(
   engineSource,
-  /const CHROME_DESKTOP_BUFFER_SECONDS = 10/,
-  'Chrome desktop must keep a deeper ring than the validated Safari path.',
+  /const DESKTOP_EXACT_SEEK_BUFFER_SECONDS = 10/,
+  'The capable desktop route must keep a deeper ring.',
 );
 assert.match(
   engineSource,
-  /CHROME_PRODUCER_POOL_SIZE = 3[\s\S]+track\.trackIndex % workers\.length === workerIndex/,
-  'Chrome desktop must distribute a large session across three producer workers.',
+  /DESKTOP_PRODUCER_POOL_SIZE = 3[\s\S]+track\.trackIndex % workers\.length === workerIndex/,
+  'A capable desktop must distribute a large session across three producer workers.',
 );
 assert.match(
   engineSource,
@@ -179,8 +215,8 @@ assert.match(
 );
 assert.match(
   engineSource,
-  /retainExtractedSamples =\s+capabilities\.isChromeFamily[\s\S]+retainExtractedSamples,/,
-  'Chrome desktop must retain MP4 extraction samples so exact forward seeks can reuse the live index.',
+  /retainExtractedSamples = supportsDesktopExactSeekRoute\(capabilities\)[\s\S]+retainExtractedSamples,/,
+  'The exact-seek route must retain MP4 extraction samples so forward seeks can reuse the live index.',
 );
 assert.match(
   engineSource,
@@ -214,6 +250,36 @@ assert.match(
 );
 assert.match(
   workerSource,
+  /if \(byteStart === 0 && bytesLookLikeMp3\(bytes\)\)/,
+  'Format sniffing must never mistake an arbitrary post-seek M4A range for an MP3 file.',
+);
+assert.match(
+  workerSource,
+  /flushDecoderForSeek\(\)[\s\S]+decoderForSeek\.reset\(\)[\s\S]+decoderForSeek\.close\(\)/,
+  'Every forward seek must close the reset decoder before dropping its reference.',
+);
+assert.doesNotMatch(
+  workerSource.match(/async flushDecoderForSeek\(\)[\s\S]+?\n  }/)?.[0] || '',
+  /decoderForSeek\.flush\(\)/,
+  'A forward seek must discard stale decoder work instead of waiting for it to flush.',
+);
+assert.match(
+  workerSource,
+  /EXACT_SEEK_FETCH_CHUNK_BYTES = 64 \* 1024[\s\S]+fetchChunk\(this\.nextFileStart, nextFetchChunkBytes\)/,
+  'An exact seek must fetch a small readiness block before returning to normal lookahead chunks.',
+);
+assert.match(
+  workerSource,
+  /const previousDemuxer = this\.demuxer[\s\S]+previousDemuxer\.dispose\(\)/,
+  'Rotating an exact-seek cursor must release the previous MP4Box instance.',
+);
+assert.match(
+  workerSource,
+  /unsetExtractionOptions\(this\.extractionTrackId\)[\s\S]+setExtractionOptions\(this\.extractionTrackId[\s\S]+const rawSeekResult = this\.file\.seek/,
+  'A seek must clear MP4Box partial extraction batches before positioning the exact cursor.',
+);
+assert.match(
+  workerSource,
   /this\.track\.retainExtractedSamples &&[\s\S]+this\.initializationChunk = \{/,
   'Only Chrome exact seeks may cache initialization bytes.',
 );
@@ -225,7 +291,7 @@ assert.match(
 assert.match(
   workerSource,
   /resetDemuxerForHardSeek\(\)[\s\S]+this\.decoderStartupStaggerApplied = false/,
-  'Backward hard resets retain the proven staggered decoder restart.',
+  'Non-exact hard resets retain the proven staggered decoder restart.',
 );
 assert.match(
   workerSource,
