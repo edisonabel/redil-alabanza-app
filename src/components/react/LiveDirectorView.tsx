@@ -4655,6 +4655,52 @@ export function LiveDirectorView({
             {!isToolbarCompactLandscape && <div aria-hidden="true" />}
 
             <div className={`flex items-stretch ${showLiveBroadcastControl ? (isUltraCompactLandscape ? 'gap-1' : 'gap-1.5') : ''} ${isToolbarCompactLandscape ? '' : 'justify-end'}`}>
+              {showLiveBroadcastControl && (
+                <button
+                  type="button"
+                  onClick={onToggleLiveBroadcast}
+                  disabled={liveBroadcastState === 'checking' || liveBroadcastState === 'unavailable'}
+                  aria-pressed={liveBroadcastState === 'active'}
+                  aria-busy={liveBroadcastState === 'checking' || undefined}
+                  data-live-director-control="live-broadcast"
+                  className={`${CONTROL_CARD} group relative ${isUltraCompactLandscape ? 'h-11 px-1.5 text-[0.56rem]' : isToolbarCompactLandscape ? 'h-12 px-2 text-[0.68rem]' : 'h-[var(--ld-control-height)] px-3 text-[0.76rem]'} shrink-0 flex-col font-semibold tracking-[0.16em] disabled:cursor-not-allowed ${liveBroadcastState === 'active'
+                    ? 'border-emerald-300/55 bg-emerald-500/24 text-emerald-200'
+                    : liveBroadcastState === 'occupied'
+                      ? 'border-amber-300/30 bg-amber-300/10 text-amber-100'
+                      : liveBroadcastState === 'checking'
+                        ? 'border-cyan-300/28 bg-cyan-300/9 text-cyan-100'
+                        : liveBroadcastState === 'unavailable'
+                          ? 'border-white/7 bg-black/14 text-white/26'
+                          : 'text-white/68 hover:border-emerald-300/24 hover:bg-emerald-400/8 hover:text-emerald-50'
+                  }`}
+                  style={isToolbarCompactLandscape
+                    ? { width: scaleRem(isUltraCompactLandscape ? 4.35 : 4.95, 3.75) }
+                    : { flex: '1 1 0' }}
+                  aria-label={liveBroadcastState === 'active'
+                    ? 'Detener transmisión LIVE'
+                    : liveBroadcastState === 'occupied'
+                      ? 'LIVE ocupado por otro dispositivo'
+                      : 'Iniciar transmisión LIVE'}
+                  title={liveBroadcastState === 'active'
+                    ? 'Detener transmisión LIVE'
+                    : liveBroadcastState === 'occupied'
+                      ? 'Otro dispositivo está enviando LIVE'
+                      : liveBroadcastState === 'unavailable'
+                        ? 'LIVE sin conexión'
+                        : 'Enviar señal LIVE'}
+                >
+                  <Radio className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isToolbarCompactLandscape ? 'h-4 w-4' : 'h-5 w-5'}`} />
+                  <span className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.46rem]' : 'mt-1 text-[0.58rem]'} tracking-[0.18em] ${liveBroadcastState === 'active'
+                    ? 'text-emerald-200'
+                    : liveBroadcastState === 'occupied'
+                      ? 'text-amber-100/88'
+                      : 'text-white/58'
+                  }`}>
+                    LIVE
+                  </span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={handleStemsToolbarAction}
@@ -4678,57 +4724,6 @@ export function LiveDirectorView({
                 </span>
                 <KeyboardHint>S</KeyboardHint>
               </button>
-
-              {showLiveBroadcastControl && (
-                <button
-                  type="button"
-                  onClick={onToggleLiveBroadcast}
-                  disabled={liveBroadcastState === 'checking' || liveBroadcastState === 'unavailable'}
-                  aria-pressed={liveBroadcastState === 'active'}
-                  aria-busy={liveBroadcastState === 'checking' || undefined}
-                  data-live-director-control="live-broadcast"
-                  className={`${CONTROL_CARD} group relative ${isUltraCompactLandscape ? 'h-11 px-1.5 text-[0.56rem]' : isToolbarCompactLandscape ? 'h-12 px-2 text-[0.68rem]' : 'h-[var(--ld-control-height)] px-3 text-[0.76rem]'} shrink-0 flex-col font-semibold tracking-[0.16em] disabled:cursor-not-allowed ${liveBroadcastState === 'active'
-                    ? 'border-rose-300/40 bg-rose-500/16 text-rose-50 shadow-[0_0_22px_rgba(244,63,94,0.18)]'
-                    : liveBroadcastState === 'occupied'
-                      ? 'border-amber-300/30 bg-amber-300/10 text-amber-100 shadow-[0_0_16px_rgba(252,211,77,0.08)]'
-                      : liveBroadcastState === 'checking'
-                        ? 'border-cyan-300/28 bg-cyan-300/9 text-cyan-100'
-                        : liveBroadcastState === 'unavailable'
-                          ? 'border-white/7 bg-black/14 text-white/26'
-                          : 'text-white/68 hover:border-rose-300/24 hover:bg-rose-400/8 hover:text-rose-50'
-                  }`}
-                  style={isToolbarCompactLandscape
-                    ? { width: scaleRem(isUltraCompactLandscape ? 4.35 : 4.95, 3.75) }
-                    : { flex: '1 1 0' }}
-                  aria-label={liveBroadcastState === 'active'
-                    ? 'Detener transmisión LIVE'
-                    : liveBroadcastState === 'occupied'
-                      ? 'LIVE ocupado por otro dispositivo'
-                      : 'Iniciar transmisión LIVE'}
-                  title={liveBroadcastState === 'active'
-                    ? 'Detener transmisión LIVE'
-                    : liveBroadcastState === 'occupied'
-                      ? 'Otro dispositivo está enviando LIVE'
-                      : liveBroadcastState === 'unavailable'
-                        ? 'LIVE sin conexión'
-                        : 'Enviar señal LIVE'}
-                >
-                  <span className="relative">
-                    <Radio className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isToolbarCompactLandscape ? 'h-4 w-4' : 'h-5 w-5'} ${liveBroadcastState === 'active' ? 'animate-pulse' : ''}`} />
-                    {liveBroadcastState === 'active' && (
-                      <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-rose-300 shadow-[0_0_8px_rgba(253,164,175,0.9)]" />
-                    )}
-                  </span>
-                  <span className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.46rem]' : 'mt-1 text-[0.58rem]'} tracking-[0.18em] ${liveBroadcastState === 'active'
-                    ? 'text-rose-100'
-                    : liveBroadcastState === 'occupied'
-                      ? 'text-amber-100/88'
-                      : 'text-white/58'
-                  }`}>
-                    LIVE
-                  </span>
-                </button>
-              )}
             </div>
           </header>
         </div>

@@ -37,12 +37,13 @@ assert.equal(isLiveDirectorLeaseFresh(lease, 20_000, 7000), true);
 assert.equal(isLiveDirectorLeaseFresh(lease, 22_001, 7000), false);
 assert.equal(normalizeLiveDirectorLease({ timestamp: Date.now() }), null);
 
-const [directorSource, transmitterSource, hubSource, compactSource, monitorSource] = await Promise.all([
+const [directorSource, transmitterSource, hubSource, compactSource, monitorSource, viewSource] = await Promise.all([
   readFile(`${projectRoot}/src/components/react/ModoEnsayoDirector.jsx`, 'utf8'),
   readFile(`${projectRoot}/src/hooks/useLiveDirectorSyncTransmitter.js`, 'utf8'),
   readFile(`${projectRoot}/src/components/react/EnsayoHub.jsx`, 'utf8'),
   readFile(`${projectRoot}/src/components/react/ModoEnsayoCompacto.jsx`, 'utf8'),
   readFile(`${projectRoot}/src/components/react/ConfidenceMonitor.jsx`, 'utf8'),
+  readFile(`${projectRoot}/src/components/react/LiveDirectorView.tsx`, 'utf8'),
 ]);
 
 assert.doesNotMatch(
@@ -66,5 +67,12 @@ assert.match(directorSource, /event\.key === 'Escape'/);
 assert.match(hubSource, /buildLiveDirectorSyncChannelName\(\{/);
 assert.match(compactSource, /buildLiveDirectorSyncChannelName\(\{ eventId, playlistId \}\)/);
 assert.match(monitorSource, /buildLiveDirectorSyncChannelName\(\{ eventId \}\)/);
+assert.ok(
+  viewSource.indexOf('data-live-director-control="live-broadcast"')
+    < viewSource.indexOf('data-live-director-control="stems"'),
+  'The frequently used LIVE control must appear before the less frequently used STEMS control.',
+);
+assert.match(viewSource, /border-emerald-300\/55 bg-emerald-500\/24 text-emerald-200/);
+assert.doesNotMatch(viewSource, /shadow-\[0_0_8px_rgba\(253,164,175,0\.9\)\]/);
 
 console.log('Live Director scoped sync lease checks passed.');
