@@ -1,7 +1,10 @@
 type NavigatorWithMemoryAndStandalone = Navigator & {
   deviceMemory?: number;
   standalone?: boolean;
-  userAgentData?: { platform?: string };
+  userAgentData?: {
+    brands?: Array<{ brand?: string; version?: string }>;
+    platform?: string;
+  };
 };
 
 type PerformanceMemoryLike = {
@@ -14,7 +17,15 @@ type PerformanceWithMemory = Performance & {
 };
 
 type WindowWithWebkitAudio = Window & typeof globalThis & {
+  chrome?: unknown;
   webkitAudioContext?: typeof AudioContext;
+};
+
+type LiveBrowserIdentity = {
+  brands?: Array<{ brand?: string }>;
+  hasChromeRuntime?: boolean;
+  userAgent?: string;
+  vendor?: string;
 };
 
 type DiagnosticMethod = 'info' | 'warn' | 'error';
@@ -22,6 +33,21 @@ type DiagnosticPayload = Record<string, unknown>;
 
 const DEBUG_QUERY_KEYS = ['debug', 'debugLive', 'liveDebug', 'lddebug'];
 const DISABLED_VALUES = new Set(['0', 'false', 'off', 'no']);
+const CHROMIUM_USER_AGENT_PATTERN = /Chrome|Chromium|CriOS|Edg|OPR/i;
+const CHROMIUM_BRAND_PATTERN = /Chromium|Google Chrome|Microsoft Edge|Opera|Brave/i;
+
+export const detectLiveChromeFamily = ({
+  brands = [],
+  hasChromeRuntime = false,
+  userAgent = '',
+  vendor = '',
+}: LiveBrowserIdentity) => {
+  const brandNames = brands.map((entry) => entry.brand || '').join(' ');
+  return CHROMIUM_USER_AGENT_PATTERN.test(userAgent) ||
+    CHROMIUM_BRAND_PATTERN.test(brandNames) ||
+    /Google Inc\.?/i.test(vendor) ||
+    hasChromeRuntime;
+};
 
 const isTruthyDebugValue = (value: string | null) => {
   if (value === null) {
@@ -83,12 +109,23 @@ export const readLiveBrowserCapabilities = () => {
   const navigatorWithMemory = navigator as NavigatorWithMemoryAndStandalone;
   const performanceWithMemory = window.performance as PerformanceWithMemory;
   const userAgent = navigator.userAgent || '';
+  const userAgentBrands = navigatorWithMemory.userAgentData?.brands || [];
+  const vendor = navigator.vendor || '';
+  const hasChromeRuntime = typeof browserWindow.chrome !== 'undefined';
   const isTouchMac = /Macintosh/i.test(userAgent) && navigator.maxTouchPoints > 1;
-  const isChromeFamily = /Chrome|Chromium|CriOS|Edg/i.test(userAgent);
+  const isChromeFamily = detectLiveChromeFamily({
+    brands: userAgentBrands,
+    hasChromeRuntime,
+    userAgent,
+    vendor,
+  });
   const isWebKit = /AppleWebKit/i.test(userAgent) && !isChromeFamily;
 
   return {
     userAgent,
+    userAgentBrands,
+    vendor,
+    hasChromeRuntime,
     platform: navigatorWithMemory.userAgentData?.platform || null,
     maxTouchPoints: navigator.maxTouchPoints || 0,
     isIOS: /iPhone|iPad|iPod/i.test(userAgent) || isTouchMac,

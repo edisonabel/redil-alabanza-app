@@ -8,6 +8,7 @@ const LOOP_CACHE_STATE_END_SAMPLE_SLOT = 3;
 const LOOP_CACHE_STRATEGY_PINNED = 'PINNED';
 const LOOP_CACHE_STRATEGY_PREDICTIVE_DOUBLE_BUFFER = 'PREDICTIVE_DOUBLE_BUFFER';
 const DEFAULT_FETCH_CHUNK_BYTES = 256 * 1024;
+const EXACT_SEEK_FETCH_CHUNK_BYTES = 64 * 1024;
 const MP4_EXTRACTION_SAMPLE_BATCH_SIZE = 16;
 const DECODER_SPECIFIC_INFO_TAG = 0x05;
 const MAX_DECODER_QUEUE_SIZE = 6;
@@ -652,9 +653,13 @@ class RangeFetcher {
     this.unsupportedFormat = urlLooksLikeMp3(this.url);
   }
 
-  async fetchChunk(byteStart) {
+  async fetchChunk(byteStart, chunkBytesOverride = null) {
     const safeByteStart = Math.max(0, Math.floor(Number(byteStart) || 0));
-    const byteEnd = safeByteStart + this.chunkBytes - 1;
+    const requestChunkBytes =
+      typeof chunkBytesOverride === 'number' && chunkBytesOverride > 0
+        ? Math.floor(chunkBytesOverride)
+        : this.chunkBytes;
+    const byteEnd = safeByteStart + requestChunkBytes - 1;
     const fetchSerial = this.fetchSerial + 1;
     this.fetchSerial = fetchSerial;
     this.aborted = false;
@@ -1070,6 +1075,14 @@ class SharedRingWriter {
     Atomics.store(this.indices, WRITE_INDEX_SLOT, targetIndex);
   }
 
+  advanceReadToSample(targetSample) {
+    if (!this.isReady()) {
+      return;
+    }
+
+    Atomics.store(this.indices, READ_INDEX_SLOT, this.frameToIndex(targetSample));
+  }
+
   computeAvailableRead(readIndex, writeIndex) {
     if (!Number.isFinite(this.indexCapacity) || this.indexCapacity <= 0) {
       return 0;
@@ -1116,8 +1129,9 @@ class SharedRingWriter {
 }
 
 class Mp4TrackDemuxer {
-  constructor(mp4box, track) {
+  constructor(mp4box, track, options = null) {
     this.track = track;
+    this.retainExtractedSamples = options && options.retainExtractedSamples === true;
     this.file = mp4box.createFile();
     this.pendingSamples = [];
     this.pendingDecoderConfig = null;
@@ -1193,6 +1207,23 @@ class Mp4TrackDemuxer {
     this.pendingDecoderConfig = null;
     this.file.stop();
 
+    // MP4Box keeps an internal partial extraction batch that is not exposed
+    // through onSamples until it reaches nbSamples. Reusing that batch across
+    // a seek prepends frames from the old position to the exact target batch
+    // (for example 9.5 s followed by 28.5 s), forcing Chromium to decode and
+    // discard stale audio before every stem can become ready. Re-registering
+    // extraction clears only that private batch; seek() below then positions
+    // the shared track cursor at the requested sample.
+    if (
+      this.extractionTrackId !== null &&
+      typeof this.file.unsetExtractionOptions === 'function'
+    ) {
+      this.file.unsetExtractionOptions(this.extractionTrackId);
+      this.file.setExtractionOptions(this.extractionTrackId, this, {
+        nbSamples: MP4_EXTRACTION_SAMPLE_BATCH_SIZE,
+      });
+    }
+
     const rawSeekResult = this.file.seek(timeInSeconds, useRAP);
 
     this.file.start();
@@ -1210,10 +1241,37 @@ class Mp4TrackDemuxer {
     };
   }
 
+  drainAfterSeek() {
+    this.throwPendingErrorIfNeeded();
+    return {
+      samples: this.drainSamples(),
+      decoderConfig: this.drainDecoderConfig(),
+    };
+  }
+
   resetPending() {
     this.pendingSamples = [];
     this.pendingDecoderConfig = null;
     this.pendingError = null;
+  }
+
+  dispose() {
+    this.resetPending();
+    if (!this.file) {
+      return;
+    }
+
+    try {
+      this.file.stop();
+    } catch (_error) {
+      // A partially initialized MP4Box cursor can already be stopped.
+    }
+    this.file.onError = null;
+    this.file.onReady = null;
+    this.file.onSamples = null;
+    this.file = null;
+    this.trackReady = false;
+    this.extractionStarted = false;
   }
 
   handleReady(info) {
@@ -1314,8 +1372,10 @@ class Mp4TrackDemuxer {
       });
     }
 
-    const lastSample = samples[samples.length - 1];
-    this.file.releaseUsedSamples(trackId, lastSample.number + 1);
+    if (!this.retainExtractedSamples) {
+      const lastSample = samples[samples.length - 1];
+      this.file.releaseUsedSamples(trackId, lastSample.number + 1);
+    }
   }
 
   getDecoderSpecificInfo(trackId) {
@@ -1419,6 +1479,9 @@ class ProducerTrackPipeline {
     this.preWarmedDecoderConfig = null;
     this.preWarmedNextFileStart = 0;
     this.preWarmedDurationSeconds = undefined;
+    this.initializationChunk = null;
+    this.seekStandbyDemuxerPromise = null;
+    this.nextFetchChunkBytes = null;
     this.readyWatchdogId = 0;
     this.startupRecoveryTimerIds = [];
     this.startupRecoveryAttemptCount = 0;
@@ -1446,12 +1509,15 @@ class ProducerTrackPipeline {
     return !!this.decoder && this.decoder.state !== 'closed';
   }
 
-  assertSupportedFormat(bytes) {
+  assertSupportedFormat(bytes, byteStart = null) {
     if (this.unsupportedFormat) {
       throw createUnsupportedFormatError(this.track, 'url-mp3');
     }
 
-    if (bytesLookLikeMp3(bytes)) {
+    // Only the first bytes of a file carry a meaningful format signature.
+    // Range chunks fetched after a seek can legitimately begin with FF Ex,
+    // which looks like an MP3 sync word by coincidence.
+    if (byteStart === 0 && bytesLookLikeMp3(bytes)) {
       this.unsupportedFormat = true;
       throw createUnsupportedFormatError(this.track, 'sniffed-mp3');
     }
@@ -1477,6 +1543,8 @@ class ProducerTrackPipeline {
     this.preWarmedDecoderConfig = null;
     this.preWarmedNextFileStart = 0;
     this.preWarmedDurationSeconds = undefined;
+    this.initializationChunk = null;
+    this.seekStandbyDemuxerPromise = null;
     this.ready = false;
     this.normalReadyPosted = false;
     this.endOfFileReached = true;
@@ -1491,7 +1559,7 @@ class ProducerTrackPipeline {
 
     if (this.demuxer) {
       try {
-        this.demuxer.resetPending();
+        this.demuxer.dispose();
       } catch (_error) {
         // MP4Box may already be half torn down by an aborted append.
       }
@@ -1521,9 +1589,33 @@ class ProducerTrackPipeline {
 
     while (!this.demuxer || !this.demuxer.trackReady) {
       this.assertAlive();
-      const chunk = await this.fetcher.fetchChunk(this.nextFileStart);
+      const canReuseInitializationChunk =
+        !this.demuxer &&
+        this.nextFileStart === 0 &&
+        this.initializationChunk &&
+        this.initializationChunk.bytes;
+      const chunk = canReuseInitializationChunk
+        ? {
+          ...this.initializationChunk,
+          bytes: this.initializationChunk.bytes.slice(),
+        }
+        : await this.fetcher.fetchChunk(this.nextFileStart);
       this.assertAlive();
-      this.assertSupportedFormat(chunk.bytes);
+      this.assertSupportedFormat(chunk.bytes, chunk.byteStart);
+
+      if (
+        this.track.retainExtractedSamples &&
+        !this.initializationChunk &&
+        chunk.byteStart === 0 &&
+        chunk.bytes.byteLength > 0
+      ) {
+        this.initializationChunk = {
+          bytes: chunk.bytes.slice(),
+          byteStart: chunk.byteStart,
+          nextByteStart: chunk.nextByteStart,
+          endOfFile: chunk.endOfFile,
+        };
+      }
 
       if (!this.demuxer) {
         const mp4box = await loadMp4Box();
@@ -1549,6 +1641,14 @@ class ProducerTrackPipeline {
     }
 
     this.ready = true;
+    if (this.track.retainExtractedSamples) {
+      const standbyPromise = this.ensureExactSeekStandbyDemuxer();
+      if (standbyPromise) {
+        standbyPromise.catch(() => {
+          // A seek can rebuild the standby synchronously if speculative prewarm fails.
+        });
+      }
+    }
   }
 
   async prewarmHeader(sessionId) {
@@ -1557,7 +1657,19 @@ class ProducerTrackPipeline {
 
     const chunk = await this.fetcher.fetchChunk(0);
     this.assertAlive();
-    this.assertSupportedFormat(chunk.bytes);
+    this.assertSupportedFormat(chunk.bytes, chunk.byteStart);
+    if (
+      this.track.retainExtractedSamples &&
+      !this.initializationChunk &&
+      chunk.bytes.byteLength > 0
+    ) {
+      this.initializationChunk = {
+        bytes: chunk.bytes.slice(),
+        byteStart: chunk.byteStart,
+        nextByteStart: chunk.nextByteStart,
+        endOfFile: chunk.endOfFile,
+      };
+    }
 
     if (!this.demuxer) {
       const mp4box = await loadMp4Box();
@@ -1906,6 +2018,8 @@ class ProducerTrackPipeline {
     seekSerial,
     decodePrerollFrames = 0,
     hardReset = false,
+    exactSampleSeek = false,
+    bufferedAdvance = false,
   ) {
     this.assertAlive();
 
@@ -1916,6 +2030,42 @@ class ProducerTrackPipeline {
     const operationToken = this.seekOperationToken + 1;
     this.seekOperationToken = operationToken;
 
+    if (bufferedAdvance) {
+      const thresholdFrames = Math.max(
+        MIN_RING_WRITE_FRAMES,
+        Math.floor(this.getOutputSampleRate() * SEEK_READY_SECONDS),
+      );
+      this.ringWriter.advanceReadToSample(safeTargetSample);
+      const availableRead = this.ringWriter.availableRead();
+      const bufferedContentFrames = this.lastNormalWriteEndSample - safeTargetSample;
+
+      if (availableRead >= thresholdFrames && bufferedContentFrames >= thresholdFrames) {
+        // Keep the running decoder and demux cursor untouched. The ring is
+        // indexed by absolute sample, so advancing every reader to the same
+        // target is already an exact synchronized seek.
+        this.firstNormalWriteStartSample = safeTargetSample;
+        self.postMessage({
+          type: 'producer-seek-ready',
+          sessionId,
+          seekSerial: safeSeekSerial,
+          trackIndex: this.track.trackIndex,
+          targetSample: safeTargetSample,
+          nextFileStart: this.nextFileStart,
+          availableRead,
+          thresholdFrames,
+          decodedUntilSample: this.decodedUntilSample,
+          firstNormalWriteStartSample: safeTargetSample,
+          lastNormalWriteEndSample: this.lastNormalWriteEndSample,
+          targetToFirstContentDelta: 0,
+          decodePrerollFrames: 0,
+          demuxerTargetSample: safeTargetSample,
+          realContentReady: true,
+          bufferedAdvance: true,
+        });
+        return;
+      }
+    }
+
     this.postSeekReadyFallback(sessionId, 'superseded-by-new-seek');
     this.currentSeekSerial = safeSeekSerial;
     this.stopLookAhead();
@@ -1923,9 +2073,20 @@ class ProducerTrackPipeline {
     this.fetcher.abort();
     if (hardReset) {
       this.resetDecoderForHardSeek();
-      this.resetDemuxerForHardSeek();
+      if (exactSampleSeek) {
+        // A desktop backward seek remains a hard reset: both the decoder and
+        // MP4 extraction cursor are replaced. Reuse only the immutable parsed
+        // header/index so we do not decode the beginning of every stem before
+        // jumping to the three-second preroll target.
+        await this.rotateExactSeekDemuxer();
+      } else {
+        this.resetDemuxerForHardSeek();
+      }
     } else {
       await this.flushDecoderForSeek();
+      if (exactSampleSeek) {
+        await this.rotateExactSeekDemuxer();
+      }
     }
     this.assertCurrentSeekOperation(operationToken, safeSeekSerial);
 
@@ -1945,18 +2106,30 @@ class ProducerTrackPipeline {
     const rebuiltFromHead = hardReset && safeTargetSample === 0;
     if (!rebuiltFromHead) {
       const seekTimeSeconds = demuxerTargetSample / this.getOutputSampleRate();
-      const seekResult = this.demuxer.seek(seekTimeSeconds, true);
+      // AAC access units are independently decodable. Chromium needs an exact
+      // sample seek here; RAP seeking can skip already-read audio samples and
+      // start an individual stem hundreds of milliseconds after the target.
+      const seekResult = this.demuxer.seek(seekTimeSeconds, !exactSampleSeek);
 
-      if (this.demuxer) {
-        this.demuxer.resetPending();
-      }
+      // Mp4TrackDemuxer.seek() clears the old pending queue before file.start().
+      // file.start() may synchronously publish the first batch at the new
+      // position in Chromium, so clearing again here would discard precisely
+      // the target samples and make that stem begin late.
 
       if (seekResult && typeof seekResult.nextFileStart === 'number') {
         this.nextFileStart = seekResult.nextFileStart;
       }
+      this.nextFetchChunkBytes = exactSampleSeek ? EXACT_SEEK_FETCH_CHUNK_BYTES : null;
+
+      // When Chrome seeks into bytes already retained by MP4Box, file.start()
+      // can synchronously emit the target AAC batch without another append.
+      // Drain it now; waiting for a redundant range fetch can leave the second
+      // consecutive forward seek with no decoder input at all.
+      await this.feedDemuxedSamples(this.demuxer.drainAfterSeek());
+      this.assertCurrentSeekOperation(operationToken, safeSeekSerial);
     }
 
-    return new Promise((resolve, reject) => {
+    const seekReadyPromise = new Promise((resolve, reject) => {
       if (this.isDestroyed) {
         reject(createAbortError('Producer pipeline destroyed before seek ready.'));
         return;
@@ -1971,6 +2144,7 @@ class ProducerTrackPipeline {
           Math.floor(this.getOutputSampleRate() * SEEK_READY_SECONDS),
         ),
         decodePrerollFrames: safeDecodePrerollFrames,
+        requireRealContentNearTarget: exactSampleSeek === true,
         demuxerTargetSample,
         resolve,
         reject,
@@ -1978,6 +2152,23 @@ class ProducerTrackPipeline {
 
       this.startLookAhead(sessionId, safeSeekSerial);
       this.postSeekReadyIfAvailable();
+    });
+
+    if (!exactSampleSeek) {
+      return seekReadyPromise;
+    }
+
+    return seekReadyPromise.then((result) => {
+      if (this.demuxer) {
+        this.demuxer.retainExtractedSamples = false;
+      }
+      const standbyPromise = this.ensureExactSeekStandbyDemuxer();
+      if (standbyPromise) {
+        standbyPromise.catch(() => {
+          // The next seek can rebuild synchronously if speculative prewarm fails.
+        });
+      }
+      return result;
     });
   }
 
@@ -2021,7 +2212,7 @@ class ProducerTrackPipeline {
   resetDemuxerForHardSeek() {
     if (this.demuxer) {
       try {
-        this.demuxer.resetPending();
+        this.demuxer.dispose();
       } catch (_error) {
         // The old demuxer is discarded below even if its pending state is invalid.
       }
@@ -2032,8 +2223,63 @@ class ProducerTrackPipeline {
     this.decoderVariants = [];
     this.decoderVariantIndex = 0;
     this.decoderStartupStaggerApplied = false;
+    this.seekStandbyDemuxerPromise = null;
     this.nextFileStart = 0;
     this.ready = false;
+  }
+
+  ensureExactSeekStandbyDemuxer() {
+    if (this.seekStandbyDemuxerPromise || !this.initializationChunk) {
+      return this.seekStandbyDemuxerPromise;
+    }
+
+    const initializationChunk = {
+      ...this.initializationChunk,
+      bytes: this.initializationChunk.bytes.slice(),
+    };
+    this.seekStandbyDemuxerPromise = (async () => {
+      const mp4box = await loadMp4Box();
+      this.assertAlive();
+      const demuxer = new Mp4TrackDemuxer(mp4box, this.track, {
+        retainExtractedSamples: true,
+      });
+      const result = demuxer.append(initializationChunk.bytes, initializationChunk.byteStart);
+      if (!demuxer.trackReady) {
+        throw new Error(`Unable to prewarm exact-seek MP4 index for ${this.track.url}`);
+      }
+
+      return {
+        demuxer,
+        decoderConfig: result.decoderConfig || this.decoderConfig,
+        nextFileStart: this.resolveNextFileStart(result, initializationChunk),
+      };
+    })().catch((error) => {
+      this.seekStandbyDemuxerPromise = null;
+      throw error;
+    });
+
+    return this.seekStandbyDemuxerPromise;
+  }
+
+  async rotateExactSeekDemuxer() {
+    const standbyPromise = this.ensureExactSeekStandbyDemuxer();
+    if (!standbyPromise) {
+      this.resetDemuxerForHardSeek();
+      await this.ensureReady();
+      return;
+    }
+
+    const standby = await standbyPromise;
+    this.assertAlive();
+    this.seekStandbyDemuxerPromise = null;
+    const previousDemuxer = this.demuxer;
+    this.demuxer = standby.demuxer;
+    this.decoderConfig = standby.decoderConfig || this.decoderConfig;
+    this.nextFileStart = standby.nextFileStart;
+    this.ready = true;
+    if (previousDemuxer && previousDemuxer !== this.demuxer) {
+      previousDemuxer.dispose();
+    }
   }
 
   async flushDecoderForSeek() {
@@ -2042,24 +2288,23 @@ class ProducerTrackPipeline {
       return;
     }
 
-    try {
-      if (decoderForSeek.state !== 'closed' && decoderForSeek.decodeQueueSize > 0) {
-        await decoderForSeek.flush();
-      }
-    } catch (error) {
-      if (!isAbortError(error)) {
-        postProducerError('decoder-flush-for-seek-failed', error, {
-          trackIndex: this.track.trackIndex,
-        });
-      }
-    }
-
+    // A seek discards every queued frame from the old position. Awaiting
+    // flush() here decodes stale audio before throwing it away and makes each
+    // consecutive section jump slower as that queue grows.
     try {
       if (decoderForSeek.state !== 'closed') {
         decoderForSeek.reset();
       }
     } catch (_error) {
       // Decoder may already be closed/reset by the browser; continue the seek.
+    }
+
+    try {
+      if (decoderForSeek.state !== 'closed') {
+        decoderForSeek.close();
+      }
+    } catch (_error) {
+      // A reset decoder can already be closing; its reference is dropped below.
     }
 
     if (this.decoder === decoderForSeek) {
@@ -2084,23 +2329,27 @@ class ProducerTrackPipeline {
         continue;
       }
 
-      const chunk = await this.fetcher.fetchChunk(this.nextFileStart);
+      const nextFetchChunkBytes = this.nextFetchChunkBytes;
+      this.nextFetchChunkBytes = null;
+      const chunk = await this.fetcher.fetchChunk(this.nextFileStart, nextFetchChunkBytes);
       this.assertAlive();
-      this.assertSupportedFormat(chunk.bytes);
+      this.assertSupportedFormat(chunk.bytes, chunk.byteStart);
       const result = this.demuxer.append(chunk.bytes, chunk.byteStart);
       this.nextFileStart = this.resolveNextFileStart(result, chunk);
 
       await this.feedDemuxedSamples(result, token);
       this.assertAlive();
 
-      self.postMessage({
-        type: 'producer-lookahead-status',
-        sessionId,
-        trackIndex: this.track.trackIndex,
-        availableRead: this.ringWriter.availableRead(),
-        availableWrite: this.ringWriter.availableWrite(),
-        targetAheadFrames: this.ringWriter.targetAheadFrames(),
-      });
+      if (producerDiagnosticsEnabled) {
+        self.postMessage({
+          type: 'producer-lookahead-status',
+          sessionId,
+          trackIndex: this.track.trackIndex,
+          availableRead: this.ringWriter.availableRead(),
+          availableWrite: this.ringWriter.availableWrite(),
+          targetAheadFrames: this.ringWriter.targetAheadFrames(),
+        });
+      }
 
       if (chunk.endOfFile) {
         this.assertAlive();
@@ -2138,20 +2387,22 @@ class ProducerTrackPipeline {
     while (!this.isDestroyed && this.prepareToken === token && this.decodedUntilSample < endSample) {
       const chunk = await this.fetcher.fetchChunk(this.nextFileStart);
       this.assertAlive();
-      this.assertSupportedFormat(chunk.bytes);
+      this.assertSupportedFormat(chunk.bytes, chunk.byteStart);
       const result = this.demuxer.append(chunk.bytes, chunk.byteStart);
       this.nextFileStart = this.resolveNextFileStart(result, chunk);
 
       await this.feedDemuxedSamples(result);
       this.assertAlive();
 
-      self.postMessage({
-        type: 'producer-track-progress',
-        sessionId,
-        trackIndex: this.track.trackIndex,
-        decodedUntilSample: this.decodedUntilSample,
-        targetEndSample: endSample,
-      });
+      if (producerDiagnosticsEnabled) {
+        self.postMessage({
+          type: 'producer-track-progress',
+          sessionId,
+          trackIndex: this.track.trackIndex,
+          decodedUntilSample: this.decodedUntilSample,
+          targetEndSample: endSample,
+        });
+      }
 
       if (chunk.endOfFile) {
         this.assertAlive();
@@ -2896,6 +3147,10 @@ class ProducerTrackPipeline {
   }
 
   postRingWriteStatus(result, frameCount) {
+    if (!producerDiagnosticsEnabled) {
+      return;
+    }
+
     const now = Date.now();
     if (now - this.lastRingWriteStatusPostAt < RING_WRITE_STATUS_POST_INTERVAL_MS) {
       return;
@@ -3003,7 +3258,9 @@ class ProducerTrackPipeline {
       this.lastNormalWriteEndSample - pending.targetSample >= pending.thresholdFrames;
     const hasEnoughRealAudio = hasEnoughAudio && hasRealContentNearTarget;
     const requiresRealContentNearTarget =
-      pending.decodePrerollFrames > 0 || pending.targetSample === 0;
+      pending.requireRealContentNearTarget === true ||
+      pending.decodePrerollFrames > 0 ||
+      pending.targetSample === 0;
     const seekReady = requiresRealContentNearTarget ? hasEnoughRealAudio : hasEnoughAudio;
     const reachedEndWithAudio = this.endOfFileReached && availableRead > 0;
 
@@ -3392,6 +3649,9 @@ const seekAllPipelines = async (
   seekSerial,
   decodePrerollFrames = 0,
   hardReset = false,
+  exactSampleSeek = false,
+  requireCompleteReady = false,
+  bufferedAdvance = false,
 ) => {
   const tasks = [];
   const safeSeekSerial = Math.max(0, Math.floor(Number(seekSerial) || 0));
@@ -3405,6 +3665,8 @@ const seekAllPipelines = async (
         safeSeekSerial,
         safeDecodePrerollFrames,
         hardReset === true,
+        exactSampleSeek === true,
+        bufferedAdvance === true,
       )
       .catch((error) => {
         if (isAbortError(error)) {
@@ -3414,7 +3676,11 @@ const seekAllPipelines = async (
 
         throw error;
       });
-    if (safeDecodePrerollFrames > 0 || hardReset === true) {
+    if (
+      requireCompleteReady === true ||
+      safeDecodePrerollFrames > 0 ||
+      hardReset === true
+    ) {
       tasks.push(seekTask);
     } else {
       const softTimeoutTask = sleep(SEEK_HANDSHAKE_SOFT_TIMEOUT_MS).then(() => {
@@ -3540,12 +3806,16 @@ self.onmessage = (event) => {
     const targetSample = Math.max(0, Math.floor(Number(message.targetSample) || 0));
     const seekSerial = Math.max(0, Math.floor(Number(message.seekSerial) || 0));
     const decodePrerollFrames = Math.max(0, Math.floor(Number(message.decodePrerollFrames) || 0));
+    const exactSampleSeek = message.exactSampleSeek === true;
     seekAllPipelines(
       targetSample,
       message.sessionId || activeSessionId,
       seekSerial,
       decodePrerollFrames,
       message.hardReset === true,
+      exactSampleSeek,
+      message.requireCompleteReady === true,
+      message.bufferedAdvance === true,
     ).catch((error) => {
       if (isAbortError(error)) {
         return;
