@@ -9,6 +9,7 @@ import { isLikelyAudioSourceUrl, resolveFetchableAudioUrl, resolvePreferredAudio
 import { buildWordGroups, parseChordProLine } from '../../utils/chordProLineUtils';
 import { normalizePersistedLiveDirectorSession } from '../../utils/liveDirectorSongSession';
 import { getPadUrlForSongKey } from '../../utils/padAudio';
+import { buildLiveDirectorSyncChannelName } from '../../utils/liveDirectorSync';
 import {
   REHEARSAL_PERSONAL_SETTINGS_TOAST_MS,
   formatRehearsalSongSettingsSummary,
@@ -3119,7 +3120,7 @@ export default function ModoEnsayoCompacto({
       }
       return;
     }
-    const channel = supabase.channel('ensayo-live-sync', {
+    const channel = supabase.channel(buildLiveDirectorSyncChannelName({ eventId, playlistId }), {
       config: { broadcast: { self: false } },
     });
     channel.on('broadcast', { event: 'SECTION_CHANGE' }, (payload) => {
@@ -3138,7 +3139,7 @@ export default function ModoEnsayoCompacto({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [pushSyncSnapshot, syncRole]);
+  }, [eventId, playlistId, pushSyncSnapshot, syncRole]);
   useEffect(() => {
     if (syncRole !== 'director' || !syncChannelRef.current) return undefined;
 

@@ -8,6 +8,7 @@
   ListMusic,
   Pause,
   Play,
+  Radio,
   SkipBack,
   SlidersVertical,
   Smartphone,
@@ -168,6 +169,7 @@ type LiveDirectorEventMixPayload = {
 };
 
 type EventMixSaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+type LiveDirectorBroadcastState = 'off' | 'checking' | 'occupied' | 'active' | 'unavailable';
 
 type LiveDirectorViewProps = {
   tracks?: TrackData[];
@@ -189,6 +191,8 @@ type LiveDirectorViewProps = {
   activeQueueSongId?: string;
   onSelectQueueSong?: (songId: string) => void;
   operationalChips?: LiveDirectorOperationalChip[];
+  liveBroadcastState?: LiveDirectorBroadcastState;
+  onToggleLiveBroadcast?: () => void;
   internalPadVolume?: number;
   onInternalPadVolumeChange?: (volume: number) => void;
   onPlaybackSnapshot?: (snapshot: LiveDirectorPlaybackSnapshot) => void;
@@ -533,6 +537,8 @@ export function LiveDirectorView({
   queueSongs = EMPTY_QUEUE_SONGS,
   activeQueueSongId = '',
   onSelectQueueSong,
+  liveBroadcastState = 'off',
+  onToggleLiveBroadcast,
   internalPadVolume,
   onInternalPadVolumeChange,
   onPlaybackSnapshot,
@@ -921,6 +927,7 @@ export function LiveDirectorView({
     setVisualSectionTimeState(nextTime);
   }, []);
   const isEnsayoMode = mode === 'ensayo';
+  const showLiveBroadcastControl = isEnsayoMode && typeof onToggleLiveBroadcast === 'function';
   const resolvedBackLabel = String(
     backLabel || (isEnsayoMode ? 'Volver al modo ensayo' : 'Volver al repertorio'),
   ).trim();
@@ -955,10 +962,10 @@ export function LiveDirectorView({
       isUltraCompactLandscape
         ? '30rem'
         : isToolbarCompactLandscape
-          ? '34rem'
+          ? (showLiveBroadcastControl ? '39rem' : '34rem')
           : scaleRem(58, 46)
     ),
-    [isToolbarCompactLandscape, isUltraCompactLandscape, scaleRem],
+    [isToolbarCompactLandscape, isUltraCompactLandscape, scaleRem, showLiveBroadcastControl],
   );
   const toolbarHeaderStyle = useMemo<CSSProperties>(
     () => (
@@ -966,10 +973,12 @@ export function LiveDirectorView({
         ? { minWidth: headerMinWidth }
         : {
           minWidth: headerMinWidth,
-          gridTemplateColumns: '35% 3% 49% 5% 8%',
+          gridTemplateColumns: showLiveBroadcastControl
+            ? '33% 2% 47% 2% 16%'
+            : '35% 3% 49% 5% 8%',
         }
     ),
-    [headerMinWidth, isToolbarCompactLandscape],
+    [headerMinWidth, isToolbarCompactLandscape, showLiveBroadcastControl],
   );
   const mixerLayoutColumns = useMemo(
     () =>
@@ -4645,7 +4654,7 @@ export function LiveDirectorView({
 
             {!isToolbarCompactLandscape && <div aria-hidden="true" />}
 
-            <div className={`flex items-stretch ${isToolbarCompactLandscape ? '' : 'justify-end'}`}>
+            <div className={`flex items-stretch ${showLiveBroadcastControl ? (isUltraCompactLandscape ? 'gap-1' : 'gap-1.5') : ''} ${isToolbarCompactLandscape ? '' : 'justify-end'}`}>
               <button
                 type="button"
                 onClick={handleStemsToolbarAction}
@@ -4659,7 +4668,7 @@ export function LiveDirectorView({
                   }`}
                 style={isToolbarCompactLandscape
                   ? { width: scaleRem(isUltraCompactLandscape ? 4.35 : 4.95, 3.75) }
-                  : { width: '100%' }}
+                  : { flex: showLiveBroadcastControl ? '1 1 0' : undefined, width: showLiveBroadcastControl ? undefined : '100%' }}
                 aria-label="Administrar stems"
                 title="Administrar stems (S)"
               >
@@ -4669,6 +4678,57 @@ export function LiveDirectorView({
                 </span>
                 <KeyboardHint>S</KeyboardHint>
               </button>
+
+              {showLiveBroadcastControl && (
+                <button
+                  type="button"
+                  onClick={onToggleLiveBroadcast}
+                  disabled={liveBroadcastState === 'checking' || liveBroadcastState === 'unavailable'}
+                  aria-pressed={liveBroadcastState === 'active'}
+                  aria-busy={liveBroadcastState === 'checking' || undefined}
+                  data-live-director-control="live-broadcast"
+                  className={`${CONTROL_CARD} group relative ${isUltraCompactLandscape ? 'h-11 px-1.5 text-[0.56rem]' : isToolbarCompactLandscape ? 'h-12 px-2 text-[0.68rem]' : 'h-[var(--ld-control-height)] px-3 text-[0.76rem]'} shrink-0 flex-col font-semibold tracking-[0.16em] disabled:cursor-not-allowed ${liveBroadcastState === 'active'
+                    ? 'border-rose-300/40 bg-rose-500/16 text-rose-50 shadow-[0_0_22px_rgba(244,63,94,0.18)]'
+                    : liveBroadcastState === 'occupied'
+                      ? 'border-amber-300/30 bg-amber-300/10 text-amber-100 shadow-[0_0_16px_rgba(252,211,77,0.08)]'
+                      : liveBroadcastState === 'checking'
+                        ? 'border-cyan-300/28 bg-cyan-300/9 text-cyan-100'
+                        : liveBroadcastState === 'unavailable'
+                          ? 'border-white/7 bg-black/14 text-white/26'
+                          : 'text-white/68 hover:border-rose-300/24 hover:bg-rose-400/8 hover:text-rose-50'
+                  }`}
+                  style={isToolbarCompactLandscape
+                    ? { width: scaleRem(isUltraCompactLandscape ? 4.35 : 4.95, 3.75) }
+                    : { flex: '1 1 0' }}
+                  aria-label={liveBroadcastState === 'active'
+                    ? 'Detener transmisión LIVE'
+                    : liveBroadcastState === 'occupied'
+                      ? 'LIVE ocupado por otro dispositivo'
+                      : 'Iniciar transmisión LIVE'}
+                  title={liveBroadcastState === 'active'
+                    ? 'Detener transmisión LIVE'
+                    : liveBroadcastState === 'occupied'
+                      ? 'Otro dispositivo está enviando LIVE'
+                      : liveBroadcastState === 'unavailable'
+                        ? 'LIVE sin conexión'
+                        : 'Enviar señal LIVE'}
+                >
+                  <span className="relative">
+                    <Radio className={`${isUltraCompactLandscape ? 'h-3.5 w-3.5' : isToolbarCompactLandscape ? 'h-4 w-4' : 'h-5 w-5'} ${liveBroadcastState === 'active' ? 'animate-pulse' : ''}`} />
+                    {liveBroadcastState === 'active' && (
+                      <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-rose-300 shadow-[0_0_8px_rgba(253,164,175,0.9)]" />
+                    )}
+                  </span>
+                  <span className={`${isUltraCompactLandscape ? 'mt-0.5 text-[0.46rem]' : 'mt-1 text-[0.58rem]'} tracking-[0.18em] ${liveBroadcastState === 'active'
+                    ? 'text-rose-100'
+                    : liveBroadcastState === 'occupied'
+                      ? 'text-amber-100/88'
+                      : 'text-white/58'
+                  }`}>
+                    LIVE
+                  </span>
+                </button>
+              )}
             </div>
           </header>
         </div>

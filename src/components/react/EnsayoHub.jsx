@@ -10,6 +10,7 @@ import {
 } from '../../utils/rehearsalUserSongSettings';
 import { createChordProSetlistPdfBrowserToken } from '../../lib/chordproSetlistPdfBrowserStore';
 import { getSongArtworkCandidates } from '../../utils/songArtwork.js';
+import { buildLiveDirectorSyncChannelName } from '../../utils/liveDirectorSync';
 
 const ModoEnsayoDirector = React.lazy(() => import('./ModoEnsayoDirector.jsx'));
 
@@ -686,6 +687,7 @@ export default function EnsayoHub({
   const [prayerTitle, setPrayerTitle] = useState('Oración de Confesión');
 
   const songs = localPlaylist;
+  const rehearsalEventId = String(eventMeta?.id || '').trim();
 
   const initialSong = useMemo(() => (
     initialSongId
@@ -897,7 +899,10 @@ export default function EnsayoHub({
   useEffect(() => {
     if (!isSyncReceiver || playableSongs.length === 0) return;
 
-    const channel = supabase.channel('ensayo-live-sync', {
+    const channel = supabase.channel(buildLiveDirectorSyncChannelName({
+      eventId: rehearsalEventId,
+      playlistId,
+    }), {
       config: { broadcast: { self: false } },
     });
 
@@ -917,7 +922,7 @@ export default function EnsayoHub({
     }).subscribe();
 
     return () => { channel.unsubscribe(); supabase.removeChannel(channel); };
-  }, [isSyncReceiver, playableSongs]);
+  }, [isSyncReceiver, playableSongs, playlistId, rehearsalEventId]);
 
   // ── Cuenta regresiva de conexión ──
   useEffect(() => {
@@ -1257,8 +1262,6 @@ export default function EnsayoHub({
   const serviceDuration = formatServiceDuration(eventMeta?.fecha_hora, eventMeta?.hora_fin);
   const displayContextTitle = String(eventMeta?.display_theme || contextTitle || '').trim() || 'Modo Ensayo';
   const displayContextPreacher = String(eventMeta?.display_preacher || eventMeta?.predicador || '').trim();
-  const rehearsalEventId = String(eventMeta?.id || '').trim();
-
   const loadPersonalSongSettingsForSongs = useCallback(async (targetSongs = printableSongs) => {
     const songIds = (Array.isArray(targetSongs) ? targetSongs : [])
       .map((song) => String(song?.id || '').trim())

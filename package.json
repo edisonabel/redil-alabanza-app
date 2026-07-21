@@ -18,6 +18,7 @@
     "test:guide-markers": "node --experimental-strip-types scripts/test-guide-section-markers.mjs",
     "test:audio-routing": "node scripts/test-audio-playback-routing.mjs",
     "test:audio-engine-policy": "node --experimental-strip-types scripts/test-live-director-engine-policy.mjs",
+    "test:live-sync": "node scripts/test-live-director-sync.mjs",
     "test:event-mix": "node scripts/test-live-director-event-mix.mjs",
     "test:artwork": "node scripts/test-song-artwork.mjs",
     "backfill:artwork": "node --experimental-strip-types scripts/backfill-song-artwork.mjs",

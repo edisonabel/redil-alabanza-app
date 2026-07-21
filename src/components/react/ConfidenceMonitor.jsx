@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { buildWordGroups } from '../../utils/chordProLineUtils';
+import { buildLiveDirectorSyncChannelName } from '../../utils/liveDirectorSync';
 import { buildDisplayTrack } from '../../utils/splitSectionIntoCues';
 import { toRgba } from '../../utils/sectionVisuals';
 import {
@@ -839,7 +840,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
   }, [findCueAtTime, getAuthoritativeRemoteTime, syncDisplayState]);
 
   useEffect(() => {
-    const channel = supabase.channel('ensayo-live-sync', {
+    const channel = supabase.channel(buildLiveDirectorSyncChannelName({ eventId }), {
       config: { broadcast: { self: false } },
     });
 
@@ -949,7 +950,7 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [findCueAtTime, syncDisplayState]);
+  }, [eventId, findCueAtTime, syncDisplayState]);
 
   useEffect(() => {
     const check = setInterval(() => {

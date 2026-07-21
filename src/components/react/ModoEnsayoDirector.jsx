@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { supabase } from '../../lib/supabase';
 import { screenWakeLockService } from '../../services/ScreenWakeLockService';
 import { LiveDirectorView } from './LiveDirectorView';
+import { useLiveDirectorSyncTransmitter } from '../../hooks/useLiveDirectorSyncTransmitter';
 import {
   buildLiveDirectorSectionsFromMarkers,
   normalizePersistedLiveDirectorSession,
@@ -367,7 +367,6 @@ export default function ModoEnsayoDirector({
   const [activeSongIndex, setActiveSongIndex] = useState(0);
   const [downloadStatus, setDownloadStatus] = useState({ active: false, progress: 0, total: 0, done: false });
   const [padVolume, setPadVolume] = useState(0.42);
-  const [syncConnected, setSyncConnected] = useState(false);
   const [sessionOverrides, setSessionOverrides] = useState({});
   const [eventMixOverrides, setEventMixOverrides] = useState({});
   const [eventMixLoadedSongIds, setEventMixLoadedSongIds] = useState(() => new Set());
@@ -380,7 +379,6 @@ export default function ModoEnsayoDirector({
     sectionOffsetSeconds: 0,
     isPlaying: false,
   });
-  const syncChannelRef = useRef(null);
   const autoCacheStartedRef = useRef(false);
   const prewarmedSongIdsRef = useRef(new Set());
   const prewarmInFlightUrlsRef = useRef(new Set());
@@ -388,6 +386,17 @@ export default function ModoEnsayoDirector({
   const eventMixSaveVersionsRef = useRef({});
   const eventMixStatusTimersRef = useRef(new Map());
   const queueSelectionTokenRef = useRef(0);
+  const takeoverCancelButtonRef = useRef(null);
+  const {
+    broadcastState,
+    cancelTakeover,
+    confirmTakeover,
+    isBroadcasting,
+    sendSectionChange,
+    statusNotice: syncStatusNotice,
+    takeoverPromptOpen,
+    toggleBroadcasting,
+  } = useLiveDirectorSyncTransmitter({ eventId, playlistId });
 
   const safeActiveSongIndex = Math.max(0, Math.min(activeSongIndex, Math.max(ensayoSongs.length - 1, 0)));
   const activeSong = ensayoSongs[safeActiveSongIndex] || null;
@@ -414,13 +423,20 @@ export default function ModoEnsayoDirector({
     [ensayoSongs],
   );
   const operationalChips = useMemo(() => {
+    const liveStatus = broadcastState === 'active'
+      ? { value: 'Enviando', tone: 'success', active: true }
+      : broadcastState === 'occupied'
+        ? { value: 'Ocupado', tone: 'info', active: false }
+        : broadcastState === 'checking'
+          ? { value: 'Espera', tone: 'info', active: false }
+          : broadcastState === 'unavailable'
+            ? { value: 'Sin red', tone: 'neutral', active: false }
+            : { value: 'Local', tone: 'neutral', active: false };
     const chips = [
       {
         id: 'sync',
-        label: 'Sync',
-        value: syncConnected ? 'Activa' : 'Espera',
-        tone: 'info',
-        active: syncConnected,
+        label: 'LIVE',
+        ...liveStatus,
       },
     ];
 
@@ -435,7 +451,7 @@ export default function ModoEnsayoDirector({
     }
 
     return chips;
-  }, [downloadStatus.active, downloadStatus.done, downloadStatus.progress, downloadStatus.total, syncConnected]);
+  }, [broadcastState, downloadStatus.active, downloadStatus.done, downloadStatus.progress, downloadStatus.total]);
 
   const hasEventMixContext = Boolean(String(eventId || '').trim() && String(playlistId || '').trim());
   const activeEventMixSaveStatus = eventMixSaveStates[activeSongId] || 'idle';
@@ -447,6 +463,14 @@ export default function ModoEnsayoDirector({
     eventMixStatusTimersRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
     eventMixStatusTimersRef.current.clear();
   }, []);
+
+  useEffect(() => {
+    if (!takeoverPromptOpen) return undefined;
+    const focusFrame = window.requestAnimationFrame(() => {
+      takeoverCancelButtonRef.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(focusFrame);
+  }, [takeoverPromptOpen]);
 
   useEffect(() => {
     if (!activeSongId) {
@@ -745,57 +769,7 @@ export default function ModoEnsayoDirector({
   }, [ensayoSongs, safeActiveSongIndex, sessionOverrides]);
 
   useEffect(() => {
-    let channel = null;
-
-    const subscribeDirectorChannel = () => {
-      if (channel) {
-        supabase.removeChannel(channel);
-      }
-
-      channel = supabase.channel('ensayo-live-sync', {
-        config: { broadcast: { self: false } },
-      });
-
-      channel.on('broadcast', { event: 'DIRECTOR_CLAIMED' }, () => {
-        alert('Otro dispositivo ha tomado el control remoto del Modo Director. Has sido desconectado para evitar conflictos.');
-        if (typeof onExit === 'function') {
-          onExit();
-        }
-      });
-
-      channel.subscribe((status) => {
-        setSyncConnected(status === 'SUBSCRIBED');
-        if (status === 'SUBSCRIBED') {
-          channel.send({
-            type: 'broadcast',
-            event: 'DIRECTOR_CLAIMED',
-            payload: { timestamp: Date.now() },
-          }).catch((error) => console.warn('[ModoEnsayoDirector] Failed to claim director lock.', error));
-        }
-      });
-
-      syncChannelRef.current = channel;
-    };
-
-    const handlePageShow = () => {
-      subscribeDirectorChannel();
-    };
-
-    subscribeDirectorChannel();
-    window.addEventListener('pageshow', handlePageShow);
-
-    return () => {
-      window.removeEventListener('pageshow', handlePageShow);
-      if (channel) {
-        supabase.removeChannel(channel);
-      }
-      syncChannelRef.current = null;
-      setSyncConnected(false);
-    };
-  }, [onExit]);
-
-  useEffect(() => {
-    if (!syncConnected || !syncChannelRef.current || !activeSongId) {
+    if (!isBroadcasting || !activeSongId) {
       return;
     }
 
@@ -805,17 +779,13 @@ export default function ModoEnsayoDirector({
         return;
       }
 
-      syncChannelRef.current.send({
-        type: 'broadcast',
-        event: 'SECTION_CHANGE',
-        payload: {
-          songId: snapshot.songId,
-          sectionIndex: snapshot.sectionIndex,
-          currentTime: snapshot.currentTime,
-          currentTimeRaw: snapshot.currentTimeRaw,
-          sectionOffsetSeconds: snapshot.sectionOffsetSeconds || 0,
-          isPlaying: snapshot.isPlaying,
-        },
+      sendSectionChange({
+        songId: snapshot.songId,
+        sectionIndex: snapshot.sectionIndex,
+        currentTime: snapshot.currentTime,
+        currentTimeRaw: snapshot.currentTimeRaw,
+        sectionOffsetSeconds: snapshot.sectionOffsetSeconds || 0,
+        isPlaying: snapshot.isPlaying,
       }).catch((error) => {
         console.warn('[ModoEnsayoDirector] Sync broadcast failed.', error);
       });
@@ -824,7 +794,7 @@ export default function ModoEnsayoDirector({
     pushSnapshot();
     const heartbeat = window.setInterval(pushSnapshot, 1500);
     return () => window.clearInterval(heartbeat);
-  }, [activeSongId, syncConnected]);
+  }, [activeSongId, isBroadcasting, sendSectionChange]);
 
   const handlePlaybackSnapshot = useCallback((snapshot) => {
     playbackSnapshotRef.current = snapshot;
@@ -951,29 +921,86 @@ export default function ModoEnsayoDirector({
   }
 
   return (
-    <LiveDirectorView
-      mode="ensayo"
-      songId={activeSongId}
-      songTitle={String(activeSong?.title || '').trim()}
-      subtitle={String(activeSong?.artist || activeSong?.cantante || '').trim()}
-      songMp3={String(activeSong?.mp3 || '').trim()}
-      songKey={String(activeSong?.originalKey || activeSong?.key || '').trim()}
-      sections={activeSongSections}
-      initialSession={activeSongSession}
-      queueSongs={queueSongs}
-      activeQueueSongId={activeSongId}
-      onSelectQueueSong={handleQueueSongSelect}
-      operationalChips={operationalChips}
-      internalPadVolume={padVolume}
-      onInternalPadVolumeChange={setPadVolume}
-      onPlaybackSnapshot={handlePlaybackSnapshot}
-      onSessionPersisted={handleSessionPersisted}
-      onEventMixChange={hasEventMixContext ? handleEventMixChange : undefined}
-      eventMixSaveStatus={activeEventMixSaveStatus}
-      onBack={onExit}
-      backLabel="Volver al modo ensayo"
-      title={`Modo Ensayo - ${contextTitle}`}
-      bpm={Number(activeSong?.bpm || 0)}
-    />
+    <>
+      <LiveDirectorView
+        mode="ensayo"
+        songId={activeSongId}
+        songTitle={String(activeSong?.title || '').trim()}
+        subtitle={String(activeSong?.artist || activeSong?.cantante || '').trim()}
+        songMp3={String(activeSong?.mp3 || '').trim()}
+        songKey={String(activeSong?.originalKey || activeSong?.key || '').trim()}
+        sections={activeSongSections}
+        initialSession={activeSongSession}
+        queueSongs={queueSongs}
+        activeQueueSongId={activeSongId}
+        onSelectQueueSong={handleQueueSongSelect}
+        operationalChips={operationalChips}
+        liveBroadcastState={broadcastState}
+        onToggleLiveBroadcast={toggleBroadcasting}
+        internalPadVolume={padVolume}
+        onInternalPadVolumeChange={setPadVolume}
+        onPlaybackSnapshot={handlePlaybackSnapshot}
+        onSessionPersisted={handleSessionPersisted}
+        onEventMixChange={hasEventMixContext ? handleEventMixChange : undefined}
+        eventMixSaveStatus={activeEventMixSaveStatus}
+        onBack={onExit}
+        backLabel="Volver al modo ensayo"
+        title={`Modo Ensayo - ${contextTitle}`}
+        bpm={Number(activeSong?.bpm || 0)}
+      />
+
+      {takeoverPromptOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/72 px-5 backdrop-blur-sm" role="presentation">
+          <div
+            className="w-full max-w-md rounded-[1.8rem] border border-amber-300/24 bg-[linear-gradient(180deg,rgba(31,27,19,0.98),rgba(18,17,15,0.98))] p-6 text-white shadow-[0_28px_80px_rgba(0,0,0,0.48)]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="live-takeover-title"
+            aria-describedby="live-takeover-description"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') cancelTakeover();
+            }}
+          >
+            <div className="flex items-center gap-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-amber-300/25 bg-amber-300/10 text-sm font-black tracking-[0.08em] text-amber-100">
+                LIVE
+              </span>
+              <div>
+                <p className="text-[0.66rem] font-black uppercase tracking-[0.24em] text-amber-200/62">Control ocupado</p>
+                <h2 id="live-takeover-title" className="mt-1 text-xl font-black tracking-tight">Otro dispositivo está enviando</h2>
+              </div>
+            </div>
+            <p id="live-takeover-description" className="mt-4 text-sm leading-relaxed text-white/66">
+              Puedes seguir usando Live Director localmente o tomar el control de la señal para este ensayo.
+            </p>
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                ref={takeoverCancelButtonRef}
+                type="button"
+                onClick={cancelTakeover}
+                className="ui-pressable-soft h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-black text-white/78 hover:bg-white/9 hover:text-white"
+              >
+                Seguir local
+              </button>
+              <button
+                type="button"
+                onClick={confirmTakeover}
+                className="ui-pressable-soft h-12 rounded-2xl border border-rose-300/28 bg-rose-500/16 px-4 text-sm font-black text-rose-50 shadow-[0_0_20px_rgba(244,63,94,0.12)] hover:bg-rose-500/24"
+              >
+                Tomar LIVE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {syncStatusNotice && (
+        <div className="pointer-events-none fixed inset-x-0 top-4 z-[121] flex justify-center px-4" role="status" aria-live="polite">
+          <div className="rounded-full border border-white/12 bg-zinc-950/92 px-4 py-2.5 text-xs font-black tracking-[0.04em] text-white shadow-[0_16px_42px_rgba(0,0,0,0.42)] backdrop-blur-xl">
+            {syncStatusNotice}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
