@@ -7,7 +7,7 @@ const BASE_RENDER_FRAME_COUNT = 128;
 const LOOP_CROSSFADE_FRAMES = 64;
 const LOOP_JUMP_CROSSFADE_FRAMES = 128;
 const SEEK_RESUME_FADE_FRAMES = 768;
-const UNDERFLOW_ALERT_INTERVAL_FRAMES = 48000;
+const UNDERFLOW_ALERT_INTERVAL_FRAMES = 96000;
 const SYNC_DRIFT_ALERT_MS = 40;
 const SYNC_DRIFT_ALERT_INTERVAL_FRAMES = 96000;
 const SYNC_FINE_DRIFT_MS = 15;
@@ -215,6 +215,39 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       return;
     }
 
+    if (type === 'PAUSE_AND_ADVANCE') {
+      const positionSeconds =
+        typeof message.positionSeconds === 'number' && Number.isFinite(message.positionSeconds)
+          ? Math.max(0, message.positionSeconds)
+          : 0;
+      if (typeof message.seekSerial === 'number' && Number.isFinite(message.seekSerial)) {
+        this.activeSeekSerial = message.seekSerial;
+      }
+      this.readingBlocked = true;
+      this.playing = false;
+      this.loopJumpCrossfadeBlocked = true;
+      this.resetAllLoopJumpFades();
+      this.fadeInFramesRemaining = 0;
+      this.telemetryBaseSeconds = positionSeconds;
+      this.telemetryBaseRenderedFrames = this.renderedFrames;
+      this.flushAllBuffers(message, true);
+      const debugTrack = this.tracks[0] || null;
+      const debugReadIndex =
+        debugTrack && debugTrack.usesSharedMemory && debugTrack.indices
+          ? Atomics.load(debugTrack.indices, READ_INDEX_SLOT)
+          : debugTrack
+            ? debugTrack.localReadIndex
+            : 0;
+      this.port.postMessage({
+        type: 'seek-debug',
+        message: `[SEEK-DEBUG] Worklet: Buffered advance -> serial: ${this.activeSeekSerial}, readIndex: ${debugReadIndex}`,
+        seekSerial: this.activeSeekSerial,
+      });
+      this.writeTelemetrySnapshot(positionSeconds);
+      this.postTransportDebug();
+      return;
+    }
+
     if (type === 'RESUME_READING') {
       if (
         typeof message.seekSerial === 'number' &&
@@ -365,7 +398,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
   }
 
-  flushAllBuffers(message) {
+  flushAllBuffers(message, preserveBufferedAudio = false) {
     const targetSample =
       message && typeof message.targetSample === 'number' && Number.isFinite(message.targetSample)
         ? Math.max(0, Math.floor(message.targetSample))
@@ -382,11 +415,15 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
       if (track.usesSharedMemory && track.indices) {
         Atomics.store(track.indices, READ_INDEX_SLOT, targetIndex);
-        Atomics.store(track.indices, WRITE_INDEX_SLOT, targetIndex);
+        if (!preserveBufferedAudio) {
+          Atomics.store(track.indices, WRITE_INDEX_SLOT, targetIndex);
+        }
       }
 
       track.localReadIndex = targetIndex;
-      track.localWriteIndex = targetIndex;
+      if (!preserveBufferedAudio) {
+        track.localWriteIndex = targetIndex;
+      }
       track.lastMeterLevel = 0;
       track.effectiveGain = 0;
       track.absoluteReadFrame = targetSample;

@@ -84,10 +84,11 @@ assert.deepEqual(
   'The validated Safari forward path must remain unchanged.',
 );
 
-const [hookSource, engineSource, workerSource] = await Promise.all([
+const [hookSource, engineSource, workerSource, workletSource] = await Promise.all([
   readFile(`${projectRoot}/src/hooks/useMultitrackEngine.ts`, 'utf8'),
   readFile(`${projectRoot}/src/services/StreamingMultitrackEngine.ts`, 'utf8'),
   readFile(`${projectRoot}/public/workers/AudioProducerWorker.js`, 'utf8'),
+  readFile(`${projectRoot}/public/workers/MultitrackWorkletProcessor.js`, 'utf8'),
 ]);
 
 assert.match(
@@ -122,6 +123,41 @@ assert.match(
 );
 assert.match(
   engineSource,
+  /const CHROME_DESKTOP_BUFFER_SECONDS = 10/,
+  'Chrome desktop must keep a deeper ring than the validated Safari path.',
+);
+assert.match(
+  engineSource,
+  /CHROME_PRODUCER_POOL_SIZE = 3[\s\S]+track\.trackIndex % workers\.length === workerIndex/,
+  'Chrome desktop must distribute a large session across three producer workers.',
+);
+assert.match(
+  engineSource,
+  /rowsByTrack\.set\(row\.trackIndex, row\)[\s\S]+rowsByTrack\.size >= pending\.expectedTrackCount/,
+  'A pooled synchronization audit must aggregate every worker before resolving.',
+);
+assert.match(
+  engineSource,
+  /requireCompleteReady: seekPolicy\.requireCompleteReady/,
+  'The complete Chrome seek barrier must be forwarded into every producer worker.',
+);
+assert.match(
+  engineSource,
+  /retainExtractedSamples =\s+capabilities\.isChromeFamily[\s\S]+retainExtractedSamples,/,
+  'Chrome desktop must retain MP4 extraction samples so exact forward seeks can reuse the live index.',
+);
+assert.match(
+  engineSource,
+  /canUseBufferedForwardSeek[\s\S]+type: canAdvanceInsideBufferedAudio \? 'PAUSE_AND_ADVANCE' : 'PAUSE_AND_FLUSH'/,
+  'A Chrome forward target already inside every ring must advance the shared readers without rebuilding decoders.',
+);
+assert.match(
+  engineSource,
+  /message\.includes\('Worklet: Flush'\)[\s\S]+message\.includes\('Worklet: Buffered advance'\)/,
+  'Both destructive flushes and buffered reader advances must acknowledge the atomic worklet pause.',
+);
+assert.match(
+  engineSource,
   /options\.requireCompleteReady \? 30_000 : 2500/,
   'Backward seeks must not fail before the synchronized producer finishes rebuilding.',
 );
@@ -140,10 +176,15 @@ assert.match(
   /postRingWriteStatus\(result, frameCount\) \{\s+if \(!producerDiagnosticsEnabled\)/,
   'High-frequency ring-write telemetry must remain disabled outside diagnostics.',
 );
-assert.doesNotMatch(
+assert.match(
   workerSource,
-  /cachedInitialChunk|headerCacheHits/,
-  'The worker must not retain an extra 512 KB header copy for every stem.',
+  /this\.track\.retainExtractedSamples &&[\s\S]+this\.initializationChunk = \{/,
+  'Only Chrome exact seeks may cache initialization bytes.',
+);
+assert.match(
+  workerSource,
+  /canReuseInitializationChunk[\s\S]+this\.initializationChunk\.bytes\.slice\(\)/,
+  'A Chrome exact seek must reuse cached initialization bytes instead of refetching every stem header.',
 );
 assert.match(
   workerSource,
@@ -155,10 +196,60 @@ assert.match(
   /this\.demuxer\.seek\(seekTimeSeconds, !exactSampleSeek\)/,
   'Chrome forward seeks must target exact AAC samples instead of RAP boundaries.',
 );
+assert.match(
+  workerSource,
+  /if \(!this\.retainExtractedSamples\) \{[\s\S]+releaseUsedSamples/,
+  'Normal playback must release MP4 extraction samples to keep memory bounded.',
+);
+assert.match(
+  workerSource,
+  /new Mp4TrackDemuxer\(mp4box, this\.track, \{[\s\S]+retainExtractedSamples: true/,
+  'Only the small standby MP4 cursor may retain its cached initialization samples.',
+);
+assert.match(
+  workerSource,
+  /this\.demuxer\.retainExtractedSamples = false/,
+  'An activated standby cursor must return to bounded-memory extraction after its exact seek.',
+);
+assert.match(
+  workerSource,
+  /if \(bufferedAdvance\) \{[\s\S]+advanceReadToSample\(safeTargetSample\)[\s\S]+bufferedAdvance: true/,
+  'A buffered Chrome advance must preserve the running decoder and acknowledge real content at the target.',
+);
+assert.match(
+  workerSource,
+  /pending\.requireRealContentNearTarget === true/,
+  'Silence padding must never satisfy the Chrome exact-seek readiness barrier.',
+);
+assert.match(
+  workerSource,
+  /requireCompleteReady === true[\s\S]+tasks\.push\(seekTask\)/,
+  'A complete Chrome seek must not discard per-track readiness at the old soft timeout.',
+);
 assert.doesNotMatch(
   workerSource,
   /const seekResult = this\.demuxer\.seek\(seekTimeSeconds, !exactSampleSeek\);\s+if \(this\.demuxer\) \{\s+this\.demuxer\.resetPending\(\)/,
   'The first synchronous Chromium sample batch must survive the demuxer seek.',
+);
+assert.match(
+  workerSource,
+  /await this\.feedDemuxedSamples\(this\.demuxer\.drainAfterSeek\(\)\)/,
+  'A retained synchronous AAC batch must feed the decoder before the next range append.',
+);
+assert.match(
+  workerSource,
+  /if \(exactSampleSeek\) \{[\s\S]+await this\.rotateExactSeekDemuxer\(\)/,
+  'Every non-buffered Chrome forward seek must rotate to a fresh prewarmed MP4 extraction cursor.',
+);
+assert.match(
+  workerSource,
+  /ensureExactSeekStandbyDemuxer\(\)[\s\S]+this\.initializationChunk\.bytes\.slice\(\)[\s\S]+new Mp4TrackDemuxer/,
+  'The next Chrome seek cursor must be prewarmed from cached initialization bytes.',
+);
+assert.match(
+  workletSource,
+  /const UNDERFLOW_ALERT_INTERVAL_FRAMES = 96000/,
+  'Realtime underflow telemetry must remain compact enough not to starve Chrome audio.',
 );
 
 console.log('Live Director engine policy regression checks passed.');
