@@ -20,6 +20,7 @@
     "test:audio-engine-policy": "node --experimental-strip-types scripts/test-live-director-engine-policy.mjs",
     "test:live-sync": "node scripts/test-live-director-sync.mjs",
     "test:event-mix": "node scripts/test-live-director-event-mix.mjs",
+    "test:google-calendar": "node scripts/test-google-calendar-sync.mjs",
     "test:artwork": "node scripts/test-song-artwork.mjs",
     "backfill:artwork": "node --experimental-strip-types scripts/backfill-song-artwork.mjs",
     "ios:sync": "npm run build && npx cap sync ios",

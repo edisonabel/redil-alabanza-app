@@ -60,6 +60,34 @@ const notifyAssignmentRecipients = async ({ eventoId, perfilIds }) => {
     }
 };
 
+const syncAssignmentCalendars = async (eventoId) => {
+    if (!eventoId || String(eventoId).startsWith('virtual|')) {
+        return { ok: true, skipped: true };
+    }
+
+    try {
+        const response = await fetch('/api/calendar/google/sync', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'content-type': 'application/json'
+            },
+            body: JSON.stringify({ evento_id: eventoId })
+        });
+        const payload = await response.json().catch(() => ({}));
+        return {
+            ok: response.ok && payload?.ok !== false,
+            status: response.status,
+            ...payload
+        };
+    } catch (error) {
+        return {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        };
+    }
+};
+
 export default function RosterManager({ evId, evFechaStr, esAcustico = false, isStrictModerator, canEditRoster = !isStrictModerator, dbData, onRosterChange }) {
     const [asignaciones, setAsignaciones] = useState(dbData?.asignaciones || []);
     const [roles, setRoles] = useState([]);
@@ -327,7 +355,13 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
         const { error } = await query;
 
         if (!error) {
-            await fetchCurrentRoster();
+            const [_, calendarResult] = await Promise.all([
+                fetchCurrentRoster(),
+                syncAssignmentCalendars(evId)
+            ]);
+            if (!calendarResult?.ok && calendarResult?.status !== 503) {
+                console.warn('Google Calendar sync warning:', calendarResult);
+            }
         } else {
             alert('Error: ' + error.message);
         }
@@ -475,11 +509,15 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
             if (!error) {
                 setPickerOpen(false);
                 setPickerSlotIndex(null);
-                const [_, notifyResult] = await Promise.all([
+                const [_, notifyResult, calendarResult] = await Promise.all([
                     fetchCurrentRoster(),
-                    notifyAssignmentRecipients({ eventoId: evId, perfilIds: [perfilId] })
+                    notifyAssignmentRecipients({ eventoId: evId, perfilIds: [perfilId] }),
+                    syncAssignmentCalendars(evId)
                 ]);
                 warnNotificationFailure(notifyResult);
+                if (!calendarResult?.ok && calendarResult?.status !== 503) {
+                    console.warn('Google Calendar sync warning:', calendarResult);
+                }
             } else {
                 alert('Error: ' + error.message);
             }
@@ -530,11 +568,15 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
         if (!error) {
             setPickerOpen(false);
             setPickerSlotIndex(null);
-            const [_, notifyResult] = await Promise.all([
+            const [_, notifyResult, calendarResult] = await Promise.all([
                 fetchCurrentRoster(),
-                notifyAssignmentRecipients({ eventoId: evId, perfilIds: [perfilId] })
+                notifyAssignmentRecipients({ eventoId: evId, perfilIds: [perfilId] }),
+                syncAssignmentCalendars(evId)
             ]);
             warnNotificationFailure(notifyResult);
+            if (!calendarResult?.ok && calendarResult?.status !== 503) {
+                console.warn('Google Calendar sync warning:', calendarResult);
+            }
         } else {
             alert('Error: ' + error.message);
         }
@@ -629,11 +671,15 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
             if (replaceError) throw replaceError;
 
             setEquipoPickerOpen(false);
-            const [_, notifyResult] = await Promise.all([
+            const [_, notifyResult, calendarResult] = await Promise.all([
                 fetchCurrentRoster(),
-                notifyAssignmentRecipients({ eventoId: evId, perfilIds: newlyAssignedPerfilIds })
+                notifyAssignmentRecipients({ eventoId: evId, perfilIds: newlyAssignedPerfilIds }),
+                syncAssignmentCalendars(evId)
             ]);
             warnNotificationFailure(notifyResult);
+            if (!calendarResult?.ok && calendarResult?.status !== 503) {
+                console.warn('Google Calendar sync warning:', calendarResult);
+            }
             if (blockedIds.size > 0) {
                 const blockedLabel = blockedNames.length > 0
                     ? ` Se omitieron por ausencia: ${blockedNames.join(', ')}.`

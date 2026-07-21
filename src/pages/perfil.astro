@@ -2,6 +2,7 @@
 import Layout from '../layouts/Layout.astro';
 import OnboardingRoot from '../components/onboarding/OnboardingRoot';
 import BotonNotificaciones from '../components/react/BotonNotificaciones.jsx';
+import GoogleCalendarConnection from '../components/react/GoogleCalendarConnection.jsx';
 
 const userId = Astro.locals.user?.id ?? null;
 ---
@@ -95,6 +96,8 @@ const userId = Astro.locals.user?.id ?? null;
  </div>
  </form>
  </section>
+
+ <GoogleCalendarConnection client:load />
 
  {/* PANEL FASE 3: Sistema de Disponibilidad (Ausencias) */}
  <section class="bg-surface rounded-2xl p-6 border border-border shadow-sm mt-8" data-tour="perfil-availability">
@@ -705,6 +708,19 @@ const userId = Astro.locals.user?.id ?? null;
  const eventsWithoutLeader = Number(result?.eventsWithoutLeader || 0);
 
  if (removedAssignments > 0) {
+ try {
+ await fetch('/api/calendar/google/sync', {
+ method: 'POST',
+ credentials: 'same-origin',
+ headers: { 'content-type': 'application/json' },
+ body: '{}'
+ });
+ } catch (calendarSyncError) {
+ console.warn('Google Calendar sync after absence failed:', calendarSyncError);
+ }
+ }
+
+ if (removedAssignments > 0) {
  const label = removedAssignments === 1 ? 'servicio' : 'servicios';
  summaryMessages.push(`Te retiramos de ${removedAssignments} ${label}.`);
  }
@@ -842,28 +858,33 @@ const userId = Astro.locals.user?.id ?? null;
  // CLIENT-SIDE DATA FETCHING
  // ==========================================
  const fetchData = async () => {
- const { user, error: sessionError } = await getStableAuth();
+ const response = await fetch('/api/profile-data', {
+ credentials: 'same-origin',
+ cache: 'no-store',
+ headers: { accept: 'application/json' },
+ });
+ const payload = await response.json().catch(() => ({}));
 
- if (!user || sessionError) {
- /* window.location.href = '/login'; Movido a Middleware */
- console.warn('Perfil: sesión no disponible en cliente', sessionError);
+ if (response.status === 401) {
+ window.location.replace('/login');
+ return;
+ }
+ if (!response.ok || !payload?.user?.id) {
+ console.warn('Perfil: no se pudieron cargar los datos desde el servidor', payload?.error);
  return;
  }
 
- currentUserId = user.id;
- const email = user.email;
+ currentUserId = payload.user.id;
+ const email = payload.user.email || '';
  
  if (inputCorreo) inputCorreo.value = email || '';
  if (uiUserEmail) uiUserEmail.textContent = email || '';
 
- // 1. Fetch Perfil
- const { data: perfilData, error: perfilError } = await supabase
- .from('perfiles')
- .select('id, nombre, avatar_url, tonalidad_voz, fecha_nacimiento, telefono, can_change_avatar')
- .eq('id', currentUserId)
- .single();
+ // La sesión del servidor también funciona en la web app instalada de iOS,
+ // aunque su almacenamiento local de Supabase esté vacío o haya caducado.
+ const perfilData = payload.profile;
 
- if (!perfilError && perfilData) {
+ if (perfilData) {
  setAvatarChangeState(perfilData.can_change_avatar !== false);
  if (inputNombre) inputNombre.value = perfilData.nombre;
  
@@ -921,13 +942,9 @@ const userId = Astro.locals.user?.id ?? null;
 
  formAusencia?.classList.remove('opacity-50', 'pointer-events-none');
 
- // 2. Fetch Roles
- const { data: rolesData, error: rolesError } = await supabase
- .from('perfil_roles')
- .select(`roles (nombre)`)
- .eq('perfil_id', currentUserId);
+ const rolesData = Array.isArray(payload.roles) ? payload.roles : [];
 
- if (uiRolesContainer && !rolesError) {
+ if (uiRolesContainer) {
  const userRoles = rolesData ? rolesData.map((r: any) => r.roles?.nombre).filter(Boolean) : [];
  uiRolesContainer.innerHTML = '';
  
@@ -942,14 +959,9 @@ const userId = Astro.locals.user?.id ?? null;
 
  // 3. Fetch Ausencias
  const ausenciasListEl = document.getElementById('ausencias-list');
- const { data: ausenciasData, error: ausenciasError } = await supabase
- .from('ausencias')
-	.select('id, fecha_inicio, fecha_fin, motivo')
- .eq('perfil_id', currentUserId)
- .gte('fecha_fin', absenceDateFormatter.format(new Date()))
- .order('fecha_inicio', { ascending: true });
+ const ausenciasData = Array.isArray(payload.absences) ? payload.absences : [];
 
- if (ausenciasListEl && !ausenciasError) {
+ if (ausenciasListEl) {
  const futureAusencias = ausenciasData || [];
  ausenciasListEl.innerHTML = '';
  

@@ -500,6 +500,23 @@ export default function CalendarioGrid({
         if (!deleteConfirmTarget) return;
         setIsDeleting(true);
         try {
+            const calendarResponse = await fetch('/api/calendar/google/sync', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                    evento_id: deleteConfirmTarget,
+                    remove_event: true
+                })
+            });
+            const calendarPayload = await calendarResponse.json().catch(() => ({}));
+            if (calendarResponse.ok && Number(calendarPayload?.failed || 0) > 0) {
+                throw new Error('No se pudieron retirar todas las copias de Google Calendar. Intenta otra vez.');
+            }
+            if (!calendarResponse.ok && calendarResponse.status !== 503) {
+                throw new Error(calendarPayload?.error || 'No se pudo limpiar Google Calendar.');
+            }
+
             const { error } = await supabase.from('eventos').delete().eq('id', deleteConfirmTarget);
             if (error) throw error;
 

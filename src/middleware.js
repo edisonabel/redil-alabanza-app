@@ -24,6 +24,7 @@ const authenticatedApiRoutes = new Set([
   '/api/song-artwork',
   '/api/auto-markers',
   '/api/event-playlist',
+  '/api/profile-data',
 ]);
 
 const staticAssetRegex = /\.(png|ico|svg|webmanifest|css|js|txt|map|woff2?|ttf|eot|json)$/i;

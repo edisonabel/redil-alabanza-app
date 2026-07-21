@@ -15,6 +15,23 @@ const composeLegacyTemaPredicacion = (temaValue, predicadorValue) => {
     return null;
 };
 
+const syncEventCalendarAssignments = async (eventoId) => {
+    if (!eventoId || String(eventoId).startsWith('virtual|')) return;
+    try {
+        const response = await fetch('/api/calendar/google/sync', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ evento_id: eventoId })
+        });
+        if (!response.ok && response.status !== 503) {
+            console.warn('No se pudo actualizar Google Calendar despues de editar el evento.');
+        }
+    } catch (error) {
+        console.warn('Google Calendar sync request failed:', error);
+    }
+};
+
 export default function ModalEvento() {
     const [isOpen, setIsOpen] = useState(false);
     const [mode, setMode] = useState('new');
@@ -331,6 +348,10 @@ export default function ModalEvento() {
             }
 
             if (transacError) throw transacError;
+
+            if (evId && !evId.startsWith('virtual|')) {
+                await syncEventCalendarAssignments(evId);
+            }
 
             handleClose();
             if (evId && evId.startsWith('virtual|')) {
