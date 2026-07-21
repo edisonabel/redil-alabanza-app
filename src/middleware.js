@@ -31,6 +31,10 @@ const crossOriginIsolationHeaders = {
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Embedder-Policy': 'require-corp',
 };
+const credentiallessCrossOriginIsolationHeaders = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'credentialless',
+};
 const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -54,6 +58,17 @@ const shouldApplyCrossOriginIsolation = (path = '') => (
   || path.startsWith('/audio-lab/')
 );
 
+const resolveCrossOriginIsolationHeaders = (path = '') => {
+  if (path === '/programacion') {
+    // Live Director can open over the calendar without changing routes.
+    // credentialless preserves public cross-origin avatars while still
+    // enabling SharedArrayBuffer in Chromium.
+    return credentiallessCrossOriginIsolationHeaders;
+  }
+
+  return shouldApplyCrossOriginIsolation(path) ? crossOriginIsolationHeaders : null;
+};
+
 const withRouteHeaders = (response, path) => {
   // Netlify's static header rules do not consistently cover Astro SSR
   // responses, so the document policy must also be set by the function.
@@ -66,9 +81,10 @@ const withRouteHeaders = (response, path) => {
     response.headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
   }
 
-  if (!shouldApplyCrossOriginIsolation(path)) return response;
+  const isolationHeaders = resolveCrossOriginIsolationHeaders(path);
+  if (!isolationHeaders) return response;
 
-  for (const [header, value] of Object.entries(crossOriginIsolationHeaders)) {
+  for (const [header, value] of Object.entries(isolationHeaders)) {
     response.headers.set(header, value);
   }
 

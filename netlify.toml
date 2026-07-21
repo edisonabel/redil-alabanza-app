@@ -15,6 +15,12 @@
 
 # ── Cross-origin isolation only where SharedArrayBuffer is required ──
 [[headers]]
+  for = "/programacion"
+  [headers.values]
+    Cross-Origin-Opener-Policy = "same-origin"
+    Cross-Origin-Embedder-Policy = "credentialless"
+
+[[headers]]
   for = "/herramientas/live-director-preview"
   [headers.values]
     Cross-Origin-Opener-Policy = "same-origin"

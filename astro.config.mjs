@@ -24,6 +24,10 @@ const crossOriginIsolationHeaders = {
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Embedder-Policy': 'require-corp',
 };
+const credentiallessCrossOriginIsolationHeaders = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'credentialless',
+};
 
 const shouldApplyCrossOriginIsolation = (url = '') => {
   const pathname = String(url || '').split('?')[0];
@@ -35,6 +39,16 @@ const shouldApplyCrossOriginIsolation = (url = '') => {
     pathname === '/audio-lab' ||
     pathname.startsWith('/audio-lab/')
   );
+};
+
+const resolveCrossOriginIsolationHeaders = (url = '') => {
+  const pathname = String(url || '').split('?')[0];
+
+  if (pathname === '/programacion') {
+    return credentiallessCrossOriginIsolationHeaders;
+  }
+
+  return shouldApplyCrossOriginIsolation(url) ? crossOriginIsolationHeaders : null;
 };
 
 const shouldApplyCrossOriginResourcePolicy = (url = '') => {
@@ -55,8 +69,9 @@ const applyCrossOriginIsolationHeaders = (request, response, next) => {
     response.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
   }
 
-  if (shouldApplyCrossOriginIsolation(request.url)) {
-    for (const [header, value] of Object.entries(crossOriginIsolationHeaders)) {
+  const isolationHeaders = resolveCrossOriginIsolationHeaders(request.url);
+  if (isolationHeaders) {
+    for (const [header, value] of Object.entries(isolationHeaders)) {
       response.setHeader(header, value);
     }
   }
