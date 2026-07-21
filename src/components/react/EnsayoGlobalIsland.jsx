@@ -194,6 +194,8 @@ const isRemoteChordProUrl = (value = '') => {
 
 const ENSAYO_OPEN_TIMEOUT_MS = 10_000;
 const ENSAYO_OPEN_RETRY_DELAY_MS = 350;
+const PWA_ISOLATION_WORKER_VERSION = 'redil-sw-v4';
+const PWA_ISOLATION_WORKER_TIMEOUT_MS = 5_000;
 
 const wait = (ms) => new Promise((resolve) => {
   window.setTimeout(resolve, ms);
@@ -259,7 +261,83 @@ const resolveMultitrackSession = async (song = {}) => {
   }
 };
 
-const openIsolatedLiveDirectorForSafari = (song = {}) => {
+const readServiceWorkerVersion = async (worker) => {
+  if (!worker || typeof MessageChannel !== 'function') return '';
+
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    let settled = false;
+    const finish = (version = '') => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      channel.port1.close();
+      channel.port2.close();
+      resolve(String(version || ''));
+    };
+    const timeoutId = window.setTimeout(() => finish(), 250);
+
+    channel.port1.onmessage = (event) => {
+      finish(event.data?.version);
+    };
+    worker.postMessage({ type: 'redil-sw-version' }, [channel.port2]);
+  });
+};
+
+const waitForWorkerActivation = async (worker) => {
+  if (!worker || worker.state === 'activated') return;
+
+  await new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      worker.removeEventListener('statechange', handleStateChange);
+      reject(new Error('El Service Worker aislado no se activó a tiempo.'));
+    }, PWA_ISOLATION_WORKER_TIMEOUT_MS);
+
+    const handleStateChange = () => {
+      if (worker.state === 'activated') {
+        window.clearTimeout(timeoutId);
+        worker.removeEventListener('statechange', handleStateChange);
+        resolve();
+      } else if (worker.state === 'redundant') {
+        window.clearTimeout(timeoutId);
+        worker.removeEventListener('statechange', handleStateChange);
+        reject(new Error('El Service Worker aislado quedó redundante.'));
+      }
+    };
+
+    worker.addEventListener('statechange', handleStateChange);
+    handleStateChange();
+  });
+};
+
+const prepareStandaloneIsolationWorker = async () => {
+  if (!('serviceWorker' in navigator) || window.crossOriginIsolated === true) return;
+
+  const registration = await navigator.serviceWorker.register('/sw.js', {
+    scope: '/',
+    updateViaCache: 'none',
+  });
+  await registration.update();
+  await waitForWorkerActivation(registration.installing || registration.waiting);
+  await navigator.serviceWorker.ready;
+
+  const deadline = performance.now() + PWA_ISOLATION_WORKER_TIMEOUT_MS;
+  while (performance.now() < deadline) {
+    const activeVersion = await readServiceWorkerVersion(registration.active);
+    const controllerVersion = await readServiceWorkerVersion(navigator.serviceWorker.controller);
+    if (
+      activeVersion === PWA_ISOLATION_WORKER_VERSION
+      || controllerVersion === PWA_ISOLATION_WORKER_VERSION
+    ) {
+      return;
+    }
+    await wait(120);
+  }
+
+  throw new Error('La web app no tomó el Service Worker aislado a tiempo.');
+};
+
+const openIsolatedLiveDirectorForSafari = async (song = {}) => {
   if (typeof window === 'undefined') return false;
 
   const capabilities = readLiveBrowserCapabilities();
@@ -272,6 +350,10 @@ const openIsolatedLiveDirectorForSafari = (song = {}) => {
   targetUrl.searchParams.set('song', songId);
   if (new URLSearchParams(window.location.search).get('debug') === '1') {
     targetUrl.searchParams.set('debug', '1');
+  }
+
+  if (capabilities.standaloneDisplay) {
+    await prepareStandaloneIsolationWorker();
   }
 
   window.location.assign(targetUrl.toString());
@@ -297,7 +379,7 @@ export default function EnsayoGlobalIsland() {
         resolveMultitrackSession(raw),
       ]);
 
-      if (multitrackSession && openIsolatedLiveDirectorForSafari(raw)) {
+      if (multitrackSession && await openIsolatedLiveDirectorForSafari(raw)) {
         setOpeningSong(null);
         return;
       }
