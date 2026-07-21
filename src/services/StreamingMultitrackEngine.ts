@@ -21,6 +21,7 @@ import {
   warnLiveDiagnostic,
 } from '../utils/liveDiagnostics';
 import { isLiveDirectorMp3Track } from '../utils/liveDirectorStemFormat';
+import { requiresSynchronizedStreamingWorker } from '../utils/liveDirectorEnginePolicy';
 
 type WindowWithWebkitAudio = Window & typeof globalThis & {
   webkitAudioContext?: typeof AudioContext;
@@ -933,13 +934,13 @@ type PreloadedStreamingSession = {
   trackStates: TrackRuntime[];
 };
 
-const AUDIO_WORKER_ASSET_VERSION = '20260716-2';
+const AUDIO_WORKER_ASSET_VERSION = '20260720-2';
 const DEFAULT_WORKLET_MODULE_URL = `/workers/MultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_PRODUCER_WORKER_URL = `/workers/AudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
 const DEFAULT_SAMPLE_RATE = 48_000;
 const DEFAULT_CHANNEL_COUNT = 1;
-const DEFAULT_BUFFER_SECONDS = 3;
+const DEFAULT_BUFFER_SECONDS = 6;
 const DEFAULT_FETCH_CHUNK_BYTES = 512 * 1024;
 const DEFAULT_FETCH_PAUSE_WATERMARK_RATIO = 0.25;
 const DEFAULT_FETCH_RESUME_WATERMARK_RATIO = 0.55;
@@ -950,7 +951,6 @@ const AAC_FRAME_SIZE = 1024;
 const MP4_EXTRACTION_SAMPLE_BATCH_SIZE = 16;
 const DECODER_SPECIFIC_INFO_TAG = 0x05;
 const STREAMING_TRACK_READY_TIMEOUT_MS = 30_000;
-const PRODUCER_STARTUP_FALLBACK_TIMEOUT_MS = 8_000;
 const MIN_START_BUFFER_SECONDS = 0.5;
 const START_BARRIER_POLL_INTERVAL_MS = 50;
 const START_BARRIER_BUFFERING_NOTICE_MS = 200;
@@ -961,6 +961,7 @@ const PRODUCER_STALE_RECHECK_DELAY_MS = 250;
 const PRODUCER_DIAGNOSTIC_RATE_LIMIT_MS = 10_000;
 const CONTENT_ALIGNMENT_GUARD_SECONDS = 20;
 const BACKWARD_SEEK_DECODE_PREROLL_SECONDS = 3;
+const SEEK_NO_OP_TOLERANCE_SECONDS = 0.015;
 const FLIGHT_RECORDER_MIN_INTERVAL_MS = 5_000;
 const AAC_SAMPLE_RATE_INDEXES = new Map<number, number>([
   [96000, 0],
@@ -1030,6 +1031,7 @@ export class StreamingMultitrackEngine {
   private producerWorker: Worker | null = null;
   private producerRuntimeWarmRequested = false;
   private producerSessionId = 0;
+  private streamingPath: 'worker' | 'main-thread' | 'uninitialized' = 'uninitialized';
   private decoderProbeQueue: Promise<void> = Promise.resolve();
 
   private readonly processorName: string;
@@ -1383,6 +1385,7 @@ export class StreamingMultitrackEngine {
     });
     this.producerWorker.terminate();
     this.producerWorker = null;
+    this.streamingPath = 'uninitialized';
     this.producerRuntimeWarmRequested = false;
     this.lastProducerMessageAt = 0;
   }
@@ -1548,6 +1551,7 @@ export class StreamingMultitrackEngine {
         preloaded.trackStates,
       ),
     });
+    this.streamingPath = 'worker';
     this.preloadedNextSession = null;
     this.postLoopRegion();
 
@@ -2003,6 +2007,8 @@ export class StreamingMultitrackEngine {
 
   getDiagnostics(): {
     engineMode: 'buffer' | 'media' | 'streaming';
+    engineRoute: 'streaming-worker' | 'streaming-main-thread' | 'streaming-uninitialized';
+    streamingPath: 'worker' | 'main-thread' | 'uninitialized';
     trackCount: number;
     estimatedAudioMemoryBytes: number;
     browserHeapUsedBytes: number | null;
@@ -2024,6 +2030,13 @@ export class StreamingMultitrackEngine {
 
     return {
       engineMode: 'streaming',
+      engineRoute:
+        this.streamingPath === 'worker'
+          ? 'streaming-worker'
+          : this.streamingPath === 'main-thread'
+            ? 'streaming-main-thread'
+            : 'streaming-uninitialized',
+      streamingPath: this.streamingPath,
       trackCount: this.tracks.length,
       estimatedAudioMemoryBytes,
       ...readBrowserMemorySnapshot(),
@@ -2075,6 +2088,11 @@ export class StreamingMultitrackEngine {
     const producerStarted = canUseSharedProducer
       ? this.configureAudioProducerWorker(normalizedTracks)
       : false;
+    const capabilities = readLiveBrowserCapabilities();
+    const synchronizedWorkerRequired = requiresSynchronizedStreamingWorker(
+      capabilities,
+      this.trackStates.length,
+    );
 
     if (!canUseSharedProducer) {
       warnLiveDiagnostic('streaming:main-thread-producer', {
@@ -2086,8 +2104,16 @@ export class StreamingMultitrackEngine {
     }
 
     if (producerStarted) {
-      await this.recoverFromStalledProducerStartup();
+      this.keepSynchronizedProducerDuringStartup();
     } else {
+      if (synchronizedWorkerRequired) {
+        throw new Error(
+          'Unsupported configuration: iOS multi-stem playback requires the synchronized ' +
+          'SharedArrayBuffer producer worker. The main-thread decoder route was blocked.',
+        );
+      }
+
+      this.streamingPath = 'main-thread';
       this.trackStates.forEach((trackState) => {
         this.startTrackPipeline(trackState);
       });
@@ -2123,65 +2149,16 @@ export class StreamingMultitrackEngine {
     );
   }
 
-  private async recoverFromStalledProducerStartup(): Promise<void> {
-    if (!this.producerWorker || this.trackStates.length === 0) {
-      return;
-    }
-
-    const firstTrackSettled = await Promise.race([
-      Promise.race(
-        this.trackStates.map((trackState) =>
-          trackState.ready.promise.then(
-            () => true,
-            () => true,
-          ),
-        ),
-      ),
-      this.sleep(PRODUCER_STARTUP_FALLBACK_TIMEOUT_MS).then(() => false),
-    ]);
-
-    if (
-      firstTrackSettled ||
-      !this.producerWorker ||
-      this.trackStates.some((trackState) => trackState.readyResolved || trackState.omitted)
-    ) {
-      return;
-    }
-
-    warnLiveDiagnostic('streaming:producer-startup-fallback', {
-      timeoutMs: PRODUCER_STARTUP_FALLBACK_TIMEOUT_MS,
+  private keepSynchronizedProducerDuringStartup(): void {
+    // Restore the stable pre-July-13 contract: once the shared producer starts,
+    // keep it alive until the existing per-track readiness deadline. The 8 s
+    // fallback moved all 15 decoders onto Safari's main thread on slow devices.
+    logLiveDiagnostic('streaming:producer-startup-policy', {
+      policy: 'retain-shared-worker-until-track-deadline',
+      timeoutMs: STREAMING_TRACK_READY_TIMEOUT_MS,
       sessionId: this.producerSessionId,
       trackCount: this.trackStates.length,
-      reason: readLiveBrowserCapabilities().isSafari
-        ? 'No track produced initial audio in Safari; switching to the synchronized main-thread pipeline.'
-        : 'No track produced initial audio; requesting the compatible media/buffer engine.',
     });
-    this.terminateProducerWorker('startup-timeout-no-track-ready');
-
-    // Safari can reject the dedicated worker under COEP even though the same
-    // WebCodecs + AudioWorklet path is valid on the main thread. Keep every stem
-    // on the shared AudioWorklet transport clock instead of falling through to
-    // independent HTMLMediaElement clocks (or decoding every full stem in RAM).
-    if (readLiveBrowserCapabilities().isSafari) {
-      this.trackStates.forEach((trackState) => {
-        if (trackState.omitted || trackState.fetchTask) {
-          return;
-        }
-
-        trackState.ringBuffer.reset();
-        trackState.fetchOffset = 0;
-        trackState.totalBytes = null;
-        trackState.endOfStreamReached = false;
-        trackState.suppressDecodedOutput = false;
-        this.startTrackPipeline(trackState);
-      });
-      return;
-    }
-
-    throw new Error(
-      'Unsupported configuration: the streaming producer did not deliver startup audio; ' +
-      'use the compatible media/buffer engine.',
-    );
   }
 
   private waitForTrackReady(trackState: TrackRuntime): Promise<void> {
@@ -2200,6 +2177,15 @@ export class StreamingMultitrackEngine {
           `ring availableRead=${trackState.ringBuffer.availableRead()}, ` +
           `availableWrite=${trackState.ringBuffer.availableWrite()}, ` +
           `capacity=${trackState.ringBuffer.capacity}, url=${trackState.config.url}`;
+
+        if (this.streamingPath === 'worker') {
+          reject(
+            new Error(
+              `track-ready-timeout en "${trackLabel}" (index ${trackState.index}): ${timeoutDetail}`,
+            ),
+          );
+          return;
+        }
 
         // A single stalled stem must not prevent every healthy stem from loading.
         // Keep one active track as the minimum so the engine never reports ready
@@ -2589,6 +2575,13 @@ export class StreamingMultitrackEngine {
 
     const fromTime = this.getCurrentTime();
     const clampedTime = Math.max(0, timeInSeconds);
+    if (
+      options?.forceFreshStart !== true &&
+      Math.abs(clampedTime - fromTime) < SEEK_NO_OP_TOLERANCE_SECONDS
+    ) {
+      return;
+    }
+
     const wasPlaying = this.transportPlaying;
     const diagnosticWasPlaying =
       typeof options?.wasPlayingBeforeUiSeek === 'boolean'
@@ -3812,14 +3805,25 @@ export class StreamingMultitrackEngine {
     }
 
     this.producerSessionId += 1;
-    worker.postMessage({
-      type: 'init-session',
-      sessionId: this.producerSessionId,
-      sampleRate: this.context.sampleRate,
-      diagnosticsEnabled: isLiveDiagnosticsEnabled(),
-      tracks: this.buildProducerTrackMetadata(trackDefinitions),
-    });
-    return true;
+    try {
+      worker.postMessage({
+        type: 'init-session',
+        sessionId: this.producerSessionId,
+        sampleRate: this.context.sampleRate,
+        diagnosticsEnabled: isLiveDiagnosticsEnabled(),
+        tracks: this.buildProducerTrackMetadata(trackDefinitions),
+      });
+      this.streamingPath = 'worker';
+      return true;
+    } catch (error) {
+      warnLiveDiagnostic('streaming:producer-worker-configure-failed', {
+        sessionId: this.producerSessionId,
+        trackCount: trackDefinitions.length,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      this.terminateProducerWorker('configure-failed');
+      return false;
+    }
   }
 
   private buildProducerTrackMetadata(
@@ -4617,7 +4621,7 @@ export class StreamingMultitrackEngine {
     let resolveSeek!: () => void;
     let rejectSeek!: (reason?: unknown) => void;
     const expectedTrackCount = this.getActiveTrackStates().length;
-    const seekTimeoutMs = options.requireCompleteReady ? 8000 : 2500;
+    const seekTimeoutMs = options.requireCompleteReady ? 30_000 : 2500;
     const timeoutId = window.setTimeout(() => {
       const pending = this.pendingProducerSeek;
       if (!pending || pending.serial !== serial) {
@@ -4977,6 +4981,7 @@ export class StreamingMultitrackEngine {
   }
 
   private resetTracks(): void {
+    this.streamingPath = 'uninitialized';
     this.latestWorkletTrackStatus.clear();
     this.latestProducerTrackState.clear();
     this.latestUnderflowByTrack.clear();
