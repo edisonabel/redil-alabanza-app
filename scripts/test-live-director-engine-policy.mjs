@@ -174,6 +174,16 @@ assert.match(
   'The streaming engine must block unstable multi-stem main-thread decoding.',
 );
 assert.match(
+  workerSource,
+  /await this\.waitForDecoderRecovery\(\);[\s\S]+if \(!this\.decodeSample\(sample\)\) \{[\s\S]+await this\.waitForDecoderRecovery\(\);[\s\S]+if \(!this\.decodeSample\(sample\)\)/,
+  'A runtime decoder recovery must retry the current compressed sample instead of discarding the rest of its MP4 batch.',
+);
+assert.match(
+  workerSource,
+  /this\.postFinalDecoderError\(error\);[\s\S]+this\.recoverDecoderAfterTerminalError\(\)[\s\S]+this\.decoderVariantIndex = 0;[\s\S]+await this\.configureDecoderVariant\(\)/,
+  'A terminal WebKit decoder error must recreate the decoder and continue the current MP4 batch.',
+);
+assert.match(
   engineSource,
   /keepSynchronizedProducerDuringStartup[\s\S]+retain-shared-worker-until-track-deadline/,
   'A slow synchronized producer must remain alive until the track-ready deadline.',
@@ -252,6 +262,26 @@ assert.match(
   workerSource,
   /postRingWriteStatus\(result, frameCount\) \{\s+if \(!producerDiagnosticsEnabled\)/,
   'High-frequency ring-write telemetry must remain disabled outside diagnostics.',
+);
+assert.match(
+  workerSource,
+  /readAacChannelCountFromDescription[\s\S]+resolveDecoderChannelCount[\s\S]+described \|\| declared \|\| container \|\| 1/,
+  'AAC decoding must honor the channel count encoded in AudioSpecificConfig before MP4 sample-entry defaults.',
+);
+assert.match(
+  workerSource,
+  /findDescriptorData[\s\S]+Array\.isArray\(descriptor\.descs\)[\s\S]+findDescriptorData\(esDescriptor, DECODER_SPECIFIC_INFO_TAG\)/,
+  'MP4Box descriptor traversal must support current nested descs when findDescriptor is unavailable.',
+);
+assert.match(
+  workerSource,
+  /handleDecoderError\(error\) \{\s+if \(this\.decoderRecoveryInFlight\)[\s\S]+this\.decoderVariantIndex \+ 1 < this\.decoderVariants\.length/,
+  'A runtime decoder failure must recover only that track through the next compatible decoder variant.',
+);
+assert.doesNotMatch(
+  workerSource.match(/handleDecoderError\(error\) \{[\s\S]+?\n  \}/)?.[0] || '',
+  /!this\.normalReadyPosted/,
+  'Decoder recovery must remain available after playback has started.',
 );
 assert.match(
   workerSource,

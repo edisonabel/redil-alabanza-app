@@ -117,6 +117,99 @@ const getAacAudioSpecificConfig = (sampleRate, channelCount) => {
   return config.buffer;
 };
 
+const readAacChannelCountFromDescription = (description) => {
+  if (!description) {
+    return null;
+  }
+
+  const bytes =
+    description instanceof Uint8Array
+      ? description
+      : new Uint8Array(
+        description.buffer || description,
+        description.byteOffset || 0,
+        description.byteLength || description.length || 0,
+      );
+
+  if (bytes.byteLength < 2) {
+    return null;
+  }
+
+  let bitOffset = 0;
+  const readBits = (bitCount) => {
+    let value = 0;
+    for (let index = 0; index < bitCount; index += 1) {
+      const byteIndex = bitOffset >> 3;
+      if (byteIndex >= bytes.byteLength) {
+        return null;
+      }
+      const bitIndex = 7 - (bitOffset & 7);
+      value = (value << 1) | ((bytes[byteIndex] >> bitIndex) & 1);
+      bitOffset += 1;
+    }
+    return value;
+  };
+
+  const audioObjectType = readBits(5);
+  const sampleRateIndex = readBits(4);
+  if (audioObjectType === null || sampleRateIndex === null) {
+    return null;
+  }
+  if (sampleRateIndex === 15 && readBits(24) === null) {
+    return null;
+  }
+
+  const channelCount = readBits(4);
+  return channelCount !== null && channelCount >= 1 && channelCount <= 7
+    ? channelCount
+    : null;
+};
+
+const findDescriptorData = (descriptor, targetTag) => {
+  if (!descriptor || typeof descriptor !== 'object') {
+    return undefined;
+  }
+
+  if (
+    descriptor.tag === targetTag &&
+    descriptor.data &&
+    descriptor.data.byteLength > 0
+  ) {
+    return descriptor.data;
+  }
+
+  const children = Array.isArray(descriptor.descs) ? descriptor.descs : [];
+  for (let index = 0; index < children.length; index += 1) {
+    const data = findDescriptorData(children[index], targetTag);
+    if (data) {
+      return data;
+    }
+  }
+
+  return undefined;
+};
+
+const resolveDecoderChannelCount = (
+  codec,
+  description,
+  declaredChannelCount,
+  containerChannelCount,
+) => {
+  const normalize = (value) => {
+    const numericValue = Math.round(Number(value) || 0);
+    return numericValue >= 1 && numericValue <= 7 ? numericValue : null;
+  };
+  const declared = normalize(declaredChannelCount);
+  const container = normalize(containerChannelCount);
+
+  if (/^mp4a\.40\.2$/i.test(String(codec || ''))) {
+    const described = readAacChannelCountFromDescription(description);
+    return described || declared || container || 1;
+  }
+
+  return container || declared || 1;
+};
+
 const preferGeneratedAacDescription = (codec, description) => (
   /^mp4a\.40\.2$/i.test(String(codec || '')) &&
   (!description || description.byteLength !== 2)
@@ -1299,8 +1392,13 @@ class Mp4TrackDemuxer {
 
     const codec = audioTrack.codec || this.track.codec || 'mp4a.40.2';
     const sampleRate = audioTrack.audio?.sample_rate || this.track.sampleRate || 48000;
-    const numberOfChannels = audioTrack.audio?.channel_count || this.track.channelCount || 1;
     const containerDescription = this.getDecoderSpecificInfo(audioTrackId);
+    const numberOfChannels = resolveDecoderChannelCount(
+      codec,
+      containerDescription,
+      this.track.channelCount,
+      audioTrack.audio?.channel_count,
+    );
     const generatedDescription = getAacAudioSpecificConfig(sampleRate, numberOfChannels);
     const shouldUseGeneratedDescription = /^mp4a\.40\.2$/i.test(String(codec || ''));
 
@@ -1389,14 +1487,18 @@ class Mp4TrackDemuxer {
       trak.mdia.minf.stbl.stsd &&
       trak.mdia.minf.stbl.stsd.entries &&
       trak.mdia.minf.stbl.stsd.entries[0];
+    const esDescriptor = sampleEntry && sampleEntry.esds && sampleEntry.esds.esd;
     const descriptor =
       sampleEntry &&
       sampleEntry.esds &&
-      sampleEntry.esds.esd &&
-      typeof sampleEntry.esds.esd.findDescriptor === 'function'
-        ? sampleEntry.esds.esd.findDescriptor(DECODER_SPECIFIC_INFO_TAG)
+      esDescriptor &&
+      typeof esDescriptor.findDescriptor === 'function'
+        ? esDescriptor.findDescriptor(DECODER_SPECIFIC_INFO_TAG)
         : undefined;
-    const descriptorData = descriptor && descriptor.data;
+    const descriptorData =
+      descriptor && descriptor.data
+        ? descriptor.data
+        : findDescriptorData(esDescriptor, DECODER_SPECIFIC_INFO_TAG);
 
     if (!descriptorData || descriptorData.byteLength === 0) {
       return undefined;
@@ -1472,6 +1574,7 @@ class ProducerTrackPipeline {
     this.decoderVariantIndex = 0;
     this.recentDecodeSamples = [];
     this.decoderRecoveryInFlight = false;
+    this.decoderRecoveryPromise = null;
     this.pendingSeekReady = null;
     this.currentSeekSerial = 0;
     this.seekOperationToken = 0;
@@ -1539,6 +1642,7 @@ class ProducerTrackPipeline {
     this.decoderVariants = [];
     this.decoderVariantIndex = 0;
     this.decoderRecoveryInFlight = false;
+    this.decoderRecoveryPromise = null;
     this.preWarmedSamples = [];
     this.preWarmedDecoderConfig = null;
     this.preWarmedNextFileStart = 0;
@@ -2428,6 +2532,9 @@ class ProducerTrackPipeline {
   async feedDemuxedSamples(result, expectedLookAheadToken = null) {
     this.assertAlive();
     this.assertCurrentLookAhead(expectedLookAheadToken);
+    await this.waitForDecoderRecovery();
+    this.assertAlive();
+    this.assertCurrentLookAhead(expectedLookAheadToken);
 
     if (result && result.decoderConfig) {
       this.decoderConfig = result.decoderConfig;
@@ -2447,14 +2554,32 @@ class ProducerTrackPipeline {
     for (let index = 0; index < samples.length; index += 1) {
       this.assertAlive();
       this.assertCurrentLookAhead(expectedLookAheadToken);
+      await this.waitForDecoderRecovery();
+      this.assertAlive();
+      this.assertCurrentLookAhead(expectedLookAheadToken);
       await this.waitForDecoderBackpressure();
+      await this.waitForDecoderRecovery();
       this.assertCurrentLookAhead(expectedLookAheadToken);
 
       const sample = samples[index];
       if (!this.decodeSample(sample)) {
-        break;
+        await this.waitForDecoderRecovery();
+        this.assertAlive();
+        this.assertCurrentLookAhead(expectedLookAheadToken);
+        if (!this.decodeSample(sample)) {
+          break;
+        }
       }
     }
+  }
+
+  async waitForDecoderRecovery() {
+    const recoveryPromise = this.decoderRecoveryPromise;
+    if (!recoveryPromise) {
+      return;
+    }
+
+    await recoveryPromise;
   }
 
   assertCurrentLookAhead(expectedLookAheadToken) {
@@ -2598,19 +2723,46 @@ class ProducerTrackPipeline {
   }
 
   handleDecoderError(error) {
-    if (
-      !this.decoderRecoveryInFlight &&
-      !this.normalReadyPosted &&
-      this.decoderVariantIndex + 1 < this.decoderVariants.length
-    ) {
-      this.decoderRecoveryInFlight = true;
-      this.recoverDecoderAfterError(error).catch((recoveryError) => {
-        this.postFinalDecoderError(recoveryError || error);
-      });
+    if (this.decoderRecoveryInFlight) {
       return;
     }
 
+    if (
+      this.decoderVariantIndex + 1 < this.decoderVariants.length
+    ) {
+      this.decoderRecoveryInFlight = true;
+      const recoveryPromise = this.recoverDecoderAfterError(error)
+        .catch((recoveryError) => {
+          this.postFinalDecoderError(recoveryError || error);
+        })
+        .finally(() => {
+          if (this.decoderRecoveryPromise === recoveryPromise) {
+            this.decoderRecoveryPromise = null;
+          }
+        });
+      this.decoderRecoveryPromise = recoveryPromise;
+      return;
+    }
+
+    // WebKit closes the AudioDecoder after the final configuration variant
+    // fails. Leaving the pipeline in that state makes feedDemuxedSamples()
+    // abandon the rest of the current MP4 extraction batch, which can turn a
+    // single bad AAC access unit into several seconds of padded silence.
+    // Report the failure, recreate the first known-good variant, discard only
+    // the tiny set already accepted by the failed Cocoa decoder, and let the
+    // current batch continue from its next sample.
     this.postFinalDecoderError(error);
+    this.decoderRecoveryInFlight = true;
+    const recoveryPromise = this.recoverDecoderAfterTerminalError()
+      .catch((recoveryError) => {
+        this.postFinalDecoderError(recoveryError || error);
+      })
+      .finally(() => {
+        if (this.decoderRecoveryPromise === recoveryPromise) {
+          this.decoderRecoveryPromise = null;
+        }
+      });
+    this.decoderRecoveryPromise = recoveryPromise;
   }
 
   async recoverDecoderAfterError(_error) {
@@ -2637,6 +2789,37 @@ class ProducerTrackPipeline {
           break;
         }
       }
+    } finally {
+      this.decoderRecoveryInFlight = false;
+    }
+  }
+
+  async recoverDecoderAfterTerminalError() {
+    try {
+      this.assertAlive();
+      if (this.decoder) {
+        try {
+          if (this.decoder.state !== 'closed') {
+            this.decoder.reset();
+          }
+        } catch (_error) {
+          // Cocoa already closed the decoder; continue with a fresh instance.
+        }
+
+        try {
+          if (this.decoder.state !== 'closed') {
+            this.decoder.close();
+          }
+        } catch (_error) {
+          // A reset decoder can already be closing.
+        }
+      }
+
+      this.decoder = null;
+      this.recentDecodeSamples = [];
+      this.decoderVariantIndex = 0;
+      await this.configureDecoderVariant();
+      this.assertAlive();
     } finally {
       this.decoderRecoveryInFlight = false;
     }
