@@ -1,3 +1,8 @@
+import {
+  isLiveCapacityDiagnosticsEnabled,
+  recordLiveCapacityDiagnostic,
+} from './liveCapacityDiagnostics.ts';
+
 type NavigatorWithMemoryAndStandalone = Navigator & {
   deviceMemory?: number;
   standalone?: boolean;
@@ -80,12 +85,19 @@ const writeLiveDiagnostic = (
   eventName: string,
   payload?: DiagnosticPayload,
 ) => {
-  if (!isLiveDiagnosticsEnabled()) {
+  const consoleEnabled = isLiveDiagnosticsEnabled();
+  const capacityEnabled = isLiveCapacityDiagnosticsEnabled();
+  if (!consoleEnabled && !capacityEnabled) {
     return;
   }
 
   const normalizedPayload = payload || {};
-  console[method](`[LiveDiagnostics] ${eventName}`, normalizedPayload);
+  if (consoleEnabled) {
+    console[method](`[LiveDiagnostics] ${eventName}`, normalizedPayload);
+  }
+  if (capacityEnabled) {
+    recordLiveCapacityDiagnostic(`live:${eventName}`, normalizedPayload, method);
+  }
 };
 
 export const logLiveDiagnostic = (eventName: string, payload?: DiagnosticPayload) => {

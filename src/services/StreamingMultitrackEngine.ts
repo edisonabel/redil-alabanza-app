@@ -20,6 +20,11 @@ import {
   readLiveBrowserCapabilities,
   warnLiveDiagnostic,
 } from '../utils/liveDiagnostics';
+import {
+  isLiveCapacityDiagnosticsEnabled,
+  recordLiveCapacityDiagnostic,
+  recordLiveCapacitySnapshot,
+} from '../utils/liveCapacityDiagnostics';
 import { isLiveDirectorMp3Track } from '../utils/liveDirectorStemFormat';
 import {
   requiresSynchronizedStreamingWorker,
@@ -74,6 +79,10 @@ const buildFlatDiagnosticLine = (
     .map(([key, value]) => `${key}=${formatFlatDiagnosticValue(value)}`);
   return entries.length ? `${prefix} ${entries.join(' ')}` : prefix;
 };
+
+const isAnyLiveDiagnosticsEnabled = () => (
+  isLiveDiagnosticsEnabled() || isLiveCapacityDiagnosticsEnabled()
+);
 
 type TrackContainer = 'adts' | 'm4a' | 'custom';
 type SharedOrRegularBuffer = SharedArrayBuffer | ArrayBuffer;
@@ -208,6 +217,10 @@ type WorkletDebugTrackState = {
   syncDriftMs?: number;
   underrunEvents: number;
   underrunFrames: number;
+  meterLevel?: number;
+  peakSample?: number;
+  signalEvents?: number;
+  signalAgeSeconds?: number | null;
 };
 
 type WorkletDebugStatusMessage = {
@@ -962,7 +975,7 @@ type PreloadedStreamingSession = {
   trackStates: TrackRuntime[];
 };
 
-const AUDIO_WORKER_ASSET_VERSION = '20260720-22';
+const AUDIO_WORKER_ASSET_VERSION = '20260721-capacity-debug-6';
 const DEFAULT_WORKLET_MODULE_URL = `/workers/MultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_PRODUCER_WORKER_URL = `/workers/AudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
@@ -1263,10 +1276,19 @@ export class StreamingMultitrackEngine {
     fields: Record<string, unknown>,
     method: FlatDiagnosticMethod = 'info',
   ): void {
-    if (!isLiveDiagnosticsEnabled()) {
+    if (!isAnyLiveDiagnosticsEnabled()) {
       return;
     }
-    console[method](buildFlatDiagnosticLine(prefix, fields));
+    if (isLiveDiagnosticsEnabled()) {
+      console[method](buildFlatDiagnosticLine(prefix, fields));
+    }
+    if (
+      isLiveCapacityDiagnosticsEnabled() &&
+      prefix !== '[SPSC-FLIGHT]' &&
+      prefix !== '[SPSC-FLIGHT-TRACK]'
+    ) {
+      recordLiveCapacityDiagnostic(`engine:${prefix}`, fields, method);
+    }
   }
 
   private logFlatLiveDiagnostic(
@@ -1274,7 +1296,7 @@ export class StreamingMultitrackEngine {
     fields: Record<string, unknown>,
     method: FlatDiagnosticMethod = 'info',
   ): void {
-    if (!isLiveDiagnosticsEnabled()) {
+    if (!isAnyLiveDiagnosticsEnabled()) {
       return;
     }
 
@@ -1594,7 +1616,7 @@ export class StreamingMultitrackEngine {
       type: 'swap-active-session',
       nextSessionId: preloaded.sessionId,
       sampleRate: this.context.sampleRate,
-      diagnosticsEnabled: isLiveDiagnosticsEnabled(),
+      diagnosticsEnabled: isAnyLiveDiagnosticsEnabled(),
       tracks: this.buildProducerTrackMetadata(
         preloaded.trackDefinitions,
         preloaded.tracks,
@@ -1643,7 +1665,7 @@ export class StreamingMultitrackEngine {
     wasPlaying: boolean;
     targetSample: number;
   }): void {
-    if (!isLiveDiagnosticsEnabled()) {
+    if (!isAnyLiveDiagnosticsEnabled()) {
       this.activeSeekDebugBlock = null;
       return;
     }
@@ -3988,7 +4010,7 @@ export class StreamingMultitrackEngine {
           type: 'init-session',
           sessionId: this.producerSessionId,
           sampleRate: this.context.sampleRate,
-          diagnosticsEnabled: isLiveDiagnosticsEnabled(),
+          diagnosticsEnabled: isAnyLiveDiagnosticsEnabled(),
           tracks: tracks.filter((track) => track.trackIndex % workers.length === workerIndex),
         });
       });
@@ -4084,7 +4106,7 @@ export class StreamingMultitrackEngine {
     state: Omit<ProducerTrackFlightState, 'atMs'>,
   ): void {
     if (
-      !isLiveDiagnosticsEnabled() ||
+      !isAnyLiveDiagnosticsEnabled() ||
       typeof trackIndex !== 'number' ||
       this.isTrackIndexOmitted(trackIndex)
     ) {
@@ -4098,7 +4120,7 @@ export class StreamingMultitrackEngine {
   }
 
   private recordWorkletDebugStatus(message: WorkletDebugStatusMessage): void {
-    if (!isLiveDiagnosticsEnabled()) {
+    if (!isAnyLiveDiagnosticsEnabled()) {
       return;
     }
 
@@ -4115,7 +4137,7 @@ export class StreamingMultitrackEngine {
     trackIndex: number | undefined,
     intervalMs = PRODUCER_DIAGNOSTIC_RATE_LIMIT_MS,
   ): boolean {
-    if (!isLiveDiagnosticsEnabled()) {
+    if (!isAnyLiveDiagnosticsEnabled()) {
       return false;
     }
 
@@ -4151,6 +4173,9 @@ export class StreamingMultitrackEngine {
       const soloBlocked = this.soloTrackIds.size > 0 && !solo;
       const outputRoute = state?.outputRoute ?? resolveTrackOutputRoute(track);
       const guide = isGuideRoutingTrack(track);
+      const click = /\b(click|tempo|metro|metronomo|metronome)\b/i.test(
+        `${track.id || ''} ${track.name || ''}`,
+      );
       const flags: string[] = [];
 
       if (!state?.readyResolved) flags.push('NOT_READY');
@@ -4161,6 +4186,20 @@ export class StreamingMultitrackEngine {
       if (guide && this.transportPlaying && (worklet?.availableRead ?? Number.POSITIVE_INFINITY) <= 0) {
         flags.push('GUIDE_NO_READ');
       }
+      if (
+        click &&
+        this.transportPlaying &&
+        !muted &&
+        !soloBlocked &&
+        volume > 0.0001 &&
+        (worklet?.availableRead ?? 0) >= AAC_FRAME_SIZE
+      ) {
+        if ((worklet?.signalEvents ?? 0) === 0 && this.getCurrentTime() >= 1.5) {
+          flags.push('CLICK_NEVER_SIGNALED');
+        } else if ((worklet?.signalAgeSeconds ?? 0) >= 2.5) {
+          flags.push('CLICK_SIGNAL_LOST');
+        }
+      }
       if (underflow && now - underflow.atMs < 5000) flags.push('RECENT_UNDERFLOW');
       if (producer?.startupPhase) flags.push(`PHASE_${producer.startupPhase}`);
       if (producer?.code) flags.push(`ERR_${producer.code}`);
@@ -4169,6 +4208,7 @@ export class StreamingMultitrackEngine {
         trackIndex: index,
         trackName: track.name || track.id,
         guide,
+        click,
         ready: Boolean(state?.readyResolved),
         route: outputRoute,
         muted,
@@ -4176,6 +4216,16 @@ export class StreamingMultitrackEngine {
         soloBlocked,
         volume: Number(volume.toFixed(3)),
         level: Number(level.toFixed(5)),
+        workletMeter: typeof worklet?.meterLevel === 'number'
+          ? Number(worklet.meterLevel.toFixed(6))
+          : null,
+        peakSample: typeof worklet?.peakSample === 'number'
+          ? Number(worklet.peakSample.toFixed(6))
+          : null,
+        signalEvents: worklet?.signalEvents ?? null,
+        signalAgeSeconds: typeof worklet?.signalAgeSeconds === 'number'
+          ? Number(worklet.signalAgeSeconds.toFixed(3))
+          : null,
         workletRead: worklet?.availableRead ?? null,
         driftMs: Number.isFinite(worklet?.syncDriftMs)
           ? Number(worklet!.syncDriftMs!.toFixed(2))
@@ -4216,7 +4266,7 @@ export class StreamingMultitrackEngine {
   }
 
   private maybePublishFlightRecorder(reason: string, force = false): void {
-    if (!isLiveDiagnosticsEnabled()) {
+    if (!isAnyLiveDiagnosticsEnabled()) {
       return;
     }
 
@@ -4228,9 +4278,12 @@ export class StreamingMultitrackEngine {
 
     this.lastFlightRecorderTableAt = now;
     const rows = this.buildDiagnosticTrackRows(now);
+    const diagnostics = this.getDiagnostics();
 
     const hasCriticalSignal = rows.some((row) => (
       String(row.flags || '').includes('GUIDE_NO_READ') ||
+      String(row.flags || '').includes('CLICK_SIGNAL_LOST') ||
+      String(row.flags || '').includes('CLICK_NEVER_SIGNALED') ||
       String(row.flags || '').includes('RECENT_UNDERFLOW') ||
       String(row.flags || '').includes('SOLO_BLOCKED') ||
       String(row.flags || '').includes('NOT_READY') ||
@@ -4241,6 +4294,23 @@ export class StreamingMultitrackEngine {
     // underflow could otherwise create a warning storm that steals time from
     // the audio pipeline precisely while it is trying to recover.
     const method: FlatDiagnosticMethod = 'info';
+
+    recordLiveCapacitySnapshot({
+      reason,
+      sessionId: this.producerSessionId,
+      position: Number(this.getCurrentTime().toFixed(3)),
+      playing: this.transportPlaying,
+      contextState: this.context.state,
+      contextTime: Number(this.context.currentTime.toFixed(3)),
+      producerMessageAgeMs: this.lastProducerMessageAt > 0
+        ? Math.round(now - this.lastProducerMessageAt)
+        : null,
+      seekSerial: this.activeSeekSerial,
+      producerSeekSerial: this.producerSeekSerial,
+      critical: hasCriticalSignal,
+      diagnostics,
+      tracks: rows,
+    });
 
     this.logFlatDiagnostic('[SPSC-FLIGHT]', {
       reason,
@@ -5281,7 +5351,7 @@ export class StreamingMultitrackEngine {
       this.workletNode.connect(this.masterGain);
       this.workletNode.port.postMessage({
         type: 'debug-enabled',
-        enabled: isLiveDiagnosticsEnabled(),
+        enabled: isAnyLiveDiagnosticsEnabled(),
       });
     }
 
@@ -5334,6 +5404,10 @@ export class StreamingMultitrackEngine {
             : null;
         workletStatusFields[`${prefix}UnderrunEvents`] = trackStatus.underrunEvents;
         workletStatusFields[`${prefix}UnderrunFrames`] = trackStatus.underrunFrames;
+        workletStatusFields[`${prefix}MeterLevel`] = trackStatus.meterLevel ?? null;
+        workletStatusFields[`${prefix}PeakSample`] = trackStatus.peakSample ?? null;
+        workletStatusFields[`${prefix}SignalEvents`] = trackStatus.signalEvents ?? null;
+        workletStatusFields[`${prefix}SignalAgeSeconds`] = trackStatus.signalAgeSeconds ?? null;
       });
       this.logFlatLiveDiagnostic(
         'streaming:worklet-status',
@@ -5383,7 +5457,7 @@ export class StreamingMultitrackEngine {
       if (this.isTrackIndexOmitted(message.trackIndex)) {
         return;
       }
-      if (isLiveDiagnosticsEnabled()) {
+      if (isAnyLiveDiagnosticsEnabled()) {
         this.latestUnderflowByTrack.set(message.trackIndex, {
           ...message,
           atMs: performance.now(),

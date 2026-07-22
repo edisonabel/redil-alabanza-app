@@ -13,6 +13,7 @@ const SYNC_DRIFT_ALERT_INTERVAL_FRAMES = 96000;
 const SYNC_FINE_DRIFT_MS = 15;
 const SYNC_HARD_DRIFT_MS = 40;
 const SYNC_HARD_REALIGN_INTERVAL_FRAMES = 4800;
+const DEBUG_SIGNAL_THRESHOLD = 0.0001;
 
 class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -425,6 +426,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         track.localWriteIndex = targetIndex;
       }
       track.lastMeterLevel = 0;
+      track.lastPeakSample = 0;
+      track.lastSignalFrame = -1;
+      track.signalEvents = 0;
       track.effectiveGain = 0;
       track.absoluteReadFrame = targetSample;
       track.indexBaseFrame = targetSample;
@@ -510,6 +514,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         loopJumpFadeRemaining: 0,
         loopJumpFadeTotalFrames: 0,
         lastMeterLevel: 0,
+        lastPeakSample: 0,
+        lastSignalFrame: -1,
+        signalEvents: 0,
         underrunEvents: 0,
         underrunFrames: 0,
         lastDropDebugFrame: 0,
@@ -568,6 +575,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       }
       this.resetLoopJumpFade(track);
       track.lastMeterLevel = 0;
+      track.lastPeakSample = 0;
+      track.lastSignalFrame = -1;
+      track.signalEvents = 0;
       track.underrunEvents = 0;
       track.underrunFrames = 0;
       track.lastDropDebugFrame = 0;
@@ -1174,6 +1184,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.noteUnderrun(track, frameCount - framesToRead, availableRead);
 
     if (framesToRead <= 0) {
+      this.noteSignalActivity(track, 0);
       track.lastMeterLevel = this.decayMeterLevel(track.lastMeterLevel);
       this.meterLevels[track.trackIndex] = track.lastMeterLevel;
       return;
@@ -1256,6 +1267,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
 
     Atomics.store(indices, READ_INDEX_SLOT, nextReadIndex);
+    this.noteSignalActivity(track, peakSample);
     track.lastMeterLevel = this.updateMeterLevel(track.lastMeterLevel, peakSample);
     this.meterLevels[track.trackIndex] = track.lastMeterLevel;
   }
@@ -1283,6 +1295,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.noteUnderrun(track, frameCount - framesToRead, availableRead);
 
     if (framesToRead <= 0) {
+      this.noteSignalActivity(track, 0);
       track.lastMeterLevel = this.decayMeterLevel(track.lastMeterLevel);
       this.meterLevels[track.trackIndex] = track.lastMeterLevel;
       return;
@@ -1367,6 +1380,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
     track.localReadIndex = nextReadIndex;
     this.noteFallbackConsumed(track, framesToRead);
+    this.noteSignalActivity(track, peakSample);
     track.lastMeterLevel = this.updateMeterLevel(track.lastMeterLevel, peakSample);
     this.meterLevels[track.trackIndex] = track.lastMeterLevel;
   }
@@ -1382,6 +1396,18 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       readingBlocked: this.readingBlocked,
       renderedFrames: this.renderedFrames,
     });
+  }
+
+  noteSignalActivity(track, peakSample) {
+    if (!this.publishDebugMessages) {
+      return;
+    }
+
+    track.lastPeakSample = Number.isFinite(peakSample) ? peakSample : 0;
+    if (track.lastPeakSample >= DEBUG_SIGNAL_THRESHOLD) {
+      track.lastSignalFrame = this.renderedFrames;
+      track.signalEvents += 1;
+    }
   }
 
   noteUnderrun(track, missingFrames, availableRead) {
@@ -1588,6 +1614,14 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         syncDriftMs: Math.round(syncDriftMs * 1000) / 1000,
         underrunEvents: track.underrunEvents,
         underrunFrames: track.underrunFrames,
+        meterLevel: Math.round(track.lastMeterLevel * 1000000) / 1000000,
+        peakSample: Math.round((track.lastPeakSample || 0) * 1000000) / 1000000,
+        signalEvents: track.signalEvents || 0,
+        signalAgeSeconds: track.lastSignalFrame >= 0
+          ? Math.round(
+            ((this.renderedFrames - track.lastSignalFrame) / (sampleRate || 48000)) * 1000,
+          ) / 1000
+          : null,
       });
     }
 
