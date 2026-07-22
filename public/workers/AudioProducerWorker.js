@@ -117,6 +117,75 @@ const getAacAudioSpecificConfig = (sampleRate, channelCount) => {
   return config.buffer;
 };
 
+const readAacChannelCountFromDescription = (description) => {
+  if (!description) {
+    return null;
+  }
+
+  const bytes =
+    description instanceof Uint8Array
+      ? description
+      : new Uint8Array(
+        description.buffer || description,
+        description.byteOffset || 0,
+        description.byteLength || description.length || 0,
+      );
+
+  if (bytes.byteLength < 2) {
+    return null;
+  }
+
+  let bitOffset = 0;
+  const readBits = (bitCount) => {
+    let value = 0;
+    for (let index = 0; index < bitCount; index += 1) {
+      const byteIndex = bitOffset >> 3;
+      if (byteIndex >= bytes.byteLength) {
+        return null;
+      }
+      const bitIndex = 7 - (bitOffset & 7);
+      value = (value << 1) | ((bytes[byteIndex] >> bitIndex) & 1);
+      bitOffset += 1;
+    }
+    return value;
+  };
+
+  const audioObjectType = readBits(5);
+  const sampleRateIndex = readBits(4);
+  if (audioObjectType === null || sampleRateIndex === null) {
+    return null;
+  }
+  if (sampleRateIndex === 15 && readBits(24) === null) {
+    return null;
+  }
+
+  const channelCount = readBits(4);
+  return channelCount !== null && channelCount >= 1 && channelCount <= 7
+    ? channelCount
+    : null;
+};
+
+const resolveDecoderChannelCount = (
+  codec,
+  description,
+  declaredChannelCount,
+  containerChannelCount,
+) => {
+  const normalize = (value) => {
+    const numericValue = Math.round(Number(value) || 0);
+    return numericValue >= 1 && numericValue <= 7 ? numericValue : null;
+  };
+  const declared = normalize(declaredChannelCount);
+  const container = normalize(containerChannelCount);
+
+  if (/^mp4a\.40\.2$/i.test(String(codec || ''))) {
+    const described = readAacChannelCountFromDescription(description);
+    return described || declared || container || 1;
+  }
+
+  return container || declared || 1;
+};
+
 const preferGeneratedAacDescription = (codec, description) => (
   /^mp4a\.40\.2$/i.test(String(codec || '')) &&
   (!description || description.byteLength !== 2)
@@ -1299,8 +1368,13 @@ class Mp4TrackDemuxer {
 
     const codec = audioTrack.codec || this.track.codec || 'mp4a.40.2';
     const sampleRate = audioTrack.audio?.sample_rate || this.track.sampleRate || 48000;
-    const numberOfChannels = audioTrack.audio?.channel_count || this.track.channelCount || 1;
     const containerDescription = this.getDecoderSpecificInfo(audioTrackId);
+    const numberOfChannels = resolveDecoderChannelCount(
+      codec,
+      containerDescription,
+      this.track.channelCount,
+      audioTrack.audio?.channel_count,
+    );
     const generatedDescription = getAacAudioSpecificConfig(sampleRate, numberOfChannels);
     const shouldUseGeneratedDescription = /^mp4a\.40\.2$/i.test(String(codec || ''));
 
@@ -2598,9 +2672,11 @@ class ProducerTrackPipeline {
   }
 
   handleDecoderError(error) {
+    if (this.decoderRecoveryInFlight) {
+      return;
+    }
+
     if (
-      !this.decoderRecoveryInFlight &&
-      !this.normalReadyPosted &&
       this.decoderVariantIndex + 1 < this.decoderVariants.length
     ) {
       this.decoderRecoveryInFlight = true;

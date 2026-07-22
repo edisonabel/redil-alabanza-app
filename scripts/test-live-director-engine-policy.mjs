@@ -255,6 +255,21 @@ assert.match(
 );
 assert.match(
   workerSource,
+  /readAacChannelCountFromDescription[\s\S]+resolveDecoderChannelCount[\s\S]+described \|\| declared \|\| container \|\| 1/,
+  'AAC decoding must honor the channel count encoded in AudioSpecificConfig before MP4 sample-entry defaults.',
+);
+assert.match(
+  workerSource,
+  /handleDecoderError\(error\) \{\s+if \(this\.decoderRecoveryInFlight\)[\s\S]+this\.decoderVariantIndex \+ 1 < this\.decoderVariants\.length/,
+  'A runtime decoder failure must recover only that track through the next compatible decoder variant.',
+);
+assert.doesNotMatch(
+  workerSource.match(/handleDecoderError\(error\) \{[\s\S]+?\n  \}/)?.[0] || '',
+  /!this\.normalReadyPosted/,
+  'Decoder recovery must remain available after playback has started.',
+);
+assert.match(
+  workerSource,
   /if \(byteStart === 0 && bytesLookLikeMp3\(bytes\)\)/,
   'Format sniffing must never mistake an arbitrary post-seek M4A range for an MP3 file.',
 );
