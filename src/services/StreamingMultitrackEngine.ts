@@ -338,7 +338,6 @@ type ProducerTrackMetadata = {
   usesSharedMemory: boolean;
   sampleBuffer: SharedOrRegularBuffer;
   indexBuffer: SharedOrRegularBuffer;
-  preferAdts: boolean;
 };
 
 type ProducerInitSessionMessage = {
@@ -976,7 +975,7 @@ type PreloadedStreamingSession = {
   trackStates: TrackRuntime[];
 };
 
-const AUDIO_WORKER_ASSET_VERSION = '20260721-capacity-debug-4';
+const AUDIO_WORKER_ASSET_VERSION = '20260721-capacity-debug-5';
 const DEFAULT_WORKLET_MODULE_URL = `/workers/MultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_PRODUCER_WORKER_URL = `/workers/AudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
@@ -4047,12 +4046,6 @@ export class StreamingMultitrackEngine {
     return trackDefinitions.map((trackDefinition, index) => {
       const track = tracks[index];
       const trackState = trackStates[index];
-      const clickIdentity = `${track?.id || ''} ${track?.name || ''} ${track?.sourceFileName || ''}`;
-      const preferAdts =
-        capabilities.isIOS === true &&
-        capabilities.isSafari === true &&
-        trackDefinition.channelCount === 1 &&
-        /\b(click|tempo|metro|metronomo|metronome)\b/i.test(clickIdentity);
 
       return {
         id: track?.id || `track-${index}`,
@@ -4071,7 +4064,6 @@ export class StreamingMultitrackEngine {
         sampleBuffer: trackState?.ringBuffer.sampleStorage || new ArrayBuffer(0),
         indexBuffer: trackState?.ringBuffer.indexStorage || new ArrayBuffer(0),
         retainExtractedSamples,
-        preferAdts,
       };
     });
   }

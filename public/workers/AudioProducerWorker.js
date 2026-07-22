@@ -415,9 +415,8 @@ const wrapAacAccessUnitWithAdts = (payload, sampleRate, channelCount) => {
   return output;
 };
 
-const buildDecoderConfigVariants = (config, options) => {
+const buildDecoderConfigVariants = (config) => {
   const variants = [];
-  const preferAdts = Boolean(options && options.preferAdts);
   const addVariant = (label, description, options) => {
     const wrapsAdts = Boolean(options && options.wrapAdts);
     const variantChannelCount = Math.max(
@@ -445,14 +444,9 @@ const buildDecoderConfigVariants = (config, options) => {
   const monoDescription = getAacAudioSpecificConfig(config.sampleRate, 1);
 
   if (/^mp4a\.40\.2$/i.test(String(config.codec || ''))) {
-    if (preferAdts) {
-      addVariant('adts-no-description', undefined, { wrapAdts: true });
-    }
     addVariant('generated-aac-lc-description', generatedDescription);
     addVariant(originalDescription ? 'original-description' : 'no-description', originalDescription);
-    if (!preferAdts) {
-      addVariant('adts-no-description', undefined, { wrapAdts: true });
-    }
+    addVariant('adts-no-description', undefined, { wrapAdts: true });
     if (Math.round(Number(config.numberOfChannels) || 1) > 1) {
       addVariant('force-mono-description', monoDescription, { channelCount: 1 });
       addVariant('force-mono-adts', undefined, { wrapAdts: true, channelCount: 1 });
@@ -1580,6 +1574,7 @@ class ProducerTrackPipeline {
     this.decoderVariantIndex = 0;
     this.recentDecodeSamples = [];
     this.decoderRecoveryInFlight = false;
+    this.decoderRecoveryPromise = null;
     this.pendingSeekReady = null;
     this.currentSeekSerial = 0;
     this.seekOperationToken = 0;
@@ -1647,6 +1642,7 @@ class ProducerTrackPipeline {
     this.decoderVariants = [];
     this.decoderVariantIndex = 0;
     this.decoderRecoveryInFlight = false;
+    this.decoderRecoveryPromise = null;
     this.preWarmedSamples = [];
     this.preWarmedDecoderConfig = null;
     this.preWarmedNextFileStart = 0;
@@ -2555,14 +2551,32 @@ class ProducerTrackPipeline {
     for (let index = 0; index < samples.length; index += 1) {
       this.assertAlive();
       this.assertCurrentLookAhead(expectedLookAheadToken);
+      await this.waitForDecoderRecovery();
+      this.assertAlive();
+      this.assertCurrentLookAhead(expectedLookAheadToken);
       await this.waitForDecoderBackpressure();
+      await this.waitForDecoderRecovery();
       this.assertCurrentLookAhead(expectedLookAheadToken);
 
       const sample = samples[index];
       if (!this.decodeSample(sample)) {
-        break;
+        await this.waitForDecoderRecovery();
+        this.assertAlive();
+        this.assertCurrentLookAhead(expectedLookAheadToken);
+        if (!this.decodeSample(sample)) {
+          break;
+        }
       }
     }
+  }
+
+  async waitForDecoderRecovery() {
+    const recoveryPromise = this.decoderRecoveryPromise;
+    if (!recoveryPromise) {
+      return;
+    }
+
+    await recoveryPromise;
   }
 
   assertCurrentLookAhead(expectedLookAheadToken) {
@@ -2649,9 +2663,7 @@ class ProducerTrackPipeline {
     }
 
     const decoderConfig = this.decoderConfig;
-    this.decoderVariants = buildDecoderConfigVariants(decoderConfig, {
-      preferAdts: Boolean(this.track && this.track.preferAdts),
-    });
+    this.decoderVariants = buildDecoderConfigVariants(decoderConfig);
     this.decoderVariantIndex = 0;
     await this.configureDecoderVariant(expectedLookAheadToken);
   }
@@ -2716,9 +2728,16 @@ class ProducerTrackPipeline {
       this.decoderVariantIndex + 1 < this.decoderVariants.length
     ) {
       this.decoderRecoveryInFlight = true;
-      this.recoverDecoderAfterError(error).catch((recoveryError) => {
-        this.postFinalDecoderError(recoveryError || error);
-      });
+      const recoveryPromise = this.recoverDecoderAfterError(error)
+        .catch((recoveryError) => {
+          this.postFinalDecoderError(recoveryError || error);
+        })
+        .finally(() => {
+          if (this.decoderRecoveryPromise === recoveryPromise) {
+            this.decoderRecoveryPromise = null;
+          }
+        });
+      this.decoderRecoveryPromise = recoveryPromise;
       return;
     }
 
@@ -2788,9 +2807,7 @@ class ProducerTrackPipeline {
       }
 
       if (this.decoderVariants.length === 0) {
-        this.decoderVariants = buildDecoderConfigVariants(this.decoderConfig, {
-          preferAdts: Boolean(this.track && this.track.preferAdts),
-        });
+        this.decoderVariants = buildDecoderConfigVariants(this.decoderConfig);
       }
 
       if (!this.decoderVariants[this.decoderVariantIndex]) {

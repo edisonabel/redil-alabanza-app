@@ -174,14 +174,9 @@ assert.match(
   'The streaming engine must block unstable multi-stem main-thread decoding.',
 );
 assert.match(
-  engineSource,
-  /capabilities\.isIOS === true[\s\S]+capabilities\.isSafari === true[\s\S]+preferAdts/,
-  'The iPhone Safari click must opt into the ADTS-first decoder route.',
-);
-assert.match(
   workerSource,
-  /if \(preferAdts\) \{[\s\S]+addVariant\('adts-no-description'[\s\S]+addVariant\('generated-aac-lc-description'/,
-  'The synchronized producer must try ADTS before raw AAC only when requested.',
+  /await this\.waitForDecoderRecovery\(\);[\s\S]+if \(!this\.decodeSample\(sample\)\) \{[\s\S]+await this\.waitForDecoderRecovery\(\);[\s\S]+if \(!this\.decodeSample\(sample\)\)/,
+  'A runtime decoder recovery must retry the current compressed sample instead of discarding the rest of its MP4 batch.',
 );
 assert.match(
   engineSource,
