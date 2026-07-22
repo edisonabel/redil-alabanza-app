@@ -415,8 +415,9 @@ const wrapAacAccessUnitWithAdts = (payload, sampleRate, channelCount) => {
   return output;
 };
 
-const buildDecoderConfigVariants = (config) => {
+const buildDecoderConfigVariants = (config, options) => {
   const variants = [];
+  const preferAdts = Boolean(options && options.preferAdts);
   const addVariant = (label, description, options) => {
     const wrapsAdts = Boolean(options && options.wrapAdts);
     const variantChannelCount = Math.max(
@@ -444,9 +445,14 @@ const buildDecoderConfigVariants = (config) => {
   const monoDescription = getAacAudioSpecificConfig(config.sampleRate, 1);
 
   if (/^mp4a\.40\.2$/i.test(String(config.codec || ''))) {
+    if (preferAdts) {
+      addVariant('adts-no-description', undefined, { wrapAdts: true });
+    }
     addVariant('generated-aac-lc-description', generatedDescription);
     addVariant(originalDescription ? 'original-description' : 'no-description', originalDescription);
-    addVariant('adts-no-description', undefined, { wrapAdts: true });
+    if (!preferAdts) {
+      addVariant('adts-no-description', undefined, { wrapAdts: true });
+    }
     if (Math.round(Number(config.numberOfChannels) || 1) > 1) {
       addVariant('force-mono-description', monoDescription, { channelCount: 1 });
       addVariant('force-mono-adts', undefined, { wrapAdts: true, channelCount: 1 });
@@ -2643,7 +2649,9 @@ class ProducerTrackPipeline {
     }
 
     const decoderConfig = this.decoderConfig;
-    this.decoderVariants = buildDecoderConfigVariants(decoderConfig);
+    this.decoderVariants = buildDecoderConfigVariants(decoderConfig, {
+      preferAdts: Boolean(this.track && this.track.preferAdts),
+    });
     this.decoderVariantIndex = 0;
     await this.configureDecoderVariant(expectedLookAheadToken);
   }
@@ -2780,7 +2788,9 @@ class ProducerTrackPipeline {
       }
 
       if (this.decoderVariants.length === 0) {
-        this.decoderVariants = buildDecoderConfigVariants(this.decoderConfig);
+        this.decoderVariants = buildDecoderConfigVariants(this.decoderConfig, {
+          preferAdts: Boolean(this.track && this.track.preferAdts),
+        });
       }
 
       if (!this.decoderVariants[this.decoderVariantIndex]) {

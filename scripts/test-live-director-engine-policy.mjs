@@ -175,6 +175,16 @@ assert.match(
 );
 assert.match(
   engineSource,
+  /capabilities\.isIOS === true[\s\S]+capabilities\.isSafari === true[\s\S]+preferAdts/,
+  'The iPhone Safari click must opt into the ADTS-first decoder route.',
+);
+assert.match(
+  workerSource,
+  /if \(preferAdts\) \{[\s\S]+addVariant\('adts-no-description'[\s\S]+addVariant\('generated-aac-lc-description'/,
+  'The synchronized producer must try ADTS before raw AAC only when requested.',
+);
+assert.match(
+  engineSource,
   /keepSynchronizedProducerDuringStartup[\s\S]+retain-shared-worker-until-track-deadline/,
   'A slow synchronized producer must remain alive until the track-ready deadline.',
 );
