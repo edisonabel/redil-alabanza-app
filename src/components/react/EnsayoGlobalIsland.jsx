@@ -352,6 +352,9 @@ const openIsolatedLiveDirectorForSafari = async (song = {}) => {
   if (new URLSearchParams(window.location.search).get('debug') === '1') {
     targetUrl.searchParams.set('debug', '1');
   }
+  if (new URLSearchParams(window.location.search).get('capacityDebug') === '1') {
+    targetUrl.searchParams.set('capacityDebug', '1');
+  }
 
   if (capabilities.standaloneDisplay) {
     await prepareStandaloneIsolationWorker();

@@ -27,6 +27,7 @@ import type { MultitrackEngineLoadWarning, SongStructure, TrackData } from '../.
 import type { SharedStreamingTelemetry } from '../../services/StreamingMultitrackEngine';
 import { ChannelStrip, FaderThumb } from './live-director/ChannelStrip';
 import { EnsayoQueueCard } from './live-director/EnsayoQueueCard';
+import { LiveCapacityDebugPanel } from './live-director/LiveCapacityDebugPanel';
 import {
   isNativeLiveDirectorEngineAvailable,
   NativeLiveDirectorEngine,
@@ -6214,6 +6215,12 @@ export function LiveDirectorView({
           </div>
         </div>
       )}
+      <LiveCapacityDebugPanel
+        songId={songId}
+        songTitle={songTitle || title}
+        trackCount={activeTracks.length}
+        mode={mode}
+      />
     </div>
   );
 }
