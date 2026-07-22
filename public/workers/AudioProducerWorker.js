@@ -2532,6 +2532,9 @@ class ProducerTrackPipeline {
   async feedDemuxedSamples(result, expectedLookAheadToken = null) {
     this.assertAlive();
     this.assertCurrentLookAhead(expectedLookAheadToken);
+    await this.waitForDecoderRecovery();
+    this.assertAlive();
+    this.assertCurrentLookAhead(expectedLookAheadToken);
 
     if (result && result.decoderConfig) {
       this.decoderConfig = result.decoderConfig;
@@ -2741,7 +2744,25 @@ class ProducerTrackPipeline {
       return;
     }
 
+    // WebKit closes the AudioDecoder after the final configuration variant
+    // fails. Leaving the pipeline in that state makes feedDemuxedSamples()
+    // abandon the rest of the current MP4 extraction batch, which can turn a
+    // single bad AAC access unit into several seconds of padded silence.
+    // Report the failure, recreate the first known-good variant, discard only
+    // the tiny set already accepted by the failed Cocoa decoder, and let the
+    // current batch continue from its next sample.
     this.postFinalDecoderError(error);
+    this.decoderRecoveryInFlight = true;
+    const recoveryPromise = this.recoverDecoderAfterTerminalError()
+      .catch((recoveryError) => {
+        this.postFinalDecoderError(recoveryError || error);
+      })
+      .finally(() => {
+        if (this.decoderRecoveryPromise === recoveryPromise) {
+          this.decoderRecoveryPromise = null;
+        }
+      });
+    this.decoderRecoveryPromise = recoveryPromise;
   }
 
   async recoverDecoderAfterError(_error) {
@@ -2768,6 +2789,37 @@ class ProducerTrackPipeline {
           break;
         }
       }
+    } finally {
+      this.decoderRecoveryInFlight = false;
+    }
+  }
+
+  async recoverDecoderAfterTerminalError() {
+    try {
+      this.assertAlive();
+      if (this.decoder) {
+        try {
+          if (this.decoder.state !== 'closed') {
+            this.decoder.reset();
+          }
+        } catch (_error) {
+          // Cocoa already closed the decoder; continue with a fresh instance.
+        }
+
+        try {
+          if (this.decoder.state !== 'closed') {
+            this.decoder.close();
+          }
+        } catch (_error) {
+          // A reset decoder can already be closing.
+        }
+      }
+
+      this.decoder = null;
+      this.recentDecodeSamples = [];
+      this.decoderVariantIndex = 0;
+      await this.configureDecoderVariant();
+      this.assertAlive();
     } finally {
       this.decoderRecoveryInFlight = false;
     }

@@ -179,6 +179,11 @@ assert.match(
   'A runtime decoder recovery must retry the current compressed sample instead of discarding the rest of its MP4 batch.',
 );
 assert.match(
+  workerSource,
+  /this\.postFinalDecoderError\(error\);[\s\S]+this\.recoverDecoderAfterTerminalError\(\)[\s\S]+this\.decoderVariantIndex = 0;[\s\S]+await this\.configureDecoderVariant\(\)/,
+  'A terminal WebKit decoder error must recreate the decoder and continue the current MP4 batch.',
+);
+assert.match(
   engineSource,
   /keepSynchronizedProducerDuringStartup[\s\S]+retain-shared-worker-until-track-deadline/,
   'A slow synchronized producer must remain alive until the track-ready deadline.',
