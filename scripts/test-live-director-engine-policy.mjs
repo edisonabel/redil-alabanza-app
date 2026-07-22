@@ -260,6 +260,11 @@ assert.match(
 );
 assert.match(
   workerSource,
+  /findDescriptorData[\s\S]+Array\.isArray\(descriptor\.descs\)[\s\S]+findDescriptorData\(esDescriptor, DECODER_SPECIFIC_INFO_TAG\)/,
+  'MP4Box descriptor traversal must support current nested descs when findDescriptor is unavailable.',
+);
+assert.match(
+  workerSource,
   /handleDecoderError\(error\) \{\s+if \(this\.decoderRecoveryInFlight\)[\s\S]+this\.decoderVariantIndex \+ 1 < this\.decoderVariants\.length/,
   'A runtime decoder failure must recover only that track through the next compatible decoder variant.',
 );

@@ -165,6 +165,30 @@ const readAacChannelCountFromDescription = (description) => {
     : null;
 };
 
+const findDescriptorData = (descriptor, targetTag) => {
+  if (!descriptor || typeof descriptor !== 'object') {
+    return undefined;
+  }
+
+  if (
+    descriptor.tag === targetTag &&
+    descriptor.data &&
+    descriptor.data.byteLength > 0
+  ) {
+    return descriptor.data;
+  }
+
+  const children = Array.isArray(descriptor.descs) ? descriptor.descs : [];
+  for (let index = 0; index < children.length; index += 1) {
+    const data = findDescriptorData(children[index], targetTag);
+    if (data) {
+      return data;
+    }
+  }
+
+  return undefined;
+};
+
 const resolveDecoderChannelCount = (
   codec,
   description,
@@ -1463,14 +1487,18 @@ class Mp4TrackDemuxer {
       trak.mdia.minf.stbl.stsd &&
       trak.mdia.minf.stbl.stsd.entries &&
       trak.mdia.minf.stbl.stsd.entries[0];
+    const esDescriptor = sampleEntry && sampleEntry.esds && sampleEntry.esds.esd;
     const descriptor =
       sampleEntry &&
       sampleEntry.esds &&
-      sampleEntry.esds.esd &&
-      typeof sampleEntry.esds.esd.findDescriptor === 'function'
-        ? sampleEntry.esds.esd.findDescriptor(DECODER_SPECIFIC_INFO_TAG)
+      esDescriptor &&
+      typeof esDescriptor.findDescriptor === 'function'
+        ? esDescriptor.findDescriptor(DECODER_SPECIFIC_INFO_TAG)
         : undefined;
-    const descriptorData = descriptor && descriptor.data;
+    const descriptorData =
+      descriptor && descriptor.data
+        ? descriptor.data
+        : findDescriptorData(esDescriptor, DECODER_SPECIFIC_INFO_TAG);
 
     if (!descriptorData || descriptorData.byteLength === 0) {
       return undefined;
