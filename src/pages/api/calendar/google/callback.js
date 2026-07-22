@@ -21,15 +21,21 @@ const redirectWithStatus = ({ url, returnPath, status, reason = '' }) => {
   const target = new URL(sanitizeReturnPath(returnPath), url.origin);
   target.searchParams.set('calendar', status);
   if (reason) target.searchParams.set('calendar_reason', reason);
-  return Response.redirect(target.toString(), 303);
-};
+  const targetUrl = target.toString();
+  const targetAttribute = targetUrl
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;');
+  const targetScript = JSON.stringify(targetUrl).replaceAll('<', '\\u003c');
+  const connected = status === 'connected' || status === 'partial';
 
-const completionPage = ({ connected }) => new Response(`<!doctype html>
+  return new Response(`<!doctype html>
 <html lang="es">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>${connected ? 'Calendario conectado' : 'No se pudo conectar'}</title>
+    <meta http-equiv="refresh" content="0;url=${targetAttribute}" />
+    <title>Redirigiendo</title>
     <style>
       :root { color-scheme: dark; font-family: system-ui, -apple-system, sans-serif; }
       body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #09090b; color: #fafafa; }
@@ -37,28 +43,31 @@ const completionPage = ({ connected }) => new Response(`<!doctype html>
       .icon { display: grid; place-items: center; width: 3.5rem; height: 3.5rem; margin: 0 auto 1rem; border-radius: 1rem; background: ${connected ? '#123d29' : '#3f1717'}; font-size: 1.65rem; }
       h1 { margin: 0; font-size: 1.45rem; }
       p { margin: .65rem 0 1.5rem; color: #a1a1aa; line-height: 1.5; }
-      a { display: inline-flex; min-height: 3rem; align-items: center; justify-content: center; padding: 0 1.25rem; border-radius: .9rem; background: #2563eb; color: white; font-weight: 750; text-decoration: none; }
+      a { color: #93c5fd; font-weight: 700; }
     </style>
   </head>
   <body>
     <main>
       <div class="icon" aria-hidden="true">${connected ? '✓' : '!'}</div>
       <h1>${connected ? 'Calendario conectado' : 'No se pudo conectar'}</h1>
-      <p>${connected ? 'Ya puedes volver a Alabanza.' : 'Vuelve a Alabanza e intenta nuevamente.'}</p>
-      <a href="/perfil">Volver a Alabanza</a>
+      <p>Redirigiendo…</p>
+      <a href="${targetAttribute}">Continuar</a>
     </main>
+    <script>window.location.replace(${targetScript});</script>
   </body>
 </html>`, {
-  status: connected ? 200 : 400,
-  headers: {
-    'content-type': 'text/html; charset=utf-8',
-    'cache-control': 'no-store, max-age=0',
-  },
-});
+    status: 200,
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store, max-age=0',
+    },
+  });
+};
 
 export async function GET({ cookies, url }) {
   const expectedState = cookies.get(STATE_COOKIE)?.value || '';
   const legacyReturnPath = cookies.get(RETURN_COOKIE)?.value || '/perfil';
+  let returnPath = legacyReturnPath;
   const cookieOptions = {
     path: '/api/calendar/google/callback',
     secure: url.protocol === 'https:',
@@ -72,7 +81,6 @@ export async function GET({ cookies, url }) {
   try {
     const state = String(url.searchParams.get('state') || '');
     let profileId = '';
-    let returnPath = legacyReturnPath;
 
     try {
       const verifiedState = verifyGoogleCalendarOAuthState(state);
@@ -86,12 +94,12 @@ export async function GET({ cookies, url }) {
 
     const providerError = String(url.searchParams.get('error') || '');
     if (providerError) {
-      return completionPage({ connected: false });
+      return redirectWithStatus({ url, returnPath, status: 'error', reason: providerError });
     }
 
     const code = String(url.searchParams.get('code') || '');
     if (!code) {
-      return completionPage({ connected: false });
+      return redirectWithStatus({ url, returnPath, status: 'error', reason: 'missing_code' });
     }
 
     const redirectUri = resolveGoogleCalendarRedirectUri(url);
@@ -107,18 +115,9 @@ export async function GET({ cookies, url }) {
       syncStatus = 'partial';
     }
 
-    try {
-      const currentUser = await requireAuthenticatedUser(cookies);
-      if (currentUser.id === profileId) {
-        return redirectWithStatus({ url, returnPath, status: syncStatus });
-      }
-    } catch {
-      // OAuth puede terminar en Safari mientras la web app sigue abierta.
-    }
-
-    return completionPage({ connected: true });
+    return redirectWithStatus({ url, returnPath, status: syncStatus });
   } catch (error) {
     console.error('[google-calendar] callback failed:', error);
-    return completionPage({ connected: false });
+    return redirectWithStatus({ url, returnPath, status: 'error', reason: 'callback_failed' });
   }
 }
