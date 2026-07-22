@@ -6,6 +6,7 @@ export const prerender = false;
 const MAX_BODY_BYTES = 192 * 1024;
 const MAX_ENTRIES = 36;
 const SESSION_ID_PATTERN = /^CAP-[A-Z0-9-]{8,40}$/;
+const CAPACITY_COOKIE_KEY = 'redil_capacity_debug';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -33,6 +34,25 @@ const sanitize = (value: unknown, depth = 0): unknown => {
     output[truncate(key, 120)] = sanitize(entry, depth + 1);
   });
   return output;
+};
+
+export const GET: APIRoute = ({ url }) => {
+  const enabled = url.searchParams.get('enable') !== '0';
+  const requestedReturnTo = String(url.searchParams.get('returnTo') || '/');
+  const returnTo = requestedReturnTo.startsWith('/') && !requestedReturnTo.startsWith('//')
+    ? requestedReturnTo
+    : '/';
+
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: returnTo,
+      'cache-control': 'no-store',
+      'set-cookie': enabled
+        ? `${CAPACITY_COOKIE_KEY}=1; Path=/; Max-Age=86400; SameSite=Lax; Secure`
+        : `${CAPACITY_COOKIE_KEY}=; Path=/; Max-Age=0; SameSite=Lax; Secure`,
+    },
+  });
 };
 
 export const POST: APIRoute = async ({ request, url }) => {

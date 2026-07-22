@@ -57,6 +57,7 @@ export type CapacitySummary = {
 };
 
 const CAPACITY_QUERY_KEY = 'capacityDebug';
+const CAPACITY_COOKIE_KEY = 'redil_capacity_debug';
 const DISABLED_VALUES = new Set(['0', 'false', 'off', 'no']);
 const STORAGE_CURRENT_KEY = 'redil:live-capacity:current-v1';
 const STORAGE_PREVIOUS_KEY = 'redil:live-capacity:previous-v1';
@@ -82,7 +83,17 @@ export const isLiveCapacityDiagnosticsEnabled = () => {
   if (typeof window === 'undefined') return false;
   try {
     const params = new URLSearchParams(window.location.search);
-    return params.has(CAPACITY_QUERY_KEY) && isTruthyDebugValue(params.get(CAPACITY_QUERY_KEY));
+    if (params.has(CAPACITY_QUERY_KEY)) {
+      const enabled = isTruthyDebugValue(params.get(CAPACITY_QUERY_KEY));
+      const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+      document.cookie = enabled
+        ? `${CAPACITY_COOKIE_KEY}=1; Path=/; Max-Age=86400; SameSite=Lax${secure}`
+        : `${CAPACITY_COOKIE_KEY}=; Path=/; Max-Age=0; SameSite=Lax${secure}`;
+      return enabled;
+    }
+    return document.cookie
+      .split(';')
+      .some((cookie) => cookie.trim() === `${CAPACITY_COOKIE_KEY}=1`);
   } catch {
     return false;
   }
