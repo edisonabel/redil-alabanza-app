@@ -35,6 +35,18 @@ const formatElapsed = (seconds: number) => {
   return `${minutes}:${String(safeSeconds % 60).padStart(2, '0')}`;
 };
 
+const formatRemoteStatus = (summary: CapacitySummary) => {
+  if (summary.remoteStatus === 'sending') return 'ENVIANDO';
+  if (summary.remoteStatus === 'error') return 'ERROR';
+  if (!summary.lastRemoteAt) {
+    return 'PENDIENTE';
+  }
+  const remoteAtMs = Date.parse(summary.lastRemoteAt);
+  if (!Number.isFinite(remoteAtMs)) return 'RECIBIDO';
+  const ageSeconds = Math.max(0, Math.round((Date.now() - remoteAtMs) / 1000));
+  return `OK ${ageSeconds}s`;
+};
+
 export function LiveCapacityDebugPanel({
   songId = '',
   songTitle = '',
@@ -45,6 +57,7 @@ export function LiveCapacityDebugPanel({
   const [summary, setSummary] = useState<CapacitySummary>(EMPTY_SUMMARY);
   const [feedback, setFeedback] = useState('');
   const [collapsed, setCollapsed] = useState(false);
+  const sending = summary.remoteStatus === 'sending';
 
   useEffect(() => {
     if (!enabled) return undefined;
@@ -113,10 +126,11 @@ export function LiveCapacityDebugPanel({
 
       {!collapsed && (
         <>
-          <div className="mt-2 grid grid-cols-3 gap-2 font-mono text-[9px] text-white/65">
+          <div className="mt-2 grid grid-cols-4 gap-2 font-mono text-[9px] text-white/65">
             <span>LOG {summary.entryCount}</span>
             <span>LAG {summary.lastEventLoopLagMs}ms</span>
             <span>MAX {summary.maxEventLoopLagMs}ms</span>
+            <span>REMOTO {formatRemoteStatus(summary)}</span>
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <button
@@ -144,15 +158,28 @@ export function LiveCapacityDebugPanel({
             </button>
             <button
               type="button"
+              disabled={sending}
+              aria-busy={sending}
               onClick={() => {
-                void flushLiveCapacityDiagnostics().then(() => showFeedback('LOG ENVIADO'));
+                void flushLiveCapacityDiagnostics().then(() => {
+                  const nextSummary = readLiveCapacitySummary();
+                  setSummary(nextSummary);
+                  showFeedback(nextSummary.remoteStatus === 'sent' ? 'LOG ENVIADO' : 'ENVÍO PENDIENTE');
+                });
               }}
-              className="rounded-md border border-white/15 bg-white/8 px-2 py-1.5 text-[10px] font-bold text-white/80"
+              className="rounded-md border border-white/15 bg-white/8 px-2 py-1.5 text-[10px] font-bold text-white/80 disabled:cursor-wait disabled:opacity-50"
             >
-              ENVIAR
+              {sending ? 'ENVIANDO' : 'ENVIAR'}
             </button>
           </div>
-          {feedback && <p className="mt-1.5 text-[9px] font-black tracking-[0.12em] text-emerald-300">{feedback}</p>}
+          {feedback && (
+            <p
+              aria-live="polite"
+              className="mt-1.5 text-[9px] font-black tracking-[0.12em] text-emerald-300"
+            >
+              {feedback}
+            </p>
+          )}
         </>
       )}
     </aside>

@@ -1,12 +1,14 @@
 import type { APIRoute } from 'astro';
+import { getStore } from '@netlify/blobs';
 import { assertRequestBodySize } from '../../lib/server/api-security.js';
 
 export const prerender = false;
 
-const MAX_BODY_BYTES = 192 * 1024;
-const MAX_ENTRIES = 36;
+const MAX_BODY_BYTES = 64 * 1024;
+const MAX_ENTRIES = 16;
 const SESSION_ID_PATTERN = /^CAP-[A-Z0-9-]{8,40}$/;
 const CAPACITY_COOKIE_KEY = 'redil_capacity_debug';
+const DIAGNOSTIC_STORE_NAME = 'live-capacity-diagnostics-preview';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -36,6 +38,60 @@ const sanitize = (value: unknown, depth = 0): unknown => {
   return output;
 };
 
+const normalizeSequence = (value: unknown) => {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? Math.max(0, Math.trunc(numericValue)) : 0;
+};
+
+const normalizeReason = (value: unknown) => (
+  truncate(String(value || 'batch').replace(/[^a-z0-9-]/gi, '-'), 48) || 'batch'
+);
+
+const buildCompactAlert = (entry: unknown) => {
+  if (!entry || typeof entry !== 'object') return null;
+  const record = entry as Record<string, unknown>;
+  const payload = record.payload && typeof record.payload === 'object'
+    ? record.payload as Record<string, unknown>
+    : {};
+  const type = truncate(String(record.type || 'event'), 96);
+  const level = truncate(String(record.level || 'info'), 12);
+  const alertText = `${type} ${level} ${JSON.stringify(payload).slice(0, 1_200)}`;
+  if (
+    level === 'info' &&
+    payload.critical !== true &&
+    !/error|underflow|underrun|overload|stall|audio-loss|signal[-_]lost|no-read/i.test(alertText)
+  ) {
+    return null;
+  }
+
+  const trackAlerts = Array.isArray(payload.tracks)
+    ? payload.tracks
+      .filter((track) => (
+        track &&
+        typeof track === 'object' &&
+        String((track as Record<string, unknown>).flags || '')
+      ))
+      .slice(0, 4)
+      .map((track) => {
+        const trackRecord = track as Record<string, unknown>;
+        return {
+          name: truncate(String(trackRecord.trackName || ''), 80),
+          flags: truncate(String(trackRecord.flags || ''), 140),
+        };
+      })
+    : [];
+
+  return {
+    sequence: normalizeSequence(record.sequence),
+    elapsedMs: normalizeSequence(record.elapsedMs),
+    type,
+    level,
+    position: Number.isFinite(Number(payload.position)) ? Number(payload.position) : null,
+    reason: truncate(String(payload.reason || ''), 80),
+    tracks: trackAlerts,
+  };
+};
+
 export const GET: APIRoute = ({ url }) => {
   const enabled = url.searchParams.get('enable') !== '0';
   const requestedReturnTo = String(url.searchParams.get('returnTo') || '/');
@@ -60,6 +116,12 @@ export const POST: APIRoute = async ({ request, url }) => {
   if (origin && origin !== url.origin) {
     return json({ ok: false, error: 'origin-not-allowed' }, 403);
   }
+  const diagnosticCookieEnabled = String(request.headers.get('cookie') || '')
+    .split(';')
+    .some((cookie) => cookie.trim() === `${CAPACITY_COOKIE_KEY}=1`);
+  if (!diagnosticCookieEnabled) {
+    return json({ ok: false, error: 'diagnostics-not-enabled' }, 403);
+  }
 
   try {
     assertRequestBodySize(request, MAX_BODY_BYTES);
@@ -82,6 +144,15 @@ export const POST: APIRoute = async ({ request, url }) => {
     }
 
     const receivedAt = new Date().toISOString();
+    const firstEntry = entries[0] && typeof entries[0] === 'object'
+      ? entries[0] as Record<string, unknown>
+      : {};
+    const lastEntry = entries[entries.length - 1] && typeof entries[entries.length - 1] === 'object'
+      ? entries[entries.length - 1] as Record<string, unknown>
+      : {};
+    const firstSequence = normalizeSequence(firstEntry.sequence);
+    const lastSequence = normalizeSequence(lastEntry.sequence);
+    const reason = normalizeReason(payload.reason);
     const diagnosticBatch = sanitize({
       marker: 'LIVE_CAPACITY_DIAGNOSTICS',
       version: payload.version,
@@ -89,13 +160,58 @@ export const POST: APIRoute = async ({ request, url }) => {
       startedAt: payload.startedAt,
       sentAt: payload.sentAt,
       receivedAt,
+      reason,
+      batchId: payload.batchId,
+      firstSequence,
+      lastSequence,
       metadata: payload.metadata,
       summary: payload.summary,
       entries,
     });
 
-    console.log('[LIVE-CAPACITY]', JSON.stringify(diagnosticBatch));
-    return json({ ok: true, sessionId, receivedAt, entries: entries.length });
+    const storageKey = [
+      sessionId,
+      `${String(firstSequence).padStart(8, '0')}-${String(lastSequence).padStart(8, '0')}.json`,
+    ].join('/');
+    const diagnosticStore = getStore(DIAGNOSTIC_STORE_NAME);
+    await diagnosticStore.setJSON(storageKey, diagnosticBatch, {
+      metadata: {
+        sessionId,
+        reason,
+        firstSequence,
+        lastSequence,
+        receivedAt,
+      },
+      onlyIfNew: true,
+    });
+
+    const summary = payload.summary && typeof payload.summary === 'object'
+      ? payload.summary as Record<string, unknown>
+      : {};
+    const alerts = entries
+      .map((entry) => buildCompactAlert(entry))
+      .filter((entry) => entry !== null)
+      .slice(-4);
+    console.log('[LIVE-CAPACITY]', JSON.stringify({
+      sessionId,
+      storageKey,
+      reason,
+      firstSequence,
+      lastSequence,
+      entries: entries.length,
+      criticalCount: normalizeSequence(summary.criticalCount),
+      alerts,
+      receivedAt,
+    }));
+    return json({
+      ok: true,
+      sessionId,
+      batchId: payload.batchId || null,
+      acceptedThrough: lastSequence || null,
+      storageKey,
+      receivedAt,
+      entries: entries.length,
+    });
   } catch (error) {
     console.warn('[LIVE-CAPACITY] rejected diagnostic batch', error);
     return json({ ok: false, error: 'invalid-payload' }, 400);

@@ -19,11 +19,14 @@ type CapacityRuntimeState = {
   criticalCount: number;
   maxEventLoopLagMs: number;
   lastEventLoopLagMs: number;
+  lastLifecycleBeaconAtMs: number;
   remoteStatus: 'idle' | 'sending' | 'sent' | 'error';
   lastRemoteAt: string;
   updateTimer: number | null;
   persistTimer: number | null;
   flushTimer: number | null;
+  drainTimer: number | null;
+  heartbeatTimer: number | null;
   runtimeTimer: number | null;
   eventLoopTimer: number | null;
   expectedEventLoopAt: number;
@@ -59,13 +62,23 @@ export type CapacitySummary = {
 const CAPACITY_QUERY_KEY = 'capacityDebug';
 const CAPACITY_COOKIE_KEY = 'redil_capacity_debug';
 const DISABLED_VALUES = new Set(['0', 'false', 'off', 'no']);
+const SESSION_ID_PATTERN = /^CAP-[A-Z0-9-]{8,40}$/;
 const STORAGE_CURRENT_KEY = 'redil:live-capacity:current-v1';
 const STORAGE_PREVIOUS_KEY = 'redil:live-capacity:previous-v1';
+const STORAGE_RECOVERY_OUTBOX_KEY = 'redil:live-capacity:recovery-outbox-v1';
 const MAX_ENTRIES = 1800;
 const MAX_PENDING_ENTRIES = 240;
-const MAX_REMOTE_BATCH = 36;
-const REMOTE_FLUSH_INTERVAL_MS = 15_000;
+const MAX_PERSISTED_ENTRIES = 90;
+const MAX_RECOVERY_ENTRIES = 16;
+const MAX_RECOVERY_SESSIONS = 2;
+const MAX_REMOTE_BATCH = 16;
+const MAX_REMOTE_BODY_BYTES = 32 * 1024;
+const REMOTE_FLUSH_INTERVAL_MS = 3_000;
+const REMOTE_DRAIN_DELAY_MS = 120;
+const REMOTE_REQUEST_TIMEOUT_MS = 6_000;
+const LIFECYCLE_BEACON_GUARD_MS = 1_500;
 const PERSIST_INTERVAL_MS = 5_000;
+const HEARTBEAT_INTERVAL_MS = 3_000;
 const RUNTIME_SAMPLE_INTERVAL_MS = 10_000;
 const EVENT_LOOP_SAMPLE_INTERVAL_MS = 1_000;
 
@@ -213,20 +226,55 @@ const readPreviousStoredSession = (): unknown => {
   }
 };
 
-const exportState = (state: CapacityRuntimeState, includePrevious = false) => JSON.stringify({
+type StoredCapacitySession = {
+  version?: number;
+  sessionId?: string;
+  startedAt?: string;
+  metadata?: Record<string, unknown>;
+  summary?: unknown;
+  entries?: CapacityEntry[];
+};
+
+const readCurrentStoredSession = (): StoredCapacitySession | null => {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_CURRENT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredCapacitySession;
+    if (
+      !parsed ||
+      typeof parsed.sessionId !== 'string' ||
+      !Array.isArray(parsed.entries) ||
+      parsed.entries.length === 0
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+const exportState = (
+  state: CapacityRuntimeState,
+  includePrevious = false,
+  entries: CapacityEntry[] = state.entries,
+) => JSON.stringify({
   version: 1,
   sessionId: state.sessionId,
   startedAt: state.startedAt,
   exportedAt: new Date().toISOString(),
   metadata: state.metadata,
   summary: getSummaryFromState(state),
-  entries: state.entries,
+  entries,
   ...(includePrevious ? { previousSession: readPreviousStoredSession() } : {}),
 }, null, 2);
 
 const persistStateNow = (state: CapacityRuntimeState) => {
   try {
-    window.localStorage.setItem(STORAGE_CURRENT_KEY, exportState(state));
+    window.localStorage.setItem(
+      STORAGE_CURRENT_KEY,
+      exportState(state, false, state.entries.slice(-MAX_PERSISTED_ENTRIES)),
+    );
   } catch {
     // Persistence is best effort; remote batches and manual export still work.
   }
@@ -256,47 +304,289 @@ const isCriticalEntry = (type: string, level: CapacityLevel, payload: unknown) =
   return /underflow|underrun|decoder-overload|worker-error|suspend|stale|interrupted|main-thread-stall|audio-loss|signal[-_]lost|CLICK_NEVER_SIGNALED|GUIDE_NO_READ|RECENT_UNDERFLOW/i.test(haystack);
 };
 
-const buildRemotePayload = (state: CapacityRuntimeState, entries: CapacityEntry[]) => ({
+type RemoteFlushReason =
+  | 'interval'
+  | 'critical'
+  | 'drain'
+  | 'hidden'
+  | 'pagehide'
+  | 'online'
+  | 'manual'
+  | 'previous-session-tail';
+
+const buildRemotePayload = (
+  state: CapacityRuntimeState,
+  entries: CapacityEntry[],
+  reason: RemoteFlushReason,
+) => ({
   version: 1,
   sessionId: state.sessionId,
   startedAt: state.startedAt,
   sentAt: new Date().toISOString(),
+  reason,
+  batchId: entries.length > 0
+    ? `${state.sessionId}:${entries[0].sequence}-${entries[entries.length - 1].sequence}`
+    : `${state.sessionId}:empty`,
+  firstSequence: entries[0]?.sequence ?? null,
+  lastSequence: entries[entries.length - 1]?.sequence ?? null,
   metadata: state.metadata,
   summary: getSummaryFromState(state),
   entries,
 });
 
-const flushWithBeacon = (state: CapacityRuntimeState) => {
+const measureUtf8Bytes = (value: string) => new TextEncoder().encode(value).byteLength;
+
+const compactEntryForTransport = (entry: CapacityEntry): CapacityEntry => ({
+  ...entry,
+  payload: {
+    transportTruncated: true,
+    preview: truncateString(JSON.stringify(entry.payload) || String(entry.payload), 4_000),
+  },
+});
+
+const buildRemoteBatch = (
+  state: CapacityRuntimeState,
+  reason: RemoteFlushReason,
+  preferRecent = false,
+) => {
+  const candidates = preferRecent
+    ? state.pending.slice(-MAX_REMOTE_BATCH).reverse()
+    : state.pending.slice(0, MAX_REMOTE_BATCH);
+  const entries: CapacityEntry[] = [];
+  let body = '';
+
+  for (const entry of candidates) {
+    const nextEntries = preferRecent ? [entry, ...entries] : [...entries, entry];
+    const nextBody = JSON.stringify(buildRemotePayload(state, nextEntries, reason));
+    if (measureUtf8Bytes(nextBody) > MAX_REMOTE_BODY_BYTES) {
+      if (entries.length === 0) {
+        const compactEntry = compactEntryForTransport(entry);
+        entries.push(compactEntry);
+        body = JSON.stringify(buildRemotePayload(state, entries, reason));
+      }
+      break;
+    }
+    if (preferRecent) {
+      entries.unshift(entry);
+    } else {
+      entries.push(entry);
+    }
+    body = nextBody;
+  }
+
+  return { entries, body };
+};
+
+const buildRecoveredRemoteBatch = (
+  previous: StoredCapacitySession,
+  recoveredBySessionId: string,
+) => {
+  const sessionId = String(previous.sessionId || '');
+  const candidates = Array.isArray(previous.entries)
+    ? previous.entries.slice(-MAX_REMOTE_BATCH).reverse()
+    : [];
+  const entries: CapacityEntry[] = [];
+  let body = '';
+
+  for (const entry of candidates) {
+    const nextEntries = [entry, ...entries];
+    const nextBody = JSON.stringify({
+      version: previous.version || 1,
+      sessionId,
+      startedAt: previous.startedAt || null,
+      sentAt: new Date().toISOString(),
+      reason: 'previous-session-tail',
+      batchId: `${sessionId}:recovered:${nextEntries[0]?.sequence ?? 0}-${nextEntries[nextEntries.length - 1]?.sequence ?? 0}`,
+      firstSequence: nextEntries[0]?.sequence ?? null,
+      lastSequence: nextEntries[nextEntries.length - 1]?.sequence ?? null,
+      metadata: {
+        ...(previous.metadata || {}),
+        previousSessionTail: true,
+        recoveredBySessionId,
+      },
+      summary: previous.summary || null,
+      entries: nextEntries,
+    });
+    if (measureUtf8Bytes(nextBody) > MAX_REMOTE_BODY_BYTES) {
+      if (entries.length === 0) {
+        const compactEntry = compactEntryForTransport(entry);
+        entries.push(compactEntry);
+        body = JSON.stringify({
+          version: previous.version || 1,
+          sessionId,
+          startedAt: previous.startedAt || null,
+          sentAt: new Date().toISOString(),
+          reason: 'previous-session-tail',
+          batchId: `${sessionId}:recovered:${compactEntry.sequence}-${compactEntry.sequence}`,
+          firstSequence: compactEntry.sequence,
+          lastSequence: compactEntry.sequence,
+          metadata: {
+            ...(previous.metadata || {}),
+            previousSessionTail: true,
+            recoveredBySessionId,
+          },
+          summary: previous.summary || null,
+          entries,
+        });
+      }
+      break;
+    }
+    entries.unshift(entry);
+    body = nextBody;
+  }
+
+  return { entries, body };
+};
+
+const readRecoveryOutbox = (): StoredCapacitySession[] => {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_RECOVERY_OUTBOX_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((session): session is StoredCapacitySession => (
+      session &&
+      SESSION_ID_PATTERN.test(String(session.sessionId || '')) &&
+      Array.isArray(session.entries) &&
+      session.entries.length > 0
+    ));
+  } catch {
+    return [];
+  }
+};
+
+const writeRecoveryOutbox = (sessions: StoredCapacitySession[]) => {
+  try {
+    if (sessions.length === 0) {
+      window.localStorage.removeItem(STORAGE_RECOVERY_OUTBOX_KEY);
+      return;
+    }
+    window.localStorage.setItem(STORAGE_RECOVERY_OUTBOX_KEY, JSON.stringify(sessions));
+  } catch {
+    // Recovery is best effort when the device has exhausted storage.
+  }
+};
+
+const queueStoredSessionForRecovery = (
+  previous: StoredCapacitySession | null,
+) => {
+  const outbox = readRecoveryOutbox();
+  const previousSessionId = String(previous?.sessionId || '');
+  if (
+    previous &&
+    SESSION_ID_PATTERN.test(previousSessionId) &&
+    Array.isArray(previous.entries) &&
+    previous.entries.length > 0 &&
+    !outbox.some((session) => session.sessionId === previousSessionId)
+  ) {
+    outbox.push({
+      ...previous,
+      entries: previous.entries.slice(-MAX_RECOVERY_ENTRIES),
+    });
+  }
+  const boundedOutbox = outbox.slice(-MAX_RECOVERY_SESSIONS);
+  writeRecoveryOutbox(boundedOutbox);
+  return boundedOutbox;
+};
+
+const postDiagnosticBody = async (body: string, keepalive = false) => {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), REMOTE_REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch('/api/live-capacity-diagnostics', {
+      method: 'POST',
+      credentials: 'same-origin',
+      keepalive,
+      signal: controller.signal,
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body,
+    });
+  } finally {
+    window.clearTimeout(timeout);
+  }
+};
+
+const uploadRecoveryOutbox = async (
+  sessions: StoredCapacitySession[],
+  recoveredBySessionId: string,
+) => {
+  for (const previous of sessions) {
+    if (previous.sessionId === recoveredBySessionId) continue;
+    const { entries, body } = buildRecoveredRemoteBatch(previous, recoveredBySessionId);
+    if (entries.length === 0 || !body) continue;
+
+    try {
+      const response = await postDiagnosticBody(body);
+      if (!response.ok) break;
+      const previousSessionId = String(previous.sessionId || '');
+      writeRecoveryOutbox(
+        readRecoveryOutbox().filter((session) => session.sessionId !== previousSessionId),
+      );
+    } catch {
+      break;
+    }
+  }
+};
+
+const flushWithBeacon = (
+  state: CapacityRuntimeState,
+  reason: Extract<RemoteFlushReason, 'hidden' | 'pagehide'>,
+) => {
   if (!navigator.sendBeacon || state.pending.length === 0) return false;
-  const entries = state.pending.slice(0, MAX_REMOTE_BATCH);
-  const body = JSON.stringify(buildRemotePayload(state, entries));
-  return navigator.sendBeacon(
+  const now = Date.now();
+  if (
+    reason === 'pagehide' &&
+    now - state.lastLifecycleBeaconAtMs < LIFECYCLE_BEACON_GUARD_MS
+  ) {
+    const latestEntry = state.pending[state.pending.length - 1];
+    if (!latestEntry) return true;
+    const lifecycleBody = JSON.stringify(buildRemotePayload(state, [latestEntry], reason));
+    const lifecycleQueued = navigator.sendBeacon(
+      '/api/live-capacity-diagnostics',
+      new Blob([lifecycleBody], { type: 'application/json' }),
+    );
+    if (lifecycleQueued) state.lastLifecycleBeaconAtMs = now;
+    return lifecycleQueued;
+  }
+  const { entries, body } = buildRemoteBatch(state, reason, true);
+  if (entries.length === 0 || !body) return false;
+  const queued = navigator.sendBeacon(
     '/api/live-capacity-diagnostics',
     new Blob([body], { type: 'application/json' }),
   );
+  if (queued) state.lastLifecycleBeaconAtMs = now;
+  return queued;
 };
 
-export const flushLiveCapacityDiagnostics = async () => {
+const scheduleRemoteDrain = (state: CapacityRuntimeState) => {
+  if (state.drainTimer !== null || state.pending.length === 0) return;
+  state.drainTimer = window.setTimeout(() => {
+    state.drainTimer = null;
+    void flushLiveCapacityDiagnostics('drain');
+  }, REMOTE_DRAIN_DELAY_MS);
+};
+
+export const flushLiveCapacityDiagnostics = async (
+  reason: RemoteFlushReason = 'manual',
+) => {
   const browserWindow = getCapacityWindow();
   const state = browserWindow?.__REDIL_CAPACITY_STATE__;
   if (!state || state.pending.length === 0 || state.remoteStatus === 'sending') return;
 
-  const entries = state.pending.slice(0, MAX_REMOTE_BATCH);
+  const { entries, body } = buildRemoteBatch(state, reason, reason === 'critical');
+  if (entries.length === 0 || !body) return;
   state.remoteStatus = 'sending';
   notifyPanel(state);
 
   try {
-    const response = await fetch('/api/live-capacity-diagnostics', {
-      method: 'POST',
-      credentials: 'same-origin',
-      keepalive: true,
-      headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify(buildRemotePayload(state, entries)),
-    });
+    const keepalive = reason === 'critical' || reason === 'hidden' || reason === 'pagehide';
+    const response = await postDiagnosticBody(body, keepalive);
     if (!response.ok) throw new Error(`diagnostic-upload-${response.status}`);
-    state.pending.splice(0, entries.length);
+    const acknowledgedSequences = new Set(entries.map((entry) => entry.sequence));
+    state.pending = state.pending.filter((entry) => !acknowledgedSequences.has(entry.sequence));
     state.remoteStatus = 'sent';
     state.lastRemoteAt = new Date().toISOString();
+    scheduleRemoteDrain(state);
   } catch {
     state.remoteStatus = 'error';
   }
@@ -333,7 +623,7 @@ const recordIntoState = (
   schedulePersist(state);
   notifyPanel(state);
   if (critical) {
-    void flushLiveCapacityDiagnostics();
+    void flushLiveCapacityDiagnostics('critical');
   }
 };
 
@@ -357,16 +647,27 @@ const installRuntimeObservers = (state: CapacityRuntimeState) => {
   window.addEventListener('unhandledrejection', (event) => {
     recordIntoState(state, 'unhandled-rejection', { reason: event.reason }, 'error');
   });
-  window.addEventListener('online', () => recordLifecycle('network-online'));
+  window.addEventListener('online', () => {
+    recordLifecycle('network-online');
+    void flushLiveCapacityDiagnostics('online');
+  });
   window.addEventListener('offline', () => recordLifecycle('network-offline'));
   window.addEventListener('pageshow', (event) => recordLifecycle('page-show', { persisted: event.persisted }));
   window.addEventListener('pagehide', (event) => {
     recordLifecycle('page-hide', { persisted: event.persisted });
     persistStateNow(state);
-    flushWithBeacon(state);
+    if (!flushWithBeacon(state, 'pagehide')) {
+      void flushLiveCapacityDiagnostics('pagehide');
+    }
   });
   document.addEventListener('visibilitychange', () => {
     recordLifecycle('visibility-change', { visibilityState: document.visibilityState });
+    if (document.visibilityState === 'hidden') {
+      persistStateNow(state);
+      if (!flushWithBeacon(state, 'hidden')) {
+        void flushLiveCapacityDiagnostics('hidden');
+      }
+    }
   });
 
   try {
@@ -405,8 +706,17 @@ const installRuntimeObservers = (state: CapacityRuntimeState) => {
     }, 'info');
   }, RUNTIME_SAMPLE_INTERVAL_MS);
 
+  state.heartbeatTimer = window.setInterval(() => {
+    recordIntoState(state, 'capacity-heartbeat', {
+      visibilityState: document.visibilityState,
+      online: navigator.onLine,
+      eventLoopLagMs: Math.round(state.lastEventLoopLagMs),
+      maxEventLoopLagMs: Math.round(state.maxEventLoopLagMs),
+    }, 'info');
+  }, HEARTBEAT_INTERVAL_MS);
+
   state.flushTimer = window.setInterval(() => {
-    void flushLiveCapacityDiagnostics();
+    void flushLiveCapacityDiagnostics('interval');
   }, REMOTE_FLUSH_INTERVAL_MS);
 };
 
@@ -442,6 +752,7 @@ const installPublicApi = (browserWindow: CapacityWindow, state: CapacityRuntimeS
       try {
         window.localStorage.removeItem(STORAGE_CURRENT_KEY);
         window.localStorage.removeItem(STORAGE_PREVIOUS_KEY);
+        window.localStorage.removeItem(STORAGE_RECOVERY_OUTBOX_KEY);
       } catch {
         // no-op
       }
@@ -465,6 +776,8 @@ export const ensureLiveCapacityDiagnostics = (metadata: Record<string, unknown> 
     return browserWindow.__REDIL_CAPACITY_STATE__;
   }
 
+  const previousStoredSession = readCurrentStoredSession();
+  const recoveryOutbox = queueStoredSessionForRecovery(previousStoredSession);
   try {
     const previous = window.localStorage.getItem(STORAGE_CURRENT_KEY);
     if (previous) window.localStorage.setItem(STORAGE_PREVIOUS_KEY, previous);
@@ -483,11 +796,14 @@ export const ensureLiveCapacityDiagnostics = (metadata: Record<string, unknown> 
     criticalCount: 0,
     maxEventLoopLagMs: 0,
     lastEventLoopLagMs: 0,
+    lastLifecycleBeaconAtMs: 0,
     remoteStatus: 'idle',
     lastRemoteAt: '',
     updateTimer: null,
     persistTimer: null,
     flushTimer: null,
+    drainTimer: null,
+    heartbeatTimer: null,
     runtimeTimer: null,
     eventLoopTimer: null,
     expectedEventLoopAt: 0,
@@ -502,6 +818,8 @@ export const ensureLiveCapacityDiagnostics = (metadata: Record<string, unknown> 
   installPublicApi(browserWindow, state);
   installRuntimeObservers(state);
   recordIntoState(state, 'capacity-session-start', { metadata: state.metadata }, 'info');
+  persistStateNow(state);
+  void uploadRecoveryOutbox(recoveryOutbox, state.sessionId);
   return state;
 };
 
