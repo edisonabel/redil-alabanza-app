@@ -3503,6 +3503,20 @@ export default function AdminRepertorio() {
                       const capturedCueCount = hasSectionStart ? 1 + capturedCueMarkers.length : 0;
                       const nextCueNumber = Math.min(cueDraft.cueCount, capturedCueCount + 1);
                       const allCuesCaptured = cueDraft.cueCount > 1 && capturedCueCount >= cueDraft.cueCount;
+                      const hasMultipleCues = cueDraft.cueCount > 1;
+                      const groupedCuePreviews = hasMultipleCues
+                        ? [
+                            {
+                              label: 'Cue 1',
+                              text: cueDraft.sectionStartPreview,
+                              cueMarkerIndex: null,
+                            },
+                            ...cueDraft.cueMarkerPreview.map((preview, previewIndex) => ({
+                              ...preview,
+                              cueMarkerIndex: previewIndex,
+                            })),
+                          ]
+                        : [];
 
                       return (
                         <div
@@ -3511,7 +3525,11 @@ export default function AdminRepertorio() {
                           className="border-b border-l-2 border-border/50 bg-surface/35 px-2.5 py-2.5 scroll-mt-36"
                           style={getSectionCardStyle(marker.sectionName)}
                         >
-                          <div className="grid grid-cols-[minmax(0,1fr)_6.3rem] items-center gap-1.5 sm:grid-cols-[minmax(6.75rem,0.9fr)_6.3rem_minmax(0,1fr)_auto_auto]">
+                          <div className={`grid grid-cols-2 items-center gap-1.5 ${
+                            hasMultipleCues
+                              ? 'sm:grid-cols-[minmax(6.75rem,0.9fr)_minmax(0,1fr)_auto_auto]'
+                              : 'sm:grid-cols-[minmax(6.75rem,0.9fr)_6.3rem_minmax(0,1fr)_auto_auto]'
+                          }`}>
                             <div className="min-w-0">
                               <p className="flex min-w-0 items-center gap-2 truncate text-sm font-medium text-content">
                                 <span
@@ -3521,11 +3539,8 @@ export default function AdminRepertorio() {
                                 />
                                 <span className="truncate">{marker.sectionName}</span>
                               </p>
-                              {cueDraft.sectionStartPreview && (
+                              {!hasMultipleCues && cueDraft.sectionStartPreview && (
                                 <p className="mt-0.5 truncate pl-4 text-[10px] text-content-muted">
-                                  {cueDraft.cueCount > 1 && (
-                                    <span className="font-medium text-content">Cue 1 · </span>
-                                  )}
                                   {cueDraft.sectionStartPreview}
                                 </p>
                               )}
@@ -3564,16 +3579,18 @@ export default function AdminRepertorio() {
                                 </span>
                               )}
                             </div>
-                            <MarkerTimeInput
-                              value={marker.startSec}
-                              onCommit={(nextValue) => {
-                                actualizarEditorSectionMarker(index, toManualMarkerPatch({
-                                  startSec: nextValue,
-                                  cueMarkers: normalizeCueMarkerTimes(marker?.cueMarkers, nextValue),
-                                }));
-                              }}
-                              placeholder="00:00.000"
-                            />
+                            {!hasMultipleCues && (
+                              <MarkerTimeInput
+                                value={marker.startSec}
+                                onCommit={(nextValue) => {
+                                  actualizarEditorSectionMarker(index, toManualMarkerPatch({
+                                    startSec: nextValue,
+                                    cueMarkers: normalizeCueMarkerTimes(marker?.cueMarkers, nextValue),
+                                  }));
+                                }}
+                                placeholder="00:00.000"
+                              />
+                            )}
                             <input
                               type="text"
                               value={marker.note || ''}
@@ -3606,26 +3623,44 @@ export default function AdminRepertorio() {
                             </button>
                           </div>
 
-                          {cueDraft.cueCount > 1 && (
+                          {hasMultipleCues && (
                             <div className="mt-2 border-t border-border/50 px-1 pt-2.5">
                               <div className="grid gap-1.5">
-                                {cueDraft.cueMarkerPreview.map((preview, previewIndex) => (
-                                  <div
-                                    key={`${marker.sectionKey || marker.id}-cue-preview-${previewIndex}`}
-                                    className="grid grid-cols-[minmax(0,1fr)_6.3rem] items-center gap-2"
-                                  >
-                                    <p className="min-w-0 truncate text-[11px] text-content-muted">
-                                      <span className="font-medium text-content">{preview.label}</span>
-                                      {` · ${preview.text}`}
-                                    </p>
-                                    <MarkerTimeInput
-                                      value={capturedCueMarkers[previewIndex] ?? null}
-                                      onCommit={(nextValue) => actualizarCueMarkerIndividual(index, previewIndex, nextValue)}
-                                      disabled={!hasSectionStart || previewIndex > capturedCueMarkers.length}
-                                      ariaLabel={`Tiempo de ${preview.label} en ${marker.sectionName}`}
-                                    />
-                                  </div>
-                                ))}
+                                {groupedCuePreviews.map((preview) => {
+                                  const isSectionStartCue = preview.cueMarkerIndex == null;
+                                  const cueMarkerIndex = preview.cueMarkerIndex;
+
+                                  return (
+                                    <div
+                                      key={`${marker.sectionKey || marker.id}-${preview.label}`}
+                                      className="grid grid-cols-[minmax(0,1fr)_6.3rem] items-center gap-2"
+                                    >
+                                      <p className="min-w-0 truncate text-[11px] text-content-muted">
+                                        <span className="font-medium text-content">{preview.label}</span>
+                                        {preview.text ? ` · ${preview.text}` : ''}
+                                      </p>
+                                      <MarkerTimeInput
+                                        value={isSectionStartCue
+                                          ? marker.startSec
+                                          : capturedCueMarkers[cueMarkerIndex] ?? null}
+                                        onCommit={(nextValue) => {
+                                          if (isSectionStartCue) {
+                                            actualizarEditorSectionMarker(index, toManualMarkerPatch({
+                                              startSec: nextValue,
+                                              cueMarkers: normalizeCueMarkerTimes(marker?.cueMarkers, nextValue),
+                                            }));
+                                            return;
+                                          }
+                                          actualizarCueMarkerIndividual(index, cueMarkerIndex, nextValue);
+                                        }}
+                                        disabled={!isSectionStartCue && (
+                                          !hasSectionStart || cueMarkerIndex > capturedCueMarkers.length
+                                        )}
+                                        ariaLabel={`Tiempo de ${preview.label} en ${marker.sectionName}`}
+                                      />
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
                           )}

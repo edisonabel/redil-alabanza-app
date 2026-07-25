@@ -154,6 +154,21 @@ assert.deepEqual(cueTwoCapture, { startSec: 56, cueMarkers: [72.35] });
 
 const cueThreeCapture = buildNextChordProCueCapture(cueTwoCapture, 3, 78.12);
 assert.deepEqual(cueThreeCapture, { startSec: 56, cueMarkers: [72.35, 78.12] });
+const guidedMarker = {
+  startSec: null,
+  cueMarkers: [],
+  note: 'Toda la banda · Sube intensidad',
+};
+const guidedCapturePatch = buildNextChordProCueCapture(guidedMarker, 3, 56);
+assert.equal(
+  { ...guidedMarker, ...guidedCapturePatch }.note,
+  guidedMarker.note,
+  'Capturing cues must preserve an existing section guide.',
+);
+assert.ok(
+  !Object.hasOwn(guidedCapturePatch, 'note'),
+  'Cue capture patches must never overwrite section guides.',
+);
 assert.equal(
   buildNextChordProCueCapture(cueThreeCapture, 3, 82),
   null,
