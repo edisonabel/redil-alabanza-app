@@ -20,6 +20,8 @@
     "test:audio-engine-policy": "node --experimental-strip-types scripts/test-live-director-engine-policy.mjs",
     "test:live-preload-policy": "node scripts/test-live-director-preload-policy.mjs",
     "test:capacity-entry": "node --experimental-strip-types scripts/test-live-capacity-entry.mjs",
+    "test:capacity-ingestion": "node --experimental-strip-types scripts/test-live-capacity-ingestion.mjs",
+    "test:audio-range-timeout": "node scripts/test-audio-producer-range-timeout.mjs",
     "test:live-sync": "node scripts/test-live-director-sync.mjs",
     "test:event-mix": "node scripts/test-live-director-event-mix.mjs",
     "test:google-calendar": "node scripts/test-google-calendar-sync.mjs",

@@ -1,3 +1,8 @@
+import {
+  isCapacityDiagnosticAcknowledgementComplete,
+  type CapacityDiagnosticAcknowledgement,
+} from '../lib/live-capacity-transport.ts';
+
 type CapacityLevel = 'info' | 'warn' | 'error';
 
 type CapacityEntry = {
@@ -92,15 +97,17 @@ const STORAGE_CURRENT_KEY = 'redil:live-capacity:current-v1';
 const STORAGE_PREVIOUS_KEY = 'redil:live-capacity:previous-v1';
 const STORAGE_RECOVERY_OUTBOX_KEY = 'redil:live-capacity:recovery-outbox-v1';
 const MAX_ENTRIES = 1800;
-const MAX_PERSISTED_ENTRIES = 90;
-const MAX_REMOTE_BATCH = 64;
+const MAX_PERSISTED_ENTRIES = 72;
+const MAX_PERSISTED_PENDING_ENTRIES = 192;
+const MAX_REMOTE_BATCH = 32;
 const MAX_REMOTE_BODY_BYTES = 48 * 1024;
-const REMOTE_FLUSH_INTERVAL_MS = 15_000;
+const TERMINATION_SIGNAL_WINDOW_MS = 15_000;
+const REMOTE_FLUSH_INTERVAL_MS = 5_000;
 const REMOTE_DRAIN_DELAY_MS = 300;
 const CRITICAL_FLUSH_DEBOUNCE_MS = 500;
 const REMOTE_REQUEST_TIMEOUT_MS = 6_000;
 const LIFECYCLE_BEACON_GUARD_MS = 1_500;
-const PERSIST_INTERVAL_MS = 5_000;
+const PERSIST_INTERVAL_MS = 2_000;
 const HEARTBEAT_INTERVAL_MS = 5_000;
 const RUNTIME_SAMPLE_INTERVAL_MS = 10_000;
 const EVENT_LOOP_SAMPLE_INTERVAL_MS = 1_000;
@@ -440,17 +447,28 @@ type RecoveryClassification = NonNullable<StoredCapacitySession['recoveryClassif
 type RecoveryTermination = {
   classification: 'probable-abrupt-termination';
   evidence: 'missing-page-hide-or-session-end';
+  probableCause:
+    | 'audio-pipeline-starvation-before-termination'
+    | 'main-thread-stall-before-termination'
+    | 'backgrounded-before-termination'
+    | 'abrupt-without-observed-web-precursor';
   detectedAt: string;
   recoveredBySessionId: string;
   lastPersistedSequence: number;
   lastPersistedAt: string | null;
-};
-
-type DiagnosticAcknowledgement = {
-  ok?: boolean;
-  sessionId?: string;
-  batchId?: string | null;
-  acceptedThrough?: number | null;
+  lastKnown: {
+    type: string | null;
+    sequence: number;
+    at: string | null;
+    songTitle: string | null;
+    position: number | null;
+    visibilityState: string | null;
+    online: boolean | null;
+    eventLoopLagMs: number | null;
+    producerMessageAgeMs: number | null;
+    contextState: string | null;
+    recentSignals: string[];
+  };
 };
 
 const getEntrySequence = (entry: Pick<CapacityEntry, 'sequence'>) => (
@@ -465,6 +483,129 @@ const getLastStoredEntry = (previous: StoredCapacitySession) => {
   return candidates.reduce<CapacityEntry | null>((latest, entry) => (
     !latest || getEntrySequence(entry) >= getEntrySequence(latest) ? entry : latest
   ), null);
+};
+
+const readFiniteNumber = (value: unknown) => {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+};
+
+const readPayloadRecord = (entry: CapacityEntry | null | undefined) => (
+  entry?.payload && typeof entry.payload === 'object' && !Array.isArray(entry.payload)
+    ? entry.payload as Record<string, unknown>
+    : {}
+);
+
+export const buildAbruptTerminationEvidence = (
+  previous: StoredCapacitySession,
+): Pick<RecoveryTermination, 'probableCause' | 'lastKnown'> => {
+  const recentEntries = [
+    ...(Array.isArray(previous.entries) ? previous.entries : []),
+    ...(Array.isArray(previous.pending) ? previous.pending : []),
+  ]
+    .filter((entry) => entry.type !== 'capacity-session-probable-termination')
+    .sort((left, right) => getEntrySequence(left) - getEntrySequence(right))
+    .slice(-24);
+  const lastEntry = recentEntries[recentEntries.length - 1] || getLastStoredEntry(previous);
+  const lastPayload = readPayloadRecord(lastEntry);
+  const metadata = previous.metadata || {};
+  const lastElapsedMs = readFiniteNumber(lastEntry?.elapsedMs);
+  const causalEntries = recentEntries.filter((entry) => {
+    const entryElapsedMs = readFiniteNumber(entry.elapsedMs);
+    if (lastElapsedMs === null || entryElapsedMs === null) {
+      return recentEntries.indexOf(entry) >= Math.max(0, recentEntries.length - 8);
+    }
+    return lastElapsedMs - entryElapsedMs <= TERMINATION_SIGNAL_WINDOW_MS;
+  });
+
+  const recentSignals = causalEntries
+    .filter((entry) => {
+      const payload = readPayloadRecord(entry);
+      const signalText = [
+        entry.type,
+        payload.reason,
+        payload.phase,
+        payload.event,
+        payload.eventType,
+        payload.status,
+      ].filter(Boolean).join(' ');
+      return /underflow|underrun|range-fetch|fetch-timeout|producer-fetch|main-thread-stall|long-task|audio-loss|signal[-_]lost|guide-no-read|click/i.test(signalText);
+    })
+    .map((entry) => entry.type)
+    .filter((type, index, allTypes) => allTypes.indexOf(type) === index)
+    .slice(-8);
+  const recentText = causalEntries.map((entry) => {
+    const payload = readPayloadRecord(entry);
+    return [
+      entry.type,
+      payload.reason,
+      payload.phase,
+      payload.event,
+      payload.eventType,
+      payload.status,
+    ].filter(Boolean).join(' ');
+  }).join(' ');
+
+  let probableCause: RecoveryTermination['probableCause'] =
+    'abrupt-without-observed-web-precursor';
+  if (
+    /underflow|underrun|range-fetch|fetch-timeout|producer-fetch|audio-loss|signal[-_]lost|guide-no-read|click-never-signaled/i.test(recentText)
+  ) {
+    probableCause = 'audio-pipeline-starvation-before-termination';
+  } else if (/main-thread-stall|long-task/i.test(recentText)) {
+    probableCause = 'main-thread-stall-before-termination';
+  } else if (
+    String(lastPayload.visibilityState || lastPayload.visible || metadata.visibilityState || '')
+      .toLowerCase() === 'hidden'
+  ) {
+    probableCause = 'backgrounded-before-termination';
+  }
+
+  const latestValue = (
+    key: string,
+    nestedKey?: string,
+  ): unknown => {
+    for (let index = recentEntries.length - 1; index >= 0; index -= 1) {
+      const payload = readPayloadRecord(recentEntries[index]);
+      if (payload[key] !== undefined) return payload[key];
+      if (
+        nestedKey
+        && payload[nestedKey]
+        && typeof payload[nestedKey] === 'object'
+        && !Array.isArray(payload[nestedKey])
+      ) {
+        const nestedValue = (payload[nestedKey] as Record<string, unknown>)[key];
+        if (nestedValue !== undefined) return nestedValue;
+      }
+    }
+    return null;
+  };
+
+  const onlineValue = latestValue('online', 'browser');
+  return {
+    probableCause,
+    lastKnown: {
+      type: lastEntry?.type || null,
+      sequence: lastEntry ? getEntrySequence(lastEntry) : 0,
+      at: lastEntry?.at || previous.exportedAt || null,
+      songTitle: metadata.songTitle ? truncateString(String(metadata.songTitle), 120) : null,
+      position: readFiniteNumber(latestValue('position')),
+      visibilityState: (() => {
+        const value = latestValue('visibilityState', 'browser')
+          || latestValue('visible')
+          || metadata.visibilityState;
+        return value ? truncateString(String(value), 32) : null;
+      })(),
+      online: typeof onlineValue === 'boolean' ? onlineValue : null,
+      eventLoopLagMs: readFiniteNumber(latestValue('eventLoopLagMs', 'browser')),
+      producerMessageAgeMs: readFiniteNumber(latestValue('producerMessageAgeMs')),
+      contextState: (() => {
+        const value = latestValue('contextState');
+        return value ? truncateString(String(value), 32) : null;
+      })(),
+      recentSignals,
+    },
+  };
 };
 
 export const classifyStoredCapacitySessionForRecovery = (
@@ -499,6 +640,7 @@ const createAbruptTerminationEntry = (
   detectedAt: string,
 ): CapacityEntry => {
   const lastEntry = getLastStoredEntry(previous);
+  const terminationEvidence = buildAbruptTerminationEvidence(previous);
   return {
     sequence: (lastEntry ? getEntrySequence(lastEntry) : 0) + 1,
     at: detectedAt,
@@ -510,6 +652,7 @@ const createAbruptTerminationEntry = (
       evidence: 'missing-page-hide-or-session-end',
       lastPersistedSequence: lastEntry ? getEntrySequence(lastEntry) : 0,
       lastPersistedAt: lastEntry?.at || previous.exportedAt || null,
+      ...terminationEvidence,
     },
   };
 };
@@ -545,7 +688,7 @@ const exportState = (
   metadata: state.metadata,
   summary: getSummaryFromState(state),
   entries,
-  pending: state.pending,
+  pending: state.pending.slice(-MAX_PERSISTED_PENDING_ENTRIES),
   ...(includePrevious ? { previousSession: readPreviousStoredSession() } : {}),
 }, null, 2);
 
@@ -702,6 +845,7 @@ const buildRecoveredRemoteBatch = (
   let body = '';
   let batchId = '';
   const lastStoredEntry = getLastStoredEntry(previous);
+  const terminationEvidence = buildAbruptTerminationEvidence(previous);
   const termination: RecoveryTermination | null = (
     previous.recoveryClassification === 'probable-abrupt-termination' &&
     previous.terminationReported !== true
@@ -712,6 +856,7 @@ const buildRecoveredRemoteBatch = (
       recoveredBySessionId,
       lastPersistedSequence: lastStoredEntry ? getEntrySequence(lastStoredEntry) : 0,
       lastPersistedAt: lastStoredEntry?.at || previous.exportedAt || null,
+      ...terminationEvidence,
     } : null;
 
   const createPayload = (payloadEntries: CapacityEntry[]) => {
@@ -893,13 +1038,12 @@ const uploadRecoveryOutbox = async (
       try {
         const response = await postDiagnosticBody(body);
         if (!response.ok) break;
-        const acknowledgement = await response.json() as DiagnosticAcknowledgement;
-        if (
-          acknowledgement.ok !== true ||
-          acknowledgement.sessionId !== previousSessionId ||
-          acknowledgement.batchId !== batchId ||
-          acknowledgement.acceptedThrough !== entries[entries.length - 1]?.sequence
-        ) {
+        const acknowledgement = await response.json() as CapacityDiagnosticAcknowledgement;
+        if (!isCapacityDiagnosticAcknowledgementComplete(acknowledgement, {
+          sessionId: previousSessionId,
+          batchId,
+          entries,
+        })) {
           break;
         }
 
@@ -1025,13 +1169,12 @@ export const flushLiveCapacityDiagnostics = async (
     const keepalive = reason === 'critical' || reason === 'hidden' || reason === 'pagehide';
     const response = await postDiagnosticBody(body, keepalive);
     if (!response.ok) throw new Error(`diagnostic-upload-${response.status}`);
-    const acknowledgement = await response.json() as DiagnosticAcknowledgement;
-    if (
-      acknowledgement.ok !== true ||
-      acknowledgement.sessionId !== state.sessionId ||
-      acknowledgement.batchId !== batchId ||
-      acknowledgement.acceptedThrough !== entries[entries.length - 1]?.sequence
-    ) {
+    const acknowledgement = await response.json() as CapacityDiagnosticAcknowledgement;
+    if (!isCapacityDiagnosticAcknowledgementComplete(acknowledgement, {
+      sessionId: state.sessionId,
+      batchId,
+      entries,
+    })) {
       throw new Error('diagnostic-upload-invalid-ack');
     }
     const acknowledgedSequences = new Set(entries.map((entry) => entry.sequence));

@@ -4,10 +4,14 @@ import {
   normalizeSafeReturnTo,
 } from '../src/lib/auth-return.js';
 import {
+  buildAbruptTerminationEvidence,
   classifyStoredCapacitySessionForRecovery,
   isLiveCapacityEntryUrgent,
   parseLiveCapacityUserAgent,
 } from '../src/utils/liveCapacityDiagnostics.ts';
+import {
+  isCapacityDiagnosticAcknowledgementComplete,
+} from '../src/lib/live-capacity-transport.ts';
 
 const iphoneSafari = parseLiveCapacityUserAgent(
   'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) '
@@ -45,6 +49,128 @@ assert.equal(
   ]),
   'previous-session-tail',
 );
+
+const expectedDiagnosticEntries = [
+  { sequence: 41 },
+  { sequence: 42 },
+  { sequence: 43 },
+];
+assert.equal(
+  isCapacityDiagnosticAcknowledgementComplete({
+    ok: true,
+    sessionId: 'CAP-20260725-ACK',
+    batchId: 'CAP-20260725-ACK:41-43',
+    acceptedFirst: 41,
+    acceptedThrough: 43,
+    acceptedCount: 3,
+  }, {
+    sessionId: 'CAP-20260725-ACK',
+    batchId: 'CAP-20260725-ACK:41-43',
+    entries: expectedDiagnosticEntries,
+  }),
+  true,
+);
+assert.equal(
+  isCapacityDiagnosticAcknowledgementComplete({
+    ok: true,
+    sessionId: 'CAP-20260725-ACK',
+    batchId: 'CAP-20260725-ACK:41-43',
+    acceptedFirst: 41,
+    acceptedThrough: 43,
+    acceptedCount: 2,
+  }, {
+    sessionId: 'CAP-20260725-ACK',
+    batchId: 'CAP-20260725-ACK:41-43',
+    entries: expectedDiagnosticEntries,
+  }),
+  false,
+  'The client must retain pending entries when the durable count does not match.',
+);
+
+const abruptEvidence = buildAbruptTerminationEvidence({
+  metadata: { songTitle: 'Glorioso Día' },
+  entries: [
+    {
+      sequence: 10,
+      at: '2026-07-25T20:00:10.000Z',
+      elapsedMs: 10_000,
+      type: 'capacity-heartbeat',
+      level: 'info',
+      payload: {
+        visibilityState: 'visible',
+        online: true,
+        eventLoopLagMs: 4,
+      },
+    },
+    {
+      sequence: 11,
+      at: '2026-07-25T20:00:11.000Z',
+      elapsedMs: 11_000,
+      type: 'streaming:producer-fetch-timeout',
+      level: 'warn',
+      payload: {
+        reason: 'range-fetch-timeout',
+        position: 61.25,
+        producerMessageAgeMs: 3510,
+        contextState: 'running',
+      },
+    },
+  ],
+});
+assert.equal(
+  abruptEvidence.probableCause,
+  'audio-pipeline-starvation-before-termination',
+);
+assert.deepEqual(abruptEvidence.lastKnown, {
+  type: 'streaming:producer-fetch-timeout',
+  sequence: 11,
+  at: '2026-07-25T20:00:11.000Z',
+  songTitle: 'Glorioso Día',
+  position: 61.25,
+  visibilityState: 'visible',
+  online: true,
+  eventLoopLagMs: 4,
+  producerMessageAgeMs: 3510,
+  contextState: 'running',
+  recentSignals: ['streaming:producer-fetch-timeout'],
+});
+
+const recoveredEvidence = buildAbruptTerminationEvidence({
+  metadata: { songTitle: 'Me rindo a ti' },
+  entries: [
+    {
+      sequence: 20,
+      at: '2026-07-25T20:00:10.000Z',
+      elapsedMs: 10_000,
+      type: 'streaming:producer-fetch-retry',
+      level: 'warn',
+      payload: { reason: 'range-fetch-retry' },
+    },
+    {
+      sequence: 21,
+      at: '2026-07-25T20:00:40.000Z',
+      elapsedMs: 40_000,
+      type: 'capacity-heartbeat',
+      level: 'info',
+      payload: { visibilityState: 'visible', online: true, eventLoopLagMs: 3 },
+    },
+    {
+      sequence: 22,
+      at: '2026-07-25T20:00:41.000Z',
+      elapsedMs: 41_000,
+      type: 'capacity-session-probable-termination',
+      level: 'warn',
+      payload: { classification: 'probable-abrupt-termination' },
+    },
+  ],
+});
+assert.equal(
+  recoveredEvidence.probableCause,
+  'abrupt-without-observed-web-precursor',
+  'A recovered fetch warning outside the causal window must not label a later exit.',
+);
+assert.equal(recoveredEvidence.lastKnown.type, 'capacity-heartbeat');
+assert.equal(recoveredEvidence.lastKnown.sequence, 21);
 
 assert.equal(
   isLiveCapacityEntryUrgent('engine-capacity-snapshot', 'info', {

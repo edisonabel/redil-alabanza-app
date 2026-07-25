@@ -34,6 +34,8 @@ const STARTUP_DECODER_RECOVERY_PHASES = [
 ];
 const RANGE_FETCH_MAX_RETRIES = 3;
 const RANGE_FETCH_BASE_RETRY_DELAY_MS = 500;
+const RANGE_FETCH_TIMEOUT_MS = 4000;
+const RANGE_FETCH_BODY_TIMEOUT_MS = 8000;
 const RANGE_FETCH_INITIAL_JITTER_MIN_MS = 10;
 const RANGE_FETCH_INITIAL_JITTER_MAX_MS = 50;
 const MICRO_SYNC_LOG_THRESHOLD_FRAMES = 8;
@@ -754,8 +756,14 @@ class RangeFetcher {
         : this.chunkBytes;
     const byteEnd = safeByteStart + requestChunkBytes - 1;
     const fetchSerial = this.fetchSerial + 1;
+    const previousAbortController = this.abortController;
     this.fetchSerial = fetchSerial;
     this.aborted = false;
+    // A seek or loop preparation can supersede an in-flight lookahead fetch.
+    // Never leave the older request orphaned after replacing the controller.
+    if (previousAbortController) {
+      previousAbortController.abort();
+    }
 
     if (!this.hasAppliedInitialJitter && this.initialJitterMs > 0) {
       this.hasAppliedInitialJitter = true;
@@ -766,9 +774,46 @@ class RangeFetcher {
     for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
       this.assertFetchActive(fetchSerial);
 
+      let requestTimeoutId = null;
+      let requestTimeoutPhase = 'headers';
+      let requestTimeoutError = null;
+      const requestStartedAt = performance.now();
+
       try {
-        this.abortController = new AbortController();
-        const response = await fetch(this.url, {
+        const requestController = new AbortController();
+        this.abortController = requestController;
+        const clearRequestTimeout = () => {
+          if (requestTimeoutId !== null) {
+            clearTimeout(requestTimeoutId);
+            requestTimeoutId = null;
+          }
+        };
+        const createRequestTimeout = (phase, timeoutMs) => new Promise((_resolve, reject) => {
+          requestTimeoutPhase = phase;
+          requestTimeoutError = null;
+          requestTimeoutId = setTimeout(() => {
+            if (requestController.signal.aborted) {
+              reject(createAbortError(`Range fetch superseded for ${this.url}`));
+              return;
+            }
+
+            requestTimeoutError = new Error(
+              `Range fetch timed out after ${timeoutMs}ms for ${this.url}`,
+            );
+            requestTimeoutError.name = 'RangeFetchTimeoutError';
+            requestTimeoutError.timeoutMs = timeoutMs;
+            requestTimeoutError.phase = requestTimeoutPhase;
+            // Reject the race before aborting. Some fetch implementations reject
+            // synchronously on abort and would otherwise hide the timeout cause.
+            reject(requestTimeoutError);
+            requestController.abort();
+          }, timeoutMs);
+        });
+        const headersTimeoutPromise = createRequestTimeout(
+          'headers',
+          RANGE_FETCH_TIMEOUT_MS,
+        );
+        const response = await Promise.race([fetch(this.url, {
           mode: 'cors',
           credentials: new URL(this.url, self.location.href).origin === self.location.origin
             ? 'same-origin'
@@ -776,8 +821,9 @@ class RangeFetcher {
           headers: {
             Range: `bytes=${safeByteStart}-${byteEnd}`,
           },
-          signal: this.abortController.signal,
-        });
+          signal: requestController.signal,
+        }), headersTimeoutPromise]);
+        clearRequestTimeout();
         this.assertFetchActive(fetchSerial);
 
         if (response.status !== 200 && response.status !== 206) {
@@ -790,7 +836,13 @@ class RangeFetcher {
         }
 
         this.totalBytes = this.parseTotalBytes(response.headers.get('Content-Range'), this.totalBytes);
-        const bytes = new Uint8Array(await response.arrayBuffer());
+        const bodyTimeoutPromise = createRequestTimeout(
+          'body',
+          RANGE_FETCH_BODY_TIMEOUT_MS,
+        );
+        const responseBuffer = await Promise.race([response.arrayBuffer(), bodyTimeoutPromise]);
+        clearRequestTimeout();
+        const bytes = new Uint8Array(responseBuffer);
         this.assertFetchActive(fetchSerial);
         const nextByteStart = safeByteStart + bytes.byteLength;
         this.abortController = null;
@@ -804,9 +856,30 @@ class RangeFetcher {
             bytes.byteLength === 0 ||
             (this.totalBytes !== null && nextByteStart >= this.totalBytes),
         };
-      } catch (error) {
+      } catch (rawError) {
+        if (requestTimeoutId !== null) {
+          clearTimeout(requestTimeoutId);
+          requestTimeoutId = null;
+        }
         if (this.abortController && fetchSerial === this.fetchSerial) {
           this.abortController = null;
+        }
+
+        const error = requestTimeoutError || rawError;
+        if (error && error.name === 'RangeFetchTimeoutError') {
+          self.postMessage({
+            type: 'producer-fetch-timeout',
+            reason: 'range-fetch-timeout',
+            trackIndex: this.trackIndex,
+            trackName: this.trackName,
+            byteStart: safeByteStart,
+            byteEnd,
+            attempt: attempt + 1,
+            maxRetries: this.maxRetries,
+            timeoutMs: error.timeoutMs || RANGE_FETCH_TIMEOUT_MS,
+            durationMs: Math.max(0, Math.round(performance.now() - requestStartedAt)),
+            phase: error.phase || requestTimeoutPhase,
+          });
         }
 
         if (isAbortError(error)) {
@@ -874,6 +947,10 @@ class RangeFetcher {
   isRetryableFetchError(error) {
     if (!error || isAbortError(error)) {
       return false;
+    }
+
+    if (error.name === 'RangeFetchTimeoutError') {
+      return true;
     }
 
     if (typeof error.status === 'number') {

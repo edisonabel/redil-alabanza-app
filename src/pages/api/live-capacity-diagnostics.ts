@@ -1,14 +1,24 @@
 import type { APIRoute } from 'astro';
 import { getStore } from '@netlify/blobs';
 import { assertRequestBodySize } from '../../lib/server/api-security.js';
+import {
+  MAX_CAPACITY_DIAGNOSTIC_BATCH_ENTRIES,
+  readCapacityDiagnosticBatchSpan,
+} from '../../lib/live-capacity-transport.ts';
 
 export const prerender = false;
 
 const MAX_BODY_BYTES = 64 * 1024;
-const MAX_ENTRIES = 64;
 const SESSION_ID_PATTERN = /^CAP-[A-Z0-9-]{8,40}$/;
 const CAPACITY_COOKIE_KEY = 'redil_capacity_debug';
 const DIAGNOSTIC_STORE_NAME = 'live-capacity-diagnostics-preview';
+const SERVER_BUILD_ENV = import.meta.env ?? process.env;
+const SERVER_DEPLOY_IDENTITY = {
+  commitRef: String(SERVER_BUILD_ENV.COMMIT_REF || ''),
+  deployId: String(SERVER_BUILD_ENV.DEPLOY_ID || ''),
+  buildId: String(SERVER_BUILD_ENV.BUILD_ID || ''),
+  context: String(SERVER_BUILD_ENV.CONTEXT || ''),
+};
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -136,22 +146,22 @@ export const POST: APIRoute = async ({ request, url }) => {
       return json({ ok: false, error: 'invalid-session-id' }, 400);
     }
 
+    if (
+      Array.isArray(payload.entries)
+      && payload.entries.length > MAX_CAPACITY_DIAGNOSTIC_BATCH_ENTRIES
+    ) {
+      return json({ ok: false, error: 'too-many-entries' }, 413);
+    }
     const entries = Array.isArray(payload.entries)
-      ? payload.entries.slice(0, MAX_ENTRIES).map((entry) => sanitize(entry))
+      ? payload.entries.map((entry) => sanitize(entry))
       : [];
     if (entries.length === 0) {
       return json({ ok: false, error: 'empty-batch' }, 400);
     }
 
     const receivedAt = new Date().toISOString();
-    const firstEntry = entries[0] && typeof entries[0] === 'object'
-      ? entries[0] as Record<string, unknown>
-      : {};
-    const lastEntry = entries[entries.length - 1] && typeof entries[entries.length - 1] === 'object'
-      ? entries[entries.length - 1] as Record<string, unknown>
-      : {};
-    const firstSequence = normalizeSequence(firstEntry.sequence);
-    const lastSequence = normalizeSequence(lastEntry.sequence);
+    const { firstSequence, lastSequence, count: storedCount } =
+      readCapacityDiagnosticBatchSpan(entries as Array<{ sequence?: unknown }>);
     const reason = normalizeReason(payload.reason);
     const rawMetadata = payload.metadata && typeof payload.metadata === 'object'
       ? payload.metadata as Record<string, unknown>
@@ -195,6 +205,12 @@ export const POST: APIRoute = async ({ request, url }) => {
           lastPersistedAt: rawTermination.lastPersistedAt
             ? truncate(String(rawTermination.lastPersistedAt), 80)
             : null,
+          ...(rawTermination.probableCause
+            ? { probableCause: truncate(String(rawTermination.probableCause), 80) }
+            : {}),
+          ...(rawTermination.lastKnown && typeof rawTermination.lastKnown === 'object'
+            ? { lastKnown: sanitize(rawTermination.lastKnown) }
+            : {}),
         }
       : null;
     const recoveryClassification = termination?.classification
@@ -203,7 +219,7 @@ export const POST: APIRoute = async ({ request, url }) => {
           ? 'previous-session-tail'
           : ''
       );
-    const diagnosticBatch = sanitize({
+    const sanitizedEnvelope = sanitize({
       marker: 'LIVE_CAPACITY_DIAGNOSTICS',
       version: payload.version,
       sessionId,
@@ -217,8 +233,22 @@ export const POST: APIRoute = async ({ request, url }) => {
       metadata: payload.metadata,
       summary: payload.summary,
       termination,
-      entries,
+      serverDeploy: SERVER_DEPLOY_IDENTITY,
     });
+    if (
+      !sanitizedEnvelope
+      || typeof sanitizedEnvelope !== 'object'
+      || Array.isArray(sanitizedEnvelope)
+    ) {
+      return json({ ok: false, error: 'invalid-envelope' }, 400);
+    }
+    // Each entry was already sanitized independently above. Keeping the array
+    // outside the envelope sanitizer prevents the generic nested-array limit
+    // from silently turning a valid 64-entry batch into 48 stored entries.
+    const diagnosticBatch = {
+      ...(sanitizedEnvelope as Record<string, unknown>),
+      entries,
+    };
 
     const storageKey = [
       sessionId,
@@ -238,8 +268,8 @@ export const POST: APIRoute = async ({ request, url }) => {
         os: osLabel,
         browser: browserLabel,
         recoveryClassification,
+        storedCount,
       },
-      onlyIfNew: true,
     });
 
     const summary = payload.summary && typeof payload.summary === 'object'
@@ -257,6 +287,8 @@ export const POST: APIRoute = async ({ request, url }) => {
         recoveredBySessionId: termination.recoveredBySessionId,
         lastPersistedSequence: termination.lastPersistedSequence,
         lastPersistedAt: termination.lastPersistedAt,
+        probableCause: termination.probableCause || null,
+        lastKnown: termination.lastKnown || null,
         testerName,
         testerUser,
         deviceModel,
@@ -272,7 +304,7 @@ export const POST: APIRoute = async ({ request, url }) => {
       recoveryClassification: recoveryClassification || null,
       firstSequence,
       lastSequence,
-      entries: entries.length,
+      entries: storedCount,
       criticalCount: normalizeSequence(summary.criticalCount),
       alerts,
       testerName,
@@ -281,15 +313,19 @@ export const POST: APIRoute = async ({ request, url }) => {
       os: osLabel,
       browser: browserLabel,
       receivedAt,
+      serverDeploy: SERVER_DEPLOY_IDENTITY,
     }));
     return json({
       ok: true,
       sessionId,
       batchId: payload.batchId || null,
+      acceptedFirst: firstSequence || null,
       acceptedThrough: lastSequence || null,
+      acceptedCount: storedCount,
       storageKey,
       receivedAt,
-      entries: entries.length,
+      entries: storedCount,
+      serverDeploy: SERVER_DEPLOY_IDENTITY,
     });
   } catch (error) {
     console.warn('[LIVE-CAPACITY] rejected diagnostic batch', error);

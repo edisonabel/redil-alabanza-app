@@ -529,6 +529,20 @@ type ProducerFetchRetryMessage = {
   status: number | null;
 };
 
+type ProducerFetchTimeoutMessage = {
+  type: 'producer-fetch-timeout';
+  reason: 'range-fetch-timeout';
+  trackIndex: number | null;
+  trackName?: string | null;
+  byteStart: number;
+  byteEnd: number;
+  attempt: number;
+  maxRetries: number;
+  timeoutMs: number;
+  durationMs: number;
+  phase: 'headers' | 'body';
+};
+
 type ProducerDecoderOverloadMessage = {
   type: 'producer-decoder-overload';
   reason: string;
@@ -730,6 +744,7 @@ type ProducerInboundMessage =
   | ProducerSampleDroppedMessage
   | ProducerRingBackpressureMessage
   | ProducerFetchRetryMessage
+  | ProducerFetchTimeoutMessage
   | ProducerDecoderOverloadMessage
   | ProducerErrorMessage
   | ProducerSeekReadyMessage
@@ -975,7 +990,7 @@ type PreloadedStreamingSession = {
   trackStates: TrackRuntime[];
 };
 
-const AUDIO_WORKER_ASSET_VERSION = '20260721-capacity-debug-6';
+const AUDIO_WORKER_ASSET_VERSION = '20260725-capacity-debug-7';
 const DEFAULT_WORKLET_MODULE_URL = `/workers/MultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_PRODUCER_WORKER_URL = `/workers/AudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
@@ -4563,6 +4578,22 @@ export class StreamingMultitrackEngine {
         errorName: message.errorName,
         errorMessage: message.errorMessage,
         status: message.status,
+      }, 'warn');
+      return;
+    }
+
+    if (message.type === 'producer-fetch-timeout') {
+      this.logFlatLiveDiagnostic('streaming:producer-fetch-timeout', {
+        reason: message.reason,
+        trackIndex: message.trackIndex,
+        trackName: this.getDiagnosticTrackLabel(message.trackIndex, message.trackName),
+        byteStart: message.byteStart,
+        byteEnd: message.byteEnd,
+        attempt: message.attempt,
+        maxRetries: message.maxRetries,
+        timeoutMs: message.timeoutMs,
+        durationMs: message.durationMs,
+        phase: message.phase,
       }, 'warn');
       return;
     }
