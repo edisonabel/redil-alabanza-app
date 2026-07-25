@@ -193,6 +193,39 @@ assert.match(
   /this\.resetTracks\(\);\s+\/\/[\s\S]*?this\.postWorkletMessage\(\{ type: 'reset-tracks' \}\);\s+this\.postWorkletMessage\(\{ type: 'clear-solo' \}\);/,
   'Every song initialization must clear stale worklet indices before configuring the next session.',
 );
+assert.match(
+  engineSource,
+  /resolveProducerMessageSessionScope[\s\S]+message\.type === 'producer-next-track-warmed'[\s\S]+message\.type === 'producer-next-session-warmed'[\s\S]+return 'preload';[\s\S]+return 'stale';/,
+  'Only explicit warm-next messages from the preloaded session may bypass the active producer session.',
+);
+assert.match(
+  engineSource,
+  /const initializingSessionId = this\.producerSessionId \+ 1;\s+this\.producerSessionId = initializingSessionId;\s+this\.warmAudioProducerRuntime\(\);\s+await this\.context\.audioWorklet\.addModule/,
+  'The next producer session must be reserved before initialization yields to stale messages from the previous song.',
+);
+assert.match(
+  engineSource,
+  /configureAudioProducerWorker\(\s*trackDefinitions: NormalizedTrackDefinition\[\],\s*sessionId: number,[\s\S]+if \(sessionId !== this\.producerSessionId\)/,
+  'A superseded initialization must not configure its producer after a newer song has reserved the session.',
+);
+const producerMessageHandlerSource =
+  engineSource.match(/private handleProducerMessage\([\s\S]+?\n  private /)?.[0] || '';
+assert.ok(
+  producerMessageHandlerSource.indexOf("messageSessionScope === 'stale'") >= 0 &&
+    producerMessageHandlerSource.indexOf("messageSessionScope === 'stale'") <
+      producerMessageHandlerSource.indexOf('this.lastProducerMessageAt = performance.now()'),
+  'A stale producer session must be rejected before it can refresh producer freshness or mutate track state.',
+);
+assert.match(
+  producerMessageHandlerSource,
+  /streaming:stale-producer-message-dropped[\s\S]+return;/,
+  'Diagnostics must record a rate-limited stale-session drop before rejecting the old song message.',
+);
+assert.match(
+  producerMessageHandlerSource,
+  /!trackState\.readyResolved[\s\S]+isGuideRoutingTrack\([\s\S]+trackState\.ready\.reject\([\s\S]+return;[\s\S]+omitTrackAfterProducerError/,
+  'Click and Guide startup errors must reject the load before the optional-stem omission path can resolve readiness.',
+);
 assert.doesNotMatch(
   engineSource,
   /recoverFromStalledProducerStartup/,

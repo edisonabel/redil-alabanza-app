@@ -18,6 +18,7 @@
     "test:guide-markers": "node --experimental-strip-types scripts/test-guide-section-markers.mjs",
     "test:audio-routing": "node scripts/test-audio-playback-routing.mjs",
     "test:audio-engine-policy": "node --experimental-strip-types scripts/test-live-director-engine-policy.mjs",
+    "test:live-preload-policy": "node scripts/test-live-director-preload-policy.mjs",
     "test:capacity-entry": "node --experimental-strip-types scripts/test-live-capacity-entry.mjs",
     "test:live-sync": "node scripts/test-live-director-sync.mjs",
     "test:event-mix": "node scripts/test-live-director-event-mix.mjs",

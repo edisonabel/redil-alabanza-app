@@ -26,6 +26,8 @@ type CapacityRuntimeState = {
   persistTimer: number | null;
   flushTimer: number | null;
   drainTimer: number | null;
+  criticalFlushTimer: number | null;
+  urgentFlushRequested: boolean;
   heartbeatTimer: number | null;
   runtimeTimer: number | null;
   eventLoopTimer: number | null;
@@ -90,18 +92,16 @@ const STORAGE_CURRENT_KEY = 'redil:live-capacity:current-v1';
 const STORAGE_PREVIOUS_KEY = 'redil:live-capacity:previous-v1';
 const STORAGE_RECOVERY_OUTBOX_KEY = 'redil:live-capacity:recovery-outbox-v1';
 const MAX_ENTRIES = 1800;
-const MAX_PENDING_ENTRIES = 240;
 const MAX_PERSISTED_ENTRIES = 90;
-const MAX_RECOVERY_ENTRIES = 16;
-const MAX_RECOVERY_SESSIONS = 2;
-const MAX_REMOTE_BATCH = 16;
-const MAX_REMOTE_BODY_BYTES = 32 * 1024;
-const REMOTE_FLUSH_INTERVAL_MS = 3_000;
-const REMOTE_DRAIN_DELAY_MS = 120;
+const MAX_REMOTE_BATCH = 64;
+const MAX_REMOTE_BODY_BYTES = 48 * 1024;
+const REMOTE_FLUSH_INTERVAL_MS = 15_000;
+const REMOTE_DRAIN_DELAY_MS = 300;
+const CRITICAL_FLUSH_DEBOUNCE_MS = 500;
 const REMOTE_REQUEST_TIMEOUT_MS = 6_000;
 const LIFECYCLE_BEACON_GUARD_MS = 1_500;
 const PERSIST_INTERVAL_MS = 5_000;
-const HEARTBEAT_INTERVAL_MS = 3_000;
+const HEARTBEAT_INTERVAL_MS = 5_000;
 const RUNTIME_SAMPLE_INTERVAL_MS = 10_000;
 const EVENT_LOOP_SAMPLE_INTERVAL_MS = 1_000;
 
@@ -425,9 +425,93 @@ type StoredCapacitySession = {
   version?: number;
   sessionId?: string;
   startedAt?: string;
+  exportedAt?: string;
   metadata?: Record<string, unknown>;
   summary?: unknown;
   entries?: CapacityEntry[];
+  pending?: CapacityEntry[];
+  recoveryClassification?: 'probable-abrupt-termination' | 'previous-session-tail';
+  terminationDetectedAt?: string;
+  terminationReported?: boolean;
+};
+
+type RecoveryClassification = NonNullable<StoredCapacitySession['recoveryClassification']>;
+
+type RecoveryTermination = {
+  classification: 'probable-abrupt-termination';
+  evidence: 'missing-page-hide-or-session-end';
+  detectedAt: string;
+  recoveredBySessionId: string;
+  lastPersistedSequence: number;
+  lastPersistedAt: string | null;
+};
+
+type DiagnosticAcknowledgement = {
+  ok?: boolean;
+  sessionId?: string;
+  batchId?: string | null;
+  acceptedThrough?: number | null;
+};
+
+const getEntrySequence = (entry: Pick<CapacityEntry, 'sequence'>) => (
+  Number.isFinite(Number(entry.sequence)) ? Math.max(0, Math.trunc(Number(entry.sequence))) : 0
+);
+
+const getLastStoredEntry = (previous: StoredCapacitySession) => {
+  const candidates = [
+    ...(Array.isArray(previous.entries) ? previous.entries : []),
+    ...(Array.isArray(previous.pending) ? previous.pending : []),
+  ];
+  return candidates.reduce<CapacityEntry | null>((latest, entry) => (
+    !latest || getEntrySequence(entry) >= getEntrySequence(latest) ? entry : latest
+  ), null);
+};
+
+export const classifyStoredCapacitySessionForRecovery = (
+  entries: Array<Pick<CapacityEntry, 'sequence' | 'type'>>,
+): RecoveryClassification => {
+  let lastOpenSequence = 0;
+  let lastCloseSequence = 0;
+
+  entries.forEach((entry) => {
+    const sequence = getEntrySequence(entry);
+    if (entry.type === 'capacity-session-start' || entry.type === 'page-show') {
+      lastOpenSequence = Math.max(lastOpenSequence, sequence);
+    }
+    if (entry.type === 'capacity-session-end' || entry.type === 'page-hide') {
+      lastCloseSequence = Math.max(lastCloseSequence, sequence);
+    }
+  });
+
+  return lastCloseSequence > lastOpenSequence
+    ? 'previous-session-tail'
+    : 'probable-abrupt-termination';
+};
+
+const getStoredRecoveryEntries = (previous: StoredCapacitySession) => (
+  Array.isArray(previous.pending)
+    ? previous.pending
+    : (Array.isArray(previous.entries) ? previous.entries : [])
+);
+
+const createAbruptTerminationEntry = (
+  previous: StoredCapacitySession,
+  detectedAt: string,
+): CapacityEntry => {
+  const lastEntry = getLastStoredEntry(previous);
+  return {
+    sequence: (lastEntry ? getEntrySequence(lastEntry) : 0) + 1,
+    at: detectedAt,
+    elapsedMs: lastEntry?.elapsedMs || 0,
+    type: 'capacity-session-probable-termination',
+    level: 'warn',
+    payload: {
+      classification: 'probable-abrupt-termination',
+      evidence: 'missing-page-hide-or-session-end',
+      lastPersistedSequence: lastEntry ? getEntrySequence(lastEntry) : 0,
+      lastPersistedAt: lastEntry?.at || previous.exportedAt || null,
+    },
+  };
 };
 
 const readCurrentStoredSession = (): StoredCapacitySession | null => {
@@ -461,6 +545,7 @@ const exportState = (
   metadata: state.metadata,
   summary: getSummaryFromState(state),
   entries,
+  pending: state.pending,
   ...(includePrevious ? { previousSession: readPreviousStoredSession() } : {}),
 }, null, 2);
 
@@ -493,11 +578,38 @@ const notifyPanel = (state: CapacityRuntimeState) => {
   }, 500);
 };
 
-const isCriticalEntry = (type: string, level: CapacityLevel, payload: unknown) => {
+export const isLiveCapacityEntryUrgent = (
+  type: string,
+  level: CapacityLevel,
+  payload: unknown,
+) => {
+  // Flight-recorder snapshots intentionally retain recent/historical flags for
+  // diagnosis. They are context, not a new failure transition, so they must not
+  // trigger another immediate POST every time the snapshot is sampled.
+  if (type === 'engine-capacity-snapshot') return false;
   if (level === 'error') return true;
-  const haystack = `${type} ${JSON.stringify(payload)}`;
-  return /underflow|underrun|decoder-overload|worker-error|suspend|stale|interrupted|main-thread-stall|audio-loss|signal[-_]lost|CLICK_NEVER_SIGNALED|GUIDE_NO_READ|RECENT_UNDERFLOW/i.test(haystack);
+
+  const payloadRecord = payload && typeof payload === 'object' && !Array.isArray(payload)
+    ? payload as Record<string, unknown>
+    : {};
+  if (payloadRecord.criticalTransition === true) return true;
+
+  const transitionText = [
+    type,
+    payloadRecord.event,
+    payloadRecord.eventType,
+    payloadRecord.type,
+    payloadRecord.phase,
+    payloadRecord.reason,
+    payloadRecord.code,
+    payloadRecord.transition,
+    payloadRecord.status,
+  ].filter((value) => typeof value === 'string').join(' ').replace(/_/g, '-');
+
+  return /underflow|underrun|decoder-overload|worker-error|suspend|stale|interrupted|main-thread-stall|audio-loss|signal[-_]lost|click-never-signaled|guide-no-read/i.test(transitionText);
 };
+
+const isCriticalEntry = isLiveCapacityEntryUrgent;
 
 type RemoteFlushReason =
   | 'interval'
@@ -569,7 +681,13 @@ const buildRemoteBatch = (
     body = nextBody;
   }
 
-  return { entries, body };
+  return {
+    entries,
+    body,
+    batchId: entries.length > 0
+      ? `${state.sessionId}:${entries[0].sequence}-${entries[entries.length - 1].sequence}`
+      : '',
+  };
 };
 
 const buildRecoveredRemoteBatch = (
@@ -578,59 +696,73 @@ const buildRecoveredRemoteBatch = (
 ) => {
   const sessionId = String(previous.sessionId || '');
   const candidates = Array.isArray(previous.entries)
-    ? previous.entries.slice(-MAX_REMOTE_BATCH).reverse()
+    ? previous.entries.slice(0, MAX_REMOTE_BATCH)
     : [];
   const entries: CapacityEntry[] = [];
   let body = '';
+  let batchId = '';
+  const lastStoredEntry = getLastStoredEntry(previous);
+  const termination: RecoveryTermination | null = (
+    previous.recoveryClassification === 'probable-abrupt-termination' &&
+    previous.terminationReported !== true
+  ) ? {
+      classification: 'probable-abrupt-termination',
+      evidence: 'missing-page-hide-or-session-end',
+      detectedAt: previous.terminationDetectedAt || new Date().toISOString(),
+      recoveredBySessionId,
+      lastPersistedSequence: lastStoredEntry ? getEntrySequence(lastStoredEntry) : 0,
+      lastPersistedAt: lastStoredEntry?.at || previous.exportedAt || null,
+    } : null;
 
-  for (const entry of candidates) {
-    const nextEntries = [entry, ...entries];
-    const nextBody = JSON.stringify({
+  const createPayload = (payloadEntries: CapacityEntry[]) => {
+    const firstSequence = payloadEntries[0]?.sequence ?? 0;
+    const lastSequence = payloadEntries[payloadEntries.length - 1]?.sequence ?? 0;
+    return {
       version: previous.version || 1,
       sessionId,
       startedAt: previous.startedAt || null,
       sentAt: new Date().toISOString(),
       reason: 'previous-session-tail',
-      batchId: `${sessionId}:recovered:${nextEntries[0]?.sequence ?? 0}-${nextEntries[nextEntries.length - 1]?.sequence ?? 0}`,
-      firstSequence: nextEntries[0]?.sequence ?? null,
-      lastSequence: nextEntries[nextEntries.length - 1]?.sequence ?? null,
+      batchId: `${sessionId}:recovered:${firstSequence}-${lastSequence}`,
+      firstSequence: firstSequence || null,
+      lastSequence: lastSequence || null,
       metadata: {
         ...(previous.metadata || {}),
         previousSessionTail: true,
         recoveredBySessionId,
+        recoveryClassification: previous.recoveryClassification || 'previous-session-tail',
       },
       summary: previous.summary || null,
-      entries: nextEntries,
-    });
+      termination,
+      entries: payloadEntries,
+    };
+  };
+
+  for (const entry of candidates) {
+    const nextEntries = [...entries, entry];
+    const nextPayload = createPayload(nextEntries);
+    const nextBody = JSON.stringify(nextPayload);
     if (measureUtf8Bytes(nextBody) > MAX_REMOTE_BODY_BYTES) {
       if (entries.length === 0) {
         const compactEntry = compactEntryForTransport(entry);
         entries.push(compactEntry);
-        body = JSON.stringify({
-          version: previous.version || 1,
-          sessionId,
-          startedAt: previous.startedAt || null,
-          sentAt: new Date().toISOString(),
-          reason: 'previous-session-tail',
-          batchId: `${sessionId}:recovered:${compactEntry.sequence}-${compactEntry.sequence}`,
-          firstSequence: compactEntry.sequence,
-          lastSequence: compactEntry.sequence,
-          metadata: {
-            ...(previous.metadata || {}),
-            previousSessionTail: true,
-            recoveredBySessionId,
-          },
-          summary: previous.summary || null,
-          entries,
-        });
+        const compactPayload = createPayload(entries);
+        batchId = compactPayload.batchId;
+        body = JSON.stringify(compactPayload);
       }
       break;
     }
-    entries.unshift(entry);
+    entries.push(entry);
+    batchId = nextPayload.batchId;
     body = nextBody;
   }
 
-  return { entries, body };
+  return {
+    entries,
+    body,
+    batchId,
+    reportsTermination: termination !== null,
+  };
 };
 
 const readRecoveryOutbox = (): StoredCapacitySession[] => {
@@ -667,21 +799,53 @@ const queueStoredSessionForRecovery = (
 ) => {
   const outbox = readRecoveryOutbox();
   const previousSessionId = String(previous?.sessionId || '');
-  if (
-    previous &&
-    SESSION_ID_PATTERN.test(previousSessionId) &&
-    Array.isArray(previous.entries) &&
-    previous.entries.length > 0 &&
-    !outbox.some((session) => session.sessionId === previousSessionId)
-  ) {
-    outbox.push({
-      ...previous,
-      entries: previous.entries.slice(-MAX_RECOVERY_ENTRIES),
-    });
+  if (previous && SESSION_ID_PATTERN.test(previousSessionId)) {
+    const lifecycleEntries = Array.isArray(previous.entries) ? previous.entries : [];
+    const recoveryClassification = previous.recoveryClassification
+      || classifyStoredCapacitySessionForRecovery(lifecycleEntries);
+    const terminationDetectedAt = previous.terminationDetectedAt || new Date().toISOString();
+    const rawRecoveryEntries = getStoredRecoveryEntries(previous);
+    const recoveryEntries = [...rawRecoveryEntries];
+
+    if (
+      recoveryClassification === 'probable-abrupt-termination' &&
+      !recoveryEntries.some((entry) => entry.type === 'capacity-session-probable-termination')
+    ) {
+      recoveryEntries.push(createAbruptTerminationEntry(previous, terminationDetectedAt));
+    }
+
+    if (recoveryEntries.length > 0) {
+      const existingIndex = outbox.findIndex((session) => session.sessionId === previousSessionId);
+      if (existingIndex >= 0) {
+        const existing = outbox[existingIndex];
+        const entriesBySequence = new Map<number, CapacityEntry>();
+        [...(existing.entries || []), ...recoveryEntries].forEach((entry) => {
+          entriesBySequence.set(getEntrySequence(entry), entry);
+        });
+        outbox[existingIndex] = {
+          ...existing,
+          ...previous,
+          pending: undefined,
+          entries: [...entriesBySequence.values()]
+            .sort((left, right) => getEntrySequence(left) - getEntrySequence(right)),
+          recoveryClassification,
+          terminationDetectedAt,
+          terminationReported: existing.terminationReported === true,
+        };
+      } else {
+        outbox.push({
+          ...previous,
+          pending: undefined,
+          entries: recoveryEntries,
+          recoveryClassification,
+          terminationDetectedAt,
+          terminationReported: previous.terminationReported === true,
+        });
+      }
+    }
   }
-  const boundedOutbox = outbox.slice(-MAX_RECOVERY_SESSIONS);
-  writeRecoveryOutbox(boundedOutbox);
-  return boundedOutbox;
+  writeRecoveryOutbox(outbox);
+  return outbox;
 };
 
 const postDiagnosticBody = async (body: string, keepalive = false) => {
@@ -705,20 +869,68 @@ const uploadRecoveryOutbox = async (
   sessions: StoredCapacitySession[],
   recoveredBySessionId: string,
 ) => {
-  for (const previous of sessions) {
-    if (previous.sessionId === recoveredBySessionId) continue;
-    const { entries, body } = buildRecoveredRemoteBatch(previous, recoveredBySessionId);
-    if (entries.length === 0 || !body) continue;
+  const sessionIds = sessions
+    .map((session) => String(session.sessionId || ''))
+    .filter((sessionId) => sessionId && sessionId !== recoveredBySessionId);
 
-    try {
-      const response = await postDiagnosticBody(body);
-      if (!response.ok) break;
-      const previousSessionId = String(previous.sessionId || '');
-      writeRecoveryOutbox(
-        readRecoveryOutbox().filter((session) => session.sessionId !== previousSessionId),
+  for (const previousSessionId of sessionIds) {
+    while (true) {
+      const outbox = readRecoveryOutbox();
+      const currentIndex = outbox.findIndex(
+        (session) => session.sessionId === previousSessionId,
       );
-    } catch {
-      break;
+      if (currentIndex < 0) break;
+
+      const previous = outbox[currentIndex];
+      const {
+        entries,
+        body,
+        batchId,
+        reportsTermination,
+      } = buildRecoveredRemoteBatch(previous, recoveredBySessionId);
+      if (entries.length === 0 || !body || !batchId) break;
+
+      try {
+        const response = await postDiagnosticBody(body);
+        if (!response.ok) break;
+        const acknowledgement = await response.json() as DiagnosticAcknowledgement;
+        if (
+          acknowledgement.ok !== true ||
+          acknowledgement.sessionId !== previousSessionId ||
+          acknowledgement.batchId !== batchId ||
+          acknowledgement.acceptedThrough !== entries[entries.length - 1]?.sequence
+        ) {
+          break;
+        }
+
+        const acknowledgedSequences = new Set(entries.map((entry) => entry.sequence));
+        const latestOutbox = readRecoveryOutbox();
+        const latestIndex = latestOutbox.findIndex(
+          (session) => session.sessionId === previousSessionId,
+        );
+        if (latestIndex < 0) break;
+        const latestSession = latestOutbox[latestIndex];
+        const remainingEntries = (latestSession.entries || [])
+          .filter((entry) => !acknowledgedSequences.has(entry.sequence));
+
+        if (remainingEntries.length === 0) {
+          latestOutbox.splice(latestIndex, 1);
+        } else {
+          latestOutbox[latestIndex] = {
+            ...latestSession,
+            entries: remainingEntries,
+            terminationReported: latestSession.terminationReported === true
+              || reportsTermination,
+          };
+        }
+        writeRecoveryOutbox(latestOutbox);
+      } catch {
+        break;
+      }
+
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, REMOTE_DRAIN_DELAY_MS);
+      });
     }
   }
 };
@@ -761,15 +973,51 @@ const scheduleRemoteDrain = (state: CapacityRuntimeState) => {
   }, REMOTE_DRAIN_DELAY_MS);
 };
 
+const scheduleCriticalFlush = (state: CapacityRuntimeState) => {
+  state.urgentFlushRequested = true;
+  if (state.criticalFlushTimer !== null) return;
+
+  const attemptFlush = () => {
+    state.criticalFlushTimer = null;
+    if (state.pending.length === 0) {
+      state.urgentFlushRequested = false;
+      return;
+    }
+    if (state.remoteStatus === 'sending') {
+      state.criticalFlushTimer = window.setTimeout(
+        attemptFlush,
+        CRITICAL_FLUSH_DEBOUNCE_MS,
+      );
+      return;
+    }
+
+    state.urgentFlushRequested = false;
+    void flushLiveCapacityDiagnostics('critical');
+  };
+
+  state.criticalFlushTimer = window.setTimeout(
+    attemptFlush,
+    CRITICAL_FLUSH_DEBOUNCE_MS,
+  );
+};
+
 export const flushLiveCapacityDiagnostics = async (
   reason: RemoteFlushReason = 'manual',
 ) => {
   const browserWindow = getCapacityWindow();
   const state = browserWindow?.__REDIL_CAPACITY_STATE__;
-  if (!state || state.pending.length === 0 || state.remoteStatus === 'sending') return;
+  if (!state || state.pending.length === 0) return;
+  if (state.remoteStatus === 'sending') {
+    if (reason === 'critical') scheduleCriticalFlush(state);
+    return;
+  }
 
-  const { entries, body } = buildRemoteBatch(state, reason, reason === 'critical');
-  if (entries.length === 0 || !body) return;
+  const {
+    entries,
+    body,
+    batchId,
+  } = buildRemoteBatch(state, reason, reason === 'critical');
+  if (entries.length === 0 || !body || !batchId) return;
   state.remoteStatus = 'sending';
   notifyPanel(state);
 
@@ -777,16 +1025,26 @@ export const flushLiveCapacityDiagnostics = async (
     const keepalive = reason === 'critical' || reason === 'hidden' || reason === 'pagehide';
     const response = await postDiagnosticBody(body, keepalive);
     if (!response.ok) throw new Error(`diagnostic-upload-${response.status}`);
+    const acknowledgement = await response.json() as DiagnosticAcknowledgement;
+    if (
+      acknowledgement.ok !== true ||
+      acknowledgement.sessionId !== state.sessionId ||
+      acknowledgement.batchId !== batchId ||
+      acknowledgement.acceptedThrough !== entries[entries.length - 1]?.sequence
+    ) {
+      throw new Error('diagnostic-upload-invalid-ack');
+    }
     const acknowledgedSequences = new Set(entries.map((entry) => entry.sequence));
     state.pending = state.pending.filter((entry) => !acknowledgedSequences.has(entry.sequence));
     state.remoteStatus = 'sent';
     state.lastRemoteAt = new Date().toISOString();
+    persistStateNow(state);
     scheduleRemoteDrain(state);
   } catch {
     state.remoteStatus = 'error';
+    schedulePersist(state);
   }
 
-  schedulePersist(state);
   notifyPanel(state);
 };
 
@@ -809,16 +1067,13 @@ const recordIntoState = (
   state.entries.push(entry);
   if (state.entries.length > MAX_ENTRIES) state.entries.splice(0, state.entries.length - MAX_ENTRIES);
   state.pending.push(entry);
-  if (state.pending.length > MAX_PENDING_ENTRIES) {
-    state.pending.splice(0, state.pending.length - MAX_PENDING_ENTRIES);
-  }
   const critical = isCriticalEntry(entry.type, level, entry.payload);
   if (critical) state.criticalCount += 1;
 
   schedulePersist(state);
   notifyPanel(state);
   if (critical) {
-    void flushLiveCapacityDiagnostics('critical');
+    scheduleCriticalFlush(state);
   }
 };
 
@@ -942,6 +1197,11 @@ const installPublicApi = (browserWindow: CapacityWindow, state: CapacityRuntimeS
     clear: () => {
       state.entries = [];
       state.pending = [];
+      state.urgentFlushRequested = false;
+      if (state.criticalFlushTimer !== null) {
+        window.clearTimeout(state.criticalFlushTimer);
+        state.criticalFlushTimer = null;
+      }
       state.criticalCount = 0;
       state.maxEventLoopLagMs = 0;
       try {
@@ -998,6 +1258,8 @@ export const ensureLiveCapacityDiagnostics = (metadata: Record<string, unknown> 
     persistTimer: null,
     flushTimer: null,
     drainTimer: null,
+    criticalFlushTimer: null,
+    urgentFlushRequested: false,
     heartbeatTimer: null,
     runtimeTimer: null,
     eventLoopTimer: null,

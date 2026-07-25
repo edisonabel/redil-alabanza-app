@@ -4,6 +4,8 @@ import {
   normalizeSafeReturnTo,
 } from '../src/lib/auth-return.js';
 import {
+  classifyStoredCapacitySessionForRecovery,
+  isLiveCapacityEntryUrgent,
   parseLiveCapacityUserAgent,
 } from '../src/utils/liveCapacityDiagnostics.ts';
 
@@ -28,6 +30,59 @@ assert.equal(androidChrome.device.formFactor, 'Mobile');
 assert.equal(androidChrome.device.modelSource, 'user-agent');
 assert.deepEqual(androidChrome.os, { name: 'Android', version: '15' });
 assert.deepEqual(androidChrome.browser, { name: 'Chrome', version: '131.0.6778.81' });
+
+assert.equal(
+  classifyStoredCapacitySessionForRecovery([
+    { sequence: 1, type: 'capacity-session-start' },
+    { sequence: 2, type: 'capacity-heartbeat' },
+  ]),
+  'probable-abrupt-termination',
+);
+assert.equal(
+  classifyStoredCapacitySessionForRecovery([
+    { sequence: 1, type: 'capacity-session-start' },
+    { sequence: 2, type: 'page-hide' },
+  ]),
+  'previous-session-tail',
+);
+
+assert.equal(
+  isLiveCapacityEntryUrgent('engine-capacity-snapshot', 'info', {
+    critical: true,
+    tracks: [{ flags: 'GUIDE_NO_READ|RECENT_UNDERFLOW' }],
+  }),
+  false,
+);
+assert.equal(
+  isLiveCapacityEntryUrgent('engine:[SPSC-WORKLET]', 'info', {
+    phase: 'audio-underflow',
+  }),
+  true,
+);
+assert.equal(
+  isLiveCapacityEntryUrgent('live:streaming:producer-decoder-overload', 'warn', {}),
+  true,
+);
+assert.equal(
+  isLiveCapacityEntryUrgent('window-error', 'error', { message: 'boom' }),
+  true,
+);
+assert.equal(
+  classifyStoredCapacitySessionForRecovery([
+    { sequence: 1, type: 'capacity-session-start' },
+    { sequence: 2, type: 'page-hide' },
+    { sequence: 3, type: 'page-show' },
+    { sequence: 4, type: 'capacity-heartbeat' },
+  ]),
+  'probable-abrupt-termination',
+);
+assert.equal(
+  classifyStoredCapacitySessionForRecovery([
+    { sequence: 1, type: 'capacity-session-start' },
+    { sequence: 2, type: 'capacity-session-end' },
+  ]),
+  'previous-session-tail',
+);
 
 assert.equal(
   normalizeSafeReturnTo('/ensayo/26-julio-2026?capacityDebug=1'),

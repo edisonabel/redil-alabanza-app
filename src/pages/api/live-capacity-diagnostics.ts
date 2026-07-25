@@ -5,7 +5,7 @@ import { assertRequestBodySize } from '../../lib/server/api-security.js';
 export const prerender = false;
 
 const MAX_BODY_BYTES = 64 * 1024;
-const MAX_ENTRIES = 16;
+const MAX_ENTRIES = 64;
 const SESSION_ID_PATTERN = /^CAP-[A-Z0-9-]{8,40}$/;
 const CAPACITY_COOKIE_KEY = 'redil_capacity_debug';
 const DIAGNOSTIC_STORE_NAME = 'live-capacity-diagnostics-preview';
@@ -59,7 +59,7 @@ const buildCompactAlert = (entry: unknown) => {
   if (
     level === 'info' &&
     payload.critical !== true &&
-    !/error|underflow|underrun|overload|stall|audio-loss|signal[-_]lost|no-read/i.test(alertText)
+    !/error|underflow|underrun|overload|stall|audio-loss|signal[-_]lost|no-read|termination|abrupt/i.test(alertText)
   ) {
     return null;
   }
@@ -179,6 +179,30 @@ export const POST: APIRoute = async ({ request, url }) => {
       [browser.name, browser.version].filter(Boolean).map(String).join(' ') || 'Navegador desconocido',
       120,
     );
+    const rawTermination = payload.termination && typeof payload.termination === 'object'
+      ? payload.termination as Record<string, unknown>
+      : null;
+    const termination = rawTermination?.classification === 'probable-abrupt-termination'
+      ? {
+          classification: 'probable-abrupt-termination' as const,
+          evidence: truncate(
+            String(rawTermination.evidence || 'missing-page-hide-or-session-end'),
+            120,
+          ),
+          detectedAt: truncate(String(rawTermination.detectedAt || ''), 80),
+          recoveredBySessionId: truncate(String(rawTermination.recoveredBySessionId || ''), 80),
+          lastPersistedSequence: normalizeSequence(rawTermination.lastPersistedSequence),
+          lastPersistedAt: rawTermination.lastPersistedAt
+            ? truncate(String(rawTermination.lastPersistedAt), 80)
+            : null,
+        }
+      : null;
+    const recoveryClassification = termination?.classification
+      || (
+        rawMetadata.recoveryClassification === 'previous-session-tail'
+          ? 'previous-session-tail'
+          : ''
+      );
     const diagnosticBatch = sanitize({
       marker: 'LIVE_CAPACITY_DIAGNOSTICS',
       version: payload.version,
@@ -192,6 +216,7 @@ export const POST: APIRoute = async ({ request, url }) => {
       lastSequence,
       metadata: payload.metadata,
       summary: payload.summary,
+      termination,
       entries,
     });
 
@@ -212,6 +237,7 @@ export const POST: APIRoute = async ({ request, url }) => {
         deviceModel,
         os: osLabel,
         browser: browserLabel,
+        recoveryClassification,
       },
       onlyIfNew: true,
     });
@@ -223,10 +249,27 @@ export const POST: APIRoute = async ({ request, url }) => {
       .map((entry) => buildCompactAlert(entry))
       .filter((entry) => entry !== null)
       .slice(-4);
+    if (termination) {
+      console.warn('[LIVE-CAPACITY-TERMINATION]', JSON.stringify({
+        classification: termination.classification,
+        evidence: termination.evidence,
+        sessionId,
+        recoveredBySessionId: termination.recoveredBySessionId,
+        lastPersistedSequence: termination.lastPersistedSequence,
+        lastPersistedAt: termination.lastPersistedAt,
+        testerName,
+        testerUser,
+        deviceModel,
+        os: osLabel,
+        browser: browserLabel,
+        receivedAt,
+      }));
+    }
     console.log('[LIVE-CAPACITY]', JSON.stringify({
       sessionId,
       storageKey,
       reason,
+      recoveryClassification: recoveryClassification || null,
       firstSequence,
       lastSequence,
       entries: entries.length,
