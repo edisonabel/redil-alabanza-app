@@ -3635,7 +3635,7 @@ export default function AdminRepertorio() {
                                       key={`${marker.sectionKey || marker.id}-${preview.label}`}
                                       className="grid grid-cols-[minmax(0,1fr)_6.3rem] items-center gap-2"
                                     >
-                                      <p className="min-w-0 truncate text-[11px] text-content-muted">
+                                      <p className="min-w-0 truncate text-[13px] text-content-muted">
                                         <span className="font-medium text-content">{preview.label}</span>
                                         {preview.text ? ` · ${preview.text}` : ''}
                                       </p>
