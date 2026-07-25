@@ -72,7 +72,9 @@ const routeIsUuid = isUuidLike(routeId);
 const user = Astro.locals.user;
 const accessToken = Astro.locals.accessToken || Astro.cookies.get('sb-access-token')?.value || '';
 if (!user || !accessToken) {
-  return Astro.redirect('/login');
+  const loginUrl = new URL('/login', Astro.url);
+  loginUrl.searchParams.set('returnTo', `${Astro.url.pathname}${Astro.url.search}`);
+  return Astro.redirect(loginUrl.toString());
 }
 
 const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();

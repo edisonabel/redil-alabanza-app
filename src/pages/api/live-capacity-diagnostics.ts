@@ -153,6 +153,32 @@ export const POST: APIRoute = async ({ request, url }) => {
     const firstSequence = normalizeSequence(firstEntry.sequence);
     const lastSequence = normalizeSequence(lastEntry.sequence);
     const reason = normalizeReason(payload.reason);
+    const rawMetadata = payload.metadata && typeof payload.metadata === 'object'
+      ? payload.metadata as Record<string, unknown>
+      : {};
+    const tester = rawMetadata.tester && typeof rawMetadata.tester === 'object'
+      ? rawMetadata.tester as Record<string, unknown>
+      : {};
+    const device = rawMetadata.device && typeof rawMetadata.device === 'object'
+      ? rawMetadata.device as Record<string, unknown>
+      : {};
+    const os = rawMetadata.os && typeof rawMetadata.os === 'object'
+      ? rawMetadata.os as Record<string, unknown>
+      : {};
+    const browser = rawMetadata.browser && typeof rawMetadata.browser === 'object'
+      ? rawMetadata.browser as Record<string, unknown>
+      : {};
+    const testerName = truncate(String(tester.name || ''), 120);
+    const testerUser = truncate(String(tester.username || tester.id || ''), 160);
+    const deviceModel = truncate(String(device.model || 'Dispositivo desconocido'), 120);
+    const osLabel = truncate(
+      [os.name, os.version].filter(Boolean).map(String).join(' ') || 'SO desconocido',
+      120,
+    );
+    const browserLabel = truncate(
+      [browser.name, browser.version].filter(Boolean).map(String).join(' ') || 'Navegador desconocido',
+      120,
+    );
     const diagnosticBatch = sanitize({
       marker: 'LIVE_CAPACITY_DIAGNOSTICS',
       version: payload.version,
@@ -181,6 +207,11 @@ export const POST: APIRoute = async ({ request, url }) => {
         firstSequence,
         lastSequence,
         receivedAt,
+        testerName,
+        testerUser,
+        deviceModel,
+        os: osLabel,
+        browser: browserLabel,
       },
       onlyIfNew: true,
     });
@@ -201,6 +232,11 @@ export const POST: APIRoute = async ({ request, url }) => {
       entries: entries.length,
       criticalCount: normalizeSequence(summary.criticalCount),
       alerts,
+      testerName,
+      testerUser,
+      deviceModel,
+      os: osLabel,
+      browser: browserLabel,
       receivedAt,
     }));
     return json({

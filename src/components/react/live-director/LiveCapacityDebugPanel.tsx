@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   copyLiveCapacityDiagnostics,
   downloadLiveCapacityDiagnostics,
+  enrichLiveCapacityDiagnostics,
   ensureLiveCapacityDiagnostics,
   flushLiveCapacityDiagnostics,
   isLiveCapacityDiagnosticsEnabled,
@@ -47,6 +48,59 @@ const formatRemoteStatus = (summary: CapacitySummary) => {
   return `OK ${ageSeconds}s`;
 };
 
+type TesterIdentity = {
+  id: string;
+  name: string;
+  username: string;
+};
+
+const readTesterIdentity = async (): Promise<TesterIdentity | null> => {
+  try {
+    const response = await fetch('/api/profile-data', {
+      credentials: 'same-origin',
+      headers: { accept: 'application/json' },
+    });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const id = String(payload?.user?.id || payload?.profile?.id || '').trim();
+    const name = String(
+      payload?.profile?.nombre
+      || payload?.user?.email
+      || '',
+    ).trim();
+    const username = String(payload?.user?.email || '').trim();
+    if (!id && !name && !username) return null;
+    return { id, name, username };
+  } catch {
+    return null;
+  }
+};
+
+const buildContextLabel = (metadata: Record<string, unknown> | null) => {
+  if (!metadata) return '';
+  const tester = metadata.tester && typeof metadata.tester === 'object'
+    ? metadata.tester as Partial<TesterIdentity>
+    : {};
+  const device = metadata.device && typeof metadata.device === 'object'
+    ? metadata.device as { model?: string }
+    : {};
+  const os = metadata.os && typeof metadata.os === 'object'
+    ? metadata.os as { name?: string; version?: string }
+    : {};
+  const browser = metadata.browser && typeof metadata.browser === 'object'
+    ? metadata.browser as { name?: string; version?: string }
+    : {};
+  const osLabel = [os.name, os.version].filter(Boolean).join(' ');
+  const browserLabel = [browser.name, browser.version].filter(Boolean).join(' ');
+
+  return [
+    tester.name || tester.username,
+    device.model,
+    osLabel,
+    browserLabel,
+  ].filter(Boolean).join(' · ');
+};
+
 export function LiveCapacityDebugPanel({
   songId = '',
   songTitle = '',
@@ -57,18 +111,20 @@ export function LiveCapacityDebugPanel({
   const [summary, setSummary] = useState<CapacitySummary>(EMPTY_SUMMARY);
   const [feedback, setFeedback] = useState('');
   const [collapsed, setCollapsed] = useState(false);
+  const [contextLabel, setContextLabel] = useState('');
   const sending = summary.remoteStatus === 'sending';
 
   useEffect(() => {
     if (!enabled) return undefined;
 
-    ensureLiveCapacityDiagnostics({
+    const baseMetadata = {
       route: window.location.pathname,
       songId: songId || null,
       songTitle: songTitle || null,
       trackCount,
       mode,
-    });
+    };
+    ensureLiveCapacityDiagnostics(baseMetadata);
     recordLiveCapacityDiagnostic('diagnostic-view-context', {
       songId: songId || null,
       songTitle: songTitle || null,
@@ -76,11 +132,24 @@ export function LiveCapacityDebugPanel({
       mode,
     });
 
+    let cancelled = false;
+    void (async () => {
+      const tester = await readTesterIdentity();
+      const enrichedMetadata = await enrichLiveCapacityDiagnostics({
+        ...baseMetadata,
+        tester,
+      });
+      if (!cancelled) {
+        setContextLabel(buildContextLabel(enrichedMetadata));
+      }
+    })();
+
     const refresh = () => setSummary(readLiveCapacitySummary());
     refresh();
     window.addEventListener('live-capacity-diagnostics:update', refresh);
     const timer = window.setInterval(refresh, 2_000);
     return () => {
+      cancelled = true;
       window.removeEventListener('live-capacity-diagnostics:update', refresh);
       window.clearInterval(timer);
     };
@@ -126,6 +195,14 @@ export function LiveCapacityDebugPanel({
 
       {!collapsed && (
         <>
+          {contextLabel && (
+            <p
+              className="mt-1 max-w-[30rem] truncate font-mono text-[9px] text-cyan-100/70"
+              title={contextLabel}
+            >
+              {contextLabel}
+            </p>
+          )}
           <div className="mt-2 grid grid-cols-4 gap-2 font-mono text-[9px] text-white/65">
             <span>LOG {summary.entryCount}</span>
             <span>LAG {summary.lastEventLoopLagMs}ms</span>

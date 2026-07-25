@@ -59,6 +59,29 @@ export type CapacitySummary = {
   lastRemoteAt: string;
 };
 
+export type LiveCapacityDeviceProfile = {
+  browser: {
+    name: string;
+    version: string;
+  };
+  os: {
+    name: string;
+    version: string;
+  };
+  device: {
+    model: string;
+    formFactor: string;
+    modelSource: 'client-hints' | 'user-agent' | 'generic';
+  };
+  clientHints: {
+    architecture: string;
+    bitness: string;
+    mobile: boolean | null;
+    platform: string;
+    platformVersion: string;
+  } | null;
+};
+
 const CAPACITY_QUERY_KEY = 'capacityDebug';
 const CAPACITY_COOKIE_KEY = 'redil_capacity_debug';
 const DISABLED_VALUES = new Set(['0', 'false', 'off', 'no']);
@@ -144,6 +167,171 @@ const sanitizeValue = (value: unknown, depth = 0, seen = new WeakSet<object>()):
   return output;
 };
 
+const normalizeVersion = (value = '') => String(value || '').replace(/_/g, '.').trim();
+
+export const parseLiveCapacityUserAgent = (
+  rawUserAgent = '',
+  rawPlatform = '',
+): LiveCapacityDeviceProfile => {
+  const userAgent = String(rawUserAgent || '');
+  const platform = String(rawPlatform || '');
+
+  const browserPatterns: Array<[string, RegExp]> = [
+    ['Microsoft Edge', /(?:EdgiOS|EdgA|Edg)\/([\d.]+)/i],
+    ['Samsung Internet', /SamsungBrowser\/([\d.]+)/i],
+    ['Opera', /(?:OPR|Opera)\/([\d.]+)/i],
+    ['Firefox', /(?:FxiOS|Firefox)\/([\d.]+)/i],
+    ['Chrome', /(?:CriOS|Chrome)\/([\d.]+)/i],
+    ['Safari', /Version\/([\d.]+).+Safari\//i],
+  ];
+  const browserMatch = browserPatterns
+    .map(([name, pattern]) => ({ name, match: userAgent.match(pattern) }))
+    .find((entry) => entry.match);
+
+  let osName = platform || 'Desconocido';
+  let osVersion = '';
+  const iosMatch = userAgent.match(/(?:CPU(?: iPhone)? OS|iPhone OS)\s([\d_]+)/i);
+  const androidMatch = userAgent.match(/Android\s([\d.]+)/i);
+  const windowsMatch = userAgent.match(/Windows NT\s([\d.]+)/i);
+  const macMatch = userAgent.match(/Mac OS X\s([\d_]+)/i);
+
+  if (iosMatch) {
+    osName = 'iOS';
+    osVersion = normalizeVersion(iosMatch[1]);
+  } else if (androidMatch) {
+    osName = 'Android';
+    osVersion = normalizeVersion(androidMatch[1]);
+  } else if (windowsMatch) {
+    osName = 'Windows';
+    osVersion = normalizeVersion(windowsMatch[1]);
+  } else if (macMatch) {
+    osName = 'macOS';
+    osVersion = normalizeVersion(macMatch[1]);
+  }
+
+  let formFactor = 'Desktop';
+  let model = '';
+  let modelSource: LiveCapacityDeviceProfile['device']['modelSource'] = 'generic';
+
+  if (/iPad/i.test(userAgent)) {
+    formFactor = 'Tablet';
+    model = 'iPad';
+  } else if (/iPhone|iPod/i.test(userAgent)) {
+    formFactor = 'Mobile';
+    model = /iPod/i.test(userAgent) ? 'iPod touch' : 'iPhone';
+  } else if (/Android/i.test(userAgent)) {
+    formFactor = /Mobile/i.test(userAgent) ? 'Mobile' : 'Tablet';
+    const androidModelMatch = userAgent.match(
+      /Android\s[^;)]+;\s*(?:[a-z]{2}(?:-[A-Z]{2})?;\s*)?([^;)]+?)(?:\s+Build[/;]|\))/i,
+    );
+    const candidate = String(androidModelMatch?.[1] || '').trim();
+    if (candidate && !/^(?:K|wv)$/i.test(candidate)) {
+      model = candidate;
+      modelSource = 'user-agent';
+    } else {
+      model = formFactor === 'Tablet' ? 'Android tablet' : 'Android';
+    }
+  } else {
+    model = osName === 'macOS' ? 'Mac' : osName === 'Windows' ? 'PC' : 'Desktop';
+  }
+
+  return {
+    browser: {
+      name: browserMatch?.name || 'Desconocido',
+      version: normalizeVersion(browserMatch?.match?.[1] || ''),
+    },
+    os: {
+      name: osName || 'Desconocido',
+      version: osVersion,
+    },
+    device: {
+      model,
+      formFactor,
+      modelSource,
+    },
+    clientHints: null,
+  };
+};
+
+export const readLiveCapacityDeviceProfile = async (): Promise<LiveCapacityDeviceProfile> => {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return parseLiveCapacityUserAgent();
+  }
+
+  const fallback = parseLiveCapacityUserAgent(navigator.userAgent, navigator.platform);
+  const navigatorWithHints = navigator as Navigator & {
+    userAgentData?: {
+      brands?: Array<{ brand?: string; version?: string }>;
+      mobile?: boolean;
+      platform?: string;
+      getHighEntropyValues?: (hints: string[]) => Promise<Record<string, unknown>>;
+    };
+  };
+  const userAgentData = navigatorWithHints.userAgentData;
+
+  if (
+    navigator.platform === 'MacIntel'
+    && navigator.maxTouchPoints > 1
+    && fallback.os.name === 'macOS'
+  ) {
+    fallback.os.name = 'iPadOS';
+    fallback.device.model = 'iPad';
+    fallback.device.formFactor = 'Tablet';
+  }
+
+  if (!userAgentData?.getHighEntropyValues) return fallback;
+
+  try {
+    const highEntropy = await userAgentData.getHighEntropyValues([
+      'architecture',
+      'bitness',
+      'formFactors',
+      'fullVersionList',
+      'model',
+      'platformVersion',
+    ]);
+    const fullVersionList = Array.isArray(highEntropy.fullVersionList)
+      ? highEntropy.fullVersionList as Array<{ brand?: string; version?: string }>
+      : userAgentData.brands || [];
+    const preferredBrand = fullVersionList.find((item) => (
+      item?.brand
+      && !/not.a.brand|chromium/i.test(item.brand)
+    )) || fullVersionList.find((item) => item?.brand);
+    const hintedModel = String(highEntropy.model || '').trim();
+    const hintedFormFactors = Array.isArray(highEntropy.formFactors)
+      ? highEntropy.formFactors.map((value) => String(value || '').trim()).filter(Boolean)
+      : [];
+    const hintedPlatform = String(userAgentData.platform || '').trim();
+    const hintedPlatformVersion = String(highEntropy.platformVersion || '').trim();
+
+    return {
+      browser: {
+        name: String(preferredBrand?.brand || fallback.browser.name).trim(),
+        version: normalizeVersion(preferredBrand?.version || fallback.browser.version),
+      },
+      os: {
+        name: hintedPlatform || fallback.os.name,
+        version: hintedPlatformVersion || fallback.os.version,
+      },
+      device: {
+        model: hintedModel || fallback.device.model,
+        formFactor: hintedFormFactors[0]
+          || (userAgentData.mobile === true ? 'Mobile' : fallback.device.formFactor),
+        modelSource: hintedModel ? 'client-hints' : fallback.device.modelSource,
+      },
+      clientHints: {
+        architecture: String(highEntropy.architecture || '').trim(),
+        bitness: String(highEntropy.bitness || '').trim(),
+        mobile: typeof userAgentData.mobile === 'boolean' ? userAgentData.mobile : null,
+        platform: hintedPlatform,
+        platformVersion: hintedPlatformVersion,
+      },
+    };
+  } catch {
+    return fallback;
+  }
+};
+
 const readBrowserSnapshot = () => {
   if (typeof window === 'undefined') return {};
   const navigatorWithHints = navigator as Navigator & {
@@ -164,6 +352,10 @@ const readBrowserSnapshot = () => {
     };
   };
   const connection = navigatorWithHints.connection;
+  const deviceProfile = parseLiveCapacityUserAgent(
+    navigator.userAgent,
+    navigator.platform,
+  );
 
   return {
     href: window.location.href,
@@ -173,6 +365,9 @@ const readBrowserSnapshot = () => {
     hardwareConcurrency: navigator.hardwareConcurrency || null,
     deviceMemoryGb: navigatorWithHints.deviceMemory ?? null,
     maxTouchPoints: navigator.maxTouchPoints || 0,
+    browser: deviceProfile.browser,
+    os: deviceProfile.os,
+    device: deviceProfile.device,
     standalone:
       window.matchMedia?.('(display-mode: standalone)').matches === true ||
       navigatorWithHints.standalone === true,
@@ -821,6 +1016,35 @@ export const ensureLiveCapacityDiagnostics = (metadata: Record<string, unknown> 
   persistStateNow(state);
   void uploadRecoveryOutbox(recoveryOutbox, state.sessionId);
   return state;
+};
+
+export const enrichLiveCapacityDiagnostics = async (
+  metadata: Record<string, unknown> = {},
+) => {
+  const state = ensureLiveCapacityDiagnostics();
+  if (!state) return null;
+
+  const deviceProfile = await readLiveCapacityDeviceProfile();
+  const sanitizedMetadata = sanitizeValue({
+    ...metadata,
+    browser: deviceProfile.browser,
+    os: deviceProfile.os,
+    device: deviceProfile.device,
+    clientHints: deviceProfile.clientHints,
+  });
+
+  if (sanitizedMetadata && typeof sanitizedMetadata === 'object' && !Array.isArray(sanitizedMetadata)) {
+    Object.assign(state.metadata, sanitizedMetadata as Record<string, unknown>);
+  }
+
+  recordIntoState(state, 'capacity-metadata-enriched', {
+    tester: state.metadata.tester || null,
+    browser: state.metadata.browser || null,
+    os: state.metadata.os || null,
+    device: state.metadata.device || null,
+  }, 'info');
+  persistStateNow(state);
+  return state.metadata;
 };
 
 export const recordLiveCapacityDiagnostic = (

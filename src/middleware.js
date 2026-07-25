@@ -6,6 +6,10 @@ import {
   getServerAuthTokens,
   setServerAuthCookies,
 } from './lib/server/auth-cookies.js';
+import {
+  buildLoginLocation,
+  normalizeSafeReturnTo,
+} from './lib/auth-return.js';
 
 const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
 
@@ -166,19 +170,19 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   if (path === '/login') {
     if (authState?.accessToken) {
-      return redirectTo('/');
+      return redirectTo(normalizeSafeReturnTo(url.searchParams.get('returnTo')));
     }
     return withRouteHeaders(await next(), path);
   }
 
   if (protectedPath && !authState?.accessToken) {
     clearServerAuthCookies(cookies, isSecure);
-    return redirectTo('/login');
+    return redirectTo(buildLoginLocation(url.pathname, url.search));
   }
 
   if (path === '/admin' && !authState?.user) {
     clearServerAuthCookies(cookies, isSecure);
-    return redirectTo('/login');
+    return redirectTo(buildLoginLocation(url.pathname, url.search));
   }
 
   if (authState?.user) {
