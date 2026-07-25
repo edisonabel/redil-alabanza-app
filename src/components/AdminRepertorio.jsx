@@ -47,13 +47,18 @@ const ARCHIVO_ELIMINABLE_FIELDS = new Set(['mp3', 'link_acordes']);
 
 const getSectionColorStyle = (sectionName = '', active = false) => {
   const visual = getChordProSectionVisual(sectionName);
-  const rgb = visual.rgb.join(', ');
+  const rgbValues = visual.rgb;
+  const rgb = rgbValues.join(', ');
+  const colorWeight = active ? 0.34 : 0.24;
+  const pastel = rgbValues.map((channel) => (
+    Math.round((channel * colorWeight) + (255 * (1 - colorWeight)))
+  ));
 
   return {
-    color: `rgb(${rgb})`,
-    backgroundColor: `rgba(${rgb}, ${active ? 0.18 : 0.1})`,
-    borderColor: `rgba(${rgb}, ${active ? 0.48 : 0.26})`,
-    boxShadow: active ? `inset 0 0 0 1px rgba(${rgb}, 0.1)` : 'none',
+    color: '#0f172a',
+    backgroundColor: `rgb(${pastel.join(', ')})`,
+    borderColor: 'transparent',
+    boxShadow: active ? `0 0 0 2px rgba(${rgb}, 0.24)` : 'none',
   };
 };
 
@@ -301,6 +306,61 @@ const parseChordProSections = (rawChordpro = '') => {
   pushCurrentSection();
   return sections;
 };
+
+const ChordProEditorHighlight = React.forwardRef(function ChordProEditorHighlight(
+  { value },
+  highlightRef,
+) {
+  const lines = String(value || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+
+  return (
+    <pre
+      ref={highlightRef}
+      aria-hidden="true"
+      className="editor-column-scroll editor-chordpro-highlight pointer-events-none absolute inset-0 m-0 overflow-y-scroll whitespace-pre-wrap break-words border-0 bg-transparent px-3 py-3 text-[13px] leading-6 text-content font-mono"
+    >
+      {lines.map((line, lineIndex) => {
+        const sectionMatch = line.trim().match(SECTION_LABEL_RE);
+        const isSection = sectionMatch && isLikelySectionHeader(sectionMatch[1]);
+        const lineBreak = lineIndex < lines.length - 1 ? '\n' : '';
+
+        if (!isSection) {
+          return (
+            <React.Fragment key={`chordpro-line-${lineIndex}`}>
+              {line || ' '}
+              {lineBreak}
+            </React.Fragment>
+          );
+        }
+
+        const section = parseSectionHeader(sectionMatch[1]);
+        const inlineRest = String(sectionMatch[2] || '').trim();
+        const supportingText = [section.note, inlineRest].filter(Boolean).join(' · ');
+
+        return (
+          <React.Fragment key={`chordpro-section-${lineIndex}`}>
+            <span
+              className="inline-flex min-h-[20px] items-center gap-1.5 rounded-full px-2 py-0.5 align-middle font-sans text-[11px] font-black leading-5"
+              style={getSectionColorStyle(section.name)}
+            >
+              <span
+                className="h-1.5 w-1.5 shrink-0 rounded-full"
+                style={getSectionDotStyle(section.name)}
+              />
+              {section.name}
+            </span>
+            {supportingText && (
+              <span className="font-sans text-[11px] italic text-content-muted">
+                {`  ${supportingText}`}
+              </span>
+            )}
+            {lineBreak}
+          </React.Fragment>
+        );
+      })}
+    </pre>
+  );
+});
 
 const toPreciseSeconds = (value) => Math.round(Math.max(0, Number(value) || 0) * 1000) / 1000;
 
@@ -882,6 +942,8 @@ export default function AdminRepertorio() {
   const editorAudioCurrentTimeRef = useRef(0);
   const editorAudioFrameRef = useRef(null);
   const voicePreviewAudioRef = useRef(null);
+  const editorChordproTextareaRef = useRef(null);
+  const editorChordproHighlightRef = useRef(null);
   const tableScrollRef = useRef(null);
   const horizontalTrackRef = useRef(null);
   const horizontalDragStateRef = useRef({ startX: 0, startScrollLeft: 0 });
@@ -2288,6 +2350,13 @@ export default function AdminRepertorio() {
     setEditorAuthoringFeedback('');
   };
 
+  const sincronizarEditorChordproScroll = (event) => {
+    const highlight = editorChordproHighlightRef.current;
+    if (!highlight) return;
+    highlight.scrollTop = event.currentTarget.scrollTop;
+    highlight.scrollLeft = event.currentTarget.scrollLeft;
+  };
+
   const agregarEditorChordproSection = (preset) => {
     const sectionLabel = buildSuggestedSectionLabel(
       preset?.label,
@@ -3039,7 +3108,7 @@ export default function AdminRepertorio() {
                               type="button"
                               onClick={() => seleccionarEditorAuthoringSection(sectionIndex)}
                               aria-pressed={isActive}
-                              className="inline-flex min-h-[32px] shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                              className="inline-flex min-h-[32px] shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
                               style={getSectionColorStyle(section.name, isActive)}
                             >
                               <span
@@ -3057,7 +3126,7 @@ export default function AdminRepertorio() {
                     {editorAuthoringPanel && (
                       <div
                         id="admin-chordpro-authoring-panel"
-                        className="absolute inset-x-2 top-[3.85rem] z-20 max-h-[calc(100%-4.35rem)] overflow-y-auto rounded-2xl border border-brand/20 bg-surface p-3 shadow-2xl"
+                        className="absolute inset-x-2 top-[3.85rem] z-20 max-h-[calc(100%-4.35rem)] overflow-y-auto rounded-2xl bg-surface p-3 shadow-2xl ring-1 ring-black/5 dark:ring-white/10"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
@@ -3094,7 +3163,7 @@ export default function AdminRepertorio() {
                                     type="button"
                                     onClick={() => seleccionarEditorAuthoringSection(sectionIndex)}
                                     aria-pressed={isActive}
-                                    className="inline-flex min-h-[32px] shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                                    className="inline-flex min-h-[32px] shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
                                     style={getSectionColorStyle(section.name, isActive)}
                                   >
                                     <span
@@ -3117,7 +3186,7 @@ export default function AdminRepertorio() {
                                 key={preset.id}
                                 type="button"
                                 onClick={() => agregarEditorChordproSection(preset)}
-                                className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl border px-2.5 py-2 text-xs font-bold transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                                className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
                                 style={getSectionColorStyle(preset.label)}
                               >
                                 <span
@@ -3194,14 +3263,23 @@ export default function AdminRepertorio() {
                       </div>
                     )}
 
-                    <textarea
-                      value={editorChordproValor}
-                      onChange={(e) => setEditorChordproValor(e.target.value)}
-                      placeholder="[Verso 1]\n[C]Texto con acordes..."
-                      spellCheck={false}
-                      aria-label="Contenido ChordPro de la canción"
-                      className="editor-column-scroll h-full min-h-0 w-full flex-1 resize-none overflow-y-auto border-0 bg-transparent px-3 py-3 text-[13px] leading-6 text-content font-mono outline-none focus:border-transparent focus:ring-0"
-                    />
+                    <div className="relative min-h-0 flex-1 overflow-hidden">
+                      <ChordProEditorHighlight
+                        ref={editorChordproHighlightRef}
+                        value={editorChordproValor}
+                      />
+                      <textarea
+                        ref={editorChordproTextareaRef}
+                        value={editorChordproValor}
+                        onChange={(e) => setEditorChordproValor(e.target.value)}
+                        onScroll={sincronizarEditorChordproScroll}
+                        placeholder="[Verso 1]\n[C]Texto con acordes..."
+                        spellCheck={false}
+                        aria-label="Contenido ChordPro de la canción"
+                        className="editor-column-scroll absolute inset-0 z-10 h-full min-h-0 w-full resize-none overflow-y-scroll border-0 bg-transparent px-3 py-3 text-[13px] leading-6 text-transparent font-mono outline-none selection:bg-brand/25 focus:border-transparent focus:ring-0"
+                        style={{ caretColor: '#3b82f6' }}
+                      />
+                    </div>
                   </div>
                 )}
                 <section id="admin-markers-panel" className="flex min-h-0 h-full flex-col overflow-hidden rounded-xl border border-border bg-background/70 p-3">
@@ -3229,7 +3307,7 @@ export default function AdminRepertorio() {
                               const element = document.getElementById(`marker-card-${index}`);
                               if (element) element.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
                             }}
-                            className="inline-flex min-h-[30px] shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                            className="inline-flex min-h-[30px] shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
                             style={getSectionColorStyle(marker.sectionName)}
                           >
                             <span
@@ -3243,7 +3321,7 @@ export default function AdminRepertorio() {
                       </div>
                     )}
 
-                    <div className="mt-2 rounded-xl border border-border bg-surface px-2.5 py-2">
+                    <div className="mt-2 border-b border-border/50 px-2.5 pb-3 pt-1">
                       {editorChordproCancion?.mp3 ? (
                         <>
                           <div className="flex items-center gap-2.5">
@@ -3283,7 +3361,7 @@ export default function AdminRepertorio() {
                     </div>
 
                     {editorChordproCancion?.mp3 && editorSectionMarkers.length > 0 && (
-                      <div className="mt-2 rounded-xl border border-border bg-surface/80 px-2.5 py-2">
+                      <div className="mt-2 border-b border-border/50 px-2.5 pb-3 pt-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <button
                             type="button"
@@ -3361,7 +3439,7 @@ export default function AdminRepertorio() {
                         <div
                           id={`marker-card-${index}`}
                           key={marker.id || `${marker.sectionName}-${index}`}
-                          className="rounded-xl border border-l-2 border-border bg-surface px-2.5 py-2 scroll-mt-36"
+                          className="border-b border-l-2 border-border/50 bg-surface/35 px-2.5 py-2.5 scroll-mt-36"
                           style={getSectionCardStyle(marker.sectionName)}
                         >
                           <div className="grid grid-cols-[minmax(0,1fr)_6.3rem] items-center gap-1.5 sm:grid-cols-[minmax(6.75rem,0.9fr)_6.3rem_minmax(0,1fr)_auto_auto]">
@@ -3449,7 +3527,7 @@ export default function AdminRepertorio() {
                           </div>
 
                           {cueDraft.cueCount > 1 && (
-                            <div className="mt-2 rounded-lg border border-border/80 bg-background/60 p-2.5">
+                            <div className="mt-2 border-t border-border/50 px-1 pt-2.5">
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="min-w-0">
                                   <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-content-muted">
@@ -3773,6 +3851,15 @@ export default function AdminRepertorio() {
 
         .editor-column-scroll::-webkit-scrollbar-thumb:hover {
           background: linear-gradient(180deg, rgba(15, 23, 42, 0.96) 0%, rgba(51, 65, 85, 0.96) 100%);
+        }
+
+        .editor-chordpro-highlight {
+          scrollbar-color: transparent transparent;
+        }
+
+        .editor-chordpro-highlight::-webkit-scrollbar-track,
+        .editor-chordpro-highlight::-webkit-scrollbar-thumb {
+          visibility: hidden;
         }
 
         .admin-marker-range {
