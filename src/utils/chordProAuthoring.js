@@ -161,6 +161,45 @@ export const parseChordProMetadata = (rawValue = '') => {
   return result;
 };
 
+const normalizeCueSeconds = (values = [], sectionStartSec = null) => {
+  const sectionStart = sectionStartSec == null ? null : Number(sectionStartSec);
+  return (Array.isArray(values) ? values : [])
+    .map((value) => Math.round(Number(value) * 1000) / 1000)
+    .filter((value) => Number.isFinite(value))
+    .filter((value) => sectionStart == null || value > sectionStart)
+    .sort((left, right) => left - right)
+    .filter((value, index, source) => index === 0 || Math.abs(value - source[index - 1]) >= 0.001);
+};
+
+export const buildNextChordProCueCapture = (
+  marker = {},
+  rawTotalCues = 1,
+  rawCurrentTime = 0,
+) => {
+  const totalCues = Math.max(1, Math.floor(Number(rawTotalCues) || 1));
+  const currentTime = Math.round(Math.max(0, Number(rawCurrentTime) || 0) * 1000) / 1000;
+  const hasSectionStart = marker?.startSec != null && Number.isFinite(Number(marker.startSec));
+  const expectedCueMarkers = totalCues - 1;
+
+  if (!hasSectionStart || expectedCueMarkers === 0) {
+    return { startSec: currentTime, cueMarkers: [] };
+  }
+
+  const sectionStartSec = Number(marker.startSec);
+  const currentCueMarkers = normalizeCueSeconds(marker?.cueMarkers, sectionStartSec)
+    .slice(0, expectedCueMarkers);
+  if (currentCueMarkers.length >= expectedCueMarkers) return null;
+
+  const nextCueMarkers = normalizeCueSeconds(
+    [...currentCueMarkers, currentTime],
+    sectionStartSec,
+  ).slice(0, expectedCueMarkers);
+
+  return nextCueMarkers.length > currentCueMarkers.length
+    ? { startSec: sectionStartSec, cueMarkers: nextCueMarkers }
+    : null;
+};
+
 export const getChordProSectionVisual = (rawSectionName = '') => {
   const normalized = normalizeFold(String(rawSectionName || '').split('|')[0]);
 

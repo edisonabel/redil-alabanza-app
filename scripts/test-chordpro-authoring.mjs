@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   buildChordProSectionBlock,
+  buildNextChordProCueCapture,
   buildSuggestedSectionLabel,
   CHORDPRO_GUIDE_PRESETS,
   CHORDPRO_SECTION_PRESETS,
@@ -140,5 +141,28 @@ const genericMetadata = parseChordProMetadata([
 assert.equal(genericMetadata.key, 'D');
 assert.equal(genericMetadata.bpm, 90);
 assert.equal(genericMetadata.meter, '4/4');
+
+const cueOneCapture = buildNextChordProCueCapture(
+  { startSec: null, cueMarkers: [] },
+  3,
+  56,
+);
+assert.deepEqual(cueOneCapture, { startSec: 56, cueMarkers: [] });
+
+const cueTwoCapture = buildNextChordProCueCapture(cueOneCapture, 3, 72.35);
+assert.deepEqual(cueTwoCapture, { startSec: 56, cueMarkers: [72.35] });
+
+const cueThreeCapture = buildNextChordProCueCapture(cueTwoCapture, 3, 78.12);
+assert.deepEqual(cueThreeCapture, { startSec: 56, cueMarkers: [72.35, 78.12] });
+assert.equal(
+  buildNextChordProCueCapture(cueThreeCapture, 3, 82),
+  null,
+  'A completed section must not add extra cue markers.',
+);
+assert.equal(
+  buildNextChordProCueCapture(cueOneCapture, 3, 40),
+  null,
+  'A cue cannot be captured before its section starts.',
+);
 
 console.log('ChordPro authoring assistant tests passed.');

@@ -1499,12 +1499,22 @@ export default function ConfidenceMonitor({ songs = [], eventId = '', eventTitle
                         color: toRgba(activeCue.sectionColor, 0.86),
                         lineHeight: 1.2,
                         maxWidth: '100%',
-                        whiteSpace: shouldWrapMobileLyrics ? 'normal' : 'nowrap',
+                        display: 'grid',
+                        gap: isMobile ? 6 : 10,
                         overflowWrap: shouldWrapMobileLyrics ? 'anywhere' : 'normal',
-                        textWrap: shouldWrapMobileLyrics ? 'balance' : 'nowrap',
                       }}
                     >
-                      {activeCue.rawLines.map((l) => transposeLineBySteps(l, personalChordShift)).join('   ')}
+                      {activeCue.rawLines.map((line, lineIndex) => (
+                        <div
+                          key={`${activeCue.id}-instrumental-line-${lineIndex}`}
+                          style={{
+                            whiteSpace: shouldWrapMobileLyrics ? 'normal' : 'nowrap',
+                            textWrap: shouldWrapMobileLyrics ? 'balance' : 'nowrap',
+                          }}
+                        >
+                          {transposeLineBySteps(line, personalChordShift)}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}

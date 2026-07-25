@@ -22,6 +22,7 @@ import {
 import { splitSectionIntoCues } from '../utils/splitSectionIntoCues';
 import {
   buildChordProSectionBlock,
+  buildNextChordProCueCapture,
   buildSuggestedSectionLabel,
   CHORDPRO_GUIDE_PRESETS,
   CHORDPRO_SECTION_PRESETS,
@@ -435,17 +436,6 @@ const normalizeCueMarkerTimes = (rawCueMarkers = [], sectionStartSec = null) => 
   return [...new Set(normalizedTimes)];
 };
 
-const formatCueMarkersValue = (cueMarkers = []) =>
-  normalizeCueMarkerTimes(cueMarkers).map((value) => formatMarkerTime(value)).join(', ');
-
-const parseCueMarkersText = (rawValue = '', sectionStartSec = null) =>
-  normalizeCueMarkerTimes(
-    String(rawValue || '')
-      .split(/[,;\n]+/)
-      .map((item) => parseMarkerTime(item)),
-    sectionStartSec,
-  );
-
 const normalizeSectionMarkers = (sections = [], rawMarkers = []) => {
   const markerGroups = (Array.isArray(rawMarkers) ? rawMarkers : [])
     .filter(Boolean)
@@ -497,8 +487,15 @@ const stripChordsFromLine = (line = '') => (
 );
 
 const compactCuePreview = (rawLines = [], maxWords = 6) => {
-  const phrase = (Array.isArray(rawLines) ? rawLines : [])
+  const sourceLines = Array.isArray(rawLines) ? rawLines : [];
+  const lyricPhrase = sourceLines
     .map(stripChordsFromLine)
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const phrase = lyricPhrase || sourceLines
+    .map((line) => String(line || '').trim())
     .filter(Boolean)
     .join(' ')
     .replace(/\s+/g, ' ')
@@ -875,31 +872,13 @@ const EditableCell = ({ cancionId, campoBd, valorInicial, onSave, isSaving, anch
   );
 };
 
-const CueMarkersInput = ({ value = [], sectionStartSec = null, onCommit, placeholder = '' }) => {
-  const [draft, setDraft] = useState(formatCueMarkersValue(value));
-
-  useEffect(() => {
-    setDraft(formatCueMarkersValue(value));
-  }, [value]);
-
-  const commit = () => {
-    onCommit(parseCueMarkersText(draft, sectionStartSec));
-  };
-
-  return (
-    <input
-      type="text"
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      placeholder={placeholder}
-      aria-label="Tiempos de cambio de pantalla en minutos, segundos y milisegundos"
-      className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
-    />
-  );
-};
-
-const MarkerTimeInput = ({ value = null, onCommit, placeholder = '00:00.000' }) => {
+const MarkerTimeInput = ({
+  value = null,
+  onCommit,
+  placeholder = '00:00.000',
+  disabled = false,
+  ariaLabel = 'Tiempo del marker en minutos, segundos y milisegundos',
+}) => {
   const formattedValue = value == null ? '' : formatMarkerTime(value);
   const [draft, setDraft] = useState(formattedValue);
   const [isFocused, setIsFocused] = useState(false);
@@ -948,8 +927,9 @@ const MarkerTimeInput = ({ value = null, onCommit, placeholder = '00:00.000' }) 
         }
       }}
       placeholder={placeholder}
-      aria-label="Tiempo del marker en minutos, segundos y milisegundos"
-      className="h-9 w-[6.3rem] rounded-lg border border-border bg-background px-2.5 text-sm tabular-nums text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+      disabled={disabled}
+      aria-label={ariaLabel}
+      className="h-9 w-[6.3rem] rounded-lg border border-border bg-background px-2.5 text-sm tabular-nums text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 disabled:cursor-not-allowed disabled:bg-surface disabled:text-content-muted"
     />
   );
 };
@@ -2195,14 +2175,6 @@ export default function AdminRepertorio() {
     }
   };
 
-  const capturarMarkerActual = (markerIndex) => {
-    setEditorSectionMarkers((prev) => prev.map((item, itemIndex) => (
-      itemIndex === markerIndex
-        ? { ...item, ...toManualMarkerPatch({ startSec: toPreciseSeconds(editorAudioCurrentTimeRef.current) }) }
-        : item
-    )));
-  };
-
   const actualizarEditorSectionMarker = (markerIndex, patch) => {
     setEditorSectionMarkers((prev) => prev.map((item, itemIndex) => (
       itemIndex === markerIndex ? { ...item, ...patch } : item
@@ -2216,28 +2188,51 @@ export default function AdminRepertorio() {
     ));
   };
 
-  const capturarCueMarkerActual = (markerIndex) => {
+  const capturarSiguienteCueActual = (markerIndex, totalCues = 1) => {
     setEditorSectionMarkers((prev) => prev.map((item, itemIndex) => {
       if (itemIndex !== markerIndex) return item;
+      const capturePatch = buildNextChordProCueCapture(
+        item,
+        totalCues,
+        editorAudioCurrentTimeRef.current,
+      );
+      return capturePatch
+        ? { ...item, ...toManualMarkerPatch(capturePatch) }
+        : item;
+    }));
+  };
+
+  const actualizarCueMarkerIndividual = (markerIndex, cueMarkerIndex, nextValue) => {
+    setEditorSectionMarkers((prev) => prev.map((item, itemIndex) => {
+      if (itemIndex !== markerIndex) return item;
+
+      const sectionStartSec = item?.startSec == null ? null : Number(item.startSec);
+      const currentCueMarkers = normalizeCueMarkerTimes(item?.cueMarkers, sectionStartSec);
+      if (nextValue == null) {
+        return {
+          ...item,
+          ...toManualMarkerPatch({ cueMarkers: currentCueMarkers.slice(0, cueMarkerIndex) }),
+        };
+      }
+
+      const floor = cueMarkerIndex === 0
+        ? sectionStartSec
+        : currentCueMarkers[cueMarkerIndex - 1];
+      if (!Number.isFinite(floor) || Number(nextValue) <= floor) return item;
+
+      const nextCueMarkers = [
+        ...currentCueMarkers.slice(0, cueMarkerIndex),
+        toPreciseSeconds(nextValue),
+        ...currentCueMarkers.slice(cueMarkerIndex + 1).filter((value) => value > Number(nextValue)),
+      ];
 
       return {
         ...item,
         ...toManualMarkerPatch({
-          cueMarkers: normalizeCueMarkerTimes(
-            [...(Array.isArray(item?.cueMarkers) ? item.cueMarkers : []), toPreciseSeconds(editorAudioCurrentTimeRef.current)],
-            item?.startSec ?? null,
-          ),
+          cueMarkers: normalizeCueMarkerTimes(nextCueMarkers, sectionStartSec),
         }),
       };
     }));
-  };
-
-  const limpiarCueMarkers = (markerIndex) => {
-    setEditorSectionMarkers((prev) => prev.map((item, itemIndex) => (
-      itemIndex === markerIndex
-        ? { ...item, ...toManualMarkerPatch({ cueMarkers: [] }) }
-        : item
-    )));
   };
 
   const autoDetectMarkers = async ({ deepAnalysis = false } = {}) => {
@@ -3502,6 +3497,12 @@ export default function AdminRepertorio() {
                     {editorSectionMarkers.length > 0 ? editorSectionMarkers.map((marker, index) => {
                       const cueDraft = cueDraftsEditor[index] || { cueCount: 1, sectionStartPreview: '', cueMarkerPreview: [] };
                       const cueTransitionCount = Math.max(0, cueDraft.cueCount - 1);
+                      const capturedCueMarkers = normalizeCueMarkerTimes(marker?.cueMarkers, marker?.startSec)
+                        .slice(0, cueTransitionCount);
+                      const hasSectionStart = marker?.startSec != null && Number.isFinite(Number(marker.startSec));
+                      const capturedCueCount = hasSectionStart ? 1 + capturedCueMarkers.length : 0;
+                      const nextCueNumber = Math.min(cueDraft.cueCount, capturedCueCount + 1);
+                      const allCuesCaptured = cueDraft.cueCount > 1 && capturedCueCount >= cueDraft.cueCount;
 
                       return (
                         <div
@@ -3522,6 +3523,9 @@ export default function AdminRepertorio() {
                               </p>
                               {cueDraft.sectionStartPreview && (
                                 <p className="mt-0.5 truncate pl-4 text-[10px] text-content-muted">
+                                  {cueDraft.cueCount > 1 && (
+                                    <span className="font-medium text-content">Cue 1 · </span>
+                                  )}
                                   {cueDraft.sectionStartPreview}
                                 </p>
                               )}
@@ -3581,69 +3585,47 @@ export default function AdminRepertorio() {
                             />
                             <button
                               type="button"
-                              onClick={() => {
-                                actualizarEditorSectionMarker(index, toManualMarkerPatch({ startSec: null, cueMarkers: [] }));
-                              }}
-                              className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-border bg-surface px-2.5 text-[11px] font-bold text-content-muted transition-colors hover:bg-background hover:text-content sm:w-auto"
+                              onClick={() => capturarSiguienteCueActual(index, cueDraft.cueCount)}
+                              disabled={!editorChordproCancion?.mp3 || allCuesCaptured}
+                              className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-brand/25 bg-brand/10 px-2.5 text-[11px] font-medium text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted sm:w-auto"
                             >
-                              Limpiar
+                              {allCuesCaptured
+                                ? 'Cues listos'
+                                : cueDraft.cueCount > 1
+                                  ? `Marcar cue ${nextCueNumber}`
+                                  : 'Marcar ahora'}
                             </button>
                             <button
                               type="button"
-                              onClick={() => capturarMarkerActual(index)}
-                              disabled={!editorChordproCancion?.mp3}
-                              className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-brand/25 bg-brand/10 px-2.5 text-[11px] font-bold text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted sm:w-auto"
+                              onClick={() => {
+                                actualizarEditorSectionMarker(index, toManualMarkerPatch({ startSec: null, cueMarkers: [] }));
+                              }}
+                              className="inline-flex h-9 w-full items-center justify-center rounded-lg px-2.5 text-[11px] font-medium text-content-muted transition-colors hover:bg-surface hover:text-content sm:w-auto"
                             >
-                              <span className="sm:hidden">Marcar</span>
-                              <span className="hidden sm:inline">Marcar ahora</span>
+                              Limpiar
                             </button>
                           </div>
 
                           {cueDraft.cueCount > 1 && (
                             <div className="mt-2 border-t border-border/50 px-1 pt-2.5">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <span className="text-[10px] font-normal uppercase tracking-[0.12em] text-content-muted">
-                                  {cueTransitionCount === 1 ? 'Cue 2' : `Cues 2–${cueDraft.cueCount}`}
-                                </span>
-
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => capturarCueMarkerActual(index)}
-                                    disabled={!editorChordproCancion?.mp3 || marker.startSec == null}
-                                    className="inline-flex h-8 items-center justify-center rounded-lg border border-brand/20 bg-brand/10 px-2.5 text-[10px] font-medium text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted"
+                              <div className="grid gap-1.5">
+                                {cueDraft.cueMarkerPreview.map((preview, previewIndex) => (
+                                  <div
+                                    key={`${marker.sectionKey || marker.id}-cue-preview-${previewIndex}`}
+                                    className="grid grid-cols-[minmax(0,1fr)_6.3rem] items-center gap-2"
                                   >
-                                    Cue ahora
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => limpiarCueMarkers(index)}
-                                    disabled={!Array.isArray(marker?.cueMarkers) || marker.cueMarkers.length === 0}
-                                    className="inline-flex h-8 items-center justify-center rounded-lg px-2.5 text-[10px] font-medium text-content-muted transition-colors hover:bg-surface hover:text-content disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    Limpiar cues
-                                  </button>
-                                </div>
-                              </div>
-
-                              <div className="mt-2 grid gap-2">
-                                <CueMarkersInput
-                                  value={marker.cueMarkers}
-                                  sectionStartSec={marker.startSec}
-                                  onCommit={(nextCueMarkers) => actualizarEditorSectionMarker(index, toManualMarkerPatch({ cueMarkers: nextCueMarkers }))}
-                                  placeholder={cueTransitionCount > 1 ? 'Ej: 01:12.350, 01:18.120' : 'Ej: 01:12.350'}
-                                />
-
-                                {cueDraft.cueMarkerPreview.length > 0 && (
-                                  <p className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-content-muted">
-                                    {cueDraft.cueMarkerPreview.map((preview, previewIndex) => (
-                                      <span key={`${marker.sectionKey || marker.id}-cue-preview-${previewIndex}`} className="min-w-0">
-                                        <span className="font-medium text-content">{preview.label}</span>
-                                        {` · ${preview.text}`}
-                                      </span>
-                                    ))}
-                                  </p>
-                                )}
+                                    <p className="min-w-0 truncate text-[11px] text-content-muted">
+                                      <span className="font-medium text-content">{preview.label}</span>
+                                      {` · ${preview.text}`}
+                                    </p>
+                                    <MarkerTimeInput
+                                      value={capturedCueMarkers[previewIndex] ?? null}
+                                      onCommit={(nextValue) => actualizarCueMarkerIndividual(index, previewIndex, nextValue)}
+                                      disabled={!hasSectionStart || previewIndex > capturedCueMarkers.length}
+                                      ariaLabel={`Tiempo de ${preview.label} en ${marker.sectionName}`}
+                                    />
+                                  </div>
+                                ))}
                               </div>
                             </div>
                           )}
