@@ -31,6 +31,19 @@ export const CHORDPRO_GUIDE_PRESETS = [
   'Sube de tono',
 ];
 
+const CHORDPRO_SECTION_VISUALS = {
+  intro: { key: 'intro', rgb: [34, 211, 238] },
+  verse: { key: 'verse', rgb: [99, 102, 241] },
+  prechorus: { key: 'prechorus', rgb: [234, 179, 8] },
+  chorus: { key: 'chorus', rgb: [249, 115, 22] },
+  interlude: { key: 'interlude', rgb: [239, 68, 68] },
+  instrumental: { key: 'instrumental', rgb: [168, 85, 247] },
+  bridge: { key: 'bridge', rgb: [236, 72, 153] },
+  solo: { key: 'solo', rgb: [20, 184, 166] },
+  outro: { key: 'outro', rgb: [14, 165, 233] },
+  default: { key: 'default', rgb: [148, 163, 184] },
+};
+
 const normalizeFold = (value = '') => (
   String(value || '')
     .normalize('NFD')
@@ -40,6 +53,45 @@ const normalizeFold = (value = '') => (
     .replace(/\s+/g, ' ')
     .trim()
 );
+
+export const getChordProSectionVisual = (rawSectionName = '') => {
+  const normalized = normalizeFold(String(rawSectionName || '').split('|')[0]);
+
+  if (normalized.includes('pre coro') || normalized.includes('prechorus')) {
+    return CHORDPRO_SECTION_VISUALS.prechorus;
+  }
+  if (normalized.includes('verso') || normalized.includes('verse')) {
+    return CHORDPRO_SECTION_VISUALS.verse;
+  }
+  if (normalized.includes('coro') || normalized.includes('chorus')) {
+    return CHORDPRO_SECTION_VISUALS.chorus;
+  }
+  if (normalized.includes('instrumental')) {
+    return CHORDPRO_SECTION_VISUALS.instrumental;
+  }
+  if (normalized.includes('interludio') || normalized.includes('interlude')) {
+    return CHORDPRO_SECTION_VISUALS.interlude;
+  }
+  if (normalized.includes('puente') || normalized.includes('bridge')) {
+    return CHORDPRO_SECTION_VISUALS.bridge;
+  }
+  if (normalized.includes('solo')) {
+    return CHORDPRO_SECTION_VISUALS.solo;
+  }
+  if (
+    normalized.includes('outro') ||
+    normalized.includes('final') ||
+    normalized.includes('ending') ||
+    normalized === 'fin'
+  ) {
+    return CHORDPRO_SECTION_VISUALS.outro;
+  }
+  if (normalized.includes('intro') || normalized.includes('entrada')) {
+    return CHORDPRO_SECTION_VISUALS.intro;
+  }
+
+  return CHORDPRO_SECTION_VISUALS.default;
+};
 
 const sanitizeSectionLabel = (value = '') => (
   String(value || '')

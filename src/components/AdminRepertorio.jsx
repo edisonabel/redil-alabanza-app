@@ -25,6 +25,7 @@ import {
   buildSuggestedSectionLabel,
   CHORDPRO_GUIDE_PRESETS,
   CHORDPRO_SECTION_PRESETS,
+  getChordProSectionVisual,
   insertChordProSectionAfterIndex,
   mergeChordProGuideNote,
   removeChordProGuideNote,
@@ -43,6 +44,34 @@ const LEADING_CHORD_SECTION_RE = new RegExp(`^\\[(${CHORD_BODY_PATTERN})\\|`, 'i
 const BROKEN_INLINE_CHORD_RE = new RegExp(`\\[(${CHORD_BODY_PATTERN})\\s*\\|\\s*`, 'gi');
 const EDITOR_MODAL_MAX_HEIGHT = 'min(94vh, calc(100dvh - 4.75rem - env(safe-area-inset-bottom)))';
 const ARCHIVO_ELIMINABLE_FIELDS = new Set(['mp3', 'link_acordes']);
+
+const getSectionColorStyle = (sectionName = '', active = false) => {
+  const visual = getChordProSectionVisual(sectionName);
+  const rgb = visual.rgb.join(', ');
+
+  return {
+    color: `rgb(${rgb})`,
+    backgroundColor: `rgba(${rgb}, ${active ? 0.18 : 0.1})`,
+    borderColor: `rgba(${rgb}, ${active ? 0.48 : 0.26})`,
+    boxShadow: active ? `inset 0 0 0 1px rgba(${rgb}, 0.1)` : 'none',
+  };
+};
+
+const getSectionDotStyle = (sectionName = '') => {
+  const rgb = getChordProSectionVisual(sectionName).rgb.join(', ');
+  return {
+    backgroundColor: `rgb(${rgb})`,
+    boxShadow: `0 0 0 3px rgba(${rgb}, 0.14)`,
+  };
+};
+
+const getSectionCardStyle = (sectionName = '') => {
+  const rgb = getChordProSectionVisual(sectionName).rgb.join(', ');
+  return {
+    borderLeftColor: `rgb(${rgb})`,
+    backgroundImage: `linear-gradient(90deg, rgba(${rgb}, 0.07), transparent 34%)`,
+  };
+};
 
 const normalizeSectionName = (rawValue = '') => {
   const cleaned = String(rawValue).trim();
@@ -2954,7 +2983,14 @@ export default function AdminRepertorio() {
                         <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-content-muted">
                           Letra y estructura
                         </p>
-                        <p className="truncate text-xs font-medium text-content">
+                        <p className="mt-0.5 flex min-w-0 items-center gap-2 truncate text-xs font-medium text-content">
+                          {editorAuthoringSection?.name && (
+                            <span
+                              className="h-2 w-2 shrink-0 rounded-full"
+                              style={getSectionDotStyle(editorAuthoringSection.name)}
+                              aria-hidden="true"
+                            />
+                          )}
                           {editorAuthoringSection?.name
                             ? `Trabajando en ${editorAuthoringSection.name}`
                             : 'Añade la primera sección'}
@@ -2993,6 +3029,31 @@ export default function AdminRepertorio() {
                       </div>
                     </div>
 
+                    {seccionesEditorChordpro.length > 0 && (
+                      <div className="admin-chip-scroll flex shrink-0 gap-1.5 overflow-x-auto border-b border-border bg-background/70 px-2.5 py-2">
+                        {seccionesEditorChordpro.map((section, sectionIndex) => {
+                          const isActive = editorAuthoringSectionIndex === sectionIndex;
+                          return (
+                            <button
+                              key={`structure-map-${section.name}-${sectionIndex}`}
+                              type="button"
+                              onClick={() => seleccionarEditorAuthoringSection(sectionIndex)}
+                              aria-pressed={isActive}
+                              className="inline-flex min-h-[32px] shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                              style={getSectionColorStyle(section.name, isActive)}
+                            >
+                              <span
+                                className="h-1.5 w-1.5 rounded-full"
+                                style={getSectionDotStyle(section.name)}
+                                aria-hidden="true"
+                              />
+                              {section.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
                     {editorAuthoringPanel && (
                       <div
                         id="admin-chordpro-authoring-panel"
@@ -3025,21 +3086,26 @@ export default function AdminRepertorio() {
                               {editorAuthoringPanel === 'sections' ? 'Insertar después de' : 'Aplicar en'}
                             </p>
                             <div className="admin-chip-scroll flex gap-1.5 overflow-x-auto pb-1">
-                              {seccionesEditorChordpro.map((section, sectionIndex) => (
-                                <button
-                                  key={`authoring-section-${section.name}-${sectionIndex}`}
-                                  type="button"
-                                  onClick={() => seleccionarEditorAuthoringSection(sectionIndex)}
-                                  aria-pressed={editorAuthoringSectionIndex === sectionIndex}
-                                  className={`inline-flex min-h-[30px] shrink-0 items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold transition-colors ${
-                                    editorAuthoringSectionIndex === sectionIndex
-                                      ? 'border-brand/40 bg-brand/15 text-brand'
-                                      : 'border-border bg-background text-content-muted hover:text-content'
-                                  }`}
-                                >
-                                  {section.name}
-                                </button>
-                              ))}
+                              {seccionesEditorChordpro.map((section, sectionIndex) => {
+                                const isActive = editorAuthoringSectionIndex === sectionIndex;
+                                return (
+                                  <button
+                                    key={`authoring-section-${section.name}-${sectionIndex}`}
+                                    type="button"
+                                    onClick={() => seleccionarEditorAuthoringSection(sectionIndex)}
+                                    aria-pressed={isActive}
+                                    className="inline-flex min-h-[32px] shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                                    style={getSectionColorStyle(section.name, isActive)}
+                                  >
+                                    <span
+                                      className="h-1.5 w-1.5 rounded-full"
+                                      style={getSectionDotStyle(section.name)}
+                                      aria-hidden="true"
+                                    />
+                                    {section.name}
+                                  </button>
+                                );
+                              })}
                             </div>
                           </div>
                         )}
@@ -3051,8 +3117,14 @@ export default function AdminRepertorio() {
                                 key={preset.id}
                                 type="button"
                                 onClick={() => agregarEditorChordproSection(preset)}
-                                className="inline-flex min-h-[38px] items-center justify-center rounded-xl border border-border bg-background px-2.5 py-2 text-xs font-semibold text-content transition-colors hover:border-brand/35 hover:bg-brand/10 hover:text-brand"
+                                className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl border px-2.5 py-2 text-xs font-bold transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                                style={getSectionColorStyle(preset.label)}
                               >
+                                <span
+                                  className="h-2 w-2 rounded-full"
+                                  style={getSectionDotStyle(preset.label)}
+                                  aria-hidden="true"
+                                />
                                 {preset.label}
                               </button>
                             ))}
@@ -3157,8 +3229,14 @@ export default function AdminRepertorio() {
                               const element = document.getElementById(`marker-card-${index}`);
                               if (element) element.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
                             }}
-                            className="inline-flex min-h-[28px] shrink-0 items-center rounded-full border border-border bg-surface px-2.5 py-1 text-[10px] font-semibold text-content-muted transition-colors hover:border-brand/30 hover:text-content"
+                            className="inline-flex min-h-[30px] shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                            style={getSectionColorStyle(marker.sectionName)}
                           >
+                            <span
+                              className="h-1.5 w-1.5 rounded-full"
+                              style={getSectionDotStyle(marker.sectionName)}
+                              aria-hidden="true"
+                            />
                             {marker.sectionName}
                           </button>
                         ))}
@@ -3280,10 +3358,22 @@ export default function AdminRepertorio() {
                       const cueTransitionCount = Math.max(0, cueDraft.cueCount - 1);
 
                       return (
-                        <div id={`marker-card-${index}`} key={marker.id || `${marker.sectionName}-${index}`} className="rounded-xl border border-border bg-surface px-2.5 py-2 scroll-mt-36">
+                        <div
+                          id={`marker-card-${index}`}
+                          key={marker.id || `${marker.sectionName}-${index}`}
+                          className="rounded-xl border border-l-2 border-border bg-surface px-2.5 py-2 scroll-mt-36"
+                          style={getSectionCardStyle(marker.sectionName)}
+                        >
                           <div className="grid grid-cols-[minmax(0,1fr)_6.3rem] items-center gap-1.5 sm:grid-cols-[minmax(6.75rem,0.9fr)_6.3rem_minmax(0,1fr)_auto_auto]">
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-content">{marker.sectionName}</p>
+                              <p className="flex min-w-0 items-center gap-2 truncate text-sm font-semibold text-content">
+                                <span
+                                  className="h-2 w-2 shrink-0 rounded-full"
+                                  style={getSectionDotStyle(marker.sectionName)}
+                                  aria-hidden="true"
+                                />
+                                <span className="truncate">{marker.sectionName}</span>
+                              </p>
                               {marker._autoDetected && (
                                 <span className={`mt-1 inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${marker._method === 'guide-cue'
                                   ? 'bg-emerald-950/70 text-emerald-400'

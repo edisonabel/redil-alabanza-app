@@ -4,6 +4,7 @@ import {
   buildSuggestedSectionLabel,
   CHORDPRO_GUIDE_PRESETS,
   CHORDPRO_SECTION_PRESETS,
+  getChordProSectionVisual,
   insertChordProSectionAfterIndex,
   mergeChordProGuideNote,
   removeChordProGuideNote,
@@ -30,6 +31,15 @@ assert.equal(
 );
 assert.equal(buildSuggestedSectionLabel('Instrumental', ['Interludio']), 'Instrumental');
 assert.equal(buildChordProSectionBlock('Solo'), '[Solo]');
+assert.equal(getChordProSectionVisual('Intro 1').key, 'intro');
+assert.equal(getChordProSectionVisual('Pre-Coro 2').key, 'prechorus');
+assert.equal(getChordProSectionVisual('Coro 3').key, 'chorus');
+assert.equal(getChordProSectionVisual('Solo').key, 'solo');
+assert.notDeepEqual(
+  getChordProSectionVisual('Intro').rgb,
+  getChordProSectionVisual('Coro').rgb,
+  'Important section families must be visually distinguishable.',
+);
 
 const initialSong = [
   '[Intro]',
