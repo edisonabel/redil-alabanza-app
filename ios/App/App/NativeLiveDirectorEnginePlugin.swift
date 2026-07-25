@@ -97,7 +97,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private let maxScheduledSilencePadSeconds: Double = 1.0
     private let internalPadTailSeconds: Double = 30.0
     private let internalPadFadeOutSeconds: Double = 10.0
-    private let padBridgeDefaultFadeSeconds: Double = 7.0
+    private let padBridgeDefaultFadeSeconds: Double = 5.0
     private let syncDebugIntervalSeconds: Double = 5.0
     private let capacityDebugIntervalSeconds: Double = 10.0
     private var engine = AVAudioEngine()
@@ -132,6 +132,11 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
     private var preloadTask: Task<Void, Never>?
     private var padBridgeTask: Task<Void, Never>?
     private var padBridgeFadeTimer: DispatchSourceTimer?
+    private let padBridgeRequestGenerationLock = NSLock()
+    private var padBridgeRequestGeneration: UInt64 = 0
+    // Accessed only from engineQueue. This prevents a cancelled timer event
+    // that was already queued from mutating the players of a newer fade.
+    private var padBridgeFadeGeneration: UInt64 = 0
     private var padBridgePlayerA: AVAudioPlayer?
     private var padBridgePlayerB: AVAudioPlayer?
     private var padBridgeURLA: String?
@@ -150,9 +155,19 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         NotificationCenter.default.removeObserver(self)
         preloadTask?.cancel()
         padBridgeTask?.cancel()
+        padBridgeRequestGenerationLock.lock()
+        padBridgeRequestGeneration &+= 1
+        padBridgeRequestGenerationLock.unlock()
+        padBridgeFadeGeneration &+= 1
         padBridgeFadeTimer?.cancel()
+        padBridgeFadeTimer = nil
         padBridgePlayerA?.stop()
         padBridgePlayerB?.stop()
+        padBridgePlayerA = nil
+        padBridgePlayerB = nil
+        padBridgeURLA = nil
+        padBridgeURLB = nil
+        padBridgeCurrentURLString = nil
         // Release the idle-timer lock if we go away mid-playback so other
         // apps / screens don't inherit a permanently-awake device.
         DispatchQueue.main.async {
@@ -289,6 +304,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         let fadeSeconds = normalizedPadBridgeFadeSeconds(call.getDouble("fadeSeconds"))
         let active = call.getBool("active") ?? false
         let volume = Float(min(1, max(0, call.getDouble("volume") ?? 0)))
+        let requestGeneration = advancePadBridgeRequestGeneration()
 
         guard
             active,
@@ -298,7 +314,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         else {
             padBridgeTask?.cancel()
             padBridgeTask = nil
-            stopPadBridge(fadeSeconds: fadeSeconds)
+            stopPadBridge(fadeSeconds: fadeSeconds, requestGeneration: requestGeneration)
             resolvePadCall(call)
             return
         }
@@ -314,7 +330,7 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
             do {
                 let localURL = try await self.cachedAudioURL(for: remoteURL)
-                if Task.isCancelled {
+                if Task.isCancelled || !self.isCurrentPadBridgeRequest(requestGeneration) {
                     self.resolvePadCall(call, payload: ["cancelled": true])
                     return
                 }
@@ -323,11 +339,18 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
                     localURL: localURL,
                     sourceURLString: urlString,
                     volume: volume,
-                    fadeSeconds: fadeSeconds
+                    fadeSeconds: fadeSeconds,
+                    requestGeneration: requestGeneration
                 )
-                self.resolvePadCall(call)
+                if Task.isCancelled || !self.isCurrentPadBridgeRequest(requestGeneration) {
+                    self.resolvePadCall(call, payload: ["cancelled": true])
+                } else {
+                    self.resolvePadCall(call)
+                }
             } catch {
-                if Task.isCancelled {
+                if error is CancellationError ||
+                    Task.isCancelled ||
+                    !self.isCurrentPadBridgeRequest(requestGeneration) {
                     self.resolvePadCall(call, payload: ["cancelled": true])
                     return
                 }
@@ -340,9 +363,10 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
 
     @objc func stopPad(_ call: CAPPluginCall) {
         let fadeSeconds = normalizedPadBridgeFadeSeconds(call.getDouble("fadeSeconds"))
+        let requestGeneration = advancePadBridgeRequestGeneration()
         padBridgeTask?.cancel()
         padBridgeTask = nil
-        stopPadBridge(fadeSeconds: fadeSeconds)
+        stopPadBridge(fadeSeconds: fadeSeconds, requestGeneration: requestGeneration)
         resolvePadCall(call)
     }
 
@@ -1712,6 +1736,33 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         min(20, max(0, value ?? padBridgeDefaultFadeSeconds))
     }
 
+    private func advancePadBridgeRequestGeneration() -> UInt64 {
+        padBridgeRequestGenerationLock.lock()
+        defer { padBridgeRequestGenerationLock.unlock() }
+        padBridgeRequestGeneration &+= 1
+        return padBridgeRequestGeneration
+    }
+
+    private func isCurrentPadBridgeRequest(_ generation: UInt64) -> Bool {
+        padBridgeRequestGenerationLock.lock()
+        defer { padBridgeRequestGenerationLock.unlock() }
+        return padBridgeRequestGeneration == generation
+    }
+
+    @discardableResult
+    private func performForCurrentPadBridgeRequest(
+        _ generation: UInt64,
+        _ action: () -> Void
+    ) -> Bool {
+        padBridgeRequestGenerationLock.lock()
+        defer { padBridgeRequestGenerationLock.unlock() }
+        guard padBridgeRequestGeneration == generation else {
+            return false
+        }
+        action()
+        return true
+    }
+
     private func resolvePadCall(_ call: CAPPluginCall, payload: [String: Any] = [:]) {
         DispatchQueue.main.async {
             if payload.isEmpty {
@@ -1732,60 +1783,116 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         localURL: URL,
         sourceURLString: String,
         volume: Float,
-        fadeSeconds: Double
+        fadeSeconds: Double,
+        requestGeneration: UInt64
     ) async throws {
         try await withCheckedThrowingContinuation { continuation in
             engineQueue.async {
                 do {
+                    guard self.isCurrentPadBridgeRequest(requestGeneration) else {
+                        throw CancellationError()
+                    }
+
                     self.configureAudioSession()
                     let safeVolume = min(1, max(0, volume))
                     let activePlayer = self.padBridgeActiveSlot == 0 ? self.padBridgePlayerA : self.padBridgePlayerB
 
                     if self.padBridgeCurrentURLString == sourceURLString, let activePlayer {
-                        activePlayer.numberOfLoops = -1
-                        if !activePlayer.isPlaying {
-                            _ = activePlayer.play()
+                        var didStart = true
+                        let applied = self.performForCurrentPadBridgeRequest(requestGeneration) {
+                            activePlayer.numberOfLoops = -1
+                            if !activePlayer.isPlaying {
+                                didStart = activePlayer.play()
+                            }
+                            guard didStart else {
+                                return
+                            }
+                            self.setIdleTimerDisabled(true)
+                            self.fadePadBridge(
+                                targetA: self.padBridgeActiveSlot == 0 ? safeVolume : 0,
+                                targetB: self.padBridgeActiveSlot == 1 ? safeVolume : 0,
+                                duration: fadeSeconds,
+                                releaseSilent: true
+                            )
                         }
-                        self.setIdleTimerDisabled(true)
-                        self.fadePadBridge(
-                            targetA: self.padBridgeActiveSlot == 0 ? safeVolume : 0,
-                            targetB: self.padBridgeActiveSlot == 1 ? safeVolume : 0,
-                            duration: fadeSeconds,
-                            stopSilent: true
-                        )
+                        guard applied else {
+                            throw CancellationError()
+                        }
+                        guard didStart else {
+                            throw NSError(domain: "NativeLiveDirectorEngine", code: 91, userInfo: [
+                                NSLocalizedDescriptionKey: "Pad player failed to resume."
+                            ])
+                        }
                         CAPLog.print("NLDE PADBRIDGE reuse url=\(localURL.lastPathComponent) slot=\(self.padBridgeActiveSlot == 0 ? "A" : "B") volume=\(String(format: "%.4f", safeVolume)) fade=\(String(format: "%.2f", fadeSeconds))")
                         continuation.resume()
                         return
                     }
 
-                    let nextSlot = self.padBridgeActiveSlot == 0 ? 1 : 0
+                    let nextSlot: Int
+                    if self.padBridgePlayerA == nil {
+                        nextSlot = 0
+                    } else if self.padBridgePlayerB == nil {
+                        nextSlot = 1
+                    } else {
+                        // If several song changes arrive during a crossfade,
+                        // recycle the quieter slot and keep the louder pad as
+                        // the outgoing bed. This avoids a sudden level drop.
+                        let volumeA = self.padBridgePlayerA?.volume ?? 0
+                        let volumeB = self.padBridgePlayerB?.volume ?? 0
+                        nextSlot = volumeA <= volumeB ? 0 : 1
+                    }
+
+                    // Release the destination before AVAudioPlayer allocates
+                    // and prepares its decoder. Rapid A -> B -> C changes
+                    // therefore never retain three pad decoders, even briefly.
+                    let reservedSlot = self.performForCurrentPadBridgeRequest(requestGeneration) {
+                        self.releasePadBridgeSlot(nextSlot)
+                    }
+                    guard reservedSlot else {
+                        throw CancellationError()
+                    }
+
                     let nextPlayer = try AVAudioPlayer(contentsOf: localURL)
                     nextPlayer.numberOfLoops = -1
                     nextPlayer.volume = 0
                     nextPlayer.prepareToPlay()
-                    guard nextPlayer.play() else {
+                    var didStart = false
+                    let applied = self.performForCurrentPadBridgeRequest(requestGeneration) {
+                        didStart = nextPlayer.play()
+                        guard didStart else {
+                            return
+                        }
+
+                        if nextSlot == 0 {
+                            self.padBridgePlayerA = nextPlayer
+                            self.padBridgeURLA = sourceURLString
+                        } else {
+                            self.padBridgePlayerB = nextPlayer
+                            self.padBridgeURLB = sourceURLString
+                        }
+
+                        self.padBridgeActiveSlot = nextSlot
+                        self.padBridgeCurrentURLString = sourceURLString
+                        self.setIdleTimerDisabled(true)
+                        self.fadePadBridge(
+                            targetA: nextSlot == 0 ? safeVolume : 0,
+                            targetB: nextSlot == 1 ? safeVolume : 0,
+                            duration: fadeSeconds,
+                            releaseSilent: true
+                        )
+                    }
+
+                    guard applied else {
+                        nextPlayer.stop()
+                        throw CancellationError()
+                    }
+                    guard didStart else {
+                        nextPlayer.stop()
                         throw NSError(domain: "NativeLiveDirectorEngine", code: 91, userInfo: [
                             NSLocalizedDescriptionKey: "Pad player failed to start."
                         ])
                     }
 
-                    if nextSlot == 0 {
-                        self.padBridgePlayerA = nextPlayer
-                        self.padBridgeURLA = sourceURLString
-                    } else {
-                        self.padBridgePlayerB = nextPlayer
-                        self.padBridgeURLB = sourceURLString
-                    }
-
-                    self.padBridgeActiveSlot = nextSlot
-                    self.padBridgeCurrentURLString = sourceURLString
-                    self.setIdleTimerDisabled(true)
-                    self.fadePadBridge(
-                        targetA: nextSlot == 0 ? safeVolume : 0,
-                        targetB: nextSlot == 1 ? safeVolume : 0,
-                        duration: fadeSeconds,
-                        stopSilent: true
-                    )
                     CAPLog.print("NLDE PADBRIDGE crossfade url=\(localURL.lastPathComponent) slot=\(nextSlot == 0 ? "A" : "B") volume=\(String(format: "%.4f", safeVolume)) fade=\(String(format: "%.2f", fadeSeconds))")
                     continuation.resume()
                 } catch {
@@ -1795,10 +1902,18 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         }
     }
 
-    private func stopPadBridge(fadeSeconds: Double) {
+    private func stopPadBridge(fadeSeconds: Double, requestGeneration: UInt64) {
         engineQueue.async {
+            guard self.isCurrentPadBridgeRequest(requestGeneration) else {
+                return
+            }
             self.padBridgeCurrentURLString = nil
-            self.fadePadBridge(targetA: 0, targetB: 0, duration: fadeSeconds, stopSilent: true)
+            self.fadePadBridge(
+                targetA: 0,
+                targetB: 0,
+                duration: fadeSeconds,
+                releaseSilent: true
+            )
             CAPLog.print("NLDE PADBRIDGE stop fade=\(String(format: "%.2f", fadeSeconds))")
         }
     }
@@ -1808,30 +1923,66 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         padBridgeFadeTimer = nil
     }
 
-    private func fadePadBridge(targetA: Float, targetB: Float, duration: Double, stopSilent: Bool) {
+    private func releasePadBridgeSlot(_ slot: Int) {
+        if slot == 0 {
+            padBridgePlayerA?.stop()
+            padBridgePlayerA = nil
+            padBridgeURLA = nil
+        } else {
+            padBridgePlayerB?.stop()
+            padBridgePlayerB = nil
+            padBridgeURLB = nil
+        }
+    }
+
+    private func completePadBridgeFade(
+        targetA: Float,
+        targetB: Float,
+        releaseSilent: Bool
+    ) {
+        padBridgePlayerA?.volume = targetA
+        padBridgePlayerB?.volume = targetB
+
+        if releaseSilent {
+            if targetA <= 0.0001 {
+                releasePadBridgeSlot(0)
+            }
+            if targetB <= 0.0001 {
+                releasePadBridgeSlot(1)
+            }
+        }
+
+        if targetA <= 0.0001, targetB <= 0.0001 {
+            padBridgeActiveSlot = 0
+            padBridgeCurrentURLString = nil
+            if !isPlaying {
+                setIdleTimerDisabled(false)
+            }
+        }
+    }
+
+    private func fadePadBridge(
+        targetA: Float,
+        targetB: Float,
+        duration: Double,
+        releaseSilent: Bool
+    ) {
+        padBridgeFadeGeneration &+= 1
+        let fadeGeneration = padBridgeFadeGeneration
         cancelPadBridgeFadeTimer()
 
         let startA = padBridgePlayerA?.volume ?? 0
         let startB = padBridgePlayerB?.volume ?? 0
+        let alreadyAtTargets =
+            abs(startA - targetA) < 0.0001 &&
+            abs(startB - targetB) < 0.0001
 
-        let finishFade = {
-            self.padBridgePlayerA?.volume = targetA
-            self.padBridgePlayerB?.volume = targetB
-            if stopSilent {
-                if targetA <= 0.0001 {
-                    self.padBridgePlayerA?.pause()
-                }
-                if targetB <= 0.0001 {
-                    self.padBridgePlayerB?.pause()
-                }
-                if targetA <= 0.0001, targetB <= 0.0001, !self.isPlaying {
-                    self.setIdleTimerDisabled(false)
-                }
-            }
-        }
-
-        if duration <= 0.001 {
-            finishFade()
+        if duration <= 0.001 || alreadyAtTargets {
+            completePadBridgeFade(
+                targetA: targetA,
+                targetB: targetB,
+                releaseSilent: releaseSilent
+            )
             return
         }
 
@@ -1840,6 +1991,9 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
         timer.schedule(deadline: .now(), repeating: .milliseconds(33), leeway: .milliseconds(8))
         timer.setEventHandler { [weak self] in
             guard let self else { return }
+            guard self.padBridgeFadeGeneration == fadeGeneration else {
+                return
+            }
 
             let elapsed = CACurrentMediaTime() - startTime
             let progress = min(1, max(0, elapsed / duration))
@@ -1851,7 +2005,11 @@ public class NativeLiveDirectorEnginePlugin: CAPPlugin, CAPBridgedPlugin, @unche
             self.padBridgePlayerB?.volume = startB + ((targetB - startB) * eased)
 
             if progress >= 1 {
-                finishFade()
+                self.completePadBridgeFade(
+                    targetA: targetA,
+                    targetB: targetB,
+                    releaseSilent: releaseSilent
+                )
                 self.cancelPadBridgeFadeTimer()
                 CAPLog.print("NLDE PADBRIDGE fade-complete targetA=\(String(format: "%.4f", targetA)) targetB=\(String(format: "%.4f", targetB))")
             }

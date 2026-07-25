@@ -31,6 +31,7 @@ import {
   isNativeLiveDirectorEngineAvailable,
   NativeLiveDirectorEngine,
 } from '../../services/NativeLiveDirectorEnginePlugin';
+import { IndependentPadPlayer } from '../../services/IndependentPadPlayer';
 import {
   createSequenceSessionFromFile,
   createStemSessionFromFolder,
@@ -221,7 +222,7 @@ const DISABLE_BACKWARD_SEEK_WHILE_PLAYING = true;
 // The internal pad masters are intentionally lush, but their raw gain is too hot
 // for live control. Apply a fixed -8 dB trim before the pad reaches either engine.
 const INTERNAL_PAD_GAIN_TRIM = Math.pow(10, -8 / 20);
-const INTERNAL_PAD_CROSSFADE_SECONDS = 7;
+const INTERNAL_PAD_CROSSFADE_SECONDS = 5;
 const INTERNAL_PAD_CROSSFADE_MS = INTERNAL_PAD_CROSSFADE_SECONDS * 1000;
 
 // Priority buckets for auto-disabling extras when a session has more
@@ -582,12 +583,8 @@ export function LiveDirectorView({
     startX: 0,
     startScrollLeft: 0,
   });
-  const padAudioRefA = useRef<HTMLAudioElement | null>(null);
-  const padAudioRefB = useRef<HTMLAudioElement | null>(null);
-  const activePadChannelRef = useRef<'A' | 'B'>('A');
-  const padFadeTargetRefA = useRef(0);
-  const padFadeTargetRefB = useRef(0);
-  const padFadeFrameRef = useRef<number | null>(null);
+  const independentPadPlayerRef = useRef<IndependentPadPlayer | null>(null);
+  const padGestureStartUrlRef = useRef<string | null>(null);
   const ownedObjectUrlsRef = useRef<string[]>([]);
   // Ref-based indirection so each ChannelStrip gets a STABLE callback
   // reference keyed by its trackId for the whole session. The callbacks read
@@ -946,6 +943,30 @@ export function LiveDirectorView({
   );
   const resolvedPadUrl = useMemo(() => getPadUrlForSongKey(songKey), [songKey]);
   const shouldUseNativePadBridge = Boolean(isIOSNativeEngineSurface && isEnsayoMode && resolvedPadUrl);
+  const setPadActiveFromGesture = useCallback((
+    nextValue: boolean | ((previous: boolean) => boolean),
+  ) => {
+    const resolvedNextValue = typeof nextValue === 'function'
+      ? nextValue(isPadActive)
+      : nextValue;
+
+    if (resolvedNextValue && !isIOSNativeEngineSurface && resolvedPadUrl) {
+      // Start while WebKit still recognizes the tap/key as a user gesture.
+      padGestureStartUrlRef.current = resolvedPadUrl;
+      void independentPadPlayerRef.current?.switchTo(
+        resolvedPadUrl,
+        effectiveInternalPadVolume,
+      ).then((result) => {
+        if (result.status === 'failed') {
+          padGestureStartUrlRef.current = null;
+          setIsPadActive(false);
+        }
+      });
+    } else if (!resolvedNextValue) {
+      padGestureStartUrlRef.current = null;
+    }
+    setIsPadActive(resolvedNextValue);
+  }, [effectiveInternalPadVolume, isIOSNativeEngineSurface, isPadActive, resolvedPadUrl]);
   const layoutScale = useMemo(() => {
     if (isPortrait || viewportHeight <= 0) {
       return 1;
@@ -2968,146 +2989,57 @@ export function LiveDirectorView({
 
   useEffect(() => {
     if (isIOSNativeEngineSurface) {
-      const padA = padAudioRefA.current;
-      const padB = padAudioRefB.current;
-      if (padFadeFrameRef.current !== null) {
-        window.cancelAnimationFrame(padFadeFrameRef.current);
-        padFadeFrameRef.current = null;
-      }
-      if (padA) {
-        padA.pause();
-        padA.removeAttribute('src');
-        padA.load();
-      }
-      if (padB) {
-        padB.pause();
-        padB.removeAttribute('src');
-        padB.load();
-      }
-      padFadeTargetRefA.current = 0;
-      padFadeTargetRefB.current = 0;
-      return;
+      independentPadPlayerRef.current?.dispose();
+      independentPadPlayerRef.current = null;
+      return undefined;
     }
 
-    const padA = padAudioRefA.current;
-    const padB = padAudioRefB.current;
-    if (!padA || !padB) {
-      return;
-    }
-
-    if (padFadeFrameRef.current !== null) {
-      window.cancelAnimationFrame(padFadeFrameRef.current);
-      padFadeFrameRef.current = null;
-    }
-
-    if (!resolvedPadUrl) {
-      if (isPadActive) {
-        if (activePadChannelRef.current === 'A') {
-          padFadeTargetRefA.current = effectiveInternalPadVolume;
-          padFadeTargetRefB.current = 0;
-        } else {
-          padFadeTargetRefB.current = effectiveInternalPadVolume;
-          padFadeTargetRefA.current = 0;
-        }
-      } else {
-        padFadeTargetRefA.current = 0;
-        padFadeTargetRefB.current = 0;
-      }
-    } else {
-      const activePad = activePadChannelRef.current === 'A' ? padA : padB;
-
-      if (!activePad.src || !activePad.src.includes(resolvedPadUrl)) {
-        const previousChannel = activePadChannelRef.current;
-        const nextChannel = previousChannel === 'A' ? 'B' : 'A';
-        activePadChannelRef.current = nextChannel;
-
-        const nextPad = nextChannel === 'A' ? padA : padB;
-        const oldPad = previousChannel === 'A' ? padA : padB;
-
-        nextPad.src = resolvedPadUrl;
-        nextPad.loop = true;
-        nextPad.volume = 0;
-
-        if (isPadActive) {
-          nextPad.play().catch((error) => {
-            console.warn('[LiveDirectorView] Pad autoplay blocked.', error);
-            setIsPadActive(false);
-          });
-        }
-
-        if (oldPad === padA) {
-          padFadeTargetRefA.current = 0;
-          padFadeTargetRefB.current = isPadActive ? effectiveInternalPadVolume : 0;
-        } else {
-          padFadeTargetRefB.current = 0;
-          padFadeTargetRefA.current = isPadActive ? effectiveInternalPadVolume : 0;
-        }
-      } else {
-        if (activePadChannelRef.current === 'A') {
-          padFadeTargetRefA.current = isPadActive ? effectiveInternalPadVolume : 0;
-          padFadeTargetRefB.current = 0;
-        } else {
-          padFadeTargetRefB.current = isPadActive ? effectiveInternalPadVolume : 0;
-          padFadeTargetRefA.current = 0;
-        }
-
-        if (isPadActive && activePad.paused) {
-          activePad.play().catch((error) => {
-            console.warn('[LiveDirectorView] Pad autoplay blocked.', error);
-            setIsPadActive(false);
-          });
-        }
-      }
-    }
-
-    let lastTime = performance.now();
-    const FADE_DURATION_MS = INTERNAL_PAD_CROSSFADE_MS;
-
-    const animateFade = (time: number) => {
-      const deltaMs = time - lastTime;
-      lastTime = time;
-
-      let volA = clamp(padA.volume, 0, 1);
-      let volB = clamp(padB.volume, 0, 1);
-      const targetA = clamp(padFadeTargetRefA.current, 0, 1);
-      const targetB = clamp(padFadeTargetRefB.current, 0, 1);
-
-      const deltaVol = (1.0 / FADE_DURATION_MS) * deltaMs;
-
-      if (Math.abs(volA - targetA) < 0.001) {
-        padA.volume = clamp(targetA, 0, 1);
-        if (targetA === 0 && !padA.paused) padA.pause();
-      } else if (volA < targetA) {
-        padA.volume = clamp(Math.min(targetA, volA + deltaVol), 0, 1);
-      } else {
-        padA.volume = clamp(Math.max(targetA, volA - deltaVol), 0, 1);
-      }
-
-      if (Math.abs(volB - targetB) < 0.001) {
-        padB.volume = clamp(targetB, 0, 1);
-        if (targetB === 0 && !padB.paused) padB.pause();
-      } else if (volB < targetB) {
-        padB.volume = clamp(Math.min(targetB, volB + deltaVol), 0, 1);
-      } else {
-        padB.volume = clamp(Math.max(targetB, volB - deltaVol), 0, 1);
-      }
-
-      if (Math.abs(padA.volume - targetA) >= 0.001 || Math.abs(padB.volume - targetB) >= 0.001) {
-        padFadeFrameRef.current = window.requestAnimationFrame(animateFade);
-      } else {
-        padFadeFrameRef.current = null;
-      }
-    };
-
-    padFadeFrameRef.current = window.requestAnimationFrame(animateFade);
+    const padPlayer = new IndependentPadPlayer({
+      transitionMs: INTERNAL_PAD_CROSSFADE_MS,
+      onPlaybackError: (error) => {
+        console.warn('[LiveDirectorView] Independent pad playback failed.', error);
+      },
+    });
+    independentPadPlayerRef.current = padPlayer;
 
     return () => {
-      if (padFadeFrameRef.current !== null) {
-        window.cancelAnimationFrame(padFadeFrameRef.current);
-        padFadeFrameRef.current = null;
+      if (independentPadPlayerRef.current === padPlayer) {
+        independentPadPlayerRef.current = null;
       }
+      padPlayer.dispose();
     };
-  }, [effectiveInternalPadVolume, isIOSNativeEngineSurface, isPadActive, resolvedPadUrl]);
+  }, [isIOSNativeEngineSurface]);
+
+  useEffect(() => {
+    if (isIOSNativeEngineSurface) return undefined;
+    const padPlayer = independentPadPlayerRef.current;
+    if (!padPlayer) return undefined;
+    let cancelled = false;
+
+    if (isPadActive && resolvedPadUrl) {
+      const alreadyStartedFromGesture = padGestureStartUrlRef.current === resolvedPadUrl;
+      padGestureStartUrlRef.current = null;
+      if (!alreadyStartedFromGesture) {
+        void padPlayer.switchTo(resolvedPadUrl, effectiveInternalPadVolume).then((result) => {
+          if (!cancelled && result.status === 'failed') {
+            setIsPadActive(false);
+          }
+        });
+      }
+    } else {
+      padGestureStartUrlRef.current = null;
+      padPlayer.stop(INTERNAL_PAD_CROSSFADE_MS);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isIOSNativeEngineSurface, isPadActive, resolvedPadUrl]);
+
+  useEffect(() => {
+    if (isIOSNativeEngineSurface) return;
+    independentPadPlayerRef.current?.setVolume(effectiveInternalPadVolume);
+  }, [effectiveInternalPadVolume, isIOSNativeEngineSurface]);
 
   const persistSongSession = useCallback(async (payload: {
     mode: 'sequence' | 'folder';
@@ -3814,11 +3746,9 @@ export function LiveDirectorView({
     }
 
     if (!shouldUseNativePadBridge || !resolvedPadUrl) {
-      if (!isPadActive) {
-        void NativeLiveDirectorEngine.stopPad({ fadeSeconds: INTERNAL_PAD_CROSSFADE_SECONDS }).catch((error) => {
-          console.warn('[LiveDirectorView] Native pad bridge stop failed.', error);
-        });
-      }
+      void NativeLiveDirectorEngine.stopPad({ fadeSeconds: INTERNAL_PAD_CROSSFADE_SECONDS }).catch((error) => {
+        console.warn('[LiveDirectorView] Native pad bridge stop failed.', error);
+      });
       return;
     }
 
@@ -3850,7 +3780,7 @@ export function LiveDirectorView({
     handleMuteTrack,
     handleSoloTrack,
     handleToggleGuideTrackRoute,
-    setIsPadActive,
+    setIsPadActive: setPadActiveFromGesture,
     isPadActive,
   };
 
@@ -4026,7 +3956,7 @@ export function LiveDirectorView({
 
         if (event.code === 'KeyP' && resolvedPadUrl) {
           event.preventDefault();
-          setIsPadActive((previous) => !previous);
+          setPadActiveFromGesture((previous) => !previous);
           return;
         }
 
@@ -4165,6 +4095,7 @@ export function LiveDirectorView({
     resolvedPadUrl,
     resolvedSections,
     scheduleSectionsAutoFollowResume,
+    setPadActiveFromGesture,
     setVisualSectionTime,
     showBackConfirm,
     showLoadPanel,
@@ -4552,7 +4483,7 @@ export function LiveDirectorView({
                 type="button"
                 onClick={() => {
                   if (!resolvedPadUrl) return;
-                  setIsPadActive((previous) => !previous);
+                  setPadActiveFromGesture((previous) => !previous);
                 }}
                 disabled={!resolvedPadUrl}
                 aria-pressed={isPadActive}
@@ -5949,13 +5880,6 @@ export function LiveDirectorView({
             </div>
           </div>
         </div>
-      )}
-
-      {!isIOSNativeEngineSurface && (
-        <>
-          <audio ref={padAudioRefA} preload="none" className="hidden" />
-          <audio ref={padAudioRefB} preload="none" className="hidden" />
-        </>
       )}
 
       {usesEventMixPersistence && eventMixSaveNotice && (

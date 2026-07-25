@@ -3,6 +3,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, LoaderCircle, Mic, MicOff, Pause,
 import { supabase } from '../../lib/supabase';
 import { audioSessionService } from '../../services/AudioSessionService';
 import { metronomeService } from '../../services/MetronomeEngine';
+import { IndependentPadPlayer } from '../../services/IndependentPadPlayer';
 import { screenWakeLockService } from '../../services/ScreenWakeLockService';
 import { useMultitrackEngine } from '../../hooks/useMultitrackEngine';
 import { isLikelyAudioSourceUrl, resolveFetchableAudioUrl, resolvePreferredAudioUrl } from '../../lib/audio-playback.js';
@@ -1444,7 +1445,8 @@ export default function ModoEnsayoCompacto({
   const trackPanRef = useRef(null);
   const trackGainFadeFrameRef = useRef(null);
   const trackTargetGainRef = useRef(TRACK_DEFAULT_GAIN);
-  const padAudioRef = useRef(null);
+  const independentPadPlayerRef = useRef(null);
+  const padGestureStartUrlRef = useRef(null);
   const [padVolume, setPadVolume] = useState(0.5);
   const [isPadActive, setIsPadActive] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(148);
@@ -1529,6 +1531,37 @@ export default function ModoEnsayoCompacto({
     const sourceKey = currentSong?.originalKey || currentSong?.key || currentSongDisplayKey;
     return getPadUrlForSongKey(sourceKey) || null;
   }, [currentSong?.key, currentSong?.originalKey, currentSongDisplayKey]);
+  useEffect(() => {
+    const padPlayer = new IndependentPadPlayer({ transitionMs: 5000 });
+    independentPadPlayerRef.current = padPlayer;
+
+    return () => {
+      if (independentPadPlayerRef.current === padPlayer) {
+        independentPadPlayerRef.current = null;
+      }
+      padPlayer.dispose();
+    };
+  }, []);
+  const handleTogglePad = useCallback(() => {
+    const nextActive = !isPadActive;
+    const padPlayer = independentPadPlayerRef.current;
+
+    if (nextActive && activePadUrl) {
+      // Start from the tap itself so iPhone keeps the media gesture valid.
+      padGestureStartUrlRef.current = activePadUrl;
+      void padPlayer?.switchTo(activePadUrl, padVolume).then((result) => {
+        if (result.status === 'failed') {
+          padGestureStartUrlRef.current = null;
+          console.warn('[Pads] No se pudo activar el pad independiente', result.error);
+          setIsPadActive(false);
+        }
+      });
+    } else if (!nextActive) {
+      padGestureStartUrlRef.current = null;
+    }
+
+    setIsPadActive(nextActive);
+  }, [activePadUrl, isPadActive, padVolume]);
   const currentSections = useMemo(() => (
     (currentSong?.sections || []).map((section) => ({
       ...section,
@@ -2535,49 +2568,36 @@ export default function ModoEnsayoCompacto({
       panner.setPosition(panValue, 0, 1 - Math.abs(panValue));
     }
   }, [panValue]);
-  // Efecto Maestro de Fades (Encendido/Apagado) — 5 segundos suave
+  // El pad vive fuera del reloj y del ciclo de carga de la secuencia.
+  // El reproductor independiente conserva solo los dos elementos del crossfade.
   useEffect(() => {
-    const padEl = padAudioRef.current;
-    if (!padEl) return;
-    if (padEl._fadeInterval) clearInterval(padEl._fadeInterval);
+    const padPlayer = independentPadPlayerRef.current;
+    if (!padPlayer) return undefined;
+    let cancelled = false;
+
     if (isPadActive && activePadUrl) {
-      if (padEl.paused) {
-        padEl.volume = 0;
-        padEl.play().then(() => {
-          const step = padVolume / 100;
-          padEl._fadeInterval = setInterval(() => {
-            if (padEl.volume + step < padVolume) {
-              padEl.volume += step;
-            } else {
-              padEl.volume = padVolume;
-              clearInterval(padEl._fadeInterval);
-            }
-          }, 50); // 100 pasos × 50ms = 5 segundos de Fade-In
-        }).catch(err => {
-          console.warn('[Pads] Autoplay bloqueado', err);
-          setIsPadActive(false);
+      const alreadyStartedFromGesture = padGestureStartUrlRef.current === activePadUrl;
+      padGestureStartUrlRef.current = null;
+      if (!alreadyStartedFromGesture) {
+        void padPlayer.switchTo(activePadUrl, padVolume).then((result) => {
+          if (!cancelled && result.status === 'failed') {
+            console.warn('[Pads] No se pudo cambiar el pad independiente', result.error);
+            setIsPadActive(false);
+          }
         });
       }
     } else {
-      const startVol = padEl.volume;
-      const step = startVol / 100;
-      padEl._fadeInterval = setInterval(() => {
-        if (padEl.volume - step > 0) {
-          padEl.volume -= step;
-        } else {
-          padEl.volume = 0;
-          padEl.pause();
-          clearInterval(padEl._fadeInterval);
-        }
-      }, 50); // 100 pasos × 50ms = 5 segundos de Fade-Out
+      padGestureStartUrlRef.current = null;
+      padPlayer.stop(5000);
     }
-  }, [isPadActive, activePadUrl]); // Sin padVolume para no interrumpir el fade
-  // Efecto secundario: slider de volumen (solo si no hay fade activo)
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activePadUrl, isPadActive]);
   useEffect(() => {
-    const padEl = padAudioRef.current;
-    if (!padEl || !isPadActive || padEl._fadeInterval) return;
-    padEl.volume = padVolume;
-  }, [padVolume, isPadActive]);
+    independentPadPlayerRef.current?.setVolume(padVolume);
+  }, [padVolume]);
   useEffect(() => {
     guideCueAudioRefs.current = guideCueAudioRefs.current.slice(0, processedGuideCueSources.length);
   }, [processedGuideCueSources.length]);
@@ -3042,6 +3062,7 @@ export default function ModoEnsayoCompacto({
     return Math.min(100, Math.max(0, (audioCurrentTime / timelineDuration) * 100));
   }, [audioCurrentTime, timelineDuration]);
   const handleGoBack = () => {
+    independentPadPlayerRef.current?.stop(0);
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
@@ -3471,13 +3492,6 @@ export default function ModoEnsayoCompacto({
           playsInline
         />
       ))}
-      <audio
-        key={`pad-${activePadUrl}`}
-        ref={padAudioRef}
-        src={activePadUrl || undefined}
-        loop
-        preload="auto"
-      />
       {personalSettingsToast && (
         <div
           className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[80] flex justify-center px-4"
@@ -4161,7 +4175,9 @@ export default function ModoEnsayoCompacto({
                     </p>
                     <button
                       type="button"
-                      onClick={() => setIsPadActive(!isPadActive)}
+                      onClick={handleTogglePad}
+                      aria-pressed={isPadActive}
+                      aria-label={isPadActive ? 'Apagar pad ambiental' : 'Activar pad ambiental'}
                       className={`rounded-full px-3 py-1 text-xs font-bold transition-all ${isPadActive
                         ? 'bg-brand text-white shadow-sm'
                         : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
@@ -4175,6 +4191,7 @@ export default function ModoEnsayoCompacto({
                       <span className="text-xs font-bold text-zinc-400">Vol</span>
                       <input
                         type="range"
+                        aria-label="Volumen del pad ambiental"
                         min="0"
                         max="1"
                         step="0.05"
