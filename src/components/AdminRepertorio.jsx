@@ -2,8 +2,35 @@
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { audioSessionService } from '../services/AudioSessionService';
-import { CheckCircle, UploadCloud, Loader2, Plus, PencilLine, X, Save, Pause, Play, ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
+import {
+  Check,
+  CheckCircle,
+  ChevronLeft,
+  ChevronRight,
+  ListPlus,
+  Loader2,
+  MessageSquarePlus,
+  Pause,
+  PencilLine,
+  Play,
+  Plus,
+  Save,
+  Sparkles,
+  UploadCloud,
+  X,
+} from 'lucide-react';
 import { splitSectionIntoCues } from '../utils/splitSectionIntoCues';
+import {
+  buildChordProSectionBlock,
+  buildSuggestedSectionLabel,
+  CHORDPRO_GUIDE_PRESETS,
+  CHORDPRO_SECTION_PRESETS,
+  insertChordProSectionAfterIndex,
+  mergeChordProGuideNote,
+  removeChordProGuideNote,
+  splitChordProGuideNote,
+  updateChordProSectionNoteAtIndex,
+} from '../utils/chordProAuthoring';
 
 const { useRef } = React;
 
@@ -26,7 +53,9 @@ const normalizeSectionName = (rawValue = '') => {
   if (normalized === 'sov' || normalized === 'start_of_verse') return 'Verso';
   if (normalized === 'sob' || normalized === 'start_of_bridge') return 'Puente';
   if (normalized === 'soi' || normalized === 'start_of_intro') return 'Intro';
-  if (normalized === 'interlude' || normalized === 'interludio' || normalized === 'instrumental' || normalized === 'instrumental 1' || normalized === 'instrumental 2' || normalized === 'solo instrumental' || normalized === 'start_of_interlude') return 'Interludio';
+  if (normalized === 'interlude' || normalized === 'interludio' || normalized === 'start_of_interlude') return 'Interludio';
+  if (normalized === 'instrumental' || /^instrumental\s+\d+$/.test(normalized)) return cleaned;
+  if (normalized === 'solo instrumental' || normalized === 'solo') return 'Solo';
   if (normalized === 'sot' || normalized === 'start_of_tag') return 'Tag';
   if (normalized === 'eoc' || normalized === 'end_of_chorus') return '';
   if (normalized === 'eov' || normalized === 'end_of_verse') return '';
@@ -41,14 +70,13 @@ const isLikelySectionHeader = (rawHeader = '') => {
   const cleaned = String(rawHeader || '').trim();
   if (!cleaned) return false;
 
-  if (CHORD_SYMBOL_RE.test(cleaned)) return false;
-
   const normalized = cleaned.toLowerCase();
   if ([
     'intro',
     'interlude',
     'interludio',
     'instrumental',
+    'solo',
     'solo instrumental',
     'coro',
     'chorus',
@@ -65,6 +93,7 @@ const isLikelySectionHeader = (rawHeader = '') => {
     return true;
   }
 
+  if (CHORD_SYMBOL_RE.test(cleaned)) return false;
   return /\d/.test(cleaned);
 };
 
@@ -385,31 +414,6 @@ const buildRepeatSectionBlock = (suggestion = {}) => {
     `[${sectionName}]`,
     ...lines.map((line) => String(line || '').trimEnd()),
   ].join('\n').trim();
-};
-
-const insertChordProSectionAfterIndex = (rawValue = '', afterSectionIndex = -1, sectionBlock = '') => {
-  const normalizedValue = String(rawValue || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const lines = normalizedValue.split('\n');
-  let sectionIndex = -1;
-  let insertAtLine = lines.length;
-
-  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-    const sectionLineMatch = lines[lineIndex].trim().match(PURE_SECTION_HEADER_RE);
-    if (!sectionLineMatch || !isLikelySectionHeader(sectionLineMatch[1])) continue;
-
-    sectionIndex += 1;
-    if (sectionIndex > afterSectionIndex) {
-      insertAtLine = lineIndex;
-      break;
-    }
-  }
-
-  const before = lines.slice(0, insertAtLine).join('\n').trimEnd();
-  const after = lines.slice(insertAtLine).join('\n').trimStart();
-
-  return [before, sectionBlock.trim(), after]
-    .filter(Boolean)
-    .join('\n\n');
 };
 
 const normalizeExternalVoiceUrl = (rawUrl = '') => {
@@ -827,6 +831,10 @@ export default function AdminRepertorio() {
   const [editorSectionMarkers, setEditorSectionMarkers] = useState([]);
   const [editorChordproCargando, setEditorChordproCargando] = useState(false);
   const [editorChordproAviso, setEditorChordproAviso] = useState('');
+  const [editorAuthoringPanel, setEditorAuthoringPanel] = useState(null);
+  const [editorAuthoringSectionIndex, setEditorAuthoringSectionIndex] = useState(-1);
+  const [editorCustomGuide, setEditorCustomGuide] = useState('');
+  const [editorAuthoringFeedback, setEditorAuthoringFeedback] = useState('');
   const [guardandoChordpro, setGuardandoChordpro] = useState(false);
   const [sectionMarkersDisponibles, setSectionMarkersDisponibles] = useState(true);
   const [isAutoDetecting, setIsAutoDetecting] = useState(false);
@@ -885,6 +893,19 @@ export default function AdminRepertorio() {
   }, [editorChordproValor]);
 
   const seccionesEditorChordpro = useMemo(() => parseChordProSections(editorChordproValor), [editorChordproValor]);
+  const editorAuthoringSection = editorAuthoringSectionIndex >= 0
+    ? seccionesEditorChordpro[editorAuthoringSectionIndex] || null
+    : null;
+  const editorAuthoringMarker = editorAuthoringSectionIndex >= 0
+    ? editorSectionMarkers[editorAuthoringSectionIndex] || null
+    : null;
+  const editorCanAnnotateSection = Boolean(
+    editorAuthoringSection &&
+    String(editorAuthoringSection.name || '').trim().toLowerCase() !== 'letra',
+  );
+  const editorAuthoringGuides = useMemo(() => (
+    splitChordProGuideNote(editorAuthoringSection?.note || editorAuthoringMarker?.note || '')
+  ), [editorAuthoringMarker?.note, editorAuthoringSection?.note]);
   const cueDraftsEditor = useMemo(() => (
     seccionesEditorChordpro.map((section, index) => {
       const cues = splitSectionIntoCues('editor-draft', index, section, null, 1);
@@ -931,6 +952,19 @@ export default function AdminRepertorio() {
     if (!editorChordproAbierto) return;
     setEditorSectionMarkers((prev) => normalizeSectionMarkers(seccionesEditorChordpro, prev));
   }, [editorChordproAbierto, seccionesEditorChordpro]);
+
+  useEffect(() => {
+    if (!editorChordproAbierto) return;
+    if (seccionesEditorChordpro.length === 0) {
+      setEditorAuthoringSectionIndex(-1);
+      return;
+    }
+    setEditorAuthoringSectionIndex((previous) => (
+      previous >= 0 && previous < seccionesEditorChordpro.length
+        ? previous
+        : seccionesEditorChordpro.length - 1
+    ));
+  }, [editorChordproAbierto, seccionesEditorChordpro.length]);
 
   useEffect(() => {
     if (!editorChordproAbierto) {
@@ -1715,6 +1749,10 @@ export default function AdminRepertorio() {
     setEditorChordproAbierto(true);
     setEditorChordproCargando(true);
     setEditorChordproAviso('');
+    setEditorAuthoringPanel(null);
+    setEditorAuthoringSectionIndex(-1);
+    setEditorCustomGuide('');
+    setEditorAuthoringFeedback('');
     setIsAutoDetecting(false);
     setAutoDetectError(null);
     setAutoDetectResult(null);
@@ -1749,6 +1787,7 @@ export default function AdminRepertorio() {
     const secciones = parseChordProSections(chordproParaEditor);
     setEditorChordproValor(chordproParaEditor);
     setEditorSectionMarkers(normalizeSectionMarkers(secciones, cancion?.section_markers || []));
+    setEditorAuthoringSectionIndex(secciones.length > 0 ? secciones.length - 1 : -1);
     setEditorAudioCurrentTime(0);
     setEditorAudioDuration(0);
     setEditorAudioPlaying(false);
@@ -1765,6 +1804,10 @@ export default function AdminRepertorio() {
     setEditorSectionMarkers([]);
     setEditorChordproCargando(false);
     setEditorChordproAviso('');
+    setEditorAuthoringPanel(null);
+    setEditorAuthoringSectionIndex(-1);
+    setEditorCustomGuide('');
+    setEditorAuthoringFeedback('');
     setIsAutoDetecting(false);
     setAutoDetectError(null);
     setAutoDetectResult(null);
@@ -2016,6 +2059,13 @@ export default function AdminRepertorio() {
     )));
   };
 
+  const actualizarEditorSectionNote = (markerIndex, note) => {
+    actualizarEditorSectionMarker(markerIndex, { note });
+    setEditorChordproValor((previous) => (
+      updateChordProSectionNoteAtIndex(previous, markerIndex, note)
+    ));
+  };
+
   const capturarCueMarkerActual = (markerIndex) => {
     setEditorSectionMarkers((prev) => prev.map((item, itemIndex) => {
       if (itemIndex !== markerIndex) return item;
@@ -2197,6 +2247,88 @@ export default function AdminRepertorio() {
       };
     });
     setEditorChordproAviso(`Se agrego ${suggestion?.suggestedName || 'la repeticion'} como seccion editable. Revisa el marker antes de guardar.`);
+  };
+
+  const toggleEditorAuthoringPanel = (panelName) => {
+    setEditorAuthoringFeedback('');
+    setEditorAuthoringPanel((previous) => (previous === panelName ? null : panelName));
+  };
+
+  const seleccionarEditorAuthoringSection = (sectionIndex) => {
+    setEditorAuthoringSectionIndex(sectionIndex);
+    setEditorAuthoringFeedback('');
+  };
+
+  const agregarEditorChordproSection = (preset) => {
+    const sectionLabel = buildSuggestedSectionLabel(
+      preset?.label,
+      seccionesEditorChordpro.map((section) => section.name),
+    );
+    const sectionBlock = buildChordProSectionBlock(sectionLabel);
+    if (!sectionBlock) return;
+
+    const insertionIndex = seccionesEditorChordpro.length > 0
+      ? Math.min(
+        seccionesEditorChordpro.length - 1,
+        Math.max(0, editorAuthoringSectionIndex),
+      )
+      : -1;
+    const nextChordpro = insertChordProSectionAfterIndex(
+      editorChordproValor,
+      insertionIndex,
+      sectionBlock,
+    );
+    const markerInsertionIndex = Math.min(
+      editorSectionMarkers.length,
+      Math.max(0, insertionIndex + 1),
+    );
+    const nextRawMarkers = [...editorSectionMarkers];
+    nextRawMarkers.splice(markerInsertionIndex, 0, {
+      sectionName: sectionLabel,
+      startSec: null,
+      cueMarkers: [],
+      note: '',
+      _autoDetected: false,
+      _confidence: 0,
+      _method: 'manual',
+    });
+
+    setEditorChordproValor(nextChordpro);
+    setEditorSectionMarkers(normalizeSectionMarkers(
+      parseChordProSections(nextChordpro),
+      nextRawMarkers,
+    ));
+    setEditorAuthoringSectionIndex(markerInsertionIndex);
+    setEditorAuthoringFeedback(`${sectionLabel} añadida`);
+  };
+
+  const aplicarEditorChordproGuide = (rawGuide, shouldRemove = false) => {
+    if (!editorCanAnnotateSection || editorAuthoringSectionIndex < 0) return;
+
+    const currentNote = editorAuthoringSection.note || editorAuthoringMarker?.note || '';
+    const nextNote = shouldRemove
+      ? removeChordProGuideNote(currentNote, rawGuide)
+      : mergeChordProGuideNote(currentNote, rawGuide);
+    const nextChordpro = updateChordProSectionNoteAtIndex(
+      editorChordproValor,
+      editorAuthoringSectionIndex,
+      nextNote,
+    );
+
+    setEditorChordproValor(nextChordpro);
+    setEditorSectionMarkers((previous) => previous.map((marker, markerIndex) => (
+      markerIndex === editorAuthoringSectionIndex
+        ? { ...marker, note: nextNote }
+        : marker
+    )));
+    setEditorAuthoringFeedback(shouldRemove ? 'Guía eliminada' : 'Guía añadida');
+  };
+
+  const agregarEditorCustomGuide = () => {
+    const customGuide = String(editorCustomGuide || '').trim();
+    if (!customGuide) return;
+    aplicarEditorChordproGuide(customGuide);
+    setEditorCustomGuide('');
   };
 
   const editorAudioProgress = editorAudioDuration > 0
@@ -2748,14 +2880,19 @@ export default function AdminRepertorio() {
       )}
 
       {editorChordproAbierto && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-slate-950/70 p-2 pb-[calc(3.5rem+env(safe-area-inset-bottom))] backdrop-blur-sm md:p-3 md:pb-[calc(3.5rem+env(safe-area-inset-bottom))]">
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-slate-950/70 p-2 pb-[calc(3.5rem+env(safe-area-inset-bottom))] backdrop-blur-sm md:p-3 md:pb-[calc(3.5rem+env(safe-area-inset-bottom))]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-chordpro-editor-title"
+        >
           <div
             className="my-1 flex h-full w-full max-w-[min(94vw,96rem)] flex-col overflow-hidden rounded-[1.6rem] border border-border bg-surface shadow-2xl md:my-2"
             style={{ maxHeight: EDITOR_MODAL_MAX_HEIGHT }}
           >
             <div className="shrink-0 flex items-center justify-between gap-3 border-b border-border px-4 py-3 md:px-5">
               <div className="min-w-0 flex flex-1 flex-wrap items-center gap-x-2.5 gap-y-1">
-                <h2 className="truncate text-lg font-bold text-content">
+                <h2 id="admin-chordpro-editor-title" className="truncate text-lg font-bold text-content">
                   Editar ChordPro
                 </h2>
                 <p className="min-w-0 truncate text-sm font-medium text-content-muted">
@@ -2811,13 +2948,187 @@ export default function AdminRepertorio() {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex min-h-0 h-full overflow-hidden rounded-xl border border-border bg-background">
+                  <div className="relative flex min-h-0 h-full flex-col overflow-hidden rounded-xl border border-border bg-background">
+                    <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-surface/80 px-2.5 py-2">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-content-muted">
+                          Letra y estructura
+                        </p>
+                        <p className="truncate text-xs font-medium text-content">
+                          {editorAuthoringSection?.name
+                            ? `Trabajando en ${editorAuthoringSection.name}`
+                            : 'Añade la primera sección'}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => toggleEditorAuthoringPanel('sections')}
+                          aria-expanded={editorAuthoringPanel === 'sections'}
+                          aria-controls="admin-chordpro-authoring-panel"
+                          className={`inline-flex min-h-[34px] items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition-colors ${
+                            editorAuthoringPanel === 'sections'
+                              ? 'border-brand/40 bg-brand text-white'
+                              : 'border-border bg-background text-content hover:border-brand/30 hover:text-brand'
+                          }`}
+                        >
+                          <ListPlus className="h-4 w-4" />
+                          Sección
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleEditorAuthoringPanel('guides')}
+                          aria-expanded={editorAuthoringPanel === 'guides'}
+                          aria-controls="admin-chordpro-authoring-panel"
+                          className={`inline-flex min-h-[34px] items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition-colors ${
+                            editorAuthoringPanel === 'guides'
+                              ? 'border-brand/40 bg-brand text-white'
+                              : 'border-border bg-background text-content hover:border-brand/30 hover:text-brand'
+                          }`}
+                        >
+                          <MessageSquarePlus className="h-4 w-4" />
+                          Guía
+                        </button>
+                      </div>
+                    </div>
+
+                    {editorAuthoringPanel && (
+                      <div
+                        id="admin-chordpro-authoring-panel"
+                        className="absolute inset-x-2 top-[3.85rem] z-20 max-h-[calc(100%-4.35rem)] overflow-y-auto rounded-2xl border border-brand/20 bg-surface p-3 shadow-2xl"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-bold text-content">
+                              {editorAuthoringPanel === 'sections' ? 'Añadir sección' : 'Añadir guía musical'}
+                            </p>
+                            <p className="mt-0.5 text-[11px] leading-4 text-content-muted">
+                              {editorAuthoringPanel === 'sections'
+                                ? 'Se insertará después de la sección seleccionada.'
+                                : 'La guía quedará visible dentro de la sección en modo ensayo.'}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setEditorAuthoringPanel(null)}
+                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-content-muted transition-colors hover:text-content"
+                            aria-label="Cerrar asistente de estructura"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        {seccionesEditorChordpro.length > 0 && (
+                          <div className="mt-3">
+                            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-content-muted">
+                              {editorAuthoringPanel === 'sections' ? 'Insertar después de' : 'Aplicar en'}
+                            </p>
+                            <div className="admin-chip-scroll flex gap-1.5 overflow-x-auto pb-1">
+                              {seccionesEditorChordpro.map((section, sectionIndex) => (
+                                <button
+                                  key={`authoring-section-${section.name}-${sectionIndex}`}
+                                  type="button"
+                                  onClick={() => seleccionarEditorAuthoringSection(sectionIndex)}
+                                  aria-pressed={editorAuthoringSectionIndex === sectionIndex}
+                                  className={`inline-flex min-h-[30px] shrink-0 items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold transition-colors ${
+                                    editorAuthoringSectionIndex === sectionIndex
+                                      ? 'border-brand/40 bg-brand/15 text-brand'
+                                      : 'border-border bg-background text-content-muted hover:text-content'
+                                  }`}
+                                >
+                                  {section.name}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {editorAuthoringPanel === 'sections' ? (
+                          <div className="mt-3 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                            {CHORDPRO_SECTION_PRESETS.map((preset) => (
+                              <button
+                                key={preset.id}
+                                type="button"
+                                onClick={() => agregarEditorChordproSection(preset)}
+                                className="inline-flex min-h-[38px] items-center justify-center rounded-xl border border-border bg-background px-2.5 py-2 text-xs font-semibold text-content transition-colors hover:border-brand/35 hover:bg-brand/10 hover:text-brand"
+                              >
+                                {preset.label}
+                              </button>
+                            ))}
+                          </div>
+                        ) : editorCanAnnotateSection ? (
+                          <>
+                            <div className="mt-3 flex flex-wrap gap-1.5">
+                              {CHORDPRO_GUIDE_PRESETS.map((guide) => {
+                                const isActive = editorAuthoringGuides.some((item) => (
+                                  item.localeCompare(guide, 'es', { sensitivity: 'base' }) === 0
+                                ));
+                                return (
+                                  <button
+                                    key={guide}
+                                    type="button"
+                                    onClick={() => aplicarEditorChordproGuide(guide, isActive)}
+                                    aria-pressed={isActive}
+                                    className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+                                      isActive
+                                        ? 'border-emerald-500/35 bg-emerald-500/15 text-emerald-400'
+                                        : 'border-border bg-background text-content hover:border-brand/30 hover:text-brand'
+                                    }`}
+                                  >
+                                    {isActive && <Check className="h-3.5 w-3.5" />}
+                                    {guide}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            <div className="mt-3 flex gap-1.5">
+                              <input
+                                type="text"
+                                value={editorCustomGuide}
+                                onChange={(event) => setEditorCustomGuide(event.target.value)}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter') {
+                                    event.preventDefault();
+                                    agregarEditorCustomGuide();
+                                  }
+                                }}
+                                placeholder="Otra indicación..."
+                                className="h-9 min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-xs text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                                aria-label="Guía musical personalizada"
+                              />
+                              <button
+                                type="button"
+                                onClick={agregarEditorCustomGuide}
+                                disabled={!editorCustomGuide.trim()}
+                                className="inline-flex h-9 items-center justify-center rounded-lg bg-action px-3 text-xs font-bold text-white transition-colors hover:bg-action/90 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                Añadir
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="mt-3 rounded-xl border border-dashed border-border bg-background px-3 py-4 text-center text-xs text-content-muted">
+                            Añade o selecciona una sección antes de colocar una guía.
+                          </div>
+                        )}
+
+                        {editorAuthoringFeedback && (
+                          <p role="status" className="mt-2 text-[11px] font-semibold text-emerald-400">
+                            {editorAuthoringFeedback}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     <textarea
                       value={editorChordproValor}
                       onChange={(e) => setEditorChordproValor(e.target.value)}
                       placeholder="[Verso 1]\n[C]Texto con acordes..."
                       spellCheck={false}
-                      className="editor-column-scroll h-full min-h-0 w-full resize-none overflow-y-auto border-0 bg-transparent px-3 py-3 text-[13px] leading-6 text-content font-mono outline-none focus:border-transparent focus:ring-0"
+                      aria-label="Contenido ChordPro de la canción"
+                      className="editor-column-scroll h-full min-h-0 w-full flex-1 resize-none overflow-y-auto border-0 bg-transparent px-3 py-3 text-[13px] leading-6 text-content font-mono outline-none focus:border-transparent focus:ring-0"
                     />
                   </div>
                 )}
@@ -3022,7 +3333,7 @@ export default function AdminRepertorio() {
                               type="text"
                               value={marker.note || ''}
                               onChange={(e) => {
-                                actualizarEditorSectionMarker(index, { note: e.target.value });
+                                actualizarEditorSectionNote(index, e.target.value);
                               }}
                               placeholder="Nota de seccion"
                               className="col-span-2 h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 sm:col-span-1"

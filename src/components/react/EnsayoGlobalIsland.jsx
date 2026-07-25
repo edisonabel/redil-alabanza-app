@@ -32,10 +32,11 @@ const normalizeSectionName = (rawValue = '') => {
   if (
     normalized === 'interlude' ||
     normalized === 'interludio' ||
-    normalized === 'instrumental' ||
     normalized === 'start_of_interlude'
   )
     return 'Interludio';
+  if (normalized === 'instrumental' || /^instrumental\s+\d+$/.test(normalized)) return cleaned;
+  if (normalized === 'solo instrumental' || normalized === 'solo') return 'Solo';
   if (normalized === 'sot' || normalized === 'start_of_tag') return 'Tag';
   if (
     ['eoc', 'eov', 'eob', 'eoi', 'eot'].includes(normalized) ||
@@ -48,17 +49,17 @@ const normalizeSectionName = (rawValue = '') => {
 const isLikelySectionHeader = (rawHeader = '') => {
   const cleaned = String(rawHeader || '').trim();
   if (!cleaned) return false;
-  if (CHORD_SYMBOL_RE.test(cleaned)) return false;
   const normalized = cleaned.toLowerCase();
   if (
     [
-      'intro', 'interlude', 'interludio', 'instrumental',
+      'intro', 'interlude', 'interludio', 'instrumental', 'solo',
       'coro', 'chorus', 'pre coro', 'pre-coro',
       'verse', 'verso', 'puente', 'bridge',
       'tag', 'outro', 'final',
     ].some((label) => normalized.startsWith(label))
   )
     return true;
+  if (CHORD_SYMBOL_RE.test(cleaned)) return false;
   return /\d/.test(cleaned);
 };
 

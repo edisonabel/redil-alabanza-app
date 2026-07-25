@@ -67,14 +67,12 @@ const normalizeSectionName = (rawValue = '') => {
   if (
     normalized === 'interlude' ||
     normalized === 'interludio' ||
-    normalized === 'instrumental' ||
-    normalized === 'instrumental 1' ||
-    normalized === 'instrumental 2' ||
-    normalized === 'solo instrumental' ||
     normalized === 'start_of_interlude'
   ) {
     return 'Interludio';
   }
+  if (normalized === 'instrumental' || /^instrumental\s+\d+$/.test(normalized)) return cleaned;
+  if (normalized === 'solo instrumental' || normalized === 'solo') return 'Solo';
   if (normalized === 'sot' || normalized === 'start_of_tag') return 'Tag';
   if (normalized === 'eoc' || normalized === 'end_of_chorus') return '';
   if (normalized === 'eov' || normalized === 'end_of_verse') return '';
@@ -89,8 +87,6 @@ const isLikelySectionHeader = (rawHeader = '') => {
   const cleaned = String(rawHeader || '').trim();
   if (!cleaned) return false;
 
-  if (CHORD_SYMBOL_RE.test(cleaned)) return false;
-
   const normalized = cleaned.toLowerCase();
   if (
     [
@@ -98,6 +94,7 @@ const isLikelySectionHeader = (rawHeader = '') => {
       'interlude',
       'interludio',
       'instrumental',
+      'solo',
       'solo instrumental',
       'coro',
       'chorus',
@@ -115,6 +112,7 @@ const isLikelySectionHeader = (rawHeader = '') => {
     return true;
   }
 
+  if (CHORD_SYMBOL_RE.test(cleaned)) return false;
   return /\d/.test(cleaned);
 };
 
