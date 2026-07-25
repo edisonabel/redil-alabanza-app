@@ -28,6 +28,7 @@ import {
   getChordProSectionVisual,
   insertChordProSectionAfterIndex,
   mergeChordProGuideNote,
+  parseChordProMetadata,
   removeChordProGuideNote,
   splitChordProGuideNote,
   updateChordProSectionNoteAtIndex,
@@ -44,6 +45,7 @@ const LEADING_CHORD_SECTION_RE = new RegExp(`^\\[(${CHORD_BODY_PATTERN})\\|`, 'i
 const BROKEN_INLINE_CHORD_RE = new RegExp(`\\[(${CHORD_BODY_PATTERN})\\s*\\|\\s*`, 'gi');
 const EDITOR_MODAL_MAX_HEIGHT = 'min(94vh, calc(100dvh - 4.75rem - env(safe-area-inset-bottom)))';
 const ARCHIVO_ELIMINABLE_FIELDS = new Set(['mp3', 'link_acordes']);
+const CANCIONES_SELECT_BASE = 'id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, link_youtube, mp3, link_acordes, link_letras, voces, link_voces, link_secuencias, chordpro, multitrack_session';
 
 const getSectionColorStyle = (sectionName = '', active = false) => {
   const visual = getChordProSectionVisual(sectionName);
@@ -275,7 +277,24 @@ const parseChordProSections = (rawChordpro = '') => {
       const directiveName = normalizeSectionName(rawDirectiveName);
       const directiveValue = directiveMatch[2]?.trim() || '';
 
-      if (['title', 'artist', 'subtitle', 'key', 'tempo', 'bpm', 'capo'].includes(directiveKey)) {
+      if ([
+        'title',
+        'artist',
+        'subtitle',
+        'key',
+        'tono',
+        'tonalidad',
+        'tempo',
+        'bpm',
+        'time',
+        'meter',
+        'metrica',
+        'métrica',
+        'compas',
+        'compás',
+        'meta',
+        'capo',
+      ].includes(directiveKey)) {
         continue;
       }
 
@@ -340,7 +359,7 @@ const ChordProEditorHighlight = React.forwardRef(function ChordProEditorHighligh
         return (
           <React.Fragment key={`chordpro-section-${lineIndex}`}>
             <span
-              className="inline-flex min-h-[20px] items-center gap-1.5 rounded-full px-2 py-0.5 align-middle font-sans text-[11px] font-black leading-5"
+              className="inline-flex min-h-[20px] items-center gap-1.5 rounded-full px-2 py-0.5 align-middle font-sans text-[11px] font-normal leading-5"
               style={getSectionColorStyle(section.name)}
             >
               <span
@@ -475,6 +494,35 @@ const stripChordsFromLine = (line = '') => (
     .replace(/\[([^\]]+)\]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
+);
+
+const compactCuePreview = (rawLines = [], maxWords = 6) => {
+  const phrase = (Array.isArray(rawLines) ? rawLines : [])
+    .map(stripChordsFromLine)
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!phrase) return '';
+
+  const words = phrase.split(' ');
+  return words.length > maxWords
+    ? `${words.slice(0, maxWords).join(' ')}…`
+    : phrase;
+};
+
+const formatMetadataMeter = (metadata = {}) => {
+  const sequence = (Array.isArray(metadata?.meterChanges) ? metadata.meterChanges : [])
+    .map((change) => String(change?.value || '').trim())
+    .filter(Boolean)
+    .filter((value, index, values) => index === 0 || value !== values[index - 1]);
+  return sequence.join(' → ') || String(metadata?.meter || '').trim();
+};
+
+const getSongMeter = (song = {}) => (
+  String(song?.metrica || '').trim() ||
+  formatMetadataMeter(parseChordProMetadata(song?.chordpro || '')) ||
+  ''
 );
 
 const getFirstMeaningfulSectionLine = (section) => {
@@ -926,6 +974,7 @@ export default function AdminRepertorio() {
   const [editorAuthoringFeedback, setEditorAuthoringFeedback] = useState('');
   const [guardandoChordpro, setGuardandoChordpro] = useState(false);
   const [sectionMarkersDisponibles, setSectionMarkersDisponibles] = useState(true);
+  const [metricaDisponible, setMetricaDisponible] = useState(true);
   const [isAutoDetecting, setIsAutoDetecting] = useState(false);
   const [autoDetectError, setAutoDetectError] = useState(null);
   const [autoDetectResult, setAutoDetectResult] = useState(null);
@@ -1002,17 +1051,12 @@ export default function AdminRepertorio() {
       const cues = splitSectionIntoCues('editor-draft', index, section, null, 1);
       return {
         cueCount: cues.length,
-        cuePreview: cues
-          .map((cue, cueIndex) => ({
-            label: cueIndex === 0 ? 'Seccion' : `Cue ${cueIndex + 1}`,
-            text: cue.rawLines.map(stripChordsFromLine).filter(Boolean).join(' / '),
-          }))
-          .filter((cue) => cue.text),
+        sectionStartPreview: compactCuePreview(cues[0]?.rawLines),
         cueMarkerPreview: cues
           .slice(1)
           .map((cue, cueIndex) => ({
             label: `Cue ${cueIndex + 2}`,
-            text: cue.rawLines.map(stripChordsFromLine).filter(Boolean).join(' / '),
+            text: compactCuePreview(cue.rawLines),
           }))
           .filter((cue) => cue.text),
       };
@@ -1288,27 +1332,28 @@ export default function AdminRepertorio() {
 
   const cargarCanciones = async () => {
     try {
-      const queryWithMarkers = await supabase
-        .from('canciones')
-        // eslint-disable-next-line max-len
-        .select('id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, link_youtube, mp3, link_acordes, link_letras, voces, link_voces, link_secuencias, chordpro, section_markers, multitrack_session')
-        .order('titulo', { ascending: true });
+      const selectVariants = [
+        { fields: `${CANCIONES_SELECT_BASE}, section_markers, metrica`, markers: true, metrica: true },
+        { fields: `${CANCIONES_SELECT_BASE}, section_markers`, markers: true, metrica: false },
+        { fields: `${CANCIONES_SELECT_BASE}, metrica`, markers: false, metrica: true },
+        { fields: CANCIONES_SELECT_BASE, markers: false, metrica: false },
+      ];
+      let data = null;
+      let error = null;
 
-      let data = queryWithMarkers.data;
-      let error = queryWithMarkers.error;
-
-      if (error) {
-        const fallbackQuery = await supabase
+      for (const variant of selectVariants) {
+        const query = await supabase
           .from('canciones')
-          // eslint-disable-next-line max-len
-          .select('id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, link_youtube, mp3, link_acordes, link_letras, voces, link_voces, link_secuencias, chordpro, multitrack_session')
+          .select(variant.fields)
           .order('titulo', { ascending: true });
 
-        data = fallbackQuery.data;
-        error = fallbackQuery.error;
-        setSectionMarkersDisponibles(false);
-      } else {
-        setSectionMarkersDisponibles(true);
+        data = query.data;
+        error = query.error;
+        if (!error) {
+          setSectionMarkersDisponibles(variant.markers);
+          setMetricaDisponible(variant.metrica);
+          break;
+        }
       }
 
       if (error) throw error;
@@ -1915,11 +1960,22 @@ export default function AdminRepertorio() {
 
     try {
       const contenidoNormalizado = normalizarChordPro(editorChordproValor);
+      const metadataChordpro = parseChordProMetadata(contenidoNormalizado);
+      const metricaChordpro = formatMetadataMeter(metadataChordpro);
       const markersNormalizados = normalizeSectionMarkers(parseChordProSections(contenidoNormalizado), editorSectionMarkers);
       const updatePayload = { chordpro: contenidoNormalizado || null };
 
       if (sectionMarkersDisponibles) {
         updatePayload.section_markers = markersNormalizados;
+      }
+      if (metadataChordpro.key) {
+        updatePayload.tonalidad = metadataChordpro.key;
+      }
+      if (metadataChordpro.bpm != null) {
+        updatePayload.bpm = metadataChordpro.bpm;
+      }
+      if (metricaChordpro && metricaDisponible) {
+        updatePayload.metrica = metricaChordpro;
       }
 
       const { error: updateError } = await supabase
@@ -1935,6 +1991,9 @@ export default function AdminRepertorio() {
             ...c,
             chordpro: contenidoNormalizado,
             section_markers: sectionMarkersDisponibles ? markersNormalizados : c.section_markers,
+            tonalidad: metadataChordpro.key || c.tonalidad,
+            bpm: metadataChordpro.bpm ?? c.bpm,
+            metrica: metricaChordpro && metricaDisponible ? metricaChordpro : c.metrica,
           };
         }
         return c;
@@ -2596,6 +2655,7 @@ export default function AdminRepertorio() {
                     {/* Metadata */}
                     <th className="admin-head-cell px-4 py-3 min-w-[6rem]">Tonalidad</th>
                     <th className="admin-head-cell px-4 py-3 min-w-[5rem]">BPM</th>
+                    <th className="admin-head-cell px-4 py-3 min-w-[5.5rem]">Métrica</th>
                     <th className="admin-head-cell px-4 py-3 min-w-[8rem]">Categoria</th>
                     <th className="admin-head-cell px-4 py-3 min-w-[8rem]">Voz</th>
                     <th className="admin-head-cell px-4 py-3 min-w-[8rem]">Tema</th>
@@ -2646,6 +2706,18 @@ export default function AdminRepertorio() {
                       </td>
                       <td className="p-0 align-top">
                         <EditableCell cancionId={cancion.id} campoBd="bpm" valorInicial={cancion.bpm} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_bpm`]} anchoClases="min-w-[5rem] max-w-[5rem]" />
+                      </td>
+                      <td className="p-0 align-top">
+                        {metricaDisponible ? (
+                          <EditableCell cancionId={cancion.id} campoBd="metrica" valorInicial={getSongMeter(cancion)} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_metrica`]} anchoClases="min-w-[5.5rem] max-w-[5.5rem]" />
+                        ) : (
+                          <span
+                            className="flex min-h-[38px] min-w-[5.5rem] items-center px-2.5 text-[13px] text-content"
+                            title="Valor leído desde ChordPro"
+                          >
+                            {getSongMeter(cancion) || '—'}
+                          </span>
+                        )}
                       </td>
                       <td className="p-0 align-top">
                         <EditableCell cancionId={cancion.id} campoBd="categoria" valorInicial={cancion.categoria} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_categoria`]} anchoClases="min-w-[8rem] max-w-[8rem]" />
@@ -2999,11 +3071,11 @@ export default function AdminRepertorio() {
                 <button
                   type="button"
                   onClick={() => document.getElementById('admin-markers-panel')?.scrollTo({ top: 0, behavior: 'smooth' })}
-                  className="inline-flex min-h-[28px] items-center rounded-full border border-brand/20 bg-brand/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-brand transition-colors hover:bg-brand/15"
+                  className="inline-flex min-h-[28px] items-center rounded-full border border-brand/20 bg-brand/10 px-2.5 py-1 text-[10px] font-normal uppercase tracking-[0.12em] text-brand transition-colors hover:bg-brand/15"
                 >
                   Markers · {totalMarkersEditor}
                 </button>
-                <span className="hidden min-h-[28px] items-center rounded-full border border-border bg-background px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-content-muted xl:inline-flex">
+                <span className="hidden min-h-[28px] items-center rounded-full border border-border bg-background px-2.5 py-1 text-[10px] font-normal uppercase tracking-[0.12em] text-content-muted xl:inline-flex">
                   Lineas · {resumenEditorChordpro.lineas}
                 </span>
               </div>
@@ -3108,7 +3180,7 @@ export default function AdminRepertorio() {
                               type="button"
                               onClick={() => seleccionarEditorAuthoringSection(sectionIndex)}
                               aria-pressed={isActive}
-                              className="inline-flex min-h-[32px] shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                              className="inline-flex min-h-[32px] shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-normal transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
                               style={getSectionColorStyle(section.name, isActive)}
                             >
                               <span
@@ -3163,7 +3235,7 @@ export default function AdminRepertorio() {
                                     type="button"
                                     onClick={() => seleccionarEditorAuthoringSection(sectionIndex)}
                                     aria-pressed={isActive}
-                                    className="inline-flex min-h-[32px] shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                                    className="inline-flex min-h-[32px] shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-normal transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
                                     style={getSectionColorStyle(section.name, isActive)}
                                   >
                                     <span
@@ -3186,7 +3258,7 @@ export default function AdminRepertorio() {
                                 key={preset.id}
                                 type="button"
                                 onClick={() => agregarEditorChordproSection(preset)}
-                                className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                                className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-xs font-normal transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
                                 style={getSectionColorStyle(preset.label)}
                               >
                                 <span
@@ -3211,7 +3283,7 @@ export default function AdminRepertorio() {
                                     type="button"
                                     onClick={() => aplicarEditorChordproGuide(guide, isActive)}
                                     aria-pressed={isActive}
-                                    className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+                                    className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-normal transition-colors ${
                                       isActive
                                         ? 'border-emerald-500/35 bg-emerald-500/15 text-emerald-400'
                                         : 'border-border bg-background text-content hover:border-brand/30 hover:text-brand'
@@ -3292,7 +3364,7 @@ export default function AdminRepertorio() {
                   <div className="sticky top-0 z-10 -mx-3 border-b border-border bg-background/95 px-3 pb-3 pt-0 backdrop-blur">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
                       <h3 className="text-[11px] font-bold uppercase tracking-[0.18em] text-content">Markers de ensayo</h3>
-                      <span className="inline-flex min-h-[24px] items-center rounded-full border border-border bg-surface px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-content-muted">
+                      <span className="inline-flex min-h-[24px] items-center rounded-full border border-border bg-surface px-2 py-0.5 text-[10px] font-normal uppercase tracking-[0.12em] text-content-muted">
                         {totalMarkersEditor} items
                       </span>
                     </div>
@@ -3307,7 +3379,7 @@ export default function AdminRepertorio() {
                               const element = document.getElementById(`marker-card-${index}`);
                               if (element) element.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
                             }}
-                            className="inline-flex min-h-[30px] shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
+                            className="inline-flex min-h-[30px] shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-normal transition-transform hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40"
                             style={getSectionColorStyle(marker.sectionName)}
                           >
                             <span
@@ -3386,7 +3458,7 @@ export default function AdminRepertorio() {
                             <span role="alert" className="text-xs font-medium text-red-400">{autoDetectError}</span>
                           ) : autoDetectResult ? (
                             <div role="status" className="flex flex-wrap items-center gap-1.5">
-                              <span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] ${
+                              <span className={`rounded-full px-2 py-1 text-[10px] font-normal uppercase tracking-[0.12em] ${
                                 autoDetectResult.quality?.level === 'high'
                                   ? 'bg-emerald-500/15 text-emerald-300'
                                   : autoDetectResult.quality?.level === 'medium'
@@ -3401,11 +3473,7 @@ export default function AdminRepertorio() {
                                   : `${autoDetectResult.guideMatched > 0 ? `${autoDetectResult.guideMatched} por guia` : `${autoDetectResult.matched} detectados`}${autoDetectResult.deepMatched > 0 ? `, ${autoDetectResult.deepMatched} profundos` : ''}${autoDetectResult.hybrid > 0 ? `, ${autoDetectResult.hybrid} hibridos` : ''}${autoDetectResult.interpolated > 0 ? `, ${autoDetectResult.interpolated} interpolados` : ''}${autoDetectResult.failed > 0 ? `, ${autoDetectResult.failed} sin match` : ''}${autoDetectResult.cueMarkersDetected > 0 ? `, ${autoDetectResult.cueMarkersDetected} cues` : ''}${Array.isArray(autoDetectResult.repeatSuggestions) && autoDetectResult.repeatSuggestions.length > 0 ? `, ${autoDetectResult.repeatSuggestions.length} repeticiones sugeridas` : ''}${autoDetectResult.deepAnalysis ? ', profundo' : ''}${autoDetectResult.audioSource?.label ? ` · ${autoDetectResult.audioSource.label}` : ''} (${autoDetectResult.language})`}
                               </span>
                             </div>
-                          ) : (
-                            <span className="text-[11px] text-content-muted">
-                              Whisper alinea palabras con 120 ms de anticipacion. Revisa los markers estimados antes de guardar.
-                            </span>
-                          )}
+                          ) : null}
                         </div>
                         {Array.isArray(autoDetectResult?.repeatSuggestions) && autoDetectResult.repeatSuggestions.length > 0 && (
                           <div className="mt-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-2">
@@ -3432,7 +3500,7 @@ export default function AdminRepertorio() {
 
                   <div className="editor-column-scroll mt-3 min-h-0 flex-1 space-y-2.5 overflow-y-scroll pr-1">
                     {editorSectionMarkers.length > 0 ? editorSectionMarkers.map((marker, index) => {
-                      const cueDraft = cueDraftsEditor[index] || { cueCount: 1, cuePreview: [], cueMarkerPreview: [] };
+                      const cueDraft = cueDraftsEditor[index] || { cueCount: 1, sectionStartPreview: '', cueMarkerPreview: [] };
                       const cueTransitionCount = Math.max(0, cueDraft.cueCount - 1);
 
                       return (
@@ -3444,7 +3512,7 @@ export default function AdminRepertorio() {
                         >
                           <div className="grid grid-cols-[minmax(0,1fr)_6.3rem] items-center gap-1.5 sm:grid-cols-[minmax(6.75rem,0.9fr)_6.3rem_minmax(0,1fr)_auto_auto]">
                             <div className="min-w-0">
-                              <p className="flex min-w-0 items-center gap-2 truncate text-sm font-semibold text-content">
+                              <p className="flex min-w-0 items-center gap-2 truncate text-sm font-medium text-content">
                                 <span
                                   className="h-2 w-2 shrink-0 rounded-full"
                                   style={getSectionDotStyle(marker.sectionName)}
@@ -3452,8 +3520,13 @@ export default function AdminRepertorio() {
                                 />
                                 <span className="truncate">{marker.sectionName}</span>
                               </p>
+                              {cueDraft.sectionStartPreview && (
+                                <p className="mt-0.5 truncate pl-4 text-[10px] text-content-muted">
+                                  {cueDraft.sectionStartPreview}
+                                </p>
+                              )}
                               {marker._autoDetected && (
-                                <span className={`mt-1 inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${marker._method === 'guide-cue'
+                                <span className={`mt-1 inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-normal ${marker._method === 'guide-cue'
                                   ? 'bg-emerald-950/70 text-emerald-400'
                                   : marker._method === 'whisper-match' && marker._confidence > 0.7
                                     ? 'bg-emerald-950/70 text-emerald-400'
@@ -3529,21 +3602,16 @@ export default function AdminRepertorio() {
                           {cueDraft.cueCount > 1 && (
                             <div className="mt-2 border-t border-border/50 px-1 pt-2.5">
                               <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div className="min-w-0">
-                                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-content-muted">
-                                    Cue markers
-                                  </p>
-                                  <p className="text-[11px] text-content-muted">
-                                    Esta seccion se divide en {cueDraft.cueCount} pantallas (cues). La pantalla 1 usa el tiempo de inicio; ingresa {cueTransitionCount === 1 ? 'el tiempo para la pantalla restante' : `los tiempos para las ${cueTransitionCount} pantallas restantes`}.
-                                  </p>
-                                </div>
+                                <span className="text-[10px] font-normal uppercase tracking-[0.12em] text-content-muted">
+                                  {cueTransitionCount === 1 ? 'Cue 2' : `Cues 2–${cueDraft.cueCount}`}
+                                </span>
 
                                 <div className="flex flex-wrap items-center gap-1.5">
                                   <button
                                     type="button"
                                     onClick={() => capturarCueMarkerActual(index)}
                                     disabled={!editorChordproCancion?.mp3 || marker.startSec == null}
-                                    className="inline-flex h-8 items-center justify-center rounded-lg border border-brand/20 bg-brand/10 px-2.5 text-[10px] font-bold uppercase tracking-[0.1em] text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted"
+                                    className="inline-flex h-8 items-center justify-center rounded-lg border border-brand/20 bg-brand/10 px-2.5 text-[10px] font-medium text-brand transition-colors hover:bg-brand/15 disabled:cursor-not-allowed disabled:border-border disabled:bg-background disabled:text-content-muted"
                                   >
                                     Cue ahora
                                   </button>
@@ -3551,7 +3619,7 @@ export default function AdminRepertorio() {
                                     type="button"
                                     onClick={() => limpiarCueMarkers(index)}
                                     disabled={!Array.isArray(marker?.cueMarkers) || marker.cueMarkers.length === 0}
-                                    className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-surface px-2.5 text-[10px] font-bold uppercase tracking-[0.1em] text-content-muted transition-colors hover:bg-background hover:text-content disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="inline-flex h-8 items-center justify-center rounded-lg px-2.5 text-[10px] font-medium text-content-muted transition-colors hover:bg-surface hover:text-content disabled:cursor-not-allowed disabled:opacity-60"
                                   >
                                     Limpiar cues
                                   </button>
@@ -3567,12 +3635,11 @@ export default function AdminRepertorio() {
                                 />
 
                                 {cueDraft.cueMarkerPreview.length > 0 && (
-                                  <p className="text-[11px] text-content-muted">
+                                  <p className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-content-muted">
                                     {cueDraft.cueMarkerPreview.map((preview, previewIndex) => (
-                                      <span key={`${marker.sectionKey || marker.id}-cue-preview-${previewIndex}`}>
-                                        {previewIndex > 0 ? ' | ' : ''}
-                                        <span className="font-semibold text-content">{preview.label}</span>
-                                        {`: ${preview.text}`}
+                                      <span key={`${marker.sectionKey || marker.id}-cue-preview-${previewIndex}`} className="min-w-0">
+                                        <span className="font-medium text-content">{preview.label}</span>
+                                        {` · ${preview.text}`}
                                       </span>
                                     ))}
                                   </p>

@@ -7,6 +7,7 @@ import {
   getChordProSectionVisual,
   insertChordProSectionAfterIndex,
   mergeChordProGuideNote,
+  parseChordProMetadata,
   removeChordProGuideNote,
   splitChordProGuideNote,
   updateChordProSectionNoteAtIndex,
@@ -100,5 +101,44 @@ assert.deepEqual(splitChordProGuideNote('Batería | Final grande · Última vez'
   'Final grande',
   'Última vez',
 ]);
+
+const metadata = parseChordProMetadata([
+  '{title: Canción de prueba}',
+  '{key: Bb}',
+  '{tempo: 72}',
+  '{time: 6/8}',
+  '[Verso 1]',
+  '[Bb]Primera línea',
+  '{time: 4/4}',
+  '[Coro]',
+  '[Eb]Segunda línea',
+].join('\n'));
+
+assert.equal(metadata.key, 'Bb');
+assert.equal(metadata.bpm, 72);
+assert.equal(metadata.meter, '6/8');
+assert.deepEqual(
+  metadata.meterChanges.map((change) => change.value),
+  ['6/8', '4/4'],
+  'Meter changes must keep their exact ChordPro order.',
+);
+
+const spanishMetadata = parseChordProMetadata([
+  '{tono: F#m}',
+  '{bpm: 128}',
+  '{métrica: 3/4}',
+].join('\n'));
+assert.equal(spanishMetadata.key, 'F#m');
+assert.equal(spanishMetadata.bpm, 128);
+assert.equal(spanishMetadata.meter, '3/4');
+
+const genericMetadata = parseChordProMetadata([
+  '{meta: key D}',
+  '{meta: tempo 90}',
+  '{meta: time 4/4}',
+].join('\n'));
+assert.equal(genericMetadata.key, 'D');
+assert.equal(genericMetadata.bpm, 90);
+assert.equal(genericMetadata.meter, '4/4');
 
 console.log('ChordPro authoring assistant tests passed.');

@@ -320,7 +320,24 @@ const parseChordProSections = (rawChordpro = '', fallbackTitle = 'Letra') => {
       const directiveName = normalizeSectionName(rawDirectiveName);
       const directiveValue = directiveMatch[2]?.trim() || '';
 
-      if (directiveKey === 'title' || directiveKey === 'artist' || directiveKey === 'subtitle' || directiveKey === 'key' || directiveKey === 'tempo' || directiveKey === 'bpm' || directiveKey === 'capo') {
+      if ([
+        'title',
+        'artist',
+        'subtitle',
+        'key',
+        'tono',
+        'tonalidad',
+        'tempo',
+        'bpm',
+        'time',
+        'meter',
+        'metrica',
+        'métrica',
+        'compas',
+        'compás',
+        'meta',
+        'capo',
+      ].includes(directiveKey)) {
         continue;
       }
 

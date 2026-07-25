@@ -2,6 +2,19 @@ const PURE_SECTION_HEADER_RE = /^(\s*)\[([^\[\]]+)\]\s*$/;
 const CHORD_BODY_PATTERN =
   '[A-G](?:#|b)?(?:[a-z0-9+#°ø()\\-]*)?(?:\\/[A-G](?:#|b)?(?:[a-z0-9+#°ø()\\-]*)?)?';
 const CHORD_SYMBOL_RE = new RegExp(`^${CHORD_BODY_PATTERN}$`, 'i');
+const CHORDPRO_METADATA_KEYS = new Set([
+  'key',
+  'tono',
+  'tonalidad',
+  'tempo',
+  'bpm',
+  'time',
+  'meter',
+  'metrica',
+  'métrica',
+  'compas',
+  'compás',
+]);
 
 export const CHORDPRO_SECTION_PRESETS = [
   { id: 'intro', label: 'Intro' },
@@ -53,6 +66,100 @@ const normalizeFold = (value = '') => (
     .replace(/\s+/g, ' ')
     .trim()
 );
+
+const normalizeMetadataKey = (value = '') => (
+  normalizeFold(value).replace(/\s+/g, '')
+);
+
+const parseMetadataDirective = (rawDirective = '') => {
+  const directive = String(rawDirective || '').trim();
+  if (!directive) return null;
+
+  const separatorIndex = directive.indexOf(':');
+  const rawName = separatorIndex >= 0
+    ? directive.slice(0, separatorIndex)
+    : directive.split(/\s+/, 1)[0];
+  const rawValue = separatorIndex >= 0
+    ? directive.slice(separatorIndex + 1)
+    : directive.slice(rawName.length);
+  const normalizedName = normalizeMetadataKey(rawName);
+  const value = rawValue.trim();
+
+  if (normalizedName !== 'meta') {
+    return CHORDPRO_METADATA_KEYS.has(normalizedName)
+      ? { key: normalizedName, value }
+      : null;
+  }
+
+  const metaMatch = value.match(/^([^\s:]+)\s*:?\s*(.+)$/);
+  if (!metaMatch) return null;
+  const metaKey = normalizeMetadataKey(metaMatch[1]);
+  return CHORDPRO_METADATA_KEYS.has(metaKey)
+    ? { key: metaKey, value: metaMatch[2].trim() }
+    : null;
+};
+
+const normalizeKeyValue = (value = '') => {
+  const cleaned = String(value || '').trim().split(/\s+/)[0] || '';
+  return /^[A-G](?:#|b)?(?:m|maj|min|sus|dim|aug)?(?:\d+)?$/i.test(cleaned)
+    ? cleaned
+    : '';
+};
+
+const normalizeTempoValue = (value = '') => {
+  const match = String(value || '').match(/(?:^|[=\s])(\d{2,3}(?:\.\d+)?)(?:\s|$)/);
+  const bpm = match ? Number(match[1]) : Number.NaN;
+  return Number.isFinite(bpm) && bpm >= 20 && bpm <= 400 ? bpm : null;
+};
+
+const normalizeMeterValue = (value = '') => {
+  const match = String(value || '').match(/\b(\d{1,2}\s*\/\s*\d{1,2})\b/);
+  return match ? match[1].replace(/\s+/g, '') : '';
+};
+
+export const parseChordProMetadata = (rawValue = '') => {
+  const result = {
+    key: '',
+    bpm: null,
+    meter: '',
+    keyChanges: [],
+    tempoChanges: [],
+    meterChanges: [],
+  };
+  const lines = String(rawValue || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+
+  lines.forEach((line, lineIndex) => {
+    for (const match of String(line || '').matchAll(/\{([^{}]+)\}/g)) {
+      const directive = parseMetadataDirective(match[1]);
+      if (!directive) continue;
+
+      if (['key', 'tono', 'tonalidad'].includes(directive.key)) {
+        const value = normalizeKeyValue(directive.value);
+        if (!value) continue;
+        result.keyChanges.push({ value, lineIndex });
+        if (!result.key) result.key = value;
+        continue;
+      }
+
+      if (['tempo', 'bpm'].includes(directive.key)) {
+        const value = normalizeTempoValue(directive.value);
+        if (value == null) continue;
+        result.tempoChanges.push({ value, lineIndex });
+        if (result.bpm == null) result.bpm = value;
+        continue;
+      }
+
+      if (['time', 'meter', 'metrica', 'métrica', 'compas', 'compás'].includes(directive.key)) {
+        const value = normalizeMeterValue(directive.value);
+        if (!value) continue;
+        result.meterChanges.push({ value, lineIndex });
+        if (!result.meter) result.meter = value;
+      }
+    }
+  });
+
+  return result;
+};
 
 export const getChordProSectionVisual = (rawSectionName = '') => {
   const normalized = normalizeFold(String(rawSectionName || '').split('|')[0]);
@@ -133,7 +240,7 @@ const hasImplicitLeadingSection = (lines = []) => {
   return leadingLines.some((line) => {
     const trimmed = String(line || '').trim();
     if (!trimmed) return false;
-    return !/^\{(?:title|t|artist|subtitle|key|tempo|bpm|capo)(?::[^}]*)?\}$/i.test(trimmed);
+    return !/^\{(?:title|t|artist|subtitle|key|tono|tonalidad|tempo|bpm|time|meter|metrica|métrica|compas|compás|meta|capo)(?::[^}]*)?\}$/i.test(trimmed);
   });
 };
 
