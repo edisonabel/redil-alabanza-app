@@ -1,4 +1,11 @@
 import { audioSessionService } from './AudioSessionService';
+import {
+  clampMetronomeVolume,
+  connectMetronomeOutput,
+  type MetronomeOutputRoute,
+} from '../utils/metronomeOutputRouting';
+
+export type { MetronomeOutputRoute } from '../utils/metronomeOutputRouting';
 
 export interface MetronomeBeatEvent {
   beatNumber: number;
@@ -18,6 +25,8 @@ interface MetronomeSettings {
   beatsPerMeasure?: number;
   subdivision?: number;
   accentFirstBeat?: boolean;
+  outputRoute?: MetronomeOutputRoute;
+  volume?: number;
   lookahead?: number;
   scheduleAheadTime?: number;
   resetCycle?: boolean;
@@ -26,7 +35,7 @@ interface MetronomeSettings {
 type BeatListener = (event: MetronomeBeatEvent) => void;
 type WindowWithWebkitAudio = Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext };
 
-class MetronomeEngine {
+export class MetronomeEngine {
   private audioContext: AudioContext | null = null;
   private worker: Worker | null = null;
   private initPromise: Promise<void> | null = null;
@@ -45,6 +54,9 @@ class MetronomeEngine {
   private beatsPerMeasure = 4;
   private subdivision = 1;
   private accentFirstBeat = true;
+  private outputRoute: MetronomeOutputRoute = 'stereo';
+  private volume = 1;
+  private transportGeneration = 0;
 
   public onBeatUpdate: BeatListener | null = null;
 
@@ -188,6 +200,18 @@ class MetronomeEngine {
       this.accentFirstBeat = settings.accentFirstBeat;
     }
 
+    if (
+      settings.outputRoute === 'stereo'
+      || settings.outputRoute === 'left'
+      || settings.outputRoute === 'right'
+    ) {
+      this.outputRoute = settings.outputRoute;
+    }
+
+    if (typeof settings.volume === 'number' && Number.isFinite(settings.volume)) {
+      this.volume = clampMetronomeVolume(settings.volume);
+    }
+
     if (typeof settings.lookahead === 'number' && Number.isFinite(settings.lookahead)) {
       this.lookahead = Math.max(5, settings.lookahead);
       if (this.worker) {
@@ -244,28 +268,41 @@ class MetronomeEngine {
   }
 
   private playClick(time: number, beatEvent: MetronomeBeatEvent) {
-    if (!this.audioContext) return;
+    if (!this.audioContext || this.volume <= 0) return;
 
     const osc = this.audioContext.createOscillator();
     const gainNode = this.audioContext.createGain();
 
     osc.connect(gainNode);
-    gainNode.connect(this.audioContext.destination);
+    const routeMergerNode = connectMetronomeOutput(
+      gainNode,
+      this.audioContext,
+      this.outputRoute,
+    );
 
     if (beatEvent.isDownbeat) {
       osc.frequency.value = 1200;
-      gainNode.gain.setValueAtTime(0.9, time);
-      gainNode.gain.exponentialRampToValueAtTime(0.001, time + 0.055);
+      gainNode.gain.setValueAtTime(0.9 * this.volume, time);
+      gainNode.gain.exponentialRampToValueAtTime(0.001 * this.volume, time + 0.055);
     } else if (beatEvent.isMainBeat) {
       osc.frequency.value = 900;
-      gainNode.gain.setValueAtTime(0.65, time);
-      gainNode.gain.exponentialRampToValueAtTime(0.001, time + 0.045);
+      gainNode.gain.setValueAtTime(0.65 * this.volume, time);
+      gainNode.gain.exponentialRampToValueAtTime(0.001 * this.volume, time + 0.045);
     } else {
       osc.frequency.value = 700;
-      gainNode.gain.setValueAtTime(0.35, time);
-      gainNode.gain.exponentialRampToValueAtTime(0.001, time + 0.035);
+      gainNode.gain.setValueAtTime(0.35 * this.volume, time);
+      gainNode.gain.exponentialRampToValueAtTime(0.001 * this.volume, time + 0.035);
     }
 
+    osc.onended = () => {
+      try {
+        osc.disconnect();
+        gainNode.disconnect();
+        routeMergerNode?.disconnect();
+      } catch {
+        // The graph may already be disconnected while the page is unloading.
+      }
+    };
     osc.start(time);
     osc.stop(time + 0.06);
   }
@@ -355,14 +392,21 @@ class MetronomeEngine {
   }
 
   async start(settings: MetronomeSettings = {}) {
-    this.updateSettings(settings);
+    const generation = ++this.transportGeneration;
+    this.updateSettings({
+      ...settings,
+      outputRoute: settings.outputRoute ?? 'stereo',
+      volume: settings.volume ?? 1,
+    });
     await this.init();
 
-    if (!this.audioContext) return;
+    if (!this.audioContext || generation !== this.transportGeneration) return;
 
     if (this.audioContext.state === 'suspended') {
       await this.audioContext.resume();
     }
+
+    if (generation !== this.transportGeneration) return;
 
     this.isPlaying = true;
     this.currentPulseInBar = 0;
@@ -372,6 +416,7 @@ class MetronomeEngine {
   }
 
   stop() {
+    this.transportGeneration += 1;
     this.isPlaying = false;
     this.stopTicker();
     this.currentPulseInBar = 0;

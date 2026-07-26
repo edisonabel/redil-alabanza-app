@@ -1691,14 +1691,17 @@ export class MultitrackEngine {
       }
     }
 
-    if (outputRoute === 'stereo' || !routeSplitterNode || !routeMergerNode) {
+    if (outputRoute === 'stereo' || !routeMergerNode) {
       inputNode.connect(gainNode);
       return;
     }
 
     const targetChannel = outputRoute === 'right' ? 1 : 0;
-    inputNode.connect(routeSplitterNode);
-    routeSplitterNode.connect(routeMergerNode, 0, targetChannel);
+    // Connecting the multichannel input directly to one mono ChannelMerger
+    // input makes Web Audio fold L+R before the hard output assignment. The
+    // previous splitter path selected plane 0 and could discard a click that
+    // arrived on the right channel.
+    inputNode.connect(routeMergerNode, 0, targetChannel);
   }
 
   private createTrackAnalyser(): AnalyserNode {

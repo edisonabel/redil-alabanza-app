@@ -3866,15 +3866,6 @@ export class StreamingMultitrackEngine {
       return trackState.decodeScratch;
     }
 
-    if (trackState.outputRoute !== 'stereo') {
-      audioData.copyTo(trackState.decodeScratch, {
-        planeIndex: 0,
-        frameCount,
-        format: 'f32-planar',
-      });
-      return trackState.decodeScratch;
-    }
-
     while (trackState.channelScratch.length < channelCount) {
       trackState.channelScratch.push(new Float32Array(frameCount));
     }

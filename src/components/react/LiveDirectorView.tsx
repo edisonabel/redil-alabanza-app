@@ -22,11 +22,13 @@ import {
   canUseSharedStreamingTelemetry,
   useMultitrackEngine,
 } from '../../hooks/useMultitrackEngine';
+import { useLiveDirectorManualTempoTransport } from '../../hooks/useLiveDirectorManualTempoTransport';
 import { useNativeIOSMultitrackEngine } from '../../hooks/useNativeIOSMultitrackEngine';
 import type { MultitrackEngineLoadWarning, SongStructure, TrackData } from '../../services/MultitrackEngine';
 import type { SharedStreamingTelemetry } from '../../services/StreamingMultitrackEngine';
 import { ChannelStrip, FaderThumb } from './live-director/ChannelStrip';
-import { EnsayoQueueCard } from './live-director/EnsayoQueueCard';
+import { EnsayoQueueAddCard, EnsayoQueueCard } from './live-director/EnsayoQueueCard';
+import { ManualTempoSongModal } from './live-director/ManualTempoSongModal';
 import {
   isNativeLiveDirectorEngineAvailable,
   NativeLiveDirectorEngine,
@@ -74,6 +76,10 @@ import {
   LIVE_DIRECTOR_M4A_ACCEPT,
 } from '../../utils/liveDirectorStemFormat';
 import { buildLiveDirectorEventMix } from '../../utils/liveDirectorEventMix';
+import type {
+  LiveDirectorManualSongInput,
+  LiveDirectorManualTempo,
+} from '../../utils/liveDirectorManualSongs';
 
 type MixerTrackMeta = {
   id: string;
@@ -121,6 +127,8 @@ type LiveDirectorQueueSong = {
   title: string;
   subtitle?: string;
   mp3?: string;
+  kind?: string;
+  manualTempo?: LiveDirectorManualTempo;
 };
 
 type LiveDirectorOperationalChip = {
@@ -192,6 +200,14 @@ type LiveDirectorViewProps = {
   queueSongs?: LiveDirectorQueueSong[];
   activeQueueSongId?: string;
   onSelectQueueSong?: (songId: string) => void;
+  canAddQueueSong?: boolean;
+  onAddQueueSong?: (input: LiveDirectorManualSongInput) => void;
+  onRemoveQueueSong?: (songId: string) => void;
+  manualTempoConfig?: {
+    songId: string;
+    bpm: number;
+    manualTempo: LiveDirectorManualTempo;
+  } | null;
   operationalChips?: LiveDirectorOperationalChip[];
   liveBroadcastState?: LiveDirectorBroadcastState;
   onToggleLiveBroadcast?: () => void;
@@ -219,6 +235,7 @@ const IOS_SAFARI_WEB_MAX_ACTIVE_TRACKS = 4;
 const SAFARI_WEB_MAX_ACTIVE_TRACKS = 9;
 const WEB_ENGINE_MAX_ACTIVE_TRACKS = 11;
 const INTERNAL_PAD_TRACK_ID = '__internal-pad__';
+const MANUAL_CLICK_TRACK_ID = '__manual-click__';
 const DISABLE_BACKWARD_SEEK_WHILE_PLAYING = true;
 // The internal pad masters are intentionally lush, but their raw gain is too hot
 // for live control. Apply a fixed -8 dB trim before the pad reaches either engine.
@@ -559,6 +576,10 @@ export function LiveDirectorView({
   queueSongs = EMPTY_QUEUE_SONGS,
   activeQueueSongId = '',
   onSelectQueueSong,
+  canAddQueueSong = false,
+  onAddQueueSong,
+  onRemoveQueueSong,
+  manualTempoConfig = null,
   liveBroadcastState = 'off',
   onToggleLiveBroadcast,
   sessionPreparationPending = false,
@@ -572,10 +593,14 @@ export function LiveDirectorView({
   backLabel,
   returnHref,
 }: LiveDirectorViewProps) {
+  const isManualTempoMode = Boolean(manualTempoConfig);
   const hasProvidedTracks = Boolean(tracks && tracks.length > 0);
   const hasPersistedSongContext = Boolean(songId);
   const isSongBoundView = requiresSongContext || hasPersistedSongContext;
-  const canLoadManualSession = !hasProvidedTracks && (!requiresSongContext || hasPersistedSongContext);
+  const canLoadManualSession =
+    !isManualTempoMode
+    && !hasProvidedTracks
+    && (!requiresSongContext || hasPersistedSongContext);
   const usesEventMixPersistence = mode === 'ensayo' && Boolean(onEventMixChange);
   const sequenceFileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
@@ -691,30 +716,100 @@ export function LiveDirectorView({
   const selectedMultitrackEngine = isIOSNativeEngineSurface
     ? nativeIOSMultitrackEngine
     : webMultitrackEngine;
+  const manualTempoTransport = useLiveDirectorManualTempoTransport(manualTempoConfig);
   const {
-    currentTime,
-    duration: playbackDuration,
+    currentTime: engineCurrentTime,
+    duration: enginePlaybackDuration,
     diagnostics,
-    initialize,
-    isPlaying,
-    isReady,
-    play,
-    pause,
-    seekTo,
-    setMasterVolume,
-    setTrackOutputRoute,
-    setVolume,
-    soloTrack,
-    stop,
+    initialize: initializeEngine,
+    isPlaying: engineIsPlaying,
+    isReady: engineIsReady,
+    play: playEngine,
+    pause: pauseEngine,
+    seekTo: seekEngineTo,
+    setMasterVolume: setEngineMasterVolume,
+    setTrackOutputRoute: setEngineTrackOutputRoute,
+    setVolume: setEngineTrackVolume,
+    soloTrack: soloEngineTrack,
+    stop: stopEngine,
     trackLevels,
     trackEnvelopes,
-    toggleMute,
+    toggleMute: toggleEngineMute,
     trackVolumes,
     loadProgress,
     loadWarnings,
   } = selectedMultitrackEngine;
+  const currentTime = isManualTempoMode
+    ? manualTempoTransport.currentTime
+    : engineCurrentTime;
+  const playbackDuration = isManualTempoMode
+    ? manualTempoTransport.duration
+    : enginePlaybackDuration;
+  const isPlaying = isManualTempoMode
+    ? manualTempoTransport.isPlaying
+    : engineIsPlaying;
+  const isReady = isManualTempoMode
+    ? manualTempoTransport.isReady
+    : engineIsReady;
+  const play = useCallback(
+    () => (isManualTempoMode ? manualTempoTransport.play() : playEngine()),
+    [isManualTempoMode, manualTempoTransport.play, playEngine],
+  );
+  const pause = useCallback(() => {
+    if (isManualTempoMode) {
+      manualTempoTransport.pause();
+      return;
+    }
+    pauseEngine();
+  }, [isManualTempoMode, manualTempoTransport.pause, pauseEngine]);
+  const seekTo = useCallback((
+    nextTime: number,
+    options?: {
+      forceFreshStart?: boolean;
+      wasPlayingBeforeUiSeek?: boolean;
+    },
+  ) => (
+    isManualTempoMode
+      ? manualTempoTransport.seekTo(nextTime)
+      : seekEngineTo(nextTime, options)
+  ), [isManualTempoMode, manualTempoTransport.seekTo, seekEngineTo]);
+  const stop = useCallback(() => {
+    if (isManualTempoMode) {
+      manualTempoTransport.stop();
+      return;
+    }
+    stopEngine();
+  }, [isManualTempoMode, manualTempoTransport.stop, stopEngine]);
+  const setMasterVolume = useCallback((nextVolume: number) => {
+    if (isManualTempoMode) {
+      manualTempoTransport.setMasterVolume(nextVolume);
+      return;
+    }
+    setEngineMasterVolume(nextVolume);
+  }, [isManualTempoMode, manualTempoTransport.setMasterVolume, setEngineMasterVolume]);
+  const setTrackOutputRoute = setEngineTrackOutputRoute;
+  const setVolume = useCallback((trackId: string, nextVolume: number) => {
+    if (isManualTempoMode && trackId === MANUAL_CLICK_TRACK_ID) {
+      manualTempoTransport.setVolume(nextVolume);
+      return;
+    }
+    setEngineTrackVolume(trackId, nextVolume);
+  }, [isManualTempoMode, manualTempoTransport.setVolume, setEngineTrackVolume]);
+  const soloTrack = useCallback((trackId: string) => {
+    if (isManualTempoMode && trackId === MANUAL_CLICK_TRACK_ID) return;
+    soloEngineTrack(trackId);
+  }, [isManualTempoMode, soloEngineTrack]);
+  const toggleMute = useCallback((trackId: string) => {
+    if (isManualTempoMode && trackId === MANUAL_CLICK_TRACK_ID) {
+      manualTempoTransport.toggleMute();
+      return;
+    }
+    toggleEngineMute(trackId);
+  }, [isManualTempoMode, manualTempoTransport.toggleMute, toggleEngineMute]);
   const passiveStreamingTelemetryActive =
-    passiveStreamingTelemetryEnabled && diagnostics?.engineMode === 'streaming';
+    !isManualTempoMode
+    && passiveStreamingTelemetryEnabled
+    && diagnostics?.engineMode === 'streaming';
   const nullSharedTelemetry = useCallback(() => null, []);
   const getSharedTelemetry = 'getSharedTelemetry' in selectedMultitrackEngine
     ? selectedMultitrackEngine.getSharedTelemetry
@@ -732,9 +827,11 @@ export function LiveDirectorView({
     ? selectedMultitrackEngine.unlockAudioForUserGesture
     : async () => {};
   const isTransportCueBusyRef = useRef(false);
-  const getVisualClockTime = useCallback(() => {
-    return selectedMultitrackEngine.getCurrentTimeSnapshot();
-  }, [selectedMultitrackEngine]);
+  const getVisualClockTime = useCallback(() => (
+    isManualTempoMode
+      ? manualTempoTransport.getCurrentTimeSnapshot()
+      : selectedMultitrackEngine.getCurrentTimeSnapshot()
+  ), [isManualTempoMode, manualTempoTransport.getCurrentTimeSnapshot, selectedMultitrackEngine]);
 
   const handleTogglePlaybackFromGesture = useCallback(() => {
     if (isTransportCueBusyRef.current) {
@@ -743,6 +840,13 @@ export function LiveDirectorView({
 
     if (isPlaying) {
       pause();
+      return;
+    }
+
+    if (isManualTempoMode) {
+      void play().catch((error) => {
+        console.warn('[LiveDirectorView] No se pudo iniciar el click manual.', error);
+      });
       return;
     }
 
@@ -756,18 +860,33 @@ export function LiveDirectorView({
       console.warn('[LiveDirectorView] No se pudo iniciar reproducción tras el gesto.', error);
     });
     void Promise.allSettled([contextUnlockPromise, sessionUnlockPromise]);
-  }, [isPlaying, pause, play, unlockAudioForUserGesture]);
+  }, [isManualTempoMode, isPlaying, pause, play, unlockAudioForUserGesture]);
 
   useEffect(() => {
     visualClockReaderRef.current = getVisualClockTime;
   }, [getVisualClockTime]);
-  const initializeEngineRef = useRef(initialize);
-  const stopEngineRef = useRef(stop);
 
   useEffect(() => {
-    initializeEngineRef.current = initialize;
-    stopEngineRef.current = stop;
-  }, [initialize, stop]);
+    if (!isManualTempoMode) return;
+
+    if (passiveClockTextRef.current) {
+      passiveClockTextRef.current.textContent = formatClock(currentTime);
+    }
+    if (passiveCompactClockTextRef.current) {
+      passiveCompactClockTextRef.current.textContent = `${formatCompact(currentTime)} / LIBRE`;
+    }
+    if (passiveProgressTextRef.current) {
+      passiveProgressTextRef.current.textContent = `${formatCompact(currentTime)} / LIBRE`;
+    }
+  }, [currentTime, isManualTempoMode]);
+
+  const initializeEngineRef = useRef(initializeEngine);
+  const stopEngineRef = useRef(stopEngine);
+
+  useEffect(() => {
+    initializeEngineRef.current = initializeEngine;
+    stopEngineRef.current = stopEngine;
+  }, [initializeEngine, stopEngine]);
 
   useEffect(() => {
     if (engineSurface === 'ios-native') {
@@ -860,6 +979,13 @@ export function LiveDirectorView({
   // When the user taps Back while audio is playing, defer the navigation and
   // show a confirmation modal. Prevents disastrous accidental exits live.
   const [showBackConfirm, setShowBackConfirm] = useState(false);
+  const [showManualTempoModal, setShowManualTempoModal] = useState(false);
+
+  useEffect(() => {
+    if (isManualTempoMode) {
+      setShowLoadPanel(false);
+    }
+  }, [isManualTempoMode]);
 
   const exitLiveDirector = useCallback(async () => {
     setShowBackConfirm(false);
@@ -868,11 +994,10 @@ export function LiveDirectorView({
     }
 
     try {
+      stop();
       if (isNativeLiveDirectorEngineAvailable()) {
         await NativeLiveDirectorEngine.stop();
         await NativeLiveDirectorEngine.clearNowPlayingMetadata().catch(() => undefined);
-      } else {
-        stop();
       }
     } catch {
       try {
@@ -929,6 +1054,12 @@ export function LiveDirectorView({
   isTransportCueBusyRef.current = isTransportCueBusy;
   const offsetModalInitialValueRef = useRef<number | null>(null);
   const [isPadActive, setIsPadActive] = useState(false);
+
+  useEffect(() => {
+    if (isManualTempoMode) {
+      setSurfaceView('mix');
+    }
+  }, [isManualTempoMode]);
   const [internalPadVolumeState, setInternalPadVolumeState] = useState(0.34);
   const [songCoverArtUrl, setSongCoverArtUrl] = useState<string | null>(null);
   const [queueSongCoverArtMap, setQueueSongCoverArtMap] = useState<Record<string, string | null>>({});
@@ -944,7 +1075,10 @@ export function LiveDirectorView({
     setVisualSectionTimeState(nextTime);
   }, []);
   const isEnsayoMode = mode === 'ensayo';
-  const showLiveBroadcastControl = isEnsayoMode && typeof onToggleLiveBroadcast === 'function';
+  const showLiveBroadcastControl =
+    isEnsayoMode
+    && !isManualTempoMode
+    && typeof onToggleLiveBroadcast === 'function';
   const resolvedBackLabel = String(
     backLabel || (isEnsayoMode ? 'Volver al modo ensayo' : 'Volver al repertorio'),
   ).trim();
@@ -1141,12 +1275,15 @@ export function LiveDirectorView({
 
   const hasSessionTracks = sessionTracks.length > 0;
   const hasTrackSession = activeTracks.length > 0;
+  const hasPlayableSession = hasTrackSession || isManualTempoMode;
   const currentSessionLabel = hasProvidedTracks
     ? subtitle
     : manualSession?.sessionLabel || songTitle || 'Sin sesion cargada';
   const inferredSessionMode = manualSession?.mode || (sessionTracks.length > 1 ? 'folder' : 'sequence');
-  const sessionModeLabel = !hasSessionTracks
-    ? 'Sin preparar'
+  const sessionModeLabel = isManualTempoMode
+    ? 'Click + Pad'
+    : !hasSessionTracks
+      ? 'Sin preparar'
     : inferredSessionMode === 'folder'
       ? `${activeTracks.length} stem${activeTracks.length === 1 ? '' : 's'} activo${activeTracks.length === 1 ? '' : 's'}`
       : 'Secuencia unica';
@@ -1156,7 +1293,7 @@ export function LiveDirectorView({
   const canUseStemsToolbar = canManageStemSelection || canOpenStemsActionModal;
   const isStemsToolbarActive = canToggleTrackLoad && enabledSessionTracks.length !== sessionTracks.length;
   const useWideTrackLoadModal = !isPortrait;
-  const showSectionsPanel = surfaceView === 'sections';
+  const showSectionsPanel = surfaceView === 'sections' && !isManualTempoMode;
   const displayBpm = Number.isFinite(Number(bpm)) ? Math.max(0, Math.round(Number(bpm))) : 0;
   const songCardTitle = songTitle || currentSessionLabel;
   const performerLabel = isEnsayoMode
@@ -1823,7 +1960,16 @@ export function LiveDirectorView({
 
   const mixerView = useMemo<MixerTrackView[]>(() => {
     const sourceTracks =
-      activeTracks.length > 0
+      isManualTempoMode
+        ? [{
+          id: MANUAL_CLICK_TRACK_ID,
+          name: 'Click',
+          url: '',
+          volume: manualTempoTransport.volume,
+          isMuted: manualTempoTransport.muted,
+          outputRoute: 'left' as TrackOutputRoute,
+        }]
+        : activeTracks.length > 0
         ? activeTracks
         : MIXER_TRACKS.map((track) => ({
           id: track.id,
@@ -1837,9 +1983,14 @@ export function LiveDirectorView({
       const meta = buildMixerTrackMeta(track, index);
       const omittedWarning = omittedWarningByTrackId.get(track.id);
       const outputRoute = trackOutputRoutes[track.id] ?? resolveTrackOutputRoute(track);
-      const showRouteFlip = isGuideRoutingTrack(track);
-      const volume = trackVolumes[track.id] ?? track.volume ?? meta.defaultVolume;
-      const muted = omittedWarning ? false : mutedTrackIds.has(track.id);
+      const isManualClickTrack = isManualTempoMode && track.id === MANUAL_CLICK_TRACK_ID;
+      const showRouteFlip = !isManualClickTrack && isGuideRoutingTrack(track);
+      const volume = isManualClickTrack
+        ? manualTempoTransport.volume
+        : trackVolumes[track.id] ?? track.volume ?? meta.defaultVolume;
+      const muted = isManualClickTrack
+        ? manualTempoTransport.muted
+        : omittedWarning ? false : mutedTrackIds.has(track.id);
       const dimmed = soloTrackIds.size > 0 && !soloTrackIds.has(track.id);
       // Activity derivation, in order of preference:
       //   1. Real-time meter level, if the engine is publishing one. On iOS
@@ -1861,7 +2012,7 @@ export function LiveDirectorView({
         muted,
         soloed: omittedWarning ? false : soloTrackIds.has(track.id),
         dimmed,
-        disabled: activeTracks.length === 0 || Boolean(omittedWarning),
+        disabled: (!isManualClickTrack && activeTracks.length === 0) || Boolean(omittedWarning),
         disabledReason: omittedWarning
           ? omittedWarning.reason === 'unsupported-format'
             ? 'Formato incompatible'
@@ -1911,7 +2062,7 @@ export function LiveDirectorView({
     }
 
     return resolvedMixerTracks;
-  }, [activeTracks, congregationPadGain, currentTime, isPadActive, isPlaying, mutedTrackIds, omittedWarningByTrackId, resolvedInternalPadVolume, resolvedPadUrl, soloTrackIds, trackEnvelopes, trackLevels, trackOutputRoutes, trackVolumes]);
+  }, [activeTracks, congregationPadGain, currentTime, isManualTempoMode, isPadActive, isPlaying, manualTempoTransport.muted, manualTempoTransport.volume, mutedTrackIds, omittedWarningByTrackId, resolvedInternalPadVolume, resolvedPadUrl, soloTrackIds, trackEnvelopes, trackLevels, trackOutputRoutes, trackVolumes]);
 
   // Precompute the mixer scroll container style so it isn't re-created on
   // every tick of the visual clock. The grid template only actually changes
@@ -2815,7 +2966,7 @@ export function LiveDirectorView({
 
   const handleToggleCongregationFade = useCallback(() => {
     if (
-      !hasTrackSession ||
+      !hasPlayableSession ||
       !isReady ||
       isTransportCueBusyRef.current ||
       sectionSeekInFlightRef.current
@@ -2871,6 +3022,12 @@ export function LiveDirectorView({
       applyMasterVolume(masterVolume);
     }
   }, [applyMasterVolume, masterVolume, stopMasterVolumeFade]);
+
+  useEffect(() => {
+    if (isManualTempoMode) {
+      manualTempoTransport.setMasterVolume(masterVolume);
+    }
+  }, [isManualTempoMode, manualTempoTransport.setMasterVolume, masterVolume]);
 
   useEffect(() => {
     sectionTransitionTokenRef.current += 1;
@@ -2996,7 +3153,7 @@ export function LiveDirectorView({
 
   const handleReturnToStart = useCallback(async () => {
     if (
-      !hasTrackSession ||
+      !hasPlayableSession ||
       isTransportCueBusyRef.current ||
       isCongregationFading ||
       (DISABLE_BACKWARD_SEEK_WHILE_PLAYING && isPlaying)
@@ -3018,7 +3175,7 @@ export function LiveDirectorView({
       isTransportCueBusyRef.current = false;
       setIsReturnToStartBusy(false);
     }
-  }, [hasTrackSession, isCongregationFading, isPlaying, primeSectionVisuals, seekTo]);
+  }, [hasPlayableSession, isCongregationFading, isPlaying, primeSectionVisuals, seekTo]);
 
   useEffect(() => {
     if (isIOSNativeEngineSurface) {
@@ -3666,11 +3823,15 @@ export function LiveDirectorView({
   }, [isIOSNativeEngineSurface, songCardTitle, songTitle, performerLabel, songKey]);
 
   const handleMuteTrack = (trackId: string) => {
-    if (!hasTrackSession) {
+    const isManualClickTrack = isManualTempoMode && trackId === MANUAL_CLICK_TRACK_ID;
+    if (!hasTrackSession && !isManualClickTrack) {
       return;
     }
 
     toggleMute(trackId);
+    if (isManualClickTrack) {
+      return;
+    }
     setMutedTrackIds((previous) => {
       const next = new Set(previous);
       if (next.has(trackId)) {
@@ -3698,6 +3859,9 @@ export function LiveDirectorView({
   };
 
   const handleSoloTrack = (trackId: string) => {
+    if (isManualTempoMode && trackId === MANUAL_CLICK_TRACK_ID) {
+      return;
+    }
     if (!hasTrackSession) {
       return;
     }
@@ -3953,6 +4117,7 @@ export function LiveDirectorView({
         showStemsActionModal ||
         showTrackLoadModal ||
         showOffsetModal ||
+        showManualTempoModal ||
         showBackConfirm
       ) {
         return;
@@ -3981,7 +4146,7 @@ export function LiveDirectorView({
           return;
         }
 
-        if (event.code === 'KeyV') {
+        if (event.code === 'KeyV' && !isManualTempoMode) {
           event.preventDefault();
           setSurfaceView((previous) => previous === 'mix' ? 'sections' : 'mix');
           return;
@@ -3993,7 +4158,7 @@ export function LiveDirectorView({
           return;
         }
 
-        if (event.code === 'KeyR' && hasTrackSession && !isTransportCueBusy && !isCongregationFading) {
+        if (event.code === 'KeyR' && hasPlayableSession && !isTransportCueBusy && !isCongregationFading) {
           event.preventDefault();
           void handleReturnToStart();
           return;
@@ -4117,9 +4282,11 @@ export function LiveDirectorView({
     handleReturnToStart,
     handleToggleCongregationFade,
     handleTogglePlaybackFromGesture,
+    hasPlayableSession,
     hasTrackSession,
     isCongregationFading,
     isNativeIosShell,
+    isManualTempoMode,
     isPlaying,
     isReady,
     isTransportCueBusy,
@@ -4132,6 +4299,7 @@ export function LiveDirectorView({
     setVisualSectionTime,
     showBackConfirm,
     showLoadPanel,
+    showManualTempoModal,
     showOffsetModal,
     showSectionsPanel,
     showStemsActionModal,
@@ -4508,7 +4676,7 @@ export function LiveDirectorView({
                   {formatClock(currentTime)}
                 </span>
                 <span ref={passiveCompactClockTextRef} className={`font-medium tabular-nums text-white/58 ${isUltraCompactLandscape ? 'text-[0.56rem]' : isToolbarCompactLandscape ? 'text-[0.72rem]' : 'mt-1 text-[0.96rem]'}`}>
-                  {formatCompact(currentTime)} / {formatCompact(playbackTimelineDuration)}
+                  {formatCompact(currentTime)} / {isManualTempoMode ? 'LIBRE' : formatCompact(playbackTimelineDuration)}
                 </span>
               </div>
 
@@ -4551,7 +4719,7 @@ export function LiveDirectorView({
                 onClick={() => {
                   void handleReturnToStart();
                 }}
-                disabled={!hasTrackSession || isTransportCueBusy || isCongregationFading || (DISABLE_BACKWARD_SEEK_WHILE_PLAYING && isPlaying)}
+                disabled={!hasPlayableSession || isTransportCueBusy || isCongregationFading || (DISABLE_BACKWARD_SEEK_WHILE_PLAYING && isPlaying)}
                 aria-busy={isTransportCueBusy || undefined}
                 data-live-director-control="return-start"
                 className={`${CONTROL_CARD} group relative ${isUltraCompactLandscape ? 'h-11 px-3' : isToolbarCompactLandscape ? 'h-12 px-4' : 'h-[var(--ld-control-height)] px-5'} justify-center text-white/76 hover:text-white disabled:cursor-not-allowed disabled:text-white/24`}
@@ -4723,8 +4891,18 @@ export function LiveDirectorView({
                           }
                           onSelectQueueSong?.(queueSong.id);
                         }}
+                        onRemove={queueSong.kind === 'manual-tempo' && onRemoveQueueSong
+                          ? () => onRemoveQueueSong(queueSong.id)
+                          : undefined}
                       />
                     ))}
+                    {canAddQueueSong && onAddQueueSong && (
+                      <EnsayoQueueAddCard
+                        compact={isCompactLandscape}
+                        ultraCompact={isUltraCompactLandscape}
+                        onClick={() => setShowManualTempoModal(true)}
+                      />
+                    )}
                   </div>
                 </div>
               </div>
@@ -4741,7 +4919,7 @@ export function LiveDirectorView({
                 <button
                   type="button"
                   onClick={() => {
-                    if (hasTrackSession) {
+                    if (hasPlayableSession) {
                       void handleReturnToStart();
                       return;
                     }
@@ -4752,7 +4930,7 @@ export function LiveDirectorView({
                   }}
                   className={`ui-pressable-card group relative flex shrink-0 overflow-hidden rounded-[1.35rem] border border-white/10 bg-[linear-gradient(180deg,rgba(35,37,39,0.98),rgba(24,26,28,0.98))] text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-200 hover:border-white/20 ${isUltraCompactLandscape ? 'p-1' : isCompactLandscape ? 'p-1.5' : 'p-3'}`}
                   style={{ width: scaleRem(isUltraCompactLandscape ? 11.6 : isCompactLandscape ? 13.4 : 15, 9.8) }}
-                  aria-label={hasTrackSession ? `Jump to start of ${currentSessionLabel}` : 'Open song loader'}
+                  aria-label={hasPlayableSession ? `Volver al inicio de ${currentSessionLabel}` : 'Abrir cargador de canción'}
                 >
                   <div className="absolute inset-0 overflow-hidden rounded-[1.05rem]">
                     {songCoverArtUrl ? (
@@ -4817,13 +4995,15 @@ export function LiveDirectorView({
                           className={`font-medium text-white/58 ${isUltraCompactLandscape ? 'mt-0.5 text-[0.62rem]' : isCompactLandscape ? 'mt-1 text-[0.78rem]' : 'mt-1.5 text-[1rem]'}`}
                           title={autoDisabledTrackNames.length > 0 ? `Omitidas por estabilidad: ${autoDisabledTrackNames.join(', ')}` : undefined}
                         >
-                          {hasTrackSession
+                          {isManualTempoMode
+                            ? 'Click manual · Pad independiente'
+                            : hasTrackSession
                             ? `${activeTracks.length}${enabledSessionTracks.length !== activeTracks.length ? ` de ${enabledSessionTracks.length}` : ''} pistas activas`
                             : 'Sin pistas activas'}
                         </p>
                       </div>
                       <span ref={passiveProgressTextRef} className={`shrink-0 font-semibold tabular-nums tracking-[0.12em] text-white/52 ${isUltraCompactLandscape ? 'text-[0.58rem]' : isCompactLandscape ? 'text-[0.72rem]' : 'text-[0.88rem]'}`}>
-                        {formatCompact(currentTime)} / {formatCompact(playbackTimelineDuration)}
+                        {formatCompact(currentTime)} / {isManualTempoMode ? 'LIBRE' : formatCompact(playbackTimelineDuration)}
                       </span>
                     </div>
 
@@ -5362,11 +5542,12 @@ export function LiveDirectorView({
               <button
                 type="button"
                 onClick={() => setSurfaceView((previous) => previous === 'mix' ? 'sections' : 'mix')}
+                disabled={isManualTempoMode}
                 aria-pressed={showSectionsPanel}
                 aria-label={showSectionsPanel ? 'Mostrar faders de mezcla' : 'Mostrar secciones'}
                 aria-keyshortcuts="V"
                 title={`${showSectionsPanel ? 'Mostrar mezcla' : 'Mostrar secciones'} (V)`}
-                className={`group relative ui-pressable-soft flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-1 rounded-[1.2rem] border transition-all ${isUltraCompactLandscape ? 'rounded-[1rem] gap-0.5' : ''
+                className={`group relative ui-pressable-soft flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-1 rounded-[1.2rem] border transition-all disabled:cursor-not-allowed disabled:opacity-35 ${isUltraCompactLandscape ? 'rounded-[1rem] gap-0.5' : ''
                   } ${showSectionsPanel
                     ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50 shadow-[0_0_20px_rgba(129,221,245,0.14)]'
                     : 'border-white/8 bg-black/24 text-white/62'
@@ -5422,7 +5603,7 @@ export function LiveDirectorView({
                     max={1}
                     step={0.01}
                     value={masterVolume}
-                    disabled={!hasTrackSession}
+                    disabled={!hasPlayableSession}
                     onPointerDown={suspendNativeMeters}
                     onPointerUp={resumeNativeMetersSoon}
                     onPointerCancel={resumeNativeMetersSoon}
@@ -6181,6 +6362,15 @@ export function LiveDirectorView({
           </div>
         </div>
       )}
+
+      <ManualTempoSongModal
+        open={showManualTempoModal}
+        onClose={() => setShowManualTempoModal(false)}
+        onSubmit={(input) => {
+          onAddQueueSong?.(input);
+          setShowManualTempoModal(false);
+        }}
+      />
     </div>
   );
 }

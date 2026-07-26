@@ -3,10 +3,11 @@ export type TrackOutputRoute = 'left' | 'right' | 'stereo';
 type TrackRoutingCandidate = {
   id?: unknown;
   name?: unknown;
+  sourceFileName?: unknown;
   outputRoute?: unknown;
 };
 
-const GUIDE_ROUTE_REGEX = /\b(click|clcik|guide|guia|cue|cues|tempo|metro|metronomo|count in)\b/i;
+const GUIDE_ROUTE_REGEX = /\b(click(?:track)?|clic|clcik|guide(?:track|vox)?|guia|guias|cue(?:track)?|cues|tempo|metro|metronomo|count in|talkback)\b/i;
 
 const normalizeRoutingToken = (value: unknown) =>
   String(value || '')
@@ -28,21 +29,29 @@ export const normalizeTrackOutputRoute = (value: unknown): TrackOutputRoute | nu
 export const isGuideRoutingTrack = (track: TrackRoutingCandidate): boolean => {
   const normalizedId = normalizeRoutingToken(track?.id);
   const normalizedName = normalizeRoutingToken(track?.name);
+  const normalizedSourceFileName = normalizeRoutingToken(track?.sourceFileName);
 
-  if (!normalizedId && !normalizedName) {
+  if (!normalizedId && !normalizedName && !normalizedSourceFileName) {
     return false;
   }
 
-  return GUIDE_ROUTE_REGEX.test(`${normalizedId} ${normalizedName}`.trim());
+  return GUIDE_ROUTE_REGEX.test(
+    `${normalizedId} ${normalizedName} ${normalizedSourceFileName}`.trim(),
+  );
 };
 
 export const resolveTrackOutputRoute = (track: TrackRoutingCandidate): TrackOutputRoute => {
   const explicitRoute = normalizeTrackOutputRoute(track?.outputRoute);
-  if (explicitRoute) {
+  const isGuideTrack = isGuideRoutingTrack(track);
+
+  // Old sessions could persist a guide as generic stereo before hard routing
+  // existed. Preserve deliberate L/R choices, but repair that historical
+  // stereo value so Click/Cue/Guide cannot leak to both outputs.
+  if (explicitRoute && !(isGuideTrack && explicitRoute === 'stereo')) {
     return explicitRoute;
   }
 
-  return isGuideRoutingTrack(track) ? 'left' : 'stereo';
+  return isGuideTrack ? 'left' : 'stereo';
 };
 
 export const toggleGuideTrackOutputRoute = (track: TrackRoutingCandidate): TrackOutputRoute => (

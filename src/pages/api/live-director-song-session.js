@@ -123,6 +123,7 @@ const normalizeIncomingTracks = (rawTracks) => {
       const id = String(track.id || '').trim();
       const name = String(track.name || '').trim();
       const url = String(track.url || '').trim();
+      const sourceFileName = String(track.sourceFileName || '').trim() || undefined;
 
       if (!id || !name || !url) {
         return null;
@@ -140,8 +141,13 @@ const normalizeIncomingTracks = (rawTracks) => {
         volume: Number.isFinite(Number(track.volume)) ? Number(track.volume) : 1,
         isMuted: Boolean(track.isMuted),
         enabled: track.enabled !== false,
-        sourceFileName: String(track.sourceFileName || '').trim() || undefined,
-        outputRoute: resolveTrackOutputRoute({ id, name, outputRoute: track.outputRoute }),
+        sourceFileName,
+        outputRoute: resolveTrackOutputRoute({
+          id,
+          name,
+          sourceFileName,
+          outputRoute: track.outputRoute,
+        }),
       };
     })
     .filter(Boolean);

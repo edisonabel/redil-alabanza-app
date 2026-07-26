@@ -137,6 +137,7 @@ export const normalizePersistedLiveDirectorSession = (
           const id = String(candidate.id || '').trim();
           const name = String(candidate.name || '').trim();
           const url = String(candidate.url || '').trim();
+          const sourceFileName = String(candidate.sourceFileName || '').trim() || undefined;
 
           if (!id || !name || !url) {
             return null;
@@ -156,10 +157,11 @@ export const normalizePersistedLiveDirectorSession = (
             volume: Number.isFinite(Number(candidate.volume)) ? Number(candidate.volume) : 1,
             isMuted: Boolean(candidate.isMuted),
             enabled: candidate.enabled !== false,
-            sourceFileName: String(candidate.sourceFileName || '').trim() || undefined,
+            sourceFileName,
             outputRoute: resolveTrackOutputRoute({
               id,
               name,
+              sourceFileName,
               outputRoute: candidate.outputRoute,
             }),
             ...(activityEnvelope ? { activityEnvelope } : {}),

@@ -231,8 +231,8 @@ const categorizeStem = (file: File): StemCategory => {
   const tokens = tokenize(text);
 
   if (
-    hasToken(tokens, ['click', 'clic', 'metro', 'metronomo', 'metronome', 'tempo', 'bpm', 'cue', 'cues', 'guide', 'guia', 'guias'])
-    || hasAny(text, ['voz guia', 'count in', 'count-in', 'talkback'])
+    hasToken(tokens, ['click', 'clic', 'clcik', 'metro', 'metronomo', 'metronome', 'tempo', 'bpm', 'cue', 'cues', 'guide', 'guia', 'guias'])
+    || hasAny(text, ['voz guia', 'count in', 'count-in', 'talkback', 'clicktrack', 'cuetrack', 'guidetrack', 'guidevox'])
   ) {
     return 'clickGuide';
   }

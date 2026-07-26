@@ -2720,6 +2720,8 @@ class ProducerTrackPipeline {
       return this.decodeScratch;
     }
 
+    // Keep the isolated engine behavior identical to production: every
+    // decoded channel is folded into the mono ring before hard L/R routing.
     while (this.channelScratch.length < channelCount) {
       this.channelScratch.push(new Float32Array(frameCount));
     }

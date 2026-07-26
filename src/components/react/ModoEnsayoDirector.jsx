@@ -21,6 +21,14 @@ import {
   NativeLiveDirectorEngine,
 } from '../../services/NativeLiveDirectorEnginePlugin';
 import { shouldRunLiveDirectorFullFileWebPrewarm } from '../../utils/liveDirectorPreloadPolicy';
+import {
+  createLiveDirectorManualSong,
+  getManualMeterLabel,
+  getRemainingManualSongSlots,
+  isManualTempoSong,
+  readLiveDirectorManualSongs,
+  writeLiveDirectorManualSongs,
+} from '../../utils/liveDirectorManualSongs';
 
 const CACHE_NAME = 'repertorio-offline-cache-v1';
 const NEXT_SONG_WEB_PRELOAD_TRACK_LIMIT = 9;
@@ -345,8 +353,16 @@ const buildQueueSongs = (songs) =>
     .map((song) => ({
       id: resolveSongId(song),
       title: String(song?.title || song?.titulo || 'Cancion').trim() || 'Cancion',
-      subtitle: [String(song?.artist || '').trim(), String(song?.originalKey || song?.key || '').trim()].filter(Boolean).join(' · '),
+      subtitle: isManualTempoSong(song)
+        ? [
+          `${Math.round(Number(song?.bpm) || 0)} BPM`,
+          getManualMeterLabel(song.manualTempo),
+          String(song?.originalKey || song?.key || '').trim(),
+        ].filter(Boolean).join(' · ')
+        : [String(song?.artist || '').trim(), String(song?.originalKey || song?.key || '').trim()].filter(Boolean).join(' · '),
       mp3: String(song?.mp3 || '').trim(),
+      kind: String(song?.kind || '').trim() || undefined,
+      manualTempo: isManualTempoSong(song) ? song.manualTempo : undefined,
     }));
 
 export default function ModoEnsayoDirector({
@@ -356,7 +372,7 @@ export default function ModoEnsayoDirector({
   playlistId = '',
   onExit,
 }) {
-  const ensayoSongs = useMemo(
+  const realEnsayoSongs = useMemo(
     () =>
       (Array.isArray(playlist) ? playlist : []).filter((song) => {
         const hasMp3 = typeof song?.mp3 === 'string' && song.mp3.trim() !== '';
@@ -365,6 +381,23 @@ export default function ModoEnsayoDirector({
         return hasMp3 || hasSession || hasLegacySequence;
       }),
     [playlist],
+  );
+  const manualSongStorageScope = useMemo(
+    () => String(eventId || playlistId || 'local'),
+    [eventId, playlistId],
+  );
+  const [manualSongs, setManualSongs] = useState([]);
+  const [manualSongsStorageReady, setManualSongsStorageReady] = useState(false);
+  const visibleManualSongs = useMemo(
+    () => manualSongs.slice(
+      0,
+      getRemainingManualSongSlots(realEnsayoSongs.length, 0),
+    ),
+    [manualSongs, realEnsayoSongs.length],
+  );
+  const ensayoSongs = useMemo(
+    () => [...realEnsayoSongs, ...visibleManualSongs],
+    [realEnsayoSongs, visibleManualSongs],
   );
   const [activeSongIndex, setActiveSongIndex] = useState(0);
   const [downloadStatus, setDownloadStatus] = useState({ active: false, progress: 0, total: 0, done: false });
@@ -400,29 +433,52 @@ export default function ModoEnsayoDirector({
     toggleBroadcasting,
   } = useLiveDirectorSyncTransmitter({ eventId, playlistId });
 
+  useEffect(() => {
+    setManualSongsStorageReady(false);
+    const storedSongs = readLiveDirectorManualSongs(
+      manualSongStorageScope,
+      realEnsayoSongs.length,
+    );
+    setManualSongs(storedSongs);
+    setManualSongsStorageReady(true);
+  }, [manualSongStorageScope, realEnsayoSongs.length]);
+
+  useEffect(() => {
+    if (!manualSongsStorageReady) return;
+    writeLiveDirectorManualSongs(manualSongStorageScope, manualSongs);
+  }, [manualSongsStorageReady, manualSongStorageScope, manualSongs]);
+
   const safeActiveSongIndex = Math.max(0, Math.min(activeSongIndex, Math.max(ensayoSongs.length - 1, 0)));
   const activeSong = ensayoSongs[safeActiveSongIndex] || null;
   const activeSongId = resolveSongId(activeSong);
-  const activeSongSessionSource = activeSongId
-    ? sessionOverrides[activeSongId] || activeSong?.multitrackSession || null
+  const activeSongIsManual = isManualTempoSong(activeSong);
+  const activePersistedSongId = activeSongIsManual ? '' : activeSongId;
+  const activeSongSessionSource = activePersistedSongId
+    ? sessionOverrides[activePersistedSongId] || activeSong?.multitrackSession || null
     : null;
-  const activeEventMix = activeSongId
-    ? eventMixOverrides[activeSongId] || null
+  const activeEventMix = activePersistedSongId
+    ? eventMixOverrides[activePersistedSongId] || null
     : null;
   const activeSongSession = useMemo(
     () => applyLiveDirectorEventMix(
       resolveSongSession(activeSong, activeSongSessionSource),
       activeEventMix,
     ),
-    [activeEventMix, activeSong, activeSongId, activeSongSessionSource],
+    [activeEventMix, activeSong, activePersistedSongId, activeSongSessionSource],
   );
   const activeSongSections = useMemo(
-    () => buildLiveDirectorSectionsFromMarkers(activeSong?.sectionMarkers || []) || undefined,
-    [activeSong?.sectionMarkers],
+    () => activeSongIsManual
+      ? []
+      : buildLiveDirectorSectionsFromMarkers(activeSong?.sectionMarkers || []) || undefined,
+    [activeSong?.sectionMarkers, activeSongIsManual],
   );
   const queueSongs = useMemo(
     () => buildQueueSongs(ensayoSongs),
     [ensayoSongs],
+  );
+  const remainingManualSongSlots = getRemainingManualSongSlots(
+    realEnsayoSongs.length,
+    manualSongs.length,
   );
   const operationalChips = useMemo(() => {
     const liveStatus = broadcastState === 'active'
@@ -456,9 +512,11 @@ export default function ModoEnsayoDirector({
   }, [broadcastState, downloadStatus.active, downloadStatus.done, downloadStatus.progress, downloadStatus.total]);
 
   const hasEventMixContext = Boolean(String(eventId || '').trim() && String(playlistId || '').trim());
-  const activeEventMixSaveStatus = eventMixSaveStates[activeSongId] || 'idle';
+  const activeEventMixSaveStatus = eventMixSaveStates[activePersistedSongId] || 'idle';
   const isActiveEventMixLoading = Boolean(
-    hasEventMixContext && activeSongId && !eventMixLoadedSongIds.has(activeSongId),
+    hasEventMixContext
+      && activePersistedSongId
+      && !eventMixLoadedSongIds.has(activePersistedSongId),
   );
 
   useEffect(() => () => {
@@ -475,7 +533,7 @@ export default function ModoEnsayoDirector({
   }, [takeoverPromptOpen]);
 
   useEffect(() => {
-    if (!activeSongId) {
+    if (!activePersistedSongId) {
       return;
     }
 
@@ -483,20 +541,20 @@ export default function ModoEnsayoDirector({
 
     const refreshPersistedSession = async () => {
       try {
-        const fetchedSession = await fetchLiveDirectorSongSession(activeSongId);
+        const fetchedSession = await fetchLiveDirectorSongSession(activePersistedSongId);
         if (cancelled || !fetchedSession?.tracks?.length) {
           return;
         }
 
         setSessionOverrides((previous) => {
-          const currentSession = previous[activeSongId] || activeSong?.multitrackSession || null;
+          const currentSession = previous[activePersistedSongId] || activeSong?.multitrackSession || null;
           if (!shouldUseFetchedSession(currentSession, fetchedSession)) {
             return previous;
           }
 
           return {
             ...previous,
-            [activeSongId]: fetchedSession,
+            [activePersistedSongId]: fetchedSession,
           };
         });
       } catch (error) {
@@ -511,21 +569,25 @@ export default function ModoEnsayoDirector({
     return () => {
       cancelled = true;
     };
-  }, [activeSong?.multitrackSession, activeSongId]);
+  }, [activePersistedSongId, activeSong?.multitrackSession]);
 
   useEffect(() => {
-    if (!hasEventMixContext || !activeSongId || eventMixLoadedSongIds.has(activeSongId)) return;
+    if (
+      !hasEventMixContext
+      || !activePersistedSongId
+      || eventMixLoadedSongIds.has(activePersistedSongId)
+    ) return;
 
     let cancelled = false;
-    void fetchLiveDirectorEventMix({ eventId, songId: activeSongId })
+    void fetchLiveDirectorEventMix({ eventId, songId: activePersistedSongId })
       .then((fetchedMix) => {
         if (cancelled || !fetchedMix) return;
         setEventMixOverrides((previous) => {
-          const currentMix = previous[activeSongId] || null;
+          const currentMix = previous[activePersistedSongId] || null;
           if (liveDirectorEventMixSignature(currentMix) === liveDirectorEventMixSignature(fetchedMix)) {
             return previous;
           }
-          return { ...previous, [activeSongId]: fetchedMix };
+          return { ...previous, [activePersistedSongId]: fetchedMix };
         });
       })
       .catch((error) => {
@@ -536,9 +598,9 @@ export default function ModoEnsayoDirector({
       .finally(() => {
         if (!cancelled) {
           setEventMixLoadedSongIds((previous) => {
-            if (previous.has(activeSongId)) return previous;
+            if (previous.has(activePersistedSongId)) return previous;
             const next = new Set(previous);
-            next.add(activeSongId);
+            next.add(activePersistedSongId);
             return next;
           });
         }
@@ -547,7 +609,7 @@ export default function ModoEnsayoDirector({
     return () => {
       cancelled = true;
     };
-  }, [activeSongId, eventId, eventMixLoadedSongIds, hasEventMixContext]);
+  }, [activePersistedSongId, eventId, eventMixLoadedSongIds, hasEventMixContext]);
 
   useEffect(() => {
     screenWakeLockService.setRequested('modo-ensayo-director', true);
@@ -782,7 +844,7 @@ export default function ModoEnsayoDirector({
   }, [ensayoSongs, safeActiveSongIndex, sessionOverrides]);
 
   useEffect(() => {
-    if (!isBroadcasting || !activeSongId) {
+    if (!isBroadcasting || !activePersistedSongId) {
       return;
     }
 
@@ -807,7 +869,7 @@ export default function ModoEnsayoDirector({
     pushSnapshot();
     const heartbeat = window.setInterval(pushSnapshot, 1500);
     return () => window.clearInterval(heartbeat);
-  }, [activeSongId, isBroadcasting, sendSectionChange]);
+  }, [activePersistedSongId, isBroadcasting, sendSectionChange]);
 
   const handlePlaybackSnapshot = useCallback((snapshot) => {
     playbackSnapshotRef.current = snapshot;
@@ -817,6 +879,11 @@ export default function ModoEnsayoDirector({
     const nextSongId = String(songId || '').trim();
     const nextIndex = ensayoSongs.findIndex((song) => resolveSongId(song) === nextSongId);
     if (nextIndex === -1) {
+      return;
+    }
+    if (isManualTempoSong(ensayoSongs[nextIndex])) {
+      queueSelectionTokenRef.current += 1;
+      setActiveSongIndex(nextIndex);
       return;
     }
 
@@ -854,6 +921,52 @@ export default function ModoEnsayoDirector({
     })();
   }, [ensayoSongs, eventId, eventMixLoadedSongIds, hasEventMixContext]);
 
+  const handleAddManualSong = useCallback((input) => {
+    if (getRemainingManualSongSlots(realEnsayoSongs.length, manualSongs.length) <= 0) {
+      return;
+    }
+
+    const nextSong = createLiveDirectorManualSong(input);
+    setManualSongs((previous) => {
+      if (getRemainingManualSongSlots(realEnsayoSongs.length, previous.length) <= 0) {
+        return previous;
+      }
+      setActiveSongIndex(realEnsayoSongs.length + previous.length);
+      return [...previous, nextSong];
+    });
+  }, [manualSongs.length, realEnsayoSongs.length]);
+
+  const handleRemoveManualSong = useCallback((songId) => {
+    const normalizedSongId = String(songId || '').trim();
+    if (!normalizedSongId) return;
+
+    queueSelectionTokenRef.current += 1;
+    setManualSongs((previous) => {
+      const removedManualIndex = previous.findIndex(
+        (song) => resolveSongId(song) === normalizedSongId,
+      );
+      if (removedManualIndex === -1) return previous;
+
+      const nextSongs = previous.filter(
+        (song) => resolveSongId(song) !== normalizedSongId,
+      );
+      const removedQueueIndex = realEnsayoSongs.length + removedManualIndex;
+      const visibleManualCapacity = getRemainingManualSongSlots(realEnsayoSongs.length, 0);
+      const nextQueueLength =
+        realEnsayoSongs.length
+        + Math.min(nextSongs.length, visibleManualCapacity);
+
+      if (removedQueueIndex <= safeActiveSongIndex) {
+        const nextIndex = removedQueueIndex < safeActiveSongIndex
+          ? safeActiveSongIndex - 1
+          : Math.min(safeActiveSongIndex, nextQueueLength - 1);
+        setActiveSongIndex(Math.max(0, nextIndex));
+      }
+
+      return nextSongs;
+    });
+  }, [realEnsayoSongs.length, safeActiveSongIndex]);
+
   const handleSessionPersisted = useCallback((session) => {
     const songId = String(session?.songId || '').trim();
     if (!songId) {
@@ -867,7 +980,7 @@ export default function ModoEnsayoDirector({
   }, []);
 
   const handleEventMixChange = useCallback((rawMix) => {
-    const songId = activeSongId;
+    const songId = activePersistedSongId;
     const mix = normalizeLiveDirectorEventMix(rawMix);
     if (!hasEventMixContext || !songId || !mix) {
       return Promise.resolve();
@@ -921,21 +1034,13 @@ export default function ModoEnsayoDirector({
         }
         throw error;
       });
-  }, [activeSongId, eventId, hasEventMixContext]);
-
-  if (!activeSong) {
-    return (
-      <div className="flex h-[100dvh] items-center justify-center bg-[#202223] text-white">
-        <p className="text-sm text-white/60">No hay canciones listas para Modo Ensayo Director.</p>
-      </div>
-    );
-  }
+  }, [activePersistedSongId, eventId, hasEventMixContext]);
 
   return (
     <>
       <LiveDirectorView
         mode="ensayo"
-        songId={activeSongId}
+        songId={activePersistedSongId}
         songTitle={String(activeSong?.title || '').trim()}
         subtitle={String(activeSong?.artist || activeSong?.cantante || '').trim()}
         songMp3={String(activeSong?.mp3 || '').trim()}
@@ -945,6 +1050,14 @@ export default function ModoEnsayoDirector({
         queueSongs={queueSongs}
         activeQueueSongId={activeSongId}
         onSelectQueueSong={handleQueueSongSelect}
+        canAddQueueSong={remainingManualSongSlots > 0}
+        onAddQueueSong={handleAddManualSong}
+        onRemoveQueueSong={handleRemoveManualSong}
+        manualTempoConfig={activeSongIsManual ? {
+          songId: activeSongId,
+          bpm: Number(activeSong?.bpm || 120),
+          manualTempo: activeSong.manualTempo,
+        } : null}
         operationalChips={operationalChips}
         liveBroadcastState={broadcastState}
         onToggleLiveBroadcast={toggleBroadcasting}
@@ -953,7 +1066,7 @@ export default function ModoEnsayoDirector({
         onInternalPadVolumeChange={setPadVolume}
         onPlaybackSnapshot={handlePlaybackSnapshot}
         onSessionPersisted={handleSessionPersisted}
-        onEventMixChange={hasEventMixContext ? handleEventMixChange : undefined}
+        onEventMixChange={hasEventMixContext && !activeSongIsManual ? handleEventMixChange : undefined}
         eventMixSaveStatus={activeEventMixSaveStatus}
         onBack={onExit}
         backLabel="Volver al modo ensayo"

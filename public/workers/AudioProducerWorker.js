@@ -3151,6 +3151,10 @@ class ProducerTrackPipeline {
       return this.decodeScratch;
     }
 
+    // The producer/worklet transport is deliberately mono per track. Always
+    // fold every decoded input plane before the worklet applies its hard L/R
+    // output matrix; selecting plane 0 here would silently discard content
+    // from a badly exported stereo click or cue.
     while (this.channelScratch.length < channelCount) {
       this.channelScratch.push(new Float32Array(frameCount));
     }
