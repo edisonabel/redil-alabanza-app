@@ -4,6 +4,12 @@ import RosterManager from './RosterManager.jsx';
 import { getEventThemeAndPreacher } from '../../lib/event-display.js';
 import { isPredicadorColumnMissingError } from '../../lib/predicador-compat.js';
 import { isEventRepertoryManagerRoleCode } from '../../lib/role-permissions.js';
+import {
+    formatEventRehearsalLabel,
+    normalizeRehearsalWeekday,
+    REHEARSAL_WEEKDAY_OPTIONS,
+    resolveEventRehearsalDate,
+} from '../../lib/event-rehearsal.js';
 
 const composeLegacyTemaPredicacion = (temaValue, predicadorValue) => {
     const temaSafe = String(temaValue || '').trim();
@@ -32,6 +38,16 @@ const syncEventCalendarAssignments = async (eventoId) => {
     }
 };
 
+const toRehearsalEventDate = (dateValue = '') => (
+    dateValue ? `${dateValue}T12:00:00-05:00` : ''
+);
+
+const isSundayServiceDate = (dateValue = '') => Boolean(resolveEventRehearsalDate({
+    eventDate: toRehearsalEventDate(dateValue),
+    rehearsalWeekday: 4,
+    hour: 12,
+}));
+
 export default function ModalEvento() {
     const [isOpen, setIsOpen] = useState(false);
     const [mode, setMode] = useState('new');
@@ -49,6 +65,8 @@ export default function ModalEvento() {
     const [applySerie, setApplySerie] = useState(false);
     const [serieId, setSerieId] = useState('');
     const [isStrictModerator, setIsStrictModerator] = useState(false);
+    const [canManageRehearsal, setCanManageRehearsal] = useState(false);
+    const [rehearsalWeekday, setRehearsalWeekday] = useState(4);
 
     const [isSaving, setIsSaving] = useState(false);
     const [isDeletingSerie, setIsDeletingSerie] = useState(false);
@@ -90,6 +108,8 @@ export default function ModalEvento() {
                 setSerieId('');
                 setApplySerie(false);
                 setIsStrictModerator(false);
+                setCanManageRehearsal(false);
+                setRehearsalWeekday(4);
                 setDbData(null);
                 setShowPlaylistBtn(false);
                 setHasPlaylist(false);
@@ -131,6 +151,8 @@ export default function ModalEvento() {
 
                 const strictMod = data.moderator === 'true';
                 setIsStrictModerator(strictMod);
+                setCanManageRehearsal(data.can_manage_rehearsal === true);
+                setRehearsalWeekday(normalizeRehearsalWeekday(data.dbData?.ensayo_dia_semana));
 
                 if (data.serie_id) {
                     setIsSerie(true);
@@ -211,6 +233,23 @@ export default function ModalEvento() {
 
         if (!fecha || !horaInicio || !titulo) {
             alert('Faltan campos obligatorios');
+            return;
+        }
+
+        const shouldManageRehearsal = (
+            mode === 'edit'
+            && evId
+            && !evId.startsWith('virtual|')
+            && canManageRehearsal
+            && isSundayServiceDate(fecha)
+        );
+        const previousRehearsalWeekday = normalizeRehearsalWeekday(dbData?.ensayo_dia_semana);
+        if (
+            shouldManageRehearsal
+            && rehearsalWeekday === null
+            && previousRehearsalWeekday !== null
+            && !window.confirm('¿Guardar este servicio sin ensayo? Se retirará el ensayo de los calendarios conectados y se avisará al equipo.')
+        ) {
             return;
         }
 
@@ -349,11 +388,51 @@ export default function ModalEvento() {
 
             if (transacError) throw transacError;
 
-            if (evId && !evId.startsWith('virtual|')) {
+            let rehearsalSyncHandled = false;
+            let rehearsalWarning = '';
+
+            if (shouldManageRehearsal) {
+                try {
+                    const response = await fetch('/api/event-rehearsal', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({
+                            evento_id: evId,
+                            ensayo_dia_semana: rehearsalWeekday,
+                        }),
+                    });
+                    const payload = await response.json().catch(() => ({}));
+                    if (!response.ok || payload?.ok === false) {
+                        throw new Error(payload?.error || 'No se pudo actualizar el ensayo.');
+                    }
+
+                    rehearsalSyncHandled = true;
+                    const calendarFailed = Number(payload?.calendar?.failed || 0);
+                    const notificationFailed = Number(payload?.notification?.failed || 0);
+                    const notificationSkipped = Number(payload?.notification?.skipped || 0);
+                    const pending = [
+                        calendarFailed > 0 ? 'Google Calendar' : '',
+                        notificationFailed > 0 ? 'algunos correos' : '',
+                        notificationSkipped > 0 ? `${notificationSkipped} integrante${notificationSkipped === 1 ? '' : 's'} sin correo registrado` : '',
+                    ].filter(Boolean);
+                    if (pending.length > 0) {
+                        rehearsalWarning = `El evento y el día de ensayo quedaron guardados. Quedó pendiente: ${pending.join(', ')}.`;
+                    }
+                } catch (error) {
+                    console.warn('No se pudo confirmar la actualización del ensayo:', error);
+                    rehearsalWarning = 'El evento quedó guardado, pero no se pudo confirmar la actualización del ensayo y sus avisos. Al recargar verás la fecha que quedó registrada.';
+                }
+            }
+
+            if (evId && !evId.startsWith('virtual|') && !rehearsalSyncHandled) {
                 await syncEventCalendarAssignments(evId);
             }
 
             handleClose();
+            if (rehearsalWarning) {
+                alert(rehearsalWarning);
+            }
             if (evId && evId.startsWith('virtual|')) {
             alert('Evento publicado. Haz clic en GESTIONAR de nuevo para añadir el equipo.');
             }
@@ -387,6 +466,13 @@ export default function ModalEvento() {
 
     // FunciÃ³n openEquipoPicker nativa movida a RosterManager
     if (!isOpen) return null;
+
+    const rehearsalEventDate = toRehearsalEventDate(fecha);
+    const showRehearsalField = (
+        mode === 'edit'
+        && canManageRehearsal
+        && isSundayServiceDate(fecha)
+    );
 
     return (
         <div id="event-modal-react" role="dialog" aria-modal="true" data-ui-modal="true" className="fixed inset-0 z-[80] min-h-[100dvh] bg-overlay/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 pt-6 pb-[calc(104px+env(safe-area-inset-bottom))] lg:items-center lg:p-6 transition-opacity">
@@ -427,6 +513,35 @@ export default function ModalEvento() {
                                     </div>
                                 </div>
                             </div>
+
+                            {showRehearsalField && (
+                                <div className="w-full border-t border-border/60 pt-4">
+                                    <div className="mb-2 flex items-center justify-between gap-3">
+                                        <label htmlFor="ev-ensayo-dia" className="text-xs font-bold uppercase tracking-wider text-content">
+                                            Día de ensayo
+                                        </label>
+                                        <span className="text-xs font-medium text-content-muted">7:00 p. m.</span>
+                                    </div>
+                                    <select
+                                        id="ev-ensayo-dia"
+                                        value={rehearsalWeekday === null ? 'none' : String(rehearsalWeekday)}
+                                        onChange={(event) => setRehearsalWeekday(
+                                            event.target.value === 'none' ? null : Number(event.target.value),
+                                        )}
+                                        className="min-h-11 w-full appearance-none rounded-xl border border-border bg-background px-4 py-3 text-sm text-content transition-colors focus:border-brand focus:outline-none"
+                                    >
+                                        {REHEARSAL_WEEKDAY_OPTIONS.map((option) => (
+                                            <option key={option.value} value={option.value}>
+                                                {formatEventRehearsalLabel({
+                                                    eventDate: rehearsalEventDate,
+                                                    rehearsalWeekday: option.value,
+                                                })}
+                                            </option>
+                                        ))}
+                                        <option value="none">Sin ensayo</option>
+                                    </select>
+                                </div>
+                            )}
 
                             {isSerie && !isStrictModerator && (
                                 <div id="serie-update-section" className="flex flex-col gap-2">

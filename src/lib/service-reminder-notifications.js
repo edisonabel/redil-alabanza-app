@@ -3,6 +3,10 @@ import {
   sendEmailNotifications,
 } from './server/notification-delivery.js';
 import { getEventThemeAndPreacher } from './event-display.js';
+import {
+  resolveEventRehearsalDate,
+  resolveEventRehearsalDateKey,
+} from './event-rehearsal.js';
 import { isPredicadorColumnMissingError, withPredicadorFallbackRows } from './predicador-compat.js';
 
 const BOGOTA_TIMEZONE = 'America/Bogota';
@@ -13,7 +17,7 @@ const REMINDER_CONFIG = {
   '15d': { label: '15 dias', subject: 'Faltan 15 d\u00EDas para tu servicio \u{1F64C}' },
   '10d': { label: '10 dias', subject: 'Faltan 10 d\u00EDas para tu servicio \u{1F3B6}' },
   '7d': { label: '7 dias', subject: 'Falta 1 semana para tu servicio \u{1F64F}' },
-  'thursday': { label: 'jueves', subject: 'Hoy tienes ensayo \u{1F3B5}' },
+  'rehearsal': { label: 'ensayo', subject: 'Hoy tienes ensayo \u{1F3B5}' },
   'saturday_night': { label: 'sabado en la noche', subject: 'Ma\u00F1ana servimos al Se\u00F1or \u{1F90D}' },
 };
 
@@ -114,7 +118,12 @@ const getBogotaDateSerial = (value) => {
 const getBogotaWeekdayIndex = (value) =>
   weekdayIndexByShortName[localWeekdayFormatter.format(value)] ?? -1;
 
-const buildReminderSource = (reminderKey, eventId) => `service_reminder_${reminderKey}__${eventId}`;
+export const buildReminderSource = (reminderKey, eventId, occurrenceKey = '') => (
+  [`service_reminder_${reminderKey}`, eventId, occurrenceKey]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .join('__')
+);
 
 const buildReminderSummaryBucket = () => ({
   events: 0,
@@ -220,9 +229,9 @@ const buildReminderContent = ({
           ctaLabel: 'Ver mi agenda',
         };
 
-    case 'thursday':
+    case 'rehearsal':
       return {
-        title: REMINDER_CONFIG.thursday.subject,
+        title: REMINDER_CONFIG.rehearsal.subject,
         body: [
           greeting,
           'Te recuerdo que hoy tienes ensayo en la iglesia.',
@@ -257,12 +266,21 @@ const buildReminderContent = ({
   }
 };
 
-const getReminderKeyForEvent = ({ scope, daysUntil, eventWeekday }) => {
+export const getReminderKeyForEvent = ({ scope, daysUntil, eventWeekday, event, referenceDate }) => {
   if (scope === 'morning') {
     if (daysUntil === 15) return '15d';
     if (daysUntil === 10) return '10d';
     if (daysUntil === 7) return '7d';
-    if (eventWeekday === 0 && daysUntil === 3) return 'thursday';
+    if (eventWeekday === 0) {
+      const rehearsalDate = resolveEventRehearsalDate({
+        eventDate: event?.fecha_hora,
+        rehearsalWeekday: event?.ensayo_dia_semana,
+        hour: 12,
+      });
+      if (rehearsalDate && getBogotaDateSerial(rehearsalDate) === getBogotaDateSerial(referenceDate)) {
+        return 'rehearsal';
+      }
+    }
     return '';
   }
 
@@ -282,8 +300,8 @@ const fetchUpcomingEvents = async ({ serviceRoleClient, referenceDate, onlyEvent
     let query = serviceRoleClient
       .from('eventos')
       .select(includePredicador
-        ? 'id, titulo, tema_predicacion, predicador, fecha_hora, hora_fin, estado'
-        : 'id, titulo, tema_predicacion, fecha_hora, hora_fin, estado');
+        ? 'id, titulo, tema_predicacion, predicador, fecha_hora, hora_fin, estado, ensayo_dia_semana'
+        : 'id, titulo, tema_predicacion, fecha_hora, hora_fin, estado, ensayo_dia_semana');
 
     if (onlyEventId) {
       return query
@@ -439,7 +457,13 @@ const buildReminderCandidates = ({
     if (daysUntil < 0) continue;
 
     const eventWeekday = getBogotaWeekdayIndex(eventDate);
-    const reminderKey = getReminderKeyForEvent({ scope, daysUntil, eventWeekday });
+    const reminderKey = getReminderKeyForEvent({
+      scope,
+      daysUntil,
+      eventWeekday,
+      event,
+      referenceDate,
+    });
     if (!reminderKey) continue;
 
     const recipientsMap = groupedAssignments.get(eventId);
@@ -451,12 +475,18 @@ const buildReminderCandidates = ({
     const rehearsalUrl = hasSetlist ? `/ensayo/${eventId}` : '';
     const formattedDate = formatBogotaLongDate(eventDate);
     const { theme, preacher } = getEventThemeAndPreacher(event, event?.titulo || 'Servicio');
+    const reminderOccurrenceKey = reminderKey === 'rehearsal'
+      ? resolveEventRehearsalDateKey({
+        eventDate: event?.fecha_hora,
+        rehearsalWeekday: event?.ensayo_dia_semana,
+      })
+      : '';
 
     candidates.push({
       eventId,
       eventDate,
       reminderKey,
-      source: buildReminderSource(reminderKey, eventId),
+      source: buildReminderSource(reminderKey, eventId, reminderOccurrenceKey),
       hasSetlist,
       rehearsalUrl,
       formattedDate,
@@ -577,7 +607,7 @@ export async function runServiceReminderNotifications({
 
       if (!reminderContent) continue;
 
-      const deliveryUrl = candidate.hasSetlist && ['10d', '7d', 'thursday'].includes(candidate.reminderKey)
+      const deliveryUrl = candidate.hasSetlist && ['10d', '7d', 'rehearsal'].includes(candidate.reminderKey)
         ? candidate.rehearsalUrl
         : reminderContent.url;
 

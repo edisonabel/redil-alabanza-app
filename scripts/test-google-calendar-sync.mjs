@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import {
   buildGoogleCalendarEventPayload,
   buildGoogleCalendarEventId,
+  buildGoogleCalendarRehearsalPayload,
   createGoogleCalendarOAuthState,
   decryptCalendarToken,
   encryptCalendarToken,
@@ -55,6 +56,40 @@ const deterministicId = buildGoogleCalendarEventId({ profileId: 'profile-1', eve
 assert.match(deterministicId, /^redil[0-9a-f]{44}$/);
 assert.equal(deterministicId, buildGoogleCalendarEventId({ profileId: 'profile-1', eventId: 'event-1' }));
 assert.notEqual(deterministicId, buildGoogleCalendarEventId({ profileId: 'profile-2', eventId: 'event-1' }));
+assert.notEqual(
+  deterministicId,
+  buildGoogleCalendarEventId({ profileId: 'profile-1', eventId: 'event-1', calendarKind: 'rehearsal' }),
+);
+
+const voiceRehearsalPayload = buildGoogleCalendarRehearsalPayload({
+  event: {
+    id: 'event-1',
+    titulo: 'Servicio Dominical',
+    fecha_hora: '2026-07-26T14:00:00.000Z',
+    ensayo_dia_semana: 2,
+  },
+  assignments: [
+    { roles: { nombre: 'Soprano', codigo: 'voz_soprano' } },
+  ],
+  siteOrigin: 'https://alabanzaredilestadio.com/',
+});
+
+assert.equal(voiceRehearsalPayload.summary, 'Ensayo · Servicio Dominical · Redil');
+assert.equal(voiceRehearsalPayload.start.dateTime, '2026-07-21T23:30:00.000Z');
+assert.equal(voiceRehearsalPayload.end.dateTime, '2026-07-22T02:00:00.000Z');
+assert.match(voiceRehearsalPayload.description, /Llegada de voces: 6:30 p\. m\./);
+assert.equal(voiceRehearsalPayload.extendedProperties.private.redil_event_kind, 'rehearsal');
+
+const noRehearsalPayload = buildGoogleCalendarRehearsalPayload({
+  event: {
+    id: 'event-1',
+    titulo: 'Servicio Dominical',
+    fecha_hora: '2026-07-26T14:00:00.000Z',
+    ensayo_dia_semana: null,
+  },
+  assignments: [{ roles: { nombre: 'Bajo', codigo: 'bajo' } }],
+});
+assert.equal(noRehearsalPayload, null);
 
 const oauthState = createGoogleCalendarOAuthState({
   profileId: 'profile-1',

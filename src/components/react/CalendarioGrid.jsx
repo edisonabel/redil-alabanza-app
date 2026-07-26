@@ -12,10 +12,18 @@ import musicNoteIcon from '@iconify-icons/mdi/music-note';
 import { supabase } from '../../lib/supabase';
 import { normalizeRosterAssignments } from '../../lib/roster-utils';
 import { buildEventHeadline, getEventThemeAndPreacher } from '../../lib/event-display.js';
-import { isEventRepertoryManagerRoleCode } from '../../lib/role-permissions.js';
+import {
+    isEventRehearsalManagerRoleCode,
+    isEventRepertoryManagerRoleCode,
+} from '../../lib/role-permissions.js';
+import {
+    formatEventRehearsalLabel,
+    normalizeRehearsalWeekday,
+    resolveEventRehearsalDate,
+} from '../../lib/event-rehearsal.js';
 
 const MONTH_CHUNK_SIZE = 2;
-const EVENT_SELECT = 'id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, serie_id, asignaciones(id, rol_id, perfiles(id, nombre, email, avatar_url))';
+const EVENT_SELECT = 'id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, serie_id, ensayo_dia_semana, asignaciones(id, rol_id, perfiles(id, nombre, email, avatar_url))';
 
 const getMonthStart = (date) => {
     const next = new Date(date);
@@ -52,6 +60,17 @@ const mergeUniqueEvents = (currentEvents, incomingEvents) => {
     });
 
     return [...byId.values()].sort((a, b) => new Date(a.fecha_hora) - new Date(b.fecha_hora));
+};
+
+const canUserManageEventRehearsal = ({ assignments, roles, sessionUser, isAdmin }) => {
+    if (isAdmin) return true;
+
+    return (assignments || []).some((assignment) => {
+        const isCurrentUser = assignment?.perfiles?.id === sessionUser?.id
+            || assignment?.perfiles?.email === sessionUser?.email;
+        const roleCode = (roles || []).find((role) => role.id === assignment?.rol_id)?.codigo;
+        return isCurrentUser && isEventRehearsalManagerRoleCode(roleCode);
+    });
 };
 
 /**
@@ -129,6 +148,57 @@ export default function CalendarioGrid({
         setTemaModal(null);
         setTemaError(null);
     }, []);
+
+    useEffect(() => {
+        if (!sessionUser?.id || typeof window === 'undefined') return;
+        const reconcileKey = `redil:calendar-rehearsal-reconcile:v1:${sessionUser.id}`;
+        if (window.sessionStorage.getItem(reconcileKey)) return;
+        window.sessionStorage.setItem(reconcileKey, 'pending');
+
+        fetch('/api/calendar/google/sync', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'content-type': 'application/json' },
+            body: '{}',
+        }).then((response) => {
+            if (!response.ok && response.status !== 503) {
+                window.sessionStorage.removeItem(reconcileKey);
+                return;
+            }
+            window.sessionStorage.setItem(reconcileKey, 'done');
+        }).catch(() => {
+            window.sessionStorage.removeItem(reconcileKey);
+        });
+    }, [sessionUser?.id]);
+
+    const renderRehearsalSummary = (cardData) => {
+        if (cardData?.isVirtual || !cardData?.dbData?.id) return null;
+
+        const eventDate = cardData.dbData.fecha_hora || cardData.fecha;
+        const isSundayService = Boolean(resolveEventRehearsalDate({
+            eventDate,
+            rehearsalWeekday: 4,
+            hour: 12,
+        }));
+        if (!isSundayService) return null;
+
+        const currentDay = normalizeRehearsalWeekday(cardData.dbData.ensayo_dia_semana);
+        const currentLabel = currentDay === null
+            ? 'Sin ensayo'
+            : formatEventRehearsalLabel({ eventDate, rehearsalWeekday: currentDay });
+
+        return (
+            <span
+                className="inline-flex min-w-0 items-center gap-1.5 text-xs font-medium text-content-muted"
+                title={currentDay === null ? 'Este servicio no tiene ensayo programado' : `Ensayo: ${currentLabel}`}
+            >
+                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-70">
+                    <path d="M8 2v4" /><path d="M16 2v4" /><rect width="18" height="18" x="3" y="4" rx="2" /><path d="M3 10h18" />
+                </svg>
+                <span className="truncate">Ensayo · {currentLabel}</span>
+            </span>
+        );
+    };
 
     const saveTema = useCallback(async () => {
         if (!temaModal) return;
@@ -557,6 +627,12 @@ export default function CalendarioGrid({
 
         const miAsignacion = rosterDb.find((asig) => asig.perfiles?.id === sessionUser?.id || asig.perfiles?.email === sessionUser?.email);
         const isUsuarioAsignado = !!miAsignacion;
+        const canManageRehearsal = canUserManageEventRehearsal({
+            assignments: rosterDb,
+            roles: dictRoles,
+            sessionUser,
+            isAdmin,
+        });
 
         let isModerator = false;
         if (miAsignacion) {
@@ -687,6 +763,7 @@ export default function CalendarioGrid({
                                                 hora_fin: cardData.dbData?.hora_fin || '',
                                                 serie_id: cardData.dbData?.serie_id || '',
                                                 moderator: !isAdmin && isModerator ? 'true' : 'false',
+                                                can_manage_rehearsal: canManageRehearsal,
                                                 dbData: cardData.dbData
                                             });
                                         }
@@ -699,6 +776,8 @@ export default function CalendarioGrid({
                         <p className="text-xs md:text-sm text-content-muted md:text-content-muted flex items-center gap-2 mt-1 md:mt-0 md:font-medium">
                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" className="opacity-70 md:w-3.5 md:h-3.5" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
                             {timeString}
+                            <span aria-hidden="true" className="text-content-muted/50">·</span>
+                            {renderRehearsalSummary(cardData)}
                             {isSuspended && <span className="ml-2 text-red-500 font-bold uppercase md:tracking-widest md:text-[10px]">SUSPENDIDO</span>}
                         </p>
                     </div>
@@ -735,6 +814,12 @@ export default function CalendarioGrid({
         const dictRoles = initialRoles || [];
         const rosterDb = normalizeRosterAssignments(cardData.dbData?.asignaciones || [], dictRoles, { maxVoiceSlots: 4 });
         const miAsignacion = rosterDb.find((asig) => asig.perfiles?.id === sessionUser?.id || asig.perfiles?.email === sessionUser?.email);
+        const canManageRehearsal = canUserManageEventRehearsal({
+            assignments: rosterDb,
+            roles: dictRoles,
+            sessionUser,
+            isAdmin,
+        });
 
         let isModerator = false;
         if (miAsignacion) {
@@ -802,14 +887,19 @@ export default function CalendarioGrid({
                     </div>
 
                     {/* HEADER ROW 2 */}
-                    <div className="flex flex-wrap items-center gap-2.5 mb-1.5">
-                        <span className="px-2.5 py-0.5 bg-info/10 text-info border border-info/30 rounded-md text-[10px] font-bold uppercase tracking-widest leading-relaxed">{diaSemana}</span>
-                        <span className="text-sm font-medium text-content-muted">{timeString}</span>
-                        {esAcustico && (
-                            <span className="px-2.5 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-full border border-emerald-200 uppercase tracking-widest leading-none dark:bg-teal-100 dark:text-teal-800 dark:border-teal-200">
-                                SOLO ACÚSTICO
-                            </span>
-                        )}
+                    <div className="mb-1.5">
+                        <div className="flex flex-wrap items-center gap-2.5">
+                            <span className="px-2.5 py-0.5 bg-info/10 text-info border border-info/30 rounded-md text-[10px] font-bold uppercase tracking-widest leading-relaxed">{diaSemana}</span>
+                            <span className="text-sm font-medium text-content-muted">{timeString}</span>
+                            {esAcustico && (
+                                <span className="px-2.5 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-full border border-emerald-200 uppercase tracking-widest leading-none dark:bg-teal-100 dark:text-teal-800 dark:border-teal-200">
+                                    SOLO ACÚSTICO
+                                </span>
+                            )}
+                        </div>
+                        <div className="mt-2">
+                            {renderRehearsalSummary(cardData)}
+                        </div>
                     </div>
 
                     {hasTemaInfo && (
@@ -841,17 +931,18 @@ export default function CalendarioGrid({
                         <button
                             onClick={() => {
                                 if (window.toggleModalGlobal) {
-                            window.toggleModalGlobal(true, 'edit', {
-                                id: cardData.id,
-                                fecha: cardData.fecha,
-                                titulo,
-                                tema: cardData.dbData?.tema_predicacion || '',
-                                predicador: cardData.dbData?.predicador || '',
-                                estado,
-                                es_acustico: esAcustico,
-                                hora_fin: cardData.dbData?.hora_fin || '',
+                                    window.toggleModalGlobal(true, 'edit', {
+                                        id: cardData.id,
+                                        fecha: cardData.fecha,
+                                        titulo,
+                                        tema: cardData.dbData?.tema_predicacion || '',
+                                        predicador: cardData.dbData?.predicador || '',
+                                        estado,
+                                        es_acustico: esAcustico,
+                                        hora_fin: cardData.dbData?.hora_fin || '',
                                         serie_id: cardData.dbData?.serie_id || '',
                                         moderator: !isAdmin && isModerator ? 'true' : 'false',
+                                        can_manage_rehearsal: canManageRehearsal,
                                         dbData: cardData.dbData
                                     });
                                 }

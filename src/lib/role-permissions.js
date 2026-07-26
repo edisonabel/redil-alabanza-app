@@ -4,6 +4,11 @@ export const EVENT_REPERTORY_MANAGER_ROLE_CODES = new Set([
   'talkback',
 ]);
 
+export const EVENT_REHEARSAL_MANAGER_ROLE_CODES = new Set([
+  'lider_alabanza',
+  'director_musical',
+]);
+
 export const VOICE_ASSIGNMENT_MANAGER_ROLE_CODES = new Set([
   ...EVENT_REPERTORY_MANAGER_ROLE_CODES,
   'lider_vocal',
@@ -24,6 +29,9 @@ export const normalizeRoleCode = (value) =>
 
 export const isEventRepertoryManagerRoleCode = (value) =>
   EVENT_REPERTORY_MANAGER_ROLE_CODES.has(normalizeRoleCode(value));
+
+export const isEventRehearsalManagerRoleCode = (value) =>
+  EVENT_REHEARSAL_MANAGER_ROLE_CODES.has(normalizeRoleCode(value));
 
 export const isVoiceAssignmentManagerRoleCode = (value) =>
   VOICE_ASSIGNMENT_MANAGER_ROLE_CODES.has(normalizeRoleCode(value));

@@ -12,6 +12,10 @@ import {
   getSupabaseServiceRoleKey,
   readEnv,
 } from './supabase-env.js';
+import {
+  REHEARSAL_END_HOUR,
+  resolveEventRehearsalDate,
+} from '../event-rehearsal.js';
 
 export const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events.owned';
 export const GOOGLE_CALENDAR_TIME_ZONE = 'America/Bogota';
@@ -23,6 +27,7 @@ const GOOGLE_CALENDAR_API_URL = 'https://www.googleapis.com/calendar/v3';
 const PRODUCTION_ORIGIN = 'https://alabanzaredilestadio.com';
 const TOKEN_REFRESH_LEEWAY_MS = 90 * 1000;
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+const CALENDAR_SYNC_CONCURRENCY = 4;
 
 const { supabaseUrl } = getSupabaseServerEnv();
 const serviceRoleKey = getSupabaseServiceRoleKey();
@@ -360,11 +365,28 @@ const getRoleName = (assignment) => {
   return String(role?.nombre || '').trim();
 };
 
+const getRoleCode = (assignment) => {
+  const role = Array.isArray(assignment?.roles) ? assignment.roles[0] : assignment?.roles;
+  return String(role?.codigo || '').trim().toLowerCase();
+};
+
+const getSortedRoleNames = (assignments) => (
+  [...new Set((assignments || []).map(getRoleName).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'es'))
+);
+
+const hasVoiceRehearsalArrival = (assignments) => (
+  (assignments || []).some((assignment) => {
+    const roleCode = getRoleCode(assignment);
+    return roleCode.startsWith('voz_') || roleCode === 'lider_vocal';
+  })
+);
+
 export const buildGoogleCalendarEventPayload = ({ event, assignments, siteOrigin = PRODUCTION_ORIGIN }) => {
   const start = new Date(event?.fecha_hora);
   if (Number.isNaN(start.getTime())) throw new Error('El evento no tiene una fecha valida.');
   const end = resolveEventEnd(start, event?.hora_fin);
-  const roleNames = [...new Set((assignments || []).map(getRoleName).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+  const roleNames = getSortedRoleNames(assignments);
   const safeOrigin = String(siteOrigin || PRODUCTION_ORIGIN).replace(/\/$/, '');
   const title = String(event?.titulo || 'Servicio').trim();
   const roleLabel = roleNames.length > 1 ? 'Roles' : 'Rol';
@@ -389,6 +411,61 @@ export const buildGoogleCalendarEventPayload = ({ event, assignments, siteOrigin
     extendedProperties: {
       private: {
         redil_event_id: String(event?.id || ''),
+        redil_event_kind: 'service',
+      },
+    },
+  };
+};
+
+export const buildGoogleCalendarRehearsalPayload = ({ event, assignments, siteOrigin = PRODUCTION_ORIGIN }) => {
+  const voiceArrival = hasVoiceRehearsalArrival(assignments);
+  const start = resolveEventRehearsalDate({
+    eventDate: event?.fecha_hora,
+    rehearsalWeekday: event?.ensayo_dia_semana,
+    hour: voiceArrival ? 18 : 19,
+    minute: voiceArrival ? 30 : 0,
+  });
+  if (!start) return null;
+
+  const end = resolveEventRehearsalDate({
+    eventDate: event?.fecha_hora,
+    rehearsalWeekday: event?.ensayo_dia_semana,
+    hour: REHEARSAL_END_HOUR,
+    minute: 0,
+  });
+  const serviceDate = new Intl.DateTimeFormat('es-CO', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: GOOGLE_CALENDAR_TIME_ZONE,
+  }).format(new Date(event.fecha_hora));
+  const roleNames = getSortedRoleNames(assignments);
+  const roleLabel = roleNames.length > 1 ? 'Roles' : 'Rol';
+  const safeOrigin = String(siteOrigin || PRODUCTION_ORIGIN).replace(/\/$/, '');
+  const title = String(event?.titulo || 'Servicio').trim();
+
+  return {
+    summary: `Ensayo · ${title} · Redil`,
+    description: [
+      `Ensayo para el servicio del ${serviceDate}.`,
+      roleNames.length ? `${roleLabel}: ${roleNames.join(', ')}` : null,
+      voiceArrival ? 'Llegada de voces: 6:30 p. m.' : 'Llegada de músicos: 7:00 p. m.',
+      '',
+      `Ver en Redil: ${safeOrigin}/programacion`,
+    ].filter((line) => line !== null).join('\n'),
+    start: {
+      dateTime: start.toISOString(),
+      timeZone: GOOGLE_CALENDAR_TIME_ZONE,
+    },
+    end: {
+      dateTime: end.toISOString(),
+      timeZone: GOOGLE_CALENDAR_TIME_ZONE,
+    },
+    reminders: { useDefault: true },
+    extendedProperties: {
+      private: {
+        redil_event_id: String(event?.id || ''),
+        redil_event_kind: 'rehearsal',
       },
     },
   };
@@ -398,17 +475,21 @@ export const hashGoogleCalendarPayload = (payload) => (
   createHash('sha256').update(JSON.stringify(payload)).digest('hex')
 );
 
-export const buildGoogleCalendarEventId = ({ profileId, eventId }) => (
-  `redil${createHash('sha256').update(`${profileId}:${eventId}`).digest('hex').slice(0, 44)}`
+export const buildGoogleCalendarEventId = ({ profileId, eventId, calendarKind = 'service' }) => (
+  `redil${createHash('sha256').update(
+    calendarKind === 'service'
+      ? `${profileId}:${eventId}`
+      : `${profileId}:${eventId}:${calendarKind}`,
+  ).digest('hex').slice(0, 44)}`
 );
 
-const removeLinkedGoogleEvent = async ({ connection, link, fetcher = fetch }) => {
+const removeLinkedGoogleEvent = async ({ connection, link, accessToken = '', fetcher = fetch }) => {
   if (!link?.google_event_id) return { removed: false };
-  const accessToken = await getValidAccessToken({ connection, fetcher });
+  const activeAccessToken = accessToken || await getValidAccessToken({ connection, fetcher });
 
   try {
     await googleCalendarRequest({
-      accessToken,
+      accessToken: activeAccessToken,
       method: 'DELETE',
       path: `/calendars/primary/events/${encodeURIComponent(link.google_event_id)}?sendUpdates=none`,
       fetcher,
@@ -422,7 +503,8 @@ const removeLinkedGoogleEvent = async ({ connection, link, fetcher = fetch }) =>
     .from('google_calendar_event_links')
     .delete()
     .eq('perfil_id', link.perfil_id)
-    .eq('evento_id', link.evento_id);
+    .eq('evento_id', link.evento_id)
+    .eq('calendar_kind', link.calendar_kind || 'service');
   if (error) throw error;
   return { removed: true };
 };
@@ -443,98 +525,145 @@ export const syncGoogleCalendarEventForProfile = async ({ profileId, eventId, fe
   const connection = await fetchConnection(profileId);
   if (!connection) return { skipped: true, reason: 'not-connected' };
 
-  const [{ data: event, error: eventError }, { data: link, error: linkError }] = await Promise.all([
+  const [{ data: event, error: eventError }, { data: links, error: linksError }] = await Promise.all([
     client
       .from('eventos')
-      .select('id, titulo, fecha_hora, hora_fin, estado, asignaciones(id, perfil_id, rol_id, roles(nombre, codigo))')
+      .select('id, titulo, fecha_hora, hora_fin, estado, ensayo_dia_semana, asignaciones(id, perfil_id, rol_id, roles(nombre, codigo))')
       .eq('id', eventId)
       .maybeSingle(),
     client
       .from('google_calendar_event_links')
-      .select('perfil_id, evento_id, google_event_id, payload_hash')
+      .select('perfil_id, evento_id, calendar_kind, google_event_id, payload_hash')
       .eq('perfil_id', profileId)
-      .eq('evento_id', eventId)
-      .maybeSingle(),
+      .eq('evento_id', eventId),
   ]);
 
   if (eventError) throw eventError;
-  if (linkError) throw linkError;
+  if (linksError) throw linksError;
 
   const assignments = (event?.asignaciones || []).filter((row) => String(row?.perfil_id || '') === String(profileId));
   const isPublished = !event?.estado || String(event.estado).toLowerCase() === 'publicado';
+  const linksByKind = new Map((links || []).map((link) => [link.calendar_kind || 'service', link]));
+  let cachedAccessToken = '';
+  const requireAccessToken = async () => {
+    if (!cachedAccessToken) {
+      cachedAccessToken = await getValidAccessToken({ connection, fetcher });
+    }
+    return cachedAccessToken;
+  };
 
   if (!event || !isPublished || assignments.length === 0) {
-    if (!link) return { skipped: true, reason: 'not-assigned' };
-    return removeLinkedGoogleEvent({ connection, link, fetcher });
+    if (!links?.length) return { skipped: true, reason: 'not-assigned' };
+    let removedCount = 0;
+    for (const link of links) {
+      const accessToken = await requireAccessToken();
+      const result = await removeLinkedGoogleEvent({ connection, link, accessToken, fetcher });
+      if (result.removed) removedCount += 1;
+    }
+    return { removed: removedCount > 0, removedCount };
   }
 
   const { siteOrigin } = getGoogleCalendarEnv();
-  const payload = buildGoogleCalendarEventPayload({ event, assignments, siteOrigin });
-  const payloadHash = hashGoogleCalendarPayload(payload);
-  if (link?.payload_hash === payloadHash) return { unchanged: true };
+  const desiredPayloads = new Map([
+    ['service', buildGoogleCalendarEventPayload({ event, assignments, siteOrigin })],
+    ['rehearsal', buildGoogleCalendarRehearsalPayload({ event, assignments, siteOrigin })],
+  ]);
+  let syncedCount = 0;
+  let removedCount = 0;
+  let unchangedCount = 0;
 
-  const accessToken = await getValidAccessToken({ connection, fetcher });
-  let remoteEvent = null;
-  const deterministicEventId = buildGoogleCalendarEventId({ profileId, eventId });
+  for (const [calendarKind, payload] of desiredPayloads) {
+    const link = linksByKind.get(calendarKind);
 
-  if (link?.google_event_id) {
-    try {
-      remoteEvent = await googleCalendarRequest({
-        accessToken,
-        method: 'PATCH',
-        path: `/calendars/primary/events/${encodeURIComponent(link.google_event_id)}?sendUpdates=none`,
-        body: payload,
-        fetcher,
-      });
-    } catch (error) {
-      if (![404, 410].includes(Number(error?.providerStatus))) throw error;
+    if (!payload) {
+      if (link) {
+        const accessToken = await requireAccessToken();
+        const result = await removeLinkedGoogleEvent({ connection, link, accessToken, fetcher });
+        if (result.removed) removedCount += 1;
+      }
+      continue;
     }
-  }
 
-  if (!remoteEvent) {
-    try {
-      remoteEvent = await googleCalendarRequest({
-        accessToken,
-        method: 'POST',
-        path: '/calendars/primary/events?sendUpdates=none',
-        body: { id: deterministicEventId, ...payload },
-        fetcher,
-      });
-    } catch (error) {
-      if (Number(error?.providerStatus) !== 409) throw error;
-      remoteEvent = await googleCalendarRequest({
-        accessToken,
-        method: 'PATCH',
-        path: `/calendars/primary/events/${deterministicEventId}?sendUpdates=none`,
-        body: payload,
-        fetcher,
-      });
+    const payloadHash = hashGoogleCalendarPayload(payload);
+    if (link?.payload_hash === payloadHash) {
+      unchangedCount += 1;
+      continue;
     }
-  }
 
-  if (!remoteEvent?.id) throw new Error('Google no devolvio el identificador del evento creado.');
+    const accessToken = await requireAccessToken();
+    let remoteEvent = null;
+    const deterministicEventId = buildGoogleCalendarEventId({ profileId, eventId, calendarKind });
 
-  const now = new Date().toISOString();
-  const [{ error: upsertError }, { error: connectionUpdateError }] = await Promise.all([
-    client
+    if (link?.google_event_id) {
+      try {
+        remoteEvent = await googleCalendarRequest({
+          accessToken,
+          method: 'PATCH',
+          path: `/calendars/primary/events/${encodeURIComponent(link.google_event_id)}?sendUpdates=none`,
+          body: payload,
+          fetcher,
+        });
+      } catch (error) {
+        if (![404, 410].includes(Number(error?.providerStatus))) throw error;
+      }
+    }
+
+    if (!remoteEvent) {
+      try {
+        remoteEvent = await googleCalendarRequest({
+          accessToken,
+          method: 'POST',
+          path: '/calendars/primary/events?sendUpdates=none',
+          body: { id: deterministicEventId, ...payload },
+          fetcher,
+        });
+      } catch (error) {
+        if (Number(error?.providerStatus) !== 409) throw error;
+        remoteEvent = await googleCalendarRequest({
+          accessToken,
+          method: 'PATCH',
+          path: `/calendars/primary/events/${deterministicEventId}?sendUpdates=none`,
+          body: payload,
+          fetcher,
+        });
+      }
+    }
+
+    if (!remoteEvent?.id) throw new Error('Google no devolvio el identificador del evento creado.');
+
+    const now = new Date().toISOString();
+    const { error: upsertError } = await client
       .from('google_calendar_event_links')
       .upsert({
         perfil_id: profileId,
         evento_id: eventId,
+        calendar_kind: calendarKind,
         google_event_id: remoteEvent.id,
         payload_hash: payloadHash,
         synced_at: now,
         updated_at: now,
-      }, { onConflict: 'perfil_id,evento_id' }),
-    client
+      }, { onConflict: 'perfil_id,evento_id,calendar_kind' });
+
+    if (upsertError) throw upsertError;
+    syncedCount += 1;
+  }
+
+  if (syncedCount > 0 || removedCount > 0) {
+    const now = new Date().toISOString();
+    const { error: connectionUpdateError } = await client
       .from('google_calendar_connections')
       .update({ last_sync_at: now, last_error: null, updated_at: now })
-      .eq('perfil_id', profileId),
-  ]);
+      .eq('perfil_id', profileId);
+    if (connectionUpdateError) throw connectionUpdateError;
+  }
 
-  if (upsertError) throw upsertError;
-  if (connectionUpdateError) throw connectionUpdateError;
-  return { synced: true, googleEventId: remoteEvent.id };
+  return {
+    synced: syncedCount > 0,
+    syncedCount,
+    removed: removedCount > 0,
+    removedCount,
+    unchanged: syncedCount === 0 && removedCount === 0 && unchangedCount > 0,
+  };
 };
 
 export const syncGoogleCalendarForEvent = async ({ eventId, fetcher = fetch }) => {
@@ -552,14 +681,18 @@ export const syncGoogleCalendarForEvent = async ({ eventId, fetcher = fetch }) =
   ].filter(Boolean))];
 
   const results = [];
-  for (const profileId of profileIds) {
-    try {
-      const result = await syncGoogleCalendarEventForProfile({ profileId, eventId, fetcher });
-      results.push({ profileId, ok: true, ...result });
-    } catch (error) {
-      await markConnectionError(profileId, error);
-      results.push({ profileId, ok: false, error: String(error?.message || error) });
-    }
+  for (let index = 0; index < profileIds.length; index += CALENDAR_SYNC_CONCURRENCY) {
+    const batch = profileIds.slice(index, index + CALENDAR_SYNC_CONCURRENCY);
+    const batchResults = await Promise.all(batch.map(async (profileId) => {
+      try {
+        const result = await syncGoogleCalendarEventForProfile({ profileId, eventId, fetcher });
+        return { profileId, ok: true, ...result };
+      } catch (error) {
+        await markConnectionError(profileId, error);
+        return { profileId, ok: false, error: String(error?.message || error) };
+      }
+    }));
+    results.push(...batchResults);
   }
 
   return {
@@ -575,7 +708,7 @@ export const removeGoogleCalendarEventsForEvent = async ({ eventId, fetcher = fe
   const client = requireServiceRoleClient();
   const { data: links, error: linksError } = await client
     .from('google_calendar_event_links')
-    .select('perfil_id, evento_id, google_event_id, payload_hash')
+    .select('perfil_id, evento_id, calendar_kind, google_event_id, payload_hash')
     .eq('evento_id', eventId);
   if (linksError) throw linksError;
 
