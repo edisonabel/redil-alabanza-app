@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { screenWakeLockService } from '../../services/ScreenWakeLockService';
 import { LiveDirectorView } from './LiveDirectorView';
 import { useLiveDirectorSyncTransmitter } from '../../hooks/useLiveDirectorSyncTransmitter';
@@ -19,6 +20,7 @@ import {
   isNativeLiveDirectorEngineAvailable,
   NativeLiveDirectorEngine,
 } from '../../services/NativeLiveDirectorEnginePlugin';
+import { shouldRunLiveDirectorFullFileWebPrewarm } from '../../utils/liveDirectorPreloadPolicy';
 
 const CACHE_NAME = 'repertorio-offline-cache-v1';
 const NEXT_SONG_WEB_PRELOAD_TRACK_LIMIT = 9;
@@ -686,11 +688,22 @@ export default function ModoEnsayoDirector({
   }, [ensayoSongs, safeActiveSongIndex, sessionOverrides]);
 
   useEffect(() => {
+    const shouldRunFullFileWebPrewarm = (
+      typeof window !== 'undefined' &&
+      shouldRunLiveDirectorFullFileWebPrewarm({
+        hasNativePreloadEngine: isNativeLiveDirectorEngineAvailable(),
+        isNativeRuntime: Capacitor.isNativePlatform(),
+        maxTouchPoints: window.navigator.maxTouchPoints,
+        userAgent: window.navigator.userAgent,
+        userAgentDataMobile: window.navigator.userAgentData?.mobile,
+      })
+    );
+
     if (
       ensayoSongs.length === 0 ||
       typeof window === 'undefined' ||
       !('caches' in window) ||
-      isNativeLiveDirectorEngineAvailable() ||
+      !shouldRunFullFileWebPrewarm ||
       isSafariWebBrowser()
     ) {
       return;

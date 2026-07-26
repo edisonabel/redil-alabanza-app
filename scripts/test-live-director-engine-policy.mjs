@@ -184,6 +184,11 @@ assert.match(
   'A terminal WebKit decoder error must recreate the decoder and continue the current MP4 batch.',
 );
 assert.match(
+  workerSource,
+  /constructor\(track, loopCacheManager, sessionId\)[\s\S]+this\.sessionId = Math\.max[\s\S]+postFinalDecoderError\(error\)[\s\S]+if \(this\.isDestroyed\) \{\s+return;[\s\S]+postProducerError\('decoder-error', error, \{\s+sessionId: this\.sessionId,/,
+  'A delayed decoder error must remain scoped to the song session that produced it.',
+);
+assert.match(
   engineSource,
   /keepSynchronizedProducerDuringStartup[\s\S]+retain-shared-worker-until-track-deadline/,
   'A slow synchronized producer must remain alive until the track-ready deadline.',
@@ -192,6 +197,29 @@ assert.match(
   engineSource,
   /this\.resetTracks\(\);\s+\/\/[\s\S]*?this\.postWorkletMessage\(\{ type: 'reset-tracks' \}\);\s+this\.postWorkletMessage\(\{ type: 'clear-solo' \}\);/,
   'Every song initialization must clear stale worklet indices before configuring the next session.',
+);
+assert.match(
+  engineSource,
+  /resolveProducerMessageSessionScope[\s\S]+message\.type === 'producer-next-track-warmed'[\s\S]+message\.type === 'producer-next-session-warmed'[\s\S]+return 'preload';[\s\S]+return 'stale';/,
+  'Only explicit next-song warmup messages may bypass the active producer session.',
+);
+assert.match(
+  engineSource,
+  /const initializingSessionId = this\.producerSessionId \+ 1;\s+this\.producerSessionId = initializingSessionId;\s+this\.warmAudioProducerRuntime\(\);\s+await this\.context\.audioWorklet\.addModule/,
+  'The next producer session must be reserved before initialization yields.',
+);
+assert.match(
+  engineSource,
+  /configureAudioProducerWorker\(\s*trackDefinitions: NormalizedTrackDefinition\[\],\s*sessionId: number,[\s\S]+if \(sessionId !== this\.producerSessionId\)/,
+  'A superseded initialization must not configure its producer.',
+);
+const producerMessageHandlerSource =
+  engineSource.match(/private handleProducerMessage\([\s\S]+?\n  private /)?.[0] || '';
+assert.ok(
+  producerMessageHandlerSource.indexOf("messageSessionScope === 'stale'") >= 0 &&
+    producerMessageHandlerSource.indexOf("messageSessionScope === 'stale'") <
+      producerMessageHandlerSource.indexOf('this.lastProducerMessageAt = performance.now()'),
+  'Stale messages must be rejected before they can mutate active-song freshness or tracks.',
 );
 assert.doesNotMatch(
   engineSource,

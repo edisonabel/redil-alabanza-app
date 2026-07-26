@@ -962,7 +962,7 @@ type PreloadedStreamingSession = {
   trackStates: TrackRuntime[];
 };
 
-const AUDIO_WORKER_ASSET_VERSION = '20260722-safari-click-recovery-1';
+const AUDIO_WORKER_ASSET_VERSION = '20260726-mobile-stability-1';
 const DEFAULT_WORKLET_MODULE_URL = `/workers/MultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_PRODUCER_WORKER_URL = `/workers/AudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
@@ -2103,8 +2103,15 @@ export class StreamingMultitrackEngine {
       throw new Error('AudioWorklet is not supported in this browser.');
     }
 
+    // Reserve the next producer session before the first await. Messages still
+    // arriving from the previous song are stale from this point onward.
+    const initializingSessionId = this.producerSessionId + 1;
+    this.producerSessionId = initializingSessionId;
     this.warmAudioProducerRuntime();
     await this.context.audioWorklet.addModule(this.workletModuleUrl);
+    if (this.producerSessionId !== initializingSessionId) {
+      return;
+    }
     this.ensureWorkletNode();
     this.resetTracks();
     // The worklet outlives individual song sessions. Clear its track table
@@ -2140,7 +2147,7 @@ export class StreamingMultitrackEngine {
         trackState.ringBuffer.usesSharedMemory && trackState.config.container !== 'adts',
     );
     const producerStarted = canUseSharedProducer
-      ? this.configureAudioProducerWorker(normalizedTracks)
+      ? this.configureAudioProducerWorker(normalizedTracks, initializingSessionId)
       : false;
     const capabilities = readLiveBrowserCapabilities();
     const synchronizedWorkerRequired = requiresSynchronizedStreamingWorker(
@@ -3973,20 +3980,25 @@ export class StreamingMultitrackEngine {
     }
   }
 
-  private configureAudioProducerWorker(trackDefinitions: NormalizedTrackDefinition[]): boolean {
+  private configureAudioProducerWorker(
+    trackDefinitions: NormalizedTrackDefinition[],
+    sessionId: number,
+  ): boolean {
     const requestedWorkerCount = this.resolveProducerWorkerCount(trackDefinitions.length);
     const workers = this.ensureAudioProducerWorkerPool(requestedWorkerCount);
     if (workers.length !== requestedWorkerCount) {
       return false;
     }
 
-    this.producerSessionId += 1;
+    if (sessionId !== this.producerSessionId) {
+      return false;
+    }
     try {
       const tracks = this.buildProducerTrackMetadata(trackDefinitions);
       workers.forEach((worker, workerIndex) => {
         worker.postMessage({
           type: 'init-session',
-          sessionId: this.producerSessionId,
+          sessionId,
           sampleRate: this.context.sampleRate,
           diagnosticsEnabled: isLiveDiagnosticsEnabled(),
           tracks: tracks.filter((track) => track.trackIndex % workers.length === workerIndex),
@@ -3994,7 +4006,7 @@ export class StreamingMultitrackEngine {
       });
       this.streamingPath = 'worker';
       logLiveDiagnostic('streaming:producer-worker-pool', {
-        sessionId: this.producerSessionId,
+        sessionId,
         workerCount: workers.length,
         trackCount: tracks.length,
         tracksPerWorker: workers.map((_, workerIndex) =>
@@ -4004,7 +4016,7 @@ export class StreamingMultitrackEngine {
       return true;
     } catch (error) {
       warnLiveDiagnostic('streaming:producer-worker-configure-failed', {
-        sessionId: this.producerSessionId,
+        sessionId,
         trackCount: trackDefinitions.length,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -4257,12 +4269,64 @@ export class StreamingMultitrackEngine {
     });
   }
 
+  private resolveProducerMessageSessionScope(
+    message: ProducerInboundMessage,
+  ): 'active' | 'preload' | 'unscoped' | 'stale' {
+    if (!('sessionId' in message)) {
+      return 'unscoped';
+    }
+
+    if (typeof message.sessionId !== 'number') {
+      return 'stale';
+    }
+
+    if (message.sessionId === this.producerSessionId) {
+      return 'active';
+    }
+
+    if (
+      message.sessionId === this.preloadedNextSession?.sessionId &&
+      (
+        message.type === 'producer-next-track-warmed' ||
+        message.type === 'producer-next-session-warmed'
+      )
+    ) {
+      return 'preload';
+    }
+
+    return 'stale';
+  }
+
   private handleProducerMessage(message: ProducerInboundMessage | null): void {
     if (!message || typeof message !== 'object') {
       return;
     }
 
-    this.lastProducerMessageAt = performance.now();
+    const messageSessionScope = this.resolveProducerMessageSessionScope(message);
+    if (messageSessionScope === 'stale') {
+      const staleTrackIndex =
+        'trackIndex' in message && typeof message.trackIndex === 'number'
+          ? message.trackIndex
+          : undefined;
+      if (
+        this.shouldPublishProducerDiagnostic(
+          `stale-${message.type}`,
+          staleTrackIndex,
+          5_000,
+        )
+      ) {
+        this.logFlatLiveDiagnostic('streaming:stale-producer-message-dropped', {
+          messageType: message.type,
+          messageSessionId: 'sessionId' in message ? message.sessionId : null,
+          activeSessionId: this.producerSessionId,
+          trackIndex: staleTrackIndex ?? null,
+        }, 'warn');
+      }
+      return;
+    }
+    if (messageSessionScope !== 'preload') {
+      this.lastProducerMessageAt = performance.now();
+    }
 
     if (message.type === 'producer-ready') {
       logLiveDiagnostic('streaming:producer-ready', { message });

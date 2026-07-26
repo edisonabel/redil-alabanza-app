@@ -93,7 +93,8 @@ type SectionVisual = SongStructure & {
 
 type SectionLaneSegment = {
   section: LiveDirectorSectionVisual;
-  waveBars: number[];
+  wavePath: string;
+  waveViewBoxWidth: number;
   widthPx: number;
   leftPx: number;
   // Precomputed style variants so the render map doesn't rebuild these
@@ -437,6 +438,25 @@ const buildWaveBars = (seed: number, count = 24) =>
     return 18 + value * 72;
   });
 
+const buildWavePath = (seed: number, count: number) => {
+  const barStride = SECTION_WAVE_BAR_WIDTH_PX + SECTION_WAVE_BAR_GAP_PX;
+  const bottom = 96;
+  const bars = buildWaveBars(seed, count);
+
+  return {
+    path: bars
+      .map((height, index) => {
+        const x = index * barStride + SECTION_WAVE_BAR_WIDTH_PX / 2;
+        return `M${x.toFixed(1)} ${bottom}V${Math.max(4, bottom - height).toFixed(1)}`;
+      })
+      .join(' '),
+    viewBoxWidth: Math.max(
+      SECTION_WAVE_BAR_WIDTH_PX,
+      count * barStride - SECTION_WAVE_BAR_GAP_PX,
+    ),
+  };
+};
+
 const getTrackBaseId = (trackId: string) => trackId.replace(/-\d+$/, '');
 
 const buildShortTrackLabel = (value: string) => {
@@ -560,6 +580,8 @@ export function LiveDirectorView({
   const sequenceFileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const sectionsLaneScrollRef = useRef<HTMLDivElement | null>(null);
+  const sectionsLaneScrollLeftRef = useRef(0);
+  const sectionsMinimapViewportRef = useRef<HTMLDivElement | null>(null);
   const sectionsDragStateRef = useRef<DragScrollState>({
     active: false,
     captured: false,
@@ -806,10 +828,6 @@ export function LiveDirectorView({
   const [viewportWidth, setViewportWidth] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [sectionsLaneViewportWidth, setSectionsLaneViewportWidth] = useState(0);
-  // Current horizontal scroll of the sections lane. Kept in state (not ref)
-  // because the minimap viewport marker is rendered from this value — we want
-  // React to re-render when the user scrolls. Throttled via rAF below.
-  const [sectionsLaneScrollLeft, setSectionsLaneScrollLeft] = useState(0);
   // UI status for the auto-follow indicator chip. 'auto' = normal (indicator
   // hidden), 'held' = user is actively dragging/scrolling (indicator on,
   // static), 'resuming' = user released and the 5s timer is counting down
@@ -1248,9 +1266,11 @@ export function LiveDirectorView({
           borderColor: section.accent,
           boxShadow: `0 0 22px ${section.accent}20`,
         };
+        const wave = buildWavePath(index + 1, waveBarCount);
         const segment: SectionLaneSegment = {
           section,
-          waveBars: buildWaveBars(index + 1, waveBarCount),
+          wavePath: wave.path,
+          waveViewBoxWidth: wave.viewBoxWidth,
           widthPx,
           leftPx: cursor,
           activeStyle,
@@ -1704,8 +1724,8 @@ export function LiveDirectorView({
 
     const maxScrollLeft = Math.max(0, scrollContainer.scrollWidth - scrollContainer.clientWidth);
     const targetScrollLeft = clamp(getSectionLaneProgressPxAtTime(nextTime), 0, maxScrollLeft);
+    sectionsLaneScrollLeftRef.current = targetScrollLeft;
     scrollContainer.scrollLeft = targetScrollLeft;
-    setSectionsLaneScrollLeft(targetScrollLeft);
   }, [getSectionLaneProgressPxAtTime]);
 
   const primeSectionVisuals = useCallback((targetTime: number) => {
@@ -1750,7 +1770,7 @@ export function LiveDirectorView({
   // Simplification: we treat the scrollable track as linear over
   // sectionLaneContentWidth, which is good enough visually even with gaps
   // between sections. The playhead line stays in true time domain above.
-  const sectionLaneMinimapViewport = useMemo(() => {
+  const getSectionLaneMinimapViewport = useCallback((scrollLeft: number) => {
     if (
       playbackTimelineDuration <= 0 ||
       sectionLaneContentWidth <= 0 ||
@@ -1763,7 +1783,7 @@ export function LiveDirectorView({
     if (contentWithoutPads <= 0) {
       return { leftPct: 0, widthPct: 100 };
     }
-    const startPx = Math.max(0, sectionsLaneScrollLeft);
+    const startPx = Math.max(0, scrollLeft);
     const widthFrac = clamp(sectionsLaneViewportWidth / contentWithoutPads, 0.03, 1);
     const startFrac = clamp(startPx / contentWithoutPads, 0, 1 - widthFrac);
     return { leftPct: startFrac * 100, widthPct: widthFrac * 100 };
@@ -1772,9 +1792,24 @@ export function LiveDirectorView({
     sectionLaneContentWidth,
     sectionLanePlayheadOffsetPx,
     sectionLaneTrailingPaddingPx,
-    sectionsLaneScrollLeft,
     sectionsLaneViewportWidth,
   ]);
+  const sectionLaneMinimapViewport = getSectionLaneMinimapViewport(
+    sectionsLaneScrollLeftRef.current,
+  );
+  const updateSectionsMinimapViewport = useCallback((scrollLeft: number) => {
+    const marker = sectionsMinimapViewportRef.current;
+    sectionsLaneScrollLeftRef.current = Math.max(0, scrollLeft);
+    if (!marker) {
+      return;
+    }
+
+    const viewport = getSectionLaneMinimapViewport(sectionsLaneScrollLeftRef.current);
+    const minimapWidth = marker.parentElement?.clientWidth || 0;
+    marker.style.left = '0px';
+    marker.style.width = `${viewport.widthPct}%`;
+    marker.style.transform = `translate3d(${minimapWidth * (viewport.leftPct / 100)}px, 0, 0)`;
+  }, [getSectionLaneMinimapViewport]);
 
   const omittedWarningByTrackId = useMemo(() => {
     const warningMap = new Map<string, MultitrackEngineLoadWarning>();
@@ -2102,9 +2137,8 @@ export function LiveDirectorView({
     };
   }, [showSectionsPanel]);
 
-  // Track the lane's scrollLeft so the minimap viewport marker follows the
-  // big lane as the user pans. Throttled via rAF so intense drags don't spam
-  // re-renders; state only commits once per frame.
+  // Keep the minimap viewport aligned without routing the 24 Hz auto-follow
+  // through React state. Only the small marker is updated on each frame.
   useEffect(() => {
     if (!showSectionsPanel) {
       releaseSectionsAutoFollowNow();
@@ -2118,7 +2152,7 @@ export function LiveDirectorView({
 
     const commit = () => {
       rafId = null;
-      setSectionsLaneScrollLeft(latest);
+      updateSectionsMinimapViewport(latest);
     };
 
     const onScroll = () => {
@@ -2127,14 +2161,13 @@ export function LiveDirectorView({
       rafId = window.requestAnimationFrame(commit);
     };
 
-    // Prime the initial value once so the minimap viewport renders immediately.
-    setSectionsLaneScrollLeft(scrollContainer.scrollLeft);
+    updateSectionsMinimapViewport(scrollContainer.scrollLeft);
     scrollContainer.addEventListener('scroll', onScroll, { passive: true });
     return () => {
       scrollContainer.removeEventListener('scroll', onScroll);
       if (rafId !== null) window.cancelAnimationFrame(rafId);
     };
-  }, [releaseSectionsAutoFollowNow, showSectionsPanel]);
+  }, [releaseSectionsAutoFollowNow, showSectionsPanel, updateSectionsMinimapViewport]);
 
   useEffect(() => {
     if (!showSectionsPanel) {
@@ -4996,7 +5029,15 @@ export function LiveDirectorView({
                         paddingRight: `${sectionLaneTrailingPaddingPx}px`,
                       }}
                     >
-                    {sectionLaneSegments.map(({ section, waveBars, widthPx, leftPx, activeStyle, inactiveStyle }, index) => {
+                    {sectionLaneSegments.map(({
+                      section,
+                      wavePath,
+                      waveViewBoxWidth,
+                      widthPx,
+                      leftPx,
+                      activeStyle,
+                      inactiveStyle,
+                    }, index) => {
                       const isActive = index === activeSectionIndex;
 
                       return (
@@ -5025,22 +5066,23 @@ export function LiveDirectorView({
                             className="absolute inset-y-0 left-0 w-px bg-white/12"
                             style={{ opacity: isActive ? 0.52 : 0.2 }}
                           />
-                          <div
-                            className="absolute left-4 right-4 top-[58%] flex h-[36%] -translate-y-1/2 items-end justify-between"
-                            style={{ gap: `${SECTION_WAVE_BAR_GAP_PX}px` }}
+                          <svg
+                            aria-hidden="true"
+                            className="pointer-events-none absolute left-4 right-4 top-[58%] h-[36%] -translate-y-1/2 overflow-visible"
+                            style={{ width: 'calc(100% - 2rem)' }}
+                            viewBox={`0 0 ${waveViewBoxWidth} 100`}
+                            preserveAspectRatio="none"
                           >
-                            {waveBars.map((height, barIndex) => (
-                              <span
-                                key={`${section.id}-bar-${barIndex}`}
-                                className="shrink-0 rounded-full bg-white/72"
-                                style={{
-                                  width: `${SECTION_WAVE_BAR_WIDTH_PX}px`,
-                                  height: `${height}%`,
-                                  opacity: isActive ? 0.96 : 0.7,
-                                }}
-                              />
-                            ))}
-                          </div>
+                            <path
+                              d={wavePath}
+                              fill="none"
+                              stroke="rgba(255,255,255,0.72)"
+                              strokeWidth={SECTION_WAVE_BAR_WIDTH_PX}
+                              strokeLinecap="round"
+                              strokeOpacity={isActive ? 0.96 : 0.7}
+                              vectorEffect="non-scaling-stroke"
+                            />
+                          </svg>
                           <div className="absolute left-4 top-8 flex items-center gap-3 rounded-[1rem] border border-white/8 bg-black/56 px-3 py-2">
                             <span
                               className="flex h-10 min-w-10 items-center justify-center rounded-full border px-2 text-[0.88rem] font-black tracking-[0.16em]"
@@ -5148,12 +5190,13 @@ export function LiveDirectorView({
                       {/* Viewport marker: qué rango de la canción está visible
                           en la lane grande. */}
                       <div
+                        ref={sectionsMinimapViewportRef}
                         aria-hidden="true"
                         className="pointer-events-none absolute -top-[2px] -bottom-[2px] rounded-[6px] border border-white/60 shadow-[0_0_0_1px_rgba(0,0,0,0.45)]"
                         style={{
-                          left: `${sectionLaneMinimapViewport.leftPct}%`,
+                          left: '0px',
                           width: `${sectionLaneMinimapViewport.widthPct}%`,
-                          transition: 'left 120ms ease, width 120ms ease',
+                          transition: 'transform 120ms ease, width 120ms ease',
                         }}
                       />
                       {/* Playhead global */}

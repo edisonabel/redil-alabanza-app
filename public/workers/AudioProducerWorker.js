@@ -34,6 +34,9 @@ const STARTUP_DECODER_RECOVERY_PHASES = [
 ];
 const RANGE_FETCH_MAX_RETRIES = 3;
 const RANGE_FETCH_BASE_RETRY_DELAY_MS = 500;
+const RANGE_FETCH_TIMEOUT_MS = 4000;
+const RANGE_FETCH_BODY_STALL_TIMEOUT_MS = 15000;
+const RANGE_FETCH_BODY_FALLBACK_TIMEOUT_MS = 60000;
 const RANGE_FETCH_INITIAL_JITTER_MIN_MS = 10;
 const RANGE_FETCH_INITIAL_JITTER_MAX_MS = 50;
 const MICRO_SYNC_LOG_THRESHOLD_FRAMES = 8;
@@ -766,9 +769,43 @@ class RangeFetcher {
     for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
       this.assertFetchActive(fetchSerial);
 
+      let requestTimeoutError = null;
+
       try {
-        this.abortController = new AbortController();
-        const response = await fetch(this.url, {
+        const requestController = new AbortController();
+        this.abortController = requestController;
+        const withTimeout = async (promise, timeoutMs, phase) => {
+          let timeoutId = null;
+          requestTimeoutError = null;
+
+          try {
+            return await Promise.race([
+              promise,
+              new Promise((_resolve, reject) => {
+                timeoutId = setTimeout(() => {
+                  if (requestController.signal.aborted) {
+                    reject(createAbortError(`Range fetch superseded for ${this.url}`));
+                    return;
+                  }
+
+                  requestTimeoutError = new Error(
+                    `Range fetch timed out after ${timeoutMs}ms for ${this.url}`,
+                  );
+                  requestTimeoutError.name = 'RangeFetchTimeoutError';
+                  requestTimeoutError.timeoutMs = timeoutMs;
+                  requestTimeoutError.phase = phase;
+                  reject(requestTimeoutError);
+                  requestController.abort();
+                }, timeoutMs);
+              }),
+            ]);
+          } finally {
+            if (timeoutId !== null) {
+              clearTimeout(timeoutId);
+            }
+          }
+        };
+        const response = await withTimeout(fetch(this.url, {
           mode: 'cors',
           credentials: new URL(this.url, self.location.href).origin === self.location.origin
             ? 'same-origin'
@@ -776,8 +813,8 @@ class RangeFetcher {
           headers: {
             Range: `bytes=${safeByteStart}-${byteEnd}`,
           },
-          signal: this.abortController.signal,
-        });
+          signal: requestController.signal,
+        }), RANGE_FETCH_TIMEOUT_MS, 'headers');
         this.assertFetchActive(fetchSerial);
 
         if (response.status !== 200 && response.status !== 206) {
@@ -790,7 +827,55 @@ class RangeFetcher {
         }
 
         this.totalBytes = this.parseTotalBytes(response.headers.get('Content-Range'), this.totalBytes);
-        const bytes = new Uint8Array(await response.arrayBuffer());
+        const readResponseBuffer = async () => {
+          const reader = response.body && typeof response.body.getReader === 'function'
+            ? response.body.getReader()
+            : null;
+
+          if (!reader) {
+            return withTimeout(
+              response.arrayBuffer(),
+              RANGE_FETCH_BODY_FALLBACK_TIMEOUT_MS,
+              'body',
+            );
+          }
+
+          const chunks = [];
+          let totalBytes = 0;
+          try {
+            while (true) {
+              // This deadline resets whenever another body chunk arrives. Slow
+              // but progressing mobile downloads are not treated as stalled.
+              const result = await withTimeout(
+                reader.read(),
+                RANGE_FETCH_BODY_STALL_TIMEOUT_MS,
+                'body-stall',
+              );
+              if (result.done) {
+                break;
+              }
+              if (result.value && result.value.byteLength > 0) {
+                const chunk = new Uint8Array(result.value);
+                chunks.push(chunk);
+                totalBytes += chunk.byteLength;
+              }
+            }
+          } finally {
+            if (typeof reader.releaseLock === 'function') {
+              reader.releaseLock();
+            }
+          }
+
+          const combined = new Uint8Array(totalBytes);
+          let writeOffset = 0;
+          for (const chunk of chunks) {
+            combined.set(chunk, writeOffset);
+            writeOffset += chunk.byteLength;
+          }
+          return combined.buffer;
+        };
+        const responseBuffer = await readResponseBuffer();
+        const bytes = new Uint8Array(responseBuffer);
         this.assertFetchActive(fetchSerial);
         const nextByteStart = safeByteStart + bytes.byteLength;
         this.abortController = null;
@@ -804,11 +889,12 @@ class RangeFetcher {
             bytes.byteLength === 0 ||
             (this.totalBytes !== null && nextByteStart >= this.totalBytes),
         };
-      } catch (error) {
+      } catch (rawError) {
         if (this.abortController && fetchSerial === this.fetchSerial) {
           this.abortController = null;
         }
 
+        const error = requestTimeoutError || rawError;
         if (isAbortError(error)) {
           self.postMessage({
             type: 'producer-fetch-aborted',
@@ -874,6 +960,10 @@ class RangeFetcher {
   isRetryableFetchError(error) {
     if (!error || isAbortError(error)) {
       return false;
+    }
+
+    if (error.name === 'RangeFetchTimeoutError') {
+      return true;
     }
 
     if (typeof error.status === 'number') {
@@ -1541,9 +1631,10 @@ class Mp4TrackDemuxer {
 }
 
 class ProducerTrackPipeline {
-  constructor(track, loopCacheManager) {
+  constructor(track, loopCacheManager, sessionId) {
     this.track = track;
     this.loopCacheManager = loopCacheManager;
+    this.sessionId = Math.max(0, Math.floor(Number(sessionId) || 0));
     this.fetcher = new RangeFetcher(track.url, {
       chunkBytes: DEFAULT_FETCH_CHUNK_BYTES,
       trackIndex: track.trackIndex,
@@ -2883,10 +2974,15 @@ class ProducerTrackPipeline {
   }
 
   postFinalDecoderError(error) {
+    if (this.isDestroyed) {
+      return;
+    }
+
     const variant = this.decoderVariants[this.decoderVariantIndex] || null;
     const firstSample = this.recentDecodeSamples[0] || null;
 
     postProducerError('decoder-error', error, {
+      sessionId: this.sessionId,
       trackIndex: this.track.trackIndex,
       trackId: this.track.id,
       trackName: this.track.name,
@@ -3660,7 +3756,10 @@ const configureSession = (message) => {
 
   for (let index = 0; index < loopCacheManager.tracks.length; index += 1) {
     const track = loopCacheManager.tracks[index];
-    trackPipelines.set(track.trackIndex, new ProducerTrackPipeline(track, loopCacheManager));
+    trackPipelines.set(
+      track.trackIndex,
+      new ProducerTrackPipeline(track, loopCacheManager, activeSessionId),
+    );
   }
 
   self.postMessage({
@@ -3699,7 +3798,10 @@ const warmNextSession = async (message) => {
   const pipelines = new Map();
   for (let index = 0; index < tracks.length; index += 1) {
     const track = tracks[index];
-    pipelines.set(track.trackIndex, new ProducerTrackPipeline(track, loopCacheManager));
+    pipelines.set(
+      track.trackIndex,
+      new ProducerTrackPipeline(track, loopCacheManager, sessionId),
+    );
   }
 
   const tasks = [];
