@@ -151,24 +151,58 @@ export default function CalendarioGrid({
 
     useEffect(() => {
         if (!sessionUser?.id || typeof window === 'undefined') return;
-        const reconcileKey = `redil:calendar-rehearsal-reconcile:v1:${sessionUser.id}`;
-        if (window.sessionStorage.getItem(reconcileKey)) return;
-        window.sessionStorage.setItem(reconcileKey, 'pending');
+        let disposed = false;
+        let inFlight = false;
+        let lastAttemptAt = 0;
 
-        fetch('/api/calendar/google/sync', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'content-type': 'application/json' },
-            body: '{}',
-        }).then((response) => {
-            if (!response.ok && response.status !== 503) {
-                window.sessionStorage.removeItem(reconcileKey);
-                return;
-            }
-            window.sessionStorage.setItem(reconcileKey, 'done');
-        }).catch(() => {
-            window.sessionStorage.removeItem(reconcileKey);
-        });
+        const syncCalendarIfStale = () => {
+            if (disposed || inFlight || document.visibilityState === 'hidden') return;
+            const now = Date.now();
+            if (now - lastAttemptAt < 60 * 1000) return;
+
+            lastAttemptAt = now;
+            inFlight = true;
+            const controller = new AbortController();
+            const timeoutId = window.setTimeout(() => controller.abort(), 25 * 1000);
+            fetch('/api/calendar/google/sync', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ if_stale_minutes: 15 }),
+                signal: controller.signal,
+            }).then(async (response) => {
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || Number(payload?.failed || 0) > 0) {
+                    console.warn('[google-calendar] Automatic reconciliation remains pending.', {
+                        status: response.status,
+                        failed: Number(payload?.failed || 0),
+                    });
+                }
+            }).catch((error) => {
+                console.warn('[google-calendar] Automatic reconciliation request failed.', {
+                    reason: error?.name === 'AbortError' ? 'timeout' : String(error?.message || error),
+                });
+            }).finally(() => {
+                window.clearTimeout(timeoutId);
+                inFlight = false;
+            });
+        };
+
+        const syncWhenVisible = () => {
+            if (document.visibilityState === 'visible') syncCalendarIfStale();
+        };
+
+        syncCalendarIfStale();
+        window.addEventListener('focus', syncCalendarIfStale);
+        window.addEventListener('pageshow', syncCalendarIfStale);
+        document.addEventListener('visibilitychange', syncWhenVisible);
+
+        return () => {
+            disposed = true;
+            window.removeEventListener('focus', syncCalendarIfStale);
+            window.removeEventListener('pageshow', syncCalendarIfStale);
+            document.removeEventListener('visibilitychange', syncWhenVisible);
+        };
     }, [sessionUser?.id]);
 
     const renderRehearsalSummary = (cardData) => {

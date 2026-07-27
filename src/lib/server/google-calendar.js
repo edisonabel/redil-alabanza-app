@@ -27,7 +27,21 @@ const GOOGLE_CALENDAR_API_URL = 'https://www.googleapis.com/calendar/v3';
 const PRODUCTION_ORIGIN = 'https://alabanzaredilestadio.com';
 const TOKEN_REFRESH_LEEWAY_MS = 90 * 1000;
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+const GOOGLE_CALENDAR_REQUEST_TIMEOUT_MS = 8 * 1000;
 const CALENDAR_SYNC_CONCURRENCY = 4;
+const CALENDAR_RETRY_CONCURRENCY = 2;
+export const GOOGLE_CALENDAR_STALE_AFTER_MS = 15 * 60 * 1000;
+export const GOOGLE_CALENDAR_ERROR_RETRY_AFTER_MS = 15 * 60 * 1000;
+export const GOOGLE_CALENDAR_RETRY_BATCH_SIZE = 6;
+export const GOOGLE_CALENDAR_BACKGROUND_BUDGET_MS = 12 * 60 * 1000;
+const GOOGLE_CALENDAR_DEADLINE_GUARD_MS = 30 * 1000;
+const GOOGLE_CALENDAR_PERMANENT_ERROR_FRAGMENTS = [
+  'invalid_grant',
+  'unauthorized_client',
+  'expired or revoked',
+  'necesita volver a autorizarse',
+  'permiso permanente',
+];
 
 const { supabaseUrl } = getSupabaseServerEnv();
 const serviceRoleKey = getSupabaseServiceRoleKey();
@@ -37,6 +51,7 @@ const serviceRoleClient = supabaseUrl && serviceRoleKey
     auth: { persistSession: false, autoRefreshToken: false },
   })
   : null;
+const profileReconciliationInFlight = new Map();
 
 const requireServiceRoleClient = () => {
   if (!serviceRoleClient) {
@@ -45,6 +60,56 @@ const requireServiceRoleClient = () => {
     throw error;
   }
   return serviceRoleClient;
+};
+
+const toTimestamp = (value) => {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number') return value;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+};
+
+const createGoogleRequestSignal = () => (
+  typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+    ? AbortSignal.timeout(GOOGLE_CALENDAR_REQUEST_TIMEOUT_MS)
+    : undefined
+);
+
+export const googleCalendarConnectionNeedsReconnect = (lastError) => {
+  const normalized = String(lastError || '').trim().toLowerCase();
+  return GOOGLE_CALENDAR_PERMANENT_ERROR_FRAGMENTS
+    .some((fragment) => normalized.includes(fragment));
+};
+
+export const isGoogleCalendarConnectionStale = (
+  connection,
+  {
+    now = Date.now(),
+    staleAfterMs = GOOGLE_CALENDAR_STALE_AFTER_MS,
+    errorRetryAfterMs = GOOGLE_CALENDAR_ERROR_RETRY_AFTER_MS,
+  } = {},
+) => {
+  if (!connection) return false;
+
+  const nowMs = toTimestamp(now);
+  if (!Number.isFinite(nowMs)) return true;
+
+  if (String(connection?.last_error || '').trim()) {
+    if (googleCalendarConnectionNeedsReconnect(connection.last_error)) return false;
+    const lastAttemptAt = toTimestamp(connection?.updated_at);
+    if (!Number.isFinite(lastAttemptAt)) return true;
+    const safeErrorRetryAfterMs = Math.max(
+      60 * 1000,
+      Number(errorRetryAfterMs) || GOOGLE_CALENDAR_ERROR_RETRY_AFTER_MS,
+    );
+    return nowMs - lastAttemptAt >= safeErrorRetryAfterMs;
+  }
+
+  const lastSyncAt = toTimestamp(connection?.last_sync_at);
+  if (!Number.isFinite(lastSyncAt)) return true;
+
+  const safeStaleAfterMs = Math.max(60 * 1000, Number(staleAfterMs) || GOOGLE_CALENDAR_STALE_AFTER_MS);
+  return nowMs - lastSyncAt >= safeStaleAfterMs;
 };
 
 export const getGoogleCalendarEnv = () => ({
@@ -213,6 +278,7 @@ export const exchangeGoogleAuthorizationCode = async ({ code, redirectUri, fetch
   const response = await fetcher(GOOGLE_TOKEN_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    signal: createGoogleRequestSignal(),
     body: new URLSearchParams({
       code,
       client_id: clientId,
@@ -229,6 +295,7 @@ const refreshGoogleAccessToken = async (refreshToken, fetcher = fetch) => {
   const response = await fetcher(GOOGLE_TOKEN_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    signal: createGoogleRequestSignal(),
     body: new URLSearchParams({
       refresh_token: refreshToken,
       client_id: clientId,
@@ -284,15 +351,56 @@ export const saveGoogleCalendarConnection = async ({ profileId, tokenPayload }) 
   if (error) throw error;
 };
 
-const markConnectionError = async (profileId, error) => {
+const markConnectionError = async (
+  profileId,
+  error,
+  { onlyIfUpdatedAt = null } = {},
+) => {
   const client = requireServiceRoleClient();
-  await client
+  let query = client
     .from('google_calendar_connections')
     .update({
       last_error: String(error?.message || error || 'Error desconocido').slice(0, 500),
       updated_at: new Date().toISOString(),
     })
     .eq('perfil_id', profileId);
+
+  if (onlyIfUpdatedAt) {
+    query = query.eq('updated_at', onlyIfUpdatedAt);
+  }
+
+  const { error: updateError } = await query;
+  if (updateError) throw updateError;
+};
+
+const markConnectionReconciled = async (
+  profileId,
+  now = new Date(),
+  { onlyIfUpdatedAt = null } = {},
+) => {
+  const client = requireServiceRoleClient();
+  const reconciledAt = new Date(toTimestamp(now)).toISOString();
+  let query = client
+    .from('google_calendar_connections')
+    .update({
+      last_sync_at: reconciledAt,
+      last_error: null,
+      updated_at: reconciledAt,
+    })
+    .eq('perfil_id', profileId);
+
+  if (onlyIfUpdatedAt) {
+    query = query.eq('updated_at', onlyIfUpdatedAt);
+  }
+
+  const { data, error } = await query
+    .select('last_sync_at')
+    .maybeSingle();
+  if (error) throw error;
+  if (data?.last_sync_at) return data.last_sync_at;
+
+  const latestConnection = await fetchConnection(profileId);
+  return latestConnection?.last_sync_at || reconciledAt;
 };
 
 const getValidAccessToken = async ({ connection, fetcher = fetch }) => {
@@ -318,8 +426,6 @@ const getValidAccessToken = async ({ connection, fetcher = fetch }) => {
       access_token_encrypted: encryptCalendarToken(accessToken, env.tokenEncryptionKey),
       token_expires_at: toExpiryIso(refreshed?.expires_in),
       granted_scope: String(refreshed?.scope || connection?.granted_scope || GOOGLE_CALENDAR_SCOPE),
-      updated_at: new Date().toISOString(),
-      last_error: null,
     })
     .eq('perfil_id', connection.perfil_id);
 
@@ -330,6 +436,7 @@ const getValidAccessToken = async ({ connection, fetcher = fetch }) => {
 const googleCalendarRequest = async ({ accessToken, path, method = 'GET', body, fetcher = fetch }) => {
   const response = await fetcher(`${GOOGLE_CALENDAR_API_URL}${path}`, {
     method,
+    signal: createGoogleRequestSignal(),
     headers: {
       authorization: `Bearer ${accessToken}`,
       ...(body ? { 'content-type': 'application/json' } : {}),
@@ -648,15 +755,6 @@ export const syncGoogleCalendarEventForProfile = async ({ profileId, eventId, fe
     syncedCount += 1;
   }
 
-  if (syncedCount > 0 || removedCount > 0) {
-    const now = new Date().toISOString();
-    const { error: connectionUpdateError } = await client
-      .from('google_calendar_connections')
-      .update({ last_sync_at: now, last_error: null, updated_at: now })
-      .eq('perfil_id', profileId);
-    if (connectionUpdateError) throw connectionUpdateError;
-  }
-
   return {
     synced: syncedCount > 0,
     syncedCount,
@@ -734,47 +832,238 @@ export const removeGoogleCalendarEventsForEvent = async ({ eventId, fetcher = fe
   };
 };
 
-export const reconcileGoogleCalendarProfile = async ({ profileId, fetcher = fetch }) => {
+export const reconcileGoogleCalendarProfile = async ({
+  profileId,
+  fetcher = fetch,
+  now = new Date(),
+  deadlineAt = null,
+}) => {
   const client = requireServiceRoleClient();
   const connection = await fetchConnection(profileId);
   if (!connection) return { connected: false, requested: 0, failed: 0 };
 
-  const [{ data: assignments, error: assignmentsError }, { data: links, error: linksError }] = await Promise.all([
-    client
-      .from('asignaciones')
-      .select('evento_id, eventos!inner(fecha_hora, estado)')
-      .eq('perfil_id', profileId)
-      .gte('eventos.fecha_hora', new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()),
-    client
-      .from('google_calendar_event_links')
-      .select('evento_id')
-      .eq('perfil_id', profileId),
-  ]);
-  if (assignmentsError) throw assignmentsError;
-  if (linksError) throw linksError;
+  const nowMs = toTimestamp(now);
+  const referenceNow = new Date(Number.isFinite(nowMs) ? nowMs : Date.now());
 
-  const eventIds = [...new Set([
-    ...(assignments || []).map((row) => row?.evento_id),
-    ...(links || []).map((row) => row?.evento_id),
-  ].filter(Boolean))];
+  try {
+    const [{ data: assignments, error: assignmentsError }, { data: links, error: linksError }] = await Promise.all([
+      client
+        .from('asignaciones')
+        .select('evento_id, eventos!inner(fecha_hora, estado)')
+        .eq('perfil_id', profileId)
+        .gte('eventos.fecha_hora', new Date(referenceNow.getTime() - 2 * 60 * 60 * 1000).toISOString()),
+      client
+        .from('google_calendar_event_links')
+        .select('evento_id, eventos!inner(fecha_hora)')
+        .eq('perfil_id', profileId)
+        .gte('eventos.fecha_hora', new Date(referenceNow.getTime() - 2 * 60 * 60 * 1000).toISOString()),
+    ]);
+    if (assignmentsError) throw assignmentsError;
+    if (linksError) throw linksError;
+
+    const eventIds = [...new Set([
+      ...(assignments || []).map((row) => row?.evento_id),
+      ...(links || []).map((row) => row?.evento_id),
+    ].filter(Boolean))];
+
+    const results = [];
+    const deadlineMs = toTimestamp(deadlineAt);
+    let budgetExhausted = false;
+    for (const eventId of eventIds) {
+      if (
+        Number.isFinite(deadlineMs)
+        && Date.now() >= deadlineMs - GOOGLE_CALENDAR_DEADLINE_GUARD_MS
+      ) {
+        budgetExhausted = true;
+        break;
+      }
+
+      try {
+        const result = await syncGoogleCalendarEventForProfile({ profileId, eventId, fetcher });
+        results.push({ eventId, ok: true, ...result });
+      } catch (error) {
+        results.push({ eventId, ok: false, error: String(error?.message || error) });
+      }
+    }
+
+    const failedResults = results.filter((result) => !result.ok);
+    const pendingCount = budgetExhausted ? Math.max(1, eventIds.length - results.length) : 0;
+    let reconciledAt = connection.last_sync_at;
+    if (failedResults.length > 0 || pendingCount > 0) {
+      const pendingError = failedResults[0]?.error
+        || 'Sincronizacion parcial pendiente por limite de tiempo.';
+      await markConnectionError(profileId, pendingError, {
+        onlyIfUpdatedAt: connection.updated_at,
+      });
+    } else {
+      reconciledAt = await markConnectionReconciled(profileId, new Date(), {
+        onlyIfUpdatedAt: connection.updated_at,
+      });
+    }
+
+    return {
+      connected: true,
+      requested: eventIds.length,
+      synced: results.filter((result) => result.synced).length,
+      removed: results.filter((result) => result.removed).length,
+      failed: failedResults.length + pendingCount,
+      partial: pendingCount > 0,
+      pending: pendingCount,
+      lastSyncAt: reconciledAt,
+      results,
+    };
+  } catch (error) {
+    await markConnectionError(profileId, error, {
+      onlyIfUpdatedAt: connection.updated_at,
+    });
+    throw error;
+  }
+};
+
+export const reconcileGoogleCalendarProfileIfStale = async ({
+  profileId,
+  fetcher = fetch,
+  now = new Date(),
+  staleAfterMs = GOOGLE_CALENDAR_STALE_AFTER_MS,
+  deadlineAt = null,
+} = {}) => {
+  const normalizedProfileId = String(profileId || '').trim();
+  if (profileReconciliationInFlight.has(normalizedProfileId)) {
+    return profileReconciliationInFlight.get(normalizedProfileId);
+  }
+
+  const reconciliationPromise = (async () => {
+    const connection = await fetchConnection(normalizedProfileId);
+    if (!connection) return { connected: false, requested: 0, failed: 0 };
+
+    if (!isGoogleCalendarConnectionStale(connection, { now, staleAfterMs })) {
+      return {
+        connected: true,
+        skipped: true,
+        reason: 'fresh',
+        requested: 0,
+        failed: 0,
+        lastSyncAt: connection.last_sync_at,
+      };
+    }
+
+    return reconcileGoogleCalendarProfile({
+      profileId: normalizedProfileId,
+      fetcher,
+      now,
+      deadlineAt,
+    });
+  })();
+
+  profileReconciliationInFlight.set(normalizedProfileId, reconciliationPromise);
+  try {
+    return await reconciliationPromise;
+  } finally {
+    if (profileReconciliationInFlight.get(normalizedProfileId) === reconciliationPromise) {
+      profileReconciliationInFlight.delete(normalizedProfileId);
+    }
+  }
+};
+
+export const reconcileStaleGoogleCalendarConnections = async ({
+  fetcher = fetch,
+  now = new Date(),
+  staleAfterMs = GOOGLE_CALENDAR_STALE_AFTER_MS,
+  limit = GOOGLE_CALENDAR_RETRY_BATCH_SIZE,
+  reconcileProfile = reconcileGoogleCalendarProfileIfStale,
+  deadlineAt = null,
+} = {}) => {
+  const client = requireServiceRoleClient();
+  const nowMs = toTimestamp(now);
+  const referenceNow = new Date(Number.isFinite(nowMs) ? nowMs : Date.now());
+  const safeStaleAfterMs = Math.max(60 * 1000, Number(staleAfterMs) || GOOGLE_CALENDAR_STALE_AFTER_MS);
+  const safeLimit = Math.min(25, Math.max(1, Number(limit) || GOOGLE_CALENDAR_RETRY_BATCH_SIZE));
+  const retryLimit = Math.max(1, Math.ceil(safeLimit / 2));
+  const retryScanLimit = Math.max(50, retryLimit * 10);
+  const staleBefore = new Date(referenceNow.getTime() - safeStaleAfterMs).toISOString();
+  const retryBefore = new Date(referenceNow.getTime() - GOOGLE_CALENDAR_ERROR_RETRY_AFTER_MS).toISOString();
+
+  let retryQueryBuilder = client
+    .from('google_calendar_connections')
+    .select('perfil_id, last_sync_at, last_error, updated_at')
+    .not('last_error', 'is', null)
+    .lte('updated_at', retryBefore);
+  GOOGLE_CALENDAR_PERMANENT_ERROR_FRAGMENTS.forEach((fragment) => {
+    retryQueryBuilder = retryQueryBuilder.not('last_error', 'ilike', `%${fragment}%`);
+  });
+
+  const [retryQuery, staleQuery] = await Promise.all([
+    retryQueryBuilder
+      .order('updated_at', { ascending: true })
+      .limit(retryScanLimit),
+    client
+      .from('google_calendar_connections')
+      .select('perfil_id, last_sync_at, last_error, updated_at')
+      .is('last_error', null)
+      .or(`last_sync_at.is.null,last_sync_at.lte.${staleBefore}`)
+      .order('last_sync_at', { ascending: true, nullsFirst: true })
+      .limit(safeLimit),
+  ]);
+  if (retryQuery.error) throw retryQuery.error;
+  if (staleQuery.error) throw staleQuery.error;
+
+  const retryConnections = (retryQuery.data || []).filter((connection) => isGoogleCalendarConnectionStale(connection, {
+    now: referenceNow,
+    staleAfterMs: safeStaleAfterMs,
+  }));
+  const staleConnections = (staleQuery.data || []).filter((connection) => isGoogleCalendarConnectionStale(connection, {
+    now: referenceNow,
+    staleAfterMs: safeStaleAfterMs,
+  }));
+  const selectedRetryConnections = retryConnections.slice(0, retryLimit);
+  const dueConnections = [
+    ...selectedRetryConnections,
+    ...staleConnections.slice(0, safeLimit - selectedRetryConnections.length),
+  ];
 
   const results = [];
-  for (const eventId of eventIds) {
-    try {
-      const result = await syncGoogleCalendarEventForProfile({ profileId, eventId, fetcher });
-      results.push({ eventId, ok: true, ...result });
-    } catch (error) {
-      await markConnectionError(profileId, error);
-      results.push({ eventId, ok: false, error: String(error?.message || error) });
+  for (let index = 0; index < dueConnections.length; index += CALENDAR_RETRY_CONCURRENCY) {
+    const deadlineMs = toTimestamp(deadlineAt);
+    if (
+      Number.isFinite(deadlineMs)
+      && Date.now() >= deadlineMs - GOOGLE_CALENDAR_DEADLINE_GUARD_MS
+    ) {
+      break;
     }
+
+    const batch = dueConnections.slice(index, index + CALENDAR_RETRY_CONCURRENCY);
+    const batchResults = await Promise.all(batch.map(async (connection) => {
+      const profileId = connection.perfil_id;
+      try {
+        const result = await reconcileProfile({
+          profileId,
+          fetcher,
+          now: new Date(),
+          staleAfterMs: safeStaleAfterMs,
+          deadlineAt,
+        });
+        return { profileId, ok: Number(result?.failed || 0) === 0, ...result };
+      } catch (syncError) {
+        return {
+          profileId,
+          ok: false,
+          failed: 1,
+          error: String(syncError?.message || syncError),
+        };
+      }
+    }));
+    results.push(...batchResults);
   }
 
   return {
-    connected: true,
-    requested: eventIds.length,
-    synced: results.filter((result) => result.synced).length,
-    removed: results.filter((result) => result.removed).length,
+    requested: dueConnections.length,
+    reconciled: results.filter((result) => result.ok).length,
     failed: results.filter((result) => !result.ok).length,
+    hasMore: retryConnections.length > selectedRetryConnections.length
+      || staleConnections.length > safeLimit - selectedRetryConnections.length
+      || (retryQuery.data || []).length >= retryScanLimit
+      || (staleQuery.data || []).length >= safeLimit
+      || results.length < dueConnections.length,
     results,
   };
 };

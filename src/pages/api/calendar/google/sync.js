@@ -2,6 +2,7 @@ import { requireAuthenticatedUser, securityErrorResponse } from '../../../../lib
 import { isEventRepertoryManagerRoleCode } from '../../../../lib/role-permissions.js';
 import {
   reconcileGoogleCalendarProfile,
+  reconcileGoogleCalendarProfileIfStale,
   removeGoogleCalendarEventsForEvent,
   syncGoogleCalendarForEvent,
 } from '../../../../lib/server/google-calendar.js';
@@ -47,9 +48,15 @@ export async function POST({ request, cookies }) {
     const payload = await request.json().catch(() => ({}));
     const eventId = String(payload?.evento_id || '').trim();
     const removeEvent = payload?.remove_event === true;
+    const staleMinutes = Number(payload?.if_stale_minutes);
 
     if (!eventId) {
-      const result = await reconcileGoogleCalendarProfile({ profileId: user.id });
+      const result = Number.isFinite(staleMinutes) && staleMinutes > 0
+        ? await reconcileGoogleCalendarProfileIfStale({
+          profileId: user.id,
+          staleAfterMs: Math.min(24 * 60, Math.max(1, staleMinutes)) * 60 * 1000,
+        })
+        : await reconcileGoogleCalendarProfile({ profileId: user.id });
       return new Response(JSON.stringify({ ok: true, ...result }), {
         headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
       });

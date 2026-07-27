@@ -80,6 +80,9 @@ export default function GoogleCalendarConnection() {
         body: '{}',
       });
       const payload = await readResponse(response);
+      if (Number(payload?.failed || 0) > 0) {
+        throw new Error('La actualización quedó pendiente y se reintentará automáticamente.');
+      }
       const changed = Number(payload.synced || 0) + Number(payload.removed || 0);
       setFeedback(changed > 0 ? 'Calendario actualizado.' : 'Tu calendario ya estaba al dia.');
       await loadStatus();
@@ -164,7 +167,7 @@ export default function GoogleCalendarConnection() {
 
       {status.needsAttention && (
         <p className="mt-2 px-2 text-xs font-semibold leading-5 text-amber-600" role="status">
-          Vuelve a conectar el calendario.
+          Sincronización pendiente. Reintentaremos automáticamente; si persiste, vuelve a conectar.
         </p>
       )}
       {unavailable && (
