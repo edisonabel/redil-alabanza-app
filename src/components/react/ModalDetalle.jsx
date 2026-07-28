@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from '@iconify/react';
 import microphoneIcon from '@iconify-icons/mdi/microphone';
 import guitarAcousticIcon from '@iconify-icons/mdi/guitar-acoustic';
@@ -295,7 +296,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
         }, 300);
     };
 
-    if (!isOpen && !eventData) return null;
+    if ((!isOpen && !eventData) || typeof document === 'undefined') return null;
 
     const fechaObj = eventData?.fecha || new Date();
     const titulo = eventData?.dbData?.titulo || 'Actividad Redil';
@@ -367,7 +368,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
         window.location.href = `/repertorio?seleccionar_para=${eventoId}`;
     };
 
-    return (
+    return createPortal((
         <div
             role="dialog"
             aria-modal="true"
@@ -612,5 +613,5 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                 </div>
             )}
         </div>
-    );
+    ), document.body);
 }

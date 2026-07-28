@@ -502,7 +502,7 @@ const DashboardInicio = ({
             </div>
 
             {/* Columna Derecha */}
-            <div className="w-full lg:w-[44%] xl:w-full shrink-0 flex flex-col gap-5 2xl:gap-6">
+            <div className={`w-full lg:w-[44%] xl:w-full shrink-0 flex flex-col gap-5 2xl:gap-6 ${isStandaloneApp ? 'pb-[calc(6.5rem+env(safe-area-inset-bottom))] lg:pb-0' : ''}`}>
                 <section className="px-3 sm:px-4 lg:px-0" data-tour="environment">
                     <div className="flex items-center justify-between gap-3 mb-3">
                         <h2 className="text-lg font-bold text-content tracking-tight">Tu Entorno</h2>
