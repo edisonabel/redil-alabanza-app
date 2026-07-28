@@ -9,6 +9,18 @@ import { createClient } from '@supabase/supabase-js';
 import { getSupabaseServerEnv } from '../lib/server/supabase-env.js';
 
 const INITIAL_MONTH_WINDOW = 2;
+const bogotaTodayParts = Object.fromEntries(
+  new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Bogota',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+    .formatToParts(new Date())
+    .filter((part) => part.type !== 'literal')
+    .map((part) => [part.type, part.value])
+);
+const initialToday = `${bogotaTodayParts.year}-${bogotaTodayParts.month}-${bogotaTodayParts.day}`;
 
 const initialFetchFloor = new Date(Date.now() - 12 * 60 * 60 * 1000);
 const initialFetchLimit = new Date(initialFetchFloor);
@@ -124,6 +136,7 @@ if (ssrUser) {
         canEditTema={ssrCanEditTema}
         initialLoadUntil={initialFetchLimit.toISOString()}
         hasMoreInitialEvents={ssrHasMoreEventos}
+        initialToday={initialToday}
     />
     
     <!-- MODAL DE GESTIÃ“N (FASE 1) -->

@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
-import { fetchLiveDirectorSongSession } from '../../utils/liveDirectorUploadClient';
-import { readLiveBrowserCapabilities } from '../../utils/liveDiagnostics';
 
 // ── ChordPro parser ──────────────────────────────────────────────────────────
 // Identical logic to AdminRepertorio so sections are compatible.
@@ -212,9 +210,6 @@ const isRemoteChordProUrl = (value = '') => {
 
 const ENSAYO_OPEN_TIMEOUT_MS = 10_000;
 const ENSAYO_OPEN_RETRY_DELAY_MS = 350;
-const PWA_ISOLATION_WORKER_VERSION = 'redil-sw-v4';
-const PWA_ISOLATION_WORKER_URL = `/sw.js?v=${PWA_ISOLATION_WORKER_VERSION}`;
-const PWA_ISOLATION_WORKER_TIMEOUT_MS = 5_000;
 
 const wait = (ms) => new Promise((resolve) => {
   window.setTimeout(resolve, ms);
@@ -262,123 +257,6 @@ const resolveChordPro = async (raw = '') => {
   }
 };
 
-const resolveMultitrackSession = async (song = {}) => {
-  const localSession = song?.multitrackSession || song?.multitrack_session || null;
-  if (localSession) return localSession;
-
-  const songId = String(song?.id || '').trim();
-  if (!songId || song?.hasMultitrackSession === false) return null;
-
-  try {
-    return await runWithOneRetry(
-      () => fetchLiveDirectorSongSession(songId),
-      'Sesión multitrack',
-    );
-  } catch (error) {
-    console.warn('[EnsayoGlobalIsland] No se pudo cargar la sesion multitrack guardada.', error);
-    return null;
-  }
-};
-
-const readServiceWorkerVersion = async (worker) => {
-  if (!worker || typeof MessageChannel !== 'function') return '';
-
-  return new Promise((resolve) => {
-    const channel = new MessageChannel();
-    let settled = false;
-    const finish = (version = '') => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timeoutId);
-      channel.port1.close();
-      channel.port2.close();
-      resolve(String(version || ''));
-    };
-    const timeoutId = window.setTimeout(() => finish(), 250);
-
-    channel.port1.onmessage = (event) => {
-      finish(event.data?.version);
-    };
-    worker.postMessage({ type: 'redil-sw-version' }, [channel.port2]);
-  });
-};
-
-const waitForWorkerActivation = async (worker) => {
-  if (!worker || worker.state === 'activated') return;
-
-  await new Promise((resolve, reject) => {
-    const timeoutId = window.setTimeout(() => {
-      worker.removeEventListener('statechange', handleStateChange);
-      reject(new Error('El Service Worker aislado no se activó a tiempo.'));
-    }, PWA_ISOLATION_WORKER_TIMEOUT_MS);
-
-    const handleStateChange = () => {
-      if (worker.state === 'activated') {
-        window.clearTimeout(timeoutId);
-        worker.removeEventListener('statechange', handleStateChange);
-        resolve();
-      } else if (worker.state === 'redundant') {
-        window.clearTimeout(timeoutId);
-        worker.removeEventListener('statechange', handleStateChange);
-        reject(new Error('El Service Worker aislado quedó redundante.'));
-      }
-    };
-
-    worker.addEventListener('statechange', handleStateChange);
-    handleStateChange();
-  });
-};
-
-const prepareStandaloneIsolationWorker = async () => {
-  if (!('serviceWorker' in navigator) || window.crossOriginIsolated === true) return;
-
-  const registration = await navigator.serviceWorker.register(PWA_ISOLATION_WORKER_URL, {
-    scope: '/',
-    updateViaCache: 'none',
-  });
-  await registration.update();
-  await waitForWorkerActivation(registration.installing || registration.waiting);
-  await navigator.serviceWorker.ready;
-
-  const deadline = performance.now() + PWA_ISOLATION_WORKER_TIMEOUT_MS;
-  while (performance.now() < deadline) {
-    const activeVersion = await readServiceWorkerVersion(registration.active);
-    const controllerVersion = await readServiceWorkerVersion(navigator.serviceWorker.controller);
-    if (
-      activeVersion === PWA_ISOLATION_WORKER_VERSION
-      || controllerVersion === PWA_ISOLATION_WORKER_VERSION
-    ) {
-      return;
-    }
-    await wait(120);
-  }
-
-  throw new Error('La web app no tomó el Service Worker aislado a tiempo.');
-};
-
-const openIsolatedLiveDirectorForSafari = async (song = {}) => {
-  if (typeof window === 'undefined') return false;
-
-  const capabilities = readLiveBrowserCapabilities();
-  if (!capabilities.isIOS && !capabilities.isSafari) return false;
-
-  const songId = String(song?.id || '').trim();
-  if (!songId) return false;
-
-  const targetUrl = new URL('/herramientas/live-director-preview', window.location.origin);
-  targetUrl.searchParams.set('song', songId);
-  if (new URLSearchParams(window.location.search).get('debug') === '1') {
-    targetUrl.searchParams.set('debug', '1');
-  }
-
-  if (capabilities.standaloneDisplay) {
-    await prepareStandaloneIsolationWorker();
-  }
-
-  window.location.assign(targetUrl.toString());
-  return true;
-};
-
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function EnsayoGlobalIsland() {
@@ -393,15 +271,7 @@ export default function EnsayoGlobalIsland() {
     setOpenError('');
 
     try {
-      const [chordproText, multitrackSession] = await Promise.all([
-        resolveChordPro(raw.chordpro),
-        resolveMultitrackSession(raw),
-      ]);
-
-      if (multitrackSession && await openIsolatedLiveDirectorForSafari(raw)) {
-        setOpeningSong(null);
-        return;
-      }
+      const chordproText = await resolveChordPro(raw.chordpro);
 
       const sections =
         Array.isArray(raw.sections) && raw.sections.length > 0
@@ -409,13 +279,17 @@ export default function EnsayoGlobalIsland() {
           : parseChordProSections(chordproText);
 
       const sectionMarkers = Array.isArray(raw.sectionMarkers) ? raw.sectionMarkers : [];
-      setActiveSong({
+      const rehearsalSong = {
         ...raw,
         chordpro: chordproText,
         sections,
         sectionMarkers,
-        ...(multitrackSession ? { multitrackSession } : {}),
-      });
+        hasMultitrackSession: false,
+      };
+      delete rehearsalSong.multitrackSession;
+      delete rehearsalSong.multitrack_session;
+
+      setActiveSong(rehearsalSong);
       setOpeningSong(null);
     } catch (error) {
       console.error('[EnsayoGlobalIsland] No se pudo abrir el modo ensayo.', error);
@@ -451,7 +325,7 @@ export default function EnsayoGlobalIsland() {
             {openError ? 'No pudimos abrir la sesión' : 'Abriendo ensayo...'}
           </h2>
           <p className="mt-2 text-[0.92rem] leading-relaxed text-white/62">
-            {openError || 'Preparando letras, carátulas y la sesión de audio.'}
+            {openError || 'Preparando acordes y estructura de la canción.'}
           </p>
           {!openError && (
             <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-white/8">

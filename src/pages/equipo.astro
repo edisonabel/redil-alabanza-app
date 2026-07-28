@@ -55,7 +55,7 @@ import Layout from '../layouts/Layout.astro';
  <!-- Pista visual scroll derecho -->
  <div class="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-neutral-50 [#0a0a0a] to-transparent pointer-events-none z-10 hidden md:block" id="scroll-hint-right"></div>
  
- <div id="plantillas-grid" class="flex gap-4 overflow-x-auto pb-4 custom-scrollbar snap-x relative z-0">
+ <div id="plantillas-grid" class="custom-scrollbar relative z-0 flex w-full flex-col gap-4 pb-4 md:flex-row md:overflow-x-auto md:snap-x">
  <!-- Se inyectan cards -->
  </div>
  </div>
@@ -382,6 +382,12 @@ import Layout from '../layouts/Layout.astro';
  window.appStateRoles = []; // Cache rÃ¡pido para Picker
 
  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+ const escapeHtml = (value: unknown) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
 
  const getStableSession = async () => {
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -465,6 +471,16 @@ import Layout from '../layouts/Layout.astro';
  const headCounter = document.getElementById('equipos-counter-top');
  const btnBuilderBig = document.getElementById('btn-open-team-builder') as HTMLButtonElement;
  const btnBuilderFab = document.getElementById('fab-team-builder')!;
+ const scrollHint = document.getElementById('scroll-hint-right')!;
+ const checkScroll = () => {
+ if (window.innerWidth >= 768 &&
+ plantillasGrid.scrollWidth > plantillasGrid.clientWidth &&
+ plantillasGrid.scrollLeft < plantillasGrid.scrollWidth - plantillasGrid.clientWidth - 10) {
+ scrollHint.classList.remove('opacity-0');
+ } else {
+ scrollHint.classList.add('opacity-0');
+ }
+ };
 
  window.renderPlantillasGlobally = () => {
  const currentCount = equiposMaster ? equiposMaster.length : 0;
@@ -490,19 +506,6 @@ import Layout from '../layouts/Layout.astro';
  return;
  }
  
- // Scroll hint visual detection 
- const scrollHint = document.getElementById('scroll-hint-right')!;
- const checkScroll = () => {
- if (plantillasGrid.scrollWidth > plantillasGrid.clientWidth && 
- plantillasGrid.scrollLeft < plantillasGrid.scrollWidth - plantillasGrid.clientWidth - 10) {
- scrollHint.classList.remove('opacity-0');
- } else {
- scrollHint.classList.add('opacity-0');
- }
- };
- plantillasGrid.addEventListener('scroll', checkScroll);
- window.addEventListener('resize', checkScroll);
-
  secPlantillas?.classList.remove('hidden');
  plantillasGrid.innerHTML = '';
  equiposMaster.forEach(eq => {
@@ -513,39 +516,98 @@ import Layout from '../layouts/Layout.astro';
  };
  const baseColor = colorMap[eq.letra || 'A'] || 'bg-background';
 
- // Extraer LÃ­deres con Safe Checks
+ // Mostrar las personas que participan musicalmente en la plantilla.
  const myTeam = window.appStateTeamMembers.filter((m:any) => m.equipo_id === eq.id);
- const lid = myTeam.find((m:any) => {
- const r = window.appStateRoles.find((rol:any) => rol.id === m.rol_maestro);
- return r && ['lider_alabanza', 'director_musical'].includes(r.codigo);
- });
- const tlk = myTeam.find((m:any) => {
- const r = window.appStateRoles.find((rol:any) => rol.id === m.rol_maestro);
- return r && r.codigo === 'talkback';
- });
- const vName = (id: string | undefined) => { const p = perfiles.find(x=>x.id===id); return p ? p.nombre.split(' ')[0] : 'Nadie'; };
- const dText = `Dirige: ${vName(lid?.perfil_id)} | Talkback: ${vName(tlk?.perfil_id)}`;
+ const nonMusicalRoleCodes = new Set([
+ 'encargado_letras',
+ 'letra_y_notas',
+ 'produccion_visual',
+ 'letras',
+ 'audiovisuales',
+ 'pastor',
+ 'gestor_secuencias'
+ ]);
+ const peopleById = new Map<string, { perfil: any; roles: any[] }>();
 
- const card = document.createElement('div');
- card.className = 'team-card-dashboard bg-surface border border-border rounded-2xl p-4 flex flex-col justify-between shadow-sm min-w-[240px] shrink-0 snap-start group relative transition-shadow hover:shadow-md cursor-pointer';
+ myTeam.forEach((member:any) => {
+ const role = window.appStateRoles.find((rol:any) => rol.id === member.rol_maestro);
+ const perfilItem = perfiles.find((perfilRow:any) => perfilRow.id === member.perfil_id);
+ if (!role || !perfilItem || nonMusicalRoleCodes.has(String(role.codigo || '').toLowerCase())) return;
+
+ const current = peopleById.get(perfilItem.id) || { perfil: perfilItem, roles: [] };
+ if (!current.roles.some((assignedRole:any) => assignedRole.id === role.id)) current.roles.push(role);
+ peopleById.set(perfilItem.id, current);
+ });
+
+ const getRolePriority = (person:{ roles: any[] }) => {
+ if (person.roles.some((role:any) => isEventRepertoryManagerRoleCode(role.codigo) || role.codigo === 'lider_vocal')) return 0;
+ if (person.roles.some((role:any) => String(role.codigo || '').startsWith('voz_'))) return 1;
+ return 2;
+ };
+ const musicalPeople = Array.from(peopleById.values()).sort((a, b) => {
+ const priorityDiff = getRolePriority(a) - getRolePriority(b);
+ return priorityDiff || String(a.perfil.nombre || '').localeCompare(String(b.perfil.nombre || ''), 'es');
+ });
+ const visiblePeople = musicalPeople.slice(0, 6);
+ const remainingPeople = Math.max(0, musicalPeople.length - visiblePeople.length);
+
+ const peopleMarkup = visiblePeople.map(({ perfil: teamPerfil, roles: teamRoles }) => {
+ const cleanName = String(teamPerfil.nombre || '').replace(/\s*\(.*?\)\s*/g, '').trim();
+ const firstName = cleanName.split(/\s+/)[0] || 'Persona';
+ const initials = cleanName.split(/\s+/).filter(Boolean).slice(0, 2).map((part:string) => part[0]).join('').toUpperCase() || 'RD';
+ const primaryRole = teamRoles[0];
+ const roleCode = String(primaryRole?.codigo || '').toLowerCase();
+ const roleTone = isEventRepertoryManagerRoleCode(roleCode) || roleCode === 'lider_vocal'
+ ? 'bg-violet-500 text-white'
+ : roleCode.startsWith('voz_')
+ ? 'bg-rol-voc text-white'
+ : 'bg-rol-ban text-white';
+ const roleLabel = teamRoles.map((role:any) => role.nombre).filter(Boolean).join(' / ') || 'Músico';
+ const safeFullName = escapeHtml(teamPerfil.nombre);
+ const safeFirstName = escapeHtml(firstName);
+ const safeInitials = escapeHtml(initials);
+ const safeRoleLabel = escapeHtml(roleLabel);
+ const avatar = teamPerfil.avatar_url
+ ? `<img src="${escapeHtml(teamPerfil.avatar_url)}" alt="${safeFullName}" crossorigin="anonymous" loading="lazy" decoding="async" class="h-11 w-11 rounded-full border border-border object-cover shadow-sm">`
+ : `<span class="h-11 w-11 rounded-full ${roleTone} flex items-center justify-center text-xs font-black shadow-sm">${safeInitials}</span>`;
+
+ return `
+ <div class="min-w-0 flex flex-col items-center text-center">
+ <div class="relative">
+ ${avatar}
+ <span class="absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-surface ${roleTone} flex items-center justify-center" aria-hidden="true">
+ <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/></svg>
+ </span>
+ </div>
+ <p class="mt-2 w-full truncate text-xs font-bold text-content" title="${safeFullName}">${safeFirstName}</p>
+ <p class="mt-0.5 w-full truncate text-[9px] font-bold uppercase tracking-wide text-content-muted" title="${safeRoleLabel}">${safeRoleLabel}</p>
+ </div>`;
+ }).join('');
+
+ const card = document.createElement('article');
+ card.className = 'team-card-dashboard relative flex w-full min-w-0 shrink-0 snap-start flex-col rounded-2xl border border-border bg-surface p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md md:w-[340px] md:min-w-[340px]';
  card.setAttribute('data-equipo-id', eq.id);
+ const safeTeamName = escapeHtml(eq.nombre);
+ const safeTeamLetter = escapeHtml(eq.letra || 'T');
+ const safeTeamId = escapeHtml(eq.id);
  card.innerHTML = safeHtml`
- <div class="flex items-center gap-3 mb-3">
+ <button type="button" class="team-card-open absolute inset-0 z-0 cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-offset-2" data-equipo-id="${safeTeamId}" aria-label="Ver integrantes del equipo ${safeTeamName}"></button>
+ <div class="pointer-events-none relative z-10 flex items-center gap-3">
  <div class="w-10 h-10 rounded-full ${baseColor} text-white flex items-center justify-center shrink-0 font-bold font-mono text-lg shadow-sm">
- ${eq.letra || 'T'}
+ ${safeTeamLetter}
  </div>
  <div class="flex-1 min-w-0 pr-6">
- <h3 class="font-bold text-content text-base truncate leading-tight">${eq.nombre}</h3>
- <p class="text-[10px] text-content-muted uppercase tracking-wider mt-0.5">Equipo Guardado</p>
+ <h3 class="font-bold text-content text-base truncate leading-tight">${safeTeamName}</h3>
+ <p class="text-[10px] text-content-muted uppercase tracking-wider mt-0.5">${musicalPeople.length} integrante${musicalPeople.length === 1 ? '' : 's'}</p>
  </div>
  </div>
- <div class="bg-background rounded-lg p-2 border border-neutral-100 ">
- <p class="text-[10px] text-content-muted font-medium truncate flex items-center gap-1.5 opacity-90">
- <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm0 5c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3Zm0 12c-2.67 0-8-1.34-8-4v-1c0-2.21 4.79-3 8-3s8 .79 8 3v1c0 2.66-5.33 4-8 4Z"/></svg>
- ${dText}
- </p>
+ <div class="pointer-events-none relative z-10 mt-4 rounded-xl border border-border/80 bg-background/70 p-3">
+ ${musicalPeople.length > 0
+ ? `<div class="grid grid-cols-3 gap-x-3 gap-y-4">${peopleMarkup}</div>
+ ${remainingPeople > 0 ? `<p class="mt-3 text-center text-[10px] font-bold text-content-muted">+${remainingPeople} integrante${remainingPeople === 1 ? '' : 's'} más</p>` : ''}`
+ : `<div class="flex min-h-20 items-center justify-center text-center"><p class="text-xs font-medium text-content-muted">Sin músicos ni voces asignados</p></div>`}
  </div>
- <button class="absolute top-3 right-3 opacity-90 transition-opacity p-2 text-content-muted hover:text-red-500 hover:bg-red-50 dark:bg-red-900/40 rounded-lg btn-del-plantilla" data-id="${eq.id}" data-letra="${eq.letra || 'T'}" data-nombre="${eq.nombre}" title="Eliminar Equipo">
+ <button type="button" class="btn-del-plantilla absolute right-1.5 top-1.5 z-20 flex h-11 w-11 items-center justify-center rounded-xl text-content-muted opacity-90 transition-colors hover:bg-red-50 hover:text-red-500 dark:bg-red-900/40" data-id="${safeTeamId}" data-letra="${safeTeamLetter}" data-nombre="${safeTeamName}" title="Eliminar Equipo" aria-label="Eliminar equipo ${safeTeamName}">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="pointer-events-none"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
  </button>
  `;
@@ -554,6 +616,15 @@ import Layout from '../layouts/Layout.astro';
  });
  checkScroll(); // trigger immediately
  };
+ plantillasGrid.addEventListener('scroll', checkScroll, { passive: true });
+ const plantillasResizeController = new AbortController();
+ window.addEventListener('resize', checkScroll, {
+  passive: true,
+  signal: plantillasResizeController.signal,
+ });
+ document.addEventListener('astro:before-swap', () => {
+  plantillasResizeController.abort();
+ }, { once: true, signal: plantillasResizeController.signal });
  window.renderPlantillasGlobally();
 
  // DelegaciÃ³n de Eventos para botones Delete y Click en Tarjeta
@@ -593,7 +664,7 @@ import Layout from '../layouts/Layout.astro';
  newBtnCancel.addEventListener('click', () => {
  modalConfirm.style.display = 'none';
  });
- 
+
  // Evento Confirmar Borrado
  newBtnOk.addEventListener('click', async () => {
  // Cerrar modal inmediatamente (style.display v/s classList para evitar conflicto flex/hidden)

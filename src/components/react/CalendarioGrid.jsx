@@ -24,6 +24,44 @@ import {
 
 const MONTH_CHUNK_SIZE = 2;
 const EVENT_SELECT = 'id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, serie_id, ensayo_dia_semana, asignaciones(id, rol_id, perfiles(id, nombre, email, avatar_url))';
+const APP_TIME_ZONE = 'America/Bogota';
+const appDateTimeFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: APP_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+});
+
+const toAppLocalDate = (value) => {
+    const rawDate = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(rawDate.getTime())) return new Date(Number.NaN);
+
+    const parts = Object.fromEntries(
+        appDateTimeFormatter
+            .formatToParts(rawDate)
+            .filter((part) => part.type !== 'literal')
+            .map((part) => [part.type, part.value])
+    );
+
+    return new Date(
+        Number(parts.year),
+        Number(parts.month) - 1,
+        Number(parts.day),
+        Number(parts.hour),
+        Number(parts.minute),
+        Number(parts.second),
+    );
+};
+
+const dateFromIsoDay = (isoDay) => {
+    const [year, month, day] = String(isoDay || '').split('-').map(Number);
+    if (!year || !month || !day) return new Date(2000, 0, 1, 12, 0, 0);
+    return new Date(year, month - 1, day, 12, 0, 0);
+};
 
 const getMonthStart = (date) => {
     const next = new Date(date);
@@ -86,6 +124,7 @@ export default function CalendarioGrid({
     canEditTema = false,
     initialLoadUntil,
     hasMoreInitialEvents = false,
+    initialToday,
 }) {
     const getRoleBadgeIcon = (role) => {
         const codigo = String(role?.codigo || '').toLowerCase();
@@ -123,7 +162,7 @@ export default function CalendarioGrid({
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [loadMoreError, setLoadMoreError] = useState('');
     const [hasMoreEventos, setHasMoreEventos] = useState(Boolean(hasMoreInitialEvents));
-    const [calendarDate, setCalendarDate] = useState(new Date());
+    const [calendarDate, setCalendarDate] = useState(() => dateFromIsoDay(initialToday));
     const [dismissedMonthHints, setDismissedMonthHints] = useState({});
     const [loadedUntil, setLoadedUntil] = useState(() => (initialLoadUntil ? new Date(initialLoadUntil) : null));
     const autoOpenHandledRef = useRef(false);
@@ -302,7 +341,7 @@ export default function CalendarioGrid({
             .map(ev => ({
                 id: ev.id,
                 isVirtual: false,
-                fecha: new Date(ev.fecha_hora),
+                fecha: toAppLocalDate(ev.fecha_hora),
                 dbData: ev
             }));
     }, [eventos]);
@@ -439,12 +478,13 @@ export default function CalendarioGrid({
                 setEventos((prev) => mergeUniqueEvents(prev, [data]));
 
                 const eventDate = new Date(data.fecha_hora);
+                const eventCalendarDate = toAppLocalDate(data.fecha_hora);
                 if (!Number.isNaN(eventDate.getTime())) {
                     setLoadedUntil((prev) => {
                         if (!prev || eventDate > prev) return getMonthEnd(eventDate);
                         return prev;
                     });
-                    setCalendarDate((prev) => (eventDate > prev ? eventDate : prev));
+                    setCalendarDate((prev) => (eventCalendarDate > prev ? eventCalendarDate : prev));
                 }
             } catch (error) {
                 console.error('Programación: no se pudo recuperar el evento solicitado', error);
@@ -505,7 +545,7 @@ export default function CalendarioGrid({
         const vocesAsignadas = [];
         const banda = [];
 
-        asignaciones.forEach(asig => {
+        asignaciones.forEach((asig, assignmentIndex) => {
             if (!asig.perfiles) return;
             const rolMatch = dictRoles.find(r => r.id === asig.rol_id);
             if (!rolMatch) return;
@@ -524,7 +564,7 @@ export default function CalendarioGrid({
             const colorSeccion = isN1 ? 'bg-rol-dir' : (isN2 ? 'bg-rol-let' : (isVoz ? 'bg-rol-voc' : 'bg-rol-ban'));
 
             const itemNode = (
-                <div key={asig.id || `${asig.rol_id}-${asig.perfiles?.id || Math.random()}`} className="flex flex-col items-center gap-1.5 group relative cursor-pointer hover:bg-neutral/20 rounded-xl p-2 -m-2 transition-colors" title={`${asig.perfiles.nombre} (${rolMatch.nombre})`}>
+                <div key={asig.id || `${asig.rol_id}-${asig.perfiles?.id || assignmentIndex}`} className="flex flex-col items-center gap-1.5 group relative cursor-pointer hover:bg-neutral/20 rounded-xl p-2 -m-2 transition-colors" title={`${asig.perfiles.nombre} (${rolMatch.nombre})`}>
                     <div className="relative">
                         {asig.perfiles.avatar_url ? (
                             <img src={asig.perfiles.avatar_url} alt={asig.perfiles.nombre} crossOrigin="anonymous" loading="lazy" decoding="async" className="w-[42px] h-[42px] sm:w-[46px] sm:h-[46px] shrink-0 rounded-full object-cover shadow-sm border border-border" />
@@ -1071,13 +1111,13 @@ export default function CalendarioGrid({
         const formatter = new Intl.DateTimeFormat('es', { month: 'long', year: 'numeric' });
         const monthYearLabel = formatter.format(calendarDate);
         const isToday = (date) => {
-            const today = new Date();
+            const today = dateFromIsoDay(initialToday);
             return date.getDate() === today.getDate() && date.getMonth() === today.getMonth() && date.getFullYear() === today.getFullYear();
         };
 
         const goToPrevMonth = () => setCalendarDate(new Date(year, month - 1, 1));
         const goToNextMonth = () => setCalendarDate(new Date(year, month + 1, 1));
-        const goToToday = () => setCalendarDate(new Date());
+        const goToToday = () => setCalendarDate(dateFromIsoDay(initialToday));
 
         return (
             <div className="w-full hidden md:flex flex-col animate-in fade-in duration-300">
@@ -1113,11 +1153,11 @@ export default function CalendarioGrid({
                             // 1. Agregar todos los eventos reales documentados en base de datos.
                             // Iteramos 'eventos' para no perder citas de MiÃƒÂ©rcoles u otros dÃƒÂ­as.
                             eventos.forEach(ev => {
-                                if (ev.fecha_hora && getPaddedDateKey(new Date(ev.fecha_hora)) === dayKey) {
+                                if (ev.fecha_hora && getPaddedDateKey(toAppLocalDate(ev.fecha_hora)) === dayKey) {
                                     dayEvents.push({
                                         id: ev.id,
                                         isVirtual: false,
-                                        fecha: new Date(ev.fecha_hora),
+                                        fecha: toAppLocalDate(ev.fecha_hora),
                                         dbData: ev
                                     });
                                 }

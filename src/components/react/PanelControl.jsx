@@ -85,6 +85,7 @@ const outerInteractiveCardClass =
   'transition-[border-color,box-shadow,transform] duration-200 ease-out hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_18px_45px_-32px_rgba(37,99,235,0.42)] focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-500/20 dark:hover:border-blue-500/30 dark:focus-within:border-blue-500/40 dark:focus-within:ring-blue-400/20';
 
 const clampPercent = (value) => Math.max(0, Math.min(100, Number(value || 0)));
+const APP_TIME_ZONE = 'America/Bogota';
 
 const formatDateTime = (value) => {
   if (!value) return 'Sin fecha';
@@ -96,6 +97,7 @@ const formatDateTime = (value) => {
     month: 'short',
     hour: 'numeric',
     minute: '2-digit',
+    timeZone: APP_TIME_ZONE,
   }).format(date);
 };
 
@@ -106,6 +108,7 @@ const formatShortDate = (value) => {
   return new Intl.DateTimeFormat('es-CO', {
     day: 'numeric',
     month: 'short',
+    timeZone: APP_TIME_ZONE,
   }).format(date);
 };
 
@@ -120,6 +123,7 @@ const formatFullDateTime = (value) => {
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
+    timeZone: APP_TIME_ZONE,
   }).format(date);
 };
 

@@ -16,6 +16,18 @@ if (!user || !accessToken) {
 }
 
 const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
+const dashboardNow = new Date();
+const dashboardTodayLabel = new Intl.DateTimeFormat('es-ES', {
+  weekday: 'long',
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+  timeZone: 'America/Bogota',
+}).format(dashboardNow);
+const dashboardCurrentMonthLabel = new Intl.DateTimeFormat('es-ES', {
+  month: 'long',
+  timeZone: 'America/Bogota',
+}).format(dashboardNow);
 
 const supabaseSSR = createClient(supabaseUrl, supabaseAnonKey, {
   global: {
@@ -305,6 +317,8 @@ const proximosServicios = (eventosData || [])
         eventosEspeciales={eventosEspecialesData || []}
         cumpleanerosMes={cumpleanerosMes || []}
         cumpleanerosTodos={cumpleanerosTodos || []}
+        todayLabel={dashboardTodayLabel}
+        currentMonthLabel={dashboardCurrentMonthLabel}
       />
       <DashboardShortcuts client:idle userId={user.id} isAdmin={Boolean(perfil?.is_admin)} />
       <ModalDetalle client:only="react" initialRoles={rolesCatalog || []} sessionUser={user} isAdmin={Boolean(perfil?.is_admin)} />

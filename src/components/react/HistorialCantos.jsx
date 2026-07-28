@@ -1,6 +1,14 @@
 import { useMemo, useState } from 'react';
 import { BarChart3, Clock3, EyeOff, UsersRound } from 'lucide-react';
 
+const APP_TIME_ZONE = 'America/Bogota';
+const getAppDateParts = (date, options) => Object.fromEntries(
+    new Intl.DateTimeFormat('es-ES', { ...options, timeZone: APP_TIME_ZONE })
+        .formatToParts(date)
+        .filter((part) => part.type !== 'literal')
+        .map((part) => [part.type, part.value])
+);
+
 const formatServiceDate = (isoString) => {
     if (!isoString) {
         return { weekday: 'FECHA', day: '--', month: '---', year: '' };
@@ -11,11 +19,18 @@ const formatServiceDate = (isoString) => {
         return { weekday: 'FECHA', day: '--', month: '---', year: '' };
     }
 
+    const parts = getAppDateParts(date, {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+    });
+
     return {
-        weekday: date.toLocaleDateString('es-ES', { weekday: 'short' }).replace('.', '').toUpperCase(),
-        day: String(date.getDate()),
-        month: date.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '').toLowerCase(),
-        year: String(date.getFullYear()),
+        weekday: String(parts.weekday || '').replace('.', '').toUpperCase(),
+        day: parts.day || '--',
+        month: String(parts.month || '').replace('.', '').toLowerCase(),
+        year: parts.year || '',
     };
 };
 
@@ -29,6 +44,7 @@ const formatExactDate = (isoString) => {
         day: 'numeric',
         month: 'long',
         year: 'numeric',
+        timeZone: APP_TIME_ZONE,
     });
 };
 
@@ -40,11 +56,13 @@ const formatMonthGroup = (isoString) => {
     const rawLabel = date.toLocaleDateString('es-ES', {
         month: 'long',
         year: 'numeric',
+        timeZone: APP_TIME_ZONE,
     });
     const label = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);
+    const parts = getAppDateParts(date, { month: '2-digit', year: 'numeric' });
 
     return {
-        key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
+        key: `${parts.year}-${parts.month}`,
         label,
     };
 };

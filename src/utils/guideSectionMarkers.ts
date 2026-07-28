@@ -106,7 +106,7 @@ export const buildGuideSectionMarkers = ({
   const cues = extractGuideSectionCues(transcriptWords);
   let cursorSec = -1;
 
-  const markers = (Array.isArray(sections) ? sections : []).map((section, index) => {
+  const markers = (Array.isArray(sections) ? sections : []).map<GuideSectionMarker>((section, index) => {
     const sectionName = String(section?.name || `Seccion ${index + 1}`);
     const kind = toGuideKind(sectionName);
 

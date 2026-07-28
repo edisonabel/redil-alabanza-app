@@ -1153,7 +1153,8 @@
       const active = currentSections[activeSectionIndex];
       activeSectionTitle.textContent = active?.label || 'Seccion actual';
 
-      [...sectionStrip.querySelectorAll<HTMLElement>('[data-section-index]'), ...karaokeMap.querySelectorAll<HTMLElement>('[data-section-index]')]
+      Array.from(sectionStrip.querySelectorAll<HTMLElement>('[data-section-index]'))
+        .concat(Array.from(karaokeMap.querySelectorAll<HTMLElement>('[data-section-index]')))
         .forEach((node) => {
           node.classList.toggle('is-active', Number(node.dataset.sectionIndex) === activeSectionIndex);
         });

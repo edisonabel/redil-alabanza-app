@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { buildEventHeadline, getEventThemeAndPreacher } from '../../lib/event-display.js';
 import { isEventRepertoryManagerRoleCode } from '../../lib/role-permissions.js';
 
+const APP_TIME_ZONE = 'America/Bogota';
+
 const getFirstName = (fullName) => {
     if (!fullName || typeof fullName !== 'string') return '';
     return fullName.trim().split(' ')[0] || '';
@@ -13,8 +15,8 @@ const formatEventDate = (isoString) => {
     if (Number.isNaN(date.getTime())) return { day: '--', month: '---' };
 
     return {
-        day: String(date.getDate()),
-        month: date.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '').toUpperCase()
+        day: date.toLocaleDateString('en-US', { day: 'numeric', timeZone: APP_TIME_ZONE }),
+        month: date.toLocaleDateString('es-ES', { month: 'short', timeZone: APP_TIME_ZONE }).replace('.', '').toUpperCase()
     };
 };
 
@@ -23,7 +25,12 @@ const formatTimeRange = (isoString, horaFin) => {
     const start = new Date(isoString);
     if (Number.isNaN(start.getTime())) return 'Hora por definir';
 
-    const startText = start.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const startText = start.toLocaleTimeString('es-ES', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: APP_TIME_ZONE,
+    });
     if (!horaFin) return startText;
     return `${startText} - ${String(horaFin).slice(0, 5)}`;
 };
@@ -86,8 +93,16 @@ function SongHistoryEntry() {
     );
 }
 
-/** @param {{ usuario?: any; proximosServicios?: any[]; eventosEspeciales?: any[]; cumpleanerosMes?: any[]; cumpleanerosTodos?: any[] }} props */
-const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = [], cumpleanerosMes = [], cumpleanerosTodos = [] }) => {
+/** @param {{ usuario?: any; proximosServicios?: any[]; eventosEspeciales?: any[]; cumpleanerosMes?: any[]; cumpleanerosTodos?: any[]; todayLabel?: string; currentMonthLabel?: string }} props */
+const DashboardInicio = ({
+    usuario,
+    proximosServicios = [],
+    eventosEspeciales = [],
+    cumpleanerosMes = [],
+    cumpleanerosTodos = [],
+    todayLabel = '',
+    currentMonthLabel = '',
+}) => {
     const [dismissUpcomingHint, setDismissUpcomingHint] = useState(false);
     const [dismissEnvironmentHint, setDismissEnvironmentHint] = useState(false);
     const [devicePlatform, setDevicePlatform] = useState('other');
@@ -222,10 +237,9 @@ const DashboardInicio = ({ usuario, proximosServicios = [], eventosEspeciales = 
     };
 
     const nombre = usuario?.nombre ? getFirstName(usuario.nombre) : 'M\u00FAsico';
-    const opcionesFecha = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-    const fechaHoy = new Date().toLocaleDateString('es-ES', opcionesFecha);
+    const fechaHoy = todayLabel || 'Hoy';
     const fechaHoyCapitalizada = fechaHoy.charAt(0).toUpperCase() + fechaHoy.slice(1);
-    const mesActualStr = new Date().toLocaleString('es-ES', { month: 'long' });
+    const mesActualStr = currentMonthLabel || '';
     const showUpcomingHint = proximosServicios.length > 1 && !dismissUpcomingHint;
     const cumpleanerosPorMes = cumpleanerosTodos.reduce((groups, persona) => {
         if (!persona?.mes) return groups;
