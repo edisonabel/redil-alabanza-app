@@ -156,13 +156,19 @@ assert.deepEqual(
   'The validated Safari forward path must remain unchanged.',
 );
 
-const [hookSource, engineSource, workerSource, workletSource] = await Promise.all([
+const [hookSource, engineSource, workerSource, workletSource, repertoireCardSource] = await Promise.all([
   readFile(`${projectRoot}/src/hooks/useMultitrackEngine.ts`, 'utf8'),
   readFile(`${projectRoot}/src/services/StreamingMultitrackEngine.ts`, 'utf8'),
   readFile(`${projectRoot}/public/workers/AudioProducerWorker.js`, 'utf8'),
   readFile(`${projectRoot}/public/workers/MultitrackWorkletProcessor.js`, 'utf8'),
+  readFile(`${projectRoot}/src/components/CardCancion.astro`, 'utf8'),
 ]);
 
+assert.match(
+  repertoireCardSource,
+  /href=\{`\/herramientas\/live-director-preview\?song=[^`]+`\}\s+data-astro-reload/,
+  'The Repertorio Live Director link must reload the document so COOP/COEP can establish cross-origin isolation.',
+);
 assert.match(
   hookSource,
   /fallbackPolicy\.action === 'block'/,

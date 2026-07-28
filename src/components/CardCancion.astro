@@ -337,6 +337,7 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
       {String(cancionId || '').trim() !== '' && (
       <a
         href={`/herramientas/live-director-preview?song=${encodeURIComponent(String(cancionId || ''))}`}
+        data-astro-reload
         class:list={[
           "h-9 rounded-xl shadow-sm inline-flex items-center gap-1.5 px-3 text-[12px] font-bold transition-all active:scale-95",
           hasMultitrackSession
