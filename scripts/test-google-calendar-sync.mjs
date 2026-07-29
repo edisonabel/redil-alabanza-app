@@ -14,6 +14,7 @@ import {
   googleCalendarConnectionNeedsReconnect,
   hashGoogleCalendarPayload,
   isGoogleCalendarConnectionStale,
+  isGoogleCalendarDeadlineReached,
   resolveGoogleCalendarRedirectUri,
   verifyGoogleCalendarOAuthState,
 } from '../src/lib/server/google-calendar.js';
@@ -171,6 +172,21 @@ assert.equal(
   'Un error cuyo enfriamiento vencio debe reintentarse.',
 );
 assert.equal(googleCalendarConnectionNeedsReconnect('invalid_grant: Token has been expired or revoked.'), true);
+assert.equal(
+  isGoogleCalendarDeadlineReached(null, stalePolicyNow),
+  false,
+  'Un plazo ausente no debe detener la sincronizacion.',
+);
+assert.equal(
+  isGoogleCalendarDeadlineReached(new Date(stalePolicyNow + 60_000), stalePolicyNow),
+  false,
+  'Un plazo futuro debe permitir la sincronizacion.',
+);
+assert.equal(
+  isGoogleCalendarDeadlineReached(new Date(stalePolicyNow + 30_000), stalePolicyNow),
+  true,
+  'La guarda del plazo debe detener trabajo nuevo durante los ultimos 30 segundos.',
+);
 assert.equal(
   isGoogleCalendarConnectionStale(
     {
