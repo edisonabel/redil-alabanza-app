@@ -63,10 +63,19 @@ const requireServiceRoleClient = () => {
 };
 
 const toTimestamp = (value) => {
+  if (value == null || (typeof value === 'string' && !value.trim())) {
+    return Number.NaN;
+  }
   if (value instanceof Date) return value.getTime();
   if (typeof value === 'number') return value;
   const parsed = new Date(value).getTime();
   return Number.isFinite(parsed) ? parsed : Number.NaN;
+};
+
+export const isGoogleCalendarDeadlineReached = (deadlineAt, now = Date.now()) => {
+  const deadlineMs = toTimestamp(deadlineAt);
+  return Number.isFinite(deadlineMs)
+    && toTimestamp(now) >= deadlineMs - GOOGLE_CALENDAR_DEADLINE_GUARD_MS;
 };
 
 const createGoogleRequestSignal = () => (
@@ -867,13 +876,9 @@ export const reconcileGoogleCalendarProfile = async ({
     ].filter(Boolean))];
 
     const results = [];
-    const deadlineMs = toTimestamp(deadlineAt);
     let budgetExhausted = false;
     for (const eventId of eventIds) {
-      if (
-        Number.isFinite(deadlineMs)
-        && Date.now() >= deadlineMs - GOOGLE_CALENDAR_DEADLINE_GUARD_MS
-      ) {
+      if (isGoogleCalendarDeadlineReached(deadlineAt)) {
         budgetExhausted = true;
         break;
       }
@@ -1023,11 +1028,7 @@ export const reconcileStaleGoogleCalendarConnections = async ({
 
   const results = [];
   for (let index = 0; index < dueConnections.length; index += CALENDAR_RETRY_CONCURRENCY) {
-    const deadlineMs = toTimestamp(deadlineAt);
-    if (
-      Number.isFinite(deadlineMs)
-      && Date.now() >= deadlineMs - GOOGLE_CALENDAR_DEADLINE_GUARD_MS
-    ) {
+    if (isGoogleCalendarDeadlineReached(deadlineAt)) {
       break;
     }
 
