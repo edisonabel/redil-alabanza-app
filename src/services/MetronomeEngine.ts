@@ -4,6 +4,7 @@ import {
   connectMetronomeOutput,
   type MetronomeOutputRoute,
 } from '../utils/metronomeOutputRouting';
+import { resolveMetronomeTransportAlignment } from '../utils/metronomeTransportSync';
 
 export type { MetronomeOutputRoute } from '../utils/metronomeOutputRouting';
 
@@ -30,10 +31,16 @@ interface MetronomeSettings {
   lookahead?: number;
   scheduleAheadTime?: number;
   resetCycle?: boolean;
+  transportTimeSeconds?: number;
 }
 
 type BeatListener = (event: MetronomeBeatEvent) => void;
 type WindowWithWebkitAudio = Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext };
+type ScheduledClick = {
+  gainNode: GainNode;
+  oscillator: OscillatorNode;
+  routeMergerNode: ChannelMergerNode | null;
+};
 
 export class MetronomeEngine {
   private audioContext: AudioContext | null = null;
@@ -57,6 +64,7 @@ export class MetronomeEngine {
   private outputRoute: MetronomeOutputRoute = 'stereo';
   private volume = 1;
   private transportGeneration = 0;
+  private scheduledClicks = new Set<ScheduledClick>();
 
   public onBeatUpdate: BeatListener | null = null;
 
@@ -279,6 +287,8 @@ export class MetronomeEngine {
       this.audioContext,
       this.outputRoute,
     );
+    const scheduledClick = { gainNode, oscillator: osc, routeMergerNode };
+    this.scheduledClicks.add(scheduledClick);
 
     if (beatEvent.isDownbeat) {
       osc.frequency.value = 1200;
@@ -295,6 +305,7 @@ export class MetronomeEngine {
     }
 
     osc.onended = () => {
+      this.scheduledClicks.delete(scheduledClick);
       try {
         osc.disconnect();
         gainNode.disconnect();
@@ -305,6 +316,25 @@ export class MetronomeEngine {
     };
     osc.start(time);
     osc.stop(time + 0.06);
+  }
+
+  private cancelScheduledClicks() {
+    this.scheduledClicks.forEach(({ gainNode, oscillator, routeMergerNode }) => {
+      try {
+        oscillator.onended = null;
+        oscillator.stop();
+      } catch {
+        // The click may have already ended.
+      }
+      try {
+        oscillator.disconnect();
+        gainNode.disconnect();
+        routeMergerNode?.disconnect();
+      } catch {
+        // The graph may already be disconnected.
+      }
+    });
+    this.scheduledClicks.clear();
   }
 
   private notifyBeat(beatEvent: MetronomeBeatEvent) {
@@ -408,9 +438,25 @@ export class MetronomeEngine {
 
     if (generation !== this.transportGeneration) return;
 
+    this.stopTicker();
+    this.cancelScheduledClicks();
     this.isPlaying = true;
-    this.currentPulseInBar = 0;
-    this.nextNoteTime = this.audioContext.currentTime + 0.05;
+    if (
+      typeof settings.transportTimeSeconds === 'number'
+      && Number.isFinite(settings.transportTimeSeconds)
+    ) {
+      const alignment = resolveMetronomeTransportAlignment({
+        beatsPerMeasure: this.beatsPerMeasure,
+        subdivision: this.subdivision,
+        tempo: this.tempo,
+        transportTimeSeconds: settings.transportTimeSeconds,
+      });
+      this.currentPulseInBar = alignment.pulseInBar;
+      this.nextNoteTime = this.audioContext.currentTime + alignment.delaySeconds;
+    } else {
+      this.currentPulseInBar = 0;
+      this.nextNoteTime = this.audioContext.currentTime + 0.05;
+    }
     this.scheduler();
     this.startTicker();
   }
@@ -419,6 +465,7 @@ export class MetronomeEngine {
     this.transportGeneration += 1;
     this.isPlaying = false;
     this.stopTicker();
+    this.cancelScheduledClicks();
     this.currentPulseInBar = 0;
   }
 

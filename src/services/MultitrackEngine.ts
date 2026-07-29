@@ -121,6 +121,7 @@ const MEDIA_METADATA_TIMEOUT_MS = 30_000;
 const MEDIA_MONITOR_INTERVAL_FAST_MS = 120;
 const MEDIA_MONITOR_INTERVAL_MEDIUM_MS = 180;
 const MEDIA_MONITOR_INTERVAL_SLOW_MS = 250;
+const MEDIA_INITIAL_SYNC_TOLERANCE_SECONDS = 0.025;
 const MEDIA_SYNC_TOLERANCE_SECONDS = 0.12;
 const MEDIA_LOOP_EPSILON_SECONDS = 0.05;
 const MEDIA_DRIFT_DIAGNOSTIC_THROTTLE_MS = 2_500;
@@ -1250,10 +1251,27 @@ export class MultitrackEngine {
       (result): result is PromiseRejectedResult => result.status === 'rejected',
     );
 
+    if (playbackSessionId !== this.playbackSessionId || !this.isPlaying) {
+      return;
+    }
+
     if (rejectedResults.length === playResults.length) {
       this.stop();
       throw rejectedResults[0].reason;
     }
+
+    const primaryTrack = this.getPrimaryPlayableMediaTrack(0) || playableTracks[0];
+    const primaryTime = primaryTrack.mediaElement.currentTime;
+    playableTracks.forEach(({ mediaElement, duration }) => {
+      if (
+        mediaElement === primaryTrack.mediaElement
+        || mediaElement.paused
+        || Math.abs(mediaElement.currentTime - primaryTime) <= MEDIA_INITIAL_SYNC_TOLERANCE_SECONDS
+      ) {
+        return;
+      }
+      mediaElement.currentTime = this.clampOffsetForDuration(primaryTime, duration);
+    });
 
     this.syncAllTrackGains();
     this.startMediaMonitor(playbackSessionId);

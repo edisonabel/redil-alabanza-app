@@ -11,6 +11,7 @@ import { buildWordGroups, parseChordProLine } from '../../utils/chordProLineUtil
 import { normalizePersistedLiveDirectorSession } from '../../utils/liveDirectorSongSession';
 import { getPadUrlForSongKey } from '../../utils/padAudio';
 import { buildLiveDirectorSyncChannelName } from '../../utils/liveDirectorSync';
+import { createLatestWinsAsyncQueue } from '../../utils/latestWinsAsyncQueue';
 import {
   REHEARSAL_PERSONAL_SETTINGS_TOAST_MS,
   formatRehearsalSongSettingsSummary,
@@ -136,6 +137,7 @@ const REHEARSAL_MIX_MAIN_TRACK_ID = 'rehearsal-main';
 const REHEARSAL_MIX_GUIDE_TRACK_PREFIX = 'rehearsal-guide';
 const REHEARSAL_MIX_STEM_BOOST_DB = 2;
 const REHEARSAL_MIX_STEM_GAIN = 10 ** (REHEARSAL_MIX_STEM_BOOST_DB / 20);
+const TIMELINE_SEEK_COMMIT_DELAY_MS = 90;
 const LATIN_TO_AMERICAN = {
   Do: 'C',
   'Do#': 'C#',
@@ -1380,6 +1382,7 @@ export default function ModoEnsayoCompacto({
   const [activeSectionManualIndex, setActiveSectionManualIndex] = useState(0);
   const [, setCollapsedSections] = useState({});
   const [audioCurrentTime, setAudioCurrentTime] = useState(0);
+  const [timelineSeekPreview, setTimelineSeekPreview] = useState(null);
   const [audioDuration, setAudioDuration] = useState(0);
   const [audioReady, setAudioReady] = useState(false);
   const [rehearsalMixUnavailable, setRehearsalMixUnavailable] = useState(false);
@@ -1429,6 +1432,8 @@ export default function ModoEnsayoCompacto({
   const lastPersistedPersonalSettingsRef = useRef('');
   const personalSettingsToastTimeoutRef = useRef(null);
   const pendingPlaybackResumeRef = useRef(false);
+  const timelineSeekPreviewRef = useRef(null);
+  const timelineSeekCommitTimeoutRef = useRef(null);
   const lastRehearsalMixSourceRef = useRef('');
   const voiceLyricWordsRef = useRef([]);
   const voiceFollowerEnabledRef = useRef(false);
@@ -1459,6 +1464,7 @@ export default function ModoEnsayoCompacto({
     isPlaying: rehearsalMixIsPlaying,
     isReady: rehearsalMixIsReady,
     loadProgress: rehearsalMixLoadProgress,
+    getCurrentTimeSnapshot: getRehearsalMixCurrentTimeSnapshot,
     pause: pauseRehearsalMix,
     play: playRehearsalMix,
     seekTo: seekRehearsalMixTo,
@@ -1466,6 +1472,17 @@ export default function ModoEnsayoCompacto({
     setVolume: setRehearsalMixVolume,
     stop: stopRehearsalMix,
   } = rehearsalMixEngine;
+  const rehearsalMixSeekQueue = useMemo(() => createLatestWinsAsyncQueue(
+    async (targetTime) => {
+      await seekRehearsalMixTo(targetTime);
+    },
+    {
+      isEquivalent: (left, right) => Math.abs(left - right) < 0.02,
+    },
+  ), [seekRehearsalMixTo]);
+  const requestRehearsalMixSeek = useCallback((targetTime) => (
+    rehearsalMixSeekQueue.request(Math.max(0, Number(targetTime) || 0))
+  ), [rehearsalMixSeekQueue]);
   useEffect(() => {
     screenWakeLockService.setRequested('modo-ensayo-compacto', true);
     return () => {
@@ -1997,7 +2014,6 @@ export default function ModoEnsayoCompacto({
     }
 
     return [
-      ...guideTracks,
       {
         id: REHEARSAL_MIX_MAIN_TRACK_ID,
         name: activePlaybackSource?.label || 'Pista de ensayo',
@@ -2007,6 +2023,7 @@ export default function ModoEnsayoCompacto({
         outputRoute: 'right',
         sourceFileName: activePlaybackUrl || activePlaybackSource?.label || '',
       },
+      ...guideTracks,
     ];
   }, [
     activePlaybackSource?.label,
@@ -2473,12 +2490,12 @@ export default function ModoEnsayoCompacto({
         Number.isFinite(activeLoopSection.startSec) &&
         rehearsalMixCurrentTime >= Math.max(loopEnd - 0.08, activeLoopSection.startSec)
       ) {
-        void seekRehearsalMixTo(activeLoopSection.startSec);
+        void requestRehearsalMixSeek(activeLoopSection.startSec);
         setAudioCurrentTime(activeLoopSection.startSec);
       }
     } else if (resolvedMixDuration > 0 && rehearsalMixCurrentTime >= resolvedMixDuration - 0.05) {
       if (loopState === 1) {
-        void seekRehearsalMixTo(0).then(() => playRehearsalMix());
+        void requestRehearsalMixSeek(0).then(() => playRehearsalMix());
         setAudioCurrentTime(0);
       } else {
         pauseRehearsalMix();
@@ -2496,28 +2513,129 @@ export default function ModoEnsayoCompacto({
     rehearsalMixDuration,
     rehearsalMixIsPlaying,
     rehearsalMixIsReady,
-    seekRehearsalMixTo,
+    requestRehearsalMixSeek,
     shouldUseRehearsalMix,
   ]);
   const stopMetronome = React.useCallback(() => {
     metronomeService.stop();
     setIsMetronomeOn(false);
   }, []);
-  const handleToggleMetronome = React.useCallback(async () => {
+  const startMetronomeAtTransportTime = React.useCallback(async (transportTime = 0) => {
     if (!currentSongBpm) return;
-    if (isMetronomeOn) {
-      stopMetronome();
-      return;
-    }
+    metronomeService.stop();
     await metronomeService.start({
       tempo: currentSongBpm,
       beatsPerMeasure: 1,
       subdivision: 1,
       accentFirstBeat: false,
       resetCycle: true,
+      transportTimeSeconds: Math.max(0, Number(transportTime) || 0),
     });
+  }, [currentSongBpm]);
+  const rephaseMetronomeAtTransportTime = React.useCallback(async (transportTime = 0) => {
+    if (!isMetronomeOn) return;
+    await startMetronomeAtTransportTime(transportTime);
+  }, [isMetronomeOn, startMetronomeAtTransportTime]);
+  const handleToggleMetronome = React.useCallback(async () => {
+    if (!currentSongBpm) return;
+    if (isMetronomeOn) {
+      stopMetronome();
+      return;
+    }
+    const transportTime = shouldUseRehearsalMix
+      ? getRehearsalMixCurrentTimeSnapshot()
+      : audioRef.current?.currentTime || audioCurrentTime;
+    await startMetronomeAtTransportTime(transportTime);
     setIsMetronomeOn(true);
-  }, [currentSongBpm, isMetronomeOn, stopMetronome]);
+  }, [
+    audioCurrentTime,
+    currentSongBpm,
+    getRehearsalMixCurrentTimeSnapshot,
+    isMetronomeOn,
+    shouldUseRehearsalMix,
+    startMetronomeAtTransportTime,
+    stopMetronome,
+  ]);
+  const commitPlaybackSeek = React.useCallback(async (targetTime) => {
+    const safeTargetTime = Math.max(0, Number(targetTime) || 0);
+    if (isMetronomeOn) {
+      metronomeService.stop();
+    }
+
+    if (shouldUseRehearsalMix) {
+      await requestRehearsalMixSeek(safeTargetTime);
+      const resolvedTime = Math.max(
+        0,
+        Number(getRehearsalMixCurrentTimeSnapshot()) || safeTargetTime,
+      );
+      setAudioCurrentTime(resolvedTime);
+      await rephaseMetronomeAtTransportTime(resolvedTime);
+      return;
+    }
+
+    if (audioRef.current) {
+      audioRef.current.currentTime = safeTargetTime;
+    }
+    setAudioCurrentTime(safeTargetTime);
+    syncGuideCueTracks(safeTargetTime, { force: true });
+    if (audioRef.current && !audioRef.current.paused) {
+      scheduleGuideCueResync();
+    }
+    await rephaseMetronomeAtTransportTime(safeTargetTime);
+  }, [
+    getRehearsalMixCurrentTimeSnapshot,
+    isMetronomeOn,
+    rephaseMetronomeAtTransportTime,
+    requestRehearsalMixSeek,
+    scheduleGuideCueResync,
+    shouldUseRehearsalMix,
+    syncGuideCueTracks,
+  ]);
+  const clearTimelineSeekCommit = React.useCallback(() => {
+    if (timelineSeekCommitTimeoutRef.current !== null) {
+      window.clearTimeout(timelineSeekCommitTimeoutRef.current);
+      timelineSeekCommitTimeoutRef.current = null;
+    }
+  }, []);
+  const commitTimelineSeekPreview = React.useCallback(async (targetTime) => {
+    const safeTargetTime = Math.max(0, Number(targetTime) || 0);
+    clearTimelineSeekCommit();
+    if (
+      timelineSeekPreviewRef.current !== null
+      && Math.abs(timelineSeekPreviewRef.current - safeTargetTime) < 0.02
+    ) {
+      timelineSeekPreviewRef.current = null;
+    }
+
+    try {
+      await commitPlaybackSeek(safeTargetTime);
+    } catch (error) {
+      console.warn('[ModoEnsayoCompacto] No se pudo completar el salto de reproducción.', error);
+    } finally {
+      setTimelineSeekPreview((currentPreview) => (
+        currentPreview !== null
+        && Math.abs(currentPreview - safeTargetTime) < 0.02
+          ? null
+          : currentPreview
+      ));
+    }
+  }, [clearTimelineSeekCommit, commitPlaybackSeek]);
+  const scheduleTimelineSeekCommit = React.useCallback((targetTime) => {
+    clearTimelineSeekCommit();
+    timelineSeekCommitTimeoutRef.current = window.setTimeout(() => {
+      timelineSeekCommitTimeoutRef.current = null;
+      void commitTimelineSeekPreview(targetTime);
+    }, TIMELINE_SEEK_COMMIT_DELAY_MS);
+  }, [clearTimelineSeekCommit, commitTimelineSeekPreview]);
+  const flushTimelineSeekCommit = React.useCallback(() => {
+    const targetTime = timelineSeekPreviewRef.current;
+    if (targetTime === null) return;
+    void commitTimelineSeekPreview(targetTime);
+  }, [commitTimelineSeekPreview]);
+  useEffect(() => () => {
+    clearTimelineSeekCommit();
+    rehearsalMixSeekQueue.clearPending();
+  }, [clearTimelineSeekCommit, rehearsalMixSeekQueue]);
   useEffect(() => {
     if (shouldUseRehearsalMix) return undefined;
 
@@ -2625,6 +2743,10 @@ export default function ModoEnsayoCompacto({
     );
   }, [fadeTrackGainTo, isMetronomeOn]);
   useEffect(() => {
+    clearTimelineSeekCommit();
+    timelineSeekPreviewRef.current = null;
+    setTimelineSeekPreview(null);
+    rehearsalMixSeekQueue.clearPending();
     setIsPlaying(false);
     setActiveSectionManualIndex(0);
     setAudioCurrentTime(0);
@@ -2653,7 +2775,17 @@ export default function ModoEnsayoCompacto({
     stopRehearsalMix();
     stopMetronome();
     setTrackGainImmediate(TRACK_DEFAULT_GAIN);
-  }, [currentSongKey, currentSong?.mp3, isLandscapeCompact, pauseGuideCueTracks, setTrackGainImmediate, stopMetronome, stopRehearsalMix]);
+  }, [
+    clearTimelineSeekCommit,
+    currentSongKey,
+    currentSong?.mp3,
+    isLandscapeCompact,
+    pauseGuideCueTracks,
+    rehearsalMixSeekQueue,
+    setTrackGainImmediate,
+    stopMetronome,
+    stopRehearsalMix,
+  ]);
   useEffect(() => () => {
     if (personalSettingsToastTimeoutRef.current) {
       window.clearTimeout(personalSettingsToastTimeoutRef.current);
@@ -3057,10 +3189,11 @@ export default function ModoEnsayoCompacto({
     setTrackGainImmediate(TRACK_DEFAULT_GAIN);
     stopMetronome();
   }, [cancelTrackGainFade, setTrackGainImmediate, stopMetronome]);
+  const displayAudioCurrentTime = timelineSeekPreview ?? audioCurrentTime;
   const progressPercent = useMemo(() => {
     if (!timelineDuration) return 0;
-    return Math.min(100, Math.max(0, (audioCurrentTime / timelineDuration) * 100));
-  }, [audioCurrentTime, timelineDuration]);
+    return Math.min(100, Math.max(0, (displayAudioCurrentTime / timelineDuration) * 100));
+  }, [displayAudioCurrentTime, timelineDuration]);
   const handleGoBack = () => {
     independentPadPlayerRef.current?.stop(0);
     if (audioRef.current) {
@@ -3231,6 +3364,11 @@ export default function ModoEnsayoCompacto({
     scrollBehavior = 'smooth',
     lineIndex = 0,
   } = {}) => {
+    if (seekAudio) {
+      clearTimelineSeekCommit();
+      timelineSeekPreviewRef.current = null;
+      setTimelineSeekPreview(null);
+    }
     setActiveSectionManualIndex(index);
     if (voiceFollowerEnabled) {
       voiceProgressIndexRef.current = findVoiceAnchorIndex(voiceLyricWords, index, lineIndex);
@@ -3251,8 +3389,11 @@ export default function ModoEnsayoCompacto({
     }));
     const marker = markerBySectionIndex.get(index);
     if (marker && seekAudio) {
+      if (isMetronomeOn) {
+        metronomeService.stop();
+      }
       if (shouldUseRehearsalMix) {
-        void seekRehearsalMixTo(marker.startSec);
+        void commitPlaybackSeek(marker.startSec);
         setAudioCurrentTime(marker.startSec);
       } else if (audioRef.current) {
         const gainNode = trackGainRef?.current;
@@ -3267,6 +3408,8 @@ export default function ModoEnsayoCompacto({
               audioRef.current.currentTime = marker.startSec;
               setAudioCurrentTime(marker.startSec);
               syncGuideCueTracks(marker.startSec, { force: true });
+              scheduleGuideCueResync();
+              void rephaseMetronomeAtTransportTime(marker.startSec);
             }
             // Micro Fade-in de 150ms tras el salto
             gainNode.gain.cancelScheduledValues(ctx.currentTime);
@@ -3278,6 +3421,8 @@ export default function ModoEnsayoCompacto({
           audioRef.current.currentTime = marker.startSec;
           setAudioCurrentTime(marker.startSec);
           syncGuideCueTracks(marker.startSec, { force: true });
+          scheduleGuideCueResync();
+          void rephaseMetronomeAtTransportTime(marker.startSec);
         }
       }
     }
@@ -3350,10 +3495,12 @@ export default function ModoEnsayoCompacto({
           pauseRehearsalMix();
         } else {
           if (audioDuration > 0 && audioCurrentTime >= audioDuration - 0.05) {
-            await seekRehearsalMixTo(0);
-            setAudioCurrentTime(0);
+            await commitPlaybackSeek(0);
           }
           await playRehearsalMix();
+          await rephaseMetronomeAtTransportTime(
+            getRehearsalMixCurrentTimeSnapshot(),
+          );
         }
       } catch (_error) {
         setIsPlaying(false);
@@ -3388,16 +3535,10 @@ export default function ModoEnsayoCompacto({
     }
   };
   const handleSeekChange = (event) => {
-    const nextTime = Number(event.target.value || 0);
-    setAudioCurrentTime(nextTime);
-    if (shouldUseRehearsalMix) {
-      void seekRehearsalMixTo(nextTime);
-      return;
-    }
-    if (audioRef.current) {
-      audioRef.current.currentTime = nextTime;
-    }
-    syncGuideCueTracks(nextTime, { force: true });
+    const nextTime = Math.max(0, Number(event.target.value || 0));
+    timelineSeekPreviewRef.current = nextTime;
+    setTimelineSeekPreview(nextTime);
+    scheduleTimelineSeekCommit(nextTime);
   };
   const handleSelectPlaybackSource = (sourceId) => {
     if (sourceId === selectedPlaybackSourceId) {
@@ -3452,6 +3593,9 @@ export default function ModoEnsayoCompacto({
           setIsPlaying(true);
           void playGuideCueTracks(event.currentTarget.currentTime || audioCurrentTime);
           scheduleGuideCueResync();
+          void rephaseMetronomeAtTransportTime(
+            event.currentTarget.currentTime || audioCurrentTime,
+          );
         }}
         onPause={() => {
           setIsPlaying(false);
@@ -4218,7 +4362,7 @@ export default function ModoEnsayoCompacto({
           </button>
           <div className="ensayo-footer-timeline min-w-0 flex-1">
             <div className="ensayo-footer-meta mb-1.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">
-              <span>{formatSeconds(audioCurrentTime)}</span>
+              <span>{formatSeconds(displayAudioCurrentTime)}</span>
               <span>{currentSections[activeSectionIndex]?.name || 'Secci\u00F3n'}</span>
               <span>{durationLabel}</span>
             </div>
@@ -4230,8 +4374,12 @@ export default function ModoEnsayoCompacto({
                 min="0"
                 max={timelineDuration}
                 step="0.1"
-                value={Math.min(audioCurrentTime, timelineDuration)}
+                value={Math.min(displayAudioCurrentTime, timelineDuration)}
                 onChange={handleSeekChange}
+                onPointerUp={flushTimelineSeekCommit}
+                onTouchEnd={flushTimelineSeekCommit}
+                onKeyUp={flushTimelineSeekCommit}
+                onBlur={flushTimelineSeekCommit}
                 disabled={!hasAudio || !audioReady}
                 className="ensayo-seek relative z-10 h-5 w-full cursor-pointer appearance-none bg-transparent disabled:cursor-not-allowed"
                 aria-label="Posici\u00F3n de reproducci\u00F3n"
