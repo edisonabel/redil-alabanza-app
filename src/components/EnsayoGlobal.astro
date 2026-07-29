@@ -41,6 +41,8 @@ import EnsayoGlobalIsland from './react/EnsayoGlobalIsland.jsx';
           linkVoces: el.dataset.voces  || '',
           linkYoutube: el.dataset.youtube || '',
           linkSecuencias: el.dataset.secuencias || '',
+          hasRehearsalPlaybackSession:
+            el.dataset.hasRehearsalPlaybackSession === 'true',
           hasMultitrackSession: false,
           sectionMarkers,
         };

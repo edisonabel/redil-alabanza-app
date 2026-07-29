@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { fetchLiveDirectorSongSession } from '../../utils/liveDirectorUploadClient';
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
 
 // ── ChordPro parser ──────────────────────────────────────────────────────────
@@ -257,6 +258,27 @@ const resolveChordPro = async (raw = '') => {
   }
 };
 
+const resolveRehearsalPlaybackSession = async (song = {}) => {
+  const localSession = song?.multitrackSession || song?.multitrack_session || null;
+  if (localSession) return localSession;
+
+  const songId = String(song?.id || '').trim();
+  if (!songId || song?.hasRehearsalPlaybackSession !== true) return null;
+
+  try {
+    return await runWithOneRetry(
+      () => fetchLiveDirectorSongSession(songId),
+      'Fuentes de reproducción',
+    );
+  } catch (error) {
+    console.warn(
+      '[EnsayoGlobalIsland] No se pudieron cargar las fuentes de reproducción; abriendo solo los acordes.',
+      error,
+    );
+    return null;
+  }
+};
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function EnsayoGlobalIsland() {
@@ -271,7 +293,10 @@ export default function EnsayoGlobalIsland() {
     setOpenError('');
 
     try {
-      const chordproText = await resolveChordPro(raw.chordpro);
+      const [chordproText, playbackSession] = await Promise.all([
+        resolveChordPro(raw.chordpro),
+        resolveRehearsalPlaybackSession(raw),
+      ]);
 
       const sections =
         Array.isArray(raw.sections) && raw.sections.length > 0
@@ -285,8 +310,8 @@ export default function EnsayoGlobalIsland() {
         sections,
         sectionMarkers,
         hasMultitrackSession: false,
+        ...(playbackSession ? { multitrackSession: playbackSession } : {}),
       };
-      delete rehearsalSong.multitrackSession;
       delete rehearsalSong.multitrack_session;
 
       setActiveSong(rehearsalSong);
