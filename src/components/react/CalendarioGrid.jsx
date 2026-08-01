@@ -23,7 +23,7 @@ import {
 } from '../../lib/event-rehearsal.js';
 
 const MONTH_CHUNK_SIZE = 2;
-const EVENT_SELECT = 'id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, serie_id, ensayo_dia_semana, asignaciones(id, rol_id, perfiles(id, nombre, email, avatar_url))';
+const EVENT_SELECT = 'id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, serie_id, ministerio_id, ensayo_dia_semana, ensayo_fecha_hora, ministerios(id, codigo, nombre), asignaciones(id, rol_id, perfiles(id, nombre, email, avatar_url, tonalidad_voz))';
 const APP_TIME_ZONE = 'America/Bogota';
 const appDateTimeFormatter = new Intl.DateTimeFormat('en-US', {
     timeZone: APP_TIME_ZONE,
@@ -34,6 +34,12 @@ const appDateTimeFormatter = new Intl.DateTimeFormat('en-US', {
     minute: '2-digit',
     second: '2-digit',
     hourCycle: 'h23',
+});
+const rehearsalTimeFormatter = new Intl.DateTimeFormat('es-CO', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: APP_TIME_ZONE,
 });
 
 const toAppLocalDate = (value) => {
@@ -116,12 +122,14 @@ const canUserManageEventRehearsal = ({ assignments, roles, sessionUser, isAdmin 
  * Renderizador maestro del motor de Eventos (Tarjetas, Listas y Calendarios).
  * Reemplaza mÃƒÂ¡s de 1000 lÃƒÂ­neas de Vanilla JS en programacion.astro
  */
+/** @param {{ initialEvents?: any[], sessionUser?: any, initialRoles?: any[], isAdmin?: boolean, canEditTema?: boolean, leaderMinistryIds?: string[], initialLoadUntil?: string, hasMoreInitialEvents?: boolean, initialToday?: string }} props */
 export default function CalendarioGrid({
     initialEvents,
     sessionUser,
     initialRoles,
     isAdmin,
     canEditTema = false,
+    leaderMinistryIds = [],
     initialLoadUntil,
     hasMoreInitialEvents = false,
     initialToday,
@@ -177,6 +185,14 @@ export default function CalendarioGrid({
     const [temaModal, setTemaModal] = useState(null); // { eventoId, tema, predicador }
     const [temaSaving, setTemaSaving] = useState(false);
     const [temaError, setTemaError] = useState(null);
+    const leaderMinistryIdSet = useMemo(
+        () => new Set((leaderMinistryIds || []).map((value) => String(value || '')).filter(Boolean)),
+        [leaderMinistryIds],
+    );
+    const isMinistryLeaderForEvent = useCallback(
+        (eventData) => leaderMinistryIdSet.has(String(eventData?.ministerio_id || '')),
+        [leaderMinistryIdSet],
+    );
 
     const openTemaModal = useCallback((eventoId, tema, predicador) => {
         setTemaModal({ eventoId, tema: tema || '', predicador: predicador || '' });
@@ -248,17 +264,22 @@ export default function CalendarioGrid({
         if (cardData?.isVirtual || !cardData?.dbData?.id) return null;
 
         const eventDate = cardData.dbData.fecha_hora || cardData.fecha;
+        const rehearsalDateTime = cardData.dbData.ensayo_fecha_hora || '';
         const isSundayService = Boolean(resolveEventRehearsalDate({
             eventDate,
             rehearsalWeekday: 4,
             hour: 12,
         }));
-        if (!isSundayService) return null;
+        if (!isSundayService && !rehearsalDateTime) return null;
 
         const currentDay = normalizeRehearsalWeekday(cardData.dbData.ensayo_dia_semana);
-        const currentLabel = currentDay === null
+        const rehearsalDateLabel = currentDay === null && !rehearsalDateTime
             ? 'Sin ensayo'
-            : formatEventRehearsalLabel({ eventDate, rehearsalWeekday: currentDay });
+            : formatEventRehearsalLabel({ eventDate, rehearsalWeekday: currentDay, rehearsalDateTime });
+        const explicitRehearsalDate = rehearsalDateTime ? new Date(rehearsalDateTime) : null;
+        const currentLabel = explicitRehearsalDate && !Number.isNaN(explicitRehearsalDate.getTime())
+            ? `${rehearsalDateLabel} · ${rehearsalTimeFormatter.format(explicitRehearsalDate)}`
+            : rehearsalDateLabel;
 
         return (
             <span
@@ -716,7 +737,8 @@ export default function CalendarioGrid({
             }
         }
 
-        const canManage = isAdmin || isModerator;
+        const isMinistryLeader = isMinistryLeaderForEvent(cardData.dbData);
+        const canManage = isAdmin || isModerator || isMinistryLeader;
 
         const listHighlightClass = isUsuarioAsignado ? 'border-brand/30 bg-brand/10' : 'border-border bg-surface hover:bg-background border-solid';
 
@@ -836,7 +858,7 @@ export default function CalendarioGrid({
                                                 es_acustico: esAcustico,
                                                 hora_fin: cardData.dbData?.hora_fin || '',
                                                 serie_id: cardData.dbData?.serie_id || '',
-                                                moderator: !isAdmin && isModerator ? 'true' : 'false',
+                                                moderator: !isAdmin && (isModerator || isMinistryLeader) ? 'true' : 'false',
                                                 can_manage_rehearsal: canManageRehearsal,
                                                 dbData: cardData.dbData
                                             });
@@ -903,7 +925,8 @@ export default function CalendarioGrid({
             }
         }
 
-        const canManage = isAdmin || isModerator;
+        const isMinistryLeader = isMinistryLeaderForEvent(cardData.dbData);
+        const canManage = isAdmin || isModerator || isMinistryLeader;
 
         // CascarÃƒÂ³n Suspendido (JSX puro)
         if (isSuspended) {
@@ -1015,7 +1038,7 @@ export default function CalendarioGrid({
                                         es_acustico: esAcustico,
                                         hora_fin: cardData.dbData?.hora_fin || '',
                                         serie_id: cardData.dbData?.serie_id || '',
-                                        moderator: !isAdmin && isModerator ? 'true' : 'false',
+                                        moderator: !isAdmin && (isModerator || isMinistryLeader) ? 'true' : 'false',
                                         can_manage_rehearsal: canManageRehearsal,
                                         dbData: cardData.dbData
                                     });

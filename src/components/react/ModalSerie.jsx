@@ -1,7 +1,13 @@
 ﻿import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import {
+    isSinFiltrosMinistry,
+    SIN_FILTROS_MINISTRY_NAME,
+    SIN_FILTROS_SERVICE_TIME,
+} from '../../lib/ministry-config.js';
 
-export default function ModalSerie({ sessionUser }) {
+/** @param {{ sessionUser?: any, initialMinistries?: any[] }} props */
+export default function ModalSerie({ sessionUser, initialMinistries = [] }) {
     const [isOpen, setIsOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [previewText, setPreviewText] = useState('');
@@ -14,7 +20,8 @@ export default function ModalSerie({ sessionUser }) {
         horaFin: '',
         estado: 'Publicado',
         fechaInicio: '',
-        fechaLimite: ''
+        fechaLimite: '',
+        ministerioId: ''
     });
 
     useEffect(() => {
@@ -73,6 +80,20 @@ export default function ModalSerie({ sessionUser }) {
                 value = `${currentYear}-12-31`;
             }
         }
+        if (name === 'ministerioId') {
+            const selectedMinistry = (initialMinistries || []).find((ministry) => ministry.id === value);
+            setFormData((prev) => isSinFiltrosMinistry(selectedMinistry)
+                ? {
+                    ...prev,
+                    ministerioId: value,
+                    titulo: prev.titulo || SIN_FILTROS_MINISTRY_NAME,
+                    dia: '6',
+                    horaInicio: prev.horaInicio || SIN_FILTROS_SERVICE_TIME,
+                }
+                : { ...prev, ministerioId: value });
+            return;
+        }
+
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
@@ -93,6 +114,15 @@ export default function ModalSerie({ sessionUser }) {
         setIsLoading(true);
 
         try {
+            const selectedMinistry = (initialMinistries || []).find(
+                (ministry) => ministry.id === formData.ministerioId,
+            );
+            if (isSinFiltrosMinistry(selectedMinistry) && formData.dia !== '6') {
+                alert('Sin Filtros se programa los sábados.');
+                setIsLoading(false);
+                return;
+            }
+
             // 1. Check for Collisions
             const startCheck = new Date(formData.fechaInicio + 'T00:00:00Z').toISOString();
             const endCheck = new Date(formData.fechaLimite + 'T23:59:59Z').toISOString();
@@ -147,7 +177,8 @@ export default function ModalSerie({ sessionUser }) {
                         hora_fin: formData.horaFin || null,
                         estado: formData.estado,
                         created_by: sessionUser?.id || null,
-                        serie_id: uuidSerie
+                        serie_id: uuidSerie,
+                        ministerio_id: formData.ministerioId || null
                     });
                 }
                 cursor.setUTCDate(cursor.getUTCDate() + 1);
@@ -195,9 +226,26 @@ export default function ModalSerie({ sessionUser }) {
 
                 <form onSubmit={handleGenerate} className="p-6 flex flex-col gap-5 text-left">
                     <div>
+                        <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">MINISTERIO</label>
+                        <select name="ministerioId" value={formData.ministerioId} onChange={handleChange} className="w-full appearance-none rounded-xl border border-border bg-background px-4 py-3 text-sm text-content transition-colors focus:border-brand focus:outline-none">
+                            <option value="">Alabanza general</option>
+                            {(initialMinistries || []).map((ministry) => (
+                                <option key={ministry.id} value={ministry.id}>{ministry.nombre}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div>
                         <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">TÍTULO DEL EVENTO (RECURRENTE) <span className="text-red-500">*</span></label>
                         <input type="text" name="titulo" value={formData.titulo} onChange={handleChange} required className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" placeholder="Ej: Culto de Adoración" />
                     </div>
+
+                    {isSinFiltrosMinistry((initialMinistries || []).find((ministry) => ministry.id === formData.ministerioId)) && (
+                        <div className="rounded-xl border border-blue-400/25 bg-blue-500/10 px-4 py-3">
+                            <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">Sin Filtros</p>
+                            <p className="mt-1 text-sm text-content-muted">Culto sábado 7:00 p. m. · Ensayo fijo 5:00 p. m.</p>
+                        </div>
+                    )}
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>

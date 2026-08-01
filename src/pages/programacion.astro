@@ -34,6 +34,8 @@ let ssrEventos: any[] = [];
 let ssrAdmin = false;
 let ssrCanEditTema = false;
 let ssrHasMoreEventos = false;
+let ssrMinistries: any[] = [];
+let ssrLeaderMinistryIds: string[] = [];
 
 if (!ssrUser || !accessToken) {
   return Astro.redirect('/login');
@@ -56,12 +58,18 @@ if (ssrUser) {
   const rolesPromise = supabaseSSR.from('roles').select('id, nombre, codigo').order('nombre');
   const perfilPromise = supabaseSSR.from('perfiles').select('is_admin').eq('id', ssrUser.id).maybeSingle();
   const canEditTemaPromise = supabaseSSR.rpc('has_sermon_edit_role');
+  const ministriesPromise = supabaseSSR.from('ministerios').select('id, codigo, nombre').eq('activo', true).order('nombre');
+  const leaderMinistriesPromise = supabaseSSR
+    .from('perfil_ministerios')
+    .select('ministerio_id')
+    .eq('perfil_id', ssrUser.id)
+    .eq('es_lider', true);
   const eventosPromise = perfilPromise.then(({ data: perfil }) => {
     const isAdmin = perfil?.is_admin || false;
 
     let query = supabaseSSR
       .from('eventos')
-      .select('id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, serie_id, ensayo_dia_semana, asignaciones(id, rol_id, perfiles(id, nombre, email, avatar_url))')
+      .select('id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, serie_id, ministerio_id, ensayo_dia_semana, ensayo_fecha_hora, ministerios(id, codigo, nombre), asignaciones(id, rol_id, perfiles(id, nombre, email, avatar_url, tonalidad_voz))')
       .gte('fecha_hora', initialFetchFloor.toISOString())
       .lte('fecha_hora', initialFetchLimit.toISOString())
       .order('fecha_hora', { ascending: true });
@@ -93,13 +101,25 @@ if (ssrUser) {
     { data: eventosDb, error: err },
     { count: moreEventosCount, error: moreEventosError },
     { data: hasSermonRole },
-  ] = await Promise.all([rolesPromise, perfilPromise, eventosPromise, moreEventosPromise, canEditTemaPromise]);
+    { data: ministriesData, error: ministriesError },
+    { data: leaderMinistriesData, error: leaderMinistriesError },
+  ] = await Promise.all([
+    rolesPromise,
+    perfilPromise,
+    eventosPromise,
+    moreEventosPromise,
+    canEditTemaPromise,
+    ministriesPromise,
+    leaderMinistriesPromise,
+  ]);
 
   ssrRoles = globalRoles || [];
   ssrAdmin = perfil?.is_admin || false;
   ssrCanEditTema = ssrAdmin || (hasSermonRole === true);
   ssrHasMoreEventos = (moreEventosCount || 0) > 0;
-  const queryError = err || perfilError || rolesError || moreEventosError;
+  ssrMinistries = ministriesData || [];
+  ssrLeaderMinistryIds = (leaderMinistriesData || []).map((row) => row.ministerio_id).filter(Boolean);
+  const queryError = err || perfilError || rolesError || moreEventosError || ministriesError || leaderMinistriesError;
   if (queryError) {
     console.error('[programacion] SSR query failed', queryError);
   }
@@ -134,19 +154,20 @@ if (ssrUser) {
         initialRoles={ssrRoles}
         isAdmin={ssrAdmin}
         canEditTema={ssrCanEditTema}
+        leaderMinistryIds={ssrLeaderMinistryIds}
         initialLoadUntil={initialFetchLimit.toISOString()}
         hasMoreInitialEvents={ssrHasMoreEventos}
         initialToday={initialToday}
     />
     
     <!-- MODAL DE GESTIÃ“N (FASE 1) -->
-    <ModalEvento client:only="react" />
+    <ModalEvento client:only="react" initialMinistries={ssrMinistries} />
     
     <!-- MODAL VISTA DETALLE COMPLETADO (FASE 1) -->
-    <ModalDetalle client:only="react" initialRoles={ssrRoles} sessionUser={ssrUser} isAdmin={ssrAdmin} />
+    <ModalDetalle client:only="react" initialRoles={ssrRoles} sessionUser={ssrUser} isAdmin={ssrAdmin} leaderMinistryIds={ssrLeaderMinistryIds} />
 
     <!-- MODAL GENERADOR DE SERIES -->
-    <ModalSerie client:only="react" sessionUser={ssrUser} />
+    <ModalSerie client:only="react" sessionUser={ssrUser} initialMinistries={ssrMinistries} />
     <OnboardingRoot client:idle page="programacion" userId={ssrUser?.id ?? null} />
   </div>
 

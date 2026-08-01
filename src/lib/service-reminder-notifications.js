@@ -41,6 +41,13 @@ const localWeekdayFormatter = new Intl.DateTimeFormat('en-US', {
   timeZone: BOGOTA_TIMEZONE,
 });
 
+const localTimeFormatter = new Intl.DateTimeFormat('es-CO', {
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+  timeZone: BOGOTA_TIMEZONE,
+});
+
 const weekdayIndexByShortName = {
   Sun: 0,
   Mon: 1,
@@ -148,9 +155,16 @@ const buildReminderContent = ({
   topic,
   preacher,
   hasSetlist,
+  event,
 }) => {
   const greeting = `Hola, ${recipientName}. Dios te bendiga.`;
   const details = buildServiceDetailsSection({ formattedDate, topic, preacher });
+  const explicitRehearsalDate = event?.ensayo_fecha_hora ? new Date(event.ensayo_fecha_hora) : null;
+  const hasExplicitRehearsal = explicitRehearsalDate && !Number.isNaN(explicitRehearsalDate.getTime());
+  const serviceDate = event?.fecha_hora ? new Date(event.fecha_hora) : null;
+  const explicitRehearsalSchedule = hasExplicitRehearsal
+    ? `Equipo completo: ${localTimeFormatter.format(explicitRehearsalDate)}\nCulto: ${serviceDate && !Number.isNaN(serviceDate.getTime()) ? localTimeFormatter.format(serviceDate) : '7:00 p. m.'}`
+    : '';
 
   switch (reminderKey) {
     case '15d':
@@ -235,12 +249,16 @@ const buildReminderContent = ({
         body: [
           greeting,
           'Te recuerdo que hoy tienes ensayo en la iglesia.',
-          'Voces: 6:30 p. m.\nM\u00FAsicos: 7:00 p. m.',
-          'Las voces pueden llegar antes para calentar y organizarse.',
-          'Los m\u00FAsicos a las 7:00 p. m. para montar y ensayar con el equipo.',
+          hasExplicitRehearsal ? explicitRehearsalSchedule : 'Voces: 6:30 p. m.\nM\u00FAsicos: 7:00 p. m.',
+          hasExplicitRehearsal
+            ? 'El ensayo de Sin Filtros comienza con todo el equipo a la hora indicada.'
+            : 'Las voces pueden llegar antes para calentar y organizarse.',
+          hasExplicitRehearsal
+            ? null
+            : 'Los m\u00FAsicos a las 7:00 p. m. para montar y ensayar con el equipo.',
           'Nos vemos esta noche, Dios mediante.',
           'Bendiciones.',
-        ].join('\n\n'),
+        ].filter(Boolean).join('\n\n'),
         url: hasSetlist ? '' : '/programacion',
         ctaLabel: hasSetlist ? 'Entrar al modo ensayo' : 'Ver mi agenda',
       };
@@ -271,10 +289,11 @@ export const getReminderKeyForEvent = ({ scope, daysUntil, eventWeekday, event, 
     if (daysUntil === 15) return '15d';
     if (daysUntil === 10) return '10d';
     if (daysUntil === 7) return '7d';
-    if (eventWeekday === 0) {
+    if (eventWeekday === 0 || event?.ensayo_fecha_hora) {
       const rehearsalDate = resolveEventRehearsalDate({
         eventDate: event?.fecha_hora,
         rehearsalWeekday: event?.ensayo_dia_semana,
+        rehearsalDateTime: event?.ensayo_fecha_hora,
         hour: 12,
       });
       if (rehearsalDate && getBogotaDateSerial(rehearsalDate) === getBogotaDateSerial(referenceDate)) {
@@ -300,8 +319,8 @@ const fetchUpcomingEvents = async ({ serviceRoleClient, referenceDate, onlyEvent
     let query = serviceRoleClient
       .from('eventos')
       .select(includePredicador
-        ? 'id, titulo, tema_predicacion, predicador, fecha_hora, hora_fin, estado, ensayo_dia_semana'
-        : 'id, titulo, tema_predicacion, fecha_hora, hora_fin, estado, ensayo_dia_semana');
+        ? 'id, titulo, tema_predicacion, predicador, fecha_hora, hora_fin, estado, ensayo_dia_semana, ensayo_fecha_hora, ministerio_id, ministerios(codigo,nombre)'
+        : 'id, titulo, tema_predicacion, fecha_hora, hora_fin, estado, ensayo_dia_semana, ensayo_fecha_hora, ministerio_id, ministerios(codigo,nombre)');
 
     if (onlyEventId) {
       return query
@@ -479,6 +498,7 @@ const buildReminderCandidates = ({
       ? resolveEventRehearsalDateKey({
         eventDate: event?.fecha_hora,
         rehearsalWeekday: event?.ensayo_dia_semana,
+        rehearsalDateTime: event?.ensayo_fecha_hora,
       })
       : '';
 
@@ -603,6 +623,7 @@ export async function runServiceReminderNotifications({
         topic: candidate.topic,
         preacher: candidate.preacher,
         hasSetlist: candidate.hasSetlist,
+        event: candidate.event,
       });
 
       if (!reminderContent) continue;

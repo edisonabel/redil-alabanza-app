@@ -10,6 +10,11 @@ import {
     REHEARSAL_WEEKDAY_OPTIONS,
     resolveEventRehearsalDate,
 } from '../../lib/event-rehearsal.js';
+import {
+    isSinFiltrosMinistry,
+    SIN_FILTROS_MINISTRY_NAME,
+    SIN_FILTROS_SERVICE_TIME,
+} from '../../lib/ministry-config.js';
 
 const composeLegacyTemaPredicacion = (temaValue, predicadorValue) => {
     const temaSafe = String(temaValue || '').trim();
@@ -48,7 +53,20 @@ const isSundayServiceDate = (dateValue = '') => Boolean(resolveEventRehearsalDat
     hour: 12,
 }));
 
-export default function ModalEvento() {
+const isSaturdayDate = (dateValue = '') => {
+    if (!dateValue) return false;
+    const parsed = new Date(`${dateValue}T12:00:00Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.getUTCDay() === 6;
+};
+
+const getRecurrenceDayCode = (dateValue = '') => {
+    const parsed = new Date(`${dateValue}T12:00:00Z`);
+    const dayCodes = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+    return Number.isNaN(parsed.getTime()) ? 'SU' : dayCodes[parsed.getUTCDay()];
+};
+
+/** @param {{ initialMinistries?: any[] }} props */
+export default function ModalEvento({ initialMinistries = [] }) {
     const [isOpen, setIsOpen] = useState(false);
     const [mode, setMode] = useState('new');
     const [evId, setEvId] = useState('');
@@ -67,6 +85,7 @@ export default function ModalEvento() {
     const [isStrictModerator, setIsStrictModerator] = useState(false);
     const [canManageRehearsal, setCanManageRehearsal] = useState(false);
     const [rehearsalWeekday, setRehearsalWeekday] = useState(4);
+    const [ministryId, setMinistryId] = useState('');
 
     const [isSaving, setIsSaving] = useState(false);
     const [isDeletingSerie, setIsDeletingSerie] = useState(false);
@@ -110,6 +129,7 @@ export default function ModalEvento() {
                 setIsStrictModerator(false);
                 setCanManageRehearsal(false);
                 setRehearsalWeekday(4);
+                setMinistryId('');
                 setDbData(null);
                 setShowPlaylistBtn(false);
                 setHasPlaylist(false);
@@ -153,6 +173,7 @@ export default function ModalEvento() {
                 setIsStrictModerator(strictMod);
                 setCanManageRehearsal(data.can_manage_rehearsal === true);
                 setRehearsalWeekday(normalizeRehearsalWeekday(data.dbData?.ensayo_dia_semana));
+                setMinistryId(data.ministerio_id || data.dbData?.ministerio_id || '');
 
                 if (data.serie_id) {
                     setIsSerie(true);
@@ -236,6 +257,15 @@ export default function ModalEvento() {
             return;
         }
 
+        const selectedMinistry = (initialMinistries || []).find(
+            (ministry) => String(ministry?.id || '') === String(ministryId || ''),
+        );
+        const isSinFiltros = isSinFiltrosMinistry(selectedMinistry);
+        if (isSinFiltros && !isSaturdayDate(fecha)) {
+            alert('Sin Filtros se programa los sábados. Selecciona una fecha de sábado.');
+            return;
+        }
+
         const shouldManageRehearsal = (
             mode === 'edit'
             && evId
@@ -297,7 +327,8 @@ export default function ModalEvento() {
                     hora_fin: horaFin || null,
                     tema_predicacion: includePredicador ? (tema || null) : legacyTemaPredicacion,
                     estado,
-                    es_acustico: esAcustico
+                    es_acustico: esAcustico,
+                    ministerio_id: ministryId || null,
                 };
 
                 if (includePredicador) {
@@ -317,7 +348,7 @@ export default function ModalEvento() {
                     ] = await Promise.all([
                         supabase
                             .from('eventos')
-                            .update({ titulo, hora_fin: horaFin || null, es_acustico: esAcustico })
+                            .update({ titulo, hora_fin: horaFin || null, es_acustico: esAcustico, ministerio_id: ministryId || null })
                             .eq('serie_id', serieId)
                             .gte('fecha_hora', startCheck),
                         supabase
@@ -335,7 +366,7 @@ export default function ModalEvento() {
                         ] = await Promise.all([
                             supabase
                                 .from('eventos')
-                                .update({ titulo, hora_fin: horaFin || null, es_acustico: esAcustico })
+                                .update({ titulo, hora_fin: horaFin || null, es_acustico: esAcustico, ministerio_id: ministryId || null })
                                 .eq('serie_id', serieId)
                                 .gte('fecha_hora', startCheck),
                             supabase
@@ -370,7 +401,7 @@ export default function ModalEvento() {
                 };
 
                 // Evento virtual o FAB (No tiene setteo de serie propio aquÃ­, la serie se crea en Generator modal)
-                if (!evId) newEv.notas_especiales = 'FREQ=WEEKLY;BYDAY=SU';
+                if (!evId) newEv.notas_especiales = `FREQ=WEEKLY;BYDAY=${getRecurrenceDayCode(fecha)}`;
 
                 let { error } = await supabase.from('eventos').insert([newEv]);
 
@@ -379,7 +410,7 @@ export default function ModalEvento() {
                     const fallbackResp = await supabase.from('eventos').insert([{
                         ...buildEventWritePayload(false),
                         created_by: currentUserId,
-                        ...(evId ? {} : { notas_especiales: 'FREQ=WEEKLY;BYDAY=SU' })
+                        ...(evId ? {} : { notas_especiales: `FREQ=WEEKLY;BYDAY=${getRecurrenceDayCode(fecha)}` })
                     }]);
                     error = fallbackResp.error;
                 }
@@ -468,6 +499,10 @@ export default function ModalEvento() {
     if (!isOpen) return null;
 
     const rehearsalEventDate = toRehearsalEventDate(fecha);
+    const selectedMinistry = (initialMinistries || []).find(
+        (ministry) => String(ministry?.id || '') === String(ministryId || ''),
+    );
+    const isSinFiltros = isSinFiltrosMinistry(selectedMinistry);
     const showRehearsalField = (
         mode === 'edit'
         && canManageRehearsal
@@ -492,9 +527,33 @@ export default function ModalEvento() {
                         <input type="hidden" id="ev-serie-id" value={serieId} readOnly />
 
                         <div className="grid grid-cols-1 gap-5 w-full">
-                            <div className={`w-full ${isStrictModerator ? 'hidden' : ''}`} id="ev-container-titulo">
-                                <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">TÍTULO DEL EVENTO <span className="text-red-500">*</span></label>
-                                <input type="text" id="ev-titulo" required disabled={isStrictModerator} value={titulo} onChange={e => setTitulo(e.target.value)} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" placeholder="Ej: Culto de Adoración" />
+                            <div className={`grid w-full grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(190px,0.62fr)] ${isStrictModerator ? 'hidden' : ''}`} id="ev-container-titulo">
+                                <div className="min-w-0">
+                                    <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">TÍTULO DEL EVENTO <span className="text-red-500">*</span></label>
+                                    <input type="text" id="ev-titulo" required disabled={isStrictModerator} value={titulo} onChange={e => setTitulo(e.target.value)} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" placeholder="Ej: Culto de Adoración" />
+                                </div>
+                                <div className="min-w-0">
+                                    <label htmlFor="ev-ministerio" className="block text-xs font-bold text-content uppercase tracking-wider mb-2">Ministerio</label>
+                                    <select
+                                        id="ev-ministerio"
+                                        value={ministryId}
+                                        onChange={(event) => {
+                                            const nextMinistryId = event.target.value;
+                                            const nextMinistry = (initialMinistries || []).find((ministry) => ministry.id === nextMinistryId);
+                                            setMinistryId(nextMinistryId);
+                                            if (isSinFiltrosMinistry(nextMinistry)) {
+                                                if (!titulo.trim()) setTitulo(SIN_FILTROS_MINISTRY_NAME);
+                                                if (!horaInicio) setHoraInicio(SIN_FILTROS_SERVICE_TIME);
+                                            }
+                                        }}
+                                        className="w-full appearance-none rounded-xl border border-border bg-background px-4 py-3 text-sm text-content transition-colors focus:border-brand focus:outline-none"
+                                    >
+                                        <option value="">Alabanza general</option>
+                                        {(initialMinistries || []).map((ministry) => (
+                                            <option key={ministry.id} value={ministry.id}>{ministry.nombre}</option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
 
                             <div className={`w-full grid grid-cols-1 sm:grid-cols-2 gap-4 ${isStrictModerator ? 'hidden' : ''}`} id="ev-container-fechas">
@@ -540,6 +599,16 @@ export default function ModalEvento() {
                                         ))}
                                         <option value="none">Sin ensayo</option>
                                     </select>
+                                </div>
+                            )}
+
+                            {isSinFiltros && (
+                                <div className="flex min-h-12 items-center justify-between gap-4 rounded-xl border border-blue-400/25 bg-blue-500/10 px-4 py-3">
+                                    <div>
+                                        <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">Ensayo fijo · Sin Filtros</p>
+                                        <p className="mt-1 text-sm text-content-muted">El mismo sábado antes del culto.</p>
+                                    </div>
+                                    <span className="shrink-0 rounded-full border border-blue-400/25 bg-surface px-3 py-1.5 text-sm font-black text-content">5:00 p. m.</span>
                                 </div>
                             )}
 

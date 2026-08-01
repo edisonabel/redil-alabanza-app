@@ -535,20 +535,28 @@ export const buildGoogleCalendarEventPayload = ({ event, assignments, siteOrigin
 
 export const buildGoogleCalendarRehearsalPayload = ({ event, assignments, siteOrigin = PRODUCTION_ORIGIN }) => {
   const voiceArrival = hasVoiceRehearsalArrival(assignments);
+  const explicitRehearsal = event?.ensayo_fecha_hora ? new Date(event.ensayo_fecha_hora) : null;
+  const hasExplicitRehearsal = explicitRehearsal && !Number.isNaN(explicitRehearsal.getTime());
   const start = resolveEventRehearsalDate({
     eventDate: event?.fecha_hora,
     rehearsalWeekday: event?.ensayo_dia_semana,
+    rehearsalDateTime: event?.ensayo_fecha_hora,
     hour: voiceArrival ? 18 : 19,
     minute: voiceArrival ? 30 : 0,
   });
   if (!start) return null;
 
-  const end = resolveEventRehearsalDate({
-    eventDate: event?.fecha_hora,
-    rehearsalWeekday: event?.ensayo_dia_semana,
-    hour: REHEARSAL_END_HOUR,
-    minute: 0,
-  });
+  const serviceStart = new Date(event?.fecha_hora);
+  const end = hasExplicitRehearsal
+    ? (serviceStart.getTime() > start.getTime()
+      ? serviceStart
+      : new Date(start.getTime() + (2 * 60 * 60 * 1000)))
+    : resolveEventRehearsalDate({
+      eventDate: event?.fecha_hora,
+      rehearsalWeekday: event?.ensayo_dia_semana,
+      hour: REHEARSAL_END_HOUR,
+      minute: 0,
+    });
   const serviceDate = new Intl.DateTimeFormat('es-CO', {
     weekday: 'long',
     day: 'numeric',
@@ -559,13 +567,23 @@ export const buildGoogleCalendarRehearsalPayload = ({ event, assignments, siteOr
   const roleLabel = roleNames.length > 1 ? 'Roles' : 'Rol';
   const safeOrigin = String(siteOrigin || PRODUCTION_ORIGIN).replace(/\/$/, '');
   const title = String(event?.titulo || 'Servicio').trim();
+  const explicitArrivalLabel = hasExplicitRehearsal
+    ? new Intl.DateTimeFormat('es-CO', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: GOOGLE_CALENDAR_TIME_ZONE,
+    }).format(start)
+    : '';
 
   return {
     summary: `Ensayo · ${title} · Redil`,
     description: [
       `Ensayo para el servicio del ${serviceDate}.`,
       roleNames.length ? `${roleLabel}: ${roleNames.join(', ')}` : null,
-      voiceArrival ? 'Llegada de voces: 6:30 p. m.' : 'Llegada de músicos: 7:00 p. m.',
+      hasExplicitRehearsal
+        ? `Llegada del equipo: ${explicitArrivalLabel}.`
+        : (voiceArrival ? 'Llegada de voces: 6:30 p. m.' : 'Llegada de músicos: 7:00 p. m.'),
       '',
       `Ver en Redil: ${safeOrigin}/programacion`,
     ].filter((line) => line !== null).join('\n'),
@@ -644,7 +662,7 @@ export const syncGoogleCalendarEventForProfile = async ({ profileId, eventId, fe
   const [{ data: event, error: eventError }, { data: links, error: linksError }] = await Promise.all([
     client
       .from('eventos')
-      .select('id, titulo, fecha_hora, hora_fin, estado, ensayo_dia_semana, asignaciones(id, perfil_id, rol_id, roles(nombre, codigo))')
+      .select('id, titulo, fecha_hora, hora_fin, estado, ensayo_dia_semana, ensayo_fecha_hora, ministerio_id, ministerios(codigo, nombre), asignaciones(id, perfil_id, rol_id, roles(nombre, codigo))')
       .eq('id', eventId)
       .maybeSingle(),
     client

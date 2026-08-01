@@ -141,7 +141,8 @@ function SongArtwork({ song }) {
     );
 }
 
-export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = false }) {
+/** @param {{ initialRoles?: any[], sessionUser?: any, isAdmin?: boolean, leaderMinistryIds?: string[] }} props */
+export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = false, leaderMinistryIds = [] }) {
     const [isOpen, setIsOpen] = useState(false);
     const [eventData, setEventData] = useState(null);
     const [playlist, setPlaylist] = useState(null);
@@ -330,6 +331,10 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
         .map((key) => rosterGroupsMap.get(key))
         .filter(Boolean);
     const eventoId = eventData?.dbData?.id || '';
+    const ministryName = String(eventData?.dbData?.ministerios?.nombre || '').trim();
+    const isMinistryLeader = (leaderMinistryIds || []).some(
+        (ministryId) => String(ministryId || '') === String(eventData?.dbData?.ministerio_id || ''),
+    );
     const miAsignacion = roster.find((asig) => asig?.perfiles?.id === sessionUser?.id || asig?.perfiles?.email === sessionUser?.email);
     let isModerator = false;
     if (miAsignacion) {
@@ -338,7 +343,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
             isModerator = true;
         }
     }
-    const canManageRepertorio = isAdmin || isModerator;
+    const canManageRepertorio = isAdmin || isModerator || isMinistryLeader;
     const manageRepertorioLabel = playlistItems.length > 0 ? 'Editar repertorio' : 'Armar repertorio';
 
     const rehearsalHref = eventoId ? `/ensayo/${eventoId}` : '/ensayo/demo';
@@ -397,6 +402,11 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                                     <h2 className="text-[1.35rem] font-black capitalize leading-none tracking-tight text-slate-950 dark:text-white min-[390px]:text-[1.5rem] sm:text-[2.85rem] sm:leading-[0.9] lg:text-[2.35rem]">
                                         {fechaFormat}
                                     </h2>
+                                    {ministryName ? (
+                                        <span className="mt-2 inline-flex w-max items-center rounded-full border border-blue-300/35 bg-blue-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300 sm:text-xs">
+                                            {ministryName}
+                                        </span>
+                                    ) : null}
                                     {temaPrincipal ? (
                                         <p className="mt-1.5 text-[0.95rem] font-semibold leading-tight text-slate-600 dark:text-white/68 min-[390px]:text-base sm:mt-3 sm:text-xl lg:mt-2 lg:text-lg">
                                             <span className="text-action">{temaPrincipal}</span>

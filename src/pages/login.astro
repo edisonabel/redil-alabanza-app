@@ -130,6 +130,24 @@ import Layout from "../layouts/Layout.astro";
               </div>
             </div>
           </div>
+          <div>
+            <label
+              for="vocal-range"
+              class="block text-sm font-semibold text-content mb-2"
+            >
+              Tipo de voz
+              <span class="text-content-muted font-normal text-xs ml-1">(si cantas)</span>
+            </label>
+            <select
+              id="vocal-range"
+              class="w-full min-h-12 px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all"
+            >
+              <option value="">No soy voz / Todav&iacute;a no lo s&eacute;</option>
+            </select>
+            <p class="text-[11px] text-content-muted mt-1.5 ml-1">
+              Puedes cambiarlo luego desde Mi Perfil.
+            </p>
+          </div>
           <div
             class="hidden bg-info/10 text-info border border-info/20 rounded-xl px-4 py-4 dark:bg-info/10 dark:text-info dark:border-info/20 items-start gap-3"
           >
@@ -383,6 +401,8 @@ import Layout from "../layouts/Layout.astro";
 
 <script>
   import { supabase } from "../lib/supabase";
+  import { VOCAL_RANGE_OPTIONS } from "../lib/ministry-config.js";
+  import { isPublicRegistrationRoleCode } from "../lib/public-registration.js";
 
   document.addEventListener("DOMContentLoaded", async () => {
     // Removido loop infinito de auto-sincronizaciÃ³n. El usuario debe hacer logout manual o login.
@@ -404,6 +424,9 @@ import Layout from "../layouts/Layout.astro";
     const accessCodeInput = document.getElementById(
       "accesscode",
     ) as HTMLInputElement;
+    const vocalRangeInput = document.getElementById(
+      "vocal-range",
+    ) as HTMLSelectElement;
     const avatarInput = document.getElementById(
       "avatar-file",
     ) as HTMLInputElement;
@@ -443,6 +466,13 @@ import Layout from "../layouts/Layout.astro";
     let previewUrl: string | null = null;
     let avatarProcessing = false;
     let registroExitoso = false;
+
+    VOCAL_RANGE_OPTIONS.forEach((option) => {
+      const optionElement = document.createElement("option");
+      optionElement.value = option.value;
+      optionElement.textContent = option.label;
+      vocalRangeInput?.appendChild(optionElement);
+    });
 
     // UI helpers para overlay de avatar
     const avatarOverlay = document.getElementById("avatar-status-overlay");
@@ -553,13 +583,15 @@ import Layout from "../layouts/Layout.astro";
       try {
         const { data, error } = await supabase
           .from("roles")
-          .select("id, nombre")
+          .select("id, nombre, codigo")
           .order("nombre");
         if (error) throw error;
         if (data && registerRolesGrid) {
           const rolesFragment = document.createDocumentFragment();
 
-          data.forEach((role: { id: string; nombre: string }) => {
+          data
+            .filter((role: { codigo?: string }) => isPublicRegistrationRoleCode(role.codigo))
+            .forEach((role: { id: string; nombre: string; codigo?: string }) => {
             const label = document.createElement("label");
             label.className =
               "flex items-center gap-2 p-2 rounded-lg border border-transparent hover:bg-surface hover:border-border transition-colors cursor-pointer text-sm text-content-muted";
@@ -640,6 +672,7 @@ import Layout from "../layouts/Layout.astro";
       fechaNacimientoInput.required = false;
       accessCodeInput.required = false;
       accessCodeInput.value = ""; // limpiar por si acaso
+      if (vocalRangeInput) vocalRangeInput.value = "";
 
       btnForgotPassword?.classList.remove("hidden");
       if (btnSubmit) btnSubmit.textContent = "Iniciar Sesión";
@@ -792,6 +825,7 @@ import Layout from "../layouts/Layout.astro";
           const telefono = telefonoInput.value;
           const fechaNacimiento = fechaNacimientoInput.value;
           const accessCode = accessCodeInput.value?.trim().toUpperCase();
+          const vocalRange = vocalRangeInput?.value || "";
           let avatarUrl = "";
           let uploadedAvatarPath = "";
 
@@ -802,7 +836,7 @@ import Layout from "../layouts/Layout.astro";
             body: JSON.stringify({ code: accessCode }),
           });
           const verifyData = await verifyRes.json();
-          if (!verifyData.valid) {
+          if (!verifyRes.ok || !verifyData.valid || !verifyData.registration_target) {
             throw new Error(
               "El Código de Acceso es incorrecto. Contacta a tu líder si no lo tienes.",
             );
@@ -838,6 +872,8 @@ import Layout from "../layouts/Layout.astro";
                 fecha_nacimiento: fechaNacimiento,
                 avatar_url: avatarUrl,
                 roles: selectedRoles,
+                tonalidad_voz: vocalRange,
+                registration_target: verifyData.registration_target,
               },
             },
           });

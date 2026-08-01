@@ -319,6 +319,21 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
         };
     };
 
+    const getEligibleProfileIdsForEvent = async () => {
+        if (!dbData?.ministerio_id) return { ids: null, error: null };
+
+        const { data, error } = await supabase.rpc('get_event_eligible_profile_ids', {
+            p_evento_id: evId,
+        });
+
+        return {
+            ids: error
+                ? new Set()
+                : new Set((data || []).map((row) => String(row?.perfil_id || '').trim()).filter(Boolean)),
+            error,
+        };
+    };
+
     useEffect(() => {
         if (!dbData?.asignaciones || assignableRoles.length === 0) return;
         setAsignaciones(
@@ -330,7 +345,7 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
         if (!evId || evId.startsWith('virtual|')) return;
         const { data } = await supabase
             .from('eventos')
-            .select('asignaciones(id, perfil_id, rol_id, perfiles(id, nombre, email, avatar_url))')
+            .select('asignaciones(id, perfil_id, rol_id, perfiles(id, nombre, email, avatar_url, tonalidad_voz))')
             .eq('id', evId)
             .single();
         if (data) {
@@ -396,15 +411,33 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
         const voiceRoles = assignableRoles.filter((rol) => String(rol.codigo || '').startsWith('voz_'));
         const voiceRoleIds = voiceRoles.map((rol) => rol.id);
 
-        const perfilesRoles = isVoicePool
-            ? await supabase
+        const eligibleProfiles = await getEligibleProfileIdsForEvent();
+        if (eligibleProfiles.error) {
+            setPickerLoading(false);
+            alert(`No se pudo validar el equipo de este ministerio: ${eligibleProfiles.error.message}`);
+            return;
+        }
+        if (eligibleProfiles.ids && eligibleProfiles.ids.size === 0) {
+            setPickerLoading(false);
+            setPickerList([]);
+            return;
+        }
+
+        let perfilesRolesQuery = isVoicePool
+            ? supabase
                 .from('perfil_roles')
-                .select('rol_id, perfiles!inner(id, nombre, email, avatar_url)')
+                .select('perfil_id, rol_id, perfiles!inner(id, nombre, email, avatar_url, tonalidad_voz)')
                 .in('rol_id', voiceRoleIds)
-            : await supabase
+            : supabase
                 .from('perfil_roles')
-                .select('rol_id, perfiles!inner(id, nombre, email, avatar_url)')
+                .select('perfil_id, rol_id, perfiles!inner(id, nombre, email, avatar_url, tonalidad_voz)')
                 .eq('rol_id', rId);
+
+        if (eligibleProfiles.ids) {
+            perfilesRolesQuery = perfilesRolesQuery.in('perfil_id', [...eligibleProfiles.ids]);
+        }
+
+        const perfilesRoles = await perfilesRolesQuery;
 
         setPickerLoading(false);
         if (perfilesRoles.error) {
@@ -429,18 +462,21 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
                     String(row?.motivo || '').trim(),
                 ])
             );
-            const mappedList = perfilesRoles.data.map(d => {
+            const mappedByProfileId = new Map();
+            perfilesRoles.data.forEach(d => {
                 const p = d.perfiles;
                 const ausenciaMotivo = blockedByProfileId.get(String(p?.id || '').trim()) || '';
-                return {
+                const mappedProfile = {
                     ...p,
                     realRolId: d.rol_id,
                     realRolNombre: assignableRoles.find(rol => rol.id === d.rol_id)?.nombre || rName,
                     ausente: blockedByProfileId.has(String(p?.id || '').trim()),
                     ausenteMotivo: ausenciaMotivo
                 };
+                const profileId = String(p?.id || '').trim();
+                if (!mappedByProfileId.has(profileId)) mappedByProfileId.set(profileId, mappedProfile);
             });
-            setPickerList(mappedList);
+            setPickerList([...mappedByProfileId.values()]);
         }
     };
 
@@ -619,10 +655,18 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
             }
 
             const assignableRoleIds = new Set(assignableRoles.map((rol) => rol.id));
-            const eligibleBlueprint = blueprint.filter((item) => assignableRoleIds.has(item.rol_maestro));
+            const eligibleProfiles = await getEligibleProfileIdsForEvent();
+            if (eligibleProfiles.error) throw eligibleProfiles.error;
+
+            const eligibleBlueprint = blueprint.filter((item) => (
+                assignableRoleIds.has(item.rol_maestro)
+                && (!eligibleProfiles.ids || eligibleProfiles.ids.has(String(item?.perfil_id || '').trim()))
+            ));
 
             if (eligibleBlueprint.length === 0) {
-                alert('Este equipo no tiene roles programables para asignaciones.');
+                alert(dbData?.ministerio_id
+                    ? 'Esta plantilla no tiene integrantes habilitados para Sin Filtros.'
+                    : 'Este equipo no tiene roles programables para asignaciones.');
                 setEquipoLoading(false);
                 return;
             }
@@ -910,7 +954,9 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
                                                 <div className="flex-1 overflow-hidden min-w-0">
                                                     <p className={`font-bold text-sm truncate ${p.ausente ? 'text-content-muted line-through' : 'text-content'}`}>{p.nombre}</p>
                                                     <p className="text-xs text-content-muted truncate">
-                                                        {pickerRolId === '_voz_pool' ? (p.realRolNombre || p.email) : p.email}
+                                                        {pickerRolId === '_voz_pool'
+                                                            ? ([p.tonalidad_voz, p.realRolNombre].filter(Boolean).join(' · ') || p.email)
+                                                            : p.email}
                                                     </p>
                                                 </div>
                                             </div>

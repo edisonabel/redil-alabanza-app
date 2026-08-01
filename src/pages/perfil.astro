@@ -3,6 +3,7 @@ import Layout from '../layouts/Layout.astro';
 import OnboardingRoot from '../components/onboarding/OnboardingRoot';
 import BotonNotificaciones from '../components/react/BotonNotificaciones.jsx';
 import GoogleCalendarConnection from '../components/react/GoogleCalendarConnection.jsx';
+import { VOCAL_RANGE_OPTIONS } from '../lib/ministry-config.js';
 
 const userId = Astro.locals.user?.id ?? null;
 ---
@@ -68,14 +69,14 @@ const userId = Astro.locals.user?.id ?? null;
  <input type="email" id="input-correo" disabled class="w-full bg-background border border-border text-content rounded-xl px-4 py-2 text-sm opacity-70 cursor-not-allowed" placeholder="Cargando..." />
  </div>
  <div class="space-y-1.5">
- <label class="text-xs font-bold text-content-muted uppercase tracking-wide">Registro Vocal</label>
+ <label class="text-xs font-bold text-content-muted uppercase tracking-wide">Tipo de voz</label>
  <select id="tonalidad-select" disabled class="w-full min-w-0 bg-surface border border-border text-content rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-action focus:outline-none transition-shadow">
- <option value="">Seleccionar Perfil Vocal...</option>
- <option value="Soprano">Soprano</option>
- <option value="Contralto">Contralto</option>
- <option value="Tenor">Tenor</option>
- <option value="Bar&iacute;tono">Bar&iacute;tono / Bajo</option>
+ <option value="">No soy voz / Todav&iacute;a no lo s&eacute;</option>
+ {VOCAL_RANGE_OPTIONS.map((option) => (
+ <option value={option.value}>{option.label}</option>
+ ))}
  </select>
+ <p class="text-xs text-content-muted">Al elegir un rango aparecer&aacute;s como candidato en la secci&oacute;n de Voces.</p>
  </div>
 <div class="space-y-1.5" data-tour="perfil-birthday">
 <label class="text-xs font-bold text-content-muted uppercase tracking-wide">Fecha de nacimiento</label>
@@ -1079,19 +1080,26 @@ const userId = Astro.locals.user?.id ?? null;
  if (!userId) throw new Error('No hay sesión activa');
 
  const updates = {
- tonalidad_voz: vocalVal || null,
  fecha_nacimiento: cumpleanosVal || null,
  telefono: telefonoVal || null,
  updated_at: new Date().toISOString()
  };
 
- const { data: updatedProfile, error } = await supabase
+ const [profileUpdate, vocalUpdate] = await Promise.all([
+ supabase
  .from('perfiles')
  .update(updates)
  .eq('id', userId)
- .select('id');
+ .select('id'),
+ supabase.rpc('set_my_vocal_range', {
+ p_vocal_range: vocalVal || null,
+ }),
+ ]);
+
+ const { data: updatedProfile, error } = profileUpdate;
 
  if (error) throw error;
+ if (vocalUpdate.error) throw vocalUpdate.error;
 
  // Validación Anti-Fallo Silencioso RLS
  if (!updatedProfile || updatedProfile.length === 0) {

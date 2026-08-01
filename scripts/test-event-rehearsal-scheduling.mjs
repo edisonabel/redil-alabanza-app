@@ -34,6 +34,23 @@ assert.equal(defaultThursday.toISOString(), '2026-07-24T00:00:00.000Z');
 assert.equal(saturday.toISOString(), '2026-07-26T00:00:00.000Z');
 assert.equal(resolveEventRehearsalDate({ eventDate: sundayService, rehearsalWeekday: null }), null);
 assert.equal(resolveEventRehearsalDate({ eventDate: '2026-07-25T14:00:00.000Z', rehearsalWeekday: 4 }), null);
+const sinFiltrosRehearsal = '2026-08-01T22:00:00.000Z';
+assert.equal(
+  resolveEventRehearsalDate({
+    eventDate: '2026-08-02T00:00:00.000Z',
+    rehearsalWeekday: 6,
+    rehearsalDateTime: sinFiltrosRehearsal,
+  }).toISOString(),
+  sinFiltrosRehearsal,
+);
+assert.equal(
+  resolveEventRehearsalDateKey({
+    eventDate: '2026-08-02T00:00:00.000Z',
+    rehearsalWeekday: 6,
+    rehearsalDateTime: sinFiltrosRehearsal,
+  }),
+  '2026-08-01',
+);
 assert.equal(normalizeRehearsalWeekday(undefined), 4);
 assert.equal(normalizeRehearsalWeekday(null), null);
 assert.match(formatEventRehearsalLabel({ eventDate: sundayService, rehearsalWeekday: 4 }), /23/);
@@ -53,6 +70,20 @@ const thursdayReminder = getReminderKeyForEvent({
   referenceDate: new Date('2026-07-23T12:00:00.000Z'),
 });
 assert.equal(thursdayReminder, 'rehearsal');
+assert.equal(
+  getReminderKeyForEvent({
+    scope: 'morning',
+    daysUntil: 0,
+    eventWeekday: 6,
+    event: {
+      fecha_hora: '2026-08-02T00:00:00.000Z',
+      ensayo_dia_semana: 6,
+      ensayo_fecha_hora: sinFiltrosRehearsal,
+    },
+    referenceDate: new Date('2026-08-01T12:00:00.000Z'),
+  }),
+  'rehearsal',
+);
 assert.equal(
   getReminderKeyForEvent({
     scope: 'morning',

@@ -75,9 +75,15 @@ export const normalizeRehearsalWeekday = (value) => {
 export const resolveEventRehearsalDate = ({
   eventDate,
   rehearsalWeekday = DEFAULT_REHEARSAL_WEEKDAY,
+  rehearsalDateTime = '',
   hour = 19,
   minute = 0,
 } = {}) => {
+  if (rehearsalDateTime) {
+    const explicitDate = new Date(rehearsalDateTime);
+    if (!Number.isNaN(explicitDate.getTime())) return explicitDate;
+  }
+
   const localDateParts = resolveEventRehearsalLocalDateParts({
     eventDate,
     rehearsalWeekday,
@@ -96,7 +102,20 @@ export const resolveEventRehearsalDate = ({
 export const resolveEventRehearsalDateKey = ({
   eventDate,
   rehearsalWeekday = DEFAULT_REHEARSAL_WEEKDAY,
+  rehearsalDateTime = '',
 } = {}) => {
+  if (rehearsalDateTime) {
+    const explicitDate = new Date(rehearsalDateTime);
+    const explicitParts = Number.isNaN(explicitDate.getTime()) ? null : getBogotaDateParts(explicitDate);
+    if (explicitParts) {
+      return [
+        explicitParts.year,
+        String(explicitParts.month).padStart(2, '0'),
+        String(explicitParts.day).padStart(2, '0'),
+      ].join('-');
+    }
+  }
+
   const localDateParts = resolveEventRehearsalLocalDateParts({
     eventDate,
     rehearsalWeekday,
@@ -110,10 +129,11 @@ export const resolveEventRehearsalDateKey = ({
   ].join('-');
 };
 
-export const formatEventRehearsalLabel = ({ eventDate, rehearsalWeekday } = {}) => {
+export const formatEventRehearsalLabel = ({ eventDate, rehearsalWeekday, rehearsalDateTime = '' } = {}) => {
   const dateKey = resolveEventRehearsalDateKey({
     eventDate,
     rehearsalWeekday,
+    rehearsalDateTime,
   });
   if (!dateKey) return 'Sin ensayo';
 

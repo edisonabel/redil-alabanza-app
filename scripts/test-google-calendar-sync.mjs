@@ -95,6 +95,20 @@ assert.equal(voiceRehearsalPayload.end.dateTime, '2026-07-22T02:00:00.000Z');
 assert.match(voiceRehearsalPayload.description, /Llegada de voces: 6:30 p\. m\./);
 assert.equal(voiceRehearsalPayload.extendedProperties.private.redil_event_kind, 'rehearsal');
 
+const sinFiltrosRehearsalPayload = buildGoogleCalendarRehearsalPayload({
+  event: {
+    id: 'event-youth-1',
+    titulo: 'Sin Filtros',
+    fecha_hora: '2026-08-02T00:00:00.000Z',
+    ensayo_dia_semana: 6,
+    ensayo_fecha_hora: '2026-08-01T22:00:00.000Z',
+  },
+  assignments: [{ roles: { nombre: 'Batería', codigo: 'bateria' } }],
+});
+assert.equal(sinFiltrosRehearsalPayload.start.dateTime, '2026-08-01T22:00:00.000Z');
+assert.equal(sinFiltrosRehearsalPayload.end.dateTime, '2026-08-02T00:00:00.000Z');
+assert.match(sinFiltrosRehearsalPayload.description, /Llegada del equipo: 5:00 p\. m\./);
+
 const noRehearsalPayload = buildGoogleCalendarRehearsalPayload({
   event: {
     id: 'event-1',

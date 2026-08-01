@@ -120,6 +120,23 @@ import Layout from '../layouts/Layout.astro';
 
  <!-- Body -->
  <div class="px-5 py-4 sm:p-6 overflow-y-auto flex-1 min-h-0 custom-scrollbar">
+ <section id="modal-sin-filtros-section" class="hidden mb-5 rounded-2xl border border-sky-500/25 bg-sky-500/10 p-4">
+ <div class="mb-3">
+ <p class="text-sm font-black text-content">Sin Filtros</p>
+ <p class="mt-0.5 text-xs leading-relaxed text-content-muted">Habilita a esta persona para los cultos juveniles. Los líderes pueden administrar su calendario y equipo.</p>
+ </div>
+ <label class="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-border bg-surface px-3 py-2.5">
+ <span class="text-sm font-bold text-content">Pertenece a Sin Filtros</span>
+ <input id="modal-sin-filtros-member" type="checkbox" class="h-5 w-5 rounded border-border text-action">
+ </label>
+ <label class="mt-2 flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-border bg-surface px-3 py-2.5 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
+ <span>
+ <span class="block text-sm font-bold text-content">Líder de Sin Filtros</span>
+ <span class="block text-[11px] text-content-muted">Puede gestionar el calendario y asignar el equipo.</span>
+ </span>
+ <input id="modal-sin-filtros-leader" type="checkbox" class="h-5 w-5 shrink-0 rounded border-border text-action" disabled>
+ </label>
+ </section>
  <p class="text-xs font-bold uppercase tracking-widest text-content-muted mb-3 sm:mb-4">MÚLTIPLES ASIGNACIONES PERMITIDAS</p>
  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2" id="modal-roles-container">
  <!-- InyecciÃ³n dinÃ¡mica de Toggles -->
@@ -441,13 +458,17 @@ import Layout from '../layouts/Layout.astro';
  { data: perfiles, error: perfilesErr },
  { data: pivot, error: pivotErr },
  { data: equiposMaster, error: equiposErr },
- { data: teamMembers, error: tzErr }
+ { data: teamMembers, error: tzErr },
+ { data: ministries, error: ministriesErr },
+ { data: profileMinistries, error: profileMinistriesErr }
  ] = await Promise.all([
  supabase.from('roles').select('id,nombre,codigo').order('nombre'),
- supabase.from('perfiles').select('id,nombre,email,avatar_url,telefono').order('nombre'),
+ supabase.from('perfiles').select('id,nombre,email,avatar_url,telefono,tonalidad_voz').order('nombre'),
  supabase.from('perfil_roles').select('perfil_id,rol_id'),
  supabase.from('equipos').select('id,nombre,letra,created_at').order('created_at', { ascending: false }),
- supabase.from('equipo_integrantes').select('equipo_id,perfil_id,rol_maestro')
+ supabase.from('equipo_integrantes').select('equipo_id,perfil_id,rol_maestro'),
+ supabase.from('ministerios').select('id,codigo,nombre').eq('activo', true),
+ supabase.from('perfil_ministerios').select('perfil_id,ministerio_id,es_lider')
  ]);
 
  if (rolesErr) throw rolesErr;
@@ -455,6 +476,15 @@ import Layout from '../layouts/Layout.astro';
  if (pivotErr) throw pivotErr;
  if (equiposErr) throw equiposErr;
  if (tzErr) throw tzErr;
+ if (ministriesErr) throw ministriesErr;
+ if (profileMinistriesErr) throw profileMinistriesErr;
+
+ const sinFiltrosMinistry = (ministries || []).find((ministry:any) => ministry.codigo === 'sin_filtros') || null;
+ const sinFiltrosMembershipByProfile = new Map(
+ (profileMinistries || [])
+ .filter((membership:any) => membership.ministerio_id === sinFiltrosMinistry?.id)
+ .map((membership:any) => [membership.perfil_id, membership])
+ );
 
  window.appStateRoles = roles || []; // Exponer a global para Picker
  window.appStateTeamMembers = teamMembers || [];
@@ -829,6 +859,7 @@ import Layout from '../layouts/Layout.astro';
  equipoGrid.innerHTML = '';
  perfiles.forEach((p) => {
  const currentRoles = rolesPorPerfil.get(p.id) || new Set();
+ const sinFiltrosMembership = sinFiltrosMembershipByProfile.get(p.id);
  
  const article = document.createElement('article');
  article.className = 'equipo-card bg-surface border border-border rounded-2xl p-6 shadow-sm opacity-0 translate-y-4 transition-all duration-500 ease-in-out flex flex-col justify-between';
@@ -859,6 +890,17 @@ import Layout from '../layouts/Layout.astro';
  if(!rolData) return '';
  return `<span class="px-2 py-0.5 bg-background border border-border text-content-muted text-[10px] font-bold uppercase tracking-wider rounded-md">${rolData.nombre}</span>`;
  }).join('');
+ const ministryBadgesHTML = [
+ sinFiltrosMembership
+ ? `<span class="px-2 py-0.5 bg-sky-500/10 border border-sky-500/25 text-sky-600 dark:text-sky-300 text-[10px] font-bold uppercase tracking-wider rounded-md">Sin Filtros</span>`
+ : '',
+ sinFiltrosMembership?.es_lider
+ ? `<span class="px-2 py-0.5 bg-violet-500/10 border border-violet-500/25 text-violet-600 dark:text-violet-300 text-[10px] font-bold uppercase tracking-wider rounded-md">Líder juvenil</span>`
+ : '',
+ p.tonalidad_voz
+ ? `<span class="px-2 py-0.5 bg-rose-500/10 border border-rose-500/25 text-rose-600 dark:text-rose-300 text-[10px] font-bold uppercase tracking-wider rounded-md">${escapeHtml(p.tonalidad_voz)}</span>`
+ : ''
+ ].filter(Boolean).join('');
 
  article.innerHTML = safeHtml`
  <div>
@@ -883,6 +925,7 @@ import Layout from '../layouts/Layout.astro';
  <div class="flex flex-wrap gap-1.5 min-h-[24px]">
  ${badgesHTML || '<span class="text-xs text-content-muted italic">Sin asignar</span>'}
  </div>
+ ${ministryBadgesHTML ? `<div class="mt-2 flex flex-wrap gap-1.5">${ministryBadgesHTML}</div>` : ''}
  </div>
  </div>
  
@@ -914,6 +957,9 @@ import Layout from '../layouts/Layout.astro';
  const modalRolesPanel = document.getElementById('modal-roles-panel');
  const modalRolesTitle = document.getElementById('modal-roles-title')!;
  const modalRolesContainer = document.getElementById('modal-roles-container')!;
+ const modalSinFiltrosSection = document.getElementById('modal-sin-filtros-section');
+ const modalSinFiltrosMember = document.getElementById('modal-sin-filtros-member') as HTMLInputElement;
+ const modalSinFiltrosLeader = document.getElementById('modal-sin-filtros-leader') as HTMLInputElement;
  const btnCloseModalRoles = document.getElementById('btn-close-modal-roles');
  const btnRolesSubmit = document.getElementById('btn-roles-submit') as HTMLButtonElement;
  let currentPerfilId: string | null = null;
@@ -937,6 +983,26 @@ import Layout from '../layouts/Layout.astro';
  const inserts = checkedRoles.map(rid => ({ perfil_id: currentPerfilId, rol_id: rid }));
  const { error: insErr } = await supabase.from('perfil_roles').insert(inserts);
  if (insErr) throw insErr;
+ }
+
+ if (sinFiltrosMinistry) {
+ if (modalSinFiltrosMember.checked) {
+ const { error: ministryUpsertError } = await supabase
+ .from('perfil_ministerios')
+ .upsert({
+ perfil_id: currentPerfilId,
+ ministerio_id: sinFiltrosMinistry.id,
+ es_lider: modalSinFiltrosLeader.checked
+ }, { onConflict: 'perfil_id,ministerio_id' });
+ if (ministryUpsertError) throw ministryUpsertError;
+ } else {
+ const { error: ministryDeleteError } = await supabase
+ .from('perfil_ministerios')
+ .delete()
+ .eq('perfil_id', currentPerfilId)
+ .eq('ministerio_id', sinFiltrosMinistry.id);
+ if (ministryDeleteError) throw ministryDeleteError;
+ }
  }
  
  // Reload explicitly to visually update the badges
@@ -981,6 +1047,16 @@ import Layout from '../layouts/Layout.astro';
  btnTarget.blur();
  currentPerfilId = perfilId;
 
+ const membership = sinFiltrosMembershipByProfile.get(perfilId || '');
+ if (sinFiltrosMinistry) {
+ modalSinFiltrosSection?.classList.remove('hidden');
+ modalSinFiltrosMember.checked = Boolean(membership);
+ modalSinFiltrosLeader.checked = Boolean(membership?.es_lider);
+ modalSinFiltrosLeader.disabled = !modalSinFiltrosMember.checked;
+ } else {
+ modalSinFiltrosSection?.classList.add('hidden');
+ }
+
  modalRolesTitle.textContent = `Roles: ${(perfilNombre || 'Músico').split(' ')[0]}`;
  
  // Volcar la data virtual al modal
@@ -1010,6 +1086,11 @@ import Layout from '../layouts/Layout.astro';
 
  toggleModalRoles(true);
  });
+ });
+
+ modalSinFiltrosMember?.addEventListener('change', () => {
+ modalSinFiltrosLeader.disabled = !modalSinFiltrosMember.checked;
+ if (!modalSinFiltrosMember.checked) modalSinFiltrosLeader.checked = false;
  });
 
 
