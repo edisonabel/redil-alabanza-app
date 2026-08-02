@@ -19,6 +19,35 @@ assert.equal(manualSongs.getRemainingManualSongSlots(12, 0), 0);
 assert.equal(manualSongs.getManualSubdivisionFactor('quarter'), 1);
 assert.equal(manualSongs.getManualSubdivisionFactor('eighth'), 2);
 assert.equal(manualSongs.getManualSubdivisionFactor('sixteenth'), 4);
+assert.equal(manualSongs.hasPlayableLiveDirectorSession(null), false);
+assert.equal(manualSongs.hasPlayableLiveDirectorSession({ tracks: [] }), false);
+assert.equal(manualSongs.hasPlayableLiveDirectorSession({
+  tracks: [{ enabled: false, url: 'https://example.com/stem.mp3' }],
+}), false);
+assert.equal(manualSongs.hasPlayableLiveDirectorSession({
+  tracks: [{ enabled: true, url: '  ' }, { enabled: true, url: 'https://example.com/stem.mp3' }],
+}), true);
+
+const santificameFallback = manualSongs.buildLiveDirectorFallbackTempoConfig({
+  songId: 'santificame',
+  bpm: 72,
+  meter: '3/4',
+});
+assert.deepEqual(santificameFallback, {
+  songId: 'santificame',
+  bpm: 72,
+  manualTempo: {
+    version: 1,
+    meter: { numerator: 3, denominator: 4 },
+    subdivision: 'quarter',
+    accentFirstBeat: true,
+  },
+});
+assert.deepEqual(manualSongs.parseLiveDirectorMeter(''), { numerator: 4, denominator: 4 });
+assert.equal(manualSongs.buildLiveDirectorFallbackTempoConfig({
+  songId: 'sin-tempo',
+  bpm: 0,
+}), null);
 
 const created = manualSongs.createLiveDirectorManualSong({
   title: '  Momento libre  ',

@@ -63,10 +63,61 @@ export type LiveDirectorManualSongInput = {
   subdivision: LiveDirectorManualSubdivision;
 };
 
+export type LiveDirectorFallbackTempoConfig = {
+  songId: string;
+  bpm: number;
+  manualTempo: LiveDirectorManualTempo;
+};
+
 const clampInteger = (value: unknown, minimum: number, maximum: number, fallback: number) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.min(maximum, Math.max(minimum, Math.round(numeric)));
+};
+
+export const hasPlayableLiveDirectorSession = (session: unknown) => {
+  if (!session || typeof session !== 'object') return false;
+  const candidate = session as { tracks?: Array<{ enabled?: boolean; url?: unknown }> };
+  return Array.isArray(candidate.tracks) && candidate.tracks.some((track) => (
+    track?.enabled !== false && String(track?.url || '').trim().length > 0
+  ));
+};
+
+export const parseLiveDirectorMeter = (rawMeter: unknown) => {
+  const match = String(rawMeter || '').trim().match(/^(\d{1,2})\s*\/\s*(\d{1,2})$/);
+  if (!match) return { numerator: 4, denominator: 4 };
+
+  return {
+    numerator: clampInteger(match[1], 1, 12, 4),
+    denominator: clampInteger(match[2], 1, 16, 4),
+  };
+};
+
+export const buildLiveDirectorFallbackTempoConfig = ({
+  songId,
+  bpm,
+  meter,
+}: {
+  songId: unknown;
+  bpm: unknown;
+  meter?: unknown;
+}): LiveDirectorFallbackTempoConfig | null => {
+  const normalizedSongId = String(songId || '').trim();
+  const numericBpm = Number(bpm);
+  if (!normalizedSongId || !Number.isFinite(numericBpm) || numericBpm < 30 || numericBpm > 300) {
+    return null;
+  }
+
+  return {
+    songId: normalizedSongId,
+    bpm: Math.round(numericBpm),
+    manualTempo: {
+      version: 1,
+      meter: parseLiveDirectorMeter(meter),
+      subdivision: 'quarter',
+      accentFirstBeat: true,
+    },
+  };
 };
 
 const createManualSongId = () => {

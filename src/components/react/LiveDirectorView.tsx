@@ -208,6 +208,7 @@ type LiveDirectorViewProps = {
     bpm: number;
     manualTempo: LiveDirectorManualTempo;
   } | null;
+  autoStartPadWithTransport?: boolean;
   operationalChips?: LiveDirectorOperationalChip[];
   liveBroadcastState?: LiveDirectorBroadcastState;
   onToggleLiveBroadcast?: () => void;
@@ -580,6 +581,7 @@ export function LiveDirectorView({
   onAddQueueSong,
   onRemoveQueueSong,
   manualTempoConfig = null,
+  autoStartPadWithTransport = false,
   liveBroadcastState = 'off',
   onToggleLiveBroadcast,
   sessionPreparationPending = false,
@@ -632,6 +634,9 @@ export function LiveDirectorView({
   });
   const independentPadPlayerRef = useRef<IndependentPadPlayer | null>(null);
   const padGestureStartUrlRef = useRef<string | null>(null);
+  const autoPadStartRef = useRef<() => void>(() => undefined);
+  const autoPadStartedForTransportRef = useRef('');
+  const autoPadOwnedByFallbackRef = useRef(false);
   const ownedObjectUrlsRef = useRef<string[]>([]);
   // Ref-based indirection so each ChannelStrip gets a STABLE callback
   // reference keyed by its trackId for the whole session. The callbacks read
@@ -844,6 +849,9 @@ export function LiveDirectorView({
     }
 
     if (isManualTempoMode) {
+      if (autoStartPadWithTransport) {
+        autoPadStartRef.current();
+      }
       void play().catch((error) => {
         console.warn('[LiveDirectorView] No se pudo iniciar el click manual.', error);
       });
@@ -860,7 +868,7 @@ export function LiveDirectorView({
       console.warn('[LiveDirectorView] No se pudo iniciar reproducción tras el gesto.', error);
     });
     void Promise.allSettled([contextUnlockPromise, sessionUnlockPromise]);
-  }, [isManualTempoMode, isPlaying, pause, play, unlockAudioForUserGesture]);
+  }, [autoStartPadWithTransport, isManualTempoMode, isPlaying, pause, play, unlockAudioForUserGesture]);
 
   useEffect(() => {
     visualClockReaderRef.current = getVisualClockTime;
@@ -887,6 +895,12 @@ export function LiveDirectorView({
     initializeEngineRef.current = initializeEngine;
     stopEngineRef.current = stopEngine;
   }, [initializeEngine, stopEngine]);
+
+  const transportIdentity = `${String(activeQueueSongId || songId || '').trim()}:${isManualTempoMode ? 'tempo' : 'stems'}`;
+  useEffect(() => {
+    autoPadStartedForTransportRef.current = '';
+    stopEngineRef.current();
+  }, [transportIdentity]);
 
   useEffect(() => {
     if (engineSurface === 'ios-native') {
@@ -1116,9 +1130,33 @@ export function LiveDirectorView({
       });
     } else if (!resolvedNextValue) {
       padGestureStartUrlRef.current = null;
+      autoPadOwnedByFallbackRef.current = false;
     }
     setIsPadActive(resolvedNextValue);
   }, [effectiveInternalPadVolume, isIOSNativeEngineSurface, isPadActive, resolvedPadUrl]);
+  autoPadStartRef.current = () => {
+    const songIdentity = String(activeQueueSongId || songId || '').trim();
+    if (
+      !autoStartPadWithTransport
+      || !songIdentity
+      || !resolvedPadUrl
+      || isPadActive
+      || autoPadStartedForTransportRef.current === songIdentity
+    ) {
+      return;
+    }
+
+    autoPadStartedForTransportRef.current = songIdentity;
+    autoPadOwnedByFallbackRef.current = true;
+    setPadActiveFromGesture(true);
+  };
+  useEffect(() => {
+    if (autoStartPadWithTransport || !autoPadOwnedByFallbackRef.current) {
+      return;
+    }
+
+    setPadActiveFromGesture(false);
+  }, [autoStartPadWithTransport, setPadActiveFromGesture, transportIdentity]);
   const layoutScale = useMemo(() => {
     if (isPortrait || viewportHeight <= 0) {
       return 1;
@@ -2701,6 +2739,7 @@ export function LiveDirectorView({
       }
 
       if (activeTracks.length === 0) {
+        stopEngineRef.current();
         setIsInitializingSession(false);
         setBusyMessage(null);
         setLoadError(null);

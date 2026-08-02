@@ -21,10 +21,13 @@ import {
   NativeLiveDirectorEngine,
 } from '../../services/NativeLiveDirectorEnginePlugin';
 import { shouldRunLiveDirectorFullFileWebPrewarm } from '../../utils/liveDirectorPreloadPolicy';
+import { parseChordProMetadata } from '../../utils/chordProAuthoring.js';
 import {
+  buildLiveDirectorFallbackTempoConfig,
   createLiveDirectorManualSong,
   getManualMeterLabel,
   getRemainingManualSongSlots,
+  hasPlayableLiveDirectorSession,
   isManualTempoSong,
   readLiveDirectorManualSongs,
   writeLiveDirectorManualSongs,
@@ -466,6 +469,28 @@ export default function ModoEnsayoDirector({
     ),
     [activeEventMix, activeSong, activePersistedSongId, activeSongSessionSource],
   );
+  const activeSongHasSequence = hasPlayableLiveDirectorSession(activeSongSession);
+  const activeSongMeter = useMemo(() => (
+    String(activeSong?.meter || activeSong?.metrica || '').trim()
+      || parseChordProMetadata(activeSong?.chordpro || '').meter
+      || ''
+  ), [activeSong?.chordpro, activeSong?.meter, activeSong?.metrica]);
+  const fallbackTempoConfig = useMemo(() => (
+    !activeSongIsManual && activePersistedSongId && !activeSongHasSequence
+      ? buildLiveDirectorFallbackTempoConfig({
+        songId: activePersistedSongId,
+        bpm: activeSong?.bpm,
+        meter: activeSongMeter,
+      })
+      : null
+  ), [
+    activePersistedSongId,
+    activeSong?.bpm,
+    activeSongHasSequence,
+    activeSongIsManual,
+    activeSongMeter,
+  ]);
+  const activeSongUsesTempoFallback = Boolean(fallbackTempoConfig);
   const activeSongSections = useMemo(
     () => activeSongIsManual
       ? []
@@ -516,6 +541,7 @@ export default function ModoEnsayoDirector({
   const isActiveEventMixLoading = Boolean(
     hasEventMixContext
       && activePersistedSongId
+      && activeSongHasSequence
       && !eventMixLoadedSongIds.has(activePersistedSongId),
   );
 
@@ -575,6 +601,7 @@ export default function ModoEnsayoDirector({
     if (
       !hasEventMixContext
       || !activePersistedSongId
+      || !activeSongHasSequence
       || eventMixLoadedSongIds.has(activePersistedSongId)
     ) return;
 
@@ -609,7 +636,7 @@ export default function ModoEnsayoDirector({
     return () => {
       cancelled = true;
     };
-  }, [activePersistedSongId, eventId, eventMixLoadedSongIds, hasEventMixContext]);
+  }, [activePersistedSongId, activeSongHasSequence, eventId, eventMixLoadedSongIds, hasEventMixContext]);
 
   useEffect(() => {
     screenWakeLockService.setRequested('modo-ensayo-director', true);
@@ -881,7 +908,18 @@ export default function ModoEnsayoDirector({
     if (nextIndex === -1) {
       return;
     }
-    if (isManualTempoSong(ensayoSongs[nextIndex])) {
+    const nextSong = ensayoSongs[nextIndex];
+    if (isManualTempoSong(nextSong)) {
+      queueSelectionTokenRef.current += 1;
+      setActiveSongIndex(nextIndex);
+      return;
+    }
+
+    const nextSongSession = resolveSongSession(
+      nextSong,
+      sessionOverrides[nextSongId] || nextSong?.multitrackSession || null,
+    );
+    if (!hasPlayableLiveDirectorSession(nextSongSession)) {
       queueSelectionTokenRef.current += 1;
       setActiveSongIndex(nextIndex);
       return;
@@ -919,7 +957,7 @@ export default function ModoEnsayoDirector({
       });
       setActiveSongIndex(nextIndex);
     })();
-  }, [ensayoSongs, eventId, eventMixLoadedSongIds, hasEventMixContext]);
+  }, [ensayoSongs, eventId, eventMixLoadedSongIds, hasEventMixContext, sessionOverrides]);
 
   const handleAddManualSong = useCallback((input) => {
     if (getRemainingManualSongSlots(realEnsayoSongs.length, manualSongs.length) <= 0) {
@@ -1057,7 +1095,8 @@ export default function ModoEnsayoDirector({
           songId: activeSongId,
           bpm: Number(activeSong?.bpm || 120),
           manualTempo: activeSong.manualTempo,
-        } : null}
+        } : fallbackTempoConfig}
+        autoStartPadWithTransport={activeSongUsesTempoFallback}
         operationalChips={operationalChips}
         liveBroadcastState={broadcastState}
         onToggleLiveBroadcast={toggleBroadcasting}
@@ -1066,7 +1105,7 @@ export default function ModoEnsayoDirector({
         onInternalPadVolumeChange={setPadVolume}
         onPlaybackSnapshot={handlePlaybackSnapshot}
         onSessionPersisted={handleSessionPersisted}
-        onEventMixChange={hasEventMixContext && !activeSongIsManual ? handleEventMixChange : undefined}
+        onEventMixChange={hasEventMixContext && !activeSongIsManual && activeSongHasSequence ? handleEventMixChange : undefined}
         eventMixSaveStatus={activeEventMixSaveStatus}
         onBack={onExit}
         backLabel="Volver al modo ensayo"
