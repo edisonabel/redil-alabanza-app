@@ -60,4 +60,35 @@ assert.match(migration, /CREATE TRIGGER trg_set_sin_filtros_rehearsal/);
 assert.match(migration, /TIME '17:00'/);
 assert.doesNotMatch(migration, /sinfiltros2026/i);
 
+const crossMembershipMigration = await readFile(
+  new URL('../migrations/037_cross_ministry_memberships.sql', import.meta.url),
+  'utf8',
+);
+assert.match(crossMembershipMigration, /'alabanza_general', 'Alabanza general'/);
+assert.match(crossMembershipMigration, /CREATE TABLE IF NOT EXISTS public\.ministerio_gestores/);
+assert.match(crossMembershipMigration, /CREATE OR REPLACE FUNCTION public\.is_current_user_ministry_manager/);
+assert.match(crossMembershipMigration, /CREATE TRIGGER trg_attach_new_profile_ministry/);
+assert.match(crossMembershipMigration, /CREATE OR REPLACE FUNCTION public\.get_event_eligible_profile_ids/);
+
+const requestedCrossMinistryProfileIds = [
+  '0b7149b5-b85a-4ea0-91d0-fbdda79496be', // Alexis Caro
+  '1fcb33de-884f-472c-bbbd-5b148c4988e0', // Josue Pena
+  'b3d68f37-b9b0-4885-afd1-a6b68dafa5e6', // Josue Sanchez
+  '157e9523-c5a7-4633-a471-0584ef3e5754', // Sarah Alzate
+  'e27845bc-5f14-42c5-a691-1a3340c56609', // Daniel Rodriguez
+  'a9197b30-9520-416a-a694-7a4e2348d903', // Nathalie Melo
+];
+for (const profileId of requestedCrossMinistryProfileIds) {
+  assert.match(crossMembershipMigration, new RegExp(profileId));
+}
+
+const requestedManagerIds = [
+  'e27845bc-5f14-42c5-a691-1a3340c56609', // Daniel Rodriguez
+  'a9197b30-9520-416a-a694-7a4e2348d903', // Nathalie Melo
+  '80f063de-6eac-4f53-9e98-acadf481dc1c', // Edison Aular
+];
+for (const profileId of requestedManagerIds) {
+  assert.match(crossMembershipMigration, new RegExp(profileId));
+}
+
 console.log('sin filtros tests: ok');

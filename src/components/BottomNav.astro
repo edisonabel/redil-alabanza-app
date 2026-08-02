@@ -3,6 +3,7 @@ const pathname = new URL(Astro.request.url).pathname;
 const user = Astro.locals.user;
 const perfil = Astro.locals.perfil;
 const isAdmin = Boolean(user && perfil?.is_admin);
+const canManageMinistries = Boolean(user && Astro.locals.canManageMinistries);
 
 const navItems = [
  {
@@ -50,7 +51,11 @@ const isActive = (href: string) => {
  return pathname.startsWith(href);
 };
 
-const visibleNavItems = navItems.filter((item) => !item.adminOnly || isAdmin);
+const visibleNavItems = navItems.filter((item) => (
+ !item.adminOnly
+ || isAdmin
+ || (item.href === '/equipo' && canManageMinistries)
+));
 const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, minmax(0, 1fr));`;
 ---
 

@@ -320,8 +320,6 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
     };
 
     const getEligibleProfileIdsForEvent = async () => {
-        if (!dbData?.ministerio_id) return { ids: null, error: null };
-
         const { data, error } = await supabase.rpc('get_event_eligible_profile_ids', {
             p_evento_id: evId,
         });
@@ -666,7 +664,7 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
             if (eligibleBlueprint.length === 0) {
                 alert(dbData?.ministerio_id
                     ? 'Esta plantilla no tiene integrantes habilitados para Sin Filtros.'
-                    : 'Este equipo no tiene roles programables para asignaciones.');
+                    : 'Esta plantilla no tiene integrantes habilitados para Alabanza general.');
                 setEquipoLoading(false);
                 return;
             }

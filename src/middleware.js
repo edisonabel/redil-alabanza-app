@@ -148,6 +148,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
   locals.user = null;
   locals.perfil = null;
   locals.accessToken = null;
+  locals.canManageMinistries = false;
 
   if (
     path.startsWith('/_astro') ||
@@ -198,17 +199,27 @@ export const onRequest = defineMiddleware(async (context, next) => {
     });
 
     try {
-      const { data: perfil, error: perfilError } = await supabaseAuthed
-        .from('perfiles')
-        .select('id, nombre, avatar_url, is_admin, tour_completado')
-        .eq('id', authState.user.id)
-        .maybeSingle();
+      const [
+        { data: perfil, error: perfilError },
+        { data: canManageMinistries, error: ministryManagerError },
+      ] = await Promise.all([
+        supabaseAuthed
+          .from('perfiles')
+          .select('id, nombre, avatar_url, is_admin, tour_completado')
+          .eq('id', authState.user.id)
+          .maybeSingle(),
+        supabaseAuthed.rpc('is_current_user_ministry_manager'),
+      ]);
 
       if (perfilError) {
         console.error('Middleware perfil query error:', perfilError);
       }
+      if (ministryManagerError && ministryManagerError.code !== 'PGRST202') {
+        console.error('Middleware ministry manager query error:', ministryManagerError);
+      }
 
       locals.perfil = perfil || null;
+      locals.canManageMinistries = canManageMinistries === true;
 
       if (path === '/admin' && !perfil?.is_admin) {
         return redirectTo('/repertorio', 303);
@@ -216,6 +227,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     } catch (perfilQueryError) {
       console.error('Middleware perfil query error:', perfilQueryError);
       locals.perfil = null;
+      locals.canManageMinistries = false;
     }
 
     if (path === '/admin' && !locals.perfil?.is_admin) {

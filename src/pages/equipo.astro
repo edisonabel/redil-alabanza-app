@@ -18,13 +18,13 @@ import Layout from '../layouts/Layout.astro';
  </span>
  <h1 class="page-title text-[2.1rem] md:text-[3.5rem]">Gesti&oacute;n de Equipo</h1>
  </div>
- <p class="page-subtitle text-sm">Administra los m&uacute;sicos y sus roles maestros.</p>
+ <p id="equipo-page-subtitle" class="page-subtitle text-sm">Administra los m&uacute;sicos, sus roles y ministerios.</p>
  </div>
  </div>
  </div>
  <div class="flex items-center gap-3">
  <span id="equipos-counter-top" class="hidden text-xs font-bold text-content-muted bg-background px-2 py-1 rounded-full">0/10 Equipos</span>
- <button id="btn-open-team-builder" class="hidden md:flex items-center gap-2 bg-neutral-900 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-neutral-800 dark:bg-background transition-colors shadow-sm text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-neutral-900 dark:disabled:bg-surface">
+ <button id="btn-open-team-builder" data-admin-only class="hidden md:flex items-center gap-2 bg-neutral-900 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-neutral-800 dark:bg-background transition-colors shadow-sm text-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-neutral-900 dark:disabled:bg-surface">
  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" class="opacity-80" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
  Crear Equipo
  </button>
@@ -32,12 +32,12 @@ import Layout from '../layouts/Layout.astro';
  </header>
  
  <!-- BotÃ³n Flotante Mobile para Plantillas -->
- <button id="fab-team-builder" class="md:hidden fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-neutral-900 to-neutral-800 text-white rounded-full flex items-center justify-center shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all z-40">
+ <button id="fab-team-builder" data-admin-only class="md:hidden fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-neutral-900 to-neutral-800 text-white rounded-full flex items-center justify-center shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all z-40">
  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
  </button>
 
  <!-- Botón Flotante para Añadir Músico -->
- <button id="fab-add-musico" class="fixed bottom-32 right-4 md:bottom-32 md:right-8 bg-action hover:bg-action/80 text-white w-14 h-14 md:w-auto md:px-6 rounded-full shadow-2xl flex items-center justify-center gap-2 transition-transform hover:scale-105 z-40 group">
+ <button id="fab-add-musico" data-admin-only class="fixed bottom-32 right-4 md:bottom-32 md:right-8 bg-action hover:bg-action/80 text-white w-14 h-14 md:w-auto md:px-6 rounded-full shadow-2xl flex items-center justify-center gap-2 transition-transform hover:scale-105 z-40 group">
  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="group-hover:rotate-90 transition-transform duration-300"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
  <span class="hidden md:block font-bold text-base">A&#241;adir M&#250;sico</span>
  </button>
@@ -120,27 +120,42 @@ import Layout from '../layouts/Layout.astro';
 
  <!-- Body -->
  <div class="px-5 py-4 sm:p-6 overflow-y-auto flex-1 min-h-0 custom-scrollbar">
- <section id="modal-sin-filtros-section" class="hidden mb-5 rounded-2xl border border-sky-500/25 bg-sky-500/10 p-4">
+ <section id="modal-ministries-section" class="hidden mb-5 rounded-2xl border border-sky-500/25 bg-sky-500/10 p-4">
  <div class="mb-3">
- <p class="text-sm font-black text-content">Sin Filtros</p>
- <p class="mt-0.5 text-xs leading-relaxed text-content-muted">Habilita a esta persona para los cultos juveniles. Los líderes pueden administrar su calendario y equipo.</p>
+ <p class="text-sm font-black text-content">Disponibilidad por ministerio</p>
+ <p class="mt-0.5 text-xs leading-relaxed text-content-muted">Una misma persona puede servir los domingos, en Sin Filtros o en ambos.</p>
  </div>
- <label class="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-border bg-surface px-3 py-2.5">
- <span class="text-sm font-bold text-content">Pertenece a Sin Filtros</span>
- <input id="modal-sin-filtros-member" type="checkbox" class="h-5 w-5 rounded border-border text-action">
+ <div class="space-y-3">
+ <fieldset class="rounded-xl border border-border bg-surface p-3">
+ <legend class="px-1 text-sm font-black text-content">Alabanza general</legend>
+ <label class="flex min-h-11 cursor-pointer items-center justify-between gap-4">
+ <span class="text-sm font-bold text-content">Disponible los domingos</span>
+ <input id="modal-general-member" type="checkbox" class="h-5 w-5 shrink-0 rounded border-border text-action">
  </label>
- <label class="mt-2 flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-border bg-surface px-3 py-2.5 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
- <span>
- <span class="block text-sm font-bold text-content">Líder de Sin Filtros</span>
- <span class="block text-[11px] text-content-muted">Puede gestionar el calendario y asignar el equipo.</span>
- </span>
+ <label class="mt-1 flex min-h-11 cursor-pointer items-center justify-between gap-4 border-t border-border/70 pt-2 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
+ <span class="text-xs font-semibold text-content-muted">Líder de Alabanza general</span>
+ <input id="modal-general-leader" type="checkbox" class="h-5 w-5 shrink-0 rounded border-border text-action" disabled>
+ </label>
+ </fieldset>
+ <fieldset class="rounded-xl border border-border bg-surface p-3">
+ <legend class="px-1 text-sm font-black text-content">Sin Filtros</legend>
+ <label class="flex min-h-11 cursor-pointer items-center justify-between gap-4">
+ <span class="text-sm font-bold text-content">Disponible los sábados</span>
+ <input id="modal-sin-filtros-member" type="checkbox" class="h-5 w-5 shrink-0 rounded border-border text-action">
+ </label>
+ <label class="mt-1 flex min-h-11 cursor-pointer items-center justify-between gap-4 border-t border-border/70 pt-2 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
+ <span class="text-xs font-semibold text-content-muted">Líder de Sin Filtros</span>
  <input id="modal-sin-filtros-leader" type="checkbox" class="h-5 w-5 shrink-0 rounded border-border text-action" disabled>
  </label>
+ </fieldset>
+ </div>
  </section>
+ <section id="modal-roles-assignment-section">
  <p class="text-xs font-bold uppercase tracking-widest text-content-muted mb-3 sm:mb-4">MÚLTIPLES ASIGNACIONES PERMITIDAS</p>
  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2" id="modal-roles-container">
  <!-- InyecciÃ³n dinÃ¡mica de Toggles -->
  </div>
+ </section>
  </div>
  <!-- Footer -->
  <div class="px-5 py-4 sm:px-6 bg-background border-t border-neutral-100 dark:border-neutral-700 flex gap-3 shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
@@ -437,17 +452,30 @@ import Layout from '../layouts/Layout.astro';
 
  const user = session.user;
  
- // Validar si es Admin directamente en la tabla perfiles
- const { data: perfil, error: perfilError } = await supabase
- .from('perfiles')
- .select('is_admin')
- .eq('id', user.id)
- .single();
+ // Los administradores gestionan roles/equipos. Los gestores designados solo
+ // pueden administrar la disponibilidad entre ministerios.
+ const [
+ { data: perfil, error: perfilError },
+ { data: ministryManagerAccess, error: ministryManagerError }
+ ] = await Promise.all([
+ supabase.from('perfiles').select('is_admin').eq('id', user.id).single(),
+ supabase.rpc('is_current_user_ministry_manager')
+ ]);
+ const isGlobalAdmin = Boolean(perfil?.is_admin);
+ const canManageMinistries = ministryManagerAccess === true;
 
- if (perfilError || !perfil?.is_admin) {
- alert('Acceso Restringido. Esta p\u00E1gina es exclusiva para Administradores.');
+ if (perfilError || (!isGlobalAdmin && (ministryManagerError || !canManageMinistries))) {
+ alert('Acceso restringido. No tienes permisos para gestionar el equipo o sus ministerios.');
  window.location.replace('/programacion');
  return;
+ }
+
+ if (!isGlobalAdmin) {
+ document.querySelectorAll<HTMLElement>('[data-admin-only]').forEach((element) => {
+ element.style.display = 'none';
+ });
+ const subtitle = document.getElementById('equipo-page-subtitle');
+ if (subtitle) subtitle.textContent = 'Administra la disponibilidad entre Alabanza general y Sin Filtros.';
  }
 
  // 2. Fetch Data (Roles, Perfiles, Perfil_Roles)
@@ -465,10 +493,16 @@ import Layout from '../layouts/Layout.astro';
  supabase.from('roles').select('id,nombre,codigo').order('nombre'),
  supabase.from('perfiles').select('id,nombre,email,avatar_url,telefono,tonalidad_voz').order('nombre'),
  supabase.from('perfil_roles').select('perfil_id,rol_id'),
- supabase.from('equipos').select('id,nombre,letra,created_at').order('created_at', { ascending: false }),
- supabase.from('equipo_integrantes').select('equipo_id,perfil_id,rol_maestro'),
+ isGlobalAdmin
+ ? supabase.from('equipos').select('id,nombre,letra,created_at').order('created_at', { ascending: false })
+ : Promise.resolve({ data: [] as any[], error: null }),
+ isGlobalAdmin
+ ? supabase.from('equipo_integrantes').select('equipo_id,perfil_id,rol_maestro')
+ : Promise.resolve({ data: [] as any[], error: null }),
  supabase.from('ministerios').select('id,codigo,nombre').eq('activo', true),
- supabase.from('perfil_ministerios').select('perfil_id,ministerio_id,es_lider')
+ canManageMinistries
+ ? supabase.from('perfil_ministerios').select('perfil_id,ministerio_id,es_lider')
+ : Promise.resolve({ data: [] as any[], error: null })
  ]);
 
  if (rolesErr) throw rolesErr;
@@ -479,11 +513,16 @@ import Layout from '../layouts/Layout.astro';
  if (ministriesErr) throw ministriesErr;
  if (profileMinistriesErr) throw profileMinistriesErr;
 
+ const generalMinistry = (ministries || []).find((ministry:any) => ministry.codigo === 'alabanza_general') || null;
  const sinFiltrosMinistry = (ministries || []).find((ministry:any) => ministry.codigo === 'sin_filtros') || null;
- const sinFiltrosMembershipByProfile = new Map(
- (profileMinistries || [])
- .filter((membership:any) => membership.ministerio_id === sinFiltrosMinistry?.id)
- .map((membership:any) => [membership.perfil_id, membership])
+ const membershipsByProfileAndMinistry = new Map(
+ (profileMinistries || []).map((membership:any) => [
+ `${membership.perfil_id}:${membership.ministerio_id}`,
+ membership
+ ])
+ );
+ const getMembership = (perfilId:string, ministryId?:string) => (
+ ministryId ? membershipsByProfileAndMinistry.get(`${perfilId}:${ministryId}`) : null
  );
 
  window.appStateRoles = roles || []; // Exponer a global para Picker
@@ -859,7 +898,8 @@ import Layout from '../layouts/Layout.astro';
  equipoGrid.innerHTML = '';
  perfiles.forEach((p) => {
  const currentRoles = rolesPorPerfil.get(p.id) || new Set();
- const sinFiltrosMembership = sinFiltrosMembershipByProfile.get(p.id);
+ const generalMembership = getMembership(p.id, generalMinistry?.id);
+ const sinFiltrosMembership = getMembership(p.id, sinFiltrosMinistry?.id);
  
  const article = document.createElement('article');
  article.className = 'equipo-card bg-surface border border-border rounded-2xl p-6 shadow-sm opacity-0 translate-y-4 transition-all duration-500 ease-in-out flex flex-col justify-between';
@@ -891,6 +931,9 @@ import Layout from '../layouts/Layout.astro';
  return `<span class="px-2 py-0.5 bg-background border border-border text-content-muted text-[10px] font-bold uppercase tracking-wider rounded-md">${rolData.nombre}</span>`;
  }).join('');
  const ministryBadgesHTML = [
+ generalMembership
+ ? `<span class="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/25 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold uppercase tracking-wider rounded-md">Alabanza general</span>`
+ : '',
  sinFiltrosMembership
  ? `<span class="px-2 py-0.5 bg-sky-500/10 border border-sky-500/25 text-sky-600 dark:text-sky-300 text-[10px] font-bold uppercase tracking-wider rounded-md">Sin Filtros</span>`
  : '',
@@ -930,13 +973,13 @@ import Layout from '../layouts/Layout.astro';
  </div>
  
  <div class="flex items-center gap-2">
- <button type="button" class="btn-editar-roles flex-1 py-2 bg-background hover:bg-neutral/20 dark:bg-slate-800 dark:hover:bg-slate-700 text-content dark:text-slate-100 transition-colors rounded-xl text-xs font-bold flex items-center justify-center gap-2 border border-border shadow-sm" data-perfil="${p.id}" data-nombre="${p.nombre}">
+ <button type="button" class="btn-editar-roles min-h-11 flex-1 py-2 bg-background hover:bg-neutral/20 dark:bg-slate-800 dark:hover:bg-slate-700 text-content dark:text-slate-100 transition-colors rounded-xl text-xs font-bold flex items-center justify-center gap-2 border border-border shadow-sm" data-perfil="${p.id}" data-nombre="${p.nombre}">
  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
- Editar Roles
+ ${isGlobalAdmin && canManageMinistries ? 'Roles y ministerios' : isGlobalAdmin ? 'Editar roles' : 'Editar ministerios'}
  </button>
- <button type="button" class="btn-eliminar-perfil w-9 h-9 flex items-center justify-center bg-red-50 hover:bg-red-100 dark:bg-red-900/40 text-red-400 hover:text-red-600 dark:text-red-400 transition-all rounded-xl border border-red-200/60 shrink-0" data-perfil="${p.id}" data-nombre="${p.nombre}" title="Eliminar m\u00FAsico">
+ ${isGlobalAdmin ? `<button type="button" class="btn-eliminar-perfil w-11 h-11 flex items-center justify-center bg-red-50 hover:bg-red-100 dark:bg-red-900/40 text-red-400 hover:text-red-600 dark:text-red-400 transition-all rounded-xl border border-red-200/60 shrink-0" data-perfil="${p.id}" data-nombre="${p.nombre}" title="Eliminar m\u00FAsico" aria-label="Eliminar a ${p.nombre}">
  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
- </button>
+ </button>` : ''}
  </div>
  
  <!-- Virtual Hidden DOM para Modal Builder -->
@@ -957,7 +1000,10 @@ import Layout from '../layouts/Layout.astro';
  const modalRolesPanel = document.getElementById('modal-roles-panel');
  const modalRolesTitle = document.getElementById('modal-roles-title')!;
  const modalRolesContainer = document.getElementById('modal-roles-container')!;
- const modalSinFiltrosSection = document.getElementById('modal-sin-filtros-section');
+ const modalRolesAssignmentSection = document.getElementById('modal-roles-assignment-section');
+ const modalMinistriesSection = document.getElementById('modal-ministries-section');
+ const modalGeneralMember = document.getElementById('modal-general-member') as HTMLInputElement;
+ const modalGeneralLeader = document.getElementById('modal-general-leader') as HTMLInputElement;
  const modalSinFiltrosMember = document.getElementById('modal-sin-filtros-member') as HTMLInputElement;
  const modalSinFiltrosLeader = document.getElementById('modal-sin-filtros-leader') as HTMLInputElement;
  const btnCloseModalRoles = document.getElementById('btn-close-modal-roles');
@@ -971,45 +1017,57 @@ import Layout from '../layouts/Layout.astro';
  btnRolesSubmit.disabled = true;
 
  try {
- // Collect checked roles
- const checkedRoles = Array.from(modalRolesContainer.querySelectorAll('input:checked')).map(el => (el as HTMLInputElement).getAttribute('data-rol'));
- 
- // 1. Remove all old roles mapping for this user
+ if (isGlobalAdmin) {
+ const checkedRoles = Array.from(modalRolesContainer.querySelectorAll('input:checked'))
+ .map(el => (el as HTMLInputElement).getAttribute('data-rol'));
+
  const { error: delErr } = await supabase.from('perfil_roles').delete().eq('perfil_id', currentPerfilId);
  if (delErr) throw delErr;
- 
- // 2. Insert new checked roles
+
  if (checkedRoles.length > 0) {
  const inserts = checkedRoles.map(rid => ({ perfil_id: currentPerfilId, rol_id: rid }));
  const { error: insErr } = await supabase.from('perfil_roles').insert(inserts);
  if (insErr) throw insErr;
  }
+ }
 
- if (sinFiltrosMinistry) {
- if (modalSinFiltrosMember.checked) {
- const { error: ministryUpsertError } = await supabase
+ if (canManageMinistries) {
+ const syncMembership = async (
+ ministry:any,
+ memberInput:HTMLInputElement,
+ leaderInput:HTMLInputElement
+ ) => {
+ if (!ministry) throw new Error('No se encontró uno de los ministerios configurados.');
+
+ if (memberInput.checked) {
+ const { error } = await supabase
  .from('perfil_ministerios')
  .upsert({
  perfil_id: currentPerfilId,
- ministerio_id: sinFiltrosMinistry.id,
- es_lider: modalSinFiltrosLeader.checked
+ ministerio_id: ministry.id,
+ es_lider: leaderInput.checked
  }, { onConflict: 'perfil_id,ministerio_id' });
- if (ministryUpsertError) throw ministryUpsertError;
- } else {
- const { error: ministryDeleteError } = await supabase
+ if (error) throw error;
+ return;
+ }
+
+ const { error } = await supabase
  .from('perfil_ministerios')
  .delete()
  .eq('perfil_id', currentPerfilId)
- .eq('ministerio_id', sinFiltrosMinistry.id);
- if (ministryDeleteError) throw ministryDeleteError;
- }
+ .eq('ministerio_id', ministry.id);
+ if (error) throw error;
+ };
+
+ await syncMembership(generalMinistry, modalGeneralMember, modalGeneralLeader);
+ await syncMembership(sinFiltrosMinistry, modalSinFiltrosMember, modalSinFiltrosLeader);
  }
  
  // Reload explicitly to visually update the badges
  window.location.reload();
  } catch(err) {
- console.error('Error al guardar roles:', err);
- alert('Hubo un error al guardar los roles.');
+ console.error('Error al guardar la configuración del perfil:', err);
+ alert('Hubo un error al guardar los cambios.');
  btnRolesSubmit.textContent = oldBtnText;
  btnRolesSubmit.disabled = false;
  }
@@ -1047,17 +1105,22 @@ import Layout from '../layouts/Layout.astro';
  btnTarget.blur();
  currentPerfilId = perfilId;
 
- const membership = sinFiltrosMembershipByProfile.get(perfilId || '');
- if (sinFiltrosMinistry) {
- modalSinFiltrosSection?.classList.remove('hidden');
- modalSinFiltrosMember.checked = Boolean(membership);
- modalSinFiltrosLeader.checked = Boolean(membership?.es_lider);
+ if (canManageMinistries && generalMinistry && sinFiltrosMinistry) {
+ const generalMembership = getMembership(perfilId || '', generalMinistry.id);
+ const sinFiltrosMembership = getMembership(perfilId || '', sinFiltrosMinistry.id);
+ modalMinistriesSection?.classList.remove('hidden');
+ modalGeneralMember.checked = Boolean(generalMembership);
+ modalGeneralLeader.checked = Boolean(generalMembership?.es_lider);
+ modalGeneralLeader.disabled = !modalGeneralMember.checked;
+ modalSinFiltrosMember.checked = Boolean(sinFiltrosMembership);
+ modalSinFiltrosLeader.checked = Boolean(sinFiltrosMembership?.es_lider);
  modalSinFiltrosLeader.disabled = !modalSinFiltrosMember.checked;
  } else {
- modalSinFiltrosSection?.classList.add('hidden');
+ modalMinistriesSection?.classList.add('hidden');
  }
 
- modalRolesTitle.textContent = `Roles: ${(perfilNombre || 'Músico').split(' ')[0]}`;
+ modalRolesAssignmentSection?.classList.toggle('hidden', !isGlobalAdmin);
+ modalRolesTitle.textContent = `${isGlobalAdmin ? 'Administrar' : 'Ministerios'}: ${(perfilNombre || 'Músico').split(' ')[0]}`;
  
  // Volcar la data virtual al modal
  const togglesRawData = document.getElementById(`raw-toggles-${perfilId}`)?.innerHTML || '';
@@ -1086,6 +1149,11 @@ import Layout from '../layouts/Layout.astro';
 
  toggleModalRoles(true);
  });
+ });
+
+ modalGeneralMember?.addEventListener('change', () => {
+ modalGeneralLeader.disabled = !modalGeneralMember.checked;
+ if (!modalGeneralMember.checked) modalGeneralLeader.checked = false;
  });
 
  modalSinFiltrosMember?.addEventListener('change', () => {

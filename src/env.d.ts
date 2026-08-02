@@ -5,6 +5,7 @@ declare namespace App {
     user: any | null;
     perfil: any | null;
     accessToken: string | null;
+    canManageMinistries: boolean;
   }
 }
 
