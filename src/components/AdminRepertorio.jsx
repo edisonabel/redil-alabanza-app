@@ -337,7 +337,7 @@ const ChordProEditorHighlight = React.forwardRef(function ChordProEditorHighligh
     <pre
       ref={highlightRef}
       aria-hidden="true"
-      className="editor-column-scroll editor-chordpro-highlight pointer-events-none absolute inset-0 m-0 overflow-y-scroll whitespace-pre-wrap break-words border-0 bg-transparent px-3 py-3 text-[13px] leading-6 text-content font-mono"
+      className="editor-column-scroll editor-chordpro-surface editor-chordpro-highlight pointer-events-none absolute inset-0 m-0 overflow-y-scroll border-0 bg-transparent px-3 py-3 text-content font-mono"
     >
       {lines.map((line, lineIndex) => {
         const sectionMatch = line.trim().match(SECTION_LABEL_RE);
@@ -360,7 +360,7 @@ const ChordProEditorHighlight = React.forwardRef(function ChordProEditorHighligh
         return (
           <React.Fragment key={`chordpro-section-${lineIndex}`}>
             <span
-              className="inline-flex min-h-[20px] items-center gap-1.5 rounded-full px-2 py-0.5 align-middle font-sans text-[11px] font-normal leading-5"
+              className="editor-chordpro-section-pill inline-flex items-center gap-1.5 rounded-full px-2 font-sans text-[11px] font-normal"
               style={getSectionColorStyle(section.name)}
             >
               <span
@@ -370,7 +370,7 @@ const ChordProEditorHighlight = React.forwardRef(function ChordProEditorHighligh
               {section.name}
             </span>
             {supportingText && (
-              <span className="font-sans text-[11px] italic text-content-muted">
+              <span className="editor-chordpro-section-support font-sans text-[11px] italic text-content-muted">
                 {`  ${supportingText}`}
               </span>
             )}
@@ -3343,7 +3343,7 @@ export default function AdminRepertorio() {
                         placeholder="[Verso 1]\n[C]Texto con acordes..."
                         spellCheck={false}
                         aria-label="Contenido ChordPro de la canción"
-                        className="editor-column-scroll absolute inset-0 z-10 h-full min-h-0 w-full resize-none overflow-y-scroll border-0 bg-transparent px-3 py-3 text-[13px] leading-6 text-transparent font-mono outline-none selection:bg-brand/25 focus:border-transparent focus:ring-0"
+                        className="editor-column-scroll editor-chordpro-surface absolute inset-0 z-10 h-full min-h-0 w-full resize-none overflow-y-scroll border-0 bg-transparent px-3 py-3 text-transparent font-mono outline-none selection:bg-brand/25 focus:border-transparent focus:ring-0"
                         style={{ caretColor: '#3b82f6' }}
                       />
                     </div>
@@ -3939,6 +3939,31 @@ export default function AdminRepertorio() {
 
         .editor-chordpro-highlight {
           scrollbar-color: transparent transparent;
+        }
+
+        .editor-chordpro-surface {
+          --editor-chordpro-line-height: 24px;
+          font-size: 13px;
+          line-height: var(--editor-chordpro-line-height);
+          letter-spacing: 0;
+          white-space: pre-wrap;
+          overflow-wrap: break-word;
+          word-break: normal;
+          tab-size: 4;
+        }
+
+        .editor-chordpro-section-pill {
+          box-sizing: border-box;
+          height: var(--editor-chordpro-line-height);
+          min-height: var(--editor-chordpro-line-height);
+          max-height: var(--editor-chordpro-line-height);
+          line-height: 1;
+          vertical-align: top;
+        }
+
+        .editor-chordpro-section-support {
+          line-height: var(--editor-chordpro-line-height);
+          vertical-align: top;
         }
 
         .editor-chordpro-highlight::-webkit-scrollbar-track,
