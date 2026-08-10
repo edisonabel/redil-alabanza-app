@@ -1142,14 +1142,17 @@ const userId = Astro.locals.user?.id ?? null;
 
  @media (max-width: 639px) {
   .profile-wizard-shell {
-   height: calc(100dvh - 66px);
-   min-height: 590px;
+   display: block;
+   height: auto;
+   min-height: calc(100dvh - 66px);
    padding: 0;
   }
 
   .profile-wizard-panel {
    width: 100%;
-   height: 100%;
+   height: auto;
+   min-height: calc(100dvh - 66px);
+   overflow: visible;
    border-width: 0;
    border-radius: 0;
    box-shadow: none;
@@ -1163,17 +1166,35 @@ const userId = Astro.locals.user?.id ?? null;
   .profile-wizard-hero-backdrop {
    inset: 0;
    transform: none;
+   will-change: transform;
   }
 
   .profile-wizard-hero-backdrop img {
+   top: -24px;
    width: 100%;
+   height: calc(100% + 48px);
    object-position: center 32%;
    opacity: 1;
    filter: none;
-   transform: none;
+   transform: translate3d(0, var(--profile-parallax-y, 0px), 0) scale(1.06);
+   transform-origin: center center;
+   will-change: transform;
+  }
+
+  .profile-wizard-hero-backdrop::before {
+   position: absolute;
+   inset: 0;
+   z-index: 1;
+   content: '';
+   pointer-events: none;
+   -webkit-mask-image: radial-gradient(ellipse at center, transparent 56%, rgb(0 0 0 / 0.46) 76%, black 100%);
+   mask-image: radial-gradient(ellipse at center, transparent 56%, rgb(0 0 0 / 0.46) 76%, black 100%);
+   -webkit-backdrop-filter: blur(6px);
+   backdrop-filter: blur(6px);
   }
 
   .profile-wizard-hero-backdrop::after {
+   z-index: 2;
    background:
     linear-gradient(0deg, rgb(2 6 23 / 0.92) 0%, rgb(2 6 23 / 0.46) 34%, transparent 72%),
     linear-gradient(180deg, rgb(15 23 42 / 0.16), transparent 34%);
@@ -1181,9 +1202,9 @@ const userId = Astro.locals.user?.id ?? null;
 
   .profile-wizard-photo-button {
    top: 18px;
-   right: auto;
+   right: 74px;
    bottom: auto;
-   left: calc(max(28px, 3vw) + 116px);
+   left: auto;
    width: 44px;
    min-height: 44px;
    justify-content: center;
@@ -1227,6 +1248,9 @@ const userId = Astro.locals.user?.id ?? null;
   }
 
   .profile-wizard-nav {
+   position: sticky;
+   top: 0;
+   z-index: 15;
    gap: 0.12rem;
    margin: -24px 0 0;
    padding: 0.9rem 0.45rem 0.48rem;
@@ -1253,7 +1277,33 @@ const userId = Astro.locals.user?.id ?? null;
   }
 
   .profile-wizard-step {
+   position: relative;
+   inset: auto;
+   display: none;
+   overflow: visible;
    padding: 2rem 0.85rem 5.7rem;
+  }
+
+  .profile-wizard-stage {
+   min-height: 0;
+   flex: none;
+   overflow: visible;
+  }
+
+  .profile-wizard-step[data-state='active'] {
+   display: block;
+   animation: profile-mobile-panel-enter 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @keyframes profile-mobile-panel-enter {
+   from {
+    opacity: 0.25;
+    transform: translateY(12px);
+   }
+   to {
+    opacity: 1;
+    transform: translateY(0);
+   }
   }
 
   .profile-form-grid,
@@ -1287,8 +1337,9 @@ const userId = Astro.locals.user?.id ?? null;
   }
 
   .profile-save-dock {
+   position: fixed;
    right: 0.8rem;
-   bottom: 0.75rem;
+   bottom: calc(76px + env(safe-area-inset-bottom));
    left: 0.8rem;
   }
 
@@ -1298,9 +1349,9 @@ const userId = Astro.locals.user?.id ?? null;
   }
 
   .profile-feedback {
-   position: absolute;
+   position: fixed;
    right: 0.8rem;
-   bottom: 5.1rem;
+   bottom: calc(82px + env(safe-area-inset-bottom));
    left: 0.8rem;
    width: auto;
    transform: translateY(14px) scale(0.98);
@@ -1370,6 +1421,10 @@ const userId = Astro.locals.user?.id ?? null;
  }
  (window as any)._cropperInstance = null;
  }
+
+ const parallaxFrame = Number((window as any).__perfilParallaxFrame || 0);
+ if (parallaxFrame) cancelAnimationFrame(parallaxFrame);
+ (window as any).__perfilParallaxFrame = 0;
  revokePerfilSafeCropperUrl();
  };
 
@@ -1489,7 +1544,35 @@ const userId = Astro.locals.user?.id ?? null;
 
  const profileWizardNavItems = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-profile-step]'));
  const profileWizardPanels = Array.from(document.querySelectorAll<HTMLElement>('[data-profile-panel]'));
+ const profileWizardNav = document.querySelector<HTMLElement>('.profile-wizard-nav');
+ const profileWizardStage = document.getElementById('profile-wizard-stage');
+ const mobileProfileMedia = window.matchMedia('(max-width: 639px)');
+ const reducedMotionMedia = window.matchMedia('(prefers-reduced-motion: reduce)');
  let currentProfileStep = 0;
+
+ const syncProfileParallax = () => {
+  (window as any).__perfilParallaxFrame = 0;
+  if (!profileHeroBackdrop || !mobileProfileMedia.matches || reducedMotionMedia.matches) {
+   profileHeroBackdrop?.style.removeProperty('--profile-parallax-y');
+   return;
+  }
+
+  const hero = document.querySelector<HTMLElement>('.profile-wizard-hero');
+  if (!hero) return;
+  const scrollProgress = Math.min(hero.offsetHeight, Math.max(0, -hero.getBoundingClientRect().top));
+  profileHeroBackdrop.style.setProperty('--profile-parallax-y', `${(scrollProgress * 0.24).toFixed(2)}px`);
+ };
+
+ const queueProfileParallax = () => {
+  if ((window as any).__perfilParallaxFrame) return;
+  (window as any).__perfilParallaxFrame = requestAnimationFrame(syncProfileParallax);
+ };
+
+ on(window, 'scroll', queueProfileParallax, { passive: true });
+ on(window, 'resize', queueProfileParallax, { passive: true });
+ on(mobileProfileMedia, 'change', queueProfileParallax);
+ on(reducedMotionMedia, 'change', queueProfileParallax);
+ queueProfileParallax();
 
  const syncProfileHeroBackdrop = (avatarUrl: string | null | undefined) => {
  const safeAvatarUrl = avatarUrl ? toSafeMediaUrl(avatarUrl) : '';
@@ -1525,6 +1608,19 @@ const userId = Astro.locals.user?.id ?? null;
  item.tabIndex = isActive ? 0 : -1;
  if (focusTab && isActive) item.focus();
  });
+
+ if (focusTab && mobileProfileMedia.matches && profileWizardNav && profileWizardStage) {
+  requestAnimationFrame(() => {
+   const navRect = profileWizardNav.getBoundingClientRect();
+   if (navRect.top > 2) return;
+   const stageTop = profileWizardStage.getBoundingClientRect().top + window.scrollY;
+   const targetTop = Math.max(0, stageTop - profileWizardNav.offsetHeight);
+   window.scrollTo({
+    top: targetTop,
+    behavior: reducedMotionMedia.matches ? 'auto' : 'smooth',
+   });
+  });
+ }
 
  };
 
