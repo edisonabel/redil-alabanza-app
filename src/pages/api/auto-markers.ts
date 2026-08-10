@@ -16,7 +16,7 @@ import {
   ApiSecurityError,
   assertRequestBodySize,
   consumeRateLimit,
-  requireAdminUser,
+  requireRepertoireManagerUser,
   securityErrorResponse,
   serviceRoleClient,
 } from '../../lib/server/api-security.js';
@@ -1334,7 +1334,7 @@ const fillMarkerGapWithStructure = ({
 export const POST: APIRoute = async ({ request, cookies }) => {
   try {
     assertRequestBodySize(request, 256 * 1024);
-    const user = await requireAdminUser(cookies);
+    const user = await requireRepertoireManagerUser(cookies);
     await consumeRateLimit({
       bucket: 'auto-markers',
       actorId: user.id,

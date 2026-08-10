@@ -149,6 +149,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
   locals.perfil = null;
   locals.accessToken = null;
   locals.canManageMinistries = false;
+  locals.canManageOperations = false;
 
   if (
     path.startsWith('/_astro') ||
@@ -202,6 +203,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
       const [
         { data: perfil, error: perfilError },
         { data: canManageMinistries, error: ministryManagerError },
+        { data: canManageOperations, error: operationsManagerError },
       ] = await Promise.all([
         supabaseAuthed
           .from('perfiles')
@@ -209,6 +211,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
           .eq('id', authState.user.id)
           .maybeSingle(),
         supabaseAuthed.rpc('is_current_user_ministry_manager'),
+        supabaseAuthed.rpc('is_current_user_operations_manager'),
       ]);
 
       if (perfilError) {
@@ -217,20 +220,25 @@ export const onRequest = defineMiddleware(async (context, next) => {
       if (ministryManagerError && ministryManagerError.code !== 'PGRST202') {
         console.error('Middleware ministry manager query error:', ministryManagerError);
       }
+      if (operationsManagerError && operationsManagerError.code !== 'PGRST202') {
+        console.error('Middleware operations manager query error:', operationsManagerError);
+      }
 
       locals.perfil = perfil || null;
       locals.canManageMinistries = canManageMinistries === true;
+      locals.canManageOperations = canManageOperations === true;
 
-      if (path === '/admin' && !perfil?.is_admin) {
+      if (path === '/admin' && !perfil?.is_admin && !locals.canManageOperations) {
         return redirectTo('/repertorio', 303);
       }
     } catch (perfilQueryError) {
       console.error('Middleware perfil query error:', perfilQueryError);
       locals.perfil = null;
       locals.canManageMinistries = false;
+      locals.canManageOperations = false;
     }
 
-    if (path === '/admin' && !locals.perfil?.is_admin) {
+    if (path === '/admin' && !locals.perfil?.is_admin && !locals.canManageOperations) {
       return redirectTo('/repertorio', 303);
     }
   }

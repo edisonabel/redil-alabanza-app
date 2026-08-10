@@ -32,6 +32,7 @@ let ssrUser = Astro.locals.user || null;
 let ssrRoles: any[] = [];
 let ssrEventos: any[] = [];
 let ssrAdmin = false;
+const ssrCanManageOperations = Boolean(Astro.locals.canManageOperations);
 let ssrCanEditTema = false;
 let ssrHasMoreEventos = false;
 let ssrMinistries: any[] = [];
@@ -153,6 +154,7 @@ if (ssrUser) {
         sessionUser={ssrUser}
         initialRoles={ssrRoles}
         isAdmin={ssrAdmin}
+        canManageAllRosters={ssrCanManageOperations}
         canEditTema={ssrCanEditTema}
         leaderMinistryIds={ssrLeaderMinistryIds}
         initialLoadUntil={initialFetchLimit.toISOString()}
@@ -164,7 +166,7 @@ if (ssrUser) {
     <ModalEvento client:only="react" initialMinistries={ssrMinistries} />
     
     <!-- MODAL VISTA DETALLE COMPLETADO (FASE 1) -->
-    <ModalDetalle client:only="react" initialRoles={ssrRoles} sessionUser={ssrUser} isAdmin={ssrAdmin} leaderMinistryIds={ssrLeaderMinistryIds} />
+    <ModalDetalle client:only="react" initialRoles={ssrRoles} sessionUser={ssrUser} isAdmin={ssrAdmin} canManageAllRosters={ssrCanManageOperations} leaderMinistryIds={ssrLeaderMinistryIds} />
 
     <!-- MODAL GENERADOR DE SERIES -->
     <ModalSerie client:only="react" sessionUser={ssrUser} initialMinistries={ssrMinistries} />

@@ -3,7 +3,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   assertRequestBodySize,
   consumeRateLimit,
-  requireAdminUser,
+  requireRepertoireManagerUser,
   securityErrorResponse,
   serviceRoleClient,
 } from '../../lib/server/api-security.js';
@@ -55,7 +55,7 @@ const isAllowedContentType = (value = '') => {
 export const POST = async ({ request, cookies }) => {
   try {
     assertRequestBodySize(request, 16 * 1024);
-    const user = await requireAdminUser(cookies);
+    const user = await requireRepertoireManagerUser(cookies);
     await consumeRateLimit({
       bucket: 'r2-upload-url',
       actorId: user.id,

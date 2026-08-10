@@ -123,12 +123,13 @@ const canUserManageEventRehearsal = ({ assignments, roles, sessionUser, isAdmin 
  * Renderizador maestro del motor de Eventos (Tarjetas, Listas y Calendarios).
  * Reemplaza mÃƒÂ¡s de 1000 lÃƒÂ­neas de Vanilla JS en programacion.astro
  */
-/** @param {{ initialEvents?: any[], sessionUser?: any, initialRoles?: any[], isAdmin?: boolean, canEditTema?: boolean, leaderMinistryIds?: string[], initialLoadUntil?: string, hasMoreInitialEvents?: boolean, initialToday?: string }} props */
+/** @param {{ initialEvents?: any[], sessionUser?: any, initialRoles?: any[], isAdmin?: boolean, canManageAllRosters?: boolean, canEditTema?: boolean, leaderMinistryIds?: string[], initialLoadUntil?: string, hasMoreInitialEvents?: boolean, initialToday?: string }} props */
 export default function CalendarioGrid({
     initialEvents,
     sessionUser,
     initialRoles,
     isAdmin,
+    canManageAllRosters = false,
     canEditTema = false,
     leaderMinistryIds = [],
     initialLoadUntil,
@@ -869,7 +870,7 @@ export default function CalendarioGrid({
         }
 
         const isMinistryLeader = isMinistryLeaderForEvent(cardData.dbData);
-        const canManage = isAdmin || isModerator || isMinistryLeader;
+        const canManage = isAdmin || isModerator || isMinistryLeader || canManageAllRosters;
 
         const listHighlightClass = isUsuarioAsignado ? 'border-brand/30 bg-brand/10' : 'border-border bg-surface hover:bg-background border-solid';
 
@@ -989,7 +990,7 @@ export default function CalendarioGrid({
                                                 es_acustico: esAcustico,
                                                 hora_fin: cardData.dbData?.hora_fin || '',
                                                 serie_id: cardData.dbData?.serie_id || '',
-                                                moderator: !isAdmin && (isModerator || isMinistryLeader) ? 'true' : 'false',
+                                                moderator: !isAdmin && (isModerator || isMinistryLeader || canManageAllRosters) ? 'true' : 'false',
                                                 can_manage_rehearsal: canManageRehearsal,
                                                 dbData: cardData.dbData
                                             });
@@ -1058,7 +1059,7 @@ export default function CalendarioGrid({
         }
 
         const isMinistryLeader = isMinistryLeaderForEvent(cardData.dbData);
-        const canManage = isAdmin || isModerator || isMinistryLeader;
+        const canManage = isAdmin || isModerator || isMinistryLeader || canManageAllRosters;
 
         // CascarÃƒÂ³n Suspendido (JSX puro)
         if (isSuspended) {
@@ -1170,7 +1171,7 @@ export default function CalendarioGrid({
                                         es_acustico: esAcustico,
                                         hora_fin: cardData.dbData?.hora_fin || '',
                                         serie_id: cardData.dbData?.serie_id || '',
-                                        moderator: !isAdmin && (isModerator || isMinistryLeader) ? 'true' : 'false',
+                                        moderator: !isAdmin && (isModerator || isMinistryLeader || canManageAllRosters) ? 'true' : 'false',
                                         can_manage_rehearsal: canManageRehearsal,
                                         dbData: cardData.dbData
                                     });

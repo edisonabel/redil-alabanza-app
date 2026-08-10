@@ -1,4 +1,4 @@
-import { requireAuthenticatedUser, securityErrorResponse } from '../../../../lib/server/api-security.js';
+import { isOperationsManagerUser, requireAuthenticatedUser, securityErrorResponse } from '../../../../lib/server/api-security.js';
 import { isEventRepertoryManagerRoleCode } from '../../../../lib/role-permissions.js';
 import {
   reconcileGoogleCalendarProfile,
@@ -28,6 +28,7 @@ const canManageAssignments = async ({ userId, eventId }) => {
     .maybeSingle();
   if (profileError) throw profileError;
   if (profile?.is_admin) return true;
+  if (await isOperationsManagerUser(userId)) return true;
 
   const { data: assignments, error: assignmentsError } = await serviceRoleClient
     .from('asignaciones')

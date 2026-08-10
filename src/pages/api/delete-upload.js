@@ -2,7 +2,7 @@ import { DeleteObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import {
   assertRequestBodySize,
   consumeRateLimit,
-  requireAdminUser,
+  requireRepertoireManagerUser,
   securityErrorResponse,
   serviceRoleClient,
 } from '../../lib/server/api-security.js';
@@ -52,7 +52,7 @@ const getR2ObjectKeyFromUrl = (fileUrl, publicBaseUrl) => {
 export const POST = async ({ request, cookies }) => {
   try {
     assertRequestBodySize(request, 16 * 1024);
-    const user = await requireAdminUser(cookies);
+    const user = await requireRepertoireManagerUser(cookies);
     await consumeRateLimit({
       bucket: 'r2-delete',
       actorId: user.id,

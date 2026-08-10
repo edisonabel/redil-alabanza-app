@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { isEventRepertoryManagerRoleCode } from '../../lib/role-permissions.js';
+import { isOperationsManagerUser } from '../../lib/server/api-security.js';
 import { getSupabaseServerEnv, getSupabaseServiceRoleKey } from '../../lib/server/supabase-env.js';
 
 export const prerender = false;
@@ -63,6 +64,7 @@ const canManageAssignments = async ({ userId, eventoId }) => {
 
   if (perfilError) throw perfilError;
   if (perfil?.is_admin) return true;
+  if (await isOperationsManagerUser(userId)) return true;
 
   const { data: ownAssignments, error: assignmentsError } = await serviceRoleClient
     .from('asignaciones')

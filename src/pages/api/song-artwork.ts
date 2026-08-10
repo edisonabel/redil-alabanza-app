@@ -3,7 +3,7 @@ import {
   ApiSecurityError,
   assertRequestBodySize,
   consumeRateLimit,
-  requireAdminUser,
+  requireRepertoireManagerUser,
   securityErrorResponse,
   serviceRoleClient,
 } from '../../lib/server/api-security.js';
@@ -33,7 +33,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       return jsonResponse({ error: 'Origen no permitido.' }, 403);
     }
 
-    const user = await requireAdminUser(cookies);
+    const user = await requireRepertoireManagerUser(cookies);
     await consumeRateLimit({
       bucket: 'song-artwork',
       actorId: user.id,

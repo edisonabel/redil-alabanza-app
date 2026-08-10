@@ -141,8 +141,8 @@ function SongArtwork({ song }) {
     );
 }
 
-/** @param {{ initialRoles?: any[], sessionUser?: any, isAdmin?: boolean, leaderMinistryIds?: string[] }} props */
-export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = false, leaderMinistryIds = [] }) {
+/** @param {{ initialRoles?: any[], sessionUser?: any, isAdmin?: boolean, canManageAllRosters?: boolean, leaderMinistryIds?: string[] }} props */
+export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = false, canManageAllRosters = false, leaderMinistryIds = [] }) {
     const [isOpen, setIsOpen] = useState(false);
     const [eventData, setEventData] = useState(null);
     const [playlist, setPlaylist] = useState(null);
@@ -343,7 +343,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
             isModerator = true;
         }
     }
-    const canManageRepertorio = isAdmin || isModerator || isMinistryLeader;
+    const canManageRepertorio = isAdmin || isModerator || isMinistryLeader || canManageAllRosters;
     const manageRepertorioLabel = playlistItems.length > 0 ? 'Editar repertorio' : 'Armar repertorio';
 
     const rehearsalHref = eventoId ? `/ensayo/${eventoId}` : '/ensayo/demo';

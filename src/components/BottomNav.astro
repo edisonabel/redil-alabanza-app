@@ -4,6 +4,7 @@ const user = Astro.locals.user;
 const perfil = Astro.locals.perfil;
 const isAdmin = Boolean(user && perfil?.is_admin);
 const canManageMinistries = Boolean(user && Astro.locals.canManageMinistries);
+const canManageOperations = Boolean(user && Astro.locals.canManageOperations);
 
 const navItems = [
  {
@@ -54,7 +55,8 @@ const isActive = (href: string) => {
 const visibleNavItems = navItems.filter((item) => (
  !item.adminOnly
  || isAdmin
- || (item.href === '/equipo' && canManageMinistries)
+ || (item.href === '/equipo' && (canManageMinistries || canManageOperations))
+ || (item.href === '/configuracion' && canManageOperations)
 ));
 const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, minmax(0, 1fr));`;
 ---

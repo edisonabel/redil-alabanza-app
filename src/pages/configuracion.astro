@@ -5,8 +5,9 @@ import PanelAdminPush from '../components/react/PanelAdminPush.jsx';
 import PanelModoExperto from '../components/react/PanelModoExperto.jsx';
 
 const isAdmin = Boolean(Astro.locals.perfil?.is_admin);
+const canManageOperations = Boolean(Astro.locals.canManageOperations);
 
-if (!isAdmin) {
+if (!isAdmin && !canManageOperations) {
   return Astro.redirect('/programacion');
 }
 ---
@@ -24,14 +25,20 @@ if (!isAdmin) {
           <span class="page-title-icon" aria-hidden="true">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 3a3 3 0 0 0-3 3v1.1a7.96 7.96 0 0 0-1.64.95l-.78-.45a3 3 0 1 0-3 5.2l.78.45a8.6 8.6 0 0 0 0 1.9l-.78.45a3 3 0 1 0 3 5.2l.78-.45a7.96 7.96 0 0 0 1.64.95V18a3 3 0 1 0 6 0v-1.1a7.96 7.96 0 0 0 1.64-.95l.78.45a3 3 0 1 0 3-5.2l-.78-.45a8.6 8.6 0 0 0 0-1.9l.78-.45a3 3 0 1 0-3-5.2l-.78.45A7.96 7.96 0 0 0 15 7.1V6a3 3 0 0 0-3-3Z"/><circle cx="12" cy="12" r="3"/></svg>
           </span>
-          <h1 class="page-title text-[2.1rem] md:text-[3.5rem]">Configuraci&oacute;n de Branding</h1>
+          <h1 class="page-title text-[2.1rem] md:text-[3.5rem]">
+            {isAdmin ? 'Configuración de Branding' : 'Gestión de Repertorio'}
+          </h1>
         </div>
-        <p class="page-subtitle text-sm">Panel white-label para tokens sem&aacute;nticos en tiempo real.</p>
+        <p class="page-subtitle text-sm">
+          {isAdmin
+            ? 'Panel white-label para tokens semánticos en tiempo real.'
+            : 'Carga canciones y administra sus recursos.'}
+        </p>
       </div>
     </header>
 
     <PanelModoExperto client:idle />
-    <PanelBranding client:idle />
-    <PanelAdminPush client:idle isAdmin={isAdmin} />
+    {isAdmin && <PanelBranding client:idle />}
+    {isAdmin && <PanelAdminPush client:idle isAdmin={isAdmin} />}
   </section>
 </Layout>

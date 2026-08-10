@@ -1,5 +1,8 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import { VOCAL_RANGE_OPTIONS } from '../lib/ministry-config.js';
+
+const canManageOperations = Boolean(Astro.locals.canManageOperations);
 ---
 
 <Layout title="Gestion de Equipo - Redil">
@@ -42,7 +45,7 @@ import Layout from '../layouts/Layout.astro';
  <span class="hidden md:block font-bold text-base">A&#241;adir M&#250;sico</span>
  </button>
 
- <main id="equipo-page-root" class="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-32">
+ <main id="equipo-page-root" data-can-manage-operations={canManageOperations ? 'true' : 'false'} class="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-32">
  <!-- SECCIÃ“N MIS EQUIPOS -->
  <div class="mb-8 hidden" id="seccion-plantillas">
  <div class="flex items-center justify-between mb-4">
@@ -103,66 +106,175 @@ import Layout from '../layouts/Layout.astro';
  </svg>
  </div>
 
- <!-- MODAL GLOBAL DE EDICIÃ“N DE ROLES (In-Place) -->
- <div id="modal-roles-global" class="fixed inset-0 z-[100] hidden items-end sm:items-center justify-center overflow-y-auto p-4 pt-6 pb-[calc(104px+env(safe-area-inset-bottom))]">
- <!-- Backdrop -->
- <div class="absolute inset-0 bg-neutral-900/40 backdrop-blur-sm transition-opacity opacity-0" id="modal-roles-backdrop"></div>
- 
- <!-- Panel -->
- <div class="relative bg-surface w-full md:max-w-md rounded-t-3xl md:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-132px-env(safe-area-inset-bottom))] transition-transform translate-y-full sm:translate-y-4 sm:scale-95 sm:opacity-0 my-auto" id="modal-roles-panel">
- <!-- Header -->
- <div class="px-5 py-4 sm:px-6 sm:py-5 border-b border-neutral-100 dark:border-neutral-700 flex justify-between items-center bg-surface/50 backdrop-blur-md sticky top-0 z-10 shrink-0">
- <h3 class="text-lg sm:text-xl font-bold text-content" id="modal-roles-title">Editar Roles</h3>
- <button type="button" id="btn-close-modal-roles" class="p-2 -mr-2 text-content-muted hover:text-content hover:bg-background dark:hover:bg-neutral-800 rounded-full transition-colors">
- <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+ <!-- WIZARD GLOBAL DE GESTIÓN DE PERFIL -->
+ <div id="modal-roles-global" class="team-wizard-modal fixed inset-0 z-[100] hidden items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="modal-roles-title">
+ <div class="team-wizard-backdrop" id="modal-roles-backdrop"></div>
+
+ <div class="team-wizard-panel" id="modal-roles-panel">
+ <header class="team-wizard-hero">
+ <div class="team-wizard-hero-media" aria-hidden="true">
+ <img id="modal-profile-image" alt="" crossorigin="anonymous" class="hidden">
+ <div id="modal-profile-initials" class="team-wizard-profile-initials">RD</div>
+ </div>
+ <div class="team-wizard-hero-scrim" aria-hidden="true"></div>
+ <button type="button" id="btn-close-modal-roles" class="team-wizard-close" aria-label="Cerrar gestión de perfil">
+ <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
  </button>
+ <div class="team-wizard-identity">
+ <p class="team-wizard-eyebrow">Gestionar integrante</p>
+ <h3 id="modal-roles-title">Perfil del músico</h3>
+ <p id="modal-profile-email"></p>
+ </div>
+ </header>
+
+ <nav class="team-wizard-nav" aria-label="Secciones de gestión" role="tablist">
+ <button type="button" class="team-wizard-nav-item" data-wizard-step="0" role="tab" aria-selected="true" aria-controls="wizard-step-ministries">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M3 21h18M5 21V8l7-5 7 5v13M9 21v-6h6v6"/></svg>
+ <span>Ministerio</span>
+ </button>
+ <button type="button" class="team-wizard-nav-item" data-wizard-step="1" role="tab" aria-selected="false" aria-controls="wizard-step-leadership">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="m12 3 2.2 4.5 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5-3.6-3.5 5-.7z"/></svg>
+ <span>Liderazgo</span>
+ </button>
+ <button type="button" class="team-wizard-nav-item" data-wizard-step="2" role="tab" aria-selected="false" aria-controls="wizard-step-roles">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>
+ <span>Roles</span>
+ </button>
+ <button type="button" class="team-wizard-nav-item" data-wizard-step="3" role="tab" aria-selected="false" aria-controls="wizard-step-voice">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
+ <span>Voz</span>
+ </button>
+ </nav>
+
+ <div class="team-wizard-stage" id="team-wizard-stage">
+ <section id="wizard-step-ministries" class="team-wizard-step" data-wizard-panel="0" data-state="active" role="tabpanel">
+ <div class="team-wizard-step-heading">
+ <p>Paso 1</p>
+ <h4>¿Dónde sirve?</h4>
+ <span>Selecciona uno o ambos ministerios.</span>
+ </div>
+ <div id="modal-ministries-section" class="team-wizard-options">
+ <label class="team-wizard-option">
+ <span class="team-wizard-option-icon team-wizard-option-icon--general">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M4 19h16M6 19V8l6-4 6 4v11M9 12h6M12 9v6"/></svg>
+ </span>
+ <span class="team-wizard-option-copy">
+ <strong>Los domingos</strong>
+ <small>Culto de Adoración Dominical</small>
+ </span>
+ <input id="modal-general-member" type="checkbox" class="team-wizard-toggle-input">
+ <span class="team-wizard-toggle" aria-hidden="true"><span></span></span>
+ </label>
+ <label class="team-wizard-option">
+ <span class="team-wizard-option-icon team-wizard-option-icon--youth">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg>
+ </span>
+ <span class="team-wizard-option-copy">
+ <strong>Sin Filtros</strong>
+ <small>Servicios de los sábados</small>
+ </span>
+ <input id="modal-sin-filtros-member" type="checkbox" class="team-wizard-toggle-input">
+ <span class="team-wizard-toggle" aria-hidden="true"><span></span></span>
+ </label>
+ </div>
+ </section>
+
+ <section id="wizard-step-leadership" class="team-wizard-step" data-wizard-panel="1" data-state="after" role="tabpanel" aria-hidden="true">
+ <div class="team-wizard-step-heading">
+ <p>Paso 2</p>
+ <h4>Permitir liderazgo</h4>
+ <span>El liderazgo se configura por ministerio.</span>
+ </div>
+ <div class="team-wizard-options">
+ <label class="team-wizard-option team-wizard-leadership-option">
+ <span class="team-wizard-option-icon team-wizard-option-icon--general">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="m12 3 2.2 4.5 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5-3.6-3.5 5-.7z"/></svg>
+ </span>
+ <span class="team-wizard-option-copy">
+ <strong>Liderar los domingos</strong>
+ <small id="modal-general-leader-help">Requiere servir en Culto Dominical</small>
+ </span>
+ <input id="modal-general-leader" type="checkbox" class="team-wizard-toggle-input" disabled>
+ <span class="team-wizard-toggle" aria-hidden="true"><span></span></span>
+ </label>
+ <label class="team-wizard-option team-wizard-leadership-option">
+ <span class="team-wizard-option-icon team-wizard-option-icon--youth">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="m12 3 2.2 4.5 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5-3.6-3.5 5-.7z"/></svg>
+ </span>
+ <span class="team-wizard-option-copy">
+ <strong>Liderar Sin Filtros</strong>
+ <small id="modal-sin-filtros-leader-help">Requiere servir en Sin Filtros</small>
+ </span>
+ <input id="modal-sin-filtros-leader" type="checkbox" class="team-wizard-toggle-input" disabled>
+ <span class="team-wizard-toggle" aria-hidden="true"><span></span></span>
+ </label>
+ </div>
+ </section>
+
+ <section id="wizard-step-roles" class="team-wizard-step" data-wizard-panel="2" data-state="after" role="tabpanel" aria-hidden="true">
+ <div class="team-wizard-step-heading">
+ <p>Paso 3</p>
+ <h4>Roles musicales</h4>
+ <span>Puedes elegir varios instrumentos o capacidades.</span>
+ </div>
+ <div class="team-wizard-role-grid" id="modal-roles-container">
+ <!-- Inyección dinámica de roles musicales -->
+ </div>
+ </section>
+
+ <section id="wizard-step-voice" class="team-wizard-step" data-wizard-panel="3" data-state="after" role="tabpanel" aria-hidden="true">
+ <div class="team-wizard-step-heading">
+ <p>Paso 4</p>
+ <h4>Configuraci&oacute;n de voz</h4>
+ <span>La voz y su registro se administran aparte de los instrumentos.</span>
+ </div>
+ <label class="team-wizard-option team-wizard-voice-option">
+ <span class="team-wizard-option-icon team-wizard-option-icon--voice">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
+ </span>
+ <span class="team-wizard-option-copy">
+ <strong>Voz</strong>
+ <small>Puede ser asignado en el equipo vocal</small>
+ </span>
+ <input id="modal-voice-enabled" type="checkbox" class="team-wizard-toggle-input">
+ <span class="team-wizard-toggle" aria-hidden="true"><span></span></span>
+ </label>
+ <div id="modal-vocal-range-section" class="team-wizard-vocal-card">
+ <span class="team-wizard-vocal-icon" aria-hidden="true">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
+ </span>
+ <div class="team-wizard-vocal-copy">
+ <strong>Registro vocal</strong>
+ <small id="modal-vocal-range-help">Activa Voz para definir la clasificaci&oacute;n.</small>
+ </div>
+ <label class="team-wizard-vocal-field" for="modal-vocal-range">
+ <span class="sr-only">Registro vocal</span>
+ <select id="modal-vocal-range" disabled>
+ <option value="">Por definir</option>
+ {VOCAL_RANGE_OPTIONS.map((option) => (
+ <option value={option.value}>{option.label}</option>
+ ))}
+ </select>
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+ </label>
+ </div>
+ </section>
  </div>
 
- <!-- Body -->
- <div class="px-5 py-4 sm:p-6 overflow-y-auto flex-1 min-h-0 custom-scrollbar">
- <section id="modal-ministries-section" class="hidden mb-5 rounded-2xl border border-sky-500/25 bg-sky-500/10 p-4">
- <div class="mb-3">
- <p class="text-sm font-black text-content">Disponibilidad por ministerio</p>
- <p class="mt-0.5 text-xs leading-relaxed text-content-muted">Una misma persona puede servir los domingos, en Sin Filtros o en ambos.</p>
+ <footer class="team-wizard-footer">
+ <div class="team-wizard-progress">
+ <span id="team-wizard-progress-label">Paso 1 de 4</span>
+ <div><i id="team-wizard-progress-bar"></i></div>
  </div>
- <div class="space-y-3">
- <fieldset class="rounded-xl border border-border bg-surface p-3">
- <legend class="px-1 text-sm font-black text-content">Alabanza general</legend>
- <label class="flex min-h-11 cursor-pointer items-center justify-between gap-4">
- <span class="text-sm font-bold text-content">Disponible los domingos</span>
- <input id="modal-general-member" type="checkbox" class="h-5 w-5 shrink-0 rounded border-border text-action">
- </label>
- <label class="mt-1 flex min-h-11 cursor-pointer items-center justify-between gap-4 border-t border-border/70 pt-2 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
- <span class="text-xs font-semibold text-content-muted">Líder de Alabanza general</span>
- <input id="modal-general-leader" type="checkbox" class="h-5 w-5 shrink-0 rounded border-border text-action" disabled>
- </label>
- </fieldset>
- <fieldset class="rounded-xl border border-border bg-surface p-3">
- <legend class="px-1 text-sm font-black text-content">Sin Filtros</legend>
- <label class="flex min-h-11 cursor-pointer items-center justify-between gap-4">
- <span class="text-sm font-bold text-content">Disponible los sábados</span>
- <input id="modal-sin-filtros-member" type="checkbox" class="h-5 w-5 shrink-0 rounded border-border text-action">
- </label>
- <label class="mt-1 flex min-h-11 cursor-pointer items-center justify-between gap-4 border-t border-border/70 pt-2 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
- <span class="text-xs font-semibold text-content-muted">Líder de Sin Filtros</span>
- <input id="modal-sin-filtros-leader" type="checkbox" class="h-5 w-5 shrink-0 rounded border-border text-action" disabled>
- </label>
- </fieldset>
- </div>
- </section>
- <section id="modal-roles-assignment-section">
- <p class="text-xs font-bold uppercase tracking-widest text-content-muted mb-3 sm:mb-4">MÚLTIPLES ASIGNACIONES PERMITIDAS</p>
- <div class="grid grid-cols-1 sm:grid-cols-2 gap-2" id="modal-roles-container">
- <!-- InyecciÃ³n dinÃ¡mica de Toggles -->
- </div>
- </section>
- </div>
- <!-- Footer -->
- <div class="px-5 py-4 sm:px-6 bg-background border-t border-neutral-100 dark:border-neutral-700 flex gap-3 shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
- <button type="button" id="btn-roles-submit" class="flex-1 bg-neutral-900 dark:bg-white dark:text-neutral-900 text-white py-3 rounded-xl font-bold hover:bg-neutral-800 dark:hover:bg-neutral-100 transition-colors shadow-sm">
- Guardar Cambios
+ <div class="team-wizard-footer-actions">
+ <button type="button" id="btn-wizard-back" class="team-wizard-secondary hidden">Atrás</button>
+ <button type="button" id="btn-wizard-next" class="team-wizard-primary">
+ Siguiente
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
  </button>
+ <button type="button" id="btn-roles-submit" class="team-wizard-primary hidden">Guardar cambios</button>
  </div>
+ </footer>
  </div>
  </div>
 
@@ -400,11 +512,1261 @@ import Layout from '../layouts/Layout.astro';
  </div>
 
 </main>
+
+<style is:global>
+ .equipo-card {
+  position: relative;
+  min-height: 320px;
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid rgb(var(--border-base));
+  border-radius: 1.75rem;
+  background: rgb(var(--bg-surface));
+  box-shadow: 0 10px 30px -22px rgb(15 23 42 / 0.42);
+  transition:
+   opacity 0.5s ease,
+   transform 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+   border-color 0.3s ease,
+   box-shadow 0.3s ease;
+ }
+
+ .equipo-card:focus-visible {
+  outline: 3px solid rgb(var(--color-brand) / 0.42);
+  outline-offset: 3px;
+ }
+
+ .equipo-card-media {
+  position: absolute;
+  z-index: 0;
+  top: 12px;
+  right: 12px;
+  left: 12px;
+  height: 130px;
+  overflow: hidden;
+  border: 1px solid rgb(var(--border-base) / 0.82);
+  border-radius: 1.25rem;
+  background:
+   radial-gradient(circle at 30% 20%, rgb(var(--color-brand) / 0.22), transparent 52%),
+   linear-gradient(145deg, rgb(var(--bg-base)), rgb(var(--border-base) / 0.5));
+  transition:
+   inset 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+   height 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+   border-radius 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+   transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+ }
+
+ .equipo-card-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 28%;
+  transform: scale(1.01);
+  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+ }
+
+ .equipo-card-initials {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  color: rgb(var(--color-brand));
+  font-size: 2.25rem;
+  font-weight: 900;
+  letter-spacing: -0.06em;
+ }
+
+ .equipo-card-scrim {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  background:
+   linear-gradient(180deg, rgb(2 6 23 / 0.02) 12%, rgb(2 6 23 / 0.24) 48%, rgb(2 6 23 / 0.92) 100%);
+  transition: opacity 0.38s ease;
+ }
+
+ .equipo-card-content {
+  position: absolute;
+  z-index: 2;
+  top: 154px;
+  right: 18px;
+  bottom: 66px;
+  left: 18px;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  transition:
+   top 0.48s cubic-bezier(0.22, 1, 0.36, 1),
+   bottom 0.48s cubic-bezier(0.22, 1, 0.36, 1),
+   transform 0.48s cubic-bezier(0.22, 1, 0.36, 1);
+ }
+
+ .equipo-card-name {
+  overflow: hidden;
+  color: rgb(var(--text-base));
+  font-size: 1.08rem;
+  font-weight: 900;
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.25s ease;
+ }
+
+ .equipo-card-contact {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.34rem;
+  color: rgb(var(--text-muted));
+  font-size: 0.74rem;
+  font-weight: 600;
+  transition: color 0.25s ease;
+ }
+
+ .equipo-card-email {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+ }
+
+ .equipo-card-phone {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(var(--border-base));
+  border-radius: 999px;
+  color: rgb(var(--color-action));
+  background: rgb(var(--bg-base) / 0.72);
+  transition: transform 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+ }
+
+ .equipo-card-phone:hover {
+  transform: scale(1.06);
+  background: rgb(var(--color-action) / 0.12);
+ }
+
+ .equipo-card-meta {
+  display: flex;
+  min-width: 0;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.65rem;
+  margin-top: auto;
+ }
+
+ .equipo-capabilities,
+ .equipo-ministries {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.34rem;
+ }
+
+ .equipo-ministries {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+ }
+
+ .equipo-capability {
+  display: inline-flex;
+  width: 31px;
+  height: 31px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(var(--border-base));
+  border-radius: 0.72rem;
+  color: rgb(var(--text-muted));
+  background: rgb(var(--bg-base) / 0.72);
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+ }
+
+ .equipo-capability svg {
+  width: 15px;
+  height: 15px;
+ }
+
+ .equipo-capability--vocal {
+  width: auto;
+  max-width: 96px;
+  gap: 0.32rem;
+  padding: 0 0.48rem;
+  color: rgb(190 24 93);
+  border-color: rgb(244 114 182 / 0.28);
+  background: rgb(244 114 182 / 0.1);
+ }
+
+ .equipo-capability--vocal span {
+  overflow: hidden;
+  font-size: 0.62rem;
+  font-weight: 900;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+ }
+
+ .equipo-capability--more {
+  color: rgb(var(--text-base));
+  font-size: 0.66rem;
+  font-weight: 900;
+ }
+
+ .equipo-capability-empty {
+  color: rgb(var(--text-muted));
+  font-size: 0.68rem;
+  font-weight: 700;
+ }
+
+ .equipo-ministry-tag {
+  display: inline-flex;
+  max-width: 88px;
+  min-height: 24px;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.5rem;
+  overflow: hidden;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.59rem;
+  font-weight: 900;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+ }
+
+ .equipo-ministry-tag::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: currentColor;
+ }
+
+ .equipo-ministry-tag--general {
+  color: rgb(5 150 105);
+  background: rgb(16 185 129 / 0.08);
+ }
+
+ .equipo-ministry-tag--youth {
+  color: rgb(2 132 199);
+  background: rgb(14 165 233 / 0.08);
+ }
+
+ .equipo-ministry-empty {
+  color: rgb(var(--text-muted));
+  font-size: 0.64rem;
+  font-weight: 700;
+ }
+
+ .equipo-card-actions {
+  position: absolute;
+  z-index: 3;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+ }
+
+ .equipo-card-manage,
+ .equipo-card-delete {
+  display: inline-flex;
+  min-height: 43px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(var(--border-base));
+  border-radius: 0.9rem;
+  font-size: 0.74rem;
+  font-weight: 900;
+  transition: transform 0.2s ease, background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+ }
+
+ .equipo-card-manage {
+  flex: 1 1 auto;
+  gap: 0.45rem;
+  color: rgb(var(--text-base));
+  background: rgb(var(--bg-base) / 0.78);
+ }
+
+ .equipo-card-delete {
+  width: 43px;
+  flex: 0 0 43px;
+  color: rgb(225 29 72);
+  border-color: rgb(244 63 94 / 0.18);
+  background: rgb(244 63 94 / 0.07);
+ }
+
+ .equipo-card-manage:hover,
+ .equipo-card-delete:hover {
+  transform: translateY(-1px);
+ }
+
+ .equipo-card-manage:focus-visible,
+ .equipo-card-delete:focus-visible,
+ .equipo-card-phone:focus-visible {
+  outline: 2px solid rgb(var(--color-brand));
+  outline-offset: 2px;
+ }
+
+ html.dark .equipo-capability--vocal {
+  color: rgb(251 207 232);
+ }
+
+ html.dark .equipo-ministry-tag--general {
+  color: rgb(110 231 183);
+ }
+
+ html.dark .equipo-ministry-tag--youth {
+  color: rgb(125 211 252);
+ }
+
+ @media (hover: hover) and (pointer: fine) and (min-width: 768px) {
+  .equipo-card:hover,
+  .equipo-card:focus-visible {
+   transform: translateY(-5px);
+   border-color: rgb(255 255 255 / 0.8);
+   box-shadow: 0 24px 52px -24px rgb(15 23 42 / 0.72);
+  }
+
+  .equipo-card:hover .equipo-card-media,
+  .equipo-card:focus-visible .equipo-card-media {
+   inset: 0;
+   height: 100%;
+   border-color: transparent;
+   border-radius: inherit;
+  }
+
+  .equipo-card:hover .equipo-card-media img,
+  .equipo-card:focus-visible .equipo-card-media img {
+   transform: scale(1.075);
+  }
+
+  .equipo-card:hover .equipo-card-scrim,
+  .equipo-card:focus-visible .equipo-card-scrim {
+   opacity: 1;
+  }
+
+  .equipo-card:hover .equipo-card-content,
+  .equipo-card:focus-visible .equipo-card-content {
+   top: auto;
+   bottom: 68px;
+   transform: translateY(0);
+  }
+
+  .equipo-card:hover .equipo-card-name,
+  .equipo-card:focus-visible .equipo-card-name {
+   color: white;
+   text-shadow: 0 1px 12px rgb(0 0 0 / 0.34);
+  }
+
+  .equipo-card:hover .equipo-card-contact,
+  .equipo-card:focus-visible .equipo-card-contact {
+   color: rgb(255 255 255 / 0.78);
+  }
+
+  .equipo-card:hover .equipo-card-phone,
+  .equipo-card:focus-visible .equipo-card-phone,
+  .equipo-card:hover .equipo-capability,
+  .equipo-card:focus-visible .equipo-capability {
+   color: white;
+   border-color: rgb(255 255 255 / 0.25);
+   background: rgb(255 255 255 / 0.14);
+   backdrop-filter: blur(14px);
+  }
+
+  .equipo-card:hover .equipo-capability--vocal,
+  .equipo-card:focus-visible .equipo-capability--vocal {
+   color: rgb(255 228 240);
+  }
+
+  .equipo-card:hover .equipo-ministry-tag,
+  .equipo-card:focus-visible .equipo-ministry-tag {
+   color: white;
+   border-color: rgb(255 255 255 / 0.3);
+   background: rgb(15 23 42 / 0.34);
+   backdrop-filter: blur(14px);
+  }
+
+  .equipo-card:hover .equipo-ministry-empty,
+  .equipo-card:focus-visible .equipo-ministry-empty,
+  .equipo-card:hover .equipo-capability-empty,
+  .equipo-card:focus-visible .equipo-capability-empty {
+   color: rgb(255 255 255 / 0.7);
+  }
+
+  .equipo-card:hover .equipo-card-manage,
+  .equipo-card:focus-visible .equipo-card-manage {
+   color: rgb(15 23 42);
+   border-color: rgb(255 255 255 / 0.7);
+   background: rgb(255 255 255 / 0.9);
+   box-shadow: 0 8px 24px -12px rgb(0 0 0 / 0.8);
+   backdrop-filter: blur(12px);
+  }
+
+  .equipo-card:hover .equipo-card-delete,
+  .equipo-card:focus-visible .equipo-card-delete {
+   color: rgb(255 228 230);
+   border-color: rgb(255 255 255 / 0.24);
+   background: rgb(127 29 29 / 0.52);
+   backdrop-filter: blur(12px);
+  }
+ }
+
+ @media (max-width: 767px) {
+  .equipo-card {
+   min-height: 294px;
+  }
+
+  .equipo-card-media {
+   height: 112px;
+  }
+
+  .equipo-card-content {
+   top: 136px;
+  }
+ }
+
+ @media (prefers-reduced-motion: reduce) {
+  .equipo-card,
+  .equipo-card-media,
+  .equipo-card-media img,
+  .equipo-card-scrim,
+  .equipo-card-content {
+   transition-duration: 0.01ms !important;
+  }
+ }
+</style>
+
+<style is:global>
+ .team-wizard-modal {
+  padding: 0;
+ }
+
+ .team-wizard-backdrop {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: rgb(2 6 23 / 0.56);
+  backdrop-filter: blur(18px) saturate(1.1);
+  transition: opacity 0.36s ease;
+ }
+
+ .team-wizard-panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: 100%;
+  height: 100dvh;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  color: rgb(var(--text-base));
+  background: rgb(var(--bg-surface));
+  opacity: 0;
+  transform: translateY(30px) scale(0.985);
+  transition:
+   opacity 0.36s ease,
+   transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+ }
+
+ .team-wizard-modal.is-open .team-wizard-backdrop {
+  opacity: 1;
+ }
+
+ .team-wizard-modal.is-open .team-wizard-panel {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+ }
+
+ .team-wizard-hero {
+  position: relative;
+  height: 184px;
+  flex: 0 0 184px;
+  overflow: hidden;
+  background: rgb(var(--bg-base));
+ }
+
+ .team-wizard-hero-media,
+ .team-wizard-hero-media img,
+ .team-wizard-profile-initials,
+ .team-wizard-hero-scrim {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+ }
+
+ .team-wizard-hero-media img {
+  object-fit: cover;
+  object-position: center 26%;
+  transform: scale(1.02);
+ }
+
+ .team-wizard-profile-initials {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgb(var(--color-brand));
+  font-size: 4rem;
+  font-weight: 950;
+  letter-spacing: -0.07em;
+  background:
+   radial-gradient(circle at 25% 20%, rgb(var(--color-brand) / 0.26), transparent 50%),
+   linear-gradient(145deg, rgb(var(--bg-base)), rgb(var(--border-base) / 0.6));
+ }
+
+ .team-wizard-profile-initials.hidden {
+  display: none;
+ }
+
+ .team-wizard-hero-scrim {
+  background:
+   linear-gradient(180deg, rgb(2 6 23 / 0.14), transparent 34%, rgb(2 6 23 / 0.86) 100%);
+ }
+
+ .team-wizard-close {
+  position: absolute;
+  z-index: 2;
+  top: max(16px, env(safe-area-inset-top));
+  left: 16px;
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  border: 1px solid rgb(255 255 255 / 0.28);
+  border-radius: 999px;
+  background: rgb(15 23 42 / 0.26);
+  box-shadow: 0 10px 24px -14px rgb(0 0 0 / 0.8);
+  backdrop-filter: blur(16px);
+  transition: transform 0.2s ease, background-color 0.2s ease;
+ }
+
+ .team-wizard-close:hover {
+  transform: translateX(-2px);
+  background: rgb(15 23 42 / 0.42);
+ }
+
+ .team-wizard-close:focus-visible {
+  outline: 3px solid rgb(255 255 255 / 0.7);
+  outline-offset: 2px;
+ }
+
+ .team-wizard-identity {
+  position: absolute;
+  z-index: 2;
+  right: 20px;
+  bottom: 18px;
+  left: 20px;
+  color: white;
+ }
+
+ .team-wizard-eyebrow {
+  margin-bottom: 0.28rem;
+  color: rgb(255 255 255 / 0.65);
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+ }
+
+ .team-wizard-identity h3 {
+  overflow: hidden;
+  font-size: 1.5rem;
+  font-weight: 950;
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+  text-overflow: ellipsis;
+  text-shadow: 0 2px 18px rgb(0 0 0 / 0.32);
+  white-space: nowrap;
+ }
+
+ .team-wizard-identity > p:last-child {
+  margin-top: 0.28rem;
+  overflow: hidden;
+  color: rgb(255 255 255 / 0.7);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+ }
+
+ .team-wizard-nav {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  flex: 0 0 auto;
+  gap: 0.35rem;
+  padding: 0.55rem 0.7rem 0.65rem;
+  border-bottom: 1px solid rgb(var(--border-base));
+  background: rgb(var(--bg-surface) / 0.92);
+  backdrop-filter: blur(20px);
+ }
+
+ .team-wizard-nav-item {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.42rem;
+  padding: 0.45rem 0.55rem;
+  color: rgb(var(--text-muted));
+  border: 1px solid transparent;
+  border-radius: 0.9rem;
+  font-size: 0.67rem;
+  font-weight: 850;
+  transition: color 0.22s ease, background-color 0.22s ease, border-color 0.22s ease, transform 0.22s ease;
+ }
+
+ .team-wizard-nav-item.hidden {
+  display: none;
+ }
+
+ .team-wizard-nav-item svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+ }
+
+ .team-wizard-nav-item[aria-selected='true'] {
+  color: rgb(var(--text-base));
+  border-color: rgb(var(--border-base));
+  background: rgb(var(--bg-base));
+  box-shadow: 0 6px 16px -14px rgb(15 23 42 / 0.55);
+ }
+
+ .team-wizard-nav-item:hover {
+  color: rgb(var(--text-base));
+  transform: translateY(-1px);
+ }
+
+ .team-wizard-nav-item:focus-visible {
+  outline: 2px solid rgb(var(--color-brand));
+  outline-offset: 1px;
+ }
+
+ .team-wizard-stage {
+  position: relative;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  background:
+   radial-gradient(circle at 100% 0%, rgb(var(--color-brand) / 0.06), transparent 36%),
+   rgb(var(--bg-surface));
+ }
+
+ .team-wizard-step {
+  position: absolute;
+  inset: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 1.25rem 1rem 1.5rem;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(34px) scale(0.99);
+  transition:
+   opacity 0.32s ease,
+   transform 0.46s cubic-bezier(0.22, 1, 0.36, 1);
+ }
+
+ .team-wizard-step[data-state='before'] {
+  transform: translateX(-34px) scale(0.99);
+ }
+
+ .team-wizard-step[data-state='active'] {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0) scale(1);
+ }
+
+ .team-wizard-step-heading {
+  margin-bottom: 1rem;
+ }
+
+ .team-wizard-step-heading p {
+  margin-bottom: 0.28rem;
+  color: rgb(var(--color-action));
+  font-size: 0.62rem;
+  font-weight: 950;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+ }
+
+ .team-wizard-step-heading h4 {
+  color: rgb(var(--text-base));
+  font-size: 1.35rem;
+  font-weight: 950;
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+ }
+
+ .team-wizard-step-heading span {
+  display: block;
+  margin-top: 0.38rem;
+  color: rgb(var(--text-muted));
+  font-size: 0.76rem;
+  font-weight: 550;
+  line-height: 1.45;
+ }
+
+ .team-wizard-options {
+  display: grid;
+  gap: 0.7rem;
+ }
+
+ .team-wizard-option {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 78px;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.78rem 0.85rem;
+  cursor: pointer;
+  border: 1px solid rgb(var(--border-base));
+  border-radius: 1.25rem;
+  background: rgb(var(--bg-surface));
+  box-shadow: 0 10px 28px -24px rgb(15 23 42 / 0.5);
+  transition: transform 0.2s ease, border-color 0.22s ease, background-color 0.22s ease, box-shadow 0.22s ease, opacity 0.22s ease;
+ }
+
+ .team-wizard-option:hover {
+  transform: translateY(-2px);
+  border-color: rgb(var(--color-brand) / 0.34);
+  box-shadow: 0 15px 30px -24px rgb(15 23 42 / 0.62);
+ }
+
+ .team-wizard-option:has(.team-wizard-toggle-input:checked) {
+  border-color: rgb(var(--color-brand) / 0.42);
+  background: color-mix(in srgb, rgb(var(--bg-surface)) 92%, rgb(var(--color-brand)) 8%);
+ }
+
+ .team-wizard-option:has(.team-wizard-toggle-input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.48;
+  transform: none;
+ }
+
+ .team-wizard-option-icon {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+ }
+
+ .team-wizard-option-icon svg {
+  width: 19px;
+  height: 19px;
+ }
+
+ .team-wizard-option-icon--general {
+  color: rgb(5 150 105);
+  background: rgb(16 185 129 / 0.09);
+ }
+
+ .team-wizard-option-icon--youth {
+  color: rgb(2 132 199);
+  background: rgb(14 165 233 / 0.09);
+ }
+
+ .team-wizard-option-icon--voice {
+  color: rgb(124 58 237);
+  background: rgb(139 92 246 / 0.09);
+ }
+
+ .team-wizard-voice-option {
+  width: 100%;
+ }
+
+ .team-wizard-option-copy {
+  min-width: 0;
+ }
+
+ .team-wizard-option-copy strong,
+ .team-wizard-option-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+ }
+
+ .team-wizard-option-copy strong {
+  color: rgb(var(--text-base));
+  font-size: 0.86rem;
+  font-weight: 900;
+ }
+
+ .team-wizard-option-copy small {
+  margin-top: 0.24rem;
+  color: rgb(var(--text-muted));
+  font-size: 0.67rem;
+  font-weight: 600;
+ }
+
+ .team-wizard-toggle-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+ }
+
+ .team-wizard-toggle {
+  position: relative;
+  width: 46px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: 1px solid rgb(var(--border-base));
+  border-radius: 999px;
+  background: rgb(var(--border-base) / 0.72);
+  transition: border-color 0.25s ease, background-color 0.25s ease;
+ }
+
+ .team-wizard-toggle > span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: white;
+  box-shadow: 0 2px 7px rgb(15 23 42 / 0.25);
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+ }
+
+ .team-wizard-toggle-input:checked + .team-wizard-toggle {
+  border-color: rgb(var(--color-action));
+  background: rgb(var(--color-action));
+ }
+
+ .team-wizard-toggle-input:checked + .team-wizard-toggle > span {
+  transform: translateX(18px);
+ }
+
+ .team-wizard-toggle-input:focus-visible + .team-wizard-toggle {
+  outline: 3px solid rgb(var(--color-brand) / 0.32);
+  outline-offset: 2px;
+ }
+
+ .team-wizard-role-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.58rem;
+  padding-bottom: 0.25rem;
+ }
+
+ .team-wizard-role-option {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 64px;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.65rem 0.72rem;
+  cursor: pointer;
+  border: 1px solid rgb(var(--border-base));
+  border-radius: 1rem;
+  background: rgb(var(--bg-surface));
+  transition: transform 0.2s ease, border-color 0.22s ease, background-color 0.22s ease;
+ }
+
+ .team-wizard-role-option:hover {
+  transform: translateY(-1px);
+  border-color: rgb(var(--color-brand) / 0.34);
+ }
+
+ .team-wizard-role-option:has(input:checked) {
+  border-color: rgb(var(--color-brand) / 0.46);
+  background: color-mix(in srgb, rgb(var(--bg-surface)) 91%, rgb(var(--color-brand)) 9%);
+ }
+
+ .team-wizard-role-icon {
+  display: inline-flex;
+  width: 38px;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  color: rgb(var(--color-action));
+  border: 1px solid rgb(var(--color-action) / 0.2);
+  border-radius: 0.82rem;
+  background: rgb(var(--color-action) / 0.08);
+ }
+
+ .team-wizard-role-icon svg {
+  width: 17px;
+  height: 17px;
+ }
+
+ .team-wizard-role-name {
+  min-width: 0;
+  overflow: hidden;
+  color: rgb(var(--text-base));
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+ }
+
+ .team-wizard-role-check {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  color: transparent;
+  border: 1px solid rgb(var(--border-base));
+  border-radius: 999px;
+  background: rgb(var(--bg-base));
+  transition: color 0.22s ease, border-color 0.22s ease, background-color 0.22s ease, transform 0.22s ease;
+ }
+
+ .team-wizard-role-check svg {
+  width: 13px;
+  height: 13px;
+ }
+
+ .team-wizard-role-option:has(input:checked) .team-wizard-role-check {
+  color: white;
+  border-color: rgb(var(--color-action));
+  background: rgb(var(--color-action));
+  transform: scale(1.04);
+ }
+
+ .team-wizard-role-option input:focus-visible ~ .team-wizard-role-check {
+  outline: 3px solid rgb(var(--color-brand) / 0.3);
+  outline-offset: 2px;
+ }
+
+ .team-wizard-role-empty {
+  padding: 2.5rem 1rem;
+  color: rgb(var(--text-muted));
+  border: 1px dashed rgb(var(--border-base));
+  border-radius: 1.2rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-align: center;
+ }
+
+ .team-wizard-vocal-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+  padding: 0.8rem;
+  border: 1px solid rgb(var(--border-base));
+  border-radius: 1.15rem;
+  background: color-mix(in srgb, rgb(var(--bg-surface)) 94%, rgb(var(--color-brand)) 6%);
+  transition: opacity 0.22s ease, border-color 0.22s ease, background-color 0.22s ease;
+ }
+
+ .team-wizard-vocal-card:not(.is-disabled) {
+  border-color: rgb(var(--color-brand) / 0.34);
+ }
+
+ .team-wizard-vocal-card.is-disabled {
+  opacity: 0.58;
+  background: rgb(var(--bg-surface));
+ }
+
+ .team-wizard-vocal-icon {
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  color: rgb(var(--color-action));
+  border: 1px solid rgb(var(--color-action) / 0.2);
+  border-radius: 0.9rem;
+  background: rgb(var(--color-action) / 0.08);
+ }
+
+ .team-wizard-vocal-icon svg {
+  width: 19px;
+  height: 19px;
+ }
+
+ .team-wizard-vocal-copy {
+  min-width: 0;
+ }
+
+ .team-wizard-vocal-copy strong,
+ .team-wizard-vocal-copy small {
+  display: block;
+ }
+
+ .team-wizard-vocal-copy strong {
+  color: rgb(var(--text-base));
+  font-size: 0.82rem;
+  font-weight: 900;
+ }
+
+ .team-wizard-vocal-copy small {
+  margin-top: 0.2rem;
+  color: rgb(var(--text-muted));
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.35;
+ }
+
+ .team-wizard-vocal-field {
+  position: relative;
+  grid-column: 1 / -1;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+ }
+
+ .team-wizard-vocal-field select {
+  width: 100%;
+  min-height: 46px;
+  appearance: none;
+  padding: 0.65rem 2.7rem 0.65rem 0.85rem;
+  color: rgb(var(--text-base));
+  border: 1px solid rgb(var(--border-base));
+  border-radius: 0.9rem;
+  background: rgb(var(--bg-surface));
+  font-size: 0.76rem;
+  font-weight: 800;
+  outline: none;
+ }
+
+ .team-wizard-vocal-field select:focus-visible {
+  border-color: rgb(var(--color-brand));
+  box-shadow: 0 0 0 3px rgb(var(--color-brand) / 0.22);
+ }
+
+ .team-wizard-vocal-field select:disabled {
+  cursor: not-allowed;
+ }
+
+ .team-wizard-vocal-field > svg {
+  position: absolute;
+  right: 0.85rem;
+  width: 16px;
+  height: 16px;
+  color: rgb(var(--text-muted));
+  pointer-events: none;
+ }
+
+ .team-wizard-footer {
+  position: relative;
+  z-index: 4;
+  flex: 0 0 auto;
+  padding: 0.72rem 0.85rem max(0.8rem, env(safe-area-inset-bottom));
+  border-top: 1px solid rgb(var(--border-base));
+  background: rgb(var(--bg-surface) / 0.92);
+  box-shadow: 0 -18px 36px -30px rgb(15 23 42 / 0.62);
+  backdrop-filter: blur(22px);
+ }
+
+ .team-wizard-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.6rem;
+ }
+
+ .team-wizard-progress > span {
+  flex: 0 0 auto;
+  color: rgb(var(--text-muted));
+  font-size: 0.61rem;
+  font-weight: 850;
+ }
+
+ .team-wizard-progress > div {
+  height: 3px;
+  flex: 1 1 auto;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(var(--border-base));
+ }
+
+ .team-wizard-progress i {
+  display: block;
+  width: 33.333%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgb(var(--color-action)), rgb(var(--color-brand)));
+  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+ }
+
+ .team-wizard-footer-actions {
+  display: flex;
+  gap: 0.55rem;
+ }
+
+ .team-wizard-primary,
+ .team-wizard-secondary {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 1rem;
+  font-size: 0.78rem;
+  font-weight: 900;
+  transition: transform 0.2s ease, background-color 0.22s ease, color 0.22s ease, opacity 0.22s ease;
+ }
+
+ .team-wizard-primary.hidden,
+ .team-wizard-secondary.hidden {
+  display: none;
+ }
+
+ .team-wizard-primary {
+  flex: 1 1 auto;
+  gap: 0.35rem;
+  color: white;
+  background: rgb(15 23 42);
+  box-shadow: 0 12px 24px -18px rgb(15 23 42 / 0.7);
+ }
+
+ .team-wizard-primary svg {
+  width: 16px;
+  height: 16px;
+ }
+
+ .team-wizard-secondary {
+  min-width: 92px;
+  color: rgb(var(--text-base));
+  border: 1px solid rgb(var(--border-base));
+  background: rgb(var(--bg-base));
+ }
+
+ .team-wizard-primary:hover,
+ .team-wizard-secondary:hover {
+  transform: translateY(-1px);
+ }
+
+ .team-wizard-primary:disabled,
+ .team-wizard-secondary:disabled {
+  cursor: wait;
+  opacity: 0.58;
+  transform: none;
+ }
+
+ .team-wizard-primary:focus-visible,
+ .team-wizard-secondary:focus-visible {
+  outline: 3px solid rgb(var(--color-brand) / 0.34);
+  outline-offset: 2px;
+ }
+
+ html.dark .team-wizard-primary {
+  color: rgb(15 23 42);
+  background: white;
+ }
+
+ html.dark .team-wizard-option-icon--general {
+  color: rgb(110 231 183);
+ }
+
+ html.dark .team-wizard-option-icon--youth {
+  color: rgb(125 211 252);
+ }
+
+ html.dark .team-wizard-option-icon--voice {
+  color: rgb(196 181 253);
+ }
+
+ @media (max-width: 479px) {
+  .team-wizard-nav {
+   gap: 0.2rem;
+   padding-inline: 0.45rem;
+  }
+
+  .team-wizard-nav-item {
+   min-height: 52px;
+   flex-direction: column;
+   gap: 0.16rem;
+   padding: 0.3rem 0.15rem;
+   font-size: 0.59rem;
+  }
+
+  .team-wizard-nav-item svg {
+   width: 15px;
+   height: 15px;
+  }
+ }
+
+ @media (min-width: 640px) {
+  .team-wizard-modal {
+   padding: 1rem;
+  }
+
+  .team-wizard-panel {
+   width: min(720px, 100%);
+   height: min(850px, calc(100dvh - 2rem));
+   border: 1px solid rgb(255 255 255 / 0.18);
+   border-radius: 2rem;
+   box-shadow: 0 34px 86px -34px rgb(2 6 23 / 0.82);
+  }
+
+  .team-wizard-hero {
+   height: 220px;
+   flex-basis: 220px;
+  }
+
+  .team-wizard-nav {
+   padding-inline: 1rem;
+  }
+
+  .team-wizard-step {
+   padding: 1.4rem 1.35rem 1.75rem;
+  }
+
+  .team-wizard-options {
+   grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .team-wizard-role-grid {
+   grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .team-wizard-vocal-card {
+   grid-template-columns: auto minmax(0, 1fr) minmax(190px, 0.8fr);
+  }
+
+  .team-wizard-vocal-field {
+   grid-column: auto;
+  }
+
+  .team-wizard-footer {
+   padding-inline: 1.35rem;
+  }
+ }
+
+ @media (prefers-reduced-motion: reduce) {
+  .team-wizard-backdrop,
+  .team-wizard-panel,
+  .team-wizard-step,
+  .team-wizard-progress i,
+  .team-wizard-toggle > span {
+   transition-duration: 0.01ms !important;
+  }
+ }
+</style>
 </Layout>
 
 <script>
  import { supabase } from '../lib/supabase';
- import { isEventRepertoryManagerRoleCode, isHiddenEventAssignmentRoleCode } from '../lib/role-permissions.js';
+ import { isEventRepertoryManagerRoleCode, isHiddenEventAssignmentRoleCode, isTeamAssignableRoleCode } from '../lib/role-permissions.js';
  import { safeHtml } from '../lib/client/html-safety.js';
 
  // Estado reactivo temporal de la Plantilla de Equipo
@@ -420,6 +1782,46 @@ import Layout from '../layouts/Layout.astro';
   .replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
+
+ const capabilityIconSvg = (roleCode = '') => {
+  const code = String(roleCode || '').trim().toLowerCase();
+  const svg = (body:string) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+
+  if (code.includes('piano') || code.includes('teclado')) {
+   return svg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v8M11 5v8M15 5v8M19 5v8"/><path d="M5 13h14"/>');
+  }
+  if (code.includes('bateria') || code.includes('caja') || code.includes('cajon')) {
+   return svg('<ellipse cx="12" cy="13" rx="7.5" ry="4"/><path d="M4.5 13V8.5c0 2.2 3.4 4 7.5 4s7.5-1.8 7.5-4V13M7 16.2V20M17 16.2V20M8 3l2.3 5M16 3l-2.3 5"/>');
+  }
+  if (code.includes('guitarra') || code === 'bajo' || code.includes('violin')) {
+   return svg('<path d="m15.5 4.5 4 4"/><path d="m14 10 4-4"/><path d="M13.2 9.2c-1.6-1.6-3.7-2-4.8-.9-.7.7-.8 1.7-.4 2.8l-3.3 3.3a3.2 3.2 0 0 0 4.5 4.5l3.3-3.3c1.1.4 2.1.3 2.8-.4 1.1-1.1.7-3.2-.9-4.8Z"/><circle cx="8.2" cy="15.8" r="1.2"/>');
+  }
+  if (code.includes('voz') || code.includes('vocal') || code.includes('talkback') || code.includes('lider_alabanza')) {
+   return svg('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M9 21h6"/>');
+  }
+  if (code.includes('audiovisual') || code.includes('produccion_visual')) {
+   return svg('<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M8.5 9.5l2.2 2 4.8-4"/>');
+  }
+  if (code.includes('letra') || code.includes('pastor')) {
+   return svg('<path d="M6 3h9l3 3v15H6z"/><path d="M14 3v4h4M9 11h6M9 15h6"/>');
+  }
+  if (code.includes('secuencia') || code.includes('director')) {
+   return svg('<path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M7 14v6"/>');
+  }
+  return svg('<path d="M9 18V5l10-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/>');
+ };
+
+const WIZARD_SEPARATE_ROLE_CODES = new Set([
+ 'audiovisuales',
+ 'encargado_letras',
+ 'gestor_secuencias',
+ 'lider_alabanza',
+ 'lider_vocal',
+ 'pastor',
+ 'voz_principal',
+ 'voz_soprano',
+ 'voz_tenor',
+]);
 
  const getStableSession = async () => {
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -451,6 +1853,7 @@ import Layout from '../layouts/Layout.astro';
  }
 
  const user = session.user;
+ const canManageOperations = pageRoot.dataset.canManageOperations === 'true';
  
  // Los administradores gestionan roles/equipos. Los gestores designados solo
  // pueden administrar la disponibilidad entre ministerios.
@@ -463,8 +1866,13 @@ import Layout from '../layouts/Layout.astro';
  ]);
  const isGlobalAdmin = Boolean(perfil?.is_admin);
  const canManageMinistries = ministryManagerAccess === true;
+ const canEditTeamRoles = isGlobalAdmin || canManageOperations;
 
- if (perfilError || (!isGlobalAdmin && (ministryManagerError || !canManageMinistries))) {
+ if (ministryManagerError && ministryManagerError.code !== 'PGRST202') {
+ console.error('No se pudo validar el permiso de gestión de ministerios:', ministryManagerError);
+ }
+
+ if (perfilError || (!isGlobalAdmin && !canManageMinistries && !canManageOperations)) {
  alert('Acceso restringido. No tienes permisos para gestionar el equipo o sus ministerios.');
  window.location.replace('/programacion');
  return;
@@ -475,7 +1883,9 @@ import Layout from '../layouts/Layout.astro';
  element.style.display = 'none';
  });
  const subtitle = document.getElementById('equipo-page-subtitle');
- if (subtitle) subtitle.textContent = 'Administra la disponibilidad entre Alabanza general y Sin Filtros.';
+ if (subtitle) subtitle.textContent = canEditTeamRoles
+ ? 'Administra instrumentos, voces y disponibilidad entre ministerios.'
+ : 'Administra la disponibilidad entre Alabanza general y Sin Filtros.';
  }
 
  // 2. Fetch Data (Roles, Perfiles, Perfil_Roles)
@@ -902,20 +2312,32 @@ import Layout from '../layouts/Layout.astro';
  const sinFiltrosMembership = getMembership(p.id, sinFiltrosMinistry?.id);
  
  const article = document.createElement('article');
- article.className = 'equipo-card bg-surface border border-border rounded-2xl p-6 shadow-sm opacity-0 translate-y-4 transition-all duration-500 ease-in-out flex flex-col justify-between';
+ article.className = 'equipo-card opacity-0 translate-y-4';
+ article.tabIndex = 0;
+ article.setAttribute('aria-label', `Integrante: ${p.nombre}`);
  
  // Generar Toggles HTML para cada Rol
- const togglesHTML = roles.map(r => {
+ const assignableRoles = isGlobalAdmin
+ ? roles
+ : roles.filter((role:any) => isTeamAssignableRoleCode(role.codigo));
+ const musicalAssignableRoles = assignableRoles.filter((role:any) => (
+  !WIZARD_SEPARATE_ROLE_CODES.has(String(role.codigo || '').trim().toLowerCase())
+ ));
+ const togglesHTML = musicalAssignableRoles.map(r => {
+ const roleCode = String(r.codigo || '').trim().toLowerCase();
  const isActive = currentRoles.has(r.id);
  return `
- <label class="flex items-center justify-between p-2 rounded-lg hover:bg-background dark:bg-neutral-800 transition-colors cursor-pointer border border-transparent ${isActive ? 'border-border bg-background ' : ''}">
- <span class="text-sm font-medium ${isActive ? 'text-content ' : 'text-content-muted '}">
- ${r.nombre}
- </span>
-        <input type="checkbox" class="role-toggle form-checkbox h-4 w-4 text-action rounded border-border bg-transparent transition duration-150 ease-in-out"
+ <label class="team-wizard-role-option">
+ <span class="team-wizard-role-icon">${capabilityIconSvg(r.codigo)}</span>
+ <span class="team-wizard-role-name">${escapeHtml(r.nombre)}</span>
+ <input type="checkbox" class="role-toggle team-wizard-toggle-input"
  data-perfil="${p.id}" 
- data-rol="${r.id}" 
+ data-rol="${r.id}"
+ data-role-code="${escapeHtml(roleCode)}"
  ${isActive ? 'checked' : ''}>
+ <span class="team-wizard-role-check" aria-hidden="true">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 12 4 4 8-9"/></svg>
+ </span>
  </label>
  `;
  }).join('');
@@ -925,59 +2347,90 @@ import Layout from '../layouts/Layout.astro';
  const telefono = (p.telefono || '').trim();
  const telefonoHref = telefono ? `tel:${telefono.replace(/[^\d+]/g, '')}` : '';
 
- const badgesHTML = Array.from(currentRoles).map(rolId => {
- const rolData = roles.find((r:any) => r.id === rolId);
- if(!rolData) return '';
- return `<span class="px-2 py-0.5 bg-background border border-border text-content-muted text-[10px] font-bold uppercase tracking-wider rounded-md">${rolData.nombre}</span>`;
- }).join('');
- const ministryBadgesHTML = [
- generalMembership
- ? `<span class="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/25 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold uppercase tracking-wider rounded-md">Alabanza general</span>`
- : '',
- sinFiltrosMembership
- ? `<span class="px-2 py-0.5 bg-sky-500/10 border border-sky-500/25 text-sky-600 dark:text-sky-300 text-[10px] font-bold uppercase tracking-wider rounded-md">Sin Filtros</span>`
- : '',
- sinFiltrosMembership?.es_lider
- ? `<span class="px-2 py-0.5 bg-violet-500/10 border border-violet-500/25 text-violet-600 dark:text-violet-300 text-[10px] font-bold uppercase tracking-wider rounded-md">Líder juvenil</span>`
- : '',
- p.tonalidad_voz
- ? `<span class="px-2 py-0.5 bg-rose-500/10 border border-rose-500/25 text-rose-600 dark:text-rose-300 text-[10px] font-bold uppercase tracking-wider rounded-md">${escapeHtml(p.tonalidad_voz)}</span>`
- : ''
- ].filter(Boolean).join('');
+ const hasAnyVoiceRole = Array.from(currentRoles).some((rolId) => {
+  const role = roles.find((candidate:any) => candidate.id === rolId);
+  return ['voz_principal', 'voz_soprano', 'voz_tenor'].includes(
+   String(role?.codigo || '').trim().toLowerCase()
+  );
+ });
+ const roleCapabilities = Array.from(currentRoles)
+ .map((rolId) => roles.find((role:any) => role.id === rolId))
+ .filter(Boolean)
+ .filter((role:any) => !['lider_alabanza', 'lider_vocal'].includes(String(role.codigo || '').trim().toLowerCase()))
+ .filter((role:any) => !['voz_principal', 'voz_soprano', 'voz_tenor'].includes(String(role.codigo || '').trim().toLowerCase()));
+ const maxVisibleRoles = hasAnyVoiceRole ? 2 : 4;
+ const visibleRoleCapabilities = roleCapabilities.slice(0, maxVisibleRoles);
+ const hiddenRoleCount = Math.max(0, roleCapabilities.length - visibleRoleCapabilities.length);
+ const vocalCapabilityLabel = p.tonalidad_voz || (hasAnyVoiceRole ? 'Voz' : '');
+ const vocalCapabilityHTML = vocalCapabilityLabel
+ ? `<span class="equipo-capability equipo-capability--vocal" title="${p.tonalidad_voz ? 'Registro vocal: ' : ''}${escapeHtml(vocalCapabilityLabel)}" aria-label="${p.tonalidad_voz ? 'Registro vocal: ' : ''}${escapeHtml(vocalCapabilityLabel)}">
+ ${capabilityIconSvg('voz_principal')}
+ <span>${escapeHtml(vocalCapabilityLabel)}</span>
+ </span>`
+ : '';
+ const roleCapabilitiesHTML = visibleRoleCapabilities.map((role:any) => `
+ <span class="equipo-capability" title="${escapeHtml(role.nombre)}" aria-label="${escapeHtml(role.nombre)}">
+ ${capabilityIconSvg(role.codigo)}
+ </span>
+ `).join('');
+ const extraCapabilitiesHTML = hiddenRoleCount > 0
+ ? `<span class="equipo-capability equipo-capability--more" title="${hiddenRoleCount} capacidades adicionales" aria-label="${hiddenRoleCount} capacidades adicionales">+${hiddenRoleCount}</span>`
+ : '';
+ const capabilitiesHTML = vocalCapabilityHTML || roleCapabilitiesHTML
+ ? `${vocalCapabilityHTML}${roleCapabilitiesHTML}${extraCapabilitiesHTML}`
+ : '<span class="equipo-capability-empty">Sin capacidades</span>';
+
+ const isGeneralLeader = Boolean(generalMembership?.es_lider);
+ const isSinFiltrosLeader = Boolean(sinFiltrosMembership?.es_lider);
+ let ministryLabel = 'Sin ministerio';
+ let ministryTitle = 'Sin ministerio asignado';
+ let ministryClass = '';
+ if (generalMembership && sinFiltrosMembership) {
+  ministryLabel = isGeneralLeader || isSinFiltrosLeader ? 'Líder · Ambos' : 'Ambos';
+  ministryTitle = 'Disponible en Culto de Adoración Dominical y Sin Filtros';
+  ministryClass = 'equipo-ministry-tag equipo-ministry-tag--youth';
+ } else if (sinFiltrosMembership) {
+  ministryLabel = isSinFiltrosLeader ? 'Líder SF' : 'Sin Filtros';
+  ministryTitle = isSinFiltrosLeader ? 'Líder de Sin Filtros' : 'Disponible en Sin Filtros';
+  ministryClass = 'equipo-ministry-tag equipo-ministry-tag--youth';
+ } else if (generalMembership) {
+  ministryLabel = isGeneralLeader ? 'Líder dominical' : 'Dominical';
+  ministryTitle = isGeneralLeader ? 'Líder de Alabanza general' : 'Disponible en Culto de Adoración Dominical';
+  ministryClass = 'equipo-ministry-tag equipo-ministry-tag--general';
+ }
+ const ministryHTML = ministryClass
+ ? `<span class="${ministryClass}" title="${escapeHtml(ministryTitle)}">${escapeHtml(ministryLabel)}</span>`
+ : `<span class="equipo-ministry-empty">${escapeHtml(ministryLabel)}</span>`;
 
  article.innerHTML = safeHtml`
- <div>
- <div class="flex items-center gap-4 mb-4">
- <div class="w-12 h-12 flex-shrink-0 bg-brand/10 border border-brand/25 rounded-full flex items-center justify-center text-brand font-bold text-lg shadow-inner z-10 relative">
- ${p.avatar_url ? `<img src="${p.avatar_url}" alt="${p.nombre}" crossorigin="anonymous" loading="lazy" decoding="async" class="w-full h-full rounded-full object-cover">` : iniciales}
+ <div class="equipo-card-media" aria-hidden="true">
+ ${p.avatar_url
+ ? `<img src="${escapeHtml(p.avatar_url)}" alt="" crossorigin="anonymous" loading="lazy" decoding="async">`
+ : `<div class="equipo-card-initials">${escapeHtml(iniciales)}</div>`}
  </div>
- <div class="min-w-0">
- <h3 class="text-lg font-bold text-content truncate">${p.nombre}</h3>
- <p class="text-sm text-content-muted truncate">${p.email}</p>
+ <div class="equipo-card-scrim" aria-hidden="true"></div>
+ <div class="equipo-card-content">
+ <h3 class="equipo-card-name" title="${escapeHtml(p.nombre)}">${escapeHtml(p.nombre)}</h3>
+ <div class="equipo-card-contact">
+ <span class="equipo-card-email" title="${escapeHtml(p.email)}">${escapeHtml(p.email)}</span>
  ${telefono ? `
- <a href="${telefonoHref}" class="mt-1 inline-flex max-w-full items-center gap-1.5 text-sm font-semibold text-action hover:text-action/80 truncate" title="Llamar a ${p.nombre}">
- <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.32 1.77.57 2.61a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.47-1.14a2 2 0 0 1 2.11-.45c.84.25 1.71.45 2.61.57A2 2 0 0 1 22 16.92Z"/></svg>
- <span class="truncate">${telefono}</span>
+ <a href="${escapeHtml(telefonoHref)}" class="equipo-card-phone" title="Llamar a ${escapeHtml(p.nombre)}" aria-label="Llamar a ${escapeHtml(p.nombre)}">
+ <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.32 1.77.57 2.61a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.47-1.14a2 2 0 0 1 2.11-.45c.84.25 1.71.45 2.61.57A2 2 0 0 1 22 16.92Z"/></svg>
  </a>
- ` : '<p class="mt-1 text-xs text-content-muted/80 italic">Sin celular registrado</p>'}
+ ` : ''}
+ </div>
+ <div class="equipo-card-meta">
+ <div class="equipo-capabilities" aria-label="Capacidades musicales">${capabilitiesHTML}</div>
+ <div class="equipo-ministries">${ministryHTML}</div>
  </div>
  </div>
 
- <div class="mb-4">
- <h4 class="text-[10px] uppercase tracking-wider font-bold text-content-muted mb-2">Roles Maestros</h4>
- <div class="flex flex-wrap gap-1.5 min-h-[24px]">
- ${badgesHTML || '<span class="text-xs text-content-muted italic">Sin asignar</span>'}
- </div>
- ${ministryBadgesHTML ? `<div class="mt-2 flex flex-wrap gap-1.5">${ministryBadgesHTML}</div>` : ''}
- </div>
- </div>
- 
- <div class="flex items-center gap-2">
- <button type="button" class="btn-editar-roles min-h-11 flex-1 py-2 bg-background hover:bg-neutral/20 dark:bg-slate-800 dark:hover:bg-slate-700 text-content dark:text-slate-100 transition-colors rounded-xl text-xs font-bold flex items-center justify-center gap-2 border border-border shadow-sm" data-perfil="${p.id}" data-nombre="${p.nombre}">
+ <div class="equipo-card-actions">
+ <button type="button" class="btn-editar-roles equipo-card-manage" data-perfil="${p.id}" data-nombre="${escapeHtml(p.nombre)}">
  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
- ${isGlobalAdmin && canManageMinistries ? 'Roles y ministerios' : isGlobalAdmin ? 'Editar roles' : 'Editar ministerios'}
+ Gestionar
  </button>
- ${isGlobalAdmin ? `<button type="button" class="btn-eliminar-perfil w-11 h-11 flex items-center justify-center bg-red-50 hover:bg-red-100 dark:bg-red-900/40 text-red-400 hover:text-red-600 dark:text-red-400 transition-all rounded-xl border border-red-200/60 shrink-0" data-perfil="${p.id}" data-nombre="${p.nombre}" title="Eliminar m\u00FAsico" aria-label="Eliminar a ${p.nombre}">
+ ${isGlobalAdmin ? `<button type="button" class="btn-eliminar-perfil equipo-card-delete" data-perfil="${p.id}" data-nombre="${escapeHtml(p.nombre)}" title="Eliminar músico" aria-label="Eliminar a ${escapeHtml(p.nombre)}">
  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
  </button>` : ''}
  </div>
@@ -994,171 +2447,356 @@ import Layout from '../layouts/Layout.astro';
  loadingState?.classList.add('hidden');
  equipoGrid?.classList.remove('hidden');
 
- // LÃ³gica de Modal Global de Roles
+ // Wizard global de gestión de perfil
  const modalRoles = document.getElementById('modal-roles-global');
  const modalRolesBackdrop = document.getElementById('modal-roles-backdrop');
- const modalRolesPanel = document.getElementById('modal-roles-panel');
  const modalRolesTitle = document.getElementById('modal-roles-title')!;
+ const modalProfileEmail = document.getElementById('modal-profile-email')!;
+ const modalProfileImage = document.getElementById('modal-profile-image') as HTMLImageElement;
+ const modalProfileInitials = document.getElementById('modal-profile-initials')!;
  const modalRolesContainer = document.getElementById('modal-roles-container')!;
- const modalRolesAssignmentSection = document.getElementById('modal-roles-assignment-section');
+ const modalVocalRangeSection = document.getElementById('modal-vocal-range-section');
+ const modalVocalRange = document.getElementById('modal-vocal-range') as HTMLSelectElement;
+ const modalVocalRangeHelp = document.getElementById('modal-vocal-range-help');
+ const modalVoiceEnabled = document.getElementById('modal-voice-enabled') as HTMLInputElement;
  const modalMinistriesSection = document.getElementById('modal-ministries-section');
  const modalGeneralMember = document.getElementById('modal-general-member') as HTMLInputElement;
  const modalGeneralLeader = document.getElementById('modal-general-leader') as HTMLInputElement;
  const modalSinFiltrosMember = document.getElementById('modal-sin-filtros-member') as HTMLInputElement;
  const modalSinFiltrosLeader = document.getElementById('modal-sin-filtros-leader') as HTMLInputElement;
- const btnCloseModalRoles = document.getElementById('btn-close-modal-roles');
+ const modalGeneralLeaderHelp = document.getElementById('modal-general-leader-help');
+ const modalSinFiltrosLeaderHelp = document.getElementById('modal-sin-filtros-leader-help');
+ const btnCloseModalRoles = document.getElementById('btn-close-modal-roles') as HTMLButtonElement;
+ const btnWizardBack = document.getElementById('btn-wizard-back') as HTMLButtonElement;
+ const btnWizardNext = document.getElementById('btn-wizard-next') as HTMLButtonElement;
  const btnRolesSubmit = document.getElementById('btn-roles-submit') as HTMLButtonElement;
+ const wizardProgressLabel = document.getElementById('team-wizard-progress-label');
+ const wizardProgressBar = document.getElementById('team-wizard-progress-bar') as HTMLElement;
+ const wizardNav = document.querySelector<HTMLElement>('.team-wizard-nav');
+ const wizardNavItems = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-wizard-step]'));
+ const wizardPanels = Array.from(document.querySelectorAll<HTMLElement>('[data-wizard-panel]'));
+ const worshipLeaderRole = roles.find((role:any) => role.codigo === 'lider_alabanza') || null;
  let currentPerfilId: string | null = null;
+ let currentWizardStep = 0;
+ let wizardTrigger: HTMLButtonElement | null = null;
+ let modalRolesCloseTimer: number | null = null;
 
- btnRolesSubmit?.addEventListener('click', async () => {
- if(!currentPerfilId) return;
- const oldBtnText = btnRolesSubmit.textContent;
- btnRolesSubmit.innerHTML = '<span class="flex items-center justify-center gap-2"><div class="w-4 h-4 rounded-full border-2 border-white/20 border-t-white animate-spin"></div> Guardando...</span>';
- btnRolesSubmit.disabled = true;
+ const availableWizardSteps = [
+  ...(canManageMinistries ? [0, 1] : []),
+  ...(canEditTeamRoles ? [2, 3] : []),
+ ];
 
- try {
- if (isGlobalAdmin) {
- const checkedRoles = Array.from(modalRolesContainer.querySelectorAll('input:checked'))
- .map(el => (el as HTMLInputElement).getAttribute('data-rol'));
+ const setWizardStep = (requestedStep:number, focusTab = false) => {
+  const fallbackStep = availableWizardSteps[0] ?? 0;
+  const nextStep = availableWizardSteps.includes(requestedStep) ? requestedStep : fallbackStep;
+  currentWizardStep = nextStep;
 
- const { error: delErr } = await supabase.from('perfil_roles').delete().eq('perfil_id', currentPerfilId);
- if (delErr) throw delErr;
+  wizardPanels.forEach((panel) => {
+   const panelStep = Number(panel.dataset.wizardPanel);
+   const state = panelStep === nextStep ? 'active' : panelStep < nextStep ? 'before' : 'after';
+   panel.dataset.state = state;
+   panel.setAttribute('aria-hidden', state === 'active' ? 'false' : 'true');
+   if (state === 'active') panel.scrollTop = 0;
+  });
 
- if (checkedRoles.length > 0) {
- const inserts = checkedRoles.map(rid => ({ perfil_id: currentPerfilId, rol_id: rid }));
- const { error: insErr } = await supabase.from('perfil_roles').insert(inserts);
- if (insErr) throw insErr;
- }
- }
+  wizardNavItems.forEach((item) => {
+   const itemStep = Number(item.dataset.wizardStep);
+   const isAvailable = availableWizardSteps.includes(itemStep);
+   const isActive = itemStep === nextStep;
+   item.classList.toggle('hidden', !isAvailable);
+   item.setAttribute('aria-selected', isActive ? 'true' : 'false');
+   item.tabIndex = isActive ? 0 : -1;
+   if (focusTab && isActive) item.focus();
+  });
 
- if (canManageMinistries) {
- const syncMembership = async (
- ministry:any,
- memberInput:HTMLInputElement,
- leaderInput:HTMLInputElement
- ) => {
- if (!ministry) throw new Error('No se encontró uno de los ministerios configurados.');
-
- if (memberInput.checked) {
- const { error } = await supabase
- .from('perfil_ministerios')
- .upsert({
- perfil_id: currentPerfilId,
- ministerio_id: ministry.id,
- es_lider: leaderInput.checked
- }, { onConflict: 'perfil_id,ministerio_id' });
- if (error) throw error;
- return;
- }
-
- const { error } = await supabase
- .from('perfil_ministerios')
- .delete()
- .eq('perfil_id', currentPerfilId)
- .eq('ministerio_id', ministry.id);
- if (error) throw error;
+ const stepIndex = Math.max(0, availableWizardSteps.indexOf(nextStep));
+ const stepTotal = Math.max(1, availableWizardSteps.length);
+  if (wizardNav) wizardNav.style.gridTemplateColumns = `repeat(${stepTotal}, minmax(0, 1fr))`;
+  if (wizardProgressLabel) wizardProgressLabel.textContent = `Paso ${stepIndex + 1} de ${stepTotal}`;
+  if (wizardProgressBar) wizardProgressBar.style.width = `${((stepIndex + 1) / stepTotal) * 100}%`;
+  btnWizardBack.classList.toggle('hidden', stepIndex === 0);
+  btnWizardNext.classList.toggle('hidden', stepIndex >= stepTotal - 1);
+  btnRolesSubmit.classList.toggle('hidden', stepIndex < stepTotal - 1);
  };
 
- await syncMembership(generalMinistry, modalGeneralMember, modalGeneralLeader);
- await syncMembership(sinFiltrosMinistry, modalSinFiltrosMember, modalSinFiltrosLeader);
- }
- 
- // Reload explicitly to visually update the badges
- window.location.reload();
- } catch(err) {
- console.error('Error al guardar la configuración del perfil:', err);
- alert('Hubo un error al guardar los cambios.');
- btnRolesSubmit.textContent = oldBtnText;
- btnRolesSubmit.disabled = false;
- }
- });
+ const syncLeadershipAvailability = () => {
+  modalGeneralLeader.disabled = !modalGeneralMember.checked;
+  modalSinFiltrosLeader.disabled = !modalSinFiltrosMember.checked;
+  if (!modalGeneralMember.checked) modalGeneralLeader.checked = false;
+  if (!modalSinFiltrosMember.checked) modalSinFiltrosLeader.checked = false;
+  if (modalGeneralLeaderHelp) {
+   modalGeneralLeaderHelp.textContent = modalGeneralMember.checked
+   ? 'Puede liderar el Culto Dominical'
+   : 'Activa primero Los domingos';
+  }
+  if (modalSinFiltrosLeaderHelp) {
+   modalSinFiltrosLeaderHelp.textContent = modalSinFiltrosMember.checked
+   ? 'Puede liderar los servicios juveniles'
+   : 'Activa primero Sin Filtros';
+  }
+ };
+
+ const syncVocalRangeAvailability = () => {
+  const voiceEnabled = modalVoiceEnabled.checked;
+  modalVocalRange.disabled = !voiceEnabled;
+  modalVocalRangeSection?.classList.toggle('is-disabled', !voiceEnabled);
+  if (modalVocalRangeHelp) {
+   modalVocalRangeHelp.textContent = voiceEnabled
+    ? 'Clasificación separada del rol musical Voz.'
+    : 'Activa Voz para definir la clasificación.';
+  }
+ };
 
  const toggleModalRoles = (show: boolean) => {
- if (show) {
- modalRoles?.classList.remove('hidden');
- modalRoles?.classList.add('flex');
- document.body.style.overflow = 'hidden';
- // Animations in
- void modalRoles?.offsetWidth; // trigger reflow
- modalRolesBackdrop?.classList.replace('opacity-0', 'opacity-100');
- modalRolesPanel?.classList.remove('translate-y-full', 'sm:translate-y-4', 'sm:scale-95', 'sm:opacity-0');
- } else {
- modalRolesBackdrop?.classList.replace('opacity-100', 'opacity-0');
- modalRolesPanel?.classList.add('translate-y-full', 'sm:translate-y-4', 'sm:scale-95', 'sm:opacity-0');
- setTimeout(() => {
- modalRoles?.classList.add('hidden');
- modalRoles?.classList.remove('flex');
- document.body.style.overflow = '';
- }, 300); // match transition duration
- }
+  if (!modalRoles) return;
+  if (modalRolesCloseTimer !== null) {
+   window.clearTimeout(modalRolesCloseTimer);
+   modalRolesCloseTimer = null;
+  }
+
+  if (show) {
+   modalRoles.classList.remove('hidden');
+   modalRoles.classList.add('flex');
+   document.body.style.overflow = 'hidden';
+   void modalRoles.offsetWidth;
+   modalRoles.classList.add('is-open');
+   window.setTimeout(() => btnCloseModalRoles?.focus(), 180);
+   return;
+  }
+
+  modalRoles.classList.remove('is-open');
+  modalRolesCloseTimer = window.setTimeout(() => {
+   modalRoles.classList.add('hidden');
+   modalRoles.classList.remove('flex');
+   document.body.style.overflow = '';
+   wizardTrigger?.focus();
+   modalRolesCloseTimer = null;
+  }, 380);
  };
+
+ btnRolesSubmit?.addEventListener('click', async () => {
+  if (!currentPerfilId) return;
+  btnRolesSubmit.innerHTML = '<span class="flex items-center justify-center gap-2"><span class="h-4 w-4 rounded-full border-2 border-white/25 border-t-white animate-spin"></span> Guardando...</span>';
+  btnRolesSubmit.disabled = true;
+  btnWizardBack.disabled = true;
+  wizardNavItems.forEach((item) => { item.disabled = true; });
+
+  try {
+   if (canEditTeamRoles) {
+    const roleInputs = Array.from(modalRolesContainer.querySelectorAll<HTMLInputElement>('input[data-rol]'));
+    const managedRoleIds = new Set(roleInputs.map((input) => input.dataset.rol).filter(Boolean) as string[]);
+    const selectedRoleIds = new Set(
+     roleInputs.filter((input) => input.checked).map((input) => input.dataset.rol).filter(Boolean) as string[]
+    );
+
+    // El rol maestro de liderazgo deja de mostrarse como instrumento y se
+    // deriva de los permisos por ministerio. Gestores ligeros no elevan roles.
+    if (isGlobalAdmin && worshipLeaderRole?.id) {
+     managedRoleIds.add(worshipLeaderRole.id);
+     if (modalGeneralLeader.checked || modalSinFiltrosLeader.checked) {
+      selectedRoleIds.add(worshipLeaderRole.id);
+     }
+    }
+
+    const existingRoleIds = new Set<string>(rolesPorPerfil.get(currentPerfilId) || []);
+    const roleIdsToDelete = [...managedRoleIds].filter((roleId) => (
+     existingRoleIds.has(roleId) && !selectedRoleIds.has(roleId)
+    ));
+    const roleIdsToInsert = [...selectedRoleIds].filter((roleId) => !existingRoleIds.has(roleId));
+
+    if (roleIdsToDelete.length > 0) {
+     const { error } = await supabase
+      .from('perfil_roles')
+      .delete()
+      .eq('perfil_id', currentPerfilId)
+      .in('rol_id', roleIdsToDelete);
+     if (error) throw error;
+    }
+
+    if (roleIdsToInsert.length > 0) {
+     const { error } = await supabase
+      .from('perfil_roles')
+      .insert(roleIdsToInsert.map((roleId) => ({ perfil_id: currentPerfilId, rol_id: roleId })));
+     if (error) throw error;
+    }
+
+    const voiceEnabled = modalVoiceEnabled.checked;
+    const vocalRangeResponse = await fetch('/api/team-vocal-range', {
+     method: 'POST',
+     credentials: 'same-origin',
+     headers: { 'content-type': 'application/json' },
+     body: JSON.stringify({
+      profileId: currentPerfilId,
+      voiceEnabled,
+      vocalRange: voiceEnabled ? modalVocalRange.value : null,
+     }),
+    });
+    if (!vocalRangeResponse.ok) {
+     const vocalRangeError = await vocalRangeResponse.json().catch(() => ({}));
+     throw new Error(vocalRangeError?.error || 'No se pudo guardar el registro vocal.');
+    }
+   }
+
+   if (canManageMinistries) {
+    const syncMembership = async (
+     ministry:any,
+     memberInput:HTMLInputElement,
+     leaderInput:HTMLInputElement
+    ) => {
+     if (!ministry) throw new Error('No se encontró uno de los ministerios configurados.');
+
+     if (memberInput.checked) {
+      const { error } = await supabase
+       .from('perfil_ministerios')
+       .upsert({
+        perfil_id: currentPerfilId,
+        ministerio_id: ministry.id,
+        es_lider: leaderInput.checked
+       }, { onConflict: 'perfil_id,ministerio_id' });
+      if (error) throw error;
+      return;
+     }
+
+     const { error } = await supabase
+      .from('perfil_ministerios')
+      .delete()
+      .eq('perfil_id', currentPerfilId)
+      .eq('ministerio_id', ministry.id);
+     if (error) throw error;
+    };
+
+    await syncMembership(generalMinistry, modalGeneralMember, modalGeneralLeader);
+    await syncMembership(sinFiltrosMinistry, modalSinFiltrosMember, modalSinFiltrosLeader);
+   }
+
+   window.location.reload();
+  } catch(err) {
+   console.error('Error al guardar la configuración del perfil:', err);
+   alert('No pudimos guardar los cambios. Intenta nuevamente.');
+   btnRolesSubmit.textContent = 'Guardar cambios';
+   btnRolesSubmit.disabled = false;
+   btnWizardBack.disabled = false;
+   wizardNavItems.forEach((item) => { item.disabled = false; });
+  }
+ });
 
  btnCloseModalRoles?.addEventListener('click', () => toggleModalRoles(false));
  modalRolesBackdrop?.addEventListener('click', () => toggleModalRoles(false));
+ modalGeneralMember?.addEventListener('change', syncLeadershipAvailability);
+ modalSinFiltrosMember?.addEventListener('change', syncLeadershipAvailability);
+ modalVoiceEnabled?.addEventListener('change', syncVocalRangeAvailability);
+ btnWizardBack?.addEventListener('click', () => {
+  const index = availableWizardSteps.indexOf(currentWizardStep);
+  if (index > 0) setWizardStep(availableWizardSteps[index - 1]);
+ });
+ btnWizardNext?.addEventListener('click', () => {
+  const index = availableWizardSteps.indexOf(currentWizardStep);
+  if (index >= 0 && index < availableWizardSteps.length - 1) {
+   setWizardStep(availableWizardSteps[index + 1]);
+  }
+ });
+ wizardNavItems.forEach((item) => {
+  item.addEventListener('click', () => setWizardStep(Number(item.dataset.wizardStep)));
+ });
 
- // Event Listeners a los botones de Tarjetas
+ modalRoles?.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+   event.preventDefault();
+   toggleModalRoles(false);
+   return;
+  }
+  if (event.key !== 'Tab') return;
+
+  const focusable = Array.from(modalRoles.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled])'))
+   .filter((element) => !element.classList.contains('hidden') && element.offsetParent !== null);
+  if (focusable.length === 0) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+   event.preventDefault();
+   last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+   event.preventDefault();
+   first.focus();
+  }
+ });
+
+ modalProfileImage?.addEventListener('error', () => {
+  modalProfileImage.classList.add('hidden');
+  modalProfileInitials.classList.remove('hidden');
+ });
+
+ // Event Listeners de los cards
  document.querySelectorAll('.btn-editar-roles').forEach(btn => {
- btn.addEventListener('click', (e) => {
- const btnTarget = e.currentTarget as HTMLButtonElement;
- const perfilId = btnTarget.getAttribute('data-perfil');
- const perfilNombre = btnTarget.getAttribute('data-nombre');
- btnTarget.blur();
- currentPerfilId = perfilId;
+  btn.addEventListener('click', (e) => {
+   const btnTarget = e.currentTarget as HTMLButtonElement;
+   const perfilId = btnTarget.getAttribute('data-perfil');
+   const profile = perfilesById.get(perfilId || '');
+   if (!perfilId || !profile) return;
 
- if (canManageMinistries && generalMinistry && sinFiltrosMinistry) {
- const generalMembership = getMembership(perfilId || '', generalMinistry.id);
- const sinFiltrosMembership = getMembership(perfilId || '', sinFiltrosMinistry.id);
- modalMinistriesSection?.classList.remove('hidden');
- modalGeneralMember.checked = Boolean(generalMembership);
- modalGeneralLeader.checked = Boolean(generalMembership?.es_lider);
- modalGeneralLeader.disabled = !modalGeneralMember.checked;
- modalSinFiltrosMember.checked = Boolean(sinFiltrosMembership);
- modalSinFiltrosLeader.checked = Boolean(sinFiltrosMembership?.es_lider);
- modalSinFiltrosLeader.disabled = !modalSinFiltrosMember.checked;
- } else {
- modalMinistriesSection?.classList.add('hidden');
- }
+   wizardTrigger = btnTarget;
+   currentPerfilId = perfilId;
+   modalRolesTitle.textContent = profile.nombre || 'Perfil del músico';
+   modalProfileEmail.textContent = profile.email || 'Sin correo registrado';
+   const profileInitials = String(profile.nombre || 'RD')
+    .replace(/\s*\(.*?\)\s*/g, '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part:string) => part[0])
+    .join('')
+    .substring(0, 2)
+    .toUpperCase() || 'RD';
+   modalProfileInitials.textContent = profileInitials;
 
- modalRolesAssignmentSection?.classList.toggle('hidden', !isGlobalAdmin);
- modalRolesTitle.textContent = `${isGlobalAdmin ? 'Administrar' : 'Ministerios'}: ${(perfilNombre || 'Músico').split(' ')[0]}`;
- 
- // Volcar la data virtual al modal
- const togglesRawData = document.getElementById(`raw-toggles-${perfilId}`)?.innerHTML || '';
- modalRolesContainer.innerHTML = safeHtml(togglesRawData);
+   if (profile.avatar_url) {
+    modalProfileImage.src = profile.avatar_url;
+    modalProfileImage.classList.remove('hidden');
+    modalProfileInitials.classList.add('hidden');
+   } else {
+    modalProfileImage.removeAttribute('src');
+    modalProfileImage.classList.add('hidden');
+    modalProfileInitials.classList.remove('hidden');
+   }
 
- // Enganchar listeners AL VUELO a estos toggles inyectados
- modalRolesContainer.querySelectorAll('.role-toggle').forEach(box => {
- box.addEventListener('change', (ev) => {
- const el = ev.target as HTMLInputElement;
- const isChecked = el.checked;
+   if (canManageMinistries && generalMinistry && sinFiltrosMinistry) {
+    const generalMembership = getMembership(perfilId, generalMinistry.id);
+    const sinFiltrosMembership = getMembership(perfilId, sinFiltrosMinistry.id);
+    modalMinistriesSection?.classList.remove('hidden');
+    modalGeneralMember.checked = Boolean(generalMembership);
+    modalGeneralLeader.checked = Boolean(generalMembership?.es_lider);
+    modalSinFiltrosMember.checked = Boolean(sinFiltrosMembership);
+    modalSinFiltrosLeader.checked = Boolean(sinFiltrosMembership?.es_lider);
+   } else {
+    modalMinistriesSection?.classList.add('hidden');
+    modalGeneralMember.checked = false;
+    modalGeneralLeader.checked = false;
+    modalSinFiltrosMember.checked = false;
+    modalSinFiltrosLeader.checked = false;
+   }
+   syncLeadershipAvailability();
 
- // UI OptimÃ­stica Modal
- const labelParent = el.closest('label')!;
- const spanText = labelParent.querySelector('span')!;
- if (isChecked) {
- labelParent.classList.add('border-border', 'bg-background');
- labelParent.classList.remove('border-transparent');
- spanText.classList.replace('text-content-muted', 'text-content');
- } else {
- labelParent.classList.remove('border-border', 'bg-background');
- labelParent.classList.add('border-transparent');
- spanText.classList.replace('text-content', 'text-content-muted');
- }
- });
- });
+   const togglesRawData = document.getElementById(`raw-toggles-${perfilId}`)?.innerHTML || '';
+   modalRolesContainer.innerHTML = togglesRawData.trim()
+    ? safeHtml(togglesRawData)
+    : '<div class="team-wizard-role-empty">No hay roles musicales disponibles.</div>';
+   const currentProfileRoleIds = new Set<string>(rolesPorPerfil.get(perfilId) || []);
+   modalVoiceEnabled.checked = Boolean(profile.tonalidad_voz) || [...currentProfileRoleIds].some((roleId) => {
+    const role = roles.find((candidate:any) => candidate.id === roleId);
+    return ['voz_principal', 'voz_soprano', 'voz_tenor'].includes(
+     String(role?.codigo || '').trim().toLowerCase()
+    );
+   });
+   modalVocalRange.value = profile.tonalidad_voz || '';
+   syncVocalRangeAvailability();
 
- toggleModalRoles(true);
- });
- });
-
- modalGeneralMember?.addEventListener('change', () => {
- modalGeneralLeader.disabled = !modalGeneralMember.checked;
- if (!modalGeneralMember.checked) modalGeneralLeader.checked = false;
- });
-
- modalSinFiltrosMember?.addEventListener('change', () => {
- modalSinFiltrosLeader.disabled = !modalSinFiltrosMember.checked;
- if (!modalSinFiltrosMember.checked) modalSinFiltrosLeader.checked = false;
+   btnRolesSubmit.textContent = 'Guardar cambios';
+   btnRolesSubmit.disabled = false;
+   btnWizardBack.disabled = false;
+   wizardNavItems.forEach((item) => { item.disabled = false; });
+   setWizardStep(availableWizardSteps[0] ?? 0);
+   toggleModalRoles(true);
+  });
  });
 
 

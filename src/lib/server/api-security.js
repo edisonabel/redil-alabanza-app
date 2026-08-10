@@ -64,6 +64,47 @@ export const requireAdminUser = async (cookies) => {
   return user;
 };
 
+export const isOperationsManagerUser = async (userId) => {
+  if (!serviceRoleClient) {
+    throw new ApiSecurityError('Servicio de autorizacion no configurado.', 503);
+  }
+
+  const { data, error } = await serviceRoleClient
+    .from('gestores_operativos')
+    .select('perfil_id')
+    .eq('perfil_id', userId)
+    .maybeSingle();
+
+  if (error) {
+    throw new ApiSecurityError('No se pudo validar el permiso de gestion.', 503);
+  }
+
+  return Boolean(data);
+};
+
+export const requireRepertoireManagerUser = async (cookies) => {
+  const user = await requireAuthenticatedUser(cookies);
+  if (!serviceRoleClient) {
+    throw new ApiSecurityError('Servicio de autorizacion no configurado.', 503);
+  }
+
+  const { data: profile, error } = await serviceRoleClient
+    .from('perfiles')
+    .select('id, is_admin')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (error) {
+    throw new ApiSecurityError('No se pudo validar el permiso de repertorio.', 503);
+  }
+
+  if (profile?.is_admin || await isOperationsManagerUser(user.id)) {
+    return user;
+  }
+
+  throw new ApiSecurityError('Permiso de gestion de repertorio requerido.', 403);
+};
+
 export const assertRequestBodySize = (request, maxBytes) => {
   const rawLength = request.headers.get('content-length');
   if (!rawLength) return;
