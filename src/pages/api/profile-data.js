@@ -30,7 +30,7 @@ export async function GET({ cookies }) {
     const [profileResult, rolesResult, absencesResult] = await Promise.all([
       supabase
         .from('perfiles')
-        .select('id, nombre, avatar_url, tonalidad_voz, fecha_nacimiento, telefono, can_change_avatar')
+        .select('id, email, nombre, avatar_url, tonalidad_voz, fecha_nacimiento, telefono, can_change_avatar')
         .eq('id', user.id)
         .single(),
       supabase
@@ -51,12 +51,33 @@ export async function GET({ cookies }) {
       return json({ error: 'No se pudieron cargar los datos del perfil.' }, 503);
     }
 
+    let profile = profileResult.data;
+    const authEmail = String(user.email || '').trim().toLowerCase();
+    const profileEmail = String(profile?.email || '').trim().toLowerCase();
+
+    // Tras confirmar un cambio de correo en Auth, conserva sincronizado el
+    // correo operativo usado por asignaciones y notificaciones.
+    if (profile && authEmail && authEmail !== profileEmail) {
+      const { data: syncedProfile, error: syncError } = await supabase
+        .from('perfiles')
+        .update({ email: authEmail })
+        .eq('id', user.id)
+        .select('id, email, nombre, avatar_url, tonalidad_voz, fecha_nacimiento, telefono, can_change_avatar')
+        .maybeSingle();
+
+      if (syncError) {
+        console.warn('[profile-data] Profile email sync failed:', syncError.message);
+      } else if (syncedProfile) {
+        profile = syncedProfile;
+      }
+    }
+
     return json({
       user: {
         id: user.id,
         email: user.email || '',
       },
-      profile: profileResult.data,
+      profile,
       roles: rolesResult.data || [],
       absences: absencesResult.data || [],
     });
