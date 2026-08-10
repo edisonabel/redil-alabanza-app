@@ -1,8 +1,8 @@
 export const SIN_FILTROS_MINISTRY_CODE = 'sin_filtros';
 export const SIN_FILTROS_MINISTRY_NAME = 'Sin Filtros';
 export const SIN_FILTROS_SERVICE_WEEKDAY = 6;
-export const SIN_FILTROS_SERVICE_TIME = '19:00';
-export const SIN_FILTROS_REHEARSAL_TIME = '17:00';
+export const SIN_FILTROS_SERVICE_TIME = '17:30';
+export const SIN_FILTROS_REHEARSAL_TIME = '16:30';
 
 export const VOCAL_RANGE_OPTIONS = [
   { value: 'Soprano', label: 'Soprano' },

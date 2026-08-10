@@ -21,6 +21,7 @@ import {
     normalizeRehearsalWeekday,
     resolveEventRehearsalDate,
 } from '../../lib/event-rehearsal.js';
+import { isSinFiltrosEvent } from '../../lib/ministry-config.js';
 
 const MONTH_CHUNK_SIZE = 2;
 const EVENT_SELECT = 'id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, serie_id, ministerio_id, ensayo_dia_semana, ensayo_fecha_hora, ministerios(id, codigo, nombre), asignaciones(id, rol_id, perfiles(id, nombre, email, avatar_url, tonalidad_voz))';
@@ -176,6 +177,16 @@ export default function CalendarioGrid({
     const autoOpenHandledRef = useRef(false);
     const autoOpenFetchAttemptedRef = useRef(false);
     const loadMoreSentinelRef = useRef(null);
+    const cardScrollerElementsRef = useRef(new Map());
+    const cardScrollRangeRefs = useRef(new Map());
+    const cardScrollerDragRef = useRef({
+        pointerId: null,
+        startX: 0,
+        startScrollLeft: 0,
+        isDragging: false,
+        hasCapture: false,
+    });
+    const suppressCardClickUntilRef = useRef(0);
 
     // UI Modals
     const [deleteConfirmTarget, setDeleteConfirmTarget] = useState(null);
@@ -203,6 +214,125 @@ export default function CalendarioGrid({
         setTemaModal(null);
         setTemaError(null);
     }, []);
+
+    const handleCardScrollerPointerDown = useCallback((event) => {
+        if (event.pointerType !== 'mouse' || event.button !== 0 || !event.isPrimary) return;
+
+        cardScrollerDragRef.current = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startScrollLeft: event.currentTarget.scrollLeft,
+            isDragging: false,
+            hasCapture: false,
+        };
+    }, []);
+
+    const handleCardScrollerPointerMove = useCallback((event) => {
+        const dragState = cardScrollerDragRef.current;
+        if (dragState.pointerId !== event.pointerId) return;
+
+        const deltaX = event.clientX - dragState.startX;
+        if (!dragState.isDragging && Math.abs(deltaX) < 5) return;
+
+        if (!dragState.isDragging) {
+            dragState.isDragging = true;
+            event.currentTarget.dataset.dragging = 'true';
+            window.getSelection?.()?.removeAllRanges();
+
+            try {
+                event.currentTarget.setPointerCapture(event.pointerId);
+                dragState.hasCapture = true;
+            } catch {
+                dragState.hasCapture = false;
+            }
+        }
+
+        event.preventDefault();
+        event.currentTarget.scrollLeft = dragState.startScrollLeft - deltaX;
+    }, []);
+
+    const finishCardScrollerDrag = useCallback((event) => {
+        const dragState = cardScrollerDragRef.current;
+        if (dragState.pointerId !== event.pointerId) return;
+
+        if (dragState.isDragging) {
+            suppressCardClickUntilRef.current = performance.now() + 400;
+        }
+
+        if (dragState.hasCapture && event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+
+        delete event.currentTarget.dataset.dragging;
+        cardScrollerDragRef.current = {
+            pointerId: null,
+            startX: 0,
+            startScrollLeft: 0,
+            isDragging: false,
+            hasCapture: false,
+        };
+    }, []);
+
+    const handleCardScrollerPointerLeave = useCallback((event) => {
+        const dragState = cardScrollerDragRef.current;
+        if (dragState.pointerId !== event.pointerId || dragState.isDragging) return;
+
+        cardScrollerDragRef.current = {
+            pointerId: null,
+            startX: 0,
+            startScrollLeft: 0,
+            isDragging: false,
+            hasCapture: false,
+        };
+    }, []);
+
+    const handleCardScrollerClickCapture = useCallback((event) => {
+        if (performance.now() > suppressCardClickUntilRef.current) return;
+
+        suppressCardClickUntilRef.current = 0;
+        event.preventDefault();
+        event.stopPropagation();
+    }, []);
+
+    const syncCardScrollRange = useCallback((monthIndex, scroller) => {
+        const range = cardScrollRangeRefs.current.get(monthIndex);
+        if (!range || !scroller) return;
+
+        const maxScrollLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+        range.max = String(Math.max(1, maxScrollLeft));
+        range.value = String(Math.min(maxScrollLeft, Math.max(0, scroller.scrollLeft)));
+        range.disabled = maxScrollLeft <= 0;
+        range.closest('.programacion-scroll-control')?.setAttribute(
+            'data-scrollable',
+            maxScrollLeft > 0 ? 'true' : 'false',
+        );
+    }, []);
+
+    useEffect(() => {
+        if (viewMode !== 'tarjeta' || typeof document === 'undefined') return undefined;
+
+        const scrollers = Array.from(document.querySelectorAll('[data-programacion-scroller]'));
+        const resizeObserver = typeof ResizeObserver === 'function'
+            ? new ResizeObserver((entries) => {
+                entries.forEach((entry) => {
+                    const monthIndex = Number(entry.target.dataset.programacionScroller);
+                    syncCardScrollRange(monthIndex, entry.target);
+                });
+            })
+            : null;
+
+        scrollers.forEach((scroller) => {
+            const monthIndex = Number(scroller.dataset.programacionScroller);
+            cardScrollerElementsRef.current.set(monthIndex, scroller);
+            syncCardScrollRange(monthIndex, scroller);
+            resizeObserver?.observe(scroller);
+        });
+
+        return () => {
+            resizeObserver?.disconnect();
+            cardScrollerElementsRef.current.clear();
+        };
+    }, [eventos.length, syncCardScrollRange, viewMode]);
 
     useEffect(() => {
         if (!sessionUser?.id || typeof window === 'undefined') return;
@@ -705,6 +835,7 @@ export default function CalendarioGrid({
 
     const renderListRow = (cardData) => {
         const isSuspended = cardData.dbData && cardData.dbData.notas_especiales && cardData.dbData.notas_especiales.includes('SUSPENDIDO');
+        const isSinFiltros = !isSuspended && isSinFiltrosEvent(cardData.dbData);
         const titulo = cardData.dbData?.titulo || 'Actividad Redil';
         const estado = cardData.dbData?.estado || 'ACTIVO';
         const esAcustico = Boolean(cardData.dbData?.es_acustico);
@@ -770,7 +901,7 @@ export default function CalendarioGrid({
         return (
             <div
                 key={cardData.id}
-                className={`relative flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 md:py-6 md:px-8 md:gap-8 rounded-2xl md:rounded-[24px] border ${listHighlightClass} transition-colors group cursor-pointer`}
+                className={`relative flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 md:py-6 md:px-8 md:gap-8 rounded-2xl md:rounded-[24px] border ${listHighlightClass} ${isSinFiltros ? 'programacion-sin-filtros-surface' : ''} transition-colors group cursor-pointer`}
                 onClick={() => {
                     if (cardData.dbData?.id && !cardData.isVirtual) {
                         if (window.openDetalleReact) {
@@ -890,6 +1021,7 @@ export default function CalendarioGrid({
     // --- HANDLERS SECUNDARIOS JSX ---
     const renderCard = (cardData, tourTargets = false) => {
         const isSuspended = cardData.dbData && cardData.dbData.notas_especiales && cardData.dbData.notas_especiales.includes('SUSPENDIDO');
+        const isSinFiltros = !isSuspended && isSinFiltrosEvent(cardData.dbData);
         const titulo = cardData.dbData?.titulo || 'Actividad Redil';
         const { theme: temaPrincipal, preacher: predicador } = getEventThemeAndPreacher(cardData.dbData || {}, titulo);
         const hasTemaInfo = Boolean(
@@ -946,7 +1078,7 @@ export default function CalendarioGrid({
         }
 
         return (
-            <div key={cardData.id} data-tour={tourTargets ? 'programacion-card' : undefined} className="agenda-card w-[85vw] sm:w-[340px] shrink-0 snap-center group relative bg-border/20 dark:bg-surface rounded-[2rem] shadow-md hover:shadow-xl transition-shadow duration-300 border border-border/90 px-5 pb-5 pt-4 flex flex-col">
+            <div key={cardData.id} data-tour={tourTargets ? 'programacion-card' : undefined} className={`agenda-card w-[85vw] sm:w-[340px] shrink-0 snap-center group relative bg-border/20 dark:bg-surface rounded-[2rem] shadow-md hover:shadow-xl transition-shadow duration-300 border border-border/90 px-5 pb-5 pt-4 flex flex-col ${isSinFiltros ? 'programacion-sin-filtros-surface' : ''}`}>
 
                 {/* --- BOTON ELIMINAR --- */}
                 {isAdmin && !cardData.isVirtual && (
@@ -1222,10 +1354,11 @@ export default function CalendarioGrid({
                                             const { theme: calendarTheme } = getEventThemeAndPreacher(ev.dbData || {}, tituloBase);
                                             const finalTitleDisplay = ev.isVirtual ? 'Actividad Redil' : (calendarTheme || tituloBase);
                                             const finalTitleTooltip = ev.isVirtual ? 'Actividad Redil' : buildEventHeadline(ev.dbData || {}, tituloBase);
+                                            const isSinFiltros = !ev.isVirtual && isSinFiltrosEvent(ev.dbData);
 
                                             return (
-                                                <button key={i} onClick={clickHandler} title={finalTitleTooltip} className={`text-left text-xs px-2 py-1.5 rounded-lg font-medium tracking-tight truncate w-full flex items-center gap-1.5 transition-colors ${ev.isVirtual ? 'bg-background text-content-muted hover:bg-neutral/20' : 'bg-brand/10 text-brand hover:bg-brand/20 cursor-pointer pointer-events-auto shadow-sm border border-brand/20'}`}>
-                                                    <div className={`w-2 h-2 rounded-full shrink-0 ${ev.isVirtual ? 'bg-neutral-300' : 'bg-brand'}`}></div>
+                                                <button key={i} onClick={clickHandler} title={finalTitleTooltip} className={`text-left text-xs px-2 py-1.5 rounded-lg font-medium tracking-tight truncate w-full flex items-center gap-1.5 transition-colors ${ev.isVirtual ? 'bg-background text-content-muted hover:bg-neutral/20' : (isSinFiltros ? 'programacion-sin-filtros-chip cursor-pointer pointer-events-auto shadow-sm' : 'bg-brand/10 text-brand hover:bg-brand/20 cursor-pointer pointer-events-auto shadow-sm border border-brand/20')}`}>
+                                                    <div className={`w-2 h-2 rounded-full shrink-0 ${ev.isVirtual ? 'bg-neutral-300' : (isSinFiltros ? 'bg-sky-400/80' : 'bg-brand')}`}></div>
                                                     <span className="font-bold opacity-70">{timeStr}</span>
                                                     <span className="truncate">{finalTitleDisplay}</span>
                                                 </button>
@@ -1239,19 +1372,6 @@ export default function CalendarioGrid({
                 </div>
             </div>
         );
-    };
-
-    // 4. El Motor de Arrastre para PC (Drag to Scroll)
-    let isDown = false; let startX; let scrollLeft;
-    const onMouseDown = (e) => { isDown = true; startX = e.pageX - e.currentTarget.offsetLeft; scrollLeft = e.currentTarget.scrollLeft; };
-    const onMouseLeave = () => { isDown = false; };
-    const onMouseUp = () => { isDown = false; };
-    const onMouseMove = (e) => {
-        if (!isDown) return;
-        e.preventDefault();
-        const x = e.pageX - e.currentTarget.offsetLeft;
-        const walk = (x - startX) * 2;
-        e.currentTarget.scrollLeft = scrollLeft - walk;
     };
 
     return (
@@ -1317,21 +1437,52 @@ export default function CalendarioGrid({
                                     </div>
                                     <div className="relative -mx-4 md:mx-0">
                                         <div
-                                            className="flex overflow-x-auto overflow-y-visible snap-x snap-mandatory gap-6 pb-8 pt-6 px-5 md:px-4 hide-scrollbar cursor-grab active:cursor-grabbing scroll-smooth"
+                                            role="region"
+                                            aria-label={`Servicios de ${group.month}`}
+                                            data-programacion-scroller={idx}
+                                            tabIndex={0}
+                                            className="programacion-card-scroller flex overflow-x-auto overflow-y-visible snap-x snap-mandatory md:snap-none gap-6 pb-8 pt-6 px-5 md:px-4 hide-scrollbar-on-mobile scroll-smooth focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                                             onScroll={(e) => {
                                                 const el = e.currentTarget;
+                                                syncCardScrollRange(idx, el);
                                                 const reachedEnd = (el.scrollWidth - (el.scrollLeft + el.clientWidth)) <= 16;
                                                 if (reachedEnd) {
                                                     dismissMonthHint(idx);
                                                 }
                                             }}
-                                            onMouseDown={onMouseDown}
-                                            onMouseLeave={onMouseLeave}
-                                            onMouseUp={onMouseUp}
-                                            onMouseMove={onMouseMove}
+                                            onPointerDown={handleCardScrollerPointerDown}
+                                            onPointerMove={handleCardScrollerPointerMove}
+                                            onPointerUp={finishCardScrollerDrag}
+                                            onPointerCancel={finishCardScrollerDrag}
+                                            onPointerLeave={handleCardScrollerPointerLeave}
+                                            onClickCapture={handleCardScrollerClickCapture}
+                                            onDragStart={(event) => event.preventDefault()}
                                         >
                                             {group.cards.map((card, cardIndex) => renderCard(card, idx === 0 && cardIndex === 0))}
                                         </div>
+                                        <label className="programacion-scroll-control hidden md:flex" data-scrollable="false">
+                                            <span className="sr-only">Desplazar servicios de {group.month}</span>
+                                            <input
+                                                ref={(node) => {
+                                                    if (!node) {
+                                                        cardScrollRangeRefs.current.delete(idx);
+                                                        return;
+                                                    }
+
+                                                    cardScrollRangeRefs.current.set(idx, node);
+                                                    syncCardScrollRange(idx, cardScrollerElementsRef.current.get(idx));
+                                                }}
+                                                type="range"
+                                                min="0"
+                                                max="1"
+                                                defaultValue="0"
+                                                aria-label={`Desplazar servicios de ${group.month}`}
+                                                onInput={(event) => {
+                                                    const scroller = cardScrollerElementsRef.current.get(idx);
+                                                    if (scroller) scroller.scrollLeft = Number(event.currentTarget.value);
+                                                }}
+                                            />
+                                        </label>
                                         {showMonthHint && (
                                             <>
                                                 <div className="md:hidden pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-background/95 via-background/65 to-transparent dark:from-surface/90 dark:via-surface/55"></div>

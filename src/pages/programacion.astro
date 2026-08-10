@@ -172,14 +172,135 @@ if (ssrUser) {
   </div>
 
   <style is:global>
+    .programacion-sin-filtros-surface {
+      background-color: color-mix(in srgb, rgb(var(--bg-surface)) 84%, rgb(219 234 254) 16%);
+      border-color: color-mix(in srgb, rgb(var(--border-base)) 75%, rgb(147 197 253) 25%) !important;
+    }
+
+    .programacion-sin-filtros-surface:hover {
+      background-color: color-mix(in srgb, rgb(var(--bg-surface)) 80%, rgb(219 234 254) 20%);
+    }
+
+    .programacion-sin-filtros-chip {
+      color: color-mix(in srgb, rgb(var(--text-base)) 88%, rgb(30 64 175) 12%);
+      background-color: color-mix(in srgb, rgb(var(--bg-surface)) 90%, rgb(219 234 254) 10%);
+      border: 1px solid color-mix(in srgb, rgb(var(--border-base)) 82%, rgb(147 197 253) 18%);
+    }
+
+    .programacion-sin-filtros-chip:hover {
+      background-color: color-mix(in srgb, rgb(var(--bg-surface)) 86%, rgb(219 234 254) 14%);
+    }
+
+    html.dark .programacion-sin-filtros-surface {
+      background-color: color-mix(in srgb, rgb(var(--bg-surface)) 78%, rgb(30 58 89) 22%);
+      border-color: color-mix(in srgb, rgb(var(--border-base)) 76%, rgb(96 165 250) 24%) !important;
+    }
+
+    html.dark .programacion-sin-filtros-surface:hover {
+      background-color: color-mix(in srgb, rgb(var(--bg-surface)) 73%, rgb(30 58 89) 27%);
+    }
+
+    html.dark .programacion-sin-filtros-chip {
+      color: color-mix(in srgb, rgb(var(--text-base)) 92%, rgb(147 197 253) 8%);
+      background-color: color-mix(in srgb, rgb(var(--bg-surface)) 93%, rgb(30 58 89) 7%);
+      border-color: color-mix(in srgb, rgb(var(--border-base)) 90%, rgb(96 165 250) 10%);
+    }
+
+    html.dark .programacion-sin-filtros-chip:hover {
+      background-color: color-mix(in srgb, rgb(var(--bg-surface)) 90%, rgb(30 58 89) 10%);
+    }
+
     /* Ocultar scrollbar horizontal en mÃ³vil (mantiene swipe fluÃ­do snap-x) */
-    @media (max-width: 768px) {
+    @media (max-width: 767px) {
       .hide-scrollbar-on-mobile::-webkit-scrollbar {
         display: none;
       }
       .hide-scrollbar-on-mobile {
         -ms-overflow-style: none; /* IE and Edge */
         scrollbar-width: none; /* Firefox */
+      }
+    }
+
+    @media (min-width: 768px) {
+      .programacion-card-scroller {
+        cursor: grab;
+        user-select: none;
+        -webkit-user-select: none;
+        scrollbar-width: none;
+      }
+
+      .programacion-card-scroller[data-dragging='true'] {
+        cursor: grabbing;
+        scroll-behavior: auto;
+        scroll-snap-type: none;
+      }
+
+      .programacion-card-scroller[data-dragging='true'] * {
+        cursor: grabbing !important;
+      }
+
+      .programacion-card-scroller::-webkit-scrollbar {
+        display: none;
+      }
+
+      .programacion-scroll-control {
+        align-items: center;
+        width: min(36rem, calc(100% - 2rem));
+        min-height: 26px;
+        margin: 0.25rem auto 0;
+      }
+
+      .programacion-scroll-control[data-scrollable='false'] {
+        display: none;
+      }
+
+      .programacion-scroll-control input[type='range'] {
+        width: 100%;
+        height: 26px;
+        margin: 0;
+        appearance: none;
+        -webkit-appearance: none;
+        cursor: ew-resize;
+        background: transparent;
+      }
+
+      .programacion-scroll-control input[type='range']:focus-visible {
+        outline: 2px solid rgb(var(--color-brand));
+        outline-offset: 3px;
+        border-radius: 999px;
+      }
+
+      .programacion-scroll-control input[type='range']::-webkit-slider-runnable-track {
+        height: 4px;
+        border-radius: 999px;
+        background: rgb(var(--border-base) / 0.58);
+      }
+
+      .programacion-scroll-control input[type='range']::-webkit-slider-thumb {
+        width: 58px;
+        height: 10px;
+        margin-top: -3px;
+        appearance: none;
+        -webkit-appearance: none;
+        border: 1px solid rgb(var(--border-base));
+        border-radius: 999px;
+        background: rgb(var(--text-muted) / 0.92);
+        box-shadow: 0 1px 4px rgb(var(--text-base) / 0.16);
+      }
+
+      .programacion-scroll-control input[type='range']::-moz-range-track {
+        height: 4px;
+        border-radius: 999px;
+        background: rgb(var(--border-base) / 0.58);
+      }
+
+      .programacion-scroll-control input[type='range']::-moz-range-thumb {
+        width: 58px;
+        height: 10px;
+        border: 1px solid rgb(var(--border-base));
+        border-radius: 999px;
+        background: rgb(var(--text-muted) / 0.92);
+        box-shadow: 0 1px 4px rgb(var(--text-base) / 0.16);
       }
     }
   </style>

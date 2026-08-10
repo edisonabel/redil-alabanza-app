@@ -1,8 +1,10 @@
 ﻿import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
+    formatClockLabel,
     isSinFiltrosMinistry,
     SIN_FILTROS_MINISTRY_NAME,
+    SIN_FILTROS_REHEARSAL_TIME,
     SIN_FILTROS_SERVICE_TIME,
 } from '../../lib/ministry-config.js';
 
@@ -243,7 +245,9 @@ export default function ModalSerie({ sessionUser, initialMinistries = [] }) {
                     {isSinFiltrosMinistry((initialMinistries || []).find((ministry) => ministry.id === formData.ministerioId)) && (
                         <div className="rounded-xl border border-blue-400/25 bg-blue-500/10 px-4 py-3">
                             <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">Sin Filtros</p>
-                            <p className="mt-1 text-sm text-content-muted">Culto sábado 7:00 p. m. · Ensayo fijo 5:00 p. m.</p>
+                            <p className="mt-1 text-sm text-content-muted">
+                                Culto sábado {formatClockLabel(SIN_FILTROS_SERVICE_TIME)} · Ensayo fijo {formatClockLabel(SIN_FILTROS_REHEARSAL_TIME)}
+                            </p>
                         </div>
                     )}
 

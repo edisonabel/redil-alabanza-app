@@ -11,8 +11,8 @@ import { isPublicRegistrationRoleCode } from '../src/lib/public-registration.js'
 
 assert.equal(SIN_FILTROS_MINISTRY_CODE, 'sin_filtros');
 assert.equal(SIN_FILTROS_SERVICE_WEEKDAY, 6);
-assert.equal(SIN_FILTROS_SERVICE_TIME, '19:00');
-assert.equal(SIN_FILTROS_REHEARSAL_TIME, '17:00');
+assert.equal(SIN_FILTROS_SERVICE_TIME, '17:30');
+assert.equal(SIN_FILTROS_REHEARSAL_TIME, '16:30');
 assert.deepEqual(
   VOCAL_RANGE_OPTIONS.map((option) => option.value),
   ['Soprano', 'Mezzosoprano', 'Contralto', 'Tenor', 'Barítono', 'Bajo'],
@@ -59,6 +59,15 @@ assert.match(migration, /CREATE OR REPLACE FUNCTION public\.get_event_eligible_p
 assert.match(migration, /CREATE TRIGGER trg_set_sin_filtros_rehearsal/);
 assert.match(migration, /TIME '17:00'/);
 assert.doesNotMatch(migration, /sinfiltros2026/i);
+
+const scheduleMigration = await readFile(
+  new URL('../migrations/038_sin_filtros_schedule.sql', import.meta.url),
+  'utf8',
+);
+assert.match(scheduleMigration, /CREATE OR REPLACE FUNCTION public\.set_sin_filtros_rehearsal/);
+assert.match(scheduleMigration, /TIME '16:30'/);
+assert.match(scheduleMigration, /m\.codigo = 'sin_filtros'/);
+assert.doesNotMatch(scheduleMigration, /SET fecha_hora/);
 
 const crossMembershipMigration = await readFile(
   new URL('../migrations/037_cross_ministry_memberships.sql', import.meta.url),

@@ -11,8 +11,10 @@ import {
     resolveEventRehearsalDate,
 } from '../../lib/event-rehearsal.js';
 import {
+    formatClockLabel,
     isSinFiltrosMinistry,
     SIN_FILTROS_MINISTRY_NAME,
+    SIN_FILTROS_REHEARSAL_TIME,
     SIN_FILTROS_SERVICE_TIME,
 } from '../../lib/ministry-config.js';
 
@@ -608,7 +610,9 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                         <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">Ensayo fijo · Sin Filtros</p>
                                         <p className="mt-1 text-sm text-content-muted">El mismo sábado antes del culto.</p>
                                     </div>
-                                    <span className="shrink-0 rounded-full border border-blue-400/25 bg-surface px-3 py-1.5 text-sm font-black text-content">5:00 p. m.</span>
+                                    <span className="shrink-0 rounded-full border border-blue-400/25 bg-surface px-3 py-1.5 text-sm font-black text-content">
+                                        {formatClockLabel(SIN_FILTROS_REHEARSAL_TIME)}
+                                    </span>
                                 </div>
                             )}
 
