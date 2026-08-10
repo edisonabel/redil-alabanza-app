@@ -307,7 +307,7 @@ const userId = Astro.locals.user?.id ?? null;
   color: rgb(var(--text-base));
   border: 0;
   border-radius: 0;
-  background: rgb(var(--bg-base));
+  background: rgb(var(--bg-background));
   box-shadow: none;
  }
 
@@ -634,7 +634,7 @@ const userId = Astro.locals.user?.id ?? null;
   padding-top: 0;
   background:
    radial-gradient(circle at 100% 0%, rgb(var(--color-brand) / 0.1), transparent 32%),
-   linear-gradient(180deg, color-mix(in srgb, rgb(var(--bg-base)) 92%, rgb(var(--color-brand)) 8%), rgb(var(--bg-surface)) 38%);
+   linear-gradient(180deg, color-mix(in srgb, rgb(var(--bg-background)) 92%, rgb(var(--color-brand)) 8%), rgb(var(--bg-surface)) 38%);
  }
 
  .profile-wizard-step {
@@ -709,7 +709,7 @@ const userId = Astro.locals.user?.id ?? null;
 
  .profile-form-grid .profile-field input:focus-visible {
   padding-inline: 0.55rem;
-  background: rgb(var(--bg-base));
+  background: rgb(var(--bg-background));
  }
 
  .profile-field {
@@ -741,7 +741,7 @@ const userId = Astro.locals.user?.id ?? null;
   color: rgb(var(--text-base));
   border: 1px solid rgb(var(--border-base));
   border-radius: 0.85rem;
-  background: rgb(var(--bg-base));
+  background: rgb(var(--bg-background));
   font-size: 0.78rem;
   font-weight: 700;
   outline: none;
@@ -956,7 +956,7 @@ const userId = Astro.locals.user?.id ?? null;
   color: rgb(var(--text-base));
   border: 1px solid rgb(var(--border-base));
   border-radius: 1rem;
-  background: rgb(var(--bg-base));
+  background: rgb(var(--bg-background));
   font-size: 0.74rem;
   font-weight: 850;
   transition: transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
@@ -1123,7 +1123,7 @@ const userId = Astro.locals.user?.id ?? null;
 
  .profile-feedback button:hover {
   color: rgb(var(--text-base));
-  background: rgb(var(--bg-base));
+  background: rgb(var(--bg-background));
  }
 
  html.dark .profile-feature-icon--agenda {
@@ -1297,6 +1297,19 @@ const userId = Astro.locals.user?.id ?? null;
    min-height: 100dvh;
    flex: none;
    overflow: visible;
+   background:
+    radial-gradient(circle at 92% -8%, rgb(var(--color-brand) / 0.14), transparent 32%),
+    linear-gradient(
+     180deg,
+     rgb(var(--bg-background) / 0.82) 0%,
+     rgb(var(--bg-background) / 0.94) 12rem,
+     rgb(var(--bg-background) / 0.985) 34rem
+    );
+   box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    0 -24px 56px -38px rgb(0 0 0 / 0.92);
+   -webkit-backdrop-filter: blur(24px) saturate(1.28);
+   backdrop-filter: blur(24px) saturate(1.28);
   }
 
   .profile-wizard-step[data-state='active'] {
