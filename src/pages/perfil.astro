@@ -1143,8 +1143,12 @@ const userId = Astro.locals.user?.id ?? null;
  @media (max-width: 639px) {
   .profile-wizard-shell {
    display: block;
+   width: 100vw;
+   max-width: 100vw;
    height: auto;
    min-height: calc(100dvh - 66px);
+   margin-right: calc(50% - 50vw);
+   margin-left: calc(50% - 50vw);
    padding: 0;
   }
 
@@ -1159,6 +1163,9 @@ const userId = Astro.locals.user?.id ?? null;
   }
 
   .profile-wizard-hero {
+   position: sticky;
+   top: 0;
+   z-index: 0;
    height: min(420px, 48dvh);
    flex-basis: min(420px, 48dvh);
   }
@@ -1201,9 +1208,9 @@ const userId = Astro.locals.user?.id ?? null;
   }
 
   .profile-wizard-photo-button {
-   top: 18px;
-   right: 74px;
-   bottom: auto;
+   top: auto;
+   right: 20px;
+   bottom: 102px;
    left: auto;
    width: 44px;
    min-height: 44px;
@@ -1228,6 +1235,7 @@ const userId = Astro.locals.user?.id ?? null;
   }
 
   .profile-wizard-identity h2 {
+   max-width: calc(100% - 58px);
    font-size: clamp(1.8rem, 8vw, 2.35rem);
   }
 
@@ -1285,7 +1293,8 @@ const userId = Astro.locals.user?.id ?? null;
   }
 
   .profile-wizard-stage {
-   min-height: 0;
+   z-index: 8;
+   min-height: 100dvh;
    flex: none;
    overflow: visible;
   }
@@ -1559,8 +1568,8 @@ const userId = Astro.locals.user?.id ?? null;
 
   const hero = document.querySelector<HTMLElement>('.profile-wizard-hero');
   if (!hero) return;
-  const scrollProgress = Math.min(hero.offsetHeight, Math.max(0, -hero.getBoundingClientRect().top));
-  profileHeroBackdrop.style.setProperty('--profile-parallax-y', `${(scrollProgress * 0.24).toFixed(2)}px`);
+  const scrollProgress = Math.min(hero.offsetHeight, Math.max(0, window.scrollY - hero.offsetTop));
+  profileHeroBackdrop.style.setProperty('--profile-parallax-y', `${(scrollProgress * 0.055).toFixed(2)}px`);
  };
 
  const queueProfileParallax = () => {
