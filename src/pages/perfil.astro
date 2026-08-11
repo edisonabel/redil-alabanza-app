@@ -16,6 +16,8 @@ const userId = Astro.locals.user?.id ?? null;
  <img id="profile-hero-backdrop-image" alt="" crossorigin="anonymous" />
  </div>
  <div class="profile-wizard-hero-glow" aria-hidden="true"></div>
+ <div class="profile-wizard-hero-inner">
+ <div class="profile-wizard-media">
  <div class="profile-wizard-portrait-wrap">
  <div id="avatar-container" class="profile-wizard-portrait bg-neutral/20 text-content-muted">
  <svg class="w-8 h-8 animate-pulse" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
@@ -26,6 +28,7 @@ const userId = Astro.locals.user?.id ?? null;
  <span>Cambiar foto</span>
  </button>
  <input type="file" id="avatar-input" accept="image/*" class="hidden" />
+ </div>
 
  <div class="profile-wizard-identity">
  <p class="profile-wizard-eyebrow">Mi perfil</p>
@@ -35,6 +38,7 @@ const userId = Astro.locals.user?.id ?? null;
  <div id="ui-roles-container" class="profile-wizard-roles">
  <div class="h-6 w-16 animate-pulse rounded-full bg-white/10"></div>
  <div class="h-6 w-20 animate-pulse rounded-full bg-white/10"></div>
+ </div>
  </div>
  </div>
  </header>
@@ -477,13 +481,30 @@ const userId = Astro.locals.user?.id ?? null;
   filter: blur(30px);
  }
 
- .profile-wizard-portrait-wrap {
-  position: absolute;
+ .profile-wizard-hero-inner {
+  position: relative;
   z-index: 2;
-  bottom: 30px;
-  left: max(28px, 3vw);
+  display: grid;
+  width: min(calc(100% - 2.5rem), 980px);
+  height: 100%;
+  grid-template-columns: 150px minmax(0, 1fr);
+  align-items: end;
+  gap: 2.25rem;
+  margin: 0 auto;
+  padding: 42px 0 30px;
+ }
+
+ .profile-wizard-media {
+  position: relative;
   width: 150px;
   height: 170px;
+ }
+
+ .profile-wizard-portrait-wrap {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
  }
 
  .profile-wizard-portrait {
@@ -517,11 +538,11 @@ const userId = Astro.locals.user?.id ?? null;
 
  .profile-wizard-photo-button {
   position: absolute;
-  z-index: 3;
+  z-index: 2;
   top: auto;
-  right: auto;
-  bottom: 39px;
-  left: calc(max(28px, 3vw) + 100px);
+  right: -4px;
+  bottom: 9px;
+  left: auto;
   display: inline-flex;
   width: 44px;
   height: 44px;
@@ -563,12 +584,9 @@ const userId = Astro.locals.user?.id ?? null;
  }
 
  .profile-wizard-identity {
-  position: absolute;
-  z-index: 2;
-  right: max(80px, 6vw);
-  bottom: 30px;
-  left: max(230px, 18vw);
-  width: auto;
+  position: relative;
+  z-index: 1;
+  width: 100%;
   min-width: 0;
   padding: 0;
   border: 0;
@@ -1877,6 +1895,23 @@ const userId = Astro.locals.user?.id ?? null;
    flex-basis: min(420px, 48dvh);
   }
 
+  .profile-wizard-hero-inner {
+   position: absolute;
+   inset: 0;
+   display: block;
+   width: 100%;
+   height: 100%;
+   margin: 0;
+   padding: 0;
+  }
+
+  .profile-wizard-media {
+   position: static;
+   display: block;
+   width: auto;
+   height: auto;
+  }
+
   .profile-wizard-hero-backdrop {
    inset: 0;
    transform: none;
@@ -1934,6 +1969,7 @@ const userId = Astro.locals.user?.id ?? null;
   }
 
   .profile-wizard-identity {
+   position: absolute;
    right: 20px;
    bottom: 30px;
    left: 20px;
