@@ -61,6 +61,7 @@ const runUnauthenticatedApiChecks = async (baseUrl) => {
     '/api/delete-upload',
     '/api/auto-markers',
     '/api/chordpro-print-pdf-v2',
+    '/api/admin/team-member',
   ];
 
   for (const path of endpoints) {

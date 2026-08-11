@@ -233,7 +233,7 @@ const [
   ausenciasResp,
   songsBundle,
 ] = await Promise.all([
-  supabaseSSR.from('perfiles').select('id, nombre, avatar_url, telefono, fecha_nacimiento').order('nombre'),
+  supabaseSSR.from('perfiles').select('id, nombre, avatar_url, telefono, fecha_nacimiento').eq('activo_en_equipo', true).order('nombre'),
   supabaseSSR.from('roles').select('id, nombre, codigo').order('nombre'),
   supabaseSSR.from('perfil_roles').select('perfil_id, rol_id'),
   buildEventosQuery(true),

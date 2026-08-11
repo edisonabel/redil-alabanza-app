@@ -17,6 +17,20 @@ export const VOICE_ASSIGNMENT_MANAGER_ROLE_CODES = new Set([
 export const VOCAL_LEADER_ROLE_CODE = 'lider_vocal';
 export const LIVE_DIRECTOR_SEQUENCE_MANAGER_ROLE_CODE = 'gestor_secuencias';
 
+// Capacidades instrumentales que cada músico puede declarar en su perfil.
+// Esta lista excluye deliberadamente voz, liderazgo y permisos operativos.
+export const SELF_MANAGED_INSTRUMENT_ROLE_CODES = new Set([
+  'bajo',
+  'bateria',
+  'caja',
+  'caja_peruana',
+  'cajon_peruano',
+  'guitarra_acustica',
+  'guitarra_electrica',
+  'piano',
+  'violin',
+]);
+
 // Roles musicales/operativos que un gestor ligero puede asignar desde Equipo.
 // Se excluyen deliberadamente los roles que elevan permisos en otras areas.
 export const TEAM_ASSIGNABLE_ROLE_CODES = new Set([
@@ -62,6 +76,9 @@ export const isVocalLeaderRoleCode = (value) =>
 
 export const isLiveDirectorSequenceManagerRoleCode = (value) =>
   normalizeRoleCode(value) === LIVE_DIRECTOR_SEQUENCE_MANAGER_ROLE_CODE;
+
+export const isSelfManagedInstrumentRoleCode = (value) =>
+  SELF_MANAGED_INSTRUMENT_ROLE_CODES.has(normalizeRoleCode(value));
 
 export const isTeamAssignableRoleCode = (value) =>
   TEAM_ASSIGNABLE_ROLE_CODES.has(normalizeRoleCode(value));

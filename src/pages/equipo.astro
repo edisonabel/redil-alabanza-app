@@ -1887,7 +1887,7 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  { data: profileMinistries, error: profileMinistriesErr }
  ] = await Promise.all([
  supabase.from('roles').select('id,nombre,codigo').order('nombre'),
- supabase.from('perfiles').select('id,nombre,email,avatar_url,telefono,tonalidad_voz').order('nombre'),
+ supabase.from('perfiles').select('id,nombre,email,avatar_url,telefono,tonalidad_voz,activo_en_equipo').eq('activo_en_equipo', true).order('nombre'),
  supabase.from('perfil_roles').select('perfil_id,rol_id'),
  isGlobalAdmin
  ? supabase.from('equipos').select('id,nombre,letra,created_at').order('created_at', { ascending: false })
@@ -2416,7 +2416,7 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
  Gestionar
  </button>
- ${isGlobalAdmin ? `<button type="button" class="btn-eliminar-perfil equipo-card-delete" data-perfil="${p.id}" data-nombre="${escapeHtml(p.nombre)}" title="Eliminar músico" aria-label="Eliminar a ${escapeHtml(p.nombre)}">
+ ${isGlobalAdmin ? `<button type="button" class="btn-eliminar-perfil equipo-card-delete" data-perfil="${p.id}" data-nombre="${escapeHtml(p.nombre)}" title="Retirar o eliminar" aria-label="Administrar presencia de ${escapeHtml(p.nombre)} en el equipo">
  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
  </button>` : ''}
  </div>
@@ -2786,64 +2786,114 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  });
 
 
- // Event Listeners para Eliminar Perfil (papelera)
+ // Retirar del equipo y eliminar una cuenta son acciones diferentes.
  document.querySelectorAll('.btn-eliminar-perfil').forEach(btn => {
- btn.addEventListener('click', async (e) => {
- const btnTarget = e.currentTarget as HTMLButtonElement;
+ btn.addEventListener('click', async (event) => {
+ const btnTarget = event.currentTarget as HTMLButtonElement;
  const perfilId = btnTarget.getAttribute('data-perfil');
- const perfilNombre = btnTarget.getAttribute('data-nombre');
+ const perfilNombre = btnTarget.getAttribute('data-nombre') || 'esta persona';
+ if (!perfilId) return;
 
- // Modal de confirmaciÃ³n premium inline
  const overlay = document.createElement('div');
- overlay.className = 'fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm';
+ overlay.className = 'fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-md p-0 sm:p-4';
  overlay.innerHTML = safeHtml`
- <div class="bg-surface rounded-3xl shadow-2xl max-w-sm w-[90%] overflow-hidden border border-border">
- <div class="p-6 text-center">
- <div class="w-14 h-14 rounded-full flex items-center justify-center text-2xl mx-auto mb-4 bg-red-100 text-red-500">
- <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+ <div class="bg-surface rounded-t-3xl sm:rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-border pb-[env(safe-area-inset-bottom)]" role="dialog" aria-modal="true" aria-labelledby="team-member-action-title">
+ <div id="member-action-choice" class="p-5 sm:p-6">
+ <div class="flex items-start justify-between gap-4 mb-5">
+ <div>
+ <h3 id="team-member-action-title" class="text-lg font-extrabold text-content">Administrar a "${perfilNombre}"</h3>
+ <p class="mt-1 text-sm text-content-muted leading-relaxed">Elige si conservarás su cuenta o si también eliminarás su acceso.</p>
  </div>
- <h3 class="text-lg font-extrabold text-content mb-1">Eliminar "${perfilNombre}"</h3>
- <p class="text-sm text-content-muted leading-relaxed">Se eliminar\u00E1 este m\u00FAsico y todas sus asignaciones. Esta acci\u00F3n no se puede deshacer.</p>
+ <button id="member-action-close" type="button" class="h-11 w-11 shrink-0 rounded-xl border border-border text-content-muted" aria-label="Cerrar">✕</button>
  </div>
- <div class="flex border-t border-border ">
- <button id="del-cancel" class="flex-1 py-3.5 text-sm font-bold text-content-muted hover:bg-background dark:bg-neutral-800 transition-colors">Cancelar</button>
- <button id="del-accept" class="flex-1 py-3.5 text-sm font-bold text-red-600 hover:bg-red-50 dark:bg-red-950/30 transition-colors border-l border-border ">Eliminar</button>
+ <div class="grid gap-3">
+ <button id="member-retire" type="button" class="w-full rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-left transition-colors hover:bg-amber-500/15">
+ <strong class="block text-sm text-content">Retirar del equipo</strong>
+ <span class="mt-1 block text-xs leading-relaxed text-content-muted">Lo oculta de Equipo y libera sus asignaciones futuras. Conserva su usuario y acceso.</span>
+ </button>
+ <button id="member-delete" type="button" class="w-full rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-left transition-colors hover:bg-red-500/15">
+ <strong class="block text-sm text-red-500">Eliminar cuenta permanentemente</strong>
+ <span class="mt-1 block text-xs leading-relaxed text-content-muted">Borra el acceso, el perfil y sus datos asociados. No se puede deshacer.</span>
+ </button>
  </div>
+ </div>
+ <form id="member-delete-confirm" class="hidden p-5 sm:p-6">
+ <h3 class="text-lg font-extrabold text-content">Eliminar definitivamente</h3>
+ <p class="mt-2 text-sm leading-relaxed text-content-muted">Para borrar la cuenta de "${perfilNombre}", escribe <strong class="text-red-500">ELIMINAR</strong>.</p>
+ <label class="mt-4 block">
+ <span class="sr-only">Confirmación</span>
+ <input id="member-delete-text" type="text" autocomplete="off" class="w-full min-h-12 rounded-xl border border-border bg-background px-4 text-content outline-none focus:border-red-500" placeholder="ELIMINAR" />
+ </label>
+ <div class="mt-5 flex gap-3">
+ <button id="member-delete-back" type="button" class="min-h-12 flex-1 rounded-xl border border-border text-sm font-bold text-content-muted">Atrás</button>
+ <button id="member-delete-final" type="submit" class="min-h-12 flex-1 rounded-xl bg-red-600 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40" disabled>Eliminar cuenta</button>
+ </div>
+ </form>
  </div>
  `;
  document.body.appendChild(overlay);
 
- const result = await new Promise((resolve) => {
- overlay.querySelector('#del-cancel')!.addEventListener('click', () => resolve(false));
- overlay.querySelector('#del-accept')!.addEventListener('click', () => resolve(true));
- overlay.addEventListener('click', (ev) => { if (ev.target === overlay) resolve(false); });
+ const choice = overlay.querySelector<HTMLElement>('#member-action-choice')!;
+ const deleteConfirm = overlay.querySelector<HTMLFormElement>('#member-delete-confirm')!;
+ const deleteText = overlay.querySelector<HTMLInputElement>('#member-delete-text')!;
+ const deleteFinal = overlay.querySelector<HTMLButtonElement>('#member-delete-final')!;
+ const resolveAction = await new Promise<'retire' | 'delete' | null>((resolve) => {
+ const finish = (action: 'retire' | 'delete' | null) => resolve(action);
+ overlay.querySelector('#member-action-close')!.addEventListener('click', () => finish(null));
+ overlay.querySelector('#member-retire')!.addEventListener('click', () => finish('retire'));
+ overlay.querySelector('#member-delete')!.addEventListener('click', () => {
+ choice.classList.add('hidden');
+ deleteConfirm.classList.remove('hidden');
+ requestAnimationFrame(() => deleteText.focus());
+ });
+ overlay.querySelector('#member-delete-back')!.addEventListener('click', () => {
+ deleteConfirm.classList.add('hidden');
+ choice.classList.remove('hidden');
+ deleteText.value = '';
+ deleteFinal.disabled = true;
+ });
+ deleteText.addEventListener('input', () => {
+ deleteFinal.disabled = deleteText.value.trim() !== 'ELIMINAR';
+ });
+ deleteConfirm.addEventListener('submit', (submitEvent) => {
+ submitEvent.preventDefault();
+ if (!deleteFinal.disabled) finish('delete');
+ });
+ overlay.addEventListener('click', (overlayEvent) => {
+ if (overlayEvent.target === overlay) finish(null);
+ });
  });
 
  overlay.remove();
- if (!result) return;
+ if (!resolveAction) return;
 
+ btnTarget.disabled = true;
  try {
- await supabase.from('asignaciones').delete().eq('perfil_id', perfilId);
- await supabase.from('perfil_roles').delete().eq('perfil_id', perfilId);
- await supabase.from('equipo_integrantes').delete().eq('perfil_id', perfilId);
- const { error } = await supabase.from('perfiles').delete().eq('id', perfilId);
- if (error) throw error;
+ const response = await fetch('/api/admin/team-member', {
+ method: 'POST',
+ credentials: 'same-origin',
+ headers: { 'Content-Type': 'application/json' },
+ body: JSON.stringify({ profileId: perfilId, action: resolveAction }),
+ });
+ const payload = await response.json().catch(() => ({}));
+ if (!response.ok) throw new Error(payload?.error || 'No se pudo completar la acción.');
 
  const card = btnTarget.closest<HTMLElement>('.equipo-card');
  if (card) {
- card.style.transition = 'all 0.3s ease-in-out';
+ card.style.transition = 'opacity 0.25s ease, transform 0.25s ease';
  card.style.opacity = '0';
- card.style.transform = 'scale(0.9)';
- setTimeout(() => card.remove(), 350);
+ card.style.transform = 'scale(0.97)';
+ setTimeout(() => card.remove(), 260);
  }
 
  const toast = document.createElement('div');
- toast.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 z-[300] bg-neutral-900 text-white text-sm font-semibold px-5 py-3 rounded-full shadow-2xl flex items-center gap-2';
- toast.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg> M\u00FAsico eliminado';
+ toast.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 z-[300] max-w-[calc(100%-2rem)] bg-neutral-900 text-white text-sm font-semibold px-5 py-3 rounded-full shadow-2xl text-center';
+ toast.textContent = payload?.message || (resolveAction === 'retire' ? 'Persona retirada del equipo.' : 'Cuenta eliminada.');
  document.body.appendChild(toast);
- setTimeout(() => toast.remove(), 3000);
- } catch(err: any) {
- alert('Error al eliminar: ' + (err.message || 'Error desconocido'));
+ setTimeout(() => toast.remove(), 4200);
+ } catch (error: any) {
+ btnTarget.disabled = false;
+ alert(error?.message || 'No se pudo completar la acción.');
  }
  });
  });

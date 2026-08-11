@@ -113,6 +113,25 @@ const userId = Astro.locals.user?.id ?? null;
  <strong id="profile-current-voice">Cargando...</strong>
  </div>
  </div>
+
+ <section class="profile-instruments-section" aria-labelledby="profile-instruments-title">
+ <div class="profile-content-card-heading">
+ <span class="profile-feature-icon profile-feature-icon--instrument" aria-hidden="true">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l10-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/></svg>
+ </span>
+ <div>
+ <h4 id="profile-instruments-title">Instrumentos</h4>
+ <p>Los instrumentos que puedes tocar.</p>
+ </div>
+ <button id="btn-open-instruments-modal" class="profile-instruments-change" type="button" aria-label="Editar instrumentos" aria-haspopup="dialog" disabled>
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
+ <span>Editar</span>
+ </button>
+ </div>
+ <div id="profile-current-instruments" class="profile-instrument-list" aria-live="polite">
+ <span class="profile-instrument-empty">Cargando...</span>
+ </div>
+ </section>
  </section>
 
  <section id="profile-step-agenda" class="profile-wizard-step" data-profile-panel="2" data-state="after" role="tabpanel" aria-hidden="true" inert>
@@ -285,6 +304,24 @@ const userId = Astro.locals.user?.id ?? null;
  Guardar voz
  </button>
  </div>
+ </div>
+ </div>
+
+ <div id="instruments-modal" class="profile-absence-modal" hidden>
+ <div class="profile-absence-dialog profile-instruments-dialog" role="dialog" aria-modal="true" aria-labelledby="instruments-modal-title">
+ <header class="profile-absence-dialog-header">
+ <h3 id="instruments-modal-title">Mis instrumentos</h3>
+ <button id="btn-close-instruments-modal" type="button" aria-label="Cerrar">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+ </button>
+ </header>
+ <form id="form-instruments" class="profile-instruments-dialog-body">
+ <p>Selecciona solo los instrumentos que puedes tocar.</p>
+ <div id="profile-instrument-options" class="profile-instrument-options"></div>
+ <div class="profile-instruments-footer">
+ <button id="btn-save-instruments" type="submit">Guardar instrumentos</button>
+ </div>
+ </form>
  </div>
  </div>
 
@@ -969,6 +1006,185 @@ const userId = Astro.locals.user?.id ?? null;
  .profile-voice-visual svg {
   width: 27px;
   height: 27px;
+ }
+
+ .profile-instruments-section {
+  margin-top: 1.35rem;
+  padding-top: 1.35rem;
+  border-top: 1px solid rgb(var(--border-base));
+ }
+
+ .profile-instruments-section .profile-content-card-heading {
+  margin-bottom: 0.8rem;
+ }
+
+ .profile-feature-icon--instrument {
+  color: rgb(13 148 136);
+  border-color: rgb(20 184 166 / 0.24);
+  background: rgb(20 184 166 / 0.09);
+ }
+
+ .profile-instruments-change {
+  display: inline-flex;
+  min-height: 42px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 0.38rem;
+  margin-left: auto;
+  padding: 0.58rem 0.78rem;
+  color: white;
+  border-radius: 0.8rem;
+  background: linear-gradient(135deg, rgb(13 148 136), rgb(8 145 178));
+  box-shadow: 0 12px 24px -17px rgb(13 148 136 / 0.94);
+  font-size: 0.68rem;
+  font-weight: 900;
+  transition: transform 0.2s ease, filter 0.2s ease, opacity 0.2s ease;
+ }
+
+ .profile-instruments-change svg {
+  width: 16px;
+  height: 16px;
+ }
+
+ .profile-instruments-change:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.07);
+ }
+
+ .profile-instruments-change:disabled {
+  cursor: wait;
+  opacity: 0.5;
+ }
+
+ .profile-instrument-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-height: 42px;
+  align-items: center;
+ }
+
+ .profile-instrument-chip,
+ .profile-instrument-empty {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  padding: 0.5rem 0.72rem;
+  border: 1px solid rgb(20 184 166 / 0.22);
+  border-radius: 0.75rem;
+  background: rgb(20 184 166 / 0.08);
+  color: rgb(var(--text-base));
+  font-size: 0.68rem;
+  font-weight: 800;
+ }
+
+ .profile-instrument-empty {
+  border-color: rgb(var(--border-base));
+  background: rgb(var(--bg-surface));
+  color: rgb(var(--text-muted));
+  font-weight: 650;
+ }
+
+ .profile-instruments-dialog {
+  width: min(100%, 520px);
+ }
+
+ .profile-instruments-dialog-body {
+  padding: 1rem 1rem 0;
+ }
+
+ .profile-instruments-dialog-body > p {
+  margin-bottom: 0.8rem;
+  color: rgb(var(--text-muted));
+  font-size: 0.7rem;
+  line-height: 1.45;
+ }
+
+ .profile-instrument-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+ }
+
+ .profile-instrument-option {
+  position: relative;
+  display: block;
+  cursor: pointer;
+ }
+
+ .profile-instrument-option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+ }
+
+ .profile-instrument-option > span {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.7rem 0.78rem;
+  border: 1px solid rgb(var(--border-base));
+  border-radius: 0.9rem;
+  background: rgb(var(--bg-background) / 0.7);
+  color: rgb(var(--text-base));
+  font-size: 0.72rem;
+  font-weight: 800;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+ }
+
+ .profile-instrument-option svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: transparent;
+ }
+
+ .profile-instrument-option input:checked + span {
+  border-color: rgb(20 184 166 / 0.58);
+  background: rgb(20 184 166 / 0.12);
+ }
+
+ .profile-instrument-option input:checked + span svg {
+  color: rgb(20 184 166);
+ }
+
+ .profile-instrument-option input:focus-visible + span {
+  border-color: rgb(20 184 166);
+  box-shadow: 0 0 0 3px rgb(20 184 166 / 0.18);
+ }
+
+ .profile-instruments-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  margin: 1rem -1rem 0;
+  padding: 0.75rem 1rem max(0.75rem, env(safe-area-inset-bottom));
+  border-top: 1px solid rgb(var(--border-base));
+  background: rgb(var(--bg-surface) / 0.97);
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+  backdrop-filter: blur(18px) saturate(1.12);
+ }
+
+ .profile-instruments-footer button {
+  min-height: 44px;
+  padding: 0.64rem 1rem;
+  color: white;
+  border-radius: 0.8rem;
+  background: linear-gradient(135deg, rgb(13 148 136), rgb(8 145 178));
+  box-shadow: 0 12px 24px -17px rgb(13 148 136 / 0.94);
+  font-size: 0.74rem;
+  font-weight: 900;
+ }
+
+ .profile-instruments-footer button:disabled {
+  cursor: wait;
+  opacity: 0.62;
  }
 
  .profile-feature-icon {
@@ -2112,8 +2328,13 @@ const userId = Astro.locals.user?.id ?? null;
   }
 
   .profile-voice-save,
+  .profile-instruments-footer button,
   .profile-message-confirm {
    width: 100%;
+  }
+
+  .profile-instrument-options {
+   grid-template-columns: 1fr;
   }
 
   .profile-absence-modal {
@@ -2183,11 +2404,13 @@ const userId = Astro.locals.user?.id ?? null;
   }
 
   .profile-absence-add span,
-  .profile-voice-change span {
+  .profile-voice-change span,
+  .profile-instruments-change span {
    display: none;
   }
 
-  .profile-voice-change {
+  .profile-voice-change,
+  .profile-instruments-change {
    width: 42px;
    padding: 0;
   }
@@ -2236,6 +2459,7 @@ const userId = Astro.locals.user?.id ?? null;
  import { supabase, uploadAvatarAtomic } from '../lib/supabase';
  import { getSafeImageForCropper } from '../utils/safeImageProcessor';
  import { safeHtml, toSafeMediaUrl } from '../lib/client/html-safety.js';
+ import { isSelfManagedInstrumentRoleCode } from '../lib/role-permissions.js';
 
  const revokePerfilSafeCropperUrl = () => {
  const safeUrl = (window as any).__perfilSafeCropperUrl as string | null | undefined;
@@ -2268,6 +2492,8 @@ const userId = Astro.locals.user?.id ?? null;
  if (absenceModal) absenceModal.hidden = true;
  const voiceModal = document.getElementById('voice-modal') as HTMLElement | null;
  if (voiceModal) voiceModal.hidden = true;
+ const instrumentsModal = document.getElementById('instruments-modal') as HTMLElement | null;
+ if (instrumentsModal) instrumentsModal.hidden = true;
  const profileMessageModal = document.getElementById('profile-message-modal') as HTMLElement | null;
  if (profileMessageModal) profileMessageModal.hidden = true;
  document.body.classList.remove('profile-absence-modal-open');
@@ -2397,6 +2623,19 @@ const userId = Astro.locals.user?.id ?? null;
  const btnSaveVoice = document.getElementById('btn-save-voice') as HTMLButtonElement | null;
  let voiceModalReturnFocus: HTMLElement | null = null;
 
+ const currentInstrumentsEl = document.getElementById('profile-current-instruments');
+ const instrumentsModal = document.getElementById('instruments-modal') as HTMLElement | null;
+ const instrumentsDialog = instrumentsModal?.querySelector('.profile-instruments-dialog') as HTMLElement | null;
+ const instrumentOptionsEl = document.getElementById('profile-instrument-options');
+ const formInstruments = document.getElementById('form-instruments') as HTMLFormElement | null;
+ const btnOpenInstrumentsModal = document.getElementById('btn-open-instruments-modal') as HTMLButtonElement | null;
+ const btnCloseInstrumentsModal = document.getElementById('btn-close-instruments-modal') as HTMLButtonElement | null;
+ const btnSaveInstruments = document.getElementById('btn-save-instruments') as HTMLButtonElement | null;
+ let instrumentsModalReturnFocus: HTMLElement | null = null;
+ let instrumentOptions: any[] = [];
+ let assignedRoleRows: any[] = [];
+ let selectedInstrumentIds = new Set<string>();
+
  const profileMessageModal = document.getElementById('profile-message-modal') as HTMLElement | null;
  const profileMessageDialog = profileMessageModal?.querySelector('.profile-message-dialog') as HTMLElement | null;
  const profileMessageTitle = document.getElementById('profile-message-title');
@@ -2426,6 +2665,83 @@ const userId = Astro.locals.user?.id ?? null;
   const matchingOption = Array.from(selectTonalidad?.options || [])
    .find((option) => option.value === voiceValue);
   currentVoiceEl.textContent = matchingOption?.textContent?.trim() || 'Sin definir';
+ };
+
+ const renderHeroRoles = (roleRows: any[]) => {
+  if (!uiRolesContainer) return;
+  const roleNames = roleRows
+   .map((row: any) => String(row?.roles?.nombre || '').trim())
+   .filter(Boolean);
+  uiRolesContainer.innerHTML = '';
+
+  if (roleNames.length === 0) {
+   const empty = document.createElement('span');
+   empty.className = 'text-xs text-content-muted italic';
+   empty.textContent = 'Sin capacidades asignadas';
+   uiRolesContainer.appendChild(empty);
+   return;
+  }
+
+  roleNames.forEach((roleName: string) => {
+   const chip = document.createElement('span');
+   chip.className = 'px-2.5 py-1 text-xs font-bold uppercase tracking-wider rounded-md bg-background border border-border text-content-muted shadow-sm';
+   chip.textContent = roleName;
+   uiRolesContainer.appendChild(chip);
+  });
+ };
+
+ const renderCurrentInstruments = () => {
+  if (!currentInstrumentsEl) return;
+  currentInstrumentsEl.innerHTML = '';
+  const selectedOptions = instrumentOptions.filter((option: any) => (
+   selectedInstrumentIds.has(String(option?.id || ''))
+  ));
+
+  if (selectedOptions.length === 0) {
+   const empty = document.createElement('span');
+   empty.className = 'profile-instrument-empty';
+   empty.textContent = 'Sin instrumentos seleccionados';
+   currentInstrumentsEl.appendChild(empty);
+   return;
+  }
+
+  selectedOptions.forEach((option: any) => {
+   const chip = document.createElement('span');
+   chip.className = 'profile-instrument-chip';
+   chip.textContent = String(option?.nombre || 'Instrumento');
+   currentInstrumentsEl.appendChild(chip);
+  });
+ };
+
+ const renderInstrumentOptions = () => {
+  if (!instrumentOptionsEl) return;
+  instrumentOptionsEl.innerHTML = '';
+
+  if (instrumentOptions.length === 0) {
+   const empty = document.createElement('p');
+   empty.className = 'profile-instrument-empty';
+   empty.textContent = 'No hay instrumentos disponibles todavía.';
+   instrumentOptionsEl.appendChild(empty);
+   return;
+  }
+
+  instrumentOptions.forEach((option: any) => {
+   const roleId = String(option?.id || '');
+   const label = document.createElement('label');
+   label.className = 'profile-instrument-option';
+   const input = document.createElement('input');
+   input.type = 'checkbox';
+   input.name = 'instrument';
+   input.value = roleId;
+   input.checked = selectedInstrumentIds.has(roleId);
+   const content = document.createElement('span');
+   const name = document.createElement('strong');
+   name.textContent = String(option?.nombre || 'Instrumento');
+   content.appendChild(name);
+   content.insertAdjacentHTML('beforeend', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg>');
+   label.append(input, content);
+   instrumentOptionsEl.appendChild(label);
+  });
  };
 
  const closeVoiceModal = ({ keepSelection = false } = {}) => {
@@ -2464,6 +2780,78 @@ const userId = Astro.locals.user?.id ?? null;
    return;
   }
   trapDialogFocus(keyboardEvent, voiceDialog);
+ });
+
+ const closeInstrumentsModal = () => {
+  if (!instrumentsModal || instrumentsModal.hidden) return;
+  instrumentsModal.hidden = true;
+  document.body.classList.remove('profile-absence-modal-open');
+  instrumentsModalReturnFocus?.focus();
+  instrumentsModalReturnFocus = null;
+ };
+
+ const openInstrumentsModal = () => {
+  if (!instrumentsModal || btnOpenInstrumentsModal?.disabled) return;
+  instrumentsModalReturnFocus = document.activeElement instanceof HTMLElement
+   ? document.activeElement
+   : btnOpenInstrumentsModal;
+  renderInstrumentOptions();
+  instrumentsModal.hidden = false;
+  document.body.classList.add('profile-absence-modal-open');
+  requestAnimationFrame(() => {
+   instrumentOptionsEl?.querySelector<HTMLInputElement>('input')?.focus();
+  });
+ };
+
+ on(btnOpenInstrumentsModal, 'click', openInstrumentsModal);
+ on(btnCloseInstrumentsModal, 'click', closeInstrumentsModal);
+ on(instrumentsModal, 'click', (event: Event) => {
+  if (event.target === instrumentsModal) closeInstrumentsModal();
+ });
+ on(instrumentsModal, 'keydown', (event: Event) => {
+  const keyboardEvent = event as KeyboardEvent;
+  if (keyboardEvent.key === 'Escape') {
+   keyboardEvent.preventDefault();
+   closeInstrumentsModal();
+   return;
+  }
+  trapDialogFocus(keyboardEvent, instrumentsDialog);
+ });
+
+ on(formInstruments, 'submit', async (event: Event) => {
+  event.preventDefault();
+  if (!btnSaveInstruments || !instrumentOptionsEl) return;
+  const selectedIds = Array.from(
+   instrumentOptionsEl.querySelectorAll<HTMLInputElement>('input[name="instrument"]:checked'),
+  ).map((input) => input.value);
+  const originalText = btnSaveInstruments.textContent || 'Guardar instrumentos';
+  btnSaveInstruments.disabled = true;
+  btnSaveInstruments.textContent = 'Guardando...';
+
+  try {
+   const { error } = await supabase.rpc('set_my_instruments', {
+    p_role_ids: selectedIds,
+   });
+   if (error) throw error;
+
+   selectedInstrumentIds = new Set(selectedIds);
+   assignedRoleRows = [
+    ...assignedRoleRows.filter((row: any) => !isSelfManagedInstrumentRoleCode(row?.roles?.codigo)),
+    ...instrumentOptions
+     .filter((option: any) => selectedInstrumentIds.has(String(option?.id || '')))
+     .map((option: any) => ({ roles: option })),
+   ];
+   renderCurrentInstruments();
+   renderHeroRoles(assignedRoleRows);
+   closeInstrumentsModal();
+   showProfileFeedback('success', 'Instrumentos actualizados.');
+  } catch (error: any) {
+   console.error('Instrument update failed:', error);
+   showProfileFeedback('error', error?.message || 'No pudimos guardar tus instrumentos.');
+  } finally {
+   btnSaveInstruments.disabled = false;
+   btnSaveInstruments.textContent = originalText;
+  }
  });
 
  const closeProfileMessage = () => {
@@ -3345,19 +3733,19 @@ const userId = Astro.locals.user?.id ?? null;
  formAusencia?.classList.remove('opacity-50', 'pointer-events-none');
  if (btnOpenAbsenceModal) btnOpenAbsenceModal.disabled = false;
 
- const rolesData = Array.isArray(payload.roles) ? payload.roles : [];
-
- if (uiRolesContainer) {
- const userRoles = rolesData ? rolesData.map((r: any) => r.roles?.nombre).filter(Boolean) : [];
- uiRolesContainer.innerHTML = '';
- 
- if (userRoles.length === 0) {
- uiRolesContainer.innerHTML = '<span class="text-xs text-content-muted italic">Sin roles asignados</span>';
- } else {
- userRoles.forEach((rol: string) => {
- uiRolesContainer.insertAdjacentHTML('beforeend', safeHtml`<span class="px-2.5 py-1 text-xs font-bold uppercase tracking-wider rounded-md bg-background border border-border text-content-muted shadow-sm">${rol}</span>`);
- });
- }
+ assignedRoleRows = Array.isArray(payload.roles) ? payload.roles : [];
+ instrumentOptions = Array.isArray(payload.instrumentOptions) ? payload.instrumentOptions : [];
+ selectedInstrumentIds = new Set(
+  assignedRoleRows
+   .filter((row: any) => isSelfManagedInstrumentRoleCode(row?.roles?.codigo))
+   .map((row: any) => String(row?.roles?.id || ''))
+   .filter(Boolean),
+ );
+ renderHeroRoles(assignedRoleRows);
+ renderCurrentInstruments();
+ renderInstrumentOptions();
+ if (btnOpenInstrumentsModal) {
+  btnOpenInstrumentsModal.disabled = instrumentOptions.length === 0;
  }
 
  // 3. Fetch Ausencias

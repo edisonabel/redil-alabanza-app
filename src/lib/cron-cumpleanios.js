@@ -74,6 +74,7 @@ const loadProfilesWithBirthday = async () => {
   const { data: perfiles, error: perfilesError } = await serviceRoleClient
     .from('perfiles')
     .select('id, nombre, email, fecha_nacimiento')
+    .eq('activo_en_equipo', true)
     .not('fecha_nacimiento', 'is', null);
 
   if (perfilesError) {

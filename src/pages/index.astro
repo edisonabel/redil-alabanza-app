@@ -83,6 +83,7 @@ try {
     supabaseSSR
       .from('perfiles')
       .select('id, nombre, fecha_nacimiento, avatar_url')
+      .eq('activo_en_equipo', true)
       .not('fecha_nacimiento', 'is', null),
     supabaseSSR
       .from('roles')

@@ -4,6 +4,7 @@ import {
   securityErrorResponse,
 } from '../../lib/server/api-security.js';
 import { createSupabaseUserClient } from '../../lib/server/supabase-user-client.js';
+import { SELF_MANAGED_INSTRUMENT_ROLE_CODES } from '../../lib/role-permissions.js';
 
 export const prerender = false;
 
@@ -27,7 +28,7 @@ export async function GET({ cookies }) {
       day: '2-digit',
     }).format(new Date());
 
-    const [profileResult, rolesResult, absencesResult] = await Promise.all([
+    const [profileResult, rolesResult, instrumentOptionsResult, absencesResult] = await Promise.all([
       supabase
         .from('perfiles')
         .select('id, email, nombre, avatar_url, tonalidad_voz, fecha_nacimiento, telefono, can_change_avatar')
@@ -35,8 +36,13 @@ export async function GET({ cookies }) {
         .single(),
       supabase
         .from('perfil_roles')
-        .select('roles (nombre)')
+        .select('roles (id, nombre, codigo)')
         .eq('perfil_id', user.id),
+      supabase
+        .from('roles')
+        .select('id, nombre, codigo')
+        .in('codigo', [...SELF_MANAGED_INSTRUMENT_ROLE_CODES])
+        .order('nombre'),
       supabase
         .from('ausencias')
         .select('id, fecha_inicio, fecha_fin, motivo')
@@ -45,7 +51,10 @@ export async function GET({ cookies }) {
         .order('fecha_inicio', { ascending: true }),
     ]);
 
-    const queryError = profileResult.error || rolesResult.error || absencesResult.error;
+    const queryError = profileResult.error
+      || rolesResult.error
+      || instrumentOptionsResult.error
+      || absencesResult.error;
     if (queryError) {
       console.error('[profile-data] Supabase query failed:', queryError.message);
       return json({ error: 'No se pudieron cargar los datos del perfil.' }, 503);
@@ -80,6 +89,7 @@ export async function GET({ cookies }) {
       },
       profile,
       roles: rolesResult.data || [],
+      instrumentOptions: instrumentOptionsResult.data || [],
       absences: absencesResult.data || [],
     });
   } catch (error) {
