@@ -149,7 +149,7 @@ import Layout from "../layouts/Layout.astro";
             </p>
           </div>
           <div
-            class="hidden bg-info/10 text-info border border-info/20 rounded-xl px-4 py-4 dark:bg-info/10 dark:text-info dark:border-info/20 items-start gap-3"
+            class="flex bg-info/10 text-info border border-info/20 rounded-xl px-4 py-4 dark:bg-info/10 dark:text-info dark:border-info/20 items-start gap-3"
           >
             <div class="mt-0.5 text-info dark:text-info shrink-0">
               <svg
@@ -166,17 +166,16 @@ import Layout from "../layouts/Layout.astro";
             </div>
             <div class="space-y-1">
               <p class="text-sm font-bold leading-snug">
-                Usa una foto de cerca (Retrato)
+                Una foto, dos usos
               </p>
               <p class="text-sm leading-snug">
-                Ampl&iacute;a la imagen hasta que <strong class="font-bold"
-                  >tu rostro llene el c&iacute;rculo</strong
-                >. No uses fotos de cuerpo entero ni grupales.
+                Puedes elegir una foto con aire. Conservaremos la imagen completa
+                para tu perfil y usar&aacute;s el c&iacute;rculo para ajustar la miniatura de tu rostro.
               </p>
             </div>
           </div>
           <div
-            class="hidden flex-col items-center justify-center gap-3 mb-1 mt-1"
+            class="flex flex-col items-center justify-center gap-3 mb-1 mt-1"
           >
             <div class="relative">
               <div
@@ -259,7 +258,7 @@ import Layout from "../layouts/Layout.astro";
             </div>
           </div>
           <p class="rounded-xl border border-border bg-background px-4 py-3 text-sm text-content-muted">
-            Podr&aacute;s agregar tu foto de perfil despu&eacute;s de confirmar tu cuenta e iniciar sesi&oacute;n.
+            La foto completa se ver&aacute; en Mi Perfil. El recorte circular se usar&aacute; en Programaci&oacute;n, Equipo y asignaciones.
           </p>
         </div>
 
@@ -403,6 +402,7 @@ import Layout from "../layouts/Layout.astro";
   import { supabase } from "../lib/supabase";
   import { VOCAL_RANGE_OPTIONS } from "../lib/ministry-config.js";
   import { isPublicRegistrationRoleCode } from "../lib/public-registration.js";
+  import { getSafeImageForCropper } from "../utils/safeImageProcessor";
 
   document.addEventListener("DOMContentLoaded", async () => {
     // Removido loop infinito de auto-sincronizaciÃ³n. El usuario debe hacer logout manual o login.
@@ -464,6 +464,8 @@ import Layout from "../layouts/Layout.astro";
     let isLoginMode = true;
     let rolesLoaded = false;
     let previewUrl: string | null = null;
+    let croppedAvatarFile: File | null = null;
+    let fullProfilePhotoFile: File | null = null;
     let avatarProcessing = false;
     let registroExitoso = false;
 
@@ -518,6 +520,8 @@ import Layout from "../layouts/Layout.astro";
         previewUrl = null;
       }
       if (avatarInput) avatarInput.value = "";
+      croppedAvatarFile = null;
+      fullProfilePhotoFile = null;
       if (avatarPreviewImage) {
         avatarPreviewImage.src = "";
         avatarPreviewImage.classList.add("hidden");
@@ -526,46 +530,73 @@ import Layout from "../layouts/Layout.astro";
       hideAvatarState();
     };
 
-    const handleAvatarChange = (e: Event) => {
+    const handleAvatarChange = async (e: Event) => {
       const target = e.target as HTMLInputElement;
       const file = target.files?.[0];
       if (!file) {
         resetAvatarPreview();
         return;
       }
+      croppedAvatarFile = null;
+      fullProfilePhotoFile = null;
       // Reset input para poder seleccionar la misma foto de nuevo
       target.value = "";
-      // Abrir cropper modal
-      const openCropper = (window as any).__loginOpenCropper;
-      if (openCropper) {
-        openCropper(file);
-      } else {
-        // Fallback si cropper no cargó
+      avatarProcessing = true;
+      showAvatarState("loading", "Preparando tu foto...");
+      avatarSkipBtn?.classList.add("hidden");
+      try {
+        const safeProfilePhoto = await getSafeImageForCropper(file, 1800);
+        URL.revokeObjectURL(safeProfilePhoto.url);
+        const safeFile = new File(
+          [safeProfilePhoto.blob],
+          `profile_${Date.now()}.jpg`,
+          { type: safeProfilePhoto.blob.type || "image/jpeg" },
+        );
+        const openCropper = (window as any).__loginOpenCropper;
+        if (!openCropper) throw new Error("Recarga para activar el recorte.");
+        hideAvatarState();
+        openCropper(safeFile);
+      } catch (error) {
+        console.error("[Registro] No se pudo preparar la foto:", error);
+        showAvatarState(
+          "error",
+          error instanceof Error ? error.message : "No se pudo preparar la foto",
+        );
+        avatarSkipBtn?.classList.remove("hidden");
+      } finally {
+        avatarProcessing = false;
+      }
+    };
+
+    // Recibir el recorte facial y conservar aparte la composición completa.
+    document.addEventListener("avatar-cropped", async (e: any) => {
+      const croppedFile: File = e.detail?.file;
+      const originalFile: File = e.detail?.originalFile;
+      if (!croppedFile || !originalFile) return;
+      avatarProcessing = true;
+      showAvatarState("loading", "Preparando ambas versiones...");
+      avatarSkipBtn?.classList.add("hidden");
+      try {
+        croppedAvatarFile = croppedFile;
+        fullProfilePhotoFile = originalFile;
+
         if (previewUrl) URL.revokeObjectURL(previewUrl);
-        previewUrl = URL.createObjectURL(file);
+        previewUrl = URL.createObjectURL(croppedFile);
         if (avatarPreviewImage) {
           avatarPreviewImage.src = previewUrl;
           avatarPreviewImage.classList.remove("hidden");
         }
         avatarPreviewPlaceholder?.classList.add("hidden");
-        showAvatarState("success", "Foto lista");
+        showAvatarState("success", "Miniatura y foto completa listas ✓");
+      } catch (error) {
+        console.error("[Registro] No se pudo preparar la foto completa:", error);
+        croppedAvatarFile = null;
+        fullProfilePhotoFile = null;
+        showAvatarState("error", "No se pudo preparar la foto");
+        avatarSkipBtn?.classList.remove("hidden");
+      } finally {
+        avatarProcessing = false;
       }
-    };
-
-    // Recibir foto recortada del modal Cropper
-    document.addEventListener("avatar-cropped", (e: any) => {
-      const croppedFile: File = e.detail?.file;
-      if (!croppedFile) return;
-      avatarSkipBtn?.classList.add("hidden");
-      // Actualizar preview con la foto recortada
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-      previewUrl = URL.createObjectURL(croppedFile);
-      if (avatarPreviewImage) {
-        avatarPreviewImage.src = previewUrl;
-        avatarPreviewImage.classList.remove("hidden");
-      }
-      avatarPreviewPlaceholder?.classList.add("hidden");
-      showAvatarState("success", "Foto lista ✓");
     });
 
     // Permitir continuar sin foto
@@ -827,7 +858,8 @@ import Layout from "../layouts/Layout.astro";
           const accessCode = accessCodeInput.value?.trim().toUpperCase();
           const vocalRange = vocalRangeInput?.value || "";
           let avatarUrl = "";
-          let uploadedAvatarPath = "";
+          let profilePhotoUrl = "";
+          let registrationUploadId = "";
 
           // SECRET CODE VALIDATION (server-side)
           const verifyRes = await fetch("/api/verify-access-code", {
@@ -858,39 +890,83 @@ import Layout from "../layouts/Layout.astro";
             return;
           }
 
+          if (croppedAvatarFile && fullProfilePhotoFile) {
+            avatarProcessing = true;
+            showAvatarState("loading", "Guardando tu foto...");
+            try {
+              const imageForm = new FormData();
+              imageForm.set("code", accessCode);
+              imageForm.set("avatar", croppedAvatarFile);
+              imageForm.set("profile_photo", fullProfilePhotoFile);
+              const imageResponse = await fetch("/api/registration-avatar", {
+                method: "POST",
+                body: imageForm,
+              });
+              const imagePayload = await imageResponse.json().catch(() => ({}));
+              if (!imageResponse.ok) {
+                throw new Error(imagePayload?.error || "No se pudo guardar la foto.");
+              }
+              avatarUrl = String(imagePayload?.avatar_url || "");
+              profilePhotoUrl = String(imagePayload?.profile_photo_url || "");
+              registrationUploadId = String(imagePayload?.upload_id || "");
+              if (!avatarUrl || !profilePhotoUrl || !registrationUploadId) {
+                throw new Error("La carga de la foto quedó incompleta.");
+              }
+              showAvatarState("success", "Foto guardada ✓");
+            } finally {
+              avatarProcessing = false;
+            }
+          }
+
           const selectedRoles = Array.from(
             document.querySelectorAll('input[name="register_role"]:checked'),
           ).map((cb) => (cb as HTMLInputElement).value);
 
-          const { data, error } = await supabase.auth.signUp({
-            email,
-            password,
-            options: {
-              data: {
-                full_name: fullName,
-                telefono: telefono,
-                fecha_nacimiento: fechaNacimiento,
-                avatar_url: avatarUrl,
-                roles: selectedRoles,
-                tonalidad_voz: vocalRange,
-                registration_target: verifyData.registration_target,
+          const cleanupRegistrationUpload = async () => {
+            if (!registrationUploadId) return;
+            try {
+              await fetch("/api/registration-avatar", {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  code: accessCode,
+                  upload_id: registrationUploadId,
+                }),
+              });
+            } catch (cleanupError) {
+              console.warn(
+                "No se pudieron limpiar las fotos tras el fallo de registro:",
+                cleanupError,
+              );
+            }
+          };
+
+          let data;
+          let error;
+          try {
+            ({ data, error } = await supabase.auth.signUp({
+              email,
+              password,
+              options: {
+                data: {
+                  full_name: fullName,
+                  telefono: telefono,
+                  fecha_nacimiento: fechaNacimiento,
+                  avatar_url: avatarUrl,
+                  profile_photo_url: profilePhotoUrl,
+                  roles: selectedRoles,
+                  tonalidad_voz: vocalRange,
+                  registration_target: verifyData.registration_target,
+                },
               },
-            },
-          });
+            }));
+          } catch (signUpError) {
+            await cleanupRegistrationUpload();
+            throw signUpError;
+          }
 
           if (error) {
-            if (uploadedAvatarPath) {
-              try {
-                await supabase.storage
-                  .from("avatars")
-                  .remove([uploadedAvatarPath]);
-              } catch (cleanupError) {
-                console.warn(
-                  "No se pudo limpiar el avatar subido tras fallo de registro:",
-                  cleanupError,
-                );
-              }
-            }
+            await cleanupRegistrationUpload();
             throw error;
           }
           if (data.user && !data.session) {
@@ -999,11 +1075,11 @@ import Layout from "../layouts/Layout.astro";
       >
       <div class="space-y-1">
         <p class="text-sm font-bold leading-snug">
-          Usa una foto de cerca (Retrato)
+          Ajusta solo la miniatura
         </p>
         <p class="text-sm leading-snug">
-          Amplia la imagen hasta que <strong>tu rostro llene el círculo</strong
-          >. No uses fotos de cuerpo entero ni grupales.
+          Mueve y ampl&iacute;a hasta que <strong>tu rostro quede bien dentro del c&iacute;rculo</strong>.
+          La composici&oacute;n completa, con su aire, tambi&eacute;n quedar&aacute; guardada.
         </p>
       </div>
     </div>
@@ -1059,6 +1135,8 @@ import Layout from "../layouts/Layout.astro";
 <script is:inline>
   (function () {
     var cropperInstance = null;
+    var sourceFile = null;
+    var sourceObjectUrl = null;
 
     var modal = document.getElementById("login-cropper-modal");
     var content = document.getElementById("login-cropper-content");
@@ -1068,8 +1146,10 @@ import Layout from "../layouts/Layout.astro";
     var btnSave = document.getElementById("login-btn-save-cropper");
 
     function openCropper(file) {
-      var objectUrl = URL.createObjectURL(file);
-      cropperImage.src = objectUrl;
+      if (sourceObjectUrl) URL.revokeObjectURL(sourceObjectUrl);
+      sourceFile = file;
+      sourceObjectUrl = URL.createObjectURL(file);
+      cropperImage.src = sourceObjectUrl;
       cropperImage.classList.remove("hidden");
       modal.classList.remove("hidden");
       modal.classList.add("flex");
@@ -1112,6 +1192,11 @@ import Layout from "../layouts/Layout.astro";
           cropperImage.src = "";
           cropperImage.classList.add("hidden");
         }
+        if (sourceObjectUrl) {
+          URL.revokeObjectURL(sourceObjectUrl);
+          sourceObjectUrl = null;
+        }
+        sourceFile = null;
       }, 300);
     }
 
@@ -1165,7 +1250,7 @@ import Layout from "../layouts/Layout.astro";
           // Disparar evento para que el script de login recoja el archivo
           document.dispatchEvent(
             new CustomEvent("avatar-cropped", {
-              detail: { file: croppedFile },
+              detail: { file: croppedFile, originalFile: sourceFile },
             }),
           );
           closeCropper();

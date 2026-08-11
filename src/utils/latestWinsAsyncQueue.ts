@@ -21,7 +21,15 @@ export const createLatestWinsAsyncQueue = <T>(
     let activeValue = initialValue;
 
     while (true) {
-      await worker(activeValue);
+      let activeWorkerFailed = false;
+      try {
+        await worker(activeValue);
+      } catch (error) {
+        if (!hasPendingValue) {
+          throw error;
+        }
+        activeWorkerFailed = true;
+      }
 
       if (!hasPendingValue) {
         return;
@@ -31,7 +39,7 @@ export const createLatestWinsAsyncQueue = <T>(
       pendingValue = undefined;
       hasPendingValue = false;
 
-      if (isEquivalent(activeValue, nextValue)) {
+      if (!activeWorkerFailed && isEquivalent(activeValue, nextValue)) {
         return;
       }
 

@@ -10,6 +10,10 @@ import {
   readLiveBrowserCapabilities,
   warnLiveDiagnostic,
 } from '../utils/liveDiagnostics';
+import {
+  MEDIA_SEEK_BARRIER_TARGET_TOLERANCE_SECONDS,
+  seekMediaElementAndWait,
+} from '../utils/mediaElementSeekBarrier';
 
 type WindowWithWebkitAudio = Window & typeof globalThis & {
   webkitAudioContext?: typeof AudioContext;
@@ -118,6 +122,8 @@ const AUDIO_BUFFER_LOAD_BATCH_SIZE = 4;
 const TRACK_FETCH_TIMEOUT_MS = 20_000;
 const TRACK_DECODE_TIMEOUT_MS = 12_000;
 const MEDIA_METADATA_TIMEOUT_MS = 30_000;
+const MEDIA_PLAY_START_TIMEOUT_MS = 4_000;
+const AUDIO_CONTEXT_RESUME_TIMEOUT_MS = 4_000;
 const MEDIA_MONITOR_INTERVAL_FAST_MS = 120;
 const MEDIA_MONITOR_INTERVAL_MEDIUM_MS = 180;
 const MEDIA_MONITOR_INTERVAL_SLOW_MS = 250;
@@ -280,6 +286,13 @@ export class MultitrackEngine {
   private startTime = 0;
   private pauseTime = 0;
   private playbackSessionId = 0;
+  private mediaSeekGeneration = 0;
+  private pendingMediaSeekController: AbortController | null = null;
+  private mediaSeekBarrierPromise: Promise<void> | null = null;
+  private mediaResumeAfterSeek = false;
+  private preparedMediaSeekOffset: number | null = null;
+  private masterVolume = 1;
+  private mediaResumeGateSessionId: number | null = null;
   private isLooping = false;
   private loopStartTime = 0;
   private loopEndTime = 0;
@@ -445,13 +458,35 @@ export class MultitrackEngine {
     const contextState = String(this.context.state);
     const contextResumePromise = contextState === 'running'
       ? Promise.resolve()
-      : this.context.resume();
+      : withTimeout(
+        this.context.resume(),
+        AUDIO_CONTEXT_RESUME_TIMEOUT_MS,
+        'Tiempo agotado activando la salida de audio.',
+      );
 
     if (this.mode === 'media') {
+      const pendingSeekBarrier = this.mediaSeekBarrierPromise;
+      if (pendingSeekBarrier) {
+        // A seek that began while paused must finish without consuming the
+        // user's Play gesture. The next tap can call every mediaElement.play()
+        // synchronously, which is required by WebKit autoplay policy.
+        await contextResumePromise;
+        const error = new Error('Las pistas todavía se están alineando.');
+        error.name = 'MediaSeekPendingError';
+        throw error;
+      }
+
       // Invoke HTMLMediaElement.play() before yielding so WebKit preserves the
       // transient user activation. The AudioContext may resume in parallel.
+      const playbackSessionId = this.playbackSessionId + 1;
+      const playbackOffset = this.clampTime(this.pauseTime);
       const mediaPlaybackPromise = this.playMediaTracks();
-      await Promise.all([contextResumePromise, mediaPlaybackPromise]);
+      try {
+        await Promise.all([contextResumePromise, mediaPlaybackPromise]);
+      } catch (error) {
+        this.rollbackMediaPlaybackSession(playbackSessionId, playbackOffset);
+        throw error;
+      }
       return;
     }
 
@@ -460,6 +495,8 @@ export class MultitrackEngine {
   }
 
   pause(accumulateElapsed = true): void {
+    this.cancelPendingMediaSeek();
+
     if (!this.isPlaying) {
       return;
     }
@@ -474,6 +511,7 @@ export class MultitrackEngine {
   }
 
   stop(): void {
+    this.cancelPendingMediaSeek();
     this.isPlaying = false;
     this.startTime = 0;
     this.pauseTime = 0;
@@ -500,7 +538,14 @@ export class MultitrackEngine {
   }
 
   async seekTo(timeInSeconds: number): Promise<void> {
-    this.pauseTime = this.clampTime(timeInSeconds);
+    const targetTime = this.clampTime(timeInSeconds);
+
+    if (this.mode === 'media') {
+      await this.seekMediaTracksTo(targetTime);
+      return;
+    }
+
+    this.pauseTime = targetTime;
 
     if (!this.isPlaying) {
       return;
@@ -570,7 +615,10 @@ export class MultitrackEngine {
   }
 
   setMasterVolume(volume: number): void {
-    this.masterGain.gain.value = this.clampVolume(volume);
+    this.masterVolume = this.clampVolume(volume);
+    if (this.mediaResumeGateSessionId === null) {
+      this.masterGain.gain.value = this.masterVolume;
+    }
   }
 
   soloTrack(trackId: string): void {
@@ -1207,11 +1255,20 @@ export class MultitrackEngine {
       return;
     }
 
+    const wasPreparedMediaSeek =
+      this.preparedMediaSeekOffset !== null
+      && Math.abs(this.preparedMediaSeekOffset - offset)
+        <= MEDIA_SEEK_BARRIER_TARGET_TOLERANCE_SECONDS;
+    this.preparedMediaSeekOffset = null;
+
     const playbackSessionId = ++this.playbackSessionId;
     this.stopAllPlayback(false);
     this.pauseTime = offset;
     this.startTime = this.context.currentTime;
     this.isPlaying = true;
+    if (wasPreparedMediaSeek) {
+      this.closeMediaResumeGate(playbackSessionId);
+    }
 
     const longestTrack = playableTracks.reduce((longest, current) =>
       current.duration > longest.duration ? current : longest,
@@ -1233,10 +1290,12 @@ export class MultitrackEngine {
 
       mediaElement.loop = false;
       mediaElement.pause();
-      mediaElement.currentTime = this.clampOffsetForDuration(offset, duration);
+      if (!wasPreparedMediaSeek) {
+        mediaElement.currentTime = this.clampOffsetForDuration(offset, duration);
+      }
     });
 
-    const playResults = await Promise.allSettled(
+    const playAllTracksPromise = Promise.allSettled(
       playableTracks.map(async ({ track, mediaElement }) => {
         try {
           await mediaElement.play();
@@ -1246,6 +1305,13 @@ export class MultitrackEngine {
         }
       }),
     );
+    const playResults = wasPreparedMediaSeek
+      ? await withTimeout(
+        playAllTracksPromise,
+        MEDIA_PLAY_START_TIMEOUT_MS,
+        'Tiempo agotado iniciando las pistas preparadas.',
+      )
+      : await playAllTracksPromise;
 
     const rejectedResults = playResults.filter(
       (result): result is PromiseRejectedResult => result.status === 'rejected',
@@ -1255,26 +1321,143 @@ export class MultitrackEngine {
       return;
     }
 
+    if (wasPreparedMediaSeek && rejectedResults.length > 0) {
+      this.isPlaying = false;
+      this.startTime = 0;
+      this.pauseTime = offset;
+      this.stopAllPlayback(false);
+      throw rejectedResults[0].reason;
+    }
+
     if (rejectedResults.length === playResults.length) {
       this.stop();
       throw rejectedResults[0].reason;
     }
 
-    const primaryTrack = this.getPrimaryPlayableMediaTrack(0) || playableTracks[0];
-    const primaryTime = primaryTrack.mediaElement.currentTime;
-    playableTracks.forEach(({ mediaElement, duration }) => {
+    if (wasPreparedMediaSeek) {
+      const startedTimes = playableTracks
+        .filter(({ mediaElement }) => !mediaElement.paused)
+        .map(({ mediaElement }) => mediaElement.currentTime);
+      const earliestStartedTime = Math.min(...startedTimes);
+      const latestStartedTime = Math.max(...startedTimes);
       if (
-        mediaElement === primaryTrack.mediaElement
-        || mediaElement.paused
-        || Math.abs(mediaElement.currentTime - primaryTime) <= MEDIA_INITIAL_SYNC_TOLERANCE_SECONDS
+        startedTimes.length !== playableTracks.length
+        || latestStartedTime - earliestStartedTime > MEDIA_INITIAL_SYNC_TOLERANCE_SECONDS
+      ) {
+        this.isPlaying = false;
+        this.startTime = 0;
+        this.pauseTime = offset;
+        this.stopAllPlayback(false);
+        throw new Error('Las pistas no arrancaron sincronizadas después del salto.');
+      }
+    }
+
+    if (!wasPreparedMediaSeek) {
+      const primaryTrack = this.getPrimaryPlayableMediaTrack(0) || playableTracks[0];
+      const primaryTime = primaryTrack.mediaElement.currentTime;
+      playableTracks.forEach(({ mediaElement, duration }) => {
+        if (
+          mediaElement === primaryTrack.mediaElement
+          || mediaElement.paused
+          || Math.abs(mediaElement.currentTime - primaryTime) <= MEDIA_INITIAL_SYNC_TOLERANCE_SECONDS
+        ) {
+          return;
+        }
+        mediaElement.currentTime = this.clampOffsetForDuration(primaryTime, duration);
+      });
+    }
+
+    this.syncAllTrackGains();
+    this.releaseMediaResumeGate(playbackSessionId);
+    this.startMediaMonitor(playbackSessionId);
+  }
+
+  private async seekMediaTracksTo(targetTime: number): Promise<void> {
+    const shouldResume = this.isPlaying || this.mediaResumeAfterSeek;
+
+    this.pendingMediaSeekController?.abort();
+    this.mediaSeekBarrierPromise = null;
+    const seekGeneration = ++this.mediaSeekGeneration;
+    const seekController = new AbortController();
+    this.pendingMediaSeekController = seekController;
+    this.mediaResumeAfterSeek = shouldResume;
+    this.preparedMediaSeekOffset = null;
+
+    ++this.playbackSessionId;
+    this.isPlaying = false;
+    this.startTime = 0;
+    this.pauseTime = targetTime;
+    this.stopAllPlayback(false);
+
+    const playableTracks = this.getPlayableMediaTracks(targetTime);
+    if (playableTracks.length === 0) {
+      if (this.pendingMediaSeekController === seekController) {
+        this.pendingMediaSeekController = null;
+      }
+      this.mediaResumeAfterSeek = false;
+      throw new Error(`No hay pistas disponibles en ${targetTime.toFixed(2)}s.`);
+    }
+
+    const barrierPromise = Promise.all(
+      playableTracks.map(({ track, mediaElement, duration }) => {
+        const trackTargetTime = this.clampOffsetForDuration(targetTime, duration);
+        return seekMediaElementAndWait(mediaElement, trackTargetTime, {
+          duration,
+          label: track.name,
+          signal: seekController.signal,
+        });
+      }),
+    ).then(() => undefined);
+    this.mediaSeekBarrierPromise = barrierPromise;
+
+    try {
+      await barrierPromise;
+
+      if (
+        seekController.signal.aborted
+        || seekGeneration !== this.mediaSeekGeneration
       ) {
         return;
       }
-      mediaElement.currentTime = this.clampOffsetForDuration(primaryTime, duration);
-    });
 
-    this.syncAllTrackGains();
-    this.startMediaMonitor(playbackSessionId);
+      this.preparedMediaSeekOffset = targetTime;
+      if (this.mediaSeekBarrierPromise === barrierPromise) {
+        this.mediaSeekBarrierPromise = null;
+      }
+      if (this.pendingMediaSeekController === seekController) {
+        this.pendingMediaSeekController = null;
+      }
+
+      const resumeAfterBarrier = this.mediaResumeAfterSeek;
+      this.mediaResumeAfterSeek = false;
+      if (resumeAfterBarrier) {
+        await this.play();
+      }
+    } catch (error) {
+      if (
+        seekController.signal.aborted
+        || seekGeneration !== this.mediaSeekGeneration
+        || isAbortError(error)
+      ) {
+        return;
+      }
+
+      this.mediaResumeAfterSeek = false;
+      this.preparedMediaSeekOffset = null;
+      this.isPlaying = false;
+      this.startTime = 0;
+      this.pauseTime = targetTime;
+      seekController.abort();
+      this.stopAllPlayback(false);
+      throw error;
+    } finally {
+      if (this.mediaSeekBarrierPromise === barrierPromise) {
+        this.mediaSeekBarrierPromise = null;
+      }
+      if (this.pendingMediaSeekController === seekController) {
+        this.pendingMediaSeekController = null;
+      }
+    }
   }
 
   private startMediaMonitor(playbackSessionId: number): void {
@@ -1450,6 +1633,47 @@ export class MultitrackEngine {
     this.stopMediaMonitor();
     this.stopAllSources();
     this.pauseAllMediaElements(resetMediaPosition);
+    this.releaseMediaResumeGate();
+  }
+
+  private rollbackMediaPlaybackSession(
+    playbackSessionId: number,
+    playbackOffset: number,
+  ): void {
+    if (this.playbackSessionId !== playbackSessionId) {
+      return;
+    }
+
+    this.isPlaying = false;
+    this.startTime = 0;
+    this.pauseTime = playbackOffset;
+    this.stopAllPlayback(false);
+  }
+
+  private closeMediaResumeGate(playbackSessionId: number): void {
+    this.mediaResumeGateSessionId = playbackSessionId;
+    this.masterGain.gain.value = 0;
+  }
+
+  private releaseMediaResumeGate(playbackSessionId?: number): void {
+    if (
+      typeof playbackSessionId === 'number'
+      && this.mediaResumeGateSessionId !== playbackSessionId
+    ) {
+      return;
+    }
+
+    this.mediaResumeGateSessionId = null;
+    this.masterGain.gain.value = this.masterVolume;
+  }
+
+  private cancelPendingMediaSeek(): void {
+    this.mediaSeekGeneration += 1;
+    this.pendingMediaSeekController?.abort();
+    this.pendingMediaSeekController = null;
+    this.mediaSeekBarrierPromise = null;
+    this.mediaResumeAfterSeek = false;
+    this.preparedMediaSeekOffset = null;
   }
 
   private stopAllSources(): void {

@@ -73,6 +73,23 @@ export async function uploadAvatarAtomic(userId, fileBlob, fileName, options = {
   const previousAvatarUrl = typeof options.previousAvatarUrl === 'string'
     ? options.previousAvatarUrl
     : null;
+  const profilePhotoBlob = options.profilePhotoBlob instanceof Blob
+    ? options.profilePhotoBlob
+    : null;
+  const profilePhotoFileName = String(
+    options.profilePhotoFileName || `profile-${Date.now()}.webp`,
+  )
+    .replace(/[^a-zA-Z0-9._/-]/g, '_')
+    .replace(/^\/+/, '');
+  const profilePhotoPath = `${folder}/${profilePhotoFileName}`.replace(/\/{2,}/g, '/');
+  const profilePhotoContentType = String(
+    options.profilePhotoContentType || profilePhotoBlob?.type || 'image/webp',
+  );
+  const uploadedPaths = [];
+
+  const cleanupUploadedFiles = async () => {
+    await Promise.all(uploadedPaths.map((path) => removeStorageObject(bucketName, path)));
+  };
 
   const { data: uploadData, error: uploadError } = await supabase.storage
     .from(bucketName)
@@ -87,12 +104,43 @@ export async function uploadAvatarAtomic(userId, fileBlob, fileName, options = {
   }
 
   const uploadedPath = uploadData?.path || filePath;
+  uploadedPaths.push(uploadedPath);
   const { data: publicUrlData } = supabase.storage.from(bucketName).getPublicUrl(uploadedPath);
   const publicUrl = String(publicUrlData?.publicUrl || '').trim();
 
   if (!publicUrl) {
-    await removeStorageObject(bucketName, uploadedPath);
+    await cleanupUploadedFiles();
     throw new Error('No se pudo obtener la URL pública del avatar subido.');
+  }
+
+  let profilePhotoUrl = '';
+  let uploadedProfilePhotoPath = '';
+
+  if (profilePhotoBlob) {
+    const { data: profileUploadData, error: profileUploadError } = await supabase.storage
+      .from(bucketName)
+      .upload(profilePhotoPath, profilePhotoBlob, {
+        cacheControl: '3600',
+        upsert: true,
+        contentType: profilePhotoContentType,
+      });
+
+    if (profileUploadError) {
+      await cleanupUploadedFiles();
+      throw new Error(`Error al subir la foto completa: ${profileUploadError.message}`);
+    }
+
+    uploadedProfilePhotoPath = profileUploadData?.path || profilePhotoPath;
+    uploadedPaths.push(uploadedProfilePhotoPath);
+    const { data: profilePhotoPublicData } = supabase.storage
+      .from(bucketName)
+      .getPublicUrl(uploadedProfilePhotoPath);
+    profilePhotoUrl = String(profilePhotoPublicData?.publicUrl || '').trim();
+
+    if (!profilePhotoUrl) {
+      await cleanupUploadedFiles();
+      throw new Error('No se pudo obtener la URL pública de la foto completa.');
+    }
   }
 
   const { data: updatedRows, error: dbError } = await supabase
@@ -102,17 +150,20 @@ export async function uploadAvatarAtomic(userId, fileBlob, fileName, options = {
     .select('id, avatar_url');
 
   if (dbError) {
-    await removeStorageObject(bucketName, uploadedPath);
+    await cleanupUploadedFiles();
     throw new Error(`Error al actualizar el perfil: ${dbError.message}`);
   }
 
   if (!Array.isArray(updatedRows) || updatedRows.length === 0) {
-    await removeStorageObject(bucketName, uploadedPath);
+    await cleanupUploadedFiles();
     throw new Error('La base de datos bloqueó la actualización del avatar.');
   }
 
   const { error: authError } = await supabase.auth.updateUser({
-    data: { avatar_url: publicUrl },
+    data: {
+      avatar_url: publicUrl,
+      ...(profilePhotoUrl ? { profile_photo_url: profilePhotoUrl } : {}),
+    },
   });
 
   if (authError) {
@@ -135,7 +186,7 @@ export async function uploadAvatarAtomic(userId, fileBlob, fileName, options = {
     }
 
     if (revertedProfile) {
-      await removeStorageObject(bucketName, uploadedPath);
+      await cleanupUploadedFiles();
       throw new Error(`No se pudo sincronizar el avatar en la sesión: ${authError.message}`);
     }
 
@@ -146,7 +197,9 @@ export async function uploadAvatarAtomic(userId, fileBlob, fileName, options = {
 
   return {
     publicUrl,
+    profilePhotoUrl,
     path: uploadedPath,
+    profilePhotoPath: uploadedProfilePhotoPath,
     bucketName,
   };
 }

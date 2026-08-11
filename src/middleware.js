@@ -40,7 +40,7 @@ const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
-  "frame-ancestors 'none'",
+  "frame-ancestors 'self'",
   "img-src 'self' https: data: blob:",
   "media-src 'self' https: data: blob:",
   "font-src 'self' data:",

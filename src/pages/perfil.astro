@@ -87,16 +87,27 @@ const userId = Astro.locals.user?.id ?? null;
  <div class="profile-wizard-step-heading">
  <h3>Voz</h3>
  </div>
- <div class="profile-voice-card">
- <label class="profile-field profile-voice-field" for="tonalidad-select">
- <span>Tipo de voz</span>
- <select id="tonalidad-select" form="form-datos-personales" disabled>
- <option value="">No soy voz / Todav&iacute;a no lo s&eacute;</option>
- {VOCAL_RANGE_OPTIONS.map((option) => (
- <option value={option.value}>{option.label}</option>
- ))}
- </select>
- </label>
+ <div class="profile-voice-section">
+ <div class="profile-content-card-heading">
+ <span class="profile-feature-icon profile-feature-icon--voice" aria-hidden="true">
+ <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 14v4M16 9v14M21 12v8M6 16v1M26 15v2"/><path d="M4 25c3.2 2 7.2 3 12 3s8.8-1 12-3" opacity=".55"/></svg>
+ </span>
+ <div>
+ <h4>Tipo de voz</h4>
+ <p>Tu registro vocal actual.</p>
+ </div>
+ <button id="btn-open-voice-modal" class="profile-voice-change" type="button" aria-label="Cambiar tipo de voz" aria-haspopup="dialog" disabled>
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>
+ <span>Cambiar voz</span>
+ </button>
+ </div>
+ <h5 class="profile-voice-current-heading">Voz seleccionada</h5>
+ <div class="profile-voice-current-card">
+ <span class="profile-voice-visual" aria-hidden="true">
+ <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 14v4M16 9v14M21 12v8M6 16v1M26 15v2"/><path d="M4 25c3.2 2 7.2 3 12 3s8.8-1 12-3" opacity=".55"/></svg>
+ </span>
+ <strong id="profile-current-voice">Cargando...</strong>
+ </div>
  </div>
  </section>
 
@@ -115,29 +126,17 @@ const userId = Astro.locals.user?.id ?? null;
  </span>
  <div>
  <h4>Mis ausencias</h4>
+ <p>Fechas en las que no estar&aacute;s disponible.</p>
  </div>
+ <button id="btn-open-absence-modal" class="profile-absence-add" type="button" aria-label="Nueva ausencia" aria-haspopup="dialog" disabled>
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+ <span>Nueva ausencia</span>
+ </button>
  </div>
- <form id="form-ausencia" class="profile-absence-form opacity-50 pointer-events-none transition-opacity">
- <label class="profile-field">
- <span>Fecha inicio</span>
- <input type="date" id="ausencia-inicio" required />
- </label>
- <label class="profile-field">
- <span>Fecha fin</span>
- <input type="date" id="ausencia-fin" required />
- </label>
- <label class="profile-field profile-absence-reason">
- <span>Motivo <em>(opcional)</em></span>
- <div class="profile-absence-action-row">
- <input type="text" id="ausencia-motivo" placeholder="Ej. Viaje familiar, trabajo..." />
- <button type="submit" id="btn-save-ausencia">Registrar</button>
- </div>
- </label>
- </form>
- <p class="profile-content-note">M&iacute;nimo 7 d&iacute;as. Las asignaciones coincidentes se retirar&aacute;n autom&aacute;ticamente.</p>
- <div class="space-y-3" id="ausencias-list">
- <div class="profile-empty-state">
- <p>Cargando ausencias...</p>
+ <div class="profile-absence-history">
+ <h5>Fechas bloqueadas</h5>
+ <div class="profile-absence-list" id="ausencias-list">
+ <div class="profile-empty-state">Cargando...</div>
  </div>
  </div>
  </section>
@@ -149,34 +148,51 @@ const userId = Astro.locals.user?.id ?? null;
  <h3>Cuenta</h3>
  </div>
  <div class="profile-account-stack">
- <section class="profile-content-card">
+ <section class="profile-content-card profile-account-notifications">
  <div class="profile-content-card-heading">
  <span class="profile-feature-icon" aria-hidden="true">
  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
  </span>
  <div>
  <h4>Notificaciones</h4>
+ <p>Recibe avisos importantes en este dispositivo.</p>
+ </div>
+ <div class="profile-notification-action">
+ <BotonNotificaciones client:idle userId={userId} compact profileMode className="profile-notification-control" />
  </div>
  </div>
- <BotonNotificaciones client:idle userId={userId} />
  </section>
- <section class="profile-content-card">
+ <section class="profile-content-card profile-account-security">
  <div class="profile-content-card-heading">
  <span class="profile-feature-icon profile-feature-icon--security" aria-hidden="true">
  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 3 4 7v5c0 5 3.4 8.3 8 9 4.6-.7 8-4 8-9V7l-8-4Z"/><path d="M9 12l2 2 4-4"/></svg>
  </span>
  <div>
  <h4>Seguridad</h4>
+ <p>Administra el acceso a tu cuenta.</p>
  </div>
  </div>
+ <h5 class="profile-account-actions-heading">Acciones de seguridad</h5>
  <div class="profile-account-actions">
  <button id="btn-change-password" type="button">
- <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
- Cambiar contrase&ntilde;a
+ <span class="profile-account-action-icon" aria-hidden="true">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+ </span>
+ <span class="profile-account-action-copy">
+ <strong>Cambiar contrase&ntilde;a</strong>
+ <small>Recibe un enlace seguro por correo.</small>
+ </span>
+ <svg class="profile-account-action-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
  </button>
  <button id="btn-logout" type="button">
- <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></svg>
- Cerrar sesi&oacute;n
+ <span class="profile-account-action-icon" aria-hidden="true">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></svg>
+ </span>
+ <span class="profile-account-action-copy">
+ <strong>Cerrar sesi&oacute;n</strong>
+ <small>Salir de todos tus dispositivos.</small>
+ </span>
+ <svg class="profile-account-action-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
  </button>
  </div>
  </section>
@@ -206,13 +222,91 @@ const userId = Astro.locals.user?.id ?? null;
  </article>
  </main>
 
+ <div id="absence-modal" class="profile-absence-modal" hidden>
+ <div class="profile-absence-dialog" role="dialog" aria-modal="true" aria-labelledby="absence-modal-title" aria-describedby="absence-modal-note">
+ <header class="profile-absence-dialog-header">
+ <h3 id="absence-modal-title">Nueva ausencia</h3>
+ <button id="btn-close-absence-modal" type="button" aria-label="Cerrar">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+ </button>
+ </header>
+ <form id="form-ausencia" class="profile-absence-form opacity-50 pointer-events-none transition-opacity">
+ <div class="profile-absence-date-grid">
+ <label class="profile-field profile-absence-date-field">
+ <span>Desde</span>
+ <input type="date" id="ausencia-inicio" required />
+ </label>
+ <label class="profile-field profile-absence-date-field">
+ <span>Hasta</span>
+ <input type="date" id="ausencia-fin" required />
+ </label>
+ </div>
+ <label class="profile-field profile-absence-reason">
+ <span>Motivo <em>(opcional)</em></span>
+ <input type="text" id="ausencia-motivo" placeholder="Ej. Viaje familiar, trabajo..." />
+ </label>
+ <div class="profile-absence-form-footer">
+ <button type="submit" id="btn-save-ausencia">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+ <span>Bloquear fechas</span>
+ </button>
+ </div>
+ </form>
+ <p class="profile-content-note" id="absence-modal-note">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+ <span>Registra con al menos 7 d&iacute;as de anticipaci&oacute;n.</span>
+ </p>
+ </div>
+ </div>
+
+ <div id="voice-modal" class="profile-absence-modal" hidden>
+ <div class="profile-absence-dialog profile-voice-dialog" role="dialog" aria-modal="true" aria-labelledby="voice-modal-title">
+ <header class="profile-absence-dialog-header">
+ <h3 id="voice-modal-title">Cambiar tipo de voz</h3>
+ <button id="btn-close-voice-modal" type="button" aria-label="Cerrar">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+ </button>
+ </header>
+ <div class="profile-voice-dialog-body">
+ <label class="profile-field profile-voice-field" for="tonalidad-select">
+ <span>Tipo de voz</span>
+ <select id="tonalidad-select" form="form-datos-personales" disabled>
+ <option value="">No soy voz / Todav&iacute;a no lo s&eacute;</option>
+ {VOCAL_RANGE_OPTIONS.map((option) => (
+ <option value={option.value}>{option.label}</option>
+ ))}
+ </select>
+ </label>
+ <button id="btn-save-voice" type="submit" form="form-datos-personales" class="profile-voice-save">
+ Guardar voz
+ </button>
+ </div>
+ </div>
+ </div>
+
+ <div id="profile-message-modal" class="profile-absence-modal profile-message-modal" data-tone="success" hidden>
+ <div class="profile-absence-dialog profile-message-dialog" role="alertdialog" aria-modal="true" aria-labelledby="profile-message-title" aria-describedby="profile-message-text">
+ <div class="profile-message-content">
+ <span class="profile-message-icon" aria-hidden="true">
+ <svg class="profile-message-success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 5h16v14H4z"/><path d="m4 7 8 6 8-6"/></svg>
+ <svg class="profile-message-error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+ </span>
+ <div>
+ <h3 id="profile-message-title">Correo enviado</h3>
+ <p id="profile-message-text"></p>
+ </div>
+ </div>
+ <button id="btn-close-profile-message" type="button" class="profile-message-confirm">Entendido</button>
+ </div>
+ </div>
+
  <OnboardingRoot client:idle page="perfil" userId={userId} />
 
  {/* Modal para Recortar Foto */}
  <div id="cropper-modal" class="fixed inset-0 z-50 bg-black/80 hidden items-center justify-center p-4 backdrop-blur-sm transition-opacity opacity-0 duration-300">
  <div id="cropper-content" class="bg-surface rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl scale-95 transition-transform duration-300">
  <div class="px-6 py-4 border-b border-border flex justify-between items-center">
- <h3 class="text-lg font-bold text-content ">Ajustar Foto de Perfil</h3>
+ <h3 class="text-lg font-bold text-content ">Ajustar miniatura</h3>
  <button id="btn-close-cropper" class="text-content-muted hover:text-content-muted dark:text-neutral-200 transition-colors">
  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
  </button>
@@ -223,8 +317,8 @@ const userId = Astro.locals.user?.id ?? null;
  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
  </div>
  <div class="space-y-1">
- <p class="text-sm font-bold leading-snug">Usa una foto de cerca (Retrato)</p>
- <p class="text-sm leading-snug text-blue-900 dark:text-blue-100">Ampl&iacute;a la imagen hasta que <strong class="text-blue-700 dark:text-white">tu rostro llene el c&iacute;rculo</strong>. No uses fotos de cuerpo entero ni grupales.</p>
+ <p class="text-sm font-bold leading-snug">Este recorte se usar&aacute; en las miniaturas</p>
+ <p class="text-sm leading-snug text-blue-900 dark:text-blue-100">Centra tu rostro en el c&iacute;rculo. La foto completa, con el espacio alrededor, se guardar&aacute; para el fondo de tu perfil.</p>
  </div>
  </div>
 
@@ -759,12 +853,104 @@ const userId = Astro.locals.user?.id ?? null;
   opacity: 0.66;
  }
 
- .profile-voice-card {
-  display: block;
+ .profile-voice-section {
   padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+ }
+
+ .profile-voice-section .profile-content-card-heading {
+  margin-bottom: 1.15rem;
+ }
+
+ .profile-feature-icon--voice {
+  color: rgb(168 85 247);
+  border-color: rgb(168 85 247 / 0.24);
+  background: rgb(168 85 247 / 0.09);
+ }
+
+ .profile-voice-change {
+  display: inline-flex;
+  min-height: 42px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 0.38rem;
+  margin-left: auto;
+  padding: 0.58rem 0.78rem;
+  color: white;
+  border-radius: 0.8rem;
+  background: linear-gradient(135deg, rgb(147 51 234), rgb(99 102 241));
+  box-shadow: 0 12px 24px -17px rgb(126 34 206 / 0.94);
+  font-size: 0.68rem;
+  font-weight: 900;
+  transition: transform 0.2s ease, filter 0.2s ease, opacity 0.2s ease;
+ }
+
+ .profile-voice-change svg {
+  width: 16px;
+  height: 16px;
+ }
+
+ .profile-voice-change:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.07);
+ }
+
+ .profile-voice-change:disabled {
+  cursor: wait;
+  opacity: 0.5;
+ }
+
+ .profile-voice-current-heading {
+  margin: 0 0 0.52rem 0.12rem;
+  color: rgb(var(--text-base));
+  font-size: 0.7rem;
+  font-weight: 900;
+ }
+
+ .profile-voice-current-card {
+  display: flex;
+  min-height: 74px;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.72rem 0.78rem;
+  border: 1px solid rgb(var(--border-base));
+  border-radius: 0.95rem;
+  background: rgb(var(--bg-surface));
+  transition: border-color 0.2s ease, transform 0.2s ease;
+ }
+
+ .profile-voice-current-card:hover {
+  border-color: rgb(168 85 247 / 0.34);
+  transform: translateY(-1px);
+ }
+
+ .profile-voice-current-card strong {
+  min-width: 0;
+  overflow: hidden;
+  color: rgb(var(--text-base));
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+ }
+
+ .profile-voice-visual {
+  display: inline-flex;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: rgb(233 213 255);
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 0.85rem;
+  background: linear-gradient(145deg, rgb(147 51 234 / 0.96), rgb(79 70 229 / 0.9));
+  box-shadow: 0 16px 34px -20px rgb(126 34 206 / 0.9), inset 0 1px 0 rgb(255 255 255 / 0.25);
+ }
+
+ .profile-voice-visual svg {
+  width: 27px;
+  height: 27px;
  }
 
  .profile-feature-icon {
@@ -801,15 +987,146 @@ const userId = Astro.locals.user?.id ?? null;
   margin-top: 0;
   padding: 0;
   border: 0;
-  border-radius: 0;
   background: transparent;
   box-shadow: none;
+ }
+
+ .profile-voice-field > span {
+  color: rgb(var(--text-muted));
+ }
+
+ .profile-voice-field select {
+  border-color: rgb(168 85 247 / 0.18);
+  background: rgb(var(--bg-background) / 0.68);
+ }
+
+ .profile-voice-dialog {
+  width: min(100%, 460px);
+ }
+
+ .profile-voice-dialog-body {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+ }
+
+ .profile-voice-save {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  justify-self: end;
+  padding: 0.64rem 1rem;
+  color: white;
+  border-radius: 0.8rem;
+  background: linear-gradient(135deg, rgb(147 51 234), rgb(99 102 241));
+  box-shadow: 0 12px 24px -17px rgb(126 34 206 / 0.94);
+  font-size: 0.74rem;
+  font-weight: 900;
+  transition: transform 0.2s ease, filter 0.2s ease, opacity 0.2s ease;
+ }
+
+ .profile-voice-save:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.07);
+ }
+
+ .profile-voice-save:disabled {
+  cursor: wait;
+  opacity: 0.62;
+  transform: none;
+ }
+
+ .profile-message-dialog {
+  width: min(100%, 430px);
+  padding: 1rem;
+ }
+
+ .profile-message-content {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.85rem;
+ }
+
+ .profile-message-icon {
+  display: inline-flex;
+  width: 52px;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+  color: rgb(16 185 129);
+  border: 1px solid rgb(16 185 129 / 0.2);
+  border-radius: 1rem;
+  background: rgb(16 185 129 / 0.1);
+ }
+
+ .profile-message-icon svg {
+  width: 23px;
+  height: 23px;
+ }
+
+ .profile-message-error-icon,
+ .profile-message-modal[data-tone='error'] .profile-message-success-icon {
+  display: none;
+ }
+
+ .profile-message-modal[data-tone='error'] .profile-message-error-icon {
+  display: block;
+ }
+
+ .profile-message-modal[data-tone='error'] .profile-message-icon {
+  color: rgb(248 113 113);
+  border-color: rgb(239 68 68 / 0.18);
+  background: rgb(127 29 29 / 0.1);
+ }
+
+ .profile-message-content h3 {
+  color: rgb(var(--text-base));
+  font-size: 0.92rem;
+  font-weight: 950;
+  letter-spacing: -0.02em;
+ }
+
+ .profile-message-content p {
+  margin-top: 0.25rem;
+  color: rgb(var(--text-muted));
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.48;
+ }
+
+ .profile-message-confirm {
+  display: inline-flex;
+  min-width: 118px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1rem;
+  margin-left: auto;
+  padding: 0.62rem 0.92rem;
+  color: white;
+  border-radius: 0.8rem;
+  background: rgb(var(--color-action));
+  box-shadow: 0 10px 22px -17px rgb(var(--color-action) / 0.9);
+  font-size: 0.74rem;
+  font-weight: 900;
+  transition: transform 0.2s ease, filter 0.2s ease;
+ }
+
+ .profile-message-confirm:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
  }
 
  .profile-agenda-stack,
  .profile-account-stack {
   display: grid;
   gap: 0.85rem;
+ }
+
+ .profile-account-stack {
+  gap: 0;
  }
 
  .profile-calendar-slot > * {
@@ -824,7 +1141,8 @@ const userId = Astro.locals.user?.id ?? null;
   box-shadow: 0 12px 28px -26px rgb(15 23 42 / 0.55);
  }
 
- .profile-agenda-stack .profile-content-card {
+ .profile-agenda-stack .profile-content-card,
+ .profile-account-stack .profile-content-card {
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -838,11 +1156,52 @@ const userId = Astro.locals.user?.id ?? null;
   border-top: 1px solid rgb(var(--border-base)) !important;
  }
 
+ .profile-account-notifications .profile-content-card-heading {
+  margin-bottom: 0;
+ }
+
+ .profile-account-security {
+  margin-top: 1.15rem;
+  padding-top: 1.55rem !important;
+  border-top: 1px solid rgb(var(--border-base)) !important;
+ }
+
+ .profile-notification-action {
+  min-width: 0;
+  max-width: 220px;
+  flex: 0 1 auto;
+  margin-left: auto;
+ }
+
+ .profile-notification-action :global(.profile-notification-control) {
+  min-width: 0;
+ }
+
+ .profile-notification-action :global(.profile-notification-control > button) {
+  min-height: 42px;
+  height: 42px;
+  padding-right: 0.8rem;
+  padding-left: 0.8rem;
+  border-radius: 0.8rem;
+  white-space: nowrap;
+ }
+
+ .profile-notification-action :global(.profile-notification-control > p) {
+  max-width: 220px;
+  margin-top: 0.18rem;
+  font-size: 0.58rem;
+  line-height: 1.35;
+ }
+
  .profile-content-card-heading {
   display: flex;
   align-items: center;
   gap: 0.8rem;
   margin-bottom: 0.9rem;
+ }
+
+ .profile-content-card-heading > div {
+  min-width: 0;
  }
 
  .profile-content-card-heading h4 {
@@ -859,38 +1218,157 @@ const userId = Astro.locals.user?.id ?? null;
   line-height: 1.4;
  }
 
+ .profile-absence-add {
+  display: inline-flex;
+  min-height: 42px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 0.38rem;
+  margin-left: auto;
+  padding: 0.58rem 0.78rem;
+  color: white;
+  border-radius: 0.8rem;
+  background: rgb(234 88 12);
+  box-shadow: 0 10px 22px -16px rgb(234 88 12 / 0.9);
+  font-size: 0.68rem;
+  font-weight: 900;
+  transition: transform 0.2s ease, filter 0.2s ease, opacity 0.2s ease;
+ }
+
+ .profile-absence-add svg {
+  width: 16px;
+  height: 16px;
+ }
+
+ .profile-absence-add:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+ }
+
+ .profile-absence-add:disabled {
+  cursor: wait;
+  opacity: 0.5;
+ }
+
+ .profile-absence-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgb(2 6 23 / 0.76);
+  -webkit-backdrop-filter: blur(14px) saturate(1.08);
+  backdrop-filter: blur(14px) saturate(1.08);
+ }
+
+ .profile-absence-modal[hidden] {
+  display: none;
+ }
+
+ body.profile-absence-modal-open {
+  overflow: hidden;
+ }
+
+ body.profile-absence-modal-open .profile-save-dock {
+  display: none;
+ }
+
+ .profile-absence-dialog {
+  width: min(100%, 520px);
+  max-height: min(720px, calc(100dvh - 2rem));
+  overflow: auto;
+  color: rgb(var(--text-base));
+  border: 1px solid rgb(var(--border-base));
+  border-radius: 1.35rem;
+  background: rgb(var(--bg-surface));
+  box-shadow: 0 34px 90px -34px rgb(0 0 0 / 0.82), inset 0 1px 0 rgb(255 255 255 / 0.06);
+ }
+
+ .profile-absence-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid rgb(var(--border-base));
+ }
+
+ .profile-absence-dialog-header h3 {
+  font-size: 0.92rem;
+  font-weight: 950;
+  letter-spacing: -0.02em;
+ }
+
+ .profile-absence-dialog-header button {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: rgb(var(--text-muted));
+  border: 1px solid rgb(var(--border-base));
+  border-radius: 0.8rem;
+  background: rgb(var(--bg-background) / 0.72);
+  transition: color 0.2s ease, background-color 0.2s ease;
+ }
+
+ .profile-absence-dialog-header button:hover {
+  color: rgb(var(--text-base));
+  background: rgb(var(--bg-background));
+ }
+
+ .profile-absence-dialog-header svg {
+  width: 18px;
+  height: 18px;
+ }
+
  .profile-absence-form {
+  padding: 1rem 1rem 0.65rem;
+  border: 0;
+  background: transparent;
+ }
+
+ .profile-absence-date-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0;
-  overflow: hidden;
-  border: 1px solid rgb(var(--border-base));
-  border-radius: 1.3rem;
-  background: rgb(var(--bg-surface));
+  gap: 0.65rem;
  }
 
- .profile-absence-reason {
-  grid-column: 1 / -1;
- }
-
- .profile-absence-form .profile-field {
+ .profile-absence-date-field {
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
   border: 0;
-  border-radius: 0;
   background: transparent;
   box-shadow: none;
  }
 
- .profile-absence-form .profile-field:first-child {
-  border-right: 1px solid rgb(var(--border-base));
- }
-
- .profile-absence-form .profile-absence-reason {
-  border-top: 1px solid rgb(var(--border-base));
- }
-
- .profile-absence-form .profile-field input {
+ .profile-absence-date-field input {
+  min-height: 44px;
   border-color: transparent;
+  background: rgb(var(--bg-background) / 0.76);
+  font-variant-numeric: tabular-nums;
+ }
+
+ .profile-absence-date-field input:focus-visible,
+ .profile-absence-reason input:focus-visible {
+  border-color: rgb(249 115 22 / 0.72);
+  box-shadow: 0 0 0 3px rgb(249 115 22 / 0.12);
+ }
+
+ .profile-absence-reason {
+  margin-top: 0.65rem;
+  padding: 0;
+  border: 0;
   background: transparent;
+ }
+
+ .profile-absence-form .profile-field {
+  box-shadow: none;
  }
 
  .profile-absence-reason em {
@@ -900,71 +1378,280 @@ const userId = Astro.locals.user?.id ?? null;
   text-transform: none;
  }
 
- .profile-absence-action-row {
-  display: flex;
-  gap: 0.55rem;
+ .profile-absence-reason input {
+  min-height: 44px;
+  border-color: transparent;
+  background: rgb(var(--bg-background) / 0.76);
  }
 
- .profile-absence-action-row button {
-  min-height: 46px;
-  flex: 0 0 auto;
-  padding: 0.65rem 1rem;
+ .profile-absence-form-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.65rem;
+ }
+
+ .profile-absence-form-footer button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.42rem;
+  padding: 0.62rem 0.9rem;
   color: white;
-  border-radius: 0.85rem;
+  border-radius: 0.8rem;
   background: rgb(234 88 12);
+  box-shadow: 0 10px 22px -16px rgb(234 88 12 / 0.9);
   font-size: 0.74rem;
   font-weight: 900;
-  transition: transform 0.2s ease, background-color 0.2s ease;
+  transition: transform 0.2s ease, filter 0.2s ease, opacity 0.2s ease;
  }
 
- .profile-absence-action-row button:hover {
+ .profile-absence-form-footer button svg {
+  width: 16px;
+  height: 16px;
+ }
+
+ .profile-absence-form-footer button:hover {
   transform: translateY(-1px);
-  background: rgb(194 65 12);
+  filter: brightness(1.06);
+ }
+
+ .profile-absence-form-footer button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+  transform: none;
  }
 
  .profile-content-note {
-  margin: 0.75rem 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.38rem;
+  margin: 0 1rem 1rem;
+  padding: 0;
   color: rgb(var(--text-muted));
   font-size: 0.64rem;
   font-weight: 570;
   line-height: 1.45;
  }
 
+ .profile-content-note svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin-top: 0.02rem;
+  color: rgb(var(--text-muted));
+ }
+
+ .profile-absence-history > h5 {
+  margin: 0 0 0.52rem 0.12rem;
+  color: rgb(var(--text-base));
+  font-size: 0.7rem;
+  font-weight: 900;
+ }
+
+ .profile-absence-list {
+  display: grid;
+  gap: 0.5rem;
+ }
+
  .profile-empty-state {
-  padding: 1.25rem;
+  padding: 0.9rem;
   color: rgb(var(--text-muted));
   border: 1px dashed rgb(var(--border-base));
-  border-radius: 1rem;
+  border-radius: 0.9rem;
   font-size: 0.68rem;
   font-weight: 750;
   text-align: center;
  }
 
+ .profile-absence-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.72rem 0.78rem;
+  border: 1px solid rgb(var(--border-base));
+  border-radius: 0.95rem;
+  background: rgb(var(--bg-surface));
+  transition: opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+ }
+
+ .profile-absence-item:hover {
+  transform: translateY(-1px);
+  border-color: rgb(var(--border-base) / 0.78);
+ }
+
+ .profile-absence-date-range {
+  display: flex;
+  align-items: center;
+  gap: 0.38rem;
+ }
+
+ .profile-absence-date-block {
+  display: grid;
+  min-width: 56px;
+  justify-items: center;
+  padding: 0.42rem 0.48rem;
+  border-radius: 0.72rem;
+  background: rgb(var(--bg-background) / 0.76);
+  font-variant-numeric: tabular-nums;
+ }
+
+ .profile-absence-date-block > span:first-child {
+  color: rgb(var(--text-muted));
+  font-size: 0.46rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+ }
+
+ .profile-absence-date-block strong {
+  margin-top: 0.2rem;
+  color: rgb(var(--text-base));
+  font-size: 1rem;
+  font-weight: 950;
+  line-height: 1;
+ }
+
+ .profile-absence-date-block > span:last-child {
+  margin-top: 0.2rem;
+  color: rgb(251 146 60);
+  font-size: 0.48rem;
+  font-weight: 850;
+  line-height: 1;
+  text-transform: uppercase;
+ }
+
+ .profile-absence-date-connector {
+  width: 16px;
+  height: 1px;
+  background: rgb(var(--border-base));
+ }
+
+ .profile-absence-item-body {
+  min-width: 0;
+  flex: 1 1 auto;
+ }
+
+ .profile-absence-item-body h5 {
+  overflow: hidden;
+  color: rgb(var(--text-base));
+  font-size: 0.74rem;
+  font-weight: 900;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+ }
+
+ .profile-absence-item-body p {
+  margin-top: 0.18rem;
+  color: rgb(var(--text-muted));
+  font-size: 0.62rem;
+  font-weight: 620;
+  line-height: 1.38;
+ }
+
+ .profile-absence-delete {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: rgb(248 113 113);
+  border: 1px solid rgb(239 68 68 / 0.12);
+  border-radius: 0.78rem;
+  background: rgb(127 29 29 / 0.1);
+  transition: color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+ }
+
+ .profile-absence-delete:hover {
+  color: rgb(254 202 202);
+  background: rgb(185 28 28 / 0.25);
+  transform: scale(1.03);
+ }
+
+ .profile-absence-delete svg {
+  width: 18px;
+  height: 18px;
+ }
+
  .profile-account-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.65rem;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+ }
+
+ .profile-account-actions-heading {
+  margin: 0 0 0.52rem 0.12rem;
+  color: rgb(var(--text-base));
+  font-size: 0.7rem;
+  font-weight: 900;
  }
 
  .profile-account-actions button {
-  display: inline-flex;
-  min-height: 50px;
+  display: grid;
+  min-height: 70px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.7rem 0.9rem;
+  gap: 0.75rem;
+  padding: 0.68rem 0.78rem;
   color: rgb(var(--text-base));
   border: 1px solid rgb(var(--border-base));
-  border-radius: 1rem;
-  background: rgb(var(--bg-background));
-  font-size: 0.74rem;
-  font-weight: 850;
+  border-radius: 0.95rem;
+  background: rgb(var(--bg-surface));
+  text-align: left;
   transition: transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
  }
 
- .profile-account-actions button svg {
+ .profile-account-action-icon {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  color: rgb(var(--color-action));
+  border: 1px solid rgb(var(--color-action) / 0.16);
+  border-radius: 0.78rem;
+  background: rgb(var(--color-action) / 0.08);
+ }
+
+ .profile-account-action-icon svg {
+  width: 18px;
+  height: 18px;
+ }
+
+ .profile-account-action-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.14rem;
+ }
+
+ .profile-account-action-copy strong {
+  overflow: hidden;
+  font-size: 0.74rem;
+  font-weight: 900;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+ }
+
+ .profile-account-action-copy small {
+  overflow: hidden;
+  color: rgb(var(--text-muted));
+  font-size: 0.61rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+ }
+
+ .profile-account-action-chevron {
   width: 17px;
   height: 17px;
+  color: rgb(var(--text-muted));
  }
 
  .profile-account-actions button:hover {
@@ -973,9 +1660,19 @@ const userId = Astro.locals.user?.id ?? null;
  }
 
  .profile-account-actions #btn-logout {
-  color: rgb(220 38 38);
   border-color: rgb(239 68 68 / 0.17);
   background: rgb(239 68 68 / 0.07);
+ }
+
+ .profile-account-actions #btn-logout .profile-account-action-icon,
+ .profile-account-actions #btn-logout .profile-account-action-copy strong,
+ .profile-account-actions #btn-logout .profile-account-action-chevron {
+  color: rgb(239 68 68);
+ }
+
+ .profile-account-actions #btn-logout .profile-account-action-icon {
+  border-color: rgb(239 68 68 / 0.16);
+  background: rgb(127 29 29 / 0.09);
  }
 
  .profile-save-dock {
@@ -1028,7 +1725,13 @@ const userId = Astro.locals.user?.id ?? null;
 
  .profile-wizard-save:focus-visible,
  .profile-account-actions button:focus-visible,
- .profile-absence-action-row button:focus-visible,
+ .profile-voice-change:focus-visible,
+ .profile-voice-save:focus-visible,
+ .profile-message-confirm:focus-visible,
+ .profile-absence-add:focus-visible,
+ .profile-absence-dialog-header button:focus-visible,
+ .profile-absence-form-footer button:focus-visible,
+ .profile-absence-delete:focus-visible,
  .profile-feedback button:focus-visible {
   outline: 3px solid rgb(var(--color-brand) / 0.3);
   outline-offset: 2px;
@@ -1132,6 +1835,10 @@ const userId = Astro.locals.user?.id ?? null;
 
  html.dark .profile-feature-icon--security {
   color: rgb(110 231 183);
+ }
+
+ html.dark .profile-feature-icon--voice {
+  color: rgb(216 180 254);
  }
 
  html.dark .profile-wizard-nav {
@@ -1329,7 +2036,6 @@ const userId = Astro.locals.user?.id ?? null;
   }
 
   .profile-form-grid,
-  .profile-absence-form,
   .profile-account-actions {
    grid-template-columns: 1fr;
   }
@@ -1342,20 +2048,43 @@ const userId = Astro.locals.user?.id ?? null;
    border-bottom: 1px solid rgb(var(--border-base));
   }
 
-  .profile-absence-form .profile-field:first-child {
+  .profile-voice-visual {
+   width: 46px;
+   height: 46px;
+   border-radius: 0.92rem;
+  }
+
+  .profile-voice-visual svg {
+   width: 24px;
+   height: 24px;
+  }
+
+  .profile-absence-date-grid {
+   grid-template-columns: 1fr;
+  }
+
+  .profile-absence-form-footer button {
+   width: 100%;
+  }
+
+  .profile-voice-save,
+  .profile-message-confirm {
+   width: 100%;
+  }
+
+  .profile-absence-modal {
+   align-items: flex-end;
+   padding: 0;
+  }
+
+  .profile-absence-dialog {
+   width: 100%;
+   max-height: calc(100dvh - env(safe-area-inset-top) - 0.75rem);
+   padding-bottom: env(safe-area-inset-bottom);
    border-right: 0;
-  }
-
-  .profile-absence-form .profile-field:not(:last-child) {
-   border-bottom: 1px solid rgb(var(--border-base));
-  }
-
-  .profile-absence-form .profile-absence-reason {
-   border-top: 0;
-  }
-
-  .profile-absence-reason {
-   grid-column: auto;
+   border-bottom: 0;
+   border-left: 0;
+   border-radius: 1.4rem 1.4rem 0 0;
   }
 
   .profile-save-dock {
@@ -1391,8 +2120,47 @@ const userId = Astro.locals.user?.id ?? null;
  }
 
  @media (max-width: 380px) {
-  .profile-absence-action-row {
-   flex-direction: column;
+  .profile-absence-form {
+   padding: 0.82rem;
+  }
+
+  .profile-content-card-heading {
+   gap: 0.58rem;
+  }
+
+  .profile-absence-add {
+   width: 42px;
+   padding: 0;
+  }
+
+  .profile-absence-add span,
+  .profile-voice-change span {
+   display: none;
+  }
+
+  .profile-voice-change {
+   width: 42px;
+   padding: 0;
+  }
+
+  .profile-absence-item {
+   grid-template-columns: auto minmax(0, 1fr) auto;
+   gap: 0.55rem;
+   padding: 0.65rem;
+  }
+
+  .profile-absence-date-range {
+   gap: 0.25rem;
+  }
+
+  .profile-absence-date-block {
+   min-width: 49px;
+   padding-right: 0.34rem;
+   padding-left: 0.34rem;
+  }
+
+  .profile-absence-date-connector {
+   width: 10px;
   }
  }
 
@@ -1447,6 +2215,13 @@ const userId = Astro.locals.user?.id ?? null;
  const parallaxFrame = Number((window as any).__perfilParallaxFrame || 0);
  if (parallaxFrame) cancelAnimationFrame(parallaxFrame);
  (window as any).__perfilParallaxFrame = 0;
+ const absenceModal = document.getElementById('absence-modal') as HTMLElement | null;
+ if (absenceModal) absenceModal.hidden = true;
+ const voiceModal = document.getElementById('voice-modal') as HTMLElement | null;
+ if (voiceModal) voiceModal.hidden = true;
+ const profileMessageModal = document.getElementById('profile-message-modal') as HTMLElement | null;
+ if (profileMessageModal) profileMessageModal.hidden = true;
+ document.body.classList.remove('profile-absence-modal-open');
  revokePerfilSafeCropperUrl();
  };
 
@@ -1469,6 +2244,7 @@ const userId = Astro.locals.user?.id ?? null;
  // Init global vars
  let currentUserId: string | null = null;
  let currentAvatarUrl: string | null = null;
+ let currentProfilePhotoUrl: string | null = null;
 
  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  const getCookieValue = (name: string) => {
@@ -1563,6 +2339,123 @@ const userId = Astro.locals.user?.id ?? null;
  };
 
  on(profileFeedbackClose, 'click', hideProfileFeedback);
+
+ const currentVoiceEl = document.getElementById('profile-current-voice');
+ const voiceModal = document.getElementById('voice-modal') as HTMLElement | null;
+ const voiceDialog = voiceModal?.querySelector('.profile-voice-dialog') as HTMLElement | null;
+ const btnOpenVoiceModal = document.getElementById('btn-open-voice-modal') as HTMLButtonElement | null;
+ const btnCloseVoiceModal = document.getElementById('btn-close-voice-modal') as HTMLButtonElement | null;
+ const btnSaveVoice = document.getElementById('btn-save-voice') as HTMLButtonElement | null;
+ let voiceModalReturnFocus: HTMLElement | null = null;
+
+ const profileMessageModal = document.getElementById('profile-message-modal') as HTMLElement | null;
+ const profileMessageDialog = profileMessageModal?.querySelector('.profile-message-dialog') as HTMLElement | null;
+ const profileMessageTitle = document.getElementById('profile-message-title');
+ const profileMessageText = document.getElementById('profile-message-text');
+ const btnCloseProfileMessage = document.getElementById('btn-close-profile-message') as HTMLButtonElement | null;
+ let profileMessageReturnFocus: HTMLElement | null = null;
+
+ const trapDialogFocus = (event: KeyboardEvent, dialog: HTMLElement | null) => {
+  if (event.key !== 'Tab' || !dialog) return;
+  const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+   'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [href], [tabindex]:not([tabindex="-1"])',
+  ));
+  if (focusable.length === 0) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+   event.preventDefault();
+   last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+   event.preventDefault();
+   first.focus();
+  }
+ };
+
+ const syncCurrentVoice = (voiceValue: string) => {
+  if (!currentVoiceEl) return;
+  const matchingOption = Array.from(selectTonalidad?.options || [])
+   .find((option) => option.value === voiceValue);
+  currentVoiceEl.textContent = matchingOption?.textContent?.trim() || 'Sin definir';
+ };
+
+ const closeVoiceModal = ({ keepSelection = false } = {}) => {
+  if (!voiceModal || voiceModal.hidden) return;
+  voiceModal.hidden = true;
+  document.body.classList.remove('profile-absence-modal-open');
+  if (!keepSelection && selectTonalidad) {
+   selectTonalidad.value = (window as any)._initialTonalidad || '';
+  }
+  checkProfileChanges();
+  voiceModalReturnFocus?.focus();
+  voiceModalReturnFocus = null;
+ };
+
+ const openVoiceModal = () => {
+  if (!voiceModal || btnOpenVoiceModal?.disabled || !selectTonalidad) return;
+  voiceModalReturnFocus = document.activeElement instanceof HTMLElement
+   ? document.activeElement
+   : btnOpenVoiceModal;
+  selectTonalidad.value = (window as any)._initialTonalidad || '';
+  voiceModal.hidden = false;
+  document.body.classList.add('profile-absence-modal-open');
+  requestAnimationFrame(() => selectTonalidad.focus());
+ };
+
+ on(btnOpenVoiceModal, 'click', openVoiceModal);
+ on(btnCloseVoiceModal, 'click', () => closeVoiceModal());
+ on(voiceModal, 'click', (event: Event) => {
+  if (event.target === voiceModal) closeVoiceModal();
+ });
+ on(voiceModal, 'keydown', (event: Event) => {
+  const keyboardEvent = event as KeyboardEvent;
+  if (keyboardEvent.key === 'Escape') {
+   keyboardEvent.preventDefault();
+   closeVoiceModal();
+   return;
+  }
+  trapDialogFocus(keyboardEvent, voiceDialog);
+ });
+
+ const closeProfileMessage = () => {
+  if (!profileMessageModal || profileMessageModal.hidden) return;
+  profileMessageModal.hidden = true;
+  document.body.classList.remove('profile-absence-modal-open');
+  profileMessageReturnFocus?.focus();
+  profileMessageReturnFocus = null;
+ };
+
+ const showProfileMessage = (
+  tone: 'success' | 'error',
+  title: string,
+  message: string,
+  returnFocus?: HTMLElement | null,
+ ) => {
+  if (!profileMessageModal || !profileMessageTitle || !profileMessageText) return;
+  profileMessageReturnFocus = returnFocus || (
+   document.activeElement instanceof HTMLElement ? document.activeElement : null
+  );
+  profileMessageModal.dataset.tone = tone;
+  profileMessageTitle.textContent = title;
+  profileMessageText.textContent = message;
+  profileMessageModal.hidden = false;
+  document.body.classList.add('profile-absence-modal-open');
+  requestAnimationFrame(() => btnCloseProfileMessage?.focus());
+ };
+
+ on(btnCloseProfileMessage, 'click', closeProfileMessage);
+ on(profileMessageModal, 'click', (event: Event) => {
+  if (event.target === profileMessageModal) closeProfileMessage();
+ });
+ on(profileMessageModal, 'keydown', (event: Event) => {
+  const keyboardEvent = event as KeyboardEvent;
+  if (keyboardEvent.key === 'Escape') {
+   keyboardEvent.preventDefault();
+   closeProfileMessage();
+   return;
+  }
+  trapDialogFocus(keyboardEvent, profileMessageDialog);
+ });
 
  const profileWizardNavItems = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-profile-step]'));
  const profileWizardPanels = Array.from(document.querySelectorAll<HTMLElement>('[data-profile-panel]'));
@@ -1679,6 +2572,7 @@ const userId = Astro.locals.user?.id ?? null;
  
  let canChangeAvatar = false;
  let isPreparingAvatar = false;
+ let pendingProfilePhotoBlob: Blob | null = null;
 
  const syncAvatarControls = () => {
  if (btnChangeAvatar) {
@@ -1760,9 +2654,11 @@ const userId = Astro.locals.user?.id ?? null;
  if (!file) return;
 
  setAvatarProcessingState(true);
+ pendingProfilePhotoBlob = null;
 
  try {
- const { url: safeImageUrl } = await getSafeImageForCropper(file, 1000);
+ const { blob: safeProfilePhotoBlob, url: safeImageUrl } = await getSafeImageForCropper(file, 1800);
+ pendingProfilePhotoBlob = safeProfilePhotoBlob;
  revokePerfilSafeCropperUrl();
  (window as any).__perfilSafeCropperUrl = safeImageUrl;
 
@@ -1792,6 +2688,7 @@ const userId = Astro.locals.user?.id ?? null;
  openCropperModal();
  }
  } catch (error) {
+ pendingProfilePhotoBlob = null;
  console.error('Error al preparar la imagen para el cropper:', error);
  alert(error instanceof Error ? error.message : 'Hubo un problema al cargar la imagen. Intenta con otra más pequeña.');
  } finally {
@@ -1855,6 +2752,7 @@ const userId = Astro.locals.user?.id ?? null;
  cropperImage.classList.add('hidden');
  }
  revokePerfilSafeCropperUrl();
+ pendingProfilePhotoBlob = null;
  }, 300);
  };
 
@@ -1905,11 +2803,17 @@ const userId = Astro.locals.user?.id ?? null;
  if (!userId) throw new Error("No session");
 
  const fileName = `avatar-${Date.now()}.${outputExtension}`;
- const { publicUrl } = await uploadAvatarAtomic(userId, blob, fileName, {
+ if (!pendingProfilePhotoBlob) throw new Error("No se pudo conservar la foto completa.");
+ const profilePhotoFileName = `profile-${Date.now()}.jpg`;
+ const { publicUrl, profilePhotoUrl } = await uploadAvatarAtomic(userId, blob, fileName, {
  previousAvatarUrl: currentAvatarUrl,
  contentType: outputMimeType,
+ profilePhotoBlob: pendingProfilePhotoBlob,
+ profilePhotoFileName,
+ profilePhotoContentType: pendingProfilePhotoBlob.type || 'image/jpeg',
  });
  currentAvatarUrl = publicUrl;
+ currentProfilePhotoUrl = profilePhotoUrl || currentProfilePhotoUrl;
 
  // Actualizar DOM visualmente
  const safePublicUrl = toSafeMediaUrl(publicUrl);
@@ -1920,7 +2824,7 @@ const userId = Astro.locals.user?.id ?? null;
  ? safeHtml`<img src="${safePublicUrl}" alt="Avatar" crossorigin="anonymous" class="w-full h-full object-cover" id="avatar-preview" />`
  : '';
  }
- syncProfileHeroBackdrop(safePublicUrl);
+ syncProfileHeroBackdrop(toSafeMediaUrl(profilePhotoUrl || publicUrl));
 
  closeCropperModal();
  } catch (err) {
@@ -1940,6 +2844,12 @@ const userId = Astro.locals.user?.id ?? null;
  const inputInicio = document.getElementById('ausencia-inicio') as HTMLInputElement;
  const inputFin = document.getElementById('ausencia-fin') as HTMLInputElement;
  const inputMotivo = document.getElementById('ausencia-motivo') as HTMLInputElement;
+ const ausenciasListEl = document.getElementById('ausencias-list');
+ const absenceModal = document.getElementById('absence-modal') as HTMLElement;
+ const absenceDialog = absenceModal?.querySelector('.profile-absence-dialog') as HTMLElement | null;
+ const btnOpenAbsenceModal = document.getElementById('btn-open-absence-modal') as HTMLButtonElement;
+ const btnCloseAbsenceModal = document.getElementById('btn-close-absence-modal') as HTMLButtonElement;
+ let absenceModalReturnFocus: HTMLElement | null = null;
  const absenceDateFormatter = new Intl.DateTimeFormat('en-CA', {
  timeZone: 'America/Bogota',
  year: 'numeric',
@@ -1953,6 +2863,7 @@ const userId = Astro.locals.user?.id ?? null;
  };
  const absenceMinStartDate = addDaysToDateOnly(absenceDateFormatter.format(new Date()), 7);
  const syncAbsenceDateConstraints = ({ forceResetEnd = false } = {}) => {
+ if (inputInicio && !inputInicio.value) inputInicio.value = absenceMinStartDate;
  const nextMinEndDate = inputInicio?.value && inputInicio.value > absenceMinStartDate
  ? inputInicio.value
  : absenceMinStartDate;
@@ -1963,16 +2874,175 @@ const userId = Astro.locals.user?.id ?? null;
  }
  };
 
+ const parseAbsenceDate = (dateOnly: string) => new Date(`${dateOnly}T12:00:00Z`);
+ const absenceRangeFormatter = new Intl.DateTimeFormat('es', {
+ timeZone: 'UTC',
+ day: 'numeric',
+ month: 'short',
+ year: 'numeric',
+ });
+
+ const getAbsenceDateParts = (dateOnly: string) => {
+ const parts = absenceRangeFormatter.formatToParts(parseAbsenceDate(dateOnly));
+ return {
+ day: parts.find((part) => part.type === 'day')?.value || '',
+ month: (parts.find((part) => part.type === 'month')?.value || '').replace('.', '').slice(0, 3),
+ year: parts.find((part) => part.type === 'year')?.value || '',
+ };
+ };
+
+ const formatAbsenceRange = (startDateOnly: string, endDateOnly: string) => {
+ const start = getAbsenceDateParts(startDateOnly);
+ const end = getAbsenceDateParts(endDateOnly);
+ if (startDateOnly === endDateOnly) return `${start.day} ${start.month} ${start.year}`;
+ if (start.year === end.year && start.month === end.month) {
+ return `${start.day}–${end.day} ${end.month} ${end.year}`;
+ }
+ if (start.year === end.year) {
+ return `${start.day} ${start.month}–${end.day} ${end.month} ${end.year}`;
+ }
+ return `${start.day} ${start.month} ${start.year}–${end.day} ${end.month} ${end.year}`;
+ };
+
+ const getAbsenceDuration = (startDateOnly: string, endDateOnly: string) => {
+ const start = parseAbsenceDate(startDateOnly).getTime();
+ const end = parseAbsenceDate(endDateOnly).getTime();
+ return Math.max(1, Math.round((end - start) / 86_400_000) + 1);
+ };
+
+ const renderAbsenceList = (absences: any[]) => {
+ if (!ausenciasListEl) return;
+ const safeAbsences = Array.isArray(absences) ? absences : [];
+ ausenciasListEl.innerHTML = '';
+
+ if (safeAbsences.length === 0) {
+ const emptyState = document.createElement('div');
+ emptyState.className = 'profile-empty-state';
+ emptyState.textContent = 'No tienes ausencias programadas.';
+ ausenciasListEl.appendChild(emptyState);
+ return;
+ }
+
+ safeAbsences.forEach((absence: any) => {
+ const startDate = String(absence?.fecha_inicio || '');
+ const endDate = String(absence?.fecha_fin || '');
+ const duration = getAbsenceDuration(startDate, endDate);
+ const item = document.createElement('article');
+ item.className = 'profile-absence-item';
+ item.dataset.ausenciaId = String(absence?.id || '');
+
+ const dateRange = document.createElement('div');
+ dateRange.className = 'profile-absence-date-range';
+ dateRange.setAttribute('aria-label', `Desde ${formatAbsenceRange(startDate, startDate)} hasta ${formatAbsenceRange(endDate, endDate)}`);
+
+ const createDateBlock = (label: string, dateOnly: string) => {
+ const parts = getAbsenceDateParts(dateOnly);
+ const dateBlock = document.createElement('time');
+ dateBlock.className = 'profile-absence-date-block';
+ dateBlock.dateTime = dateOnly;
+ const dateLabel = document.createElement('span');
+ dateLabel.textContent = label;
+ const day = document.createElement('strong');
+ day.textContent = parts.day;
+ const monthYear = document.createElement('span');
+ monthYear.textContent = `${parts.month} ${parts.year}`;
+ dateBlock.append(dateLabel, day, monthYear);
+ return dateBlock;
+ };
+
+ const dateConnector = document.createElement('span');
+ dateConnector.className = 'profile-absence-date-connector';
+ dateConnector.setAttribute('aria-hidden', 'true');
+ dateRange.append(
+ createDateBlock('Inicio', startDate),
+ dateConnector,
+ createDateBlock('Fin', endDate),
+ );
+
+ const body = document.createElement('div');
+ body.className = 'profile-absence-item-body';
+ const title = document.createElement('h5');
+ title.textContent = String(absence?.motivo || '').trim() || 'Ausencia';
+ const dates = document.createElement('p');
+ dates.textContent = `${duration} ${duration === 1 ? 'día bloqueado' : 'días bloqueados'}`;
+ body.append(title, dates);
+
+ const deleteButton = document.createElement('button');
+ deleteButton.type = 'button';
+ deleteButton.className = 'profile-absence-delete';
+ deleteButton.setAttribute('aria-label', `Eliminar ${title.textContent}, ${formatAbsenceRange(startDate, endDate)}`);
+ deleteButton.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 10v6M14 10v6"/></svg>';
+ on(deleteButton, 'click', () => (window as any)._deleteAusencia(String(absence?.id || '')));
+
+ item.append(dateRange, body, deleteButton);
+ ausenciasListEl.appendChild(item);
+ });
+ };
+
  syncAbsenceDateConstraints({ forceResetEnd: true });
  on(inputInicio, 'input', () => syncAbsenceDateConstraints({ forceResetEnd: true }));
  on(inputInicio, 'change', () => syncAbsenceDateConstraints({ forceResetEnd: true }));
+
+ const resetAbsenceDraft = () => {
+ inputMotivo.value = '';
+ inputInicio.value = absenceMinStartDate;
+ syncAbsenceDateConstraints({ forceResetEnd: true });
+ };
+
+ const closeAbsenceModal = ({ resetDraft = false } = {}) => {
+ if (!absenceModal || absenceModal.hidden) return;
+ absenceModal.hidden = true;
+ document.body.classList.remove('profile-absence-modal-open');
+ if (resetDraft) resetAbsenceDraft();
+ absenceModalReturnFocus?.focus();
+ absenceModalReturnFocus = null;
+ };
+
+ const openAbsenceModal = () => {
+ if (!absenceModal || btnOpenAbsenceModal?.disabled) return;
+ absenceModalReturnFocus = document.activeElement instanceof HTMLElement
+ ? document.activeElement
+ : btnOpenAbsenceModal;
+ syncAbsenceDateConstraints();
+ absenceModal.hidden = false;
+ document.body.classList.add('profile-absence-modal-open');
+ requestAnimationFrame(() => inputInicio?.focus());
+ };
+
+ on(btnOpenAbsenceModal, 'click', openAbsenceModal);
+ on(btnCloseAbsenceModal, 'click', () => closeAbsenceModal({ resetDraft: true }));
+ on(absenceModal, 'click', (event: Event) => {
+ if (event.target === absenceModal) closeAbsenceModal({ resetDraft: true });
+ });
+ on(absenceModal, 'keydown', (event: Event) => {
+ const keyboardEvent = event as KeyboardEvent;
+ if (keyboardEvent.key === 'Escape') {
+ keyboardEvent.preventDefault();
+ closeAbsenceModal({ resetDraft: true });
+ return;
+ }
+ if (keyboardEvent.key !== 'Tab' || !absenceDialog) return;
+ const focusable = Array.from(absenceDialog.querySelectorAll<HTMLElement>(
+ 'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [href], [tabindex]:not([tabindex="-1"])',
+ ));
+ if (focusable.length === 0) return;
+ const first = focusable[0];
+ const last = focusable[focusable.length - 1];
+ if (keyboardEvent.shiftKey && document.activeElement === first) {
+ keyboardEvent.preventDefault();
+ last.focus();
+ } else if (!keyboardEvent.shiftKey && document.activeElement === last) {
+ keyboardEvent.preventDefault();
+ first.focus();
+ }
+ });
 
  on(formAusencia, 'submit', async (e: Event) => {
  e.preventDefault();
  if (!inputInicio.value || !inputFin.value) return;
 
- const originalBtnText = btnSaveAusencia.textContent;
- btnSaveAusencia.textContent = 'Guardando...';
+ const originalBtnHtml = btnSaveAusencia.innerHTML;
+ btnSaveAusencia.innerHTML = '<span class="h-4 w-4 rounded-full border-2 border-white/35 border-t-white animate-spin" aria-hidden="true"></span><span>Guardando...</span>';
  btnSaveAusencia.disabled = true;
 
  try {
@@ -2031,49 +3101,17 @@ const userId = Astro.locals.user?.id ?? null;
  summaryMessages.push(`Hay ${eventsWithoutLeader} ${label} sin liderazgo asignado para avisar.`);
  }
 
+ resetAbsenceDraft();
+ closeAbsenceModal();
+ await fetchData();
  alert(summaryMessages.join(' '));
- 
- // Recargar pÃ¡gina para actualizar lista
- window.location.reload();
 } catch (err) {
  console.error('Error insertando ausencia:', err);
  alert(err instanceof Error ? err.message : 'Hubo un error al registrar la ausencia. Verifica las fechas.');
- btnSaveAusencia.textContent = originalBtnText;
+ } finally {
+ btnSaveAusencia.innerHTML = originalBtnHtml;
  btnSaveAusencia.disabled = false;
  }
- });
-
- // Borrar Ausencia
- document.querySelectorAll('.btn-delete-ausencia').forEach((btn) => {
- on(btn, 'click', async (e: Event) => {
- const button = e.currentTarget as HTMLButtonElement;
- const id = button.getAttribute('data-id');
- if (!id) return;
- 
- if (!confirm('\u00BFEst\u00E1s seguro de eliminar este bloqueo de fechas?')) return;
- 
- button.disabled = true;
- button.classList.add('opacity-50');
-
- try {
- const { error } = await supabase
- .from('ausencias')
- .delete()
- .eq('id', id);
-
- if (error) throw error;
- 
- // Remover del DOM visualmente
- const row = document.querySelector(`[data-ausencia-id="${id}"]`);
- row?.remove();
-
- } catch (err) {
- console.error('Error eliminando ausencia:', err);
- alert("Error eliminando registro.");
- button.disabled = false;
- button.classList.remove('opacity-50');
- }
- });
  });
 
  // ==========================================
@@ -2135,18 +3173,28 @@ const userId = Astro.locals.user?.id ?? null;
  const btnChangePassword = document.getElementById('btn-change-password') as HTMLButtonElement;
  on(btnChangePassword, 'click', async () => {
    const { user } = await getStableAuth();
-   if (!user?.email) { alert('No se pudo obtener tu email. Recarga la página.'); return; }
+   if (!user?.email) {
+    showProfileMessage('error', 'No pudimos continuar', 'No encontramos tu correo de acceso. Recarga la página e inténtalo nuevamente.', btnChangePassword);
+    return;
+   }
+   const originalButtonHtml = btnChangePassword.innerHTML;
    btnChangePassword.disabled = true;
    btnChangePassword.textContent = 'Enviando…';
-   const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-     redirectTo: `${window.location.origin}/reset-password`,
-   });
-   btnChangePassword.disabled = false;
-   btnChangePassword.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg> Cambiar Contraseña`;
-   if (error) {
-     alert('Error: ' + error.message);
-   } else {
-     alert('✅ Correo enviado a ' + user.email + '. Revisa tu bandeja y sigue el enlace.');
+   try {
+    const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (error) {
+      showProfileMessage('error', 'No se pudo enviar', error.message, btnChangePassword);
+    } else {
+      showProfileMessage('success', 'Correo enviado', `Enviamos el enlace a ${user.email}. Revisa tu bandeja.`, btnChangePassword);
+    }
+   } catch (error) {
+    console.error('Password reset email error:', error);
+    showProfileMessage('error', 'No se pudo enviar', 'Ocurrió un problema al enviar el correo. Inténtalo nuevamente.', btnChangePassword);
+   } finally {
+    btnChangePassword.disabled = false;
+    btnChangePassword.innerHTML = originalButtonHtml;
    }
  });
 
@@ -2172,6 +3220,7 @@ const userId = Astro.locals.user?.id ?? null;
 
  currentUserId = payload.user.id;
  const email = payload.user.email || '';
+ currentProfilePhotoUrl = String(payload.user.profile_photo_url || '').trim() || null;
  
  if (inputCorreo) inputCorreo.value = email || '';
  if (inputCorreo) {
@@ -2200,11 +3249,12 @@ const userId = Astro.locals.user?.id ?? null;
 
  // Set vocal key and birthday
  if(selectTonalidad) {
+ const currentVoice = String(perfilData.tonalidad_voz || '');
  selectTonalidad.disabled = false;
- if (perfilData.tonalidad_voz) {
- selectTonalidad.value = perfilData.tonalidad_voz;
- (window as any)._initialTonalidad = perfilData.tonalidad_voz;
- }
+ selectTonalidad.value = currentVoice;
+ (window as any)._initialTonalidad = currentVoice;
+ syncCurrentVoice(currentVoice);
+ if (btnOpenVoiceModal) btnOpenVoiceModal.disabled = false;
  }
  if (inputCumpleanos) {
  inputCumpleanos.disabled = false;
@@ -2228,22 +3278,23 @@ const userId = Astro.locals.user?.id ?? null;
  avatarContainer.innerHTML = safeAvatarUrl
  ? safeHtml`<img src="${safeAvatarUrl}" alt="${perfilData.nombre}" crossorigin="anonymous" class="w-full h-full object-cover" id="avatar-preview" />`
  : '';
- syncProfileHeroBackdrop(safeAvatarUrl);
+ syncProfileHeroBackdrop(toSafeMediaUrl(currentProfilePhotoUrl || safeAvatarUrl));
  } else {
  currentAvatarUrl = null;
  const initials = perfilData.nombre.split(' ').map((n: string) => n[0]).join('').substring(0,2).toUpperCase();
  avatarContainer.innerHTML = safeHtml`<span id="avatar-preview-text" class="text-brand">${initials}</span>`;
  avatarContainer.classList.add('bg-brand/10');
- syncProfileHeroBackdrop(null);
+ syncProfileHeroBackdrop(toSafeMediaUrl(currentProfilePhotoUrl));
  }
  }
  } else {
  currentAvatarUrl = null;
- syncProfileHeroBackdrop(null);
+ syncProfileHeroBackdrop(toSafeMediaUrl(currentProfilePhotoUrl));
  setAvatarChangeState(true);
  }
 
  formAusencia?.classList.remove('opacity-50', 'pointer-events-none');
+ if (btnOpenAbsenceModal) btnOpenAbsenceModal.disabled = false;
 
  const rolesData = Array.isArray(payload.roles) ? payload.roles : [];
 
@@ -2261,45 +3312,11 @@ const userId = Astro.locals.user?.id ?? null;
  }
 
  // 3. Fetch Ausencias
- const ausenciasListEl = document.getElementById('ausencias-list');
  const ausenciasData = Array.isArray(payload.absences) ? payload.absences : [];
 
  if (ausenciasListEl) {
  const futureAusencias = ausenciasData || [];
- ausenciasListEl.innerHTML = '';
- 
- if (futureAusencias.length === 0) {
- ausenciasListEl.innerHTML = `
- <div class="py-6 text-center border-2 border-dashed border-border rounded-xl">
- <p class="text-xs font-bold text-content-muted">No tienes ausencias registradas.</p>
- </div>
- `;
- } else {
- futureAusencias.forEach((aus: any) => {
- const inicio = new Date(aus.fecha_inicio).toLocaleDateString('es', { day: 'numeric', month: 'short', timeZone: 'UTC' });
- const fin = new Date(aus.fecha_fin).toLocaleDateString('es', { day: 'numeric', month: 'short', timeZone: 'UTC' });
- const motivoHtml = aus.motivo ? `<p class="text-xs text-content-muted">${aus.motivo}</p>` : '';
- 
- // We recreate the HTML for each item
- const div = document.createElement('div');
- div.className = "flex items-center justify-between p-3 rounded-lg border border-neutral-100 bg-background group shrink-0 transition-opacity";
- div.setAttribute('data-ausencia-id', aus.id);
- div.innerHTML = safeHtml`
- <div>
- <p class="text-sm font-bold text-content ">
- ${inicio} <span class="text-content-muted mx-1">-</span> ${fin}
- </p>
- ${motivoHtml}
- </div>
- <button type="button" class="p-2 rounded-lg text-content-muted hover:text-red-500 hover:bg-red-50 dark:bg-red-950/30 transition-colors" title="Eliminar">
- <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
- </button>
- `;
- const deleteAbsenceButton = div.querySelector('button');
- on(deleteAbsenceButton, 'click', () => (window as any)._deleteAusencia(String(aus.id)));
- ausenciasListEl.appendChild(div);
- });
- }
+ renderAbsenceList(futureAusencias);
 
  if (futureAusencias.length > 0) {
  try {
@@ -2371,6 +3388,10 @@ const userId = Astro.locals.user?.id ?? null;
  if (formDatosPersonales && btnSaveDatos) {
  on(formDatosPersonales, 'submit', async (e: Event) => {
  e.preventDefault();
+ const submittedFromVoiceModal = (e as SubmitEvent).submitter === btnSaveVoice;
+ const activeSaveButton = submittedFromVoiceModal && btnSaveVoice
+  ? btnSaveVoice
+  : btnSaveDatos;
  const vocalVal = selectTonalidad.value;
  const cumpleanosVal = inputCumpleanos.value;
  const telefonoVal = inputTelefono.value;
@@ -2378,16 +3399,30 @@ const userId = Astro.locals.user?.id ?? null;
  const initialEmail = String((window as any)._initialEmail || '').trim().toLowerCase();
  const emailChanged = correoVal !== initialEmail;
 
- if (!inputCorreo.checkValidity()) {
+ if (!submittedFromVoiceModal && !inputCorreo.checkValidity()) {
   inputCorreo.reportValidity();
   return;
  }
 
- const originalBtnHtml = btnSaveDatos.innerHTML;
- btnSaveDatos.innerHTML = '<span class="flex items-center gap-2"><div class="w-4 h-4 rounded-full border-2 border-white/20 border-t-white animate-spin"></div> Guardando...</span>';
- btnSaveDatos.disabled = true;
+ const originalBtnHtml = activeSaveButton.innerHTML;
+ activeSaveButton.innerHTML = '<span class="flex items-center gap-2"><span class="w-4 h-4 rounded-full border-2 border-white/20 border-t-white animate-spin" aria-hidden="true"></span> Guardando...</span>';
+ activeSaveButton.disabled = true;
 
  try {
+ if (submittedFromVoiceModal) {
+  const { error: voiceUpdateError } = await supabase.rpc('set_my_vocal_range', {
+   p_vocal_range: vocalVal || null,
+  });
+  if (voiceUpdateError) throw voiceUpdateError;
+
+  (window as any)._initialTonalidad = vocalVal;
+  syncCurrentVoice(vocalVal);
+  checkProfileChanges();
+  showProfileFeedback('success', 'Tipo de voz actualizado.');
+  closeVoiceModal({ keepSelection: true });
+  return;
+ }
+
  const auth = await getStableAuth();
  const userId = currentUserId || auth.user?.id;
  if (!userId) throw new Error('No hay sesión activa');
@@ -2422,6 +3457,7 @@ const userId = Astro.locals.user?.id ?? null;
  }
 
  (window as any)._initialTonalidad = vocalVal;
+ syncCurrentVoice(vocalVal);
  (window as any)._initialCumpleanos = cumpleanosVal;
  (window as any)._initialTelefono = telefonoVal;
  let feedbackMessage = 'Cambios guardados.';
@@ -2453,8 +3489,8 @@ const userId = Astro.locals.user?.id ?? null;
  console.error("Error al actualizar datos:", error);
  showProfileFeedback('error', 'No se pudieron guardar los cambios. Intenta nuevamente.');
  } finally {
- btnSaveDatos.innerHTML = originalBtnHtml;
- btnSaveDatos.disabled = false;
+ activeSaveButton.innerHTML = originalBtnHtml;
+ activeSaveButton.disabled = false;
  checkProfileChanges();
  }
  });
@@ -2465,7 +3501,9 @@ const userId = Astro.locals.user?.id ?? null;
  if (!confirm('\u00BFEst\u00E1s seguro de eliminar este bloqueo de fechas?')) return;
  
  const row = document.querySelector(`[data-ausencia-id="${id}"]`) as HTMLElement;
- if(row) row.style.opacity = '0.5';
+ const deleteButton = row?.querySelector('.profile-absence-delete') as HTMLButtonElement | null;
+ if (row) row.style.opacity = '0.5';
+ if (deleteButton) deleteButton.disabled = true;
 
  try {
  const { error } = await supabase
@@ -2476,15 +3514,16 @@ const userId = Astro.locals.user?.id ?? null;
  if (error) throw error;
  row?.remove();
  
- // If it was the last one, fetch again to show empty state
- if (document.querySelectorAll('[data-ausencia-id]').length === 0) {
+ const remainingAbsences = document.querySelectorAll('[data-ausencia-id]').length;
+ if (remainingAbsences === 0) {
  fetchData();
  }
 
  } catch (err) {
  console.error('Error eliminando ausencia:', err);
  alert("Error eliminando registro.");
- if(row) row.style.opacity = '1';
+ if (row) row.style.opacity = '1';
+ if (deleteButton) deleteButton.disabled = false;
  }
  }
 
