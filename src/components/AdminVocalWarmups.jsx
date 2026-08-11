@@ -485,12 +485,24 @@ export default function AdminVocalWarmups({ createSignal = 0, onCountChange }) {
 
       {modalOpen && (
         <div
-          className="fixed inset-0 z-[65] flex items-end justify-center bg-slate-950/72 backdrop-blur-md sm:items-center sm:p-4"
+          className="fixed inset-x-0 z-[90] flex items-end justify-center bg-slate-950/72 backdrop-blur-md sm:items-center sm:p-4"
+          style={{
+            top: 'var(--app-modal-viewport-offset-top, 0px)',
+            bottom: 'auto',
+            height: 'var(--app-modal-viewport-height, 100dvh)',
+          }}
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) closeModal();
           }}
         >
-          <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="warmup-dialog-title" className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[1.65rem] border border-border bg-surface shadow-2xl sm:max-w-xl sm:rounded-[1.65rem]">
+          <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="warmup-dialog-title"
+            className="flex w-full flex-col overflow-hidden rounded-t-[1.65rem] border border-border bg-surface shadow-2xl sm:max-w-xl sm:rounded-[1.65rem]"
+            style={{ maxHeight: 'min(48rem, calc(var(--app-modal-viewport-height, 100dvh) - 0.75rem))' }}
+          >
             <div className="flex items-start justify-between gap-3 border-b border-border px-4 pb-4 pt-5 sm:px-6">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-brand">Calentamiento vocal</p>
@@ -503,8 +515,8 @@ export default function AdminVocalWarmups({ createSignal = 0, onCountChange }) {
               </button>
             </div>
 
-            <form onSubmit={saveWarmup} className="min-h-0 overflow-y-auto">
-              <div className="space-y-5 bg-background/70 px-4 py-5 sm:px-6">
+            <form onSubmit={saveWarmup} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto bg-background/70 px-4 py-5 sm:px-6">
                 <label className="block">
                   <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">Nombre *</span>
                   <input
@@ -573,7 +585,7 @@ export default function AdminVocalWarmups({ createSignal = 0, onCountChange }) {
                 {feedback && <p role="alert" className="rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2.5 text-sm font-semibold text-red-500">{feedback}</p>}
               </div>
 
-              <div className="flex flex-col-reverse gap-2 border-t border-border bg-surface px-4 py-3 sm:flex-row sm:justify-end sm:px-6">
+              <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-border bg-surface/95 px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur-xl sm:flex-row sm:justify-end sm:px-6 sm:pb-4">
                 <button type="button" onClick={closeModal} disabled={saving} className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-border bg-background px-4 text-sm font-bold text-content disabled:opacity-50">
                   Cancelar
                 </button>

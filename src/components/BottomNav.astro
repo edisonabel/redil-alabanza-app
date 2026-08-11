@@ -181,9 +181,11 @@ const navGridStyle = `grid-template-columns: repeat(${visibleNavItems.length}, m
   pointer-events: none;
  }
 
- :global(html[data-bottom-nav-hidden='true'] nav[data-bottom-nav='true']) {
+ :global(html[data-bottom-nav-hidden='true'] nav[data-bottom-nav='true']),
+ :global(html[data-mobile-modal-open='true'] nav[data-bottom-nav='true']) {
   transform: translate3d(0, calc(100% + env(safe-area-inset-bottom) + 1.25rem), 0) !important;
   opacity: 0 !important;
+  visibility: hidden !important;
   pointer-events: none !important;
  }
 

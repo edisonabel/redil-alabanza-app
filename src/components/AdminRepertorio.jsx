@@ -3545,14 +3545,20 @@ export default function AdminRepertorio() {
 
       {songWizardOpen && (
         <div
-          className="fixed inset-0 z-[55] flex items-end justify-center bg-slate-950/72 backdrop-blur-md sm:items-center sm:p-4"
+          className="fixed inset-x-0 z-[90] flex items-end justify-center bg-slate-950/72 backdrop-blur-md sm:items-center sm:p-4"
+          style={{
+            top: 'var(--app-modal-viewport-offset-top, 0px)',
+            bottom: 'auto',
+            height: 'var(--app-modal-viewport-height, 100dvh)',
+          }}
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) cerrarSongWizard();
           }}
         >
           <div
             ref={songWizardDialogRef}
-            className="flex max-h-[min(94dvh,52rem)] w-full flex-col overflow-hidden rounded-t-[1.65rem] border border-border bg-surface shadow-2xl sm:max-w-3xl sm:rounded-[1.65rem]"
+            className="flex w-full flex-col overflow-hidden rounded-t-[1.65rem] border border-border bg-surface shadow-2xl sm:max-w-3xl sm:rounded-[1.65rem]"
+            style={{ maxHeight: 'min(52rem, calc(var(--app-modal-viewport-height, 100dvh) - 0.75rem))' }}
             role="dialog"
             aria-modal="true"
             aria-labelledby="admin-song-wizard-title"

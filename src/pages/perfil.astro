@@ -249,6 +249,10 @@ const userId = Astro.locals.user?.id ?? null;
  <span>Motivo <em>(opcional)</em></span>
  <input type="text" id="ausencia-motivo" placeholder="Ej. Viaje familiar, trabajo..." />
  </label>
+ <p class="profile-content-note" id="absence-modal-note">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+ <span>Registra con al menos 7 d&iacute;as de anticipaci&oacute;n.</span>
+ </p>
  <div class="profile-absence-form-footer">
  <button type="submit" id="btn-save-ausencia">
  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
@@ -256,10 +260,6 @@ const userId = Astro.locals.user?.id ?? null;
  </button>
  </div>
  </form>
- <p class="profile-content-note" id="absence-modal-note">
- <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
- <span>Registra con al menos 7 d&iacute;as de anticipaci&oacute;n.</span>
- </p>
  </div>
  </div>
 
@@ -1403,9 +1403,17 @@ const userId = Astro.locals.user?.id ?? null;
  }
 
  .profile-absence-form-footer {
+  position: sticky;
+  bottom: -0.65rem;
+  z-index: 3;
   display: flex;
   justify-content: flex-end;
-  margin-top: 0.65rem;
+  margin: 0.65rem -1rem -0.65rem;
+  padding: 0.75rem 1rem max(0.75rem, env(safe-area-inset-bottom));
+  border-top: 1px solid rgb(var(--border-base));
+  background: rgb(var(--bg-surface) / 0.97);
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+  backdrop-filter: blur(18px) saturate(1.12);
  }
 
  .profile-absence-form-footer button {
@@ -1444,7 +1452,7 @@ const userId = Astro.locals.user?.id ?? null;
   display: flex;
   align-items: flex-start;
   gap: 0.38rem;
-  margin: 0 1rem 1rem;
+  margin: 0.8rem 0 0;
   padding: 0;
   color: rgb(var(--text-muted));
   font-size: 0.64rem;
@@ -2109,14 +2117,19 @@ const userId = Astro.locals.user?.id ?? null;
   }
 
   .profile-absence-modal {
+   top: var(--app-modal-viewport-offset-top, 0px);
+   right: 0;
+   bottom: auto;
+   left: 0;
+   height: var(--app-modal-viewport-height, 100dvh);
    align-items: flex-end;
    padding: 0;
   }
 
   .profile-absence-dialog {
    width: 100%;
-   max-height: calc(100dvh - env(safe-area-inset-top) - 0.75rem);
-   padding-bottom: env(safe-area-inset-bottom);
+   max-height: calc(var(--app-modal-viewport-height, 100dvh) - 0.75rem);
+   padding-bottom: 0;
    border-right: 0;
    border-bottom: 0;
    border-left: 0;

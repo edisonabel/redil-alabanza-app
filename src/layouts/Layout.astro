@@ -844,11 +844,24 @@ const themeColors = brandingData;
     ].join(',');
 
     let observer = null;
+    let observedBody = null;
     let rafId = 0;
+
+    const syncVisualViewport = () => {
+      const viewport = window.visualViewport;
+      const viewportHeight = Math.max(1, Math.round(viewport?.height || window.innerHeight));
+      const viewportOffsetTop = Math.max(0, Math.round(viewport?.offsetTop || 0));
+      root.style.setProperty('--app-modal-viewport-height', `${viewportHeight}px`);
+      root.style.setProperty('--app-modal-viewport-offset-top', `${viewportOffsetTop}px`);
+    };
 
     const syncModalState = () => {
       rafId = 0;
-      const hasOpenModal = Boolean(document.querySelector(modalSelector));
+      syncVisualViewport();
+      const hasOpenModal = Array.from(document.querySelectorAll(modalSelector)).some((modal) => (
+        !modal.closest('[hidden]')
+        && modal.getClientRects().length > 0
+      ));
       root.dataset.mobileModalOpen = hasOpenModal ? 'true' : 'false';
     };
 
@@ -863,7 +876,15 @@ const themeColors = brandingData;
         observer = new MutationObserver(scheduleSync);
       }
 
-      observer.observe(document.body, {
+      if (observedBody === document.body) {
+        scheduleSync();
+        return;
+      }
+
+      observer.disconnect();
+      observedBody = document.body;
+
+      observer.observe(observedBody, {
         childList: true,
         subtree: true,
         attributes: true,
@@ -879,10 +900,12 @@ const themeColors = brandingData;
       startObserver();
     }
 
-    document.addEventListener('astro:after-swap', scheduleSync);
-    document.addEventListener('astro:page-load', scheduleSync);
-    window.addEventListener('pageshow', scheduleSync);
+    document.addEventListener('astro:after-swap', startObserver);
+    document.addEventListener('astro:page-load', startObserver);
+    window.addEventListener('pageshow', startObserver);
     window.addEventListener('resize', scheduleSync);
+    window.visualViewport?.addEventListener('resize', scheduleSync);
+    window.visualViewport?.addEventListener('scroll', scheduleSync);
   })();
  </script>
 
