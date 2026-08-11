@@ -97,10 +97,10 @@ const canManageOperations = Boolean(Astro.locals.canManageOperations);
  </div>
 
  <!-- WIZARD GLOBAL DE GESTIÓN DE PERFIL -->
- <div id="modal-roles-global" class="team-wizard-modal fixed inset-0 z-[100] hidden items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="modal-roles-title">
+ <div id="modal-roles-global" class="team-wizard-modal fixed inset-0 z-[100] hidden items-center justify-center" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="modal-roles-title" data-ui-modal="true" data-ui-bottom-sheet="true">
  <div class="team-wizard-backdrop" id="modal-roles-backdrop"></div>
 
- <div class="team-wizard-panel" id="modal-roles-panel">
+ <div class="team-wizard-panel" id="modal-roles-panel" data-ui-bottom-sheet-panel="true">
  <header class="team-wizard-hero">
  <div class="team-wizard-hero-media" aria-hidden="true">
  <img id="modal-profile-image" alt="" crossorigin="anonymous" class="hidden">
@@ -269,16 +269,16 @@ const canManageOperations = Boolean(Astro.locals.canManageOperations);
  </div>
 
  <!-- MODAL CONSTRUCTOR DE PLANTILLAS (Team Builder) -->
- <div id="modal-team-builder" class="fixed inset-0 z-[80] hidden items-end sm:items-center justify-center">
+ <div id="modal-team-builder" class="fixed inset-0 z-[80] hidden items-end sm:items-center justify-center" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="team-builder-title" data-ui-modal="true" data-ui-bottom-sheet="true">
  <!-- Backdrop -->
  <div class="absolute inset-0 bg-neutral-900/40 backdrop-blur-sm transition-opacity opacity-0" id="tb-backdrop"></div>
  
  <!-- Panel -->
- <div class="relative bg-surface w-full sm:w-[90vw] md:w-[600px] shrink-0 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh] sm:max-h-[85vh] transition-transform translate-y-full sm:translate-y-4 sm:scale-95 sm:opacity-0" id="tb-panel">
+ <div class="relative bg-surface w-full sm:w-[90vw] md:w-[600px] shrink-0 rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[calc(var(--app-modal-viewport-height,100dvh)-0.5rem)] sm:max-h-[85vh] transition-transform translate-y-full sm:translate-y-4 sm:scale-95 sm:opacity-0" id="tb-panel" data-ui-bottom-sheet-panel="true">
  <!-- Header -->
  <div class="px-5 sm:px-6 py-4 sm:py-5 border-b border-neutral-100 flex justify-between items-center bg-surface/50 backdrop-blur-md sticky top-0 z-10">
  <div>
- <h3 class="text-xl sm:text-2xl font-bold text-content tracking-tight">Constructor de Equipo</h3>
+ <h3 id="team-builder-title" class="text-xl sm:text-2xl font-bold text-content tracking-tight">Constructor de Equipo</h3>
  <p class="text-xs text-content-muted mt-1">Crea moldes de equipo para cargarlos rÃ¡pidamente.</p>
  </div>
  <div class="flex gap-2">
@@ -290,8 +290,8 @@ const canManageOperations = Boolean(Astro.locals.canManageOperations);
  </div>
  
  <!-- Body Formulario -->
- <form id="form-team-builder" class="overflow-y-auto flex-1 custom-scrollbar">
- <div class="p-5 sm:p-6 space-y-6">
+ <form id="form-team-builder" class="min-h-0 flex flex-1 flex-col overflow-hidden">
+ <div class="custom-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6 space-y-6">
  <!-- Letra y Nombre de Equipo -->
  <div class="flex flex-col sm:flex-row gap-4">
  <div class="w-full sm:w-28 space-y-2 shrink-0">
@@ -349,7 +349,7 @@ const canManageOperations = Boolean(Astro.locals.canManageOperations);
  </div>
  
  <!-- Footer Form -->
- <div class="px-5 sm:px-6 py-4 bg-background border-t border-neutral-100 dark:border-neutral-700 sticky bottom-0 z-10 flex gap-3 shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
+ <div class="px-5 sm:px-6 pt-4 bg-background/95 backdrop-blur-xl border-t border-neutral-100 dark:border-neutral-700 z-10 flex gap-3 shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
  <button type="submit" id="btn-tb-submit" class="flex-1 bg-neutral-900 text-white py-3 rounded-xl font-bold hover:bg-neutral-800 dark:bg-background transition-colors shadow-sm relative overflow-hidden flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
  <svg id="tb-spinner" class="animate-spin -ml-1 mr-2 h-4 w-4 hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
  <span id="tb-submit-text">Guardar Equipo</span>
@@ -360,9 +360,9 @@ const canManageOperations = Boolean(Astro.locals.canManageOperations);
  </div>
  
  <!-- MODAL DETALLES DEL EQUIPO -->
- <div id="modal-detalles-equipo" class="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm hidden">
+ <div id="modal-detalles-equipo" class="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="detalle-nombre" data-ui-modal="true" data-ui-bottom-sheet="true">
  <div class="absolute inset-0" id="backdrop-detalles-equipo"></div>
- <div class="relative w-full max-w-2xl bg-background rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden transition-transform translate-y-full flex flex-col max-h-[90vh] m-auto" id="panel-detalles-equipo">
+ <div class="relative w-full max-w-2xl bg-background rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden transition-transform translate-y-full flex flex-col max-h-[calc(var(--app-modal-viewport-height,100dvh)-0.5rem)] sm:max-h-[90vh] sm:m-auto" id="panel-detalles-equipo" data-ui-bottom-sheet-panel="true">
  <!-- Header -->
  <div class="px-6 py-5 border-b border-border bg-surface flex justify-between items-center z-10 sticky top-0">
  <div class="flex items-center gap-3">
@@ -418,14 +418,14 @@ const canManageOperations = Boolean(Astro.locals.canManageOperations);
  </div>
  
  <!-- MODAL CONFIRMACIÃ“N BORRAR EQUIPO -->
- <div id="modal-confirm-delete" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm hidden">
+ <div id="modal-confirm-delete" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="confirm-delete-title" data-ui-modal="true">
  <div class="relative bg-surface rounded-2xl shadow-2xl max-w-sm w-full mx-4 p-6 flex flex-col gap-4">
  <div class="flex items-center gap-3">
  <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-500"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
  </div>
  <div>
- <h3 class="font-bold text-content text-base">Eliminar Equipo</h3>
+ <h3 id="confirm-delete-title" class="font-bold text-content text-base">Eliminar Equipo</h3>
  <p class="text-xs text-content-muted" id="confirm-delete-msg">&iquest;Seguro que deseas eliminar este equipo?</p>
  </div>
  </div>
@@ -441,13 +441,13 @@ const canManageOperations = Boolean(Astro.locals.canManageOperations);
  </div>
 
  <!-- MODAL PICKER REUTILIZADO PARA EVENTOS Y BUILDER -->
- <div id="picker-modal" class="fixed inset-0 z-[110] flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm" style="display:none">
+ <div id="picker-modal" class="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-neutral-900/40 backdrop-blur-sm" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="picker-title" data-ui-modal="true" data-ui-bottom-sheet="true" style="display:none">
  <div class="absolute inset-0" id="picker-backdrop"></div>
  <!-- Picker Panel -->
- <div class="relative bg-background w-full sm:max-w-md rounded-3xl shadow-2xl flex flex-col max-h-[85vh] mx-4" id="picker-panel">
+ <div class="relative bg-background w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col max-h-[calc(var(--app-modal-viewport-height,100dvh)-0.5rem)] sm:max-h-[85vh] sm:mx-4" id="picker-panel" data-ui-bottom-sheet-panel="true">
  <div class="px-5 py-4 border-b border-border flex justify-between items-center bg-surface rounded-t-3xl sm:rounded-t-3xl shadow-sm z-10">
  <div>
- <h3 class="text-lg font-bold text-content ">Seleccionar M&uacute;sico</h3>
+ <h3 id="picker-title" class="text-lg font-bold text-content ">Seleccionar M&uacute;sico</h3>
 <p class="text-[10px] font-bold uppercase tracking-widest text-action mt-1 flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span id="picker-role-name">Buscando...</span></p>
  </div>
  <button type="button" id="picker-close" class="p-2 -mr-2 bg-background text-content-muted hover:text-content dark:text-white rounded-full transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
@@ -465,19 +465,19 @@ const canManageOperations = Boolean(Astro.locals.canManageOperations);
 
  
  <!-- MODAL AÑADIR MÚSICO -->
- <div id="modal-add-musico" class="fixed inset-0 z-[100] hidden items-center justify-center">
+ <div id="modal-add-musico" class="fixed inset-0 z-[100] hidden items-end sm:items-center justify-center" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="add-musico-title" data-ui-modal="true" data-ui-bottom-sheet="true">
  <div class="absolute inset-0 bg-neutral-900/40 backdrop-blur-sm transition-opacity opacity-0" id="add-musico-backdrop"></div>
- <div class="relative bg-surface w-full md:max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] mx-4 transition-all scale-95 opacity-0" id="add-musico-panel">
+ <div class="relative bg-surface w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[calc(var(--app-modal-viewport-height,100dvh)-0.5rem)] sm:max-h-[85vh] sm:mx-4 transition-all translate-y-full sm:translate-y-4 sm:scale-95 sm:opacity-0" id="add-musico-panel" data-ui-bottom-sheet-panel="true">
  <div class="px-6 py-5 border-b border-neutral-100 flex justify-between items-center">
  <div>
- <h3 class="text-lg font-bold text-content ">A&#241;adir M&#250;sico</h3>
+ <h3 id="add-musico-title" class="text-lg font-bold text-content ">A&#241;adir M&#250;sico</h3>
  <p class="text-xs text-content-muted mt-0.5">Registra un nuevo integrante del equipo.</p>
  </div>
  <button type="button" id="btn-close-add-musico" class="p-2 -mr-2 bg-background text-content-muted hover:text-content dark:text-white rounded-full transition-colors">
  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
  </button>
  </div>
- <div class="p-6 flex flex-col gap-4 overflow-y-auto">
+ <div class="custom-scrollbar min-h-0 flex-1 p-6 flex flex-col gap-4 overflow-y-auto overscroll-contain">
  <div>
  <label class="text-xs font-bold text-content-muted uppercase tracking-widest mb-1.5 block">Nombre completo</label>
  <input type="text" id="add-musico-nombre" class="w-full px-4 py-3 rounded-xl border border-border bg-background text-content text-sm font-medium focus:ring-2 focus:ring-brand focus:border-transparent outline-none transition-all" placeholder="Ej: Carlos (Pianista)">
@@ -491,7 +491,7 @@ const canManageOperations = Boolean(Astro.locals.canManageOperations);
  <input type="tel" id="add-musico-telefono" class="w-full px-4 py-3 rounded-xl border border-border bg-background text-content text-sm font-medium focus:ring-2 focus:ring-brand focus:border-transparent outline-none transition-all" placeholder="Ej: +57 300 123 4567">
  </div>
  </div>
- <div class="p-6 pt-0 flex gap-3">
+ <div class="shrink-0 bg-surface/95 px-6 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] flex gap-3 border-t border-border backdrop-blur-xl">
  <button type="button" id="btn-cancel-add-musico" class="flex-1 py-3 rounded-xl border border-border text-content-muted font-bold text-sm hover:bg-background dark:bg-neutral-800 transition-colors">Cancelar</button>
  <button type="button" id="btn-submit-add-musico" class="flex-1 py-3 rounded-xl bg-action text-white font-bold text-sm hover:bg-action/80 transition-all shadow-md">
  <span id="add-musico-text">Registrar</span>
@@ -2117,6 +2117,7 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  }
  
  if (msgEl) msgEl.textContent = `Â¿Eliminar "${letEq} - ${nomEq}"?`;
+ modalConfirm.setAttribute('aria-hidden', 'false');
  modalConfirm.style.display = 'flex'; // Usar style directo, no classList (evita conflicto flex/hidden)
  
  // Limpiar listeners previos para evitar duplicados
@@ -2128,12 +2129,14 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  // Evento Cancelar
  newBtnCancel.addEventListener('click', () => {
  modalConfirm.style.display = 'none';
+ modalConfirm.setAttribute('aria-hidden', 'true');
  });
 
  // Evento Confirmar Borrado
  newBtnOk.addEventListener('click', async () => {
  // Cerrar modal inmediatamente (style.display v/s classList para evitar conflicto flex/hidden)
  modalConfirm.style.display = 'none';
+ modalConfirm.setAttribute('aria-hidden', 'true');
  // log
  
  newBtnOk.disabled = true;
@@ -2255,6 +2258,7 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  if (n3!.children.length === 0) n3!.innerHTML = `<p class="text-xs text-content-muted font-medium italic p-2 col-span-2">Sin asignar</p>`;
 
  // 6. Animar Entrada Modal
+ modalDetalles?.setAttribute('aria-hidden', 'false');
  modalDetalles?.classList.remove('hidden');
  void modalDetalles?.offsetWidth;
  panelDetalles?.classList.remove('translate-y-full');
@@ -2262,7 +2266,10 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
 
  const closeDetallesModal = () => {
  panelDetalles?.classList.add('translate-y-full');
- setTimeout(() => modalDetalles?.classList.add('hidden'), 350);
+ setTimeout(() => {
+ modalDetalles?.classList.add('hidden');
+ modalDetalles?.setAttribute('aria-hidden', 'true');
+ }, 350);
  };
 
  btnCloseDetalles?.addEventListener('click', closeDetallesModal);
@@ -2541,6 +2548,7 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
   }
 
   if (show) {
+   modalRoles.setAttribute('aria-hidden', 'false');
    modalRoles.classList.remove('hidden');
    modalRoles.classList.add('flex');
    document.body.style.overflow = 'hidden';
@@ -2554,6 +2562,7 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
   modalRolesCloseTimer = window.setTimeout(() => {
    modalRoles.classList.add('hidden');
    modalRoles.classList.remove('flex');
+   modalRoles.setAttribute('aria-hidden', 'true');
    document.body.style.overflow = '';
    wizardTrigger?.focus();
    modalRolesCloseTimer = null;
@@ -2792,16 +2801,21 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  const btnTarget = event.currentTarget as HTMLButtonElement;
  const perfilId = btnTarget.getAttribute('data-perfil');
  const perfilNombre = btnTarget.getAttribute('data-nombre') || 'esta persona';
+ const perfilNombreSeguro = escapeHtml(perfilNombre);
  if (!perfilId) return;
 
+ document.querySelector('[data-team-member-action="true"]')?.remove();
  const overlay = document.createElement('div');
- overlay.className = 'fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-md p-0 sm:p-4';
+ overlay.className = 'team-member-action-overlay fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-md p-0 sm:p-4';
+ overlay.dataset.uiModal = 'true';
+ overlay.dataset.uiBottomSheet = 'true';
+ overlay.dataset.teamMemberAction = 'true';
  overlay.innerHTML = safeHtml`
- <div class="bg-surface rounded-t-3xl sm:rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-border pb-[env(safe-area-inset-bottom)]" role="dialog" aria-modal="true" aria-labelledby="team-member-action-title">
+ <div class="bg-surface rounded-t-3xl sm:rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-border pb-[env(safe-area-inset-bottom)]" role="dialog" aria-modal="true" aria-labelledby="team-member-action-title" data-ui-bottom-sheet-panel="true">
  <div id="member-action-choice" class="p-5 sm:p-6">
  <div class="flex items-start justify-between gap-4 mb-5">
  <div>
- <h3 id="team-member-action-title" class="text-lg font-extrabold text-content">Administrar a "${perfilNombre}"</h3>
+ <h3 id="team-member-action-title" class="text-lg font-extrabold text-content">Administrar a "${perfilNombreSeguro}"</h3>
  <p class="mt-1 text-sm text-content-muted leading-relaxed">Elige si conservarás su cuenta o si también eliminarás su acceso.</p>
  </div>
  <button id="member-action-close" type="button" class="h-11 w-11 shrink-0 rounded-xl border border-border text-content-muted" aria-label="Cerrar">✕</button>
@@ -2817,28 +2831,37 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  </button>
  </div>
  </div>
- <form id="member-delete-confirm" class="hidden p-5 sm:p-6">
+ <div id="member-delete-confirm" class="hidden p-5 sm:p-6">
  <h3 class="text-lg font-extrabold text-content">Eliminar definitivamente</h3>
- <p class="mt-2 text-sm leading-relaxed text-content-muted">Para borrar la cuenta de "${perfilNombre}", escribe <strong class="text-red-500">ELIMINAR</strong>.</p>
+ <p class="mt-2 text-sm leading-relaxed text-content-muted">Para borrar la cuenta de "${perfilNombreSeguro}", escribe <strong class="text-red-500">ELIMINAR</strong>.</p>
  <label class="mt-4 block">
  <span class="sr-only">Confirmación</span>
  <input id="member-delete-text" type="text" autocomplete="off" class="w-full min-h-12 rounded-xl border border-border bg-background px-4 text-content outline-none focus:border-red-500" placeholder="ELIMINAR" />
  </label>
  <div class="mt-5 flex gap-3">
  <button id="member-delete-back" type="button" class="min-h-12 flex-1 rounded-xl border border-border text-sm font-bold text-content-muted">Atrás</button>
- <button id="member-delete-final" type="submit" class="min-h-12 flex-1 rounded-xl bg-red-600 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40" disabled>Eliminar cuenta</button>
+ <button id="member-delete-final" type="button" class="min-h-12 flex-1 rounded-xl bg-red-600 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40" disabled>Eliminar cuenta</button>
  </div>
- </form>
+ </div>
  </div>
  `;
+ const previousBodyOverflow = document.body.style.overflow;
+ document.body.style.overflow = 'hidden';
  document.body.appendChild(overlay);
 
  const choice = overlay.querySelector<HTMLElement>('#member-action-choice')!;
- const deleteConfirm = overlay.querySelector<HTMLFormElement>('#member-delete-confirm')!;
+ const deleteConfirm = overlay.querySelector<HTMLElement>('#member-delete-confirm')!;
  const deleteText = overlay.querySelector<HTMLInputElement>('#member-delete-text')!;
  const deleteFinal = overlay.querySelector<HTMLButtonElement>('#member-delete-final')!;
  const resolveAction = await new Promise<'retire' | 'delete' | null>((resolve) => {
- const finish = (action: 'retire' | 'delete' | null) => resolve(action);
+ let settled = false;
+ const finish = (action: 'retire' | 'delete' | null) => {
+ if (settled) return;
+ settled = true;
+ document.body.style.overflow = previousBodyOverflow;
+ overlay.remove();
+ resolve(action);
+ };
  overlay.querySelector('#member-action-close')!.addEventListener('click', () => finish(null));
  overlay.querySelector('#member-retire')!.addEventListener('click', () => finish('retire'));
  overlay.querySelector('#member-delete')!.addEventListener('click', () => {
@@ -2855,16 +2878,24 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  deleteText.addEventListener('input', () => {
  deleteFinal.disabled = deleteText.value.trim() !== 'ELIMINAR';
  });
- deleteConfirm.addEventListener('submit', (submitEvent) => {
- submitEvent.preventDefault();
+ deleteFinal.addEventListener('click', () => {
  if (!deleteFinal.disabled) finish('delete');
+ });
+ deleteText.addEventListener('keydown', (keyboardEvent) => {
+ if (keyboardEvent.key === 'Enter' && !deleteFinal.disabled) {
+ keyboardEvent.preventDefault();
+ finish('delete');
+ }
+ });
+ overlay.addEventListener('keydown', (keyboardEvent) => {
+ if (keyboardEvent.key === 'Escape') finish(null);
  });
  overlay.addEventListener('click', (overlayEvent) => {
  if (overlayEvent.target === overlay) finish(null);
  });
+ requestAnimationFrame(() => overlay.querySelector<HTMLButtonElement>('#member-action-close')?.focus());
  });
 
- overlay.remove();
  if (!resolveAction) return;
 
  btnTarget.disabled = true;
@@ -2908,18 +2939,20 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
 
  const toggleAddMusico = (show: boolean) => {
  if (show) {
+ modalAddMusico?.setAttribute('aria-hidden', 'false');
  modalAddMusico?.classList.remove('hidden');
  modalAddMusico?.classList.add('flex');
  document.body.style.overflow = 'hidden';
  void modalAddMusico?.offsetWidth;
  addMusicoBackdrop?.classList.replace('opacity-0', 'opacity-100');
- addMusicoPanel?.classList.remove('scale-95', 'opacity-0');
+ addMusicoPanel?.classList.remove('translate-y-full', 'sm:translate-y-4', 'sm:scale-95', 'sm:opacity-0');
  } else {
  addMusicoBackdrop?.classList.replace('opacity-100', 'opacity-0');
- addMusicoPanel?.classList.add('scale-95', 'opacity-0');
+ addMusicoPanel?.classList.add('translate-y-full', 'sm:translate-y-4', 'sm:scale-95', 'sm:opacity-0');
  setTimeout(() => {
  modalAddMusico?.classList.add('hidden');
  modalAddMusico?.classList.remove('flex');
+ modalAddMusico?.setAttribute('aria-hidden', 'true');
  document.body.style.overflow = '';
  }, 300);
  }
@@ -3004,6 +3037,7 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
 
  const toggleTbModal = (show: boolean) => {
  if (show) {
+ tbModal?.setAttribute('aria-hidden', 'false');
  tbModal?.classList.remove('hidden');
  tbModal?.classList.add('flex');
  document.body.style.overflow = 'hidden';
@@ -3019,6 +3053,7 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  setTimeout(() => {
  tbModal?.classList.add('hidden');
  tbModal?.classList.remove('flex');
+ tbModal?.setAttribute('aria-hidden', 'true');
  document.body.style.overflow = '';
  }, 300);
  }
@@ -3140,6 +3175,7 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  const modalPicker = document.getElementById('picker-modal');
  window.openTbPicker = async (rolId, rolName) => {
  document.getElementById('picker-role-name')!.textContent = rolName || 'Rol';
+ modalPicker!.setAttribute('aria-hidden', 'false');
  modalPicker!.style.display = 'flex';
  void modalPicker?.offsetWidth; 
  
@@ -3214,10 +3250,16 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  `;
  
  btn.onclick = () => {
- if (isDisabled || isSelected) { modalPicker!.style.display = 'none'; renderTbSlots(); return; }
+ if (isDisabled || isSelected) {
+ modalPicker!.style.display = 'none';
+ modalPicker!.setAttribute('aria-hidden', 'true');
+ renderTbSlots();
+ return;
+ }
  const saveRolId = isVozPool ? realRolId : rolId;
  window.tbState.assignments.push({ rol_id: saveRolId, perfil_id: p.id, perfil_nombre: p.nombre, avatar_url: p.avatar_url });
  modalPicker!.style.display = 'none';
+ modalPicker!.setAttribute('aria-hidden', 'true');
  renderTbSlots();
  };
  list.appendChild(btn);
@@ -3226,10 +3268,12 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  
  document.getElementById('picker-close')?.addEventListener('click', () => {
  modalPicker!.style.display = 'none';
+ modalPicker!.setAttribute('aria-hidden', 'true');
  });
 
  document.getElementById('picker-backdrop')?.addEventListener('click', () => {
  modalPicker!.style.display = 'none';
+ modalPicker!.setAttribute('aria-hidden', 'true');
  });
 
  // Submit Form Team Builder Database Save
