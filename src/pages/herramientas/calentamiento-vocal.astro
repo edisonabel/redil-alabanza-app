@@ -1,5 +1,7 @@
 ---
 import Layout from '../../layouts/Layout.astro';
+import { createClient } from '@supabase/supabase-js';
+import { getSupabaseServerEnv } from '../../lib/server/supabase-env.js';
 
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1qYfvvneKV2DEyG_BXPDA22H-k0y1JhHX9KpDYWmHUOQ/export?format=csv';
 
@@ -59,7 +61,37 @@ type WarmupItem = {
   link: string;
 };
 
-const loadWarmups = async (): Promise<WarmupItem[]> => {
+const loadManagedWarmups = async (): Promise<WarmupItem[] | null> => {
+  const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
+  if (!supabaseUrl || !supabaseAnonKey) return null;
+
+  try {
+    const client = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data, error } = await client
+      .from('calentamientos_vocales')
+      .select('id, titulo, mp3_url')
+      .eq('activo', true)
+      .not('mp3_url', 'is', null)
+      .order('orden', { ascending: true })
+      .order('titulo', { ascending: true });
+
+    if (error) return null;
+    return (data || [])
+      .map((item) => ({
+        id: String(item.id || ''),
+        titulo: String(item.titulo || '').trim(),
+        link: String(item.mp3_url || '').trim(),
+      }))
+      .filter((item) => item.id && item.titulo && item.link);
+  } catch (error) {
+    console.error('No se pudo leer la biblioteca administrada de calentamientos:', error);
+    return null;
+  }
+};
+
+const loadSheetWarmups = async (): Promise<WarmupItem[]> => {
   const results: WarmupItem[] = [];
 
   try {
@@ -117,7 +149,8 @@ const loadWarmups = async (): Promise<WarmupItem[]> => {
   return results;
 };
 
-const warmups = await loadWarmups();
+const managedWarmups = await loadManagedWarmups();
+const warmups = managedWarmups ?? await loadSheetWarmups();
 const showSwipeHint = warmups.length > 1;
 ---
 
@@ -183,7 +216,7 @@ const showSwipeHint = warmups.length > 1;
         ) : (
           <article class="w-full rounded-2xl border border-border bg-surface p-6 text-center shadow-sm">
             <h3 class="text-lg font-bold text-content">Sin ejercicios cargados</h3>
-            <p class="mt-2 text-sm text-content-muted">Cuando agregues m&aacute;s filas en la hoja, aparecer&aacute;n aqu&iacute; autom&aacute;ticamente.</p>
+            <p class="mt-2 text-sm text-content-muted">Cuando publiques un calentamiento desde Administraci&oacute;n, aparecer&aacute; aqu&iacute;.</p>
           </article>
         )}
       </div>

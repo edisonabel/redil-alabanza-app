@@ -11,7 +11,7 @@ import { readEnv } from '../../lib/server/supabase-env.js';
 
 const MAX_UPLOAD_BYTES = 150 * 1024 * 1024;
 const PUBLIC_R2_HOST = 'stems.alabanzaredilestadio.com';
-const ALLOWED_PURPOSES = new Set(['mp3', 'acordes', 'voces', 'secuencia', 'otro']);
+const ALLOWED_PURPOSES = new Set(['mp3', 'acordes', 'voces', 'secuencia', 'calentamiento', 'otro']);
 
 const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -65,6 +65,7 @@ export const POST = async ({ request, cookies }) => {
 
     const body = await request.json().catch(() => ({}));
     const songId = String(body?.songId || '').trim();
+    const warmupId = String(body?.warmupId || '').trim();
     const fileName = sanitizeFileName(body?.fileName);
     const fileType = String(body?.fileType || 'application/octet-stream').trim().toLowerCase();
     const fileSize = Number(body?.fileSize);
@@ -72,8 +73,8 @@ export const POST = async ({ request, cookies }) => {
       ? String(body.purpose)
       : 'otro';
 
-    if (!songId || !fileName) {
-      return jsonResponse({ error: 'Se requieren songId y fileName.' }, 400);
+    if ((!songId && !warmupId) || (songId && warmupId) || !fileName) {
+      return jsonResponse({ error: 'Se requiere un recurso valido y fileName.' }, 400);
     }
     if (!Number.isFinite(fileSize) || fileSize < 1 || fileSize > MAX_UPLOAD_BYTES) {
       return jsonResponse({ error: 'Tamano de archivo invalido o superior a 150 MB.' }, 413);
@@ -81,14 +82,27 @@ export const POST = async ({ request, cookies }) => {
     if (!isAllowedContentType(fileType)) {
       return jsonResponse({ error: 'Tipo de archivo no permitido.' }, 415);
     }
+    if (warmupId && !fileType.startsWith('audio/') && fileType !== 'application/octet-stream') {
+      return jsonResponse({ error: 'El calentamiento debe ser un archivo de audio.' }, 415);
+    }
 
-    const { data: song, error: songError } = await serviceRoleClient
-      .from('canciones')
-      .select('id')
-      .eq('id', songId)
-      .maybeSingle();
-    if (songError) throw songError;
-    if (!song) return jsonResponse({ error: 'La cancion no existe.' }, 404);
+    if (warmupId) {
+      const { data: warmup, error: warmupError } = await serviceRoleClient
+        .from('calentamientos_vocales')
+        .select('id')
+        .eq('id', warmupId)
+        .maybeSingle();
+      if (warmupError) throw warmupError;
+      if (!warmup) return jsonResponse({ error: 'El calentamiento no existe.' }, 404);
+    } else {
+      const { data: song, error: songError } = await serviceRoleClient
+        .from('canciones')
+        .select('id')
+        .eq('id', songId)
+        .maybeSingle();
+      if (songError) throw songError;
+      if (!song) return jsonResponse({ error: 'La cancion no existe.' }, 404);
+    }
 
     const endpoint = readEnv('R2_ENDPOINT');
     const accessKeyId = readEnv('R2_ACCESS_KEY_ID');
@@ -98,7 +112,9 @@ export const POST = async ({ request, cookies }) => {
       return jsonResponse({ error: 'Almacenamiento no configurado.' }, 503);
     }
 
-    const objectKey = `songs/${songId}/${purpose}/${Date.now()}-${fileName}`;
+    const objectKey = warmupId
+      ? `warmups/${warmupId}/${Date.now()}-${fileName}`
+      : `songs/${songId}/${purpose}/${Date.now()}-${fileName}`;
     const client = new S3Client({
       region: 'auto',
       endpoint,
