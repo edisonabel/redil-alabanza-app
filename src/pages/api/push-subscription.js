@@ -95,10 +95,29 @@ export async function POST({ request, cookies }) {
 
     const suscripcion = body?.subscription ?? body;
     const endpoint = typeof suscripcion?.endpoint === 'string' ? suscripcion.endpoint.trim() : '';
+    const p256dh = typeof suscripcion?.keys?.p256dh === 'string' ? suscripcion.keys.p256dh.trim() : '';
+    const auth = typeof suscripcion?.keys?.auth === 'string' ? suscripcion.keys.auth.trim() : '';
+    const rawExpirationTime = Number(suscripcion?.expirationTime);
+    const expirationTime = Number.isFinite(rawExpirationTime) ? rawExpirationTime : null;
+    let endpointUrl = null;
 
-    if (!endpoint || !suscripcion?.keys) {
+    try {
+      endpointUrl = new URL(endpoint);
+    } catch {
+      endpointUrl = null;
+    }
+
+    if (
+      !endpointUrl ||
+      endpointUrl.protocol !== 'https:' ||
+      endpoint.length > 2048 ||
+      !p256dh ||
+      !auth ||
+      p256dh.length > 512 ||
+      auth.length > 512
+    ) {
       return new Response(
-        JSON.stringify({ error: 'Suscripción inválida: falta endpoint o keys.' }),
+        JSON.stringify({ error: 'Suscripción push inválida.' }),
         {
           status: 400,
           headers: jsonHeaders,
@@ -112,7 +131,11 @@ export async function POST({ request, cookies }) {
         {
           user_id: user.id,
           endpoint,
-          suscripcion,
+          suscripcion: {
+            endpoint,
+            expirationTime,
+            keys: { p256dh, auth },
+          },
         },
         { onConflict: 'endpoint' },
       );

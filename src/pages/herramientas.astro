@@ -2,19 +2,9 @@
 import Layout from '../layouts/Layout.astro';
 ---
 <Layout>
- <header class="mb-8 mt-4 md:mt-10 relative max-w-6xl mx-auto px-4">
- <div class="page-title-row mb-3">
- <span class="page-title-icon" aria-hidden="true">
- <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="21" y1="4" x2="14" y2="4"></line><line x1="10" y1="4" x2="3" y2="4"></line><line x1="21" y1="12" x2="12" y2="12"></line><line x1="8" y1="12" x2="3" y2="12"></line><line x1="21" y1="20" x2="16" y2="20"></line><line x1="12" y1="20" x2="3" y2="20"></line><line x1="14" y1="2" x2="14" y2="6"></line><line x1="8" y1="10" x2="8" y2="14"></line><line x1="12" y1="18" x2="12" y2="22"></line></svg>
- </span>
- <h1 class="page-title text-[2.1rem] md:text-[3.5rem]">Herramientas para M&uacute;sicos</h1>
- </div>
- <p class="page-subtitle text-sm md:text-lg max-w-2xl">
- Utilidades para facilitar el ensayo y la preparaci&oacute;n del domingo.
- </p>
- </header>
+ <h1 class="sr-only">Herramientas</h1>
 
- <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8 max-w-5xl mx-auto px-4 pb-12">
+ <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-4 md:mt-8 max-w-5xl mx-auto px-4 pb-12">
  <!-- Metr&oacute;nomo PRO -->
  <a href="/herramientas/metronomo" class="bg-surface border border-border rounded-2xl p-6 hover:bg-background hover:-translate-y-1 transition-all duration-300 shadow-xl group card-herramienta">
  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 mb-3 text-brand"><path d="m15 11 5-5"/><path d="m11 15 5-5"/><path d="M22 12A10 10 0 1 1 12 2a10 10 0 0 1 10 10Z"/><path d="M12 22v-3"/><path d="M12 5V2"/><path d="M22 12h-3"/><path d="M5 12H2"/></svg>
@@ -34,6 +24,13 @@ import Layout from '../layouts/Layout.astro';
  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 mb-3 text-info"><line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><circle cx="8" cy="9" r="2"/><circle cx="16" cy="15" r="2"/></svg>
  <h3 class="text-xl font-bold text-content mb-2 group-hover:text-info transition-colors">Capotraste</h3>
  <p class="text-content-muted text-sm leading-relaxed">Encuentra las posiciones de acordes ideales para guitarra ac&uacute;stica seg&uacute;n el tono original.</p>
+ </a>
+
+ <!-- Afinador inteligente -->
+ <a href="/herramientas/afinador" class="bg-surface border border-border rounded-2xl p-6 hover:bg-background hover:-translate-y-1 transition-all duration-300 shadow-xl group card-herramienta">
+ <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 mb-3 text-emerald-500"><path d="M12 3v18"/><path d="M5 8v8"/><path d="M19 6v12"/><path d="M8.5 5.5v13"/><path d="M15.5 5.5v13"/></svg>
+ <h3 class="text-xl font-bold text-content mb-2 group-hover:text-emerald-500 transition-colors">Afinador Inteligente</h3>
+ <p class="text-content-muted text-sm leading-relaxed">Afina guitarra o voz y valida en verde o rojo si la nota pertenece a la escala seleccionada.</p>
  </a>
 
  <!-- Conversor de Stems -->

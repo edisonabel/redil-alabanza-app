@@ -19,6 +19,8 @@
     "test:chordpro-authoring": "node scripts/test-chordpro-authoring.mjs",
     "test:audio-routing": "node scripts/test-audio-playback-routing.mjs",
     "test:metronome-routing": "node --experimental-strip-types scripts/test-metronome-output-routing.mjs",
+    "test:smart-tuner": "node --experimental-strip-types scripts/test-smart-tuner.mjs",
+    "test:rehearsal-media-sync": "node --experimental-strip-types scripts/test-rehearsal-media-seek-barrier.mjs",
     "test:audio-engine-policy": "node --experimental-strip-types scripts/test-live-director-engine-policy.mjs",
     "test:audio-range-timeout": "node scripts/test-audio-producer-range-timeout.mjs",
     "test:live-preload-policy": "node scripts/test-live-director-preload-policy.mjs",

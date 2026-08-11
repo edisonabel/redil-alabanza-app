@@ -69,6 +69,7 @@ const hexToRgbString = (hex: unknown) => {
 const pathname = new URL(Astro.request.url).pathname;
 const isAdminRepertorioView = pathname === '/admin';
 const isRepertorioView = pathname === '/repertorio';
+const isProfileView = pathname === '/perfil';
 const isChordProPrintView = pathname === '/herramientas/chordpro-print';
 const isLiveDirectorShellView = pathname === '/herramientas/live-director-preview' || pathname === '/herramientas/live-director-ios';
 const shouldBootstrapCrossOriginIsolation =
@@ -619,7 +620,7 @@ const themeColors = brandingData;
    <p class="standalone-boot-splash__hint">Preparando tu espacio de trabajo</p>
   </div>
  </div>
-{pathname !== '/' && user && !isAdminRepertorioView && !isRepertorioView && !isChordProPrintView && !isLiveDirectorShellView && (
+{pathname !== '/' && user && !isAdminRepertorioView && !isRepertorioView && !isProfileView && !isChordProPrintView && !isLiveDirectorShellView && (
   <div
    id="layout-notification-bell"
    class="fixed right-4 md:right-6 z-[61] pointer-events-none"

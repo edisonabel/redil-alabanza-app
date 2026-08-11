@@ -66,6 +66,7 @@ export default function BotonNotificaciones({
   userId,
   className = '',
   compact = false,
+  profileMode = false,
 }) {
   const [isReady, setIsReady] = useState(false);
   const [isSupported, setIsSupported] = useState(true);
@@ -78,11 +79,11 @@ export default function BotonNotificaciones({
   const [isStandaloneApp, setIsStandaloneApp] = useState(false);
 
   const buttonLabel = useMemo(() => {
-    if (!userId) return 'Inicia sesión para activar';
+    if (!userId) return profileMode ? 'Inicia sesión' : 'Inicia sesión para activar';
     if (isLoading) return 'Activando...';
-    if (isSubscribed) return 'Notificaciones Activadas';
-    return 'Activar Notificaciones';
-  }, [isLoading, isSubscribed, userId]);
+    if (isSubscribed) return profileMode ? 'Activadas' : 'Notificaciones Activadas';
+    return profileMode ? 'Activar' : 'Activar Notificaciones';
+  }, [isLoading, isSubscribed, profileMode, userId]);
 
   useEffect(() => {
     let active = true;
@@ -115,12 +116,26 @@ export default function BotonNotificaciones({
           ? await registration.pushManager.getSubscription()
           : null;
 
+        let subscriptionIsCurrent = Boolean(subscription && userId);
+        if (subscription && userId) {
+          try {
+            const subscriptionJson = JSON.parse(JSON.stringify(subscription));
+            await savePushSubscription(subscriptionJson);
+          } catch (error) {
+            subscriptionIsCurrent = false;
+            console.error('Push: no se pudo sincronizar la suscripción con la sesión actual', error);
+            if (active) {
+              setStatusMessage('Vuelve a activar las notificaciones en este dispositivo.');
+            }
+          }
+        }
+
         if (!active) return;
 
         setIsIOSDevice(Boolean(isIOS));
         setIsStandaloneApp(Boolean(standalone));
         setPermissionState(Notification.permission);
-        setIsSubscribed(Boolean(subscription));
+        setIsSubscribed(subscriptionIsCurrent);
       } catch (error) {
         console.error('Push: no se pudo leer el estado actual de suscripción', error);
       } finally {
@@ -135,7 +150,7 @@ export default function BotonNotificaciones({
     return () => {
       active = false;
     };
-  }, []);
+  }, [userId]);
 
   const handleSubscribe = async () => {
     if (!isSupported || isLoading) return;

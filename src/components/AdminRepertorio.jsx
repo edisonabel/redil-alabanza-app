@@ -7,14 +7,22 @@ import {
   CheckCircle,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
+  FileAudio,
+  FileText,
+  FolderOpen,
   ListPlus,
   Loader2,
   MessageSquarePlus,
+  Mic2,
+  Music2,
   Pause,
   PencilLine,
   Play,
   Plus,
   Save,
+  Search,
+  SlidersHorizontal,
   Sparkles,
   UploadCloud,
   X,
@@ -47,6 +55,80 @@ const BROKEN_INLINE_CHORD_RE = new RegExp(`\\[(${CHORD_BODY_PATTERN})\\s*\\|\\s*
 const EDITOR_MODAL_MAX_HEIGHT = 'min(94vh, calc(100dvh - 4.75rem - env(safe-area-inset-bottom)))';
 const ARCHIVO_ELIMINABLE_FIELDS = new Set(['mp3', 'link_acordes']);
 const CANCIONES_SELECT_BASE = 'id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, link_youtube, mp3, link_acordes, link_letras, voces, link_voces, link_secuencias, chordpro, multitrack_session';
+const SONG_WIZARD_STEPS = [
+  { label: 'Canción', shortLabel: 'Canción' },
+  { label: 'Música', shortLabel: 'Música' },
+  { label: 'Organización', shortLabel: 'Orden' },
+  { label: 'Adicionales', shortLabel: 'Extras' },
+];
+const INITIAL_SONG_WIZARD_DRAFT = {
+  titulo: '',
+  cantante: '',
+  tonalidad: '',
+  bpm: '',
+  metrica: '',
+  categoria: '',
+  voz: '',
+  tema: '',
+  estado: 'Activa',
+  link_youtube: '',
+};
+
+const songToWizardDraft = (song = {}) => ({
+  titulo: String(song?.titulo || ''),
+  cantante: String(song?.cantante || ''),
+  tonalidad: String(song?.tonalidad || ''),
+  bpm: String(song?.bpm || ''),
+  metrica: String(song?.metrica || getSongMeter(song) || ''),
+  categoria: String(song?.categoria || ''),
+  voz: String(song?.voz || song?.voz_principal || ''),
+  tema: String(song?.tema || ''),
+  estado: String(song?.estado || 'Activa'),
+  link_youtube: String(song?.link_youtube || ''),
+});
+
+const buildSongWizardPayload = (draft = {}, includeMeter = true) => {
+  const fields = [
+    'titulo',
+    'cantante',
+    'tonalidad',
+    'bpm',
+    'categoria',
+    'voz',
+    'tema',
+    'estado',
+    'link_youtube',
+  ];
+  const payload = fields.reduce((result, field) => ({
+    ...result,
+    [field]: String(draft?.[field] || '').trim() || null,
+  }), {});
+
+  if (includeMeter) {
+    payload.metrica = String(draft?.metrica || '').trim() || null;
+  }
+
+  return payload;
+};
+
+const normalizeSearchText = (value = '') => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .trim();
+
+const sortSongsByTitle = (songs = []) => [...songs].sort((left, right) => (
+  String(left?.titulo || '').localeCompare(String(right?.titulo || ''), 'es', { sensitivity: 'base' })
+));
+
+const getSongResourceCount = (song = {}) => [
+  song?.mp3,
+  song?.link_acordes,
+  song?.link_letras,
+  song?.link_voces || song?.voces,
+  song?.link_secuencias,
+  hasMeaningfulChordProContent(song?.chordpro) ? song?.chordpro : '',
+].filter((value) => String(value || '').trim()).length;
 
 const getSectionColorStyle = (sectionName = '', active = false) => {
   const visual = getChordProSectionVisual(sectionName);
@@ -515,6 +597,29 @@ const formatMetadataMeter = (metadata = {}) => {
     .filter((value, index, values) => index === 0 || value !== values[index - 1]);
   return sequence.join(' → ') || String(metadata?.meter || '').trim();
 };
+
+const extractManualMeterValues = (rawValue = '') => (
+  [...String(rawValue || '').matchAll(/\b(\d{1,2}\s*\/\s*\d{1,2})\b/g)]
+    .map((match) => match[1].replace(/\s+/g, ''))
+    .filter((value, index, values) => values.indexOf(value) === index)
+);
+
+const replaceChordProMeterMetadata = (rawChordpro = '', rawMeter = '') => {
+  const meterValues = extractManualMeterValues(rawMeter);
+  const contentWithoutMeter = String(rawChordpro || '')
+    .replace(/\{(?:time|meter|metrica|métrica|compas|compás)\s*:\s*[^{}]*\}/gi, '')
+    .replace(/\{meta\s*:\s*(?:time|meter|metrica|métrica|compas|compás)\s*:?[\s\S]*?\}/gi, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  const meterDirectives = meterValues.map((value) => `{time: ${value}}`).join('\n');
+
+  return [meterDirectives, contentWithoutMeter].filter(Boolean).join('\n\n');
+};
+
+const hasMeaningfulChordProContent = (rawChordpro = '') => (
+  parseChordProSections(rawChordpro).length > 0
+);
 
 const getSongMeter = (song = {}) => (
   String(song?.metrica || '').trim() ||
@@ -987,6 +1092,20 @@ export default function AdminRepertorio() {
   const [draggingHorizontalThumb, setDraggingHorizontalThumb] = useState(false);
   const [headerActionsHost, setHeaderActionsHost] = useState(null);
   const [headerActionsReady, setHeaderActionsReady] = useState(false);
+  const [isCompactAdmin, setIsCompactAdmin] = useState(false);
+  const [mobileSearch, setMobileSearch] = useState('');
+  const [mobileFilter, setMobileFilter] = useState('todas');
+  const [songWizardOpen, setSongWizardOpen] = useState(false);
+  const [songWizardMode, setSongWizardMode] = useState('create');
+  const [songWizardStep, setSongWizardStep] = useState(0);
+  const [songWizardSongId, setSongWizardSongId] = useState('');
+  const [songWizardDraft, setSongWizardDraft] = useState(INITIAL_SONG_WIZARD_DRAFT);
+  const [songWizardSaving, setSongWizardSaving] = useState(false);
+  const [songWizardFeedback, setSongWizardFeedback] = useState('');
+  const [songWizardDirty, setSongWizardDirty] = useState(false);
+  const [songWizardMp3File, setSongWizardMp3File] = useState(null);
+  const songWizardHeadingRef = useRef(null);
+  const songWizardDialogRef = useRef(null);
 
   const [sessionUser, setSessionUser] = useState(null);
 
@@ -1046,12 +1165,47 @@ export default function AdminRepertorio() {
   const cancionesPendientesChordpro = useMemo(() => (
     canciones.filter((cancion) => {
       const estado = String(cancion?.estado || '').trim().toLowerCase();
-      const chordpro = String(cancion?.chordpro || '').trim();
-      return estado !== 'archivada' && chordpro === '';
+      return estado !== 'archivada' && !hasMeaningfulChordProContent(cancion?.chordpro);
     })
   ), [canciones]);
 
   const vocesDraftEntriesOrdenadas = useMemo(() => sortVoiceEntries(vocesDraftEntries), [vocesDraftEntries]);
+
+  const songWizardSong = useMemo(() => (
+    canciones.find((song) => String(song?.id) === String(songWizardSongId)) || null
+  ), [canciones, songWizardSongId]);
+
+  const mobileSongs = useMemo(() => {
+    const query = normalizeSearchText(mobileSearch);
+    return canciones.filter((song) => {
+      const estado = normalizeSearchText(song?.estado);
+      const matchesFilter = mobileFilter === 'activas'
+        ? estado !== 'archivada'
+        : mobileFilter === 'sin_chordpro'
+          ? !hasMeaningfulChordProContent(song?.chordpro) && estado !== 'archivada'
+          : true;
+      if (!matchesFilter || !query) return matchesFilter;
+
+      const searchable = normalizeSearchText([
+        song?.titulo,
+        song?.cantante,
+        song?.tonalidad,
+        song?.categoria,
+        song?.voz,
+        song?.tema,
+        song?.estado,
+      ].filter(Boolean).join(' '));
+      return searchable.includes(query);
+    });
+  }, [canciones, mobileFilter, mobileSearch]);
+
+  const songWizardTitleReady = Boolean(String(songWizardDraft.titulo || '').trim());
+  const songWizardSingerReady = Boolean(String(songWizardDraft.cantante || '').trim());
+  const songWizardHasMp3 = Boolean(songWizardMp3File || String(songWizardSong?.mp3 || '').trim());
+  const songWizardBasicsReady = songWizardTitleReady && songWizardSingerReady && songWizardHasMp3;
+  const songWizardFirstStepReady = songWizardMode === 'create'
+    ? songWizardBasicsReady
+    : songWizardTitleReady;
 
   const canScrollHorizontalLeft = horizontalScrollUi.scrollLeft > 2;
   const canScrollHorizontalRight =
@@ -1062,6 +1216,63 @@ export default function AdminRepertorio() {
     setHeaderActionsHost(document.getElementById('admin-header-actions'));
     setHeaderActionsReady(true);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const mediaQuery = window.matchMedia('(max-width: 1023px)');
+    const updateCompactMode = () => setIsCompactAdmin(mediaQuery.matches);
+    updateCompactMode();
+    mediaQuery.addEventListener?.('change', updateCompactMode);
+    return () => mediaQuery.removeEventListener?.('change', updateCompactMode);
+  }, []);
+
+  useEffect(() => {
+    if (!songWizardOpen || typeof document === 'undefined') return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.dataset.mobileModalOpen = 'true';
+
+    const handleEscape = (event) => {
+      if (event.key === 'Tab' && !vocesModalCancion && !editorChordproAbierto) {
+        const focusable = Array.from(songWizardDialogRef.current?.querySelectorAll(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]'
+        ) || []);
+        if (focusable.length > 0) {
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
+      }
+
+      if (
+        event.key === 'Escape' &&
+        !songWizardSaving &&
+        !vocesModalCancion &&
+        !editorChordproAbierto
+      ) {
+        setSongWizardOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      delete document.documentElement.dataset.mobileModalOpen;
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [editorChordproAbierto, songWizardOpen, songWizardSaving, vocesModalCancion]);
+
+  useEffect(() => {
+    if (!songWizardOpen) return;
+    const frame = window.requestAnimationFrame(() => songWizardHeadingRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [songWizardOpen, songWizardStep]);
 
   useEffect(() => {
     if (!editorChordproAbierto) return;
@@ -1157,7 +1368,7 @@ export default function AdminRepertorio() {
       scrollEl.removeEventListener('scroll', scheduleUpdate);
       window.removeEventListener('resize', scheduleUpdate);
     };
-  }, [canciones.length, loading]);
+  }, [canciones.length, isCompactAdmin, loading]);
 
   useEffect(() => {
     if (!draggingHorizontalThumb) return undefined;
@@ -1346,40 +1557,212 @@ export default function AdminRepertorio() {
     }
   };
 
-  const agregarCancion = async () => {
-    try {
-      setLoading(true);
+  const abrirWizardNuevaCancion = () => {
+    setSongWizardMode('create');
+    setSongWizardStep(0);
+    setSongWizardSongId('');
+    setSongWizardDraft({ ...INITIAL_SONG_WIZARD_DRAFT });
+    setSongWizardFeedback('');
+    setSongWizardDirty(false);
+    setSongWizardMp3File(null);
+    setSongWizardOpen(true);
+  };
 
-      // Generate a unique title to avoid UNIQUE constraint violation
-      const titulosExistentes = new Set(canciones.map(c => (c.titulo || '').toLowerCase()));
-      let titulo = 'Nueva Cancion';
-      let contador = 2;
-      while (titulosExistentes.has(titulo.toLowerCase())) {
-        titulo = `Nueva Cancion ${contador}`;
-        contador++;
+  const abrirWizardEditarCancion = (song) => {
+    if (!song?.id) return;
+    setSongWizardMode('edit');
+    setSongWizardStep(0);
+    setSongWizardSongId(song.id);
+    setSongWizardDraft(songToWizardDraft(song));
+    setSongWizardFeedback('');
+    setSongWizardDirty(false);
+    setSongWizardMp3File(null);
+    setSongWizardOpen(true);
+  };
+
+  const cerrarSongWizard = () => {
+    if (songWizardSaving) return;
+    setSongWizardOpen(false);
+    setSongWizardFeedback('');
+    setSongWizardMp3File(null);
+  };
+
+  const actualizarSongWizardDraft = (field, value) => {
+    setSongWizardDraft((previous) => ({ ...previous, [field]: value }));
+    setSongWizardDirty(true);
+    setSongWizardFeedback('');
+  };
+
+  const guardarPasoInicialSongWizard = async () => {
+    if (!songWizardTitleReady) {
+      setSongWizardFeedback('Escribe el nombre de la canción para continuar.');
+      return false;
+    }
+    if (songWizardMode === 'create' && !songWizardSingerReady) {
+      setSongWizardFeedback('Escribe el cantante o banda para continuar.');
+      return false;
+    }
+    if (songWizardMode === 'create' && !songWizardHasMp3) {
+      setSongWizardFeedback('Selecciona el MP3 principal para continuar.');
+      return false;
+    }
+
+    setSongWizardSaving(true);
+    setSongWizardFeedback('');
+
+    try {
+      const basicPayload = {
+        titulo: String(songWizardDraft.titulo || '').trim(),
+        cantante: String(songWizardDraft.cantante || '').trim() || null,
+      };
+      let persistedSong = songWizardSong;
+
+      if (songWizardMode === 'create') {
+        const selectFields = [
+          CANCIONES_SELECT_BASE,
+          sectionMarkersDisponibles ? 'section_markers' : '',
+          metricaDisponible ? 'metrica' : '',
+        ].filter(Boolean).join(', ');
+        const { data, error } = await supabase
+          .from('canciones')
+          .insert([{ ...basicPayload, estado: 'Activa' }])
+          .select(selectFields)
+          .single();
+
+        if (error) throw error;
+        if (!data) throw new Error('La canción no pudo crearse.');
+        persistedSong = data;
+        setCanciones((previous) => sortSongsByTitle([...previous, data]));
+        setSongWizardSongId(data.id);
+        setSongWizardMode('edit');
+      } else {
+        if (!songWizardSongId || !persistedSong) {
+          throw new Error('No se encontró la canción que estás editando.');
+        }
+        const { error } = await supabase
+          .from('canciones')
+          .update(basicPayload)
+          .eq('id', songWizardSongId);
+
+        if (error) throw error;
+        persistedSong = { ...persistedSong, ...basicPayload };
+        setCanciones((previous) => sortSongsByTitle(previous.map((song) => (
+          String(song.id) === String(songWizardSongId) ? persistedSong : song
+        ))));
       }
 
-      const nuevaCancion = {
-        titulo,
-        estado: 'Activa',
-      };
-      const { data, error } = await supabase
+      if (songWizardMp3File) {
+        const publicUrl = await subirArchivoR2(songWizardMp3File, persistedSong.id, 'mp3');
+        const { error: mp3Error } = await supabase
+          .from('canciones')
+          .update({ mp3: publicUrl })
+          .eq('id', persistedSong.id);
+
+        if (mp3Error) throw mp3Error;
+        persistedSong = { ...persistedSong, mp3: publicUrl };
+        setCanciones((previous) => sortSongsByTitle(previous.map((song) => (
+          String(song.id) === String(persistedSong.id) ? persistedSong : song
+        ))));
+        setSongWizardMp3File(null);
+
+        try {
+          await generarMiniaturaCancion(persistedSong.id);
+        } catch (artworkError) {
+          console.warn('El MP3 se guardó, pero su miniatura no pudo generarse:', artworkError);
+        }
+      }
+
+      setSongWizardDirty(false);
+      setSongWizardFeedback(songWizardMode === 'create'
+        ? 'Canción creada. Continúa con los datos musicales.'
+        : 'Datos principales guardados.');
+      return true;
+    } catch (error) {
+      console.error('Error guardando datos principales:', error);
+      const detail = String(error?.message || error?.details || 'No se pudieron guardar los datos principales.');
+      setSongWizardFeedback(/duplicate|unique/i.test(detail)
+        ? 'Ya existe una canción con ese nombre.'
+        : detail);
+      return false;
+    } finally {
+      setSongWizardSaving(false);
+    }
+  };
+
+  const guardarSongWizardMetadata = async () => {
+    if (!songWizardSongId || !songWizardSong) {
+      setSongWizardFeedback('Primero completa los datos principales de la canción.');
+      setSongWizardStep(0);
+      return false;
+    }
+
+    const rawMeter = String(songWizardDraft.metrica || '').trim();
+    const meterValues = extractManualMeterValues(rawMeter);
+    if (rawMeter && meterValues.length === 0) {
+      setSongWizardFeedback('Usa una métrica como 4/4, 3/4 o 6/8.');
+      setSongWizardStep(1);
+      return false;
+    }
+
+    setSongWizardSaving(true);
+    setSongWizardFeedback('');
+
+    try {
+      const payload = buildSongWizardPayload(songWizardDraft, metricaDisponible);
+      if (metricaDisponible) {
+        payload.metrica = meterValues.join(' → ') || null;
+      } else {
+        const currentChordpro = songWizardMode === 'edit' ? songWizardSong?.chordpro : '';
+        payload.chordpro = replaceChordProMeterMetadata(currentChordpro, meterValues.join(' → ')) || null;
+      }
+      const { error } = await supabase
         .from('canciones')
-        .insert([nuevaCancion])
-        .select('id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, link_youtube, mp3, link_acordes, link_letras, voces, link_voces, link_secuencias, chordpro, section_markers, multitrack_session')
-        .single();
+        .update(payload)
+        .eq('id', songWizardSongId);
 
       if (error) throw error;
-      if (data) {
-        setCanciones(prev => [data, ...prev]);
-      }
-    } catch (err) {
-      console.error('Error al agregar:', err);
-      const detalle = err?.message || err?.details || 'Error desconocido';
-      alert(`Error al anadir la cancion:\n${detalle}`);
+      setCanciones((previous) => sortSongsByTitle(previous.map((song) => (
+        String(song.id) === String(songWizardSongId)
+          ? { ...song, ...payload }
+          : song
+      ))));
+      setSongWizardFeedback('Datos guardados. Completa los adicionales que necesites.');
+
+      setSongWizardDirty(false);
+      return true;
+    } catch (error) {
+      console.error('Error guardando canción desde el wizard:', error);
+      const detail = String(error?.message || error?.details || 'No se pudieron guardar los cambios.');
+      const isDuplicate = /duplicate|unique/i.test(detail);
+      setSongWizardFeedback(isDuplicate
+        ? 'Ya existe una canción con ese nombre. Usa un título diferente.'
+        : detail);
+      return false;
     } finally {
-      setLoading(false);
+      setSongWizardSaving(false);
     }
+  };
+
+  const avanzarSongWizard = async () => {
+    if (songWizardStep === 0) {
+      const saved = await guardarPasoInicialSongWizard();
+      if (saved) setSongWizardStep(1);
+      return;
+    }
+
+    if (songWizardStep === 1) {
+      setSongWizardFeedback('');
+      setSongWizardStep(2);
+      return;
+    }
+
+    if (songWizardStep === 2) {
+      const saved = await guardarSongWizardMetadata();
+      if (saved) setSongWizardStep(3);
+      return;
+    }
+
+    cerrarSongWizard();
   };
 
   const generarMiniaturaCancion = async (songId) => {
@@ -1427,6 +1810,47 @@ export default function AdminRepertorio() {
       // Revertir a DB value (reload) - opcional
     } finally {
       setSavingCell(prev => ({ ...prev, [keyContext]: false }));
+    }
+  };
+
+  const guardarMetricaManual = async (cancionId, nuevoValor) => {
+    const rawValue = String(nuevoValor || '').trim();
+    const meterValues = extractManualMeterValues(rawValue);
+    if (rawValue && meterValues.length === 0) {
+      alert('Usa una métrica como 4/4, 3/4 o 6/8.');
+      return;
+    }
+
+    const normalizedValue = meterValues.join(' → ');
+    if (metricaDisponible) {
+      await guardarMetadata(cancionId, 'metrica', normalizedValue);
+      return;
+    }
+
+    const currentSong = canciones.find((song) => String(song?.id) === String(cancionId));
+    if (!currentSong) return;
+
+    const keyContext = `${cancionId}_metrica`;
+    setSavingCell((previous) => ({ ...previous, [keyContext]: true }));
+
+    try {
+      const nextChordpro = replaceChordProMeterMetadata(currentSong.chordpro, normalizedValue);
+      const { error } = await supabase
+        .from('canciones')
+        .update({ chordpro: nextChordpro || null })
+        .eq('id', cancionId);
+
+      if (error) throw error;
+      setCanciones((previous) => previous.map((song) => (
+        String(song?.id) === String(cancionId)
+          ? { ...song, chordpro: nextChordpro || null }
+          : song
+      )));
+    } catch (error) {
+      console.error('Error guardando métrica manual:', error);
+      alert('No se pudo guardar la métrica.');
+    } finally {
+      setSavingCell((previous) => ({ ...previous, [keyContext]: false }));
     }
   };
 
@@ -1994,6 +2418,7 @@ export default function AdminRepertorio() {
     const estaCargando = uploading[keyContext];
     const esChordPro = campoBd === 'chordpro';
     const valorTexto = String(valor || '').trim();
+    const hasChordProContent = esChordPro && hasMeaningfulChordProContent(valorTexto);
     const puedeEliminar = ARCHIVO_ELIMINABLE_FIELDS.has(campoBd);
     const etiquetaArchivo = campoBd === 'mp3' ? 'MP3 actual' : 'Acordes actuales';
     const esVoces = campoBd === 'link_voces';
@@ -2055,12 +2480,12 @@ export default function AdminRepertorio() {
       return (
         <div className="inline-flex w-full min-w-[17rem] flex-nowrap items-center justify-center gap-2 py-0.5 px-1.5">
           <label
-            className={`cursor-pointer group inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-action transition-all shadow-sm whitespace-nowrap hover:bg-surface ${valorTexto ? 'border-brand/30 bg-brand/10 text-brand' : ''}`}
-            title={valorTexto ? 'ChordPro cargado. Puedes reemplazarlo.' : undefined}
+            className={`cursor-pointer group inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-action transition-all shadow-sm whitespace-nowrap hover:bg-surface ${hasChordProContent ? 'border-brand/30 bg-brand/10 text-brand' : ''}`}
+            title={hasChordProContent ? 'ChordPro cargado. Puedes reemplazarlo.' : undefined}
           >
             <UploadCloud className="w-4 h-4" />
             <span className="text-xs font-semibold text-content group-hover:text-action transition-colors">
-              {valorTexto ? 'Reemplazar TXT' : 'Subir TXT'}
+              {hasChordProContent ? 'Reemplazar TXT' : 'Subir TXT'}
             </span>
             <input
               type="file"
@@ -2073,10 +2498,10 @@ export default function AdminRepertorio() {
           <button
             type="button"
             onClick={() => abrirEditorChordpro(cancion)}
-            className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-all shadow-sm ${valorTexto ? 'border-brand/30 bg-brand/10 text-brand hover:bg-brand/15' : 'border-border bg-surface text-content hover:bg-background'}`}
+            className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-all shadow-sm ${hasChordProContent ? 'border-brand/30 bg-brand/10 text-brand hover:bg-brand/15' : 'border-border bg-surface text-content hover:bg-background'}`}
           >
             <PencilLine className="w-3.5 h-3.5" />
-            {valorTexto ? 'Editar' : 'Pegar'}
+            {hasChordProContent ? 'Editar' : 'Pegar'}
           </button>
         </div>
       );
@@ -2104,6 +2529,159 @@ export default function AdminRepertorio() {
   const construirLiveDirectorUrl = (cancionId) => (
     `/herramientas/live-director-preview?song=${encodeURIComponent(String(cancionId || ''))}`
   );
+
+  const renderWizardResourceCard = (song, resource) => {
+    const Icon = resource.icon;
+    const field = resource.field;
+    const rawValue = field === 'link_voces'
+      ? (song?.link_voces || song?.voces)
+      : field
+        ? song?.[field]
+        : '';
+    const hasResource = resource.type === 'chordpro'
+      ? hasMeaningfulChordProContent(rawValue)
+      : Boolean(String(rawValue || '').trim());
+    const uploadKey = field ? `${song?.id}_${field}` : '';
+    const isUploading = Boolean(uploadKey && uploading[uploadKey]);
+
+    if (resource.type === 'live') {
+      return (
+        <article className="flex min-h-[7.25rem] flex-col justify-between rounded-2xl border border-border bg-background/75 p-4">
+          <div className="flex items-start gap-3">
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-brand">
+              <Icon className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <h4 className="font-bold text-content">{resource.label}</h4>
+              <p className="mt-0.5 text-xs leading-5 text-content-muted">{resource.description}</p>
+            </div>
+          </div>
+          <a
+            href={construirLiveDirectorUrl(song.id)}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-3 inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl border border-brand/25 bg-brand/10 px-3 text-sm font-semibold text-brand transition-colors hover:bg-brand/15"
+          >
+            <ExternalLink className="h-4 w-4" />
+            Abrir
+          </a>
+        </article>
+      );
+    }
+
+    if (resource.type === 'voices') {
+      const parsedVoices = parseVoiceAdminPayload(String(rawValue || '').trim());
+      const voiceCount = parsedVoices.entries.length;
+      const status = voiceCount > 0
+        ? `${voiceCount} ${voiceCount === 1 ? 'voz' : 'voces'}`
+        : parsedVoices.legacyUrl
+          ? 'Link conectado'
+          : 'Pendiente';
+      return (
+        <article className="flex min-h-[7.25rem] flex-col justify-between rounded-2xl border border-border bg-background/75 p-4">
+          <div className="flex items-start gap-3">
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-500">
+              <Icon className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <h4 className="font-bold text-content">{resource.label}</h4>
+              <p className={`mt-0.5 text-xs font-semibold ${hasResource ? 'text-emerald-500' : 'text-content-muted'}`}>{status}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => abrirModalVoces(song)}
+            className="mt-3 inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl border border-border bg-surface px-3 text-sm font-semibold text-content transition-colors hover:border-violet-500/30 hover:text-violet-500"
+          >
+            <PencilLine className="h-4 w-4" />
+            {hasResource ? 'Gestionar' : 'Añadir'}
+          </button>
+        </article>
+      );
+    }
+
+    if (resource.type === 'chordpro') {
+      return (
+        <article className="flex min-h-[7.25rem] flex-col justify-between rounded-2xl border border-border bg-background/75 p-4">
+          <div className="flex items-start gap-3">
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-500">
+              <Icon className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <h4 className="font-bold text-content">{resource.label}</h4>
+              {resource.description && (
+                <p className="mt-0.5 text-xs leading-4 text-content-muted">{resource.description}</p>
+              )}
+              <p className={`mt-0.5 text-xs font-semibold ${hasResource ? 'text-emerald-500' : 'text-content-muted'}`}>
+                {hasResource ? 'Listo' : 'Pendiente'}
+              </p>
+            </div>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <label className="inline-flex min-h-[40px] cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-surface px-2 text-xs font-semibold text-content transition-colors hover:border-amber-500/30 hover:text-amber-500">
+              {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+              Importar
+              <input
+                type="file"
+                hidden
+                accept=".txt,.pro,.cho,.chordpro,text/plain"
+                disabled={isUploading}
+                onChange={(event) => manejarSubidaChordpro(event, song.id)}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => abrirEditorChordpro(song)}
+              className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl border border-border bg-surface px-2 text-xs font-semibold text-content transition-colors hover:border-amber-500/30 hover:text-amber-500"
+            >
+              <PencilLine className="h-4 w-4" />
+              {hasResource ? 'Editar' : 'Crear'}
+            </button>
+          </div>
+        </article>
+      );
+    }
+
+    return (
+      <article className="flex min-h-[7.25rem] flex-col justify-between rounded-2xl border border-border bg-background/75 p-4">
+        <div className="flex items-start gap-3">
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-brand">
+            <Icon className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <h4 className="font-bold text-content">{resource.label}</h4>
+            <p className={`mt-0.5 text-xs font-semibold ${hasResource ? 'text-emerald-500' : 'text-content-muted'}`}>
+              {hasResource ? 'Archivo listo' : 'Pendiente'}
+            </p>
+          </div>
+        </div>
+        <div className="mt-3 flex gap-2">
+          <label className="inline-flex min-h-[40px] flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-surface px-3 text-sm font-semibold text-content transition-colors hover:border-brand/30 hover:text-brand">
+            {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+            {hasResource ? 'Reemplazar' : 'Subir'}
+            <input
+              type="file"
+              hidden
+              accept={resource.accept}
+              disabled={isUploading}
+              onChange={(event) => manejarSubida(event, song.id, field)}
+            />
+          </label>
+          {hasResource && ARCHIVO_ELIMINABLE_FIELDS.has(field) && (
+            <button
+              type="button"
+              onClick={() => eliminarArchivoActual(song, field)}
+              disabled={isUploading}
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-danger/20 bg-danger/10 text-danger transition-colors hover:bg-danger/15 disabled:opacity-50"
+              aria-label={`Quitar ${resource.label}`}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      </article>
+    );
+  };
 
   const desplazarTablaHorizontalmente = (delta) => {
     const scrollEl = tableScrollRef.current;
@@ -2492,22 +3070,22 @@ export default function AdminRepertorio() {
   const headerActions = (
     <>
       <button
-        onClick={agregarCancion}
-        disabled={loading}
+        onClick={abrirWizardNuevaCancion}
+        disabled={loading || songWizardSaving}
         className="inline-flex min-h-[34px] items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand/90 disabled:opacity-50"
       >
         {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
         Nueva
       </button>
 
-      <span className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold md:text-xs ${cancionesPendientesChordpro.length > 0
+      <span title="Canciones sin ChordPro" className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold md:text-xs ${cancionesPendientesChordpro.length > 0
         ? 'border-amber-500/25 bg-amber-500/10 text-amber-600'
         : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600'
         }`}>
         <span className="inline-flex min-w-[1.65rem] items-center justify-center rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-black">
           {cancionesPendientesChordpro.length}
         </span>
-        <span>Sin ChordPro</span>
+        <span className="hidden sm:inline">Sin ChordPro</span>
       </span>
 
       {!sectionMarkersDisponibles && (
@@ -2556,8 +3134,8 @@ export default function AdminRepertorio() {
           </p>
         </div>
         <button
-          onClick={agregarCancion}
-          disabled={loading}
+          onClick={abrirWizardNuevaCancion}
+          disabled={loading || songWizardSaving}
           className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-brand text-white rounded-xl font-bold hover:bg-brand/90 transition-colors shadow disabled:opacity-50"
         >
           {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
@@ -2636,6 +3214,122 @@ export default function AdminRepertorio() {
           <Loader2 className="w-10 h-10 text-brand animate-spin" />
           <span className="text-content-muted font-medium tracking-wide">Cargando base de datos...</span>
         </div>
+      ) : isCompactAdmin ? (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
+          <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[1.25rem] border border-border bg-surface/95 shadow-[0_18px_38px_-24px_rgba(15,23,42,0.32)]">
+            <div className="shrink-0 border-b border-border bg-surface/95 p-3 backdrop-blur-xl">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-content-muted" aria-hidden="true" />
+                <input
+                  type="search"
+                  value={mobileSearch}
+                  onChange={(event) => setMobileSearch(event.target.value)}
+                  placeholder="Buscar canción o cantante"
+                  aria-label="Buscar canción o cantante"
+                  className="h-12 w-full rounded-xl border border-border bg-background pl-10 pr-4 text-base text-content outline-none transition-colors placeholder:text-content-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+                />
+              </div>
+
+              <div className="mt-2.5 flex items-center gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-content-muted" aria-hidden="true" />
+                  <select
+                    value={mobileFilter}
+                    onChange={(event) => setMobileFilter(event.target.value)}
+                    aria-label="Filtrar repertorio"
+                    className="h-10 w-full appearance-none rounded-xl border border-border bg-background pl-9 pr-8 text-sm font-semibold text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                  >
+                    <option value="todas">Todas las canciones</option>
+                    <option value="activas">Solo activas</option>
+                    <option value="sin_chordpro">Sin ChordPro</option>
+                  </select>
+                  <ChevronRight className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 rotate-90 text-content-muted" aria-hidden="true" />
+                </div>
+                <span className="inline-flex h-10 shrink-0 items-center rounded-xl border border-border bg-background px-3 text-xs font-bold tabular-nums text-content-muted">
+                  {mobileSongs.length} de {canciones.length}
+                </span>
+              </div>
+            </div>
+
+            <div className="admin-mobile-song-list min-h-0 flex-1 space-y-2.5 overflow-y-auto bg-background/70 p-3 pb-[calc(env(safe-area-inset-bottom)+5.25rem)]">
+              {mobileSongs.map((song) => {
+                const estado = String(song?.estado || 'Sin estado').trim() || 'Sin estado';
+                const isArchived = normalizeSearchText(estado) === 'archivada';
+                const resourceCount = getSongResourceCount(song);
+                const metadataItems = [
+                  song?.tonalidad ? `Tono ${song.tonalidad}` : '',
+                  song?.bpm ? `${song.bpm} BPM` : '',
+                  song?.categoria || '',
+                ].filter(Boolean);
+
+                return (
+                  <article key={song.id} className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
+                    <div className="flex items-start gap-3">
+                      <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-brand">
+                        <Music2 className="h-5 w-5" aria-hidden="true" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <h2 className="truncate text-base font-bold text-content">{song?.titulo || 'Sin título'}</h2>
+                            <p className="mt-0.5 truncate text-sm text-content-muted">{song?.cantante || 'Sin cantante'}</p>
+                          </div>
+                          <span className={`inline-flex shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.08em] ${isArchived ? 'bg-content-muted/10 text-content-muted' : 'bg-emerald-500/10 text-emerald-500'}`}>
+                            {estado}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {metadataItems.length > 0 ? metadataItems.map((item) => (
+                            <span key={`${song.id}-${item}`} className="rounded-full border border-border bg-background px-2.5 py-1 text-[11px] font-semibold text-content-muted">
+                              {item}
+                            </span>
+                          )) : (
+                            <span className="text-xs text-content-muted">Sin datos musicales</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-content">{resourceCount}/6 recursos</p>
+                        <p className={`mt-0.5 text-[11px] ${hasMeaningfulChordProContent(song?.chordpro) ? 'text-emerald-500' : 'text-amber-500'}`}>
+                          {hasMeaningfulChordProContent(song?.chordpro) ? 'ChordPro listo' : 'Falta ChordPro'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => abrirWizardEditarCancion(song)}
+                        className="inline-flex min-h-[42px] shrink-0 items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-brand/90"
+                        aria-label={`Editar ${song?.titulo || 'canción'}`}
+                      >
+                        <PencilLine className="h-4 w-4" />
+                        Editar
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+
+              {mobileSongs.length === 0 && (
+                <div className="flex min-h-56 flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-surface px-6 text-center">
+                  <Music2 className="h-8 w-8 text-content-muted" />
+                  <p className="mt-3 font-bold text-content">No encontramos canciones</p>
+                  <p className="mt-1 text-sm text-content-muted">Cambia el filtro o crea una nueva.</p>
+                  <button
+                    type="button"
+                    onClick={abrirWizardNuevaCancion}
+                    className="mt-4 inline-flex min-h-[42px] items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-bold text-white"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Nueva canción
+                  </button>
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-2 md:px-3 xl:px-4">
           <section className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-[1.05rem] border border-border/90 bg-surface/95 shadow-[0_18px_38px_-24px_rgba(15,23,42,0.28)]">
@@ -2703,16 +3397,7 @@ export default function AdminRepertorio() {
                         <EditableCell cancionId={cancion.id} campoBd="bpm" valorInicial={cancion.bpm} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_bpm`]} anchoClases="min-w-[5rem] max-w-[5rem]" />
                       </td>
                       <td className="p-0 align-top">
-                        {metricaDisponible ? (
-                          <EditableCell cancionId={cancion.id} campoBd="metrica" valorInicial={getSongMeter(cancion)} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_metrica`]} anchoClases="min-w-[5.5rem] max-w-[5.5rem]" />
-                        ) : (
-                          <span
-                            className="flex min-h-[38px] min-w-[5.5rem] items-center px-2.5 text-[13px] text-content"
-                            title="Valor leído desde ChordPro"
-                          >
-                            {getSongMeter(cancion) || '—'}
-                          </span>
-                        )}
+                        <EditableCell cancionId={cancion.id} campoBd="metrica" valorInicial={getSongMeter(cancion)} onSave={guardarMetricaManual} isSaving={savingCell[`${cancion.id}_metrica`]} anchoClases="min-w-[5.5rem] max-w-[5.5rem]" />
                       </td>
                       <td className="p-0 align-top">
                         <EditableCell cancionId={cancion.id} campoBd="categoria" valorInicial={cancion.categoria} onSave={guardarMetadata} isSaving={savingCell[`${cancion.id}_categoria`]} anchoClases="min-w-[8rem] max-w-[8rem]" />
@@ -2804,10 +3489,431 @@ export default function AdminRepertorio() {
             )}
             {canciones.length === 0 && !loading && (
               <div className="flex shrink-0 items-center justify-center px-6 py-10 text-center font-medium text-content-muted bg-surface">
-                Aun no hay canciones creadas. Haz clic en "Anadir Cancion" para comenzar.
+                Aún no hay canciones creadas. Usa “Nueva” para comenzar.
               </div>
             )}
           </section>
+        </div>
+      )}
+
+      {songWizardOpen && (
+        <div
+          className="fixed inset-0 z-[55] flex items-end justify-center bg-slate-950/72 backdrop-blur-md sm:items-center sm:p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) cerrarSongWizard();
+          }}
+        >
+          <div
+            ref={songWizardDialogRef}
+            className="flex max-h-[min(94dvh,52rem)] w-full flex-col overflow-hidden rounded-t-[1.65rem] border border-border bg-surface shadow-2xl sm:max-w-3xl sm:rounded-[1.65rem]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-song-wizard-title"
+          >
+            <div className="shrink-0 border-b border-border bg-surface/95 px-4 pb-3 pt-4 backdrop-blur-xl sm:px-6 sm:pt-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-brand">
+                    {songWizardMode === 'create' ? 'Nueva canción' : 'Editar canción'}
+                  </p>
+                  <h2
+                    id="admin-song-wizard-title"
+                    ref={songWizardHeadingRef}
+                    tabIndex="-1"
+                    className="mt-1 truncate text-xl font-black text-content outline-none sm:text-2xl"
+                  >
+                    {songWizardMode === 'create'
+                      ? 'Añadir al repertorio'
+                      : (songWizardDraft.titulo || 'Editar canción')}
+                  </h2>
+                  <p className="mt-1 text-sm text-content-muted">
+                    Paso {songWizardStep + 1} de {SONG_WIZARD_STEPS.length} · {SONG_WIZARD_STEPS[songWizardStep].label}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={cerrarSongWizard}
+                  disabled={songWizardSaving}
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-background text-content-muted transition-colors hover:bg-surface hover:text-content disabled:opacity-50"
+                  aria-label="Cerrar asistente de canción"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <ol className="mt-4 grid grid-cols-4 gap-1.5" aria-label="Progreso de la canción">
+                {SONG_WIZARD_STEPS.map((step, index) => {
+                  const canOpenStep = songWizardMode === 'edit'
+                    ? !(songWizardDirty && index === 3)
+                    : index <= songWizardStep;
+                  const isActive = index === songWizardStep;
+                  const isComplete = index < songWizardStep || (songWizardMode === 'edit' && index < 3 && !songWizardDirty);
+                  return (
+                    <li key={step.label}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!canOpenStep) return;
+                          setSongWizardFeedback('');
+                          setSongWizardStep(index);
+                        }}
+                        disabled={!canOpenStep || songWizardSaving}
+                        aria-current={isActive ? 'step' : undefined}
+                        className={`flex min-h-[3.35rem] w-full flex-col items-center justify-center rounded-xl border px-1.5 transition-colors ${isActive
+                          ? 'border-brand bg-brand text-white shadow-sm'
+                          : isComplete
+                            ? 'border-brand/25 bg-brand/10 text-brand'
+                            : 'border-border bg-background text-content-muted'} disabled:cursor-not-allowed disabled:opacity-55`}
+                      >
+                        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-current/10 text-[10px] font-black">
+                          {isComplete && !isActive ? <Check className="h-3 w-3" /> : index + 1}
+                        </span>
+                        <span className="mt-0.5 text-[10px] font-bold sm:text-xs">{step.shortLabel}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+
+            <div className="admin-song-wizard-body min-h-0 flex-1 overflow-y-auto bg-background/70 px-4 py-5 sm:px-6 sm:py-6">
+              {songWizardStep === 0 && (
+                <section aria-labelledby="wizard-step-song-title">
+                  <div className="mb-5 flex items-start gap-3">
+                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-brand">
+                      <FileAudio className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <h3 id="wizard-step-song-title" className="text-lg font-black text-content">Identifica la canción</h3>
+                      <p className="mt-0.5 text-sm text-content-muted">Nombre, cantante y audio principal.</p>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="block sm:col-span-2">
+                      <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">Título *</span>
+                      <input
+                        type="text"
+                        value={songWizardDraft.titulo}
+                        onChange={(event) => actualizarSongWizardDraft('titulo', event.target.value)}
+                        placeholder="Ej. Eres fiel"
+                        required
+                        autoFocus
+                        className="mt-2 h-12 w-full rounded-xl border border-border bg-surface px-4 text-base font-semibold text-content outline-none placeholder:font-normal placeholder:text-content-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+                      />
+                    </label>
+                    <label className="block sm:col-span-2">
+                      <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">
+                        Cantante o banda {songWizardMode === 'create' ? '*' : ''}
+                      </span>
+                      <input
+                        type="text"
+                        value={songWizardDraft.cantante}
+                        onChange={(event) => actualizarSongWizardDraft('cantante', event.target.value)}
+                        placeholder="Ej. Miel San Marcos"
+                        required={songWizardMode === 'create'}
+                        className="mt-2 h-12 w-full rounded-xl border border-border bg-surface px-4 text-base text-content outline-none placeholder:text-content-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+                      />
+                    </label>
+                    <div className="sm:col-span-2">
+                      <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">
+                        MP3 principal {songWizardMode === 'create' ? '*' : ''}
+                      </span>
+                      <div className={`mt-2 flex min-h-[4.5rem] items-center gap-3 rounded-xl border p-3 transition-colors ${songWizardHasMp3
+                        ? 'border-emerald-500/25 bg-emerald-500/10'
+                        : 'border-border bg-surface'}`}
+                      >
+                        <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${songWizardHasMp3
+                          ? 'bg-emerald-500/15 text-emerald-500'
+                          : 'bg-brand/10 text-brand'}`}
+                        >
+                          {songWizardHasMp3 ? <CheckCircle className="h-5 w-5" /> : <FileAudio className="h-5 w-5" />}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-bold text-content">
+                            {songWizardMp3File?.name || (songWizardSong?.mp3 ? 'MP3 actual listo' : 'Selecciona el MP3')}
+                          </p>
+                          <p className="mt-0.5 text-xs text-content-muted">
+                            {songWizardMp3File ? 'Se subirá al continuar.' : 'Audio principal de la canción.'}
+                          </p>
+                        </div>
+                        <label className="inline-flex min-h-[42px] shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 text-sm font-bold text-content transition-colors hover:border-brand/30 hover:text-brand">
+                          <UploadCloud className="h-4 w-4" />
+                          <span className="hidden sm:inline">{songWizardHasMp3 ? 'Cambiar' : 'Elegir'}</span>
+                          <input
+                            type="file"
+                            hidden
+                            accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac"
+                            onChange={(event) => {
+                              const file = event.target.files?.[0] || null;
+                              setSongWizardMp3File(file);
+                              if (file) setSongWizardDirty(true);
+                              setSongWizardFeedback('');
+                              event.target.value = '';
+                            }}
+                          />
+                        </label>
+                        {songWizardMp3File && (
+                          <button
+                            type="button"
+                            onClick={() => setSongWizardMp3File(null)}
+                            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-background text-content-muted transition-colors hover:text-danger"
+                            aria-label="Quitar MP3 seleccionado"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              )}
+
+              {songWizardStep === 1 && (
+                <section aria-labelledby="wizard-step-music-title">
+                  <div className="mb-5 flex items-start gap-3">
+                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-500">
+                      <Mic2 className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <h3 id="wizard-step-music-title" className="text-lg font-black text-content">Datos musicales</h3>
+                      <p className="mt-0.5 text-sm text-content-muted">Lo necesario para preparar al equipo.</p>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">Tonalidad</span>
+                      <input
+                        type="text"
+                        value={songWizardDraft.tonalidad}
+                        onChange={(event) => actualizarSongWizardDraft('tonalidad', event.target.value)}
+                        placeholder="Ej. G"
+                        className="mt-2 h-12 w-full rounded-xl border border-border bg-surface px-4 text-base text-content outline-none placeholder:text-content-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">BPM</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min="1"
+                        max="300"
+                        value={songWizardDraft.bpm}
+                        onChange={(event) => actualizarSongWizardDraft('bpm', event.target.value)}
+                        placeholder="Ej. 72"
+                        className="mt-2 h-12 w-full rounded-xl border border-border bg-surface px-4 text-base text-content outline-none placeholder:text-content-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">Métrica</span>
+                      <input
+                        type="text"
+                        value={songWizardDraft.metrica}
+                        onChange={(event) => actualizarSongWizardDraft('metrica', event.target.value)}
+                        placeholder="Ej. 4/4"
+                        className="mt-2 h-12 w-full rounded-xl border border-border bg-surface px-4 text-base text-content outline-none placeholder:text-content-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">Voz</span>
+                      <input
+                        type="text"
+                        list="admin-song-voice-options"
+                        value={songWizardDraft.voz}
+                        onChange={(event) => actualizarSongWizardDraft('voz', event.target.value)}
+                        placeholder="Ej. Hombre"
+                        className="mt-2 h-12 w-full rounded-xl border border-border bg-surface px-4 text-base text-content outline-none placeholder:text-content-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+                      />
+                      <datalist id="admin-song-voice-options">
+                        <option value="Hombre" />
+                        <option value="Mujer" />
+                        <option value="Mixta" />
+                      </datalist>
+                    </label>
+                  </div>
+                </section>
+              )}
+
+              {songWizardStep === 2 && (
+                <section aria-labelledby="wizard-step-order-title">
+                  <div className="mb-5 flex items-start gap-3">
+                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-500/10 text-sky-500">
+                      <FolderOpen className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <h3 id="wizard-step-order-title" className="text-lg font-black text-content">Organización</h3>
+                      <p className="mt-0.5 text-sm text-content-muted">Clasifica y deja el enlace principal.</p>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">Categoría</span>
+                      <input
+                        type="text"
+                        list="admin-song-category-options"
+                        value={songWizardDraft.categoria}
+                        onChange={(event) => actualizarSongWizardDraft('categoria', event.target.value)}
+                        placeholder="Ej. Rápida"
+                        className="mt-2 h-12 w-full rounded-xl border border-border bg-surface px-4 text-base text-content outline-none placeholder:text-content-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+                      />
+                      <datalist id="admin-song-category-options">
+                        <option value="Lenta" />
+                        <option value="Rápida" />
+                        <option value="Transición" />
+                      </datalist>
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">Tema</span>
+                      <input
+                        type="text"
+                        value={songWizardDraft.tema}
+                        onChange={(event) => actualizarSongWizardDraft('tema', event.target.value)}
+                        placeholder="Ej. Gratitud"
+                        className="mt-2 h-12 w-full rounded-xl border border-border bg-surface px-4 text-base text-content outline-none placeholder:text-content-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">Estado</span>
+                      <select
+                        value={songWizardDraft.estado}
+                        onChange={(event) => actualizarSongWizardDraft('estado', event.target.value)}
+                        className="mt-2 h-12 w-full rounded-xl border border-border bg-surface px-4 text-base text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                      >
+                        <option value="Activa">Activa</option>
+                        <option value="Nueva">Nueva</option>
+                        <option value="Archivada">Archivada</option>
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">YouTube</span>
+                      <input
+                        type="text"
+                        value={songWizardDraft.link_youtube}
+                        onChange={(event) => actualizarSongWizardDraft('link_youtube', event.target.value)}
+                        placeholder="Enlace o referencia"
+                        className="mt-2 h-12 w-full rounded-xl border border-border bg-surface px-4 text-base text-content outline-none placeholder:text-content-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+                      />
+                    </label>
+                  </div>
+                </section>
+              )}
+
+              {songWizardStep === 3 && (
+                <section aria-labelledby="wizard-step-resources-title">
+                  <div className="mb-5 flex items-start gap-3">
+                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-500">
+                      <Sparkles className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <h3 id="wizard-step-resources-title" className="text-lg font-black text-content">Adicionales</h3>
+                      <p className="mt-0.5 text-sm text-content-muted">Completa solo lo que necesites.</p>
+                    </div>
+                  </div>
+
+                  {songWizardSong ? (
+                    <div className="space-y-6">
+                      <div>
+                        <p className="mb-2 text-[11px] font-black uppercase tracking-[0.16em] text-content-muted">Material adicional</p>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {[
+                            { field: 'link_acordes', label: 'Acordes', icon: FileText, accept: '.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*' },
+                            { field: 'link_letras', label: 'Letras', icon: FileText, accept: '.pdf,.doc,.docx,.txt,text/plain,application/pdf' },
+                            { field: 'link_voces', label: 'Voces', icon: Mic2, type: 'voices' },
+                            { field: 'link_secuencias', label: 'Secuencias', icon: FolderOpen, accept: '.zip,.wav,.mp3,.m4a,.aac,.ogg,.flac,audio/*,application/zip' },
+                          ].map((resource) => (
+                            <React.Fragment key={resource.field}>
+                              {renderWizardResourceCard(songWizardSong, resource)}
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <p className="mb-2 text-[11px] font-black uppercase tracking-[0.16em] text-content-muted">Guía y prueba</p>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {[
+                            { field: 'chordpro', label: 'Guía musical', icon: Music2, type: 'chordpro', description: 'ChordPro · letra, acordes y secciones.' },
+                            { label: 'Live Director', icon: ExternalLink, type: 'live', description: 'Prueba la canción en modo dirección.' },
+                          ].map((resource) => (
+                            <React.Fragment key={resource.field || resource.type}>
+                              {renderWizardResourceCard(songWizardSong, resource)}
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex min-h-44 items-center justify-center rounded-2xl border border-dashed border-border bg-surface text-sm font-semibold text-content-muted">
+                      Preparando la canción…
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {songWizardFeedback && (
+                <p
+                  className={`mt-5 rounded-xl border px-4 py-3 text-sm font-semibold ${/error|existe|encontró|escribe|selecciona|usa una métrica/i.test(songWizardFeedback)
+                    ? 'border-danger/20 bg-danger/10 text-danger'
+                    : 'border-brand/20 bg-brand/10 text-brand'}`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  {songWizardFeedback}
+                </p>
+              )}
+            </div>
+
+            <div className="shrink-0 border-t border-border bg-surface/95 px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur-xl sm:px-6 sm:pb-4">
+              <div className="flex items-center gap-2 sm:justify-end">
+                {songWizardStep > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSongWizardFeedback('');
+                      setSongWizardStep((previous) => Math.max(0, previous - 1));
+                    }}
+                    disabled={songWizardSaving}
+                    className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 text-sm font-bold text-content transition-colors hover:bg-surface disabled:opacity-50"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Atrás
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={cerrarSongWizard}
+                    disabled={songWizardSaving}
+                    className="inline-flex min-h-[46px] items-center justify-center rounded-xl border border-border bg-background px-4 text-sm font-bold text-content transition-colors hover:bg-surface disabled:opacity-50"
+                  >
+                    Cancelar
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={avanzarSongWizard}
+                  disabled={songWizardSaving || (songWizardStep === 0 && !songWizardFirstStepReady)}
+                  className="inline-flex min-h-[46px] flex-1 items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-black text-white shadow-sm transition-colors hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none sm:min-w-[11rem]"
+                >
+                  {songWizardSaving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : songWizardStep === 3 ? (
+                    <Check className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                  {songWizardSaving
+                    ? 'Guardando…'
+                    : songWizardStep === 3
+                      ? 'Finalizar'
+                      : songWizardStep === 0
+                        ? (songWizardMode === 'create' ? 'Crear y continuar' : 'Guardar y continuar')
+                      : songWizardStep === 2
+                        ? 'Guardar y continuar'
+                        : 'Continuar'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -3046,7 +4152,7 @@ export default function AdminRepertorio() {
 
       {editorChordproAbierto && (
         <div
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-slate-950/70 p-2 pb-[calc(3.5rem+env(safe-area-inset-bottom))] backdrop-blur-sm md:p-3 md:pb-[calc(3.5rem+env(safe-area-inset-bottom))]"
+          className="fixed inset-0 z-[60] flex items-start justify-center overflow-hidden bg-slate-950/70 p-2 pb-[calc(3.5rem+env(safe-area-inset-bottom))] backdrop-blur-sm md:p-3 md:pb-[calc(3.5rem+env(safe-area-inset-bottom))]"
           role="dialog"
           aria-modal="true"
           aria-labelledby="admin-chordpro-editor-title"
@@ -3701,6 +4807,30 @@ export default function AdminRepertorio() {
       )}
 
       <style>{`
+        .admin-mobile-song-list,
+        .admin-song-wizard-body {
+          overscroll-behavior: contain;
+          scrollbar-gutter: stable;
+          scrollbar-width: thin;
+          scrollbar-color: rgba(13, 148, 136, 0.78) rgba(148, 163, 184, 0.12);
+        }
+
+        .admin-mobile-song-list::-webkit-scrollbar,
+        .admin-song-wizard-body::-webkit-scrollbar {
+          width: 8px;
+        }
+
+        .admin-mobile-song-list::-webkit-scrollbar-track,
+        .admin-song-wizard-body::-webkit-scrollbar-track {
+          background: rgba(148, 163, 184, 0.12);
+        }
+
+        .admin-mobile-song-list::-webkit-scrollbar-thumb,
+        .admin-song-wizard-body::-webkit-scrollbar-thumb {
+          border-radius: 999px;
+          background: rgba(13, 148, 136, 0.78);
+        }
+
         .admin-table-head {
           position: sticky;
           top: 0;

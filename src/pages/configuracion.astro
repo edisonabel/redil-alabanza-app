@@ -10,35 +10,464 @@ const canManageOperations = Boolean(Astro.locals.canManageOperations);
 if (!isAdmin && !canManageOperations) {
   return Astro.redirect('/programacion');
 }
+
+const settingsStepCount = isAdmin ? 3 : 1;
+const settingsGridStyle = `grid-template-columns: repeat(${settingsStepCount}, minmax(0, 1fr));`;
 ---
 
 <Layout>
-  <section class="w-full max-w-6xl mx-auto pt-4 md:pt-8 pb-24">
-    <header class="mb-6 flex items-center gap-3">
-      <a href="/programacion" class="inline-flex items-center justify-center w-10 h-10 rounded-xl border border-border bg-surface text-content-muted hover:text-content hover:bg-background transition-colors">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="m15 18-6-6 6-6" />
-        </svg>
-      </a>
-      <div>
-        <div class="page-title-row">
-          <span class="page-title-icon" aria-hidden="true">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 3a3 3 0 0 0-3 3v1.1a7.96 7.96 0 0 0-1.64.95l-.78-.45a3 3 0 1 0-3 5.2l.78.45a8.6 8.6 0 0 0 0 1.9l-.78.45a3 3 0 1 0 3 5.2l.78-.45a7.96 7.96 0 0 0 1.64.95V18a3 3 0 1 0 6 0v-1.1a7.96 7.96 0 0 0 1.64-.95l.78.45a3 3 0 1 0 3-5.2l-.78-.45a8.6 8.6 0 0 0 0-1.9l.78-.45a3 3 0 1 0-3-5.2l-.78.45A7.96 7.96 0 0 0 15 7.1V6a3 3 0 0 0-3-3Z"/><circle cx="12" cy="12" r="3"/></svg>
+  <div class="settings-wizard-shell">
+    <article class="settings-wizard-panel" aria-labelledby="settings-page-title">
+      <header class="settings-wizard-hero">
+        <div class="settings-wizard-hero-orb settings-wizard-hero-orb--one" aria-hidden="true"></div>
+        <div class="settings-wizard-hero-orb settings-wizard-hero-orb--two" aria-hidden="true"></div>
+        <div class="settings-wizard-hero-inner">
+          <span class="settings-wizard-hero-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 3a3 3 0 0 0-3 3v1.1a8 8 0 0 0-1.64.95l-.78-.45a3 3 0 1 0-3 5.2l.78.45a8.6 8.6 0 0 0 0 1.9l-.78.45a3 3 0 1 0 3 5.2l.78-.45A8 8 0 0 0 9 20.9V18a3 3 0 1 0 6 0v-1.1a8 8 0 0 0 1.64-.95l.78.45a3 3 0 1 0 3-5.2l-.78-.45a8.6 8.6 0 0 0 0-1.9l.78-.45a3 3 0 1 0-3-5.2l-.78.45A8 8 0 0 0 15 7.1V6a3 3 0 0 0-3-3Z"/><circle cx="12" cy="12" r="3"/></svg>
           </span>
-          <h1 class="page-title text-[2.1rem] md:text-[3.5rem]">
-            {isAdmin ? 'Configuración de Branding' : 'Gestión de Repertorio'}
-          </h1>
+          <div class="settings-wizard-hero-copy">
+            <p>Administraci&oacute;n</p>
+            <h1 id="settings-page-title">Configuraci&oacute;n</h1>
+            <span>Trabaja cada &aacute;rea por separado.</span>
+          </div>
+          <span class="settings-wizard-access-badge">{isAdmin ? 'Administrador' : 'Operaciones'}</span>
         </div>
-        <p class="page-subtitle text-sm">
-          {isAdmin
-            ? 'Panel white-label para tokens semánticos en tiempo real.'
-            : 'Carga canciones y administra sus recursos.'}
-        </p>
-      </div>
-    </header>
+      </header>
 
-    <PanelModoExperto client:idle />
-    {isAdmin && <PanelBranding client:idle />}
-    {isAdmin && <PanelAdminPush client:idle isAdmin={isAdmin} />}
-  </section>
+      <nav class="settings-wizard-nav" style={settingsGridStyle} aria-label="Secciones de configuraci&oacute;n" role="tablist">
+        <button type="button" class="settings-wizard-nav-item" data-settings-step="0" data-settings-key="repertorio" role="tab" aria-selected="true" aria-controls="settings-step-repertorio">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          <span>Repertorio</span>
+        </button>
+        {isAdmin && (
+          <button type="button" class="settings-wizard-nav-item" data-settings-step="1" data-settings-key="branding" role="tab" aria-selected="false" aria-controls="settings-step-branding" tabindex="-1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M12 3a9 9 0 0 0 0 18h1.5a2.5 2.5 0 0 0 0-5H12a1.5 1.5 0 0 1 0-3h3a6 6 0 0 0 0-12Z"/><circle cx="7.5" cy="10.5" r=".8" fill="currentColor"/><circle cx="9" cy="6.8" r=".8" fill="currentColor"/><circle cx="13" cy="5.8" r=".8" fill="currentColor"/></svg>
+            <span>Branding</span>
+          </button>
+        )}
+        {isAdmin && (
+          <button type="button" class="settings-wizard-nav-item" data-settings-step="2" data-settings-key="alertas" role="tab" aria-selected="false" aria-controls="settings-step-alertas" tabindex="-1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
+            <span>Alertas</span>
+          </button>
+        )}
+      </nav>
+
+      <div class="settings-wizard-stage" id="settings-wizard-stage">
+        <section id="settings-step-repertorio" class="settings-wizard-step" data-settings-panel="0" data-settings-key="repertorio" data-state="active" role="tabpanel">
+          <PanelModoExperto client:idle />
+        </section>
+        {isAdmin && (
+          <section id="settings-step-branding" class="settings-wizard-step" data-settings-panel="1" data-settings-key="branding" data-state="after" role="tabpanel" aria-hidden="true" inert>
+            <PanelBranding client:idle />
+          </section>
+        )}
+        {isAdmin && (
+          <section id="settings-step-alertas" class="settings-wizard-step" data-settings-panel="2" data-settings-key="alertas" data-state="after" role="tabpanel" aria-hidden="true" inert>
+            <PanelAdminPush client:idle isAdmin={isAdmin} />
+          </section>
+        )}
+      </div>
+    </article>
+  </div>
 </Layout>
+
+<style>
+  .settings-wizard-shell {
+    display: flex;
+    width: 100%;
+    min-height: 640px;
+    height: calc(100dvh - 72px);
+    align-items: stretch;
+    justify-content: center;
+  }
+
+  .settings-wizard-panel {
+    position: relative;
+    display: flex;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+    color: rgb(var(--text-base));
+    background: rgb(var(--bg-background));
+  }
+
+  .settings-wizard-hero {
+    position: relative;
+    height: 190px;
+    flex: 0 0 190px;
+    overflow: hidden;
+    isolation: isolate;
+    color: white;
+    background:
+      radial-gradient(circle at 76% 4%, rgb(255 255 255 / 0.2), transparent 26%),
+      linear-gradient(128deg, rgb(15 23 42), rgb(30 64 175) 58%, rgb(88 28 135));
+  }
+
+  .settings-wizard-hero::after {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    content: '';
+    pointer-events: none;
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.06), transparent 45%, rgb(2 6 23 / 0.22));
+  }
+
+  .settings-wizard-hero-orb {
+    position: absolute;
+    border-radius: 999px;
+    opacity: 0.38;
+    filter: blur(2px);
+    pointer-events: none;
+  }
+
+  .settings-wizard-hero-orb--one {
+    top: -100px;
+    right: 8%;
+    width: 280px;
+    height: 280px;
+    background: rgb(125 211 252 / 0.34);
+  }
+
+  .settings-wizard-hero-orb--two {
+    bottom: -130px;
+    left: 24%;
+    width: 250px;
+    height: 250px;
+    background: rgb(167 139 250 / 0.28);
+  }
+
+  .settings-wizard-hero-inner {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 1.35rem max(5.5rem, calc((100vw - 980px) / 2));
+  }
+
+  .settings-wizard-hero-icon {
+    display: inline-flex;
+    width: 50px;
+    height: 50px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgb(255 255 255 / 0.28);
+    border-radius: 1rem;
+    background: rgb(15 23 42 / 0.34);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12);
+    backdrop-filter: blur(14px);
+  }
+
+  .settings-wizard-hero-icon svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .settings-wizard-hero-icon {
+    color: rgb(191 219 254);
+  }
+
+  .settings-wizard-hero-copy {
+    min-width: 0;
+  }
+
+  .settings-wizard-hero-copy p {
+    color: rgb(255 255 255 / 0.6);
+    font-size: 0.62rem;
+    font-weight: 950;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .settings-wizard-hero-copy h1 {
+    margin-top: 0.28rem;
+    color: white;
+    font-size: clamp(2rem, 4vw, 3rem);
+    font-weight: 950;
+    line-height: 1;
+    letter-spacing: -0.05em;
+  }
+
+  .settings-wizard-hero-copy > span {
+    display: block;
+    margin-top: 0.42rem;
+    color: rgb(255 255 255 / 0.68);
+    font-size: 0.76rem;
+    font-weight: 620;
+  }
+
+  .settings-wizard-access-badge {
+    margin-left: auto;
+    padding: 0.52rem 0.72rem;
+    color: rgb(255 255 255 / 0.84);
+    border: 1px solid rgb(255 255 255 / 0.22);
+    border-radius: 999px;
+    background: rgb(15 23 42 / 0.28);
+    font-size: 0.62rem;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    backdrop-filter: blur(14px);
+  }
+
+  .settings-wizard-nav {
+    position: relative;
+    z-index: 3;
+    display: grid;
+    flex: 0 0 auto;
+    gap: 0.3rem;
+    padding: 0.68rem max(1rem, calc((100vw - 980px) / 2));
+    border-bottom: 1px solid rgb(var(--border-base));
+    background: rgb(var(--bg-surface) / 0.96);
+    box-shadow: 0 12px 32px -28px rgb(15 23 42 / 0.68);
+    backdrop-filter: blur(20px) saturate(1.1);
+  }
+
+  .settings-wizard-nav-item {
+    display: flex;
+    min-width: 0;
+    min-height: 48px;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    padding: 0.45rem 0.65rem;
+    color: rgb(var(--text-muted));
+    border: 1px solid transparent;
+    border-radius: 1.05rem;
+    font-size: 0.72rem;
+    font-weight: 850;
+    transition: color 0.22s ease, background-color 0.22s ease, border-color 0.22s ease, transform 0.22s ease;
+  }
+
+  .settings-wizard-nav-item svg {
+    width: 17px;
+    height: 17px;
+    flex: 0 0 auto;
+  }
+
+  .settings-wizard-nav-item[aria-selected='true'] {
+    color: white;
+    border-color: rgb(255 255 255 / 0.28);
+    background: linear-gradient(110deg, rgb(59 130 246), rgb(129 140 248));
+    box-shadow: 0 12px 24px -16px rgb(37 99 235 / 0.9), inset 0 1px 0 rgb(255 255 255 / 0.28);
+  }
+
+  .settings-wizard-nav-item:not([aria-selected='true']):hover {
+    color: rgb(var(--text-base));
+    transform: translateY(-1px);
+  }
+
+  .settings-wizard-nav-item:focus-visible {
+    outline: 3px solid rgb(var(--color-brand) / 0.34);
+    outline-offset: 2px;
+  }
+
+  .settings-wizard-stage {
+    position: relative;
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 100% 0%, rgb(var(--color-brand) / 0.1), transparent 32%),
+      linear-gradient(180deg, color-mix(in srgb, rgb(var(--bg-background)) 94%, rgb(var(--color-brand)) 6%), rgb(var(--bg-background)) 42%);
+  }
+
+  .settings-wizard-step {
+    position: absolute;
+    inset: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 2rem max(1.25rem, calc((100vw - 980px) / 2)) 5.5rem;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(36px) scale(0.992);
+    transition: opacity 0.3s ease, transform 0.46s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .settings-wizard-step[data-state='before'] {
+    transform: translateX(-36px) scale(0.992);
+  }
+
+  .settings-wizard-step[data-state='active'] {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0) scale(1);
+  }
+
+  @media (max-width: 639px) {
+    .settings-wizard-shell {
+      display: block;
+      width: 100vw;
+      max-width: 100vw;
+      height: auto;
+      min-height: calc(100dvh - 66px);
+      margin-right: calc(50% - 50vw);
+      margin-left: calc(50% - 50vw);
+    }
+
+    .settings-wizard-panel {
+      height: auto;
+      min-height: calc(100dvh - 66px);
+      overflow: visible;
+    }
+
+    .settings-wizard-hero {
+      height: 176px;
+      flex-basis: 176px;
+    }
+
+    .settings-wizard-hero-inner {
+      gap: 0.65rem;
+      padding: 1rem 4.6rem 1rem 0.85rem;
+    }
+
+    .settings-wizard-hero-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 0.85rem;
+    }
+
+    .settings-wizard-hero-icon {
+      display: none;
+    }
+
+    .settings-wizard-hero-copy h1 {
+      font-size: clamp(1.9rem, 9vw, 2.45rem);
+    }
+
+    .settings-wizard-hero-copy > span {
+      max-width: 210px;
+      font-size: 0.68rem;
+    }
+
+    .settings-wizard-access-badge {
+      display: none;
+    }
+
+    .settings-wizard-nav {
+      position: sticky;
+      top: 0;
+      z-index: 15;
+      gap: 0.12rem;
+      padding: 0.64rem 0.42rem;
+    }
+
+    .settings-wizard-nav-item {
+      min-height: 54px;
+      flex-direction: column;
+      gap: 0.16rem;
+      padding: 0.3rem 0.12rem;
+      font-size: 0.58rem;
+    }
+
+    .settings-wizard-nav-item svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .settings-wizard-stage {
+      min-height: 100dvh;
+      overflow: visible;
+    }
+
+    .settings-wizard-step {
+      position: relative;
+      inset: auto;
+      display: none;
+      overflow: visible;
+      padding: 1.2rem 0.85rem 6rem;
+    }
+
+    .settings-wizard-step[data-state='active'] {
+      display: block;
+      animation: settings-mobile-panel-enter 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    @keyframes settings-mobile-panel-enter {
+      from { opacity: 0.28; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .settings-wizard-nav-item,
+    .settings-wizard-step {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
+  }
+</style>
+
+<script>
+  const initSettingsWizard = () => {
+    const previousAbort = (window as any).__settingsWizardAbort as AbortController | undefined;
+    previousAbort?.abort();
+
+    const controller = new AbortController();
+    const signal = controller.signal;
+    (window as any).__settingsWizardAbort = controller;
+
+    const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-settings-step]'));
+    const panels = Array.from(document.querySelectorAll<HTMLElement>('[data-settings-panel]'));
+    if (!tabs.length || !panels.length) return;
+
+    const setStep = (requestedStep: number, { focusTab = false, updateHash = false } = {}) => {
+      const nextStep = Math.max(0, Math.min(tabs.length - 1, requestedStep));
+
+      tabs.forEach((tab, index) => {
+        const isActive = index === nextStep;
+        tab.setAttribute('aria-selected', String(isActive));
+        tab.tabIndex = isActive ? 0 : -1;
+        if (isActive && focusTab) tab.focus();
+      });
+
+      panels.forEach((panel, index) => {
+        const isActive = index === nextStep;
+        panel.dataset.state = isActive ? 'active' : index < nextStep ? 'before' : 'after';
+        panel.setAttribute('aria-hidden', String(!isActive));
+        panel.inert = !isActive;
+        if (isActive) panel.scrollTop = 0;
+      });
+
+      if (updateHash) {
+        const stepKey = tabs[nextStep]?.dataset.settingsKey || '';
+        const nextUrl = `${window.location.pathname}${window.location.search}${stepKey ? `#${stepKey}` : ''}`;
+        window.history.replaceState(window.history.state, '', nextUrl);
+      }
+    };
+
+    tabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => setStep(index, { updateHash: true }), { signal });
+      tab.addEventListener('keydown', (event) => {
+        let nextIndex = index;
+        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (index + 1) % tabs.length;
+        else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (index - 1 + tabs.length) % tabs.length;
+        else if (event.key === 'Home') nextIndex = 0;
+        else if (event.key === 'End') nextIndex = tabs.length - 1;
+        else return;
+        event.preventDefault();
+        setStep(nextIndex, { focusTab: true, updateHash: true });
+      }, { signal });
+    });
+
+    const requestedKey = window.location.hash.replace('#', '').trim().toLowerCase();
+    const requestedIndex = requestedKey
+      ? tabs.findIndex((tab) => tab.dataset.settingsKey === requestedKey)
+      : 0;
+    setStep(requestedIndex >= 0 ? requestedIndex : 0);
+  };
+
+  document.addEventListener('astro:page-load', initSettingsWizard);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initSettingsWizard, { once: true });
+  } else {
+    initSettingsWizard();
+  }
+</script>

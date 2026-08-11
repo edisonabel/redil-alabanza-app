@@ -102,7 +102,8 @@ const firstTourResourcesId =
 ---
 
 <Layout>
- <header id="repertorioHeader" class="mb-1.5 mt-2 md:mb-10 md:mt-6 px-2 md:px-4 max-w-7xl mx-auto anim-fade-in-up anim-stagger" style="--delay: 60ms">
+ <h1 class="sr-only">Repertorio</h1>
+ <header id="repertorioHeader" class="hidden mb-1.5 mt-2 md:mb-10 md:mt-6 px-2 md:px-4 max-w-7xl mx-auto anim-fade-in-up anim-stagger" style="--delay: 60ms">
  <div class="text-left flex flex-col justify-center">
  <div class="page-title-row mb-1.5">
   <span class="page-title-icon" aria-hidden="true">
@@ -2711,10 +2712,15 @@ function filterCards() {
  }
 
  .repertorio-shared-setlist-mode #repertorioHeader {
+   display: block;
    max-width: 64rem;
    margin-bottom: 1rem;
    padding-inline: 1rem;
  }
+
+ .repertorio-selection-mode #repertorioHeader {
+   display: block;
+  }
 
  .repertorio-shared-setlist-mode #repertorioSubtitle {
    margin-top: 0.35rem;

@@ -76,6 +76,7 @@ export async function GET({ cookies }) {
       user: {
         id: user.id,
         email: user.email || '',
+        profile_photo_url: String(user.user_metadata?.profile_photo_url || ''),
       },
       profile,
       roles: rolesResult.data || [],

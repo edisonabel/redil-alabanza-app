@@ -1,60 +1,22 @@
-import { createClient } from '@supabase/supabase-js';
 import {
   insertInAppNotifications,
   listNotificationRecipients,
   sendEmailNotifications,
   sendPushNotifications,
 } from '../../lib/server/notification-delivery.js';
-import { getSupabaseServerEnv, getSupabaseServiceRoleKey } from '../../lib/server/supabase-env.js';
+import { parseAdminAlertPayload } from '../../lib/server/admin-alert-policy.js';
+import {
+  assertRequestBodySize,
+  consumeRateLimit,
+  requireAdminUser,
+  securityErrorResponse,
+} from '../../lib/server/api-security.js';
 
 export const prerender = false;
 
-const { supabaseUrl, supabaseAnonKey } = getSupabaseServerEnv();
-const supabaseServiceRoleKey = getSupabaseServiceRoleKey();
-
-const authClient = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-  },
-});
-
-const serviceRoleClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-  },
-});
-
 const jsonHeaders = {
-  'content-type': 'application/json',
-};
-
-const DELIVERY_MODES = {
-  multicanal: {
-    inApp: true,
-    email: true,
-    push: true,
-    label: 'Multicanal',
-  },
-  push: {
-    inApp: false,
-    email: false,
-    push: true,
-    label: 'Solo push',
-  },
-  email: {
-    inApp: false,
-    email: true,
-    push: false,
-    label: 'Solo correo',
-  },
-  in_app: {
-    inApp: true,
-    email: false,
-    push: false,
-    label: 'Solo campanita',
-  },
+  'content-type': 'application/json; charset=utf-8',
+  'cache-control': 'no-store',
 };
 
 const emptyNotificationSummary = (overrides = {}) => ({
@@ -74,54 +36,53 @@ const getErrorMessage = (error) => {
   return String(error || 'Error desconocido');
 };
 
+const processDeliveryChannel = async ({ channel, enabled, disabledSummary, recipientsCount, run }) => {
+  if (!enabled) {
+    return { summary: disabledSummary, error: null };
+  }
+
+  try {
+    return { summary: await run(), error: null };
+  } catch (error) {
+    console.error(`[send-push] ${channel} channel failed:`, error);
+    return {
+      summary: emptyNotificationSummary({
+        attempted: recipientsCount,
+        failed: recipientsCount,
+        error: getErrorMessage(error),
+      }),
+      error: getErrorMessage(error),
+    };
+  }
+};
+
 export async function POST({ request, cookies }) {
   try {
-    const token = cookies.get('sb-access-token')?.value || '';
-    if (!token) {
-      return new Response(JSON.stringify({ error: 'No autenticado.' }), {
-        status: 401,
+    assertRequestBodySize(request, 8 * 1024);
+    const user = await requireAdminUser(cookies);
+    await consumeRateLimit({
+      bucket: 'admin-team-alerts',
+      actorId: user.id,
+      windowSeconds: 10 * 60,
+      maxRequests: 8,
+    });
+
+    const payload = await request.json().catch(() => null);
+    const parsedPayload = parseAdminAlertPayload(payload);
+    if (!parsedPayload.ok) {
+      return new Response(JSON.stringify({ error: parsedPayload.error }), {
+        status: 400,
         headers: jsonHeaders,
       });
     }
 
     const {
-      data: { user },
-      error: authError,
-    } = await authClient.auth.getUser(token);
-
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Sesion invalida.' }), {
-        status: 401,
-        headers: jsonHeaders,
-      });
-    }
-
-    const { data: perfil, error: perfilError } = await serviceRoleClient
-      .from('perfiles')
-      .select('id, is_admin')
-      .eq('id', user.id)
-      .single();
-
-    if (perfilError || !perfil?.is_admin) {
-      return new Response(JSON.stringify({ error: 'Solo administradores pueden enviar alertas.' }), {
-        status: 403,
-        headers: jsonHeaders,
-      });
-    }
-
-    const payload = await request.json().catch(() => null);
-    const title = typeof payload?.title === 'string' ? payload.title.trim() : '';
-    const body = typeof payload?.body === 'string' ? payload.body.trim() : '';
-    const targetUrl = typeof payload?.url === 'string' && payload.url.trim() ? payload.url.trim() : '/';
-    const requestedMode = typeof payload?.mode === 'string' ? payload.mode.trim().toLowerCase() : 'multicanal';
-    const deliveryMode = DELIVERY_MODES[requestedMode] || DELIVERY_MODES.multicanal;
-
-    if (!title || !body) {
-      return new Response(JSON.stringify({ error: 'Debes enviar title y body en el JSON.' }), {
-        status: 400,
-        headers: jsonHeaders,
-      });
-    }
+      title,
+      body,
+      targetUrl,
+      requestedMode,
+      deliveryMode,
+    } = parsedPayload.value;
 
     const recipients = await listNotificationRecipients();
 
@@ -132,62 +93,89 @@ export async function POST({ request, cookies }) {
       });
     }
 
-    const [inApp, email, push] = await Promise.all([
-      deliveryMode.inApp
-        ? insertInAppNotifications({
+    const [inAppResult, emailResult, pushResult] = await Promise.all([
+      processDeliveryChannel({
+        channel: 'in_app',
+        enabled: deliveryMode.inApp,
+        disabledSummary: emptyNotificationSummary({ provider: 'in-app-disabled' }),
+        recipientsCount: recipients.length,
+        run: () => insertInAppNotifications({
           recipients,
           title,
           body,
           type: 'recordatorio',
           source: 'admin_alert',
-        })
-        : Promise.resolve(emptyNotificationSummary()),
-      deliveryMode.email
-        ? sendEmailNotifications({
+        }),
+      }),
+      processDeliveryChannel({
+        channel: 'email',
+        enabled: deliveryMode.email,
+        disabledSummary: emptyNotificationSummary({ provider: 'email-disabled' }),
+        recipientsCount: recipients.length,
+        run: () => sendEmailNotifications({
           recipients,
           title,
           body,
           url: targetUrl,
           ctaLabel: 'Abrir alerta',
           source: 'admin_alert',
-        })
-        : Promise.resolve(emptyNotificationSummary({ provider: 'email-disabled' })),
-      deliveryMode.push
-        ? sendPushNotifications({
+        }),
+      }),
+      processDeliveryChannel({
+        channel: 'push',
+        enabled: deliveryMode.push,
+        disabledSummary: emptyNotificationSummary({ provider: 'push-disabled' }),
+        recipientsCount: recipients.length,
+        run: () => sendPushNotifications({
           recipients,
           title,
           body,
           url: targetUrl,
           source: 'admin_alert',
-        })
-        : Promise.resolve(emptyNotificationSummary({ provider: 'push-disabled' })),
+        }),
+      }),
     ]);
+
+    const channelErrors = [
+      inAppResult.error && { channel: 'in_app', error: inAppResult.error },
+      emailResult.error && { channel: 'email', error: emailResult.error },
+      pushResult.error && { channel: 'push', error: pushResult.error },
+    ].filter(Boolean);
+    const enabledChannelCount = [deliveryMode.inApp, deliveryMode.email, deliveryMode.push]
+      .filter(Boolean)
+      .length;
+    const status = channelErrors.length === 0
+      ? 200
+      : channelErrors.length < enabledChannelCount
+        ? 207
+        : 502;
 
     return new Response(
       JSON.stringify({
-        ok: true,
+        ok: channelErrors.length === 0,
+        partial: status === 207,
+        error: status === 502 ? 'Ningún canal pudo completar el envío.' : undefined,
         recipients: recipients.length,
         mode: requestedMode,
         mode_label: deliveryMode.label,
-        inApp,
-        email,
-        push,
+        inApp: inAppResult.summary,
+        email: emailResult.summary,
+        push: pushResult.summary,
+        channel_errors: channelErrors,
       }),
       {
-        status: 200,
+        status,
         headers: jsonHeaders,
       },
     );
   } catch (error) {
     console.error('send-push endpoint error:', error);
-    return new Response(
-      JSON.stringify({
-        error: getErrorMessage(error),
-      }),
-      {
-        status: 500,
-        headers: jsonHeaders,
-      },
-    );
+    const secureResponse = securityErrorResponse(error);
+    if (secureResponse.status !== 500) return secureResponse;
+
+    return new Response(JSON.stringify({ error: getErrorMessage(error) }), {
+      status: 500,
+      headers: jsonHeaders,
+    });
   }
 }

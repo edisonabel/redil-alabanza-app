@@ -54,6 +54,7 @@ export default function NotificationBell({ inline = false, direction = 'down' })
 
   useEffect(() => {
     mountedRef.current = true;
+    ensureBootstrapped();
 
     return () => {
       mountedRef.current = false;
