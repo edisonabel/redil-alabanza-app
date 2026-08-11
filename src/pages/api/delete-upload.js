@@ -62,39 +62,53 @@ export const POST = async ({ request, cookies }) => {
 
     const body = await request.json().catch(() => ({}));
     const songId = String(body?.songId || '').trim();
+    const warmupId = String(body?.warmupId || '').trim();
     const fileUrl = String(body?.fileUrl || '').trim();
-    if (!songId || !fileUrl) {
-      return jsonResponse({ error: 'Se requieren songId y fileUrl.' }, 400);
+    if ((!songId && !warmupId) || (songId && warmupId) || !fileUrl) {
+      return jsonResponse({ error: 'Se requiere un recurso valido y fileUrl.' }, 400);
     }
 
-    const { data: song, error: songError } = await serviceRoleClient
-      .from('canciones')
-      .select(`
-        id,
-        chordpro,
-        link_acordes,
-        link_letras,
-        link_secuencias,
-        link_voces,
-        link_youtube,
-        mp3,
-        multitrack_session,
-        voces
-      `)
-      .eq('id', songId)
-      .maybeSingle();
-    if (songError) throw songError;
-    if (!song) return jsonResponse({ error: 'La cancion no existe.' }, 404);
+    if (warmupId) {
+      const { data: warmup, error: warmupError } = await serviceRoleClient
+        .from('calentamientos_vocales')
+        .select('id')
+        .eq('id', warmupId)
+        .maybeSingle();
+      if (warmupError) throw warmupError;
+      if (!warmup) return jsonResponse({ error: 'El calentamiento no existe.' }, 404);
+    } else {
+      const { data: song, error: songError } = await serviceRoleClient
+        .from('canciones')
+        .select(`
+          id,
+          chordpro,
+          link_acordes,
+          link_letras,
+          link_secuencias,
+          link_voces,
+          link_youtube,
+          mp3,
+          multitrack_session,
+          voces
+        `)
+        .eq('id', songId)
+        .maybeSingle();
+      if (songError) throw songError;
+      if (!song) return jsonResponse({ error: 'La cancion no existe.' }, 404);
 
-    // Solo se puede borrar un objeto que aun este referenciado por la cancion.
-    if (!JSON.stringify(song).includes(fileUrl)) {
-      return jsonResponse({ error: 'El archivo no pertenece a la cancion indicada.' }, 403);
+      // Solo se puede borrar un objeto que aun este referenciado por la cancion.
+      if (!JSON.stringify(song).includes(fileUrl)) {
+        return jsonResponse({ error: 'El archivo no pertenece a la cancion indicada.' }, 403);
+      }
     }
 
     const publicBaseUrl = normalizePublicBaseUrl(readEnv('PUBLIC_R2_URL', 'R2_PUBLIC_URL'));
     const objectKey = getR2ObjectKeyFromUrl(fileUrl, publicBaseUrl);
     if (!objectKey) {
       return jsonResponse({ deleted: false, skipped: true, reason: 'external-or-invalid-url' });
+    }
+    if (warmupId && !objectKey.startsWith(`warmups/${warmupId}/`)) {
+      return jsonResponse({ error: 'El archivo no pertenece al calentamiento indicado.' }, 403);
     }
 
     const endpoint = readEnv('R2_ENDPOINT');

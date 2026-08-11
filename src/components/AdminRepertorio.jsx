@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
+import AdminVocalWarmups from './AdminVocalWarmups';
 import { audioSessionService } from '../services/AudioSessionService';
 import {
   Check,
@@ -1104,6 +1105,9 @@ export default function AdminRepertorio() {
   const [songWizardFeedback, setSongWizardFeedback] = useState('');
   const [songWizardDirty, setSongWizardDirty] = useState(false);
   const [songWizardMp3File, setSongWizardMp3File] = useState(null);
+  const [activeAdminArea, setActiveAdminArea] = useState('songs');
+  const [warmupCreateSignal, setWarmupCreateSignal] = useState(0);
+  const [warmupCount, setWarmupCount] = useState(0);
   const songWizardHeadingRef = useRef(null);
   const songWizardDialogRef = useRef(null);
 
@@ -3070,25 +3074,36 @@ export default function AdminRepertorio() {
   const headerActions = (
     <>
       <button
-        onClick={abrirWizardNuevaCancion}
-        disabled={loading || songWizardSaving}
+        onClick={() => {
+          if (activeAdminArea === 'warmups') {
+            setWarmupCreateSignal((previous) => previous + 1);
+          } else {
+            abrirWizardNuevaCancion();
+          }
+        }}
+        disabled={activeAdminArea === 'songs' && (loading || songWizardSaving)}
         className="inline-flex min-h-[34px] items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand/90 disabled:opacity-50"
       >
-        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-        Nueva
+        {activeAdminArea === 'songs' && loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+        {activeAdminArea === 'warmups' ? 'Nuevo ejercicio' : 'Nueva'}
       </button>
 
-      <span title="Canciones sin ChordPro" className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold md:text-xs ${cancionesPendientesChordpro.length > 0
-        ? 'border-amber-500/25 bg-amber-500/10 text-amber-600'
-        : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600'
-        }`}>
+      <span
+        title={activeAdminArea === 'warmups' ? 'Calentamientos cargados' : 'Canciones sin ChordPro'}
+        className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold md:text-xs ${activeAdminArea === 'warmups'
+          ? 'border-brand/25 bg-brand/10 text-brand'
+          : cancionesPendientesChordpro.length > 0
+            ? 'border-amber-500/25 bg-amber-500/10 text-amber-600'
+            : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600'
+        }`}
+      >
         <span className="inline-flex min-w-[1.65rem] items-center justify-center rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-black">
-          {cancionesPendientesChordpro.length}
+          {activeAdminArea === 'warmups' ? warmupCount : cancionesPendientesChordpro.length}
         </span>
-        <span className="hidden sm:inline">Sin ChordPro</span>
+        <span className="hidden sm:inline">{activeAdminArea === 'warmups' ? 'Ejercicios' : 'Sin ChordPro'}</span>
       </span>
 
-      {!sectionMarkersDisponibles && (
+      {activeAdminArea === 'songs' && !sectionMarkersDisponibles && (
         <span className="inline-flex min-h-[34px] items-center rounded-full border border-amber-500/25 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-600 md:text-xs">
           <span className="hidden sm:inline">Falta migracion de</span>
           <code className="mx-1 text-[11px] font-semibold">section_markers</code>
@@ -3126,6 +3141,33 @@ export default function AdminRepertorio() {
             {headerActions}
           </div>
         ))}
+
+      <nav className="mx-3 mb-2 grid shrink-0 grid-cols-2 gap-1 rounded-xl border border-border bg-surface/90 p-1 md:mx-4 md:max-w-md" aria-label="Áreas de administración">
+        <button
+          type="button"
+          onClick={() => {
+            setActiveAdminArea('songs');
+            setSongWizardOpen(false);
+          }}
+          aria-current={activeAdminArea === 'songs' ? 'page' : undefined}
+          className={`inline-flex min-h-[42px] items-center justify-center gap-2 rounded-lg px-3 text-sm font-bold transition-colors ${activeAdminArea === 'songs' ? 'bg-brand text-white shadow-sm' : 'text-content-muted hover:bg-background hover:text-content'}`}
+        >
+          <Music2 className="h-4 w-4" />
+          Canciones
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setActiveAdminArea('warmups');
+            setSongWizardOpen(false);
+          }}
+          aria-current={activeAdminArea === 'warmups' ? 'page' : undefined}
+          className={`inline-flex min-h-[42px] items-center justify-center gap-2 rounded-lg px-3 text-sm font-bold transition-colors ${activeAdminArea === 'warmups' ? 'bg-brand text-white shadow-sm' : 'text-content-muted hover:bg-background hover:text-content'}`}
+        >
+          <Mic2 className="h-4 w-4" />
+          Calentamientos
+        </button>
+      </nav>
 
       <div className="hidden mb-6 flex-col sm:flex-row sm:items-center justify-between gap-4 px-4 max-w-7xl mx-auto w-full">
         <div>
@@ -3209,7 +3251,12 @@ export default function AdminRepertorio() {
         </div>
       )}
 
-      {loading && canciones.length === 0 ? (
+      {activeAdminArea === 'warmups' ? (
+        <AdminVocalWarmups
+          createSignal={warmupCreateSignal}
+          onCountChange={setWarmupCount}
+        />
+      ) : loading && canciones.length === 0 ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 py-16">
           <Loader2 className="w-10 h-10 text-brand animate-spin" />
           <span className="text-content-muted font-medium tracking-wide">Cargando base de datos...</span>
