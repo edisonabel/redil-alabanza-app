@@ -455,6 +455,7 @@ export const DELETE = async ({ request, cookies }) => {
 
     const body = await request.json().catch(() => ({}));
     const songId = String(body?.songId || '').trim();
+    const trackId = String(body?.trackId || '').trim();
 
     if (!songId) {
       return jsonResponse({ error: 'Se requiere songId.' }, 400);
@@ -467,6 +468,89 @@ export const DELETE = async ({ request, cookies }) => {
     }
 
     const r2Context = createR2Context();
+
+    if (trackId) {
+      const currentSession = normalizePersistedLiveDirectorSession(songRow.multitrack_session, {
+        songId,
+        songTitle: String(songRow.titulo || ''),
+      });
+
+      if (!currentSession) {
+        return jsonResponse({ error: 'La cancion no tiene una sesion multitrack guardada.' }, 404);
+      }
+
+      const trackToDelete = currentSession.tracks.find((track) => track.id === trackId);
+      if (!trackToDelete) {
+        return jsonResponse({ error: 'El stem solicitado no existe en esta sesion.' }, 404);
+      }
+
+      const remainingTracks = currentSession.tracks.filter((track) => track.id !== trackId);
+
+      if (remainingTracks.length === 0) {
+        const { error: clearError } = await serviceRoleClient
+          .from('canciones')
+          .update({ multitrack_session: null })
+          .eq('id', songId);
+
+        if (clearError) {
+          throw clearError;
+        }
+
+        await deleteSessionFiles(currentSession, r2Context);
+
+        return jsonResponse({ success: true, session: null });
+      }
+
+      const folder = currentSession.folder || buildLiveDirectorSongFolder(songId, String(songRow.titulo || ''));
+      const manifestUrl = `${r2Context.publicBaseUrl}/${folder}/manifest.json`;
+      const persistedSession = {
+        ...currentSession,
+        version: 1,
+        songId,
+        songTitle: String(songRow.titulo || ''),
+        mode: 'folder',
+        folder,
+        manifestUrl,
+        updatedAt: new Date().toISOString(),
+        tracks: remainingTracks,
+      };
+
+      await r2Context.client.send(
+        new PutObjectCommand({
+          Bucket: r2Context.bucket,
+          Key: `${folder}/manifest.json`,
+          ContentType: 'application/json',
+          Body: JSON.stringify(persistedSession, null, 2),
+        }),
+      );
+
+      const { error: updateTrackError } = await serviceRoleClient
+        .from('canciones')
+        .update({ multitrack_session: persistedSession })
+        .eq('id', songId);
+
+      if (updateTrackError) {
+        throw updateTrackError;
+      }
+
+      await deleteSessionFiles({
+        ...currentSession,
+        manifestUrl: '',
+        tracks: [trackToDelete],
+      }, r2Context, {
+        keepUrls: remainingTracks.flatMap((track) => [
+          track.url,
+          track.iosUrl,
+          track.nativeUrl,
+          track.optimizedUrl,
+          track.cafUrl,
+          track.pcmUrl,
+        ]),
+      });
+
+      return jsonResponse({ success: true, session: persistedSession });
+    }
+
     await deleteSessionFiles(songRow.multitrack_session, r2Context);
 
     const { error: updateError } = await serviceRoleClient

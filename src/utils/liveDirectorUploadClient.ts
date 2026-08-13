@@ -193,3 +193,17 @@ export async function deleteLiveDirectorSongSession(songId: string): Promise<voi
 
   await readJsonResponse(response);
 }
+
+export async function deleteLiveDirectorSongTrack(params: {
+  songId: string;
+  trackId: string;
+}): Promise<LiveDirectorPersistedSession | null> {
+  const response = await fetch('/api/live-director-song-session', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const payload = await readJsonResponse(response);
+
+  return payload?.session || null;
+}

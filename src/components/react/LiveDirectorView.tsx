@@ -49,6 +49,7 @@ import {
   sampleActivityEnvelope,
 } from '../../utils/audioActivityEnvelope';
 import {
+  deleteLiveDirectorSongTrack,
   deleteLiveDirectorSongSession,
   fetchLiveDirectorUploadPermission,
   requestLiveDirectorUploadTarget,
@@ -606,6 +607,7 @@ export function LiveDirectorView({
   const usesEventMixPersistence = mode === 'ensayo' && Boolean(onEventMixChange);
   const sequenceFileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const singleStemInputRef = useRef<HTMLInputElement | null>(null);
   const sectionsLaneScrollRef = useRef<HTMLDivElement | null>(null);
   const sectionsLaneScrollLeftRef = useRef(0);
   const sectionsMinimapViewportRef = useRef<HTMLDivElement | null>(null);
@@ -1062,6 +1064,7 @@ export function LiveDirectorView({
   const [showOffsetModal, setShowOffsetModal] = useState(false);
   const [showStemsActionModal, setShowStemsActionModal] = useState(false);
   const [showTrackLoadModal, setShowTrackLoadModal] = useState(false);
+  const [deletingTrackId, setDeletingTrackId] = useState<string | null>(null);
   const [pendingEnabledMap, setPendingEnabledMap] = useState<Record<string, boolean> | null>(null);
   const [isReturnToStartBusy, setIsReturnToStartBusy] = useState(false);
   const isTransportCueBusy = isReturnToStartBusy || isSectionSeekBusy;
@@ -1327,7 +1330,12 @@ export function LiveDirectorView({
       : 'Secuencia unica';
   const canToggleTrackLoad = !hasProvidedTracks && manualSession?.mode === 'folder' && sessionTracks.length > 1;
   const canOpenStemsActionModal = !hasProvidedTracks && canManagePersistedSongSession && hasPersistedSongContext;
-  const canManageStemSelection = !hasProvidedTracks && hasPersistedSongContext && canToggleTrackLoad;
+  const canAddSingleStem = !hasProvidedTracks
+    && canManagePersistedSongSession
+    && hasPersistedSongContext
+    && manualSession?.mode === 'folder'
+    && sessionTracks.length > 0;
+  const canManageStemSelection = canAddSingleStem;
   const canUseStemsToolbar = canManageStemSelection || canOpenStemsActionModal;
   const isStemsToolbarActive = canToggleTrackLoad && enabledSessionTracks.length !== sessionTracks.length;
   const useWideTrackLoadModal = !isPortrait;
@@ -3579,6 +3587,17 @@ export function LiveDirectorView({
     setShowLoadPanel(true);
   }, [canOpenLoadPanel]);
 
+  const handleOpenSingleStemPicker = useCallback(() => {
+    if (!canAddSingleStem || busyMessage || deletingTrackId) {
+      return;
+    }
+
+    setLoadError(null);
+    setShowStemsActionModal(false);
+    setShowTrackLoadModal(false);
+    singleStemInputRef.current?.click();
+  }, [busyMessage, canAddSingleStem, deletingTrackId]);
+
   const handleOpenOffsetModal = useCallback(() => {
     setSectionOffsetSaveError(null);
     offsetModalInitialValueRef.current = Number.isFinite(Number(manualSession?.sectionOffsetSeconds))
@@ -3753,6 +3772,141 @@ export function LiveDirectorView({
       setLoadError(error instanceof Error ? error.message : 'No se pudo cargar la carpeta de stems.');
     }
   };
+
+  const handleSingleStemSelection = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      if (!canAddSingleStem || !manualSession) {
+        throw new Error('Primero carga una sesion multitrack para agregar stems individuales.');
+      }
+
+      await assertLiveDirectorM4aFiles([file]);
+      setLoadError(null);
+      setBusyMessage(`Preparando ${file.name}...`);
+
+      const inference = inferStemTracksFromFiles([file]);
+      const matchedFile = inference.matchedFiles[0];
+      if (!matchedFile) {
+        throw new Error('No se pudo reconocer el stem seleccionado.');
+      }
+
+      const existingTrackIds = new Set(manualSession.tracks.map((track) => track.id));
+      let nextTrackId = matchedFile.trackId;
+      let nextTrackName = matchedFile.trackName;
+      let duplicateIndex = 2;
+      while (existingTrackIds.has(nextTrackId)) {
+        nextTrackId = `${matchedFile.trackId}-${duplicateIndex}`;
+        nextTrackName = `${matchedFile.trackName} ${duplicateIndex}`;
+        duplicateIndex += 1;
+      }
+
+      setBusyMessage(`Subiendo ${file.name}...`);
+      const uploadTarget = await requestLiveDirectorUploadTarget({
+        songId,
+        fileName: `${nextTrackId}-${file.name}`,
+        fileType: file.type,
+        kind: 'stems',
+      });
+      await uploadFileToLiveDirectorTarget(file, uploadTarget);
+
+      const currentTracks = manualSession.tracks.map((track) => ({
+        ...track,
+        volume: trackVolumes[track.id] ?? track.volume,
+        isMuted: mutedTrackIds.has(track.id),
+        outputRoute: trackOutputRoutes[track.id] ?? resolveTrackOutputRoute(track),
+      }));
+
+      await persistSongSession({
+        mode: 'folder',
+        tracks: [
+          ...currentTracks,
+          {
+            id: nextTrackId,
+            name: nextTrackName,
+            url: uploadTarget.publicUrl,
+            volume: matchedFile.defaultVolume,
+            isMuted: false,
+            enabled: true,
+            sourceFileName: file.name,
+            outputRoute: resolveTrackOutputRoute({
+              id: nextTrackId,
+              name: nextTrackName,
+              sourceFileName: file.name,
+            }),
+          },
+        ],
+        unmatchedFiles: manualSession.unmatchedFiles,
+        sectionOffsetSeconds: Number(manualSession.sectionOffsetSeconds) || 0,
+      });
+    } catch (error) {
+      console.error('[LiveDirectorView] Single stem upload failed.', error);
+      setBusyMessage(null);
+      setLoadError(error instanceof Error ? error.message : 'No se pudo agregar el stem.');
+    }
+  };
+
+  const handleDeleteStem = useCallback(async (trackId: string) => {
+    if (!hasPersistedSongContext || !canManagePersistedSongSession || deletingTrackId) {
+      return;
+    }
+
+    if (!manualSession) {
+      return;
+    }
+
+    const track = manualSession.tracks.find((candidate) => candidate.id === trackId);
+    if (!track) {
+      return;
+    }
+
+    const isLastTrack = manualSession.tracks.length === 1;
+    const confirmed = window.confirm(
+      isLastTrack
+        ? `¿Eliminar "${track.sourceFileName || track.name}"? Es el ultimo stem; tambien se borrara la sesion y sus archivos de R2.`
+        : `¿Eliminar "${track.sourceFileName || track.name}" de la sesion y de R2?`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    stop();
+    setLoadError(null);
+    setDeletingTrackId(trackId);
+    setBusyMessage(`Eliminando ${track.sourceFileName || track.name} de R2...`);
+
+    try {
+      const savedSession = await deleteLiveDirectorSongTrack({ songId, trackId });
+
+      if (savedSession) {
+        applyManualSession(toResolvedSession(savedSession));
+        onSessionPersisted?.(savedSession);
+      } else {
+        setUnmatchedFiles([]);
+        setMutedTrackIds(new Set());
+        setSoloTrackIds(new Set());
+        setManualSession(null);
+        replaceOwnedObjectUrls([]);
+        setReloadKey((previous) => previous + 1);
+      }
+
+      setLoaderMode('folder');
+      setShowStemsActionModal(false);
+      setShowTrackLoadModal(false);
+      setShowLoadPanel(canOpenLoadPanel);
+    } catch (error) {
+      console.error('[LiveDirectorView] Single stem delete failed.', error);
+      setLoadError(error instanceof Error ? error.message : 'No se pudo eliminar el stem.');
+    } finally {
+      setDeletingTrackId(null);
+      setBusyMessage(null);
+    }
+  }, [applyManualSession, canManagePersistedSongSession, canOpenLoadPanel, deletingTrackId, hasPersistedSongContext, manualSession, onSessionPersisted, replaceOwnedObjectUrls, songId, stop]);
 
   const handlePreviousSection = () => {
     if (
@@ -5672,7 +5826,7 @@ export function LiveDirectorView({
                   {hasPersistedSongContext ? `Carga ${songTitle || 'esta cancion'}.` : 'Carga una pista o multitrack.'}
                 </h2>
                 <p className={`max-w-3xl leading-relaxed text-white/62 ${isCompactLandscape ? 'mt-1 text-[0.84rem]' : 'mt-3 text-[1rem]'}`}>
-                  Elige una pista unica o una carpeta multitrack.
+                  Elige una pista unica, agrega un stem o reemplaza la carpeta multitrack.
                 </p>
                 <p className={`max-w-3xl text-amber-200/70 ${isCompactLandscape ? 'mt-1 text-[0.7rem]' : 'mt-2 text-[0.82rem]'}`}>
                   Formato requerido: <span className="font-semibold">M4A/AAC-LC · 256 kbps · 48 kHz · Fast Start</span>. Convierte MP3, FLAC o ALAC antes de cargar.
@@ -5741,16 +5895,34 @@ export function LiveDirectorView({
                   <div>
                     <p className="text-[0.76rem] font-black uppercase tracking-[0.24em] text-white/40">Multitrack</p>
                     <p className={`text-white/56 ${isCompactLandscape ? 'mt-2 text-sm' : 'mt-3 text-sm'}`}>
-                      Sube una carpeta con stems.
+                      {canAddSingleStem
+                        ? 'Agrega solo el stem que falta o reemplaza toda la carpeta.'
+                        : 'Sube una carpeta con stems.'}
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => folderInputRef.current?.click()}
-                      className={`ui-pressable-soft mt-3 flex w-full items-center justify-center gap-3 rounded-[1.2rem] border border-dashed border-cyan-300/24 bg-cyan-300/7 text-cyan-50 ${isCompactLandscape ? 'h-20 px-4' : 'h-32 px-6'}`}
-                    >
-                      <FolderOpen className={isCompactLandscape ? 'h-6 w-6' : 'h-8 w-8'} />
-                      <span className={`${isCompactLandscape ? 'text-base' : 'text-lg'} font-semibold`}>ELEGIR CARPETA</span>
-                    </button>
+                    <div className={`mt-3 grid gap-2.5 ${canAddSingleStem && !isCompactLandscape ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                      {canAddSingleStem && (
+                        <button
+                          type="button"
+                          onClick={handleOpenSingleStemPicker}
+                          disabled={Boolean(busyMessage || deletingTrackId)}
+                          className={`ui-pressable-soft flex w-full items-center justify-center gap-3 rounded-[1.2rem] border border-cyan-300/30 bg-cyan-300/10 text-cyan-50 disabled:cursor-not-allowed disabled:opacity-45 ${isCompactLandscape ? 'h-16 px-4' : 'h-28 px-5'}`}
+                        >
+                          <Upload className={isCompactLandscape ? 'h-5 w-5' : 'h-7 w-7'} />
+                          <span className={`${isCompactLandscape ? 'text-sm' : 'text-base'} font-semibold`}>AGREGAR UN STEM</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => folderInputRef.current?.click()}
+                        disabled={Boolean(busyMessage || deletingTrackId)}
+                        className={`ui-pressable-soft flex w-full items-center justify-center gap-3 rounded-[1.2rem] border border-dashed border-white/16 bg-black/24 text-white/78 disabled:cursor-not-allowed disabled:opacity-45 ${isCompactLandscape ? 'h-16 px-4' : canAddSingleStem ? 'h-28 px-5' : 'h-32 px-6'}`}
+                      >
+                        <FolderOpen className={isCompactLandscape ? 'h-5 w-5' : 'h-7 w-7'} />
+                        <span className={`${isCompactLandscape ? 'text-sm' : 'text-base'} font-semibold`}>
+                          {canAddSingleStem ? 'REEMPLAZAR CON CARPETA' : 'ELEGIR CARPETA'}
+                        </span>
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -5787,23 +5959,35 @@ export function LiveDirectorView({
                           mappedTrackDetails.map((track) => (
                             <div
                               key={`mapped-${track.id}-${track.sourceFileName}`}
-                              className={`rounded-[0.9rem] border px-3 py-2 transition-all ${track.enabled
+                              className={`flex items-center gap-2 rounded-[0.9rem] border px-3 py-2 transition-all ${track.enabled
                                 ? 'border-white/6 bg-white/[0.03]'
                                 : 'border-white/5 bg-white/[0.018] opacity-65'
                                 }`}
                             >
-                              <p className="truncate text-sm font-semibold text-white/88">{track.sourceFileName}</p>
-                              <div className="mt-1 flex items-center justify-between gap-3">
-                                <p className={`min-w-0 truncate text-[0.72rem] uppercase tracking-[0.16em] ${track.enabled ? 'text-cyan-100/56' : 'text-white/34'}`}>
-                                  {track.trackName}
-                                </p>
-                                <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[0.54rem] font-black uppercase tracking-[0.18em] ${track.enabled
-                                  ? 'border-emerald-300/14 bg-emerald-300/[0.07] text-emerald-100/72'
-                                  : 'border-white/8 bg-black/20 text-white/46'
-                                  }`}>
-                                  {track.enabled ? 'Activa' : 'Omitida'}
-                                </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-semibold text-white/88">{track.sourceFileName}</p>
+                                <div className="mt-1 flex items-center justify-between gap-3">
+                                  <p className={`min-w-0 truncate text-[0.72rem] uppercase tracking-[0.16em] ${track.enabled ? 'text-cyan-100/56' : 'text-white/34'}`}>
+                                    {track.trackName}
+                                  </p>
+                                  <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[0.54rem] font-black uppercase tracking-[0.18em] ${track.enabled
+                                    ? 'border-emerald-300/14 bg-emerald-300/[0.07] text-emerald-100/72'
+                                    : 'border-white/8 bg-black/20 text-white/46'
+                                    }`}>
+                                    {track.enabled ? 'Activa' : 'Omitida'}
+                                  </span>
+                                </div>
                               </div>
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteStem(track.id)}
+                                disabled={Boolean(deletingTrackId || busyMessage)}
+                                className="ui-pressable-soft flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-rose-300/16 bg-rose-300/[0.06] text-rose-100/72 hover:border-rose-300/28 hover:bg-rose-300/[0.10] hover:text-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                aria-label={`Eliminar ${track.sourceFileName} de la sesion y de R2`}
+                                title="Eliminar stem de la sesion y de R2"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
                             </div>
                           ))
                         ) : (
@@ -5870,6 +6054,13 @@ export function LiveDirectorView({
             onChange={handleStemFolderSelection}
             className="hidden"
           />
+          <input
+            ref={singleStemInputRef}
+            type="file"
+            accept={LIVE_DIRECTOR_M4A_ACCEPT}
+            onChange={handleSingleStemSelection}
+            className="hidden"
+          />
         </>
       )}
 
@@ -5880,7 +6071,7 @@ export function LiveDirectorView({
           aria-modal="true"
           aria-labelledby="live-director-stems-action-title"
         >
-          <div className={`w-full overflow-hidden rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,22,0.98),rgba(13,15,17,0.98))] shadow-[0_32px_72px_rgba(0,0,0,0.44)] ${useWideTrackLoadModal ? 'max-w-[42rem]' : 'max-w-[25rem]'}`}>
+          <div className={`w-full overflow-hidden rounded-[1.75rem] border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,22,0.98),rgba(13,15,17,0.98))] shadow-[0_32px_72px_rgba(0,0,0,0.44)] ${useWideTrackLoadModal ? 'max-w-[58rem]' : 'max-w-[25rem]'}`}>
             <div className={`${useWideTrackLoadModal ? 'px-5 py-4' : 'px-4 py-4'}`}>
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
@@ -5905,21 +6096,40 @@ export function LiveDirectorView({
                 </button>
               </div>
 
-              <div className={`mt-4 grid ${useWideTrackLoadModal ? 'grid-cols-2 gap-3' : 'grid-cols-1 gap-2.5'}`}>
+              <div className={`mt-4 grid ${useWideTrackLoadModal ? `${canAddSingleStem ? 'grid-cols-3' : 'grid-cols-2'} gap-3` : 'grid-cols-1 gap-2.5'}`}>
+                {canAddSingleStem && (
+                  <button
+                    type="button"
+                    onClick={handleOpenSingleStemPicker}
+                    disabled={Boolean(busyMessage || deletingTrackId)}
+                    className="ui-pressable-soft group min-h-[8.2rem] rounded-[1.35rem] border border-cyan-300/24 bg-cyan-300/[0.09] p-4 text-left text-cyan-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-cyan-300/36 hover:bg-cyan-300/[0.13] disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <span className="flex h-11 w-11 items-center justify-center rounded-[1rem] border border-cyan-300/24 bg-black/24 text-cyan-100">
+                      <Upload className="h-5 w-5" />
+                    </span>
+                    <span className="mt-4 block text-[0.96rem] font-semibold tracking-tight text-white">
+                      Agregar un stem
+                    </span>
+                    <span className="mt-1 block text-[0.74rem] leading-relaxed text-white/56">
+                      Sube una sola pista y conserva todos los stems actuales.
+                    </span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={handleOpenTrackLoadModal}
-                  disabled={!canToggleTrackLoad}
-                  className="ui-pressable-soft group min-h-[8.2rem] rounded-[1.35rem] border border-cyan-300/18 bg-cyan-300/[0.075] p-4 text-left text-cyan-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-cyan-300/30 hover:bg-cyan-300/[0.10] disabled:cursor-not-allowed disabled:border-white/8 disabled:bg-white/[0.025] disabled:text-white/38"
+                  disabled={!canManageStemSelection}
+                  className="ui-pressable-soft group min-h-[8.2rem] rounded-[1.35rem] border border-white/10 bg-white/[0.045] p-4 text-left text-white/82 hover:border-cyan-300/22 hover:bg-white/[0.065] disabled:cursor-not-allowed disabled:border-white/8 disabled:bg-white/[0.025] disabled:text-white/38"
                 >
-                  <span className="flex h-11 w-11 items-center justify-center rounded-[1rem] border border-cyan-300/22 bg-black/24 text-cyan-100">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-[1rem] border border-white/10 bg-black/24 text-cyan-100/86">
                     <SlidersVertical className="h-5 w-5" />
                   </span>
                   <span className="mt-4 block text-[0.96rem] font-semibold tracking-tight text-white">
                     Gestionar stems
                   </span>
                   <span className="mt-1 block text-[0.74rem] leading-relaxed text-white/54">
-                    {canToggleTrackLoad
+                    {canManageStemSelection
                       ? `Prende o apaga pistas antes de aplicar. Ahora: ${activeTracks.length}/${sessionTracks.length} activas.`
                       : 'Disponible cuando la cancion tenga una carpeta multitrack cargada.'}
                   </span>
@@ -5934,10 +6144,10 @@ export function LiveDirectorView({
                     <FolderOpen className="h-5 w-5" />
                   </span>
                   <span className="mt-4 block text-[0.96rem] font-semibold tracking-tight text-white">
-                    Cargar / reemplazar
+                    Reemplazar todo
                   </span>
                   <span className="mt-1 block text-[0.74rem] leading-relaxed text-white/52">
-                    Abre el cargador para escoger una secuencia única o una carpeta multitrack.
+                    Selecciona otra carpeta y reemplaza la sesión multitrack completa.
                   </span>
                 </button>
               </div>
@@ -6030,29 +6240,31 @@ export function LiveDirectorView({
                 {mappedTrackDetails.map((track) => {
                   const pendingEnabled = pendingEnabledMap ? (pendingEnabledMap[track.id] !== false) : track.enabled;
                   return (
-                    <button
+                    <div
                       key={`toggle-track-load-${track.id}`}
-                      type="button"
-                      onClick={() => {
-                        if (!pendingEnabledMap) return;
-                        const isEnabling = pendingEnabledMap[track.id] === false;
-                        const enabledCount = Object.values(pendingEnabledMap).filter(Boolean).length;
-                        if (isEnabling && enabledCount >= sessionActiveTrackLimit) {
-                          window.alert(`Para estabilidad, no cargues más de ${sessionActiveTrackLimit} stems. Desactiva uno antes de activar otro.`);
-                          return;
-                        }
-
-                        const next = { ...pendingEnabledMap, [track.id]: !pendingEnabledMap[track.id] };
-                        const hasAny = Object.values(next).some(Boolean);
-                        if (hasAny) setPendingEnabledMap(next);
-                      }}
-                      aria-pressed={pendingEnabled}
-                      className={`group w-full rounded-[1.05rem] border text-left transition-all ${useWideTrackLoadModal ? 'px-3.5 py-3' : 'px-3 py-3'} ${pendingEnabled
+                      className={`group flex w-full items-center rounded-[1.05rem] border text-left transition-all ${pendingEnabled
                         ? 'border-cyan-300/18 bg-cyan-300/[0.06] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'
                         : 'border-white/7 bg-black/22 opacity-72'
                         }`}
                     >
-                      <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!pendingEnabledMap) return;
+                          const isEnabling = pendingEnabledMap[track.id] === false;
+                          const enabledCount = Object.values(pendingEnabledMap).filter(Boolean).length;
+                          if (isEnabling && enabledCount >= sessionActiveTrackLimit) {
+                            window.alert(`Para estabilidad, no cargues más de ${sessionActiveTrackLimit} stems. Desactiva uno antes de activar otro.`);
+                            return;
+                          }
+
+                          const next = { ...pendingEnabledMap, [track.id]: !pendingEnabledMap[track.id] };
+                          const hasAny = Object.values(next).some(Boolean);
+                          if (hasAny) setPendingEnabledMap(next);
+                        }}
+                        aria-pressed={pendingEnabled}
+                        className={`flex min-w-0 flex-1 items-center gap-3 text-left ${useWideTrackLoadModal ? 'px-3.5 py-3' : 'px-3 py-3'}`}
+                      >
                         <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${pendingEnabled ? 'bg-cyan-200 shadow-[0_0_12px_rgba(103,232,249,0.35)]' : 'bg-white/18'}`} />
                         <div className="min-w-0 flex-1">
                           <p className={`truncate font-semibold ${useWideTrackLoadModal ? 'text-[0.92rem]' : 'text-[0.86rem]'} ${pendingEnabled ? 'text-white/92' : 'text-white/58'}`}>
@@ -6065,8 +6277,18 @@ export function LiveDirectorView({
                         <span className={`relative h-7 w-12 shrink-0 rounded-full border transition-all ${pendingEnabled ? 'border-cyan-300/28 bg-cyan-300/16' : 'border-white/10 bg-black/28'}`}>
                           <span className={`absolute top-1 h-5 w-5 rounded-full transition-all ${pendingEnabled ? 'left-6 bg-cyan-100' : 'left-1 bg-white/38'}`} />
                         </span>
-                      </div>
-                    </button>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteStem(track.id)}
+                        disabled={Boolean(deletingTrackId || busyMessage)}
+                        className="ui-pressable-soft mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-rose-300/18 bg-rose-300/[0.07] text-rose-100/72 hover:border-rose-300/30 hover:bg-rose-300/[0.12] hover:text-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label={`Eliminar ${track.sourceFileName} de la sesion y de R2`}
+                        title="Eliminar stem de la sesion y de R2"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
                   );
                 })}
               </div>
@@ -6080,7 +6302,7 @@ export function LiveDirectorView({
                     onClick={handleOpenStemsLoader}
                     className="ui-pressable-soft h-12 flex-1 rounded-[1rem] border border-white/10 bg-white/[0.04] px-3 text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-white/70 hover:bg-white/[0.07] hover:text-white"
                   >
-                    Cargar / reemplazar
+                    Agregar / reemplazar
                   </button>
                 )}
                 <button
