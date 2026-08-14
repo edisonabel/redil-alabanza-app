@@ -5950,11 +5950,10 @@ export function LiveDirectorView({
                   </div>
                 </div>
 
-                {!isCompactLandscape && (
-                  <div className="mt-4 grid grid-cols-[minmax(0,1fr)_minmax(0,0.88fr)] gap-4">
+                <div className={`mt-4 grid ${isCompactLandscape ? 'grid-cols-1 gap-2' : 'grid-cols-[minmax(0,1fr)_minmax(0,0.88fr)] gap-4'}`}>
                     <div className="rounded-[1rem] border border-white/8 bg-black/24 p-3">
                       <p className="text-[0.66rem] font-black uppercase tracking-[0.18em] text-white/38">Pistas cargadas</p>
-                      <div className="mt-3 max-h-32 space-y-2 overflow-y-auto pr-1">
+                      <div className={`${isCompactLandscape ? 'mt-2 max-h-36' : 'mt-3 max-h-32'} space-y-2 overflow-y-auto pr-1`}>
                         {mappedTrackDetails.length > 0 ? (
                           mappedTrackDetails.map((track) => (
                             <div
@@ -5996,7 +5995,7 @@ export function LiveDirectorView({
                       </div>
                     </div>
 
-                    <div className="rounded-[1rem] border border-white/8 bg-black/24 p-3">
+                    {!isCompactLandscape && <div className="rounded-[1rem] border border-white/8 bg-black/24 p-3">
                       <p className="text-[0.66rem] font-black uppercase tracking-[0.18em] text-white/38">Archivos sin mapa</p>
                       <div className="mt-3 max-h-32 space-y-2 overflow-y-auto pr-1">
                         {unmatchedFiles.length > 0 ? (
@@ -6015,9 +6014,8 @@ export function LiveDirectorView({
                           <p className="text-sm leading-relaxed text-white/48">Todo entro al mixer.</p>
                         )}
                       </div>
-                    </div>
+                    </div>}
                   </div>
-                )}
 
                 {hasSessionTracks && (
                   <div className={`mt-4 flex items-center justify-between rounded-[1.2rem] border border-white/8 bg-black/20 ${isCompactLandscape ? 'gap-2 px-3 py-2' : 'px-4 py-3'}`}>
@@ -6240,31 +6238,28 @@ export function LiveDirectorView({
                 {mappedTrackDetails.map((track) => {
                   const pendingEnabled = pendingEnabledMap ? (pendingEnabledMap[track.id] !== false) : track.enabled;
                   return (
-                    <div
+                    <button
                       key={`toggle-track-load-${track.id}`}
-                      className={`group flex w-full items-center rounded-[1.05rem] border text-left transition-all ${pendingEnabled
+                      type="button"
+                      onClick={() => {
+                        if (!pendingEnabledMap) return;
+                        const isEnabling = pendingEnabledMap[track.id] === false;
+                        const enabledCount = Object.values(pendingEnabledMap).filter(Boolean).length;
+                        if (isEnabling && enabledCount >= sessionActiveTrackLimit) {
+                          window.alert(`Para estabilidad, no cargues más de ${sessionActiveTrackLimit} stems. Desactiva uno antes de activar otro.`);
+                          return;
+                        }
+
+                        const next = { ...pendingEnabledMap, [track.id]: !pendingEnabledMap[track.id] };
+                        const hasAny = Object.values(next).some(Boolean);
+                        if (hasAny) setPendingEnabledMap(next);
+                      }}
+                      aria-pressed={pendingEnabled}
+                      className={`group flex w-full items-center gap-3 rounded-[1.05rem] border text-left transition-all ${useWideTrackLoadModal ? 'px-3.5 py-3' : 'px-3 py-3'} ${pendingEnabled
                         ? 'border-cyan-300/18 bg-cyan-300/[0.06] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'
                         : 'border-white/7 bg-black/22 opacity-72'
                         }`}
                     >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!pendingEnabledMap) return;
-                          const isEnabling = pendingEnabledMap[track.id] === false;
-                          const enabledCount = Object.values(pendingEnabledMap).filter(Boolean).length;
-                          if (isEnabling && enabledCount >= sessionActiveTrackLimit) {
-                            window.alert(`Para estabilidad, no cargues más de ${sessionActiveTrackLimit} stems. Desactiva uno antes de activar otro.`);
-                            return;
-                          }
-
-                          const next = { ...pendingEnabledMap, [track.id]: !pendingEnabledMap[track.id] };
-                          const hasAny = Object.values(next).some(Boolean);
-                          if (hasAny) setPendingEnabledMap(next);
-                        }}
-                        aria-pressed={pendingEnabled}
-                        className={`flex min-w-0 flex-1 items-center gap-3 text-left ${useWideTrackLoadModal ? 'px-3.5 py-3' : 'px-3 py-3'}`}
-                      >
                         <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${pendingEnabled ? 'bg-cyan-200 shadow-[0_0_12px_rgba(103,232,249,0.35)]' : 'bg-white/18'}`} />
                         <div className="min-w-0 flex-1">
                           <p className={`truncate font-semibold ${useWideTrackLoadModal ? 'text-[0.92rem]' : 'text-[0.86rem]'} ${pendingEnabled ? 'text-white/92' : 'text-white/58'}`}>
@@ -6277,18 +6272,7 @@ export function LiveDirectorView({
                         <span className={`relative h-7 w-12 shrink-0 rounded-full border transition-all ${pendingEnabled ? 'border-cyan-300/28 bg-cyan-300/16' : 'border-white/10 bg-black/28'}`}>
                           <span className={`absolute top-1 h-5 w-5 rounded-full transition-all ${pendingEnabled ? 'left-6 bg-cyan-100' : 'left-1 bg-white/38'}`} />
                         </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteStem(track.id)}
-                        disabled={Boolean(deletingTrackId || busyMessage)}
-                        className="ui-pressable-soft mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-rose-300/18 bg-rose-300/[0.07] text-rose-100/72 hover:border-rose-300/30 hover:bg-rose-300/[0.12] hover:text-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
-                        aria-label={`Eliminar ${track.sourceFileName} de la sesion y de R2`}
-                        title="Eliminar stem de la sesion y de R2"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
