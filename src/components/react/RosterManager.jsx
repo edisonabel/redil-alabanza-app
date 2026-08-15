@@ -859,17 +859,19 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
         }
     });
 
-    const voces = Array.from({ length: MAX_VOZ_SLOTS }, (_, index) => {
-        if (vocesAsignadas[index]) return vocesAsignadas[index];
-        return renderEmptySlot(
-            voicePoolRole,
-            {
-                forceVisible: true,
-                label: 'Voz',
-                keySuffix: index
-            }
-        );
-    }).filter(Boolean);
+    const voces = canEditRoster
+        ? Array.from({ length: MAX_VOZ_SLOTS }, (_, index) => {
+            if (vocesAsignadas[index]) return vocesAsignadas[index];
+            return renderEmptySlot(
+                voicePoolRole,
+                {
+                    forceVisible: true,
+                    label: 'Voz',
+                    keySuffix: index
+                }
+            );
+        }).filter(Boolean)
+        : vocesAsignadas;
 
     return (
         <div className="flex flex-col gap-4">
@@ -904,7 +906,7 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
                         <span className="text-[10px] font-bold text-rol-voc uppercase tracking-widest leading-none mt-0.5">Voces</span>
                         <div className="h-px flex-1 bg-rol-voc/10 ml-3"></div>
                     </div>
-                    <div className="flex flex-wrap gap-2.5 items-start">{voces}</div>
+                    <div className="flex flex-wrap gap-2.5 items-start">{voces.length > 0 ? voces : <span className="text-xs text-content-muted font-medium">Vacío</span>}</div>
                 </div>
             </div>
 
