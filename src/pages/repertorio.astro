@@ -7,46 +7,112 @@ import { createSupabaseUserClient } from '../lib/server/supabase-user-client.js'
 import { pickPreferredVoicePayload } from '../utils/voicePayload.js';
 import { buildStoredSongArtworkUrl } from '../utils/songArtwork.js';
 
-let canciones: any[] = [];
 const userId = Astro.locals.user?.id ?? null;
 const accessToken = Astro.locals.accessToken || '';
 const supabaseSSR = createSupabaseUserClient(accessToken);
+const PAGE_SIZE = 24;
+const selectionEventId = String(Astro.url.searchParams.get('seleccionar_para') || '').trim();
+const sharedSetlistParam = String(Astro.url.searchParams.get('setlist') || '').trim();
+const shouldPaginate = !selectionEventId && !sharedSetlistParam;
+const requestedPage = Math.max(1, Number.parseInt(Astro.url.searchParams.get('page') || '1', 10) || 1);
+const searchQuery = String(Astro.url.searchParams.get('q') || '').trim().slice(0, 80);
+const vozFilter = String(Astro.url.searchParams.get('voz') || '').trim().slice(0, 80);
+const categoriaFilter = String(Astro.url.searchParams.get('categoria') || '').trim().slice(0, 80);
+const temaFilter = String(Astro.url.searchParams.get('tema') || '').trim().slice(0, 120);
+const estadoFilter = String(Astro.url.searchParams.get('estado') || '').trim().slice(0, 80);
+const safePostgrestSearch = searchQuery.replace(/[,().%_\\]/g, ' ').replace(/\s+/g, ' ').trim();
+
+const songSelect = `
+  id,
+  titulo,
+  cantante,
+  tonalidad,
+  bpm,
+  categoria,
+  estado,
+  tema,
+  voz,
+  chordpro,
+  link_acordes,
+  link_letras,
+  link_secuencias,
+  link_voces,
+  link_youtube,
+  mp3,
+  multitrack_session,
+  section_markers,
+  voces
+`;
+
+let canciones: any[] = [];
+let filterCatalog: any[] = [];
+let totalSongs = 0;
 try {
-  const { data, error } = await supabaseSSR
+  let songsQuery = supabaseSSR
     .from('canciones')
-    .select(`
-      id,
-      titulo,
-      cantante,
-      tonalidad,
-      bpm,
-      categoria,
-      estado,
-      tema,
-      voz,
-      chordpro,
-      link_acordes,
-      link_letras,
-      link_secuencias,
-      link_voces,
-      link_youtube,
-      mp3,
-      multitrack_session,
-      section_markers,
-      voces
-    `)
+    .select(songSelect, { count: shouldPaginate ? 'exact' : undefined })
+    .or('estado.is.null,estado.neq.Archivada')
     .order('titulo');
+
+  if (shouldPaginate) {
+    if (safePostgrestSearch) {
+      songsQuery = songsQuery.or(
+        `titulo.ilike.%${safePostgrestSearch}%,cantante.ilike.%${safePostgrestSearch}%`,
+      );
+    }
+    if (vozFilter) songsQuery = songsQuery.ilike('voz', `%${vozFilter}%`);
+    if (categoriaFilter === 'Transición') {
+      songsQuery = songsQuery.or('categoria.ilike.%Transición%,categoria.ilike.%Transicion%');
+    } else if (categoriaFilter) {
+      songsQuery = songsQuery.ilike('categoria', `%${categoriaFilter}%`);
+    }
+    if (temaFilter) songsQuery = songsQuery.eq('tema', temaFilter);
+    if (estadoFilter) songsQuery = songsQuery.eq('estado', estadoFilter);
+    const rangeStart = (requestedPage - 1) * PAGE_SIZE;
+    songsQuery = songsQuery.range(rangeStart, rangeStart + PAGE_SIZE - 1);
+  }
+
+  const [songsResult, catalogResult] = await Promise.all([
+    songsQuery,
+    supabaseSSR
+      .from('canciones')
+      .select('tema, estado')
+      .or('estado.is.null,estado.neq.Archivada'),
+  ]);
+
+  const { data, error, count } = songsResult;
 
   if (error) {
     console.error("Error fetching from Supabase:", error);
   } else if (data) {
-    canciones = data.filter(c => c.estado !== 'Archivada');
+    canciones = data;
+    totalSongs = shouldPaginate ? Number(count || 0) : data.length;
+  }
+  if (catalogResult.error) {
+    console.error('Error fetching repertoire filter catalog:', catalogResult.error);
+  } else {
+    filterCatalog = catalogResult.data || [];
   }
 } catch (e) {
   console.error("Fetch failed", e);
 }
 
-const selectionEventId = String(Astro.url.searchParams.get('seleccionar_para') || '').trim();
+const totalPages = shouldPaginate ? Math.max(1, Math.ceil(totalSongs / PAGE_SIZE)) : 1;
+if (shouldPaginate && requestedPage > totalPages && totalSongs > 0) {
+  const redirectParams = new URLSearchParams(Astro.url.searchParams);
+  redirectParams.set('page', String(totalPages));
+  return Astro.redirect(`/repertorio?${redirectParams.toString()}`);
+}
+const pageStart = totalSongs === 0 ? 0 : (requestedPage - 1) * PAGE_SIZE + 1;
+const pageEnd = Math.min(requestedPage * PAGE_SIZE, totalSongs);
+const pageHref = (page: number) => {
+  const params = new URLSearchParams(Astro.url.searchParams);
+  if (page <= 1) params.delete('page');
+  else params.set('page', String(page));
+  const query = params.toString();
+  return query ? `/repertorio?${query}` : '/repertorio';
+};
+
 let initialPlaylistSongIds: string[] = [];
 if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(selectionEventId)) {
   try {
@@ -73,8 +139,8 @@ if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
   }
 }
 
-const temasUnicos = [...new Set(canciones.map((c: any) => c.tema).filter(Boolean))].sort() as string[];
-const estadosUnicos = [...new Set(canciones.map((c: any) => c.estado).filter(Boolean))].sort() as string[];
+const temasUnicos = [...new Set(filterCatalog.map((c: any) => c.tema).filter(Boolean))].sort() as string[];
+const estadosUnicos = [...new Set(filterCatalog.map((c: any) => c.estado).filter(Boolean))].sort() as string[];
 const songRegistry = canciones.reduce((acc: Record<string, any>, cancion: any) => {
   const artwork = cancion.portada || cancion.imagen || cancion.image || cancion.cover || cancion.thumbnail
     || cancion.artwork || cancion.album_art || cancion.albumArt || cancion.caratula || cancion.foto || '';
@@ -119,8 +185,8 @@ const firstTourResourcesId =
  <section id="searchControls" data-tour="repertorio-search" class="repertoire-search-bar sticky z-40 max-w-7xl mx-auto mb-3 md:mb-6 bg-surface/95 backdrop-blur-xl border border-border rounded-2xl px-2.5 py-2.5 md:px-4 md:py-4 shadow-lg anim-fade-in-up anim-stagger" style="--delay: 220ms; top: max(calc(env(safe-area-inset-top) + 0.65rem), 0.75rem);">
  <div class="flex items-end gap-2 md:grid md:grid-cols-[minmax(16rem,1fr)_auto] md:gap-3">
  <div class="min-w-0 flex-1">
- <label for="search-input" class="hidden md:block text-sm font-medium text-content mb-1.5">Buscar</label>
-  <BuscadorPredictivo idInput="searchInput" placeholder="Buscar canci&oacute;n o artista..." />
+ <label for="searchInput" class="hidden md:block text-sm font-medium text-content mb-1.5">Buscar</label>
+  <BuscadorPredictivo idInput="searchInput" placeholder="Buscar canci&oacute;n o artista..." value={searchQuery} />
  </div>
  <button id="btnToggleFilters" type="button" aria-expanded="false" aria-controls="mobileFiltersDialog" class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 text-sm font-bold text-content transition-colors hover:bg-surface md:hidden">
   <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18"/><path d="M6 12h12"/><path d="M10 19h4"/></svg>
@@ -135,10 +201,10 @@ const firstTourResourcesId =
  <label for="filterVoz" class="block text-xs md:text-sm font-medium text-content mb-1.5">Voz</label>
  <select id="filterVoz" 
  class="w-full h-11 bg-surface border border-border text-content rounded-xl px-3 text-sm md:text-base focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors appearance-none">
- <option value="Todas">Todas</option>
- <option value="Hombre">Hombre</option>
- <option value="Mujer">Mujer</option>
- <option value="Hombre y Mujer">Hombre y Mujer</option>
+ <option value="Todas" selected={!vozFilter}>Todas</option>
+ <option value="Hombre" selected={vozFilter === 'Hombre'}>Hombre</option>
+ <option value="Mujer" selected={vozFilter === 'Mujer'}>Mujer</option>
+ <option value="Hombre y Mujer" selected={vozFilter === 'Hombre y Mujer'}>Hombre y Mujer</option>
  </select>
  </div>
 
@@ -146,10 +212,10 @@ const firstTourResourcesId =
  <label for="filterCategoria" class="block text-xs md:text-sm font-medium text-content mb-1.5">Categor&iacute;a</label>
  <select id="filterCategoria" 
  class="w-full h-11 bg-surface border border-border text-content rounded-xl px-3 text-sm md:text-base focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors appearance-none">
- <option value="Todas">Todas</option>
- <option value="Lenta">Lenta</option>
- <option value="R&aacute;pida">R&aacute;pida</option>
- <option value="Transici&oacute;n">Transici&oacute;n</option>
+ <option value="Todas" selected={!categoriaFilter}>Todas</option>
+ <option value="Lenta" selected={categoriaFilter === 'Lenta'}>Lenta</option>
+ <option value="R&aacute;pida" selected={categoriaFilter === 'Rápida'}>R&aacute;pida</option>
+ <option value="Transici&oacute;n" selected={categoriaFilter === 'Transición'}>Transici&oacute;n</option>
  </select>
  </div>
 
@@ -157,9 +223,9 @@ const firstTourResourcesId =
  <label for="filterTema" class="block text-xs md:text-sm font-medium text-content mb-1.5">Tema</label>
  <select id="filterTema" 
  class="w-full h-11 bg-surface border border-border text-content rounded-xl px-3 text-sm md:text-base focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors appearance-none">
- <option value="Todas">Todas</option>
+ <option value="Todas" selected={!temaFilter}>Todas</option>
  {temasUnicos.map(tema => (
- <option value={tema}>{tema}</option>
+ <option value={tema} selected={temaFilter === tema}>{tema}</option>
  ))}
  </select>
  </div>
@@ -168,9 +234,9 @@ const firstTourResourcesId =
  <label for="filterEstado" class="block text-xs md:text-sm font-medium text-content mb-1.5">Estado</label>
  <select id="filterEstado"
  class="w-full h-11 bg-surface border border-border text-content rounded-xl px-3 text-sm md:text-base focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors appearance-none">
- <option value="Todas">Todas</option>
+ <option value="Todas" selected={!estadoFilter}>Todas</option>
  {estadosUnicos.map(estado => (
- <option value={estado}>{estado}</option>
+ <option value={estado} selected={estadoFilter === estado}>{estado}</option>
  ))}
  </select>
  </div>
@@ -279,6 +345,27 @@ const firstTourResourcesId =
  />
  ))}
  </div>
+
+ {shouldPaginate && totalSongs > 0 && (
+  <nav class="repertorio-pagination mx-auto mt-5 flex max-w-7xl items-center justify-between gap-3 rounded-2xl border border-border bg-surface px-3 py-3 md:px-4" aria-label="Paginación del repertorio">
+   <p class="min-w-0 text-xs font-semibold text-content-muted md:text-sm">
+    <span class="text-content">{pageStart}-{pageEnd}</span> de {totalSongs} canciones
+   </p>
+   <div class="flex shrink-0 items-center gap-2">
+    {requestedPage > 1 ? (
+     <a class="inline-flex min-h-10 items-center rounded-xl border border-border bg-background px-3 text-sm font-bold text-content hover:border-brand/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50" href={pageHref(requestedPage - 1)} rel="prev">Anterior</a>
+    ) : (
+     <span class="inline-flex min-h-10 items-center rounded-xl border border-border px-3 text-sm font-bold text-content-muted opacity-45" aria-disabled="true">Anterior</span>
+    )}
+    <span class="hidden text-xs font-bold text-content-muted sm:inline">{requestedPage} / {totalPages}</span>
+    {requestedPage < totalPages ? (
+     <a class="inline-flex min-h-10 items-center rounded-xl bg-brand px-3 text-sm font-bold text-white hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50" href={pageHref(requestedPage + 1)} rel="next">Siguiente</a>
+    ) : (
+     <span class="inline-flex min-h-10 items-center rounded-xl bg-brand px-3 text-sm font-bold text-white opacity-40" aria-disabled="true">Siguiente</span>
+    )}
+   </div>
+  </nav>
+ )}
 
  {/* Datos inertes: evita ejecutar el contenido ChordPro como JavaScript inline. */}
  <script is:inline id="repertorioSongRegistry" type="application/json" set:html={serializedSongRegistry}></script>
@@ -1078,9 +1165,10 @@ if (sessionError) {
   if (filterVoz && mobileFilterVoz) filterVoz.value = mobileFilterVoz.value;
   if (filterCategoria && mobileFilterCategoria) filterCategoria.value = mobileFilterCategoria.value;
   if (filterTema && mobileFilterTema) filterTema.value = mobileFilterTema.value;
-  if (filterEstado && mobileFilterEstado) filterEstado.value = mobileFilterEstado.value;
-  setMobileFiltersOpen(false);
-  filterCards();
+ if (filterEstado && mobileFilterEstado) filterEstado.value = mobileFilterEstado.value;
+ setMobileFiltersOpen(false);
+ filterCards();
+  syncServerFilters();
  });
 
  addListener(window, 'resize', () => {
@@ -1688,6 +1776,34 @@ const matchCategoria = (categoriaValue: string, categoriaFilter: string) => {
  };
  }
 
+ const syncServerFilters = () => {
+  if (isSelectionMode || isSetlistSemana) return;
+
+  const params = new URLSearchParams(window.location.search);
+  const setOrDelete = (key: string, value: string, defaultValue = '') => {
+   const normalizedValue = value.trim();
+   if (!normalizedValue || normalizedValue.toLowerCase() === defaultValue.toLowerCase()) {
+    params.delete(key);
+   } else {
+    params.set(key, normalizedValue);
+   }
+  };
+
+  setOrDelete('q', searchInput?.value || '');
+  setOrDelete('voz', filterVoz?.value || '', 'todas');
+  setOrDelete('categoria', filterCategoria?.value || '', 'todas');
+  setOrDelete('tema', filterTema?.value || '', 'todas');
+  setOrDelete('estado', filterEstado?.value || '', 'todas');
+  params.delete('page');
+
+  const nextQuery = params.toString();
+  const currentQuery = new URLSearchParams(window.location.search).toString();
+  if (nextQuery === currentQuery) return;
+  window.location.assign(nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname);
+ };
+
+ const debouncedServerFilterSync = debounce(syncServerFilters, 520);
+
 function filterCards() {
  const searchTerm = normalizeStr(searchInput.value).trim();
  const vozTerm = normalizeStr(filterVoz.value);
@@ -1763,14 +1879,18 @@ function filterCards() {
    syncMobileFilterDraft();
    setMobileFiltersOpen(false);
    filterCards();
+   syncServerFilters();
   });
  }
 
- if(searchInput) addListener(searchInput, 'input', debouncedFilterCards);
- if(filterVoz) addListener(filterVoz, 'change', filterCards);
- if(filterCategoria) addListener(filterCategoria, 'change', filterCards);
- if(filterTema) addListener(filterTema, 'change', filterCards);
- if(filterEstado) addListener(filterEstado, 'change', filterCards);
+ if(searchInput) addListener(searchInput, 'input', () => {
+  debouncedFilterCards();
+  debouncedServerFilterSync();
+ });
+ if(filterVoz) addListener(filterVoz, 'change', () => { filterCards(); syncServerFilters(); });
+ if(filterCategoria) addListener(filterCategoria, 'change', () => { filterCards(); syncServerFilters(); });
+ if(filterTema) addListener(filterTema, 'change', () => { filterCards(); syncServerFilters(); });
+ if(filterEstado) addListener(filterEstado, 'change', () => { filterCards(); syncServerFilters(); });
  syncFilterMenuState();
 
 
@@ -1839,8 +1959,8 @@ function filterCards() {
  .card-cancion .badge-bpm:hover {
    background-color: rgba(113, 113, 122, 0.08);
  }
- :global(.dark) .card-cancion .badge-tono:hover,
- :global(.dark) .card-cancion .badge-bpm:hover {
+ .dark .card-cancion .badge-tono:hover,
+ .dark .card-cancion .badge-bpm:hover {
    background-color: rgba(255, 255, 255, 0.07);
  }
  .resource-actions {
@@ -2685,7 +2805,7 @@ function filterCards() {
    padding: 0.85rem 0.25rem 1rem;
    border-top: 1px solid rgba(228,228,231,0.5);
  }
- :global(.dark) .modo-lista.expandido .card-content {
+ .dark .modo-lista.expandido .card-content {
    border-top-color: rgba(255,255,255,0.07);
  }
  .compact-song-list .modo-lista.expandido {

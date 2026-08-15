@@ -9,75 +9,20 @@ import {
   createChordProPdfPayloadToken,
   deleteChordProPdfPayloadToken,
 } from '../../lib/chordproPdfPayloadStore';
-import { readEnv } from '../../lib/server/supabase-env.js';
 import {
   ApiSecurityError,
   protectPdfGenerationRequest,
   securityErrorResponse,
 } from '../../lib/server/api-security.js';
+import {
+  getPdfBrowserRuntime,
+  isDevRuntime,
+} from '../../lib/server/pdf-browser-runtime';
 
 export const prerender = false;
 
 const PDF_READY_TIMEOUT_MS = 60000;
 const PDF_VIEWPORT = { width: 816, height: 1056, deviceScaleFactor: 1 } as const;
-
-type BrowserLauncher = {
-  launch: (options: Record<string, unknown>) => Promise<Browser>;
-  defaultArgs?: (options?: Record<string, unknown>) => string[];
-};
-
-const isDevRuntime = () => readEnv('DEV') === 'true' || process.env.NODE_ENV === 'development';
-
-const isServerlessChromiumRuntime = () =>
-  !isDevRuntime() &&
-  Boolean(
-    process.env.NETLIFY ||
-      process.env.AWS_EXECUTION_ENV ||
-      process.env.AWS_LAMBDA_FUNCTION_NAME ||
-      process.env.LAMBDA_TASK_ROOT
-  );
-
-const getBrowserRuntime = async () => {
-  if (isServerlessChromiumRuntime()) {
-    const [{ default: puppeteerCore }, { default: chromium }] = await Promise.all([
-      import('puppeteer-core'),
-      import('@sparticuz/chromium'),
-    ]);
-
-    chromium.setGraphicsMode = false;
-
-    const headlessMode = 'shell';
-    const executablePath = await chromium.executablePath();
-    const launchArgs =
-      typeof puppeteerCore.defaultArgs === 'function'
-        ? puppeteerCore.defaultArgs({
-            args: chromium.args,
-            headless: headlessMode,
-          })
-        : chromium.args;
-
-    return {
-      launcher: puppeteerCore as BrowserLauncher,
-      launchOptions: {
-        args: launchArgs,
-        defaultViewport: PDF_VIEWPORT,
-        executablePath,
-        headless: headlessMode,
-      },
-      runtimeLabel: 'serverless-chromium',
-    };
-  }
-
-  const { default: puppeteer } = await import('puppeteer');
-  return {
-    launcher: puppeteer as unknown as BrowserLauncher,
-    launchOptions: {
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    },
-    runtimeLabel: 'local-puppeteer',
-  };
-};
 
 const buildContentDisposition = (fileName: string) => {
   const safeName = `${buildChordProPdfFileName(fileName)}.pdf`.replace(/\.pdf\.pdf$/i, '.pdf');
@@ -163,7 +108,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     const renderUrl = buildRenderUrl(request, token);
     failureStage = 'launch-browser';
 
-    const browserRuntime = await getBrowserRuntime();
+    const browserRuntime = await getPdfBrowserRuntime(PDF_VIEWPORT);
     console.log(`[ChordPro PDF V2] browser runtime: ${browserRuntime.runtimeLabel}`);
     browser = await browserRuntime.launcher.launch(browserRuntime.launchOptions);
 

@@ -218,7 +218,7 @@ Decisiones de shell visibles hoy:
   - landing de herramientas del musico
 
 - `src/pages/configuracion.astro` -> `/configuracion`
-  - panel admin de branding, push manual y modo experto
+  - panel admin de branding, push manual y gestión de repertorio
 
 - `src/pages/panel.astro` -> `/panel`
   - dashboard analitico y operativo
@@ -415,8 +415,8 @@ Decisiones de shell visibles hoy:
   - edicion de branding semantico
 - `PanelAdminPush.jsx`
   - envio manual de notificaciones
-- `PanelModoExperto.jsx`
-  - operaciones directas / modo experto
+- `PanelGestionRepertorio.jsx`
+  - administración directa del repertorio
 - `PanelControl.jsx`
   - dashboard analitico del `/panel`
 

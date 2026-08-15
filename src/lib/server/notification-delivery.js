@@ -5,7 +5,7 @@ import { readEnv } from './supabase-env.js';
 const rawSupabaseUrl = readEnv('SUPABASE_URL', 'PUBLIC_SUPABASE_URL');
 const supabaseUrl = rawSupabaseUrl.replace(/\/$/, '');
 const supabaseServiceRoleKey = readEnv('SUPABASE_SERVICE_ROLE_KEY');
-const notificationFunctionSecret = readEnv('NOTIFICATION_FUNCTION_SECRET') || supabaseServiceRoleKey;
+const notificationFunctionSecret = readEnv('NOTIFICATION_FUNCTION_SECRET');
 const resendApiKey = readEnv('RESEND_API_KEY');
 const resendFrom = readEnv('RESEND_FROM') || 'Worship App <onboarding@resend.dev>';
 const siteUrl = readEnv('PUBLIC_SITE_URL', 'SITE_URL', 'URL') || 'https://alabanzaredilestadio.com';

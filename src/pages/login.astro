@@ -28,16 +28,18 @@ import Layout from "../layouts/Layout.astro";
 
       <form id="login-form" class="flex flex-col gap-5">
         <!-- Pestañas (Tabs) -->
-        <div class="flex p-1 bg-background rounded-xl mb-2">
+        <div class="flex p-1 bg-background rounded-xl mb-2" role="group" aria-label="Modo de acceso">
           <button
             type="button"
             id="tab-login"
+            aria-pressed="true"
             class="flex-1 py-2 text-sm font-ui-strong rounded-lg bg-surface text-content shadow-sm transition-all"
             >Iniciar Sesión</button
           >
           <button
             type="button"
             id="tab-register"
+            aria-pressed="false"
             class="flex-1 py-2 text-sm font-ui-strong rounded-lg text-content-muted hover:text-content transition-all"
             >Registrarse</button
           >
@@ -296,6 +298,8 @@ import Layout from "../layouts/Layout.astro";
             type="password"
             id="password"
             required
+            maxlength="128"
+            aria-describedby="password-hint"
             class="w-full px-4 py-3 bg-background border border-border rounded-xl text-content focus:outline-none focus:ring-2 focus:ring-brand transition-all placeholder-content-muted"
             placeholder="••••••••"
           />
@@ -303,7 +307,7 @@ import Layout from "../layouts/Layout.astro";
             class="text-[11px] text-content-muted mt-1.5 ml-1"
             id="password-hint"
           >
-            Mínimo 6 caracteres.
+            Mínimo 12 caracteres.
           </p>
         </div>
 
@@ -323,11 +327,14 @@ import Layout from "../layouts/Layout.astro";
 
         <div
           id="error-message"
+          role="alert"
           class="hidden text-danger text-sm font-medium bg-danger/10 border border-danger/30 p-3 rounded-xl text-center mt-2"
         >
         </div>
         <div
           id="success-message"
+          role="status"
+          aria-live="polite"
           class="hidden text-success text-sm font-medium bg-success/10 border border-success/30 p-3 rounded-xl text-center mt-2"
         >
         </div>
@@ -403,6 +410,10 @@ import Layout from "../layouts/Layout.astro";
   import { VOCAL_RANGE_OPTIONS } from "../lib/ministry-config.js";
   import { isPublicRegistrationRoleCode } from "../lib/public-registration.js";
   import { getSafeImageForCropper } from "../utils/safeImageProcessor";
+  import Cropper from "cropperjs";
+  import "cropperjs/dist/cropper.css";
+
+  (window as any).Cropper = Cropper;
 
   document.addEventListener("DOMContentLoaded", async () => {
     // Removido loop infinito de auto-sincronizaciÃ³n. El usuario debe hacer logout manual o login.
@@ -686,9 +697,11 @@ import Layout from "../layouts/Layout.astro";
       isLoginMode = true;
       tabLogin?.classList.add("bg-surface", "text-content", "shadow-sm");
       tabLogin?.classList.remove("text-content-muted", "hover:text-content");
+      tabLogin?.setAttribute("aria-pressed", "true");
 
       tabRegister?.classList.remove("bg-surface", "text-content", "shadow-sm");
       tabRegister?.classList.add("text-content-muted", "hover:text-content");
+      tabRegister?.setAttribute("aria-pressed", "false");
 
       registerFieldsTop?.classList.add("hidden");
       registerFieldsTop?.classList.remove("flex");
@@ -697,6 +710,8 @@ import Layout from "../layouts/Layout.astro";
       registerFieldsBottom?.classList.add("hidden");
       registerFieldsBottom?.classList.remove("flex");
       passwordHint?.classList.add("hidden");
+      passwordInput.minLength = 0;
+      passwordInput.autocomplete = "current-password";
 
       fullnameInput.required = false;
       telefonoInput.required = false;
@@ -714,9 +729,11 @@ import Layout from "../layouts/Layout.astro";
       isLoginMode = false;
       tabRegister?.classList.add("bg-surface", "text-content", "shadow-sm");
       tabRegister?.classList.remove("text-content-muted", "hover:text-content");
+      tabRegister?.setAttribute("aria-pressed", "true");
 
       tabLogin?.classList.remove("bg-surface", "text-content", "shadow-sm");
       tabLogin?.classList.add("text-content-muted", "hover:text-content");
+      tabLogin?.setAttribute("aria-pressed", "false");
 
       registerFieldsTop?.classList.remove("hidden");
       registerFieldsTop?.classList.add("flex");
@@ -725,6 +742,8 @@ import Layout from "../layouts/Layout.astro";
       registerFieldsBottom?.classList.remove("hidden");
       registerFieldsBottom?.classList.add("flex");
       passwordHint?.classList.remove("hidden");
+      passwordInput.minLength = 12;
+      passwordInput.autocomplete = "new-password";
 
       fullnameInput.required = true;
       telefonoInput.required = true;
@@ -861,6 +880,10 @@ import Layout from "../layouts/Layout.astro";
           let profilePhotoUrl = "";
           let registrationUploadId = "";
 
+          if (password.length < 12) {
+            throw new Error("La contraseña debe tener al menos 12 caracteres.");
+          }
+
           // SECRET CODE VALIDATION (server-side)
           const verifyRes = await fetch("/api/verify-access-code", {
             method: "POST",
@@ -868,7 +891,12 @@ import Layout from "../layouts/Layout.astro";
             body: JSON.stringify({ code: accessCode }),
           });
           const verifyData = await verifyRes.json();
-          if (!verifyRes.ok || !verifyData.valid || !verifyData.registration_target) {
+          if (
+            !verifyRes.ok
+            || !verifyData.valid
+            || !verifyData.registration_target
+            || !verifyData.registration_ticket
+          ) {
             throw new Error(
               "El Código de Acceso es incorrecto. Contacta a tu líder si no lo tienes.",
             );
@@ -957,6 +985,7 @@ import Layout from "../layouts/Layout.astro";
                   roles: selectedRoles,
                   tonalidad_voz: vocalRange,
                   registration_target: verifyData.registration_target,
+                  registration_ticket: verifyData.registration_ticket,
                 },
               },
             }));
@@ -1009,19 +1038,6 @@ import Layout from "../layouts/Layout.astro";
     });
   });
 </script>
-
-<!-- Cropper.js CDN -->
-<link
-  rel="stylesheet"
-  href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css"
-  integrity="sha512-hvNR0F/e2J7zPPfLC9auFe3/SE0yG4aJCOd/qxew74NN7eyiSKjr7xJJMu1Jy2wf7FXITpWS1E/RY8yzuXN7VA=="
-  crossorigin="anonymous"
-/>
-<script
-  is:inline
-  src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"
-  integrity="sha512-9KkIqdfN7ipEW6B6k+Aq20PV31bjODg4AA52W+tYtAE0jE0kMx49bjJ3FgvS56wzmyfMUHbQ4Km2b7l9+Y/+Eg=="
-  crossorigin="anonymous"></script>
 
 <!-- Modal Cropper Foto de Perfil -->
 <div

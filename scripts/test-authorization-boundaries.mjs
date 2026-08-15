@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { createClient } from '@supabase/supabase-js';
 import { config as loadEnv } from 'dotenv';
 
@@ -22,6 +23,71 @@ const clientOptions = {
 
 const anonClient = createClient(supabaseUrl, anonKey, clientOptions);
 const serviceClient = createClient(supabaseUrl, serviceRoleKey, clientOptions);
+
+const runStaticProfilePrivacyChecks = async () => {
+  const migration = await readFile(
+    new URL('../migrations/044_profile_data_minimization.sql', import.meta.url),
+    'utf8',
+  );
+  assert.match(migration, /REVOKE SELECT ON TABLE public\.perfiles FROM PUBLIC, anon, authenticated/);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.get_team_birthdays/);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.get_team_roster_private/);
+  assert.match(migration, /RAISE EXCEPTION 'No tienes permisos para consultar datos privados del equipo\.'/);
+
+  const publicRosterFiles = [
+    '../src/pages/index.astro',
+    '../src/pages/programacion.astro',
+    '../src/pages/ensayo/[id].astro',
+    '../src/components/react/CalendarioGrid.jsx',
+    '../src/components/react/RosterManager.jsx',
+  ];
+  for (const relativePath of publicRosterFiles) {
+    const source = await readFile(new URL(relativePath, import.meta.url), 'utf8');
+    assert.doesNotMatch(
+      source,
+      /perfiles(?:!inner)?\s*\([^)]*\bemail\b/i,
+      `${relativePath}: no debe solicitar email dentro del roster publico.`,
+    );
+  }
+
+  const profileApi = await readFile(
+    new URL('../src/pages/api/profile-data.js', import.meta.url),
+    'utf8',
+  );
+  assert.match(profileApi, /serviceRoleClient[\s\S]+\.from\('perfiles'\)/);
+  console.log('authorization profile privacy static checks: ok');
+};
+
+const runStaticCredentialHardeningChecks = async () => {
+  const loginSource = await readFile(new URL('../src/pages/login.astro', import.meta.url), 'utf8');
+  const resetSource = await readFile(new URL('../src/pages/reset-password.astro', import.meta.url), 'utf8');
+  assert.match(loginSource, /passwordInput\.minLength = 12/);
+  assert.match(loginSource, /contraseña debe tener al menos 12 caracteres/i);
+  assert.match(resetSource, /minlength="12"/);
+  assert.match(resetSource, /newPass\.length < 12/);
+
+  const dedicatedSecretFiles = [
+    '../src/pages/api/process-assignment-notifications.js',
+    '../src/pages/api/notify-birthdays.js',
+    '../src/pages/api/notify-service-reminders.js',
+    '../src/lib/server/notification-delivery.js',
+    '../netlify/functions/reconcile-google-calendar.mjs',
+    '../netlify/functions/reconcile-google-calendar-background.mjs',
+    '../supabase/functions/send-notification-email/index.ts',
+    '../supabase/functions/notify-assignment/index.ts',
+  ];
+
+  for (const relativePath of dedicatedSecretFiles) {
+    const source = await readFile(new URL(relativePath, import.meta.url), 'utf8');
+    assert.doesNotMatch(
+      source,
+      /NOTIFICATION_FUNCTION_SECRET[\s\S]{0,120}(?:\|\||,)\s*(?:process\.env\.|Deno\.env\.get\()?['"]?SUPABASE_SERVICE_ROLE_KEY/i,
+      `${relativePath}: no debe reutilizar SUPABASE_SERVICE_ROLE_KEY como secreto interno.`,
+    );
+  }
+
+  console.log('authorization credential hardening static checks: ok');
+};
 
 const expectPermissionDenied = (result, label) => {
   assert(result.error, `${label}: el acceso anonimo no fue rechazado.`);
@@ -153,6 +219,8 @@ const runAuthenticatedRoleChecks = async () => {
   console.log('authorization authenticated roles: ok');
 };
 
+await runStaticProfilePrivacyChecks();
+await runStaticCredentialHardeningChecks();
 await runDatabaseBoundaryChecks();
 
 if (process.env.TEST_APP_URL) {

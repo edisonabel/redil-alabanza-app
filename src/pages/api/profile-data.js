@@ -2,6 +2,7 @@ import { getServerAuthTokens } from '../../lib/server/auth-cookies.js';
 import {
   requireAuthenticatedUser,
   securityErrorResponse,
+  serviceRoleClient,
 } from '../../lib/server/api-security.js';
 import { createSupabaseUserClient } from '../../lib/server/supabase-user-client.js';
 import { SELF_MANAGED_INSTRUMENT_ROLE_CODES } from '../../lib/role-permissions.js';
@@ -19,6 +20,9 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), {
 export async function GET({ cookies }) {
   try {
     const user = await requireAuthenticatedUser(cookies);
+    if (!serviceRoleClient) {
+      return json({ error: 'El servicio de perfiles no esta configurado.' }, 503);
+    }
     const { accessToken } = getServerAuthTokens(cookies);
     const supabase = createSupabaseUserClient(accessToken);
     const today = new Intl.DateTimeFormat('en-CA', {
@@ -29,7 +33,7 @@ export async function GET({ cookies }) {
     }).format(new Date());
 
     const [profileResult, rolesResult, instrumentOptionsResult, absencesResult] = await Promise.all([
-      supabase
+      serviceRoleClient
         .from('perfiles')
         .select('id, email, nombre, avatar_url, tonalidad_voz, fecha_nacimiento, telefono, can_change_avatar')
         .eq('id', user.id)
@@ -67,7 +71,7 @@ export async function GET({ cookies }) {
     // Tras confirmar un cambio de correo en Auth, conserva sincronizado el
     // correo operativo usado por asignaciones y notificaciones.
     if (profile && authEmail && authEmail !== profileEmail) {
-      const { data: syncedProfile, error: syncError } = await supabase
+      const { data: syncedProfile, error: syncError } = await serviceRoleClient
         .from('perfiles')
         .update({ email: authEmail })
         .eq('id', user.id)

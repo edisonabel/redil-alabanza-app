@@ -1,9 +1,10 @@
 import { runServiceReminderNotifications } from '../../lib/service-reminder-notifications.js';
 import { readEnv } from '../../lib/server/supabase-env.js';
+import { internalSecretsMatch } from '../../lib/server/internal-secret.js';
 
 export const prerender = false;
 
-const notificationFunctionSecret = readEnv('NOTIFICATION_FUNCTION_SECRET', 'SUPABASE_SERVICE_ROLE_KEY');
+const notificationFunctionSecret = readEnv('NOTIFICATION_FUNCTION_SECRET');
 
 const jsonHeaders = {
   'content-type': 'application/json',
@@ -34,7 +35,7 @@ const normalizeReferenceDate = (value) => {
 
 const isAuthorized = (request) => {
   const receivedSecret = String(request.headers.get('x-notification-secret') || '').trim();
-  return Boolean(notificationFunctionSecret) && receivedSecret === notificationFunctionSecret;
+  return internalSecretsMatch(receivedSecret, notificationFunctionSecret);
 };
 
 export async function POST({ request }) {

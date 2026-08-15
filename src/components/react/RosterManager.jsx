@@ -343,7 +343,7 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
         if (!evId || evId.startsWith('virtual|')) return;
         const { data } = await supabase
             .from('eventos')
-            .select('asignaciones(id, perfil_id, rol_id, perfiles(id, nombre, email, avatar_url, tonalidad_voz))')
+            .select('asignaciones(id, perfil_id, rol_id, perfiles(id, nombre, avatar_url, tonalidad_voz))')
             .eq('id', evId)
             .single();
         if (data) {
@@ -424,11 +424,11 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
         let perfilesRolesQuery = isVoicePool
             ? supabase
                 .from('perfil_roles')
-                .select('perfil_id, rol_id, perfiles!inner(id, nombre, email, avatar_url, tonalidad_voz)')
+                .select('perfil_id, rol_id, perfiles!inner(id, nombre, avatar_url, tonalidad_voz)')
                 .in('rol_id', voiceRoleIds)
             : supabase
                 .from('perfil_roles')
-                .select('perfil_id, rol_id, perfiles!inner(id, nombre, email, avatar_url, tonalidad_voz)')
+                .select('perfil_id, rol_id, perfiles!inner(id, nombre, avatar_url, tonalidad_voz)')
                 .eq('rol_id', rId);
 
         if (eligibleProfiles.ids) {
@@ -954,9 +954,7 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
                                                 <div className="flex-1 overflow-hidden min-w-0">
                                                     <p className={`font-bold text-sm truncate ${p.ausente ? 'text-content-muted line-through' : 'text-content'}`}>{p.nombre}</p>
                                                     <p className="text-xs text-content-muted truncate">
-                                                        {pickerRolId === '_voz_pool'
-                                                            ? ([p.tonalidad_voz, p.realRolNombre].filter(Boolean).join(' · ') || p.email)
-                                                            : p.email}
+                                                        {[p.tonalidad_voz, p.realRolNombre].filter(Boolean).join(' · ') || 'Disponible para este rol'}
                                                     </p>
                                                 </div>
                                             </div>

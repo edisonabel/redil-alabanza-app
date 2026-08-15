@@ -24,8 +24,20 @@ const JSON_HEADERS = { "Content-Type": "application/json" };
 const INTERNAL_SECRET_HEADER = "x-notification-secret";
 
 const getInternalFunctionSecret = () =>
-  (Deno.env.get("NOTIFICATION_FUNCTION_SECRET") ?? "").trim() ||
-  (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
+  (Deno.env.get("NOTIFICATION_FUNCTION_SECRET") ?? "").trim();
+
+const secretsMatch = (received: string, expected: string) => {
+  const encoder = new TextEncoder();
+  const receivedBytes = encoder.encode(received);
+  const expectedBytes = encoder.encode(expected);
+  if (receivedBytes.length === 0 || receivedBytes.length !== expectedBytes.length) return false;
+
+  let difference = 0;
+  for (let index = 0; index < receivedBytes.length; index += 1) {
+    difference |= receivedBytes[index] ^ expectedBytes[index];
+  }
+  return difference === 0;
+};
 
 const jsonResponse = (payload: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify({ executed: true, ...payload }), {
@@ -39,14 +51,14 @@ const authorizeInternalRequest = (req: Request) => {
     return jsonResponse(
       {
         error: "Missing internal notification secret",
-        required: ["NOTIFICATION_FUNCTION_SECRET or SUPABASE_SERVICE_ROLE_KEY"],
+        required: ["NOTIFICATION_FUNCTION_SECRET"],
       },
       500,
     );
   }
 
   const receivedSecret = (req.headers.get(INTERNAL_SECRET_HEADER) ?? "").trim();
-  if (!receivedSecret || receivedSecret !== expectedSecret) {
+  if (!secretsMatch(receivedSecret, expectedSecret)) {
     return jsonResponse({ error: "Unauthorized internal request" }, 401);
   }
 

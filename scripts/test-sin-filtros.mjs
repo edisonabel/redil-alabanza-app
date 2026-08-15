@@ -23,32 +23,12 @@ assert.equal(isPublicRegistrationRoleCode('lider_alabanza'), false);
 assert.equal(isPublicRegistrationRoleCode('director_musical'), false);
 assert.equal(isPublicRegistrationRoleCode('voz_soprano'), false);
 
-process.env.REGISTRATION_CODE = 'redil2026';
-process.env.YOUTH_REGISTRATION_CODE = 'sinfiltros2026';
-const { POST: verifyAccessCode } = await import('../src/pages/api/verify-access-code.js');
-const verify = async (code) => {
-  const response = await verifyAccessCode({
-    request: new Request('http://localhost/api/verify-access-code', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ code }),
-    }),
-  });
-  return response.json();
-};
-
-assert.deepEqual(await verify('sinfiltros2026'), {
-  valid: true,
-  registration_target: 'sin_filtros',
-});
-assert.deepEqual(await verify('redil2026'), {
-  valid: true,
-  registration_target: 'general',
-});
-assert.deepEqual(await verify('incorrecto'), {
-  valid: false,
-  registration_target: null,
-});
+process.env.REGISTRATION_CODE = 'TEST_GENERAL_INVITE_7f3c2a91';
+process.env.YOUTH_REGISTRATION_CODE = 'TEST_YOUTH_INVITE_4d8b6e20';
+const { resolveRegistrationTarget } = await import('../src/lib/server/registration-security.js');
+assert.equal(resolveRegistrationTarget('TEST_YOUTH_INVITE_4d8b6e20'), 'sin_filtros');
+assert.equal(resolveRegistrationTarget('TEST_GENERAL_INVITE_7f3c2a91'), 'general');
+assert.equal(resolveRegistrationTarget('incorrecto'), '');
 
 const migration = await readFile(
   new URL('../migrations/036_sin_filtros_ministry_and_vocal_ranges.sql', import.meta.url),
@@ -58,7 +38,7 @@ assert.match(migration, /CREATE POLICY "eventos_select_scope"/);
 assert.match(migration, /CREATE OR REPLACE FUNCTION public\.get_event_eligible_profile_ids/);
 assert.match(migration, /CREATE TRIGGER trg_set_sin_filtros_rehearsal/);
 assert.match(migration, /TIME '17:00'/);
-assert.doesNotMatch(migration, /sinfiltros2026/i);
+assert.doesNotMatch(migration, /(?:registration|access)[_-]?code\s*[:=]/i);
 
 const scheduleMigration = await readFile(
   new URL('../migrations/038_sin_filtros_schedule.sql', import.meta.url),
@@ -78,6 +58,15 @@ assert.match(crossMembershipMigration, /CREATE TABLE IF NOT EXISTS public\.minis
 assert.match(crossMembershipMigration, /CREATE OR REPLACE FUNCTION public\.is_current_user_ministry_manager/);
 assert.match(crossMembershipMigration, /CREATE TRIGGER trg_attach_new_profile_ministry/);
 assert.match(crossMembershipMigration, /CREATE OR REPLACE FUNCTION public\.get_event_eligible_profile_ids/);
+
+const registrationTicketMigration = await readFile(
+  new URL('../migrations/043_registration_invitation_tickets.sql', import.meta.url),
+  'utf8',
+);
+assert.match(registrationTicketMigration, /CREATE TABLE IF NOT EXISTS public\.registration_tickets/);
+assert.match(registrationTicketMigration, /BEFORE INSERT ON auth\.users/);
+assert.match(registrationTicketMigration, /consumed_at IS NULL/);
+assert.match(registrationTicketMigration, /expires_at > now\(\)/);
 
 const requestedCrossMinistryProfileIds = [
   '0b7149b5-b85a-4ea0-91d0-fbdda79496be', // Alexis Caro

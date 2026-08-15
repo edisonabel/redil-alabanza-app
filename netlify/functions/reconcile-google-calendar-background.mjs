@@ -12,9 +12,7 @@ export const config = {
 
 const readSecret = () => {
   const sourceSecret = String(
-    process.env.NOTIFICATION_FUNCTION_SECRET
-    || process.env.SUPABASE_SERVICE_ROLE_KEY
-    || '',
+    process.env.NOTIFICATION_FUNCTION_SECRET || '',
   ).trim();
   if (!sourceSecret) return '';
   return createHash('sha256')

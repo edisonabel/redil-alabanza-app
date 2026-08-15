@@ -8,7 +8,10 @@ import {
   securityErrorResponse,
   serviceRoleClient,
 } from '../../lib/server/api-security.js';
-import { readEnv } from '../../lib/server/supabase-env.js';
+import {
+  getRequestActorAddress,
+  resolveRegistrationTarget,
+} from '../../lib/server/registration-security.js';
 
 const AVATAR_BUCKET = 'avatars';
 const MAX_CROP_BYTES = 2 * 1024 * 1024;
@@ -26,20 +29,6 @@ const json = (body: Record<string, unknown>, status = 200) => new Response(
     },
   },
 );
-
-const resolveRegistrationTarget = (rawCode: unknown) => {
-  const normalizedCode = String(rawCode || '').trim().toLocaleUpperCase('es');
-  const generalCode = readEnv('REGISTRATION_CODE');
-  const youthCode = readEnv('YOUTH_REGISTRATION_CODE', 'SIN_FILTROS_REGISTRATION_CODE');
-
-  if (youthCode && normalizedCode === youthCode.trim().toLocaleUpperCase('es')) {
-    return 'sin_filtros';
-  }
-  if (generalCode && normalizedCode === generalCode.trim().toLocaleUpperCase('es')) {
-    return 'general';
-  }
-  return '';
-};
 
 const assertSameOrigin = (request: Request) => {
   const requestOrigin = request.headers.get('origin');
@@ -105,14 +94,9 @@ export const POST: APIRoute = async ({ request }) => {
       return json({ error: 'La foto es demasiado pesada. Intenta con otra imagen.' }, 413);
     }
 
-    const actorAddress = String(
-      request.headers.get('x-nf-client-connection-ip')
-      || request.headers.get('x-forwarded-for')?.split(',')[0]
-      || 'unknown',
-    ).trim();
     await consumeRateLimit({
       bucket: 'registration-avatar',
-      actorId: actorAddress,
+      actorId: getRequestActorAddress(request),
       windowSeconds: 60 * 60,
       maxRequests: 20,
     });

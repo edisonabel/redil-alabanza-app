@@ -18,10 +18,7 @@ const baseUrl = (
   'https://alabanzaredilestadio.com'
 ).replace(/\/$/, '');
 
-const notificationSecret =
-  process.env.NOTIFICATION_FUNCTION_SECRET ||
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  '';
+const notificationSecret = process.env.NOTIFICATION_FUNCTION_SECRET || '';
 
 const scope = readArg('--scope') || 'morning';
 const date = readArg('--date') || '';
@@ -30,7 +27,7 @@ const perfilId = readArg('--perfil') || '';
 const dryRun = !hasFlag('--live');
 
 if (!notificationSecret) {
-  throw new Error('Missing NOTIFICATION_FUNCTION_SECRET or SUPABASE_SERVICE_ROLE_KEY');
+  throw new Error('Missing NOTIFICATION_FUNCTION_SECRET');
 }
 
 const payload = {

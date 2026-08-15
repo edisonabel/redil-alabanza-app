@@ -3298,7 +3298,7 @@ export default function AdminRepertorio() {
               </div>
             </div>
 
-            <div className="admin-mobile-song-list min-h-0 flex-1 space-y-2.5 overflow-y-auto bg-background/70 p-3 pb-[calc(env(safe-area-inset-bottom)+5.25rem)]">
+            <div className="admin-mobile-song-list min-h-0 flex-1 space-y-2.5 overflow-y-auto bg-background/70 p-3 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
               {mobileSongs.map((song) => {
                 const estado = String(song?.estado || 'Sin estado').trim() || 'Sin estado';
                 const isArchived = normalizeSearchText(estado) === 'archivada';

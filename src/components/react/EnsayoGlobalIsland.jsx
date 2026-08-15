@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchLiveDirectorSongSession } from '../../utils/liveDirectorUploadClient';
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
 
@@ -281,10 +281,11 @@ const resolveRehearsalPlaybackSession = async (song = {}) => {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function EnsayoGlobalIsland() {
+export default function EnsayoGlobalIsland({ initialSong = null }) {
   const [activeSong, setActiveSong] = useState(null);
   const [openingSong, setOpeningSong] = useState(null);
   const [openError, setOpenError] = useState('');
+  const initialSongRef = useRef(initialSong);
 
   const openSong = useCallback(async (raw) => {
     if (!raw) return;
@@ -331,6 +332,13 @@ export default function EnsayoGlobalIsland() {
 
     window.addEventListener('open-ensayo-compacto', handleOpen);
     return () => window.removeEventListener('open-ensayo-compacto', handleOpen);
+  }, [openSong]);
+
+  useEffect(() => {
+    if (!initialSongRef.current) return;
+    const song = initialSongRef.current;
+    initialSongRef.current = null;
+    void openSong(song);
   }, [openSong]);
 
   const handleGoBack = useCallback(() => {

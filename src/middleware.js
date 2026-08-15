@@ -36,17 +36,24 @@ const credentiallessCrossOriginIsolationHeaders = {
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Embedder-Policy': 'credentialless',
 };
+const baseSecurityHeaders = {
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Permissions-Policy': 'camera=(), geolocation=(), microphone=(self), payment=(), usb=()',
+};
 const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
-  "frame-ancestors 'self'",
+  "frame-ancestors 'none'",
   "img-src 'self' https: data: blob:",
   "media-src 'self' https: data: blob:",
   "font-src 'self' data:",
-  "connect-src 'self' https: wss: blob:",
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://stems.alabanzaredilestadio.com https://*.r2.dev https://*.r2.cloudflarestorage.com https://drive.google.com https://docs.google.com https://www.googleapis.com https://cloudflareinsights.com blob:",
   "worker-src 'self' blob:",
-  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob:",
+  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://static.cloudflareinsights.com blob:",
   "style-src 'self' 'unsafe-inline'",
   "frame-src 'self' https://drive.google.com https://docs.google.com",
 ].join('; ') + ';';
@@ -74,6 +81,9 @@ const withRouteHeaders = (response, path) => {
   // Netlify's static header rules do not consistently cover Astro SSR
   // responses, so the document policy must also be set by the function.
   response.headers.set('Content-Security-Policy', contentSecurityPolicy);
+  for (const [header, value] of Object.entries(baseSecurityHeaders)) {
+    response.headers.set(header, value);
+  }
 
   if (path.startsWith('/workers/') || path.startsWith('/vendor/')) {
     response.headers.set('Cross-Origin-Resource-Policy', 'same-origin');
@@ -97,6 +107,8 @@ const redirectTo = (location, status = 302) => new Response(null, {
   headers: {
     Location: location,
     'Cache-Control': 'no-cache',
+    ...baseSecurityHeaders,
+    'Content-Security-Policy': contentSecurityPolicy,
   },
 });
 
@@ -200,35 +212,55 @@ export const onRequest = defineMiddleware(async (context, next) => {
     });
 
     try {
-      const [
-        { data: perfil, error: perfilError },
-        { data: canManageMinistries, error: ministryManagerError },
-        { data: canManageOperations, error: operationsManagerError },
-      ] = await Promise.all([
-        supabaseAuthed
-          .from('perfiles')
-          .select('id, nombre, avatar_url, is_admin, tour_completado')
-          .eq('id', authState.user.id)
-          .maybeSingle(),
-        supabaseAuthed.rpc('is_current_user_ministry_manager'),
-        supabaseAuthed.rpc('is_current_user_operations_manager'),
-      ]);
+      const { data: bootstrap, error: bootstrapError } = await supabaseAuthed
+        .rpc('get_current_user_bootstrap')
+        .maybeSingle();
 
-      if (perfilError) {
-        console.error('Middleware perfil query error:', perfilError);
-      }
-      if (ministryManagerError && ministryManagerError.code !== 'PGRST202') {
-        console.error('Middleware ministry manager query error:', ministryManagerError);
-      }
-      if (operationsManagerError && operationsManagerError.code !== 'PGRST202') {
-        console.error('Middleware operations manager query error:', operationsManagerError);
+      if (!bootstrapError && bootstrap) {
+        locals.perfil = {
+          id: bootstrap.id,
+          nombre: bootstrap.nombre,
+          avatar_url: bootstrap.avatar_url,
+          is_admin: bootstrap.is_admin === true,
+          tour_completado: bootstrap.tour_completado === true,
+        };
+        locals.canManageMinistries = bootstrap.can_manage_ministries === true;
+        locals.canManageOperations = bootstrap.can_manage_operations === true;
+      } else {
+        if (bootstrapError && bootstrapError.code !== 'PGRST202') {
+          console.error('Middleware bootstrap query error:', bootstrapError);
+        }
+
+        // Compatibilidad de despliegue: se retira cuando 045 este aplicada en
+        // todos los ambientes.
+        const [
+          { data: perfil, error: perfilError },
+          { data: canManageMinistries, error: ministryManagerError },
+          { data: canManageOperations, error: operationsManagerError },
+        ] = await Promise.all([
+          supabaseAuthed
+            .from('perfiles')
+            .select('id, nombre, avatar_url, is_admin, tour_completado')
+            .eq('id', authState.user.id)
+            .maybeSingle(),
+          supabaseAuthed.rpc('is_current_user_ministry_manager'),
+          supabaseAuthed.rpc('is_current_user_operations_manager'),
+        ]);
+
+        if (perfilError) console.error('Middleware perfil query error:', perfilError);
+        if (ministryManagerError && ministryManagerError.code !== 'PGRST202') {
+          console.error('Middleware ministry manager query error:', ministryManagerError);
+        }
+        if (operationsManagerError && operationsManagerError.code !== 'PGRST202') {
+          console.error('Middleware operations manager query error:', operationsManagerError);
+        }
+
+        locals.perfil = perfil || null;
+        locals.canManageMinistries = canManageMinistries === true;
+        locals.canManageOperations = canManageOperations === true;
       }
 
-      locals.perfil = perfil || null;
-      locals.canManageMinistries = canManageMinistries === true;
-      locals.canManageOperations = canManageOperations === true;
-
-      if (path === '/admin' && !perfil?.is_admin && !locals.canManageOperations) {
+      if (path === '/admin' && !locals.perfil?.is_admin && !locals.canManageOperations) {
         return redirectTo('/repertorio', 303);
       }
     } catch (perfilQueryError) {

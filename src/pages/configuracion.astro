@@ -2,7 +2,7 @@
 import Layout from '../layouts/Layout.astro';
 import PanelBranding from '../components/react/PanelBranding.jsx';
 import PanelAdminPush from '../components/react/PanelAdminPush.jsx';
-import PanelModoExperto from '../components/react/PanelModoExperto.jsx';
+import PanelGestionRepertorio from '../components/react/PanelGestionRepertorio.jsx';
 
 const isAdmin = Boolean(Astro.locals.perfil?.is_admin);
 const canManageOperations = Boolean(Astro.locals.canManageOperations);
@@ -55,7 +55,7 @@ const settingsGridStyle = `grid-template-columns: repeat(${settingsStepCount}, m
 
       <div class="settings-wizard-stage" id="settings-wizard-stage">
         <section id="settings-step-repertorio" class="settings-wizard-step" data-settings-panel="0" data-settings-key="repertorio" data-state="active" role="tabpanel">
-          <PanelModoExperto client:idle />
+          <PanelGestionRepertorio client:idle />
         </section>
         {isAdmin && (
           <section id="settings-step-branding" class="settings-wizard-step" data-settings-panel="1" data-settings-key="branding" data-state="after" role="tabpanel" aria-hidden="true" inert>

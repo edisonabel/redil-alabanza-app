@@ -1,10 +1,4 @@
----
-import EnsayoGlobalIsland from './react/EnsayoGlobalIsland.jsx';
----
-
-<div id="ensayo-global-mount" transition:persist>
-  <EnsayoGlobalIsland client:only="react" />
-</div>
+<div id="ensayo-global-mount" transition:persist></div>
 
 <script>
   // Singleton guard: only register listener once across SPA navigations
@@ -13,7 +7,7 @@ import EnsayoGlobalIsland from './react/EnsayoGlobalIsland.jsx';
 
     document.addEventListener(
       'click',
-      (event) => {
+      async (event) => {
         const btn = (event.target as Element).closest('.btn-open-ensayo');
         if (!btn) return;
         event.preventDefault();
@@ -47,11 +41,80 @@ import EnsayoGlobalIsland from './react/EnsayoGlobalIsland.jsx';
           sectionMarkers,
         };
 
-        window.dispatchEvent(
-          new CustomEvent('open-ensayo-compacto', { detail: { song } }),
-        );
+        const ensayoWindow = window as any;
+        if (ensayoWindow.__REDIL_ENSAYO_GLOBAL_ROOT__) {
+          window.dispatchEvent(
+            new CustomEvent('open-ensayo-compacto', { detail: { song } }),
+          );
+          return;
+        }
+
+        const mount = document.getElementById('ensayo-global-mount');
+        if (!mount) return;
+        mount.innerHTML = '<div class="ensayo-lazy-feedback" role="status" aria-live="polite"><span></span><strong>Abriendo ensayo...</strong></div>';
+
+        try {
+          if (!ensayoWindow.__REDIL_ENSAYO_GLOBAL_IMPORT__) {
+            ensayoWindow.__REDIL_ENSAYO_GLOBAL_IMPORT__ = Promise.all([
+              import('react'),
+              import('react-dom/client'),
+              import('./react/EnsayoGlobalIsland.jsx'),
+            ]);
+          }
+          const [ReactModule, ReactDomModule, IslandModule] = await ensayoWindow.__REDIL_ENSAYO_GLOBAL_IMPORT__;
+          mount.replaceChildren();
+          const root = ReactDomModule.createRoot(mount);
+          ensayoWindow.__REDIL_ENSAYO_GLOBAL_ROOT__ = root;
+          root.render(ReactModule.createElement(IslandModule.default, { initialSong: song }));
+        } catch (error) {
+          console.error('[EnsayoGlobal] No se pudo cargar el modo ensayo.', error);
+          ensayoWindow.__REDIL_ENSAYO_GLOBAL_IMPORT__ = null;
+          mount.innerHTML = '<div class="ensayo-lazy-feedback ensayo-lazy-feedback-error" role="alert"><strong>No se pudo abrir Ensayo.</strong><small>Intenta nuevamente.</small></div>';
+        }
       },
       true, // capture phase so it fires before card's own click handler
     );
   }
 </script>
+
+<style>
+  .ensayo-lazy-feedback {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 1.25rem;
+    color: white;
+    background: rgb(9 9 11 / 0.72);
+    backdrop-filter: blur(10px);
+  }
+
+  .ensayo-lazy-feedback span {
+    width: 1.1rem;
+    height: 1.1rem;
+    border: 2px solid rgb(255 255 255 / 0.28);
+    border-top-color: white;
+    border-radius: 999px;
+    animation: ensayo-lazy-spin 700ms linear infinite;
+  }
+
+  .ensayo-lazy-feedback-error {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .ensayo-lazy-feedback-error small {
+    color: rgb(255 255 255 / 0.68);
+  }
+
+  @keyframes ensayo-lazy-spin {
+    to { transform: rotate(360deg); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ensayo-lazy-feedback span { animation: none; }
+  }
+</style>

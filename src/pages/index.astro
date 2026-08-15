@@ -80,11 +80,7 @@ try {
       .eq('activo', true)
       .order('fecha', { ascending: true })
       .limit(5),
-    supabaseSSR
-      .from('perfiles')
-      .select('id, nombre, fecha_nacimiento, avatar_url')
-      .eq('activo_en_equipo', true)
-      .not('fecha_nacimiento', 'is', null),
+    supabaseSSR.rpc('get_team_birthdays'),
     supabaseSSR
       .from('roles')
       .select('id, nombre, codigo'),
@@ -119,10 +115,9 @@ hoy.setHours(0, 0, 0, 0);
 const mesActual = hoy.getMonth() + 1;
 const cumpleanerosTodos = (perfilesCumplesData || [])
   .map((perfilCumple) => {
-    const rawFecha = perfilCumple?.fecha_nacimiento;
-    if (!rawFecha || typeof rawFecha !== 'string') return null;
-    const [year, month, day] = rawFecha.split('-').map((v) => Number(v));
-    if (!year || !month || !day) return null;
+    const month = Number(perfilCumple?.birthday_month);
+    const day = Number(perfilCumple?.birthday_day);
+    if (!month || !day) return null;
     const proximoCumple = new Date(hoy.getFullYear(), month - 1, day);
     if (proximoCumple < hoy) {
       proximoCumple.setFullYear(proximoCumple.getFullYear() + 1);
@@ -152,8 +147,6 @@ const cumpleanerosMes = cumpleanerosTodos
 
 // Keep a 12h tolerance like Programacion to avoid timezone edge-cases.
 const fechaFiltroISO = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
-const userEmail = user.email || null;
-
 const rolesById = new Map((rolesCatalog || []).map((rol) => [rol.id, rol]));
 
 const buildEventosSelect = (includePredicador = true) => `
@@ -167,7 +160,7 @@ const buildEventosSelect = (includePredicador = true) => `
   asignaciones (
     perfil_id,
     rol_id,
-    perfiles (id, nombre, email, avatar_url)
+    perfiles (id, nombre, avatar_url)
   )
 `;
 
@@ -252,9 +245,7 @@ const proximosServicios = (eventosData || [])
     const roster = Array.isArray(evento.asignaciones) ? evento.asignaciones : [];
     const misAsignaciones = roster.filter((asig: any) => {
       const perfilAsignado = asig?.perfiles;
-      return asig?.perfil_id === user.id
-        || perfilAsignado?.id === user.id
-        || (userEmail && perfilAsignado?.email === userEmail);
+      return asig?.perfil_id === user.id || perfilAsignado?.id === user.id;
     });
 
     if (misAsignaciones.length === 0) return null;

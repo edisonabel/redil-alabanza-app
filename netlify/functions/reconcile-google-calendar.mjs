@@ -12,9 +12,7 @@ const getDispatchUrl = () => {
 
 const getDispatchSecret = () => {
   const sourceSecret = String(
-    process.env.NOTIFICATION_FUNCTION_SECRET
-    || process.env.SUPABASE_SERVICE_ROLE_KEY
-    || '',
+    process.env.NOTIFICATION_FUNCTION_SECRET || '',
   ).trim();
   if (!sourceSecret) throw new Error('Falta el secreto interno para iniciar la reconciliacion.');
   return createHash('sha256')

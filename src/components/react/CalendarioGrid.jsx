@@ -24,7 +24,7 @@ import {
 import { isSinFiltrosEvent } from '../../lib/ministry-config.js';
 
 const MONTH_CHUNK_SIZE = 2;
-const EVENT_SELECT = 'id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, serie_id, ministerio_id, ensayo_dia_semana, ensayo_fecha_hora, ministerios(id, codigo, nombre), asignaciones(id, rol_id, perfiles(id, nombre, email, avatar_url, tonalidad_voz))';
+const EVENT_SELECT = 'id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, serie_id, ministerio_id, ensayo_dia_semana, ensayo_fecha_hora, ministerios(id, codigo, nombre), asignaciones(id, rol_id, perfiles(id, nombre, avatar_url, tonalidad_voz))';
 const APP_TIME_ZONE = 'America/Bogota';
 const appDateTimeFormatter = new Intl.DateTimeFormat('en-US', {
     timeZone: APP_TIME_ZONE,
@@ -111,8 +111,7 @@ const canUserManageEventRehearsal = ({ assignments, roles, sessionUser, isAdmin 
     if (isAdmin) return true;
 
     return (assignments || []).some((assignment) => {
-        const isCurrentUser = assignment?.perfiles?.id === sessionUser?.id
-            || assignment?.perfiles?.email === sessionUser?.email;
+        const isCurrentUser = assignment?.perfiles?.id === sessionUser?.id;
         const roleCode = (roles || []).find((role) => role.id === assignment?.rol_id)?.codigo;
         return isCurrentUser && isEventRehearsalManagerRoleCode(roleCode);
     });
@@ -852,7 +851,7 @@ export default function CalendarioGrid({
         const rosterDb = cardData.dbData?.asignaciones || [];
         const dictRoles = initialRoles || [];
 
-        const miAsignacion = rosterDb.find((asig) => asig.perfiles?.id === sessionUser?.id || asig.perfiles?.email === sessionUser?.email);
+        const miAsignacion = rosterDb.find((asig) => asig.perfiles?.id === sessionUser?.id);
         const isUsuarioAsignado = !!miAsignacion;
         const canManageRehearsal = canUserManageEventRehearsal({
             assignments: rosterDb,
@@ -1042,7 +1041,7 @@ export default function CalendarioGrid({
         const timeString = cardData.dbData?.hora_fin ? `${horaInicio} - ${cardData.dbData.hora_fin.substring(0, 5)}` : horaInicio;
         const dictRoles = initialRoles || [];
         const rosterDb = normalizeRosterAssignments(cardData.dbData?.asignaciones || [], dictRoles, { maxVoiceSlots: 4 });
-        const miAsignacion = rosterDb.find((asig) => asig.perfiles?.id === sessionUser?.id || asig.perfiles?.email === sessionUser?.email);
+        const miAsignacion = rosterDb.find((asig) => asig.perfiles?.id === sessionUser?.id);
         const canManageRehearsal = canUserManageEventRehearsal({
             assignments: rosterDb,
             roles: dictRoles,

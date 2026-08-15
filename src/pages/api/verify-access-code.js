@@ -1,37 +1,74 @@
-import { readEnv } from '../../lib/server/supabase-env.js';
+import {
+  ApiSecurityError,
+  assertRequestBodySize,
+  consumeRateLimit,
+  securityErrorResponse,
+  serviceRoleClient,
+} from '../../lib/server/api-security.js';
+import {
+  getRequestActorAddress,
+  REGISTRATION_TICKET_TTL_MINUTES,
+  resolveRegistrationTarget,
+} from '../../lib/server/registration-security.js';
 
 export const prerender = false;
 
 export async function POST({ request }) {
   try {
-    const { code } = await request.json();
-    const generalCode = readEnv('REGISTRATION_CODE');
-    const sinFiltrosCode = readEnv('YOUTH_REGISTRATION_CODE', 'SIN_FILTROS_REGISTRATION_CODE');
+    assertRequestBodySize(request, 8 * 1024);
+    if (!serviceRoleClient) {
+      throw new ApiSecurityError('El registro no esta configurado.', 503);
+    }
 
-    if (!generalCode && !sinFiltrosCode) {
-      console.error('[verify-access-code] No registration codes are configured');
-      return new Response(JSON.stringify({ valid: false, error: 'Configuración del servidor incompleta.' }), {
-        status: 500,
+    await consumeRateLimit({
+      bucket: 'registration-code',
+      actorId: getRequestActorAddress(request),
+      windowSeconds: 15 * 60,
+      maxRequests: 10,
+    });
+
+    const { code } = await request.json();
+    const registrationTarget = resolveRegistrationTarget(code);
+
+    if (!registrationTarget) {
+      return new Response(JSON.stringify({
+        valid: false,
+        registration_target: null,
+        registration_ticket: null,
+      }), {
+        status: 200,
         headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
       });
     }
 
-    const normalizedCode = String(code || '').trim().toLocaleUpperCase('es');
-    const registrationTarget = sinFiltrosCode
-      && normalizedCode === String(sinFiltrosCode).trim().toLocaleUpperCase('es')
-      ? 'sin_filtros'
-      : generalCode && normalizedCode === String(generalCode).trim().toLocaleUpperCase('es')
-        ? 'general'
-        : '';
+    const expiresAt = new Date(
+      Date.now() + REGISTRATION_TICKET_TTL_MINUTES * 60 * 1000,
+    ).toISOString();
+    const { data: ticket, error: ticketError } = await serviceRoleClient
+      .from('registration_tickets')
+      .insert({
+        registration_target: registrationTarget,
+        expires_at: expiresAt,
+      })
+      .select('id, expires_at')
+      .single();
+
+    if (ticketError || !ticket?.id) {
+      console.error('[verify-access-code] Could not issue registration ticket:', ticketError?.message);
+      throw new ApiSecurityError('No se pudo preparar el registro.', 503);
+    }
 
     return new Response(JSON.stringify({
-      valid: Boolean(registrationTarget),
-      registration_target: registrationTarget || null,
+      valid: true,
+      registration_target: registrationTarget,
+      registration_ticket: ticket.id,
+      expires_at: ticket.expires_at,
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof ApiSecurityError) return securityErrorResponse(error);
     return new Response(JSON.stringify({ valid: false, error: 'Error al verificar el código.' }), {
       status: 400,
       headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },

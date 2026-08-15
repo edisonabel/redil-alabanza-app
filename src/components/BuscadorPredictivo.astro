@@ -2,11 +2,13 @@
 interface Props {
   placeholder?: string;
   idInput?: string;
+  value?: string;
 }
 
 const { 
   placeholder = "Buscar...", 
-  idInput = "searchInput"
+  idInput = "searchInput",
+  value = "",
 } = Astro.props;
 
 const idSuggestion = `${idInput}-suggestion`;
@@ -17,6 +19,7 @@ const idSuggestion = `${idInput}-suggestion`;
     class="input-ghost-suggestion absolute inset-0 h-11 w-full bg-transparent text-content-muted pointer-events-none border border-transparent pl-4 pr-4 text-sm md:text-base disabled:opacity-100" disabled />
   <input type="text" id={idInput} 
     placeholder={placeholder} 
+    value={value}
     class="input-ghost-main relative h-11 w-full bg-transparent border border-border text-content rounded-xl pl-4 pr-4 text-sm md:text-base focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/40 transition-colors placeholder:text-content-muted z-10" autocomplete="off" />
 </div>
 

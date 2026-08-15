@@ -11,14 +11,14 @@
  * standard Web Audio `AudioBuffer`, so callers can pipe the result into any
  * encoder (we feed it to FFmpeg as 32-bit float WAV in the stem converter).
  *
- * The WASM binary is fetched from a CDN at runtime (mirroring how we already
- * load `@ffmpeg/core`). It is roughly 260 KB and is only requested when the
- * user actually triggers a pitch change, so users who never shift never pay
- * the bundle cost.
+ * The WASM binary is emitted as a local hashed asset at build time. It is
+ * roughly 260 KB and is only requested when the user actually triggers a
+ * pitch change, so users who never shift never pay the transfer cost.
  */
 
-const WASM_VERSION = '3.3.0';
-const WASM_URL = `https://cdn.jsdelivr.net/npm/rubberband-wasm@${WASM_VERSION}/dist/rubberband.wasm`;
+import rubberbandWasmUrl from 'rubberband-wasm/dist/rubberband.wasm?url';
+
+const WASM_URL = rubberbandWasmUrl;
 
 // Mirror the constants from `rubberband-wasm` so we don't have to import the
 // runtime module just to access enums. These match the upstream C header.

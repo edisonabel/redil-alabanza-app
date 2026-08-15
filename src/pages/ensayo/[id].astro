@@ -513,17 +513,7 @@ let canAssignVoices = false;
 // ── Verificar si el usuario puede editar el setlist ──
 let canEditSetlist = false;
 if (user?.id) {
-  const { data: perfil, error: perfilPermissionError } = await supabaseSSR
-    .from('perfiles')
-    .select('is_admin')
-    .eq('id', user.id)
-    .maybeSingle();
-
-  if (perfilPermissionError) {
-    console.error('Ensayo profile permission query error:', perfilPermissionError);
-  }
-
-  if (perfil?.is_admin) {
+  if (Astro.locals.perfil?.is_admin) {
     canEditSetlist = true;
     canAssignVoices = true;
   }
@@ -614,7 +604,7 @@ if (!routeIsDemo) {
 
     const { data: rosterRows, error: rosterError } = await supabaseSSR
       .from('asignaciones')
-      .select('perfil_id, roles(codigo, nombre), perfiles(id, nombre, email, avatar_url)')
+      .select('perfil_id, roles(codigo, nombre), perfiles(id, nombre, avatar_url)')
       .eq('evento_id', eventData.id);
 
     if (rosterError) {
@@ -634,8 +624,7 @@ if (!routeIsDemo) {
         }
         const existing = rosterMap.get(profileId) || {
           id: profileId,
-          name: String(row?.perfiles?.nombre || row?.perfiles?.email || 'Integrante').trim() || 'Integrante',
-          email: String(row?.perfiles?.email || '').trim(),
+          name: String(row?.perfiles?.nombre || 'Integrante').trim() || 'Integrante',
           avatarUrl: String(row?.perfiles?.avatar_url || '').trim(),
           roleCodes: [],
           roleNames: [],
@@ -649,7 +638,6 @@ if (!routeIsDemo) {
       const allMembers = Array.from(rosterMap.values()).map((member) => ({
         id: member.id,
         name: member.name,
-        email: member.email,
         avatarUrl: member.avatarUrl,
         roleCodes: member.roleCodes,
         roleLabel: member.roleNames.join(', '),

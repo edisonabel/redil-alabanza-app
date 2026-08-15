@@ -141,8 +141,6 @@ const themeColors = brandingData;
  <link rel="preload" href="/fonts/redil/adineuePRO-Regular.woff2" as="font" type="font/woff2" crossorigin />
  <link rel="preconnect" href="https://stems.alabanzaredilestadio.com" crossorigin />
  <link rel="dns-prefetch" href="https://stems.alabanzaredilestadio.com" />
- <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
- <link rel="dns-prefetch" href="https://cdn.jsdelivr.net" />
 
  <script is:inline>
   (() => {
@@ -450,7 +448,7 @@ const themeColors = brandingData;
     html[data-admin-route='true'],
     html[data-admin-route='true'] body,
     body[data-admin-route='true'] {
-      height: 100dvh;
+      height: var(--app-viewport-height, 100dvh);
       overflow: hidden;
       overscroll-behavior: none;
     }
@@ -651,10 +649,10 @@ const themeColors = brandingData;
  )}
  <main
   transition:animate={premiumPageTransition}
-  class={`app-safe-main relative isolate w-full flex-1 bg-background px-4 lg:px-8 xl:px-12 ${
+  class={`app-safe-main relative isolate w-full bg-background ${
     isAdminRepertorioView
-      ? 'box-border flex min-h-0 h-[calc(100dvh-var(--app-safe-top-offset))] max-h-[calc(100dvh-var(--app-safe-top-offset))] flex-col overflow-x-clip overflow-y-hidden pb-[calc(env(safe-area-inset-bottom)+0.35rem)]'
-      : 'min-h-screen min-h-[100dvh] overflow-x-clip pb-24'
+      ? 'box-border flex h-[var(--app-viewport-height)] max-h-[var(--app-viewport-height)] min-h-0 shrink-0 flex-col overflow-x-clip overflow-y-hidden px-0 pb-[calc(env(safe-area-inset-bottom)+0.35rem)]'
+      : 'min-h-screen min-h-[100dvh] flex-1 overflow-x-clip px-4 pb-24 lg:px-8 xl:px-12'
   }`}
  >
  <!-- Contenedor principal (pb-24 evita choque visual con la barra flotante). -->
@@ -869,6 +867,7 @@ const themeColors = brandingData;
       const viewport = window.visualViewport;
       const viewportHeight = Math.max(1, Math.round(viewport?.height || window.innerHeight));
       const viewportOffsetTop = Math.max(0, Math.round(viewport?.offsetTop || 0));
+      root.style.setProperty('--app-viewport-height', `${viewportHeight}px`);
       root.style.setProperty('--app-modal-viewport-height', `${viewportHeight}px`);
       root.style.setProperty('--app-modal-viewport-offset-top', `${viewportOffsetTop}px`);
     };

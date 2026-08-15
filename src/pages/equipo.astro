@@ -3,6 +3,12 @@ import Layout from '../layouts/Layout.astro';
 import { VOCAL_RANGE_OPTIONS } from '../lib/ministry-config.js';
 
 const canManageOperations = Boolean(Astro.locals.canManageOperations);
+const canManageMinistries = Boolean(Astro.locals.canManageMinistries);
+const isGlobalAdmin = Boolean(Astro.locals.perfil?.is_admin);
+
+if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
+ return Astro.redirect('/programacion');
+}
 ---
 
 <Layout title="Gestion de Equipo - Redil">
@@ -35,7 +41,7 @@ const canManageOperations = Boolean(Astro.locals.canManageOperations);
  <span class="hidden md:block font-bold text-base">A&#241;adir M&#250;sico</span>
  </button>
 
- <main id="equipo-page-root" data-can-manage-operations={canManageOperations ? 'true' : 'false'} class="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-32">
+ <main id="equipo-page-root" data-can-manage-operations={canManageOperations ? 'true' : 'false'} data-can-manage-ministries={canManageMinistries ? 'true' : 'false'} data-is-global-admin={isGlobalAdmin ? 'true' : 'false'} class="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-32">
  <!-- SECCIÃ“N MIS EQUIPOS -->
  <div class="mb-8 hidden" id="seccion-plantillas">
  <div class="flex items-center justify-between mb-4">
@@ -1842,31 +1848,13 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  return;
  }
 
- const user = session.user;
  const canManageOperations = pageRoot.dataset.canManageOperations === 'true';
  
  // Los administradores gestionan roles/equipos. Los gestores designados solo
  // pueden administrar la disponibilidad entre ministerios.
- const [
- { data: perfil, error: perfilError },
- { data: ministryManagerAccess, error: ministryManagerError }
- ] = await Promise.all([
- supabase.from('perfiles').select('is_admin').eq('id', user.id).single(),
- supabase.rpc('is_current_user_ministry_manager')
- ]);
- const isGlobalAdmin = Boolean(perfil?.is_admin);
- const canManageMinistries = ministryManagerAccess === true;
+ const isGlobalAdmin = pageRoot.dataset.isGlobalAdmin === 'true';
+ const canManageMinistries = pageRoot.dataset.canManageMinistries === 'true';
  const canEditTeamRoles = isGlobalAdmin || canManageOperations;
-
- if (ministryManagerError && ministryManagerError.code !== 'PGRST202') {
- console.error('No se pudo validar el permiso de gestión de ministerios:', ministryManagerError);
- }
-
- if (perfilError || (!isGlobalAdmin && !canManageMinistries && !canManageOperations)) {
- alert('Acceso restringido. No tienes permisos para gestionar el equipo o sus ministerios.');
- window.location.replace('/programacion');
- return;
- }
 
  if (!isGlobalAdmin) {
  document.querySelectorAll<HTMLElement>('[data-admin-only]').forEach((element) => {
@@ -1879,7 +1867,7 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  // Carga paralela para reducir TTI al abrir /equipo
  const [
  { data: roles, error: rolesErr },
- { data: perfiles, error: perfilesErr },
+ { data: perfilesData, error: perfilesErr },
  { data: pivot, error: pivotErr },
  { data: equiposMaster, error: equiposErr },
  { data: teamMembers, error: tzErr },
@@ -1887,7 +1875,7 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  { data: profileMinistries, error: profileMinistriesErr }
  ] = await Promise.all([
  supabase.from('roles').select('id,nombre,codigo').order('nombre'),
- supabase.from('perfiles').select('id,nombre,email,avatar_url,telefono,tonalidad_voz,activo_en_equipo').eq('activo_en_equipo', true).order('nombre'),
+ supabase.rpc('get_team_roster_private'),
  supabase.from('perfil_roles').select('perfil_id,rol_id'),
  isGlobalAdmin
  ? supabase.from('equipos').select('id,nombre,letra,created_at').order('created_at', { ascending: false })
@@ -1908,6 +1896,8 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  if (tzErr) throw tzErr;
  if (ministriesErr) throw ministriesErr;
  if (profileMinistriesErr) throw profileMinistriesErr;
+
+ const perfiles:any[] = Array.isArray(perfilesData) ? perfilesData : [];
 
  const generalMinistry = (ministries || []).find((ministry:any) => ministry.codigo === 'alabanza_general') || null;
  const sinFiltrosMinistry = (ministries || []).find((ministry:any) => ministry.codigo === 'sin_filtros') || null;
