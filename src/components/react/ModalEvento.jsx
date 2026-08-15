@@ -1,4 +1,16 @@
-﻿import { useState, useEffect } from 'react';
+﻿import { useState, useEffect, useMemo } from 'react';
+import {
+    CalendarDays,
+    Check,
+    CheckCircle2,
+    ChevronLeft,
+    ChevronRight,
+    ClipboardCheck,
+    ListMusic,
+    Settings2,
+    UsersRound,
+    X,
+} from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import RosterManager from './RosterManager.jsx';
 import { getEventThemeAndPreacher } from '../../lib/event-display.js';
@@ -67,6 +79,37 @@ const getRecurrenceDayCode = (dateValue = '') => {
     return Number.isNaN(parsed.getTime()) ? 'SU' : dayCodes[parsed.getUTCDay()];
 };
 
+const EVENT_WIZARD_STEP_META = {
+    service: {
+        id: 'service',
+        label: 'Servicio',
+        shortLabel: 'Servicio',
+        description: 'Nombre, ministerio, fecha y horario.',
+        icon: CalendarDays,
+    },
+    details: {
+        id: 'details',
+        label: 'Detalles',
+        shortLabel: 'Detalles',
+        description: 'Publicación, ensayo y predicación.',
+        icon: Settings2,
+    },
+    team: {
+        id: 'team',
+        label: 'Equipo',
+        shortLabel: 'Equipo',
+        description: 'Repertorio y asignaciones del servicio.',
+        icon: UsersRound,
+    },
+    review: {
+        id: 'review',
+        label: 'Revisar',
+        shortLabel: 'Revisar',
+        description: 'Comprueba todo antes de guardar.',
+        icon: ClipboardCheck,
+    },
+};
+
 /** @param {{ initialMinistries?: any[] }} props */
 export default function ModalEvento({ initialMinistries = [] }) {
     const [isOpen, setIsOpen] = useState(false);
@@ -88,6 +131,8 @@ export default function ModalEvento({ initialMinistries = [] }) {
     const [canManageRehearsal, setCanManageRehearsal] = useState(false);
     const [rehearsalWeekday, setRehearsalWeekday] = useState(4);
     const [ministryId, setMinistryId] = useState('');
+    const [activeWizardStep, setActiveWizardStep] = useState('service');
+    const [wizardError, setWizardError] = useState('');
 
     const [isSaving, setIsSaving] = useState(false);
     const [isDeletingSerie, setIsDeletingSerie] = useState(false);
@@ -113,6 +158,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
 
             setIsOpen(true);
             setMode(modalMode);
+            setWizardError('');
             document.body.style.overflow = 'hidden';
 
             if (modalMode === 'new') {
@@ -136,6 +182,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
                 setShowPlaylistBtn(false);
                 setHasPlaylist(false);
                 setCollisionDate(null);
+                setActiveWizardStep('service');
             } else if (modalMode === 'edit' && data) {
                 setEvId(data.id || '');
                 setTitulo(data.titulo || '');
@@ -173,6 +220,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
 
                 const strictMod = data.moderator === 'true';
                 setIsStrictModerator(strictMod);
+                setActiveWizardStep(strictMod ? 'details' : 'service');
                 setCanManageRehearsal(data.can_manage_rehearsal === true);
                 setRehearsalWeekday(normalizeRehearsalWeekday(data.dbData?.ensayo_dia_semana));
                 setMinistryId(data.ministerio_id || data.dbData?.ministerio_id || '');
@@ -244,6 +292,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
 
     }, [user, evId]);
     const handleClose = () => {
+        setWizardError('');
         if (typeof window !== 'undefined' && typeof window.toggleModalGlobal === 'function') {
             window.toggleModalGlobal(false);
         } else {
@@ -497,6 +546,86 @@ export default function ModalEvento({ initialMinistries = [] }) {
         }
     };
 
+    const wizardSteps = useMemo(() => [
+        ...(!isStrictModerator ? [EVENT_WIZARD_STEP_META.service] : []),
+        EVENT_WIZARD_STEP_META.details,
+        ...(mode === 'edit' ? [EVENT_WIZARD_STEP_META.team] : []),
+        EVENT_WIZARD_STEP_META.review,
+    ], [isStrictModerator, mode]);
+
+    useEffect(() => {
+        if (!wizardSteps.some((step) => step.id === activeWizardStep)) {
+            setActiveWizardStep(wizardSteps[0]?.id || 'details');
+        }
+    }, [activeWizardStep, wizardSteps]);
+
+    const activeWizardIndex = Math.max(
+        0,
+        wizardSteps.findIndex((step) => step.id === activeWizardStep),
+    );
+    const activeWizardMeta = wizardSteps[activeWizardIndex] || wizardSteps[0];
+    const isLastWizardStep = activeWizardIndex === wizardSteps.length - 1;
+
+    const validateServiceStep = () => {
+        if (!titulo.trim() || !fecha || !horaInicio) {
+            setWizardError('Completa el título, la fecha y la hora para continuar.');
+            return false;
+        }
+
+        const ministry = (initialMinistries || []).find(
+            (candidate) => String(candidate?.id || '') === String(ministryId || ''),
+        );
+        if (isSinFiltrosMinistry(ministry) && !isSaturdayDate(fecha)) {
+            setWizardError('Sin Filtros se programa los sábados. Elige una fecha de sábado.');
+            return false;
+        }
+
+        setWizardError('');
+        return true;
+    };
+
+    const openWizardStep = (stepId) => {
+        const targetIndex = wizardSteps.findIndex((step) => step.id === stepId);
+        if (targetIndex < 0) return;
+        if (
+            targetIndex > activeWizardIndex
+            && activeWizardStep === 'service'
+            && !validateServiceStep()
+        ) {
+            return;
+        }
+        setWizardError('');
+        setActiveWizardStep(stepId);
+    };
+
+    const handleWizardNext = () => {
+        if (activeWizardStep === 'service' && !validateServiceStep()) {
+            return;
+        }
+        const nextStep = wizardSteps[activeWizardIndex + 1];
+        if (nextStep) {
+            setWizardError('');
+            setActiveWizardStep(nextStep.id);
+        }
+    };
+
+    const handleWizardBack = () => {
+        const previousStep = wizardSteps[activeWizardIndex - 1];
+        if (previousStep) {
+            setWizardError('');
+            setActiveWizardStep(previousStep.id);
+        }
+    };
+
+    const handleWizardFormSubmit = (event) => {
+        if (!isLastWizardStep) {
+            event.preventDefault();
+            handleWizardNext();
+            return;
+        }
+        handleSave(event);
+    };
+
     // FunciÃ³n openEquipoPicker nativa movida a RosterManager
     if (!isOpen) return null;
 
@@ -510,230 +639,496 @@ export default function ModalEvento({ initialMinistries = [] }) {
         && canManageRehearsal
         && isSundayServiceDate(fecha)
     );
+    const selectedMinistryLabel = selectedMinistry?.nombre || 'Alabanza general';
+    const eventDateLabel = fecha
+        ? new Intl.DateTimeFormat('es-CO', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+            timeZone: 'UTC',
+        }).format(new Date(`${fecha}T12:00:00Z`))
+        : 'Sin fecha';
+    const eventTimeLabel = horaInicio
+        ? `${formatClockLabel(horaInicio)}${horaFin ? ` – ${formatClockLabel(horaFin)}` : ''}`
+        : 'Sin horario';
+    const assignmentCount = Array.isArray(dbData?.asignaciones) ? dbData.asignaciones.length : 0;
 
     return (
-        <div id="event-modal-react" role="dialog" aria-modal="true" data-ui-modal="true" className="fixed inset-0 z-[80] min-h-[100dvh] bg-overlay/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-4 pt-6 pb-[calc(104px+env(safe-area-inset-bottom))] lg:items-center lg:p-6 transition-opacity">
-            <div className="bg-surface border border-border rounded-3xl w-full max-w-2xl lg:max-w-4xl xl:max-w-5xl max-h-[calc(100dvh-132px-env(safe-area-inset-bottom))] lg:max-h-[calc(100dvh-120px-env(safe-area-inset-bottom))] overflow-hidden shadow-2xl flex flex-col transform my-auto lg:my-0">
-                <div className="p-6 border-b border-border flex justify-between items-center bg-background sticky top-0 z-10">
-                    <h2 id="modal-title" className="text-xl font-bold text-content ">
-                        {mode === 'new' ? 'Nuevo Evento' : 'Gestionar Evento'}
-                    </h2>
-                    <button id="btn-close-modal" type="button" onClick={handleClose} className="text-content-muted hover:text-content transition-colors p-2 -mr-2 bg-background hover:bg-border rounded-full">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
-                    </button>
-                </div>
+        <div
+            id="event-modal-react"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modal-title"
+            data-ui-modal="true"
+            className="fixed inset-x-0 z-[80] flex items-end justify-center bg-slate-950/70 backdrop-blur-md sm:items-center sm:p-4"
+            style={{
+                top: 'var(--app-modal-viewport-offset-top, 0px)',
+                height: 'var(--app-modal-viewport-height, 100dvh)',
+            }}
+            onMouseDown={(event) => {
+                if (event.target === event.currentTarget && !isSaving) handleClose();
+            }}
+        >
+            <div
+                className="flex w-full flex-col overflow-hidden rounded-t-[1.65rem] border border-border bg-surface shadow-2xl sm:max-w-4xl sm:rounded-[1.65rem] xl:max-w-5xl"
+                style={{ maxHeight: 'min(54rem, calc(var(--app-modal-viewport-height, 100dvh) - 0.75rem))' }}
+            >
+                <header className="shrink-0 border-b border-border bg-surface/95 px-4 pb-3 pt-4 backdrop-blur-xl sm:px-6 sm:pt-5">
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-brand">
+                                {mode === 'new' ? 'Nuevo evento' : 'Gestionar evento'}
+                            </p>
+                            <h2 id="modal-title" className="mt-1 truncate text-xl font-black text-content sm:text-2xl">
+                                {mode === 'new' ? 'Preparar servicio' : (titulo || 'Editar servicio')}
+                            </h2>
+                            <p className="mt-1 text-sm text-content-muted">
+                                Paso {activeWizardIndex + 1} de {wizardSteps.length} · {activeWizardMeta?.label}
+                            </p>
+                        </div>
+                        <button
+                            id="btn-close-modal"
+                            type="button"
+                            onClick={handleClose}
+                            disabled={isSaving}
+                            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-background text-content-muted transition-colors hover:bg-surface hover:text-content disabled:opacity-50"
+                            aria-label="Cerrar asistente de evento"
+                        >
+                            <X className="h-5 w-5" />
+                        </button>
+                    </div>
 
-                <div className="p-6 bg-surface flex-1 overflow-y-auto overflow-x-hidden">
-                    <form id="form-event" className="flex flex-col gap-5" onSubmit={handleSave}>
+                    <ol
+                        className="mt-4 grid gap-1.5"
+                        style={{ gridTemplateColumns: `repeat(${wizardSteps.length}, minmax(0, 1fr))` }}
+                        aria-label="Etapas del evento"
+                        role="tablist"
+                    >
+                        {wizardSteps.map((step, index) => {
+                            const StepIcon = step.icon;
+                            const isActive = step.id === activeWizardStep;
+                            const isComplete = index < activeWizardIndex;
+                            return (
+                                <li key={step.id} className="min-w-0">
+                                    <button
+                                        type="button"
+                                        role="tab"
+                                        aria-selected={isActive}
+                                        aria-controls={`event-wizard-panel-${step.id}`}
+                                        tabIndex={isActive ? 0 : -1}
+                                        onClick={() => openWizardStep(step.id)}
+                                        disabled={isSaving}
+                                        className={`flex min-h-[3.35rem] w-full flex-col items-center justify-center rounded-xl border px-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30 ${isActive
+                                            ? 'border-brand bg-brand text-white shadow-sm'
+                                            : isComplete
+                                                ? 'border-brand/25 bg-brand/10 text-brand'
+                                                : 'border-border bg-background text-content-muted'} disabled:cursor-not-allowed disabled:opacity-55`}
+                                    >
+                                        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-current/10">
+                                            {isComplete && !isActive ? <Check className="h-3 w-3" /> : <StepIcon className="h-3.5 w-3.5" />}
+                                        </span>
+                                        <span className="mt-0.5 truncate text-[10px] font-bold sm:text-xs">{step.shortLabel}</span>
+                                    </button>
+                                </li>
+                            );
+                        })}
+                    </ol>
+                </header>
+
+                <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-background/70 px-4 py-5 sm:px-6 sm:py-6">
+                    <form id="form-event" className="mx-auto w-full max-w-4xl" onSubmit={handleWizardFormSubmit}>
                         <input type="hidden" id="ev-id" value={evId} readOnly />
                         <input type="hidden" id="ev-serie-id" value={serieId} readOnly />
 
-                        <div className="grid grid-cols-1 gap-5 w-full">
-                            <div className={`grid w-full grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(190px,0.62fr)] ${isStrictModerator ? 'hidden' : ''}`} id="ev-container-titulo">
-                                <div className="min-w-0">
-                                    <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">TÍTULO DEL EVENTO <span className="text-red-500">*</span></label>
-                                    <input type="text" id="ev-titulo" required disabled={isStrictModerator} value={titulo} onChange={e => setTitulo(e.target.value)} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" placeholder="Ej: Culto de Adoración" />
-                                </div>
-                                <div className="min-w-0">
-                                    <label htmlFor="ev-ministerio" className="block text-xs font-bold text-content uppercase tracking-wider mb-2">Ministerio</label>
-                                    <select
-                                        id="ev-ministerio"
-                                        value={ministryId}
-                                        onChange={(event) => {
-                                            const nextMinistryId = event.target.value;
-                                            const nextMinistry = (initialMinistries || []).find((ministry) => ministry.id === nextMinistryId);
-                                            setMinistryId(nextMinistryId);
-                                            if (isSinFiltrosMinistry(nextMinistry)) {
-                                                if (!titulo.trim()) setTitulo(SIN_FILTROS_MINISTRY_NAME);
-                                                if (!horaInicio) setHoraInicio(SIN_FILTROS_SERVICE_TIME);
-                                            }
-                                        }}
-                                        className="w-full appearance-none rounded-xl border border-border bg-background px-4 py-3 text-sm text-content transition-colors focus:border-brand focus:outline-none"
-                                    >
-                                        <option value="">Alabanza general</option>
-                                        {(initialMinistries || []).map((ministry) => (
-                                            <option key={ministry.id} value={ministry.id}>{ministry.nombre}</option>
-                                        ))}
-                                    </select>
-                                </div>
+                        {wizardError && (
+                            <div role="alert" className="mb-5 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-600 dark:text-red-300">
+                                {wizardError}
                             </div>
+                        )}
 
-                            <div className={`w-full grid grid-cols-1 sm:grid-cols-2 gap-4 ${isStrictModerator ? 'hidden' : ''}`} id="ev-container-fechas">
-                                <div className="w-full min-w-0">
-                                    <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">Fecha <span className="text-red-500">*</span></label>
-                                    <input type="date" id="ev-fecha" required disabled={isStrictModerator} value={fecha} onChange={e => setFecha(e.target.value)} className="w-full min-w-0 bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" />
-                                </div>
-                                <div className="flex gap-4 form-row-compact min-w-0">
-                                    <div className="flex-1 min-w-0">
-                                        <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">Hora <span className="text-red-500">*</span></label>
-                                        <input type="time" id="ev-hora-inicio" required disabled={isStrictModerator} value={horaInicio} onChange={e => setHoraInicio(e.target.value)} className="w-full min-w-0 bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" />
-                                    </div>
-                                    <div className="flex-[0.7] min-w-0">
-                                        <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2 truncate" title="Hora Fin">Fin <span className="text-content-muted font-normal lowercase">(opc)</span></label>
-                                        <input type="time" id="ev-hora-fin" disabled={isStrictModerator} value={horaFin} onChange={e => setHoraFin(e.target.value)} className="w-full min-w-0 bg-background border border-border rounded-xl px-3 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" />
-                                    </div>
-                                </div>
-                            </div>
-
-                            {showRehearsalField && (
-                                <div className="w-full border-t border-border/60 pt-4">
-                                    <div className="mb-2 flex items-center justify-between gap-3">
-                                        <label htmlFor="ev-ensayo-dia" className="text-xs font-bold uppercase tracking-wider text-content">
-                                            Día de ensayo
-                                        </label>
-                                        <span className="text-xs font-medium text-content-muted">7:00 p. m.</span>
-                                    </div>
-                                    <select
-                                        id="ev-ensayo-dia"
-                                        value={rehearsalWeekday === null ? 'none' : String(rehearsalWeekday)}
-                                        onChange={(event) => setRehearsalWeekday(
-                                            event.target.value === 'none' ? null : Number(event.target.value),
-                                        )}
-                                        className="min-h-11 w-full appearance-none rounded-xl border border-border bg-background px-4 py-3 text-sm text-content transition-colors focus:border-brand focus:outline-none"
-                                    >
-                                        {REHEARSAL_WEEKDAY_OPTIONS.map((option) => (
-                                            <option key={option.value} value={option.value}>
-                                                {formatEventRehearsalLabel({
-                                                    eventDate: rehearsalEventDate,
-                                                    rehearsalWeekday: option.value,
-                                                })}
-                                            </option>
-                                        ))}
-                                        <option value="none">Sin ensayo</option>
-                                    </select>
-                                </div>
-                            )}
-
-                            {isSinFiltros && (
-                                <div className="flex min-h-12 items-center justify-between gap-4 rounded-xl border border-blue-400/25 bg-blue-500/10 px-4 py-3">
-                                    <div>
-                                        <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">Ensayo fijo · Sin Filtros</p>
-                                        <p className="mt-1 text-sm text-content-muted">El mismo sábado antes del culto.</p>
-                                    </div>
-                                    <span className="shrink-0 rounded-full border border-blue-400/25 bg-surface px-3 py-1.5 text-sm font-black text-content">
-                                        {formatClockLabel(SIN_FILTROS_REHEARSAL_TIME)}
+                        {activeWizardStep === 'service' && (
+                            <section id="event-wizard-panel-service" role="tabpanel" aria-labelledby="event-wizard-service-title">
+                                <div className="mb-5 flex items-start gap-3">
+                                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-brand">
+                                        <CalendarDays className="h-5 w-5" />
                                     </span>
-                                </div>
-                            )}
-
-                            {isSerie && !isStrictModerator && (
-                                <div id="serie-update-section" className="flex flex-col gap-2">
-                                    <label className="flex items-center gap-3 bg-violet-50 border border-violet-200 rounded-xl p-3 cursor-pointer hover:bg-violet-100 transition-colors">
-                                        <input type="checkbox" id="ev-serie-check" checked={applySerie} onChange={e => setApplySerie(e.target.checked)} className="w-5 h-5 accent-violet-500 rounded" />
-                                        <div>
-                                            <span className="text-sm font-bold text-violet-700">Aplicar a toda la serie</span>
-                                            <p className="text-[11px] text-violet-500 mt-0.5">Actualiza título y hora en todos los eventos futuros de esta serie</p>
-                                        </div>
-                                    </label>
-                                    <button type="button" onClick={handleDeleteSerie} disabled={isDeletingSerie} id="btn-eliminar-serie" className="w-full flex items-center justify-center gap-2 py-2.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded-xl transition-colors font-ui-strong text-sm leading-tight">
-                                        {isDeletingSerie ? (
-                                            <div className="w-4 h-4 border-2 border-red-600/30 border-t-red-600 rounded-full animate-spin"></div>
-                                        ) : (
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                                        )}
-                                        {isDeletingSerie ? 'Eliminando...' : 'Eliminar toda la serie permanentemente'}
-                                    </button>
-                                </div>
-                            )}
-
-                            <div className={`grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto] gap-4 items-end ${isStrictModerator ? 'hidden' : ''}`} id="ev-container-estado">
-                                <div className="min-w-0">
-                                    <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">Estado</label>
-                                    <select id="ev-estado" value={estado} onChange={e => setEstado(e.target.value)} disabled={isStrictModerator} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors appearance-none">
-                                        <option value="Borrador">Borrador</option>
-                                        <option value="Publicado">Publicado</option>
-                                    </select>
+                                    <div>
+                                        <h3 id="event-wizard-service-title" className="text-lg font-black text-content">Datos del servicio</h3>
+                                        <p className="mt-0.5 text-sm text-content-muted">Define qué se celebra y cuándo.</p>
+                                    </div>
                                 </div>
 
-                                <div className="w-full md:w-auto" id="ev-container-acustico">
-                                    <label className="inline-flex w-full md:w-auto items-center gap-3 bg-background border border-border rounded-xl px-4 py-3 cursor-pointer hover:bg-surface transition-colors select-none">
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <label className="block sm:col-span-2 lg:col-span-1" id="ev-container-titulo">
+                                        <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">Título del evento *</span>
                                         <input
-                                            type="checkbox"
-                                            id="ev-es-acustico"
-                                            checked={esAcustico}
-                                            onChange={e => setEsAcustico(e.target.checked)}
-                                            disabled={isStrictModerator}
-                                            className="h-5 w-5 rounded border-border accent-brand"
+                                            type="text"
+                                            id="ev-titulo"
+                                            required
+                                            value={titulo}
+                                            onChange={(event) => setTitulo(event.target.value)}
+                                            autoFocus
+                                            className="mt-2 h-12 w-full rounded-xl border border-border bg-surface px-4 text-base font-semibold text-content outline-none placeholder:font-normal placeholder:text-content-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+                                            placeholder="Ej. Culto de adoración"
                                         />
-                                        <span className="text-sm font-semibold text-content whitespace-nowrap">Servicio Acústico</span>
                                     </label>
+                                    <label className="block sm:col-span-2 lg:col-span-1">
+                                        <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">Ministerio</span>
+                                        <select
+                                            id="ev-ministerio"
+                                            value={ministryId}
+                                            onChange={(event) => {
+                                                const nextMinistryId = event.target.value;
+                                                const nextMinistry = (initialMinistries || []).find((ministry) => ministry.id === nextMinistryId);
+                                                setMinistryId(nextMinistryId);
+                                                if (isSinFiltrosMinistry(nextMinistry)) {
+                                                    if (!titulo.trim()) setTitulo(SIN_FILTROS_MINISTRY_NAME);
+                                                    if (!horaInicio) setHoraInicio(SIN_FILTROS_SERVICE_TIME);
+                                                }
+                                            }}
+                                            className="mt-2 h-12 w-full appearance-none rounded-xl border border-border bg-surface px-4 text-base text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                                        >
+                                            <option value="">Alabanza general</option>
+                                            {(initialMinistries || []).map((ministry) => (
+                                                <option key={ministry.id} value={ministry.id}>{ministry.nombre}</option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                    <label className="block" id="ev-container-fechas">
+                                        <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">Fecha *</span>
+                                        <input
+                                            type="date"
+                                            id="ev-fecha"
+                                            required
+                                            value={fecha}
+                                            onChange={(event) => setFecha(event.target.value)}
+                                            className="mt-2 h-12 w-full min-w-0 rounded-xl border border-border bg-surface px-4 text-base text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                                        />
+                                    </label>
+                                    <div className="grid min-w-0 grid-cols-2 gap-3">
+                                        <label className="block min-w-0">
+                                            <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">Hora *</span>
+                                            <input
+                                                type="time"
+                                                id="ev-hora-inicio"
+                                                required
+                                                value={horaInicio}
+                                                onChange={(event) => setHoraInicio(event.target.value)}
+                                                className="mt-2 h-12 w-full min-w-0 rounded-xl border border-border bg-surface px-3 text-base text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                                            />
+                                        </label>
+                                        <label className="block min-w-0">
+                                            <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">Fin <span className="font-normal normal-case">(opcional)</span></span>
+                                            <input
+                                                type="time"
+                                                id="ev-hora-fin"
+                                                value={horaFin}
+                                                onChange={(event) => setHoraFin(event.target.value)}
+                                                className="mt-2 h-12 w-full min-w-0 rounded-xl border border-border bg-surface px-3 text-base text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                                            />
+                                        </label>
+                                    </div>
                                 </div>
-                            </div>
+                            </section>
+                        )}
 
-                            <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1.65fr)_minmax(220px,0.95fr)] gap-4 w-full">
-                                <div className="min-w-0">
-                                    <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">Tema de predicacion <span className="text-content-muted font-normal lowercase">(opcional)</span></label>
-                                    <input type="text" id="ev-tema" value={tema} onChange={e => setTema(e.target.value)} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" placeholder="Ej: Proverbios" />
+                        {activeWizardStep === 'details' && (
+                            <section id="event-wizard-panel-details" role="tabpanel" aria-labelledby="event-wizard-details-title">
+                                <div className="mb-5 flex items-start gap-3">
+                                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-500">
+                                        <Settings2 className="h-5 w-5" />
+                                    </span>
+                                    <div>
+                                        <h3 id="event-wizard-details-title" className="text-lg font-black text-content">Detalles del evento</h3>
+                                        <p className="mt-0.5 text-sm text-content-muted">Ajusta ensayo, publicación y predicación.</p>
+                                    </div>
                                 </div>
-                                <div className="min-w-0">
-                                    <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">Predicador <span className="text-content-muted font-normal lowercase">(opcional)</span></label>
-                                    <input type="text" id="ev-predicador" value={predicador} onChange={e => setPredicador(e.target.value)} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" placeholder="Ej: P. Ronald" />
+
+                                <div className="grid gap-4">
+                                    {!isStrictModerator && (
+                                        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end" id="ev-container-estado">
+                                            <label className="block min-w-0">
+                                                <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">Estado</span>
+                                                <select
+                                                    id="ev-estado"
+                                                    value={estado}
+                                                    onChange={(event) => setEstado(event.target.value)}
+                                                    className="mt-2 h-12 w-full appearance-none rounded-xl border border-border bg-surface px-4 text-base text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                                                >
+                                                    <option value="Borrador">Borrador</option>
+                                                    <option value="Publicado">Publicado</option>
+                                                </select>
+                                            </label>
+                                            <label className="inline-flex h-12 w-full cursor-pointer select-none items-center gap-3 rounded-xl border border-border bg-surface px-4 transition-colors hover:border-brand/25 md:w-auto" id="ev-container-acustico">
+                                                <input
+                                                    type="checkbox"
+                                                    id="ev-es-acustico"
+                                                    checked={esAcustico}
+                                                    onChange={(event) => setEsAcustico(event.target.checked)}
+                                                    className="h-5 w-5 rounded border-border accent-brand"
+                                                />
+                                                <span className="whitespace-nowrap text-sm font-semibold text-content">Servicio acústico</span>
+                                            </label>
+                                        </div>
+                                    )}
+
+                                    {showRehearsalField && (
+                                        <div className="rounded-2xl border border-border bg-surface p-4">
+                                            <div className="mb-2 flex items-center justify-between gap-3">
+                                                <label htmlFor="ev-ensayo-dia" className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">Día de ensayo</label>
+                                                <span className="text-xs font-bold text-content-muted">7:00 p. m.</span>
+                                            </div>
+                                            <select
+                                                id="ev-ensayo-dia"
+                                                value={rehearsalWeekday === null ? 'none' : String(rehearsalWeekday)}
+                                                onChange={(event) => setRehearsalWeekday(event.target.value === 'none' ? null : Number(event.target.value))}
+                                                className="h-12 w-full appearance-none rounded-xl border border-border bg-background px-4 text-base text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                                            >
+                                                {REHEARSAL_WEEKDAY_OPTIONS.map((option) => (
+                                                    <option key={option.value} value={option.value}>
+                                                        {formatEventRehearsalLabel({ eventDate: rehearsalEventDate, rehearsalWeekday: option.value })}
+                                                    </option>
+                                                ))}
+                                                <option value="none">Sin ensayo</option>
+                                            </select>
+                                        </div>
+                                    )}
+
+                                    {isSinFiltros && (
+                                        <div className="flex min-h-14 items-center justify-between gap-4 rounded-2xl border border-blue-400/25 bg-blue-500/10 px-4 py-3">
+                                            <div>
+                                                <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">Ensayo fijo · Sin Filtros</p>
+                                                <p className="mt-1 text-sm text-content-muted">El mismo sábado antes del culto.</p>
+                                            </div>
+                                            <span className="shrink-0 rounded-full border border-blue-400/25 bg-surface px-3 py-1.5 text-sm font-black text-content">
+                                                {formatClockLabel(SIN_FILTROS_REHEARSAL_TIME)}
+                                            </span>
+                                        </div>
+                                    )}
+
+                                    <div className="grid gap-4 md:grid-cols-[minmax(0,1.65fr)_minmax(220px,0.95fr)]">
+                                        <label className="block min-w-0">
+                                            <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">Tema de predicación <span className="font-normal normal-case">(opcional)</span></span>
+                                            <input
+                                                type="text"
+                                                id="ev-tema"
+                                                value={tema}
+                                                onChange={(event) => setTema(event.target.value)}
+                                                className="mt-2 h-12 w-full rounded-xl border border-border bg-surface px-4 text-base text-content outline-none placeholder:text-content-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+                                                placeholder="Ej. Proverbios"
+                                            />
+                                        </label>
+                                        <label className="block min-w-0">
+                                            <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">Predicador <span className="font-normal normal-case">(opcional)</span></span>
+                                            <input
+                                                type="text"
+                                                id="ev-predicador"
+                                                value={predicador}
+                                                onChange={(event) => setPredicador(event.target.value)}
+                                                className="mt-2 h-12 w-full rounded-xl border border-border bg-surface px-4 text-base text-content outline-none placeholder:text-content-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
+                                                placeholder="Ej. P. Ronald"
+                                            />
+                                        </label>
+                                    </div>
+
+                                    {isSerie && !isStrictModerator && (
+                                        <section id="serie-update-section" className="rounded-2xl border border-violet-500/20 bg-violet-500/[0.06] p-4">
+                                            <p className="text-xs font-black uppercase tracking-[0.14em] text-violet-600 dark:text-violet-300">Opciones de serie</p>
+                                            <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border border-violet-500/20 bg-surface p-3 transition-colors hover:border-violet-500/35">
+                                                <input type="checkbox" id="ev-serie-check" checked={applySerie} onChange={(event) => setApplySerie(event.target.checked)} className="mt-0.5 h-5 w-5 rounded accent-violet-500" />
+                                                <span>
+                                                    <span className="block text-sm font-bold text-content">Aplicar a toda la serie</span>
+                                                    <span className="mt-0.5 block text-xs text-content-muted">Actualiza título, hora final, formato y ministerio en los eventos futuros.</span>
+                                                </span>
+                                            </label>
+                                            <button
+                                                type="button"
+                                                onClick={handleDeleteSerie}
+                                                disabled={isDeletingSerie}
+                                                id="btn-eliminar-serie"
+                                                className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 text-sm font-bold text-red-600 transition-colors hover:bg-red-500/15 disabled:opacity-50 dark:text-red-300"
+                                            >
+                                                {isDeletingSerie ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-red-600/30 border-t-red-600" /> : null}
+                                                {isDeletingSerie ? 'Eliminando...' : 'Eliminar toda la serie permanentemente'}
+                                            </button>
+                                        </section>
+                                    )}
                                 </div>
-                            </div>
+                            </section>
+                        )}
 
-                        </div>
+                        {activeWizardStep === 'team' && mode === 'edit' && (
+                            <section id="event-wizard-panel-team" role="tabpanel" aria-labelledby="event-wizard-team-title">
+                                <div className="mb-5 flex items-start gap-3">
+                                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-500/10 text-sky-500">
+                                        <UsersRound className="h-5 w-5" />
+                                    </span>
+                                    <div>
+                                        <h3 id="event-wizard-team-title" className="text-lg font-black text-content">Equipo y repertorio</h3>
+                                        <p className="mt-0.5 text-sm text-content-muted">Gestiona esta parte sin mezclarla con los datos del evento.</p>
+                                    </div>
+                                </div>
 
-                        <div id="modal-roster-section" className={`${mode === 'new' ? 'hidden' : ''} mt-4 pt-6 border-t border-border flex flex-col gap-4`}>
-                            <div className="flex items-center justify-between">
-                                <h3 className="text-sm font-bold text-content uppercase tracking-wider flex items-center gap-2">Asignaciones de Equipo <span className="text-[10px] font-normal text-content-muted bg-background px-2 py-0.5 rounded hidden sm:inline-block">Clic editar</span></h3>
-                            </div>
+                                <button
+                                    type="button"
+                                    id="btn-armar-playlist"
+                                    onClick={() => {
+                                        if (evId) window.location.href = `/repertorio?seleccionar_para=${evId}`;
+                                    }}
+                                    className={`mb-5 w-full items-center justify-between gap-3 rounded-2xl border border-violet-500/20 bg-violet-500/10 px-4 py-3.5 text-left text-content transition-colors hover:border-violet-500/35 hover:bg-violet-500/15 ${showPlaylistBtn ? 'flex' : 'hidden'}`}
+                                >
+                                    <span className="flex min-w-0 items-center gap-3">
+                                        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/15 text-violet-500">
+                                            <ListMusic className="h-5 w-5" />
+                                        </span>
+                                        <span className="min-w-0">
+                                            <span className="block truncate text-sm font-black">{hasPlaylist ? 'Editar repertorio' : 'Armar repertorio'}</span>
+                                            <span className="mt-0.5 block text-xs text-content-muted">Abre el selector de canciones para este servicio.</span>
+                                        </span>
+                                    </span>
+                                    <ChevronRight className="h-5 w-5 shrink-0 text-content-muted" />
+                                </button>
 
-                            <button
-                                type="button"
-                                id="btn-armar-playlist"
-                                onClick={() => {
-                                    if (evId) window.location.href = '/repertorio?seleccionar_para=' + evId;
-                                }}
-                                className={`w-full relative overflow-hidden group items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-gradient-to-br from-purple-500 via-fuchsia-500 to-pink-500 text-white font-ui-strong text-[15px] leading-tight shadow-md shadow-fuchsia-500/30 hover:shadow-fuchsia-500/50 hover:-translate-y-0.5 transition-all duration-300 ${showPlaylistBtn ? 'flex' : 'hidden'}`}
-                            >
-                                <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-in-out"></div>
-                                <span className="relative z-10 flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>{hasPlaylist ? 'Editar Repertorio' : 'Armar Repertorio (Setlist)'}</span>
-                            </button>
+                                <div id="modal-roster-section" className="rounded-2xl border border-border bg-surface p-4 sm:p-5">
+                                    <div className="mb-4 flex items-center justify-between gap-3">
+                                        <div>
+                                            <h4 className="text-sm font-black uppercase tracking-[0.12em] text-content">Asignaciones</h4>
+                                            <p className="mt-1 text-xs text-content-muted">Los cambios de equipo se aplican al seleccionar cada persona.</p>
+                                        </div>
+                                        <span className="shrink-0 rounded-full bg-brand/10 px-3 py-1 text-xs font-black text-brand">{assignmentCount}</span>
+                                    </div>
+                                    <RosterManager
+                                        evId={evId}
+                                        evFechaStr={fecha}
+                                        evTituloStr={titulo}
+                                        evTemaStr={tema}
+                                        evEstadoStr={estado}
+                                        esAcustico={esAcustico}
+                                        isStrictModerator={isStrictModerator}
+                                        canEditRoster={mode === 'edit'}
+                                        dbData={dbData}
+                                        onRosterChange={(nextAsignaciones) => {
+                                            setDbData((prev) => (
+                                                prev ? { ...prev, asignaciones: nextAsignaciones } : { asignaciones: nextAsignaciones }
+                                            ));
+                                        }}
+                                    />
+                                </div>
+                            </section>
+                        )}
 
-                            <RosterManager
-                                evId={evId}
-                                evFechaStr={fecha}
-                                evTituloStr={titulo}
-                                evTemaStr={tema}
-                                evEstadoStr={estado}
-                                esAcustico={esAcustico}
-                                isStrictModerator={isStrictModerator}
-                                canEditRoster={mode === 'edit'}
-                                dbData={dbData}
-                                onRosterChange={(nextAsignaciones) => {
-                                    setDbData((prev) => (
-                                        prev
-                                            ? { ...prev, asignaciones: nextAsignaciones }
-                                            : { asignaciones: nextAsignaciones }
-                                    ));
-                                }}
-                            />
-                        </div>
+                        {activeWizardStep === 'review' && (
+                            <section id="event-wizard-panel-review" role="tabpanel" aria-labelledby="event-wizard-review-title">
+                                <div className="mb-5 flex items-start gap-3">
+                                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-500">
+                                        <CheckCircle2 className="h-5 w-5" />
+                                    </span>
+                                    <div>
+                                        <h3 id="event-wizard-review-title" className="text-lg font-black text-content">Revisa antes de guardar</h3>
+                                        <p className="mt-0.5 text-sm text-content-muted">Un resumen limpio de lo que quedará publicado.</p>
+                                    </div>
+                                </div>
 
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <button type="button" onClick={() => openWizardStep(isStrictModerator ? 'details' : 'service')} className="rounded-2xl border border-border bg-surface p-4 text-left transition-colors hover:border-brand/25">
+                                        <span className="text-[10px] font-black uppercase tracking-[0.16em] text-content-muted">Servicio</span>
+                                        <span className="mt-2 block text-base font-black text-content">{titulo || 'Sin título'}</span>
+                                        <span className="mt-1 block text-sm text-content-muted">{selectedMinistryLabel}</span>
+                                    </button>
+                                    <button type="button" onClick={() => openWizardStep(isStrictModerator ? 'details' : 'service')} className="rounded-2xl border border-border bg-surface p-4 text-left transition-colors hover:border-brand/25">
+                                        <span className="text-[10px] font-black uppercase tracking-[0.16em] text-content-muted">Fecha y hora</span>
+                                        <span className="mt-2 block capitalize text-base font-black text-content">{eventDateLabel}</span>
+                                        <span className="mt-1 block text-sm text-content-muted">{eventTimeLabel}</span>
+                                    </button>
+                                    <button type="button" onClick={() => openWizardStep('details')} className="rounded-2xl border border-border bg-surface p-4 text-left transition-colors hover:border-brand/25">
+                                        <span className="text-[10px] font-black uppercase tracking-[0.16em] text-content-muted">Configuración</span>
+                                        <span className="mt-2 flex flex-wrap gap-2">
+                                            <span className={`rounded-full px-2.5 py-1 text-xs font-black ${estado === 'Publicado' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300' : 'bg-amber-500/10 text-amber-600 dark:text-amber-300'}`}>{estado}</span>
+                                            {esAcustico && <span className="rounded-full bg-sky-500/10 px-2.5 py-1 text-xs font-black text-sky-600 dark:text-sky-300">Acústico</span>}
+                                            {isSerie && applySerie && <span className="rounded-full bg-violet-500/10 px-2.5 py-1 text-xs font-black text-violet-600 dark:text-violet-300">Toda la serie</span>}
+                                        </span>
+                                        {showRehearsalField && (
+                                            <span className="mt-2 block text-sm text-content-muted">
+                                                {rehearsalWeekday === null ? 'Sin ensayo' : formatEventRehearsalLabel({ eventDate: rehearsalEventDate, rehearsalWeekday })}
+                                            </span>
+                                        )}
+                                    </button>
+                                    <button type="button" onClick={() => openWizardStep('details')} className="rounded-2xl border border-border bg-surface p-4 text-left transition-colors hover:border-brand/25">
+                                        <span className="text-[10px] font-black uppercase tracking-[0.16em] text-content-muted">Predicación</span>
+                                        <span className="mt-2 block text-base font-black text-content">{tema || 'Sin tema definido'}</span>
+                                        <span className="mt-1 block text-sm text-content-muted">{predicador || 'Sin predicador definido'}</span>
+                                    </button>
+                                    {mode === 'edit' && (
+                                        <button type="button" onClick={() => openWizardStep('team')} className="rounded-2xl border border-border bg-surface p-4 text-left transition-colors hover:border-brand/25 sm:col-span-2">
+                                            <span className="flex items-center justify-between gap-3">
+                                                <span>
+                                                    <span className="text-[10px] font-black uppercase tracking-[0.16em] text-content-muted">Equipo y repertorio</span>
+                                                    <span className="mt-2 block text-base font-black text-content">{assignmentCount} {assignmentCount === 1 ? 'asignación' : 'asignaciones'}</span>
+                                                    <span className="mt-1 block text-sm text-content-muted">{hasPlaylist ? 'Repertorio preparado' : 'Sin repertorio preparado'}</span>
+                                                </span>
+                                                <ChevronRight className="h-5 w-5 shrink-0 text-content-muted" />
+                                            </span>
+                                        </button>
+                                    )}
+                                </div>
+
+                                {mode === 'new' && (
+                                    <div className="mt-4 rounded-2xl border border-brand/20 bg-brand/10 px-4 py-3 text-sm text-content-muted">
+                                        Guarda el evento primero; después podrás añadir repertorio y asignar el equipo.
+                                    </div>
+                                )}
+                            </section>
+                        )}
                     </form>
                 </div>
-                <div className="shrink-0 border-t border-border bg-surface px-6 pt-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
-                    <div className="flex gap-3">
+
+                <footer className="shrink-0 border-t border-border bg-surface px-4 pb-[calc(0.9rem+env(safe-area-inset-bottom))] pt-3 sm:px-6 sm:pb-4">
+                    <div className="flex items-center gap-2.5 sm:gap-3">
                         <button
                             type="button"
                             onClick={handleClose}
+                            disabled={isSaving}
                             id="btn-cancel-modal"
-                            className="flex-1 py-3.5 px-4 bg-background hover:bg-border border border-border text-sm text-content rounded-xl font-bold transition-colors"
+                            className="inline-flex h-12 flex-1 items-center justify-center rounded-xl border border-border bg-background px-3 text-sm font-bold text-content transition-colors hover:bg-border disabled:opacity-50 sm:flex-none sm:px-5"
                         >
                             Cancelar
                         </button>
-                        <button
-                            type="submit"
-                            form="form-event"
-                            disabled={isSaving}
-                            id="btn-submit-modal"
-                            className="flex-1 py-3.5 px-4 bg-brand hover:bg-brand/90 text-white text-sm rounded-xl font-bold transition-colors flex justify-center items-center gap-2"
-                        >
-                            <span>{isSaving ? 'Guardando...' : 'Guardar Evento'}</span>
-                            {isSaving && <div id="btn-spinner" className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>}
-                        </button>
+                        {activeWizardIndex > 0 && (
+                            <button
+                                type="button"
+                                onClick={handleWizardBack}
+                                disabled={isSaving}
+                                className="inline-flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl border border-border bg-surface px-3 text-sm font-bold text-content transition-colors hover:bg-background disabled:opacity-50 sm:flex-none sm:px-5"
+                            >
+                                <ChevronLeft className="h-4 w-4" />
+                                Atrás
+                            </button>
+                        )}
+                        {!isLastWizardStep ? (
+                            <button
+                                type="button"
+                                onClick={handleWizardNext}
+                                disabled={isSaving}
+                                className="inline-flex h-12 flex-[1.3] items-center justify-center gap-1.5 rounded-xl bg-brand px-4 text-sm font-black text-white shadow-sm transition-colors hover:bg-brand/90 disabled:opacity-50 sm:ml-auto sm:flex-none sm:px-7"
+                            >
+                                Siguiente
+                                <ChevronRight className="h-4 w-4" />
+                            </button>
+                        ) : (
+                            <button
+                                type="submit"
+                                form="form-event"
+                                disabled={isSaving}
+                                id="btn-submit-modal"
+                                className="inline-flex h-12 flex-[1.3] items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-black text-white shadow-sm transition-colors hover:bg-brand/90 disabled:opacity-50 sm:ml-auto sm:flex-none sm:px-7"
+                            >
+                                <span>{isSaving ? 'Guardando...' : 'Guardar evento'}</span>
+                                {isSaving ? <span id="btn-spinner" className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> : <Check className="h-4 w-4" />}
+                            </button>
+                        )}
                     </div>
-                </div>
+                </footer>
             </div>
             {/* ERROR MODAL NATIVO OVERRIDE (COLISIÃ“N) */}
             {collisionDate && (
