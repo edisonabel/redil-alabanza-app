@@ -1,13 +1,17 @@
 ﻿import { useState, useEffect, useMemo } from 'react';
 import {
+    AlertTriangle,
     CalendarDays,
     Check,
     CheckCircle2,
+    ChevronDown,
     ChevronLeft,
     ChevronRight,
     ClipboardCheck,
+    Layers3,
     ListMusic,
     Settings2,
+    Trash2,
     UsersRound,
     X,
 } from 'lucide-react';
@@ -133,6 +137,8 @@ export default function ModalEvento({ initialMinistries = [] }) {
     const [ministryId, setMinistryId] = useState('');
     const [activeWizardStep, setActiveWizardStep] = useState('service');
     const [wizardError, setWizardError] = useState('');
+    const [isSeriesOptionsOpen, setIsSeriesOptionsOpen] = useState(false);
+    const [isSeriesDeleteConfirmationOpen, setIsSeriesDeleteConfirmationOpen] = useState(false);
 
     const [isSaving, setIsSaving] = useState(false);
     const [isDeletingSerie, setIsDeletingSerie] = useState(false);
@@ -152,6 +158,8 @@ export default function ModalEvento({ initialMinistries = [] }) {
         window.toggleModalGlobal = async (show, modalMode = 'new', data = null) => {
             if (!show) {
                 setIsOpen(false);
+                setIsSeriesOptionsOpen(false);
+                setIsSeriesDeleteConfirmationOpen(false);
                 document.body.style.overflow = '';
                 return;
             }
@@ -159,6 +167,8 @@ export default function ModalEvento({ initialMinistries = [] }) {
             setIsOpen(true);
             setMode(modalMode);
             setWizardError('');
+            setIsSeriesOptionsOpen(false);
+            setIsSeriesDeleteConfirmationOpen(false);
             document.body.style.overflow = 'hidden';
 
             if (modalMode === 'new') {
@@ -293,6 +303,8 @@ export default function ModalEvento({ initialMinistries = [] }) {
     }, [user, evId]);
     const handleClose = () => {
         setWizardError('');
+        setIsSeriesOptionsOpen(false);
+        setIsSeriesDeleteConfirmationOpen(false);
         if (typeof window !== 'undefined' && typeof window.toggleModalGlobal === 'function') {
             window.toggleModalGlobal(false);
         } else {
@@ -530,8 +542,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
     };
 
     const handleDeleteSerie = async () => {
-        if (!serieId) return;
-        if (!window.confirm('ATENCIÓN: Estás a punto de eliminar TODOS los eventos asociados a esta serie de forma permanente.\\n\\n¿Estás seguro de que deseas continuar?')) return;
+        if (!serieId || !isSeriesDeleteConfirmationOpen) return;
 
         setIsDeletingSerie(true);
         try {
@@ -558,6 +569,18 @@ export default function ModalEvento({ initialMinistries = [] }) {
             setActiveWizardStep(wizardSteps[0]?.id || 'details');
         }
     }, [activeWizardStep, wizardSteps]);
+
+    useEffect(() => {
+        if (!isSeriesDeleteConfirmationOpen || typeof window === 'undefined') return undefined;
+
+        const animationFrame = window.requestAnimationFrame(() => {
+            const confirmation = document.getElementById('series-delete-confirmation');
+            confirmation?.focus({ preventScroll: true });
+            confirmation?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+
+        return () => window.cancelAnimationFrame(animationFrame);
+    }, [isSeriesDeleteConfirmationOpen]);
 
     const activeWizardIndex = Math.max(
         0,
@@ -836,7 +859,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
                         {activeWizardStep === 'details' && (
                             <section id="event-wizard-panel-details" role="tabpanel" aria-labelledby="event-wizard-details-title">
                                 <div className="mb-5 flex items-start gap-3">
-                                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-500">
+                                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-500/10 text-teal-500">
                                         <Settings2 className="h-5 w-5" />
                                     </span>
                                     <div>
@@ -933,25 +956,108 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                     </div>
 
                                     {isSerie && !isStrictModerator && (
-                                        <section id="serie-update-section" className="rounded-2xl border border-violet-500/20 bg-violet-500/[0.06] p-4">
-                                            <p className="text-xs font-black uppercase tracking-[0.14em] text-violet-600 dark:text-violet-300">Opciones de serie</p>
-                                            <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border border-violet-500/20 bg-surface p-3 transition-colors hover:border-violet-500/35">
-                                                <input type="checkbox" id="ev-serie-check" checked={applySerie} onChange={(event) => setApplySerie(event.target.checked)} className="mt-0.5 h-5 w-5 rounded accent-violet-500" />
-                                                <span>
-                                                    <span className="block text-sm font-bold text-content">Aplicar a toda la serie</span>
-                                                    <span className="mt-0.5 block text-xs text-content-muted">Actualiza título, hora final, formato y ministerio en los eventos futuros.</span>
-                                                </span>
-                                            </label>
+                                        <section id="serie-update-section" className="overflow-hidden rounded-2xl border border-border bg-surface">
                                             <button
                                                 type="button"
-                                                onClick={handleDeleteSerie}
+                                                onClick={() => {
+                                                    if (isDeletingSerie) return;
+                                                    setIsSeriesOptionsOpen((current) => {
+                                                        const next = !current;
+                                                        if (!next) {
+                                                            setApplySerie(false);
+                                                            setIsSeriesDeleteConfirmationOpen(false);
+                                                        }
+                                                        return next;
+                                                    });
+                                                }}
+                                                aria-expanded={isSeriesOptionsOpen}
+                                                aria-controls="series-advanced-options"
+                                                className="flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500/30 disabled:opacity-50"
                                                 disabled={isDeletingSerie}
-                                                id="btn-eliminar-serie"
-                                                className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 text-sm font-bold text-red-600 transition-colors hover:bg-red-500/15 disabled:opacity-50 dark:text-red-300"
                                             >
-                                                {isDeletingSerie ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-red-600/30 border-t-red-600" /> : null}
-                                                {isDeletingSerie ? 'Eliminando...' : 'Eliminar toda la serie permanentemente'}
+                                                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-300">
+                                                    <Layers3 className="h-5 w-5" />
+                                                </span>
+                                                <span className="min-w-0 flex-1">
+                                                    <span className="block text-sm font-black text-content">Acciones avanzadas de la serie</span>
+                                                    <span className="mt-0.5 block text-xs text-content-muted">Cambios masivos y eliminación.</span>
+                                                </span>
+                                                <ChevronDown className={`h-5 w-5 shrink-0 text-content-muted transition-transform ${isSeriesOptionsOpen ? 'rotate-180' : ''}`} />
                                             </button>
+
+                                            {isSeriesOptionsOpen && (
+                                                <div id="series-advanced-options" className="border-t border-border bg-background/55 p-4">
+                                                    <div className="flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3.5 py-3">
+                                                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
+                                                        <p className="text-xs leading-relaxed text-content-muted">
+                                                            Estas acciones afectan más de un evento. Revísalas con cuidado antes de guardar.
+                                                        </p>
+                                                    </div>
+
+                                                    <label className={`mt-3 flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition-colors ${applySerie ? 'border-teal-500/35 bg-teal-500/10' : 'border-border bg-surface hover:border-teal-500/25'}`}>
+                                                        <input
+                                                            type="checkbox"
+                                                            id="ev-serie-check"
+                                                            checked={applySerie}
+                                                            onChange={(event) => setApplySerie(event.target.checked)}
+                                                            className="mt-0.5 h-5 w-5 rounded border-border accent-teal-500"
+                                                        />
+                                                        <span>
+                                                            <span className="block text-sm font-bold text-content">Aplicar cambios a eventos futuros</span>
+                                                            <span className="mt-1 block text-xs leading-relaxed text-content-muted">Actualiza título, hora final, formato y ministerio en esta serie.</span>
+                                                        </span>
+                                                    </label>
+
+                                                    {applySerie && (
+                                                        <div role="status" className="mt-2 rounded-lg bg-teal-500/10 px-3 py-2 text-xs font-semibold text-teal-700 dark:text-teal-300">
+                                                            El botón final cambiará a “Guardar toda la serie”.
+                                                        </div>
+                                                    )}
+
+                                                    <div className="mt-4 border-t border-border pt-4">
+                                                        {!isSeriesDeleteConfirmationOpen ? (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setIsSeriesDeleteConfirmationOpen(true)}
+                                                                className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-red-500/25 bg-surface px-4 text-sm font-bold text-red-600 transition-colors hover:bg-red-500/10 dark:text-red-300"
+                                                            >
+                                                                <Trash2 className="h-4 w-4" />
+                                                                Eliminar esta serie…
+                                                            </button>
+                                                        ) : (
+                                                            <div
+                                                                id="series-delete-confirmation"
+                                                                className="rounded-xl border border-red-500/30 bg-red-500/10 p-3.5 outline-none"
+                                                                role="alert"
+                                                                tabIndex={-1}
+                                                            >
+                                                                <p className="text-sm font-black text-red-600 dark:text-red-300">¿Eliminar todos los eventos de esta serie?</p>
+                                                                <p className="mt-1 text-xs leading-relaxed text-content-muted">Esta acción es permanente y no se puede deshacer.</p>
+                                                                <div className="mt-3 grid grid-cols-2 gap-2">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setIsSeriesDeleteConfirmationOpen(false)}
+                                                                        disabled={isDeletingSerie}
+                                                                        className="min-h-11 rounded-xl border border-border bg-surface px-3 text-sm font-bold text-content transition-colors hover:bg-background disabled:opacity-50"
+                                                                    >
+                                                                        No, cancelar
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={handleDeleteSerie}
+                                                                        disabled={isDeletingSerie}
+                                                                        id="btn-eliminar-serie"
+                                                                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-red-600 px-3 text-sm font-black text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                                                                    >
+                                                                        {isDeletingSerie ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> : <Trash2 className="h-4 w-4" />}
+                                                                        {isDeletingSerie ? 'Eliminando...' : 'Sí, eliminar serie'}
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </section>
                                     )}
                                 </div>
@@ -976,10 +1082,10 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                     onClick={() => {
                                         if (evId) window.location.href = `/repertorio?seleccionar_para=${evId}`;
                                     }}
-                                    className={`mb-5 w-full items-center justify-between gap-3 rounded-2xl border border-violet-500/20 bg-violet-500/10 px-4 py-3.5 text-left text-content transition-colors hover:border-violet-500/35 hover:bg-violet-500/15 ${showPlaylistBtn ? 'flex' : 'hidden'}`}
+                                    className={`mb-5 w-full items-center justify-between gap-3 rounded-2xl border border-cyan-500/25 bg-cyan-500/10 px-4 py-3.5 text-left text-content transition-colors hover:border-cyan-500/40 hover:bg-cyan-500/15 ${showPlaylistBtn ? 'flex' : 'hidden'}`}
                                 >
                                     <span className="flex min-w-0 items-center gap-3">
-                                        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/15 text-violet-500">
+                                        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-500/15 text-cyan-500">
                                             <ListMusic className="h-5 w-5" />
                                         </span>
                                         <span className="min-w-0">
@@ -990,7 +1096,11 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                     <ChevronRight className="h-5 w-5 shrink-0 text-content-muted" />
                                 </button>
 
-                                <div id="modal-roster-section" className="rounded-2xl border border-border bg-surface p-4 sm:p-5">
+                                <div
+                                    id="modal-roster-section"
+                                    className="rounded-2xl border border-border bg-surface p-4 sm:p-5"
+                                    style={{ '--color-rol-dir': '14 165 233', '--color-rol-voc': '249 115 22' }}
+                                >
                                     <div className="mb-4 flex items-center justify-between gap-3">
                                         <div>
                                             <h4 className="text-sm font-black uppercase tracking-[0.12em] text-content">Asignaciones</h4>
@@ -1046,7 +1156,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                         <span className="mt-2 flex flex-wrap gap-2">
                                             <span className={`rounded-full px-2.5 py-1 text-xs font-black ${estado === 'Publicado' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300' : 'bg-amber-500/10 text-amber-600 dark:text-amber-300'}`}>{estado}</span>
                                             {esAcustico && <span className="rounded-full bg-sky-500/10 px-2.5 py-1 text-xs font-black text-sky-600 dark:text-sky-300">Acústico</span>}
-                                            {isSerie && applySerie && <span className="rounded-full bg-violet-500/10 px-2.5 py-1 text-xs font-black text-violet-600 dark:text-violet-300">Toda la serie</span>}
+                                            {isSerie && applySerie && <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-black text-amber-700 dark:text-amber-300">Toda la serie</span>}
                                         </span>
                                         {showRehearsalField && (
                                             <span className="mt-2 block text-sm text-content-muted">
@@ -1123,7 +1233,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                 id="btn-submit-modal"
                                 className="inline-flex h-12 flex-[1.3] items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-black text-white shadow-sm transition-colors hover:bg-brand/90 disabled:opacity-50 sm:ml-auto sm:flex-none sm:px-7"
                             >
-                                <span>{isSaving ? 'Guardando...' : 'Guardar evento'}</span>
+                                <span>{isSaving ? 'Guardando...' : (applySerie ? 'Guardar toda la serie' : 'Guardar evento')}</span>
                                 {isSaving ? <span id="btn-spinner" className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> : <Check className="h-4 w-4" />}
                             </button>
                         )}
