@@ -1,4 +1,5 @@
 export type TrackOutputRoute = 'left' | 'right' | 'stereo';
+export type LiveDirectorOutputLayout = 'guide-left' | 'guide-right';
 
 type TrackRoutingCandidate = {
   id?: unknown;
@@ -53,6 +54,24 @@ export const resolveTrackOutputRoute = (track: TrackRoutingCandidate): TrackOutp
 
   return isGuideTrack ? 'left' : 'stereo';
 };
+
+export const resolveTrackOutputRouteForLayout = (
+  track: TrackRoutingCandidate,
+  layout: LiveDirectorOutputLayout,
+): TrackOutputRoute => {
+  const guideOnRight = layout === 'guide-right';
+  if (isGuideRoutingTrack(track)) {
+    return guideOnRight ? 'right' : 'left';
+  }
+
+  return guideOnRight ? 'left' : 'right';
+};
+
+export const nextLiveDirectorOutputLayout = (
+  layout: LiveDirectorOutputLayout,
+): LiveDirectorOutputLayout => (
+  layout === 'guide-right' ? 'guide-left' : 'guide-right'
+);
 
 export const toggleGuideTrackOutputRoute = (track: TrackRoutingCandidate): TrackOutputRoute => (
   resolveTrackOutputRoute(track) === 'right' ? 'left' : 'right'

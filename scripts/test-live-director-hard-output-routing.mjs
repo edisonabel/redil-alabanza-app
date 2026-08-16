@@ -4,7 +4,9 @@ import vm from 'node:vm';
 
 import {
   isGuideRoutingTrack,
+  nextLiveDirectorOutputLayout,
   resolveTrackOutputRoute,
+  resolveTrackOutputRouteForLayout,
 } from '../src/utils/liveDirectorTrackRouting.ts';
 
 const assertGuideRoute = (track, message) => {
@@ -38,6 +40,39 @@ assert.equal(
   'stereo',
   'Una pista musical normal debe conservar stereo',
 );
+
+assert.equal(
+  resolveTrackOutputRouteForLayout({ name: 'Click' }, 'guide-left'),
+  'left',
+  'El layout por defecto debe enviar Click/Metro a L',
+);
+assert.equal(
+  resolveTrackOutputRouteForLayout({ name: 'Guía' }, 'guide-left'),
+  'left',
+  'El layout por defecto debe enviar la guía a L',
+);
+assert.equal(
+  resolveTrackOutputRouteForLayout({ name: 'Batería' }, 'guide-left'),
+  'right',
+  'El layout por defecto debe enviar instrumentos a R',
+);
+assert.equal(
+  resolveTrackOutputRouteForLayout({ name: 'Click' }, 'guide-right'),
+  'right',
+  'El layout invertido debe enviar Click/Metro a R',
+);
+assert.equal(
+  resolveTrackOutputRouteForLayout({ name: 'Guía' }, 'guide-right'),
+  'right',
+  'El layout invertido debe enviar la guía a R',
+);
+assert.equal(
+  resolveTrackOutputRouteForLayout({ name: 'Batería' }, 'guide-right'),
+  'left',
+  'El layout invertido debe enviar instrumentos a L',
+);
+assert.equal(nextLiveDirectorOutputLayout('guide-left'), 'guide-right');
+assert.equal(nextLiveDirectorOutputLayout('guide-right'), 'guide-left');
 
 const loadWorkletProcessor = async (path) => {
   const source = await readFile(new URL(path, import.meta.url), 'utf8');
