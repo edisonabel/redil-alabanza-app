@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Clock3, ExternalLink, GripVertical, ListMusic, Loader2, Mic2, Play, Plus, Printer, RadioReceiver, X, Zap } from 'lucide-react';
+import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Clock3, ExternalLink, GripVertical, ListMusic, Loader2, Mic2, Play, Plus, Printer, RadioReceiver, Share2, X, Zap } from 'lucide-react';
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
 import EnsayoPersonalView from './EnsayoPersonalView.jsx';
 import { supabase } from '../../lib/supabase';
@@ -663,6 +663,8 @@ function SongArtworkThumb({ song, index }) {
  *   userId?: string;
  *   rosterMembers?: any[];
  *   initialSongVoiceAssignments?: Record<string, any>;
+ *   isCustomSetlist?: boolean;
+ *   shareUrl?: string;
  * }} props
  */
 export default function EnsayoHub({
@@ -677,6 +679,8 @@ export default function EnsayoHub({
   userId = '',
   rosterMembers = [],
   initialSongVoiceAssignments = {},
+  isCustomSetlist = false,
+  shareUrl = '',
 }) {
   const [localPlaylist, setLocalPlaylist] = useState(() =>
     Array.isArray(playlist) ? playlist.filter(Boolean) : []
@@ -685,6 +689,7 @@ export default function EnsayoHub({
   const [showPrayerModal, setShowPrayerModal] = useState(false);
   const [prayerText, setPrayerText] = useState('');
   const [prayerTitle, setPrayerTitle] = useState('Oración de Confesión');
+  const [shareCopied, setShareCopied] = useState(false);
 
   const songs = localPlaylist;
   const rehearsalEventId = String(eventMeta?.id || '').trim();
@@ -1501,9 +1506,23 @@ export default function EnsayoHub({
     setCancionPersonalActiva(null);
   }, []);
 
+  const handleShareCustomSetlist = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+    const url = String(shareUrl || window.location.href).trim();
+    if (!url) return;
+
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable');
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true);
+    } catch {
+      window.prompt('Copia el enlace de tu setlist personalizada:', url);
+    }
+  }, [shareUrl]);
+
   const handleListBack = useCallback(() => {
-    window.location.href = '/';
-  }, []);
+    window.location.href = isCustomSetlist ? '/repertorio' : '/';
+  }, [isCustomSetlist]);
 
   useEffect(() => () => {
     stopMetronome();
@@ -1636,10 +1655,12 @@ export default function EnsayoHub({
             </button>
 
               <div className="min-w-0">
-                  <p className="text-[11px] font-black uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
-                    Setlist de Ensayo
-                  </p>
-                  <h1 className="mt-2 text-2xl font-black tracking-tight text-zinc-950 dark:text-zinc-50 md:text-4xl">
+                  {!isCustomSetlist && (
+                    <p className="text-[11px] font-black uppercase tracking-[0.28em] text-zinc-500 dark:text-zinc-400">
+                      Setlist de Ensayo
+                    </p>
+                  )}
+                  <h1 className={`${isCustomSetlist ? "" : "mt-2 "}text-2xl font-black tracking-tight text-zinc-950 dark:text-zinc-50 md:text-4xl`}>
                     {displayContextTitle}
                   </h1>
                   {displayContextPreacher && (
@@ -1682,6 +1703,18 @@ export default function EnsayoHub({
                 </div>
 
               </div>
+
+              {isCustomSetlist && (
+                <button
+                  type="button"
+                  onClick={handleShareCustomSetlist}
+                  className="ui-pressable-soft col-span-2 inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-4 text-sm font-black text-blue-700 shadow-sm transition-colors hover:bg-blue-100 dark:border-blue-400/20 dark:bg-blue-400/10 dark:text-blue-200 dark:hover:bg-blue-400/15 md:col-span-1 md:col-start-3 md:row-start-1"
+                  aria-label="Compartir setlist personalizada"
+                >
+                  <Share2 className="h-4 w-4" />
+                  {shareCopied ? 'Copiado' : 'Compartir'}
+                </button>
+              )}
             </div>
         </div>
         </header>
