@@ -1,0 +1,44 @@
+name: Apply Live Director output layout patch
+
+on:
+  push:
+    branches:
+      - feat/live-director-output-layout
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply surgical patch
+        run: node scripts/__patch-live-director-output-layout.mjs
+      - name: Verify hard output routing
+        run: npm run test:live-output-routing
+      - name: Typecheck
+        run: npm run check
+      - name: Build
+        run: npm run build
+      - name: Remove temporary patch helpers
+        run: |
+          rm scripts/__patch-live-director-output-layout.mjs
+          rm .github/workflows/__apply-live-director-output-layout.yml
+      - name: Commit verified changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "Improve Live Director split routing and mixer order"
+          git push origin HEAD:feat/live-director-output-layout
