@@ -23,7 +23,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Apply surgical patch
-        run: node scripts/__patch-live-director-output-layout.mjs
+        run: |
+          node scripts/__fix-live-director-patcher.mjs
+          node scripts/__patch-live-director-output-layout.mjs
       - name: Verify hard output routing
         run: npm run test:live-output-routing
       - name: Typecheck
@@ -32,6 +34,7 @@ jobs:
         run: npm run build
       - name: Remove temporary patch helpers
         run: |
+          rm scripts/__fix-live-director-patcher.mjs
           rm scripts/__patch-live-director-output-layout.mjs
           rm .github/workflows/__apply-live-director-output-layout.yml
       - name: Commit verified changes
