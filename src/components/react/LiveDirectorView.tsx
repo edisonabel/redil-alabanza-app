@@ -61,8 +61,11 @@ import { resolveFetchableAudioUrl } from '../../lib/audio-playback.js';
 import { audioSessionService } from '../../services/AudioSessionService';
 import {
   isGuideRoutingTrack,
+  nextLiveDirectorOutputLayout,
   resolveTrackOutputRoute,
+  resolveTrackOutputRouteForLayout,
   toggleGuideTrackOutputRoute,
+  type LiveDirectorOutputLayout,
   type TrackOutputRoute,
 } from '../../utils/liveDirectorTrackRouting';
 import { getPadUrlForSongKey } from '../../utils/padAudio';
@@ -252,7 +255,7 @@ const INTERNAL_PAD_CROSSFADE_MS = INTERNAL_PAD_CROSSFADE_SECONDS * 1000;
 // roles. The list mirrors the roles that are essential for live worship:
 // click → guide → rhythm section → voices → harmonic → colour.
 const STEM_PRIORITY_RULES: Array<{ rank: number; pattern: RegExp }> = [
-  { rank: 0, pattern: /\b(click|metronom[oe]?)\b/i },
+  { rank: 0, pattern: /\b(click|clic|clcik|tempo|metro|metronom[oe]?)\b/i },
   { rank: 1, pattern: /\b(gu[ií]a|guide|cue|count[- ]?in|count)\b/i },
   { rank: 2, pattern: /\b(bater[ií]a|drum|kick|snare|toms?|overhead|cymbal|hi-?hat|hat|percu)/i },
   { rank: 3, pattern: /\b(bajo|bass)\b/i },
@@ -274,6 +277,13 @@ function stemPriorityRank(track: { name?: string; label?: string; id?: string })
 
 function isCongregationCueTrack(track: { name?: string; label?: string; id?: string }): boolean {
   return stemPriorityRank(track) <= 1;
+}
+
+function mixerRoleRank(track: { name?: string; label?: string; id?: string }): number {
+  const priority = stemPriorityRank(track);
+  if (priority === 0) return 0;
+  if (priority === 1) return 1;
+  return 2;
 }
 
 type MixerTrackView = MixerTrackMeta & {
@@ -523,10 +533,11 @@ const buildMixerTrackMeta = (
 };
 
 const buildTrackOutputRouteMap = (
-  tracks: Array<Pick<TrackData, 'id' | 'name' | 'outputRoute'>>,
+  tracks: Array<Pick<TrackData, 'id' | 'name' | 'sourceFileName' | 'outputRoute'>>,
+  layout: LiveDirectorOutputLayout = 'guide-left',
 ): Record<string, TrackOutputRoute> => (
   tracks.reduce<Record<string, TrackOutputRoute>>((routes, track) => {
-    routes[track.id] = resolveTrackOutputRoute(track);
+    routes[track.id] = resolveTrackOutputRouteForLayout(track, layout);
     return routes;
   }, {})
 );
@@ -901,6 +912,7 @@ export function LiveDirectorView({
   const transportIdentity = `${String(activeQueueSongId || songId || '').trim()}:${isManualTempoMode ? 'tempo' : 'stems'}`;
   useEffect(() => {
     autoPadStartedForTransportRef.current = '';
+    setOutputLayout('guide-left');
     stopEngineRef.current();
   }, [transportIdentity]);
 
@@ -1049,6 +1061,7 @@ export function LiveDirectorView({
   const [unmatchedFiles, setUnmatchedFiles] = useState<string[]>([]);
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
   const [mutedTrackIds, setMutedTrackIds] = useState<Set<string>>(new Set());
+  const [outputLayout, setOutputLayout] = useState<LiveDirectorOutputLayout>('guide-left');
   const [trackOutputRoutes, setTrackOutputRoutes] = useState<Record<string, TrackOutputRoute>>({});
   const [soloTrackIds, setSoloTrackIds] = useState<Set<string>>(() => new Set());
   const [masterVolume, setMasterVolumeState] = useState(0.82);
@@ -1213,14 +1226,14 @@ export function LiveDirectorView({
 
   const trackRouteSeedSignature = useMemo(
     () => sessionTracks
-      .map((track) => `${track.id}:${track.name}:${resolveTrackOutputRoute(track)}`)
+      .map((track) => `${track.id}:${track.name}:${track.sourceFileName || ""}`)
       .join('|'),
     [sessionTracks],
   );
 
   const seededTrackOutputRoutes = useMemo(
-    () => buildTrackOutputRouteMap(sessionTracks),
-    [trackRouteSeedSignature],
+    () => buildTrackOutputRouteMap(sessionTracks, outputLayout),
+    [outputLayout, trackRouteSeedSignature],
   );
 
   const activeTrackWarningThreshold = useMemo(() => {
@@ -2030,7 +2043,7 @@ export function LiveDirectorView({
       const omittedWarning = omittedWarningByTrackId.get(track.id);
       const outputRoute = trackOutputRoutes[track.id] ?? resolveTrackOutputRoute(track);
       const isManualClickTrack = isManualTempoMode && track.id === MANUAL_CLICK_TRACK_ID;
-      const showRouteFlip = !isManualClickTrack && isGuideRoutingTrack(track);
+      const showRouteFlip = false;
       const volume = isManualClickTrack
         ? manualTempoTransport.volume
         : trackVolumes[track.id] ?? track.volume ?? meta.defaultVolume;
@@ -2069,6 +2082,8 @@ export function LiveDirectorView({
         showRouteFlip,
       };
     });
+
+    resolvedMixerTracks.sort((a, b) => mixerRoleRank(a) - mixerRoleRank(b));
 
     if (resolvedPadUrl || isPadActive) {
       const padEnvelope = trackEnvelopes[INTERNAL_PAD_TRACK_ID];
@@ -4113,6 +4128,64 @@ export function LiveDirectorView({
       void commitMixerStateSilent(nextTracks);
     }
   }, [commitMixerStateSilent, hasPersistedSongContext, hasProvidedTracks, hasTrackSession, manualSession, sessionTracks, setTrackOutputRoute, trackOutputRoutes]);
+
+  const handleCycleOutputLayout = useCallback(() => {
+    if (!hasTrackSession) {
+      return;
+    }
+
+    const nextLayout = nextLiveDirectorOutputLayout(outputLayout);
+    const sourceTracks = hasProvidedTracks ? sessionTracks : manualSession?.tracks || [];
+    const nextRoutes = buildTrackOutputRouteMap(sourceTracks, nextLayout);
+    const activeIds = new Set(activeTracks.map((track) => track.id));
+
+    setOutputLayout(nextLayout);
+    setTrackOutputRoutes(nextRoutes);
+
+    sourceTracks.forEach((track) => {
+      if (activeIds.has(track.id)) {
+        setTrackOutputRoute(track.id, nextRoutes[track.id]);
+      }
+    });
+
+    if (!manualSession) {
+      return;
+    }
+
+    const nextTracks = manualSession.tracks.map((track) => ({
+      ...track,
+      outputRoute: nextRoutes[track.id] ?? resolveTrackOutputRouteForLayout(track, nextLayout),
+    }));
+
+    setManualSession((previous) => (
+      previous ? { ...previous, tracks: nextTracks } : previous
+    ));
+
+    if (hasPersistedSongContext && !usesEventMixPersistence) {
+      queueSilentSessionSave(buildSessionSavePayload({
+        mode: manualSession.mode,
+        tracks: nextTracks,
+        unmatchedFiles: manualSession.unmatchedFiles || [],
+        sectionOffsetSeconds: Number(manualSession.sectionOffsetSeconds) || 0,
+      }));
+    }
+  }, [
+    activeTracks,
+    buildSessionSavePayload,
+    hasPersistedSongContext,
+    hasProvidedTracks,
+    hasTrackSession,
+    manualSession,
+    outputLayout,
+    queueSilentSessionSave,
+    sessionTracks,
+    setTrackOutputRoute,
+    usesEventMixPersistence,
+  ]);
+
+  const outputLayoutLabel = outputLayout === 'guide-right'
+    ? 'STEMS L · CLICK+GUÍA R'
+    : 'CLICK+GUÍA L · STEMS R';
 
   const handleInternalPadVolumeChange = useCallback((nextVolume: number) => {
     const safeValue = clamp(nextVolume, 0, 1);
@@ -6195,7 +6268,7 @@ export function LiveDirectorView({
                 </button>
               </div>
 
-              <div className={`mt-4 grid gap-2 ${useWideTrackLoadModal ? 'grid-cols-[1fr_1fr_auto] items-stretch' : 'grid-cols-2'}`}>
+              <div className={`mt-4 grid gap-2 ${useWideTrackLoadModal ? 'grid-cols-[1fr_1fr_1.35fr_auto] items-stretch' : 'grid-cols-2'}`}>
                 <div className="rounded-[1rem] border border-cyan-300/14 bg-cyan-300/[0.07] px-3 py-2.5">
                   <p className="text-[0.56rem] font-black uppercase tracking-[0.18em] text-cyan-100/52">Activos</p>
                   <p className="mt-0.5 text-[1.15rem] font-semibold leading-none text-cyan-50">
@@ -6208,6 +6281,19 @@ export function LiveDirectorView({
                     {sessionActiveTrackLimit >= sessionTracks.length ? 'Todos' : sessionActiveTrackLimit}
                   </p>
                 </div>
+                <button
+                  type="button"
+                  onClick={handleCycleOutputLayout}
+                  disabled={!hasTrackSession}
+                  className={`ui-pressable-soft rounded-[1rem] border border-cyan-300/18 bg-cyan-300/[0.07] px-3 py-2.5 text-left text-cyan-50 transition-all hover:border-cyan-300/30 hover:bg-cyan-300/[0.11] disabled:cursor-not-allowed disabled:opacity-40 ${useWideTrackLoadModal ? '' : 'col-span-2'}`}
+                  aria-label={`Cambiar distribución de salida. Actual: ${outputLayoutLabel}`}
+                  title="Toca para invertir Click/Guía y stems entre L/R"
+                >
+                  <p className="text-[0.56rem] font-black uppercase tracking-[0.18em] text-cyan-100/52">Salida L/R</p>
+                  <p className="mt-0.5 text-[0.78rem] font-semibold leading-tight text-cyan-50">
+                    {outputLayoutLabel}
+                  </p>
+                </button>
                 <button
                   type="button"
                   onClick={() => {
