@@ -15,6 +15,7 @@ import {
 } from '../../lib/role-permissions.js';
 import { getSupabaseServerEnv } from '../../lib/server/supabase-env.js';
 import { pickPreferredVoicePayload } from '../../utils/voicePayload.js';
+import { parseCustomSetlistRouteId } from '../../utils/customSetlistShare';
 
 const MOCK_CANCION_ENSAYO = {
   id: 'demo',
@@ -68,6 +69,8 @@ const BROKEN_INLINE_CHORD_RE = new RegExp(`\\[(${CHORD_BODY_PATTERN})\\s*\\|\\s*
 const { id = 'demo' } = Astro.params;
 const routeId = String(id || 'demo').trim();
 const routeIsDemo = routeId === 'demo';
+const customPlaylistId = parseCustomSetlistRouteId(routeId);
+const isCustomSetlist = Boolean(customPlaylistId);
 const routeIsUuid = isUuidLike(routeId);
 const user = Astro.locals.user;
 const accessToken = Astro.locals.accessToken || Astro.cookies.get('sb-access-token')?.value || '';
@@ -543,7 +546,7 @@ const fetchEventBySlug = async (slugValue: string, includePredicador = true): Pr
   };
 };
 
-if (!routeIsDemo) {
+if (!routeIsDemo && !isCustomSetlist) {
   const fetchEventRow = async (includePredicador = true): Promise<EventFetchResult> => {
     if (routeIsUuid) {
       const { data, error } = await supabaseSSR
@@ -751,29 +754,81 @@ if (!routeIsDemo) {
   }
 }
 
+if (isCustomSetlist && customPlaylistId) {
+  const { data: customPlaylist, error: customPlaylistError } = await supabaseSSR
+    .from('playlists')
+    .select('id')
+    .eq('id', customPlaylistId)
+    .is('evento_id', null)
+    .maybeSingle();
+
+  if (customPlaylistError) {
+    console.error('Ensayo custom playlist query error:', customPlaylistError);
+  }
+
+  if (customPlaylist?.id) {
+    playlistDbId = String(customPlaylist.id);
+    canEditSetlist = true;
+
+    const { data: customItems, error: customItemsError } = await supabaseSSR
+      .from('playlist_canciones')
+      .select('orden, cancion_id, canciones(id, titulo, cantante, tonalidad, bpm, categoria, voz, mp3, voces, link_voces, link_secuencias, chordpro, section_markers, voice_track_anchors, multitrack_session)')
+      .eq('playlist_id', customPlaylist.id)
+      .order('orden', { ascending: true });
+
+    if (customItemsError) {
+      console.error('Ensayo custom playlist_canciones query error:', customItemsError);
+    } else {
+      const seenSongs = new Set<string>();
+      playlistSongs = await Promise.all((customItems || [])
+        .filter((item: any) => {
+          const songId = item?.cancion_id || item?.canciones?.id;
+          const songKey = String(songId || '');
+          if (!songKey || seenSongs.has(songKey)) return false;
+          seenSongs.add(songKey);
+          return true;
+        })
+        .map((item: any, index: number) => buildSongFromRow(item.canciones, index)));
+    }
+  }
+}
+
 const rehearsalSongs =
   playlistSongs.length > 0
     ? playlistSongs
     : routeIsDemo
       ? [MOCK_CANCION_ENSAYO]
-      : [
-          createFallbackSong({
-            songId: `fallback-${routeId}`,
-            title: getEventThemeAndPreacher(eventData || {}, 'Setlist pendiente').theme || 'Setlist pendiente',
-            message: eventData?.id
-              ? 'Este servicio todav\u00eda no tiene canciones listas para el modo ensayo.'
-              : 'No encontramos el evento solicitado o a\u00fan no tiene repertorio cargado.',
-          }),
-        ];
+      : isCustomSetlist
+        ? [
+            createFallbackSong({
+              songId: `fallback-custom-${routeId}`,
+              title: 'Setlist personalizada',
+              message: 'No encontramos canciones disponibles para esta setlist personalizada.',
+            }),
+          ]
+        : [
+            createFallbackSong({
+              songId: `fallback-${routeId}`,
+              title: getEventThemeAndPreacher(eventData || {}, 'Setlist pendiente').theme || 'Setlist pendiente',
+              message: eventData?.id
+                ? 'Este servicio todav\u00eda no tiene canciones listas para el modo ensayo.'
+                : 'No encontramos el evento solicitado o a\u00fan no tiene repertorio cargado.',
+            }),
+          ];
 
 const initialSongId = Astro.url.searchParams.get('song') || null;
-const monitorUrl = new URL(`/monitor/${routeId}`, Astro.url).toString();
+const monitorUrl = isCustomSetlist ? '' : new URL(`/monitor/${routeId}`, Astro.url).toString();
+const customShareUrl = isCustomSetlist ? new URL(Astro.url.pathname, Astro.url).toString() : '';
 const { theme: contextTheme, preacher: contextPreacher } = getEventThemeAndPreacher(eventData || {}, 'Modo Ensayo');
-const contextTitle = contextTheme || 'Modo Ensayo';
-const pageTitle = `${buildEventHeadline(eventData || {}, 'Modo Ensayo')} | Modo Ensayo`;
-const pageDescription = eventData?.id
-  ? `Vista de ensayo para ${buildEventHeadline(eventData || {}, contextTitle)}.`
-  : 'Vista de ensayo enfocada para leer acordes y letras en vivo.';
+const contextTitle = isCustomSetlist ? 'Setlist personalizada' : (contextTheme || 'Modo Ensayo');
+const pageTitle = isCustomSetlist
+  ? 'Setlist personalizada | Modo Ensayo'
+  : `${buildEventHeadline(eventData || {}, 'Modo Ensayo')} | Modo Ensayo`;
+const pageDescription = isCustomSetlist
+  ? 'Setlist personalizada con las herramientas completas del modo ensayo.'
+  : eventData?.id
+    ? `Vista de ensayo para ${buildEventHeadline(eventData || {}, contextTitle)}.`
+    : 'Vista de ensayo enfocada para leer acordes y letras en vivo.';
 
 const themeColors = await getBrandingConfig({ accessToken });
 const resolvedColorTokens = {
@@ -879,6 +934,8 @@ const resolvedColorTokens = {
       userId={user.id}
       rosterMembers={rosterMembers}
       initialSongVoiceAssignments={initialSongVoiceAssignments}
+      isCustomSetlist={isCustomSetlist}
+      shareUrl={customShareUrl}
     />
     <ProPlayerGlobal />
     <VocesModalGlobal />
