@@ -1552,10 +1552,15 @@ const clearPlaylistSelection = () => {
    window.prompt('Copia el enlace de tu setlist personalizada:', url);
   }
 
-  alert(copied
-   ? '\u00A1Setlist personalizada creada y enlace copiado!'
-   : '\u00A1Setlist personalizada creada!');
-  window.open(url, '_blank', 'noopener,noreferrer');
+  const feedbackMount = document.getElementById('ensayo-global-mount');
+  if (feedbackMount) {
+   feedbackMount.innerHTML = '<div class="custom-setlist-navigation-feedback" role="status" aria-live="polite"><span class="custom-setlist-navigation-spinner" aria-hidden="true"></span><strong>Abriendo modo ensayo...</strong></div>';
+  }
+
+  await new Promise<void>((resolve) => {
+   requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+  window.location.assign(url);
  } catch (error) {
   if (createdPlaylistId) {
    await supabase.from('playlists').delete().eq('id', createdPlaylistId);
@@ -1864,6 +1869,46 @@ function filterCards() {
 </script>
 
 <style is:global>
+ .custom-setlist-navigation-feedback {
+   position: fixed;
+   inset: 0;
+   z-index: 120;
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+   justify-content: center;
+   gap: 0.9rem;
+   padding: 1.5rem;
+   color: white;
+   background: rgb(9 9 11 / 0.82);
+   backdrop-filter: blur(12px);
+   -webkit-backdrop-filter: blur(12px);
+   text-align: center;
+ }
+
+ .custom-setlist-navigation-feedback strong {
+   font-size: 0.95rem;
+   font-weight: 800;
+   letter-spacing: -0.01em;
+ }
+
+ .custom-setlist-navigation-spinner {
+   width: 2.4rem;
+   height: 2.4rem;
+   border: 3px solid rgb(255 255 255 / 0.24);
+   border-top-color: white;
+   border-radius: 9999px;
+   animation: custom-setlist-navigation-spin 720ms linear infinite;
+ }
+
+ @keyframes custom-setlist-navigation-spin {
+   to { transform: rotate(360deg); }
+ }
+
+ @media (prefers-reduced-motion: reduce) {
+   .custom-setlist-navigation-spinner { animation: none; }
+ }
+
  /* Content visibility optimizations for long list scroll performance */
  .cancion-oculta { display: none !important; }
  .btn-add-setlist { transform: translateZ(0); -webkit-backface-visibility: hidden; backface-visibility: hidden; }

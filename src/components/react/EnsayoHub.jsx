@@ -1708,7 +1708,7 @@ export default function EnsayoHub({
                 <button
                   type="button"
                   onClick={handleShareCustomSetlist}
-                  className="ui-pressable-soft col-span-2 inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-4 text-sm font-black text-blue-700 shadow-sm transition-colors hover:bg-blue-100 dark:border-blue-400/20 dark:bg-blue-400/10 dark:text-blue-200 dark:hover:bg-blue-400/15 md:col-span-1 md:col-start-3 md:row-start-1"
+                  className="ui-pressable-soft mt-4 inline-flex min-h-[3.25rem] w-full items-center justify-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 text-sm font-black text-blue-700 shadow-sm transition-colors hover:bg-blue-100 dark:border-blue-400/20 dark:bg-blue-400/10 dark:text-blue-200 dark:hover:bg-blue-400/15"
                   aria-label="Compartir setlist personalizada"
                 >
                   <Share2 className="h-4 w-4" />
