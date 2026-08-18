@@ -7,7 +7,9 @@ import {
   CHORDPRO_SECTION_PRESETS,
   getChordProSectionVisual,
   insertChordProSectionAfterIndex,
+  isLegacyZeroFilledChordProMarkerSet,
   mergeChordProGuideNote,
+  normalizeOptionalChordProMarkerTime,
   parseChordProMetadata,
   removeChordProGuideNote,
   splitChordProGuideNote,
@@ -142,12 +144,42 @@ assert.equal(genericMetadata.key, 'D');
 assert.equal(genericMetadata.bpm, 90);
 assert.equal(genericMetadata.meter, '4/4');
 
+assert.equal(normalizeOptionalChordProMarkerTime(null), null);
+assert.equal(normalizeOptionalChordProMarkerTime(undefined), null);
+assert.equal(normalizeOptionalChordProMarkerTime(''), null);
+assert.equal(normalizeOptionalChordProMarkerTime('   '), null);
+assert.equal(normalizeOptionalChordProMarkerTime('invalid'), null);
+assert.equal(normalizeOptionalChordProMarkerTime(0), 0);
+assert.equal(normalizeOptionalChordProMarkerTime('12.3456'), 12.346);
+
+assert.equal(
+  isLegacyZeroFilledChordProMarkerSet([
+    { sectionName: 'Intro', startSec: 0, cueMarkers: [] },
+    { sectionName: 'Verso 1', startSec: 0, cueMarkers: [] },
+  ]),
+  true,
+  'An old all-zero marker set without provenance must be treated as uninitialized.',
+);
+assert.equal(
+  isLegacyZeroFilledChordProMarkerSet([
+    { sectionName: 'Intro', startSec: 0, cueMarkers: [], _method: 'manual' },
+    { sectionName: 'Verso 1', startSec: 18, cueMarkers: [], _method: 'manual' },
+  ]),
+  false,
+  'Real zero-second intros must be preserved when the marker set contains authored timing.',
+);
+
 const cueOneCapture = buildNextChordProCueCapture(
   { startSec: null, cueMarkers: [] },
   3,
   56,
 );
 assert.deepEqual(cueOneCapture, { startSec: 56, cueMarkers: [] });
+assert.deepEqual(
+  buildNextChordProCueCapture({ startSec: '', cueMarkers: [null, ''] }, 3, 56),
+  { startSec: 56, cueMarkers: [] },
+  'Empty marker values must capture cue 1 instead of being coerced to zero.',
+);
 
 const cueTwoCapture = buildNextChordProCueCapture(cueOneCapture, 3, 72.35);
 assert.deepEqual(cueTwoCapture, { startSec: 56, cueMarkers: [72.35] });

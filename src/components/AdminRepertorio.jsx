@@ -37,7 +37,9 @@ import {
   CHORDPRO_SECTION_PRESETS,
   getChordProSectionVisual,
   insertChordProSectionAfterIndex,
+  isLegacyZeroFilledChordProMarkerSet,
   mergeChordProGuideNote,
+  normalizeOptionalChordProMarkerTime,
   parseChordProMetadata,
   removeChordProGuideNote,
   splitChordProGuideNote,
@@ -503,16 +505,15 @@ const parseMarkerTime = (rawValue) => {
 };
 
 const normalizeCueMarkerTimes = (rawCueMarkers = [], sectionStartSec = null) => {
-  const sectionFloor = Number.isFinite(Number(sectionStartSec)) ? Number(sectionStartSec) : null;
+  const sectionFloor = normalizeOptionalChordProMarkerTime(sectionStartSec);
   const normalizedTimes = (Array.isArray(rawCueMarkers) ? rawCueMarkers : [])
     .map((marker) => {
-      if (typeof marker === 'number') return marker;
-      if (typeof marker?.startSec === 'number') return marker.startSec;
-      if (typeof marker?.time === 'number') return marker.time;
-      return Number(marker);
+      if (marker == null) return null;
+      if (typeof marker?.startSec === 'number') return normalizeOptionalChordProMarkerTime(marker.startSec);
+      if (typeof marker?.time === 'number') return normalizeOptionalChordProMarkerTime(marker.time);
+      return normalizeOptionalChordProMarkerTime(marker);
     })
-    .filter((value) => Number.isFinite(value))
-    .map((value) => toPreciseSeconds(value))
+    .filter((value) => value != null)
     .filter((value) => (sectionFloor == null ? true : value > sectionFloor))
     .sort((left, right) => left - right);
 
@@ -520,6 +521,7 @@ const normalizeCueMarkerTimes = (rawCueMarkers = [], sectionStartSec = null) => 
 };
 
 const normalizeSectionMarkers = (sections = [], rawMarkers = []) => {
+  const shouldClearLegacyZeroMarkers = isLegacyZeroFilledChordProMarkerSet(rawMarkers);
   const markerGroups = (Array.isArray(rawMarkers) ? rawMarkers : [])
     .filter(Boolean)
     .reduce((acc, marker, index) => {
@@ -538,7 +540,9 @@ const normalizeSectionMarkers = (sections = [], rawMarkers = []) => {
     const groupedMarkers = markerGroups.get(normalizedSectionName) || [];
     const existingMarker = groupedMarkers[nextOccurrence] || (Array.isArray(rawMarkers) ? rawMarkers[index] : {}) || {};
     markerOccurrences.set(normalizedSectionName, nextOccurrence + 1);
-    const startSec = Number(existingMarker?.startSec);
+    const startSec = shouldClearLegacyZeroMarkers
+      ? null
+      : normalizeOptionalChordProMarkerTime(existingMarker?.startSec);
     const sectionOccurrence = nextOccurrence + 1;
     const slugBase = normalizedSectionName
       .normalize('NFD')
@@ -552,9 +556,9 @@ const normalizeSectionMarkers = (sections = [], rawMarkers = []) => {
       sectionIndex: index,
       sectionOccurrence,
       sectionKey: `${slugBase}__${sectionOccurrence}`,
-      startSec: Number.isFinite(startSec) ? toPreciseSeconds(startSec) : null,
+      startSec,
       note: String(existingMarker?.note || section?.note || '').trim(),
-      cueMarkers: normalizeCueMarkerTimes(existingMarker?.cueMarkers, Number.isFinite(startSec) ? startSec : null),
+      cueMarkers: normalizeCueMarkerTimes(existingMarker?.cueMarkers, startSec),
       _autoDetected: Boolean(existingMarker?._autoDetected),
       _confidence: Number.isFinite(Number(existingMarker?._confidence)) ? Number(existingMarker._confidence) : 0,
       _method: String(existingMarker?._method || '').trim(),
@@ -981,7 +985,7 @@ const EditableCell = ({ cancionId, campoBd, valorInicial, onSave, isSaving, anch
 const MarkerTimeInput = ({
   value = null,
   onCommit,
-  placeholder = '00:00.000',
+  placeholder = '',
   disabled = false,
   ariaLabel = 'Tiempo del marker en minutos, segundos y milisegundos',
 }) => {
@@ -1693,7 +1697,10 @@ export default function AdminRepertorio() {
     }
   };
 
-  const guardarSongWizardMetadata = async () => {
+  const guardarSongWizardMetadata = async ({
+    progressFeedback = '',
+    successFeedback = 'Datos guardados. Completa los adicionales que necesites.',
+  } = {}) => {
     if (!songWizardSongId || !songWizardSong) {
       setSongWizardFeedback('Primero completa los datos principales de la canción.');
       setSongWizardStep(0);
@@ -1709,7 +1716,7 @@ export default function AdminRepertorio() {
     }
 
     setSongWizardSaving(true);
-    setSongWizardFeedback('');
+    setSongWizardFeedback(progressFeedback);
 
     try {
       const payload = buildSongWizardPayload(songWizardDraft, metricaDisponible);
@@ -1725,15 +1732,16 @@ export default function AdminRepertorio() {
         .eq('id', songWizardSongId);
 
       if (error) throw error;
+      const persistedSong = { ...songWizardSong, ...payload };
       setCanciones((previous) => sortSongsByTitle(previous.map((song) => (
         String(song.id) === String(songWizardSongId)
           ? { ...song, ...payload }
           : song
       ))));
-      setSongWizardFeedback('Datos guardados. Completa los adicionales que necesites.');
+      setSongWizardFeedback(successFeedback);
 
       setSongWizardDirty(false);
-      return true;
+      return persistedSong;
     } catch (error) {
       console.error('Error guardando canción desde el wizard:', error);
       const detail = String(error?.message || error?.details || 'No se pudieron guardar los cambios.');
@@ -2340,6 +2348,18 @@ export default function AdminRepertorio() {
     setEditorChordproCargando(false);
   };
 
+  const abrirEditorChordproDesdeWizard = async (cancion) => {
+    if (songWizardSaving || !cancion?.id) return;
+
+    const persistedSong = await guardarSongWizardMetadata({
+      progressFeedback: 'Guardando la canción antes de abrir ChordPro…',
+      successFeedback: 'Cambios guardados antes de abrir ChordPro.',
+    });
+    if (!persistedSong) return;
+
+    await abrirEditorChordpro(persistedSong);
+  };
+
   const cerrarEditorChordpro = () => {
     if (guardandoChordpro) return;
     setEditorChordproAbierto(false);
@@ -2622,24 +2642,28 @@ export default function AdminRepertorio() {
             </div>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2">
-            <label className="inline-flex min-h-[40px] cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-surface px-2 text-xs font-semibold text-content transition-colors hover:border-amber-500/30 hover:text-amber-500">
+            <label className={`inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl border border-border bg-surface px-2 text-xs font-semibold text-content transition-colors ${songWizardSaving
+              ? 'pointer-events-none cursor-not-allowed opacity-50'
+              : 'cursor-pointer hover:border-amber-500/30 hover:text-amber-500'
+            }`}>
               {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
               Importar
               <input
                 type="file"
                 hidden
                 accept=".txt,.pro,.cho,.chordpro,text/plain"
-                disabled={isUploading}
+                disabled={isUploading || songWizardSaving}
                 onChange={(event) => manejarSubidaChordpro(event, song.id)}
               />
             </label>
             <button
               type="button"
-              onClick={() => abrirEditorChordpro(song)}
-              className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl border border-border bg-surface px-2 text-xs font-semibold text-content transition-colors hover:border-amber-500/30 hover:text-amber-500"
+              onClick={() => abrirEditorChordproDesdeWizard(song)}
+              disabled={songWizardSaving || isUploading}
+              className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl border border-border bg-surface px-2 text-xs font-semibold text-content transition-colors hover:border-amber-500/30 hover:text-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <PencilLine className="h-4 w-4" />
-              {hasResource ? 'Editar' : 'Crear'}
+              {songWizardSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <PencilLine className="h-4 w-4" />}
+              {songWizardSaving ? 'Guardando…' : (hasResource ? 'Editar' : 'Crear')}
             </button>
           </div>
         </article>
@@ -4747,7 +4771,7 @@ export default function AdminRepertorio() {
                                     cueMarkers: normalizeCueMarkerTimes(marker?.cueMarkers, nextValue),
                                   }));
                                 }}
-                                placeholder="00:00.000"
+                                placeholder=""
                               />
                             )}
                             <input

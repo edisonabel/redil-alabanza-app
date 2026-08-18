@@ -161,11 +161,38 @@ export const parseChordProMetadata = (rawValue = '') => {
   return result;
 };
 
+export const normalizeOptionalChordProMarkerTime = (rawValue) => {
+  if (rawValue == null) return null;
+  if (typeof rawValue === 'string' && !rawValue.trim()) return null;
+
+  const numericValue = Number(rawValue);
+  if (!Number.isFinite(numericValue)) return null;
+  return Math.round(Math.max(0, numericValue) * 1000) / 1000;
+};
+
+export const isLegacyZeroFilledChordProMarkerSet = (rawMarkers = []) => {
+  if (!Array.isArray(rawMarkers) || rawMarkers.length < 2) return false;
+
+  return rawMarkers.every((marker) => {
+    if (!marker || typeof marker !== 'object') return false;
+    const markerTime = normalizeOptionalChordProMarkerTime(marker.startSec);
+    const cueMarkers = Array.isArray(marker.cueMarkers) ? marker.cueMarkers : [];
+    const hasCueTime = cueMarkers.some((value) => (
+      normalizeOptionalChordProMarkerTime(value?.startSec ?? value?.time ?? value) != null
+    ));
+    const hasDetectionSource = Boolean(
+      marker._autoDetected || String(marker._method || '').trim(),
+    );
+
+    return markerTime === 0 && !hasCueTime && !hasDetectionSource;
+  });
+};
+
 const normalizeCueSeconds = (values = [], sectionStartSec = null) => {
-  const sectionStart = sectionStartSec == null ? null : Number(sectionStartSec);
+  const sectionStart = normalizeOptionalChordProMarkerTime(sectionStartSec);
   return (Array.isArray(values) ? values : [])
-    .map((value) => Math.round(Number(value) * 1000) / 1000)
-    .filter((value) => Number.isFinite(value))
+    .map((value) => normalizeOptionalChordProMarkerTime(value))
+    .filter((value) => value != null)
     .filter((value) => sectionStart == null || value > sectionStart)
     .sort((left, right) => left - right)
     .filter((value, index, source) => index === 0 || Math.abs(value - source[index - 1]) >= 0.001);
@@ -178,14 +205,15 @@ export const buildNextChordProCueCapture = (
 ) => {
   const totalCues = Math.max(1, Math.floor(Number(rawTotalCues) || 1));
   const currentTime = Math.round(Math.max(0, Number(rawCurrentTime) || 0) * 1000) / 1000;
-  const hasSectionStart = marker?.startSec != null && Number.isFinite(Number(marker.startSec));
+  const normalizedSectionStart = normalizeOptionalChordProMarkerTime(marker?.startSec);
+  const hasSectionStart = normalizedSectionStart != null;
   const expectedCueMarkers = totalCues - 1;
 
   if (!hasSectionStart || expectedCueMarkers === 0) {
     return { startSec: currentTime, cueMarkers: [] };
   }
 
-  const sectionStartSec = Number(marker.startSec);
+  const sectionStartSec = normalizedSectionStart;
   const currentCueMarkers = normalizeCueSeconds(marker?.cueMarkers, sectionStartSec)
     .slice(0, expectedCueMarkers);
   if (currentCueMarkers.length >= expectedCueMarkers) return null;
