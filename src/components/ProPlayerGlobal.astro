@@ -1,14 +1,11 @@
 <div id="proPlayerGlobalRoot" transition:persist transition:animate="none">
-  <div id="mp3MiniPlayer" class="fixed left-3 right-3 md:left-auto md:right-5 md:w-[34rem] bottom-[calc(env(safe-area-inset-bottom)+5.85rem)] md:bottom-[6.75rem] z-[310] hidden overflow-hidden rounded-[1.35rem] border border-white/10 bg-[#1c1c1f]/92 text-white shadow-2xl backdrop-blur-2xl">
+  <div id="mp3MiniPlayer" class="fixed left-3 right-3 md:left-auto md:right-5 md:w-[42rem] md:max-w-[calc(100vw-2.5rem)] bottom-[calc(env(safe-area-inset-bottom)+5.85rem)] md:bottom-[6.75rem] z-[310] hidden overflow-hidden rounded-[1.35rem] border border-transparent bg-[#1c1c1f]/92 text-white shadow-2xl backdrop-blur-2xl">
     <div class="mp3-mini-progress-shell relative h-1 bg-border/60">
       <div id="mp3MiniProgress" class="h-full w-0 bg-action transition-[width] duration-150"></div>
       <input id="mp3MiniSeek" type="range" min="0" max="1" value="0" step="0.01" class="mp3-mini-seek" aria-label="Mover pista vocal" />
     </div>
-    <div class="grid grid-cols-[auto_auto_1fr_auto] items-center gap-3 p-2.5">
-      <button id="btnMp3MiniPlay" type="button" class="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#111113] shadow-lg transition-colors hover:bg-white/88" aria-label="Reproducir">
-        <svg id="mp3MiniPlayIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5 fill-current"><path d="M8 5v14l11-7z"></path></svg>
-      </button>
-      <div class="mp3-art-shell relative h-11 w-11 overflow-hidden rounded-xl bg-black/24">
+    <div class="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-3 p-2.5">
+      <div class="mp3-art-shell mp3-mini-art-shell relative h-11 w-11 overflow-hidden rounded-xl bg-black/24">
         <img id="mp3MiniArtwork" alt="" class="mp3-art-image hidden h-full w-full object-cover" />
         <div id="mp3MiniArtworkFallback" class="grid h-full w-full place-items-center text-white/55" aria-hidden="true">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
@@ -18,21 +15,27 @@
         <span id="mp3MiniTitle" class="block truncate text-sm font-black leading-tight">Cancion</span>
         <span class="mt-0.5 flex items-center gap-2 text-[11px] font-semibold text-white/58">
           <span id="mp3MiniArtist" class="truncate">Artista</span>
-          <span class="shrink-0 text-white/35">/</span>
+          <span class="shrink-0 text-white/35">·</span>
           <span id="mp3MiniTime" class="shrink-0 tabular-nums">00:00</span>
         </span>
       </button>
+      <button id="btnMp3MiniPlay" type="button" class="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#111113] shadow-lg transition-colors hover:bg-white/88" aria-label="Reproducir">
+        <svg id="mp3MiniPlayIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5 fill-current"><path d="M8 5v14l11-7z"></path></svg>
+      </button>
       <div class="flex items-center gap-1">
+        <button id="btnMp3MiniNextTrack" type="button" class="hidden h-11 w-11 items-center justify-center rounded-full text-white transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30" aria-label="Siguiente canción">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-6 w-6 fill-current"><path d="M6 5.5 15 12 6 18.5v-13ZM17 5h2v14h-2V5Z"></path></svg>
+        </button>
         <div class="hidden items-center gap-1.5 md:flex">
           <button id="btnMp3MiniMute" type="button" class="inline-flex h-10 w-10 items-center justify-center rounded-full text-white/74 transition-colors hover:bg-white/10 hover:text-white" aria-label="Silenciar">
             <svg id="mp3MiniVolumeIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M18.36 5.64a9 9 0 0 1 0 12.73"/></svg>
           </button>
           <input id="mp3MiniVolume" type="range" min="0" max="1" step="0.01" value="0.85" class="mp3-volume-slider w-20" aria-label="Volumen mini reproductor" />
         </div>
-        <button id="btnMp3MiniExpandIcon" type="button" class="inline-flex h-10 w-10 items-center justify-center rounded-full text-white/74 transition-colors hover:bg-white/10 hover:text-white" aria-label="Abrir panel">
+        <button id="btnMp3MiniExpandIcon" type="button" class="hidden h-10 w-10 items-center justify-center rounded-full text-white/74 transition-colors hover:bg-white/10 hover:text-white md:inline-flex" aria-label="Abrir panel">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg>
         </button>
-        <button id="btnMp3MiniClose" type="button" class="inline-flex h-10 w-10 items-center justify-center rounded-full text-white/74 transition-colors hover:bg-white/10 hover:text-white" aria-label="Cerrar reproductor">
+        <button id="btnMp3MiniClose" type="button" class="hidden h-10 w-10 items-center justify-center rounded-full text-white/74 transition-colors hover:bg-white/10 hover:text-white md:inline-flex" aria-label="Cerrar reproductor">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
         </button>
       </div>
@@ -91,10 +94,11 @@
 
               <div class="mt-8 grid grid-cols-[1fr_auto_1fr] items-center gap-4 md:mt-9">
                 <div class="flex items-center justify-end gap-6 md:gap-8">
-                  <button id="btnMp3Repeat" type="button" class="mp3-transport-secondary" aria-label="Repetir canción">
+                  <button id="btnMp3Repeat" type="button" class="mp3-transport-secondary relative" aria-label="Activar repetición">
                     <svg id="mp3RepeatIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2.35" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+                    <span id="mp3RepeatOneBadge" class="absolute inset-0 hidden place-items-center pt-px text-[9px] font-black" aria-hidden="true">1</span>
                   </button>
-                  <button id="btnMp3Back5" type="button" class="mp3-transport-main" aria-label="Retroceder 5 segundos">
+                  <button id="btnMp3PreviousTrack" type="button" class="mp3-transport-main" aria-label="Canción anterior">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-10 w-10 md:h-12 md:w-12" fill="currentColor"><path d="M11 18.5 2.5 12 11 5.5v13Zm10 0L12.5 12 21 5.5v13Z"></path></svg>
                   </button>
                 </div>
@@ -103,7 +107,7 @@
                   <span id="mp3PlayLabel" class="sr-only">Reproducir</span>
                 </button>
                 <div class="flex items-center justify-start gap-6 md:gap-8">
-                  <button id="btnMp3Forward5" type="button" class="mp3-transport-main" aria-label="Adelantar 5 segundos">
+                  <button id="btnMp3NextTrack" type="button" class="mp3-transport-main" aria-label="Siguiente canción">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-10 w-10 md:h-12 md:w-12" fill="currentColor"><path d="M13 5.5 21.5 12 13 18.5v-13Zm-10 0L11.5 12 3 18.5v-13Z"></path></svg>
                   </button>
                   <button id="btnMp3VolumeToggle" type="button" class="mp3-transport-secondary hidden md:inline-flex" aria-label="Mostrar volumen">
@@ -173,6 +177,11 @@
     extractDriveFileId,
     shouldPreferNativeBackgroundPlayback,
   } from '../lib/audio-playback.js';
+  import {
+    getNextProPlayerRepeatMode,
+    getProPlayerQueueAvailability,
+    PRO_PLAYER_REPEAT_MODES,
+  } from '../utils/proPlayerQueue.js';
 
   type RawSectionMarker = {
     id?: string | number;
@@ -196,6 +205,12 @@
     lyricIndex: number;
   };
   type PreparedSection = Omit<PlayerSection, 'endSec'> & { endSec: number | null };
+  type RepeatMode = 'off' | 'all' | 'one';
+  type PlayerQueueState = {
+    active: boolean;
+    index: number;
+    length: number;
+  };
 
   type LyricSection = { name: string; lines: string[] };
   type LyricCue = {
@@ -220,6 +235,7 @@
     sectionMarkers?: RawSectionMarker[];
     artworkUrl?: string;
     expand?: boolean;
+    preserveExpanded?: boolean;
     startAtSec?: number | null;
   };
 
@@ -258,14 +274,16 @@
     const btnMiniClose = document.getElementById('btnMp3MiniClose');
     const btnExpand = document.getElementById('btnMp3Expand');
     const btnExpandIcon = document.getElementById('btnMp3MiniExpandIcon');
+    const btnMiniNextTrack = document.getElementById('btnMp3MiniNextTrack') as HTMLButtonElement | null;
     const btnPlay = document.getElementById('btnMp3PlayPause');
     const btnMiniPlay = document.getElementById('btnMp3MiniPlay');
     const btnRepeat = document.getElementById('btnMp3Repeat');
+    const repeatOneBadge = document.getElementById('mp3RepeatOneBadge');
     const btnVolumeToggle = document.getElementById('btnMp3VolumeToggle');
     const btnMute = document.getElementById('btnMp3Mute');
     const btnMiniMute = document.getElementById('btnMp3MiniMute');
-    const btnBack5 = document.getElementById('btnMp3Back5');
-    const btnForward5 = document.getElementById('btnMp3Forward5');
+    const btnPreviousTrack = document.getElementById('btnMp3PreviousTrack') as HTMLButtonElement | null;
+    const btnNextTrack = document.getElementById('btnMp3NextTrack') as HTMLButtonElement | null;
     const playIcon = document.getElementById('mp3PlayIcon');
     const miniPlayIcon = document.getElementById('mp3MiniPlayIcon');
     const volumeIcon = document.getElementById('mp3VolumeIcon');
@@ -305,9 +323,9 @@
       !miniTitleEl || !miniArtistEl || !miniTimeEl || !miniProgressEl ||
       !miniSeek || !miniProgressShell || !artworkEl || !miniArtworkEl || !artworkFallbackEl || !miniArtworkFallbackEl ||
       !liveIndicatorEl || !statusEl ||
-      !btnClose || !btnCollapse || !btnMiniClose || !btnExpand || !btnExpandIcon ||
-      !btnPlay || !btnMiniPlay || !btnRepeat || !btnVolumeToggle || !btnMute || !btnMiniMute || !btnBack5 ||
-      !btnForward5 || !playIcon || !miniPlayIcon || !volumeIcon || !miniVolumeIcon ||
+      !btnClose || !btnCollapse || !btnMiniClose || !btnExpand || !btnExpandIcon || !btnMiniNextTrack ||
+      !btnPlay || !btnMiniPlay || !btnRepeat || !repeatOneBadge || !btnVolumeToggle || !btnMute || !btnMiniMute || !btnPreviousTrack ||
+      !btnNextTrack || !playIcon || !miniPlayIcon || !volumeIcon || !miniVolumeIcon ||
       !playLabel || !timelineWrap || !waveformCanvas || !seek || !volumeRow || !volume ||
       !miniVolume || !currentEl || !durationEl || !chkLoop || !loopInfo || !loopBracket ||
       !loopFill || !handleA || !handleB || !btnClearLoop || !btnPrevSection ||
@@ -354,7 +372,8 @@
     let karaokeMode: 'lyrics' | 'map' = 'lyrics';
     let activeMediaKind = '';
     let closingPlayer = false;
-    let repeatEnabled = false;
+    let repeatMode: RepeatMode = PRO_PLAYER_REPEAT_MODES.OFF;
+    let queueUiState: PlayerQueueState = { active: false, index: -1, length: 0 };
     let lastVolume = Number(window.localStorage?.getItem('redil:pro-player-volume') || 0.85);
     let artworkRequestId = 0;
 
@@ -796,12 +815,103 @@
       else drawWaveformFrame();
     };
 
-    const setRepeatState = (enabled: boolean) => {
-      repeatEnabled = Boolean(enabled);
-      audio.loop = repeatEnabled;
-      btnRepeat.classList.toggle('is-active', repeatEnabled);
-      btnRepeat.setAttribute('aria-pressed', repeatEnabled ? 'true' : 'false');
-      btnRepeat.setAttribute('aria-label', repeatEnabled ? 'Repetición activada' : 'Repetir canción');
+    const renderQueueControls = () => {
+      const availability = getProPlayerQueueAvailability({
+        active: queueUiState.active,
+        currentIndex: queueUiState.index,
+        length: queueUiState.length,
+        repeatMode,
+      });
+
+      btnMiniNextTrack.classList.toggle('hidden', !availability.hasPlaylist);
+      btnMiniNextTrack.classList.toggle('inline-flex', availability.hasPlaylist);
+      btnMiniNextTrack.disabled = !availability.canNext;
+      btnPreviousTrack.disabled = !availability.canPrevious;
+      btnNextTrack.disabled = !availability.canNext;
+
+      const positionLabel = availability.hasPlaylist
+        ? `${queueUiState.index + 1} de ${queueUiState.length}`
+        : '';
+      btnPreviousTrack.title = availability.hasPlaylist
+        ? `Canción anterior · ${positionLabel}`
+        : 'Disponible al reproducir la lista completa';
+      btnNextTrack.title = availability.hasPlaylist
+        ? `Siguiente canción · ${positionLabel}`
+        : 'Disponible al reproducir la lista completa';
+      btnMiniNextTrack.title = btnNextTrack.title;
+    };
+
+    const setRepeatMode = (nextMode: RepeatMode, { notify = true } = {}) => {
+      repeatMode = Object.values(PRO_PLAYER_REPEAT_MODES).includes(nextMode)
+        ? nextMode
+        : PRO_PLAYER_REPEAT_MODES.OFF;
+      audio.loop = repeatMode === PRO_PLAYER_REPEAT_MODES.ONE;
+
+      const isActive = repeatMode !== PRO_PLAYER_REPEAT_MODES.OFF;
+      const isRepeatOne = repeatMode === PRO_PLAYER_REPEAT_MODES.ONE;
+      btnRepeat.classList.toggle('is-active', isActive);
+      btnRepeat.classList.toggle('is-repeat-one', isRepeatOne);
+      repeatOneBadge.classList.toggle('hidden', !isRepeatOne);
+      repeatOneBadge.classList.toggle('grid', isRepeatOne);
+      btnRepeat.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      btnRepeat.setAttribute(
+        'aria-label',
+        repeatMode === PRO_PLAYER_REPEAT_MODES.ALL
+          ? 'Repetir lista activado. Cambiar a repetir una canción'
+          : isRepeatOne
+            ? 'Repetir una canción activado. Desactivar repetición'
+            : queueUiState.active && queueUiState.length > 1
+              ? 'Activar repetición de lista'
+              : 'Activar repetición de canción'
+      );
+      renderQueueControls();
+
+      if (notify) {
+        window.dispatchEvent(new CustomEvent('redil:pro-player-repeat-change', {
+          detail: { mode: repeatMode },
+        }));
+      }
+    };
+
+    const setQueueUiState = ({ active = false, index = -1, length = 0 }: Partial<PlayerQueueState> = {}) => {
+      const safeLength = Number.isInteger(length) ? Math.max(0, Number(length)) : 0;
+      const safeIndex = Number.isInteger(index) ? Number(index) : -1;
+      queueUiState = {
+        active: Boolean(active) && safeLength > 0 && safeIndex >= 0 && safeIndex < safeLength,
+        index: safeIndex,
+        length: safeLength,
+      };
+
+      if (!queueUiState.active && repeatMode === PRO_PLAYER_REPEAT_MODES.ALL) {
+        setRepeatMode(PRO_PLAYER_REPEAT_MODES.OFF);
+        return;
+      }
+
+      renderQueueControls();
+      setRepeatMode(repeatMode, { notify: false });
+    };
+
+    const requestQueueMove = (direction: 'previous' | 'next') => {
+      const availability = getProPlayerQueueAvailability({
+        active: queueUiState.active,
+        currentIndex: queueUiState.index,
+        length: queueUiState.length,
+        repeatMode,
+      });
+      if (direction === 'previous' && !availability.canPrevious) return;
+      if (direction === 'next' && !availability.canNext) return;
+
+      window.dispatchEvent(new CustomEvent('redil:pro-player-queue-command', {
+        detail: { direction },
+      }));
+    };
+
+    const cycleRepeatMode = () => {
+      const nextMode = getNextProPlayerRepeatMode(
+        repeatMode,
+        queueUiState.active && queueUiState.length > 1
+      ) as RepeatMode;
+      setRepeatMode(nextMode);
     };
 
     const renderVolumeIcon = () => {
@@ -1254,7 +1364,8 @@
       audio.removeAttribute('src');
       audio.load();
       audioSessionService.resetMetadata();
-      setRepeatState(false);
+      setRepeatMode(PRO_PLAYER_REPEAT_MODES.OFF);
+      setQueueUiState({ active: false, index: -1, length: 0 });
       sourceCandidates = [];
       sourceIndex = 0;
       requestedPlay = false;
@@ -1295,10 +1406,12 @@
       sectionMarkers = [],
       artworkUrl = '',
       expand = false,
+      preserveExpanded = false,
       startAtSec = null,
     }: PlayerPayload) => {
       const playableCandidates = buildSourceCandidates(url);
       if (!playableCandidates.length) return;
+      const shouldExpand = expand || (preserveExpanded && !modal.classList.contains('hidden'));
 
       sourceCandidates = playableCandidates;
       sourceIndex = 0;
@@ -1381,7 +1494,7 @@
       renderSections();
 
       showMini();
-      if (expand) openExpanded();
+      if (shouldExpand) openExpanded();
       else collapseExpanded();
       setSource(0);
 
@@ -1435,7 +1548,13 @@
       open: (payload: PlayerPayload) => openPlayer({ ...payload, autoPlay: payload?.autoPlay !== false }),
       close: closePlayer,
       expand: openExpanded,
+      setQueueState: (state: Partial<PlayerQueueState>) => setQueueUiState(state),
     };
+
+    window.addEventListener('redil:pro-player-queue-state', (event) => {
+      const detail = (event as CustomEvent<Partial<PlayerQueueState>>).detail || {};
+      setQueueUiState(detail);
+    });
 
     window.addEventListener('play-pro-audio', (event) => {
       const detail = (event as CustomEvent<PlayerPayload>).detail || ({} as PlayerPayload);
@@ -1453,6 +1572,7 @@
         sectionMarkers: Array.isArray(detail.sectionMarkers) ? detail.sectionMarkers : [],
         artworkUrl: detail.artworkUrl || '',
         expand: detail.expand === true,
+        preserveExpanded: detail.preserveExpanded === true,
         startAtSec: detail.startAtSec,
       });
     });
@@ -1521,7 +1641,10 @@
 
     btnPlay.addEventListener('click', togglePlayback);
     btnMiniPlay.addEventListener('click', togglePlayback);
-    btnRepeat.addEventListener('click', () => setRepeatState(!repeatEnabled));
+    btnRepeat.addEventListener('click', cycleRepeatMode);
+    btnPreviousTrack.addEventListener('click', () => requestQueueMove('previous'));
+    btnNextTrack.addEventListener('click', () => requestQueueMove('next'));
+    btnMiniNextTrack.addEventListener('click', () => requestQueueMove('next'));
     btnVolumeToggle.addEventListener('click', toggleVolumeRow);
     btnMute.addEventListener('click', toggleMute);
     btnMiniMute.addEventListener('click', toggleMute);
@@ -1608,23 +1731,6 @@
     handleA.addEventListener('pointerdown', (event) => startLoopDrag('A', event));
     handleB.addEventListener('pointerdown', (event) => startLoopDrag('B', event));
 
-    btnBack5.addEventListener('click', () => {
-      if (!Number.isFinite(audio.currentTime)) return;
-      audio.currentTime = Math.max(0, (audio.currentTime || 0) - 5);
-      syncPlaybackMetrics();
-      syncActiveSection();
-      syncActiveCue(true);
-      syncPlaybackWaveform();
-    });
-    btnForward5.addEventListener('click', () => {
-      const maxDuration = Number.isFinite(totalDuration) && totalDuration > 0 ? totalDuration : Number.isFinite(audio.duration) ? audio.duration : 0;
-      if (!maxDuration) return;
-      audio.currentTime = Math.min(maxDuration, (audio.currentTime || 0) + 5);
-      syncPlaybackMetrics();
-      syncActiveSection();
-      syncActiveCue(true);
-      syncPlaybackWaveform();
-    });
     btnPrevSection.addEventListener('click', () => seekToSection(Math.max(0, activeSectionIndex - 1)));
     btnNextSection.addEventListener('click', () => seekToSection(Math.min(currentSections.length - 1, activeSectionIndex + 1)));
     btnLoopSection.addEventListener('click', loopActiveSection);
@@ -1658,7 +1764,8 @@
     });
 
     setVolume(Number.isFinite(lastVolume) ? lastVolume : 0.85, { remember: false });
-    setRepeatState(false);
+    setQueueUiState({ active: false, index: -1, length: 0 });
+    setRepeatMode(PRO_PLAYER_REPEAT_MODES.OFF, { notify: false });
   })();
 </script>
 
@@ -1761,6 +1868,10 @@
     box-shadow:
       inset 0 0 0 1px rgb(255 255 255 / 0.055),
       0 10px 28px rgb(0 0 0 / 0.32);
+  }
+
+  .mp3-mini-art-shell {
+    box-shadow: 0 8px 20px rgb(0 0 0 / 0.3);
   }
 
   .mp3-art-image {
@@ -1947,9 +2058,15 @@
   }
 
   #btnMp3Repeat.is-active {
-    background: rgb(255 43 85 / 0.18);
-    color: rgb(255 73 112);
-    box-shadow: inset 0 0 0 1px rgb(255 73 112 / 0.18);
+    background: rgb(var(--color-action) / 0.14);
+    color: rgb(var(--color-action));
+    box-shadow: inset 0 0 0 1px rgb(var(--color-action) / 0.24);
+  }
+
+  .mp3-transport-main:disabled {
+    cursor: default;
+    opacity: 0.22;
+    transform: none;
   }
 
   #mp3PlayerModal.mp3-playing #mp3Seek::-webkit-slider-thumb {

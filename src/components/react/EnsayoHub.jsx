@@ -11,6 +11,10 @@ import {
 import { createChordProSetlistPdfBrowserToken } from '../../lib/chordproSetlistPdfBrowserStore';
 import { getSongArtworkCandidates } from '../../utils/songArtwork.js';
 import { buildLiveDirectorSyncChannelName } from '../../utils/liveDirectorSync';
+import {
+  PRO_PLAYER_REPEAT_MODES,
+  resolveProPlayerQueueIndex,
+} from '../../utils/proPlayerQueue.js';
 
 const ModoEnsayoDirector = React.lazy(() => import('./ModoEnsayoDirector.jsx'));
 
@@ -226,6 +230,7 @@ const dispatchProPlayerEvent = ({
   chordpro = '',
   sectionMarkers = [],
   expand = false,
+  preserveExpanded = false,
   startAtSec = null,
 }) => {
   const cleanUrl = String(url || '').trim();
@@ -245,6 +250,7 @@ const dispatchProPlayerEvent = ({
       chordpro,
       sectionMarkers: safeSectionMarkers,
       expand,
+      preserveExpanded,
       startAtSec,
     });
     return;
@@ -263,9 +269,31 @@ const dispatchProPlayerEvent = ({
       chordpro,
       sectionMarkers: safeSectionMarkers,
       expand,
+      preserveExpanded,
       startAtSec,
     },
   }));
+};
+
+const updateProPlayerQueueState = ({
+  active = false,
+  index = -1,
+  length = 0,
+} = {}) => {
+  if (typeof window === 'undefined') return;
+
+  const detail = {
+    active: Boolean(active),
+    index: Number.isInteger(index) ? index : -1,
+    length: Number.isInteger(length) ? Math.max(0, length) : 0,
+  };
+
+  if (window.__REDIL_PRO_PLAYER__?.setQueueState) {
+    window.__REDIL_PRO_PLAYER__.setQueueState(detail);
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent('redil:pro-player-queue-state', { detail }));
 };
 
 const serializeVoicePayload = (value) => {
@@ -731,6 +759,7 @@ export default function EnsayoHub({
   const queueSongsRef = useRef([]);
   const queueIndexRef = useRef(-1);
   const queueActiveRef = useRef(false);
+  const queueRepeatModeRef = useRef(PRO_PLAYER_REPEAT_MODES.OFF);
   const voiceAssignmentFeedbackTimeoutRef = useRef(null);
   const setlistPdfObjectUrlsRef = useRef([]);
   const songActionScrollerRefs = useRef(new Map());
@@ -979,10 +1008,12 @@ export default function EnsayoHub({
     queueSongsRef.current = [];
     queueIndexRef.current = -1;
     queueActiveRef.current = false;
+    queueRepeatModeRef.current = PRO_PLAYER_REPEAT_MODES.OFF;
     setQueueState({ active: false, index: -1 });
+    updateProPlayerQueueState({ active: false, index: -1, length: 0 });
   }, []);
 
-  const openSongInPlayer = useCallback((song, autoPlay = true) => {
+  const openSongInPlayer = useCallback((song, autoPlay = true, preserveExpanded = false) => {
     if (!song?.mp3) return;
     const safeUrl = song.mp3.replace(/ /g, '%20');
     dispatchProPlayerEvent({
@@ -992,6 +1023,7 @@ export default function EnsayoHub({
       autoPlay,
       chordpro: song.chordpro || '',
       sectionMarkers: song.sectionMarkers || [],
+      preserveExpanded,
     });
   }, []);
 
@@ -1286,7 +1318,8 @@ export default function EnsayoHub({
     queueIndexRef.current = index;
     queueActiveRef.current = true;
     setQueueState({ active: true, index });
-    openSongInPlayer(nextSong, true);
+    openSongInPlayer(nextSong, true, true);
+    updateProPlayerQueueState({ active: true, index, length: queueSongs.length });
   }, [openSongInPlayer, stopQueue]);
 
   const startQueue = useCallback((startIndex = 0) => {
@@ -1566,13 +1599,43 @@ export default function EnsayoHub({
   useEffect(() => {
     const audio = document.getElementById('mp3Audio');
     const closeButton = document.getElementById('btnMp3Close');
-    const backdrop = document.getElementById('mp3PlayerBackdrop');
+    const miniCloseButton = document.getElementById('btnMp3MiniClose');
 
     if (!audio) return undefined;
 
+    const navigateQueue = (direction, { stopAtEnd = false } = {}) => {
+      if (!queueActiveRef.current) return;
+
+      const nextIndex = resolveProPlayerQueueIndex({
+        currentIndex: queueIndexRef.current,
+        length: queueSongsRef.current.length,
+        direction,
+        repeatMode: queueRepeatModeRef.current,
+      });
+
+      if (nextIndex === null) {
+        if (stopAtEnd) stopQueue();
+        return;
+      }
+
+      playQueueItem(nextIndex);
+    };
+
     const handleEnded = () => {
       if (!queueActiveRef.current) return;
-      playQueueItem(queueIndexRef.current + 1);
+      navigateQueue('next', { stopAtEnd: true });
+    };
+
+    const handleQueueCommand = (event) => {
+      const direction = event?.detail?.direction === 'previous' ? 'previous' : 'next';
+      navigateQueue(direction);
+    };
+
+    const handleRepeatChange = (event) => {
+      const nextMode = event?.detail?.mode;
+      queueRepeatModeRef.current = Object.values(PRO_PLAYER_REPEAT_MODES).includes(nextMode)
+        ? nextMode
+        : PRO_PLAYER_REPEAT_MODES.OFF;
     };
 
     const handleQueueStop = () => {
@@ -1582,12 +1645,16 @@ export default function EnsayoHub({
 
     audio.addEventListener('ended', handleEnded);
     closeButton?.addEventListener('click', handleQueueStop);
-    backdrop?.addEventListener('click', handleQueueStop);
+    miniCloseButton?.addEventListener('click', handleQueueStop);
+    window.addEventListener('redil:pro-player-queue-command', handleQueueCommand);
+    window.addEventListener('redil:pro-player-repeat-change', handleRepeatChange);
 
     return () => {
       audio.removeEventListener('ended', handleEnded);
       closeButton?.removeEventListener('click', handleQueueStop);
-      backdrop?.removeEventListener('click', handleQueueStop);
+      miniCloseButton?.removeEventListener('click', handleQueueStop);
+      window.removeEventListener('redil:pro-player-queue-command', handleQueueCommand);
+      window.removeEventListener('redil:pro-player-repeat-change', handleRepeatChange);
     };
   }, [playQueueItem, stopQueue]);
 

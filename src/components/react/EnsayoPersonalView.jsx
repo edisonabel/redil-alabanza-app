@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Check, ChevronDown, MapPin, Mic2, Save, Settings2, Volume2 } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, MapPin, Mic2, Play, Save, Settings2, Volume2 } from 'lucide-react';
 
 const TRACK_ANCHORS_KEY = '__trackAnchors';
 
@@ -759,12 +759,18 @@ export default function EnsayoPersonalView({
   };
 
   const selectedMemberLabel = safeMembers.find((member) => String(member?.id || '') === String(selectedMemberId || ''));
+  const viewerMember = memberById.get(viewerMemberId) || null;
+  const assignedTrackIndex = tracksParaVista.findIndex((track) => track?.esAsignada === true);
+  const assignedTrack = assignedTrackIndex >= 0 ? tracksParaVista[assignedTrackIndex] : null;
+  const assignedTrackDisplayParts = assignedTrack
+    ? getVoiceTrackDisplayParts(assignedTrack, assignedTrackIndex)
+    : null;
   const priorityTitle = currentAssignment
     ? cleanVoiceTrackLabel(currentAssignment)
-    : 'Sin voz asignada';
-  const priorityMeta = currentAssignment
-    ? 'Tu pista aparece primero'
-    : `${tracksParaVista.length} pistas vocales`;
+    : 'Aún no tienes voz asignada';
+  const viewerVoiceSummary = viewerMember && currentAssignment
+    ? `${getFirstName(viewerMember.name)} · ${assignedTrackDisplayParts?.title || priorityTitle}`
+    : priorityTitle;
 
   if (!song) return null;
 
@@ -1177,21 +1183,32 @@ export default function EnsayoPersonalView({
         }}
       >
         <div className="mx-auto flex max-w-4xl flex-col gap-4">
-          <section className="overflow-hidden rounded-[1.6rem] border border-cyan-500/18 bg-white px-4 py-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] dark:border-cyan-400/14 dark:bg-[linear-gradient(180deg,_rgba(18,23,34,0.96),_rgba(14,18,27,0.96))] dark:shadow-[0_20px_70px_rgba(2,6,23,0.36)] sm:px-5">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-700 dark:text-cyan-300">
-                  Voz asignada
-                </p>
-                <h2 className="mt-1 truncate text-lg font-black text-slate-950 dark:text-white">
-                  {priorityTitle}
-                </h2>
-              </div>
+          <section className="border-b border-slate-200 px-1 pb-4 pt-1 dark:border-white/8">
+            <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-700 dark:text-cyan-300">
+              Tu voz
+            </p>
 
-              <div className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-black text-slate-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-300">
-                {priorityMeta}
-              </div>
-            </div>
+            {assignedTrack ? (
+              <button
+                type="button"
+                onClick={() => handleTrackClick(assignedTrack, assignedTrackDisplayParts)}
+                className="ui-no-press mt-2 flex min-h-12 w-full items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/70 dark:focus-visible:ring-cyan-300/70"
+                aria-label={`Escuchar ${assignedTrackDisplayParts?.title || priorityTitle}, voz asignada a ${viewerMember?.name || 'ti'}`}
+              >
+                {viewerMember && <MemberAvatar member={viewerMember} size="sm" />}
+                <span className="min-w-0 flex-1 truncate text-base font-black text-slate-950 dark:text-white">
+                  {viewerVoiceSummary}
+                </span>
+                <span className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-full bg-slate-950 px-4 text-xs font-black text-white dark:bg-white dark:text-slate-950">
+                  <Play className="h-4 w-4 fill-current" />
+                  Escuchar
+                </span>
+              </button>
+            ) : (
+              <p className="mt-2 text-base font-black text-slate-950 dark:text-white">
+                {viewerVoiceSummary}
+              </p>
+            )}
           </section>
 
           <section className="grid gap-3">
