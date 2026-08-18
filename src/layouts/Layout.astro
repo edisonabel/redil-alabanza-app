@@ -4,6 +4,7 @@ import BottomNav from '../components/BottomNav.astro';
 import ProPlayerGlobal from '../components/ProPlayerGlobal.astro';
 import VocesModalGlobal from '../components/VocesModalGlobal.astro';
 import EnsayoGlobal from '../components/EnsayoGlobal.astro';
+import AuthSessionBridge from '../components/AuthSessionBridge.astro';
 import NotificationBell from '../components/react/NotificationBell.jsx';
 import { getBrandingConfig, invalidarCacheBranding } from '../lib/branding';
 import { ClientRouter } from 'astro:transitions';
@@ -748,104 +749,7 @@ const themeColors = brandingData;
   }
  </script>
 
- <script>
-  import { supabase } from '../lib/supabase';
-
-  const AUTH_COOKIE_REGEX = /^(sb-|__Host-sb-|__Secure-sb-|supabase-)/i;
-
-  const syncServerSession = async (session: any) => {
-    if (!session?.access_token || !session?.refresh_token) return;
-    const response = await fetch('/api/auth/session', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        access_token: session.access_token,
-        refresh_token: session.refresh_token,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error('No se pudo sincronizar la sesion segura.');
-    }
-  };
-
-  const expireCookie = (name: string) => {
-    if (!name) return;
-    const secureFlag = window.location.protocol === 'https:' ? '; Secure' : '';
-    document.cookie = `${name}=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=Lax${secureFlag}`;
-    document.cookie = `${name}=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=None${secureFlag}`;
-  };
-
-  const clearSessionCookies = async () => {
-    const names = new Set<string>();
-    const rawCookies = document.cookie ? document.cookie.split(';') : [];
-    rawCookies.forEach((cookiePart) => {
-      const [rawName] = cookiePart.trim().split('=');
-      if (!rawName) return;
-      if (AUTH_COOKIE_REGEX.test(rawName)) {
-        names.add(rawName);
-      }
-    });
-
-    names.forEach((name) => expireCookie(name));
-
-    try {
-      Object.keys(localStorage).forEach((key) => {
-        if (AUTH_COOKIE_REGEX.test(key) || key.includes('supabase.auth.token')) {
-          localStorage.removeItem(key);
-        }
-      });
-    } catch {
-      // no-op
-    }
-
-    try {
-      await fetch('/api/auth/logout', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'cache-control': 'no-store' },
-      });
-    } catch {
-      // El middleware invalidara cualquier cookie expirada en la siguiente carga.
-    }
-  };
-
-  window.__REDIL_AUTH_MANAGER__ = {
-    clearSessionCookies,
-  };
-
-  const bootstrapSessionCookieSync = async () => {
-    try {
-      const { data } = await supabase.auth.getSession();
-      if (data?.session) await syncServerSession(data.session);
-    } catch {
-      // no-op
-    }
-  };
-
-  bootstrapSessionCookieSync();
-
-  supabase.auth.onAuthStateChange((event, session) => {
-    if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') && session) {
-      void syncServerSession(session).catch((error) => console.error('[auth] session sync failed', error));
-      return;
-    }
-
-    if (event === 'INITIAL_SESSION' && session) {
-      void syncServerSession(session).catch((error) => console.error('[auth] initial session sync failed', error));
-      return;
-    }
-
-    if (event === 'SIGNED_OUT') {
-      void clearSessionCookies().finally(() => {
-        if (window.location.pathname !== '/login') {
-          window.location.assign('/login');
-        }
-      });
-    }
- });
- </script>
+ <AuthSessionBridge />
 
  <script is:inline>
   (() => {

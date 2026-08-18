@@ -13,6 +13,7 @@
     "local:url": "node scripts/print-lan-url.mjs",
     "check": "astro check --minimumFailingSeverity error",
     "test:authorization": "node scripts/test-authorization-boundaries.mjs",
+    "test:auth-session": "node scripts/test-auth-session-bridge.mjs",
     "test:migrations": "node scripts/check-migration-history.mjs",
     "test:voice-follower": "node scripts/test-voice-lyric-follower.mjs",
     "test:section-alignment": "node --experimental-strip-types scripts/test-global-section-alignment.mjs",

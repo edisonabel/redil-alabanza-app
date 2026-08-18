@@ -1,0 +1,155 @@
+<script>
+  import { supabase } from '../lib/supabase';
+
+  (() => {
+    const existingManager = window.__REDIL_AUTH_MANAGER__;
+    if (window.__REDIL_AUTH_SESSION_BRIDGE_INITIALIZED__ && existingManager?.ensureServerSession) {
+      void existingManager.ensureServerSession().catch((error: unknown) => {
+        console.error('[auth] session resync failed', error);
+      });
+      return;
+    }
+    window.__REDIL_AUTH_SESSION_BRIDGE_INITIALIZED__ = true;
+
+    const AUTH_COOKIE_REGEX = /^(sb-|__Host-sb-|__Secure-sb-|supabase-)/i;
+    const SESSION_SYNC_FRESHNESS_MS = 60 * 1000;
+    let sessionSyncPromise: Promise<boolean> | null = null;
+    let lastSessionSyncAt = 0;
+
+    const syncServerSession = async (session: any) => {
+      if (!session?.access_token || !session?.refresh_token) return false;
+      const response = await fetch('/api/auth/session', {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('No se pudo sincronizar la sesion segura.');
+      }
+
+      lastSessionSyncAt = Date.now();
+      return true;
+    };
+
+    const ensureServerSession = async ({ force = false } = {}) => {
+      if (
+        !force &&
+        lastSessionSyncAt > 0 &&
+        Date.now() - lastSessionSyncAt < SESSION_SYNC_FRESHNESS_MS
+      ) {
+        return true;
+      }
+
+      if (sessionSyncPromise) return sessionSyncPromise;
+
+      sessionSyncPromise = (async () => {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        if (!data?.session) return false;
+        return syncServerSession(data.session);
+      })().finally(() => {
+        sessionSyncPromise = null;
+      });
+
+      return sessionSyncPromise;
+    };
+
+    const expireCookie = (name: string) => {
+      if (!name) return;
+      const secureFlag = window.location.protocol === 'https:' ? '; Secure' : '';
+      document.cookie = `${name}=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=Lax${secureFlag}`;
+      document.cookie = `${name}=; path=/; max-age=0; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=None${secureFlag}`;
+    };
+
+    const clearSessionCookies = async () => {
+      const names = new Set<string>();
+      const rawCookies = document.cookie ? document.cookie.split(';') : [];
+      rawCookies.forEach((cookiePart) => {
+        const [rawName] = cookiePart.trim().split('=');
+        if (!rawName) return;
+        if (AUTH_COOKIE_REGEX.test(rawName)) {
+          names.add(rawName);
+        }
+      });
+
+      names.forEach((name) => expireCookie(name));
+
+      try {
+        Object.keys(localStorage).forEach((key) => {
+          if (AUTH_COOKIE_REGEX.test(key) || key.includes('supabase.auth.token')) {
+            localStorage.removeItem(key);
+          }
+        });
+      } catch {
+        // no-op
+      }
+
+      try {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: { 'cache-control': 'no-store' },
+        });
+      } catch {
+        // El middleware invalidara cualquier cookie expirada en la siguiente carga.
+      }
+    };
+
+    window.__REDIL_AUTH_MANAGER__ = {
+      clearSessionCookies,
+      ensureServerSession,
+      syncServerSession,
+    };
+
+    const reportSyncFailure = (context: string, error: unknown) => {
+      console.error(`[auth] ${context}`, error);
+    };
+
+    const syncCurrentSession = (context: string, options = {}) => {
+      void ensureServerSession(options).catch((error: unknown) => reportSyncFailure(context, error));
+    };
+
+    syncCurrentSession('initial session sync failed', { force: true });
+
+    supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') && session) {
+        void syncServerSession(session).catch((error: unknown) => reportSyncFailure('session sync failed', error));
+        return;
+      }
+
+      if (event === 'INITIAL_SESSION' && session) {
+        void syncServerSession(session).catch((error: unknown) => reportSyncFailure('initial session sync failed', error));
+        return;
+      }
+
+      if (event === 'SIGNED_OUT') {
+        void clearSessionCookies().finally(() => {
+          if (window.location.pathname !== '/login') {
+            window.location.assign('/login');
+          }
+        });
+      }
+    });
+
+    const syncWhenVisible = () => {
+      if (document.visibilityState === 'visible') {
+        syncCurrentSession('visible session sync failed', { force: true });
+      }
+    };
+
+    window.addEventListener('pageshow', () => {
+      syncCurrentSession('pageshow session sync failed', { force: true });
+    });
+    window.addEventListener('online', () => {
+      syncCurrentSession('online session sync failed', { force: true });
+    });
+    document.addEventListener('visibilitychange', syncWhenVisible);
+  })();
+</script>

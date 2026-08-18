@@ -1413,6 +1413,12 @@
       if (!playableCandidates.length) return;
       const shouldExpand = expand || (preserveExpanded && !modal.classList.contains('hidden'));
 
+      try {
+        await window.__REDIL_AUTH_MANAGER__?.ensureServerSession?.();
+      } catch (error) {
+        console.error('[pro-player] secure session sync failed', error);
+      }
+
       sourceCandidates = playableCandidates;
       sourceIndex = 0;
       requestedPlay = false;

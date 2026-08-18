@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import EnsayoHub from '../../components/react/EnsayoHub.jsx';
 import ProPlayerGlobal from '../../components/ProPlayerGlobal.astro';
 import VocesModalGlobal from '../../components/VocesModalGlobal.astro';
+import AuthSessionBridge from '../../components/AuthSessionBridge.astro';
 import { getBrandingConfig } from '../../lib/branding';
 import { buildEventHeadline, getEventThemeAndPreacher } from '../../lib/event-display.js';
 import { buildEventDateSlug, isUuidLike, parseEventDateSlug } from '../../lib/event-slug.js';
@@ -921,6 +922,7 @@ const resolvedColorTokens = {
     </script>
   </head>
   <body class="min-h-screen overflow-hidden bg-white dark:bg-zinc-950">
+    <AuthSessionBridge />
     <EnsayoHub
       client:only="react"
       playlist={rehearsalSongs}
