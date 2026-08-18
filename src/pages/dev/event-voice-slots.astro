@@ -1,0 +1,23 @@
+---
+import '../../styles/global.css';
+import EventVoiceSlotsPreview from '../../components/react/dev/EventVoiceSlotsPreview.jsx';
+
+if (!import.meta.env.DEV) {
+  return new Response('Not found', { status: 404 });
+}
+
+const previewIsDark = Astro.url.searchParams.get('theme') === 'dark';
+---
+
+<!doctype html>
+<html lang="es" class:list={{ dark: previewIsDark }}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Vista local · Cupos vocales del evento</title>
+  </head>
+  <body class="min-h-screen bg-slate-100 dark:bg-zinc-950">
+    <EventVoiceSlotsPreview client:only="react" />
+  </body>
+</html>

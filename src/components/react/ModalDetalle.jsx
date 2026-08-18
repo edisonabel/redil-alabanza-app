@@ -10,7 +10,7 @@ import violinIcon from '@iconify-icons/mdi/violin';
 import speakerIcon from '@iconify-icons/mdi/speaker';
 import scriptTextIcon from '@iconify-icons/mdi/script-text';
 import musicNoteIcon from '@iconify-icons/mdi/music-note';
-import { normalizeRosterAssignments } from '../../lib/roster-utils';
+import { getEventVoiceSlotCount, normalizeRosterAssignments } from '../../lib/roster-utils';
 import { getEventThemeAndPreacher } from '../../lib/event-display.js';
 import { isEventRepertoryManagerRoleCode } from '../../lib/role-permissions.js';
 import { getSongArtworkCandidates } from '../../utils/songArtwork.js';
@@ -314,7 +314,10 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
     const horaInicio = fechaObj.toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit' });
     const timeString = eventData?.dbData?.hora_fin ? `${horaInicio} - ${eventData.dbData.hora_fin.substring(0, 5)}` : horaInicio;
 
-    const roster = normalizeRosterAssignments(eventData?.dbData?.asignaciones || [], initialRoles || [], { maxVoiceSlots: 4 });
+    const rawRoster = eventData?.dbData?.asignaciones || [];
+    const rosterRoles = initialRoles || [];
+    const voiceSlotCount = getEventVoiceSlotCount(rawRoster, rosterRoles);
+    const roster = normalizeRosterAssignments(rawRoster, rosterRoles, { maxVoiceSlots: voiceSlotCount });
     const rolesById = new Map((initialRoles || []).map((role) => [role.id, role]));
     const rosterGroupsMap = new Map();
 

@@ -10,7 +10,7 @@ import speakerIcon from '@iconify-icons/mdi/speaker';
 import scriptTextIcon from '@iconify-icons/mdi/script-text';
 import musicNoteIcon from '@iconify-icons/mdi/music-note';
 import { supabase } from '../../lib/supabase';
-import { normalizeRosterAssignments } from '../../lib/roster-utils';
+import { getEventVoiceSlotCount, normalizeRosterAssignments } from '../../lib/roster-utils';
 import { buildEventHeadline, getEventThemeAndPreacher } from '../../lib/event-display.js';
 import {
     isEventRehearsalManagerRoleCode,
@@ -687,8 +687,8 @@ export default function CalendarioGrid({
         if (!dbData || !dbData.asignaciones) return null;
 
         const dictRoles = initialRoles || [];
-        const MAX_VOZ_SLOTS = 4;
-        const asignaciones = normalizeRosterAssignments(dbData.asignaciones, dictRoles, { maxVoiceSlots: MAX_VOZ_SLOTS });
+        const voiceSlotCount = getEventVoiceSlotCount(dbData.asignaciones, dictRoles);
+        const asignaciones = normalizeRosterAssignments(dbData.asignaciones, dictRoles, { maxVoiceSlots: voiceSlotCount });
 
         // Agrupadores
         const direccion = [];
@@ -736,7 +736,7 @@ export default function CalendarioGrid({
 
             if (isN1) direccion.push(itemNode);
             else if (isN2) letras.push(itemNode);
-            else if (isVoz && vocesAsignadas.length < MAX_VOZ_SLOTS) vocesAsignadas.push(itemNode);
+            else if (isVoz && vocesAsignadas.length < voiceSlotCount) vocesAsignadas.push(itemNode);
             else banda.push(itemNode);
         });
 
@@ -1040,7 +1040,9 @@ export default function CalendarioGrid({
         const horaInicio = fechaObj.toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit' });
         const timeString = cardData.dbData?.hora_fin ? `${horaInicio} - ${cardData.dbData.hora_fin.substring(0, 5)}` : horaInicio;
         const dictRoles = initialRoles || [];
-        const rosterDb = normalizeRosterAssignments(cardData.dbData?.asignaciones || [], dictRoles, { maxVoiceSlots: 4 });
+        const rosterAssignments = cardData.dbData?.asignaciones || [];
+        const voiceSlotCount = getEventVoiceSlotCount(rosterAssignments, dictRoles);
+        const rosterDb = normalizeRosterAssignments(rosterAssignments, dictRoles, { maxVoiceSlots: voiceSlotCount });
         const miAsignacion = rosterDb.find((asig) => asig.perfiles?.id === sessionUser?.id);
         const canManageRehearsal = canUserManageEventRehearsal({
             assignments: rosterDb,

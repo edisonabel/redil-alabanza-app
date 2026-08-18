@@ -1,9 +1,14 @@
 ﻿import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
-import { getAssignmentProfileId, getVisibleVoiceAssignments, normalizeRosterAssignments } from '../../lib/roster-utils';
+import {
+    DEFAULT_EVENT_VOICE_SLOTS,
+    MAX_EVENT_VOICE_SLOTS,
+    getAssignmentProfileId,
+    getEventVoiceSlotCount,
+    getVisibleVoiceAssignments,
+    normalizeRosterAssignments,
+} from '../../lib/roster-utils';
 import { isEventRepertoryManagerRoleCode, isHiddenEventAssignmentRoleCode } from '../../lib/role-permissions.js';
-
-const MAX_VOZ_SLOTS = 4;
 
 const isHiddenAssignmentRole = (role) =>
     isHiddenEventAssignmentRoleCode(role?.codigo);
@@ -91,6 +96,7 @@ const syncAssignmentCalendars = async (eventoId) => {
 export default function RosterManager({ evId, evFechaStr, esAcustico = false, isStrictModerator, canEditRoster = !isStrictModerator, dbData, onRosterChange }) {
     const [asignaciones, setAsignaciones] = useState(dbData?.asignaciones || []);
     const [roles, setRoles] = useState([]);
+    const [voiceSlotCount, setVoiceSlotCount] = useState(DEFAULT_EVENT_VOICE_SLOTS);
 
     // Pickers State
     const [pickerOpen, setPickerOpen] = useState(false);
@@ -144,9 +150,13 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
     );
 
     const normalizedAssignments = useMemo(
-        () => normalizeRosterAssignments(asignaciones, assignableRoles, { maxVoiceSlots: MAX_VOZ_SLOTS }),
-        [asignaciones, assignableRoles],
+        () => normalizeRosterAssignments(asignaciones, assignableRoles, { maxVoiceSlots: voiceSlotCount }),
+        [asignaciones, assignableRoles, voiceSlotCount],
     );
+
+    useEffect(() => {
+        setVoiceSlotCount(DEFAULT_EVENT_VOICE_SLOTS);
+    }, [evId]);
 
     const broadcastRosterChange = (nextAssignments) => {
         onRosterChange?.(nextAssignments);
@@ -334,9 +344,9 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
 
     useEffect(() => {
         if (!dbData?.asignaciones || assignableRoles.length === 0) return;
-        setAsignaciones(
-            normalizeRosterAssignments(dbData.asignaciones, assignableRoles, { maxVoiceSlots: MAX_VOZ_SLOTS }),
-        );
+        const inferredVoiceSlotCount = getEventVoiceSlotCount(dbData.asignaciones, assignableRoles);
+        setVoiceSlotCount((current) => Math.max(current, inferredVoiceSlotCount));
+        setAsignaciones(dbData.asignaciones);
     }, [dbData, assignableRoles]);
 
     const fetchCurrentRoster = async () => {
@@ -347,8 +357,10 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
             .eq('id', evId)
             .single();
         if (data) {
-            const nextAssignments = normalizeRosterAssignments(data.asignaciones || [], assignableRoles, { maxVoiceSlots: MAX_VOZ_SLOTS });
-            setAsignaciones(nextAssignments);
+            const inferredVoiceSlotCount = getEventVoiceSlotCount(data.asignaciones || [], assignableRoles);
+            const nextAssignments = normalizeRosterAssignments(data.asignaciones || [], assignableRoles, { maxVoiceSlots: inferredVoiceSlotCount });
+            setVoiceSlotCount((current) => Math.max(current, inferredVoiceSlotCount));
+            setAsignaciones(data.asignaciones || []);
             broadcastRosterChange(nextAssignments);
         }
     };
@@ -529,6 +541,12 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
 
             if (pickerSlotIndex !== null && existingVoiceAssignments[pickerSlotIndex]) {
                 alert('Ese slot de voces ya está ocupado. Elige uno vacío.');
+                setPickerLoading(false);
+                return;
+            }
+
+            if (existingVoiceAssignments.length >= voiceSlotCount) {
+                alert('No quedan cupos de voces abiertos. Añade otro cupo antes de asignar.');
                 setPickerLoading(false);
                 return;
             }
@@ -817,7 +835,7 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
     const banda = [];
     const voiceRoles = assignableRoles.filter(rol => String(rol.codigo || '').startsWith('voz_'));
     const voicePoolRole = { id: '_voz_pool', nombre: 'Voz' };
-    const vocesAsignadas = getVisibleVoiceAssignments(normalizedAssignments, assignableRoles, { maxVoiceSlots: MAX_VOZ_SLOTS })
+    const vocesAsignadas = getVisibleVoiceAssignments(normalizedAssignments, assignableRoles, { maxVoiceSlots: voiceSlotCount })
         .map((asig) => {
             const rolMatch = assignableRoles.find((rol) => rol.id === asig.rol_id) || voiceRoles[0];
             return rolMatch ? renderAvatar(asig, rolMatch) : null;
@@ -860,7 +878,7 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
     });
 
     const voces = canEditRoster
-        ? Array.from({ length: MAX_VOZ_SLOTS }, (_, index) => {
+        ? Array.from({ length: voiceSlotCount }, (_, index) => {
             if (vocesAsignadas[index]) return vocesAsignadas[index];
             return renderEmptySlot(
                 voicePoolRole,
@@ -904,7 +922,25 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
                 <div>
                     <div className="flex items-center justify-between mb-2 w-full">
                         <span className="text-[10px] font-bold text-rol-voc uppercase tracking-widest leading-none mt-0.5">Voces</span>
-                        <div className="h-px flex-1 bg-rol-voc/10 ml-3"></div>
+                        <div className="h-px flex-1 bg-rol-voc/10 mx-3"></div>
+                        {canEditRoster && (
+                            <div className="flex shrink-0 items-center gap-2">
+                                <span className="text-[10px] font-bold tabular-nums text-content-muted">
+                                    {voiceSlotCount}/{MAX_EVENT_VOICE_SLOTS}
+                                </span>
+                                {voiceSlotCount < MAX_EVENT_VOICE_SLOTS && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setVoiceSlotCount((current) => Math.min(MAX_EVENT_VOICE_SLOTS, current + 1))}
+                                        className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-rol-voc/25 bg-rol-voc/10 px-3 text-[10px] font-black uppercase tracking-[0.08em] text-rol-voc transition-colors hover:bg-rol-voc/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rol-voc/45"
+                                        aria-label={`Añadir cupo de voz ${voiceSlotCount + 1} de ${MAX_EVENT_VOICE_SLOTS}`}
+                                    >
+                                        <span aria-hidden="true" className="text-base leading-none">+</span>
+                                        Añadir voz
+                                    </button>
+                                )}
+                            </div>
+                        )}
                     </div>
                     <div className="flex flex-wrap gap-2.5 items-start">{voces.length > 0 ? voces : <span className="text-xs text-content-muted font-medium">Vacío</span>}</div>
                 </div>

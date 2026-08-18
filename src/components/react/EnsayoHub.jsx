@@ -614,6 +614,12 @@ const getVoiceAssignmentErrorMessage = (error, fallbackMessage) => {
   return fallbackMessage;
 };
 
+const isMissingVoiceAssignmentRpc = (error) => (
+  error?.code === 'PGRST202' ||
+  error?.code === '42883' ||
+  String(error?.message || '').toLowerCase().includes('schema cache')
+);
+
 function SongArtworkThumb({ song, index }) {
   const candidates = getSongArtworkCandidates(song);
   const candidatesKey = candidates.join('|');
@@ -743,6 +749,7 @@ export default function EnsayoHub({
       .map((member) => ({
         id: String(member.id),
         name: String(member.name || member.nombre || member.email || 'Integrante').trim() || 'Integrante',
+        avatarUrl: String(member.avatarUrl || member.avatar_url || '').trim(),
         roleLabel: String(member.roleLabel || '').trim(),
         roleCodes: Array.isArray(member.roleCodes)
           ? member.roleCodes.map((code) => String(code || '').trim()).filter(Boolean)
@@ -1059,16 +1066,29 @@ export default function EnsayoHub({
     setIsSavingVoiceAssignments(true);
 
     try {
-      const { error } = await supabase
-        .from('playlist_voice_assignments')
-        .upsert({
-          playlist_id: playlistId,
-          evento_id: eventMeta.id,
-          assignments: nextAssignments,
-          updated_by: userId,
-        }, {
-          onConflict: 'playlist_id',
-        });
+      let { data: savedAssignments, error } = await supabase.rpc('set_playlist_voice_assignment', {
+        p_playlist_id: playlistId,
+        p_evento_id: eventMeta.id,
+        p_song_id: safeSongId,
+        p_member_id: safeTargetUserId,
+        p_track_name: safeTrackName,
+      });
+
+      // Compatibilidad temporal mientras la migracion llega a todos los entornos.
+      if (error && isMissingVoiceAssignmentRpc(error)) {
+        const fallbackResult = await supabase
+          .from('playlist_voice_assignments')
+          .upsert({
+            playlist_id: playlistId,
+            evento_id: eventMeta.id,
+            assignments: nextAssignments,
+            updated_by: userId,
+          }, {
+            onConflict: 'playlist_id',
+          });
+        error = fallbackResult.error;
+        savedAssignments = nextAssignments;
+      }
 
       if (error) {
         console.error('EnsayoHub voice assignment save error:', error);
@@ -1076,7 +1096,8 @@ export default function EnsayoHub({
         return;
       }
 
-      setSongVoiceAssignments(nextAssignments);
+      const authoritativeAssignments = sanitizeSongVoiceAssignments(savedAssignments);
+      setSongVoiceAssignments(mergeRepertoireVoiceTrackAnchors(authoritativeAssignments, localPlaylist));
       showVoiceAssignmentFeedback('success', 'Asignacion guardada.');
     } catch (error) {
       console.error('EnsayoHub unexpected voice assignment save error:', error);
@@ -1084,7 +1105,7 @@ export default function EnsayoHub({
     } finally {
       setIsSavingVoiceAssignments(false);
     }
-  }, [canAssignVoices, canEdit, playlistId, eventMeta?.id, userId, songVoiceAssignments, showVoiceAssignmentFeedback]);
+  }, [canAssignVoices, canEdit, playlistId, eventMeta?.id, userId, songVoiceAssignments, localPlaylist, showVoiceAssignmentFeedback]);
 
   const handleClearVoiceAssignment = useCallback(async ({ songId, targetUserId }) => {
     const safeSongId = String(songId || '').trim();
@@ -1113,16 +1134,28 @@ export default function EnsayoHub({
     setIsSavingVoiceAssignments(true);
 
     try {
-      const { error } = await supabase
-        .from('playlist_voice_assignments')
-        .upsert({
-          playlist_id: playlistId,
-          evento_id: eventMeta.id,
-          assignments: nextAssignments,
-          updated_by: userId,
-        }, {
-          onConflict: 'playlist_id',
-        });
+      let { data: savedAssignments, error } = await supabase.rpc('clear_playlist_voice_assignment', {
+        p_playlist_id: playlistId,
+        p_evento_id: eventMeta.id,
+        p_song_id: safeSongId,
+        p_member_id: safeTargetUserId,
+      });
+
+      // Compatibilidad temporal mientras la migracion llega a todos los entornos.
+      if (error && isMissingVoiceAssignmentRpc(error)) {
+        const fallbackResult = await supabase
+          .from('playlist_voice_assignments')
+          .upsert({
+            playlist_id: playlistId,
+            evento_id: eventMeta.id,
+            assignments: nextAssignments,
+            updated_by: userId,
+          }, {
+            onConflict: 'playlist_id',
+          });
+        error = fallbackResult.error;
+        savedAssignments = nextAssignments;
+      }
 
       if (error) {
         console.error('EnsayoHub voice assignment clear error:', error);
@@ -1130,7 +1163,8 @@ export default function EnsayoHub({
         return;
       }
 
-      setSongVoiceAssignments(nextAssignments);
+      const authoritativeAssignments = sanitizeSongVoiceAssignments(savedAssignments);
+      setSongVoiceAssignments(mergeRepertoireVoiceTrackAnchors(authoritativeAssignments, localPlaylist));
       showVoiceAssignmentFeedback('success', 'Asignacion actualizada.');
     } catch (error) {
       console.error('EnsayoHub unexpected voice assignment clear error:', error);
@@ -1138,7 +1172,7 @@ export default function EnsayoHub({
     } finally {
       setIsSavingVoiceAssignments(false);
     }
-  }, [canAssignVoices, canEdit, playlistId, eventMeta?.id, userId, songVoiceAssignments, showVoiceAssignmentFeedback]);
+  }, [canAssignVoices, canEdit, playlistId, eventMeta?.id, userId, songVoiceAssignments, localPlaylist, showVoiceAssignmentFeedback]);
 
   const handleSaveVoiceTrackAnchor = useCallback(async ({ songId, trackName, anchor }) => {
     const safeSongId = String(songId || '').trim();
