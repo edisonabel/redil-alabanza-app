@@ -815,7 +815,7 @@ export default function EnsayoPersonalView({
       </header>
 
       {canManageAssignments && showAssignmentPanel && (
-        <section className="shrink-0 border-b border-slate-200 bg-slate-100/94 backdrop-blur-xl dark:border-white/8 dark:bg-[#0d1118]/94">
+        <section className="relative z-[200] shrink-0 border-b border-slate-200 bg-slate-100/94 backdrop-blur-xl dark:border-white/8 dark:bg-[#0d1118]/94">
           <div className="mx-auto max-w-4xl px-4 py-4 sm:px-5">
             <div className="rounded-[1.35rem] border border-slate-200 bg-white p-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-[#12161f] dark:shadow-[0_18px_60px_rgba(0,0,0,0.28)] sm:p-5">
               <div className="flex flex-col gap-3">
@@ -933,7 +933,7 @@ export default function EnsayoPersonalView({
                           <div
                             role="listbox"
                             aria-labelledby="voice-member-picker-label"
-                            className="absolute left-0 right-0 top-full z-30 mt-2 max-h-64 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-[0_20px_60px_rgba(15,23,42,0.16)] dark:border-white/10 dark:bg-[#171b24] dark:shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
+                            className="absolute left-0 right-0 top-full z-[210] mt-2 max-h-64 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-[0_20px_60px_rgba(15,23,42,0.16)] dark:border-white/10 dark:bg-[#171b24] dark:shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
                           >
                             {safeMembers.map((member) => {
                               const isSelected = String(member.id) === String(selectedMemberId);
@@ -995,7 +995,7 @@ export default function EnsayoPersonalView({
                           <div
                             role="listbox"
                             aria-labelledby="voice-track-picker-label"
-                            className="absolute left-0 right-0 top-full z-30 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-[0_20px_60px_rgba(15,23,42,0.16)] dark:border-white/10 dark:bg-[#171b24] dark:shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
+                            className="absolute left-0 right-0 top-full z-[210] mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-[0_20px_60px_rgba(15,23,42,0.16)] dark:border-white/10 dark:bg-[#171b24] dark:shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
                           >
                             {availableTrackNames.map((trackName) => {
                               const trackTheme = getVoiceColorTheme(trackName);
