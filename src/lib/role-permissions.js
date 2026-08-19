@@ -1,12 +1,16 @@
+export const DIRECTION_LEADERSHIP_ROLE_CODES = new Set([
+  'talkback',
+  'director_musical',
+]);
+
 export const EVENT_REPERTORY_MANAGER_ROLE_CODES = new Set([
   'lider_alabanza',
-  'director_musical',
-  'talkback',
+  ...DIRECTION_LEADERSHIP_ROLE_CODES,
 ]);
 
 export const EVENT_REHEARSAL_MANAGER_ROLE_CODES = new Set([
   'lider_alabanza',
-  'director_musical',
+  ...DIRECTION_LEADERSHIP_ROLE_CODES,
 ]);
 
 export const VOICE_ASSIGNMENT_MANAGER_ROLE_CODES = new Set([
@@ -21,7 +25,6 @@ export const LIVE_DIRECTOR_SEQUENCE_MANAGER_ROLE_CODE = 'gestor_secuencias';
 // liderar al menos uno de sus ministerios.
 export const LEADERSHIP_ROLE_CODE_ORDER = Object.freeze([
   'lider_alabanza',
-  'director_musical',
   'lider_vocal',
   'talkback',
 ]);
@@ -35,13 +38,17 @@ export const OPERATIONAL_ROLE_CODE_ORDER = Object.freeze([
   'pastor',
 ]);
 
-export const LEADERSHIP_ROLE_CODES = new Set(LEADERSHIP_ROLE_CODE_ORDER);
+export const LEADERSHIP_ROLE_CODES = new Set([
+  ...LEADERSHIP_ROLE_CODE_ORDER,
+  ...DIRECTION_LEADERSHIP_ROLE_CODES,
+]);
 export const OPERATIONAL_ROLE_CODES = new Set(OPERATIONAL_ROLE_CODE_ORDER);
 
 // Union de compatibilidad para consumidores que solo necesitan excluir todas
 // las responsabilidades especiales de la lista de instrumentos.
 export const LEADERSHIP_PERMISSION_ROLE_CODE_ORDER = Object.freeze([
   ...LEADERSHIP_ROLE_CODE_ORDER,
+  'director_musical',
   ...OPERATIONAL_ROLE_CODE_ORDER,
 ]);
 
@@ -109,6 +116,9 @@ export const isLiveDirectorSequenceManagerRoleCode = (value) =>
 
 export const isLeadershipRoleCode = (value) =>
   LEADERSHIP_ROLE_CODES.has(normalizeRoleCode(value));
+
+export const isDirectionLeadershipRoleCode = (value) =>
+  DIRECTION_LEADERSHIP_ROLE_CODES.has(normalizeRoleCode(value));
 
 export const isOperationalRoleCode = (value) =>
   OPERATIONAL_ROLE_CODES.has(normalizeRoleCode(value));

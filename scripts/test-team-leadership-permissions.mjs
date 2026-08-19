@@ -1,18 +1,20 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
+  DIRECTION_LEADERSHIP_ROLE_CODES,
   LEADERSHIP_ROLE_CODE_ORDER,
   LEADERSHIP_PERMISSION_ROLE_CODE_ORDER,
   OPERATIONAL_ROLE_CODE_ORDER,
   isLeadershipPermissionRoleCode,
   isLeadershipRoleCode,
+  isDirectionLeadershipRoleCode,
+  isEventRehearsalManagerRoleCode,
   isOperationalRoleCode,
   isTeamAssignableRoleCode,
 } from '../src/lib/role-permissions.js';
 
 const expectedLeadershipRoles = [
   'lider_alabanza',
-  'director_musical',
   'lider_vocal',
   'talkback',
 ];
@@ -35,7 +37,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   [...LEADERSHIP_PERMISSION_ROLE_CODE_ORDER],
-  [...expectedLeadershipRoles, ...expectedOperationalRoles],
+  [...expectedLeadershipRoles, 'director_musical', ...expectedOperationalRoles],
   'La union debe excluir todos los roles especiales de los instrumentos.',
 );
 
@@ -47,6 +49,13 @@ for (const roleCode of expectedLeadershipRoles) {
     `${roleCode} debe clasificarse como responsabilidad especial.`,
   );
 }
+
+assert.deepEqual([...DIRECTION_LEADERSHIP_ROLE_CODES], ['talkback', 'director_musical']);
+assert.equal(isLeadershipRoleCode('director_musical'), true);
+assert.equal(isDirectionLeadershipRoleCode('talkback'), true);
+assert.equal(isDirectionLeadershipRoleCode('director_musical'), true);
+assert.equal(isEventRehearsalManagerRoleCode('talkback'), true);
+assert.equal(isEventRehearsalManagerRoleCode('director_musical'), true);
 
 for (const roleCode of expectedOperationalRoles) {
   assert.equal(isOperationalRoleCode(roleCode), true, `${roleCode} debe ser un rol operativo.`);
@@ -66,6 +75,10 @@ const directorRoleMigration = await readFile(
 );
 const leadershipGateMigration = await readFile(
   new URL('../migrations/048_restrict_delegated_leadership_assignment.sql', import.meta.url),
+  'utf8',
+);
+const directionAliasMigration = await readFile(
+  new URL('../migrations/049_talkback_direction_alias.sql', import.meta.url),
   'utf8',
 );
 
@@ -91,6 +104,11 @@ assert.match(
 );
 assert.match(teamPage, /if \(!leadsAnyMinistry\) input\.checked = false/);
 assert.match(teamPage, /modalLeadershipRoleSection\?\.classList\.toggle\('hidden', !canConfigureLeadershipRoles\)/);
+assert.doesNotMatch(teamPage, /if \(isWorshipLeader && leadsAnyMinistry\) input\.checked = true/);
+assert.doesNotMatch(teamPage, /worshipLeaderRole/);
+assert.match(teamPage, /nombre: 'Talkback \/ Dirección Musical'/);
+assert.match(teamPage, /data-linked-role-ids=/);
+assert.match(teamPage, /'director_musical', 'talkback', 'bateria'/);
 assert.equal(isTeamAssignableRoleCode('lider_vocal'), false);
 assert.equal(isTeamAssignableRoleCode('talkback'), false);
 assert.equal(isTeamAssignableRoleCode('audiovisuales'), true);
@@ -107,6 +125,8 @@ assert.match(
 assert.doesNotMatch(leadershipGateMigration, /'lider_vocal'/);
 assert.doesNotMatch(leadershipGateMigration, /'talkback'/);
 assert.match(leadershipGateMigration, /'audiovisuales'/);
+assert.match(directionAliasMigration, /'lider_alabanza', 'talkback', 'director_musical'/);
+assert.match(directionAliasMigration, /INSERT INTO public\.perfil_roles/);
 assert.match(teamPage, /modalGeneralLeader\?\.addEventListener\('change', syncLeadershipAvailability\)/);
 assert.match(teamPage, /modalSinFiltrosLeader\?\.addEventListener\('change', syncLeadershipAvailability\)/);
 

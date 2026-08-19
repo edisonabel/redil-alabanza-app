@@ -1908,6 +1908,7 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
  import {
   LEADERSHIP_ROLE_CODE_ORDER,
   OPERATIONAL_ROLE_CODE_ORDER,
+  isDirectionLeadershipRoleCode,
   isEventRepertoryManagerRoleCode,
   isEventVoiceRoleCode,
   isHiddenEventAssignmentRoleCode,
@@ -1961,10 +1962,9 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
  };
 
  const RESPONSIBILITY_ROLE_DESCRIPTIONS:Record<string, string> = {
-  lider_alabanza: 'Liderazgo base. Se activa automáticamente al liderar un ministerio.',
-  director_musical: 'Gestiona el repertorio y la preparación musical.',
+  lider_alabanza: 'Dirige la alabanza y gestiona repertorio, ensayos y voces.',
   lider_vocal: 'Gestiona la asignación de voces del equipo.',
-  talkback: 'Apoya la dirección y la gestión del repertorio.',
+  talkback: 'Talkback y Dirección Musical son una misma función de liderazgo.',
   gestor_secuencias: 'Administra las secuencias de Live Director.',
   encargado_letras: 'Responsable de letras y notas del servicio.',
   audiovisuales: 'Puede editar el tema y apoyar la producción.',
@@ -2463,8 +2463,23 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
  const musicalAssignableRoles = assignableRoles.filter((role:any) => (
   !isLeadershipPermissionRoleCode(role.codigo) && !isEventVoiceRoleCode(role.codigo)
  ));
- const leadershipAssignableRoles = assignableRoles
-  .filter((role:any) => isLeadershipRoleCode(role.codigo))
+ const directionLeadershipRoles = assignableRoles
+  .filter((role:any) => isDirectionLeadershipRoleCode(role.codigo));
+ const canonicalDirectionRole = directionLeadershipRoles
+  .find((role:any) => String(role.codigo || '').trim().toLowerCase() === 'talkback')
+  || directionLeadershipRoles[0]
+  || null;
+ const leadershipAssignableRoles = [
+  ...assignableRoles.filter((role:any) => (
+   isLeadershipRoleCode(role.codigo) && !isDirectionLeadershipRoleCode(role.codigo)
+  )),
+  ...(canonicalDirectionRole ? [{
+   ...canonicalDirectionRole,
+   codigo: 'talkback',
+   nombre: 'Talkback / Dirección Musical',
+   linkedRoleIds: directionLeadershipRoles.map((role:any) => role.id),
+  }] : []),
+ ]
   .sort((first:any, second:any) => {
    const firstCode = String(first.codigo || '').trim().toLowerCase();
    const secondCode = String(second.codigo || '').trim().toLowerCase();
@@ -2499,7 +2514,10 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
  }).join('');
  const buildResponsibilityTogglesHTML = (roleList:any[], iconVariant:'leadership' | 'operational') => roleList.map((r:any) => {
   const roleCode = String(r.codigo || '').trim().toLowerCase();
-  const isActive = currentRoles.has(r.id);
+  const linkedRoleIds = Array.isArray(r.linkedRoleIds) && r.linkedRoleIds.length > 0
+   ? r.linkedRoleIds
+   : [r.id];
+  const isActive = linkedRoleIds.some((roleId:any) => currentRoles.has(roleId));
   return `
   <label class="team-wizard-option team-wizard-permission-option">
   <span class="team-wizard-option-icon team-wizard-option-icon--${iconVariant}">${capabilityIconSvg(roleCode)}</span>
@@ -2510,6 +2528,7 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
   <input type="checkbox" class="role-toggle team-wizard-toggle-input"
   data-perfil="${p.id}"
   data-rol="${r.id}"
+  data-linked-role-ids="${escapeHtml(linkedRoleIds.join(','))}"
   data-role-code="${escapeHtml(roleCode)}"
   ${isActive ? 'checked' : ''}>
   <span class="team-wizard-toggle" aria-hidden="true"><span></span></span>
@@ -2663,7 +2682,6 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
  const wizardNav = document.querySelector<HTMLElement>('.team-wizard-nav');
  const wizardNavItems = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-wizard-step]'));
  const wizardPanels = Array.from(document.querySelectorAll<HTMLElement>('[data-wizard-panel]'));
- const worshipLeaderRole = roles.find((role:any) => role.codigo === 'lider_alabanza') || null;
  let currentPerfilId: string | null = null;
  let currentWizardStep = 0;
  let wizardTrigger: HTMLButtonElement | null = null;
@@ -2736,10 +2754,8 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
   modalLeadershipRolesContainer
    .querySelectorAll<HTMLInputElement>('input[data-rol]')
    .forEach((input) => {
-    const isWorshipLeader = input.dataset.roleCode === 'lider_alabanza';
     if (!leadsAnyMinistry) input.checked = false;
-    if (isWorshipLeader && leadsAnyMinistry) input.checked = true;
-    input.disabled = !leadsAnyMinistry || isWorshipLeader;
+    input.disabled = !leadsAnyMinistry;
    });
  };
 
@@ -2797,19 +2813,15 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
      ...Array.from(modalLeadershipRolesContainer.querySelectorAll<HTMLInputElement>('input[data-rol]')),
      ...Array.from(modalOperationalRolesContainer.querySelectorAll<HTMLInputElement>('input[data-rol]')),
     ];
-    const managedRoleIds = new Set(roleInputs.map((input) => input.dataset.rol).filter(Boolean) as string[]);
+    const managedRoleIds = new Set(roleInputs.flatMap((input) => (
+     String(input.dataset.linkedRoleIds || input.dataset.rol || '')
+      .split(',')
+      .map((roleId) => roleId.trim())
+      .filter(Boolean)
+    )));
     const selectedRoleIds = new Set(
      roleInputs.filter((input) => input.checked).map((input) => input.dataset.rol).filter(Boolean) as string[]
     );
-
-    // Los controles de ministerio son la llave maestra del liderazgo. Al
-    // retirar ambos se revocan tambien sus roles de direccion dependientes.
-    if (isGlobalAdmin && canManageMinistries && worshipLeaderRole?.id) {
-     managedRoleIds.add(worshipLeaderRole.id);
-     if (modalGeneralLeader.checked || modalSinFiltrosLeader.checked) {
-      selectedRoleIds.add(worshipLeaderRole.id);
-     }
-    }
 
     const existingRoleIds = new Set<string>(rolesPorPerfil.get(currentPerfilId) || []);
     const roleIdsToDelete = [...managedRoleIds].filter((roleId) => (
@@ -3327,7 +3339,7 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
  });
  
  // '+' Button para el slot
- const canAdd = !(['lider_alabanza', 'director_musical', 'bateria', 'bajo', 'piano', 'guitarra_acustica', 'guitarra_electrica', 'caja', 'caja_peruana', 'cajon_peruano'].includes(codigo) && assigned.length >= 1);
+ const canAdd = !(['lider_alabanza', 'director_musical', 'talkback', 'bateria', 'bajo', 'piano', 'guitarra_acustica', 'guitarra_electrica', 'caja', 'caja_peruana', 'cajon_peruano'].includes(codigo) && assigned.length >= 1);
  if (canAdd) {
  html += `<button type="button" class="btn-tb-add w-full h-[42px] px-2 flex items-center justify-center bg-transparent hover:bg-action/10 dark:hover:bg-action/20 border border-dashed border-border text-content-muted hover:text-action dark:hover:text-action hover:border-action/50 dark:hover:border-action/60 rounded-xl transition-all cursor-pointer text-[11px] font-bold gap-1 truncate" data-rol="${rolId}" data-rolname="${rolNombre}">
  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" class="shrink-0 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
@@ -3378,8 +3390,15 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
  // Saltar soprano y tenor individualmente â€” se manejan via pool unificado
  if (String(rol.codigo || '').startsWith('voz_')) return;
  if (isHiddenEventAssignmentRoleCode(rol.codigo)) return;
+ if (
+  String(rol.codigo || '').trim().toLowerCase() === 'director_musical'
+  && window.appStateRoles.some((candidate:any) => String(candidate.codigo || '').trim().toLowerCase() === 'talkback')
+ ) return;
  
- const markup = buildSlotHtml(rol.id, rol.nombre, rol.codigo);
+ const roleLabel = String(rol.codigo || '').trim().toLowerCase() === 'talkback'
+  ? 'Talkback / Dirección Musical'
+  : rol.nombre;
+ const markup = buildSlotHtml(rol.id, roleLabel, rol.codigo);
  if (isEventRepertoryManagerRoleCode(rol.codigo)) n1.insertAdjacentHTML('beforeend', safeHtml(markup));
  else if (['encargado_letras', 'letra_y_notas', 'produccion_visual', 'letras'].includes(rol.codigo)) n2.insertAdjacentHTML('beforeend', safeHtml(markup));
  else n3.insertAdjacentHTML('beforeend', safeHtml(markup));
