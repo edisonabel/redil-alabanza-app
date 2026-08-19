@@ -17,19 +17,32 @@ export const VOICE_ASSIGNMENT_MANAGER_ROLE_CODES = new Set([
 export const VOCAL_LEADER_ROLE_CODE = 'lider_vocal';
 export const LIVE_DIRECTOR_SEQUENCE_MANAGER_ROLE_CODE = 'gestor_secuencias';
 
-// Orden estable de responsabilidades con permisos especiales. La pantalla de
-// Equipo usa este catalogo para separarlas de los instrumentos y mostrarlas en
-// la pestaña Liderazgo, incluso cuando un rol se incorpora a la base de datos
-// despues de desplegar la interfaz (por ejemplo, director_musical).
-export const LEADERSHIP_PERMISSION_ROLE_CODE_ORDER = Object.freeze([
+// Liderazgos reales: solo se habilitan despues de autorizar a la persona para
+// liderar al menos uno de sus ministerios.
+export const LEADERSHIP_ROLE_CODE_ORDER = Object.freeze([
   'lider_alabanza',
   'director_musical',
   'lider_vocal',
-  LIVE_DIRECTOR_SEQUENCE_MANAGER_ROLE_CODE,
   'talkback',
+]);
+
+// Responsabilidades operativas: no convierten a la persona en lider y se
+// administran junto a los demas roles del equipo.
+export const OPERATIONAL_ROLE_CODE_ORDER = Object.freeze([
+  LIVE_DIRECTOR_SEQUENCE_MANAGER_ROLE_CODE,
   'encargado_letras',
   'audiovisuales',
   'pastor',
+]);
+
+export const LEADERSHIP_ROLE_CODES = new Set(LEADERSHIP_ROLE_CODE_ORDER);
+export const OPERATIONAL_ROLE_CODES = new Set(OPERATIONAL_ROLE_CODE_ORDER);
+
+// Union de compatibilidad para consumidores que solo necesitan excluir todas
+// las responsabilidades especiales de la lista de instrumentos.
+export const LEADERSHIP_PERMISSION_ROLE_CODE_ORDER = Object.freeze([
+  ...LEADERSHIP_ROLE_CODE_ORDER,
+  ...OPERATIONAL_ROLE_CODE_ORDER,
 ]);
 
 export const LEADERSHIP_PERMISSION_ROLE_CODES = new Set(
@@ -51,7 +64,7 @@ export const SELF_MANAGED_INSTRUMENT_ROLE_CODES = new Set([
 ]);
 
 // Roles musicales/operativos que un gestor ligero puede asignar desde Equipo.
-// Se excluyen deliberadamente los roles que elevan permisos en otras areas.
+// Los liderazgos quedan reservados a quien administra su llave ministerial.
 export const TEAM_ASSIGNABLE_ROLE_CODES = new Set([
   'audiovisuales',
   'bajo',
@@ -59,9 +72,7 @@ export const TEAM_ASSIGNABLE_ROLE_CODES = new Set([
   'caja',
   'guitarra_acustica',
   'guitarra_electrica',
-  'lider_vocal',
   'piano',
-  'talkback',
   'violin',
   'voz_principal',
   'voz_soprano',
@@ -95,6 +106,12 @@ export const isVocalLeaderRoleCode = (value) =>
 
 export const isLiveDirectorSequenceManagerRoleCode = (value) =>
   normalizeRoleCode(value) === LIVE_DIRECTOR_SEQUENCE_MANAGER_ROLE_CODE;
+
+export const isLeadershipRoleCode = (value) =>
+  LEADERSHIP_ROLE_CODES.has(normalizeRoleCode(value));
+
+export const isOperationalRoleCode = (value) =>
+  OPERATIONAL_ROLE_CODES.has(normalizeRoleCode(value));
 
 export const isLeadershipPermissionRoleCode = (value) =>
   LEADERSHIP_PERMISSION_ROLE_CODES.has(normalizeRoleCode(value));
