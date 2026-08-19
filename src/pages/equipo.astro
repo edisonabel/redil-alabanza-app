@@ -178,8 +178,13 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
  <section id="wizard-step-leadership" class="team-wizard-step" data-wizard-panel="1" data-state="after" role="tabpanel" aria-hidden="true">
  <div class="team-wizard-step-heading">
  <p>Paso 2</p>
- <h4>Permitir liderazgo</h4>
- <span>El liderazgo se configura por ministerio.</span>
+ <h4>Liderazgo y permisos</h4>
+ <span>Configura el liderazgo por ministerio y las responsabilidades especiales.</span>
+ </div>
+ <div id="modal-ministry-leadership-section" class="team-wizard-leadership-section">
+ <div class="team-wizard-subsection-heading">
+ <strong>Liderazgo por ministerio</strong>
+ <span>Define en cuál servicio puede liderar.</span>
  </div>
  <div class="team-wizard-options">
  <label class="team-wizard-option team-wizard-leadership-option">
@@ -204,6 +209,16 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
  <input id="modal-sin-filtros-leader" type="checkbox" class="team-wizard-toggle-input" disabled>
  <span class="team-wizard-toggle" aria-hidden="true"><span></span></span>
  </label>
+ </div>
+ </div>
+ <div id="modal-special-leadership-section" class="team-wizard-leadership-section">
+ <div class="team-wizard-subsection-heading">
+ <strong>Permisos especiales</strong>
+ <span>Habilita las funciones operativas que esta persona puede administrar.</span>
+ </div>
+ <div class="team-wizard-options team-wizard-permission-grid" id="modal-leadership-roles-container">
+ <!-- Inyección dinámica de responsabilidades y permisos especiales -->
+ </div>
  </div>
  </section>
 
@@ -1225,6 +1240,35 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
   gap: 0.7rem;
  }
 
+ .team-wizard-leadership-section + .team-wizard-leadership-section {
+  margin-top: 1.2rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid rgb(var(--border-base));
+ }
+
+ .team-wizard-subsection-heading {
+  margin-bottom: 0.68rem;
+ }
+
+ .team-wizard-subsection-heading strong,
+ .team-wizard-subsection-heading span {
+  display: block;
+ }
+
+ .team-wizard-subsection-heading strong {
+  color: rgb(var(--text-base));
+  font-size: 0.78rem;
+  font-weight: 900;
+ }
+
+ .team-wizard-subsection-heading span {
+  margin-top: 0.2rem;
+  color: rgb(var(--text-muted));
+  font-size: 0.67rem;
+  font-weight: 600;
+  line-height: 1.4;
+ }
+
  .team-wizard-option {
   position: relative;
   display: grid;
@@ -1315,6 +1359,21 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
   color: rgb(var(--text-muted));
   font-size: 0.67rem;
   font-weight: 600;
+ }
+
+ .team-wizard-permission-option {
+  min-height: 86px;
+ }
+
+ .team-wizard-permission-option .team-wizard-option-copy small {
+  overflow: visible;
+  line-height: 1.35;
+  text-overflow: clip;
+  white-space: normal;
+ }
+
+ .team-wizard-permission-option:has(.team-wizard-toggle-input:disabled) {
+  opacity: 0.72;
  }
 
  .team-wizard-toggle-input {
@@ -1762,7 +1821,14 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
 
 <script>
  import { supabase } from '../lib/supabase';
- import { isEventRepertoryManagerRoleCode, isHiddenEventAssignmentRoleCode, isTeamAssignableRoleCode } from '../lib/role-permissions.js';
+ import {
+  LEADERSHIP_PERMISSION_ROLE_CODE_ORDER,
+  isEventRepertoryManagerRoleCode,
+  isEventVoiceRoleCode,
+  isHiddenEventAssignmentRoleCode,
+  isLeadershipPermissionRoleCode,
+  isTeamAssignableRoleCode,
+ } from '../lib/role-permissions.js';
  import { safeHtml } from '../lib/client/html-safety.js';
 
  // Estado reactivo temporal de la Plantilla de Equipo
@@ -1807,17 +1873,21 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
   return svg('<path d="M9 18V5l10-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/>');
  };
 
-const WIZARD_SEPARATE_ROLE_CODES = new Set([
- 'audiovisuales',
- 'encargado_letras',
- 'gestor_secuencias',
- 'lider_alabanza',
- 'lider_vocal',
- 'pastor',
- 'voz_principal',
- 'voz_soprano',
- 'voz_tenor',
-]);
+ const LEADERSHIP_ROLE_DESCRIPTIONS:Record<string, string> = {
+  lider_alabanza: 'Gestiona repertorio, ensayos y voces. Se activa al liderar un ministerio.',
+  director_musical: 'Gestiona el repertorio y la preparación musical.',
+  lider_vocal: 'Gestiona la asignación de voces del equipo.',
+  gestor_secuencias: 'Administra las secuencias de Live Director.',
+  talkback: 'Apoya la dirección y la gestión del repertorio.',
+  encargado_letras: 'Responsable de letras y notas del servicio.',
+  audiovisuales: 'Puede editar el tema y apoyar la producción.',
+  pastor: 'Puede editar el tema y el predicador del servicio.',
+ };
+
+ const leadershipRoleDescription = (roleCode = '') => (
+  LEADERSHIP_ROLE_DESCRIPTIONS[String(roleCode || '').trim().toLowerCase()]
+  || 'Habilita permisos especiales para esta responsabilidad.'
+ );
 
  const getStableSession = async () => {
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -2304,8 +2374,16 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  ? roles
  : roles.filter((role:any) => isTeamAssignableRoleCode(role.codigo));
  const musicalAssignableRoles = assignableRoles.filter((role:any) => (
-  !WIZARD_SEPARATE_ROLE_CODES.has(String(role.codigo || '').trim().toLowerCase())
+  !isLeadershipPermissionRoleCode(role.codigo) && !isEventVoiceRoleCode(role.codigo)
  ));
+ const leadershipAssignableRoles = assignableRoles
+  .filter((role:any) => isLeadershipPermissionRoleCode(role.codigo))
+  .sort((first:any, second:any) => {
+   const firstCode = String(first.codigo || '').trim().toLowerCase();
+   const secondCode = String(second.codigo || '').trim().toLowerCase();
+   return LEADERSHIP_PERMISSION_ROLE_CODE_ORDER.indexOf(firstCode)
+    - LEADERSHIP_PERMISSION_ROLE_CODE_ORDER.indexOf(secondCode);
+  });
  const togglesHTML = musicalAssignableRoles.map(r => {
  const roleCode = String(r.codigo || '').trim().toLowerCase();
  const isActive = currentRoles.has(r.id);
@@ -2324,6 +2402,25 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  </label>
  `;
  }).join('');
+ const leadershipTogglesHTML = leadershipAssignableRoles.map((r:any) => {
+  const roleCode = String(r.codigo || '').trim().toLowerCase();
+  const isActive = currentRoles.has(r.id);
+  return `
+  <label class="team-wizard-option team-wizard-permission-option">
+  <span class="team-wizard-option-icon team-wizard-option-icon--voice">${capabilityIconSvg(roleCode)}</span>
+  <span class="team-wizard-option-copy">
+  <strong>${escapeHtml(r.nombre)}</strong>
+  <small>${escapeHtml(leadershipRoleDescription(roleCode))}</small>
+  </span>
+  <input type="checkbox" class="role-toggle team-wizard-toggle-input"
+  data-perfil="${p.id}"
+  data-rol="${r.id}"
+  data-role-code="${escapeHtml(roleCode)}"
+  ${isActive ? 'checked' : ''}>
+  <span class="team-wizard-toggle" aria-hidden="true"><span></span></span>
+  </label>
+  `;
+ }).join('');
 
  const cleanName = p.nombre.replace(/\s*\(.*?\)\s*/g, '').trim();
  const iniciales = cleanName.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
@@ -2339,7 +2436,7 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  const roleCapabilities = Array.from(currentRoles)
  .map((rolId) => roles.find((role:any) => role.id === rolId))
  .filter(Boolean)
- .filter((role:any) => !['lider_alabanza', 'lider_vocal'].includes(String(role.codigo || '').trim().toLowerCase()))
+ .filter((role:any) => !isLeadershipPermissionRoleCode(role.codigo))
  .filter((role:any) => !['voz_principal', 'voz_soprano', 'voz_tenor'].includes(String(role.codigo || '').trim().toLowerCase()));
  const maxVisibleRoles = hasAnyVoiceRole ? 2 : 4;
  const visibleRoleCapabilities = roleCapabilities.slice(0, maxVisibleRoles);
@@ -2422,6 +2519,9 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  <div class="hidden raw-toggles-data" id="raw-toggles-${p.id}">
  ${togglesHTML}
  </div>
+ <div class="hidden raw-toggles-data" id="raw-leadership-toggles-${p.id}">
+ ${leadershipTogglesHTML}
+ </div>
  `;
  
  equipoGrid.appendChild(article);
@@ -2438,6 +2538,9 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  const modalProfileImage = document.getElementById('modal-profile-image') as HTMLImageElement;
  const modalProfileInitials = document.getElementById('modal-profile-initials')!;
  const modalRolesContainer = document.getElementById('modal-roles-container')!;
+ const modalLeadershipRolesContainer = document.getElementById('modal-leadership-roles-container')!;
+ const modalMinistryLeadershipSection = document.getElementById('modal-ministry-leadership-section');
+ const modalSpecialLeadershipSection = document.getElementById('modal-special-leadership-section');
  const modalVocalRangeSection = document.getElementById('modal-vocal-range-section');
  const modalVocalRange = document.getElementById('modal-vocal-range') as HTMLSelectElement;
  const modalVocalRangeHelp = document.getElementById('modal-vocal-range-help');
@@ -2465,7 +2568,8 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  let modalRolesCloseTimer: number | null = null;
 
  const availableWizardSteps = [
-  ...(canManageMinistries ? [0, 1] : []),
+  ...(canManageMinistries ? [0] : []),
+  ...(canManageMinistries || canEditTeamRoles ? [1] : []),
   ...(canEditTeamRoles ? [2, 3] : []),
  ];
 
@@ -2497,6 +2601,10 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
   if (wizardNav) wizardNav.style.gridTemplateColumns = `repeat(${stepTotal}, minmax(0, 1fr))`;
   if (wizardProgressLabel) wizardProgressLabel.textContent = `Paso ${stepIndex + 1} de ${stepTotal}`;
   if (wizardProgressBar) wizardProgressBar.style.width = `${((stepIndex + 1) / stepTotal) * 100}%`;
+  const activeStepEyebrow = wizardPanels
+   .find((panel) => Number(panel.dataset.wizardPanel) === nextStep)
+   ?.querySelector<HTMLElement>('.team-wizard-step-heading > p');
+  if (activeStepEyebrow) activeStepEyebrow.textContent = `Paso ${stepIndex + 1}`;
   btnWizardBack.classList.toggle('hidden', stepIndex === 0);
   btnWizardNext.classList.toggle('hidden', stepIndex >= stepTotal - 1);
   btnRolesSubmit.classList.toggle('hidden', stepIndex < stepTotal - 1);
@@ -2516,6 +2624,14 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
    modalSinFiltrosLeaderHelp.textContent = modalSinFiltrosMember.checked
    ? 'Puede liderar los servicios juveniles'
    : 'Activa primero Sin Filtros';
+  }
+
+  const worshipLeaderInput = modalLeadershipRolesContainer
+   .querySelector<HTMLInputElement>('input[data-role-code="lider_alabanza"]');
+  if (worshipLeaderInput) {
+   const leadsAnyMinistry = modalGeneralLeader.checked || modalSinFiltrosLeader.checked;
+   if (leadsAnyMinistry) worshipLeaderInput.checked = true;
+   worshipLeaderInput.disabled = leadsAnyMinistry;
   }
  };
 
@@ -2568,14 +2684,17 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
 
   try {
    if (canEditTeamRoles) {
-    const roleInputs = Array.from(modalRolesContainer.querySelectorAll<HTMLInputElement>('input[data-rol]'));
+    const roleInputs = [
+     ...Array.from(modalRolesContainer.querySelectorAll<HTMLInputElement>('input[data-rol]')),
+     ...Array.from(modalLeadershipRolesContainer.querySelectorAll<HTMLInputElement>('input[data-rol]')),
+    ];
     const managedRoleIds = new Set(roleInputs.map((input) => input.dataset.rol).filter(Boolean) as string[]);
     const selectedRoleIds = new Set(
      roleInputs.filter((input) => input.checked).map((input) => input.dataset.rol).filter(Boolean) as string[]
     );
 
-    // El rol maestro de liderazgo deja de mostrarse como instrumento y se
-    // deriva de los permisos por ministerio. Gestores ligeros no elevan roles.
+    // Liderar un ministerio implica el permiso maestro de Lider de Alabanza.
+    // El control permanece visible para administrar tambien el permiso global.
     if (isGlobalAdmin && worshipLeaderRole?.id) {
      managedRoleIds.add(worshipLeaderRole.id);
      if (modalGeneralLeader.checked || modalSinFiltrosLeader.checked) {
@@ -2669,6 +2788,8 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
  modalRolesBackdrop?.addEventListener('click', () => toggleModalRoles(false));
  modalGeneralMember?.addEventListener('change', syncLeadershipAvailability);
  modalSinFiltrosMember?.addEventListener('change', syncLeadershipAvailability);
+ modalGeneralLeader?.addEventListener('change', syncLeadershipAvailability);
+ modalSinFiltrosLeader?.addEventListener('change', syncLeadershipAvailability);
  modalVoiceEnabled?.addEventListener('change', syncVocalRangeAvailability);
  btnWizardBack?.addEventListener('click', () => {
   const index = availableWizardSteps.indexOf(currentWizardStep);
@@ -2759,12 +2880,20 @@ const WIZARD_SEPARATE_ROLE_CODES = new Set([
     modalSinFiltrosMember.checked = false;
     modalSinFiltrosLeader.checked = false;
    }
-   syncLeadershipAvailability();
+
+   modalMinistryLeadershipSection?.classList.toggle('hidden', !canManageMinistries);
+   modalSpecialLeadershipSection?.classList.toggle('hidden', !canEditTeamRoles);
+
+   const leadershipTogglesRawData = document.getElementById(`raw-leadership-toggles-${perfilId}`)?.innerHTML || '';
+   modalLeadershipRolesContainer.innerHTML = leadershipTogglesRawData.trim()
+    ? safeHtml(leadershipTogglesRawData)
+    : '<div class="team-wizard-role-empty">No hay permisos especiales disponibles.</div>';
 
    const togglesRawData = document.getElementById(`raw-toggles-${perfilId}`)?.innerHTML || '';
    modalRolesContainer.innerHTML = togglesRawData.trim()
     ? safeHtml(togglesRawData)
     : '<div class="team-wizard-role-empty">No hay roles musicales disponibles.</div>';
+   syncLeadershipAvailability();
    const currentProfileRoleIds = new Set<string>(rolesPorPerfil.get(perfilId) || []);
    modalVoiceEnabled.checked = Boolean(profile.tonalidad_voz) || [...currentProfileRoleIds].some((roleId) => {
     const role = roles.find((candidate:any) => candidate.id === roleId);
