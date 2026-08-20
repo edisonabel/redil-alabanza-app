@@ -606,11 +606,109 @@ if (sessionError) {
   resourceHintFrame = window.requestAnimationFrame(syncResourceActionHints);
  };
 
+ const bindResourceActionDrag = (el: HTMLElement) => {
+  if (el.dataset.resourceDragBound === 'true') return;
+  el.dataset.resourceDragBound = 'true';
+
+  const card = el.closest('.card-cancion') as HTMLElement | null;
+  const dragThresholdPx = 7;
+  const clickGuardMs = 400;
+  let pointerId: number | null = null;
+  let startX = 0;
+  let startY = 0;
+  let startScrollLeft = 0;
+  let isDragging = false;
+  let suppressClickUntil = 0;
+
+  const resetDrag = (event?: PointerEvent) => {
+   if (isDragging) {
+    suppressClickUntil = Date.now() + clickGuardMs;
+   }
+   el.classList.remove('is-dragging');
+   card?.classList.remove('is-resource-touching');
+   if (event && el.hasPointerCapture?.(event.pointerId)) {
+    try {
+     el.releasePointerCapture(event.pointerId);
+    } catch {
+     // Safari puede liberar la captura al cancelar el gesto vertical.
+    }
+   }
+   pointerId = null;
+   isDragging = false;
+  };
+
+  addListener(el, 'pointerdown', (event) => {
+   const pointerEvent = event as PointerEvent;
+   if (pointerEvent.pointerType === 'mouse' || !pointerEvent.isPrimary || pointerId !== null) return;
+   if (el.scrollWidth - el.clientWidth <= 8) return;
+
+   pointerId = pointerEvent.pointerId;
+   startX = pointerEvent.clientX;
+   startY = pointerEvent.clientY;
+   startScrollLeft = el.scrollLeft;
+   isDragging = false;
+   card?.classList.add('is-resource-touching');
+  }, { passive: true });
+
+  addListener(el, 'pointermove', (event) => {
+   const pointerEvent = event as PointerEvent;
+   if (pointerEvent.pointerId !== pointerId) return;
+
+   const deltaX = pointerEvent.clientX - startX;
+   const deltaY = pointerEvent.clientY - startY;
+   const distanceX = Math.abs(deltaX);
+   const distanceY = Math.abs(deltaY);
+
+   if (!isDragging) {
+    if (distanceY > dragThresholdPx && distanceY > distanceX) {
+     resetDrag(pointerEvent);
+     return;
+    }
+    if (distanceX < dragThresholdPx || distanceX <= distanceY) return;
+
+    isDragging = true;
+    el.classList.add('is-dragging');
+    try {
+     el.setPointerCapture(pointerEvent.pointerId);
+    } catch {
+     // El desplazamiento sigue funcionando aunque una version antigua no capture el puntero.
+    }
+   }
+
+   if (pointerEvent.cancelable) pointerEvent.preventDefault();
+   el.scrollLeft = startScrollLeft - deltaX;
+   scheduleResourceActionHints();
+  }, { passive: false });
+
+  const finishDrag = (event: Event) => {
+   const pointerEvent = event as PointerEvent;
+   if (pointerEvent.pointerId !== pointerId) return;
+   resetDrag(pointerEvent);
+   scheduleResourceActionHints();
+  };
+  addListener(el, 'pointerup', finishDrag);
+  addListener(el, 'pointercancel', finishDrag);
+
+  addListener(el, 'click', (event) => {
+   if (Date.now() > suppressClickUntil) return;
+   event.preventDefault();
+   event.stopPropagation();
+   event.stopImmediatePropagation();
+   suppressClickUntil = 0;
+  }, true);
+
+  cleanupFns.push(() => {
+   resetDrag();
+   delete el.dataset.resourceDragBound;
+  });
+ };
+
  const bindResourceActionHints = () => {
   document.querySelectorAll('.resource-actions').forEach((scroller) => {
    const el = scroller as HTMLElement;
    if (el.dataset.resourceHintBound === 'true') return;
    el.dataset.resourceHintBound = 'true';
+   bindResourceActionDrag(el);
    addListener(el, 'scroll', scheduleResourceActionHints, { passive: true });
    cleanupFns.push(() => {
     delete el.dataset.resourceHintBound;
@@ -1968,6 +2066,10 @@ function filterCards() {
    overflow-y: hidden;
    white-space: nowrap;
    -webkit-overflow-scrolling: touch;
+   touch-action: pan-y pinch-zoom;
+   -webkit-user-select: none;
+   user-select: none;
+   overscroll-behavior-x: contain;
    scroll-snap-type: x proximity;
    scrollbar-width: none;
    padding-right: 0.25rem;
@@ -1979,8 +2081,22 @@ function filterCards() {
  .resource-actions > * {
    flex: 0 0 auto;
    scroll-snap-align: start;
+   touch-action: inherit;
    white-space: nowrap;
  }
+ .resource-actions > a {
+   -webkit-user-drag: none;
+  }
+ .resource-actions.is-dragging {
+   scroll-behavior: auto;
+   scroll-snap-type: none;
+  }
+ .resource-actions.is-dragging > * {
+   scale: 1 !important;
+  }
+ .card-cancion.is-resource-touching {
+   scale: 1 !important;
+  }
  .resource-actions-shell {
    position: relative;
    transition: padding-inline 180ms ease;
