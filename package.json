@@ -15,6 +15,7 @@
     "test:authorization": "node scripts/test-authorization-boundaries.mjs",
     "test:team-leadership": "node scripts/test-team-leadership-permissions.mjs",
     "test:auth-session": "node scripts/test-auth-session-bridge.mjs",
+    "test:navigation-recovery": "node scripts/test-navigation-recovery.mjs",
     "test:migrations": "node scripts/check-migration-history.mjs",
     "test:voice-follower": "node scripts/test-voice-lyric-follower.mjs",
     "test:section-alignment": "node --experimental-strip-types scripts/test-global-section-alignment.mjs",

@@ -12,6 +12,8 @@ assert.match(bridge, /TOKEN_REFRESHED/);
 assert.match(bridge, /visibilitychange/);
 assert.match(bridge, /pageshow/);
 assert.match(bridge, /ensureServerSession/);
+assert.match(bridge, /supabase\.auth\.refreshSession\(\)/);
+assert.match(bridge, /refresh = false/);
 assert.match(layout, /<AuthSessionBridge\s*\/>/);
 assert.match(rehearsal, /<AuthSessionBridge\s*\/>/);
 assert.match(player, /await window\.__REDIL_AUTH_MANAGER__\?\.ensureServerSession\?\.\(\)/);

@@ -13,7 +13,10 @@ import {
   fetchLiveDirectorEventMix,
   liveDirectorEventMixSignature,
   normalizeLiveDirectorEventMix,
+  readPendingLiveDirectorEventMix,
+  retryPendingLiveDirectorEventMix,
   saveLiveDirectorEventMix,
+  stagePendingLiveDirectorEventMix,
 } from '../../utils/liveDirectorEventMix';
 import { getPadUrlForSongKey } from '../../utils/padAudio';
 import {
@@ -423,6 +426,7 @@ export default function ModoEnsayoDirector({
   const eventMixSaveQueueRef = useRef(Promise.resolve());
   const eventMixSaveVersionsRef = useRef({});
   const eventMixStatusTimersRef = useRef(new Map());
+  const eventMixRetryTimerRef = useRef(null);
   const queueSelectionTokenRef = useRef(0);
   const takeoverCancelButtonRef = useRef(null);
   const {
@@ -548,6 +552,10 @@ export default function ModoEnsayoDirector({
   useEffect(() => () => {
     eventMixStatusTimersRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
     eventMixStatusTimersRef.current.clear();
+    if (eventMixRetryTimerRef.current !== null) {
+      window.clearTimeout(eventMixRetryTimerRef.current);
+      eventMixRetryTimerRef.current = null;
+    }
   }, []);
 
   useEffect(() => {
@@ -604,6 +612,25 @@ export default function ModoEnsayoDirector({
       || !activeSongHasSequence
       || eventMixLoadedSongIds.has(activePersistedSongId)
     ) return;
+
+    const pending = readPendingLiveDirectorEventMix({
+      eventId,
+      songId: activePersistedSongId,
+    });
+    if (pending?.mix) {
+      setEventMixOverrides((previous) => ({
+        ...previous,
+        [activePersistedSongId]: pending.mix,
+      }));
+      setEventMixLoadedSongIds((previous) => {
+        if (previous.has(activePersistedSongId)) return previous;
+        const next = new Set(previous);
+        next.add(activePersistedSongId);
+        return next;
+      });
+      setEventMixSaveStates((previous) => ({ ...previous, [activePersistedSongId]: 'saving' }));
+      return;
+    }
 
     let cancelled = false;
     void fetchLiveDirectorEventMix({ eventId, songId: activePersistedSongId })
@@ -1017,6 +1044,44 @@ export default function ModoEnsayoDirector({
     }));
   }, []);
 
+  const enqueueEventMixSave = useCallback((songId, mix, recoverPending = false) => {
+    const saveTask = eventMixSaveQueueRef.current
+      .catch(() => undefined)
+      .then(() => recoverPending
+        ? retryPendingLiveDirectorEventMix({ eventId, songId })
+        : saveLiveDirectorEventMix({ eventId, songId, mix }));
+
+    eventMixSaveQueueRef.current = saveTask.then(
+      () => undefined,
+      () => undefined,
+    );
+    return saveTask;
+  }, [eventId]);
+
+  const markEventMixSaveSucceeded = useCallback((songId, version, savedMix) => {
+    if (Number(eventMixSaveVersionsRef.current[songId] || 0) !== version) return;
+
+    if (savedMix) {
+      setEventMixOverrides((previous) => ({ ...previous, [songId]: savedMix }));
+    }
+    setEventMixSaveStates((previous) => ({ ...previous, [songId]: 'saved' }));
+
+    const existingTimer = eventMixStatusTimersRef.current.get(songId);
+    if (existingTimer) window.clearTimeout(existingTimer);
+    const timeoutId = window.setTimeout(() => {
+      eventMixStatusTimersRef.current.delete(songId);
+      if (Number(eventMixSaveVersionsRef.current[songId] || 0) !== version) return;
+      setEventMixSaveStates((previous) => ({ ...previous, [songId]: 'idle' }));
+    }, 2400);
+    eventMixStatusTimersRef.current.set(songId, timeoutId);
+  }, []);
+
+  const markEventMixSaveFailed = useCallback((songId, version) => {
+    if (Number(eventMixSaveVersionsRef.current[songId] || 0) === version) {
+      setEventMixSaveStates((previous) => ({ ...previous, [songId]: 'error' }));
+    }
+  }, []);
+
   const handleEventMixChange = useCallback((rawMix) => {
     const songId = activePersistedSongId;
     const mix = normalizeLiveDirectorEventMix(rawMix);
@@ -1031,6 +1096,7 @@ export default function ModoEnsayoDirector({
       next.add(songId);
       return next;
     });
+    stagePendingLiveDirectorEventMix({ eventId, songId, mix });
 
     const nextVersion = Number(eventMixSaveVersionsRef.current[songId] || 0) + 1;
     eventMixSaveVersionsRef.current[songId] = nextVersion;
@@ -1042,37 +1108,79 @@ export default function ModoEnsayoDirector({
       eventMixStatusTimersRef.current.delete(songId);
     }
 
-    const saveTask = eventMixSaveQueueRef.current
-      .catch(() => undefined)
-      .then(() => saveLiveDirectorEventMix({ eventId, songId, mix }));
-
-    eventMixSaveQueueRef.current = saveTask.then(
-      () => undefined,
-      () => undefined,
-    );
-
-    return saveTask
+    return enqueueEventMixSave(songId, mix)
       .then((savedMix) => {
-        if (eventMixSaveVersionsRef.current[songId] !== nextVersion) return;
-
-        if (savedMix) {
-          setEventMixOverrides((previous) => ({ ...previous, [songId]: savedMix }));
-        }
-        setEventMixSaveStates((previous) => ({ ...previous, [songId]: 'saved' }));
-        const timeoutId = window.setTimeout(() => {
-          eventMixStatusTimersRef.current.delete(songId);
-          if (eventMixSaveVersionsRef.current[songId] !== nextVersion) return;
-          setEventMixSaveStates((previous) => ({ ...previous, [songId]: 'idle' }));
-        }, 2400);
-        eventMixStatusTimersRef.current.set(songId, timeoutId);
+        markEventMixSaveSucceeded(songId, nextVersion, savedMix);
       })
       .catch((error) => {
-        if (eventMixSaveVersionsRef.current[songId] === nextVersion) {
-          setEventMixSaveStates((previous) => ({ ...previous, [songId]: 'error' }));
-        }
+        markEventMixSaveFailed(songId, nextVersion);
         throw error;
       });
-  }, [activePersistedSongId, eventId, hasEventMixContext]);
+  }, [activePersistedSongId, enqueueEventMixSave, eventId, hasEventMixContext, markEventMixSaveFailed, markEventMixSaveSucceeded]);
+
+  const retryPendingActiveEventMix = useCallback(async () => {
+    const songId = activePersistedSongId;
+    if (!hasEventMixContext || !songId) return null;
+
+    const pending = readPendingLiveDirectorEventMix({ eventId, songId });
+    if (!pending?.mix) return null;
+
+    const version = Number(eventMixSaveVersionsRef.current[songId] || 0);
+    setEventMixSaveStates((previous) => ({ ...previous, [songId]: 'saving' }));
+
+    try {
+      const savedMix = await enqueueEventMixSave(songId, pending.mix, true);
+      markEventMixSaveSucceeded(songId, version, savedMix);
+      return savedMix;
+    } catch (error) {
+      markEventMixSaveFailed(songId, version);
+      throw error;
+    }
+  }, [activePersistedSongId, enqueueEventMixSave, eventId, hasEventMixContext, markEventMixSaveFailed, markEventMixSaveSucceeded]);
+
+  const schedulePendingEventMixRetry = useCallback((delayMs = 250) => {
+    if (!hasEventMixContext || !activePersistedSongId) return;
+    if (eventMixRetryTimerRef.current !== null) {
+      window.clearTimeout(eventMixRetryTimerRef.current);
+    }
+    eventMixRetryTimerRef.current = window.setTimeout(() => {
+      eventMixRetryTimerRef.current = null;
+      void retryPendingActiveEventMix().catch((error) => {
+        console.warn('[ModoEnsayoDirector] No se pudo recuperar la mezcla pendiente.', error);
+      });
+    }, delayMs);
+  }, [activePersistedSongId, hasEventMixContext, retryPendingActiveEventMix]);
+
+  useEffect(() => {
+    if (!hasEventMixContext || !activePersistedSongId) return undefined;
+
+    const scheduleRecovery = () => schedulePendingEventMixRetry(200);
+    const scheduleAfterInteraction = () => schedulePendingEventMixRetry(1400);
+    const scheduleWhenVisible = () => {
+      if (document.visibilityState === 'visible') scheduleRecovery();
+    };
+
+    window.addEventListener('focus', scheduleRecovery);
+    window.addEventListener('online', scheduleRecovery);
+    window.addEventListener('pointerup', scheduleAfterInteraction, { passive: true });
+    window.addEventListener('touchend', scheduleAfterInteraction, { passive: true });
+    window.addEventListener('keyup', scheduleAfterInteraction);
+    document.addEventListener('visibilitychange', scheduleWhenVisible);
+    schedulePendingEventMixRetry(0);
+
+    return () => {
+      window.removeEventListener('focus', scheduleRecovery);
+      window.removeEventListener('online', scheduleRecovery);
+      window.removeEventListener('pointerup', scheduleAfterInteraction);
+      window.removeEventListener('touchend', scheduleAfterInteraction);
+      window.removeEventListener('keyup', scheduleAfterInteraction);
+      document.removeEventListener('visibilitychange', scheduleWhenVisible);
+      if (eventMixRetryTimerRef.current !== null) {
+        window.clearTimeout(eventMixRetryTimerRef.current);
+        eventMixRetryTimerRef.current = null;
+      }
+    };
+  }, [activePersistedSongId, hasEventMixContext, schedulePendingEventMixRetry]);
 
   return (
     <>

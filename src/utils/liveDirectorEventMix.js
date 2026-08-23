@@ -1,5 +1,8 @@
+import { fetchWithSessionRetry } from './authenticatedFetch.js';
+
 const MAX_EVENT_MIX_TRACKS = 64;
 const MAX_TRACK_ID_LENGTH = 160;
+const PENDING_EVENT_MIX_STORAGE_PREFIX = 'redil:live-director:event-mix:pending:v1:';
 
 const clampVolume = (value, fallback = 1) => {
   const numeric = Number(value);
@@ -74,6 +77,96 @@ export const liveDirectorEventMixSignature = (value = null) => {
     .join('|');
 };
 
+const buildPendingEventMixStorageKey = (eventId = '', songId = '') => (
+  `${PENDING_EVENT_MIX_STORAGE_PREFIX}${encodeURIComponent(String(eventId || '').trim())}:${encodeURIComponent(String(songId || '').trim())}`
+);
+
+const getLocalStorage = () => {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+};
+
+export const readPendingLiveDirectorEventMix = ({ eventId = '', songId = '' } = {}) => {
+  const storage = getLocalStorage();
+  if (!storage) return null;
+
+  const key = buildPendingEventMixStorageKey(eventId, songId);
+  try {
+    const parsed = JSON.parse(storage.getItem(key) || 'null');
+    const mix = normalizeLiveDirectorEventMix(parsed?.mix);
+    const signature = liveDirectorEventMixSignature(mix);
+    if (
+      !mix
+      || !signature
+      || String(parsed?.eventId || '') !== String(eventId || '').trim()
+      || String(parsed?.songId || '') !== String(songId || '').trim()
+      || String(parsed?.signature || '') !== signature
+    ) {
+      storage.removeItem(key);
+      return null;
+    }
+
+    return {
+      eventId: String(eventId || '').trim(),
+      songId: String(songId || '').trim(),
+      signature,
+      mix,
+      stagedAt: String(parsed?.stagedAt || '').trim(),
+    };
+  } catch {
+    try {
+      storage.removeItem(key);
+    } catch {
+      // localStorage is best-effort; the in-memory queue still handles this tab.
+    }
+    return null;
+  }
+};
+
+export const stagePendingLiveDirectorEventMix = ({ eventId = '', songId = '', mix = null } = {}) => {
+  const storage = getLocalStorage();
+  const safeEventId = String(eventId || '').trim();
+  const safeSongId = String(songId || '').trim();
+  const safeMix = normalizeLiveDirectorEventMix(mix);
+  const signature = liveDirectorEventMixSignature(safeMix);
+  if (!storage || !safeEventId || !safeSongId || !safeMix || !signature) return null;
+
+  const record = {
+    version: 1,
+    eventId: safeEventId,
+    songId: safeSongId,
+    signature,
+    mix: safeMix,
+    stagedAt: new Date().toISOString(),
+  };
+
+  try {
+    storage.setItem(buildPendingEventMixStorageKey(safeEventId, safeSongId), JSON.stringify(record));
+    return record;
+  } catch {
+    return null;
+  }
+};
+
+const clearPendingLiveDirectorEventMixIfMatching = ({ eventId, songId, signature }) => {
+  const storage = getLocalStorage();
+  if (!storage) return false;
+
+  const pending = readPendingLiveDirectorEventMix({ eventId, songId });
+  if (!pending || pending.signature !== signature) return false;
+
+  try {
+    storage.removeItem(buildPendingEventMixStorageKey(eventId, songId));
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const parseJsonResponse = async (response) => {
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -84,7 +177,7 @@ const parseJsonResponse = async (response) => {
 
 export async function fetchLiveDirectorEventMix({ eventId = '', songId = '' } = {}) {
   const params = new URLSearchParams({ evento_id: eventId, cancion_id: songId });
-  const response = await fetch(`/api/live-director-event-mix?${params.toString()}`, {
+  const response = await fetchWithSessionRetry(`/api/live-director-event-mix?${params.toString()}`, {
     method: 'GET',
     headers: { accept: 'application/json' },
     credentials: 'same-origin',
@@ -100,7 +193,13 @@ export async function saveLiveDirectorEventMix({ eventId = '', songId = '', mix 
     throw new Error('La mezcla del evento no contiene stems validos.');
   }
 
-  const response = await fetch('/api/live-director-event-mix', {
+  const requestedSignature = liveDirectorEventMixSignature(safeMix);
+  const currentPending = readPendingLiveDirectorEventMix({ eventId, songId });
+  if (!currentPending || currentPending.signature === requestedSignature) {
+    stagePendingLiveDirectorEventMix({ eventId, songId, mix: safeMix });
+  }
+
+  const response = await fetchWithSessionRetry('/api/live-director-event-mix', {
     method: 'PUT',
     keepalive: true,
     headers: {
@@ -115,5 +214,21 @@ export async function saveLiveDirectorEventMix({ eventId = '', songId = '', mix 
     }),
   });
   const payload = await parseJsonResponse(response);
-  return normalizeLiveDirectorEventMix(payload?.mix);
+  const savedMix = normalizeLiveDirectorEventMix(payload?.mix);
+  if (!savedMix || liveDirectorEventMixSignature(savedMix) !== requestedSignature) {
+    throw new Error('El servidor no confirmo exactamente la mezcla enviada. Se mantiene pendiente.');
+  }
+
+  clearPendingLiveDirectorEventMixIfMatching({
+    eventId,
+    songId,
+    signature: requestedSignature,
+  });
+  return savedMix;
+}
+
+export async function retryPendingLiveDirectorEventMix({ eventId = '', songId = '' } = {}) {
+  const pending = readPendingLiveDirectorEventMix({ eventId, songId });
+  if (!pending) return null;
+  return saveLiveDirectorEventMix({ eventId, songId, mix: pending.mix });
 }

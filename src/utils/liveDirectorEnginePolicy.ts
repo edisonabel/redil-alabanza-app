@@ -3,6 +3,7 @@ export type LiveDirectorBrowserCapabilities = {
   crossOriginIsolated?: boolean;
   isAndroid?: boolean;
   isChromeFamily?: boolean;
+  isFirefox?: boolean;
   isIOS?: boolean;
   isSafari?: boolean;
   sharedArrayBuffer?: boolean;

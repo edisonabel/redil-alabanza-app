@@ -173,6 +173,19 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
     }, []);
 
     useEffect(() => {
+        const resetOpeningRehearsal = () => {
+            setOpeningRehearsal(false);
+        };
+
+        window.addEventListener('pageshow', resetOpeningRehearsal);
+        window.addEventListener('popstate', resetOpeningRehearsal);
+        return () => {
+            window.removeEventListener('pageshow', resetOpeningRehearsal);
+            window.removeEventListener('popstate', resetOpeningRehearsal);
+        };
+    }, []);
+
+    useEffect(() => {
         if (!isOpen || focusSection !== 'repertorio') return;
 
         const scrollTimer = setTimeout(() => {

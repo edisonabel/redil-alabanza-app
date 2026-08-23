@@ -1,4 +1,5 @@
 import type { LiveDirectorPersistedSession } from './liveDirectorSongSession';
+import { fetchWithSessionRetry } from './authenticatedFetch.js';
 
 type LiveDirectorUploadTarget = {
   presignedUrl: string;
@@ -142,8 +143,10 @@ export async function saveLiveDirectorSongSession(params: {
   songId: string;
   session: Omit<LiveDirectorPersistedSession, 'folder' | 'manifestUrl' | 'updatedAt' | 'songId' | 'songTitle' | 'version'>;
 }): Promise<LiveDirectorPersistedSession> {
-  const response = await fetch('/api/live-director-song-session', {
+  const response = await fetchWithSessionRetry('/api/live-director-song-session', {
     method: 'POST',
+    credentials: 'same-origin',
+    cache: 'no-store',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
@@ -155,8 +158,10 @@ export async function saveLiveDirectorSectionOffset(params: {
   songId: string;
   sectionOffsetSeconds: number;
 }): Promise<LiveDirectorPersistedSession> {
-  const response = await fetch('/api/live-director-song-session', {
+  const response = await fetchWithSessionRetry('/api/live-director-song-session', {
     method: 'PATCH',
+    credentials: 'same-origin',
+    cache: 'no-store',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });

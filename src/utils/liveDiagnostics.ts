@@ -120,6 +120,7 @@ export const readLiveBrowserCapabilities = () => {
     vendor,
   });
   const isWebKit = /AppleWebKit/i.test(userAgent) && !isChromeFamily;
+  const isFirefox = /Firefox|FxiOS/i.test(userAgent);
 
   return {
     userAgent,
@@ -131,6 +132,7 @@ export const readLiveBrowserCapabilities = () => {
     isIOS: /iPhone|iPad|iPod/i.test(userAgent) || isTouchMac,
     isAndroid: /Android/i.test(userAgent),
     isSafari: /Safari/i.test(userAgent) && !isChromeFamily,
+    isFirefox,
     isWebKit,
     isChromeFamily,
     standaloneDisplay:

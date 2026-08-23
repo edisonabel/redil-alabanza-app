@@ -990,6 +990,7 @@ export function LiveDirectorView({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sectionOffsetSaveError, setSectionOffsetSaveError] = useState<string | null>(null);
   const [dismissedLoadWarningKey, setDismissedLoadWarningKey] = useState<string | null>(null);
+  const [browserPlaybackRecommendation, setBrowserPlaybackRecommendation] = useState('');
   const [trackLimitNotice, setTrackLimitNotice] = useState<{
     key: string;
     names: string[];
@@ -1014,6 +1015,21 @@ export function LiveDirectorView({
       setShowLoadPanel(false);
     }
   }, [isManualTempoMode]);
+
+  useEffect(() => {
+    const capabilities = readLiveBrowserCapabilities();
+    if (!capabilities.isFirefox) return;
+
+    if (capabilities.isAndroid) {
+      setBrowserPlaybackRecommendation('Firefox en Android puede rechazar stems AAC. Para este ensayo usa Chrome.');
+      return;
+    }
+    if (capabilities.isIOS) {
+      setBrowserPlaybackRecommendation('Para mayor compatibilidad con stems AAC en iPhone o iPad, usa Safari.');
+      return;
+    }
+    setBrowserPlaybackRecommendation('Firefox puede limitar la reproducción multitrack. Prueba Chrome o Safari.');
+  }, []);
 
   const exitLiveDirector = useCallback(async () => {
     setShowBackConfirm(false);
@@ -6586,7 +6602,9 @@ export function LiveDirectorView({
                 <p className="mt-2 text-[0.76rem] leading-snug text-amber-100/70">
                   {hasUnsupportedStemFormat
                     ? <>Convierte esos stems a <span className="font-semibold">M4A/AAC-LC (.m4a 256 kbps)</span> y vuelve a subirlos.</>
-                    : <>Consejo: pasa los stems problemáticos por el conversor y expórtalos como <span className="font-semibold">M4A/AAC-LC · 256 kbps · 48 kHz · Fast Start</span>.</>}
+                    : browserPlaybackRecommendation
+                      ? browserPlaybackRecommendation
+                      : <>Consejo: pasa los stems problemáticos por el conversor y expórtalos como <span className="font-semibold">M4A/AAC-LC · 256 kbps · 48 kHz · Fast Start</span>.</>}
                 </p>
               </div>
               <button

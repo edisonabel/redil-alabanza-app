@@ -13,6 +13,7 @@
 
     const AUTH_COOKIE_REGEX = /^(sb-|__Host-sb-|__Secure-sb-|supabase-)/i;
     const SESSION_SYNC_FRESHNESS_MS = 60 * 1000;
+    const SESSION_REFRESH_SKEW_SECONDS = 90;
     let sessionSyncPromise: Promise<boolean> | null = null;
     let lastSessionSyncAt = 0;
 
@@ -37,22 +38,43 @@
       return true;
     };
 
-    const ensureServerSession = async ({ force = false } = {}) => {
+    const readFreshClientSession = async ({ refresh = false } = {}) => {
+      const current = await supabase.auth.getSession();
+      if (current.error) throw current.error;
+
+      const session = current.data?.session || null;
+      const expiresAt = Number(session?.expires_at || 0);
+      const expiresSoon = expiresAt > 0
+        && expiresAt <= Math.floor(Date.now() / 1000) + SESSION_REFRESH_SKEW_SECONDS;
+
+      if (!refresh && !expiresSoon) {
+        return session;
+      }
+
+      const refreshed = await supabase.auth.refreshSession();
+      if (refreshed.error) throw refreshed.error;
+      return refreshed.data?.session || null;
+    };
+
+    const ensureServerSession = async ({ force = false, refresh = false } = {}) => {
       if (
         !force &&
+        !refresh &&
         lastSessionSyncAt > 0 &&
         Date.now() - lastSessionSyncAt < SESSION_SYNC_FRESHNESS_MS
       ) {
         return true;
       }
 
-      if (sessionSyncPromise) return sessionSyncPromise;
+      if (sessionSyncPromise) {
+        const synced = await sessionSyncPromise;
+        if (!refresh) return synced;
+      }
 
       sessionSyncPromise = (async () => {
-        const { data, error } = await supabase.auth.getSession();
-        if (error) throw error;
-        if (!data?.session) return false;
-        return syncServerSession(data.session);
+        const session = await readFreshClientSession({ refresh });
+        if (!session) return false;
+        return syncServerSession(session);
       })().finally(() => {
         sessionSyncPromise = null;
       });
