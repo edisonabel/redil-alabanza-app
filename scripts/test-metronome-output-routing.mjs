@@ -163,6 +163,11 @@ assert.match(
   'Un seek debe cancelar clicks que quedaron programados en la fase anterior.',
 );
 assert.match(
+  engineSource,
+  /settings\.resetCycle \|\| meterChanged[\s\S]+this\.isPlaying[\s\S]+this\.cancelScheduledClicks\(\)[\s\S]+this\.currentPulseInBar = 0/,
+  'Cambiar de negras a corcheas durante playback debe cancelar pulsos viejos antes de reiniciar el compas.',
+);
+assert.match(
   compactRehearsalSource,
   /createLatestWinsAsyncQueue[\s\S]+requestRehearsalMixSeek/,
   'El ensayo debe serializar los seeks de stems con estrategia latest-wins.',

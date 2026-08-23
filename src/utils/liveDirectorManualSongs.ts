@@ -137,6 +137,23 @@ export const getManualSubdivisionFactor = (
   subdivision: LiveDirectorManualSubdivision | unknown,
 ) => LIVE_DIRECTOR_SUBDIVISION_OPTIONS.find((option) => option.value === subdivision)?.factor || 1;
 
+export const getManualSubdivisionLabel = (
+  subdivision: LiveDirectorManualSubdivision | unknown,
+) => LIVE_DIRECTOR_SUBDIVISION_OPTIONS.find((option) => option.value === subdivision)?.label || 'Negra';
+
+export const getNextManualPulseSubdivision = (
+  subdivision: LiveDirectorManualSubdivision | unknown,
+): LiveDirectorManualSubdivision => subdivision === 'eighth' ? 'quarter' : 'eighth';
+
+export const getManualPulseBpm = (
+  bpm: unknown,
+  subdivision: LiveDirectorManualSubdivision | unknown,
+) => {
+  const numericBpm = Number(bpm);
+  if (!Number.isFinite(numericBpm) || numericBpm <= 0) return 0;
+  return Math.round(numericBpm * getManualSubdivisionFactor(subdivision));
+};
+
 export const getManualMeterLabel = (manualTempo: LiveDirectorManualTempo | null | undefined) => {
   if (!manualTempo) return '';
   return `${manualTempo.meter.numerator}/${manualTempo.meter.denominator}`;

@@ -19,6 +19,13 @@ assert.equal(manualSongs.getRemainingManualSongSlots(12, 0), 0);
 assert.equal(manualSongs.getManualSubdivisionFactor('quarter'), 1);
 assert.equal(manualSongs.getManualSubdivisionFactor('eighth'), 2);
 assert.equal(manualSongs.getManualSubdivisionFactor('sixteenth'), 4);
+assert.equal(manualSongs.getManualSubdivisionLabel('quarter'), 'Negra');
+assert.equal(manualSongs.getManualSubdivisionLabel('eighth'), 'Corchea');
+assert.equal(manualSongs.getNextManualPulseSubdivision('quarter'), 'eighth');
+assert.equal(manualSongs.getNextManualPulseSubdivision('eighth'), 'quarter');
+assert.equal(manualSongs.getManualPulseBpm(64, 'quarter'), 64);
+assert.equal(manualSongs.getManualPulseBpm(64, 'eighth'), 128);
+assert.equal(manualSongs.getManualPulseBpm(0, 'eighth'), 0);
 assert.equal(manualSongs.hasPlayableLiveDirectorSession(null), false);
 assert.equal(manualSongs.hasPlayableLiveDirectorSession({ tracks: [] }), false);
 assert.equal(manualSongs.hasPlayableLiveDirectorSession({

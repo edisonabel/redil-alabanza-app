@@ -240,6 +240,9 @@ export class MetronomeEngine {
       previousSubdivision !== this.subdivision;
 
     if ((settings.resetCycle || meterChanged) && this.audioContext) {
+      if (this.isPlaying) {
+        this.cancelScheduledClicks();
+      }
       this.currentPulseInBar = 0;
       this.nextNoteTime = this.audioContext.currentTime + 0.05;
     }

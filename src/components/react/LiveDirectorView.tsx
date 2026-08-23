@@ -84,6 +84,7 @@ import type {
   LiveDirectorManualSongInput,
   LiveDirectorManualTempo,
 } from '../../utils/liveDirectorManualSongs';
+import { getManualPulseBpm } from '../../utils/liveDirectorManualSongs';
 
 type MixerTrackMeta = {
   id: string;
@@ -1370,6 +1371,27 @@ export function LiveDirectorView({
   const useWideTrackLoadModal = !isPortrait;
   const showSectionsPanel = surfaceView === 'sections' && !isManualTempoMode;
   const displayBpm = Number.isFinite(Number(bpm)) ? Math.max(0, Math.round(Number(bpm))) : 0;
+  const canTogglePulseSubdivision = isManualTempoMode && displayBpm > 0;
+  const displayedPulseBpm = canTogglePulseSubdivision
+    ? getManualPulseBpm(displayBpm, manualTempoTransport.pulseSubdivision)
+    : displayBpm;
+  const pulseSubdivisionLabel = manualTempoTransport.pulseMultiplier === 2
+    ? 'CORCHEAS'
+    : manualTempoTransport.pulseMultiplier === 4
+      ? 'SEMICORCHEAS'
+      : 'NEGRAS';
+  const compactPulseSubdivisionLabel = manualTempoTransport.pulseMultiplier === 2
+    ? 'COR.'
+    : manualTempoTransport.pulseMultiplier === 4
+      ? 'SEM.'
+      : 'NEG.';
+  const bpmControlLabel = canTogglePulseSubdivision
+    ? manualTempoTransport.pulseMultiplier === 2
+      ? `${displayedPulseBpm} pulsos por minuto en corcheas. Tocar para volver a negras.`
+      : `${displayedPulseBpm} pulsos por minuto en ${pulseSubdivisionLabel.toLowerCase()}. Tocar para activar corcheas a ${displayBpm * 2} pulsos por minuto.`
+    : displayBpm
+      ? `${displayBpm} BPM. La secuencia controla el tempo.`
+      : 'Sin BPM';
   const songCardTitle = songTitle || currentSessionLabel;
   const performerLabel = isEnsayoMode
     ? String(title || '').replace(/^Modo Ensayo\s*[-·]?\s*/i, '').trim()
@@ -4931,21 +4953,34 @@ export function LiveDirectorView({
                 <KeyboardHint>B</KeyboardHint>
               </button>
 
-              <div
+              <button
+                type="button"
                 data-live-director-control="bpm"
-                className={`flex ${isUltraCompactLandscape ? 'h-11 rounded-[0.8rem] px-1 py-0.5' : isToolbarCompactLandscape ? 'h-12 rounded-[1rem] px-1.5 py-1' : 'h-[var(--ld-control-height)] rounded-[1.45rem] px-2 py-3'} shrink-0 flex-col items-center justify-center gap-0.5 border border-white/8 bg-black/16 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]`}
+                data-pulse-multiplier={canTogglePulseSubdivision ? manualTempoTransport.pulseMultiplier : undefined}
+                onClick={manualTempoTransport.togglePulseSubdivision}
+                disabled={!canTogglePulseSubdivision}
+                aria-label={bpmControlLabel}
+                aria-pressed={canTogglePulseSubdivision ? manualTempoTransport.pulseMultiplier === 2 : undefined}
+                title={bpmControlLabel}
+                className={`flex ${isUltraCompactLandscape ? 'h-11 rounded-[0.8rem] px-1 py-0.5' : isToolbarCompactLandscape ? 'h-12 rounded-[1rem] px-1.5 py-1' : 'h-[var(--ld-control-height)] rounded-[1.45rem] px-2 py-3'} shrink-0 appearance-none flex-col items-center justify-center gap-0.5 border bg-black/16 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 ${canTogglePulseSubdivision
+                  ? manualTempoTransport.pulseMultiplier === 2
+                    ? 'cursor-pointer border-cyan-300/42 bg-cyan-300/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_0_20px_rgba(103,232,249,0.08)] active:scale-[0.98]'
+                    : 'cursor-pointer border-white/12 hover:border-cyan-200/28 hover:bg-white/[0.04] active:scale-[0.98]'
+                  : 'cursor-default border-white/8'}`}
                 style={isToolbarCompactLandscape
                   ? { width: scaleRem(isUltraCompactLandscape ? 3.05 : 3.75, 2.75) }
                   : { flex: '0 0 18%', width: '18%' }}
               >
                 <span className={`font-light leading-none tracking-tight text-white/92 ${isUltraCompactLandscape ? 'text-[1.08rem]' : isToolbarCompactLandscape ? 'text-[1.4rem]' : 'text-[2.05rem]'}`}>
-                  {displayBpm || '--'}
+                  {displayedPulseBpm || '--'}
                 </span>
                 <div className="h-px w-full bg-white/18" />
                 <span className={`${isUltraCompactLandscape ? 'text-[0.42rem]' : 'text-[0.56rem]'} font-black uppercase tracking-[0.22em] text-white/56`}>
-                  {displayBpm ? 'BPM' : 'SIN BPM'}
+                  {canTogglePulseSubdivision
+                    ? `${isToolbarCompactLandscape ? compactPulseSubdivisionLabel : pulseSubdivisionLabel} · ${manualTempoTransport.pulseMultiplier}×`
+                    : displayBpm ? 'BPM' : 'SIN BPM'}
                 </span>
-              </div>
+              </button>
 
               <div
                 data-live-director-control="clock"

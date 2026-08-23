@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [directorSource, viewSource] = await Promise.all([
+const [directorSource, viewSource, manualTransportSource] = await Promise.all([
   readFile(new URL('../src/components/react/ModoEnsayoDirector.jsx', import.meta.url), 'utf8'),
   readFile(new URL('../src/components/react/LiveDirectorView.tsx', import.meta.url), 'utf8'),
+  readFile(new URL('../src/hooks/useLiveDirectorManualTempoTransport.ts', import.meta.url), 'utf8'),
 ]);
 
 assert.match(
@@ -35,6 +36,21 @@ assert.match(
   viewSource,
   /autoPadOwnedByFallbackRef[\s\S]+setPadActiveFromGesture\(false\)/,
   'El pad iniciado por el respaldo debe retirarse al volver a stems.',
+);
+assert.match(
+  viewSource,
+  /canTogglePulseSubdivision = isManualTempoMode && displayBpm > 0[\s\S]+disabled=\{!canTogglePulseSubdivision\}/,
+  'El BPM solo debe ser interactivo cuando la app controla el click de una canción sin secuencia.',
+);
+assert.match(
+  viewSource,
+  /displayedPulseBpm[\s\S]+pulseSubdivisionLabel[\s\S]+manualTempoTransport\.pulseMultiplier/,
+  'El control debe comunicar tanto los pulsos audibles como la figura musical activa.',
+);
+assert.match(
+  manualTransportSource,
+  /togglePulseSubdivision[\s\S]+getNextManualPulseSubdivision[\s\S]+resetCycle: true/,
+  'El cambio entre negras y corcheas debe aplicarse al motor activo y reiniciar limpiamente el compás.',
 );
 
 console.log('live director sessionless fallback: ok');

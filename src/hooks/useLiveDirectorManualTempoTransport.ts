@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { metronomeService } from '../services/MetronomeEngine';
 import {
   getManualSubdivisionFactor,
+  getNextManualPulseSubdivision,
   type LiveDirectorManualTempo,
+  type LiveDirectorManualSubdivision,
 } from '../utils/liveDirectorManualSongs';
 
 type ManualTempoTransportConfig = {
@@ -22,6 +24,9 @@ export const useLiveDirectorManualTempoTransport = (
   const [currentTime, setCurrentTime] = useState(0);
   const [volume, setVolumeState] = useState(0.72);
   const [muted, setMuted] = useState(false);
+  const [pulseSubdivision, setPulseSubdivision] = useState<LiveDirectorManualSubdivision>(
+    config?.manualTempo.subdivision || 'quarter',
+  );
   const isPlayingRef = useRef(false);
   const elapsedSecondsRef = useRef(0);
   const startedAtRef = useRef(0);
@@ -29,6 +34,9 @@ export const useLiveDirectorManualTempoTransport = (
   const volumeRef = useRef(volume);
   const mutedRef = useRef(muted);
   const masterVolumeRef = useRef(0.82);
+  const pulseSubdivisionRef = useRef<LiveDirectorManualSubdivision>(
+    config?.manualTempo.subdivision || 'quarter',
+  );
 
   const effectiveVolume = useCallback(() => (
     mutedRef.current ? 0 : clamp(volumeRef.current) * clamp(masterVolumeRef.current)
@@ -63,7 +71,7 @@ export const useLiveDirectorManualTempoTransport = (
     return {
       tempo: Math.max(30, Math.min(300, Math.round(Number(config.bpm) || 120))),
       beatsPerMeasure: Math.max(1, Math.round(config.manualTempo.meter.numerator || 4)),
-      subdivision: getManualSubdivisionFactor(config.manualTempo.subdivision),
+      subdivision: getManualSubdivisionFactor(pulseSubdivisionRef.current),
       accentFirstBeat: true,
       outputRoute: 'left' as const,
       volume: effectiveVolume(),
@@ -147,6 +155,21 @@ export const useLiveDirectorManualTempoTransport = (
     metronomeService.updateSettings({ volume: effectiveVolume() });
   }, [effectiveVolume]);
 
+  const togglePulseSubdivision = useCallback(() => {
+    if (!config) return;
+
+    const nextSubdivision = getNextManualPulseSubdivision(pulseSubdivisionRef.current);
+    pulseSubdivisionRef.current = nextSubdivision;
+    setPulseSubdivision(nextSubdivision);
+
+    if (isPlayingRef.current) {
+      metronomeService.updateSettings({
+        subdivision: getManualSubdivisionFactor(nextSubdivision),
+        resetCycle: true,
+      });
+    }
+  }, [config]);
+
   useEffect(() => {
     volumeRef.current = volume;
   }, [volume]);
@@ -156,6 +179,9 @@ export const useLiveDirectorManualTempoTransport = (
   }, [muted]);
 
   useEffect(() => {
+    const configuredSubdivision = config?.manualTempo.subdivision || 'quarter';
+    pulseSubdivisionRef.current = configuredSubdivision;
+    setPulseSubdivision(configuredSubdivision);
     stop();
   }, [
     config?.songId,
@@ -177,10 +203,13 @@ export const useLiveDirectorManualTempoTransport = (
     muted,
     pause,
     play,
+    pulseMultiplier: getManualSubdivisionFactor(pulseSubdivision),
+    pulseSubdivision,
     seekTo,
     setMasterVolume,
     setVolume,
     stop,
+    togglePulseSubdivision,
     toggleMute,
     volume,
   };
