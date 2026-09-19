@@ -6,6 +6,7 @@ import guitarElectricIcon from '@iconify-icons/mdi/guitar-electric';
 import pianoIcon from '@iconify-icons/mdi/piano';
 import drumIcon from '@iconify-icons/mdi/music-circle';
 import violinIcon from '@iconify-icons/mdi/violin';
+import fluteIcon from '../../lib/flute-icon.js';
 import speakerIcon from '@iconify-icons/mdi/speaker';
 import scriptTextIcon from '@iconify-icons/mdi/script-text';
 import musicNoteIcon from '@iconify-icons/mdi/music-note';
@@ -21,10 +22,10 @@ import {
     normalizeRehearsalWeekday,
     resolveEventRehearsalDate,
 } from '../../lib/event-rehearsal.js';
-import { isSinFiltrosEvent } from '../../lib/ministry-config.js';
+import { formatClockLabel, isSinFiltrosEvent } from '../../lib/ministry-config.js';
 
 const MONTH_CHUNK_SIZE = 2;
-const EVENT_SELECT = 'id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, serie_id, ministerio_id, ensayo_dia_semana, ensayo_fecha_hora, ministerios(id, codigo, nombre), asignaciones(id, rol_id, perfiles(id, nombre, avatar_url, tonalidad_voz))';
+const EVENT_SELECT = 'id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, serie_id, ministerio_id, ensayo_dia_semana, ensayo_fecha_hora, ensayo_hora_fin, ministerios(id, codigo, nombre), asignaciones(id, rol_id, perfiles(id, nombre, avatar_url, tonalidad_voz))';
 const APP_TIME_ZONE = 'America/Bogota';
 const appDateTimeFormatter = new Intl.DateTimeFormat('en-US', {
     timeZone: APP_TIME_ZONE,
@@ -160,6 +161,7 @@ export default function CalendarioGrid({
         if (text.includes('piano') || text.includes('teclado')) return pianoIcon;
         if (text.includes('bateria') || text.includes('batería')) return drumIcon;
         if (text.includes('violin') || text.includes('violín')) return violinIcon;
+        if (text.includes('flauta')) return fluteIcon;
         if (text.includes('caja') || text.includes('cajon') || text.includes('cajón')) return speakerIcon;
         if (text.includes('encargado_letras') || text.includes('encargado de letras')) return scriptTextIcon;
 
@@ -408,7 +410,7 @@ export default function CalendarioGrid({
             : formatEventRehearsalLabel({ eventDate, rehearsalWeekday: currentDay, rehearsalDateTime });
         const explicitRehearsalDate = rehearsalDateTime ? new Date(rehearsalDateTime) : null;
         const currentLabel = explicitRehearsalDate && !Number.isNaN(explicitRehearsalDate.getTime())
-            ? `${rehearsalDateLabel} · ${rehearsalTimeFormatter.format(explicitRehearsalDate)}`
+            ? `${rehearsalDateLabel} · ${rehearsalTimeFormatter.format(explicitRehearsalDate)}${cardData.dbData.ensayo_hora_fin ? `–${formatClockLabel(cardData.dbData.ensayo_hora_fin)}` : ''}`
             : rehearsalDateLabel;
 
         return (

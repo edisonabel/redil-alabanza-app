@@ -11,6 +11,7 @@ import {
   isEventRehearsalManagerRoleCode,
   isOperationalRoleCode,
   isTeamAssignableRoleCode,
+  isSelfManagedInstrumentRoleCode,
 } from '../src/lib/role-permissions.js';
 
 const expectedLeadershipRoles = [
@@ -112,6 +113,8 @@ assert.match(teamPage, /'director_musical', 'talkback', 'bateria'/);
 assert.equal(isTeamAssignableRoleCode('lider_vocal'), false);
 assert.equal(isTeamAssignableRoleCode('talkback'), false);
 assert.equal(isTeamAssignableRoleCode('audiovisuales'), true);
+assert.equal(isTeamAssignableRoleCode('flauta'), true);
+assert.equal(isSelfManagedInstrumentRoleCode('flauta'), true);
 assert.match(
   teamPage,
   /!isLeadershipPermissionRoleCode\(role\.codigo\) && !isEventVoiceRoleCode\(role\.codigo\)/,

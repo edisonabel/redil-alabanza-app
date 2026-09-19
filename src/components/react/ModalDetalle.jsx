@@ -7,6 +7,7 @@ import guitarElectricIcon from '@iconify-icons/mdi/guitar-electric';
 import pianoIcon from '@iconify-icons/mdi/piano';
 import drumIcon from '@iconify-icons/mdi/music-circle';
 import violinIcon from '@iconify-icons/mdi/violin';
+import fluteIcon from '../../lib/flute-icon.js';
 import speakerIcon from '@iconify-icons/mdi/speaker';
 import scriptTextIcon from '@iconify-icons/mdi/script-text';
 import musicNoteIcon from '@iconify-icons/mdi/music-note';
@@ -40,6 +41,7 @@ const getRoleBadgeIcon = (role) => {
     if (text.includes('piano') || text.includes('teclado')) return pianoIcon;
     if (text.includes('bateria') || text.includes('baterÃ­a')) return drumIcon;
     if (text.includes('violin') || text.includes('violÃ­n')) return violinIcon;
+    if (text.includes('flauta')) return fluteIcon;
     if (text.includes('caja') || text.includes('cajon') || text.includes('cajÃ³n')) return speakerIcon;
     if (text.includes('encargado_letras') || text.includes('encargado de letras')) return scriptTextIcon;
 

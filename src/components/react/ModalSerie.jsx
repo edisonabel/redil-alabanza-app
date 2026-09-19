@@ -4,9 +4,19 @@ import {
     formatClockLabel,
     isSinFiltrosMinistry,
     SIN_FILTROS_MINISTRY_NAME,
+    SIN_FILTROS_REHEARSAL_END_TIME,
     SIN_FILTROS_REHEARSAL_TIME,
+    SIN_FILTROS_SERVICE_END_TIME,
     SIN_FILTROS_SERVICE_TIME,
 } from '../../lib/ministry-config.js';
+
+const bogotaDateFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit',
+});
+const toBogotaDateKey = (value) => {
+    const parts = Object.fromEntries(bogotaDateFormatter.formatToParts(new Date(value)).map((part) => [part.type, part.value]));
+    return `${parts.year}-${parts.month}-${parts.day}`;
+};
 
 /** @param {{ sessionUser?: any, initialMinistries?: any[] }} props */
 export default function ModalSerie({ sessionUser, initialMinistries = [] }) {
@@ -20,6 +30,8 @@ export default function ModalSerie({ sessionUser, initialMinistries = [] }) {
         dia: '0',
         horaInicio: '',
         horaFin: '',
+        ensayoInicio: SIN_FILTROS_REHEARSAL_TIME,
+        ensayoFin: SIN_FILTROS_REHEARSAL_END_TIME,
         estado: 'Publicado',
         fechaInicio: '',
         fechaLimite: '',
@@ -29,13 +41,12 @@ export default function ModalSerie({ sessionUser, initialMinistries = [] }) {
     useEffect(() => {
         window.openSerieModal = () => {
             const today = new Date();
-            // Evitar problemas timezone UTC al sacar la start date reusando un constructor timezone-safe
-            const todayStr = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+            const todayStr = toBogotaDateKey(today);
 
             setFormData(prev => ({
                 ...prev,
                 fechaInicio: todayStr,
-                fechaLimite: `${today.getFullYear()}-12-31`
+                fechaLimite: `${todayStr.slice(0, 4)}-12-31`
             }));
 
             setIsOpen(true);
@@ -75,7 +86,7 @@ export default function ModalSerie({ sessionUser, initialMinistries = [] }) {
     const handleChange = (e) => {
         let { name, value } = e.target;
         if (name === 'fechaLimite') {
-            const currentYear = new Date().getFullYear();
+            const currentYear = Number(toBogotaDateKey(new Date()).slice(0, 4));
             const selectedYear = parseInt(value.substring(0, 4), 10);
             if (selectedYear > currentYear) {
                 alert(`La fecha límite no puede pasar del año en curso (${currentYear}).`);
@@ -91,6 +102,7 @@ export default function ModalSerie({ sessionUser, initialMinistries = [] }) {
                     titulo: prev.titulo || SIN_FILTROS_MINISTRY_NAME,
                     dia: '6',
                     horaInicio: prev.horaInicio || SIN_FILTROS_SERVICE_TIME,
+                    horaFin: prev.horaFin || SIN_FILTROS_SERVICE_END_TIME,
                 }
                 : { ...prev, ministerioId: value });
             return;
@@ -107,7 +119,16 @@ export default function ModalSerie({ sessionUser, initialMinistries = [] }) {
             return;
         }
 
-        const currentYear = new Date().getFullYear();
+        const selectedMinistry = (initialMinistries || []).find((ministry) => ministry.id === formData.ministerioId);
+        const isSinFiltros = isSinFiltrosMinistry(selectedMinistry);
+        if (isSinFiltros && (!formData.horaFin || formData.horaFin <= formData.horaInicio
+            || !formData.ensayoInicio || !formData.ensayoFin
+            || formData.ensayoFin <= formData.ensayoInicio || formData.ensayoFin > formData.horaInicio)) {
+            alert('Revisa los horarios: el ensayo debe terminar antes del culto y cada fin debe ser posterior al inicio.');
+            return;
+        }
+
+        const currentYear = Number(toBogotaDateKey(new Date()).slice(0, 4));
         if (parseInt(formData.fechaLimite.substring(0, 4), 10) > currentYear) {
             alert(`La fecha límite no puede pasar del año en curso (${currentYear}).`);
             return;
@@ -116,18 +137,15 @@ export default function ModalSerie({ sessionUser, initialMinistries = [] }) {
         setIsLoading(true);
 
         try {
-            const selectedMinistry = (initialMinistries || []).find(
-                (ministry) => ministry.id === formData.ministerioId,
-            );
-            if (isSinFiltrosMinistry(selectedMinistry) && formData.dia !== '6') {
+            if (isSinFiltros && formData.dia !== '6') {
                 alert('Sin Filtros se programa los sábados.');
                 setIsLoading(false);
                 return;
             }
 
             // 1. Check for Collisions
-            const startCheck = new Date(formData.fechaInicio + 'T00:00:00Z').toISOString();
-            const endCheck = new Date(formData.fechaLimite + 'T23:59:59Z').toISOString();
+            const startCheck = new Date(`${formData.fechaInicio}T00:00:00-05:00`).toISOString();
+            const endCheck = new Date(`${formData.fechaLimite}T23:59:59-05:00`).toISOString();
 
             const { data: existingEvents, error: fetchErr } = await supabase
                 .from('eventos')
@@ -145,7 +163,7 @@ export default function ModalSerie({ sessionUser, initialMinistries = [] }) {
                 (existingEvents || []).map(ev => {
                     if (!ev.fecha_hora) return null;
                     // Extraer "YYYY-MM-DD" de manera segura local si el servidor manda ISO UTC puro.
-                    return ev.fecha_hora.split('T')[0];
+                    return toBogotaDateKey(ev.fecha_hora);
                 }).filter(Boolean)
             );
 
@@ -169,14 +187,14 @@ export default function ModalSerie({ sessionUser, initialMinistries = [] }) {
                         return;
                     }
 
-                    const localDate = new Date(`${dStr}T00:00:00`);
-                    const [h, m] = formData.horaInicio.split(':').map(Number);
-                    localDate.setHours(h, m, 0, 0);
-
                     eventos.push({
                         titulo: formData.titulo,
-                        fecha_hora: localDate.toISOString(),
+                        fecha_hora: new Date(`${dStr}T${formData.horaInicio}:00-05:00`).toISOString(),
                         hora_fin: formData.horaFin || null,
+                        ...(isSinFiltros ? {
+                            ensayo_fecha_hora: new Date(`${dStr}T${formData.ensayoInicio}:00-05:00`).toISOString(),
+                            ensayo_hora_fin: formData.ensayoFin,
+                        } : {}),
                         estado: formData.estado,
                         created_by: sessionUser?.id || null,
                         serie_id: uuidSerie,
@@ -246,7 +264,7 @@ export default function ModalSerie({ sessionUser, initialMinistries = [] }) {
                         <div className="rounded-xl border border-blue-400/25 bg-blue-500/10 px-4 py-3">
                             <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">Sin Filtros</p>
                             <p className="mt-1 text-sm text-content-muted">
-                                Culto sábado {formatClockLabel(SIN_FILTROS_SERVICE_TIME)} · Ensayo fijo {formatClockLabel(SIN_FILTROS_REHEARSAL_TIME)}
+                                Por defecto: ensayo {formatClockLabel(SIN_FILTROS_REHEARSAL_TIME)}–{formatClockLabel(SIN_FILTROS_REHEARSAL_END_TIME)} · culto {formatClockLabel(SIN_FILTROS_SERVICE_TIME)}–{formatClockLabel(SIN_FILTROS_SERVICE_END_TIME)}
                             </p>
                         </div>
                     )}
@@ -270,6 +288,17 @@ export default function ModalSerie({ sessionUser, initialMinistries = [] }) {
                         </div>
                     </div>
 
+                    {isSinFiltrosMinistry((initialMinistries || []).find((ministry) => ministry.id === formData.ministerioId)) && (
+                        <details className="rounded-xl border border-blue-400/25 bg-blue-500/10 px-4 py-3">
+                            <summary className="cursor-pointer text-sm font-bold text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">Ajustar horario del ensayo · {formatClockLabel(formData.ensayoInicio)}–{formatClockLabel(formData.ensayoFin)}</summary>
+                            <p className="mt-2 text-xs text-content-muted">Se aplicará a todos los sábados de esta serie.</p>
+                            <div className="mt-3 grid grid-cols-2 gap-3">
+                                <label className="text-xs font-bold text-content-muted">Inicio<input type="time" name="ensayoInicio" value={formData.ensayoInicio} onChange={handleChange} className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-3 text-base text-content focus:border-brand focus:outline-none" /></label>
+                                <label className="text-xs font-bold text-content-muted">Fin<input type="time" name="ensayoFin" value={formData.ensayoFin} onChange={handleChange} className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-3 text-base text-content focus:border-brand focus:outline-none" /></label>
+                            </div>
+                        </details>
+                    )}
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">Hora Fin <span className="text-content-muted font-normal lowercase">(opc)</span></label>
@@ -291,7 +320,7 @@ export default function ModalSerie({ sessionUser, initialMinistries = [] }) {
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-content uppercase tracking-wider mb-2">FECHA LÍMITE <span className="text-red-500">*</span></label>
-                            <input type="date" name="fechaLimite" value={formData.fechaLimite} onChange={handleChange} required max={`${new Date().getFullYear()}-12-31`} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" />
+                            <input type="date" name="fechaLimite" value={formData.fechaLimite} onChange={handleChange} required max={`${toBogotaDateKey(new Date()).slice(0, 4)}-12-31`} className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-content focus:outline-none focus:border-brand transition-colors" />
                             <p className="text-[10px] text-content-muted mt-1">Máximo: 31 de Diciembre del año en curso</p>
                         </div>
                     </div>

@@ -3,7 +3,9 @@ import { readFile } from 'node:fs/promises';
 import {
   SIN_FILTROS_MINISTRY_CODE,
   SIN_FILTROS_REHEARSAL_TIME,
+  SIN_FILTROS_REHEARSAL_END_TIME,
   SIN_FILTROS_SERVICE_TIME,
+  SIN_FILTROS_SERVICE_END_TIME,
   SIN_FILTROS_SERVICE_WEEKDAY,
   VOCAL_RANGE_OPTIONS,
 } from '../src/lib/ministry-config.js';
@@ -11,14 +13,17 @@ import { isPublicRegistrationRoleCode } from '../src/lib/public-registration.js'
 
 assert.equal(SIN_FILTROS_MINISTRY_CODE, 'sin_filtros');
 assert.equal(SIN_FILTROS_SERVICE_WEEKDAY, 6);
-assert.equal(SIN_FILTROS_SERVICE_TIME, '17:30');
-assert.equal(SIN_FILTROS_REHEARSAL_TIME, '16:30');
+assert.equal(SIN_FILTROS_SERVICE_TIME, '18:30');
+assert.equal(SIN_FILTROS_SERVICE_END_TIME, '19:30');
+assert.equal(SIN_FILTROS_REHEARSAL_TIME, '16:00');
+assert.equal(SIN_FILTROS_REHEARSAL_END_TIME, '17:00');
 assert.deepEqual(
   VOCAL_RANGE_OPTIONS.map((option) => option.value),
   ['Soprano', 'Mezzosoprano', 'Contralto', 'Tenor', 'Barítono', 'Bajo'],
 );
 
 assert.equal(isPublicRegistrationRoleCode('bateria'), true);
+assert.equal(isPublicRegistrationRoleCode('flauta'), true);
 assert.equal(isPublicRegistrationRoleCode('lider_alabanza'), false);
 assert.equal(isPublicRegistrationRoleCode('director_musical'), false);
 assert.equal(isPublicRegistrationRoleCode('voz_soprano'), false);
@@ -48,6 +53,16 @@ assert.match(scheduleMigration, /CREATE OR REPLACE FUNCTION public\.set_sin_filt
 assert.match(scheduleMigration, /TIME '16:30'/);
 assert.match(scheduleMigration, /m\.codigo = 'sin_filtros'/);
 assert.doesNotMatch(scheduleMigration, /SET fecha_hora/);
+
+const flexibleScheduleMigration = await readFile(
+  new URL('../migrations/050_flute_and_flexible_sin_filtros_schedule.sql', import.meta.url),
+  'utf8',
+);
+assert.match(flexibleScheduleMigration, /'flauta', 'Flauta'/);
+assert.match(flexibleScheduleMigration, /ADD COLUMN IF NOT EXISTS ensayo_hora_fin time/);
+assert.match(flexibleScheduleMigration, /NEW\.ensayo_fecha_hora IS NOT DISTINCT FROM OLD\.ensayo_fecha_hora/);
+assert.match(flexibleScheduleMigration, /TIME '16:00'/);
+assert.match(flexibleScheduleMigration, /TIME '17:00'/);
 
 const crossMembershipMigration = await readFile(
   new URL('../migrations/037_cross_ministry_memberships.sql', import.meta.url),

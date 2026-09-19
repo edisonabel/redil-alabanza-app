@@ -8,6 +8,7 @@ import {
   resolveEventRehearsalDateKey,
 } from './event-rehearsal.js';
 import { isPredicadorColumnMissingError, withPredicadorFallbackRows } from './predicador-compat.js';
+import { formatClockLabel } from './ministry-config.js';
 
 const BOGOTA_TIMEZONE = 'America/Bogota';
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -163,7 +164,7 @@ const buildReminderContent = ({
   const hasExplicitRehearsal = explicitRehearsalDate && !Number.isNaN(explicitRehearsalDate.getTime());
   const serviceDate = event?.fecha_hora ? new Date(event.fecha_hora) : null;
   const explicitRehearsalSchedule = hasExplicitRehearsal
-    ? `Equipo completo: ${localTimeFormatter.format(explicitRehearsalDate)}\nCulto: ${serviceDate && !Number.isNaN(serviceDate.getTime()) ? localTimeFormatter.format(serviceDate) : '7:00 p. m.'}`
+    ? `Equipo completo: ${localTimeFormatter.format(explicitRehearsalDate)}${event?.ensayo_hora_fin ? `–${formatClockLabel(event.ensayo_hora_fin)}` : ''}\nCulto: ${serviceDate && !Number.isNaN(serviceDate.getTime()) ? localTimeFormatter.format(serviceDate) : '7:00 p. m.'}${event?.hora_fin ? `–${formatClockLabel(event.hora_fin)}` : ''}`
     : '';
 
   switch (reminderKey) {
@@ -319,8 +320,8 @@ const fetchUpcomingEvents = async ({ serviceRoleClient, referenceDate, onlyEvent
     let query = serviceRoleClient
       .from('eventos')
       .select(includePredicador
-        ? 'id, titulo, tema_predicacion, predicador, fecha_hora, hora_fin, estado, ensayo_dia_semana, ensayo_fecha_hora, ministerio_id, ministerios(codigo,nombre)'
-        : 'id, titulo, tema_predicacion, fecha_hora, hora_fin, estado, ensayo_dia_semana, ensayo_fecha_hora, ministerio_id, ministerios(codigo,nombre)');
+        ? 'id, titulo, tema_predicacion, predicador, fecha_hora, hora_fin, estado, ensayo_dia_semana, ensayo_fecha_hora, ensayo_hora_fin, ministerio_id, ministerios(codigo,nombre)'
+        : 'id, titulo, tema_predicacion, fecha_hora, hora_fin, estado, ensayo_dia_semana, ensayo_fecha_hora, ensayo_hora_fin, ministerio_id, ministerios(codigo,nombre)');
 
     if (onlyEventId) {
       return query

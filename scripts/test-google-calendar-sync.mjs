@@ -120,6 +120,21 @@ const noRehearsalPayload = buildGoogleCalendarRehearsalPayload({
 });
 assert.equal(noRehearsalPayload, null);
 
+const movedSinFiltrosRehearsal = buildGoogleCalendarRehearsalPayload({
+  event: {
+    id: 'event-youth-2',
+    titulo: 'Sin Filtros',
+    fecha_hora: '2026-08-01T23:30:00.000Z',
+    hora_fin: '19:30',
+    ensayo_dia_semana: 6,
+    ensayo_fecha_hora: '2026-08-01T21:00:00.000Z',
+    ensayo_hora_fin: '17:00',
+  },
+  assignments: [],
+});
+assert.equal(movedSinFiltrosRehearsal.start.dateTime, '2026-08-01T21:00:00.000Z');
+assert.equal(movedSinFiltrosRehearsal.end.dateTime, '2026-08-01T22:00:00.000Z');
+
 const oauthState = createGoogleCalendarOAuthState({
   profileId: 'profile-1',
   returnPath: '/perfil',

@@ -30,9 +30,22 @@ import {
     formatClockLabel,
     isSinFiltrosMinistry,
     SIN_FILTROS_MINISTRY_NAME,
+    SIN_FILTROS_REHEARSAL_END_TIME,
     SIN_FILTROS_REHEARSAL_TIME,
+    SIN_FILTROS_SERVICE_END_TIME,
     SIN_FILTROS_SERVICE_TIME,
 } from '../../lib/ministry-config.js';
+
+const bogotaTimeFormatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
+const bogotaDateFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit',
+});
+const toBogotaTime = (value, fallback) => {
+    const date = value ? new Date(value) : null;
+    return date && !Number.isNaN(date.getTime()) ? bogotaTimeFormatter.format(date) : fallback;
+};
 
 const composeLegacyTemaPredicacion = (temaValue, predicadorValue) => {
     const temaSafe = String(temaValue || '').trim();
@@ -145,6 +158,8 @@ export default function ModalEvento({ initialMinistries = [] }) {
     const [fecha, setFecha] = useState('');
     const [horaInicio, setHoraInicio] = useState('');
     const [horaFin, setHoraFin] = useState('');
+    const [rehearsalStartTime, setRehearsalStartTime] = useState(SIN_FILTROS_REHEARSAL_TIME);
+    const [rehearsalEndTime, setRehearsalEndTime] = useState(SIN_FILTROS_REHEARSAL_END_TIME);
     const [collisionDate, setCollisionDate] = useState(null);
     const [estado, setEstado] = useState('Publicado');
     const [tema, setTema] = useState('');
@@ -202,6 +217,8 @@ export default function ModalEvento({ initialMinistries = [] }) {
                 setFecha('');
                 setHoraInicio('');
                 setHoraFin('');
+                setRehearsalStartTime(SIN_FILTROS_REHEARSAL_TIME);
+                setRehearsalEndTime(SIN_FILTROS_REHEARSAL_END_TIME);
                 setTema('');
                 setPredicador('');
                 setEstado('Publicado');
@@ -228,14 +245,14 @@ export default function ModalEvento({ initialMinistries = [] }) {
                 try {
                     const eventDateSource = data.fecha_hora || data.fecha;
                     const d = new Date(eventDateSource);
-                    const offset = d.getTimezoneOffset() * 60000;
-                    const localISOTime = (new Date(d.getTime() - offset)).toISOString().slice(0, 16);
-                    const [fDate, fTime] = localISOTime.split('T');
-                    setFecha(fDate);
-                    setHoraInicio(fTime);
+                    const parts = Object.fromEntries(bogotaDateFormatter.formatToParts(d).map((part) => [part.type, part.value]));
+                    setFecha(`${parts.year}-${parts.month}-${parts.day}`);
+                    setHoraInicio(toBogotaTime(d, ''));
                 } catch (e) { }
 
-                setHoraFin(data.hora_fin || '');
+                setHoraFin((data.hora_fin || '').slice(0, 5));
+                setRehearsalStartTime(toBogotaTime(data.dbData?.ensayo_fecha_hora, SIN_FILTROS_REHEARSAL_TIME));
+                setRehearsalEndTime((data.dbData?.ensayo_hora_fin || SIN_FILTROS_REHEARSAL_END_TIME).slice(0, 5));
                 const rawTema =
                     typeof data.tema === 'string' && data.tema !== 'undefined' && data.tema !== 'null'
                         ? data.tema
@@ -375,6 +392,12 @@ export default function ModalEvento({ initialMinistries = [] }) {
             alert('Sin Filtros se programa los sábados. Selecciona una fecha de sábado.');
             return;
         }
+        if (isSinFiltros && !isStrictModerator && (!horaFin || horaFin <= horaInicio || !rehearsalStartTime
+            || !rehearsalEndTime || rehearsalEndTime <= rehearsalStartTime
+            || rehearsalEndTime > horaInicio)) {
+            alert('Revisa los horarios: cada fin debe ser posterior al inicio y el ensayo debe terminar antes del culto.');
+            return;
+        }
 
         const shouldManageRehearsal = (
             mode === 'edit'
@@ -401,8 +424,8 @@ export default function ModalEvento({ initialMinistries = [] }) {
 
             // 1. Check for collisions (if Date was changed or making a new Event)
             // Solo probamos para ese dÃ­a entero.
-            const startCheck = new Date(fecha + 'T00:00:00Z').toISOString();
-            const endCheck = new Date(fecha + 'T23:59:59Z').toISOString();
+            const startCheck = new Date(`${fecha}T00:00:00-05:00`).toISOString();
+            const endCheck = new Date(`${fecha}T23:59:59-05:00`).toISOString();
 
             let query = supabase.from('eventos').select('id, fecha_hora').gte('fecha_hora', startCheck).lte('fecha_hora', endCheck);
             // Ignorar el actual si es ediciÃ³n de un existente de BDD y no un virtual insert
@@ -424,10 +447,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
             }
 
             // 2. Assembler Time Payload
-            const localDate = new Date(`${fecha}T00:00:00`);
-            const [h, m] = horaInicio.split(':').map(Number);
-            localDate.setHours(h, m, 0, 0);
-            const isoPayload = localDate.toISOString();
+            const isoPayload = new Date(`${fecha}T${horaInicio}:00-05:00`).toISOString();
             const legacyTemaPredicacion = composeLegacyTemaPredicacion(tema, predicador);
 
             const buildEventWritePayload = (includePredicador = true) => {
@@ -440,6 +460,11 @@ export default function ModalEvento({ initialMinistries = [] }) {
                     es_acustico: esAcustico,
                     ministerio_id: ministryId || null,
                 };
+
+                if (isSinFiltros && !isStrictModerator) {
+                    payload.ensayo_fecha_hora = new Date(`${fecha}T${rehearsalStartTime}:00-05:00`).toISOString();
+                    payload.ensayo_hora_fin = rehearsalEndTime;
+                }
 
                 if (includePredicador) {
                     payload.predicador = predicador || null;
@@ -647,6 +672,12 @@ export default function ModalEvento({ initialMinistries = [] }) {
         );
         if (isSinFiltrosMinistry(ministry) && !isSaturdayDate(fecha)) {
             setWizardError('Sin Filtros se programa los sábados. Elige una fecha de sábado.');
+            return false;
+        }
+        if (isSinFiltrosMinistry(ministry) && (!horaFin || horaFin <= horaInicio || !rehearsalStartTime
+            || !rehearsalEndTime || rehearsalEndTime <= rehearsalStartTime
+            || rehearsalEndTime > horaInicio)) {
+            setWizardError('Ajusta los horarios: el ensayo debe terminar antes del culto y cada fin debe ser posterior al inicio.');
             return false;
         }
 
@@ -901,6 +932,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                                 if (isSinFiltrosMinistry(nextMinistry)) {
                                                     if (!titulo.trim()) setTitulo(SIN_FILTROS_MINISTRY_NAME);
                                                     if (!horaInicio) setHoraInicio(SIN_FILTROS_SERVICE_TIME);
+                                                    if (!horaFin) setHoraFin(SIN_FILTROS_SERVICE_END_TIME);
                                                 }
                                             }}
                                             className="mt-2 h-12 w-full appearance-none rounded-xl border border-border bg-surface px-4 text-base text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
@@ -922,6 +954,21 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                             className="mt-2 h-12 w-full min-w-0 rounded-xl border border-border bg-surface px-4 text-base text-content outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                                         />
                                     </label>
+                                    {isSinFiltros ? (
+                                        <details className="min-w-0 rounded-2xl border border-blue-400/25 bg-blue-500/10 px-4 py-3 sm:col-span-2">
+                                            <summary className="cursor-pointer text-sm font-bold text-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand">
+                                                <span className="block">Horarios del sábado</span>
+                                                <span className="mt-1 block text-xs font-medium text-content-muted">Ensayo {formatClockLabel(rehearsalStartTime)}–{formatClockLabel(rehearsalEndTime)} · Culto {formatClockLabel(horaInicio)}–{formatClockLabel(horaFin)}</span>
+                                            </summary>
+                                            <p className="mt-2 text-xs text-content-muted">Estos horarios se proponen por defecto. Puedes cambiarlos para este culto.</p>
+                                            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                                                <label className="block min-w-0"><span className="text-xs font-bold text-content-muted">Ensayo · inicio</span><input type="time" value={rehearsalStartTime} onChange={(event) => setRehearsalStartTime(event.target.value)} className="mt-2 h-12 w-full min-w-0 rounded-xl border border-border bg-surface px-3 text-base text-content focus:border-brand focus:ring-2 focus:ring-brand/20" /></label>
+                                                <label className="block min-w-0"><span className="text-xs font-bold text-content-muted">Ensayo · fin</span><input type="time" value={rehearsalEndTime} onChange={(event) => setRehearsalEndTime(event.target.value)} className="mt-2 h-12 w-full min-w-0 rounded-xl border border-border bg-surface px-3 text-base text-content focus:border-brand focus:ring-2 focus:ring-brand/20" /></label>
+                                                <label className="block min-w-0"><span className="text-xs font-bold text-content-muted">Culto · inicio</span><input type="time" value={horaInicio} onChange={(event) => setHoraInicio(event.target.value)} className="mt-2 h-12 w-full min-w-0 rounded-xl border border-border bg-surface px-3 text-base text-content focus:border-brand focus:ring-2 focus:ring-brand/20" /></label>
+                                                <label className="block min-w-0"><span className="text-xs font-bold text-content-muted">Culto · fin</span><input type="time" value={horaFin} onChange={(event) => setHoraFin(event.target.value)} className="mt-2 h-12 w-full min-w-0 rounded-xl border border-border bg-surface px-3 text-base text-content focus:border-brand focus:ring-2 focus:ring-brand/20" /></label>
+                                            </div>
+                                        </details>
+                                    ) : (
                                     <div className="grid min-w-0 grid-cols-2 gap-3">
                                         <label className="block min-w-0">
                                             <span className="text-xs font-black uppercase tracking-[0.14em] text-content-muted">Hora *</span>
@@ -945,6 +992,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                             />
                                         </label>
                                     </div>
+                                    )}
                                 </div>
                             </section>
                         )}
@@ -1002,11 +1050,11 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                     {isSinFiltros && (
                                         <div className="flex min-h-14 items-center justify-between gap-4 rounded-2xl border border-blue-400/25 bg-blue-500/10 px-4 py-3">
                                             <div>
-                                                <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">Ensayo fijo · Sin Filtros</p>
-                                                <p className="mt-1 text-sm text-content-muted">El mismo sábado antes del culto.</p>
+                                                <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">Ensayo · Sin Filtros</p>
+                                                <p className="mt-1 text-sm text-content-muted">El mismo sábado antes del culto. El horario se ajusta en Servicio.</p>
                                             </div>
                                             <span className="shrink-0 rounded-full border border-blue-400/25 bg-surface px-3 py-1.5 text-sm font-black text-content">
-                                                {formatClockLabel(SIN_FILTROS_REHEARSAL_TIME)}
+                                                {formatClockLabel(rehearsalStartTime)}–{formatClockLabel(rehearsalEndTime)}
                                             </span>
                                         </div>
                                     )}
@@ -1293,7 +1341,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                                     <dt className="text-xs font-bold text-content-muted">Ensayo</dt>
                                                     <dd className="text-sm font-semibold text-content">
                                                         {isSinFiltros
-                                                            ? `El mismo sábado · ${formatClockLabel(SIN_FILTROS_REHEARSAL_TIME)}`
+                                                            ? `El mismo sábado · ${formatClockLabel(rehearsalStartTime)}–${formatClockLabel(rehearsalEndTime)}`
                                                             : rehearsalWeekday === null
                                                                 ? 'Sin ensayo'
                                                                 : formatEventRehearsalLabel({ eventDate: rehearsalEventDate, rehearsalWeekday })}

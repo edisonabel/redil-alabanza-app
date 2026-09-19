@@ -67,7 +67,7 @@ if (ssrUser) {
   const eventosPromise = (() => {
     let query = supabaseSSR
       .from('eventos')
-      .select('id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, serie_id, ministerio_id, ensayo_dia_semana, ensayo_fecha_hora, ministerios(id, codigo, nombre), asignaciones(id, rol_id, perfiles(id, nombre, avatar_url, tonalidad_voz))')
+      .select('id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, serie_id, ministerio_id, ensayo_dia_semana, ensayo_fecha_hora, ensayo_hora_fin, ministerios(id, codigo, nombre), asignaciones(id, rol_id, perfiles(id, nombre, avatar_url, tonalidad_voz))')
       .gte('fecha_hora', initialFetchFloor.toISOString())
       .lte('fecha_hora', initialFetchLimit.toISOString())
       .order('fecha_hora', { ascending: true });

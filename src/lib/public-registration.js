@@ -2,6 +2,7 @@ const PUBLIC_REGISTRATION_ROLE_CODES = new Set([
   'bateria',
   'bajo',
   'piano',
+  'flauta',
   'guitarra_acustica',
   'guitarra_electrica',
   'violin',

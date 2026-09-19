@@ -547,10 +547,13 @@ export const buildGoogleCalendarRehearsalPayload = ({ event, assignments, siteOr
   if (!start) return null;
 
   const serviceStart = new Date(event?.fecha_hora);
+  const legacyExplicitEnd = serviceStart.getTime() > start.getTime()
+    ? serviceStart
+    : new Date(start.getTime() + (2 * 60 * 60 * 1000));
   const end = hasExplicitRehearsal
-    ? (serviceStart.getTime() > start.getTime()
-      ? serviceStart
-      : new Date(start.getTime() + (2 * 60 * 60 * 1000)))
+    ? (event?.ensayo_hora_fin
+      ? resolveEventEnd(start, event.ensayo_hora_fin)
+      : legacyExplicitEnd)
     : resolveEventRehearsalDate({
       eventDate: event?.fecha_hora,
       rehearsalWeekday: event?.ensayo_dia_semana,
@@ -662,7 +665,7 @@ export const syncGoogleCalendarEventForProfile = async ({ profileId, eventId, fe
   const [{ data: event, error: eventError }, { data: links, error: linksError }] = await Promise.all([
     client
       .from('eventos')
-      .select('id, titulo, fecha_hora, hora_fin, estado, ensayo_dia_semana, ensayo_fecha_hora, ministerio_id, ministerios(codigo, nombre), asignaciones(id, perfil_id, rol_id, roles(nombre, codigo))')
+      .select('id, titulo, fecha_hora, hora_fin, estado, ensayo_dia_semana, ensayo_fecha_hora, ensayo_hora_fin, ministerio_id, ministerios(codigo, nombre), asignaciones(id, perfil_id, rol_id, roles(nombre, codigo))')
       .eq('id', eventId)
       .maybeSingle(),
     client
