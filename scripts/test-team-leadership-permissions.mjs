@@ -9,6 +9,7 @@ import {
   isLeadershipRoleCode,
   isDirectionLeadershipRoleCode,
   isEventRehearsalManagerRoleCode,
+  isMinistryLeadershipRoleCode,
   isOperationalRoleCode,
   isTeamAssignableRoleCode,
   isSelfManagedInstrumentRoleCode,
@@ -18,9 +19,9 @@ const expectedLeadershipRoles = [
   'lider_alabanza',
   'lider_vocal',
   'talkback',
+  'gestor_secuencias',
 ];
 const expectedOperationalRoles = [
-  'gestor_secuencias',
   'encargado_letras',
   'audiovisuales',
   'pastor',
@@ -57,6 +58,9 @@ assert.equal(isDirectionLeadershipRoleCode('talkback'), true);
 assert.equal(isDirectionLeadershipRoleCode('director_musical'), true);
 assert.equal(isEventRehearsalManagerRoleCode('talkback'), true);
 assert.equal(isEventRehearsalManagerRoleCode('director_musical'), true);
+assert.equal(isMinistryLeadershipRoleCode('gestor_secuencias'), false);
+assert.equal(isMinistryLeadershipRoleCode('lider_alabanza'), true);
+assert.equal(isMinistryLeadershipRoleCode('talkback'), true);
 
 for (const roleCode of expectedOperationalRoles) {
   assert.equal(isOperationalRoleCode(roleCode), true, `${roleCode} debe ser un rol operativo.`);
@@ -103,7 +107,8 @@ assert.match(
   /modalOperationalRolesContainer\.querySelectorAll<HTMLInputElement>\('input\[data-rol\]'\)/,
   'El guardado debe incluir los roles operativos.',
 );
-assert.match(teamPage, /if \(!leadsAnyMinistry\) input\.checked = false/);
+assert.match(teamPage, /isMinistryLeadershipRoleCode\(input\.dataset\.roleCode\) && !leadsAnyMinistry/);
+assert.match(teamPage, /if \(disabled\) input\.checked = false/);
 assert.match(teamPage, /modalLeadershipRoleSection\?\.classList\.toggle\('hidden', !canConfigureLeadershipRoles\)/);
 assert.doesNotMatch(teamPage, /if \(isWorshipLeader && leadsAnyMinistry\) input\.checked = true/);
 assert.doesNotMatch(teamPage, /worshipLeaderRole/);

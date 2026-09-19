@@ -24,8 +24,10 @@ export async function requestLiveDirectorUploadTarget(params: {
   fileType?: string;
   kind: 'playback' | 'stems';
 }): Promise<LiveDirectorUploadTarget> {
-  const response = await fetch('/api/live-director-upload-url', {
+  const response = await fetchWithSessionRetry('/api/live-director-upload-url', {
     method: 'POST',
+    credentials: 'same-origin',
+    cache: 'no-store',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
@@ -173,14 +175,20 @@ export async function fetchLiveDirectorSongSession(
   songId: string,
 ): Promise<LiveDirectorPersistedSession | null> {
   const params = new URLSearchParams({ songId });
-  const response = await fetch(`/api/live-director-song-session?${params.toString()}`);
+  const response = await fetchWithSessionRetry(`/api/live-director-song-session?${params.toString()}`, {
+    credentials: 'same-origin',
+    cache: 'no-store',
+  });
   const payload = await readJsonResponse(response);
 
   return payload?.session || null;
 }
 
 export async function fetchLiveDirectorUploadPermission(): Promise<boolean> {
-  const response = await fetch('/api/live-director-upload-permission');
+  const response = await fetchWithSessionRetry('/api/live-director-upload-permission', {
+    credentials: 'same-origin',
+    cache: 'no-store',
+  });
   if (!response.ok) {
     return false;
   }
@@ -190,8 +198,10 @@ export async function fetchLiveDirectorUploadPermission(): Promise<boolean> {
 }
 
 export async function deleteLiveDirectorSongSession(songId: string): Promise<void> {
-  const response = await fetch('/api/live-director-song-session', {
+  const response = await fetchWithSessionRetry('/api/live-director-song-session', {
     method: 'DELETE',
+    credentials: 'same-origin',
+    cache: 'no-store',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ songId }),
   });
@@ -203,8 +213,10 @@ export async function deleteLiveDirectorSongTrack(params: {
   songId: string;
   trackId: string;
 }): Promise<LiveDirectorPersistedSession | null> {
-  const response = await fetch('/api/live-director-song-session', {
+  const response = await fetchWithSessionRetry('/api/live-director-song-session', {
     method: 'DELETE',
+    credentials: 'same-origin',
+    cache: 'no-store',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });

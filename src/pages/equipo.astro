@@ -178,13 +178,13 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
  <section id="wizard-step-leadership" class="team-wizard-step" data-wizard-panel="1" data-state="after" role="tabpanel" aria-hidden="true">
  <div class="team-wizard-step-heading">
  <p>Paso 2</p>
- <h4>Liderazgo por ministerio</h4>
- <span>Primero autoriza dónde puede liderar. Después define su función de liderazgo.</span>
+ <h4>Funciones de liderazgo</h4>
+ <span>Autoriza dónde puede liderar y asigna las funciones que correspondan.</span>
  </div>
  <div id="modal-ministry-leadership-section" class="team-wizard-leadership-section">
  <div class="team-wizard-subsection-heading">
  <strong>Dónde puede liderar</strong>
- <span>Estos controles desbloquean las opciones de liderazgo.</span>
+ <span>Actívalos para asignar dirección de alabanza o voces.</span>
  </div>
  <div class="team-wizard-options">
  <label class="team-wizard-option team-wizard-leadership-option">
@@ -213,12 +213,12 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
  </div>
  <div id="modal-leadership-locked-state" class="team-wizard-locked-state" role="status" aria-live="polite">
  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
- <span><strong>Liderazgos bloqueados</strong>Activa “Liderar los domingos” o “Liderar Sin Filtros” para continuar.</span>
+ <span><strong>Liderazgos ministeriales bloqueados</strong>Activa “Liderar los domingos” o “Liderar Sin Filtros” para asignar dirección o voces. Gestor de Secuencias sigue disponible.</span>
  </div>
  <div id="modal-leadership-role-section" class="team-wizard-leadership-section hidden" aria-hidden="true">
  <div class="team-wizard-subsection-heading">
  <strong>Función de liderazgo</strong>
- <span>Selecciona únicamente las responsabilidades de dirección que correspondan.</span>
+ <span>Asigna dirección, voces o gestión de secuencias según corresponda.</span>
  </div>
  <div class="team-wizard-options team-wizard-permission-grid" id="modal-leadership-roles-container">
  <!-- Inyección dinámica de roles de liderazgo -->
@@ -1259,9 +1259,9 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
   gap: 0.7rem;
  }
 
- .team-wizard-leadership-section + .team-wizard-leadership-section {
-  margin-top: 1.2rem;
-  padding-top: 1.1rem;
+ #modal-leadership-role-section {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
   border-top: 1px solid rgb(var(--border-base));
  }
 
@@ -1521,6 +1521,12 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
  .team-wizard-role-option:hover {
   transform: translateY(-1px);
   border-color: rgb(var(--color-brand) / 0.34);
+ }
+
+ .team-wizard-role-option:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.48;
+  transform: none;
  }
 
  .team-wizard-role-option:has(input:checked) {
@@ -1914,6 +1920,8 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
   isHiddenEventAssignmentRoleCode,
   isLeadershipPermissionRoleCode,
   isLeadershipRoleCode,
+  isLiveDirectorSequenceManagerRoleCode,
+  isMinistryLeadershipRoleCode,
   isOperationalRoleCode,
   isTeamAssignableRoleCode,
  } from '../lib/role-permissions.js';
@@ -1970,7 +1978,7 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
   lider_alabanza: 'Dirige la alabanza y gestiona repertorio, ensayos y voces.',
   lider_vocal: 'Gestiona la asignación de voces del equipo.',
   talkback: 'Talkback y Dirección Musical son una misma función de liderazgo.',
-  gestor_secuencias: 'Administra las secuencias de Live Director.',
+  gestor_secuencias: 'Puede cargar, reemplazar y borrar secuencias de Live Director.',
   encargado_letras: 'Responsable de letras y notas del servicio.',
   audiovisuales: 'Puede editar el tema y apoyar la producción.',
   pastor: 'Puede editar el tema y el predicador del servicio.',
@@ -2751,17 +2759,22 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
   }
 
   const leadsAnyMinistry = modalGeneralLeader.checked || modalSinFiltrosLeader.checked;
-  const canConfigureLeadershipRoles = canEditTeamRoles && leadsAnyMinistry;
+  const leadershipInputs = Array.from(
+   modalLeadershipRolesContainer.querySelectorAll<HTMLInputElement>('input[data-rol]')
+  );
+  const hasSequenceManagerOption = leadershipInputs.some((input) => (
+   isLiveDirectorSequenceManagerRoleCode(input.dataset.roleCode)
+  ));
+  const canConfigureLeadershipRoles = canEditTeamRoles && (leadsAnyMinistry || hasSequenceManagerOption);
   modalLeadershipRoleSection?.classList.toggle('hidden', !canConfigureLeadershipRoles);
   modalLeadershipRoleSection?.setAttribute('aria-hidden', canConfigureLeadershipRoles ? 'false' : 'true');
   modalLeadershipLockedState?.classList.toggle('hidden', !canEditTeamRoles || leadsAnyMinistry);
 
-  modalLeadershipRolesContainer
-   .querySelectorAll<HTMLInputElement>('input[data-rol]')
-   .forEach((input) => {
-    if (!leadsAnyMinistry) input.checked = false;
-    input.disabled = !leadsAnyMinistry;
-   });
+  leadershipInputs.forEach((input) => {
+   const disabled = isMinistryLeadershipRoleCode(input.dataset.roleCode) && !leadsAnyMinistry;
+   if (disabled) input.checked = false;
+   input.disabled = disabled;
+  });
  };
 
  const syncVocalRangeAvailability = () => {

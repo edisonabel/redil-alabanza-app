@@ -21,18 +21,18 @@ export const VOICE_ASSIGNMENT_MANAGER_ROLE_CODES = new Set([
 export const VOCAL_LEADER_ROLE_CODE = 'lider_vocal';
 export const LIVE_DIRECTOR_SEQUENCE_MANAGER_ROLE_CODE = 'gestor_secuencias';
 
-// Liderazgos reales: solo se habilitan despues de autorizar a la persona para
-// liderar al menos uno de sus ministerios.
+// Funciones visibles en Liderazgo. La gestion de secuencias no requiere
+// permiso para liderar un ministerio.
 export const LEADERSHIP_ROLE_CODE_ORDER = Object.freeze([
   'lider_alabanza',
   'lider_vocal',
   'talkback',
+  LIVE_DIRECTOR_SEQUENCE_MANAGER_ROLE_CODE,
 ]);
 
 // Responsabilidades operativas: no convierten a la persona en lider y se
 // administran junto a los demas roles del equipo.
 export const OPERATIONAL_ROLE_CODE_ORDER = Object.freeze([
-  LIVE_DIRECTOR_SEQUENCE_MANAGER_ROLE_CODE,
   'encargado_letras',
   'audiovisuales',
   'pastor',
@@ -118,6 +118,9 @@ export const isLiveDirectorSequenceManagerRoleCode = (value) =>
 
 export const isLeadershipRoleCode = (value) =>
   LEADERSHIP_ROLE_CODES.has(normalizeRoleCode(value));
+
+export const isMinistryLeadershipRoleCode = (value) =>
+  isLeadershipRoleCode(value) && !isLiveDirectorSequenceManagerRoleCode(value);
 
 export const isDirectionLeadershipRoleCode = (value) =>
   DIRECTION_LEADERSHIP_ROLE_CODES.has(normalizeRoleCode(value));

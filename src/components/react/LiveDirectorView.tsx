@@ -45,6 +45,7 @@ import type {
   LiveDirectorSectionVisual,
 } from '../../utils/liveDirectorSongSession';
 import { applyLiveDirectorSectionOffset } from '../../utils/liveDirectorSongSession';
+import { canOpenLiveDirectorSongLoader } from '../../utils/liveDirectorLoadAccess';
 import {
   sampleActivityEnvelope,
 } from '../../utils/audioActivityEnvelope';
@@ -612,10 +613,12 @@ export function LiveDirectorView({
   const hasProvidedTracks = Boolean(tracks && tracks.length > 0);
   const hasPersistedSongContext = Boolean(songId);
   const isSongBoundView = requiresSongContext || hasPersistedSongContext;
-  const canLoadManualSession =
-    !isManualTempoMode
-    && !hasProvidedTracks
-    && (!requiresSongContext || hasPersistedSongContext);
+  const canLoadManualSession = canOpenLiveDirectorSongLoader({
+    isManualTempoMode,
+    hasPersistedSongContext,
+    hasProvidedTracks,
+    requiresSongContext,
+  });
   const usesEventMixPersistence = mode === 'ensayo' && Boolean(onEventMixChange);
   const sequenceFileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
