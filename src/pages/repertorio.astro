@@ -22,6 +22,7 @@ try {
       bpm,
       categoria,
       estado,
+      repertorio,
       tema,
       voz,
       chordpro,
@@ -47,6 +48,16 @@ try {
 }
 
 const selectionEventId = String(Astro.url.searchParams.get('seleccionar_para') || '').trim();
+const { data: canAccessSinFiltros } = await supabaseSSR.rpc('can_access_sin_filtros_repertoire');
+let showSinFiltrosLibrary = canAccessSinFiltros === true;
+if (selectionEventId) {
+  const { data: selectedEvent } = await supabaseSSR.from('eventos').select('ministerios(codigo)').eq('id', selectionEventId).maybeSingle();
+  const ministry = Array.isArray(selectedEvent?.ministerios) ? selectedEvent.ministerios[0] : selectedEvent?.ministerios;
+  showSinFiltrosLibrary = showSinFiltrosLibrary && ministry?.codigo === 'sin_filtros';
+}
+if (!showSinFiltrosLibrary) canciones = canciones.filter((song) => song.repertorio !== 'sin_filtros');
+const initialLibrary = showSinFiltrosLibrary && Astro.url.searchParams.get('biblioteca') === 'sin_filtros' ? 'sin_filtros' : 'general';
+const canUploadSinFiltros = canAccessSinFiltros === true && (Astro.locals.perfil?.is_admin || Astro.locals.canManageOperations);
 let initialPlaylistSongIds: string[] = [];
 if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(selectionEventId)) {
   try {
@@ -115,6 +126,16 @@ const firstTourResourcesId =
   </div>
   </header>
 
+ <section id="songLibraryAccess" data-library={initialLibrary} class="max-w-7xl mx-auto mb-3 flex flex-wrap items-center justify-between gap-3 px-1" aria-label="Bibliotecas de canciones">
+  {showSinFiltrosLibrary && <div class="inline-flex rounded-xl border border-border bg-surface p-1" role="group" aria-label="Elegir repertorio">
+   <button type="button" data-library-choice="general" aria-pressed={initialLibrary === 'general'} class="library-choice min-h-11 rounded-lg px-4 text-sm font-semibold text-content">General</button>
+   <button type="button" data-library-choice="sin_filtros" aria-pressed={initialLibrary === 'sin_filtros'} class="library-choice min-h-11 rounded-lg px-4 text-sm font-semibold text-content">Sin Filtros</button>
+  </div>}
+  {canUploadSinFiltros && <a href="/admin/sin-filtros" class="inline-flex min-h-11 items-center gap-2 rounded-xl border border-brand/25 bg-brand/10 px-3 text-sm font-semibold text-content transition-colors hover:bg-brand/20">
+   <span aria-hidden="true" class="text-brand">＋</span> Cargar canciones de Sin Filtros
+  </a>}
+  {showSinFiltrosLibrary && <p id="songLibraryDescription" class="w-full text-sm text-content-muted">{initialLibrary === 'sin_filtros' ? 'Canciones exclusivas para los servicios de Sin Filtros.' : 'Repertorio de la iglesia, disponible también para Sin Filtros.'}</p>}
+ </section>
  <!-- UI Controles -->
  <section id="searchControls" data-tour="repertorio-search" class="repertoire-search-bar sticky z-40 max-w-7xl mx-auto mb-3 md:mb-6 bg-surface/95 backdrop-blur-xl border border-border rounded-2xl px-2.5 py-2.5 md:px-4 md:py-4 shadow-lg anim-fade-in-up anim-stagger" style="--delay: 220ms; top: max(calc(env(safe-area-inset-top) + 0.65rem), 0.75rem);">
  <div class="flex items-end gap-2 md:grid md:grid-cols-[minmax(16rem,1fr)_auto] md:gap-3">
@@ -271,6 +292,7 @@ const firstTourResourcesId =
  tema={cancion.tema || ''}
  sectionMarkers={[]}
  estado={cancion.estado || ''}
+ repertorio={cancion.repertorio || 'general'}
  oculta={index >= 15}
   tourCard={String(cancion.id) === String(firstTourCardId) ? 'repertorio-card' : undefined}
   tourAudio={String(cancion.id) === String(firstTourAudioId) ? 'repertorio-audio' : undefined}
@@ -849,6 +871,18 @@ if (sessionError) {
  // DETECCION DE MODOS DE LA PAGINA (Setlist Semanal vs Playlist vs Normal)
  // =============================================
  const urlParams = new URLSearchParams(window.location.search);
+const libraryAccess = document.getElementById('songLibraryAccess');
+let activeSongLibrary = libraryAccess?.dataset.library || 'general';
+for (const button of document.querySelectorAll<HTMLButtonElement>('[data-library-choice]')) {
+ addListener(button, 'click', () => {
+  activeSongLibrary = button.dataset.libraryChoice || 'general';
+  document.querySelectorAll<HTMLButtonElement>('[data-library-choice]').forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
+  const description = document.getElementById('songLibraryDescription');
+  if (description) description.textContent = activeSongLibrary === 'sin_filtros' ? 'Canciones exclusivas para los servicios de Sin Filtros.' : 'Repertorio de la iglesia, disponible también para Sin Filtros.';
+  filterCards();
+ });
+}
+
  const seleccionarPara = urlParams.get('seleccionar_para');
  const setlistParam = urlParams.get('setlist');
  const isSelectionMode = !!seleccionarPara;
@@ -1426,6 +1460,7 @@ function applySongOrder(songCards: Iterable<HTMLElement>) {
  const esEnsayo = urlParams.get('esEnsayo') === 'true';
  
  if (searchControls) searchControls.style.display = 'none';
+ if (libraryAccess) libraryAccess.style.display = 'none';
  if (setlistPanel) setlistPanel.style.display = 'none';
  document.body.classList.add('repertorio-shared-setlist-mode');
  if (pageSubtitle) {
@@ -1896,7 +1931,8 @@ function filterCards() {
  const matchesTema = temaTerm === 'todas' || tema.includes(temaTerm);
  const matchesEstado = estadoTerm === 'todas' || estado.includes(estadoTerm);
 
- return matchesSearch && matchesVoz && matchesCategoria && matchesTema && matchesEstado;
+ const matchesLibrary = !!setlistParam || (card.getAttribute('data-repertorio') || 'general') === activeSongLibrary;
+ return matchesLibrary && matchesSearch && matchesVoz && matchesCategoria && matchesTema && matchesEstado;
  });
 
  cancionesFiltradas = sortSongsSelectedFirst(cancionesFiltradas);
@@ -1927,6 +1963,7 @@ function filterCards() {
  }
  }
 
+ if (!setlistParam) filterCards();
  const debouncedFilterCards = debounce(filterCards, 140);
 
  // Limpiar filtros button
@@ -2012,6 +2049,8 @@ function filterCards() {
  .btn-add-setlist { transform: translateZ(0); -webkit-backface-visibility: hidden; backface-visibility: hidden; }
 
  /* GPU-accelerated containment for card grid — reduces layout/paint on scroll */
+ .library-choice[aria-pressed="true"] { background: rgb(var(--color-brand) / 0.16); color: rgb(var(--text-base)); box-shadow: 0 1px 4px rgb(0 0 0 / 0.12); }
+ .library-choice:focus-visible { outline: 2px solid rgb(var(--color-brand)); outline-offset: 2px; }
  #gridCanciones { contain: style; }
 
  .repertoire-search-bar {

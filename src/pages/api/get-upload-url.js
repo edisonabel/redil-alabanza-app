@@ -1,3 +1,5 @@
+import { createSupabaseUserClient } from '../../lib/server/supabase-user-client.js';
+import { getServerAuthTokens } from '../../lib/server/auth-cookies.js';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
@@ -95,7 +97,7 @@ export const POST = async ({ request, cookies }) => {
       if (warmupError) throw warmupError;
       if (!warmup) return jsonResponse({ error: 'El calentamiento no existe.' }, 404);
     } else {
-      const { data: song, error: songError } = await serviceRoleClient
+      const { data: song, error: songError } = await createSupabaseUserClient(getServerAuthTokens(cookies).accessToken)
         .from('canciones')
         .select('id')
         .eq('id', songId)

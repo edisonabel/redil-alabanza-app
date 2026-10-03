@@ -1,3 +1,5 @@
+import { createSupabaseUserClient } from '../../lib/server/supabase-user-client.js';
+import { getServerAuthTokens } from '../../lib/server/auth-cookies.js';
 import { createClient } from '@supabase/supabase-js';
 import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import {
@@ -197,8 +199,7 @@ const deleteSessionFiles = async (sessionRecord, r2Context, { keepUrls = [] } = 
   );
 };
 
-const fetchSongRow = async (songId) => {
-  const client = serviceRoleClient || authClient;
+const fetchSongRow = async (songId, client) => {
   const withSession = await client
     .from('canciones')
     .select('id, titulo, multitrack_session')
@@ -233,7 +234,8 @@ export const GET = async ({ request, cookies }) => {
       return jsonResponse({ error: 'Se requiere songId.' }, 400);
     }
 
-    const songRow = await fetchSongRow(songId);
+    const { accessToken } = getServerAuthTokens(cookies);
+    const songRow = await fetchSongRow(songId, createSupabaseUserClient(accessToken));
 
     if (!songRow) {
       return jsonResponse({ error: 'La cancion solicitada no existe.' }, 404);
@@ -273,7 +275,7 @@ export const POST = async ({ request, cookies }) => {
       return jsonResponse({ error: 'Se requiere songId.' }, 400);
     }
 
-    const songRow = await fetchSongRow(songId);
+    const songRow = await fetchSongRow(songId, createSupabaseUserClient(getServerAuthTokens(cookies).accessToken));
 
     if (!songRow) {
       return jsonResponse({ error: 'La cancion solicitada no existe.' }, 404);
@@ -378,7 +380,7 @@ export const PATCH = async ({ request, cookies }) => {
       return jsonResponse({ error: 'sectionOffsetSeconds debe ser un numero valido.' }, 400);
     }
 
-    const songRow = await fetchSongRow(songId);
+    const songRow = await fetchSongRow(songId, createSupabaseUserClient(getServerAuthTokens(cookies).accessToken));
     if (!songRow) {
       return jsonResponse({ error: 'La cancion solicitada no existe.' }, 404);
     }
@@ -461,7 +463,7 @@ export const DELETE = async ({ request, cookies }) => {
       return jsonResponse({ error: 'Se requiere songId.' }, 400);
     }
 
-    const songRow = await fetchSongRow(songId);
+    const songRow = await fetchSongRow(songId, createSupabaseUserClient(getServerAuthTokens(cookies).accessToken));
 
     if (!songRow) {
       return jsonResponse({ error: 'La cancion solicitada no existe.' }, 404);

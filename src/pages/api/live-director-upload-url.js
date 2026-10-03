@@ -1,3 +1,5 @@
+import { createSupabaseUserClient } from '../../lib/server/supabase-user-client.js';
+import { getServerAuthTokens } from '../../lib/server/auth-cookies.js';
 import { createClient } from '@supabase/supabase-js';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -126,7 +128,7 @@ export const POST = async ({ request, cookies }) => {
       }, 415);
     }
 
-    const { data: songRow, error: songError } = await serviceRoleClient
+    const { data: songRow, error: songError } = await createSupabaseUserClient(getServerAuthTokens(cookies).accessToken)
       .from('canciones')
       .select('id, titulo')
       .eq('id', songId)

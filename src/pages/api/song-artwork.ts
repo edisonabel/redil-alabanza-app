@@ -1,3 +1,5 @@
+import { createSupabaseUserClient } from '../../lib/server/supabase-user-client.js';
+import { getServerAuthTokens } from '../../lib/server/auth-cookies.js';
 import type { APIRoute } from 'astro';
 import {
   ApiSecurityError,
@@ -51,7 +53,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       return jsonResponse({ error: 'Identificador de cancion invalido.' }, 400);
     }
 
-    const { data: song, error: songError } = await serviceRoleClient
+    const { data: song, error: songError } = await createSupabaseUserClient(getServerAuthTokens(cookies).accessToken)
       .from('canciones')
       .select('id, mp3')
       .eq('id', songId)

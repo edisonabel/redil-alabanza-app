@@ -57,7 +57,7 @@ const LEADING_CHORD_SECTION_RE = new RegExp(`^\\[(${CHORD_BODY_PATTERN})\\|`, 'i
 const BROKEN_INLINE_CHORD_RE = new RegExp(`\\[(${CHORD_BODY_PATTERN})\\s*\\|\\s*`, 'gi');
 const EDITOR_MODAL_MAX_HEIGHT = 'min(94vh, calc(100dvh - 4.75rem - env(safe-area-inset-bottom)))';
 const ARCHIVO_ELIMINABLE_FIELDS = new Set(['mp3', 'link_acordes']);
-const CANCIONES_SELECT_BASE = 'id, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, link_youtube, mp3, link_acordes, link_letras, voces, link_voces, link_secuencias, chordpro, multitrack_session';
+const CANCIONES_SELECT_BASE = 'id, repertorio, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, link_youtube, mp3, link_acordes, link_letras, voces, link_voces, link_secuencias, chordpro, multitrack_session';
 const SONG_WIZARD_STEPS = [
   { label: 'Canción', shortLabel: 'Canción' },
   { label: 'Música', shortLabel: 'Música' },
@@ -1044,7 +1044,8 @@ const MarkerTimeInput = ({
   );
 };
 
-export default function AdminRepertorio() {
+export default function AdminRepertorio({ libraryScope = 'general' }) {
+  const repertoireScope = libraryScope === 'sin_filtros' ? 'sin_filtros' : 'general';
   const [canciones, setCanciones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorTexto, setErrorTexto] = useState(null);
@@ -1544,6 +1545,7 @@ export default function AdminRepertorio() {
         const query = await supabase
           .from('canciones')
           .select(variant.fields)
+          .eq('repertorio', repertoireScope)
           .order('titulo', { ascending: true });
 
         data = query.data;
@@ -1620,6 +1622,7 @@ export default function AdminRepertorio() {
 
     try {
       const basicPayload = {
+        repertorio: repertoireScope,
         titulo: String(songWizardDraft.titulo || '').trim(),
         cantante: String(songWizardDraft.cantante || '').trim() || null,
       };
@@ -3109,7 +3112,7 @@ export default function AdminRepertorio() {
         className="inline-flex min-h-[34px] items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand/90 disabled:opacity-50"
       >
         {activeAdminArea === 'songs' && loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-        {activeAdminArea === 'warmups' ? 'Nuevo ejercicio' : 'Nueva'}
+        {activeAdminArea === 'warmups' ? 'Nuevo ejercicio' : 'Nueva canción'}
       </button>
 
       <span
@@ -3166,7 +3169,7 @@ export default function AdminRepertorio() {
           </div>
         ))}
 
-      <nav className="mx-3 mb-2 grid shrink-0 grid-cols-2 gap-1 rounded-xl border border-border bg-surface/90 p-1 md:mx-4 md:max-w-md" aria-label="Áreas de administración">
+      {repertoireScope === 'general' && <nav className="mx-3 mb-2 grid shrink-0 grid-cols-2 gap-1 rounded-xl border border-border bg-surface/90 p-1 md:mx-4 md:max-w-md" aria-label="Áreas de administración">
         <button
           type="button"
           onClick={() => {
@@ -3191,7 +3194,7 @@ export default function AdminRepertorio() {
           <Mic2 className="h-4 w-4" />
           Calentamientos
         </button>
-      </nav>
+      </nav>}
 
       <div className="hidden mb-6 flex-col sm:flex-row sm:items-center justify-between gap-4 px-4 max-w-7xl mx-auto w-full">
         <div>

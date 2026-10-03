@@ -744,6 +744,7 @@ if (!routeIsDemo && !isCustomSetlist) {
       const seenSongs = new Set<string>();
       playlistSongs = await Promise.all((playlistItems || [])
         .filter((item: any) => {
+          if (!item?.canciones) return false;
           const songId = item?.cancion_id || item?.canciones?.id;
           const songKey = String(songId || '');
           if (!songKey || seenSongs.has(songKey)) return false;
@@ -783,6 +784,7 @@ if (isCustomSetlist && customPlaylistId) {
       const seenSongs = new Set<string>();
       playlistSongs = await Promise.all((customItems || [])
         .filter((item: any) => {
+          if (!item?.canciones) return false;
           const songId = item?.cancion_id || item?.canciones?.id;
           const songKey = String(songId || '');
           if (!songKey || seenSongs.has(songKey)) return false;

@@ -1,3 +1,5 @@
+import { createSupabaseUserClient } from '../../lib/server/supabase-user-client.js';
+import { getServerAuthTokens } from '../../lib/server/auth-cookies.js';
 import type { APIRoute } from 'astro';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
@@ -1392,7 +1394,7 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     if (!serviceRoleClient) {
       throw new ApiSecurityError('Servicio de autorizacion no configurado.', 503);
     }
-    const { data: song, error: songError } = await serviceRoleClient
+    const { data: song, error: songError } = await createSupabaseUserClient(getServerAuthTokens(cookies).accessToken)
       .from('canciones')
       .select(`
         id,

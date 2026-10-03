@@ -24,6 +24,7 @@ interface Props {
 	tema: string;
 	sectionMarkers?: any[];
 	estado?: string;
+	repertorio?: string;
 	oculta?: boolean;
 	tourCard?: string;
 	tourAudio?: string;
@@ -31,7 +32,7 @@ interface Props {
 	compact?: boolean;
 }
 
-const { cancionId = "", titulo = "", cantante = "", tonalidad = "", bpm = 0, linkLetra = "", linkAcordes = "", linkVoces = "", linkYoutube = "", linkSecuencias = "", linkMp3 = "", chordpro = "", hasChordproOverride, hasMultitrackSession = false, categoria = "", voz = "", tema = "", sectionMarkers = [], estado = "", oculta = false, tourCard = "", tourAudio = "", tourResources = "", compact = false } = Astro.props;
+const { cancionId = "", titulo = "", cantante = "", tonalidad = "", bpm = 0, linkLetra = "", linkAcordes = "", linkVoces = "", linkYoutube = "", linkSecuencias = "", linkMp3 = "", chordpro = "", hasChordproOverride, hasMultitrackSession = false, categoria = "", voz = "", tema = "", sectionMarkers = [], estado = "", repertorio = "general", oculta = false, tourCard = "", tourAudio = "", tourResources = "", compact = false } = Astro.props;
 
 const sectionMarkersPayload = (() => {
   try { return JSON.stringify(Array.isArray(sectionMarkers) ? sectionMarkers : []); }
@@ -90,6 +91,7 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
  data-tonalidad={tonalidad || ''}
  data-voz={voz || ''}
  data-tema={tema || ''}
+ data-repertorio={repertorio}
  data-estado={estado || ''}
  data-tour={tourCard || undefined}>
 
@@ -176,8 +178,8 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
    <h3 class="text-lg md:text-xl font-black tracking-tight text-zinc-950 mb-0.5 pr-14 transition-all card-title dark:text-zinc-50">
      <span class="card-title-marquee">{titulo}</span>
    </h3>
-   {cantante && <p class="card-artist text-sm text-zinc-500 mb-2.5 line-clamp-1 pr-14 dark:text-zinc-400"><span class="card-artist-marquee">{cantante}</span></p>}
-   {!cantante && <div class="card-artist mb-2.5" aria-hidden="true"></div>}
+   {(cantante || repertorio === 'sin_filtros') && <p class:list={["card-artist text-sm text-zinc-500 mb-2.5 line-clamp-1 pr-14 dark:text-zinc-400", { "sf-song-artist": repertorio === 'sin_filtros' }]}><span class="card-artist-marquee">{cantante}</span>{repertorio === 'sin_filtros' && <span class="sf-song-badge" title="Solo para servicios de Sin Filtros">Sin Filtros</span>}</p>}
+   {!cantante && repertorio !== 'sin_filtros' && <div class="card-artist mb-2.5" aria-hidden="true"></div>}
 
    <div class="flex items-center gap-0 overflow-x-auto pb-0.5 card-badges repertorio-meta-row transition-all [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
      <button type="button" class="repertorio-meta-item inline-flex h-7 shrink-0 items-center rounded-lg border border-transparent bg-transparent px-1.5 text-[12px] font-semibold text-zinc-600 badge-tono cursor-pointer transition-colors hover:text-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 dark:text-zinc-300 dark:hover:text-white" data-tono={tonalidad || ""}>
@@ -397,3 +399,9 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
   </div>
  </div>
 </article>
+
+<style>
+ .sf-song-artist { display: flex; align-items: center; gap: 0.35rem; }
+ .sf-song-artist .card-artist-marquee { flex: 1; min-width: 0; }
+ .sf-song-badge { display: inline-flex; flex-shrink: 0; padding: 0.2rem 0.5rem;  border-radius: 999px; background: rgb(var(--color-brand)); color: #042f2e; font-size: 0.625rem; font-weight: 800; white-space: nowrap; }
+</style>

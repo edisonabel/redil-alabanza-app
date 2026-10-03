@@ -96,7 +96,7 @@ export const PUT: APIRoute = async ({ request, cookies, url }) => {
 
     const { data: event, error: eventError } = await database
       .from('eventos')
-      .select('id, sin_servicio_motivo')
+      .select('id, sin_servicio_motivo, ministerios(codigo)')
       .eq('id', eventoId)
       .maybeSingle();
     if (eventError) throw eventError;
@@ -106,10 +106,14 @@ export const PUT: APIRoute = async ({ request, cookies, url }) => {
     if (songIds.length > 0) {
       const { data: songs, error: songsError } = await database
         .from('canciones')
-        .select('id')
+        .select('id, repertorio')
         .in('id', songIds);
       if (songsError) throw songsError;
 
+      const ministry = Array.isArray(event.ministerios) ? event.ministerios[0] : event.ministerios;
+      if (ministry?.codigo !== 'sin_filtros' && (songs || []).some((song) => song.repertorio === 'sin_filtros')) {
+        throw new ApiSecurityError('Las canciones de Sin Filtros solo se pueden programar en eventos de Sin Filtros.', 400);
+      }
       const validSongIds = new Set((songs || []).map((song) => String(song.id)));
       if (songIds.some((songId) => !validSongIds.has(songId))) {
         throw new ApiSecurityError('Una o mas canciones ya no estan disponibles.', 400);
