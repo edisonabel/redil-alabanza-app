@@ -26,6 +26,7 @@ import { formatClockLabel, isSinFiltrosEvent } from '../../lib/ministry-config.j
 
 const MONTH_CHUNK_SIZE = 2;
 import { isLeaderForEventMinistry } from '../../lib/event-management-permissions.js';
+import { EVENT_CARD_CLASS_NAME } from '../../lib/event-card-layout.js';
 import SinFiltrosNotice from './SinFiltrosNotice.jsx';
 import { getSinFiltrosNotice } from '../../lib/service-status.js';
 
@@ -878,16 +879,14 @@ export default function CalendarioGrid({
         const isMinistryLeader = isMinistryLeaderForEvent(cardData.dbData);
         const canManage = isAdmin || isModerator || isMinistryLeader || canManageAllRosters;
         if (getSinFiltrosNotice(cardData.dbData)) {
-            return <div key={cardData.id} className="agenda-card w-full">
-                <SinFiltrosNotice event={cardData.dbData} dateLabel={fechaObj.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Bogota' })}
+            return <SinFiltrosNotice key={cardData.id} variant="list" event={cardData.dbData} dateLabel={fechaObj.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Bogota' })}
                     onManage={canManage ? () => window.toggleModalGlobal?.(true, 'edit', {
                         id: cardData.id, fecha: cardData.fecha, titulo, estado,
                         hora_fin: cardData.dbData?.hora_fin || '',
                         serie_id: cardData.dbData?.serie_id || '',
                         moderator: isAdmin ? 'false' : 'true',
                         can_manage_rehearsal: canManageRehearsal, dbData: cardData.dbData,
-                    }) : undefined} />
-            </div>;
+                    }) : undefined} />;
         }
 
 
@@ -1082,16 +1081,14 @@ export default function CalendarioGrid({
         const isMinistryLeader = isMinistryLeaderForEvent(cardData.dbData);
         const canManage = isAdmin || isModerator || isMinistryLeader || canManageAllRosters;
         if (getSinFiltrosNotice(cardData.dbData)) {
-            return <div key={cardData.id} className="agenda-card w-full sm:max-w-[380px] shrink-0 snap-center">
-                <SinFiltrosNotice event={cardData.dbData} dateLabel={fechaObj.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Bogota' })}
+            return <SinFiltrosNotice key={cardData.id} event={cardData.dbData} dateLabel={fechaObj.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Bogota' })}
                     onManage={canManage ? () => window.toggleModalGlobal?.(true, 'edit', {
                         id: cardData.id, fecha: cardData.fecha, titulo, estado,
                         hora_fin: cardData.dbData?.hora_fin || '',
                         serie_id: cardData.dbData?.serie_id || '',
                         moderator: isAdmin ? 'false' : 'true',
                         can_manage_rehearsal: canManageRehearsal, dbData: cardData.dbData,
-                    }) : undefined} />
-            </div>;
+                    }) : undefined} />;
         }
 
 
@@ -1113,7 +1110,7 @@ export default function CalendarioGrid({
         }
 
         return (
-            <div key={cardData.id} data-tour={tourTargets ? 'programacion-card' : undefined} className={`agenda-card w-[85vw] sm:w-[340px] shrink-0 snap-center group relative bg-border/20 dark:bg-surface rounded-[2rem] shadow-md hover:shadow-xl transition-shadow duration-300 border border-border/90 px-5 pb-5 pt-4 flex flex-col ${isSinFiltros ? 'programacion-sin-filtros-surface' : ''}`}>
+            <div key={cardData.id} data-tour={tourTargets ? 'programacion-card' : undefined} className={`${EVENT_CARD_CLASS_NAME} ${isSinFiltros ? 'programacion-sin-filtros-surface' : ''}`}>
 
                 {/* --- BOTON ELIMINAR --- */}
                 {isAdmin && !cardData.isVirtual && (

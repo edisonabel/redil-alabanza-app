@@ -2,12 +2,23 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase.js';
 import RosterManager from '../RosterManager.jsx';
 import ModalEvento from '../ModalEvento.jsx';
-import SinFiltrosNotice from '../SinFiltrosNotice.jsx';
+import CalendarioGrid from '../CalendarioGrid.jsx';
 
 const roles = [{ id: 'guitar-role', codigo: 'guitarra_acustica', nombre: 'Guitarra electroacústica' }, { id: 'caja-role', codigo: 'caja', nombre: 'Caja' }];
 const ministries = [{ id: 'sf', codigo: 'sin_filtros', nombre: 'Sin Filtros' }, { id: 'general', codigo: 'alabanza_general', nombre: 'Alabanza general' }];
+roles.push({ id: 'direction-role', codigo: 'lider_alabanza', nombre: 'Líder de alabanza' }, { id: 'lyrics-role', codigo: 'encargado_letras', nombre: 'Letras' }, { id: 'voice-role', codigo: 'voz_principal', nombre: 'Voz' });
 const profiles = ['Ana', 'Luis', 'Sara'].map((nombre, i) => ({ id: `profile-${i}`, nombre, avatar_url: null }));
 const event = { id: 'preview-event', titulo: 'Sin Filtros', fecha_hora: '2026-10-03T18:30:00-05:00', hora_fin: '19:30', ministerio_id: 'sf', ministerios: ministries[0], estado: 'Publicado', es_acustico: true, asignaciones: [] };
+
+const comparisonEvents = [
+    { ...event, id: 'notice-preview', sin_servicio_motivo: 'Asamblea de miembros' },
+    { ...event, id: 'active-preview', fecha_hora: '2026-10-10T18:30:00-05:00', tema_predicacion: 'Una fe que permanece', predicador: 'Luis', asignaciones: [
+        { id: 'dir', rol_id: 'direction-role', perfiles: profiles[0] },
+        { id: 'lyrics', rol_id: 'lyrics-role', perfiles: profiles[1] },
+        { id: 'guitar', rol_id: 'guitar-role', perfiles: profiles[2] },
+        ...profiles.map((profile, i) => ({ id: `voice-${i}`, rol_id: 'voice-role', perfiles: profile })),
+    ] },
+];
 
 // Esta vista se sirve únicamente en DEV. Cada consulta utiliza datos locales.
 export default function EventSchedulingPreview() {
@@ -27,7 +38,7 @@ export default function EventSchedulingPreview() {
                 single: () => Promise.resolve({ data: { ...event, ...payload, asignaciones: [...assignments] }, error: null }),
                 then: (resolve) => Promise.resolve({ data: table === 'asignaciones' ? [...assignments]
                     : table === 'perfil_roles' ? profiles.map((profile) => ({ perfil_id: profile.id, rol_id: 'guitar-role', perfiles: profile }))
-                    : table === 'roles' ? roles : [], error: null }).then(resolve),
+                    : table === 'roles' ? roles : table === 'eventos' ? comparisonEvents : [], error: null }).then(resolve),
             };
             return query;
         };
@@ -49,9 +60,9 @@ export default function EventSchedulingPreview() {
         return () => { supabase.from = originalFrom; supabase.rpc = originalRpc; window.fetch = originalFetch; };
     }, []);
     if (!ready) return null;
-    return <main className="mx-auto max-w-3xl space-y-8 p-5 text-content">
+    return <main className="mx-auto max-w-6xl space-y-8 p-5 text-content">
         <h1 className="text-2xl font-bold">Programación · Vista local</h1>
-        <SinFiltrosNotice event={{ ...event, sin_servicio_motivo: 'Asamblea de miembros' }} dateLabel="Sábado 3 de octubre de 2026" onManage={() => window.toggleModalGlobal?.(true, 'edit', { id: event.id, fecha: event.fecha_hora, titulo: event.titulo, estado: event.estado, hora_fin: event.hora_fin, moderator: 'true', dbData: { ...event, sin_servicio_motivo: 'Asamblea de miembros' } })} />
+        <CalendarioGrid initialEvents={comparisonEvents} initialRoles={roles} sessionUser={{ id: 'leader' }} leaderMinistryIds={['sf']} initialToday="2026-10-01" initialLoadUntil="2026-12-31T23:59:59Z" hasMoreInitialEvents={false} />
         <section className="rounded-2xl border border-border bg-surface p-5">
             <h2 className="mb-5 text-lg font-bold">Formato acústico · dos electroacústicas</h2>
             <RosterManager evId={event.id} evFechaStr="2026-10-03" esAcustico dbData={event} canEditRoster />
