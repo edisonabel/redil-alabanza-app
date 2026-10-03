@@ -90,14 +90,18 @@ export const PUT: APIRoute = async ({ request, cookies, url }) => {
     }
 
     const database = await getAuthenticatedDatabase(cookies);
+    const { data: allowed, error: permissionError } = await database.rpc('can_manage_event_assignments', { evt_id: eventoId });
+    if (permissionError) throw permissionError;
+    if (allowed !== true) throw new ApiSecurityError('No tienes permisos para programar canciones en este evento.', 403);
 
     const { data: event, error: eventError } = await database
       .from('eventos')
-      .select('id')
+      .select('id, sin_servicio_motivo')
       .eq('id', eventoId)
       .maybeSingle();
     if (eventError) throw eventError;
     if (!event) throw new ApiSecurityError('El evento no existe o no esta disponible.', 404);
+    if (event.sin_servicio_motivo) throw new ApiSecurityError('Este sábado no hay servicio para programar canciones.', 409);
 
     if (songIds.length > 0) {
       const { data: songs, error: songsError } = await database

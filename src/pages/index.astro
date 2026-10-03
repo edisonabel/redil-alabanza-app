@@ -157,6 +157,7 @@ const buildEventosSelect = (includePredicador = true) => `
   tema_predicacion,
   ${includePredicador ? 'predicador,' : ''}
   estado,
+  sin_servicio_motivo,
   asignaciones (
     perfil_id,
     rol_id,
@@ -240,6 +241,7 @@ if (eventoIds.length > 0) {
 }
 
 const proximosServicios = (eventosData || [])
+  .filter((evento) => !evento.sin_servicio_motivo)
   .map((evento) => {
     const playlistMeta = playlistByEvento.get(evento.id) || null;
     const roster = Array.isArray(evento.asignaciones) ? evento.asignaciones : [];

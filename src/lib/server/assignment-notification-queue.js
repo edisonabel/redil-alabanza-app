@@ -62,8 +62,8 @@ const fetchEventsByIds = async ({ serviceRoleClient, eventIds = [] }) => {
     serviceRoleClient
       .from('eventos')
       .select(includePredicador
-        ? 'id, titulo, tema_predicacion, predicador, fecha_hora, estado'
-        : 'id, titulo, tema_predicacion, fecha_hora, estado')
+        ? 'id, titulo, tema_predicacion, predicador, fecha_hora, sin_servicio_motivo, estado'
+        : 'id, titulo, tema_predicacion, fecha_hora, sin_servicio_motivo, estado')
       .in('id', normalizedEventIds);
 
   let response = await buildQuery(true);
@@ -81,7 +81,7 @@ const fetchEventsByIds = async ({ serviceRoleClient, eventIds = [] }) => {
   if (error) throw error;
 
   return new Map(
-    (data || []).map((event) => [normalizeText(event?.id), event]),
+    (data || []).filter((event) => !event.sin_servicio_motivo).map((event) => [normalizeText(event?.id), event]),
   );
 };
 

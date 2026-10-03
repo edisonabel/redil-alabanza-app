@@ -1,9 +1,10 @@
-﻿import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
     DEFAULT_EVENT_VOICE_SLOTS,
     MAX_EVENT_VOICE_SLOTS,
     getAssignmentProfileId,
+    getInstrumentSlotCount,
     getEventVoiceSlotCount,
     getVisibleVoiceAssignments,
     normalizeRosterAssignments,
@@ -103,6 +104,7 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
     const [pickerRolId, setPickerRolId] = useState(null);
     const [pickerRolName, setPickerRolName] = useState('');
     const [pickerSlotIndex, setPickerSlotIndex] = useState(null);
+    const [pickerAssignmentId, setPickerAssignmentId] = useState(null);
     const [pickerList, setPickerList] = useState([]);
     const [pickerLoading, setPickerLoading] = useState(false);
 
@@ -392,7 +394,7 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
         }
     };
 
-    const openPicker = async (rId, rName, slotIndex = null) => {
+    const openPicker = async (rId, rName, slotIndex = null, assignmentId = null) => {
         if (!evId || evId.startsWith('virtual|')) {
             alert('Guarda/crea primero este evento para asignarle equipo.');
             return;
@@ -406,6 +408,7 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
         setPickerRolId(rId);
         setPickerRolName(rName);
         setPickerSlotIndex(slotIndex);
+        setPickerAssignmentId(assignmentId);
         setPickerOpen(true);
         setPickerLoading(true);
         setPickerList([]);
@@ -606,7 +609,10 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
             }
         }
 
-        const existingAssignmentForRole = normalizedAssignments.find((assignment) => assignment.rol_id === saveRolId);
+        const isAcousticGuitar = getInstrumentSlotCount(newRol?.codigo, esAcustico) === 2;
+        const existingAssignmentForRole = normalizedAssignments.find((assignment) => isAcousticGuitar
+            ? assignment.id === pickerAssignmentId
+            : assignment.rol_id === saveRolId);
         if (existingAssignmentForRole && getAssignmentProfileId(existingAssignmentForRole) === perfilId) {
             setPickerLoading(false);
             setPickerOpen(false);
@@ -614,7 +620,12 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
             return;
         }
 
-        const { error } = await replaceRoleAssignment({ perfilId, rolId: saveRolId });
+        const { error } = isAcousticGuitar
+            ? await supabase.rpc('assign_event_acoustic_guitar', {
+                p_evento_id: evId, p_perfil_id: perfilId, p_rol_id: saveRolId,
+                p_asignacion_id: pickerAssignmentId,
+            })
+            : await replaceRoleAssignment({ perfilId, rolId: saveRolId });
 
         setPickerLoading(false);
         if (!error) {
@@ -772,7 +783,7 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
                 className={`btn-roster-inline empty-slot inline-flex whitespace-nowrap px-4 h-9 items-center justify-center gap-1.5 rounded-full border border-dashed border-border text-[11px] font-bold leading-none text-content-muted uppercase tracking-widest transition-all ${!canEditRoster ? 'cursor-default opacity-55' : 'hover:border-brand/30 hover:text-brand hover:bg-brand/10'}`}
                 disabled={!canEditRoster}
             >
-                {(label || rolMap.nombre).split(' ')[0]} <span className="font-normal opacity-60 text-lg leading-none mt-[-2px]">+</span>
+                {label || rolMap.nombre.split(' ')[0]} <span className="font-normal opacity-60 text-lg leading-none mt-[-2px]">+</span>
             </button>
         );
     };
@@ -792,7 +803,7 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
         const colorSeccion = isN1 ? 'bg-rol-dir' : (isN2 ? 'bg-rol-let' : (isVoz ? 'bg-rol-voc' : 'bg-rol-ban'));
 
         return (
-            <div key={asig.id || `${asig.rol_id}-${assignmentProfileId}`} className="flex flex-col items-center gap-1 group relative cursor-pointer hover:bg-neutral/20 rounded-xl p-2 -m-2 transition-colors" title={`${p.nombre} (${rolMatch.nombre})`} onClick={() => canEditRoster && openPicker(rolMatch.id, rolMatch.nombre)}>
+            <div key={asig.id || `${asig.rol_id}-${assignmentProfileId}`} className="flex flex-col items-center gap-1 group relative cursor-pointer hover:bg-neutral/20 rounded-xl p-2 -m-2 transition-colors" title={`${p.nombre} (${rolMatch.nombre})`} onClick={() => canEditRoster && openPicker(rolMatch.id, rolMatch.nombre, null, asig.id)}>
                 <div className="relative">
                     {p.avatar_url ? (
                         <img src={p.avatar_url} alt={p.nombre} crossOrigin="anonymous" loading="lazy" decoding="async" className="w-[42px] h-[42px] sm:w-[46px] sm:h-[46px] shrink-0 rounded-full object-cover shadow-sm border border-border" />
@@ -855,6 +866,15 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
         }
 
         if (isVoz) {
+            return;
+        }
+
+        if (getInstrumentSlotCount(rolMatch.codigo, esAcustico) === 2) {
+            assigned.forEach((assignment) => banda.push(renderAvatar(assignment, rolMatch)));
+            for (let index = assigned.length; index < 2; index += 1) {
+                const empty = renderEmptySlot(rolMatch, { label: `Electroacústica ${index + 1}`, keySuffix: index });
+                if (empty) banda.push(empty);
+            }
             return;
         }
 

@@ -3,8 +3,8 @@ import {
   enqueueAssignmentNotifications,
   getAssignmentNotificationDelayMinutes,
 } from '../../lib/server/assignment-notification-queue.js';
-import { isEventRepertoryManagerRoleCode } from '../../lib/role-permissions.js';
-import { isOperationsManagerUser } from '../../lib/server/api-security.js';
+import { createSupabaseUserClient } from '../../lib/server/supabase-user-client.js';
+import { canManageEventAssignments } from '../../lib/event-management-permissions.js';
 import { getSupabaseServerEnv, getSupabaseServiceRoleKey } from '../../lib/server/supabase-env.js';
 
 export const prerender = false;
@@ -50,37 +50,7 @@ const normalizePerfilIds = (payload) => {
   return [...new Set(rawIds.map((value) => String(value || '').trim()).filter(Boolean))];
 };
 
-const canManageAssignments = async ({ userId, eventoId }) => {
-  const { data: perfil, error: perfilError } = await serviceRoleClient
-    .from('perfiles')
-    .select('id, is_admin')
-    .eq('id', userId)
-    .single();
 
-  if (perfilError) throw perfilError;
-  if (perfil?.is_admin) return true;
-  if (await isOperationsManagerUser(userId)) return true;
-
-  const { data: ownAssignments, error: assignmentsError } = await serviceRoleClient
-    .from('asignaciones')
-    .select('rol_id')
-    .eq('evento_id', eventoId)
-    .eq('perfil_id', userId);
-
-  if (assignmentsError) throw assignmentsError;
-
-  const roleIds = [...new Set((ownAssignments || []).map((row) => row?.rol_id).filter(Boolean))];
-  if (roleIds.length === 0) return false;
-
-  const { data: roles, error: rolesError } = await serviceRoleClient
-    .from('roles')
-    .select('codigo')
-    .in('id', roleIds);
-
-  if (rolesError) throw rolesError;
-
-  return (roles || []).some((role) => isEventRepertoryManagerRoleCode(role?.codigo));
-};
 
 export async function POST({ request, cookies }) {
   try {
@@ -137,7 +107,7 @@ export async function POST({ request, cookies }) {
       );
     }
 
-    const allowed = await canManageAssignments({ userId: user.id, eventoId });
+    const allowed = await canManageEventAssignments(createSupabaseUserClient(token), eventoId);
     if (!allowed) {
       return new Response(JSON.stringify({ error: 'No tienes permisos para programar asignaciones en este evento.' }), {
         status: 403,

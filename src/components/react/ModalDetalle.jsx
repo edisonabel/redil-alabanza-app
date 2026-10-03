@@ -1,3 +1,4 @@
+import { isLeaderForEventMinistry } from '../../lib/event-management-permissions.js';
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '@iconify/react';
@@ -143,8 +144,8 @@ function SongArtwork({ song }) {
     );
 }
 
-/** @param {{ initialRoles?: any[], sessionUser?: any, isAdmin?: boolean, canManageAllRosters?: boolean, leaderMinistryIds?: string[] }} props */
-export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = false, canManageAllRosters = false, leaderMinistryIds = [] }) {
+/** @param {{ initialRoles?: any[], sessionUser?: any, isAdmin?: boolean, canManageAllRosters?: boolean, leaderMinistryIds?: string[], generalMinistryId?: string }} props */
+export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = false, canManageAllRosters = false, leaderMinistryIds = [], generalMinistryId = '' }) {
     const [isOpen, setIsOpen] = useState(false);
     const [eventData, setEventData] = useState(null);
     const [playlist, setPlaylist] = useState(null);
@@ -350,9 +351,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
         .filter(Boolean);
     const eventoId = eventData?.dbData?.id || '';
     const ministryName = String(eventData?.dbData?.ministerios?.nombre || '').trim();
-    const isMinistryLeader = (leaderMinistryIds || []).some(
-        (ministryId) => String(ministryId || '') === String(eventData?.dbData?.ministerio_id || ''),
-    );
+    const isMinistryLeader = isLeaderForEventMinistry(eventData?.dbData, leaderMinistryIds, generalMinistryId);
     const miAsignacion = roster.find((asig) => asig?.perfiles?.id === sessionUser?.id || asig?.perfiles?.email === sessionUser?.email);
     let isModerator = false;
     if (miAsignacion) {

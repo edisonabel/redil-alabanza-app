@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
     AlertTriangle,
     CalendarDays,
@@ -19,7 +19,7 @@ import { supabase } from '../../lib/supabase';
 import RosterManager from './RosterManager.jsx';
 import { getEventThemeAndPreacher } from '../../lib/event-display.js';
 import { isPredicadorColumnMissingError } from '../../lib/predicador-compat.js';
-import { isEventRepertoryManagerRoleCode } from '../../lib/role-permissions.js';
+import { canManageEventAssignments } from '../../lib/event-management-permissions.js';
 import {
     formatEventRehearsalLabel,
     normalizeRehearsalWeekday,
@@ -165,6 +165,9 @@ export default function ModalEvento({ initialMinistries = [] }) {
     const [tema, setTema] = useState('');
     const [predicador, setPredicador] = useState('');
     const [esAcustico, setEsAcustico] = useState(false);
+    const [isFormatSaving, setIsFormatSaving] = useState(false);
+    const [sinServicio, setSinServicio] = useState(false);
+    const [sinServicioMotivo, setSinServicioMotivo] = useState('');
     const [isSerie, setIsSerie] = useState(false);
     const [applySerie, setApplySerie] = useState(false);
     const [serieId, setSerieId] = useState('');
@@ -223,6 +226,8 @@ export default function ModalEvento({ initialMinistries = [] }) {
                 setPredicador('');
                 setEstado('Publicado');
                 setEsAcustico(false);
+                setSinServicio(false);
+                setSinServicioMotivo('');
                 setIsSerie(false);
                 setSerieId('');
                 setApplySerie(false);
@@ -272,6 +277,8 @@ export default function ModalEvento({ initialMinistries = [] }) {
                 setPredicador(parsedPredicacion.preacher || '');
                 setEstado(data.estado || 'Publicado');
                 setEsAcustico(Boolean(data.es_acustico ?? data.dbData?.es_acustico));
+                setSinServicio(Boolean(data.dbData?.sin_servicio_motivo));
+                setSinServicioMotivo(data.dbData?.sin_servicio_motivo || '');
 
                 const strictMod = data.moderator === 'true';
                 setIsStrictModerator(strictMod);
@@ -326,21 +333,9 @@ export default function ModalEvento({ initialMinistries = [] }) {
                 return;
             }
 
-            const currentUserId = user?.id || window.__SSR_USER__?.id || '';
-            const profileReq = await supabase.from('perfiles').select('is_admin').eq('id', currentUserId).single();
-            if (profileReq.data?.is_admin) {
-                setShowPlaylistBtn(true);
-            } else {
-                const rolesReq = await supabase.from('asignaciones').select('roles(codigo)').eq('evento_id', id).eq('perfil_id', currentUserId);
-                if (rolesReq.data) {
-                    const codigos = rolesReq.data.map(r => r.roles?.codigo).filter(Boolean);
-                    if (codigos.some(isEventRepertoryManagerRoleCode)) {
-                        setShowPlaylistBtn(true);
-                    }
-                }
-            }
 
             try {
+                setShowPlaylistBtn(await canManageEventAssignments(supabase, id));
                 const response = await fetch(`/api/event-playlist?evento_id=${encodeURIComponent(id)}`, {
                     credentials: 'same-origin',
                 });
@@ -365,6 +360,23 @@ export default function ModalEvento({ initialMinistries = [] }) {
             }
         };
     }, [user]);
+    useEffect(() => {
+        const ministry = initialMinistries.find((item) => item.id === ministryId);
+        if (!isSinFiltrosMinistry(ministry)) { setSinServicio(false); setSinServicioMotivo(''); }
+    }, [ministryId, initialMinistries]);
+
+    const handleAcousticChange = async (checked) => {
+        if (!evId || evId.startsWith('virtual|')) { setEsAcustico(checked); return; }
+        setIsFormatSaving(true);
+        try {
+            const { data, error } = await supabase.from('eventos').update({ es_acustico: checked }).eq('id', evId).select('id, es_acustico').single();
+            if (error) throw error;
+            setEsAcustico(data.es_acustico);
+            setDbData((previous) => ({ ...previous, es_acustico: data.es_acustico }));
+        } catch (error) { setWizardError(error?.message || 'No se pudo guardar el formato del servicio.'); }
+        finally { setIsFormatSaving(false); }
+    };
+
     const handleClose = () => {
         setWizardError('');
         setIsSeriesOptionsOpen(false);
@@ -388,11 +400,16 @@ export default function ModalEvento({ initialMinistries = [] }) {
             (ministry) => String(ministry?.id || '') === String(ministryId || ''),
         );
         const isSinFiltros = isSinFiltrosMinistry(selectedMinistry);
+        if (isSinFiltros && sinServicio && !sinServicioMotivo.trim()) {
+            setWizardError('Escribe el motivo por el que este sábado no hay Sin Filtros.');
+            setActiveWizardStep('details');
+            return;
+        }
         if (isSinFiltros && !isSaturdayDate(fecha)) {
             alert('Sin Filtros se programa los sábados. Selecciona una fecha de sábado.');
             return;
         }
-        if (isSinFiltros && !isStrictModerator && (!horaFin || horaFin <= horaInicio || !rehearsalStartTime
+        if (isSinFiltros && !sinServicio && !isStrictModerator && (!horaFin || horaFin <= horaInicio || !rehearsalStartTime
             || !rehearsalEndTime || rehearsalEndTime <= rehearsalStartTime
             || rehearsalEndTime > horaInicio)) {
             alert('Revisa los horarios: cada fin debe ser posterior al inicio y el ensayo debe terminar antes del culto.');
@@ -458,10 +475,11 @@ export default function ModalEvento({ initialMinistries = [] }) {
                     tema_predicacion: includePredicador ? (tema || null) : legacyTemaPredicacion,
                     estado,
                     es_acustico: esAcustico,
+                    sin_servicio_motivo: isSinFiltros && sinServicio ? sinServicioMotivo.trim() : null,
                     ministerio_id: ministryId || null,
                 };
 
-                if (isSinFiltros && !isStrictModerator) {
+                if (isSinFiltros && !sinServicio && !isStrictModerator) {
                     payload.ensayo_fecha_hora = new Date(`${fecha}T${rehearsalStartTime}:00-05:00`).toISOString();
                     payload.ensayo_hora_fin = rehearsalEndTime;
                 }
@@ -475,7 +493,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
 
             // Camino A: EdiciÃ³n de un evento existente
             if (evId && !evId.startsWith('virtual|')) {
-                if (applySerie && serieId) {
+                if (applySerie && serieId && !sinServicio) {
                     // ActualizaciÃ³n masiva a la serie
                     const [
                         { error: serieError },
@@ -632,9 +650,9 @@ export default function ModalEvento({ initialMinistries = [] }) {
     const wizardSteps = useMemo(() => [
         ...(!isStrictModerator ? [EVENT_WIZARD_STEP_META.service] : []),
         EVENT_WIZARD_STEP_META.details,
-        ...(mode === 'edit' ? [EVENT_WIZARD_STEP_META.team, EVENT_WIZARD_STEP_META.repertoire] : []),
+        ...(mode === 'edit' && !sinServicio ? [EVENT_WIZARD_STEP_META.team, EVENT_WIZARD_STEP_META.repertoire] : []),
         EVENT_WIZARD_STEP_META.review,
-    ], [isStrictModerator, mode]);
+    ], [isStrictModerator, mode, sinServicio]);
 
     useEffect(() => {
         if (!wizardSteps.some((step) => step.id === activeWizardStep)) {
@@ -674,7 +692,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
             setWizardError('Sin Filtros se programa los sábados. Elige una fecha de sábado.');
             return false;
         }
-        if (isSinFiltrosMinistry(ministry) && (!horaFin || horaFin <= horaInicio || !rehearsalStartTime
+        if (isSinFiltrosMinistry(ministry) && !sinServicio && (!horaFin || horaFin <= horaInicio || !rehearsalStartTime
             || !rehearsalEndTime || rehearsalEndTime <= rehearsalStartTime
             || rehearsalEndTime > horaInicio)) {
             setWizardError('Ajusta los horarios: el ensayo debe terminar antes del culto y cada fin debe ser posterior al inicio.');
@@ -1025,6 +1043,19 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                         </label>
                                     )}
 
+                                    {isSinFiltros && (
+                                        <div className="rounded-2xl border border-border p-4">
+                                            <label className="flex min-h-11 cursor-pointer items-center justify-between gap-4">
+                                                <span className="text-sm font-bold text-content">Este sábado no hay Sin Filtros</span>
+                                                <input type="checkbox" checked={sinServicio} onChange={(event) => { setSinServicio(event.target.checked); setApplySerie(false); }} className="h-5 w-5 accent-sky-500" />
+                                            </label>
+                                            {sinServicio && <label className="mt-3 block text-sm font-semibold text-content">
+                                                Motivo
+                                                <input type="text" value={sinServicioMotivo} maxLength={240} required onChange={(event) => setSinServicioMotivo(event.target.value)} placeholder="Ej. Asamblea de miembros" className="mt-2 min-h-12 w-full rounded-xl border border-border bg-surface px-3 text-content focus-visible:outline-2 focus-visible:outline-brand" />
+                                                <span className="mt-2 block text-xs font-normal text-content-muted">Se mostrará en la programación. Solo aplica a este sábado.</span>
+                                            </label>}
+                                        </div>
+                                    )}
                                     {showRehearsalField && (
                                         <label className="block">
                                             <div className="mb-2 flex items-center justify-between gap-3">
@@ -1047,7 +1078,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                         </label>
                                     )}
 
-                                    {isSinFiltros && (
+                                    {isSinFiltros && !sinServicio && (
                                         <div className="flex min-h-14 items-center justify-between gap-4 rounded-2xl border border-blue-400/25 bg-blue-500/10 px-4 py-3">
                                             <div>
                                                 <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-700 dark:text-blue-300">Ensayo · Sin Filtros</p>
@@ -1084,7 +1115,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                         </label>
                                     </div>
 
-                                    {isSerie && !isStrictModerator && (
+                                    {isSerie && !isStrictModerator && !sinServicio && (
                                         <section id="serie-update-section" className="overflow-hidden rounded-2xl border border-border bg-surface">
                                             <button
                                                 type="button"
@@ -1205,17 +1236,18 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                     </div>
                                 </div>
 
-                                {!isStrictModerator && (
+                                {mode === 'edit' && (
                                     <label className="mb-5 flex min-h-14 cursor-pointer select-none items-center justify-between gap-4 border-y border-border py-3" id="ev-container-acustico">
                                         <span>
                                             <span className="block text-sm font-black text-content">Servicio acústico</span>
-                                            <span className="mt-0.5 block text-xs text-content-muted">Ajusta los instrumentos disponibles para este formato.</span>
+                                            <span className="mt-0.5 block text-xs text-content-muted">Permite dos guitarras electroacústicas. El formato se guarda al cambiarlo.</span>
                                         </span>
                                         <input
                                             type="checkbox"
                                             id="ev-es-acustico"
                                             checked={esAcustico}
-                                            onChange={(event) => setEsAcustico(event.target.checked)}
+                                            onChange={(event) => handleAcousticChange(event.target.checked)}
+                                            disabled={isFormatSaving}
                                             className="h-5 w-5 shrink-0 rounded border-border accent-sky-500"
                                         />
                                     </label>
@@ -1240,7 +1272,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                         evEstadoStr={estado}
                                         esAcustico={esAcustico}
                                         isStrictModerator={isStrictModerator}
-                                        canEditRoster={mode === 'edit'}
+                                        canEditRoster={mode === 'edit' && !isFormatSaving}
                                         dbData={dbData}
                                         onRosterChange={(nextAsignaciones) => {
                                             setDbData((prev) => (
@@ -1299,6 +1331,10 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                 </div>
 
                                 <div className="space-y-8">
+                                    {isSinFiltros && sinServicio && <div className="rounded-2xl border border-blue-400/25 bg-blue-500/10 p-4 text-content">
+                                        <p className="font-bold">Este sábado no hay Sin Filtros</p>
+                                        <p className="mt-2 break-words text-sm text-content-muted">Motivo: {sinServicioMotivo}</p>
+                                    </div>}
                                     <section>
                                         <div className="mb-3 flex items-center justify-between gap-3">
                                             <h4 className="text-xs font-black uppercase tracking-[0.16em] text-content-muted">Servicio</h4>
@@ -1356,7 +1392,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                                 <dt className="text-xs font-bold text-content-muted">Predicador</dt>
                                                 <dd className="text-sm font-semibold text-content">{predicador || 'Sin predicador definido'}</dd>
                                             </div>
-                                            {isSerie && applySerie && (
+                                            {isSerie && applySerie && !sinServicio && (
                                                 <div className="grid gap-1 py-3 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-4">
                                                     <dt className="text-xs font-bold text-content-muted">Alcance</dt>
                                                     <dd className="text-sm font-black text-amber-700 dark:text-amber-300">Eventos futuros de toda la serie</dd>
@@ -1365,7 +1401,7 @@ export default function ModalEvento({ initialMinistries = [] }) {
                                         </dl>
                                     </section>
 
-                                    {mode === 'edit' && (
+                                    {mode === 'edit' && !sinServicio && (
                                         <>
                                             <section>
                                                 <div className="mb-3 flex items-center justify-between gap-3">

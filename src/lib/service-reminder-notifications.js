@@ -320,8 +320,8 @@ const fetchUpcomingEvents = async ({ serviceRoleClient, referenceDate, onlyEvent
     let query = serviceRoleClient
       .from('eventos')
       .select(includePredicador
-        ? 'id, titulo, tema_predicacion, predicador, fecha_hora, hora_fin, estado, ensayo_dia_semana, ensayo_fecha_hora, ensayo_hora_fin, ministerio_id, ministerios(codigo,nombre)'
-        : 'id, titulo, tema_predicacion, fecha_hora, hora_fin, estado, ensayo_dia_semana, ensayo_fecha_hora, ensayo_hora_fin, ministerio_id, ministerios(codigo,nombre)');
+        ? 'id, titulo, tema_predicacion, predicador, fecha_hora, hora_fin, sin_servicio_motivo, estado, ensayo_dia_semana, ensayo_fecha_hora, ensayo_hora_fin, ministerio_id, ministerios(codigo,nombre)'
+        : 'id, titulo, tema_predicacion, fecha_hora, hora_fin, sin_servicio_motivo, estado, ensayo_dia_semana, ensayo_fecha_hora, ensayo_hora_fin, ministerio_id, ministerios(codigo,nombre)');
 
     if (onlyEventId) {
       return query
@@ -355,7 +355,7 @@ const fetchUpcomingEvents = async ({ serviceRoleClient, referenceDate, onlyEvent
     throw error;
   }
 
-  return data || [];
+  return (data || []).filter((event) => !event.sin_servicio_motivo);
 };
 
 const fetchAssignmentsForEvents = async ({ serviceRoleClient, eventIds = [], onlyPerfilId = '' }) => {

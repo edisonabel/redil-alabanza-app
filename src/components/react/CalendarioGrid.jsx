@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Icon } from '@iconify/react';
 import microphoneIcon from '@iconify-icons/mdi/microphone';
 import guitarAcousticIcon from '@iconify-icons/mdi/guitar-acoustic';
@@ -25,7 +25,11 @@ import {
 import { formatClockLabel, isSinFiltrosEvent } from '../../lib/ministry-config.js';
 
 const MONTH_CHUNK_SIZE = 2;
-const EVENT_SELECT = 'id, titulo, fecha_hora, hora_fin, estado, es_acustico, notas_especiales, tema_predicacion, serie_id, ministerio_id, ensayo_dia_semana, ensayo_fecha_hora, ensayo_hora_fin, ministerios(id, codigo, nombre), asignaciones(id, rol_id, perfiles(id, nombre, avatar_url, tonalidad_voz))';
+import { isLeaderForEventMinistry } from '../../lib/event-management-permissions.js';
+import SinFiltrosNotice from './SinFiltrosNotice.jsx';
+import { getSinFiltrosNotice } from '../../lib/service-status.js';
+
+const EVENT_SELECT = 'id, titulo, fecha_hora, hora_fin, estado, es_acustico, sin_servicio_motivo, notas_especiales, tema_predicacion, serie_id, ministerio_id, ensayo_dia_semana, ensayo_fecha_hora, ensayo_hora_fin, ministerios(id, codigo, nombre), asignaciones(id, rol_id, perfiles(id, nombre, avatar_url, tonalidad_voz))';
 const APP_TIME_ZONE = 'America/Bogota';
 const appDateTimeFormatter = new Intl.DateTimeFormat('en-US', {
     timeZone: APP_TIME_ZONE,
@@ -123,7 +127,7 @@ const canUserManageEventRehearsal = ({ assignments, roles, sessionUser, isAdmin 
  * Renderizador maestro del motor de Eventos (Tarjetas, Listas y Calendarios).
  * Reemplaza mÃƒÂ¡s de 1000 lÃƒÂ­neas de Vanilla JS en programacion.astro
  */
-/** @param {{ initialEvents?: any[], sessionUser?: any, initialRoles?: any[], isAdmin?: boolean, canManageAllRosters?: boolean, canEditTema?: boolean, leaderMinistryIds?: string[], initialLoadUntil?: string, hasMoreInitialEvents?: boolean, initialToday?: string }} props */
+/** @param {{ initialEvents?: any[], sessionUser?: any, initialRoles?: any[], isAdmin?: boolean, canManageAllRosters?: boolean, canEditTema?: boolean, leaderMinistryIds?: string[], generalMinistryId?: string, initialLoadUntil?: string, hasMoreInitialEvents?: boolean, initialToday?: string }} props */
 export default function CalendarioGrid({
     initialEvents,
     sessionUser,
@@ -132,6 +136,7 @@ export default function CalendarioGrid({
     canManageAllRosters = false,
     canEditTema = false,
     leaderMinistryIds = [],
+    generalMinistryId = '',
     initialLoadUntil,
     hasMoreInitialEvents = false,
     initialToday,
@@ -203,8 +208,8 @@ export default function CalendarioGrid({
         [leaderMinistryIds],
     );
     const isMinistryLeaderForEvent = useCallback(
-        (eventData) => leaderMinistryIdSet.has(String(eventData?.ministerio_id || '')),
-        [leaderMinistryIdSet],
+        (eventData) => isLeaderForEventMinistry(eventData, [...leaderMinistryIdSet], generalMinistryId),
+        [leaderMinistryIdSet, generalMinistryId],
     );
 
     const openTemaModal = useCallback((eventoId, tema, predicador) => {
@@ -872,6 +877,19 @@ export default function CalendarioGrid({
 
         const isMinistryLeader = isMinistryLeaderForEvent(cardData.dbData);
         const canManage = isAdmin || isModerator || isMinistryLeader || canManageAllRosters;
+        if (getSinFiltrosNotice(cardData.dbData)) {
+            return <div key={cardData.id} className="agenda-card w-full">
+                <SinFiltrosNotice event={cardData.dbData} dateLabel={fechaObj.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Bogota' })}
+                    onManage={canManage ? () => window.toggleModalGlobal?.(true, 'edit', {
+                        id: cardData.id, fecha: cardData.fecha, titulo, estado,
+                        hora_fin: cardData.dbData?.hora_fin || '',
+                        serie_id: cardData.dbData?.serie_id || '',
+                        moderator: isAdmin ? 'false' : 'true',
+                        can_manage_rehearsal: canManageRehearsal, dbData: cardData.dbData,
+                    }) : undefined} />
+            </div>;
+        }
+
 
         const listHighlightClass = isUsuarioAsignado ? 'border-brand/30 bg-brand/10' : 'border-border bg-surface hover:bg-background border-solid';
 
@@ -1063,6 +1081,19 @@ export default function CalendarioGrid({
 
         const isMinistryLeader = isMinistryLeaderForEvent(cardData.dbData);
         const canManage = isAdmin || isModerator || isMinistryLeader || canManageAllRosters;
+        if (getSinFiltrosNotice(cardData.dbData)) {
+            return <div key={cardData.id} className="agenda-card w-full sm:max-w-[380px] shrink-0 snap-center">
+                <SinFiltrosNotice event={cardData.dbData} dateLabel={fechaObj.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Bogota' })}
+                    onManage={canManage ? () => window.toggleModalGlobal?.(true, 'edit', {
+                        id: cardData.id, fecha: cardData.fecha, titulo, estado,
+                        hora_fin: cardData.dbData?.hora_fin || '',
+                        serie_id: cardData.dbData?.serie_id || '',
+                        moderator: isAdmin ? 'false' : 'true',
+                        can_manage_rehearsal: canManageRehearsal, dbData: cardData.dbData,
+                    }) : undefined} />
+            </div>;
+        }
+
 
         // CascarÃƒÂ³n Suspendido (JSX puro)
         if (isSuspended) {

@@ -665,7 +665,7 @@ export const syncGoogleCalendarEventForProfile = async ({ profileId, eventId, fe
   const [{ data: event, error: eventError }, { data: links, error: linksError }] = await Promise.all([
     client
       .from('eventos')
-      .select('id, titulo, fecha_hora, hora_fin, estado, ensayo_dia_semana, ensayo_fecha_hora, ensayo_hora_fin, ministerio_id, ministerios(codigo, nombre), asignaciones(id, perfil_id, rol_id, roles(nombre, codigo))')
+      .select('id, titulo, fecha_hora, hora_fin, sin_servicio_motivo, estado, ensayo_dia_semana, ensayo_fecha_hora, ensayo_hora_fin, ministerio_id, ministerios(codigo, nombre), asignaciones(id, perfil_id, rol_id, roles(nombre, codigo))')
       .eq('id', eventId)
       .maybeSingle(),
     client
@@ -689,7 +689,7 @@ export const syncGoogleCalendarEventForProfile = async ({ profileId, eventId, fe
     return cachedAccessToken;
   };
 
-  if (!event || !isPublished || assignments.length === 0) {
+  if (!event || event.sin_servicio_motivo || !isPublished || assignments.length === 0) {
     if (!links?.length) return { skipped: true, reason: 'not-assigned' };
     let removedCount = 0;
     for (const link of links) {
@@ -879,7 +879,7 @@ export const reconcileGoogleCalendarProfile = async ({
     const [{ data: assignments, error: assignmentsError }, { data: links, error: linksError }] = await Promise.all([
       client
         .from('asignaciones')
-        .select('evento_id, eventos!inner(fecha_hora, estado)')
+        .select('evento_id, eventos!inner(fecha_hora, sin_servicio_motivo, estado)')
         .eq('perfil_id', profileId)
         .gte('eventos.fecha_hora', new Date(referenceNow.getTime() - 2 * 60 * 60 * 1000).toISOString()),
       client

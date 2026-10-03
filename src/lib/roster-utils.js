@@ -89,3 +89,7 @@ export function getVisibleVoiceAssignments(assignments = [], roles = [], options
     .filter((assignment) => voiceRoleIds.has(assignment?.rol_id))
     .slice(0, maxVoiceSlots);
 }
+
+export const getInstrumentSlotCount = (roleCode, esAcustico = false) => (
+  esAcustico && roleCode === 'guitarra_acustica' ? 2 : 1
+);
