@@ -57,7 +57,6 @@ if (selectionEventId) {
 }
 if (!showSinFiltrosLibrary) canciones = canciones.filter((song) => song.repertorio !== 'sin_filtros');
 const initialLibrary = showSinFiltrosLibrary && Astro.url.searchParams.get('biblioteca') === 'sin_filtros' ? 'sin_filtros' : 'general';
-const canUploadSinFiltros = canAccessSinFiltros === true && (Astro.locals.perfil?.is_admin || Astro.locals.canManageOperations);
 let initialPlaylistSongIds: string[] = [];
 if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(selectionEventId)) {
   try {
@@ -126,16 +125,6 @@ const firstTourResourcesId =
   </div>
   </header>
 
- <section id="songLibraryAccess" data-library={initialLibrary} class="max-w-7xl mx-auto mb-3 flex flex-wrap items-center justify-between gap-3 px-1" aria-label="Bibliotecas de canciones">
-  {showSinFiltrosLibrary && <div class="inline-flex rounded-xl border border-border bg-surface p-1" role="group" aria-label="Elegir repertorio">
-   <button type="button" data-library-choice="general" aria-pressed={initialLibrary === 'general'} class="library-choice min-h-11 rounded-lg px-4 text-sm font-semibold text-content">General</button>
-   <button type="button" data-library-choice="sin_filtros" aria-pressed={initialLibrary === 'sin_filtros'} class="library-choice min-h-11 rounded-lg px-4 text-sm font-semibold text-content">Sin Filtros</button>
-  </div>}
-  {canUploadSinFiltros && <a href="/admin/sin-filtros" class="inline-flex min-h-11 items-center gap-2 rounded-xl border border-brand/25 bg-brand/10 px-3 text-sm font-semibold text-content transition-colors hover:bg-brand/20">
-   <span aria-hidden="true" class="text-brand">＋</span> Cargar canciones de Sin Filtros
-  </a>}
-  {showSinFiltrosLibrary && <p id="songLibraryDescription" class="w-full text-sm text-content-muted">{initialLibrary === 'sin_filtros' ? 'Canciones exclusivas para los servicios de Sin Filtros.' : 'Repertorio de la iglesia, disponible también para Sin Filtros.'}</p>}
- </section>
  <!-- UI Controles -->
  <section id="searchControls" data-tour="repertorio-search" class="repertoire-search-bar sticky z-40 max-w-7xl mx-auto mb-3 md:mb-6 bg-surface/95 backdrop-blur-xl border border-border rounded-2xl px-2.5 py-2.5 md:px-4 md:py-4 shadow-lg anim-fade-in-up anim-stagger" style="--delay: 220ms; top: max(calc(env(safe-area-inset-top) + 0.65rem), 0.75rem);">
  <div class="flex items-end gap-2 md:grid md:grid-cols-[minmax(16rem,1fr)_auto] md:gap-3">
@@ -143,15 +132,23 @@ const firstTourResourcesId =
  <label for="search-input" class="hidden md:block text-sm font-medium text-content mb-1.5">Buscar</label>
   <BuscadorPredictivo idInput="searchInput" placeholder="Buscar canci&oacute;n o artista..." />
  </div>
- <button id="btnToggleFilters" type="button" aria-expanded="false" aria-controls="mobileFiltersDialog" class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 text-sm font-bold text-content transition-colors hover:bg-surface md:hidden">
+ <button id="btnToggleFilters" type="button" aria-expanded="false" aria-controls="mobileFiltersDialog" class="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 text-sm font-bold text-content transition-colors hover:bg-surface">
   <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18"/><path d="M6 12h12"/><path d="M10 19h4"/></svg>
   <span>Filtros</span>
   <span id="activeFiltersBadge" class="hidden min-w-5 rounded-full bg-brand px-1.5 py-0.5 text-[10px] font-black leading-none text-white">0</span>
  </button>
  </div>
 
- <div id="advancedFilters" class="repertorio-advanced-filters mt-0 md:mt-3 md:grid md:grid-cols-4 md:gap-3" data-open="false">
+ <div id="advancedFilters" class:list={["repertorio-advanced-filters mt-0 md:grid md:gap-3", showSinFiltrosLibrary ? "md:grid-cols-5" : "md:grid-cols-4"]} data-open="false" inert>
  <div class="grid grid-cols-2 gap-2.5 md:contents">
+ {showSinFiltrosLibrary && <div class="col-span-2 md:col-span-1">
+  <label for="filterRepertorio" class="block text-xs md:text-sm font-medium text-content mb-1.5">Repertorio</label>
+  <select id="filterRepertorio" class="w-full h-11 bg-surface border border-border text-content rounded-xl px-3 text-sm md:text-base focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand transition-colors appearance-none">
+   <option value="general" selected={initialLibrary === 'general'}>Repertorio general</option>
+   <option value="sin_filtros" selected={initialLibrary === 'sin_filtros'}>Repertorio Sin Filtros</option>
+  </select>
+ </div>}
+
  <div class="col-span-1">
  <label for="filterVoz" class="block text-xs md:text-sm font-medium text-content mb-1.5">Voz</label>
  <select id="filterVoz" 
@@ -214,6 +211,14 @@ const firstTourResourcesId =
    </header>
 
    <div class="mobile-filters-fields">
+    {showSinFiltrosLibrary && <div>
+     <label for="mobileFilterRepertorio" class="mobile-filter-label">Repertorio</label>
+     <select id="mobileFilterRepertorio" class="mobile-filter-select">
+      <option value="general">Repertorio general</option>
+      <option value="sin_filtros">Repertorio Sin Filtros</option>
+     </select>
+    </div>}
+
     <div>
      <label for="mobileFilterVoz" class="mobile-filter-label">Voz</label>
      <select id="mobileFilterVoz" class="mobile-filter-select">
@@ -575,6 +580,7 @@ if (sessionError) {
  const filterCategoria = document.getElementById('filterCategoria') as HTMLSelectElement;
  const filterTema = document.getElementById('filterTema') as HTMLSelectElement;
  const filterEstado = document.getElementById('filterEstado') as HTMLSelectElement;
+ const filterRepertorio = document.getElementById('filterRepertorio') as HTMLSelectElement | null;
  const btnToggleFilters = document.getElementById('btnToggleFilters') as HTMLButtonElement | null;
  const advancedFilters = document.getElementById('advancedFilters') as HTMLElement | null;
  const activeFiltersBadge = document.getElementById('activeFiltersBadge') as HTMLElement | null;
@@ -583,6 +589,7 @@ if (sessionError) {
  const mobileFilterCategoria = document.getElementById('mobileFilterCategoria') as HTMLSelectElement | null;
  const mobileFilterTema = document.getElementById('mobileFilterTema') as HTMLSelectElement | null;
  const mobileFilterEstado = document.getElementById('mobileFilterEstado') as HTMLSelectElement | null;
+ const mobileFilterRepertorio = document.getElementById('mobileFilterRepertorio') as HTMLSelectElement | null;
  const btnCloseMobileFilters = document.getElementById('btnCloseMobileFilters') as HTMLButtonElement | null;
  const btnResetMobileFilters = document.getElementById('btnResetMobileFilters') as HTMLButtonElement | null;
  const btnApplyMobileFilters = document.getElementById('btnApplyMobileFilters') as HTMLButtonElement | null;
@@ -871,18 +878,6 @@ if (sessionError) {
  // DETECCION DE MODOS DE LA PAGINA (Setlist Semanal vs Playlist vs Normal)
  // =============================================
  const urlParams = new URLSearchParams(window.location.search);
-const libraryAccess = document.getElementById('songLibraryAccess');
-let activeSongLibrary = libraryAccess?.dataset.library || 'general';
-for (const button of document.querySelectorAll<HTMLButtonElement>('[data-library-choice]')) {
- addListener(button, 'click', () => {
-  activeSongLibrary = button.dataset.libraryChoice || 'general';
-  document.querySelectorAll<HTMLButtonElement>('[data-library-choice]').forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
-  const description = document.getElementById('songLibraryDescription');
-  if (description) description.textContent = activeSongLibrary === 'sin_filtros' ? 'Canciones exclusivas para los servicios de Sin Filtros.' : 'Repertorio de la iglesia, disponible también para Sin Filtros.';
-  filterCards();
- });
-}
-
  const seleccionarPara = urlParams.get('seleccionar_para');
  const setlistParam = urlParams.get('setlist');
  const isSelectionMode = !!seleccionarPara;
@@ -1139,7 +1134,7 @@ for (const button of document.querySelectorAll<HTMLButtonElement>('[data-library
   const temaTerm = (filterTema?.value || 'Todas').trim().toLowerCase();
   const estadoTerm = (filterEstado?.value || 'Todas').trim().toLowerCase();
 
-  return Boolean(searchTerm) || vozTerm !== 'todas' || categoriaTerm !== 'todas' || temaTerm !== 'todas' || estadoTerm !== 'todas';
+  return (filterRepertorio?.value || 'general') !== 'general' || Boolean(searchTerm) || vozTerm !== 'todas' || categoriaTerm !== 'todas' || temaTerm !== 'todas' || estadoTerm !== 'todas';
  }
 
  function countAdvancedSongFilters() {
@@ -1147,10 +1142,11 @@ for (const button of document.querySelectorAll<HTMLButtonElement>('[data-library
   const categoriaTerm = (filterCategoria?.value || 'Todas').trim().toLowerCase();
   const temaTerm = (filterTema?.value || 'Todas').trim().toLowerCase();
   const estadoTerm = (filterEstado?.value || 'Todas').trim().toLowerCase();
-  return [vozTerm !== 'todas', categoriaTerm !== 'todas', temaTerm !== 'todas', estadoTerm !== 'todas'].filter(Boolean).length;
+  return [(filterRepertorio?.value || 'general') !== 'general', vozTerm !== 'todas', categoriaTerm !== 'todas', temaTerm !== 'todas', estadoTerm !== 'todas'].filter(Boolean).length;
  }
 
  function syncMobileFilterDraft() {
+  if (mobileFilterRepertorio) mobileFilterRepertorio.value = filterRepertorio?.value || 'general';
   if (mobileFilterVoz) mobileFilterVoz.value = filterVoz?.value || 'Todas';
   if (mobileFilterCategoria) mobileFilterCategoria.value = filterCategoria?.value || 'Todas';
   if (mobileFilterTema) mobileFilterTema.value = filterTema?.value || 'Todas';
@@ -1169,7 +1165,7 @@ for (const button of document.querySelectorAll<HTMLButtonElement>('[data-library
    document.body.classList.remove('mobile-filters-open');
   }
 
-  btnToggleFilters.setAttribute('aria-expanded', String(isOpen));
+  btnToggleFilters.setAttribute('aria-expanded', String(isOpen || advancedFilters?.dataset.open === 'true'));
  }
 
  function syncFilterMenuState() {
@@ -1180,10 +1176,23 @@ for (const button of document.querySelectorAll<HTMLButtonElement>('[data-library
   }
  }
 
+ function setDesktopFiltersOpen(isOpen: boolean) {
+  if (advancedFilters) {
+   advancedFilters.dataset.open = String(isOpen);
+   advancedFilters.inert = !isOpen;
+  }
+  btnToggleFilters?.setAttribute('aria-expanded', String(isOpen));
+ }
+ function syncFiltersBreakpoint() {
+  setMobileFiltersOpen(false);
+  setDesktopFiltersOpen(false);
+  btnToggleFilters?.setAttribute('aria-controls', window.innerWidth >= 768 ? 'advancedFilters' : 'mobileFiltersDialog');
+ }
+ syncFiltersBreakpoint();
  if (btnToggleFilters) {
   addListener(btnToggleFilters, 'click', () => {
-   const isOpen = Boolean(mobileFiltersDialog?.open);
-   setMobileFiltersOpen(!isOpen);
+   if (window.innerWidth >= 768) setDesktopFiltersOpen(advancedFilters?.dataset.open !== 'true');
+   else setMobileFiltersOpen(!mobileFiltersDialog?.open);
   });
  }
 
@@ -1197,10 +1206,11 @@ for (const button of document.querySelectorAll<HTMLButtonElement>('[data-library
  });
  addListener(mobileFiltersDialog, 'close', () => {
   document.body.classList.remove('mobile-filters-open');
-  btnToggleFilters?.setAttribute('aria-expanded', 'false');
+  btnToggleFilters?.setAttribute('aria-expanded', String(advancedFilters?.dataset.open === 'true'));
  });
 
  addListener(btnResetMobileFilters, 'click', () => {
+  if (mobileFilterRepertorio) mobileFilterRepertorio.value = 'general';
   if (mobileFilterVoz) mobileFilterVoz.value = 'Todas';
   if (mobileFilterCategoria) mobileFilterCategoria.value = 'Todas';
   if (mobileFilterTema) mobileFilterTema.value = 'Todas';
@@ -1208,6 +1218,7 @@ for (const button of document.querySelectorAll<HTMLButtonElement>('[data-library
  });
 
  addListener(btnApplyMobileFilters, 'click', () => {
+  if (filterRepertorio && mobileFilterRepertorio) filterRepertorio.value = mobileFilterRepertorio.value;
   if (filterVoz && mobileFilterVoz) filterVoz.value = mobileFilterVoz.value;
   if (filterCategoria && mobileFilterCategoria) filterCategoria.value = mobileFilterCategoria.value;
   if (filterTema && mobileFilterTema) filterTema.value = mobileFilterTema.value;
@@ -1216,8 +1227,13 @@ for (const button of document.querySelectorAll<HTMLButtonElement>('[data-library
   filterCards();
  });
 
+ let filtersDesktopBreakpoint = window.innerWidth >= 768;
  addListener(window, 'resize', () => {
-  if (window.innerWidth >= 768 && mobileFiltersDialog?.open) setMobileFiltersOpen(false);
+  const nextDesktopBreakpoint = window.innerWidth >= 768;
+  if (nextDesktopBreakpoint !== filtersDesktopBreakpoint) {
+   filtersDesktopBreakpoint = nextDesktopBreakpoint;
+   syncFiltersBreakpoint();
+  }
  }, { passive: true });
 
  function sortSongsSelectedFirst(songCards: Iterable<HTMLElement>) {
@@ -1460,7 +1476,6 @@ function applySongOrder(songCards: Iterable<HTMLElement>) {
  const esEnsayo = urlParams.get('esEnsayo') === 'true';
  
  if (searchControls) searchControls.style.display = 'none';
- if (libraryAccess) libraryAccess.style.display = 'none';
  if (setlistPanel) setlistPanel.style.display = 'none';
  document.body.classList.add('repertorio-shared-setlist-mode');
  if (pageSubtitle) {
@@ -1931,7 +1946,7 @@ function filterCards() {
  const matchesTema = temaTerm === 'todas' || tema.includes(temaTerm);
  const matchesEstado = estadoTerm === 'todas' || estado.includes(estadoTerm);
 
- const matchesLibrary = !!setlistParam || (card.getAttribute('data-repertorio') || 'general') === activeSongLibrary;
+ const matchesLibrary = !!setlistParam || (card.getAttribute('data-repertorio') || 'general') === (filterRepertorio?.value || 'general');
  return matchesLibrary && matchesSearch && matchesVoz && matchesCategoria && matchesTema && matchesEstado;
  });
 
@@ -1974,6 +1989,7 @@ function filterCards() {
    if (filterCategoria) (filterCategoria as HTMLSelectElement).value = 'Todas';
    if (filterTema) (filterTema as HTMLSelectElement).value = 'Todas';
    if (filterEstado) (filterEstado as HTMLSelectElement).value = 'Todas';
+   if (filterRepertorio) filterRepertorio.value = 'general';
    syncMobileFilterDraft();
    setMobileFiltersOpen(false);
    filterCards();
@@ -1985,6 +2001,7 @@ function filterCards() {
  if(filterCategoria) addListener(filterCategoria, 'change', filterCards);
  if(filterTema) addListener(filterTema, 'change', filterCards);
  if(filterEstado) addListener(filterEstado, 'change', filterCards);
+ if(filterRepertorio) addListener(filterRepertorio, 'change', filterCards);
  syncFilterMenuState();
 
 
@@ -2049,8 +2066,6 @@ function filterCards() {
  .btn-add-setlist { transform: translateZ(0); -webkit-backface-visibility: hidden; backface-visibility: hidden; }
 
  /* GPU-accelerated containment for card grid — reduces layout/paint on scroll */
- .library-choice[aria-pressed="true"] { background: rgb(var(--color-brand) / 0.16); color: rgb(var(--text-base)); box-shadow: 0 1px 4px rgb(0 0 0 / 0.12); }
- .library-choice:focus-visible { outline: 2px solid rgb(var(--color-brand)); outline-offset: 2px; }
  #gridCanciones { contain: style; }
 
  .repertoire-search-bar {
@@ -2434,8 +2449,6 @@ function filterCards() {
      display: none;
    }
 
-   .repertorio-advanced-filters,
-   .repertorio-advanced-filters[data-open='false'],
    .repertorio-advanced-filters[data-open='true'] {
      max-height: none;
      opacity: 1;
