@@ -1,5 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import { createSupabaseUserClient } from '../lib/server/supabase-user-client.js';
 import PanelBranding from '../components/react/PanelBranding.jsx';
 import PanelAdminPush from '../components/react/PanelAdminPush.jsx';
 import PanelGestionRepertorio from '../components/react/PanelGestionRepertorio.jsx';
@@ -9,6 +10,17 @@ const canManageOperations = Boolean(Astro.locals.canManageOperations);
 
 if (!isAdmin && !canManageOperations) {
   return Astro.redirect('/programacion');
+}
+
+let canManageSinFiltros = isAdmin;
+if (!isAdmin && canManageOperations) {
+  try {
+    const { data, error } = await createSupabaseUserClient(Astro.locals.accessToken).rpc('can_access_sin_filtros_repertoire');
+    if (error) throw error;
+    canManageSinFiltros = data === true;
+  } catch (error) {
+    console.error('[configuracion] No se pudo validar el acceso a Sin Filtros:', error);
+  }
 }
 
 const settingsStepCount = isAdmin ? 3 : 1;
@@ -55,7 +67,12 @@ const settingsGridStyle = `grid-template-columns: repeat(${settingsStepCount}, m
 
       <div class="settings-wizard-stage" id="settings-wizard-stage">
         <section id="settings-step-repertorio" class="settings-wizard-step" data-settings-panel="0" data-settings-key="repertorio" data-state="active" role="tabpanel">
-          <PanelGestionRepertorio client:idle />
+          <div class="flex flex-col gap-8">
+            <PanelGestionRepertorio client:idle />
+            {canManageSinFiltros && <div class="border-t border-border pt-8">
+              <PanelGestionRepertorio libraryScope="sin_filtros" client:idle />
+            </div>}
+          </div>
         </section>
         {isAdmin && (
           <section id="settings-step-branding" class="settings-wizard-step" data-settings-panel="1" data-settings-key="branding" data-state="after" role="tabpanel" aria-hidden="true" inert>
