@@ -1,3 +1,4 @@
+import { processPlaylistReadyNotifications } from '../../lib/server/playlist-ready-notifications.js';
 import {
   getAssignmentNotificationDelayMinutes,
   processDueAssignmentNotifications,
@@ -45,12 +46,17 @@ export async function POST({ request }) {
       ? Math.min(Math.round(rawLimit), 50)
       : 12;
 
-    const result = await processDueAssignmentNotifications({
+    const [result, playlistReady] = await Promise.all([processDueAssignmentNotifications({
       limit,
       onlyEventId: payload?.event_id || payload?.only_event_id || '',
       onlyPerfilId: payload?.perfil_id || payload?.only_perfil_id || '',
       dryRun: Boolean(payload?.dry_run),
-    });
+    }), processPlaylistReadyNotifications({
+      limit,
+      onlyEventId: payload?.event_id || payload?.only_event_id || '',
+      onlyPerfilId: payload?.perfil_id || payload?.only_perfil_id || '',
+      dryRun: Boolean(payload?.dry_run),
+    })]);
 
     return new Response(
       JSON.stringify({
@@ -58,6 +64,7 @@ export async function POST({ request }) {
         executed: true,
         delay_minutes: getAssignmentNotificationDelayMinutes(),
         result,
+        playlist_ready: playlistReady,
       }),
       {
         status: 200,

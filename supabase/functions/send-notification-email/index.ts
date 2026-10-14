@@ -10,6 +10,7 @@ type NotificationRow = {
   source?: string;
   url?: string;
   cta_label?: string;
+  idempotency_key?: string;
 };
 
 type WebhookPayload = {
@@ -312,6 +313,7 @@ serve(async (req) => {
     const source = notification?.source?.trim() ?? "system";
     const url = notification?.url?.trim() ?? "";
     const ctaLabel = notification?.cta_label?.trim() ?? "Abrir app";
+    const idempotencyKey = notification?.idempotency_key?.trim() ?? "";
 
     if (!perfilId || !titulo || !contenido) {
       return jsonResponse(
@@ -368,7 +370,7 @@ serve(async (req) => {
 
     const resendFrom = (Deno.env.get("RESEND_FROM") ?? "").trim() || "Worship App <onboarding@resend.dev>";
     const resend = new Resend(resendApiKey);
-    const { data, error } = await resend.emails.send({
+    const emailPayload = {
       from: resendFrom,
       to: [email],
       subject: titulo,
@@ -378,7 +380,19 @@ serve(async (req) => {
         ctaUrl: url,
         ctaLabel,
       }),
-    });
+    };
+    // El SDK 4.1.2 permite pasar opciones HTTP por fetchRequest.
+    const { data, error } = idempotencyKey
+      ? await resend.fetchRequest<{ id: string }>('/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify(emailPayload),
+      })
+      : await resend.emails.send(emailPayload);
 
     if (error) {
       console.error("Resend send error:", error);

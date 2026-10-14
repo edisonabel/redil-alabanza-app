@@ -8,6 +8,8 @@ import {
 import { getServerAuthTokens } from '../../lib/server/auth-cookies.js';
 import { createSupabaseUserClient } from '../../lib/server/supabase-user-client.js';
 
+import { processPlaylistReadyNotifications } from '../../lib/server/playlist-ready-notifications.js';
+
 export const prerender = false;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -120,48 +122,17 @@ export const PUT: APIRoute = async ({ request, cookies, url }) => {
       }
     }
 
-    const { data: playlist, error: playlistError } = await database
-      .from('playlists')
-      .upsert({ evento_id: eventoId }, { onConflict: 'evento_id' })
-      .select('id, created_at, updated_at')
-      .single();
-    if (playlistError || !playlist) throw playlistError || new Error('No se pudo crear el repertorio.');
+    const { error: saveError } = await database.rpc('save_event_playlist', {
+      p_evento_id: eventoId,
+      p_song_ids: songIds,
+    });
+    if (saveError) throw saveError;
 
-    const { data: previousItems, error: previousItemsError } = await database
-      .from('playlist_canciones')
-      .select('id')
-      .eq('playlist_id', playlist.id);
-    if (previousItemsError) throw previousItemsError;
-
-    const previousItemIds = (previousItems || []).map((item) => item.id).filter(Boolean);
-    let insertedItemIds: string[] = [];
-
-    if (songIds.length > 0) {
-      const insertPayload = songIds.map((cancionId, orden) => ({
-        playlist_id: playlist.id,
-        cancion_id: cancionId,
-        orden,
-      }));
-      const { data: insertedItems, error: insertError } = await database
-        .from('playlist_canciones')
-        .insert(insertPayload)
-        .select('id');
-      if (insertError) throw insertError;
-      insertedItemIds = (insertedItems || []).map((item) => item.id).filter(Boolean);
-    }
-
-    if (previousItemIds.length > 0) {
-      const { error: deleteError } = await database
-        .from('playlist_canciones')
-        .delete()
-        .in('id', previousItemIds);
-
-      if (deleteError) {
-        if (insertedItemIds.length > 0) {
-          await database.from('playlist_canciones').delete().in('id', insertedItemIds);
-        }
-        throw deleteError;
-      }
+    // Un fallo del correo no revierte el guardado; el cron reintenta los pendientes.
+    try {
+      await processPlaylistReadyNotifications({ onlyEventId: eventoId, limit: 50 });
+    } catch (error) {
+      console.error('[event-playlist] Playlist email remains queued:', error);
     }
 
     return json(await loadEventPlaylist(database, eventoId));

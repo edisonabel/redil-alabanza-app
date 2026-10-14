@@ -393,6 +393,7 @@ import { supabase } from '../lib/supabase';
 import { metronomeService } from '../services/MetronomeEngine';
 import { safeHtml } from '../lib/client/html-safety.js';
 import { buildCustomSetlistPath } from '../utils/customSetlistShare';
+import { matchesSongLibrary } from '../lib/song-library.js';
 
  type RepertorioWindow = Window & {
   __REPERTORIO_INIT_BOUND__?: boolean;
@@ -1946,7 +1947,7 @@ function filterCards() {
  const matchesTema = temaTerm === 'todas' || tema.includes(temaTerm);
  const matchesEstado = estadoTerm === 'todas' || estado.includes(estadoTerm);
 
- const matchesLibrary = !!setlistParam || (card.getAttribute('data-repertorio') || 'general') === (filterRepertorio?.value || 'general');
+ const matchesLibrary = !!setlistParam || matchesSongLibrary(card.getAttribute('data-repertorio') || 'general', filterRepertorio?.value || 'general');
  return matchesLibrary && matchesSearch && matchesVoz && matchesCategoria && matchesTema && matchesEstado;
  });
 

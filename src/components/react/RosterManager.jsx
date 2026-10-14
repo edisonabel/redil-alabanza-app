@@ -9,10 +9,7 @@ import {
     getVisibleVoiceAssignments,
     normalizeRosterAssignments,
 } from '../../lib/roster-utils';
-import { isEventRepertoryManagerRoleCode, isHiddenEventAssignmentRoleCode } from '../../lib/role-permissions.js';
-
-const isHiddenAssignmentRole = (role) =>
-    isHiddenEventAssignmentRoleCode(role?.codigo);
+import { getEventAssignableRoles, isEventRepertoryManagerRoleCode, isDirectionLeadershipRoleCode } from '../../lib/role-permissions.js';
 
 const isMissingRpcFunctionError = (error) => {
     const code = String(error?.code || '');
@@ -147,7 +144,7 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
     }, [roles, esAcustico]);
 
     const assignableRoles = useMemo(
-        () => effectiveRoles.filter((rol) => !isHiddenAssignmentRole(rol)),
+        () => getEventAssignableRoles(effectiveRoles),
         [effectiveRoles],
     );
 
@@ -780,10 +777,10 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
                         Number.isInteger(keySuffix) ? keySuffix : null
                     );
                 }}
-                className={`btn-roster-inline empty-slot inline-flex whitespace-nowrap px-4 h-9 items-center justify-center gap-1.5 rounded-full border border-dashed border-border text-[11px] font-bold leading-none text-content-muted uppercase tracking-widest transition-all ${!canEditRoster ? 'cursor-default opacity-55' : 'hover:border-brand/30 hover:text-brand hover:bg-brand/10'}`}
+                className={`btn-roster-inline empty-slot inline-flex max-w-full px-4 min-h-9 py-2 items-center justify-center gap-1.5 rounded-full border border-dashed border-border text-[11px] font-bold leading-snug text-content-muted uppercase tracking-widest transition-all ${isDirectionLeadershipRoleCode(rolMap.codigo) ? 'whitespace-normal text-center' : 'whitespace-nowrap'} ${!canEditRoster ? 'cursor-default opacity-55' : 'hover:border-brand/30 hover:text-brand hover:bg-brand/10'}`}
                 disabled={!canEditRoster}
             >
-                {label || rolMap.nombre.split(' ')[0]} <span className="font-normal opacity-60 text-lg leading-none mt-[-2px]">+</span>
+                {label || (isDirectionLeadershipRoleCode(rolMap.codigo) ? rolMap.nombre : rolMap.nombre.split(' ')[0])} <span className="font-normal opacity-60 text-lg leading-none mt-[-2px]">+</span>
             </button>
         );
     };
@@ -825,6 +822,9 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
                     )}
                 </div>
                 <span className="text-[11px] font-semibold text-content capitalize max-w-[60px] truncate text-center leading-none tracking-tight">{displayName}</span>
+                {isDirectionLeadershipRoleCode(rolMatch.codigo) && (
+                    <span className="max-w-[110px] text-center text-[10px] font-bold leading-snug text-rol-dir">Director musical</span>
+                )}
                 {canEditRoster && (
                     <button
                         type="button"

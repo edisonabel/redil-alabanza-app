@@ -373,7 +373,7 @@ export async function insertInAppNotifications({
   };
 }
 
-const sendEmailWithSupabaseFunction = async ({ perfilId, title, body, source, url = '', ctaLabel = 'Abrir app' }) => {
+const sendEmailWithSupabaseFunction = async ({ perfilId, title, body, source, url = '', ctaLabel = 'Abrir app', idempotencyKey = '' }) => {
   if (!supabaseUrl || !supabaseServiceRoleKey) {
     throw new Error('Faltan credenciales de Supabase para invocar el email transaccional.');
   }
@@ -388,6 +388,7 @@ const sendEmailWithSupabaseFunction = async ({ perfilId, title, body, source, ur
       source,
       url,
       cta_label: ctaLabel,
+      idempotency_key: idempotencyKey,
     }),
   });
 
@@ -422,12 +423,13 @@ const sendEmailWithSupabaseFunction = async ({ perfilId, title, body, source, ur
   };
 };
 
-const sendEmailWithResendApi = async ({ email, title, html }) => {
+const sendEmailWithResendApi = async ({ email, title, html, idempotencyKey = '' }) => {
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       authorization: `Bearer ${resendApiKey}`,
+      ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
     body: JSON.stringify({
       from: resendFrom,
@@ -460,6 +462,7 @@ export async function sendEmailNotifications({
   ctaLabel = 'Abrir app',
   htmlBuilder,
   source = 'system',
+  idempotencyKey = '',
 }) {
   const recipientsWithIdentity = Array.isArray(recipients)
     ? recipients.filter((item) => item?.id)
@@ -514,6 +517,7 @@ export async function sendEmailNotifications({
           email: recipient.email,
           title,
           html: htmlFor(recipient),
+          idempotencyKey: idempotencyKey ? `${idempotencyKey}/${recipient.id}` : '',
         });
 
         return {
@@ -530,6 +534,7 @@ export async function sendEmailNotifications({
         source,
         url,
         ctaLabel,
+        idempotencyKey: idempotencyKey ? `${idempotencyKey}/${recipient.id}` : '',
       });
 
       return {

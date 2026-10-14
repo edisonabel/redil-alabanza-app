@@ -1,3 +1,4 @@
+import { isDirectionLeadershipRoleCode, withRoleDisplayNames } from '../../lib/role-permissions.js';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Icon } from '@iconify/react';
 import microphoneIcon from '@iconify-icons/mdi/microphone';
@@ -694,7 +695,7 @@ export default function CalendarioGrid({
     const renderRoster = (dbData) => {
         if (!dbData || !dbData.asignaciones) return null;
 
-        const dictRoles = initialRoles || [];
+        const dictRoles = withRoleDisplayNames(initialRoles || []);
         const voiceSlotCount = getEventVoiceSlotCount(dbData.asignaciones, dictRoles);
         const asignaciones = normalizeRosterAssignments(dbData.asignaciones, dictRoles, { maxVoiceSlots: voiceSlotCount });
 
@@ -739,6 +740,9 @@ export default function CalendarioGrid({
                         )}
                     </div>
                     <span className="text-[11px] font-semibold text-content capitalize max-w-[60px] truncate text-center leading-none tracking-tight">{displayName}</span>
+                    {isDirectionLeadershipRoleCode(rolMatch.codigo) && (
+                        <span className="max-w-[110px] text-center text-[10px] font-bold leading-snug text-rol-dir">Director musical</span>
+                    )}
                 </div>
             );
 
@@ -857,7 +861,7 @@ export default function CalendarioGrid({
         const { theme: temaPrincipal, preacher: predicador } = getEventThemeAndPreacher(cardData.dbData || {}, titulo);
 
         const rosterDb = cardData.dbData?.asignaciones || [];
-        const dictRoles = initialRoles || [];
+        const dictRoles = withRoleDisplayNames(initialRoles || []);
 
         const miAsignacion = rosterDb.find((asig) => asig.perfiles?.id === sessionUser?.id);
         const isUsuarioAsignado = !!miAsignacion;
@@ -1058,7 +1062,7 @@ export default function CalendarioGrid({
 
         const horaInicio = fechaObj.toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit' });
         const timeString = cardData.dbData?.hora_fin ? `${horaInicio} - ${cardData.dbData.hora_fin.substring(0, 5)}` : horaInicio;
-        const dictRoles = initialRoles || [];
+        const dictRoles = withRoleDisplayNames(initialRoles || []);
         const rosterAssignments = cardData.dbData?.asignaciones || [];
         const voiceSlotCount = getEventVoiceSlotCount(rosterAssignments, dictRoles);
         const rosterDb = normalizeRosterAssignments(rosterAssignments, dictRoles, { maxVoiceSlots: voiceSlotCount });

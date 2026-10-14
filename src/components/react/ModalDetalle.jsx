@@ -1,3 +1,4 @@
+import { isDirectionLeadershipRoleCode, withRoleDisplayNames } from '../../lib/role-permissions.js';
 import { isLeaderForEventMinistry } from '../../lib/event-management-permissions.js';
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -331,10 +332,10 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
     const timeString = eventData?.dbData?.hora_fin ? `${horaInicio} - ${eventData.dbData.hora_fin.substring(0, 5)}` : horaInicio;
 
     const rawRoster = eventData?.dbData?.asignaciones || [];
-    const rosterRoles = initialRoles || [];
+    const rosterRoles = withRoleDisplayNames(initialRoles || []);
     const voiceSlotCount = getEventVoiceSlotCount(rawRoster, rosterRoles);
     const roster = normalizeRosterAssignments(rawRoster, rosterRoles, { maxVoiceSlots: voiceSlotCount });
-    const rolesById = new Map((initialRoles || []).map((role) => [role.id, role]));
+    const rolesById = new Map((withRoleDisplayNames(initialRoles || [])).map((role) => [role.id, role]));
     const rosterGroupsMap = new Map();
 
     roster.forEach((asig) => {
@@ -605,7 +606,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                                                             <h4 className="truncate text-sm font-black leading-tight text-slate-950 dark:text-white sm:text-base">
                                                                 {displayName}
                                                             </h4>
-                                                            <p className="mt-0.5 truncate text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500 dark:text-white/46 sm:text-[11px]">
+                                                            <p className={`mt-0.5 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500 dark:text-white/46 sm:text-[11px] ${isDirectionLeadershipRoleCode(role.codigo) ? 'whitespace-normal leading-snug' : 'truncate'}`}>
                                                                 {roleName}
                                                             </p>
                                                         </div>

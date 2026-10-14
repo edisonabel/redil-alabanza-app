@@ -472,7 +472,7 @@ const operationalEvents: AnyRecord[] = eventos
     const alerts = [];
     if (!hasSetlist) alerts.push({ level: 'danger', title: 'Sin setlist', detail: 'Este servicio aun no tiene playlist cargada.' });
     if (!hasRoster) alerts.push({ level: 'danger', title: 'Sin roster', detail: 'Todavia no hay personal asignado.' });
-    if (!hasDirection) alerts.push({ level: 'warning', title: 'Falta direccion', detail: 'No hay rol de direccion o talkback asignado.' });
+    if (!hasDirection) alerts.push({ level: 'warning', title: 'Falta direccion', detail: 'No hay líder de alabanza ni director musical asignado.' });
     if (!hasLyrics) alerts.push({ level: 'warning', title: 'Falta letras', detail: 'No hay cobertura para letras o visuales.' });
     if (missingChordproSongs.length > 0) alerts.push({ level: 'warning', title: 'ChordPro pendiente', detail: `${missingChordproSongs.length} canciones sin guia de ensayo.` });
     if (missingMp3Songs.length > 0) alerts.push({ level: 'warning', title: 'MP3 pendiente', detail: `${missingMp3Songs.length} canciones sin audio base.` });

@@ -112,7 +112,7 @@ assert.match(teamPage, /if \(disabled\) input\.checked = false/);
 assert.match(teamPage, /modalLeadershipRoleSection\?\.classList\.toggle\('hidden', !canConfigureLeadershipRoles\)/);
 assert.doesNotMatch(teamPage, /if \(isWorshipLeader && leadsAnyMinistry\) input\.checked = true/);
 assert.doesNotMatch(teamPage, /worshipLeaderRole/);
-assert.match(teamPage, /nombre: 'Talkback \/ Dirección Musical'/);
+assert.match(teamPage, /nombre: 'Director musical'/);
 assert.match(teamPage, /data-linked-role-ids=/);
 assert.match(teamPage, /'director_musical', 'talkback', 'bateria'/);
 assert.equal(isTeamAssignableRoleCode('lider_vocal'), false);

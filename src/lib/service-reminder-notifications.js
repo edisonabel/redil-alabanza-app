@@ -19,7 +19,6 @@ const REMINDER_CONFIG = {
   '10d': { label: '10 dias', subject: 'Faltan 10 d\u00EDas para tu servicio \u{1F3B6}' },
   '7d': { label: '7 dias', subject: 'Falta 1 semana para tu servicio \u{1F64F}' },
   'rehearsal': { label: 'ensayo', subject: 'Hoy tienes ensayo \u{1F3B5}' },
-  'saturday_night': { label: 'sabado en la noche', subject: 'Ma\u00F1ana servimos al Se\u00F1or \u{1F90D}' },
 };
 
 const localDateFormatter = new Intl.DateTimeFormat('es-CO', {
@@ -264,22 +263,6 @@ const buildReminderContent = ({
         ctaLabel: hasSetlist ? 'Entrar al modo ensayo' : 'Ver mi agenda',
       };
 
-    case 'saturday_night':
-      return {
-        title: REMINDER_CONFIG.saturday_night.subject,
-        body: [
-          greeting,
-          'Solo paso para recordarte que ma\u00F1ana tienes servicio.',
-          details,
-          'Procura descansar bien esta noche, guardar energ\u00EDas y preparar tu coraz\u00F3n para servir al Se\u00F1or.',
-          'Toma un momento para orar y encomendar el servicio a Dios.',
-          'Nos vemos ma\u00F1ana, Dios mediante.',
-          'Bendiciones.',
-        ].join('\n\n'),
-        url: '/programacion',
-        ctaLabel: 'Ver mi agenda',
-      };
-
     default:
       return null;
   }
@@ -301,11 +284,6 @@ export const getReminderKeyForEvent = ({ scope, daysUntil, eventWeekday, event, 
         return 'rehearsal';
       }
     }
-    return '';
-  }
-
-  if (scope === 'saturday-night') {
-    if (eventWeekday === 0 && daysUntil === 1) return 'saturday_night';
     return '';
   }
 
@@ -538,15 +516,15 @@ export async function runServiceReminderNotifications({
 } = {}) {
   const referenceDate = normalizeReferenceDate(today);
   const normalizedScope = String(scope || 'morning').trim().toLowerCase();
-  const serviceRoleClient = getServiceRoleClient();
   const summary = {
     ...emptySummary(normalizedScope, referenceDate),
     dry_run: Boolean(dryRun),
   };
 
-  if (!['morning', 'saturday-night'].includes(normalizedScope)) {
-    throw new Error('scope must be morning or saturday-night');
-  }
+  // Compatibilidad con llamadas antiguas mientras se retira el cron.
+  if (normalizedScope === 'saturday-night') return { ...summary, executed: false, reason: 'reminder-disabled' };
+  if (normalizedScope !== 'morning') throw new Error('scope must be morning');
+  const serviceRoleClient = getServiceRoleClient();
 
   const events = await fetchUpcomingEvents({
     serviceRoleClient,

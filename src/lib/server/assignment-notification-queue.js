@@ -1,4 +1,5 @@
 import { getEventThemeAndPreacher } from '../event-display.js';
+import { getRoleDisplayName } from '../role-permissions.js';
 import { isPredicadorColumnMissingError, withPredicadorFallbackRows } from '../predicador-compat.js';
 import {
   getServiceRoleClient,
@@ -144,7 +145,7 @@ const buildAssignmentNotificationContent = ({
   const { theme, preacher } = getEventThemeAndPreacher(event, event?.titulo || 'Servicio');
   const formattedDate = formatBogotaLongDate(new Date(event.fecha_hora));
   const roleNames = uniqueNormalizedStrings(
-    assignments.map((assignment) => assignment?.roles?.nombre || ''),
+    assignments.map((assignment) => getRoleDisplayName(assignment?.roles)),
   );
   const roleLabel = roleNames.length === 1 ? 'Rol' : 'Roles';
 

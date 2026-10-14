@@ -5,6 +5,7 @@ import ModalEvento from '../ModalEvento.jsx';
 import CalendarioGrid from '../CalendarioGrid.jsx';
 
 const roles = [{ id: 'guitar-role', codigo: 'guitarra_acustica', nombre: 'Guitarra electroacústica' }, { id: 'caja-role', codigo: 'caja', nombre: 'Caja' }];
+roles.push({ id: 'talkback-role', codigo: 'talkback', nombre: 'Talkback' }, { id: 'legacy-director-role', codigo: 'director_musical', nombre: 'Director' });
 const ministries = [{ id: 'sf', codigo: 'sin_filtros', nombre: 'Sin Filtros' }, { id: 'general', codigo: 'alabanza_general', nombre: 'Alabanza general' }];
 roles.push({ id: 'direction-role', codigo: 'lider_alabanza', nombre: 'Líder de alabanza' }, { id: 'lyrics-role', codigo: 'encargado_letras', nombre: 'Letras' }, { id: 'voice-role', codigo: 'voz_principal', nombre: 'Voz' });
 const profiles = ['Ana', 'Luis', 'Sara'].map((nombre, i) => ({ id: `profile-${i}`, nombre, avatar_url: null }));
@@ -14,6 +15,7 @@ const comparisonEvents = [
     { ...event, id: 'notice-preview', sin_servicio_motivo: 'Asamblea de miembros' },
     { ...event, id: 'active-preview', fecha_hora: '2026-10-10T18:30:00-05:00', tema_predicacion: 'Una fe que permanece', predicador: 'Luis', asignaciones: [
         { id: 'dir', rol_id: 'direction-role', perfiles: profiles[0] },
+        { id: 'musical-director', rol_id: 'talkback-role', perfiles: profiles[1] },
         { id: 'lyrics', rol_id: 'lyrics-role', perfiles: profiles[1] },
         { id: 'guitar', rol_id: 'guitar-role', perfiles: profiles[2] },
         ...profiles.map((profile, i) => ({ id: `voice-${i}`, rol_id: 'voice-role', perfiles: profile })),

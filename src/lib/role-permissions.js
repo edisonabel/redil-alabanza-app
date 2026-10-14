@@ -125,6 +125,21 @@ export const isMinistryLeadershipRoleCode = (value) =>
 export const isDirectionLeadershipRoleCode = (value) =>
   DIRECTION_LEADERSHIP_ROLE_CODES.has(normalizeRoleCode(value));
 
+export const getRoleDisplayName = (role) => (
+  isDirectionLeadershipRoleCode(role?.codigo) ? 'Director musical' : String(role?.nombre || '')
+);
+
+export const withRoleDisplayNames = (roles = []) =>
+  roles.map((role) => ({ ...role, nombre: getRoleDisplayName(role) }));
+
+// Talkback conserva su ID y sus permisos; el alias anterior no crea otro cargo.
+export const getEventAssignableRoles = (roles = []) => {
+  return withRoleDisplayNames(roles).filter((role) => (
+    !isHiddenEventAssignmentRoleCode(role.codigo)
+    && normalizeRoleCode(role.codigo) !== 'director_musical'
+  ));
+};
+
 export const isOperationalRoleCode = (value) =>
   OPERATIONAL_ROLE_CODES.has(normalizeRoleCode(value));
 
