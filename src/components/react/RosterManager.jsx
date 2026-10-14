@@ -800,7 +800,7 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
         const colorSeccion = isN1 ? 'bg-rol-dir' : (isN2 ? 'bg-rol-let' : (isVoz ? 'bg-rol-voc' : 'bg-rol-ban'));
 
         return (
-            <div key={asig.id || `${asig.rol_id}-${assignmentProfileId}`} className="flex flex-col items-center gap-1 group relative cursor-pointer hover:bg-neutral/20 rounded-xl p-2 -m-2 transition-colors" title={`${p.nombre} (${rolMatch.nombre})`} onClick={() => canEditRoster && openPicker(rolMatch.id, rolMatch.nombre, null, asig.id)}>
+            <div key={asig.id || `${asig.rol_id}-${assignmentProfileId}`} className="flex min-w-0 flex-col items-center gap-1 group relative cursor-pointer hover:bg-neutral/20 rounded-xl p-2 -m-2 transition-colors" title={`${p.nombre} (${rolMatch.nombre})`} onClick={() => canEditRoster && openPicker(rolMatch.id, rolMatch.nombre, null, asig.id)}>
                 <div className="relative">
                     {p.avatar_url ? (
                         <img src={p.avatar_url} alt={p.nombre} crossOrigin="anonymous" loading="lazy" decoding="async" className="w-[42px] h-[42px] sm:w-[46px] sm:h-[46px] shrink-0 rounded-full object-cover shadow-sm border border-border" />
@@ -821,10 +821,12 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
                         </button>
                     )}
                 </div>
-                <span className="text-[11px] font-semibold text-content capitalize max-w-[60px] truncate text-center leading-none tracking-tight">{displayName}</span>
-                {isDirectionLeadershipRoleCode(rolMatch.codigo) && (
-                    <span className="max-w-[110px] text-center text-[10px] font-bold leading-snug text-rol-dir">Director musical</span>
-                )}
+                <div className="flex max-w-full flex-col items-center gap-0.5">
+                    <span className="text-[11px] font-semibold text-content capitalize max-w-[60px] truncate text-center leading-none tracking-tight">{displayName}</span>
+                    {isDirectionLeadershipRoleCode(rolMatch.codigo) && (
+                        <span className="max-w-full text-center text-[10px] font-bold leading-tight text-rol-dir">Director musical</span>
+                    )}
+                </div>
                 {canEditRoster && (
                     <button
                         type="button"
@@ -920,7 +922,7 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
                     <span className="text-[10px] font-bold text-rol-dir uppercase tracking-widest leading-none mt-0.5">Dirección</span>
                             <div className="h-px flex-1 bg-rol-dir/10 ml-3"></div>
                         </div>
-                        <div className="flex flex-wrap gap-2.5 items-start">{direccion.length > 0 ? direccion : <span className="text-xs text-content-muted font-medium">Vacío</span>}</div>
+                        <div className="grid grid-cols-2 gap-2.5 items-start">{direccion.length > 0 ? direccion : <span className="text-xs text-content-muted font-medium">Vacío</span>}</div>
                     </div>
                     <div className="flex flex-col">
                         <div className="flex items-center justify-between mb-2 w-full">

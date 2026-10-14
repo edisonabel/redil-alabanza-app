@@ -1,4 +1,4 @@
-import { isDirectionLeadershipRoleCode, withRoleDisplayNames } from '../../lib/role-permissions.js';
+import { compareRolesForDisplay, isDirectionLeadershipRoleCode, withRoleDisplayNames } from '../../lib/role-permissions.js';
 import { isLeaderForEventMinistry } from '../../lib/event-management-permissions.js';
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -349,7 +349,8 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
 
     const rosterGroups = ['direccion', 'letras', 'banda', 'voces', 'produccion']
         .map((key) => rosterGroupsMap.get(key))
-        .filter(Boolean);
+        .filter(Boolean)
+        .map((group) => ({ ...group, members: group.members.sort((first, second) => compareRolesForDisplay(first.role, second.role)) }));
     const eventoId = eventData?.dbData?.id || '';
     const ministryName = String(eventData?.dbData?.ministerios?.nombre || '').trim();
     const isMinistryLeader = isLeaderForEventMinistry(eventData?.dbData, leaderMinistryIds, generalMinistryId);

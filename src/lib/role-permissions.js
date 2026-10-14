@@ -132,12 +132,17 @@ export const getRoleDisplayName = (role) => (
 export const withRoleDisplayNames = (roles = []) =>
   roles.map((role) => ({ ...role, nombre: getRoleDisplayName(role) }));
 
+export const compareRolesForDisplay = (first, second) => (
+  Number(isDirectionLeadershipRoleCode(second?.codigo))
+  - Number(isDirectionLeadershipRoleCode(first?.codigo))
+);
+
 // Talkback conserva su ID y sus permisos; el alias anterior no crea otro cargo.
 export const getEventAssignableRoles = (roles = []) => {
   return withRoleDisplayNames(roles).filter((role) => (
     !isHiddenEventAssignmentRoleCode(role.codigo)
     && normalizeRoleCode(role.codigo) !== 'director_musical'
-  ));
+  )).sort(compareRolesForDisplay);
 };
 
 export const isOperationalRoleCode = (value) =>

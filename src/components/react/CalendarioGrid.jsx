@@ -1,4 +1,4 @@
-import { isDirectionLeadershipRoleCode, withRoleDisplayNames } from '../../lib/role-permissions.js';
+import { compareRolesForDisplay, isDirectionLeadershipRoleCode, withRoleDisplayNames } from '../../lib/role-permissions.js';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Icon } from '@iconify/react';
 import microphoneIcon from '@iconify-icons/mdi/microphone';
@@ -697,7 +697,9 @@ export default function CalendarioGrid({
 
         const dictRoles = withRoleDisplayNames(initialRoles || []);
         const voiceSlotCount = getEventVoiceSlotCount(dbData.asignaciones, dictRoles);
-        const asignaciones = normalizeRosterAssignments(dbData.asignaciones, dictRoles, { maxVoiceSlots: voiceSlotCount });
+        const rolesById = new Map(dictRoles.map((role) => [role.id, role]));
+        const asignaciones = normalizeRosterAssignments(dbData.asignaciones, dictRoles, { maxVoiceSlots: voiceSlotCount })
+            .sort((first, second) => compareRolesForDisplay(rolesById.get(first.rol_id), rolesById.get(second.rol_id)));
 
         // Agrupadores
         const direccion = [];
@@ -724,7 +726,7 @@ export default function CalendarioGrid({
             const colorSeccion = isN1 ? 'bg-rol-dir' : (isN2 ? 'bg-rol-let' : (isVoz ? 'bg-rol-voc' : 'bg-rol-ban'));
 
             const itemNode = (
-                <div key={asig.id || `${asig.rol_id}-${asig.perfiles?.id || assignmentIndex}`} className="flex flex-col items-center gap-1.5 group relative cursor-pointer hover:bg-neutral/20 rounded-xl p-2 -m-2 transition-colors" title={`${asig.perfiles.nombre} (${rolMatch.nombre})`}>
+                <div key={asig.id || `${asig.rol_id}-${asig.perfiles?.id || assignmentIndex}`} className="flex min-w-0 flex-col items-center gap-1.5 group relative cursor-pointer hover:bg-neutral/20 rounded-xl p-2 -m-2 transition-colors" title={`${asig.perfiles.nombre} (${rolMatch.nombre})`}>
                     <div className="relative">
                         {asig.perfiles.avatar_url ? (
                             <img src={asig.perfiles.avatar_url} alt={asig.perfiles.nombre} crossOrigin="anonymous" loading="lazy" decoding="async" className="w-[42px] h-[42px] sm:w-[46px] sm:h-[46px] shrink-0 rounded-full object-cover shadow-sm border border-border" />
@@ -739,10 +741,12 @@ export default function CalendarioGrid({
                             </div>
                         )}
                     </div>
-                    <span className="text-[11px] font-semibold text-content capitalize max-w-[60px] truncate text-center leading-none tracking-tight">{displayName}</span>
-                    {isDirectionLeadershipRoleCode(rolMatch.codigo) && (
-                        <span className="max-w-[110px] text-center text-[10px] font-bold leading-snug text-rol-dir">Director musical</span>
-                    )}
+                    <div className="flex max-w-full flex-col items-center gap-0.5">
+                        <span className="text-[11px] font-semibold text-content capitalize max-w-[60px] truncate text-center leading-none tracking-tight">{displayName}</span>
+                        {isDirectionLeadershipRoleCode(rolMatch.codigo) && (
+                            <span className="max-w-full text-center text-[10px] font-bold leading-tight text-rol-dir">Director musical</span>
+                        )}
+                    </div>
                 </div>
             );
 
@@ -762,7 +766,7 @@ export default function CalendarioGrid({
                             <span className="text-[10px] font-bold text-rol-dir uppercase tracking-widest leading-none mt-0.5">Dirección</span>
                             <div className="h-px flex-1 bg-rol-dir/10 ml-3"></div>
                         </div>
-                        <div className="flex flex-wrap gap-3">{direccion.length > 0 ? direccion : <span className="text-xs text-content-muted font-medium">Vacío</span>}</div>
+                        <div className="grid grid-cols-2 items-start gap-3">{direccion.length > 0 ? direccion : <span className="text-xs text-content-muted font-medium">Vacío</span>}</div>
                     </div>
                     <div className="flex flex-col">
                         <div className="flex items-center justify-between mb-2 w-full">

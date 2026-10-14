@@ -1913,6 +1913,7 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
  import { supabase } from '../lib/supabase';
  import {
   LEADERSHIP_ROLE_CODE_ORDER,
+  compareRolesForDisplay,
   OPERATIONAL_ROLE_CODE_ORDER,
   isDirectionLeadershipRoleCode,
   isEventRepertoryManagerRoleCode,
@@ -3403,7 +3404,7 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
  return html;
  };
 
- window.appStateRoles.forEach((rol:any) => {
+ [...window.appStateRoles].sort(compareRolesForDisplay).forEach((rol:any) => {
  // Saltar soprano y tenor individualmente â€” se manejan via pool unificado
  if (String(rol.codigo || '').startsWith('voz_')) return;
  if (isHiddenEventAssignmentRoleCode(rol.codigo)) return;
