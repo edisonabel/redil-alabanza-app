@@ -10,6 +10,11 @@ import {
 } from '../../utils/rehearsalUserSongSettings';
 import { createChordProSetlistPdfBrowserToken } from '../../lib/chordproSetlistPdfBrowserStore';
 import { getSongArtworkCandidates } from '../../utils/songArtwork.js';
+import {
+  buildVoiceTrackLyricSync,
+  extractVoiceTrackAnchorsFromPayload,
+  sanitizeVoiceTrackAnchors,
+} from '../../utils/voiceTrackSync.js';
 import { buildLiveDirectorSyncChannelName } from '../../utils/liveDirectorSync';
 import {
   PRO_PLAYER_REPEAT_MODES,
@@ -177,45 +182,6 @@ const formatServiceDuration = (startValue, endValue) => {
   if (hours <= 0) return `${minutes} min`;
   if (!minutes) return `${hours} h`;
   return `${hours} h ${String(minutes).padStart(2, '0')} min`;
-};
-
-const getSectionMarkerStartSec = (marker = {}) => {
-  const value = Number(marker?.startSec ?? marker?.start_sec ?? marker?.time ?? marker?.seconds);
-  return Number.isFinite(value) && value >= 0 ? value : null;
-};
-
-const getSectionMarkerEndSec = (marker = {}) => {
-  const value = Number(marker?.endSec ?? marker?.end_sec);
-  return Number.isFinite(value) && value >= 0 ? value : null;
-};
-
-const shiftSectionMarkersForVoiceTrack = (sectionMarkers = [], anchorStartSec = null) => {
-  const safeMarkers = Array.isArray(sectionMarkers) ? sectionMarkers : [];
-  const offset = Number(anchorStartSec);
-
-  if (!Number.isFinite(offset) || offset <= 0) return safeMarkers;
-
-  return safeMarkers
-    .map((marker, index) => {
-      const startSec = getSectionMarkerStartSec(marker);
-      if (startSec == null || startSec < offset - 0.35) return null;
-
-      const endSec = getSectionMarkerEndSec(marker);
-      const shiftedStartSec = Math.max(0, startSec - offset);
-      const shiftedEndSec = endSec != null && endSec > offset
-        ? Math.max(shiftedStartSec, endSec - offset)
-        : null;
-
-      return {
-        ...marker,
-        id: marker?.id || `voice-section-${index}`,
-        startSec: shiftedStartSec,
-        time: shiftedStartSec,
-        seconds: shiftedStartSec,
-        endSec: shiftedEndSec,
-      };
-    })
-    .filter(Boolean);
 };
 
 const dispatchProPlayerEvent = ({
@@ -537,24 +503,6 @@ const parseVoiceResources = (value) => {
   return { hasResources: false, entries: [], legacyUrl: '' };
 };
 
-const extractVoiceTrackAnchorsFromPayload = (value) => {
-  const raw = serializeVoicePayload(value);
-  if (!raw || !raw.trim().startsWith('{')) return {};
-
-  try {
-    const parsed = JSON.parse(raw);
-    const anchors =
-      parsed?.trackAnchors ||
-      parsed?.voiceTrackAnchors ||
-      parsed?.__trackAnchors ||
-      {};
-
-    return sanitizeVoiceTrackAnchors(anchors);
-  } catch {
-    return {};
-  }
-};
-
 const buildVoicePayloadWithTrackAnchors = (value, trackAnchors = {}) => {
   const parsed = parseVoiceResources(value);
   const payload = {
@@ -596,10 +544,6 @@ const formatCompactMetaLabel = (value = '') => {
 };
 
 const sanitizeSongVoiceAssignments = (value) => (
-  value && typeof value === 'object' && !Array.isArray(value) ? value : {}
-);
-
-const sanitizeVoiceTrackAnchors = (value) => (
   value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 );
 
@@ -1047,24 +991,20 @@ export default function EnsayoHub({
     const songTitle = String(song?.title || 'Recursos de voz').trim() || 'Recursos de voz';
     const displayVoiceName = String(track?.__displayTitle || safeTrackName || 'Voz seleccionada').trim();
     const trackAnchors = songVoiceAssignments?.[safeSongId]?.[VOICE_TRACK_ANCHORS_KEY] || {};
-    const trackAnchor = trackAnchors?.[safeTrackName] || null;
-    const anchorStartSec = Number(trackAnchor?.startSec);
-    const sectionMarkers = shiftSectionMarkersForVoiceTrack(
-      song?.sectionMarkers || [],
-      Number.isFinite(anchorStartSec) ? anchorStartSec : null
-    );
+    const lyricSync = buildVoiceTrackLyricSync({
+      ...song,
+      voiceTrackAnchors: trackAnchors,
+    }, safeTrackName);
 
     dispatchProPlayerEvent({
       url: safeUrl,
       title: `${songTitle} - ${displayVoiceName}`,
       artist: song?.artist || '',
-      subtitle: trackAnchor?.sectionLabel ? `Desde ${trackAnchor.sectionLabel}` : 'Practica vocal',
+      ...lyricSync,
       mediaKind: 'voice',
       voiceName: displayVoiceName,
       voiceColor: track?.__voiceColor || '',
       autoPlay: true,
-      chordpro: song?.chordpro || '',
-      sectionMarkers,
       expand: true,
       startAtSec: 0,
     });

@@ -29,8 +29,16 @@
 </div>
 
 <script>
+  import { buildVoiceTrackLyricSync } from '../utils/voiceTrackSync.js';
+
   type VoiceEntry = { label: string; url: string; [key: string]: unknown };
   type VoiceDatasetResult = { type: string; entries: VoiceEntry[]; legacyUrl: string };
+  type VoiceSongContext = {
+    chordpro?: string;
+    sectionMarkers?: any[];
+    voiceTrackAnchors?: Record<string, any>;
+    linkVoces?: unknown;
+  };
 
   (() => {
     const alreadyInit = Boolean(window.__REDIL_VOCES_MODAL_READY__);
@@ -204,7 +212,7 @@
       });
     };
 
-    const playAudio = (rawUrl: unknown, voiceName = '') => {
+    const playAudio = (rawUrl: unknown, voiceName = '', songContext: VoiceSongContext = {}) => {
       const normalized = normalizeExternalUrl(rawUrl);
       if (!normalized) return;
 
@@ -212,6 +220,7 @@
       const modalSongTitle = vocesTitle?.textContent?.trim() || 'Recursos de voz';
       const modalSongArtist = vocesArtist?.textContent?.trim() || '';
       const finalTitle = voiceName ? `${modalSongTitle} · ${voiceName}` : modalSongTitle;
+      const lyricSync = buildVoiceTrackLyricSync(songContext, voiceName);
 
       closeVocesModal(() => {
         const voiceColor = getVoiceColor(voiceName);
@@ -219,17 +228,19 @@
           url: normalized,
           title: finalTitle,
           artist: voiceName || modalSongArtist,
-          subtitle: modalSongArtist,
+          ...lyricSync,
           mediaKind: 'voice',
           voiceName,
           voiceColor,
           isDirectPlayable: true,
           autoPlay: true,
+          expand: true,
+          startAtSec: 0,
         });
       });
     };
 
-    const openVocesModal = (title: string, artist: string, entries: any[], legacyUrl = '') => {
+    const openVocesModal = (title: string, artist: string, entries: any[], legacyUrl = '', songContext: VoiceSongContext = {}) => {
       const { vocesModal, vocesBackdrop, vocesPanel, vocesTitle, vocesArtist, vocesOptions } = getRefs();
       if (!vocesModal || !vocesBackdrop || !vocesPanel || !vocesOptions || !vocesTitle || !vocesArtist) return;
 
@@ -318,7 +329,7 @@
           event.stopPropagation();
           const url = button.dataset.url || '';
           const voice = button.dataset.voice || '';
-          playAudio(url, voice);
+          playAudio(url, voice, songContext);
         });
         vocesOptions.appendChild(button);
       });
@@ -449,12 +460,25 @@
       const parsed = parseDatasetVoces(rawVoces);
       if (!parsed) return;
 
+      const songId = vocesButton.getAttribute('data-id') || vocesButton.closest('.card-cancion')?.getAttribute('data-id') || '';
+      const registry = window.__REDIL_SONG_REGISTRY__?.[songId];
+      let sectionMarkers = registry?.m || [];
+      if (!sectionMarkers.length) {
+        try { sectionMarkers = JSON.parse(vocesButton.getAttribute('data-section-markers') || '[]'); } catch {}
+      }
+      const songContext: VoiceSongContext = {
+        chordpro: registry?.c || vocesButton.getAttribute('data-chordpro') || '',
+        sectionMarkers,
+        voiceTrackAnchors: registry?.va,
+        linkVoces: rawVoces,
+      };
+
       if (parsed.type === 'legacy') {
-        openVocesModal(songTitle, songArtist, [], parsed.legacyUrl);
+        openVocesModal(songTitle, songArtist, [], parsed.legacyUrl, songContext);
         return;
       }
 
-      openVocesModal(songTitle, songArtist, parsed.entries || []);
+      openVocesModal(songTitle, songArtist, parsed.entries || [], parsed.legacyUrl, songContext);
     };
 
     const handleEscape = (event: KeyboardEvent) => {
@@ -469,7 +493,7 @@
 
     window.addEventListener('open-voces-modal', (event) => {
       const detail = (event as CustomEvent<Record<string, any>>).detail || {};
-      openVocesModal(detail.title || 'Recursos de voz', detail.artist || '', detail.entries || [], detail.legacyUrl || '');
+      openVocesModal(detail.title || 'Recursos de voz', detail.artist || '', detail.entries || [], detail.legacyUrl || '', detail.song || {});
     });
 
     document.addEventListener('astro:before-swap', () => {

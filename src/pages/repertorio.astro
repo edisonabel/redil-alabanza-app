@@ -5,6 +5,7 @@ import BuscadorPredictivo from '../components/BuscadorPredictivo.astro';
 import OnboardingRoot from '../components/onboarding/OnboardingRoot';
 import { createSupabaseUserClient } from '../lib/server/supabase-user-client.js';
 import { pickPreferredVoicePayload } from '../utils/voicePayload.js';
+import { extractVoiceTrackAnchorsFromPayload, sanitizeVoiceTrackAnchors } from '../utils/voiceTrackSync.js';
 import { buildStoredSongArtworkUrl } from '../utils/songArtwork.js';
 
 let canciones: any[] = [];
@@ -34,6 +35,7 @@ try {
       mp3,
       multitrack_session,
       section_markers,
+      voice_track_anchors,
       voces
     `)
     .order('titulo');
@@ -89,12 +91,15 @@ const songRegistry = canciones.reduce((acc: Record<string, any>, cancion: any) =
   const artwork = cancion.portada || cancion.imagen || cancion.image || cancion.cover || cancion.thumbnail
     || cancion.artwork || cancion.album_art || cancion.albumArt || cancion.caratula || cancion.foto || '';
   const resolvedArtwork = artwork || buildStoredSongArtworkUrl(cancion);
-  if (!cancion.chordpro && !resolvedArtwork && !Array.isArray(cancion.section_markers)) return acc;
-
   const entry: Record<string, any> = {};
   if (cancion.chordpro) entry.c = cancion.chordpro;
   if (Array.isArray(cancion.section_markers) && cancion.section_markers.length) entry.m = cancion.section_markers;
   if (resolvedArtwork) entry.a = resolvedArtwork;
+  const voiceTrackAnchors = {
+    ...extractVoiceTrackAnchorsFromPayload(pickPreferredVoicePayload(cancion.link_voces, cancion.voces)),
+    ...sanitizeVoiceTrackAnchors(cancion.voice_track_anchors),
+  };
+  if (Object.keys(voiceTrackAnchors).length) entry.va = voiceTrackAnchors;
   if (Object.keys(entry).length) acc[String(cancion.id)] = entry;
   return acc;
 }, {});

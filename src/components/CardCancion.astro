@@ -302,6 +302,9 @@ const showEnsayarAsPrimary = !hasMp3 && hasChordpro;
      {isValidVoces && (
      <button
        type="button"
+       data-id={String(cancionId || '')}
+       data-chordpro={chordpro || ''}
+       data-section-markers={sectionMarkersPayload}
        data-voces={vocesPayload}
        data-title={titulo}
        data-artist={cantante || ''}
