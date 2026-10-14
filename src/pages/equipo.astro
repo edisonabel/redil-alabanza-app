@@ -3349,7 +3349,7 @@ if (!isGlobalAdmin && !canManageMinistries && !canManageOperations) {
  html += `
  <div class="flex items-center gap-2 px-2 h-[42px] bg-surface border border-border/60 shadow-sm rounded-xl hover:shadow-md transition-shadow group shrink-0 w-full relative">
  ${avatarUI}
- <span class="text-[11px] font-bold text-neutral pr-6 flex-1 min-w-0"><span class="block truncate">${asig.perfil_nombre.split(' ')[0]}</span>${isDirectionLeadershipRoleCode(codigo) ? '<span class="block whitespace-normal text-[10px] leading-snug text-rol-dir">Director musical</span>' : ''}</span>
+ <span class="text-[11px] font-bold text-neutral pr-6 flex-1 min-w-0"><span class="block truncate">${asig.perfil_nombre.split(' ')[0]}</span>${isDirectionLeadershipRoleCode(codigo) ? '<span class="block whitespace-nowrap text-[8px] leading-none text-rol-dir">Director musical</span>' : ''}</span>
  <button type="button" class="btn-tb-remove text-content-muted hover:text-red-500 hover:bg-red-50 dark:bg-red-900/40 p-1.5 rounded-lg transition-colors absolute right-1" data-rol="${rolId}" data-perfil="${asig.perfil_id}">
  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" class="pointer-events-none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
  </button>

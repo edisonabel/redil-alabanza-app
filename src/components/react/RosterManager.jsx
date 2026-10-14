@@ -824,7 +824,7 @@ export default function RosterManager({ evId, evFechaStr, esAcustico = false, is
                 <div className="flex max-w-full flex-col items-center gap-0.5">
                     <span className="text-[11px] font-semibold text-content capitalize max-w-[60px] truncate text-center leading-none tracking-tight">{displayName}</span>
                     {isDirectionLeadershipRoleCode(rolMatch.codigo) && (
-                        <span className="max-w-full text-center text-[10px] font-bold leading-tight text-rol-dir">Director musical</span>
+                        <span className="whitespace-nowrap text-center text-[8px] font-bold leading-none text-rol-dir">Director musical</span>
                     )}
                 </div>
                 {canEditRoster && (

@@ -607,7 +607,7 @@ export default function ModalDetalle({ initialRoles, sessionUser, isAdmin = fals
                                                             <h4 className="truncate text-sm font-black leading-tight text-slate-950 dark:text-white sm:text-base">
                                                                 {displayName}
                                                             </h4>
-                                                            <p className={`mt-0.5 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500 dark:text-white/46 sm:text-[11px] ${isDirectionLeadershipRoleCode(role.codigo) ? 'whitespace-normal leading-snug' : 'truncate'}`}>
+                                                            <p className={`mt-0.5 font-bold text-slate-500 dark:text-white/46 ${isDirectionLeadershipRoleCode(role.codigo) ? 'whitespace-nowrap text-[8px] leading-none' : 'truncate text-[10px] uppercase tracking-[0.10em] sm:text-[11px]'}`}>
                                                                 {roleName}
                                                             </p>
                                                         </div>
