@@ -3,7 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { getEventAssignableRoles, getRoleDisplayName } from '../src/lib/role-permissions.js';
 import { matchesSongLibrary } from '../src/lib/song-library.js';
 import { getReminderKeyForEvent, runServiceReminderNotifications } from '../src/lib/service-reminder-notifications.js';
-import { processPlaylistReadyNotifications } from '../src/lib/server/playlist-ready-notifications.js';
+import { buildPlaylistReadyEmail, processPlaylistReadyNotifications } from '../src/lib/server/playlist-ready-notifications.js';
+import { resolveRehearsalEventById } from '../src/lib/server/rehearsal-event.js';
 const { PGlite } = await import(process.env.PGLITE_MODULE_PATH || '@electric-sql/pglite');
 const db = new PGlite();
 assert.equal(matchesSongLibrary('general', 'general'), true);
@@ -116,6 +117,28 @@ class Query {
   }
 }
 const client = { from: (table) => new Query(table) };
+// The new email URL and the already-sent playlist URL must resolve the same event.
+const { rows: [eventPlaylist] } = await db.query('SELECT id FROM playlists WHERE evento_id=$1', [u(30)]);
+const email = buildPlaylistReadyEmail({
+  event: { id: u(30), titulo: 'Domingo', fecha_hora: '2026-10-18T14:00:00Z' },
+  recipient: { name: 'Ana Música' },
+});
+assert.equal(email.url, `/ensayo/${u(30)}`);
+assert.notEqual(email.url, `/ensayo/${eventPlaylist.id}`);
+for (const routeId of [email.url.split('/').at(-1), eventPlaylist.id]) {
+  const resolved = await resolveRehearsalEventById(client, routeId, 'id, titulo');
+  assert.equal(resolved.error, null);
+  assert.equal(resolved.data.id, u(30));
+  const { rows: songs } = await db.query(`SELECT pc.cancion_id FROM playlist_canciones pc
+    JOIN playlists p ON p.id=pc.playlist_id WHERE p.evento_id=$1 ORDER BY pc.orden`, [resolved.data.id]);
+  assert.deepEqual(songs.map((song) => song.cancion_id), [u(42), u(40)]);
+}
+assert.equal((await resolveRehearsalEventById(client, u(999), 'id')).data, null);
+const personalPlaylist = u(998);
+await db.query('INSERT INTO playlists(id) VALUES($1)', [personalPlaylist]);
+assert.equal((await resolveRehearsalEventById(client, personalPlaylist, 'id')).data, null,
+  'A personal playlist must not resolve to an event');
+
 const now = new Date('2026-10-14T18:00:00Z');
 await db.query('UPDATE playlist_ready_notification_queue SET next_attempt_at=$1', [now]);
 let deliveries = 0;
@@ -124,7 +147,8 @@ const sendEmail = async (message) => {
   deliveries += 1;
   assert.equal(message.recipients.length,1);
   assert.match(message.body, /\n\n/);
-  assert.match(message.url, /^\/ensayo\//);
+  const eventId = message.idempotencyKey.split('__')[1];
+  assert.equal(message.url, `/ensayo/${eventId}`);
   assert.match(message.idempotencyKey, /^playlist_ready__/);
   return { sent: fail ? 0 : 1 };
 };

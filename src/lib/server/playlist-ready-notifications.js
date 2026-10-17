@@ -4,7 +4,7 @@ const TABLE = 'playlist_ready_notification_queue';
 const RETRY_MS = 5 * 60 * 1000;
 const LEASE_MS = 10 * 60 * 1000;
 
-export const buildPlaylistReadyEmail = ({ event, playlistId, recipient }) => ({
+export const buildPlaylistReadyEmail = ({ event, recipient }) => ({
   title: 'El repertorio de tu servicio ya está listo 🎶',
   body: [
     `Hola, ${String(recipient.name || 'Equipo').trim().split(/\s+/)[0]}. Dios te bendiga.`,
@@ -18,7 +18,7 @@ export const buildPlaylistReadyEmail = ({ event, playlistId, recipient }) => ({
     'Entra al modo ensayo para revisar el repertorio y practicar con tiempo.',
     'Gracias por tu disposición para servir. Bendiciones.',
   ].join('\n\n'),
-  url: `/ensayo/${encodeURIComponent(playlistId)}`,
+  url: `/ensayo/${encodeURIComponent(event.id)}`,
   ctaLabel: 'Entrar al modo ensayo',
 });
 
@@ -85,7 +85,7 @@ export async function processPlaylistReadyNotifications({
       if (!sentAudit?.length) {
         // Mantener el mismo contenido en los reintentos con clave de idempotencia.
         const notification = row.notification || buildPlaylistReadyEmail({
-          event, playlistId: playlist.id, recipient: { name: profile.nombre },
+          event, recipient: { name: profile.nombre },
         });
         if (!row.notification) {
           unwrap(await client.from(TABLE).update({ notification }).eq('id', row.id));

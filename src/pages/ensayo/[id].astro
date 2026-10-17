@@ -15,6 +15,7 @@ import {
   isVocalLeaderRoleCode,
 } from '../../lib/role-permissions.js';
 import { getSupabaseServerEnv } from '../../lib/server/supabase-env.js';
+import { resolveRehearsalEventById } from '../../lib/server/rehearsal-event.js';
 import { pickPreferredVoicePayload } from '../../utils/voicePayload.js';
 import { parseCustomSetlistRouteId } from '../../utils/customSetlistShare';
 
@@ -550,11 +551,11 @@ const fetchEventBySlug = async (slugValue: string, includePredicador = true): Pr
 if (!routeIsDemo && !isCustomSetlist) {
   const fetchEventRow = async (includePredicador = true): Promise<EventFetchResult> => {
     if (routeIsUuid) {
-      const { data, error } = await supabaseSSR
-        .from('eventos')
-        .select(includePredicador ? EVENT_SELECT_WITH_PREACHER : EVENT_SELECT_BASE)
-        .eq('id', routeId)
-        .maybeSingle();
+      const { data, error } = await resolveRehearsalEventById(
+        supabaseSSR,
+        routeId,
+        includePredicador ? EVENT_SELECT_WITH_PREACHER : EVENT_SELECT_BASE,
+      );
 
       return { data, error, multipleMatches: false };
     }
@@ -820,7 +821,7 @@ const rehearsalSongs =
           ];
 
 const initialSongId = Astro.url.searchParams.get('song') || null;
-const monitorUrl = isCustomSetlist ? '' : new URL(`/monitor/${routeId}`, Astro.url).toString();
+const monitorUrl = isCustomSetlist ? '' : new URL(`/monitor/${eventData?.id || routeId}`, Astro.url).toString();
 const customShareUrl = isCustomSetlist ? new URL(Astro.url.pathname, Astro.url).toString() : '';
 const { theme: contextTheme, preacher: contextPreacher } = getEventThemeAndPreacher(eventData || {}, 'Modo Ensayo');
 const contextTitle = isCustomSetlist ? 'Setlist personalizada' : (contextTheme || 'Modo Ensayo');
