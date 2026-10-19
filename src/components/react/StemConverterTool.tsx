@@ -1511,7 +1511,7 @@ export default function StemConverterTool() {
 
           {(omittedCount > 0 || rejectedCount > 0) ? (
             <div className="mt-4 rounded-2xl border border-border bg-background p-3 text-sm text-content-muted">
-              {omittedCount > 0 ? <p>{omittedCount} omitidos por sugerencia o limite.</p> : null}
+              {omittedCount > 0 ? <p>{omittedCount} omitidos por tu elección.</p> : null}
               {rejectedCount > 0 ? <p>{rejectedCount} ignorados por no parecer audio.</p> : null}
             </div>
           ) : null}
