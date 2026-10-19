@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import AdminVocalWarmups from './AdminVocalWarmups';
 import { audioSessionService } from '../services/AudioSessionService';
-import { getAudioCrossOrigin } from '../lib/audio-playback.js';
+import { getAudioCrossOrigin, resolveFetchableAudioUrl } from '../lib/audio-playback.js';
 import {
   Check,
   CheckCircle,
@@ -1073,6 +1073,7 @@ export default function AdminRepertorio({ libraryScope = 'general' }) {
   const [editorAudioCurrentTime, setEditorAudioCurrentTime] = useState(0);
   const [editorAudioDuration, setEditorAudioDuration] = useState(0);
   const [editorAudioPlaying, setEditorAudioPlaying] = useState(false);
+  const [editorAudioError, setEditorAudioError] = useState('');
   const [vocesModalCancion, setVocesModalCancion] = useState(null);
   const [vocesDraftEntries, setVocesDraftEntries] = useState([]);
   const [vocesDraftLegacyUrl, setVocesDraftLegacyUrl] = useState('');
@@ -1080,6 +1081,10 @@ export default function AdminRepertorio({ libraryScope = 'general' }) {
   const [vocesFeedback, setVocesFeedback] = useState('');
   const [guardandoVoces, setGuardandoVoces] = useState(false);
   const [voicePreview, setVoicePreview] = useState({ id: '', url: '' });
+  // Editor media uses the authenticated same-origin proxy so stale R2 CORS
+  // responses cannot silence playback or prevent metadata/marker seeking.
+  const editorAudioUrl = resolveFetchableAudioUrl(editorChordproCancion?.mp3, { preferSameOrigin: true });
+  const voicePreviewAudioUrl = resolveFetchableAudioUrl(voicePreview.url, { preferSameOrigin: true });
   const editorAudioCurrentTimeRef = useRef(0);
   const editorAudioFrameRef = useRef(null);
   const voicePreviewAudioRef = useRef(null);
@@ -1425,6 +1430,7 @@ export default function AdminRepertorio({ libraryScope = 'general' }) {
 
     const handleLoadedMetadata = () => {
       const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+      if (audio.readyState >= 1 && duration > 0) setEditorAudioError('');
       setEditorAudioDuration((prev) => (areTimesClose(prev, duration, 0.1) ? prev : duration));
     };
 
@@ -1458,6 +1464,7 @@ export default function AdminRepertorio({ libraryScope = 'general' }) {
     audio.addEventListener('play', handlePlay);
     audio.addEventListener('pause', handlePause);
     audio.addEventListener('ended', handleEnded);
+    handleLoadedMetadata();
 
     return () => {
       if (editorAudioFrameRef.current != null) {
@@ -1491,7 +1498,7 @@ export default function AdminRepertorio({ libraryScope = 'general' }) {
     if (!audio || !voicePreview.url) return undefined;
 
     let cancelled = false;
-    audio.src = voicePreview.url;
+    audio.src = voicePreviewAudioUrl;
     audio.currentTime = 0;
     audio.play().catch(() => {
       if (!cancelled) setVoicePreview({ id: '', url: '' });
@@ -1505,7 +1512,7 @@ export default function AdminRepertorio({ libraryScope = 'general' }) {
       audio.pause();
       audio.removeEventListener('ended', handleEnded);
     };
-  }, [voicePreview.url]);
+  }, [voicePreview.url, voicePreviewAudioUrl]);
 
   useEffect(() => {
     verificarSesion();
@@ -2347,6 +2354,7 @@ export default function AdminRepertorio({ libraryScope = 'general' }) {
     setEditorAudioCurrentTime(0);
     setEditorAudioDuration(0);
     setEditorAudioPlaying(false);
+    setEditorAudioError('');
     editorAudioCurrentTimeRef.current = 0;
     setEditorChordproAviso(aviso);
     setEditorChordproCargando(false);
@@ -2766,12 +2774,15 @@ export default function AdminRepertorio({ libraryScope = 'general' }) {
 
     try {
       if (audio.paused) {
+        setEditorAudioError('');
+        if (audio.error) audio.load();
         await audio.play();
       } else {
         audio.pause();
       }
     } catch (_error) {
       setEditorAudioPlaying(false);
+      setEditorAudioError('No se pudo reproducir el audio. Pulsa reproducir para reintentar.');
     }
   };
 
@@ -4033,7 +4044,7 @@ export default function AdminRepertorio({ libraryScope = 'general' }) {
             </div>
 
             <div className="max-h-[min(72vh,42rem)] overflow-y-auto px-4 py-4 md:px-5">
-              <audio ref={voicePreviewAudioRef} crossOrigin={getAudioCrossOrigin(voicePreview.url)} className="hidden" preload="none" />
+              <audio ref={voicePreviewAudioRef} crossOrigin={getAudioCrossOrigin(voicePreviewAudioUrl)} className="hidden" preload="none" />
 
               <div className="flex flex-wrap items-center gap-2">
                 <label className="inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-2 rounded-lg border border-brand/25 bg-brand/10 px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand/15">
@@ -4539,8 +4550,12 @@ export default function AdminRepertorio({ libraryScope = 'general' }) {
                 <section id="admin-markers-panel" className="flex min-h-0 h-full flex-col overflow-hidden rounded-xl border border-border bg-background/70 p-3">
                   <audio
                     id="admin-chordpro-audio"
-                    crossOrigin={getAudioCrossOrigin(editorChordproCancion?.mp3)}
-                    src={editorChordproCancion?.mp3 || ''}
+                    crossOrigin={getAudioCrossOrigin(editorAudioUrl)}
+                    src={editorAudioUrl || undefined}
+                    onError={() => {
+                      setEditorAudioPlaying(false);
+                      setEditorAudioError('No se pudo cargar el audio. Pulsa reproducir para reintentar.');
+                    }}
                     preload="metadata"
                     className="hidden"
                   />
@@ -4577,6 +4592,7 @@ export default function AdminRepertorio({ libraryScope = 'general' }) {
                     )}
 
                     <div className="mt-2 border-b border-border/50 px-2.5 pb-3 pt-1">
+                      {editorAudioError && <p role="alert" className="mb-2 text-xs text-danger">{editorAudioError}</p>}
                       {editorChordproCancion?.mp3 ? (
                         <>
                           <div className="flex items-center gap-2.5">

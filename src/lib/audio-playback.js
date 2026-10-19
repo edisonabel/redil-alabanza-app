@@ -206,7 +206,7 @@ export const resolvePreferredAudioUrl = (rawUrl, { origin = '' } = {}) => (
   buildPlaybackSourceCandidates(rawUrl, { origin })[0] || ''
 );
 
-export const resolveFetchableAudioUrl = (rawUrl, { origin = '' } = {}) => {
+export const resolveFetchableAudioUrl = (rawUrl, { origin = '', preferSameOrigin = false } = {}) => {
   const normalized = normalizeExternalAudioUrl(rawUrl, { origin });
   if (!normalized) return '';
 
@@ -233,7 +233,7 @@ export const resolveFetchableAudioUrl = (rawUrl, { origin = '' } = {}) => {
   }
 
   if (parsed.protocol === 'https:' && isR2AudioUrl(normalized, { origin })) {
-    if (canUseDirectR2AudioUrl(baseOrigin)) {
+    if (!preferSameOrigin && canUseDirectR2AudioUrl(baseOrigin)) {
       return normalized;
     }
 

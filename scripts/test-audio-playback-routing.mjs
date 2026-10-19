@@ -32,6 +32,11 @@ assert.equal(
 
 const r2Url = 'https://stems.alabanzaredilestadio.com/voices/guide.m4a';
 assert.equal(resolveFetchableAudioUrl(r2Url, { origin: productionOrigin }), r2Url);
+const adminR2Url = resolveFetchableAudioUrl(r2Url, { origin: productionOrigin, preferSameOrigin: true });
+assert.equal(new URL(adminR2Url).origin, productionOrigin);
+assert.equal(new URL(adminR2Url).pathname, '/api/mp3-proxy');
+assert.equal(new URL(adminR2Url).searchParams.get('src'), r2Url);
+assert.equal(resolveFetchableAudioUrl(adminR2Url, { origin: productionOrigin, preferSameOrigin: true }), adminR2Url);
 
 const localR2Url = resolveFetchableAudioUrl(r2Url, { origin: 'http://localhost:4321' });
 assert.match(localR2Url, /^http:\/\/localhost:4321\/api\/mp3-proxy\?/);

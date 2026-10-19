@@ -11,8 +11,8 @@ assert.equal(getAudioCrossOrigin('/api/audio?id=fixture', { origin }), 'anonymou
 assert.equal(getAudioCrossOrigin('https://third-party.example/song.mp3', { origin }), undefined);
 assert.equal(getAudioCrossOrigin('', { origin }), undefined);
 const admin = readFileSync(new URL('../src/components/AdminRepertorio.jsx', import.meta.url), 'utf8');
-assert.match(admin, /crossOrigin=\{getAudioCrossOrigin\(editorChordproCancion\?\.mp3\)\}/);
-assert.match(admin, /crossOrigin=\{getAudioCrossOrigin\(voicePreview.url\)\}/);
+assert.match(admin, /crossOrigin=\{getAudioCrossOrigin\(editorAudioUrl\)\}/);
+assert.match(admin, /crossOrigin=\{getAudioCrossOrigin\(voicePreviewAudioUrl\)\}/);
 const player = readFileSync(new URL('../src/components/ProPlayerGlobal.astro', import.meta.url), 'utf8');
 assert.ok(player.indexOf('audio.crossOrigin = crossOrigin') < player.indexOf('audio.src = nextUrl'));
 
