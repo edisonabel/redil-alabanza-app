@@ -193,6 +193,12 @@ export const buildPlaybackSourceCandidates = (rawUrl, { origin = '' } = {}) => {
     return [toAudioApiUrl(normalized, { origin })].filter(Boolean);
   }
 
+  // Ordinary song/voice playback must not depend on cached R2 CORS headers.
+  // Keep the streaming multitrack transport's URL resolution separate.
+  if (isR2AudioUrl(normalized, { origin })) {
+    return [resolveFetchableAudioUrl(normalized, { origin, preferSameOrigin: true })].filter(Boolean);
+  }
+
   if (!isDriveLikeAudioUrl(normalized, { origin })) {
     return [normalized];
   }

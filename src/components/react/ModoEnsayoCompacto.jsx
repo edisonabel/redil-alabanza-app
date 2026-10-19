@@ -6,7 +6,7 @@ import { metronomeService } from '../../services/MetronomeEngine';
 import { IndependentPadPlayer } from '../../services/IndependentPadPlayer';
 import { screenWakeLockService } from '../../services/ScreenWakeLockService';
 import { useMultitrackEngine } from '../../hooks/useMultitrackEngine';
-import { isLikelyAudioSourceUrl, resolveFetchableAudioUrl, resolvePreferredAudioUrl } from '../../lib/audio-playback.js';
+import { isLikelyAudioSourceUrl, resolvePreferredAudioUrl } from '../../lib/audio-playback.js';
 import { buildWordGroups, parseChordProLine } from '../../utils/chordProLineUtils';
 import { normalizePersistedLiveDirectorSession } from '../../utils/liveDirectorSongSession';
 import { getPadUrlForSongKey } from '../../utils/padAudio';
@@ -1385,6 +1385,7 @@ export default function ModoEnsayoCompacto({
   const [timelineSeekPreview, setTimelineSeekPreview] = useState(null);
   const [audioDuration, setAudioDuration] = useState(0);
   const [audioReady, setAudioReady] = useState(false);
+  const [audioLoadError, setAudioLoadError] = useState('');
   const [isPlaybackSeekPending, setIsPlaybackSeekPending] = useState(false);
   const [playbackSeekError, setPlaybackSeekError] = useState('');
   const [playbackSeekNotice, setPlaybackSeekNotice] = useState('');
@@ -1879,17 +1880,12 @@ export default function ModoEnsayoCompacto({
   const playbackSources = useMemo(() => buildPlaybackSources(currentSong), [currentSong]);
   const guideCueSources = useMemo(() => buildGuideCueSources(currentSong), [currentSong]);
   const processedGuideCueSources = useMemo(() => (
-    guideCueSources.map((source) => ({
-      ...source,
-      playbackUrl: resolveFetchableAudioUrl(source.url, {
+    guideCueSources.map((source) => {
+      const playbackUrl = resolvePreferredAudioUrl(source.url, {
         origin: typeof window !== 'undefined' ? window.location.origin : '',
-      }) || resolvePreferredAudioUrl(source.url, {
-        origin: typeof window !== 'undefined' ? window.location.origin : '',
-      }) || source.url,
-      rehearsalMixUrl: resolveFetchableAudioUrl(source.url, {
-        origin: typeof window !== 'undefined' ? window.location.origin : '',
-      }) || source.url,
-    }))
+      }) || source.url;
+      return { ...source, playbackUrl, rehearsalMixUrl: playbackUrl };
+    })
   ), [guideCueSources]);
   const hasPersistedGuideCueSources = processedGuideCueSources.length > 0;
   const guideCueDisplayLabel = useMemo(() => getGuideCueLabel(guideCueSources), [guideCueSources]);
@@ -1905,17 +1901,11 @@ export default function ModoEnsayoCompacto({
   );
   const activePlaybackUrl = activePlaybackSource?.url || '';
   const processedActivePlaybackUrl = useMemo(() => (
-    resolveFetchableAudioUrl(activePlaybackUrl, {
-      origin: typeof window !== 'undefined' ? window.location.origin : '',
-    }) || resolvePreferredAudioUrl(activePlaybackUrl, {
+    resolvePreferredAudioUrl(activePlaybackUrl, {
       origin: typeof window !== 'undefined' ? window.location.origin : '',
     })
   ), [activePlaybackUrl]);
-  const rehearsalMixActivePlaybackUrl = useMemo(() => (
-    resolveFetchableAudioUrl(activePlaybackUrl, {
-      origin: typeof window !== 'undefined' ? window.location.origin : '',
-    }) || processedActivePlaybackUrl
-  ), [activePlaybackUrl, processedActivePlaybackUrl]);
+  const rehearsalMixActivePlaybackUrl = processedActivePlaybackUrl;
   const hasSupplementalPlaybackSources = useMemo(() => (
     playbackSources.some((source) => source.kind === 'sequence' || source.kind === 'stem') || hasGuideCueSources
   ), [hasGuideCueSources, playbackSources]);
@@ -2839,6 +2829,7 @@ export default function ModoEnsayoCompacto({
     setAudioCurrentTime(0);
     setAudioDuration(0);
     setAudioReady(false);
+    setAudioLoadError('');
     if (scrollRef.current) {
       scrollRef.current.scrollTo({ top: 0, behavior: 'auto' });
     }
@@ -3324,6 +3315,7 @@ export default function ModoEnsayoCompacto({
         : 0;
     setAudioDuration((prev) => (Math.abs(prev - nextDuration) < 0.05 ? prev : nextDuration));
     setAudioReady(nextDuration > 0);
+    if (nextDuration > 0 && audioElement.readyState >= 1) setAudioLoadError('');
     setAudioCurrentTime((prev) => (Math.abs(prev - nextTime) < 0.05 ? prev : nextTime));
   };
   useEffect(() => {
@@ -3614,6 +3606,8 @@ export default function ModoEnsayoCompacto({
 
     try {
       if (audioRef.current.paused) {
+        setAudioLoadError('');
+        if (audioRef.current.error) audioRef.current.load();
         await ensureWebAudioConnected();
         if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
           await audioCtxRef.current.resume();
@@ -3635,6 +3629,7 @@ export default function ModoEnsayoCompacto({
       }
     } catch (_error) {
       setIsPlaying(false);
+      setAudioLoadError('No se pudo reproducir el audio. Pulsa reproducir para reintentar.');
     }
   };
   const handleSeekChange = (event) => {
@@ -3644,6 +3639,7 @@ export default function ModoEnsayoCompacto({
     scheduleTimelineSeekCommit(nextTime);
   };
   const handleSelectPlaybackSource = (sourceId) => {
+    setAudioLoadError('');
     if (sourceId === selectedPlaybackSourceId) {
       setShowPlaybackOptions(false);
       return;
@@ -3732,8 +3728,10 @@ export default function ModoEnsayoCompacto({
           setAudioCurrentTime(finalTime || 0);
         }}
         onError={() => {
+          setIsPlaying(false);
           setAudioReady(false);
           setAudioDuration(0);
+          setAudioLoadError('No se pudo cargar el audio. Pulsa reproducir para reintentar.');
         }}
       />
       {!shouldUseRehearsalMix && hasGuideCueSources && processedGuideCueSources.map((source, index) => (
@@ -4506,7 +4504,7 @@ export default function ModoEnsayoCompacto({
                 onBlur={flushTimelineSeekCommit}
                 disabled={!hasAudio || !audioReady || isPlaybackSeekPending}
                 className="ensayo-seek relative z-10 h-5 w-full cursor-pointer appearance-none bg-transparent disabled:cursor-not-allowed"
-                aria-label="Posici\u00F3n de reproducci\u00F3n"
+                aria-label="Posición de reproducción"
               />
             </div>
             {playbackSectionStrip.length > 0 && (
@@ -4549,6 +4547,11 @@ export default function ModoEnsayoCompacto({
             {playbackSeekError && (
               <p className="mt-1 text-[10px] font-semibold text-red-600 dark:text-red-400" role="alert">
                 {playbackSeekError}
+              </p>
+            )}
+            {audioLoadError && (
+              <p className="mt-1 text-[10px] font-semibold text-red-600 dark:text-red-400" role="alert">
+                {audioLoadError}
               </p>
             )}
             {playbackSeekNotice && !playbackSeekError && (

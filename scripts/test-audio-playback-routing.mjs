@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   buildPlaybackSourceCandidates,
   resolveFetchableAudioUrl,
+  resolvePreferredAudioUrl,
 } from '../src/lib/audio-playback.js';
 
 const productionOrigin = 'https://alabanzaredilestadio.com';
@@ -37,6 +38,14 @@ assert.equal(new URL(adminR2Url).origin, productionOrigin);
 assert.equal(new URL(adminR2Url).pathname, '/api/mp3-proxy');
 assert.equal(new URL(adminR2Url).searchParams.get('src'), r2Url);
 assert.equal(resolveFetchableAudioUrl(adminR2Url, { origin: productionOrigin, preferSameOrigin: true }), adminR2Url);
+for (const origin of [productionOrigin, 'https://www.alabanzaredilestadio.com', 'http://localhost:4321']) {
+  const candidates = buildPlaybackSourceCandidates(r2Url, { origin });
+  assert.equal(candidates.length, 1, 'Native playback must not fall back to direct R2');
+  assert.equal(new URL(candidates[0]).origin, origin);
+  assert.equal(new URL(candidates[0]).pathname, '/api/mp3-proxy');
+  assert.equal(new URL(candidates[0]).searchParams.get('src'), r2Url);
+  assert.equal(resolvePreferredAudioUrl(r2Url, { origin }), candidates[0]);
+}
 
 const localR2Url = resolveFetchableAudioUrl(r2Url, { origin: 'http://localhost:4321' });
 assert.match(localR2Url, /^http:\/\/localhost:4321\/api\/mp3-proxy\?/);
