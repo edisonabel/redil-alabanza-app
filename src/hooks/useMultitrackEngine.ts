@@ -1,3 +1,4 @@
+import { isMissingStemError } from '../utils/liveDirectorSessionSafety';
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MultitrackEngine, type TrackData, type MultitrackEngineLoadWarning } from '../services/MultitrackEngine';
 import {
@@ -502,7 +503,7 @@ export function useMultitrackEngine(
         return;
       }
 
-      if (targetKind === 'streaming') {
+      if (targetKind === 'streaming' && !isMissingStemError(error)) {
         const fallbackCapabilities = readLiveBrowserCapabilities();
         const fallbackPolicy = resolveStreamingFallbackPolicy(
           fallbackCapabilities,
@@ -592,6 +593,16 @@ export function useMultitrackEngine(
         }
       }
 
+      if (initializationToken !== initializationTokenRef.current) return;
+      // A failed engine must not keep publishing diagnostics that retrigger
+      // session initialization (and reset the visible error every second).
+      if (engineRef.current) {
+        teardownEngine(engineRef.current);
+        engineRef.current = null;
+      }
+      if (isMissingStemError(error)) {
+        error = new Error('Faltan archivos de esta sesión (404/410). Vuelve a subir los stems de esta canción o retira la sesión anterior.', { cause: error });
+      }
       setIsReady(false);
       trackLevelsRef.current = {};
       setTrackLevels({});

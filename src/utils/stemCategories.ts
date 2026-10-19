@@ -49,7 +49,8 @@ const normalizeName = (name: string) => name.normalize('NFD').replace(/[\u0300-\
   .toLowerCase().replace(/([a-z])(\d)/g, '$1 $2').replace(/[^a-z0-9]+/g, ' ').trim();
 
 export function readExportedStemCategory(name: string): StemCategory | null {
-  const tag = /^\d+-([a-z-]+)--/i.exec(name)?.[1]?.toLowerCase();
+  const tag = (/^\d+-([a-z-]+)--/i.exec(name)?.[1]
+    || /^\d+-([a-z-]+)\.[^.]+$/i.exec(name)?.[1])?.toLowerCase();
   return tag ? STEM_CATEGORY_ORDER.find((key) => STEM_CATEGORIES[key].trackId === tag) || null : null;
 }
 
@@ -75,5 +76,20 @@ export function buildClassifiedStemFileName(name: string, index: number, categor
     .replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 82) || 'stem';
   const prefix = String(index + 1).padStart(2, '0');
   return category === 'unknown' ? `${prefix}-${base}.m4a`
-    : `${prefix}-${STEM_CATEGORIES[category].trackId}--${base}.m4a`;
+    : `${prefix}-${STEM_CATEGORIES[category].trackId}.m4a`;
+}
+
+// Older uploaders treated exported category tags as part of a custom name.
+// Repair only those generated labels; preserve IDs, URLs and deliberate names.
+export function cleanExportedStemLabels<T extends { id: string; name: string; sourceFileName?: string }>(tracks: T[]): T[] {
+  const counts = new Map<string, number>();
+  return tracks.map((track) => {
+    const category = readExportedStemCategory(track.sourceFileName || '');
+    if (!category || category === 'unknown') return track;
+    const label = STEM_CATEGORIES[category].trackName;
+    const count = (counts.get(category) || 0) + 1;
+    counts.set(category, count);
+    if (!track.id.startsWith('custom-') || !/^\d+[ -]/.test(track.name)) return track;
+    return { ...track, name: count === 1 ? label : `${label} ${count}` };
+  });
 }

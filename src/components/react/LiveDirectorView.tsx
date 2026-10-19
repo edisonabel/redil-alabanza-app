@@ -547,6 +547,7 @@ const buildTrackOutputRouteMap = (
 const toResolvedSession = (
   session: LiveDirectorPersistedSession,
 ): LiveDirectorResolvedSession => ({
+  songId: session.songId,
   mode: session.mode,
   sessionLabel: session.songTitle || 'Saved Session',
   tracks: session.tracks.map((track) => ({
@@ -1240,8 +1241,13 @@ export function LiveDirectorView({
   );
 
   const sessionTracks = useMemo(
-    () => (hasProvidedTracks ? tracks || [] : manualSession?.tracks || []),
-    [hasProvidedTracks, manualSession?.tracks, tracks],
+    () => {
+      if (hasProvidedTracks) return tracks || [];
+      // Props can switch to the next song one render before local state syncs.
+      if (songId && manualSession?.songId && manualSession.songId !== songId) return [];
+      return manualSession?.tracks || [];
+    },
+    [hasProvidedTracks, manualSession?.songId, manualSession?.tracks, songId, tracks],
   );
 
   const trackRouteSeedSignature = useMemo(
@@ -2776,6 +2782,8 @@ export function LiveDirectorView({
     };
   }, []);
 
+  const failedSessionLoadRef = useRef<{ key: string; message: string } | null>(null);
+  const sessionLoadKey = `${songId}:${reloadKey}:${enabledSessionTracks.map(track => `${track.id}:${track.optimizedUrl || track.url}`).join('|')}`;
   const trackSignature = useMemo(() => (
     activeEngineTracks.map(track => `${track.id}:${track.url}`).join('|')
   ), [activeEngineTracks]);
@@ -2810,6 +2818,13 @@ export function LiveDirectorView({
         return;
       }
 
+      if (failedSessionLoadRef.current?.key === sessionLoadKey) {
+        setLoadError(failedSessionLoadRef.current.message);
+        setIsInitializingSession(false);
+        setBusyMessage(null);
+        return;
+      }
+      failedSessionLoadRef.current = null;
       setLoadError(null);
       setIsInitializingSession(true);
       setBusyMessage(isIOSNativeEngineSurface ? 'Iniciando motor Apple...' : useStreamingEngine ? 'Iniciando motor en flujo...' : 'Cargando buffers de audio...');
@@ -2846,7 +2861,9 @@ export function LiveDirectorView({
         setIsInitializingSession(false);
         setBusyMessage(null);
         console.error('[LiveDirectorView] Failed to initialize the multitrack engine.', error);
-        setLoadError(error instanceof Error ? error.message : 'No se pudieron cargar los buffers de audio.');
+        const message = error instanceof Error ? error.message : 'No se pudieron cargar los buffers de audio.';
+        failedSessionLoadRef.current = { key: sessionLoadKey, message };
+        setLoadError(message);
       }
     };
 
@@ -2857,7 +2874,7 @@ export function LiveDirectorView({
       stopEngineRef.current();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trackSignature, hasResolvedEngineCapability, isIOSNativeEngineSurface, isWebTrackLimitExceeded, reloadKey, sessionActiveTrackLimit, sessionPreparationPending, useStreamingEngine]);
+  }, [sessionLoadKey, trackSignature, hasResolvedEngineCapability, isIOSNativeEngineSurface, isWebTrackLimitExceeded, reloadKey, sessionActiveTrackLimit, sessionPreparationPending, useStreamingEngine]);
 
   const loadWarningsKey = useMemo(() => {
     if (!loadWarnings || loadWarnings.length === 0) {
@@ -3425,7 +3442,7 @@ export function LiveDirectorView({
   }, [canManagePersistedSongSession, enqueueSessionSave, hasPersistedSongContext, manualSession, onSessionPersisted, songId]);
 
   const commitMixerStateSilent = useCallback((tracksOverride?: TrackData[]) => {
-    if (!hasPersistedSongContext || !manualSession) {
+    if (!hasPersistedSongContext || !manualSession || manualSession.songId !== songId) {
       return;
     }
 
@@ -3465,7 +3482,7 @@ export function LiveDirectorView({
       unmatchedFiles: manualSession.unmatchedFiles || [],
       sectionOffsetSeconds: Number(manualSession.sectionOffsetSeconds) || 0,
     }));
-  }, [buildSessionSavePayload, hasPersistedSongContext, manualSession, mutedTrackIds, onEventMixChange, queueSilentSessionSave, trackOutputRoutes, trackVolumes, usesEventMixPersistence]);
+  }, [buildSessionSavePayload, hasPersistedSongContext, manualSession, mutedTrackIds, onEventMixChange, queueSilentSessionSave, songId, trackOutputRoutes, trackVolumes, usesEventMixPersistence]);
 
   useEffect(() => {
     eventMixFlushRef.current = () => commitMixerStateSilent();
@@ -6749,6 +6766,9 @@ export function LiveDirectorView({
               className="ui-pressable mt-5 rounded-[1rem] border border-white/10 bg-white/8 px-5 py-3 text-sm tracking-[0.18em] text-white"
             >
               {hasTrackSession ? 'REINTENTAR CARGA' : 'VOLVER AL CARGADOR'}
+            </button>
+            <button type="button" onClick={() => { void exitLiveDirector(); }} className="ml-3 mt-3 rounded-xl border border-white/20 px-5 py-3 text-sm text-white">
+              Volver
             </button>
           </div>
         </div>

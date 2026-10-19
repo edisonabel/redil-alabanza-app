@@ -32,7 +32,8 @@ try {
     refresh.injectIntoGlobalHook(window); window.$RefreshReg$ = () => {}; window.$RefreshSig$ = () => type => type;
     window.__vite_plugin_react_preamble_installed__ = true;
     const React = (await import('/@id/react')).default;
-    const {createRoot} = await import('/@id/react-dom/client');
+    const reactDomModule = await import('/@id/react-dom/client');
+    const {createRoot} = reactDomModule.default || reactDomModule;
     const Component = (await import('/src/components/react/StemConverterTool.tsx')).default;
     document.documentElement.classList.add('dark');
     document.body.innerHTML = '<div id="test-root"></div>';

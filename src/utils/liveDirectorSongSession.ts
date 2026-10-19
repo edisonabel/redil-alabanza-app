@@ -1,3 +1,4 @@
+import { cleanExportedStemLabels } from './stemCategories';
 import { buildSectionShortLabel, getSectionKind, SECTION_VISUALS, toRgba } from './sectionVisuals';
 import type { TrackOutputRoute } from './liveDirectorTrackRouting';
 import { resolveTrackOutputRoute } from './liveDirectorTrackRouting';
@@ -193,7 +194,7 @@ export const normalizePersistedLiveDirectorSession = (
       String(sessionRecord.folder || '').trim() || buildLiveDirectorSongFolder(songId, songTitle),
     manifestUrl: String(sessionRecord.manifestUrl || '').trim(),
     updatedAt: String(sessionRecord.updatedAt || '').trim(),
-    tracks,
+    tracks: cleanExportedStemLabels(tracks),
     unmatchedFiles: Array.isArray(sessionRecord.unmatchedFiles)
       ? sessionRecord.unmatchedFiles.map((value) => String(value || '').trim()).filter(Boolean)
       : [],

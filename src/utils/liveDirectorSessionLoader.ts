@@ -3,6 +3,7 @@ import type { TrackData } from '../services/MultitrackEngine';
 import { isLiveDirectorM4aFile } from './liveDirectorStemFormat.ts';
 
 export type LiveDirectorResolvedSession = {
+  songId?: string;
   mode: 'sequence' | 'folder';
   sessionLabel: string;
   tracks: TrackData[];

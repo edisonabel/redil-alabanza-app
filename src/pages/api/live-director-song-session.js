@@ -1,3 +1,4 @@
+import { assertSongOwnsStemUrls, isSongOwnedStemKey } from '../../utils/liveDirectorSessionSafety.ts';
 import { createSupabaseUserClient } from '../../lib/server/supabase-user-client.js';
 import { getServerAuthTokens } from '../../lib/server/auth-cookies.js';
 import { createClient } from '@supabase/supabase-js';
@@ -161,7 +162,7 @@ const normalizeIncomingTracks = (rawTracks) => {
   return normalizedTracks;
 };
 
-const deleteSessionFiles = async (sessionRecord, r2Context, { keepUrls = [] } = {}) => {
+const deleteSessionFiles = async (sessionRecord, r2Context, { keepUrls = [], songId } = {}) => {
   const normalizedSession = normalizePersistedLiveDirectorSession(sessionRecord);
   if (!normalizedSession) {
     return;
@@ -183,7 +184,7 @@ const deleteSessionFiles = async (sessionRecord, r2Context, { keepUrls = [] } = 
   const objectKeys = candidateUrls
     .filter((url) => url && !keepSet.has(url))
     .map((url) => getR2ObjectKeyFromUrl(url, r2Context.publicBaseUrl))
-    .filter(Boolean);
+    .filter((key) => key && songId && isSongOwnedStemKey(key, songId));
 
   await Promise.all(
     [...new Set(objectKeys)].map((objectKey) =>
@@ -288,6 +289,7 @@ export const POST = async ({ request, cookies }) => {
       ? Number(rawSession.sectionOffsetSeconds)
       : 0;
     const tracks = normalizeIncomingTracks(rawSession?.tracks);
+    assertSongOwnsStemUrls(songId, tracks);
     const unmatchedFiles = Array.isArray(rawSession?.unmatchedFiles)
       ? rawSession.unmatchedFiles.map((value) => String(value || '').trim()).filter(Boolean)
       : [];
@@ -330,6 +332,7 @@ export const POST = async ({ request, cookies }) => {
     }
 
     await deleteSessionFiles(songRow.multitrack_session, r2Context, {
+      songId,
       keepUrls: [
         manifestUrl,
         ...tracks.flatMap((track) => [
@@ -498,7 +501,7 @@ export const DELETE = async ({ request, cookies }) => {
           throw clearError;
         }
 
-        await deleteSessionFiles(currentSession, r2Context);
+        await deleteSessionFiles(currentSession, r2Context, { songId });
 
         return jsonResponse({ success: true, session: null });
       }
@@ -540,6 +543,7 @@ export const DELETE = async ({ request, cookies }) => {
         manifestUrl: '',
         tracks: [trackToDelete],
       }, r2Context, {
+        songId,
         keepUrls: remainingTracks.flatMap((track) => [
           track.url,
           track.iosUrl,
@@ -553,7 +557,7 @@ export const DELETE = async ({ request, cookies }) => {
       return jsonResponse({ success: true, session: persistedSession });
     }
 
-    await deleteSessionFiles(songRow.multitrack_session, r2Context);
+    await deleteSessionFiles(songRow.multitrack_session, r2Context, { songId });
 
     const { error: updateError } = await serviceRoleClient
       .from('canciones')
