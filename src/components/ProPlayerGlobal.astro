@@ -175,6 +175,7 @@
   import {
     buildPlaybackSourceCandidates,
     extractDriveFileId,
+    getAudioCrossOrigin,
     shouldPreferNativeBackgroundPlayback,
   } from '../lib/audio-playback.js';
   import {
@@ -629,6 +630,9 @@
     const setSource = (index: number) => {
       const nextUrl = sourceCandidates[index] || '';
       if (!nextUrl) return false;
+      const crossOrigin = getAudioCrossOrigin(nextUrl);
+      if (crossOrigin) audio.crossOrigin = crossOrigin;
+      else audio.removeAttribute('crossorigin');
       audio.src = nextUrl;
       audio.load();
       return true;

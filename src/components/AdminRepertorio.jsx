@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import AdminVocalWarmups from './AdminVocalWarmups';
 import { audioSessionService } from '../services/AudioSessionService';
+import { getAudioCrossOrigin } from '../lib/audio-playback.js';
 import {
   Check,
   CheckCircle,
@@ -4032,7 +4033,7 @@ export default function AdminRepertorio({ libraryScope = 'general' }) {
             </div>
 
             <div className="max-h-[min(72vh,42rem)] overflow-y-auto px-4 py-4 md:px-5">
-              <audio ref={voicePreviewAudioRef} className="hidden" preload="none" />
+              <audio ref={voicePreviewAudioRef} crossOrigin={getAudioCrossOrigin(voicePreview.url)} className="hidden" preload="none" />
 
               <div className="flex flex-wrap items-center gap-2">
                 <label className="inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-2 rounded-lg border border-brand/25 bg-brand/10 px-3 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand/15">
@@ -4538,6 +4539,7 @@ export default function AdminRepertorio({ libraryScope = 'general' }) {
                 <section id="admin-markers-panel" className="flex min-h-0 h-full flex-col overflow-hidden rounded-xl border border-border bg-background/70 p-3">
                   <audio
                     id="admin-chordpro-audio"
+                    crossOrigin={getAudioCrossOrigin(editorChordproCancion?.mp3)}
                     src={editorChordproCancion?.mp3 || ''}
                     preload="metadata"
                     className="hidden"

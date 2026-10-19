@@ -97,6 +97,23 @@ export const isR2AudioUrl = (rawUrl, { origin = '' } = {}) => {
   }
 };
 
+// Opt our CORS-enabled storage into a CORS fetch before assigning audio.src.
+// A no-cors media load becomes silent if Web Audio (including an extension)
+// attaches a MediaElementAudioSourceNode, even when R2 allows the page origin.
+// Keep native playback for third-party sources whose CORS policy we don't own.
+export const getAudioCrossOrigin = (rawUrl, { origin = '' } = {}) => {
+  const normalized = normalizeExternalAudioUrl(rawUrl, { origin });
+  if (!normalized) return undefined;
+  try {
+    return isR2AudioUrl(normalized, { origin }) ||
+      new URL(normalized).origin === new URL(resolveBaseOrigin(origin)).origin
+      ? 'anonymous'
+      : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 export const isAudioApiUrl = (rawUrl, { origin = '' } = {}) => {
   const normalized = normalizeExternalAudioUrl(rawUrl, { origin });
   if (!normalized) return false;
