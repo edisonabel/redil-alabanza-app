@@ -1,3 +1,4 @@
+import { StemSongLevelAnalyzer, SONG_TARGET_LUFS, SONG_PEAK_DB } from '../../utils/stemSongLevel';
 import {
   CheckCircle2,
   Download,
@@ -7,7 +8,6 @@ import {
   Loader2,
   Music2,
   Music4,
-  ShieldCheck,
   UploadCloud,
   Volume2,
   XCircle,
@@ -26,15 +26,18 @@ import {
 } from '../../utils/pitchShift/rubberbandEngine';
 import { encodeAudioBufferToFloat32Wav } from '../../utils/pitchShift/wavEncoder';
 
-const MAX_STEMS = 15;
-const TARGET_STEMS = 10;
+import {
+  CONTROL_STEM_CATEGORIES, categoryOptions, buildClassifiedStemFileName as buildOutputName, type StemCategory,
+} from '../../utils/stemCategories';
+import {
+  MAX_STEMS, sourceStemFromFile, buildSmartPlan, getPlanReason, getGroupOutputCount, getPlanOutputCount,
+  planGroupsToStems, rawSourcesToStems, canMergeStemGroup,
+  type StemStatus, type SourceStem, type StemItem, type SmartPlanGroup, type PlanAction,
+} from '../../utils/stemConverterPlan';
+
 const DEFAULT_BITRATE = '256k';
 const TARGET_SAMPLE_RATE = 48_000;
 const TARGET_SAMPLE_RATE_FILTER = `aresample=${TARGET_SAMPLE_RATE},aformat=sample_rates=${TARGET_SAMPLE_RATE}`;
-const TARGET_PEAK_DB = -3;
-const TARGET_PEAK_LINEAR = 10 ** (TARGET_PEAK_DB / 20);
-const MAX_AUTO_GAIN_DB = 12;
-const MAX_MANUAL_GAIN_DB = 12;
 const FFMPEG_LOAD_TIMEOUT_MS = 45_000;
 const FFMPEG_WORKER_CACHE_VERSION = '2026-07-16-csp-wasm-v2';
 const FFMPEG_WORKER_URL = `${ffmpegWorkerURL}${ffmpegWorkerURL.includes('?') ? '&' : '?'}v=${FFMPEG_WORKER_CACHE_VERSION}`;
@@ -44,45 +47,7 @@ const MONO_CORRELATION_THRESHOLD = 0.997;
 const MONO_SIDE_RATIO_DB_THRESHOLD = -30;
 const MONO_BALANCE_DB_THRESHOLD = 1.25;
 
-type StemStatus = 'queued' | 'processing' | 'done' | 'error';
-type StemCategory = 'clickGuide' | 'drums' | 'bass' | 'piano' | 'keys' | 'acoustic' | 'electric' | 'percussion' | 'vocals' | 'pads' | 'misc' | 'unknown';
-type PlanAction = 'keep' | 'merge' | 'skip';
 type ChannelMode = 'mono' | 'stereo';
-type VolumeMode = 'auto' | 'manual';
-
-type SourceStem = {
-  id: string;
-  file: File;
-  name: string;
-  relativePath: string;
-  size: number;
-  category: StemCategory;
-};
-
-type StemItem = {
-  id: string;
-  sources: SourceStem[];
-  name: string;
-  relativePath: string;
-  size: number;
-  status: StemStatus;
-  progress: number;
-  outputName?: string;
-  outputSize?: number;
-  error?: string;
-  channelMode?: ChannelMode;
-  channelNote?: string;
-  levelNote?: string;
-};
-
-type SmartPlanGroup = {
-  id: string;
-  action: PlanAction;
-  category: StemCategory;
-  name: string;
-  reason: string;
-  sources: SourceStem[];
-};
 
 type OutputAsset = {
   blob: Blob;
@@ -131,7 +96,7 @@ const AUDIO_EXTENSIONS = new Set([
   'wav',
 ]);
 
-const autoMonoCategories = new Set<StemCategory>(['clickGuide', 'bass', 'vocals']);
+const autoMonoCategories = new Set<StemCategory>(['click', 'guide', 'cues', 'bass', 'vocals']);
 
 const formatBytes = (bytes: number) => {
   if (!Number.isFinite(bytes) || bytes <= 0) {
@@ -156,59 +121,9 @@ const formatDb = (value: number, includePlus = false) => {
   return `${prefix}${normalized.toFixed(1).replace('.0', '')} dB`;
 };
 
-const parseDetectedPeakDb = (logs: string[]) => {
-  for (let index = logs.length - 1; index >= 0; index -= 1) {
-    const match = /max_volume:\s*(-?inf|[-+]?\d+(?:\.\d+)?)\s*dB/i.exec(logs[index]);
-    if (!match) continue;
-    if (match[1].toLowerCase() === '-inf') return Number.NEGATIVE_INFINITY;
-    const value = Number(match[1]);
-    if (Number.isFinite(value)) return value;
-  }
-  return null;
-};
-
-const getAutomaticGainDb = (peakDb: number) => {
-  if (!Number.isFinite(peakDb)) return 0;
-  return Math.max(0, Math.min(MAX_AUTO_GAIN_DB, TARGET_PEAK_DB - peakDb));
-};
-
-const buildSafeLevelFilter = (gainDb: number) => (
-  `volume=${gainDb.toFixed(2)}dB,alimiter=limit=${TARGET_PEAK_LINEAR.toFixed(6)}:attack=5:release=100:level=0`
-);
-
 const getFileExtension = (name: string) => {
   const match = /\.([^.]+)$/.exec(name.toLowerCase());
   return match?.[1] || '';
-};
-
-const getFileBaseName = (name: string) => name.replace(/\.[^.]+$/, '');
-
-const normalizeText = (value: string) => value
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .toLowerCase();
-
-const tokenize = (value: string) => normalizeText(value).split(/[^a-z0-9]+/).filter(Boolean);
-
-const sanitizeFileName = (value: string) => {
-  const safe = value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9._-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 82);
-
-  return safe || 'stem';
-};
-
-const buildStemId = (file: File, index: number) => {
-  const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
-  return `${index}-${relativePath}-${file.size}-${file.lastModified}`;
-};
-
-const buildOutputName = (name: string, index: number) => {
-  const base = sanitizeFileName(getFileBaseName(name));
-  return `${String(index + 1).padStart(2, '0')}-${base}.m4a`;
 };
 
 const buildInputName = (file: File, index: number, sourceIndex = 0) => {
@@ -221,308 +136,9 @@ const isSupportedAudio = (file: File) => {
   return AUDIO_EXTENSIONS.has(extension) || file.type.startsWith('audio/');
 };
 
-const hasAny = (text: string, words: string[]) => words.some((word) => text.includes(word));
-
-const hasToken = (tokens: string[], words: string[]) => words.some((word) => tokens.includes(word));
-
-const categorizeStem = (file: File): StemCategory => {
-  const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
-  const text = normalizeText(`${relativePath} ${getFileBaseName(file.name)}`);
-  const tokens = tokenize(text);
-
-  if (
-    hasToken(tokens, ['click', 'clic', 'clcik', 'metro', 'metronomo', 'metronome', 'tempo', 'bpm', 'cue', 'cues', 'guide', 'guia', 'guias'])
-    || hasAny(text, ['voz guia', 'count in', 'count-in', 'talkback', 'clicktrack', 'cuetrack', 'guidetrack', 'guidevox'])
-  ) {
-    return 'clickGuide';
-  }
-
-  if (hasAny(text, ['synthbass', 'synth bass'])) return 'misc';
-  if (hasToken(tokens, ['drums', 'drum', 'bateria', 'baterias'])) return 'drums';
-  if (hasToken(tokens, ['bass', 'bajo'])) return 'bass';
-  if (hasToken(tokens, ['piano', 'grand', 'upright'])) return 'piano';
-  if (hasToken(tokens, ['keys', 'key', 'teclas', 'tecla', 'organ', 'organo', 'rhodes', 'wurli', 'wurlitzer', 'ep', 'synth', 'strings', 'string', 'brass'])) return 'keys';
-  if (hasToken(tokens, ['ga', 'gac', 'acoustic', 'acustica']) || hasAny(text, ['guitarra acustica', 'gtr ac'])) return 'acoustic';
-  if (
-    hasToken(tokens, [
-      'ge',
-      'ge1',
-      'ge2',
-      'ge3',
-      'ge4',
-      'ge5',
-      'ge6',
-      'g1',
-      'g1a',
-      'g1b',
-      'g2',
-      'g3',
-      'g4',
-      'g5',
-      'g6',
-      'eg',
-      'eg1',
-      'eg2',
-      'eg3',
-      'eg4',
-      'eg5',
-      'eg6',
-      'egtr',
-      'electric',
-      'electrica',
-      'elec',
-      'lead',
-      'dist',
-    ])
-  ) return 'electric';
-  if (hasAny(text, ['guitarra electrica', 'gtr elec', 'gtr electric'])) return 'electric';
-  if (hasToken(tokens, ['perc', 'percs', 'percussion', 'percusion', 'shaker', 'tamb', 'tambourine', 'conga', 'bongo', 'loop', 'loops'])) return 'percussion';
-  if (hasToken(tokens, ['pad', 'pads', 'ambient', 'ambiente', 'atmos', 'colchon', 'colchones'])) return 'pads';
-  if (hasToken(tokens, ['voz', 'voces', 'vocal', 'vocals', 'coro', 'coros', 'choir', 'bgv', 'bv'])) return 'vocals';
-  if (hasAny(text, ['guitar', 'guitarra', 'gtr'])) return 'electric';
-
-  return 'unknown';
-};
-
-const categoryOrder: StemCategory[] = [
-  'clickGuide',
-  'drums',
-  'bass',
-  'piano',
-  'keys',
-  'acoustic',
-  'electric',
-  'percussion',
-  'vocals',
-  'misc',
-  'pads',
-  'unknown',
-];
-
-const categoryMeta: Record<StemCategory, { name: string; mergeReason: string; keepReason: string; skipReason?: string }> = {
-  clickGuide: {
-    name: 'Click + Guia + Cues',
-    mergeReason: 'Click, guia y cues en una sola pista.',
-    keepReason: 'Guia de tiempo lista.',
-  },
-  drums: {
-    name: 'Bateria',
-    mergeReason: 'Bateria unificada y separada de la percusion extra.',
-    keepReason: 'Base ritmica principal.',
-  },
-  bass: {
-    name: 'Bajo',
-    mergeReason: 'Bajos juntos para mantener un solo canal base.',
-    keepReason: 'Base armonica principal.',
-  },
-  piano: {
-    name: 'Piano',
-    mergeReason: 'Pianos juntos en un solo apoyo.',
-    keepReason: 'Instrumento base frecuente.',
-  },
-  keys: {
-    name: 'Keys / Organos',
-    mergeReason: 'Teclas, organos y synths juntos como apoyo.',
-    keepReason: 'Apoyo de teclas.',
-  },
-  acoustic: {
-    name: 'Guitarras acusticas',
-    mergeReason: 'Acusticas similares en una sola pista.',
-    keepReason: 'Acustica principal.',
-  },
-  electric: {
-    name: 'Guitarras electricas',
-    mergeReason: 'GE, G1, G2 y leads juntos para ahorrar canales.',
-    keepReason: 'Electrica principal.',
-  },
-  percussion: {
-    name: 'Percusion extra',
-    mergeReason: 'Loops y percusiones extra juntos.',
-    keepReason: 'Percusion extra.',
-  },
-  vocals: {
-    name: 'Coros / Voces',
-    mergeReason: 'Coros y voces de apoyo en una sola guia.',
-    keepReason: 'Voz de apoyo.',
-  },
-  misc: {
-    name: 'Extras / FX',
-    mergeReason: 'Extras poco criticos juntos.',
-    keepReason: 'Extra disponible.',
-  },
-  pads: {
-    name: 'Pads / Ambiente',
-    mergeReason: 'Pads juntos si decides usarlos.',
-    keepReason: 'Pad disponible.',
-    skipReason: 'Sugerido omitir: puedes usar el pad interno.',
-  },
-  unknown: {
-    name: 'Por clasificar',
-    mergeReason: 'No estoy seguro de estas pistas.',
-    keepReason: 'No estoy seguro de esta pista.',
-    skipReason: 'No estoy seguro: dime en que categoria va.',
-  },
-};
-
-const sourceStemFromFile = (file: File, index: number): SourceStem => {
-  const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
-  return {
-    id: buildStemId(file, index),
-    file,
-    name: file.name,
-    relativePath,
-    size: file.size,
-    category: categorizeStem(file),
-  };
-};
-
-const getDefaultPlanAction = (category: StemCategory, sources: SourceStem[], hasNonPadSources: boolean): PlanAction => {
-  if (category === 'unknown') return 'skip';
-  if (category === 'pads') return hasNonPadSources ? 'skip' : sources.length > 1 ? 'merge' : 'keep';
-  if (sources.length <= 1) return 'keep';
-  if (category === 'clickGuide' || category === 'percussion' || category === 'misc') return 'merge';
-  if (category === 'keys' || category === 'electric' || category === 'vocals') {
-    return sources.length > 2 ? 'merge' : 'keep';
-  }
-  return 'keep';
-};
-
-const getPlanReason = (category: StemCategory, sources: SourceStem[], action: PlanAction) => {
-  const meta = categoryMeta[category];
-  if (action === 'skip') return meta.skipReason || 'Sugerido omitir para ahorrar canales.';
-  if (action === 'merge') return meta.mergeReason;
-  if (sources.length > 1) return 'Separadas para prender/apagar cada una en Live Director.';
-  return meta.keepReason;
-};
-
-const createPlanGroup = (
-  category: StemCategory,
-  sources: SourceStem[],
-  action?: PlanAction,
-  overrides?: { name?: string; reason?: string },
-): SmartPlanGroup => {
-  const meta = categoryMeta[category];
-  const finalAction = action || (sources.length > 1 ? 'merge' : 'keep');
-  return {
-    id: `${category}-${sources.map((source) => source.id).join('|')}`,
-    action: finalAction,
-    category,
-    name: overrides?.name || meta.name,
-    reason: overrides?.reason || getPlanReason(category, sources, finalAction),
-    sources,
-  };
-};
-
-const createElectricGuitarPlanGroups = (sources: SourceStem[]) => {
-  if (sources.length <= 2) {
-    return [createPlanGroup('electric', sources, 'keep')];
-  }
-
-  const primarySources = sources.slice(0, 2);
-  const secondarySources = sources.slice(2);
-
-  return [
-    createPlanGroup('electric', primarySources, 'merge', {
-      name: 'Electricas 1-2',
-      reason: 'Guitarras 1 y 2 juntas como opcion principal.',
-    }),
-    createPlanGroup('electric', secondarySources, secondarySources.length > 1 ? 'merge' : 'keep', {
-      name: secondarySources.length > 1 ? 'Electricas extras' : 'Electrica extra',
-      reason: secondarySources.length > 1
-        ? 'Guitarras restantes juntas para ahorrar canales.'
-        : 'Guitarra extra separada para apagarla si no hace falta.',
-    }),
-  ];
-};
-
-const buildSmartPlan = (sources: SourceStem[]) => {
-  const byCategory = new Map<StemCategory, SourceStem[]>();
-  sources.forEach((source) => {
-    const bucket = byCategory.get(source.category) || [];
-    bucket.push(source);
-    byCategory.set(source.category, bucket);
-  });
-
-  const hasNonPadSources = sources.some((source) => source.category !== 'pads');
-  const groups = categoryOrder.flatMap((category) => {
-    const bucket = byCategory.get(category);
-    if (!bucket?.length) return [];
-    if (category === 'electric') return createElectricGuitarPlanGroups(bucket);
-    return [createPlanGroup(category, bucket, getDefaultPlanAction(category, bucket, hasNonPadSources))];
-  });
-
-  return groups;
-};
-
-const getGroupOutputCount = (group: SmartPlanGroup) => {
-  if (group.action === 'skip') return 0;
-  if (group.action === 'merge') return 1;
-  return group.sources.length;
-};
-
-const getPlanOutputCount = (groups: SmartPlanGroup[]) => groups.reduce(
-  (total, group) => total + getGroupOutputCount(group),
-  0,
-);
-
-const planGroupsToStems = (groups: SmartPlanGroup[]) => {
-  const outputStems: StemItem[] = [];
-
-  groups.forEach((group) => {
-    if (group.action === 'skip') {
-      return;
-    }
-
-    if (group.action === 'keep') {
-      group.sources.forEach((source) => {
-        const outputIndex = outputStems.length;
-        outputStems.push({
-          id: `plan-${outputIndex}-${source.id}`,
-          sources: [source],
-          name: source.name,
-          relativePath: source.relativePath,
-          size: source.size,
-          status: 'queued',
-          progress: 0,
-          outputName: buildOutputName(source.name, outputIndex),
-        });
-      });
-      return;
-    }
-
-    const outputIndex = outputStems.length;
-    const sourceNames = group.sources.map((source) => source.name);
-    outputStems.push({
-      id: `plan-${outputIndex}-${group.id}`,
-      sources: group.sources,
-      name: group.name,
-      relativePath: sourceNames.length > 3
-        ? `${sourceNames.slice(0, 3).join(', ')} +${sourceNames.length - 3}`
-        : sourceNames.join(', '),
-      size: group.sources.reduce((total, source) => total + source.size, 0),
-      status: 'queued',
-      progress: 0,
-      outputName: buildOutputName(group.name, outputIndex),
-    });
-  });
-
-  return outputStems;
-};
-
-const rawSourcesToStems = (sources: SourceStem[]) => sources.slice(0, MAX_STEMS).map<StemItem>((source, index) => ({
-  id: `raw-${index}-${source.id}`,
-  sources: [source],
-  name: source.name,
-  relativePath: source.relativePath,
-  size: source.size,
-  status: 'queued',
-  progress: 0,
-  outputName: buildOutputName(source.name, index),
-}));
-
 const shouldForceMonoForStem = (stem: StemItem) => (
   stem.sources.length > 0
-  && stem.sources.every((source) => source.category === 'clickGuide')
+  && stem.sources.every((source) => CONTROL_STEM_CATEGORIES.has(source.category))
 );
 
 const shouldAnalyzeMonoForStem = (stem: StemItem) => (
@@ -681,7 +297,7 @@ const getStemMaterial = (stem: StemItem): PitchShiftMaterial => {
   const isAllPercussive = stem.sources.every((source) => (
     source.category === 'drums'
     || source.category === 'percussion'
-    || source.category === 'clickGuide'
+    || CONTROL_STEM_CATEGORIES.has(source.category)
   ));
   return isAllPercussive ? 'percussive' : 'melodic';
 };
@@ -716,21 +332,6 @@ const formatPitchSummary = (semitones: number): string => {
   const noun = Math.abs(semitones) === 1 ? 'semitono' : 'semitonos';
   return `${sign}${semitones} ${noun}`;
 };
-
-const categoryOptions: Array<{ value: StemCategory; label: string }> = [
-  { value: 'unknown', label: 'Elegir categoria' },
-  { value: 'clickGuide', label: 'Click / Guia / Cues' },
-  { value: 'drums', label: 'Bateria' },
-  { value: 'bass', label: 'Bajo' },
-  { value: 'piano', label: 'Piano' },
-  { value: 'keys', label: 'Keys / Organos' },
-  { value: 'acoustic', label: 'Guitarra acustica' },
-  { value: 'electric', label: 'Guitarra electrica' },
-  { value: 'percussion', label: 'Percusion extra' },
-  { value: 'vocals', label: 'Coros / Voces' },
-  { value: 'pads', label: 'Pads / Ambiente' },
-  { value: 'misc', label: 'Extras / FX' },
-];
 
 const getStatusLabel = (status: StemStatus) => {
   switch (status) {
@@ -818,12 +419,7 @@ export default function StemConverterTool() {
   const [keyDetectionStatus, setKeyDetectionStatus] = useState<'idle' | 'running' | 'done' | 'failed' | 'unavailable'>('idle');
   const [isPitchModalOpen, setIsPitchModalOpen] = useState(false);
 
-  // Leveling is enabled by default because the converter is commonly used
-  // with low-volume sequence exports. It remains opt-out so an engineer can
-  // preserve the source gain through the encode chain.
-  const [isLevelingEnabled, setIsLevelingEnabled] = useState(true);
-  const [volumeMode, setVolumeMode] = useState<VolumeMode>('auto');
-  const [manualGainDb, setManualGainDb] = useState(3);
+  const [levelStage, setLevelStage] = useState('');
 
   const selectedTotalBytes = useMemo(
     () => stems.reduce((total, item) => total + item.size, 0),
@@ -884,12 +480,8 @@ export default function StemConverterTool() {
     ];
     rows.push({
       label: 'Nivel',
-      value: isLevelingEnabled
-        ? volumeMode === 'auto'
-          ? `Auto · ${TARGET_PEAK_DB} dBFS`
-          : `${formatDb(manualGainDb, true)} · ${TARGET_PEAK_DB} dBFS`
-        : 'Original',
-      tone: isLevelingEnabled ? 'brand' : undefined,
+      value: 'Automático por canción',
+      tone: 'brand',
     });
     if (detectedKey || pitchShiftSemitones !== 0) {
       const detected = detectedKey ? detectedKey.label : '—';
@@ -908,7 +500,7 @@ export default function StemConverterTool() {
       tone: convertedTotalBytes ? 'success' : undefined,
     });
     return rows;
-  }, [convertedTotalBytes, detectedKey, isLevelingEnabled, manualGainDb, pitchShiftSemitones, selectedTotalBytes, stems.length, volumeMode]);
+  }, [convertedTotalBytes, detectedKey, pitchShiftSemitones, selectedTotalBytes, stems.length]);
 
   const revokeZipUrl = useCallback(() => {
     if (zipUrlRef.current) {
@@ -1031,8 +623,9 @@ export default function StemConverterTool() {
   }, [planOutputCount, planSkippedCount, smartPlan]);
 
   const applyRawPlan = useCallback(() => {
+    if (pendingSources.length > MAX_STEMS) return;
     setStems(rawSourcesToStems(pendingSources));
-    setOmittedCount(Math.max(0, pendingSources.length - MAX_STEMS));
+    setOmittedCount(0);
     setIsPlanOpen(false);
   }, [pendingSources]);
 
@@ -1058,14 +651,14 @@ export default function StemConverterTool() {
       const nextSources = current.map((source) => (
         source.id === sourceId ? { ...source, category } : source
       ));
-      setSmartPlan(buildSmartPlan(nextSources));
+      setSmartPlan((previous) => buildSmartPlan(nextSources, previous));
       return nextSources;
     });
   }, []);
 
   const updatePlanGroupAction = useCallback((groupId: string, action: PlanAction) => {
     setSmartPlan((current) => current.map((group) => (
-      group.id === groupId
+      group.id === groupId && (action !== 'merge' || canMergeStemGroup(group))
         ? { ...group, action, reason: getPlanReason(group.category, group.sources, action) }
         : group
     )));
@@ -1098,7 +691,7 @@ export default function StemConverterTool() {
 
         ffmpeg.on('log', ({ message }) => {
           if (!message?.trim()) return;
-          ffmpegLogsRef.current = [...ffmpegLogsRef.current.slice(-19), message.trim()];
+          ffmpegLogsRef.current = [...ffmpegLogsRef.current.slice(-79), message.trim()];
         });
         ffmpeg.on('progress', ({ progress }) => {
           const activeId = activeStemIdRef.current;
@@ -1175,12 +768,12 @@ export default function StemConverterTool() {
     ffmpeg: FFmpegInstance,
     stem: StemItem,
     index: number,
+    level: StemSongLevelAnalyzer | number,
   ): Promise<StemConversionResult> => {
     const needsPitchShift = pitchShiftSemitones !== 0;
-    const shouldMeasureLevel = isLevelingEnabled && volumeMode === 'auto';
-    const pitchProgressShare = needsPitchShift ? (shouldMeasureLevel ? 0.7 : 0.8) : 0;
-    const measurementProgressShare = shouldMeasureLevel ? (needsPitchShift ? 0.1 : 0.15) : 0;
-    const encodeProgressOffset = pitchProgressShare + measurementProgressShare;
+    const analyzing = level instanceof StemSongLevelAnalyzer;
+    const pitchProgressShare = needsPitchShift ? 0.7 : 0;
+    const encodeProgressOffset = pitchProgressShare;
     // When pitch-shifting we hand FFmpeg a self-describing 32-bit float WAV;
     // otherwise we keep the original container so the encoder can decode
     // whatever native format the user supplied.
@@ -1189,27 +782,23 @@ export default function StemConverterTool() {
         ? `input-${index}-${sourceIndex}.wav`
         : buildInputName(source.file, index, sourceIndex)
     ));
-    const outputName = stem.outputName || buildOutputName(stem.name, index);
+    const outputName = analyzing ? `prepared-${index}.wav` : stem.outputName || buildOutputName(stem.name, index);
     const shouldForceMono = shouldForceMonoForStem(stem);
     const shouldAnalyzeChannels = shouldAnalyzeMonoForStem(stem);
 
     activeStemIdRef.current = stem.id;
     // Reset the FFmpeg progress mapping to "full bar". When pitch-shifting we
-    // re-scope it below so the encode phase only fills the last 20%.
+    // re-scope it below so encoding fills the final part of the bar.
     ffmpegProgressRangeRef.current = { offset: 0, scale: 1 };
     updateStem(stem.id, {
       status: 'processing',
       progress: 1,
       error: undefined,
-      outputName,
+      outputName: stem.outputName,
       outputSize: undefined,
       channelMode: undefined,
       channelNote: shouldForceMono ? 'Mono forzado: click, guia y cues.' : shouldAnalyzeChannels ? 'Analizando L/R...' : 'Stereo preservado.',
-      levelNote: isLevelingEnabled
-        ? volumeMode === 'auto'
-          ? 'Nivel automático listo para medir.'
-          : `Ganancia ${formatDb(manualGainDb, true)} · límite ${TARGET_PEAK_DB} dBFS.`
-        : undefined,
+      levelNote: analyzing ? 'Analizando el balance de la canción...' : `Ganancia ${formatDb(level as number, true)} · ${shouldForceMono ? 'control nivelado aparte' : 'balance conservado'}.`,
     });
 
     try {
@@ -1223,8 +812,7 @@ export default function StemConverterTool() {
 
       if (needsPitchShift) {
         const material = getStemMaterial(stem);
-        // Pitch shifting is the heaviest phase. Automatic leveling reserves a
-        // small slice after it for peak measurement before the final encode.
+        // Analyze and export the same pitch-shifted signal in both passes.
         ffmpegProgressRangeRef.current = { offset: encodeProgressOffset, scale: 1 - encodeProgressOffset };
         for (let sourceIndex = 0; sourceIndex < stem.sources.length; sourceIndex += 1) {
           const file = stem.sources[sourceIndex].file;
@@ -1261,113 +849,29 @@ export default function StemConverterTool() {
       }
 
       const inputArgs = inputNames.flatMap((inputName) => ['-i', inputName]);
-      const mixedInputFilter = `${inputNames.map((_, sourceIndex) => `[${sourceIndex}:a:0]`).join('')}amix=inputs=${inputNames.length}:duration=longest:normalize=1`;
-      let appliedGainDb = isLevelingEnabled && volumeMode === 'manual' ? manualGainDb : 0;
-
-      if (shouldMeasureLevel) {
-        updateStem(stem.id, { levelNote: 'Midiendo el pico real...' });
-        ffmpegProgressRangeRef.current = {
-          offset: pitchProgressShare,
-          scale: measurementProgressShare,
-        };
-        const measurementCommand = inputNames.length === 1
-          ? [
-            '-hide_banner',
-            ...inputArgs,
-            '-map',
-            '0:a:0',
-            '-af',
-            `${TARGET_SAMPLE_RATE_FILTER},volumedetect`,
-            '-f',
-            'null',
-            '-',
-          ]
-          : [
-            '-hide_banner',
-            ...inputArgs,
-            '-filter_complex',
-            `${mixedInputFilter},${TARGET_SAMPLE_RATE_FILTER},volumedetect[a]`,
-            '-map',
-            '[a]',
-            '-f',
-            'null',
-            '-',
-          ];
-
-        ffmpegLogsRef.current = [];
-        const measurementExitCode = await ffmpeg.exec(measurementCommand);
-        const detectedPeakDb = measurementExitCode === 0
-          ? parseDetectedPeakDb(ffmpegLogsRef.current)
-          : null;
-
-        if (detectedPeakDb === Number.NEGATIVE_INFINITY) {
-          updateStem(stem.id, { levelNote: `Audio en silencio · límite ${TARGET_PEAK_DB} dBFS.` });
-        } else if (detectedPeakDb === null) {
-          updateStem(stem.id, { levelNote: `No se pudo medir · limitador ${TARGET_PEAK_DB} dBFS activo.` });
-        } else {
-          appliedGainDb = getAutomaticGainDb(detectedPeakDb);
-          const reachedTarget = detectedPeakDb + appliedGainDb >= TARGET_PEAK_DB - 0.05;
-          updateStem(stem.id, {
-            levelNote: reachedTarget
-              ? `Pico ${formatDb(detectedPeakDb)} · ganancia ${formatDb(appliedGainDb, true)} · límite ${TARGET_PEAK_DB} dBFS.`
-              : `Pico ${formatDb(detectedPeakDb)} · máximo ${formatDb(appliedGainDb, true)} · límite ${TARGET_PEAK_DB} dBFS.`,
-          });
-        }
-      }
-
-      ffmpegProgressRangeRef.current = {
-        offset: encodeProgressOffset,
-        scale: 1 - encodeProgressOffset,
-      };
-      const channelArgs = channelAnalysis.mode === 'mono' ? ['-ac', '1'] : [];
-      const safeLevelFilter = isLevelingEnabled ? buildSafeLevelFilter(appliedGainDb) : '';
-      const outputArgs = [
-        '-vn',
-        '-map_metadata',
-        '-1',
-        '-c:a',
-        'aac',
-        '-profile:a',
-        'aac_low',
-        '-b:a',
-        DEFAULT_BITRATE,
-        '-ar',
-        String(TARGET_SAMPLE_RATE),
-        ...channelArgs,
-        '-movflags',
-        '+faststart',
-        outputName,
-      ];
+      const mixedInputFilter = `${inputNames.map((_, sourceIndex) => `[${sourceIndex}:a:0]`).join('')}amix=inputs=${inputNames.length}:duration=longest:normalize=0`;
+      ffmpegProgressRangeRef.current = { offset: encodeProgressOffset, scale: 1 - encodeProgressOffset };
+      const channelArgs = channelAnalysis.mode === 'mono' ? ['-ac', '1'] : ['-ac', '2'];
+      const audioFilter = analyzing ? TARGET_SAMPLE_RATE_FILTER
+        : `${TARGET_SAMPLE_RATE_FILTER},volume=${(level as number).toFixed(4)}dB`;
+      const outputArgs = analyzing
+        ? ['-vn', '-map_metadata', '-1', '-c:a', 'pcm_f32le', '-ar', String(TARGET_SAMPLE_RATE), ...channelArgs, outputName]
+        : ['-vn', '-map_metadata', '-1', '-c:a', 'aac', '-profile:a', 'aac_low', '-b:a', DEFAULT_BITRATE,
+          '-ar', String(TARGET_SAMPLE_RATE), ...channelArgs, '-movflags', '+faststart', outputName];
       const command = inputNames.length === 1
-        ? [
-          '-hide_banner',
-          '-y',
-          ...inputArgs,
-          '-map',
-          '0:a:0',
-          '-af',
-          isLevelingEnabled
-            ? `${TARGET_SAMPLE_RATE_FILTER},${safeLevelFilter}`
-            : TARGET_SAMPLE_RATE_FILTER,
-          ...outputArgs,
-        ]
-        : [
-          '-hide_banner',
-          '-y',
-          ...inputArgs,
-          '-filter_complex',
-          isLevelingEnabled
-            ? `${mixedInputFilter},${TARGET_SAMPLE_RATE_FILTER},${safeLevelFilter}[a]`
-            : `${mixedInputFilter},alimiter=limit=0.95,${TARGET_SAMPLE_RATE_FILTER}[a]`,
-          '-map',
-          '[a]',
-          ...outputArgs,
-        ];
+        ? ['-hide_banner', '-y', ...inputArgs, '-map', '0:a:0', '-af', audioFilter, ...outputArgs]
+        : ['-hide_banner', '-y', ...inputArgs, '-filter_complex', `${mixedInputFilter},${audioFilter}[a]`, '-map', '[a]', ...outputArgs];
 
       ffmpegLogsRef.current = [];
       const exitCode = await ffmpeg.exec(command);
       if (exitCode !== 0) {
         throw new Error(getConversionFailureMessage(stem.name, exitCode, ffmpegLogsRef.current));
+      }
+
+      if (level instanceof StemSongLevelAnalyzer) {
+        await level.add(stem.id, outputName, shouldForceMono);
+        updateStem(stem.id, { status: 'queued', progress: 0, levelNote: 'Análisis listo. Esperando el resto de la canción.' });
+        return { ok: true };
       }
 
       const result = await ffmpeg.readFile(outputName);
@@ -1405,7 +909,7 @@ export default function StemConverterTool() {
       await Promise.all(inputNames.map((inputName) => cleanupFfmpegFile(ffmpeg, inputName)));
       await cleanupFfmpegFile(ffmpeg, outputName);
     }
-  }, [cleanupFfmpegFile, isLevelingEnabled, manualGainDb, pitchShiftSemitones, updateStem, volumeMode]);
+  }, [cleanupFfmpegFile, pitchShiftSemitones, updateStem]);
 
   const buildZip = useCallback(async () => {
     const outputs = outputsRef.current;
@@ -1459,11 +963,22 @@ export default function StemConverterTool() {
       levelNote: undefined,
     })));
 
+    let analyzer: StemSongLevelAnalyzer | undefined;
     try {
       const ffmpeg = await loadEngine();
+      analyzer = new StemSongLevelAnalyzer(ffmpeg, () => ffmpegLogsRef.current, () => { ffmpegLogsRef.current = []; });
+      for (let index = 0; index < stems.length; index += 1) {
+        setLevelStage(`Analizando canción · ${index + 1}/${stems.length}`);
+        const result = await convertOneStem(ffmpeg, stems[index], index, analyzer);
+        if (!result.ok) throw new Error(result.message);
+      }
+      setLevelStage('Calculando el volumen de la canción...');
+      const gainForStem = await analyzer.finish();
+      await analyzer.cleanup();
       const failures: string[] = [];
       for (let index = 0; index < stems.length; index += 1) {
-        const result = await convertOneStem(ffmpeg, stems[index], index);
+        setLevelStage(`Exportando · ${index + 1}/${stems.length}`);
+        const result = await convertOneStem(ffmpeg, stems[index], index, gainForStem(stems[index].id));
         if (!result.ok) {
           failures.push(result.message);
         }
@@ -1486,6 +1001,8 @@ export default function StemConverterTool() {
         : 'No se pudo completar la conversión. Pulsa Convertir para reintentar.';
       setErrorMessage(message);
     } finally {
+      await analyzer?.cleanup();
+      setLevelStage('');
       activeStemIdRef.current = null;
       setIsConverting(false);
     }
@@ -1573,14 +1090,15 @@ export default function StemConverterTool() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="smart-plan-title"
-            className="max-h-[90dvh] w-full max-w-4xl overflow-hidden rounded-[1.5rem] border border-border bg-surface shadow-2xl"
+            className="flex max-h-[90dvh] w-full max-w-4xl flex-col overflow-hidden rounded-[1.5rem] border border-border bg-surface shadow-2xl"
           >
-            <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex shrink-0 flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-[0.72rem] font-black uppercase tracking-[0.22em] text-brand">Cerebro de stems</p>
+                <p className="text-[0.72rem] font-black uppercase tracking-[0.22em] text-brand">Clasificación de stems</p>
                 <h2 id="smart-plan-title" className="text-xl font-black text-content sm:text-2xl">
                   {pendingSources.length} archivos a {planOutputCount} stems
                 </h2>
+                <p className="mt-1 text-sm text-content-muted">Separados por defecto. Fusiona solo los grupos que elijas.</p>
               </div>
               <button
                 type="button"
@@ -1591,20 +1109,20 @@ export default function StemConverterTool() {
               </button>
             </div>
 
-            <div className="grid max-h-[58dvh] gap-3 overflow-y-auto p-4 sm:grid-cols-2">
+            <div className="grid min-h-0 gap-3 overflow-y-auto p-4 sm:grid-cols-2">
               {smartPlan.map((group) => {
                 const isSkipped = group.action === 'skip';
                 const groupOutputCount = getGroupOutputCount(group);
                 const actionLabel = group.action === 'merge'
                   ? 'Fusionar'
                   : group.action === 'skip'
-                    ? 'Omitir sugerido'
+                    ? 'Omitir'
                     : group.sources.length > 1
                       ? 'Separar'
                       : 'Mantener';
                 const groupActions: Array<{ action: PlanAction; label: string; disabled?: boolean }> = [
                   { action: 'keep', label: group.sources.length > 1 ? 'Separar' : 'Mantener' },
-                  { action: 'merge', label: 'Fusionar', disabled: group.sources.length < 2 },
+                  { action: 'merge', label: 'Fusionar', disabled: !canMergeStemGroup(group) },
                   { action: 'skip', label: 'Omitir' },
                 ];
                 return (
@@ -1648,44 +1166,39 @@ export default function StemConverterTool() {
                       })}
                     </div>
                     <div className="mt-2 space-y-1">
-                      {group.sources.slice(0, 4).map((source) => (
-                        <div key={source.id} className="grid gap-2">
+                      {group.sources.map((source) => (
+                        <div key={source.id} className="grid min-w-0 gap-2">
                           <p className="truncate text-xs text-content-muted">
                             {source.name}
                           </p>
-                          {group.category === 'unknown' ? (
-                            <select
+                          <select
+                              aria-label={`Categoría de ${source.name}`}
                               value={source.category}
                               onChange={(event) => updatePendingSourceCategory(source.id, event.target.value as StemCategory)}
-                              className="min-h-10 rounded-xl border border-border bg-surface px-3 text-sm font-bold text-content outline-none transition focus:border-brand"
-                              aria-label={`Categoria para ${source.name}`}
+                              className="min-h-11 w-full min-w-0 rounded-xl border border-border bg-surface px-3 text-sm font-bold text-content outline-none transition focus:border-brand"
                             >
                               {categoryOptions.map((option) => (
                                 <option key={option.value} value={option.value}>
                                   {option.label}
                                 </option>
                               ))}
-                            </select>
-                          ) : null}
+                          </select>
                         </div>
                       ))}
-                      {group.sources.length > 4 ? (
-                        <p className="text-xs font-bold text-content-muted">+{group.sources.length - 4} mas</p>
-                      ) : null}
                     </div>
                   </article>
                 );
               })}
             </div>
 
-            <div className="border-t border-border px-5 py-4">
+            <div className="shrink-0 border-t border-border px-5 py-4">
               <div className="mb-4 flex flex-wrap gap-2 text-xs font-bold text-content-muted">
                 <span className={`rounded-full border px-3 py-1.5 ${isPlanOverLimit ? 'border-danger/30 bg-danger/10 text-danger' : 'border-border bg-background'}`}>
                   Salidas: {planOutputCount}/{MAX_STEMS}
                 </span>
-                <span className="rounded-full border border-border bg-background px-3 py-1.5">Ideal: {TARGET_STEMS}</span>
+                <span className="rounded-full border border-border bg-background px-3 py-1.5">Hasta {MAX_STEMS} salidas</span>
                 <span className="rounded-full border border-border bg-background px-3 py-1.5">Fusiones: {planMergeCount}</span>
-                <span className="rounded-full border border-border bg-background px-3 py-1.5">Omitidos sugeridos: {planSkippedCount}</span>
+                <span className="rounded-full border border-border bg-background px-3 py-1.5">Omitidos: {planSkippedCount}</span>
               </div>
               {isPlanOverLimit ? (
                 <p className="mb-4 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm font-bold text-danger">
@@ -1696,7 +1209,8 @@ export default function StemConverterTool() {
                 <button
                   type="button"
                   onClick={applyRawPlan}
-                  className="ui-pressable-soft inline-flex min-h-12 items-center justify-center rounded-2xl border border-border bg-background px-5 font-bold text-content"
+                  disabled={pendingSources.length > MAX_STEMS}
+                  className="ui-pressable-soft inline-flex min-h-12 items-center justify-center rounded-2xl border border-border bg-background px-5 font-bold text-content disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Sin fusionar
                 </button>
@@ -1777,102 +1291,22 @@ export default function StemConverterTool() {
             </div>
 
             <div className="border-t border-border bg-background/35 px-5 py-5 md:px-7">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex min-w-0 items-start gap-3">
-                  <div className={`mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${isLevelingEnabled ? 'bg-brand/12 text-brand' : 'bg-surface text-content-muted'}`}>
-                    <Volume2 className="h-5 w-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="font-black text-content">Nivelar volumen</h3>
-                    <p className="mt-1 text-sm leading-relaxed text-content-muted">
-                      Sube secuencias bajas y controla los picos sin cambiar el tono ni el tempo.
-                    </p>
-                  </div>
+              <div className="flex items-start gap-3">
+                <Volume2 className="mt-1 h-5 w-5 shrink-0 text-brand" />
+                <div>
+                  <h3 className="font-black text-content">Volumen automático por canción</h3>
+                  <p className="mt-1 text-sm leading-relaxed text-content-muted">
+                    Carga una canción por conversión. Se mide la mezcla y se ajustan todos sus instrumentos por igual,
+                    conservando su balance. Click, guía y conteos se nivelan aparte.
+                  </p>
+                  <p className="mt-2 text-xs leading-relaxed text-content-muted">
+                    Referencia: {SONG_TARGET_LUFS} LUFS, con margen de {Math.abs(SONG_PEAK_DB)} dB para los picos.
+                    Si acercarse a la referencia saturaría el audio, se conserva un nivel menor.
+                    El análisis previo puede aumentar el tiempo de conversión.
+                  </p>
+                  <p className="mt-2 text-sm font-bold text-brand" role="status" aria-live="polite">{levelStage || 'Siempre activo'}</p>
                 </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={isLevelingEnabled}
-                  aria-label="Activar nivelación de volumen"
-                  onClick={() => setIsLevelingEnabled((current) => !current)}
-                  disabled={isConverting}
-                  className={`relative inline-flex min-h-11 w-16 shrink-0 items-center rounded-full border p-1 transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                    isLevelingEnabled
-                      ? 'border-brand bg-brand'
-                      : 'border-border bg-surface'
-                  }`}
-                >
-                  <span
-                    className={`h-8 w-8 rounded-full bg-white shadow-md transition-transform ${isLevelingEnabled ? 'translate-x-5' : 'translate-x-0'}`}
-                  />
-                </button>
               </div>
-
-              {isLevelingEnabled ? (
-                <div className="mt-4 rounded-2xl border border-border bg-surface p-3 md:p-4">
-                  <div className="grid grid-cols-2 gap-2 rounded-xl bg-background p-1" aria-label="Modo de nivelación">
-                    {([
-                      { value: 'auto' as const, label: 'Automático' },
-                      { value: 'manual' as const, label: 'Manual' },
-                    ]).map((option) => {
-                      const isSelected = volumeMode === option.value;
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          aria-pressed={isSelected}
-                          onClick={() => setVolumeMode(option.value)}
-                          disabled={isConverting}
-                          className={`min-h-11 rounded-lg px-3 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                            isSelected
-                              ? 'bg-brand text-white shadow-sm'
-                              : 'text-content-muted hover:text-content'
-                          }`}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {volumeMode === 'auto' ? (
-                    <p className="mt-3 text-sm leading-relaxed text-content-muted">
-                      Mide cada salida y la acerca a {TARGET_PEAK_DB} dBFS, con un máximo de +{MAX_AUTO_GAIN_DB} dB.
-                    </p>
-                  ) : (
-                    <div className="mt-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <label htmlFor="stem-manual-gain" className="text-sm font-bold text-content">
-                          Ganancia adicional
-                        </label>
-                        <output htmlFor="stem-manual-gain" className="rounded-full border border-brand/25 bg-brand/10 px-3 py-1 text-sm font-black text-brand">
-                          {formatDb(manualGainDb, true)}
-                        </output>
-                      </div>
-                      <input
-                        id="stem-manual-gain"
-                        type="range"
-                        min="0"
-                        max={MAX_MANUAL_GAIN_DB}
-                        step="1"
-                        value={manualGainDb}
-                        onChange={(event) => setManualGainDb(Number(event.target.value))}
-                        disabled={isConverting}
-                        className="mt-3 h-11 w-full cursor-pointer accent-[var(--color-brand)] disabled:cursor-not-allowed disabled:opacity-50"
-                      />
-                      <div className="flex justify-between text-xs font-bold text-content-muted" aria-hidden="true">
-                        <span>0 dB</span>
-                        <span>+{MAX_MANUAL_GAIN_DB} dB</span>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="mt-3 flex items-center gap-2 rounded-xl border border-success/25 bg-success/10 px-3 py-2.5 text-xs font-bold text-success">
-                    <ShieldCheck className="h-4 w-4 shrink-0" />
-                    Limitador de seguridad fijo en {TARGET_PEAK_DB} dBFS
-                  </div>
-                </div>
-              ) : null}
             </div>
 
             <div className="flex flex-col gap-3 border-t border-border px-5 py-4 sm:flex-row sm:flex-wrap md:px-7">

@@ -1,5 +1,6 @@
+import { STEM_CATEGORIES, STEM_CATEGORY_ORDER, categorizeStemName } from './stemCategories.ts';
 import type { TrackData } from '../services/MultitrackEngine';
-import { isLiveDirectorM4aFile } from './liveDirectorStemFormat';
+import { isLiveDirectorM4aFile } from './liveDirectorStemFormat.ts';
 
 export type LiveDirectorResolvedSession = {
   mode: 'sequence' | 'folder';
@@ -30,50 +31,10 @@ type StemAliasGroup = {
   aliases: string[];
 };
 
-const STEM_ALIAS_GROUPS: StemAliasGroup[] = [
-  { id: 'click', label: 'Click', defaultVolume: 0.34, aliases: ['click', 'clic', 'metro', 'metronome', 'cue click'] },
-  { id: 'guide', label: 'Guide', defaultVolume: 0.72, aliases: ['guide', 'guia', 'guia vocal', 'vocal guide', 'vox guide'] },
-  { id: 'cues', label: 'Cues', defaultVolume: 0.62, aliases: ['cues', 'cue', 'count in', 'countin'] },
-  { id: 'drums', label: 'Drums', defaultVolume: 0.83, aliases: ['drums', 'drum', 'bateria', 'kit'] },
-  { id: 'percussion', label: 'Percussion', defaultVolume: 0.72, aliases: ['percussion', 'perc', 'shaker', 'loop perc'] },
-  { id: 'bass', label: 'Bass', defaultVolume: 0.76, aliases: ['bass', 'bajo'] },
-  { id: 'synth-bass', label: 'Synth Bass', defaultVolume: 0.7, aliases: ['synth bass', 'sub bass', '808 bass'] },
-  {
-    id: 'acoustic-gtr',
-    label: 'Acoustic Gtr',
-    defaultVolume: 0.69,
-    aliases: ['acoustic', 'acoustic 1', 'acoustic 2', 'acoustic gtr', 'acoustic guitar', 'guitarra acustica', 'guitarra acustica 1', 'guitarra acustica 2', 'ag'],
-  },
-  {
-    id: 'electric-gtr',
-    label: 'Electric Gtr',
-    defaultVolume: 0.63,
-    aliases: [
-      'electric',
-      'electric 1',
-      'electric 2',
-      'electric 3',
-      'electric 4',
-      'electric 5',
-      'electric gtr',
-      'electric guitar',
-      'guitarra electrica',
-      'lead gtr',
-      'rhythm gtr',
-      'eg',
-      'gtr',
-    ],
-  },
-  { id: 'keys', label: 'Keys', defaultVolume: 0.74, aliases: ['keys', 'key', 'teclas', 'teclado'] },
-  { id: 'piano', label: 'Piano', defaultVolume: 0.72, aliases: ['piano'] },
-  { id: 'organ', label: 'Organ', defaultVolume: 0.68, aliases: ['organ', 'hammond'] },
-  { id: 'pad', label: 'Pad', defaultVolume: 0.66, aliases: ['pad', 'pads'] },
-  { id: 'strings', label: 'Strings', defaultVolume: 0.66, aliases: ['strings', 'string'] },
-  { id: 'synth', label: 'Synth', defaultVolume: 0.68, aliases: ['synth', 'synthesizer', 'lead synth'] },
-  { id: 'background-vocals', label: 'Background Vocals', defaultVolume: 0.78, aliases: ['background vocals', 'background vocal', 'bgv', 'backing vocals', 'vocals bg'] },
-  { id: 'choir', label: 'Choir', defaultVolume: 0.76, aliases: ['choir', 'coro', 'coros'] },
-  { id: 'sequence', label: 'Sequence', defaultVolume: 0.84, aliases: ['sequence', 'secuencia', 'playback', 'stereo', 'mix', 'full mix', 'main mix', 'lr'] },
-];
+const STEM_ALIAS_GROUPS: StemAliasGroup[] = STEM_CATEGORY_ORDER.filter((key) => key !== 'unknown').map((key) => {
+  const category = STEM_CATEGORIES[key];
+  return { id: category.trackId, label: category.trackName, defaultVolume: category.volume, aliases: category.aliases };
+});
 
 const normalizeName = (value: string) =>
   String(value || '')
@@ -90,48 +51,8 @@ const isAudioFile = (file: File) => {
 };
 
 const inferTrackGroup = (filename: string): StemAliasGroup | null => {
-  const normalizedName = normalizeName(filename);
-
-  if (!normalizedName) {
-    return null;
-  }
-
-  let bestMatch: { group: StemAliasGroup; score: number } | null = null;
-
-  for (const group of STEM_ALIAS_GROUPS) {
-    for (const alias of group.aliases) {
-      const normalizedAlias = normalizeName(alias);
-
-      if (!normalizedAlias || !normalizedName.includes(normalizedAlias)) {
-        continue;
-      }
-
-      const exactScore = normalizedName === normalizedAlias ? 1000 : 0;
-      const boundaryScore =
-        normalizedName.startsWith(normalizedAlias) || normalizedName.endsWith(normalizedAlias)
-          ? 120
-          : 0;
-      const score = exactScore + boundaryScore + normalizedAlias.length * 10;
-
-      if (!bestMatch || score > bestMatch.score) {
-        bestMatch = { group, score };
-      }
-    }
-  }
-
-  if (bestMatch) {
-    return bestMatch.group;
-  }
-
-  if (
-    normalizedName.includes('electric') ||
-    normalizedName.includes('gtr') ||
-    normalizedName.includes('guitar')
-  ) {
-    return STEM_ALIAS_GROUPS.find((group) => group.id === 'electric-gtr') ?? null;
-  }
-
-  return null;
+  const category = categorizeStemName(filename);
+  return category === 'unknown' ? null : STEM_ALIAS_GROUPS.find((group) => group.id === STEM_CATEGORIES[category].trackId) ?? null;
 };
 
 const buildTrack = (
