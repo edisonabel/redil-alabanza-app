@@ -1,4 +1,4 @@
-import { StemSongLevelAnalyzer, SONG_TARGET_LUFS, SONG_PEAK_DB } from '../../utils/stemSongLevel';
+import { StemSongLevelAnalyzer } from '../../utils/stemSongLevel';
 import {
   CheckCircle2,
   Download,
@@ -1295,16 +1295,8 @@ export default function StemConverterTool() {
                 <Volume2 className="mt-1 h-5 w-5 shrink-0 text-brand" />
                 <div>
                   <h3 className="font-black text-content">Volumen automático por canción</h3>
-                  <p className="mt-1 text-sm leading-relaxed text-content-muted">
-                    Carga una canción por conversión. Se mide la mezcla y se ajustan todos sus instrumentos por igual,
-                    conservando su balance. Click, guía y conteos se nivelan aparte.
-                  </p>
-                  <p className="mt-2 text-xs leading-relaxed text-content-muted">
-                    Referencia: {SONG_TARGET_LUFS} LUFS, con margen de {Math.abs(SONG_PEAK_DB)} dB para los picos.
-                    Si acercarse a la referencia saturaría el audio, se conserva un nivel menor.
-                    El análisis previo puede aumentar el tiempo de conversión.
-                  </p>
-                  <p className="mt-2 text-sm font-bold text-brand" role="status" aria-live="polite">{levelStage || 'Siempre activo'}</p>
+                  <p className="mt-2 text-sm font-bold text-brand">Siempre activo</p>
+                  <span className="sr-only" role="status" aria-live="polite">{levelStage}</span>
                 </div>
               </div>
             </div>
