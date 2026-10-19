@@ -58,7 +58,6 @@ const LEADING_CHORD_SECTION_RE = new RegExp(`^\\[(${CHORD_BODY_PATTERN})\\|`, 'i
 const BROKEN_INLINE_CHORD_RE = new RegExp(`\\[(${CHORD_BODY_PATTERN})\\s*\\|\\s*`, 'gi');
 const EDITOR_MODAL_MAX_HEIGHT = 'min(94vh, calc(100dvh - 4.75rem - env(safe-area-inset-bottom)))';
 const ARCHIVO_ELIMINABLE_FIELDS = new Set(['mp3', 'link_acordes']);
-const CANCIONES_SELECT_BASE = 'id, repertorio, titulo, cantante, tonalidad, bpm, categoria, voz, tema, estado, link_youtube, mp3, link_acordes, link_letras, voces, link_voces, link_secuencias, chordpro, multitrack_session';
 const SONG_WIZARD_STEPS = [
   { label: 'Canción', shortLabel: 'Canción' },
   { label: 'Música', shortLabel: 'Música' },
@@ -1540,32 +1539,20 @@ export default function AdminRepertorio({ libraryScope = 'general' }) {
 
   const cargarCanciones = async () => {
     try {
-      const selectVariants = [
-        { fields: `${CANCIONES_SELECT_BASE}, section_markers, metrica`, markers: true, metrica: true },
-        { fields: `${CANCIONES_SELECT_BASE}, section_markers`, markers: true, metrica: false },
-        { fields: `${CANCIONES_SELECT_BASE}, metrica`, markers: false, metrica: true },
-        { fields: CANCIONES_SELECT_BASE, markers: false, metrica: false },
-      ];
-      let data = null;
-      let error = null;
-
-      for (const variant of selectVariants) {
-        const query = await supabase
-          .from('canciones')
-          .select(variant.fields)
-          .eq('repertorio', repertoireScope)
-          .order('titulo', { ascending: true });
-
-        data = query.data;
-        error = query.error;
-        if (!error) {
-          setSectionMarkersDisponibles(variant.markers);
-          setMetricaDisponible(variant.metrica);
-          break;
-        }
-      }
-
+      // Read the available row shape once rather than probing optional columns
+      // with requests that return 400 on databases awaiting those migrations.
+      const { data, error } = await supabase
+        .from('canciones')
+        .select('*')
+        .eq('repertorio', repertoireScope)
+        .order('titulo', { ascending: true });
       if (error) throw error;
+      const sample = data?.[0];
+      if (sample) {
+        setSectionMarkersDisponibles(Object.hasOwn(sample, 'section_markers'));
+        setMetricaDisponible(Object.hasOwn(sample, 'metrica'));
+      }
+      setErrorTexto(null);
       setCanciones(data || []);
     } catch (error) {
       console.error('Error al cargar:', error);
@@ -1637,19 +1624,16 @@ export default function AdminRepertorio({ libraryScope = 'general' }) {
       let persistedSong = songWizardSong;
 
       if (songWizardMode === 'create') {
-        const selectFields = [
-          CANCIONES_SELECT_BASE,
-          sectionMarkersDisponibles ? 'section_markers' : '',
-          metricaDisponible ? 'metrica' : '',
-        ].filter(Boolean).join(', ');
         const { data, error } = await supabase
           .from('canciones')
           .insert([{ ...basicPayload, estado: 'Activa' }])
-          .select(selectFields)
+          .select('*')
           .single();
 
         if (error) throw error;
         if (!data) throw new Error('La canción no pudo crearse.');
+        setSectionMarkersDisponibles(Object.hasOwn(data, 'section_markers'));
+        setMetricaDisponible(Object.hasOwn(data, 'metrica'));
         persistedSong = data;
         setCanciones((previous) => sortSongsByTitle([...previous, data]));
         setSongWizardSongId(data.id);

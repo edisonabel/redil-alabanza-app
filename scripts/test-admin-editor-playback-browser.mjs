@@ -16,7 +16,12 @@ const frontend = await build({
   stdin:{contents:`import React from 'react';import{createRoot}from'react-dom/client';import Admin from './src/components/AdminRepertorio.jsx';createRoot(document.getElementById('root')).render(React.createElement(Admin));`,resolveDir:process.cwd(),loader:'jsx'},
   bundle:true,write:false,format:'esm',platform:'browser',define:{'process.env.NODE_ENV':'"production"'},
   plugins:[{name:'fixture-catalog',setup(b){
-    b.onLoad({filter:/\/lib\/supabase\.js$/},()=>({contents:`export const supabase={auth:{getSession:async()=>({data:{session:{user:{id:'test-admin'}}}})},from:()=>({select(){return this},eq(){return this},order:async()=>({data:[${JSON.stringify(song)}],error:null})})};`,loader:'js'}));
+    b.onLoad({filter:/\/lib\/supabase\.js$/},()=>({contents:`const song=${JSON.stringify(song)};window.__catalogQueries=[];
+export const supabase={auth:{getSession:async()=>({data:{session:{user:{id:'test-admin'}}}})},from:()=>({
+select(fields){this.fields=fields;window.__catalogQueries.push(fields);return this},
+eq(){return this},
+order(){const missing=this.fields.split(',').map(f=>f.trim()).find(f=>f!=='*'&&!Object.hasOwn(song,f));return Promise.resolve(missing?{data:null,error:{code:'42703',message:'Missing column '+missing}}:{data:[song],error:null})}
+})};`,loader:'js'}));
     b.onLoad({filter:/\/AdminVocalWarmups\.jsx$/},()=>({contents:'export default function Warmups(){return null}',loader:'js'}));
   }}]
 });
@@ -60,12 +65,15 @@ await new Promise(r=>server.listen(0,'127.0.0.1',r));
 try{
   browser=await puppeteer.launch({headless:true,args:['--no-sandbox','--autoplay-policy=no-user-gesture-required']});
   const page=await browser.newPage();const errors=[];let directRequests=0;
+  page.setDefaultTimeout(12000);
+  page.on('dialog',async d=>{errors.push('Unexpected dialog: '+d.message());await d.dismiss();});
   page.on('pageerror',e=>{errors.push(e.message);console.error('PAGE ERROR:',e.message);});
   await page.setRequestInterception(true);
   page.on('request',req=>{if(req.url().startsWith('https://stems.')){directRequests++;return req.abort();}return req.continue();});
   await page.setViewport({width:1440,height:1100});
   await page.goto(`http://127.0.0.1:${server.address().port}`,{waitUntil:'networkidle0'});
   await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Editar'));
+  assert.deepEqual(await page.evaluate(()=>window.__catalogQueries),['*'],'Loading must not probe absent columns with failed queries');
   const open=()=>page.evaluate(()=>[...document.querySelectorAll('tbody tr td:last-child button')].find(b=>b.textContent.trim()==='Editar').click());
   await open();await page.waitForSelector('#admin-chordpro-audio');
   await page.waitForFunction(()=>document.querySelector('#admin-chordpro-audio')?.duration>0,{timeout:30000});
