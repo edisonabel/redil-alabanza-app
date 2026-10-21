@@ -45,6 +45,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.fadeInTotalFrames = SEEK_RESUME_FADE_FRAMES;
     this.loopJumpCrossfadeBlocked = false;
     this.activeSeekSerial = 0;
+    this.renderErrorReported = false;
 
     this.port.onmessage = (event) => {
       const data = event && event.data ? event.data : null;
@@ -353,6 +354,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   resetTracks() {
     this.tracks = [];
     this.trackCount = 0;
+    this.renderErrorReported = false;
     this.meterLevels = new Float32Array(0);
     this.meterMessage = {
       type: 'track-levels',
@@ -433,6 +435,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       this.resetLoopJumpFade(track);
       track.underrunEvents = 0;
       track.underrunFrames = 0;
+      track.recoveringUnderrun = false;
       track.lastDropDebugFrame = 0;
       track.lastUnderflowAlertFrame = 0;
       track.lastHardSyncFrame = 0;
@@ -512,6 +515,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         lastMeterLevel: 0,
         underrunEvents: 0,
         underrunFrames: 0,
+        recoveringUnderrun: false,
         lastDropDebugFrame: 0,
         lastUnderflowAlertFrame: 0,
         lastSyncDriftAlertFrame: 0,
@@ -570,6 +574,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       track.lastMeterLevel = 0;
       track.underrunEvents = 0;
       track.underrunFrames = 0;
+      track.recoveringUnderrun = false;
       track.lastDropDebugFrame = 0;
       track.lastUnderflowAlertFrame = 0;
       track.lastSyncDriftAlertFrame = 0;
@@ -983,6 +988,15 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       this.readingBlocked = true;
       this.fadeInFramesRemaining = 0;
       this.resetAllLoopJumpFades();
+      if (!this.renderErrorReported) {
+        this.renderErrorReported = true;
+        this.port.postMessage({
+          type: 'render-error',
+          code: 'mix-exception',
+          seekSerial: this.activeSeekSerial,
+          renderedFrames: this.renderedFrames,
+        });
+      }
       return true;
     }
 
@@ -1079,6 +1093,30 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     );
 
     track.driftHoldFrames = 0;
+
+    // A known underrun is missing content, not clock jitter. Discard stale
+    // PCM when it arrives, even when the deficit is below the drift threshold.
+    // This preserves the song timeline; it cannot restore already missed audio.
+    if (track.recoveringUnderrun) {
+      const missingFrames = Math.max(0, -driftFrames);
+      const skippedFrames = Math.min(missingFrames, availableRead);
+      const nextReadIndex = this.advanceIndex(readIndex, skippedFrames, track.indexCapacity);
+      track.absoluteReadFrame += skippedFrames;
+      track.indexBaseFrame = track.absoluteReadFrame;
+      track.indexBaseIndex = nextReadIndex;
+      track.recoveringUnderrun = skippedFrames < missingFrames;
+      if (skippedFrames > 0) {
+        track.effectiveGain = 0;
+        this.resetLoopJumpFade(track);
+        if (track.usesSharedMemory && track.indices) {
+          Atomics.store(track.indices, READ_INDEX_SLOT, nextReadIndex);
+        } else {
+          track.localReadIndex = nextReadIndex;
+          this.noteFallbackConsumed(track, skippedFrames);
+        }
+        return nextReadIndex;
+      }
+    }
 
     if (absoluteDriftFrames < fineDriftFrames) {
       return readIndex;
@@ -1385,6 +1423,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   }
 
   noteUnderrun(track, missingFrames, availableRead) {
+    if (missingFrames > 0 && this.playing && !this.readingBlocked && !track.loopEnabled) {
+      track.recoveringUnderrun = true;
+    }
     if (
       missingFrames <= 0 ||
       !this.playing ||
