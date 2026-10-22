@@ -8,6 +8,7 @@ import { ChannelStrip } from './ChannelStrip';
 type Props = {
   tracks: TrackData[]; isReady: boolean; isPlaying: boolean; busy: boolean; hidden: boolean;
   compact: boolean; ultraCompact: boolean;
+  songGain?: number;
   onGroupGain: (trackId: string, gain: number) => void;
   getTelemetry: () => SharedStreamingTelemetry | null;
   trackLevels: Record<string, number>;
@@ -31,9 +32,9 @@ export function LiveDirectorGroupMixer(props: Props) {
     if (!props.isReady) return;
     for (const group of groups) {
       const gain = muted[group.id] || (hasSolo && !solos[group.id]) ? 0 : gains[group.id] ?? 1;
-      for (const track of group.tracks) props.onGroupGain(track.id, gain);
+      for (const track of group.tracks) props.onGroupGain(track.id, gain * (inferMixGroup(track) === 'cues' ? 1 : props.songGain ?? 1));
     }
-  }, [groups, gains, muted, solos, hasSolo, props.onGroupGain, props.isReady]);
+  }, [groups, gains, muted, solos, hasSolo, props.onGroupGain, props.isReady, props.songGain]);
   useEffect(() => {
     if (props.hidden || !props.isPlaying) { setLevels({}); return; }
     const update = () => {

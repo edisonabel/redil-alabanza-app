@@ -1,3 +1,5 @@
+import { useLiveDirectorSongLevel } from '../../hooks/useLiveDirectorSongLevel';
+import { LiveDirectorSongLevel } from './live-director/LiveDirectorSongLevel';
 import { useLiveDirectorEventArrangement } from '../../hooks/useLiveDirectorEventArrangement';
 import { useLiveDirectorArrangement } from '../../hooks/useLiveDirectorArrangement';
 import { LiveDirectorArrangementEditor } from './live-director/LiveDirectorArrangementEditor';
@@ -16,7 +18,7 @@ import {
   Pause,
   Play,
   Radio,
-  Repeat2,
+  Repeat1,
   Infinity as InfinityIcon,
   Headphones,
   ArrowRight,
@@ -1111,6 +1113,7 @@ export function LiveDirectorView({
   const [trackOutputRoutes, setTrackOutputRoutes] = useState<Record<string, TrackOutputRoute>>({});
   const [soloTrackIds, setSoloTrackIds] = useState<Set<string>>(() => new Set());
   const [masterVolume, setMasterVolumeState] = useState(0.82);
+  const songLevel = useLiveDirectorSongLevel(`${eventId || 'independent'}:${songId || activeQueueSongId || songTitle}`);
   const [congregationFadeState, setCongregationFadeState] = useState<
     'normal' | 'fading-out' | 'muted' | 'fading-in'
   >('normal');
@@ -5096,16 +5099,6 @@ export function LiveDirectorView({
                 <span className="shrink-0 text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-white/35">Secciones</span>
                 <span className="min-w-0 truncate font-medium text-white/80">{activeSection?.name || '—'}</span>
                 {experimentalTools && <>
-                  <button type="button" aria-label="Repetir sección una vez" aria-pressed={sectionJump.repeat?.mode === 'once'}
-                    disabled={!isPlaying || !isReady || isSectionSeekBusy || isCongregationFading}
-                    title="Repetir la sección una vez al terminar"
-                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors disabled:opacity-25 ${sectionJump.repeat?.mode === 'once' ? 'bg-cyan-200/10 text-cyan-100' : 'hover:bg-white/5 hover:text-white'}`}
-                    onClick={() => sectionJump.repeat?.mode === 'once' ? sectionJump.cancel() : startRepeatFromTimeline('once')}><Repeat2 size={17}/></button>
-                  <button type="button" aria-label="Mantener sección en repetición" aria-pressed={sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested}
-                    disabled={!isPlaying || !isReady || isSectionSeekBusy || isCongregationFading}
-                    title={sectionJump.repeat?.mode === 'hold' ? 'Salir de la repetición al terminar esta pasada' : 'Repetir hasta salir'}
-                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors disabled:opacity-25 ${sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested ? 'bg-cyan-200/10 text-cyan-100' : 'hover:bg-white/5 hover:text-white'}`}
-                    onClick={() => sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested ? sectionJump.exitRepeat() : startRepeatFromTimeline('hold')}><InfinityIcon size={18}/></button>
                   {sectionJump.armed ? <span role="status" title={sectionJump.notice} className="flex min-w-0 items-center gap-1.5 text-amber-100/90">
                     <ArrowRight size={13} className="shrink-0"/><span className="truncate">{sectionJump.armed.section.name}</span>
                     <span aria-label={sectionJump.preparation === 'ready' ? 'Stems listos' : 'Preparando stems'} className={`h-1.5 w-1.5 shrink-0 rounded-full ${sectionJump.preparation === 'ready' ? 'bg-emerald-300' : 'animate-pulse bg-amber-200/70'}`}/>
@@ -6079,7 +6072,7 @@ export function LiveDirectorView({
             {experimentalTools && selectedMultitrackEngine.setTrackGroupGain && !isManualTempoMode && <LiveDirectorGroupMixer
               key={`${trackSignature}:${reloadKey}`} hidden={!showGroupsPanel} tracks={activeEngineTracks}
               isReady={isReady} busy={isCongregationFading || isSectionSeekBusy}
-              onGroupGain={selectedMultitrackEngine.setTrackGroupGain}
+              onGroupGain={selectedMultitrackEngine.setTrackGroupGain} songGain={songLevel.gain}
               isPlaying={isPlaying} compact={isCompactLandscape} ultraCompact={isUltraCompactLandscape}
               getTelemetry={getSharedTelemetry} trackLevels={trackLevels}
             />}
@@ -6171,6 +6164,22 @@ export function LiveDirectorView({
                 <SlidersVertical className={isUltraCompactLandscape ? 'h-3 w-3' : isCompactLandscape ? 'h-3.5 w-3.5' : 'h-6 w-6'} />
                 <span className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : isCompactLandscape ? 'text-[0.52rem]' : 'text-[0.66rem]'} font-black uppercase tracking-[0.12em]`}>Grupos</span>
               </button> : <div aria-hidden="true" className="min-h-0 w-full flex-1" data-live-director-control-slot="reserved" />}
+              {experimentalTools && !isManualTempoMode && <div data-live-director-repeat-controls="true" className="contents">
+                <button type="button" data-live-director-control="repeat-once" aria-label="Repetir sección una vez" aria-pressed={sectionJump.repeat?.mode === 'once'}
+                  disabled={!isPlaying || !isReady || isSectionSeekBusy || isCongregationFading || showArrangementEditor}
+                  title="Repetir la sección una vez al terminar"
+                  className={`ui-pressable-soft flex min-h-8 w-full flex-1 flex-col items-center justify-center gap-1 rounded-[1.2rem] border px-1 disabled:opacity-30 ${sectionJump.repeat?.mode === 'once' ? 'border-cyan-200/45 bg-cyan-200/15 text-cyan-100' : 'border-white/15 bg-black/35 text-white/80 hover:bg-white/5'}`}
+                  onClick={() => sectionJump.repeat?.mode === 'once' ? sectionJump.cancel() : startRepeatFromTimeline('once')}>
+                  <Repeat1 size={isCompactLandscape ? 24 : 28}/><span className={isCompactLandscape ? 'sr-only' : 'text-[10px] font-semibold'}>Una vez</span>
+                </button>
+                <button type="button" data-live-director-control="repeat-hold" aria-label="Mantener sección en repetición" aria-pressed={sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested}
+                  disabled={!isPlaying || !isReady || isSectionSeekBusy || isCongregationFading || showArrangementEditor}
+                  title={sectionJump.repeat?.mode === 'hold' ? 'Salir de la repetición al terminar esta pasada' : 'Repetir hasta salir'}
+                  className={`ui-pressable-soft flex min-h-8 w-full flex-1 flex-col items-center justify-center gap-1 rounded-[1.2rem] border px-1 disabled:opacity-30 ${sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested ? 'border-cyan-200/45 bg-cyan-200/15 text-cyan-100' : 'border-white/15 bg-black/35 text-white/80 hover:bg-white/5'}`}
+                  onClick={() => sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested ? sectionJump.exitRepeat() : startRepeatFromTimeline('hold')}>
+                  <InfinityIcon size={isCompactLandscape ? 26 : 30}/><span className={isCompactLandscape ? 'sr-only' : 'text-[10px] font-semibold'}>{sectionJump.repeat?.exitRequested ? 'Saliendo' : 'Hasta salir'}</span>
+                </button>
+              </div>}
             </div>
           </div>
 
@@ -6208,6 +6217,9 @@ export function LiveDirectorView({
               <div className={`text-center ${isUltraCompactLandscape ? 'mt-0' : isCompactLandscape ? 'mt-1' : 'mt-4'}`}>
                 {!isCompactLandscape && <p className="text-[0.62rem] font-black uppercase tracking-[0.3em] text-white/28">BUS</p>}
                 <p className={`font-semibold text-white/90 ${isUltraCompactLandscape ? 'text-[0.78rem]' : isCompactLandscape ? 'text-[0.9rem]' : 'mt-1 text-[1.15rem]'}`}>Master</p>
+                {experimentalTools && !isManualTempoMode && selectedMultitrackEngine.setTrackGroupGain && <LiveDirectorSongLevel
+                  db={songLevel.db} onChange={songLevel.setDb} title={songTitle || title} compact={isCompactLandscape}
+                  disabled={!isReady || isSectionSeekBusy || isCongregationFading || showArrangementEditor} />}
               </div>
             </div>
           </div>

@@ -72,7 +72,8 @@
     "test:live-terminal-section": "node scripts/test-live-director-terminal-section.mjs",
     "test:live-terminal-section-ui": "node scripts/test-live-director-terminal-section-browser.mjs",
     "test:live-event-access": "node scripts/test-live-director-event-access.mjs",
-    "test:live-event-arrangement-ui": "node scripts/test-live-director-event-arrangement-browser.mjs"
+    "test:live-event-arrangement-ui": "node scripts/test-live-director-event-arrangement-browser.mjs",
+    "test:live-song-level-ui": "node scripts/test-live-director-song-level-browser.mjs"
   },
   "dependencies": {
     "@astrojs/netlify": "8.2.1",
