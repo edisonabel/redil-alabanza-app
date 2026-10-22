@@ -1,0 +1,10 @@
+html,body,#root{margin:0;min-height:100%;background:#17191b;color:#fff}
+.lab-banner{position:fixed;inset:0 0 auto;z-index:120;height:42px;box-sizing:border-box;display:flex;align-items:center;gap:14px;padding:0 18px;background:#153028;color:#d9fbe8;border-bottom:1px solid #39745a;font:13px/1.3 system-ui,sans-serif}
+.lab-banner strong{letter-spacing:.09em;font-size:11px;color:#a3efc5}
+.lab-banner label{margin-left:auto;display:flex;align-items:center;gap:8px}
+.lab-banner select{height:32px;max-width:220px;border:1px solid #47715b;border-radius:6px;background:#10281e;color:#fff;padding:0 8px;font:inherit}
+.lab-banner select:focus-visible{outline:2px solid #a3efc5;outline-offset:2px}
+.lab-director{top:42px!important;height:calc(100dvh - 42px)!important}
+.lab-director>div.relative.flex{height:100%!important;min-height:100%!important;max-height:100%!important}
+.lab-message{padding:80px 24px;font:16px/1.5 system-ui,sans-serif}
+@media(max-width:720px){.lab-banner{gap:8px;padding:0 10px}.lab-banner>span{display:none}.lab-banner select{max-width:180px}}

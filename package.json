@@ -4,6 +4,8 @@
   "version": "0.0.1",
   "scripts": {
     "dev": "astro dev",
+    "lab:providencia": "node scripts/start-providencia-lab.mjs",
+    "test:providencia-lab": "node scripts/test-providencia-lab-browser.mjs",
     "dev:lan": "astro dev --host 0.0.0.0 --port 4321",
     "build": "astro build",
     "postbuild": "node scripts/check-build-artifacts.mjs",
