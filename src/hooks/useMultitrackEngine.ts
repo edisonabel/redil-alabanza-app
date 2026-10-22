@@ -1,4 +1,5 @@
 import type { GuideAudioGraph } from '../services/DynamicGuidePlayer';
+import type { GeneratedClickSettings } from '../utils/liveDirectorGeneratedClick';
 import { holdAudioGain, startAudioGainFade } from '../services/AudioGainRamp';
 import { isMissingStemError } from '../utils/liveDirectorSessionSafety';
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -71,6 +72,8 @@ export type UseMultitrackEngineReturn = {
   cancelSectionJump?: () => void;
   runtimeError?: string | null;
   getGuideAudioGraph?: (trackId: string) => GuideAudioGraph | null;
+  loadGeneratedClickSamples?: () => Promise<void>;
+  setGeneratedClick?: (trackId: string, settings: GeneratedClickSettings | null) => boolean;
   fadeMasterVolume?: (volume: number, durationMs: number) => ReturnType<typeof startAudioGainFade> | null;
   setTrackGroupGain?: (trackId: string, gain: number) => void;
   isPlaying: boolean;
@@ -802,6 +805,16 @@ export function useMultitrackEngine(
     return engine instanceof StreamingMultitrackEngine ? engine.getGuideAudioGraph(trackId) : null;
   }, []);
 
+  const loadGeneratedClickSamples = useCallback(async () => {
+    const engine = engineRef.current;
+    if (!(engine instanceof StreamingMultitrackEngine)) throw new Error('Metrónomo no disponible en este motor.');
+    await engine.loadGeneratedClickSamples();
+  }, []);
+  const setGeneratedClick = useCallback((trackId: string, settings: GeneratedClickSettings | null) => {
+    const engine = engineRef.current;
+    return engine instanceof StreamingMultitrackEngine && engine.setGeneratedClick(trackId, settings);
+  }, []);
+
   const setMetersEnabled = useCallback(() => {
     // The web engines keep their meters in-process; native iOS uses this hook
     // to shed AVAudioEngine tap load during touch interaction.
@@ -1049,6 +1062,8 @@ export function useMultitrackEngine(
     () => ({
       runtimeError,
       getGuideAudioGraph,
+      loadGeneratedClickSamples,
+      setGeneratedClick,
       fadeMasterVolume,
       setTrackGroupGain,
       prepareSectionJump,
@@ -1086,6 +1101,8 @@ export function useMultitrackEngine(
     [
       runtimeError,
       getGuideAudioGraph,
+      loadGeneratedClickSamples,
+      setGeneratedClick,
       fadeMasterVolume,
       setTrackGroupGain,
       prepareSectionJump,

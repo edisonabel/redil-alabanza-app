@@ -33,6 +33,7 @@ import { useNativeIOSMultitrackEngine } from '../../hooks/useNativeIOSMultitrack
 import type { MultitrackEngineLoadWarning, SongStructure, TrackData } from '../../services/MultitrackEngine';
 import type { SharedStreamingTelemetry } from '../../services/StreamingMultitrackEngine';
 import { LiveDirectorGroupMixer } from './live-director/LiveDirectorGroupMixer';
+import { LiveDirectorClickMixer } from './live-director/LiveDirectorClickMixer';
 import { ChannelStrip, FaderThumb, PrecisionFaderSurface } from './live-director/ChannelStrip';
 import { EnsayoQueueAddCard, EnsayoQueueCard } from './live-director/EnsayoQueueCard';
 import { ManualTempoSongModal } from './live-director/ManualTempoSongModal';
@@ -3311,6 +3312,12 @@ export function LiveDirectorView({
   });
 
   const [guideRetryKey, setGuideRetryKey] = useState(0);
+  const [showClickMixer, setShowClickMixer] = useState(false);
+  const openClickMixer = useCallback(() => setShowClickMixer(true), []);
+  const closeClickMixer = useCallback(() => setShowClickMixer(false), []);
+  useEffect(() => { setShowClickMixer(false); }, [trackSignature, reloadKey]);
+  const clickTrack = activeEngineTracks.find(track => /\b(click|metronomo|metronome)\b/i.test(`${track.id} ${track.name}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
+  const canUseGeneratedClick = experimentalTools && !isManualTempoMode && Boolean(clickTrack) && diagnostics?.engineRoute === 'streaming-worker';
   const guideTrack = activeEngineTracks.find(track => /\b(guide|guia)\b/i.test(`${track.id} ${track.name}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
   const dynamicGuide = useLiveDirectorDynamicGuide({
     wanted: experimentalTools && Boolean(guideTrack) && diagnostics?.engineRoute === 'streaming-worker', ready: isReady, playing: isPlaying,
@@ -5438,6 +5445,7 @@ export function LiveDirectorView({
                       onMute={stableCallbacks.onMute}
                       onSolo={stableCallbacks.onSolo}
                       onToggleOutputRoute={stableCallbacks.onToggleOutputRoute}
+                      onOpenSettings={canUseGeneratedClick && track.id === clickTrack?.id ? openClickMixer : undefined}
                     />
                   </div>
                 );
@@ -5495,6 +5503,11 @@ export function LiveDirectorView({
 
   return (
     <div ref={liveDirectorRootRef} className={shellClassName}>
+      {canUseGeneratedClick && clickTrack && selectedMultitrackEngine.loadGeneratedClickSamples && selectedMultitrackEngine.setGeneratedClick &&
+        <LiveDirectorClickMixer key={`click:${trackSignature}:${reloadKey}`} open={showClickMixer} onClose={closeClickMixer}
+          trackId={clickTrack.id} bpm={bpm} originSeconds={resolvedSections[0]?.startTime ?? 0}
+          ready={isReady} playing={isPlaying} busy={isSectionSeekBusy || isCongregationFading}
+          loadSamples={selectedMultitrackEngine.loadGeneratedClickSamples} onConfigure={selectedMultitrackEngine.setGeneratedClick} />}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(93,214,240,0.08),_transparent_24%),linear-gradient(180deg,#232526_0%,#222425_46%,#202224_100%)]" />
       <div className="relative flex h-[100dvh] flex-col overflow-hidden" style={shellContentStyle}>
         <div className={`hide-scrollbar -mx-1 shrink-0 overflow-x-auto ${isUltraCompactLandscape ? 'pb-0' : isToolbarCompactLandscape ? 'pb-0' : 'pb-1'}`}>

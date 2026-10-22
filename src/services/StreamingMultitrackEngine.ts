@@ -1,4 +1,5 @@
 import type { GuideAudioGraph } from './DynamicGuidePlayer';
+import { normalizeGeneratedClick, type GeneratedClickSettings } from '../utils/liveDirectorGeneratedClick';
 import { AudioRingBuffer } from './AudioRingBuffer';
 import { AacAdtsDemuxer } from './AacAdtsDemuxer';
 import {
@@ -996,7 +997,7 @@ type SectionJumpPreparation = {
   startedAt: number;
 };
 
-const AUDIO_WORKER_ASSET_VERSION = '20261022-auto-guide-2';
+const AUDIO_WORKER_ASSET_VERSION = '20261022-sync-click-1';
 const DEFAULT_WORKLET_MODULE_URL = `/workers/MultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_PRODUCER_WORKER_URL = `/workers/AudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
@@ -1095,6 +1096,8 @@ export class StreamingMultitrackEngine {
   public onEnded: (() => void) | null = null;
   private groupGains = new Map<string, number>();
   private dynamicGuideOverrides = new Set<string>();
+  private clickSamplesPromise: Promise<Float32Array[]> | null = null;
+  private clickSamplesNode: AudioWorkletNode | null = null;
   private workletProcessorFailed = false;
   private renderFaulted = false;
   public onRenderError: ((message: string) => void) | null = null;
@@ -3237,6 +3240,41 @@ export class StreamingMultitrackEngine {
     if (index === undefined) return;
     if (enabled) this.dynamicGuideOverrides.add(trackId); else this.dynamicGuideOverrides.delete(trackId);
     this.workletNode?.port.postMessage({ type: 'track-guide-override', trackIndex: index, enabled });
+  }
+
+  async loadGeneratedClickSamples(): Promise<void> {
+    if (!this.workletNode || this.renderFaulted) throw new Error('El motor de audio todavía no está listo.');
+    if (!this.clickSamplesPromise) {
+      this.clickSamplesPromise = Promise.all(['accents', 'quarter', 'eighth', 'sixteenth'].map(async name => {
+        const response = await fetch(`/audio/click-classic/${name}.wav`, { signal: AbortSignal.timeout(10000) });
+        if (!response.ok) throw new Error('No se pudieron cargar los sonidos del metrónomo.');
+        const data = await response.arrayBuffer();
+        if (data.byteLength > 500000) throw new Error('Muestra de click demasiado grande.');
+        const audio = await this.context.decodeAudioData(data);
+        if (audio.length < 1 || audio.duration > 2) throw new Error('Muestra de click inválida.');
+        const mono = new Float32Array(audio.length);
+        for (let channel = 0; channel < audio.numberOfChannels; channel += 1) {
+          const samples = audio.getChannelData(channel);
+          for (let frame = 0; frame < samples.length; frame += 1) mono[frame] += samples[frame] / audio.numberOfChannels;
+        }
+        if (mono.some(value => !Number.isFinite(value) || Math.abs(value) > 1)) throw new Error('Muestra de click inválida.');
+        return mono;
+      })).catch(error => { this.clickSamplesPromise = null; throw error; });
+    }
+    const samples = await this.clickSamplesPromise;
+    if (!this.workletNode || this.renderFaulted) throw new Error('El motor de audio se cerró.');
+    // FIFO on the same port guarantees the samples arrive before activation.
+    this.workletNode.port.postMessage({ type: 'click-samples', samples });
+    this.clickSamplesNode = this.workletNode;
+  }
+
+  setGeneratedClick(trackId: string, settings: GeneratedClickSettings | null): boolean {
+    const trackIndex = this.trackIndexById.get(trackId);
+    const normalized = settings ? normalizeGeneratedClick(settings) : null;
+    if (trackIndex === undefined || !this.workletNode || this.renderFaulted ||
+        (settings && (!normalized || this.clickSamplesNode !== this.workletNode))) return false;
+    this.workletNode.port.postMessage({ type: 'track-generated-click', trackIndex, settings: normalized });
+    return true;
   }
 
   getGuideAudioGraph(trackId: string): GuideAudioGraph | null {

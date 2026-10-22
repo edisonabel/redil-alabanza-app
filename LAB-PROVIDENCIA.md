@@ -36,7 +36,7 @@ Se importaron 44 muestras mono PCM16 a 24 kHz (1.7 MB), derivadas de `Click and 
 
 La repetición usa el mismo cambio preparado que los saltos armados en Chrome de escritorio. Se conserva un productor de reserva para reutilizar índices y decodificadores en la siguiente vuelta. Todas las pistas deben tener audio real alineado y al menos 0,5 s de reserva; no significa descargar toda la canción. Si la preparación no llega a tiempo, se cancela la repetición y la canción sigue su recorrido. La primera preparación necesita margen, especialmente con muchos stems o red lenta. La guía anuncia destinos preparados y omite avisos que ya no caben antes del límite. El guiado es de nombres de sección y repetición, no reproduce todos los avisos/count-offs que pudiera contener la guía grabada.
 
-El salto se solicita desde un temporizador de UI que consulta el reloj de audio cada 25 ms. No está programado a precisión de muestra: una interfaz ocupada o en segundo plano puede retrasarlo o cancelarlo. La preparación de PCM puede producir una pausa; no hay transición continua ni precarga PCM de la siguiente canción conectada a esta pantalla.
+El temporizador de UI de 25 ms supervisa el estado. En el salto preparado, el límite y el cambio de todos los buffers se ejecutan en AudioWorklet, incluso si la UI se bloquea. Las rutas que no admiten preparación conservan fade y seek. No hay precarga PCM de la siguiente canción conectada a esta pantalla.
 
 La precarga de archivos en `ModoEnsayoDirector.jsx` ya no marca éxito con solicitudes fallidas, HTTP omitidos, cargas concurrentes incompletas o cancelación. Libera las URLs que reservó al cancelarse. Ese contenedor no se monta en este laboratorio; el flujo se verificó mediante su función real con caché/red simuladas.
 
@@ -124,6 +124,26 @@ La interacción de stems y grupos antes solo enviaba volumen al soltar y cuantiz
 
 La lectura de la guía grabada se atenúa por muestra en una ventana de tiempo de audio, con rampas de 5 ms, únicamente para avisos de navegación. Por defecto no se aplica override a Guide. Pruebas de procesador verifican default sin atenuación, ventana, cancelación, restauración en cambio preparado, mezcla/grupo/ruta conservados y ausencia de efecto sobre otra pista. Los 44 samples siguen pasando PCM L/R, mute y cancelación.
 
-Pruebas: `npm run test:live-ui`, `test:live-fader-precision`, `test:live-guide-duck`, `test:live-dynamic-guide`. Las capturas 1728×1000, 1280×800 y 844×390 están en `.lab/results/minimal-*.png`. `test:live-tools` es ahora alias de la verificación de interfaz mínima; el antiguo dialog no se monta. La investigación del mapa musical y el metrónomo está en el informe del repositorio de análisis, fuera de este checkout. Editor de arreglo y metrónomo de subdivisiones aún no implementados.
+Pruebas: `npm run test:live-ui`, `test:live-fader-precision`, `test:live-guide-duck`, `test:live-dynamic-guide`. Las capturas 1728×1000, 1280×800 y 844×390 están en `.lab/results/minimal-*.png`. `test:live-tools` es ahora alias de la verificación de interfaz mínima; el antiguo dialog no se monta. La investigación del mapa musical y el metrónomo está en el informe del repositorio de análisis, fuera de este checkout. El editor de arreglo sigue pendiente. El metrónomo de subdivisiones se añadió en la iteración siguiente, descrita abajo.
 
 Verificación final de esta interfaz: guía automática y fallo/reintento de voces, repetición única, dos vueltas, salida y salto con 15 stems aprobados; respuesta de fader al arrastrar y master fino aprobados. La regresión de saltos preparados pasó con límite dentro del bloque, UI bloqueada 750 ms, cancelación y 14/15 pistas preparadas sin parar el recorrido original. No hubo errores de página ni escrituras HTTP. La comprobación final de tamaños también incluye 1280×720, que usa vistas alternas por falta de altura.
+
+## Metrónomo por capas · 22 de octubre de 2026
+
+Pulsa el nombre **Click** debajo de su fader para abrir el metrónomo. El click grabado sigue seleccionado por defecto. Con la reproducción pausada, revisa BPM (en negras), pulso de referencia en segundos y compás; pulsa **Click generado**. Carga las cuatro muestras Classic proporcionadas por el usuario antes de sustituir el PCM del stem Click. Un error de carga deja seleccionado el click grabado y permite reintentar. Cerrar el panel conserva el modo y niveles mientras permanece esta canción abierta; cambiar de canción o recargar los reinicia. No se guardan en la base de datos.
+
+Cinco faders reales de `ChannelStrip`: acento, blancas, negras, corcheas y semicorcheas, con S/M por capa y ajuste fino. Las blancas reutilizan quarter. Corcheas añaden los contratiempos y semicorcheas los pulsos intermedios restantes. El acento está desactivado hasta marcar explícitamente que el pulso de referencia es el primer pulso de un compás y que el compás es correcto. Cambiar cualquier dato del mapa borra esa confirmación. El 4/4 inicial es un valor editable, no un análisis confirmado de la canción.
+
+Todas las capas siguen volumen/grupo/mute/solo/salida del stem Click y el master existente. Solo se sustituye su PCM audible; el archivo sigue consumiéndose para conservar la sincronización y permitir restaurarlo. No se mezclan la grabación y el click generado a la vez. La generación usa la posición fuente del mismo AudioWorklet que mezcla los stems: al saltar o repetir adopta la fase del destino dentro del mismo bloque, sin temporizador de UI ni AudioContext separado. Las muestras se decodifican a la frecuencia real del contexto; los eventos usan posiciones absolutas redondeadas a frames, sin acumular el redondeo de intervalos.
+
+**Límites actuales:** tempo y compás constantes por canción; no hay importador/editor de cambios internos, detección automática de mapa ni ajuste automático de marcadores. El pulso sugerido es el primer marcador de sección ya desplazado; necesita comprobarse con la grabación. En Providencia los pulsos y 120 BPM están verificados, pero el primer compás y los finales 1/3 aún no están confirmados. Mantener acento apagado permite probar subdivisiones sobre la cuadrícula de negras sin inventar ese dato. El generador sigue la duración del archivo Click, incluido su silencio final; no detecta automáticamente el final musical. El metrónomo de canciones manuales Click+Pad conserva su motor previo.
+
+Pruebas nuevas:
+
+```sh
+npm run test:live-generated-click
+npm run test:live-click-audio
+npm run test:live-click-ui
+```
+
+El procesador real, ejecutado en VM con PCM controlado, verifica todas las capas, rejilla fraccionaria sin deriva acumulada, 6/8, pausa/reanudación, cambio preparado dentro del bloque, rutas, mezcla y restauración del archivo. Un navegador real compara la salida del AudioWorklet contra las muestras Classic ubicadas en una lista de eventos de referencia, incluyendo 750 ms de bloqueo de UI. La integración con la pantalla verifica carga fallida/reintento, acento pendiente, faders finos durante reproducción, bloqueo de edición de mapa, retorno a grabado y salto preparado con los 15 stems reales. Salida física silenciada; sin escrituras HTTP. No sustituye escucha musical ni prueba prolongada con la interfaz de audio del culto.

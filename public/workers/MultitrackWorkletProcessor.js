@@ -49,6 +49,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.activeSeekSerial = 0;
     this.renderErrorReported = false;
     this.pendingSectionSwitch = null;
+    this.clickSamples = null;
 
     this.port.onmessage = (event) => {
       const data = event && event.data ? event.data : null;
@@ -63,6 +64,39 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
   handleMessage(message) {
     const type = message.type;
+
+    if (type === 'click-samples') {
+      const samples = message.samples;
+      if (Array.isArray(samples) && samples.length === 4 && samples.every(pcm =>
+        pcm instanceof Float32Array && pcm.length > 0 && pcm.length <= (sampleRate || 48000) * 2 &&
+        pcm.every(value => Number.isFinite(value) && Math.abs(value) <= 1))) this.clickSamples = samples;
+      return;
+    }
+    if (type === 'track-generated-click') {
+      const track = this.tracks[message.trackIndex];
+      if (!track) return;
+      const settings = message.settings;
+      if (!settings) { track.generatedClick = null; return; }
+      // Reject an invalid grid before replacing the recorded click.
+      if (!this.clickSamples || !Number.isFinite(settings.bpm) || settings.bpm < 30 || settings.bpm > 300 ||
+          !Number.isFinite(settings.originSeconds) || settings.originSeconds < 0 ||
+          !Number.isInteger(settings.numerator) || settings.numerator < 1 || settings.numerator > 16 ||
+          ![2, 4, 8, 16].includes(settings.denominator) || !Array.isArray(settings.levels) ||
+          settings.levels.length !== 5 || settings.levels.some(value => !Number.isFinite(value))) return;
+      const rate = sampleRate || 48000;
+      const quarterFrames = rate * 60 / settings.bpm;
+      const previous = track.generatedClick;
+      track.generatedClick = {
+        originFrame: Math.round(settings.originSeconds * rate),
+        periods: [quarterFrames * settings.numerator * 4 / settings.denominator,
+          quarterFrames * 2, quarterFrames, quarterFrames, quarterFrames / 2],
+        phases: [0, 0, 0, quarterFrames / 2, quarterFrames / 4],
+        accentConfirmed: settings.accentConfirmed === true,
+        levels: settings.levels.map(value => Math.max(0, Math.min(1, value))),
+        gains: previous ? previous.gains : settings.levels.map((value, index) => index === 0 && settings.accentConfirmed !== true ? 0 : Math.max(0, Math.min(1, value))),
+      };
+      return;
+    }
 
     if (type === 'prepare-section-switch') {
       this.prepareSectionSwitch(message);
@@ -583,6 +617,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         underrunFrames: 0,
         recoveringUnderrun: false,
         groupGain: 1,
+        generatedClick: null,
         guideDuckStartFrame: -1,
         guideDuckEndFrame: -1,
         guideDuckRecoveryStartFrame: 0,
@@ -1446,7 +1481,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
       for (let frameIndex = 0; frameIndex < framesToRead; frameIndex += 1) {
         let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
-        rawSample = this.applyLoopSmoothing(track, samples, rawSample);
+        rawSample = track.generatedClick
+          ? this.getGeneratedClickSample(track, renderStartFrame + frameIndex)
+          : this.applyLoopSmoothing(track, samples, rawSample);
         track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
         const sample = rawSample * track.effectiveGain * this.getTrackGuideGain(track, outputOffset + frameIndex);
         const absoluteSample = sample >= 0 ? sample : -sample;
@@ -1468,7 +1505,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
       for (let frameIndex = 0; frameIndex < framesToRead; frameIndex += 1) {
         let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
-        rawSample = this.applyLoopSmoothing(track, samples, rawSample);
+        rawSample = track.generatedClick
+          ? this.getGeneratedClickSample(track, renderStartFrame + frameIndex)
+          : this.applyLoopSmoothing(track, samples, rawSample);
         track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
         const sample = rawSample * track.effectiveGain * this.getTrackGuideGain(track, outputOffset + frameIndex);
         const absoluteSample = sample >= 0 ? sample : -sample;
@@ -1493,7 +1532,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     } else {
       for (let frameIndex = 0; frameIndex < framesToRead; frameIndex += 1) {
         let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
-        rawSample = this.applyLoopSmoothing(track, samples, rawSample);
+        rawSample = track.generatedClick
+          ? this.getGeneratedClickSample(track, renderStartFrame + frameIndex)
+          : this.applyLoopSmoothing(track, samples, rawSample);
         track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
         const sample = rawSample * track.effectiveGain * this.getTrackGuideGain(track, outputOffset + frameIndex);
         const absoluteSample = sample >= 0 ? sample : -sample;
@@ -1556,7 +1597,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
       for (let frameIndex = 0; frameIndex < framesToRead; frameIndex += 1) {
         let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
-        rawSample = this.applyLoopSmoothing(track, samples, rawSample);
+        rawSample = track.generatedClick
+          ? this.getGeneratedClickSample(track, renderStartFrame + frameIndex)
+          : this.applyLoopSmoothing(track, samples, rawSample);
         track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
         const sample = rawSample * track.effectiveGain * this.getTrackGuideGain(track, outputOffset + frameIndex);
         const absoluteSample = sample >= 0 ? sample : -sample;
@@ -1578,7 +1621,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
       for (let frameIndex = 0; frameIndex < framesToRead; frameIndex += 1) {
         let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
-        rawSample = this.applyLoopSmoothing(track, samples, rawSample);
+        rawSample = track.generatedClick
+          ? this.getGeneratedClickSample(track, renderStartFrame + frameIndex)
+          : this.applyLoopSmoothing(track, samples, rawSample);
         track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
         const sample = rawSample * track.effectiveGain * this.getTrackGuideGain(track, outputOffset + frameIndex);
         const absoluteSample = sample >= 0 ? sample : -sample;
@@ -1603,7 +1648,9 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     } else {
       for (let frameIndex = 0; frameIndex < framesToRead; frameIndex += 1) {
         let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
-        rawSample = this.applyLoopSmoothing(track, samples, rawSample);
+        rawSample = track.generatedClick
+          ? this.getGeneratedClickSample(track, renderStartFrame + frameIndex)
+          : this.applyLoopSmoothing(track, samples, rawSample);
         track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
         const sample = rawSample * track.effectiveGain * this.getTrackGuideGain(track, outputOffset + frameIndex);
         const absoluteSample = sample >= 0 ? sample : -sample;
@@ -2015,6 +2062,30 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
   frameToIndex(frame, indexCapacity) {
     return this.normalizeIndex(frame, indexCapacity);
+  }
+
+  getGeneratedClickSample(track, renderFrame) {
+    const click = track.generatedClick;
+    const pcm = this.clickSamples;
+    if (!click || !pcm) return 0;
+    const sourceFrame = Math.round(this.telemetryBaseSeconds * (sampleRate || 48000)) +
+      renderFrame - this.telemetryBaseRenderedFrames;
+    const relative = sourceFrame - click.originFrame;
+    let output = 0;
+    for (let layer = 0; layer < 5; layer += 1) {
+      const target = layer === 0 && !click.accentConfirmed ? 0 : click.levels[layer];
+      click.gains[layer] += (target - click.gains[layer]) * SOLO_GAIN_SMOOTHING;
+      if (click.gains[layer] <= GAIN_FLOOR) continue;
+      const period = click.periods[layer];
+      // Eighths and sixteenths add the intervening pulses, with tails
+      // continuing over quarter-note boundaries until the next own event.
+      const phase = click.phases[layer];
+      const pulse = Math.floor((relative - phase + .5) / period);
+      const cursor = relative - Math.round(phase + pulse * period);
+      const sample = pcm[layer === 0 ? 0 : layer <= 2 ? 1 : layer - 1];
+      if (cursor >= 0 && cursor < sample.length) output += sample[cursor] * click.gains[layer];
+    }
+    return output;
   }
 
   guideDuckGainAtFrame(track, frame) {

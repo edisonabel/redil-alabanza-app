@@ -35,6 +35,7 @@ export type ChannelStripProps = {
   onToggleOutputRoute?: () => void;
   onInteractionStart?: () => void;
   onInteractionEnd?: () => void;
+  onOpenSettings?: () => void;
 };
 
 const FADER_AXIS_LOCK_THRESHOLD_PX = 7;
@@ -243,6 +244,7 @@ export const ChannelStrip = memo(function ChannelStrip({
   onToggleOutputRoute,
   onInteractionStart,
   onInteractionEnd,
+  onOpenSettings,
 }: ChannelStripProps) {
   const [draftVolume, setDraftVolume] = useState<number | null>(null);
   const displayVolume = draftVolume ?? volume;
@@ -416,7 +418,9 @@ export const ChannelStrip = memo(function ChannelStrip({
           <span />
         </div>
         {!compact && <p className="text-[0.62rem] font-black uppercase tracking-[0.3em] text-white/28">{shortLabel}</p>}
-        <p className={`leading-tight text-white/88 ${ultraCompact ? 'text-[10px] font-semibold' : compact ? 'text-[11px] font-semibold' : 'mt-1 text-[1.03rem] font-semibold'}`}>{label}</p>
+        {onOpenSettings ? <button type="button" onClick={onOpenSettings} aria-label="Configurar metrónomo"
+          title="Abrir subdivisiones del click" className={`min-h-7 rounded px-2 font-semibold text-white/88 underline decoration-white/30 decoration-dotted underline-offset-4 focus-visible:outline-2 focus-visible:outline-cyan-200 ${ultraCompact ? 'text-[10px]' : compact ? 'text-[11px]' : 'mt-1 text-[1.03rem]'}`}>{label}</button>
+          : <p className={`leading-tight text-white/88 ${ultraCompact ? 'text-[10px] font-semibold' : compact ? 'text-[11px] font-semibold' : 'mt-1 text-[1.03rem] font-semibold'}`}>{label}</p>}
         {disabledReason ? (
           <p className={`mx-auto max-w-full truncate font-black uppercase tracking-[0.12em] text-amber-100/72 ${ultraCompact ? 'mt-0.5 text-[7px]' : compact ? 'mt-0.5 text-[8px]' : 'mt-1 text-[0.58rem]'}`}>
             {disabledReason}
@@ -443,4 +447,5 @@ export const ChannelStrip = memo(function ChannelStrip({
   previousProps.showRouteFlip === nextProps.showRouteFlip &&
   previousProps.compact === nextProps.compact &&
   previousProps.ultraCompact === nextProps.ultraCompact
+  && previousProps.onOpenSettings === nextProps.onOpenSettings
 ));
