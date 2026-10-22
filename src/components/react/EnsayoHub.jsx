@@ -1,3 +1,4 @@
+import { canAccessLight2Beta } from '../../lib/light2-beta-access.js';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Clock3, ExternalLink, GripVertical, ListMusic, Loader2, Mic2, Play, Plus, Printer, RadioReceiver, Share2, X, Zap } from 'lucide-react';
 import ModoEnsayoCompacto from './ModoEnsayoCompacto.jsx';
@@ -1645,7 +1646,7 @@ export default function EnsayoHub({
           <div className="flex h-[100dvh] items-center justify-center bg-[#0b0d12] px-6 text-center text-white">
             <div>
               <p className="text-[0.72rem] font-black uppercase tracking-[0.24em] text-cyan-300/80">
-                Modo Live
+                Modo Light 2
               </p>
               <p className="mt-3 text-sm font-semibold text-white/70">Preparando director...</p>
             </div>
@@ -2376,7 +2377,7 @@ export default function EnsayoHub({
               className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-brand px-5 text-sm font-black text-white shadow-lg shadow-brand/25 transition-all hover:bg-brand/90 hover:shadow-brand/40 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Zap className="h-4 w-4" />
-              MODO LIVE
+              {canAccessLight2Beta(userId) ? 'Modo Light 2' : 'MODO LIVE'}
             </button>
           </div>
         </div>

@@ -1,5 +1,6 @@
 <script>
   import { supabase } from '../lib/supabase';
+  import { createFetchWithSessionRecovery } from '../utils/authenticatedFetch';
 
   (() => {
     const existingManager = window.__REDIL_AUTH_MANAGER__;
@@ -12,14 +13,22 @@
     window.__REDIL_AUTH_SESSION_BRIDGE_INITIALIZED__ = true;
 
     const AUTH_COOKIE_REGEX = /^(sb-|__Host-sb-|__Secure-sb-|supabase-)/i;
+    const AUTH_RECOVERY_EXCLUDED_API_PATHS = new Set([
+      '/api/auth/session',
+      '/api/auth/logout',
+      '/api/verify-access-code',
+      '/api/registration-avatar',
+    ]);
     const SESSION_SYNC_FRESHNESS_MS = 60 * 1000;
     const SESSION_REFRESH_SKEW_SECONDS = 90;
+    const nativeFetch = window.fetch.bind(window);
     let sessionSyncPromise: Promise<boolean> | null = null;
+    let sessionExpiryPromise: Promise<void> | null = null;
     let lastSessionSyncAt = 0;
 
     const syncServerSession = async (session: any) => {
       if (!session?.access_token || !session?.refresh_token) return false;
-      const response = await fetch('/api/auth/session', {
+      const response = await nativeFetch('/api/auth/session', {
         method: 'POST',
         credentials: 'same-origin',
         cache: 'no-store',
@@ -31,7 +40,10 @@
       });
 
       if (!response.ok) {
-        throw new Error('No se pudo sincronizar la sesion segura.');
+        const error = new Error('No se pudo sincronizar la sesion segura.');
+        (error as any).status = response.status;
+        (error as any).authFailure = response.status === 400 || response.status === 401;
+        throw error;
       }
 
       lastSessionSyncAt = Date.now();
@@ -113,7 +125,7 @@
       }
 
       try {
-        await fetch('/api/auth/logout', {
+        await nativeFetch('/api/auth/logout', {
           method: 'POST',
           credentials: 'same-origin',
           cache: 'no-store',
@@ -124,18 +136,105 @@
       }
     };
 
+    const redirectToLogin = () => {
+      if (window.location.pathname !== '/login') {
+        window.location.assign('/login');
+      }
+    };
+
+    const expireSession = async ({ reason = 'session-invalid', signOutClient = true } = {}) => {
+      if (sessionExpiryPromise) return sessionExpiryPromise;
+
+      sessionExpiryPromise = (async () => {
+        console.warn(`[auth] closing unusable session: ${reason}`);
+        if (signOutClient) {
+          try {
+            await supabase.auth.signOut({ scope: 'local' });
+          } catch {
+            // clearSessionCookies also removes the persisted browser session.
+          }
+        }
+        await clearSessionCookies();
+      })().finally(redirectToLogin);
+
+      return sessionExpiryPromise;
+    };
+
+    const isDefinitiveAuthError = (error: any) => {
+      if (!error) return false;
+      if (error.authFailure === true) return true;
+
+      const name = String(error.name || '').toLowerCase();
+      const code = String(error.code || '').toLowerCase();
+      const message = String(error.message || '').toLowerCase();
+      const status = Number(error.status || 0);
+
+      if (
+        name.includes('retryable')
+        || message.includes('failed to fetch')
+        || message.includes('network')
+        || message.includes('timeout')
+      ) {
+        return false;
+      }
+
+      return status === 400
+        || status === 401
+        || code.includes('refresh_token')
+        || code === 'session_not_found'
+        || code === 'bad_jwt'
+        || code === 'user_not_found';
+    };
+
+    const shouldRecoverApiRequest = (input: RequestInfo | URL) => {
+      try {
+        const rawUrl = input instanceof Request ? input.url : String(input);
+        const requestUrl = new URL(rawUrl, window.location.href);
+        return requestUrl.origin === window.location.origin
+          && requestUrl.pathname.startsWith('/api/')
+          && !AUTH_RECOVERY_EXCLUDED_API_PATHS.has(requestUrl.pathname);
+      } catch {
+        return false;
+      }
+    };
+
+    const fetchWithSessionRecovery = createFetchWithSessionRecovery({
+      fetchImpl: nativeFetch,
+      ensureServerSession,
+      expireSession,
+      shouldHandle: shouldRecoverApiRequest,
+      isDefinitiveAuthError,
+    });
+
     window.__REDIL_AUTH_MANAGER__ = {
       clearSessionCookies,
       ensureServerSession,
+      expireSession,
+      fetchWithSessionRecovery,
       syncServerSession,
     };
+    window.fetch = fetchWithSessionRecovery;
 
     const reportSyncFailure = (context: string, error: unknown) => {
       console.error(`[auth] ${context}`, error);
     };
 
     const syncCurrentSession = (context: string, options = {}) => {
-      void ensureServerSession(options).catch((error: unknown) => reportSyncFailure(context, error));
+      void ensureServerSession(options)
+        .then((synced) => {
+          const isAuthView = window.location.pathname === '/login'
+            || window.location.pathname === '/reset-password';
+          if (!synced && !isAuthView) {
+            void expireSession({ reason: 'session-missing-on-resync' });
+          }
+        })
+        .catch((error: unknown) => {
+          if (isDefinitiveAuthError(error)) {
+            void expireSession({ reason: 'session-resync-rejected' });
+            return;
+          }
+          reportSyncFailure(context, error);
+        });
     };
 
     syncCurrentSession('initial session sync failed', { force: true });
@@ -152,11 +251,7 @@
       }
 
       if (event === 'SIGNED_OUT') {
-        void clearSessionCookies().finally(() => {
-          if (window.location.pathname !== '/login') {
-            window.location.assign('/login');
-          }
-        });
+        void expireSession({ reason: 'supabase-signed-out', signOutClient: false });
       }
     });
 

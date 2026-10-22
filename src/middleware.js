@@ -1,3 +1,4 @@
+import { canAccessLight2Beta, LIGHT2_PUBLIC_AUTH_PATHS, light2AccessDenied } from './lib/light2-beta-access.js';
 import { defineMiddleware } from 'astro:middleware';
 import { createClient } from '@supabase/supabase-js';
 import { getSupabaseServerEnv } from './lib/server/supabase-env.js';
@@ -17,14 +18,9 @@ const supabaseServer = createClient(supabaseUrl, supabaseAnonKey, {
 });
 
 const protectedRoutes = ['/', '/admin', '/programacion', '/repertorio', '/historial-cantos', '/perfil', '/equipo', '/herramientas', '/configuracion', '/ensayo', '/monitor', '/panel', '/audio-lab'];
-const authenticatedApiRoutes = new Set([
-  '/api/audio',
-  '/api/mp3-proxy',
-  '/api/mp3-cover-art',
-  '/api/song-artwork',
-  '/api/auto-markers',
-  '/api/event-playlist',
-  '/api/profile-data',
+const authLifecycleApiRoutes = new Set([
+  '/api/auth/session',
+  '/api/auth/logout',
 ]);
 
 const staticAssetRegex = /\.(png|ico|svg|webmanifest|css|js|txt|map|woff2?|ttf|eot|json)$/i;
@@ -80,6 +76,7 @@ const resolveCrossOriginIsolationHeaders = (path = '') => {
 const withRouteHeaders = (response, path) => {
   // Netlify's static header rules do not consistently cover Astro SSR
   // responses, so the document policy must also be set by the function.
+  if (!staticAssetRegex.test(path) || isApiRoute(path)) response.headers.set('Cache-Control', 'private, no-store');
   response.headers.set('Content-Security-Policy', contentSecurityPolicy);
   for (const [header, value] of Object.entries(baseSecurityHeaders)) {
     response.headers.set(header, value);
@@ -114,6 +111,8 @@ const redirectTo = (location, status = 302) => new Response(null, {
 
 const isProtectedRoute = (path) =>
   protectedRoutes.some((route) => path === route || path.startsWith(`${route}/`));
+
+const isApiRoute = (path) => path === '/api' || path.startsWith('/api/');
 
 const resolveAuthState = async (cookies, isSecure) => {
   const { accessToken, refreshToken } = getServerAuthTokens(cookies);
@@ -163,20 +162,50 @@ export const onRequest = defineMiddleware(async (context, next) => {
   locals.canManageMinistries = false;
   locals.canManageOperations = false;
 
-  if (
+  if (!isApiRoute(path) && (
     path.startsWith('/_astro') ||
     path.startsWith('/assets') ||
     path === '/sw.js' ||
     path.startsWith('/workbox-') ||
     staticAssetRegex.test(path)
-  ) {
+  )) {
     return withRouteHeaders(await next(), path);
   }
 
   const protectedPath = isProtectedRoute(path);
-  const authState = protectedPath || path === '/login' || authenticatedApiRoutes.has(path)
+  const apiPath = isApiRoute(path);
+  const shouldResolveAuth = protectedPath
+    || !LIGHT2_PUBLIC_AUTH_PATHS.has(path)
+    || path === '/login'
+    || (apiPath && !authLifecycleApiRoutes.has(path));
+  const tokensBeforeResolution = shouldResolveAuth ? getServerAuthTokens(cookies) : null;
+  const hadServerAuthTokens = Boolean(
+    tokensBeforeResolution?.accessToken || tokensBeforeResolution?.refreshToken,
+  );
+  const authState = shouldResolveAuth
     ? await resolveAuthState(cookies, isSecure)
     : null;
+
+  if (apiPath && shouldResolveAuth && hadServerAuthTokens && !authState?.accessToken) {
+    clearServerAuthCookies(cookies, isSecure);
+  }
+
+  if (authState?.user && !canAccessLight2Beta(authState.user.id)) {
+    return withRouteHeaders(light2AccessDenied(apiPath), path);
+  }
+  if (!authState?.user && !LIGHT2_PUBLIC_AUTH_PATHS.has(path)) {
+    return apiPath ? withRouteHeaders(light2AccessDenied(true, 401), path) : redirectTo('/login');
+  }
+
+  // The beta can read the library and save its own event mix/arrangement, but
+  // cannot replace the original stems, song timing or persisted song session.
+  if (authState?.user && path === '/api/live-director-upload-permission') {
+    return withRouteHeaders(new Response(JSON.stringify({ allowed: false }), { headers: { 'content-type': 'application/json', 'cache-control': 'private, no-store' } }), path);
+  }
+  if (authState?.user && !['GET', 'HEAD'].includes(context.request.method) &&
+      ['/api/live-director-song-session', '/api/live-director-upload-url'].includes(path)) {
+    return withRouteHeaders(new Response(JSON.stringify({ error: 'En Modo Light 2 los stems y la canción original se mantienen intactos.' }), { status: 403, headers: { 'content-type': 'application/json', 'cache-control': 'private, no-store' } }), path);
+  }
 
   if (path === '/login') {
     if (authState?.accessToken) {
@@ -198,6 +227,12 @@ export const onRequest = defineMiddleware(async (context, next) => {
   if (authState?.user) {
     locals.user = authState.user;
     locals.accessToken = authState.accessToken;
+
+    // API handlers only need the verified user/access token. Avoid running the
+    // page bootstrap RPC for every API request after centralizing auth refresh.
+    if (!protectedPath) {
+      return withRouteHeaders(await next(), path);
+    }
 
     const supabaseAuthed = createClient(supabaseUrl, supabaseAnonKey, {
       auth: {

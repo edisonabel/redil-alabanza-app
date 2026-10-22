@@ -1,3 +1,4 @@
+import { applyBetaSongCalibration } from '../../utils/liveDirectorBetaCalibration';
 import type { APIRoute } from 'astro';
 import { createHash } from 'node:crypto';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
@@ -32,11 +33,12 @@ async function context(cookies: Parameters<typeof requireAuthenticatedUser>[0], 
   const song = await database.from('canciones').select('section_markers, multitrack_session').eq('id', songId).maybeSingle();
   if (song.error) throw song.error;
   if (!song.data) throw new ApiSecurityError('Canción no disponible.', 404);
-  const markers = Array.isArray(song.data.section_markers) ? song.data.section_markers : [];
+  const calibrated = applyBetaSongCalibration({ id: songId, sectionMarkers: song.data.section_markers });
+  const markers = Array.isArray(calibrated.sectionMarkers) ? calibrated.sectionMarkers : [];
   const sectionIds = new Set((buildLiveDirectorSectionsFromMarkers(markers) || []).map(section => section.id));
   if (write && !sectionIds.size) throw new ApiSecurityError('La canción no tiene secciones disponibles.', 409);
   const sourceSignature = createHash('sha256').update(JSON.stringify({ markers, offset: song.data.multitrack_session?.sectionOffsetSeconds ?? 0 })).digest('hex');
-  return { ...access, canWrite: access.canWrite && sectionIds.size > 0, userId: user.id, sourceSignature, sectionIds, key: `live-director/event-arrangements/${eventId}/${songId}.json` };
+  return { ...access, canWrite: access.canWrite && sectionIds.size > 0, userId: user.id, sourceSignature, sectionIds, key: `live-director/light2-beta/event-arrangements/${eventId}/${songId}.json` };
 }
 async function read(client: S3Client, bucket: string, key: string) {
   try {

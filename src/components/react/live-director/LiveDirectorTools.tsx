@@ -1,4 +1,3 @@
-import './LiveDirectorTools.css';
 import { useEffect, useRef, useState } from 'react';
 import type { SectionJumpController } from '../../../hooks/useLiveDirectorSectionJump';
 import type { TrackData } from '../../../services/MultitrackEngine';

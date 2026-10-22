@@ -1,3 +1,4 @@
+import { applyBetaSongCalibration, applyBetaSessionCalibration, betaClickGrid } from '../../utils/liveDirectorBetaCalibration';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { screenWakeLockService } from '../../services/ScreenWakeLockService';
@@ -224,10 +225,10 @@ const resolveSongSession = (song, sessionOverride = null) => {
   const songId = resolveSongId(song);
   const songTitle = String(song?.title || song?.titulo || '').trim();
 
-  return normalizePersistedLiveDirectorSession(sessionOverride || song?.multitrackSession || null, {
+  return applyBetaSessionCalibration(songId, normalizePersistedLiveDirectorSession(sessionOverride || song?.multitrackSession || null, {
     songId,
     songTitle,
-  }) || buildLegacySequenceSession(song);
+  }) || buildLegacySequenceSession(song));
 };
 
 const buildSongCacheUrls = (song, sessionOverride = null) => {
@@ -386,7 +387,7 @@ export default function ModoEnsayoDirector({
         const hasSession = Boolean(song?.multitrackSession?.tracks?.length);
         const hasLegacySequence = Boolean(buildLegacySequenceSession(song)?.tracks?.length);
         return hasMp3 || hasSession || hasLegacySequence;
-      }),
+      }).map(applyBetaSongCalibration),
     [playlist],
   );
   const manualSongStorageScope = useMemo(
@@ -1241,7 +1242,9 @@ export default function ModoEnsayoDirector({
         onBack={onExit}
         backLabel="Volver al modo ensayo"
         title={`Modo Ensayo - ${contextTitle}`}
-        bpm={Number(activeSong?.bpm || 0)}
+        bpm={betaClickGrid(activeSongId)?.bpm ?? Number(activeSong?.bpm || 0)}
+        generatedClickGrid={betaClickGrid(activeSongId)}
+        timeSignature={activeSong?.timeSignature}
       />
 
       {takeoverPromptOpen && (

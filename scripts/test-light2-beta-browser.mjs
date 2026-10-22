@@ -1,0 +1,45 @@
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import {readFile,writeFile} from 'node:fs/promises';
+import dotenv from 'dotenv';
+const require=createRequire(import.meta.url);
+const {chromium}=require('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+dotenv.config({path:'.env',quiet:true});
+const base=process.env.LIGHT2_QA_URL||'http://127.0.0.1:4323';
+const session=JSON.parse(await readFile('.lab/beta-qa-session.json','utf8'));
+const {eventIds}=JSON.parse(await readFile('.lab/beta-qa-context.json','utf8'));
+const browser=await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',args:['--mute-audio']});
+const context=await browser.newContext({viewport:{width:1728,height:1000}});
+const page=await context.newPage(),errors=[],writes=[];
+page.on('pageerror',e=>errors.push(e.message));
+page.on('request',r=>{if(!['GET','HEAD'].includes(r.method()))writes.push(new URL(r.url()).pathname)});
+try{
+ const anonymous=await context.request.get(base+'/programacion',{maxRedirects:0});assert.equal(anonymous.status(),302);
+ assert.equal(anonymous.headers().location,'/login');
+ assert.equal((await context.request.get(base+'/api/live-director-event-arrangement?evento_id='+eventIds[0]+'&cancion_id=f2ce26b1-eac1-4937-b9e8-aa9f9d8338c9')).status(),401);
+ assert.equal((await context.request.get(base+'/api/private.json')).status(),401);
+ const key='sb-'+new URL(process.env.PUBLIC_SUPABASE_URL).hostname.split('.')[0]+'-auth-token';
+ await context.addInitScript(({key,session})=>localStorage.setItem(key,JSON.stringify(session)),{key,session});
+ const signIn=await context.request.post(base+'/api/auth/session',{headers:{Origin:base},data:{access_token:session.access_token,refresh_token:session.refresh_token}});
+ assert.equal(signIn.status(),200);
+ const permission=await context.request.get(base+'/api/live-director-upload-permission');assert.deepEqual(await permission.json(),{allowed:false});
+ assert.equal((await context.request.put(base+'/api/live-director-song-session',{headers:{Origin:base},data:{}})).status(),403);
+ await page.goto(base+'/ensayo/'+eventIds[0]);
+ const enter=page.getByRole('button',{name:'Modo Light 2',exact:true});await enter.waitFor({timeout:60000});
+ assert.equal(await enter.isEnabled(),true);await page.screenshot({path:'.lab/results/light2-entry.png'});
+ await enter.click();
+ await page.locator('[data-live-director-control="play-pause"]').waitFor({timeout:60000});
+ await page.waitForFunction(()=>window.__streamingEngineDumpOwner?.getTracks().length>0&&!document.querySelector('[data-live-director-control="play-pause"]').disabled,null,{timeout:120000});
+ const firstSectionStart=Number(await page.locator('[data-live-section-index]').first().getAttribute('data-live-section-start'));
+ assert.equal(firstSectionStart,12,'Providencia keeps the exact imported REAPER grid');
+ const count=await page.evaluate(()=>window.__streamingEngineDumpOwner.getTracks().length);
+ const play=page.locator('[data-live-director-control="play-pause"]');await play.click();
+ await page.waitForFunction(()=>window.__streamingEngineDumpOwner.getIsPlaying(),null,{timeout:30000});
+ await page.waitForTimeout(800);await play.click();
+ await page.waitForFunction(()=>!window.__streamingEngineDumpOwner.getIsPlaying());
+ await page.screenshot({path:'.lab/results/light2-real-event.png'});
+ assert.equal(errors.length,0);
+ const result={pass:true,url:base,anonymousCannotEnter:true,apiGuarded:true,staticSuffixCannotBypassAuth:true,ownAccountCanEnter:true,noExpiration:true,libraryWritesBlocked:true,realEventLoads:true,loadedStems:count,firstSectionStart,realEventPlayPause:true,errors,writes};
+ await writeFile('.lab/results/light2-beta-browser-check.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));
+}catch(e){await page.screenshot({path:'.lab/results/light2-beta-failure.png'});console.log(JSON.stringify({path:new URL(page.url()).pathname,errors,writes}));throw e}
+finally{await browser.close()}

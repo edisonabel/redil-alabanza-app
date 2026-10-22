@@ -1,4 +1,3 @@
-import './LiveDirectorTools.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TrackData } from '../../../services/MultitrackEngine';
 import type { SharedStreamingTelemetry } from '../../../services/StreamingMultitrackEngine';
