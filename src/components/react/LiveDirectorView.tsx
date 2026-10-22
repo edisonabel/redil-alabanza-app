@@ -1240,12 +1240,12 @@ export function LiveDirectorView({
         ? { minWidth: headerMinWidth }
         : {
           minWidth: headerMinWidth,
-          gridTemplateColumns: showLiveBroadcastControl
-            ? '33% 2% 47% 2% 16%'
-            : '35% 3% 49% 5% 8%',
+          gridTemplateColumns: experimentalTools
+            ? (showLiveBroadcastControl ? '31% 2% 43% 2% 22%' : '33% 2% 47% 2% 16%')
+            : showLiveBroadcastControl ? '33% 2% 47% 2% 16%' : '35% 3% 49% 5% 8%',
         }
     ),
-    [headerMinWidth, isToolbarCompactLandscape, showLiveBroadcastControl],
+    [experimentalTools, headerMinWidth, isToolbarCompactLandscape, showLiveBroadcastControl],
   );
   const mixerLayoutColumns = useMemo(
     () =>
@@ -1391,7 +1391,7 @@ export function LiveDirectorView({
     && hasPersistedSongContext
     && manualSession?.mode === 'folder'
     && sessionTracks.length > 0;
-  const canManageStemSelection = canAddSingleStem;
+  const canManageStemSelection = canAddSingleStem || (experimentalTools && canToggleTrackLoad);
   const canUseStemsToolbar = canManageStemSelection || canOpenStemsActionModal;
   const isStemsToolbarActive = canToggleTrackLoad && enabledSessionTracks.length !== sessionTracks.length;
   const useWideTrackLoadModal = !isPortrait;
@@ -5816,7 +5816,6 @@ export function LiveDirectorView({
                 onClick={() => setShowArrangementEditor(true)}
                 className={`${CONTROL_CARD} flex-1 flex-col px-3 text-xs font-semibold tracking-[0.12em] disabled:opacity-30 ${arrangementEntries ? 'border-cyan-200/40 text-cyan-100' : 'text-white/75 hover:bg-white/5'}`}
                 style={{ minWidth: '4rem' }}><Pencil size={isUltraCompactLandscape ? 14 : 18}/><span className="mt-1 text-[0.58rem]">EDITAR</span></button>}
-              {(!experimentalTools || canUseStemsToolbar) && <>
               <button
                 type="button"
                 onClick={handleStemsToolbarAction}
@@ -5830,7 +5829,7 @@ export function LiveDirectorView({
                   }`}
                 style={isToolbarCompactLandscape
                   ? { width: scaleRem(isUltraCompactLandscape ? 4.35 : 4.95, 3.75) }
-                  : { flex: showLiveBroadcastControl ? '1 1 0' : undefined, width: showLiveBroadcastControl ? undefined : '100%' }}
+                  : { flex: showLiveBroadcastControl || experimentalTools ? '1 1 0' : undefined, width: showLiveBroadcastControl || experimentalTools ? undefined : '100%', minWidth: experimentalTools ? '4rem' : undefined }}
                 aria-label="Administrar stems"
                 title="Administrar stems (S)"
               >
@@ -5840,7 +5839,6 @@ export function LiveDirectorView({
                 </span>
                 <KeyboardHint>S</KeyboardHint>
               </button>
-              </>}
             </div>
           </header>
         </div>
