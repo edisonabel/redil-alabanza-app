@@ -34,6 +34,7 @@ import type { MultitrackEngineLoadWarning, SongStructure, TrackData } from '../.
 import type { SharedStreamingTelemetry } from '../../services/StreamingMultitrackEngine';
 import { LiveDirectorGroupMixer } from './live-director/LiveDirectorGroupMixer';
 import { LiveDirectorClickMixer } from './live-director/LiveDirectorClickMixer';
+import type { GeneratedClickSettings } from '../../utils/liveDirectorGeneratedClick';
 import { ChannelStrip, FaderThumb, PrecisionFaderSurface } from './live-director/ChannelStrip';
 import { EnsayoQueueAddCard, EnsayoQueueCard } from './live-director/EnsayoQueueCard';
 import { ManualTempoSongModal } from './live-director/ManualTempoSongModal';
@@ -202,6 +203,7 @@ type LiveDirectorViewProps = {
   title?: string;
   subtitle?: string;
   bpm?: number;
+  generatedClickGrid?: Pick<GeneratedClickSettings, 'bpm' | 'originSeconds'>;
   className?: string;
   songId?: string;
   songTitle?: string;
@@ -589,6 +591,7 @@ export function LiveDirectorView({
   title = 'Sunday AM',
   subtitle = 'Battle Belongs',
   bpm = 81,
+  generatedClickGrid,
   className = '',
   songId = '',
   songTitle = '',
@@ -1392,7 +1395,7 @@ export function LiveDirectorView({
   const showSectionsPanel = (desktopCombined || surfaceView === 'sections') && !isManualTempoMode;
   const showGroupsPanel = surfaceView === 'groups' && experimentalTools && !isManualTempoMode;
   const showMixReturn = !desktopCombined && (showSectionsPanel || showGroupsPanel);
-  const displayBpm = Number.isFinite(Number(bpm)) ? Math.max(0, Math.round(Number(bpm))) : 0;
+  const displayBpm = Number.isFinite(Number(bpm)) ? Math.max(0, Math.round(Number(bpm) * 1000) / 1000) : 0;
   const canTogglePulseSubdivision = isManualTempoMode && displayBpm > 0;
   const displayedPulseBpm = canTogglePulseSubdivision
     ? getManualPulseBpm(displayBpm, manualTempoTransport.pulseSubdivision)
@@ -5505,7 +5508,7 @@ export function LiveDirectorView({
     <div ref={liveDirectorRootRef} className={shellClassName}>
       {canUseGeneratedClick && clickTrack && selectedMultitrackEngine.loadGeneratedClickSamples && selectedMultitrackEngine.setGeneratedClick &&
         <LiveDirectorClickMixer key={`click:${trackSignature}:${reloadKey}`} open={showClickMixer} onClose={closeClickMixer}
-          trackId={clickTrack.id} bpm={bpm} originSeconds={resolvedSections[0]?.startTime ?? 0}
+          trackId={clickTrack.id} bpm={generatedClickGrid?.bpm ?? bpm} originSeconds={generatedClickGrid?.originSeconds ?? resolvedSections[0]?.startTime ?? 0}
           ready={isReady} playing={isPlaying} busy={isSectionSeekBusy || isCongregationFading}
           loadSamples={selectedMultitrackEngine.loadGeneratedClickSamples} onConfigure={selectedMultitrackEngine.setGeneratedClick} />}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(93,214,240,0.08),_transparent_24%),linear-gradient(180deg,#232526_0%,#222425_46%,#202224_100%)]" />

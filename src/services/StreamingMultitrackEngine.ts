@@ -997,7 +997,7 @@ type SectionJumpPreparation = {
   startedAt: number;
 };
 
-const AUDIO_WORKER_ASSET_VERSION = '20261022-sync-click-1';
+const AUDIO_WORKER_ASSET_VERSION = '20261022-click-calibration-2';
 const DEFAULT_WORKLET_MODULE_URL = `/workers/MultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_PRODUCER_WORKER_URL = `/workers/AudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';

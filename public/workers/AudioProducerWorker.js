@@ -2631,7 +2631,10 @@ class ProducerTrackPipeline {
     });
   }
 
-  async feedDemuxedSamples(result, expectedLookAheadToken = null) {
+  // Header loading can yield while a full ring applies backpressure. It must
+  // be cancelled by a seek too: otherwise its old head AAC reaches the new
+  // decoder and anchors Chromium's output timestamps to the abandoned head.
+  async feedDemuxedSamples(result, expectedLookAheadToken = this.lookAheadToken) {
     this.assertAlive();
     this.assertCurrentLookAhead(expectedLookAheadToken);
     await this.waitForDecoderRecovery();

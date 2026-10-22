@@ -63,7 +63,9 @@
     "test:live-guide-duck": "node scripts/test-live-director-guide-duck.mjs",
     "test:live-generated-click": "node scripts/test-live-director-generated-click.mjs",
     "test:live-click-ui": "node scripts/test-live-director-click-browser.mjs",
-    "test:live-click-audio": "node scripts/test-live-director-click-audio-browser.mjs"
+    "test:live-click-audio": "node scripts/test-live-director-click-audio-browser.mjs",
+    "test:live-click-calibration": "node scripts/test-live-director-song-click-calibration-browser.mjs --late-seek",
+    "test:live-producer-cancel": "node scripts/test-audio-producer-stale-head-cancellation.mjs"
   },
   "dependencies": {
     "@astrojs/netlify": "8.2.1",
