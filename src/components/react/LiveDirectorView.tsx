@@ -1113,6 +1113,7 @@ export function LiveDirectorView({
   const [trackOutputRoutes, setTrackOutputRoutes] = useState<Record<string, TrackOutputRoute>>({});
   const [soloTrackIds, setSoloTrackIds] = useState<Set<string>>(() => new Set());
   const [masterVolume, setMasterVolumeState] = useState(0.82);
+  const [masterMeterTarget, setMasterMeterTarget] = useState<HTMLDivElement | null>(null);
   const songLevel = useLiveDirectorSongLevel(`${eventId || 'independent'}:${songId || activeQueueSongId || songTitle}`);
   const [congregationFadeState, setCongregationFadeState] = useState<
     'normal' | 'fading-out' | 'muted' | 'fading-in'
@@ -6207,6 +6208,8 @@ export function LiveDirectorView({
                       style={{ bottom: `${14 + index * 11}%` }}
                     />
                   ))}
+                  <div ref={setMasterMeterTarget} data-live-director-master-meter-slot="true"
+                    className={`pointer-events-none absolute left-1/2 -translate-x-1/2 ${isUltraCompactLandscape ? 'top-[8%] bottom-[12%] w-[0.5rem]' : isCompactLandscape ? 'top-[7%] bottom-[11%] w-[0.56rem]' : 'top-[4.5%] bottom-[6.5%] w-[0.72rem]'}`} />
                   <FaderThumb
                     accent="#81ddf5"
                     className={`live-director-master-thumb ${isUltraCompactLandscape ? 'h-[1.85rem]' : isCompactLandscape ? 'h-[2.2rem]' : 'h-[4.35rem]'} w-full ${isUltraCompactLandscape ? 'max-w-[5.1rem]' : isCompactLandscape ? 'max-w-[5.85rem]' : 'max-w-[6.1rem]'} transition-[box-shadow] duration-150`}
@@ -6228,6 +6231,7 @@ export function LiveDirectorView({
                 {experimentalTools && !isManualTempoMode && selectedMultitrackEngine.setTrackGroupGain && selectedMultitrackEngine.getLevelMeterSnapshot && selectedMultitrackEngine.resetLevelMeter && <LiveDirectorSongLevel
                   key={`${eventId}:${songId}:${reloadKey}`} db={songLevel.db} onChange={songLevel.setDb} title={songTitle || title} compact={isCompactLandscape}
                   playing={isPlaying} getMeter={selectedMultitrackEngine.getLevelMeterSnapshot!} resetMeter={selectedMultitrackEngine.resetLevelMeter!}
+                  meterTarget={masterMeterTarget}
                   disabled={!isReady || isSectionSeekBusy || isCongregationFading || showArrangementEditor} />}
               </div>
             </div>

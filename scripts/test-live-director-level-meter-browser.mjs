@@ -31,6 +31,11 @@ try {
   await page.waitForFunction(() => window.__streamingEngineDumpOwner.getLevelMeterSnapshot().held >= 1.2);
   const physical = await page.evaluate(() => window.__streamingEngineDumpOwner.getLevelMeterSnapshot());
   assert.ok(Math.abs(physical.held - 1.5 * physical.master) < .00001, `Output meter is after the actual Master gain: ${JSON.stringify(physical)}`);
+  const rail = page.locator('[data-live-director-master-meter-slot]');
+  const fill = rail.locator('[data-live-director-master-meter-fill]');
+  assert.equal(await rail.locator('[data-live-director-output-meter]').count(), 1, 'Output meter belongs to the Master rail');
+  assert.ok((await fill.boundingBox()).height > (await rail.boundingBox()).height * .9, 'Live signal visibly fills the vertical Master rail');
+  await page.screenshot({ path: '.lab/results/master-rail-live-hot.png' });
   await page.getByRole('button', { name: 'Ajustar nivel de esta canción', exact: true }).click();
   const auto = page.getByRole('button', { name: 'Ajuste automático por picos', exact: true });
   await auto.click(); assert.equal(await auto.getAttribute('aria-pressed'), 'true');
@@ -65,8 +70,18 @@ try {
   await page.evaluate(() => window.__streamingEngineDumpOwner.setTrackVolume('drums', .05));
   await page.waitForTimeout(1500);
   assert.match(await page.locator('[data-live-director-control="song-level"]').getAttribute('title'), new RegExp(db.toFixed(1)));
+  assert.ok((await fill.boundingBox()).height < (await rail.boundingBox()).height * .6, 'Meter falls with the actual signal');
+  const masterControl = page.getByRole('slider', { name: 'Master volume', exact: true });
+  await masterControl.focus(); await page.keyboard.press('Home');
+  await page.waitForFunction(() => document.querySelector('[data-live-director-output-meter]')?.getAttribute('aria-valuenow') === '-60');
+  await page.waitForFunction(() => new DOMMatrix(getComputedStyle(document.querySelector('[data-live-director-master-meter-fill]')).transform).m22 === 0);
+  assert.equal(await fill.evaluate(el => new DOMMatrix(getComputedStyle(el).transform).m22), 0, 'Moving Master to zero extinguishes its meter');
+  await page.keyboard.press('End');
+  await page.waitForFunction(() => new DOMMatrix(getComputedStyle(document.querySelector('[data-live-director-master-meter-fill]')).transform).m22 > .1);
+  await page.screenshot({ path: '.lab/results/master-rail-live-soft.png' });
   await page.locator('[data-live-director-control="play-pause"]').click();
   await page.waitForFunction(() => !window.__streamingEngineDumpOwner.getIsPlaying());
+  await page.waitForFunction(() => new DOMMatrix(getComputedStyle(document.querySelector('[data-live-director-master-meter-fill]')).transform).m22 === 0);
   for (const [width, height] of [[1728, 1000], [1280, 720], [844, 390]]) {
     await page.setViewportSize({ width, height }); await page.waitForTimeout(100);
     const box = await page.locator('[data-live-director-output-meter]').boundingBox();
@@ -81,7 +96,7 @@ try {
   assert.equal(Number(await slider.inputValue()), db); assert.equal(await auto.getAttribute('aria-pressed'), 'false');
   await page.getByRole('button', { name: 'Restaurar 0 dB', exact: true }).click();
   assert.deepEqual(errors, []); assert.deepEqual(writes, []);
-  const result = { pass: true, outputAfterMaster: true, loudCueDoesNotDriveAuto: true, automaticDb: db, settledPeak: measured.meter.musicPeak * measured.meter.master, cuesAndFaderUnchanged: true, noRunaway: true, noBoostOnQuietPassages: true, operatesWithPanelClosed: true, rememberedFixedLevel: true, autoOffOnReload: true, peakReset: true, responsive: true, errors, writes };
+  const result = { pass: true, outputAfterMaster: true, loudCueDoesNotDriveAuto: true, automaticDb: db, settledPeak: measured.meter.musicPeak * measured.meter.master, cuesAndFaderUnchanged: true, noRunaway: true, noBoostOnQuietPassages: true, operatesWithPanelClosed: true, rememberedFixedLevel: true, autoOffOnReload: true, peakReset: true, responsive: true, integratedMasterRail: true, liveSignalFillsRail: true, quieterSignalLowersRail: true, masterFaderControlsMeter: true, pauseClearsRail: true, errors, writes };
   await writeFile('.lab/results/level-meter-check.json', JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));
 } catch (error) { await writeFile('.lab/results/level-meter-failure.json', JSON.stringify(await page.evaluate(() => window.__streamingEngineDumpOwner?.getLevelMeterSnapshot()), null, 2)); await page.screenshot({ path: '.lab/results/level-meter-failure.png' }); throw error; }
 finally { await browser.close(); }

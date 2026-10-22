@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { LiveDirectorLevelMeter } from '../../../services/StreamingMultitrackEngine';
 import { nextPeakAttenuation, samplePeakDb } from '../../../utils/liveDirectorPeakLevel';
 type Props = { db: number; onChange: (db: number) => void; title: string; disabled: boolean; compact: boolean;
-  playing: boolean; getMeter: () => LiveDirectorLevelMeter | null; resetMeter: () => void };
+  playing: boolean; getMeter: () => LiveDirectorLevelMeter | null; resetMeter: () => void; meterTarget: HTMLDivElement | null };
 const peakLabel = (peak: number) => peak > .000001 ? `${samplePeakDb(peak).toFixed(1)} dBFS` : '−∞ dBFS';
 export function LiveDirectorSongLevel(props: Props) {
   const { db, onChange, title, disabled, compact } = props;
@@ -29,17 +30,18 @@ export function LiveDirectorSongLevel(props: Props) {
   }, [disabled, props.playing, props.getMeter]);
   const label = `${db.toFixed(1)} dB`;
   const recent = meter && meter.audioTime - meter.outputAt <= .25;
-  const peak = recent ? meter.peak : 0;
+  const peak = props.playing && recent ? meter.peak : 0;
   const fill = Math.max(0, Math.min(100, (samplePeakDb(peak) + 60) / 60 * 100));
   const held = meter?.held || 0;
-  const color = peak >= 1 ? '#fb7185' : peak >= .708 ? '#fbbf24' : '#7dd3bc';
+  const color = peak >= 1 ? '#fb7185' : peak >= .708 ? '#fbbf24' : '#81ddf5';
   return <>
-    <div data-live-director-output-meter="true" title={`Pico retenido: ${peakLabel(held)} · Salida digital de stems y guía, después de Master`} className="mt-1 w-full">
-      <div role="meter" aria-label="Pico de salida digital" aria-valuemin={-60} aria-valuemax={0} aria-valuenow={Math.max(-60, Math.min(0, samplePeakDb(peak)))} aria-valuetext={peakLabel(peak)} className="h-1 overflow-hidden rounded-full bg-white/10">
-        <div className="h-full rounded-full" style={{ width: `${fill}%`, background: color }} />
-      </div>
-      <span data-output-peak-hold={held} className={`block text-[9px] tabular-nums ${held >= 1 ? 'text-rose-300' : 'text-white/45'}`}>{peakLabel(held)}</span>
-    </div>
+    {props.meterTarget && createPortal(
+      <div data-live-director-output-meter="true" data-output-peak-hold={held} role="meter" aria-label="Pico de salida digital" aria-orientation="vertical"
+        aria-valuemin={-60} aria-valuemax={0} aria-valuenow={Math.max(-60, Math.min(0, samplePeakDb(peak)))} aria-valuetext={peakLabel(peak)}
+        title={`Pico retenido: ${peakLabel(held)} · Salida después de Master`} className="pointer-events-none absolute inset-0">
+        <div data-live-director-master-meter-fill="true" className="absolute inset-y-0 left-1/2 w-[0.38rem] rounded-full opacity-90 transition-transform duration-75 ease-linear"
+          style={{ backgroundColor: color, transform: `translateX(-50%) scaleY(${fill / 100})`, transformOrigin: 'bottom center' }} />
+      </div>, props.meterTarget)}
     <button type="button" data-live-director-control="song-level" aria-label="Ajustar nivel de esta canción" aria-haspopup="dialog" title={`Nivel de esta canción: ${label}${automatic ? ' · Auto picos' : ''}`}
       disabled={disabled} onClick={() => dialog.current?.showModal()}
       className={`mt-1 min-h-7 w-full rounded-lg border px-1 text-[9px] font-semibold tracking-wide focus-visible:outline-2 focus-visible:outline-cyan-200 disabled:opacity-30 ${db < 0 || automatic ? 'border-cyan-200/30 text-cyan-100' : 'border-white/10 text-white/50 hover:text-white/80'}`}>
