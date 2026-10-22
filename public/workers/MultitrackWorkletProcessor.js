@@ -48,6 +48,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.loopJumpCrossfadeBlocked = false;
     this.activeSeekSerial = 0;
     this.renderErrorReported = false;
+    this.pendingSectionEnd = null;
     this.pendingSectionSwitch = null;
     this.clickSamples = null;
 
@@ -186,6 +187,22 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       return;
     }
 
+    if (type === 'prepare-section-end') {
+      const rate = sampleRate || 48000;
+      if (message.controlBuffer instanceof SharedArrayBuffer && message.controlBuffer.byteLength >= 4 && Number.isFinite(message.endSeconds)) {
+        const control = new Int32Array(message.controlBuffer, 0, 1);
+        const boundaryFrame = Math.round(this.telemetryBaseRenderedFrames + (message.endSeconds - this.telemetryBaseSeconds) * rate);
+        if (!this.playing || this.readingBlocked || boundaryFrame < this.renderedFrames) {
+          Atomics.store(control, 0, -1);
+          this.port.postMessage({ type: 'section-end-skipped', serial: message.serial });
+        } else this.pendingSectionEnd = { serial: message.serial, boundaryFrame, endSeconds: message.endSeconds, control };
+      }
+      return;
+    }
+    if (type === 'cancel-section-end') {
+      if (this.pendingSectionEnd?.serial === message.serial) this.pendingSectionEnd = null;
+      return;
+    }
     if (type === 'track-guide-override') {
       const track = this.tracks[message.trackIndex];
       if (track) track.guideOverride = message.enabled === true;
@@ -226,6 +243,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
     if (type === 'PAUSE' || type === 'PAUSE_AND_FLUSH' || type === 'PAUSE_AND_ADVANCE' ||
         type === 'FLUSH_BUFFERS' || type === 'transport') {
+      this.pendingSectionEnd = null;
       for (let index = 0; index < this.trackCount; index += 1) {
         if (this.tracks[index]) this.clearGuideDuck(this.tracks[index], true);
       }
@@ -1079,6 +1097,24 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.renderContextFrameOffset = (typeof currentFrame === 'number' ? currentFrame : renderStartFrame) - renderStartFrame;
 
     try {
+      const ending = this.pendingSectionEnd;
+      const stopOffset = ending ? ending.boundaryFrame - renderStartFrame : -1;
+      if (ending && stopOffset >= 0 && stopOffset <= frameCount && Atomics.compareExchange(ending.control, 0, 0, 1) === 0) {
+        if (stopOffset > 0) this.mixTracks(output, outputChannelCount, stopOffset, renderStartFrame, 0);
+        this.renderedFrames -= frameCount - stopOffset;
+        this.playing = false;
+        this.pendingSectionEnd = null;
+        this.clearAllSectionEndGuides();
+        this.writeTelemetrySnapshot(ending.endSeconds);
+        this.port.postMessage({ type: 'section-end-complete', serial: ending.serial, endSeconds: ending.endSeconds });
+        return true;
+      }
+      if (ending && (stopOffset < 0 || Atomics.load(ending.control, 0) !== 0)) {
+        if (stopOffset < 0 && Atomics.compareExchange(ending.control, 0, 0, -1) === 0) {
+          this.port.postMessage({ type: 'section-end-skipped', serial: ending.serial });
+        }
+        this.pendingSectionEnd = null;
+      }
       const plan = this.pendingSectionSwitch;
       const offset = plan ? plan.boundaryFrame - renderStartFrame : -1;
       if (plan && offset >= 0 && offset <= frameCount) {
@@ -1146,6 +1182,12 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
 
     return true;
+  }
+
+  clearAllSectionEndGuides() {
+    for (let index = 0; index < this.trackCount; index++) {
+      if (this.tracks[index]) this.clearGuideDuck(this.tracks[index], true);
+    }
   }
 
   prepareSectionSwitch(message) {

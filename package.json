@@ -61,6 +61,8 @@
     "test:live-ui": "node scripts/test-live-director-minimal-ui-browser.mjs",
     "test:live-fader-precision": "node scripts/test-live-director-fader-precision-browser.mjs",
     "test:live-guide-duck": "node scripts/test-live-director-guide-duck.mjs",
+    "test:live-arrangement": "node scripts/test-live-director-arrangement.mjs",
+    "test:live-arrangement-ui": "node scripts/test-live-director-arrangement-browser.mjs",
     "test:live-guide-exclusion": "node scripts/test-live-director-guide-exclusion-browser.mjs",
     "test:live-generated-click": "node scripts/test-live-director-generated-click.mjs",
     "test:live-click-ui": "node scripts/test-live-director-click-browser.mjs",

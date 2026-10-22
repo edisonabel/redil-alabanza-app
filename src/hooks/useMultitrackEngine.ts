@@ -69,7 +69,8 @@ type UseMultitrackEngineOptions = {
 
 export type UseMultitrackEngineReturn = {
   prepareSectionJump?: (targetSeconds: number, boundarySeconds: number) => Promise<{ serial: number; completion: Promise<boolean> }>;
-  cancelSectionJump?: () => void;
+  cancelSectionJump?: (serial?: number) => void;
+  scheduleSectionEnd?: (endSeconds: number) => { completion: Promise<boolean>; cancel: () => void };
   runtimeError?: string | null;
   getGuideAudioGraph?: (trackId: string) => GuideAudioGraph | null;
   getDurationSnapshot?: () => number;
@@ -396,8 +397,9 @@ export function useMultitrackEngine(
     }
     engineRef.current.onEnded = () => {
       setIsPlaying(false);
-      currentTimeRef.current = 0;
-      setCurrentTime(0);
+      const endedTime = engineRef.current instanceof StreamingMultitrackEngine ? engineRef.current.getCurrentTime() : 0;
+      currentTimeRef.current = endedTime;
+      setCurrentTime(endedTime);
       commitDuration(Math.max(durationRef.current, engineRef.current?.getDuration() ?? 0));
       trackLevelsRef.current = buildTrackLevels(engineRef.current?.getTracks() || []);
       setTrackLevels(trackLevelsRef.current);
@@ -903,9 +905,15 @@ export function useMultitrackEngine(
     }
     return engine.prepareSectionJump(targetSeconds, boundarySeconds);
   }, []);
-  const cancelSectionJump = useCallback(() => {
+  const cancelSectionJump = useCallback((serial?: number) => {
     const engine = engineRef.current;
-    if (engine instanceof StreamingMultitrackEngine) engine.cancelSectionJump();
+    if (engine instanceof StreamingMultitrackEngine) engine.cancelSectionJump(serial);
+  }, []);
+
+  const scheduleSectionEnd = useCallback((endSeconds: number) => {
+    const engine = engineRef.current;
+    if (!(engine instanceof StreamingMultitrackEngine)) throw new Error('El motor no permite editar el recorrido.');
+    return engine.scheduleSectionEnd(endSeconds);
   }, []);
 
   useEffect(() => {
@@ -1072,6 +1080,7 @@ export function useMultitrackEngine(
       setTrackGroupGain,
       prepareSectionJump,
       cancelSectionJump,
+      scheduleSectionEnd,
       isPlaying,
       currentTime,
       duration,
@@ -1112,6 +1121,7 @@ export function useMultitrackEngine(
       setTrackGroupGain,
       prepareSectionJump,
       cancelSectionJump,
+      scheduleSectionEnd,
       currentTime,
       duration,
       diagnostics,

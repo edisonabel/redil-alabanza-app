@@ -1,0 +1,48 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import vm from 'node:vm';
+const require = createRequire(import.meta.url);
+const { build } = require('esbuild');
+const bundle = await build({ entryPoints: ['src/utils/liveDirectorArrangement.ts'], bundle: true, write: false, format: 'cjs' });
+const module = { exports: {} }; vm.runInNewContext(bundle.outputFiles[0].text, { module, exports: module.exports });
+const { originalArrangement, resolveArrangement, arrangementTimeline, arrangementElapsed, arrangementSourceAt } = module.exports;
+const sources = [{ id: 'a', name: 'A', startTime: 10, endTime: 18 }, { id: 'b', name: 'B', startTime: 18, endTime: 30 }];
+assert.equal(originalArrangement(sources).length, 2);
+const arranged = resolveArrangement(sources, [{ id: 'copy-1', sectionId: 'b' }, { id: 'copy-2', sectionId: 'a' }, { id: 'copy-3', sectionId: 'a' }]);
+assert.deepEqual(Array.from(arranged, s => s.name), ['B', 'A', 'A']); assert.equal(arranged[2].startTime, 10);
+assert.deepEqual(Array.from(arrangementTimeline(arranged), s => [s.startTime, s.endTime]), [[0, 12], [12, 20], [20, 28]]);
+assert.equal(arrangementElapsed(arranged, 2, 14), 24);
+assert.equal(arrangementSourceAt(arranged, 24).id, 'copy-3');
+assert.equal(arrangementSourceAt(arranged, 24).time, 14);
+assert.equal(sources[0].id, 'a'); assert.throws(() => resolveArrangement(sources, []));
+assert.throws(() => resolveArrangement(sources, [{ id: 'x', sectionId: 'missing' }]));
+assert.throws(() => resolveArrangement(sources, [{ id: 'same', sectionId: 'a' }, { id: 'same', sectionId: 'a' }]));
+let Processor;
+const runtime = { AudioWorkletProcessor: class { constructor() { this.messages = []; this.port = { postMessage: m => this.messages.push(m) }; } }, registerProcessor: (_name, value) => { Processor = value; }, sampleRate: 48000, currentFrame: 0, Float32Array, Float64Array, Int32Array, SharedArrayBuffer, Atomics, Math, Number, Set, console };
+vm.runInNewContext(await readFile('public/workers/MultitrackWorkletProcessor.js', 'utf8'), runtime);
+function setup() {
+  runtime.currentFrame = 0;
+  const p = new Processor(), capacity = 4096, sampleBuffer = new SharedArrayBuffer(capacity * 4), indexBuffer = new SharedArrayBuffer(8);
+  new Float32Array(sampleBuffer).fill(.25); new Int32Array(indexBuffer)[1] = 3000;
+  p.configureTrack({ id: 'stem', trackIndex: 0, capacity, sampleRate: 48000, channelCount: 1, usesSharedMemory: true, sampleBuffer, indexBuffer, volume: 1, outputRoute: 'left' });
+  p.tracks[0].effectiveGain = 1; p.playing = true; p.publishMeterMessages = false;
+  return p;
+}
+const p = setup(), controlBuffer = new SharedArrayBuffer(4);
+p.handleMessage({ type: 'prepare-section-end', serial: 1, endSeconds: 173 / 48000, controlBuffer });
+let measured = [];
+for (let i = 0; i < 4; i++) { const output = [new Float32Array(128), new Float32Array(128)]; p.process([], [output]); runtime.currentFrame += 128; measured.push(...output[0]); }
+assert.ok(measured.slice(0, 173).every(v => v === .25)); assert.ok(measured.slice(173).every(v => v === 0));
+assert.equal(p.getTelemetryPositionSeconds(), 173 / 48000); assert.equal(p.playing, false); assert.equal(new Int32Array(controlBuffer)[0], 1);
+assert.equal(p.messages.filter(m => m.type === 'section-end-complete').length, 1);
+const cancelled = setup(), cancelControl = new SharedArrayBuffer(4);
+cancelled.handleMessage({ type: 'prepare-section-end', serial: 2, endSeconds: 50 / 48000, controlBuffer: cancelControl });
+Atomics.store(new Int32Array(cancelControl), 0, -1);
+const out = [new Float32Array(128)]; cancelled.process([], [out]); assert.ok(out[0].every(v => v === .25)); assert.equal(cancelled.playing, true);
+const late = setup(); late.renderedFrames = 128;
+const lateControl = new SharedArrayBuffer(4);
+late.handleMessage({ type: 'prepare-section-end', serial: 3, endSeconds: 50 / 48000, controlBuffer: lateControl });
+assert.equal(new Int32Array(lateControl)[0], -1);
+assert.ok(late.messages.some(message => message.type === 'section-end-skipped'));
+console.log(JSON.stringify({ pass: true, sourceRangesPreserved: true, uniqueOccurrences: true, sampleAccurateEnd: true, cancelledEndKeepsPlaying: true }));

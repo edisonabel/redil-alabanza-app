@@ -6,9 +6,11 @@ type RepeatState = { section: JumpSection; mode: 'once' | 'hold'; completed: num
 type Options = {
   enabled: boolean; resetKey: string; sections: JumpSection[];
   isReady: boolean; isPlaying: boolean; busy: boolean;
+  getSectionAtTime?: (time: number) => JumpSection | undefined;
   getTime: () => number; onJump: (time: number) => Promise<boolean | void>;
   prepareJump?: (targetSeconds: number, boundarySeconds: number) => Promise<{ serial: number; completion: Promise<boolean> }>;
   cancelPreparedJump?: () => void;
+  onNavigate?: (sectionId: string) => void;
 };
 export function useLiveDirectorSectionJump(options: Options) {
   const latest = useRef(options); latest.current = options;
@@ -25,7 +27,7 @@ export function useLiveDirectorSectionJump(options: Options) {
     const current = latest.current;
     if (!current.enabled || !current.isReady || !current.isPlaying || current.busy || inFlight.current) return false;
     const now = current.getTime();
-    const source = current.sections.find(section => now >= section.startTime && now < section.endTime);
+    const source = current.getSectionAtTime?.(now) ?? current.sections.find(section => now >= section.startTime && now < section.endTime);
     const section = current.sections.find(section => section.id === sectionId);
     if (!source || !section || source.endTime - now < .25) { setNotice('Arma el salto antes de que termine la sección actual.'); return false; }
     generation.current++; setRepeat(null);
@@ -35,7 +37,7 @@ export function useLiveDirectorSectionJump(options: Options) {
   const startRepeat = useCallback((mode: 'once' | 'hold') => {
     const current = latest.current;
     if (!current.enabled || !current.isReady || !current.isPlaying || current.busy || inFlight.current) return false;
-    const now = current.getTime(), section = current.sections.find(section => now >= section.startTime && now < section.endTime);
+    const now = current.getTime(), section = current.getSectionAtTime?.(now) ?? current.sections.find(section => now >= section.startTime && now < section.endTime);
     if (!section || section.endTime - now < .25) { setNotice('Activa la repetición antes de que termine la sección.'); return false; }
     generation.current++; setArmed(null); setRepeat({ section, mode, completed: 0, exitRequested: false });
     setNotice(`${section.name}: ${mode === 'once' ? 'repetir una vez' : 'repetir hasta salir'}.`); return true;
@@ -70,6 +72,7 @@ export function useLiveDirectorSectionJump(options: Options) {
       setPreparation(null);
       setArmed(null);
       const section = armed?.section ?? repeat!.section;
+      latest.current.onNavigate?.(section.id);
       if (repeat?.mode === 'hold') {
         setRepeat(previous => previous ? { ...previous, completed: previous.completed + 1 } : null);
         setNotice(`${section.name} en repetición.`);

@@ -306,6 +306,8 @@ type WorkletMessage =
   | WorkletLoopRegionMessage;
 
 type WorkletInboundMessage =
+  | { type: 'section-end-skipped'; serial: number }
+  | { type: 'section-end-complete'; serial: number; endSeconds: number }
   | { type: 'track-guide-duck-ready'; requestId: number }
   | { type: 'section-switch-complete'; serial: number; targetSeconds: number; contextTime: number; positionSeconds: number }
   | { type: 'section-switch-skipped'; serial: number; reason?: string }
@@ -999,7 +1001,7 @@ type SectionJumpPreparation = {
   startedAt: number;
 };
 
-const AUDIO_WORKER_ASSET_VERSION = '20261022-guide-exclusive-1';
+const AUDIO_WORKER_ASSET_VERSION = '20261022-arrangement-1';
 const DEFAULT_WORKLET_MODULE_URL = `/workers/MultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_PRODUCER_WORKER_URL = `/workers/AudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
@@ -1111,6 +1113,8 @@ export class StreamingMultitrackEngine {
   private producerSessionId = 0;
   private producerSessionSerial = 0;
   private sectionJumpSerial = 0;
+  private sectionEndSerial = 0;
+  private pendingSectionEnd: { serial: number; endSeconds: number; control: Int32Array; resolve: (result: boolean) => void } | null = null;
   private pendingSectionJump: SectionJumpPreparation | null = null;
   private standbySectionPool: StandbySectionPool | null = null;
   private streamingPath: 'worker' | 'main-thread' | 'uninitialized' = 'uninitialized';
@@ -2791,9 +2795,10 @@ export class StreamingMultitrackEngine {
     return pending.ready.promise;
   }
 
-  cancelSectionJump(): void {
+  cancelSectionJump(serial?: number): void {
+    if (serial === undefined) this.cancelSectionEnd();
     const pending = this.pendingSectionJump;
-    if (!pending) return;
+    if (!pending || (serial !== undefined && pending.serial !== serial)) return;
     // The render thread wins once state=1. Adopt before pause/manual seek can
     // inspect the clock or terminate the producers that are now audible.
     if (Atomics.compareExchange(pending.control, 0, 0, -1) === 1) {
@@ -2801,6 +2806,34 @@ export class StreamingMultitrackEngine {
       return;
     }
     this.failSectionJump(pending, 'Salto cancelado.');
+  }
+
+  scheduleSectionEnd(endSeconds: number): { completion: Promise<boolean>; cancel: () => void } {
+    this.cancelSectionEnd();
+    if (!this.workletNode || !this.transportPlaying || !Number.isFinite(endSeconds) || endSeconds <= this.getCurrentTime()) {
+      throw new Error('No se pudo programar el final del arreglo.');
+    }
+    const serial = ++this.sectionEndSerial;
+    const controlBuffer = new SharedArrayBuffer(4);
+    const control = new Int32Array(controlBuffer);
+    const completion = new Promise<boolean>(resolve => { this.pendingSectionEnd = { serial, endSeconds, control, resolve }; });
+    this.workletNode.port.postMessage({ type: 'prepare-section-end', serial, endSeconds, controlBuffer });
+    return { completion, cancel: () => { if (this.pendingSectionEnd?.serial === serial) this.cancelSectionEnd(); } };
+  }
+
+  private cancelSectionEnd(): void {
+    const pending = this.pendingSectionEnd;
+    if (!pending) return;
+    // Once the audio thread has stopped, adopt it even if its message has not
+    // reached the UI yet; a pause/seek must not lose the completed endpoint.
+    const committed = Atomics.compareExchange(pending.control, 0, 0, -1) === 1;
+    this.workletNode?.port.postMessage({ type: 'cancel-section-end', serial: pending.serial });
+    this.pendingSectionEnd = null;
+    if (committed) {
+      this.pauseTime = pending.endSeconds; this.transportPlaying = false;
+      this.postProducerTransportState(false);
+    }
+    pending.resolve(committed);
   }
 
   private releaseStandbySectionPool(): void {
@@ -5749,6 +5782,21 @@ export class StreamingMultitrackEngine {
       return;
     }
 
+    if (message.type === 'section-end-skipped') {
+      if (this.pendingSectionEnd?.serial === message.serial) this.cancelSectionEnd();
+      return;
+    }
+    if (message.type === 'section-end-complete') {
+      const pending = this.pendingSectionEnd;
+      if (pending?.serial !== message.serial) return;
+      this.pendingSectionEnd = null;
+      this.pauseTime = message.endSeconds;
+      this.transportPlaying = false;
+      this.postProducerTransportState(false);
+      pending.resolve(true);
+      this.onEnded?.();
+      return;
+    }
     if (message.type === 'track-guide-duck-ready') {
       const request = this.guideDuckRequests.get(message.requestId);
       if (request) {

@@ -1,3 +1,6 @@
+import { useLiveDirectorArrangement } from '../../hooks/useLiveDirectorArrangement';
+import { LiveDirectorArrangementEditor } from './live-director/LiveDirectorArrangementEditor';
+import { resolveArrangement, arrangementTimeline, arrangementElapsed, arrangementSourceAt, arrangementDuration, type ArrangementEntry } from '../../utils/liveDirectorArrangement';
 import { useLiveDirectorDynamicGuide } from '../../hooks/useLiveDirectorDynamicGuide';
 import { useLiveDirectorSectionJump } from '../../hooks/useLiveDirectorSectionJump';
 import {
@@ -7,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FolderOpen,
+  Pencil,
   ListMusic,
   Pause,
   Play,
@@ -1447,7 +1451,7 @@ export function LiveDirectorView({
     ? Number(manualSession?.sectionOffsetSeconds)
     : 0;
   const sourceAudioDuration = selectedMultitrackEngine.getDurationSnapshot?.() ?? playbackDuration;
-  const resolvedSections = useMemo(
+  const sourceSections = useMemo(
     () => {
       const shifted = applyLiveDirectorSectionOffset(
         (sections || DEFAULT_SECTIONS) as LiveDirectorSectionVisual[],
@@ -1458,6 +1462,22 @@ export function LiveDirectorView({
     [experimentalTools, sourceAudioDuration, sectionOffsetSeconds, sections],
   );
 
+  const arrangementIdentity = `${songId}:${reloadKey}:${sectionOffsetSeconds}`;
+  const [arrangementState, setArrangementState] = useState<{ key: string; entries: ArrangementEntry[] | null }>({ key: '', entries: null });
+  const arrangementEntries = arrangementState.key === arrangementIdentity ? arrangementState.entries : null;
+  const [showArrangementEditor, setShowArrangementEditor] = useState(false);
+  const arrangementCursor = useRef(0);
+  const manualArrangementNavigation = useRef(false);
+  const resolvedSections = useMemo(() => arrangementEntries ? resolveArrangement(sourceSections, arrangementEntries) : sourceSections, [sourceSections, arrangementEntries]);
+  const arrangement = useLiveDirectorArrangement({
+    enabled: experimentalTools && Boolean(arrangementEntries), resetKey: `${arrangementIdentity}:${arrangementEntries?.map(entry => entry.id).join('|') ?? 'original'}`,
+    sections: resolvedSections, playing: isPlaying, ready: isReady, busy: isSectionSeekBusy || isCongregationFading,
+    cursor: arrangementCursor, manualNavigation: manualArrangementNavigation,
+    getTime: selectedMultitrackEngine.getCurrentTimeSnapshot, pause: selectedMultitrackEngine.pause,
+    prepare: selectedMultitrackEngine.prepareSectionJump, cancel: selectedMultitrackEngine.cancelSectionJump,
+    scheduleEnd: selectedMultitrackEngine.scheduleSectionEnd,
+  });
+
   const sectionTimelineDuration = useMemo(
     () => resolvedSections.reduce((maxTime, section) => Math.max(maxTime, section.endTime), 0),
     [resolvedSections],
@@ -1466,7 +1486,11 @@ export function LiveDirectorView({
     () => Math.max(sectionTimelineDuration, hasTrackSession ? playbackDuration : 0, hasTrackSession ? currentTime : 0),
     [currentTime, hasTrackSession, playbackDuration, sectionTimelineDuration],
   );
-  const sectionTimelineTailDuration = Math.max(0, playbackTimelineDuration - sectionTimelineDuration);
+  const navigationDuration = arrangementEntries ? arrangementDuration(resolvedSections) : playbackTimelineDuration;
+  const navigationSections = useMemo(() => arrangementEntries ? arrangementTimeline(resolvedSections) : resolvedSections, [arrangementEntries, resolvedSections]);
+  const getNavigationTime = useCallback((sourceTime: number) => arrangementEntries ? arrangementElapsed(resolvedSections, arrangementCursor.current, sourceTime) : sourceTime, [arrangementEntries, resolvedSections]);
+  const navigationTime = getNavigationTime(currentTime);
+  const sectionTimelineTailDuration = arrangementEntries ? 0 : Math.max(0, playbackTimelineDuration - sectionTimelineDuration);
   const sectionLaneTailWidthPx = Math.max(
     0,
     Math.ceil(sectionTimelineTailDuration * SECTION_LANE_PIXELS_PER_SECOND),
@@ -1563,6 +1587,11 @@ export function LiveDirectorView({
 
   const getSectionIndexAtTime = useCallback((timeInSeconds: number) => {
     const safeTime = Math.max(0, Number(timeInSeconds) || 0);
+    if (arrangementEntries) {
+      const index = arrangementCursor.current;
+      const section = resolvedSections[index];
+      if (section && (safeTime >= section.startTime && safeTime <= section.endTime || index === 0 && safeTime < section.startTime)) return index;
+    }
     const nextIndex = resolvedSections.findIndex(
       (section) => safeTime >= section.startTime && safeTime < section.endTime,
     );
@@ -1576,7 +1605,7 @@ export function LiveDirectorView({
     }
 
     return 0;
-  }, [resolvedSections, sectionTimelineDuration]);
+  }, [arrangementEntries, resolvedSections, sectionTimelineDuration]);
 
   const publishPlaybackSnapshot = useCallback((timeInSeconds: number, playing: boolean) => {
     if (!songId || !onPlaybackSnapshot) {
@@ -1608,7 +1637,7 @@ export function LiveDirectorView({
       return activeSegment.leftPx;
     }
 
-    if (safeTime >= sectionTimelineDuration) {
+    if (!arrangementEntries && safeTime >= sectionTimelineDuration) {
       const lastSegment = sectionLaneSegments[sectionLaneSegments.length - 1];
       const overflowDuration = Math.max(
         0,
@@ -1628,9 +1657,20 @@ export function LiveDirectorView({
     );
 
     return activeSegment.leftPx + activeSegment.widthPx * progressWithinSection;
-  }, [getSectionIndexAtTime, playbackTimelineDuration, sectionLaneSegments, sectionTimelineDuration]);
+  }, [arrangementEntries, getSectionIndexAtTime, playbackTimelineDuration, sectionLaneSegments, sectionTimelineDuration]);
 
-  const progressPercent = playbackTimelineDuration > 0 ? clamp(currentTime / playbackTimelineDuration, 0, 1) * 100 : 0;
+  const progressPercent = navigationDuration > 0 ? clamp(navigationTime / navigationDuration, 0, 1) * 100 : 0;
+
+  // Passive playback writes these labels directly. Reconcile them after
+  // pausing or changing the arrangement even when React's old text is equal.
+  useEffect(() => {
+    if (isPlaying) return;
+    if (passiveClockTextRef.current) passiveClockTextRef.current.textContent = formatClock(navigationTime);
+    const label = `${formatCompact(navigationTime)} / ${isManualTempoMode ? 'LIBRE' : formatCompact(navigationDuration)}`;
+    if (passiveCompactClockTextRef.current) passiveCompactClockTextRef.current.textContent = label;
+    if (passiveProgressTextRef.current) passiveProgressTextRef.current.textContent = label;
+    if (passiveProgressBarRef.current) passiveProgressBarRef.current.style.transform = `scaleX(${Math.max(hasTrackSession ? progressPercent / 100 : 0, hasTrackSession ? .04 : 0)})`;
+  }, [isPlaying, isManualTempoMode, navigationTime, navigationDuration, hasTrackSession, progressPercent]);
 
   const stopPassiveTelemetryLoop = useCallback(() => {
     if (passiveTelemetryFrameRef.current !== null) {
@@ -1707,8 +1747,9 @@ export function LiveDirectorView({
 
       if (telemetry) {
         const nextTime = readStableStreamingTelemetryTime(telemetry);
-        const duration = Math.max(playbackTimelineDuration, nextTime, 0.001);
-        const progress = hasTrackSession ? clamp(nextTime / duration, 0, 1) * 100 : 0;
+        const visibleTime = getNavigationTime(nextTime);
+        const duration = Math.max(navigationDuration, visibleTime, 0.001);
+        const progress = hasTrackSession ? clamp(visibleTime / duration, 0, 1) * 100 : 0;
 
         passiveCurrentTimeRef.current = nextTime;
         if (
@@ -1727,13 +1768,13 @@ export function LiveDirectorView({
         }
 
         if (passiveClockTextRef.current) {
-          passiveClockTextRef.current.textContent = formatClock(nextTime);
+          passiveClockTextRef.current.textContent = formatClock(visibleTime);
         }
         if (passiveCompactClockTextRef.current) {
-          passiveCompactClockTextRef.current.textContent = `${formatCompact(nextTime)} / ${formatCompact(duration)}`;
+          passiveCompactClockTextRef.current.textContent = `${formatCompact(visibleTime)} / ${formatCompact(duration)}`;
         }
         if (passiveProgressTextRef.current) {
-          passiveProgressTextRef.current.textContent = `${formatCompact(nextTime)} / ${formatCompact(duration)}`;
+          passiveProgressTextRef.current.textContent = `${formatCompact(visibleTime)} / ${formatCompact(duration)}`;
         }
         if (passiveProgressBarRef.current) {
           passiveProgressBarRef.current.style.transform = `scaleX(${Math.max(hasTrackSession ? progress / 100 : 0, hasTrackSession ? 0.04 : 0)})`;
@@ -1809,6 +1850,8 @@ export function LiveDirectorView({
     getSectionLaneProgressPxAtTime,
     passiveStreamingTelemetryActive,
     playbackTimelineDuration,
+    navigationDuration,
+    getNavigationTime,
     publishPlaybackSnapshot,
     sectionLaneSegments,
     showSectionsPanel,
@@ -2003,7 +2046,7 @@ export function LiveDirectorView({
   // This domain (time, not px) lets the minimap stay aligned with the real
   // playhead regardless of gaps in the big lane.
   const sectionLaneMinimapSegments = useMemo(() => {
-    if (playbackTimelineDuration <= 0 || resolvedSections.length === 0) {
+    if (navigationDuration <= 0 || navigationSections.length === 0) {
       return [] as Array<{
         id: string;
         leftPct: number;
@@ -2011,9 +2054,9 @@ export function LiveDirectorView({
         accent: string;
       }>;
     }
-    return resolvedSections.map((section) => {
-      const startFrac = clamp(section.startTime / playbackTimelineDuration, 0, 1);
-      const endFrac = clamp(section.endTime / playbackTimelineDuration, 0, 1);
+    return navigationSections.map((section) => {
+      const startFrac = clamp(section.startTime / navigationDuration, 0, 1);
+      const endFrac = clamp(section.endTime / navigationDuration, 0, 1);
       return {
         id: section.id,
         leftPct: startFrac * 100,
@@ -2021,12 +2064,12 @@ export function LiveDirectorView({
         accent: section.accent,
       };
     });
-  }, [playbackTimelineDuration, resolvedSections]);
+  }, [navigationDuration, navigationSections]);
 
   const sectionLaneMinimapPlayheadPct = useMemo(() => {
-    if (playbackTimelineDuration <= 0) return 0;
-    return clamp(currentTime / playbackTimelineDuration, 0, 1) * 100;
-  }, [currentTime, playbackTimelineDuration]);
+    if (navigationDuration <= 0) return 0;
+    return clamp(navigationTime / navigationDuration, 0, 1) * 100;
+  }, [navigationTime, navigationDuration]);
 
   // Project the big lane's scrolled viewport onto the timeline fraction.
   // Simplification: we treat the scrollable track as linear over
@@ -2807,15 +2850,6 @@ export function LiveDirectorView({
     activeEngineTracks.map(track => `${track.id}:${track.url}`).join('|')
   ), [activeEngineTracks]);
 
-  useEffect(() => {
-    if (!isInitializingSession) {
-      return;
-    }
-    if (loadProgress && loadProgress.total > 0) {
-      const label = isIOSNativeEngineSurface ? 'Preparando motor Apple' : useStreamingEngine ? 'Preparando motor' : 'Cargando audio';
-      setBusyMessage(`${label} ${loadProgress.loaded}/${loadProgress.total}...`);
-    }
-  }, [isIOSNativeEngineSurface, isInitializingSession, loadProgress, useStreamingEngine]);
 
   useEffect(() => {
     if (sessionPreparationPending) {
@@ -3310,12 +3344,17 @@ export function LiveDirectorView({
   ]);
 
   const sectionJump = useLiveDirectorSectionJump({
+    getSectionAtTime: arrangementEntries ? time => {
+      const section = resolvedSections[getSectionIndexAtTime(time)];
+      return section && time >= section.startTime && time < section.endTime ? section : undefined;
+    } : undefined,
     enabled: experimentalTools, resetKey: `${trackSignature}:${reloadKey}:${sectionOffsetSeconds}`, sections: resolvedSections,
     isReady, isPlaying, busy: isSectionSeekBusy || isCongregationFading,
     getTime: selectedMultitrackEngine.getCurrentTimeSnapshot, onJump: handleSectionSeek,
     prepareJump: !isManualTempoMode && diagnostics?.engineRoute === 'streaming-worker' ? selectedMultitrackEngine.prepareSectionJump : undefined,
-    cancelPreparedJump: selectedMultitrackEngine.cancelSectionJump,
+    cancelPreparedJump: selectedMultitrackEngine.cancelSectionJump, onNavigate: arrangementEntries ? arrangement.focus : undefined,
   });
+  manualArrangementNavigation.current = Boolean(sectionJump.armed || sectionJump.repeat);
 
   const [guideRetryKey, setGuideRetryKey] = useState(0);
   const [showClickMixer, setShowClickMixer] = useState(false);
@@ -3329,8 +3368,18 @@ export function LiveDirectorView({
     wanted: experimentalTools && Boolean(guideTrack) && diagnostics?.engineRoute === 'streaming-worker', ready: isReady, playing: isPlaying,
     busy: isSectionSeekBusy, resetKey: `${trackSignature}:${reloadKey}:${guideRetryKey}`, bpm,
     getGraph: () => guideTrack ? selectedMultitrackEngine.getGuideAudioGraph?.(guideTrack.id) ?? null : null,
-    getTime: selectedMultitrackEngine.getCurrentTimeSnapshot, getPlan: time => { const plan = sectionJump.getCuePlan(time); return plan && /^(jump|repeat):/.test(plan.id) ? plan : null; },
+    getTime: selectedMultitrackEngine.getCurrentTimeSnapshot, getPlan: time => { const plan = sectionJump.getCuePlan(time); return plan && /^(jump|repeat):/.test(plan.id) ? plan : arrangementEntries ? arrangement.getCuePlan() : null; },
   });
+  const applyArrangement = useCallback(async (entries: ArrangementEntry[] | null) => {
+    if (isPlaying || isSectionSeekBusy || isCongregationFading) throw new Error('Pausa la canción antes de aplicar.');
+    if (diagnostics?.engineRoute !== 'streaming-worker') throw new Error('Este motor no permite probar arreglos.');
+    const next = entries ? resolveArrangement(sourceSections, entries) : sourceSections;
+    arrangement.cancel();
+    const start = entries ? next[0]?.startTime ?? 0 : 0;
+    await seekTo(start, { wasPlayingBeforeUiSeek: false, forceFreshStart: start === 0 });
+    setArrangementState({ key: arrangementIdentity, entries: entries?.map(entry => ({ ...entry })) ?? null });
+    setVisualSectionTime(null); setKeyboardSectionIndex(null); releaseSectionsAutoFollowNow();
+  }, [isPlaying, isSectionSeekBusy, isCongregationFading, diagnostics?.engineRoute, sourceSections, arrangementIdentity, seekTo, setVisualSectionTime, releaseSectionsAutoFollowNow, arrangement.cancel]);
   const lastSectionTapRef = useRef<{ id: string; time: number } | null>(null);
   useEffect(() => { lastSectionTapRef.current = null; }, [isPlaying, trackSignature]);
   const selectedJumpSection = keyboardSectionIndex !== null ? resolvedSections[keyboardSectionIndex] : null;
@@ -3365,14 +3414,15 @@ export function LiveDirectorView({
     }
 
     try {
-      await seekTo(0, { forceFreshStart: true });
+      if (arrangementEntries && resolvedSections[0]) arrangement.focus(resolvedSections[0].id);
+      await seekTo(arrangementEntries ? resolvedSections[0]?.startTime ?? 0 : 0, { forceFreshStart: true });
     } catch (error) {
       console.warn('[LiveDirectorView] Return to start failed.', error);
     } finally {
       isTransportCueBusyRef.current = false;
       setIsReturnToStartBusy(false);
     }
-  }, [hasPlayableSession, isCongregationFading, isPlaying, primeSectionVisuals, seekTo]);
+  }, [hasPlayableSession, isCongregationFading, isPlaying, primeSectionVisuals, seekTo, arrangementEntries, resolvedSections, sourceSections, arrangement.focus]);
 
   useEffect(() => {
     if (isIOSNativeEngineSurface) {
@@ -4075,12 +4125,14 @@ export function LiveDirectorView({
 
     const currentSection = resolvedSections[activeSectionIndex];
     if (currentSection && (getLivePlaybackTime() - currentSection.startTime > 2.5)) {
+      if (arrangementEntries) arrangement.focus(currentSection.id);
       void handleSectionSeek(currentSection.startTime);
       return;
     }
 
     const targetIndex = Math.max(0, activeSectionIndex - 1);
     const targetSection = resolvedSections[targetIndex];
+    if (arrangementEntries && targetSection) arrangement.focus(targetSection.id);
     void handleSectionSeek(targetSection?.startTime ?? 0);
   };
 
@@ -4103,6 +4155,7 @@ export function LiveDirectorView({
 
     // If we're already on the last section, snap to its start (useful for
     // re-cueing the outro) instead of doing nothing.
+    if (arrangementEntries) arrangement.focus(targetSection.id);
     void handleSectionSeek(targetSection.startTime);
   };
 
@@ -4642,7 +4695,7 @@ export function LiveDirectorView({
         setVisualSectionTime(null);
         releaseSectionsAutoFollowNow();
         if (experimentalTools && isPlaying) armSectionFromTimeline(targetSection.id);
-        else void handleSectionSeek(targetSection.startTime);
+        else { if (arrangementEntries) arrangement.focus(targetSection.id); void handleSectionSeek(targetSection.startTime); }
         return;
       }
 
@@ -4708,6 +4761,8 @@ export function LiveDirectorView({
     releaseSectionsAutoFollowNow,
     resolvedPadUrl,
     resolvedSections,
+    arrangementEntries,
+    arrangement.focus,
     scheduleSectionsAutoFollowResume,
     setPadActiveFromGesture,
     setVisualSectionTime,
@@ -4855,14 +4910,14 @@ export function LiveDirectorView({
           setKeyboardSectionIndex(index);
           scheduleSectionsAutoFollowResume();
         }
-      } else void handleSectionSeek(nextTime);
+      } else { const section = resolvedSections[Number(button.dataset.liveSectionIndex)]; if (arrangementEntries && section) arrangement.focus(section.id); void handleSectionSeek(nextTime); }
     };
 
     container.addEventListener('pointerup', handleNativeSectionPointerUp);
     return () => {
       container.removeEventListener('pointerup', handleNativeSectionPointerUp);
     };
-  }, [handleSectionSeek, showSectionsPanel, experimentalTools, isPlaying, resolvedSections, isSectionSeekBusy, isCongregationFading, armSectionFromTimeline, scheduleSectionsAutoFollowResume]);
+  }, [handleSectionSeek, showSectionsPanel, experimentalTools, isPlaying, resolvedSections, isSectionSeekBusy, isCongregationFading, armSectionFromTimeline, scheduleSectionsAutoFollowResume, arrangementEntries, arrangement.focus]);
 
   // ─── Minimap interaction ──────────────────────────────────────────────────
   // The minimap is a tap-and-drag scrub target. We convert clientX to a time
@@ -4878,12 +4933,12 @@ export function LiveDirectorView({
 
   const minimapXToTime = useCallback((clientX: number): number => {
     const node = minimapTrackRef.current;
-    if (!node || playbackTimelineDuration <= 0) return 0;
+    if (!node || navigationDuration <= 0) return 0;
     const rect = node.getBoundingClientRect();
     if (rect.width <= 0) return 0;
     const x = clamp(clientX - rect.left, 0, rect.width);
-    return (x / rect.width) * playbackTimelineDuration;
-  }, [playbackTimelineDuration]);
+    return (x / rect.width) * navigationDuration;
+  }, [navigationDuration]);
 
   const handleMinimapPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
@@ -4930,8 +4985,10 @@ export function LiveDirectorView({
   const handleMinimapPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const seekTime = minimapPendingSeekTimeRef.current ?? minimapXToTime(event.clientX);
     endMinimapDrag(event);
-    void handleSectionSeek(seekTime);
-  }, [endMinimapDrag, handleSectionSeek, minimapXToTime]);
+    const target = arrangementEntries ? arrangementSourceAt(resolvedSections, seekTime) : null;
+    if (target) arrangement.focus(target.id);
+    void handleSectionSeek(target?.time ?? seekTime);
+  }, [endMinimapDrag, handleSectionSeek, minimapXToTime, arrangementEntries, resolvedSections, arrangement.focus]);
 
   const handleMinimapPointerCancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     endMinimapDrag(event);
@@ -5024,8 +5081,9 @@ export function LiveDirectorView({
                   {dynamicGuide.status === 'error' ? <button type="button" data-live-director-control="guide-status" data-guide-state="error" aria-label="Reintentar guía automática" title={dynamicGuide.error || 'Reintentar guía automática'} onClick={() => setGuideRetryKey(previous => previous + 1)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-amber-200/75"><Headphones size={14}/></button>
                   : <span data-live-director-control="guide-status" data-guide-state={dynamicGuide.status} role="img" aria-label={dynamicGuide.status === 'loading' ? 'Preparando guía automática' : dynamicGuide.status === 'off' ? 'Guía grabada' : 'Guía automática'} title={dynamicGuide.status === 'loading' ? 'Preparando guía automática' : dynamicGuide.status === 'off' ? 'Guía grabada' : 'Guía automática para saltos y repeticiones'} className={`flex h-8 w-5 shrink-0 items-center justify-center text-white/30 ${dynamicGuide.status === 'loading' ? 'animate-pulse' : ''}`}><Headphones size={13}/></span>}
                 </>}
+                {arrangementEntries && <span data-live-director-control="arrangement-status" title={arrangement.notice || 'Arreglo de prueba'} className="min-w-0 truncate text-[10px] text-cyan-100/60">Arreglo {arrangement.index + 1}/{resolvedSections.length}{arrangement.notice.startsWith('Arreglo pausado') ? ' · Pausado' : ''}</span>}
                 <button type="button" aria-label="Abrir ajuste de desfase" title="Ajustar marcadores con precisión" onClick={() => showOffsetModal ? void handleCloseOffsetModal() : handleOpenOffsetModal()} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/35 hover:bg-white/5 hover:text-white/80">±</button>
-                <span className="sr-only" role="status" aria-live="polite">{sectionJump.notice}</span>
+                <span className="sr-only" role="status" aria-live="polite">{[sectionJump.notice, arrangementEntries ? arrangement.notice : ''].filter(Boolean).join('. ')}</span>
               </div>
               {!experimentalTools && nextSectionPreview && !sectionJump.armed && !sectionJump.repeat && (
                 <div
@@ -5194,7 +5252,7 @@ export function LiveDirectorView({
                               return;
                             }
                             if (experimentalTools && isPlaying) armSectionFromTimeline(section.id);
-                            else void handleSectionSeek(section.startTime);
+                            else { if (arrangementEntries) arrangement.focus(section.id); void handleSectionSeek(section.startTime); }
                           }}
                           aria-label={`${section.name}${experimentalTools && isPlaying ? '. Doble toque para armar salto al terminar la sección actual' : ''}`}
                           aria-pressed={sectionJump.armed?.section.id === section.id}
@@ -5304,8 +5362,8 @@ export function LiveDirectorView({
                       aria-label="Mini-mapa de la canción"
                       role="slider"
                       aria-valuemin={0}
-                      aria-valuemax={playbackTimelineDuration}
-                      aria-valuenow={clamp(currentTime, 0, playbackTimelineDuration)}
+                      aria-valuemax={navigationDuration}
+                      aria-valuenow={clamp(navigationTime, 0, navigationDuration)}
                     >
                       {sectionLaneMinimapSegments.map((seg, index) => {
                         const isActive = index === activeSectionIndex;
@@ -5355,13 +5413,13 @@ export function LiveDirectorView({
                     {/* Tooltip que sigue al dedo mientras el usuario arrastra
                         en el mini-mapa: muestra nombre de sección + timestamp
                         para que el seek ciego se convierta en seek informado. */}
-                    {minimapHoverTime !== null && playbackTimelineDuration > 0 && (() => {
+                    {minimapHoverTime !== null && navigationDuration > 0 && (() => {
                       const hoverPct = clamp(
-                        (minimapHoverTime / playbackTimelineDuration) * 100,
+                        (minimapHoverTime / navigationDuration) * 100,
                         0,
                         100,
                       );
-                      const hoverSection = resolvedSections.find(
+                      const hoverSection = navigationSections.find(
                         (s) =>
                           minimapHoverTime >= s.startTime &&
                           minimapHoverTime < s.endTime,
@@ -5509,9 +5567,11 @@ export function LiveDirectorView({
 
   return (
     <div ref={liveDirectorRootRef} className={shellClassName}>
+      {experimentalTools && showArrangementEditor && <LiveDirectorArrangementEditor open={showArrangementEditor} onClose={() => setShowArrangementEditor(false)}
+        playing={isPlaying} busy={isSectionSeekBusy || isCongregationFading} sections={sourceSections} entries={arrangementEntries} onApply={applyArrangement} />}
       {canUseGeneratedClick && clickTrack && selectedMultitrackEngine.loadGeneratedClickSamples && selectedMultitrackEngine.setGeneratedClick &&
         <LiveDirectorClickMixer key={`click:${trackSignature}:${reloadKey}`} open={showClickMixer} onClose={closeClickMixer}
-          trackId={clickTrack.id} bpm={generatedClickGrid?.bpm ?? bpm} originSeconds={generatedClickGrid?.originSeconds ?? resolvedSections[0]?.startTime ?? 0}
+          trackId={clickTrack.id} bpm={generatedClickGrid?.bpm ?? bpm} originSeconds={generatedClickGrid?.originSeconds ?? sourceSections[0]?.startTime ?? 0}
           ready={isReady} playing={isPlaying} busy={isSectionSeekBusy || isCongregationFading}
           loadSamples={selectedMultitrackEngine.loadGeneratedClickSamples} onConfigure={selectedMultitrackEngine.setGeneratedClick} />}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(93,214,240,0.08),_transparent_24%),linear-gradient(180deg,#232526_0%,#222425_46%,#202224_100%)]" />
@@ -5584,10 +5644,10 @@ export function LiveDirectorView({
                   : { flex: '0 0 36%', width: '36%' }}
               >
                 <span ref={passiveClockTextRef} className={`font-light leading-none tracking-tight text-white ${isUltraCompactLandscape ? 'text-[1.28rem]' : isToolbarCompactLandscape ? 'text-[1.7rem]' : 'text-[2.65rem]'}`}>
-                  {formatClock(currentTime)}
+                  {formatClock(navigationTime)}
                 </span>
                 <span ref={passiveCompactClockTextRef} className={`font-medium tabular-nums text-white/58 ${isUltraCompactLandscape ? 'text-[0.56rem]' : isToolbarCompactLandscape ? 'text-[0.72rem]' : 'mt-1 text-[0.96rem]'}`}>
-                  {formatCompact(currentTime)} / {isManualTempoMode ? 'LIBRE' : formatCompact(playbackTimelineDuration)}
+                  {formatCompact(navigationTime)} / {isManualTempoMode ? 'LIBRE' : formatCompact(navigationDuration)}
                 </span>
               </div>
 
@@ -5703,7 +5763,7 @@ export function LiveDirectorView({
 
             {!isToolbarCompactLandscape && <div aria-hidden="true" />}
 
-            <div className={`flex items-stretch ${showLiveBroadcastControl ? (isUltraCompactLandscape ? 'gap-1' : 'gap-1.5') : ''} ${isToolbarCompactLandscape ? '' : 'justify-end'}`}>
+            <div className={`flex items-stretch gap-1.5 ${showLiveBroadcastControl ? (isUltraCompactLandscape ? 'gap-1' : 'gap-1.5') : ''} ${isToolbarCompactLandscape ? '' : 'justify-end'}`}>
               {showLiveBroadcastControl && (
                 <button
                   type="button"
@@ -5750,6 +5810,13 @@ export function LiveDirectorView({
                 </button>
               )}
 
+              {experimentalTools && !isManualTempoMode && <button type="button" data-live-director-control="edit-song"
+                aria-label="Editar canción" title={isPlaying ? 'Pausa para editar la canción' : arrangementEntries ? 'Editar arreglo de prueba' : 'Editar canción'}
+                disabled={isPlaying || !isReady || isInitializingSession || Boolean(busyMessage) || sessionPreparationPending || isTransportCueBusy || isCongregationFading || diagnostics?.engineRoute !== 'streaming-worker' || sourceSections.length === 0}
+                onClick={() => setShowArrangementEditor(true)}
+                className={`${CONTROL_CARD} flex-1 flex-col px-3 text-xs font-semibold tracking-[0.12em] disabled:opacity-30 ${arrangementEntries ? 'border-cyan-200/40 text-cyan-100' : 'text-white/75 hover:bg-white/5'}`}
+                style={{ minWidth: '4rem' }}><Pencil size={isUltraCompactLandscape ? 14 : 18}/><span className="mt-1 text-[0.58rem]">EDITAR</span></button>}
+              {(!experimentalTools || canUseStemsToolbar) && <>
               <button
                 type="button"
                 onClick={handleStemsToolbarAction}
@@ -5773,6 +5840,7 @@ export function LiveDirectorView({
                 </span>
                 <KeyboardHint>S</KeyboardHint>
               </button>
+              </>}
             </div>
           </header>
         </div>
@@ -5922,7 +5990,7 @@ export function LiveDirectorView({
                         </p>
                       </div>
                       <span ref={passiveProgressTextRef} className={`shrink-0 font-semibold tabular-nums tracking-[0.12em] text-white/52 ${isUltraCompactLandscape ? 'text-[0.58rem]' : isCompactLandscape ? 'text-[0.72rem]' : 'text-[0.88rem]'}`}>
-                        {formatCompact(currentTime)} / {isManualTempoMode ? 'LIBRE' : formatCompact(playbackTimelineDuration)}
+                        {formatCompact(navigationTime)} / {isManualTempoMode ? 'LIBRE' : formatCompact(navigationDuration)}
                       </span>
                     </div>
 
@@ -5940,7 +6008,7 @@ export function LiveDirectorView({
                         <div className={`flex w-full overflow-hidden ${isUltraCompactLandscape ? 'h-[2px] mt-0.5 rounded-[1px]' : isCompactLandscape ? 'h-[3px] mt-1 rounded-[2px]' : 'h-1 mt-1.5 rounded-full'} opacity-[0.62]`}>
                           {resolvedSections.map((sec) => {
                             const duration = sec.endTime - sec.startTime;
-                            const widthPercent = playbackTimelineDuration > 0 ? (duration / playbackTimelineDuration) * 100 : 0;
+                            const widthPercent = navigationDuration > 0 ? (duration / navigationDuration) * 100 : 0;
                             return (
                               <div
                                 key={`minimap-${sec.id}`}
@@ -6826,7 +6894,9 @@ export function LiveDirectorView({
       )}
 
       {(sessionPreparationPending || busyMessage) && (() => {
-        const displayBusyMessage = sessionPreparationPending ? 'Cargando stems...' : busyMessage;
+        const loadLabel = isIOSNativeEngineSurface ? 'Preparando motor Apple' : useStreamingEngine ? 'Preparando motor' : 'Cargando audio';
+        const displayBusyMessage = sessionPreparationPending ? 'Cargando stems...'
+          : isInitializingSession && loadProgress && loadProgress.total > 0 ? `${loadLabel} ${loadProgress.loaded}/${loadProgress.total}...` : busyMessage;
         // When we have real load progress, compute fill + counts so the
         // overlay becomes a live progress indicator instead of an opaque
         // "please wait" spinner. Fall back to indeterminate style when we
