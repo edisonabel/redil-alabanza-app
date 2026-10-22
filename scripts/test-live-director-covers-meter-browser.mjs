@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 const require = createRequire(import.meta.url);
 const { chromium } = require('/Users/edisonaular/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--mute-audio', '--autoplay-policy=no-user-gesture-required'] });
@@ -12,13 +12,16 @@ try {
   await mkdir('.lab/results', { recursive: true });
   await page.goto('http://127.0.0.1:4322/');
   await page.waitForFunction(() => window.__streamingEngineDumpOwner?.getTracks().length === 15 && !document.querySelector('[data-live-director-control="play-pause"]')?.disabled, null, { timeout: 90000 });
+  const importedMap = JSON.parse(await readFile('lab/providencia-reaper-map.json', 'utf8'));
+  const sectionTimes = await page.locator('[data-live-section-index]').evaluateAll(elements => elements.map(el => ({ start: +el.dataset.liveSectionStart, end: +el.dataset.liveSectionEnd })));
+  assert.deepEqual(sectionTimes, importedMap.sectionMarkers.map(marker => ({ start: marker.startSec, end: marker.endSec })), 'Every displayed section retains the exact imported source times');
   for (const title of ['Providencia', 'Tu palabra (JCA)']) {
     const img = page.getByRole('button', { name: `Abrir ${title}`, exact: true }).locator('img');
     await img.waitFor(); await img.evaluate(el => el.decode());
     assert.ok(await img.evaluate(el => el.naturalWidth > 0 && el.naturalHeight > 0));
     assert.match(await img.getAttribute('src'), /^\/lab-artwork\/\d+.webp$/);
   }
-  assert.equal(await headerMeter.innerText(), '—/—', 'Absent metadata cannot invent a confirmed 4/4');
+  assert.equal(await headerMeter.innerText(), '4/4', 'Providencia uses the meter confirmed in the imported REAPER map');
   assert.match(await page.locator('[data-live-director-control="bpm"]').innerText(), /120/);
   await page.locator('[data-live-director-control="bpm"]').click();
   const dialog = page.getByRole('dialog', { name: 'Metrónomo · Click' }); await dialog.waitFor();
@@ -31,7 +34,7 @@ try {
   await page.screenshot({ path: '.lab/results/covers-meter-confirmed.png' });
   await page.locator('[data-live-director-control="bpm"]').click();
   await dialog.getByRole('spinbutton', { name: 'Numerador del compás' }).fill('4');
-  await page.waitForFunction(() => document.querySelector('[data-live-director-time-signature]')?.getAttribute('data-meter-confirmed') === 'false');
+  await page.waitForFunction(() => document.querySelector('[data-live-director-time-signature]')?.textContent === '4/4');
   await dialog.getByRole('combobox', { name: 'Denominador del compás' }).selectOption('4');
   await dialog.getByRole('button', { name: 'Cerrar metrónomo' }).click();
   const chooser = page.getByRole('combobox', { name: 'Canción de prueba' });
@@ -49,7 +52,7 @@ try {
     await page.screenshot({ path: `.lab/results/covers-meter-${width}.png` });
   }
   assert.deepEqual(errors, []); assert.deepEqual(writes, []);
-  const result = { pass: true, realCoversLoaded: 2, bpmAndMeterVisible: true, missingMeterMarkedPending: true, confirmedMeterMirrored: true, changedGridInvalidatesConfirmation: true, recordedClickUnchanged: true, songChangeClearsLocalConfirmation: true, bpmDecimalPreserved: true, responsive: true, capability, errors, writes };
+  const result = { pass: true, importedSectionsMatchReaperMap: true, realCoversLoaded: 2, bpmAndMeterVisible: true, missingMeterMarkedPending: true, confirmedMeterMirrored: true, changedGridRestoresConfirmedMetadata: true, recordedClickUnchanged: true, songChangeClearsLocalConfirmation: true, bpmDecimalPreserved: true, responsive: true, capability, errors, writes };
   await writeFile('.lab/results/covers-meter-check.json', JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));
 } catch (error) { await page.screenshot({ path: '.lab/results/covers-meter-failure.png' }); throw error; }
 finally { await browser.close(); }

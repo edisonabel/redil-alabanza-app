@@ -269,3 +269,9 @@ El bloque de tempo muestra **BPM arriba y compás abajo**. Las filas reales de a
 El usuario propone una M-Audio posiblemente de 4 salidas. Distribución candidata **pendiente de implementación y prueba física**: 1 Click/Guide, 2 Ritmo/Bajo, 3 Armonía, 4 Voces/Extras; cuatro señales mono. Hace falta confirmar modelo y cuatro salidas independientes expuestas al navegador, implementar matriz/asignaciones y probar cada canal por separado, incluyendo guía dinámica, medidores y silencio seguro ante desconexión. Conectar la interfaz por sí solo no habilita esa matriz. Los niveles y el margen de cada bus siguen siendo necesarios para evitar saturación. REAPER y la activación en main permanecen pendientes.
 
 La regresión `npm run test:live-click-ui` también pasó: fuente grabada por defecto, rechazo de mapa inválido, carga fallida/reintento, confirmación de uno, faders de capas, salto con 15/15 stems y restauración al click grabado.
+
+## Marcadores corregidos en REAPER — 22 de octubre de 2026
+
+Se importaron las 14 entradas que Edison corrigió directamente en `Providencia - revision WAV.RPP`. `lab/providencia-reaper-map.json` conserva los tiempos absolutos, los identificadores de sección, el nombre y SHA-256 del RPP, el uno corregido en 4 s y el final de audio en 340 s. Este mapa sustituye la referencia anterior del uno en 4,5 s. Los inicios son 12, 28, 60, 92, 100, 132, 164, 180, 212, 244, 276, 284, 300 y 316 s; no se redondearon ni ajustaron después de leer REAPER.
+
+El servidor local aplica el mapa solamente a Providencia y fija `sectionOffsetSeconds: 0`, porque los tiempos de REAPER ya incluyen la posición absoluta en el audio. Los finales se enlazan con la siguiente entrada y Outro 3 termina en 340 s. Conserva los 15 stems, niveles y rutas; Tu palabra sigue usando sus marcadores anteriores. La referencia de click es ahora 4 s y el compás confirmado se muestra como 4/4. No se escribieron datos en Alabanza ni se alteró main.

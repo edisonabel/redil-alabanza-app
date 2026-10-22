@@ -6,7 +6,7 @@ import '../src/styles/global.css';
 import './style.css';
 import clickGrids from './click-grids.json';
 
-type Song = {id:string; titulo:string; cantante:string; tonalidad:string; bpm:number; artworkUrl?:string; section_markers:unknown; multitrack_session:any};
+type Song = {id:string; titulo:string; cantante:string; tonalidad:string; bpm:number; timeSignature?:{numerator:number;denominator:number}; artworkUrl?:string; section_markers:unknown; multitrack_session:any};
 function Lab() {
   // Local browser test harness: endpoints remain mocked or blocked by the lab server.
   const labEventId = new URLSearchParams(location.search).get('labEvent') || '';
@@ -30,7 +30,7 @@ function Lab() {
     <div className="lab-banner" role="status"><strong>EXPERIMENTAL</strong><span>Copia de prueba · Los ajustes no cambian Alabanza</span><label>Canción <select aria-label="Canción de prueba" value={selected} disabled={!songs.length} onChange={event=>setSelected(event.target.value)}>{songs.map(s=><option key={s.id} value={s.id}>{s.titulo}</option>)}</select></label></div>
     {error?<main className="lab-message" role="alert"><h1>No se pudo abrir la prueba</h1><p>{error}</p><button onClick={()=>location.reload()}>Reintentar</button></main>:!song?<main className="lab-message" aria-live="polite">Abriendo copia de prueba…</main>:<LiveDirectorView
       experimentalTools eventId={labEventId} eventTitle={labEventId ? 'Evento de prueba local' : ''} key={song.id} mode="ensayo" songId={song.id} songTitle={song.titulo} songKey={song.tonalidad} songArtworkUrl={song.artworkUrl}
-      title="LiveDirector · Experimental" subtitle={song.titulo} bpm={clickGrid?.bpm ?? song.bpm} generatedClickGrid={clickGrid}
+      title="LiveDirector · Experimental" subtitle={song.titulo} bpm={clickGrid?.bpm ?? song.bpm} timeSignature={song.timeSignature} generatedClickGrid={clickGrid}
       initialSession={resolvedSession} sections={sections} requiresSongContext
       queueSongs={queue} activeQueueSongId={song.id} onSelectQueueSong={setSelected}
       autoStartPadWithTransport={false} onEventMixChange={mix=>{mixes.current[song.id]=mix;}}

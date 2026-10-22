@@ -11,8 +11,14 @@ const {compile}=require('@tailwindcss/node');
 const {Scanner}=require('@tailwindcss/oxide');
 const fixturePath=process.env.LD_LAB_FIXTURE || resolve(root,'.lab/songs.json');
 const fixture=JSON.parse(await readFile(fixturePath,'utf8'));
+const reaperMap=JSON.parse(await readFile(resolve(root,'lab/providencia-reaper-map.json'),'utf8'));
 const media=new Map();
-const songs=fixture.songs.map((song,songIndex)=>{
+const songs=fixture.songs.map((originalSong,songIndex)=>{
+  // REAPER markers use absolute source seconds; do not add the legacy offset.
+  const importedMarkers=originalSong.id===reaperMap.songId ? new Map(reaperMap.sectionMarkers.map(marker=>[marker.id,marker])) : null;
+  const song=importedMarkers ? {...originalSong,bpm:reaperMap.bpm,timeSignature:reaperMap.timeSignature,
+    section_markers:originalSong.section_markers.map(marker=>({...marker,...importedMarkers.get(marker.id)})),
+    multitrack_session:{...originalSong.multitrack_session,sectionOffsetSeconds:0}} : originalSong;
   const artworkPath=`/lab-artwork/${songIndex}.webp`;
   media.set(artworkPath,`https://stems.alabanzaredilestadio.com/songs/${encodeURIComponent(song.id)}/artwork/cover-500.webp`);
   return {...song,artworkUrl:artworkPath,multitrack_session:{...song.multitrack_session,folder:undefined,manifestUrl:undefined,tracks:song.multitrack_session.tracks.map((track,index)=>{
