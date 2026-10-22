@@ -53,7 +53,7 @@ import type {
   LiveDirectorPersistedSession,
   LiveDirectorSectionVisual,
 } from '../../utils/liveDirectorSongSession';
-import { applyLiveDirectorSectionOffset } from '../../utils/liveDirectorSongSession';
+import { applyLiveDirectorSectionOffset, resolveLiveDirectorTerminalSectionEnd } from '../../utils/liveDirectorSongSession';
 import { canOpenLiveDirectorSongLoader } from '../../utils/liveDirectorLoadAccess';
 import {
   sampleActivityEnvelope,
@@ -1446,13 +1446,16 @@ export function LiveDirectorView({
   const sectionOffsetSeconds = Number.isFinite(Number(manualSession?.sectionOffsetSeconds))
     ? Number(manualSession?.sectionOffsetSeconds)
     : 0;
+  const sourceAudioDuration = selectedMultitrackEngine.getDurationSnapshot?.() ?? playbackDuration;
   const resolvedSections = useMemo(
-    () =>
-      applyLiveDirectorSectionOffset(
+    () => {
+      const shifted = applyLiveDirectorSectionOffset(
         (sections || DEFAULT_SECTIONS) as LiveDirectorSectionVisual[],
         sectionOffsetSeconds,
-      ) || ((sections || DEFAULT_SECTIONS) as LiveDirectorSectionVisual[]),
-    [sectionOffsetSeconds, sections],
+      ) || ((sections || DEFAULT_SECTIONS) as LiveDirectorSectionVisual[]);
+      return experimentalTools ? resolveLiveDirectorTerminalSectionEnd(shifted, sourceAudioDuration) : shifted;
+    },
+    [experimentalTools, sourceAudioDuration, sectionOffsetSeconds, sections],
   );
 
   const sectionTimelineDuration = useMemo(

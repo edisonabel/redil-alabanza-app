@@ -72,6 +72,7 @@ export type UseMultitrackEngineReturn = {
   cancelSectionJump?: () => void;
   runtimeError?: string | null;
   getGuideAudioGraph?: (trackId: string) => GuideAudioGraph | null;
+  getDurationSnapshot?: () => number;
   loadGeneratedClickSamples?: () => Promise<void>;
   setGeneratedClick?: (trackId: string, settings: GeneratedClickSettings | null) => boolean;
   fadeMasterVolume?: (volume: number, durationMs: number) => ReturnType<typeof startAudioGainFade> | null;
@@ -805,6 +806,8 @@ export function useMultitrackEngine(
     return engine instanceof StreamingMultitrackEngine ? engine.getGuideAudioGraph(trackId) : null;
   }, []);
 
+  const getDurationSnapshot = useCallback(() => engineRef.current?.getDuration() ?? 0, []);
+
   const loadGeneratedClickSamples = useCallback(async () => {
     const engine = engineRef.current;
     if (!(engine instanceof StreamingMultitrackEngine)) throw new Error('Metrónomo no disponible en este motor.');
@@ -1062,6 +1065,7 @@ export function useMultitrackEngine(
     () => ({
       runtimeError,
       getGuideAudioGraph,
+      getDurationSnapshot,
       loadGeneratedClickSamples,
       setGeneratedClick,
       fadeMasterVolume,
@@ -1101,6 +1105,7 @@ export function useMultitrackEngine(
     [
       runtimeError,
       getGuideAudioGraph,
+      getDurationSnapshot,
       loadGeneratedClickSamples,
       setGeneratedClick,
       fadeMasterVolume,

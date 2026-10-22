@@ -1469,8 +1469,9 @@ class Mp4TrackDemuxer {
     }
 
     const audioTrackId = audioTrack.id;
-    const trackDuration = Number(audioTrack.duration);
-    const trackTimescale = Number(audioTrack.timescale);
+    const hasPresentationDuration = Number(audioTrack.movie_duration) > 0 && Number(audioTrack.movie_timescale) > 0;
+    const trackDuration = Number(hasPresentationDuration ? audioTrack.movie_duration : audioTrack.duration);
+    const trackTimescale = Number(hasPresentationDuration ? audioTrack.movie_timescale : audioTrack.timescale);
     if (
       Number.isFinite(trackDuration) &&
       trackDuration > 0 &&
@@ -2046,6 +2047,7 @@ class ProducerTrackPipeline {
     this.clearReadyWatchdog();
     self.postMessage({
       type: 'producer-track-ready',
+      durationSeconds: this.demuxer?.durationSeconds,
       sessionId,
       trackIndex: this.track.trackIndex,
       decodedUntilSample: Math.max(
@@ -2624,6 +2626,7 @@ class ProducerTrackPipeline {
 
     self.postMessage({
       type: 'producer-track-ready',
+      durationSeconds: this.demuxer?.durationSeconds,
       sessionId,
       trackIndex: this.track.trackIndex,
       decodedUntilSample: this.decodedUntilSample,
@@ -3227,6 +3230,7 @@ class ProducerTrackPipeline {
       this.clearReadyWatchdog();
       self.postMessage({
         type: 'producer-track-ready',
+        durationSeconds: this.demuxer?.durationSeconds,
         sessionId: activeSessionId,
         trackIndex: this.track.trackIndex,
         decodedUntilSample: result.absoluteEndSample,

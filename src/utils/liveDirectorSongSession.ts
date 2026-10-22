@@ -40,6 +40,7 @@ export type LiveDirectorSectionVisual = {
   name: string;
   startTime: number;
   endTime: number;
+  endTimeSource?: 'marker' | 'next-marker' | 'fallback' | 'audio';
   shortLabel: string;
   accent: string;
   surface: string;
@@ -209,7 +210,7 @@ export const buildLiveDirectorSectionsFromMarkers = (
       const candidate = (marker || {}) as RawSongMarker;
       const name = String(candidate.sectionName || candidate.name || `Section ${index + 1}`).trim();
       const startTime = clampTime(candidate.startSec);
-      const endTime = clampTime(candidate.endSec);
+      const endTime = candidate.endSec == null || candidate.endSec === '' ? null : clampTime(candidate.endSec);
 
       if (startTime == null) {
         return null;
@@ -250,6 +251,7 @@ export const buildLiveDirectorSectionsFromMarkers = (
       name: marker.name,
       startTime: marker.startTime,
       endTime: resolvedEndTime,
+      endTimeSource: marker.endTime != null ? 'marker' : nextMarker ? 'next-marker' : 'fallback',
       shortLabel: buildSectionShortLabel(marker.name, kind, occurrence),
       accent: toRgba(visual.rgb, 0.95),
       surface: toRgba(visual.rgb, 0.14),
@@ -280,4 +282,17 @@ export const applyLiveDirectorSectionOffset = (
       endTime: nextStart != null ? Math.max(shiftedStart + 0.25, Math.min(shiftedEnd, nextStart)) : shiftedEnd,
     };
   });
+};
+
+/** Audio duration is absolute: shifting section markers must not move the file end. */
+export const resolveLiveDirectorTerminalSectionEnd = (
+  sections: LiveDirectorSectionVisual[],
+  audioDurationSeconds: number,
+): LiveDirectorSectionVisual[] => {
+  const last = sections.at(-1);
+  if (!last || last.endTimeSource !== 'fallback' || !Number.isFinite(audioDurationSeconds) ||
+      audioDurationSeconds < last.startTime + 0.25) return sections;
+  return sections.map((section, index) => index === sections.length - 1
+    ? { ...section, endTime: audioDurationSeconds, endTimeSource: 'audio' }
+    : section);
 };

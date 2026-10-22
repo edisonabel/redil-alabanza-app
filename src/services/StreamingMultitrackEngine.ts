@@ -459,6 +459,7 @@ type ProducerTrackReadyMessage = {
   trackIndex: number;
   decodedUntilSample: number;
   targetEndSample: number | null;
+  durationSeconds?: number;
 };
 
 type ProducerTrackProgressMessage = {
@@ -997,7 +998,7 @@ type SectionJumpPreparation = {
   startedAt: number;
 };
 
-const AUDIO_WORKER_ASSET_VERSION = '20261022-click-calibration-2';
+const AUDIO_WORKER_ASSET_VERSION = '20261022-audio-duration-1';
 const DEFAULT_WORKLET_MODULE_URL = `/workers/MultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_PRODUCER_WORKER_URL = `/workers/AudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
@@ -4737,6 +4738,11 @@ export class StreamingMultitrackEngine {
     }
 
     if (message.type === 'producer-track-ready') {
+      const track = this.tracks[message.trackIndex];
+      const durationSeconds = Number(message.durationSeconds);
+      if (track && Number.isFinite(durationSeconds) && durationSeconds > 0) {
+        track.durationSeconds = Math.max(Number(track.durationSeconds) || 0, durationSeconds);
+      }
       this.recordProducerTrackState(message.trackIndex, {
         messageType: message.type,
         decodedUntilSample: message.decodedUntilSample,
@@ -6156,8 +6162,9 @@ class Mp4BoxDemuxer implements EncodedAudioChunkDemuxer {
     }
 
     const audioTrackId = audioTrack.id;
-    const trackDuration = Number(audioTrack.duration);
-    const trackTimescale = Number(audioTrack.timescale);
+    const hasPresentationDuration = Number(audioTrack.movie_duration) > 0 && Number(audioTrack.movie_timescale) > 0;
+    const trackDuration = Number(hasPresentationDuration ? audioTrack.movie_duration : audioTrack.duration);
+    const trackTimescale = Number(hasPresentationDuration ? audioTrack.movie_timescale : audioTrack.timescale);
     if (Number.isFinite(trackDuration) && trackDuration > 0 && Number.isFinite(trackTimescale) && trackTimescale > 0) {
       this.durationSeconds = trackDuration / trackTimescale;
     }
