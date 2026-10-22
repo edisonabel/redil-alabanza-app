@@ -38,3 +38,17 @@ assert.ok(render(fault).every(c=>c.every(value=>value===0)));
 render(fault);assert.equal(fault.messages.filter(m=>m.type==='render-error').length,1);
 assert.equal(fault.readingBlocked,true,'Fault stays safely silent pending explicit recovery');
 console.log(JSON.stringify({passed:true,cases,renderFaultEvents:1,seekResetsRecovery:true}));
+// Group attenuation is independent of stored faders, mute and hard routing.
+const grouped=new Processor();configure(grouped,0,24000);grouped.playing=true;
+grouped.handleMessage({type:'track-group-gain',trackIndex:0,gain:0.25});
+assert.equal(grouped.getTrackTargetGain(grouped.tracks[0]),0.25);
+grouped.setTrackVolumeByIndex(0,0.8);
+assert.equal(grouped.tracks[0].volume,0.8);
+assert.equal(grouped.getTrackTargetGain(grouped.tracks[0]),0.2);
+grouped.handleMessage({type:'track-group-gain',trackIndex:0,gain:0});
+assert.equal(grouped.getTrackTargetGain(grouped.tracks[0]),0);
+grouped.handleMessage({type:'track-group-gain',trackIndex:0,gain:1});
+assert.equal(grouped.getTrackTargetGain(grouped.tracks[0]),0.8);
+grouped.tracks[0].isMuted=true;
+assert.equal(grouped.getTrackTargetGain(grouped.tracks[0]),0);
+console.log('group gain preserves individual volume and mute: ok');

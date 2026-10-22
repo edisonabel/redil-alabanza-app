@@ -298,6 +298,7 @@ type WorkletMessage =
   | WorkletLoopRegionMessage;
 
 type WorkletInboundMessage =
+  | { type: 'render-error'; code: string; seekSerial: number; renderedFrames: number }
   | WorkletTrackLevelsMessage
   | WorkletDebugStatusMessage
   | WorkletDebugTransportMessage
@@ -1059,6 +1060,10 @@ export class StreamingMultitrackEngine {
   public readonly masterGain: GainNode;
   public workletNode: AudioWorkletNode | null = null;
   public onEnded: (() => void) | null = null;
+  private groupGains = new Map<string, number>();
+  private workletProcessorFailed = false;
+  private renderFaulted = false;
+  public onRenderError: ((message: string) => void) | null = null;
   private producerWorker: Worker | null = null;
   private readonly producerWorkers: Worker[] = [];
   private producerRuntimeWarmRequested = false;
@@ -1477,6 +1482,7 @@ export class StreamingMultitrackEngine {
       return levels;
     }, {});
 
+    this.groupGains.clear();
     const onProgress = options?.onProgress;
     if (onProgress) {
       try {
@@ -2112,6 +2118,13 @@ export class StreamingMultitrackEngine {
     if (this.producerSessionId !== initializingSessionId) {
       return;
     }
+    if (this.workletProcessorFailed && this.workletNode) {
+      this.workletNode.port.onmessage = null;
+      this.workletNode.onprocessorerror = null;
+      this.workletNode.disconnect();
+      this.workletNode = null;
+      this.workletProcessorFailed = false;
+    }
     this.ensureWorkletNode();
     this.resetTracks();
     // The worklet outlives individual song sessions. Clear its track table
@@ -2513,6 +2526,7 @@ export class StreamingMultitrackEngine {
   }
 
   async play(): Promise<void> {
+    if (this.renderFaulted) throw new Error('Recarga la sesión para recuperar el audio.');
     if (this.transportPlaying) {
       return;
     }
@@ -2533,6 +2547,7 @@ export class StreamingMultitrackEngine {
     }
 
     const auditSummary = await this.runSyncAudit({ reason: 'play', seekSerial: this.activeSeekSerial });
+    if (this.renderFaulted) return;
     if (this.shouldBlockPlaybackForContentMismatch(auditSummary)) {
       this.transportPlaying = false;
       this.startTime = 0;
@@ -2630,6 +2645,7 @@ export class StreamingMultitrackEngine {
     timeInSeconds: number,
     options?: { wasPlayingBeforeUiSeek?: boolean; forceFreshStart?: boolean },
   ): Promise<void> {
+    if (this.renderFaulted) throw new Error('Recarga la sesión para recuperar el audio.');
     if (!Number.isFinite(timeInSeconds)) {
       return;
     }
@@ -2946,6 +2962,14 @@ export class StreamingMultitrackEngine {
     );
   }
 
+  setTrackGroupGain(trackId: string, gain: number): void {
+    const track = this.getTrackStateOrNull(trackId, 'group gain');
+    if (!track) return;
+    const safeGain = Number.isFinite(gain) ? Math.max(0, Math.min(1, gain)) : 1;
+    this.groupGains.set(trackId, safeGain);
+    this.workletNode?.port.postMessage({ type: 'track-group-gain', trackIndex: track.index, gain: safeGain });
+  }
+
   setTrackVolume(trackIdOrIndex: string | number, volume: number): void {
     const trackState = this.getTrackStateOrNull(trackIdOrIndex, 'volume update');
     if (!trackState) {
@@ -3008,7 +3032,9 @@ export class StreamingMultitrackEngine {
   }
 
   setMasterVolume(volume: number): void {
-    this.masterGain.gain.value = this.clampVolume(volume);
+    const now = this.context.currentTime;
+    this.masterGain.gain.cancelScheduledValues(now);
+    this.masterGain.gain.setValueAtTime(this.clampVolume(volume), now);
   }
 
   toggleLoop(): void {
@@ -3138,6 +3164,7 @@ export class StreamingMultitrackEngine {
     this.resetTracks();
     if (this.workletNode) {
       this.workletNode.port.onmessage = null;
+      this.workletNode.onprocessorerror = null;
       this.workletNode.disconnect();
       this.workletNode = null;
     }
@@ -3402,6 +3429,8 @@ export class StreamingMultitrackEngine {
       indexBuffer: trackState.ringBuffer.indexStorage,
     });
 
+    const trackId = this.tracks[trackState.index]?.id;
+    if (trackId) this.setTrackGroupGain(trackId, this.groupGains.get(trackId) ?? 1);
     this.postWorkletMessage({
       type: 'track-volume',
       trackIndex: trackState.index,
@@ -5283,6 +5312,7 @@ export class StreamingMultitrackEngine {
   }
 
   private resetTracks(): void {
+    this.renderFaulted = false;
     this.streamingPath = 'uninitialized';
     this.latestWorkletTrackStatus.clear();
     this.latestProducerTrackState.clear();
@@ -5333,6 +5363,7 @@ export class StreamingMultitrackEngine {
       this.workletNode.port.onmessage = (event) => {
         this.handleWorkletMessage(event.data as WorkletInboundMessage | null);
       };
+      this.workletNode.onprocessorerror = () => this.handleWorkletMessage({ type: 'render-error', code: 'processor-error', seekSerial: this.activeSeekSerial, renderedFrames: 0 });
       this.workletNode.connect(this.masterGain);
       this.workletNode.port.postMessage({
         type: 'debug-enabled',
@@ -5345,6 +5376,17 @@ export class StreamingMultitrackEngine {
 
   private handleWorkletMessage(message: WorkletInboundMessage | null): void {
     if (!message || typeof message !== 'object') {
+      return;
+    }
+
+    if (message.type === 'render-error') {
+      if (this.renderFaulted) return;
+      this.renderFaulted = true;
+      this.workletProcessorFailed = message.code === 'processor-error';
+      this.pause();
+      this.activeSeekSerial += 1;
+      this.startBarrierSerial += 1;
+      this.onRenderError?.('El motor de audio se detuvo por un fallo de mezcla. Recarga la sesión y pulsa reproducir cuando esté preparada.');
       return;
     }
 

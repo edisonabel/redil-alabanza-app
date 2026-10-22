@@ -839,53 +839,45 @@ export default function ModoEnsayoDirector({
     let cancelled = false;
 
     const prewarmNextSong = async () => {
-      await wait(NEXT_SONG_WEB_PRELOAD_START_DELAY_MS, abortController.signal);
-
-      const preloadTracks = buildSongPreloadTracks(nextSong, sessionOverrides[nextSongId], {
-        limit: NEXT_SONG_WEB_PRELOAD_TRACK_LIMIT,
-        includePad: true,
-      });
-      const urls = Array.from(new Set(preloadTracks.map((track) => track.url).filter(Boolean)));
-      if (urls.length === 0) {
-        prewarmedSongIdsRef.current.add(nextSongId);
-        return;
-      }
-
+      const ownedUrls = [];
       try {
+        await wait(NEXT_SONG_WEB_PRELOAD_START_DELAY_MS, abortController.signal);
+        const preloadTracks = buildSongPreloadTracks(nextSong, sessionOverrides[nextSongId], {
+          limit: NEXT_SONG_WEB_PRELOAD_TRACK_LIMIT,
+          includePad: true,
+        });
+        const urls = Array.from(new Set(preloadTracks.map((track) => track.url).filter(Boolean)));
+        if (urls.length === 0) return;
+
         const cache = await window.caches.open(CACHE_NAME);
         const urlsToWarm = urls.filter((url) => !prewarmInFlightUrlsRef.current.has(url));
+        if (urlsToWarm.length === 0) return;
+        ownedUrls.push(...urlsToWarm);
+        ownedUrls.forEach((url) => prewarmInFlightUrlsRef.current.add(url));
 
-        if (urlsToWarm.length === 0) {
-          return;
-        }
-
-        urlsToWarm.forEach((url) => prewarmInFlightUrlsRef.current.add(url));
-
+        let allSucceeded = urlsToWarm.length === urls.length;
         for (const url of urlsToWarm) {
-          if (cancelled || abortController.signal.aborted) {
-            return;
-          }
-
+          if (cancelled || abortController.signal.aborted) return;
           try {
-            await cacheUrlIfNeeded(cache, url, abortController.signal);
+            const result = await cacheUrlIfNeeded(cache, url, abortController.signal);
+            if (result !== 'hit' && result !== 'stored') allSucceeded = false;
           } catch (error) {
+            allSucceeded = false;
             if (!abortController.signal.aborted) {
               console.warn('[ModoEnsayoDirector] No se pudo precalentar la siguiente cancion.', url, error);
             }
-          } finally {
-            prewarmInFlightUrlsRef.current.delete(url);
           }
-
           await wait(NEXT_SONG_WEB_PRELOAD_GAP_MS, abortController.signal);
         }
-
-        if (!cancelled) {
+        if (!cancelled && !abortController.signal.aborted && allSucceeded) {
           prewarmedSongIdsRef.current.add(nextSongId);
         }
       } catch (error) {
         if (!abortController.signal.aborted) {
           console.warn('[ModoEnsayoDirector] Fallo el prewarm de la siguiente cancion.', error);
         }
+      } finally {
+        ownedUrls.forEach((url) => prewarmInFlightUrlsRef.current.delete(url));
       }
     };
 

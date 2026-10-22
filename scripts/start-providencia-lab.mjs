@@ -32,7 +32,7 @@ const scanner=new Scanner({});
 const content=await Promise.all(Object.keys(bundle.metafile.inputs).filter(path=>!path.startsWith('<')).map(async path=>({content:await readFile(resolve(path),'utf8'),extension:extname(path).slice(1)})));
 const candidates=scanner.scanFiles(content);
 const compiler=await compile(await readFile(resolve(root,'src/styles/global.css'),'utf8'),{base:resolve(root,'src/styles'),onDependency:()=>{}});
-const css=compiler.build(candidates)+'\n'+await readFile(resolve(root,'lab/style.css'),'utf8');
+const css=compiler.build(candidates)+'\n'+await readFile(resolve(root,'src/components/react/live-director/LiveDirectorTools.css'),'utf8')+'\n'+await readFile(resolve(root,'lab/style.css'),'utf8');
 await writeFile(resolve(root,'.lab/lab.js'),bundle.outputFiles[0].contents);
 await writeFile(resolve(root,'.lab/lab.css'),css);
 const index=(await readFile(resolve(root,'lab/index.html'),'utf8')).replace('src="/lab/main.tsx"','src="/lab.js"').replace('</head>','<link rel="stylesheet" href="/lab.css"></head>');

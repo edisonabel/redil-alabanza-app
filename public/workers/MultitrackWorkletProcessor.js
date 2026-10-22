@@ -133,6 +133,12 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       return;
     }
 
+    if (type === 'track-group-gain') {
+      const track = this.tracks[message.trackIndex];
+      if (track) track.groupGain = Math.max(0, Math.min(1, Number.isFinite(message.gain) ? message.gain : 1));
+      return;
+    }
+
     if (type === 'track-volume') {
       this.setTrackVolumeByIndex(message.trackIndex, message.volume);
       return;
@@ -516,6 +522,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         underrunEvents: 0,
         underrunFrames: 0,
         recoveringUnderrun: false,
+        groupGain: 1,
         lastDropDebugFrame: 0,
         lastUnderflowAlertFrame: 0,
         lastSyncDriftAlertFrame: 0,
@@ -1805,7 +1812,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       return 0;
     }
 
-    return track.volume;
+    return track.volume * (track.groupGain ?? 1);
   }
 
   getTrackReadIndex(track) {

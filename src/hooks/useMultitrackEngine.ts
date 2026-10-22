@@ -1,3 +1,4 @@
+import { holdAudioGain, startAudioGainFade } from '../services/AudioGainRamp';
 import { isMissingStemError } from '../utils/liveDirectorSessionSafety';
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MultitrackEngine, type TrackData, type MultitrackEngineLoadWarning } from '../services/MultitrackEngine';
@@ -65,6 +66,9 @@ type UseMultitrackEngineOptions = {
 };
 
 export type UseMultitrackEngineReturn = {
+  runtimeError?: string | null;
+  fadeMasterVolume?: (volume: number, durationMs: number) => ReturnType<typeof startAudioGainFade> | null;
+  setTrackGroupGain?: (trackId: string, gain: number) => void;
   isPlaying: boolean;
   currentTime: number;
   duration: number;
@@ -261,6 +265,8 @@ export function useMultitrackEngine(
     requestedStreamingEngine && canUseAdvancedStreamingEngine() ? 'streaming' : 'buffer';
   const passiveTelemetry = Boolean(options.passiveTelemetry);
   const engineRef = useRef<EngineInstance | null>(null);
+  const activeFadeRef = useRef<ReturnType<typeof startAudioGainFade> | null>(null);
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const engineKindRef = useRef<EngineKind>(requestedEngineKind);
   const frameRef = useRef<number | null>(null);
   const diagnosticsIntervalRef = useRef<number | null>(null);
@@ -320,7 +326,9 @@ export function useMultitrackEngine(
     }
 
     try {
+      activeFadeRef.current?.cancel();
       engine.onEnded = null;
+      if (engine instanceof StreamingMultitrackEngine) engine.onRenderError = null;
     } catch {
       // no-op
     }
@@ -368,6 +376,16 @@ export function useMultitrackEngine(
           publishMeterMessages: !passiveTelemetry,
         })
         : new MultitrackEngine();
+    const currentEngine = engineRef.current;
+    if (currentEngine instanceof StreamingMultitrackEngine) {
+      currentEngine.onRenderError = (message) => {
+        if (engineRef.current !== currentEngine) return;
+        activeFadeRef.current?.cancel();
+        setIsPlaying(false);
+        setIsReady(false);
+        setRuntimeError(message);
+      };
+    }
     engineRef.current.onEnded = () => {
       setIsPlaying(false);
       currentTimeRef.current = 0;
@@ -443,6 +461,8 @@ export function useMultitrackEngine(
     const targetKind = requestedEngineKind;
     let engine: EngineInstance | null = null;
 
+    activeFadeRef.current?.cancel();
+    setRuntimeError(null);
     setIsReady(false);
     setIsPlaying(false);
     currentTimeRef.current = 0;
@@ -755,7 +775,22 @@ export function useMultitrackEngine(
       return;
     }
 
+    activeFadeRef.current?.cancel();
+    holdAudioGain(engine.context, engine.masterGain.gain);
     engine.setMasterVolume(volume);
+  }, []);
+
+  const fadeMasterVolume = useCallback((volume: number, durationMs: number) => {
+    const engine = engineRef.current;
+    if (!(engine instanceof StreamingMultitrackEngine)) return null;
+    activeFadeRef.current?.cancel();
+    const fade = startAudioGainFade(engine.context, engine.masterGain.gain, volume, durationMs);
+    activeFadeRef.current = fade;
+    return fade;
+  }, []);
+
+  const setTrackGroupGain = useCallback((trackId: string, gain: number) => {
+    engineRef.current?.setTrackGroupGain(trackId, gain);
   }, []);
 
   const setMetersEnabled = useCallback(() => {
@@ -991,6 +1026,9 @@ export function useMultitrackEngine(
 
   return useMemo(
     () => ({
+      runtimeError,
+      fadeMasterVolume,
+      setTrackGroupGain,
       isPlaying,
       currentTime,
       duration,
@@ -1022,6 +1060,9 @@ export function useMultitrackEngine(
       getCurrentTimeSnapshot,
     }),
     [
+      runtimeError,
+      fadeMasterVolume,
+      setTrackGroupGain,
       currentTime,
       duration,
       diagnostics,

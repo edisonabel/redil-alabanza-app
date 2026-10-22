@@ -1,4 +1,4 @@
-﻿import {
+import {
   Activity,
   AlertTriangle,
   AudioWaveform,
@@ -26,6 +26,7 @@ import { useLiveDirectorManualTempoTransport } from '../../hooks/useLiveDirector
 import { useNativeIOSMultitrackEngine } from '../../hooks/useNativeIOSMultitrackEngine';
 import type { MultitrackEngineLoadWarning, SongStructure, TrackData } from '../../services/MultitrackEngine';
 import type { SharedStreamingTelemetry } from '../../services/StreamingMultitrackEngine';
+import { LiveDirectorTools } from './live-director/LiveDirectorTools';
 import { ChannelStrip, FaderThumb } from './live-director/ChannelStrip';
 import { EnsayoQueueAddCard, EnsayoQueueCard } from './live-director/EnsayoQueueCard';
 import { ManualTempoSongModal } from './live-director/ManualTempoSongModal';
@@ -188,6 +189,7 @@ type EventMixSaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 type LiveDirectorBroadcastState = 'off' | 'checking' | 'occupied' | 'active' | 'unavailable';
 
 type LiveDirectorViewProps = {
+  experimentalTools?: boolean;
   tracks?: TrackData[];
   sections?: Array<SectionVisual | LiveDirectorSectionVisual>;
   title?: string;
@@ -574,6 +576,7 @@ const toResolvedSession = (
 });
 
 export function LiveDirectorView({
+  experimentalTools = false,
   tracks,
   sections = DEFAULT_SECTIONS,
   title = 'Sunday AM',
@@ -2909,7 +2912,10 @@ export function LiveDirectorView({
     trackLimitNotice && dismissedTrackLimitNoticeKey !== trackLimitNotice.key
   );
 
+  const audioMasterFadeCancelRef = useRef<(() => void) | null>(null);
   const stopMasterVolumeFade = useCallback(() => {
+    audioMasterFadeCancelRef.current?.();
+    audioMasterFadeCancelRef.current = null;
     if (masterVolumeFadeFrameRef.current !== null) {
       window.cancelAnimationFrame(masterVolumeFadeFrameRef.current);
       masterVolumeFadeFrameRef.current = null;
@@ -2936,8 +2942,21 @@ export function LiveDirectorView({
     setMasterVolume(safeVolume);
   }, [setMasterVolume]);
 
-  const fadeMasterVolume = useCallback((targetVolume: number, durationMs: number, transitionToken: number) => (
-    new Promise<void>((resolve) => {
+  const scheduleEngineMasterFade = !isManualTempoMode ? selectedMultitrackEngine.fadeMasterVolume : undefined;
+  const fadeMasterVolume = useCallback((targetVolume: number, durationMs: number, transitionToken: number) => {
+    if (scheduleEngineMasterFade) {
+      stopMasterVolumeFade();
+      const fade = scheduleEngineMasterFade(targetVolume, durationMs);
+      if (fade) {
+        audioMasterFadeCancelRef.current = fade.cancel;
+        return fade.finished.then(() => {
+          if (sectionTransitionTokenRef.current === transitionToken) appliedMasterVolumeRef.current = targetVolume;
+        }).finally(() => {
+          if (audioMasterFadeCancelRef.current === fade.cancel) audioMasterFadeCancelRef.current = null;
+        });
+      }
+    }
+    return new Promise<void>((resolve) => {
       stopMasterVolumeFade();
 
       const safeTarget = clamp(targetVolume, 0, 1);
@@ -2986,8 +3005,8 @@ export function LiveDirectorView({
 
       masterVolumeFadeResolveRef.current = complete;
       masterVolumeFadeFrameRef.current = window.requestAnimationFrame(animate);
-    })
-  ), [applyMasterVolume, stopMasterVolumeFade]);
+    });
+  }, [applyMasterVolume, stopMasterVolumeFade, scheduleEngineMasterFade]);
 
   const stopCongregationTrackFade = useCallback(() => {
     if (congregationFadeFrameRef.current !== null) {
@@ -3250,7 +3269,10 @@ export function LiveDirectorView({
         }
       }
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return false;
       console.warn('[LiveDirectorView] Section seek failed.', error);
+      setLoadError(error instanceof Error ? error.message : 'No se pudo preparar el salto de sección.');
+      return false;
     } finally {
       pendingSectionSeekTargetRef.current = null;
       pendingSectionSeekWasPlayingRef.current = null;
@@ -4953,6 +4975,13 @@ export function LiveDirectorView({
               data-live-director-control="status-group"
               className={`flex min-w-0 items-stretch ${isToolbarCompactLandscape ? (isUltraCompactLandscape ? 'gap-1' : 'gap-1.5') : 'justify-start gap-1.5 pr-2'}`}
             >
+              {experimentalTools && !isManualTempoMode && selectedMultitrackEngine.setTrackGroupGain && <LiveDirectorTools
+                key={`${trackSignature}:${reloadKey}`} tracks={activeEngineTracks} sections={resolvedSections}
+                isReady={isReady} isPlaying={isPlaying} busy={isCongregationFading || isSectionSeekBusy}
+                loadProgress={loadProgress} warnings={[...(loadWarnings || []).map(warning => warning.message || String(warning.reason)), ...(selectedMultitrackEngine.runtimeError ? [selectedMultitrackEngine.runtimeError] : [])]}
+                engineRoute={diagnostics?.engineRoute} getTime={getLivePlaybackTime}
+                onJump={handleSectionSeek} onGroupGain={selectedMultitrackEngine.setTrackGroupGain}
+              />}
               <button
                 type="button"
                 onClick={() => {
@@ -6744,14 +6773,15 @@ export function LiveDirectorView({
         );
       })()}
 
-      {loadError && (
+      {(loadError || selectedMultitrackEngine.runtimeError) && (
         <div className="absolute inset-0 z-[70] flex items-center justify-center bg-black/24 backdrop-blur-[8px]">
-          <div className="max-w-lg rounded-[1.8rem] border border-rose-300/18 bg-[linear-gradient(180deg,rgba(23,15,17,0.96),rgba(16,12,13,0.96))] px-7 py-6 shadow-[0_30px_60px_rgba(0,0,0,0.32)]">
+          <div role="alertdialog" aria-modal="true" aria-labelledby="ld-audio-error-title" className="max-w-lg rounded-[1.8rem] border border-rose-300/18 bg-[linear-gradient(180deg,rgba(23,15,17,0.96),rgba(16,12,13,0.96))] px-7 py-6 shadow-[0_30px_60px_rgba(0,0,0,0.32)]">
             <p className="text-[0.8rem] font-black uppercase tracking-[0.28em] text-rose-200/70">Error de audio</p>
-            <h2 className="mt-2 text-2xl font-semibold text-white">La sesion multitrack no pudo terminar de cargarse.</h2>
-            <p className="mt-3 text-base leading-relaxed text-white/62">{loadError}</p>
+            <h2 id="ld-audio-error-title" className="mt-2 text-2xl font-semibold text-white">{selectedMultitrackEngine.runtimeError ? 'La reproducción se detuvo.' : 'La sesión multitrack no pudo terminar de cargarse.'}</h2>
+            <p className="mt-3 text-base leading-relaxed text-white/62">{loadError || selectedMultitrackEngine.runtimeError}</p>
             <button
               type="button"
+              autoFocus
               onClick={() => {
                 if (hasTrackSession) {
                   setReloadKey((previous) => previous + 1);
