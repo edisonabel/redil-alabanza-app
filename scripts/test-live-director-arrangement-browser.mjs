@@ -12,11 +12,12 @@ try {
   await page.goto('http://127.0.0.1:4322/');
   await page.waitForFunction(() => window.__streamingEngineDumpOwner?.getTracks().length === 15 && !document.querySelector('[data-live-director-control="edit-song"]')?.disabled, null, { timeout: 90000 });
   await page.getByRole('button', { name: 'Editar canción', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Editar canción' }); await dialog.waitFor();
+  const dialog = page.getByRole('region', { name: 'Editar secciones de la canción' }); await dialog.waitFor();
   assert.equal(await dialog.locator('[data-arrangement-entry]').count(), 14);
   // Cancel preserves the original song.
+  await dialog.getByRole('button', { name: 'Opciones de sección 1', exact: true }).click();
   await dialog.getByRole('button', { name: 'Duplicar sección 1', exact: true }).click();
-  await dialog.getByRole('button', { name: 'Cerrar editor de canción', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
   assert.equal(await page.locator('[data-live-section-index]').count(), 14);
   await page.getByRole('button', { name: 'Editar canción', exact: true }).click(); await dialog.waitFor();
   assert.equal(await dialog.locator('[data-arrangement-entry]').count(), 14);
@@ -24,13 +25,16 @@ try {
   // then move the Interludio between both Intro occurrences.
   for (let index = 13; index >= 0; index--) if (index !== 3) await dialog.getByRole('button', { name: `Quitar sección ${index + 1}`, exact: true }).click();
   assert.equal(await dialog.getByRole('button', { name: 'Quitar sección 1', exact: true }).isDisabled(), true);
+  await dialog.getByRole('button', { name: 'Opciones de sección 1', exact: true }).click();
   await dialog.getByRole('button', { name: 'Duplicar sección 1', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Insertar sección en posición 3', exact: true }).click();
   await dialog.getByRole('combobox', { name: 'Sección para agregar' }).selectOption('interludio-2');
   await dialog.getByRole('button', { name: 'Agregar', exact: true }).click();
-  await dialog.getByRole('button', { name: 'Subir sección 3', exact: true }).click();
-  const names = await dialog.locator('[data-arrangement-entry] p.font-medium').allTextContents(); assert.deepEqual(names, ['Intro', 'Interludio', 'Intro']);
+  await dialog.getByRole('button', { name: 'Opciones de sección 3', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Mover sección 3 a la izquierda', exact: true }).click();
+  const names = await dialog.locator('[data-arrangement-entry] h3').allTextContents(); assert.deepEqual(names, ['Intro', 'Interludio', 'Intro']);
   await page.screenshot({ path: '.lab/results/arrangement-editor-desktop.png' });
-  await dialog.getByRole('button', { name: 'Aplicar arreglo', exact: true }).click(); await dialog.waitFor({ state: 'hidden' });
+  await dialog.getByRole('button', { name: 'Aplicar temporalmente', exact: true }).click(); await dialog.waitFor({ state: 'hidden' });
   const sections = await page.locator('[data-live-section-index]').evaluateAll(list => list.map(el => ({ start: +el.dataset.liveSectionStart, end: +el.dataset.liveSectionEnd })));
   assert.deepEqual(sections, [{ start: 92.5, end: 100.5 }, { start: 276.5, end: 285.5 }, { start: 92.5, end: 100.5 }]);
   assert.equal(await page.evaluate(() => window.__streamingEngineDumpOwner.getCurrentTime()), 92.5);
@@ -76,17 +80,17 @@ try {
   assert.match(await page.locator('[data-live-director-control="arrangement-status"]').innerText(), /3\/3/);
   await page.locator('[data-live-director-control="play-pause"]').click(); await page.waitForFunction(() => !window.__streamingEngineDumpOwner.getIsPlaying());
   await page.getByRole('button', { name: 'Editar canción', exact: true }).click();
-  await dialog.getByRole('button', { name: 'Restaurar original', exact: true }).click(); await dialog.waitFor({ state: 'hidden' });
+  await dialog.getByRole('button', { name: 'Restaurar original', exact: true }).click(); await dialog.getByRole('button', { name: 'Aplicar temporalmente', exact: true }).click(); await dialog.waitFor({ state: 'hidden' });
   assert.equal(await page.locator('[data-live-section-index]').count(), 14);
   assert.equal(await page.evaluate(() => window.__streamingEngineDumpOwner.getCurrentTime()), 0);
   await page.waitForFunction(() => [...document.querySelectorAll('span')].some(el => el.textContent.trim() === '0:00 / 5:40'));
   for (const [width, height] of [[844, 390], [1280, 720]]) {
     await page.setViewportSize({ width, height });
     await page.getByRole('button', { name: 'Editar canción', exact: true }).click(); await dialog.waitFor();
-    assert.ok(await dialog.getByRole('button', { name: 'Agregar', exact: true }).isVisible());
+    assert.ok(await dialog.getByRole('button', { name: 'Insertar sección en posición 1', exact: true }).isVisible());
     const overflow = await dialog.evaluate(el => el.scrollWidth > el.clientWidth + 1); assert.equal(overflow, false);
     await page.screenshot({ path: `.lab/results/arrangement-editor-${width}.png` });
-    await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });
+    await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click(); await dialog.waitFor({ state: 'hidden' });
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('heading', { name: 'Modo horizontal obligatorio' }).waitFor();

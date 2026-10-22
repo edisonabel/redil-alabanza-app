@@ -11,6 +11,7 @@ import { fetchLiveDirectorSongSession } from '../../utils/liveDirectorUploadClie
 import {
   applyLiveDirectorEventMix,
   fetchLiveDirectorEventMix,
+  fetchLiveDirectorEventMixPermission,
   liveDirectorEventMixSignature,
   normalizeLiveDirectorEventMix,
   readPendingLiveDirectorEventMix,
@@ -409,6 +410,14 @@ export default function ModoEnsayoDirector({
   const [downloadStatus, setDownloadStatus] = useState({ active: false, progress: 0, total: 0, done: false });
   const [padVolume, setPadVolume] = useState(0.42);
   const [sessionOverrides, setSessionOverrides] = useState({});
+  const [mixPermission, setMixPermission] = useState({ eventId: '', allowed: false });
+  const canSaveEventMix = mixPermission.eventId === eventId && mixPermission.allowed;
+  useEffect(() => {
+    let cancelled = false;
+    setMixPermission({ eventId: '', allowed: false });
+    if (eventId) void fetchLiveDirectorEventMixPermission(eventId).then(allowed => { if (!cancelled) setMixPermission({ eventId, allowed }); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [eventId]);
   const [eventMixOverrides, setEventMixOverrides] = useState({});
   const [eventMixLoadedSongIds, setEventMixLoadedSongIds] = useState(() => new Set());
   const [eventMixSaveStates, setEventMixSaveStates] = useState({});
@@ -613,10 +622,10 @@ export default function ModoEnsayoDirector({
       || eventMixLoadedSongIds.has(activePersistedSongId)
     ) return;
 
-    const pending = readPendingLiveDirectorEventMix({
+    const pending = canSaveEventMix ? readPendingLiveDirectorEventMix({
       eventId,
       songId: activePersistedSongId,
-    });
+    }) : null;
     if (pending?.mix) {
       setEventMixOverrides((previous) => ({
         ...previous,
@@ -663,7 +672,7 @@ export default function ModoEnsayoDirector({
     return () => {
       cancelled = true;
     };
-  }, [activePersistedSongId, activeSongHasSequence, eventId, eventMixLoadedSongIds, hasEventMixContext]);
+  }, [activePersistedSongId, activeSongHasSequence, eventId, eventMixLoadedSongIds, hasEventMixContext, canSaveEventMix]);
 
   useEffect(() => {
     screenWakeLockService.setRequested('modo-ensayo-director', true);
@@ -1088,6 +1097,7 @@ export default function ModoEnsayoDirector({
       next.add(songId);
       return next;
     });
+    if (!canSaveEventMix) return Promise.resolve();
     stagePendingLiveDirectorEventMix({ eventId, songId, mix });
 
     const nextVersion = Number(eventMixSaveVersionsRef.current[songId] || 0) + 1;
@@ -1108,11 +1118,11 @@ export default function ModoEnsayoDirector({
         markEventMixSaveFailed(songId, nextVersion);
         throw error;
       });
-  }, [activePersistedSongId, enqueueEventMixSave, eventId, hasEventMixContext, markEventMixSaveFailed, markEventMixSaveSucceeded]);
+  }, [activePersistedSongId, enqueueEventMixSave, eventId, hasEventMixContext, markEventMixSaveFailed, markEventMixSaveSucceeded, canSaveEventMix]);
 
   const retryPendingActiveEventMix = useCallback(async () => {
     const songId = activePersistedSongId;
-    if (!hasEventMixContext || !songId) return null;
+    if (!hasEventMixContext || !songId || !canSaveEventMix) return null;
 
     const pending = readPendingLiveDirectorEventMix({ eventId, songId });
     if (!pending?.mix) return null;
@@ -1128,7 +1138,7 @@ export default function ModoEnsayoDirector({
       markEventMixSaveFailed(songId, version);
       throw error;
     }
-  }, [activePersistedSongId, enqueueEventMixSave, eventId, hasEventMixContext, markEventMixSaveFailed, markEventMixSaveSucceeded]);
+  }, [activePersistedSongId, enqueueEventMixSave, eventId, hasEventMixContext, markEventMixSaveFailed, markEventMixSaveSucceeded, canSaveEventMix]);
 
   const schedulePendingEventMixRetry = useCallback((delayMs = 250) => {
     if (!hasEventMixContext || !activePersistedSongId) return;
@@ -1177,6 +1187,9 @@ export default function ModoEnsayoDirector({
   return (
     <>
       <LiveDirectorView
+        experimentalTools
+        eventId={hasEventMixContext ? eventId : ''}
+        eventTitle={contextTitle}
         mode="ensayo"
         songId={activePersistedSongId}
         songTitle={String(activeSong?.title || '').trim()}

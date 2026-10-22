@@ -1,3 +1,4 @@
+import { useLiveDirectorEventArrangement } from '../../hooks/useLiveDirectorEventArrangement';
 import { useLiveDirectorArrangement } from '../../hooks/useLiveDirectorArrangement';
 import { LiveDirectorArrangementEditor } from './live-director/LiveDirectorArrangementEditor';
 import { resolveArrangement, arrangementTimeline, arrangementElapsed, arrangementSourceAt, arrangementDuration, type ArrangementEntry } from '../../utils/liveDirectorArrangement';
@@ -202,6 +203,8 @@ type LiveDirectorBroadcastState = 'off' | 'checking' | 'occupied' | 'active' | '
 
 type LiveDirectorViewProps = {
   experimentalTools?: boolean;
+  eventId?: string;
+  eventTitle?: string;
   tracks?: TrackData[];
   sections?: Array<SectionVisual | LiveDirectorSectionVisual>;
   title?: string;
@@ -597,6 +600,8 @@ export function LiveDirectorView({
   bpm = 81,
   generatedClickGrid,
   className = '',
+  eventId = '',
+  eventTitle = '',
   songId = '',
   songTitle = '',
   songMp3 = '',
@@ -866,6 +871,8 @@ export function LiveDirectorView({
   const unlockAudioForUserGesture = 'unlockAudioForUserGesture' in selectedMultitrackEngine
     ? selectedMultitrackEngine.unlockAudioForUserGesture
     : async () => {};
+  const eventArrangementBlockedRef = useRef(false);
+  const prepareArrangementPlayRef = useRef<(() => boolean) | null>(null);
   const isTransportCueBusyRef = useRef(false);
   const getVisualClockTime = useCallback(() => (
     isManualTempoMode
@@ -874,7 +881,7 @@ export function LiveDirectorView({
   ), [isManualTempoMode, manualTempoTransport.getCurrentTimeSnapshot, selectedMultitrackEngine]);
 
   const handleTogglePlaybackFromGesture = useCallback(() => {
-    if (isTransportCueBusyRef.current) {
+    if (isTransportCueBusyRef.current || eventArrangementBlockedRef.current) {
       return;
     }
 
@@ -893,6 +900,7 @@ export function LiveDirectorView({
       return;
     }
 
+    if (prepareArrangementPlayRef.current?.()) return;
     const contextUnlockPromise = unlockAudioForUserGesture();
     const sessionUnlockPromise = audioSessionService.unlockFromUserGesture();
 
@@ -931,7 +939,7 @@ export function LiveDirectorView({
     stopEngineRef.current = stopEngine;
   }, [initializeEngine, stopEngine]);
 
-  const transportIdentity = `${String(activeQueueSongId || songId || '').trim()}:${isManualTempoMode ? 'tempo' : 'stems'}`;
+  const transportIdentity = `${eventId}:${String(activeQueueSongId || songId || '').trim()}:${isManualTempoMode ? 'tempo' : 'stems'}`;
   useEffect(() => {
     autoPadStartedForTransportRef.current = '';
     setOutputLayout('guide-left');
@@ -1462,10 +1470,16 @@ export function LiveDirectorView({
     [experimentalTools, sourceAudioDuration, sectionOffsetSeconds, sections],
   );
 
-  const arrangementIdentity = `${songId}:${reloadKey}:${sectionOffsetSeconds}`;
+  const eventArrangement = useLiveDirectorEventArrangement(isManualTempoMode ? '' : eventId, songId);
+  const arrangementIdentity = `${eventId}:${songId}:${reloadKey}:${sectionOffsetSeconds}`;
   const [arrangementState, setArrangementState] = useState<{ key: string; entries: ArrangementEntry[] | null }>({ key: '', entries: null });
-  const arrangementEntries = arrangementState.key === arrangementIdentity ? arrangementState.entries : null;
+  const arrangementEntries = arrangementState.key === arrangementIdentity ? arrangementState.entries : eventArrangement.entries;
   const [showArrangementEditor, setShowArrangementEditor] = useState(false);
+  useEffect(() => {
+    setShowArrangementEditor(false);
+    setArrangementState({ key: '', entries: null });
+  }, [arrangementIdentity]);
+  eventArrangementBlockedRef.current = showArrangementEditor || eventArrangement.loading || Boolean(eventArrangement.error);
   const arrangementCursor = useRef(0);
   const manualArrangementNavigation = useRef(false);
   const resolvedSections = useMemo(() => arrangementEntries ? resolveArrangement(sourceSections, arrangementEntries) : sourceSections, [sourceSections, arrangementEntries]);
@@ -1477,6 +1491,21 @@ export function LiveDirectorView({
     prepare: selectedMultitrackEngine.prepareSectionJump, cancel: selectedMultitrackEngine.cancelSectionJump,
     scheduleEnd: selectedMultitrackEngine.scheduleSectionEnd,
   });
+
+  prepareArrangementPlayRef.current = () => {
+    if (!arrangementEntries || !resolvedSections.length) return false;
+    const time = selectedMultitrackEngine.getCurrentTimeSnapshot();
+    const section = resolvedSections[arrangementCursor.current];
+    if (section && time >= section.startTime && time < section.endTime) return false;
+    const first = resolvedSections[0];
+    void Promise.allSettled([unlockAudioForUserGesture(), audioSessionService.unlockFromUserGesture()]);
+    isTransportCueBusyRef.current = true;
+    arrangement.focus(first.id);
+    void seekTo(first.startTime, { wasPlayingBeforeUiSeek: false }).then(() => play()).catch(reason => {
+      setLoadError(reason instanceof Error ? reason.message : 'No se pudo preparar el arreglo.');
+    }).finally(() => { isTransportCueBusyRef.current = false; });
+    return true;
+  };
 
   const sectionTimelineDuration = useMemo(
     () => resolvedSections.reduce((maxTime, section) => Math.max(maxTime, section.endTime), 0),
@@ -3374,12 +3403,13 @@ export function LiveDirectorView({
     if (isPlaying || isSectionSeekBusy || isCongregationFading) throw new Error('Pausa la canción antes de aplicar.');
     if (diagnostics?.engineRoute !== 'streaming-worker') throw new Error('Este motor no permite probar arreglos.');
     const next = entries ? resolveArrangement(sourceSections, entries) : sourceSections;
+    if (eventId) await eventArrangement.save(entries);
     arrangement.cancel();
     const start = entries ? next[0]?.startTime ?? 0 : 0;
     await seekTo(start, { wasPlayingBeforeUiSeek: false, forceFreshStart: start === 0 });
     setArrangementState({ key: arrangementIdentity, entries: entries?.map(entry => ({ ...entry })) ?? null });
     setVisualSectionTime(null); setKeyboardSectionIndex(null); releaseSectionsAutoFollowNow();
-  }, [isPlaying, isSectionSeekBusy, isCongregationFading, diagnostics?.engineRoute, sourceSections, arrangementIdentity, seekTo, setVisualSectionTime, releaseSectionsAutoFollowNow, arrangement.cancel]);
+  }, [isPlaying, isSectionSeekBusy, isCongregationFading, diagnostics?.engineRoute, sourceSections, arrangementIdentity, seekTo, setVisualSectionTime, releaseSectionsAutoFollowNow, arrangement.cancel, eventId, eventArrangement.save]);
   const lastSectionTapRef = useRef<{ id: string; time: number } | null>(null);
   useEffect(() => { lastSectionTapRef.current = null; }, [isPlaying, trackSignature]);
   const selectedJumpSection = keyboardSectionIndex !== null ? resolvedSections[keyboardSectionIndex] : null;
@@ -4573,6 +4603,7 @@ export function LiveDirectorView({
         showTrackLoadModal ||
         showOffsetModal ||
         showManualTempoModal ||
+        showArrangementEditor ||
         showBackConfirm
       ) {
         return;
@@ -4769,6 +4800,7 @@ export function LiveDirectorView({
     showBackConfirm,
     showLoadPanel,
     showManualTempoModal,
+    showArrangementEditor,
     showOffsetModal,
     showSectionsPanel,
     showStemsActionModal,
@@ -5054,7 +5086,11 @@ export function LiveDirectorView({
     [isCompactLandscape, isNativeIosShell, scaleRem],
   );
 
-  const sectionSurface = (
+  const sectionSurface = showArrangementEditor ? (
+    <LiveDirectorArrangementEditor key={arrangementIdentity} onClose={() => setShowArrangementEditor(false)}
+      busy={isPlaying || isSectionSeekBusy || isCongregationFading} sections={sourceSections} entries={arrangementEntries}
+      eventTitle={eventId ? eventTitle || 'Evento actual' : undefined} onApply={applyArrangement} />
+  ) : (
 <div data-live-director-section-surface="true" className="relative flex min-h-0 flex-col overflow-hidden rounded-[1.2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(29,30,32,0.98),rgba(23,24,26,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
               <div data-live-director-section-controls="true" data-live-repeat-count={sectionJump.repeat?.completed ?? 0} className="relative z-40 flex h-11 shrink-0 items-center gap-2 border-b border-white/5 px-3 text-xs text-white/60">
                 <span className="shrink-0 text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-white/35">Secciones</span>
@@ -5567,8 +5603,10 @@ export function LiveDirectorView({
 
   return (
     <div ref={liveDirectorRootRef} className={shellClassName}>
-      {experimentalTools && showArrangementEditor && <LiveDirectorArrangementEditor open={showArrangementEditor} onClose={() => setShowArrangementEditor(false)}
-        playing={isPlaying} busy={isSectionSeekBusy || isCongregationFading} sections={sourceSections} entries={arrangementEntries} onApply={applyArrangement} />}
+      {eventId && (eventArrangement.loading || eventArrangement.error) && <div role="status" className="absolute inset-x-3 top-3 z-[90] flex items-center gap-3 rounded-lg border border-amber-200/30 bg-[#252325] p-3 text-xs text-amber-100">
+        <span>{eventArrangement.loading ? 'Cargando arreglo del evento…' : eventArrangement.error}</span>
+        {eventArrangement.error && <button type="button" className="rounded border border-white/20 px-3 py-2" onClick={eventArrangement.reload}>Reintentar</button>}
+      </div>}
       {canUseGeneratedClick && clickTrack && selectedMultitrackEngine.loadGeneratedClickSamples && selectedMultitrackEngine.setGeneratedClick &&
         <LiveDirectorClickMixer key={`click:${trackSignature}:${reloadKey}`} open={showClickMixer} onClose={closeClickMixer}
           trackId={clickTrack.id} bpm={generatedClickGrid?.bpm ?? bpm} originSeconds={generatedClickGrid?.originSeconds ?? sourceSections[0]?.startTime ?? 0}
@@ -5708,7 +5746,7 @@ export function LiveDirectorView({
               <button
                 type="button"
                 onClick={handleTogglePlaybackFromGesture}
-                disabled={!isReady || isTransportCueBusy}
+                disabled={!isReady || isTransportCueBusy || showArrangementEditor || eventArrangement.loading || Boolean(eventArrangement.error)}
                 aria-busy={isTransportCueBusy || undefined}
                 data-live-director-control="play-pause"
                 className={`${CONTROL_CARD} group relative ${isUltraCompactLandscape ? 'h-11 px-6' : isToolbarCompactLandscape ? 'h-12 px-7' : 'h-[var(--ld-control-height)] px-8'} justify-center border-cyan-300/24 bg-cyan-300/[0.08] text-cyan-100 shadow-[0_0_18px_rgba(103,232,249,0.09)] hover:border-cyan-200/38 hover:bg-cyan-300/[0.11] disabled:cursor-not-allowed disabled:border-white/8 disabled:bg-black/12 disabled:text-white/24`}
@@ -5812,8 +5850,8 @@ export function LiveDirectorView({
 
               {experimentalTools && !isManualTempoMode && <button type="button" data-live-director-control="edit-song"
                 aria-label="Editar canción" title={isPlaying ? 'Pausa para editar la canción' : arrangementEntries ? 'Editar arreglo de prueba' : 'Editar canción'}
-                disabled={isPlaying || !isReady || isInitializingSession || Boolean(busyMessage) || sessionPreparationPending || isTransportCueBusy || isCongregationFading || diagnostics?.engineRoute !== 'streaming-worker' || sourceSections.length === 0}
-                onClick={() => setShowArrangementEditor(true)}
+                disabled={!eventArrangement.canEdit || eventArrangement.loading || Boolean(eventArrangement.error) || isPlaying || !isReady || isInitializingSession || Boolean(busyMessage) || sessionPreparationPending || isTransportCueBusy || isCongregationFading || diagnostics?.engineRoute !== 'streaming-worker' || sourceSections.length === 0}
+                onClick={() => { setShowArrangementEditor(true); setSurfaceView('sections'); }}
                 className={`${CONTROL_CARD} flex-1 flex-col px-3 text-xs font-semibold tracking-[0.12em] disabled:opacity-30 ${arrangementEntries ? 'border-cyan-200/40 text-cyan-100' : 'text-white/75 hover:bg-white/5'}`}
                 style={{ minWidth: '4rem' }}><Pencil size={isUltraCompactLandscape ? 14 : 18}/><span className="mt-1 text-[0.58rem]">EDITAR</span></button>}
               <button
@@ -6034,7 +6072,7 @@ export function LiveDirectorView({
         <section
           className={`grid min-h-0 flex-1 ${isUltraCompactLandscape ? 'gap-0.5' : isCompactLandscape ? 'gap-1.5' : 'gap-4'}`}
           data-live-director-layout={desktopCombined ? 'desktop-combined' : 'mobile-pages'}
-          style={{ gridTemplateColumns: `minmax(0,1fr) ${mixerLayoutColumns}`, ...(desktopCombined ? { gridTemplateRows: 'minmax(170px, 0.42fr) minmax(250px, 1fr)' } : {}) }}
+          style={{ gridTemplateColumns: `minmax(0,1fr) ${mixerLayoutColumns}`, ...(desktopCombined ? { gridTemplateRows: showArrangementEditor ? 'minmax(250px, 0.55fr) minmax(210px, 1fr)' : 'minmax(170px, 0.42fr) minmax(250px, 1fr)' } : {}) }}
         >
           {desktopCombined && <div className="grid min-h-0 min-w-0" style={{ gridColumn: '1 / -1' }}>{sectionSurface}</div>}
           <div className="grid min-h-0 min-w-0">
@@ -6062,7 +6100,7 @@ export function LiveDirectorView({
               <button
                 type="button"
                 onClick={handlePreviousSection}
-                disabled={!hasTrackSession || isTransportCueBusy || isCongregationFading}
+                disabled={!hasTrackSession || isTransportCueBusy || isCongregationFading || showArrangementEditor}
                 aria-label="Ir a la sección anterior"
                 aria-keyshortcuts="["
                 title="Sección anterior ([)"
@@ -6079,7 +6117,7 @@ export function LiveDirectorView({
               <button
                 type="button"
                 onClick={handleNextSection}
-                disabled={!hasTrackSession || isTransportCueBusy || isCongregationFading}
+                disabled={!hasTrackSession || isTransportCueBusy || isCongregationFading || showArrangementEditor}
                 aria-label="Ir a la sección siguiente"
                 aria-keyshortcuts="]"
                 title="Sección siguiente (])"
@@ -6097,7 +6135,7 @@ export function LiveDirectorView({
               <button
                 type="button"
                 onClick={() => setSurfaceView((previous) => previous === 'mix' ? 'sections' : 'mix')}
-                disabled={isManualTempoMode}
+                disabled={isManualTempoMode || showArrangementEditor}
                 aria-pressed={showSectionsPanel}
                 aria-label={showMixReturn ? 'Mostrar faders de mezcla' : 'Mostrar secciones'}
                 aria-keyshortcuts="V"
@@ -6123,6 +6161,7 @@ export function LiveDirectorView({
               </>}
               {experimentalTools && !isManualTempoMode && selectedMultitrackEngine.setTrackGroupGain ? <button
                 type="button" data-live-director-control="groups"
+                disabled={showArrangementEditor}
                 onClick={() => setSurfaceView(previous => previous === 'groups' ? 'mix' : 'groups')}
                 aria-label={showGroupsPanel ? 'Volver a mezcla individual' : 'Mostrar grupos de mezcla'}
                 aria-pressed={showGroupsPanel}

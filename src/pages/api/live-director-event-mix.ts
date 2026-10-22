@@ -1,3 +1,4 @@
+import { getLiveDirectorEventAccess } from '../../lib/server/live-director-event-permissions.js';
 import type { APIRoute } from 'astro';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import {
@@ -103,32 +104,15 @@ const getAuthenticatedDatabase = async (cookies: Parameters<typeof requireAuthen
   return { user, database: createSupabaseUserClient(accessToken) };
 };
 
-const requireEventAccess = async (userId: string, eventId: string) => {
-  if (!serviceRoleClient) {
-    throw new ApiSecurityError('Servicio de autorizacion no configurado.', 503);
+const requireEventAccess = async (userId: string, eventId: string, write = false) => {
+  if (!serviceRoleClient) throw new ApiSecurityError('Servicio de autorizacion no configurado.', 503);
+  let access;
+  try { access = await getLiveDirectorEventAccess(serviceRoleClient, userId, eventId); }
+  catch { throw new ApiSecurityError('No se pudo validar el acceso al evento.', 503); }
+  if (!access.canRead || (write && !access.canWrite)) {
+    throw new ApiSecurityError(write ? 'Solo el director musical de este evento y el administrador pueden guardar cambios.' : 'Debes estar asignado a este evento.', 403);
   }
-
-  const [profileResult, assignmentResult] = await Promise.all([
-    serviceRoleClient
-      .from('perfiles')
-      .select('is_admin')
-      .eq('id', userId)
-      .maybeSingle(),
-    serviceRoleClient
-      .from('asignaciones')
-      .select('id')
-      .eq('evento_id', eventId)
-      .eq('perfil_id', userId)
-      .limit(1)
-      .maybeSingle(),
-  ]);
-
-  if (profileResult.error || assignmentResult.error) {
-    throw new ApiSecurityError('No se pudo validar el acceso al evento.', 503);
-  }
-  if (!profileResult.data?.is_admin && !assignmentResult.data) {
-    throw new ApiSecurityError('Debes estar asignado a este evento para guardar su mezcla.', 403);
-  }
+  return access;
 };
 
 const requireEventPlaylistSong = async (
@@ -211,13 +195,20 @@ const readContext = (value: Record<string, unknown> | URLSearchParams) => {
 
 export const GET: APIRoute = async ({ cookies, url }) => {
   try {
+    if (url.searchParams.get('permission') === '1') {
+      const eventId = String(url.searchParams.get('evento_id') || '');
+      if (!isUuid(eventId)) throw new ApiSecurityError('Evento inválido.', 400);
+      const { user } = await getAuthenticatedDatabase(cookies);
+      const access = await requireEventAccess(user.id, eventId);
+      return json({ canEdit: access.canWrite });
+    }
     const { eventId, songId } = readContext(url.searchParams);
     const { user, database } = await getAuthenticatedDatabase(cookies);
-    await Promise.all([
+    const [access] = await Promise.all([
       requireEventAccess(user.id, eventId),
       requireEventPlaylistSong(database, eventId, songId),
     ]);
-    return json({ mix: await readMix(eventId, songId) });
+    return json({ mix: await readMix(eventId, songId), canEdit: access.canWrite });
   } catch (error) {
     console.error('[live-director-event-mix] GET failed:', error);
     return securityErrorResponse(error);
@@ -239,7 +230,7 @@ export const PUT: APIRoute = async ({ request, cookies, url }) => {
     const mix = sanitizeMix(payload.mix);
     const { user, database } = await getAuthenticatedDatabase(cookies);
     await Promise.all([
-      requireEventAccess(user.id, eventId),
+      requireEventAccess(user.id, eventId, true),
       requireEventPlaylistSong(database, eventId, songId),
     ]);
 

@@ -70,7 +70,9 @@
     "test:live-click-calibration": "node scripts/test-live-director-song-click-calibration-browser.mjs --late-seek",
     "test:live-producer-cancel": "node scripts/test-audio-producer-stale-head-cancellation.mjs",
     "test:live-terminal-section": "node scripts/test-live-director-terminal-section.mjs",
-    "test:live-terminal-section-ui": "node scripts/test-live-director-terminal-section-browser.mjs"
+    "test:live-terminal-section-ui": "node scripts/test-live-director-terminal-section-browser.mjs",
+    "test:live-event-access": "node scripts/test-live-director-event-access.mjs",
+    "test:live-event-arrangement-ui": "node scripts/test-live-director-event-arrangement-browser.mjs"
   },
   "dependencies": {
     "@astrojs/netlify": "8.2.1",

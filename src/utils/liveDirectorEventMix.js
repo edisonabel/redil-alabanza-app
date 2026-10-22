@@ -232,3 +232,11 @@ export async function retryPendingLiveDirectorEventMix({ eventId = '', songId = 
   if (!pending) return null;
   return saveLiveDirectorEventMix({ eventId, songId, mix: pending.mix });
 }
+
+export async function fetchLiveDirectorEventMixPermission(eventId) {
+  // Ask the server for the current user's authority in this specific event.
+  const params = new URLSearchParams({ evento_id: eventId, permission: '1' });
+  const response = await fetchWithSessionRetry(`/api/live-director-event-mix?${params}`, { credentials: 'same-origin', cache: 'no-store' });
+  const body = await parseJsonResponse(response);
+  return body.canEdit === true;
+}
