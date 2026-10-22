@@ -1,3 +1,4 @@
+import { useLiveDirectorSectionJump } from '../../hooks/useLiveDirectorSectionJump';
 import {
   Activity,
   AlertTriangle,
@@ -3296,6 +3297,21 @@ export function LiveDirectorView({
     setVisualSectionTime,
   ]);
 
+  const sectionJump = useLiveDirectorSectionJump({
+    enabled: experimentalTools, resetKey: `${trackSignature}:${reloadKey}:${sectionOffsetSeconds}`, sections: resolvedSections,
+    isReady, isPlaying, busy: isSectionSeekBusy || isCongregationFading,
+    getTime: selectedMultitrackEngine.getCurrentTimeSnapshot, onJump: handleSectionSeek,
+  });
+  const lastSectionTapRef = useRef<{ id: string; time: number } | null>(null);
+  useEffect(() => { lastSectionTapRef.current = null; }, [isPlaying, trackSignature]);
+  const selectedJumpSection = keyboardSectionIndex !== null ? resolvedSections[keyboardSectionIndex] : null;
+  const armSectionFromTimeline = useCallback((sectionId: string) => {
+    if (sectionJump.arm(sectionId)) {
+      setVisualSectionTime(null);
+      releaseSectionsAutoFollowNow();
+    }
+  }, [sectionJump.arm, releaseSectionsAutoFollowNow]);
+
   const handleReturnToStart = useCallback(async () => {
     if (
       !hasPlayableSession ||
@@ -4472,6 +4488,11 @@ export function LiveDirectorView({
         return;
       }
 
+      if (document.querySelector('dialog[open]')) return;
+      if (experimentalTools && sectionJump.armed && event.key === 'Escape') {
+        event.preventDefault(); sectionJump.cancel(); return;
+      }
+
       const desktopSectionKeyboardEnabled =
         !isNativeIosShell &&
         typeof window.matchMedia === 'function' &&
@@ -4583,7 +4604,8 @@ export function LiveDirectorView({
         event.preventDefault();
         setVisualSectionTime(null);
         releaseSectionsAutoFollowNow();
-        void handleSectionSeek(targetSection.startTime);
+        if (experimentalTools && isPlaying) armSectionFromTimeline(targetSection.id);
+        else void handleSectionSeek(targetSection.startTime);
         return;
       }
 
@@ -4627,6 +4649,10 @@ export function LiveDirectorView({
     handleNextSection,
     handlePreviousSection,
     handleSectionSeek,
+    experimentalTools,
+    armSectionFromTimeline,
+    sectionJump.armed,
+    sectionJump.cancel,
     handleStemsToolbarAction,
     handleReturnToStart,
     handleToggleCongregationFade,
@@ -4733,6 +4759,7 @@ export function LiveDirectorView({
     }
 
     sectionsGestureExceededDragThresholdRef.current = true;
+    lastSectionTapRef.current = null;
 
     container.scrollLeft = dragState.startScrollLeft - deltaX;
     event.preventDefault();
@@ -4773,14 +4800,30 @@ export function LiveDirectorView({
       }
 
       event.preventDefault();
-      void handleSectionSeek(nextTime);
+      if (experimentalTools && isPlaying) {
+        const index = Number(button.dataset.liveSectionIndex);
+        const section = resolvedSections[index];
+        if (!section || isSectionSeekBusy || isCongregationFading) return;
+        const previous = lastSectionTapRef.current;
+        const now = performance.now();
+        lastSectionTapRef.current = { id: section.id, time: now };
+        if (previous?.id === section.id && now - previous.time < 500) {
+          lastSectionTapRef.current = null;
+          armSectionFromTimeline(section.id);
+        } else {
+          isUserScrollingSectionsRef.current = true;
+          keyboardSectionIndexRef.current = index;
+          setKeyboardSectionIndex(index);
+          scheduleSectionsAutoFollowResume();
+        }
+      } else void handleSectionSeek(nextTime);
     };
 
     container.addEventListener('pointerup', handleNativeSectionPointerUp);
     return () => {
       container.removeEventListener('pointerup', handleNativeSectionPointerUp);
     };
-  }, [handleSectionSeek, showSectionsPanel]);
+  }, [handleSectionSeek, showSectionsPanel, experimentalTools, isPlaying, resolvedSections, isSectionSeekBusy, isCongregationFading, armSectionFromTimeline, scheduleSectionsAutoFollowResume]);
 
   // ─── Minimap interaction ──────────────────────────────────────────────────
   // The minimap is a tap-and-drag scrub target. We convert clientX to a time
@@ -4982,8 +5025,8 @@ export function LiveDirectorView({
                 key={`${trackSignature}:${reloadKey}`} tracks={activeEngineTracks} sections={resolvedSections}
                 isReady={isReady} isPlaying={isPlaying} busy={isCongregationFading || isSectionSeekBusy}
                 loadProgress={loadProgress} warnings={[...(loadWarnings || []).map(warning => warning.message || String(warning.reason)), ...(selectedMultitrackEngine.runtimeError ? [selectedMultitrackEngine.runtimeError] : [])]}
-                engineRoute={diagnostics?.engineRoute} getTime={getLivePlaybackTime}
-                onJump={handleSectionSeek}
+                engineRoute={diagnostics?.engineRoute}
+                jump={sectionJump}
               />}
               <button
                 type="button"
@@ -5235,6 +5278,10 @@ export function LiveDirectorView({
           </header>
         </div>
 
+        {sectionJump.armed && !showSectionsPanel && <div className="flex shrink-0 items-center gap-3 rounded-lg border border-amber-200/25 bg-amber-200/5 px-3 py-1 text-xs text-amber-100">
+          <span role="status" className="min-w-0 flex-1 truncate">→ {sectionJump.armed.section.name} · Al terminar la sección actual</span>
+          <button type="button" aria-label="Cancelar salto armado" className="rounded-md border border-amber-200/30 px-3 py-1" onClick={sectionJump.cancel}>Cancelar</button>
+        </div>}
         <section className={`shrink-0 overflow-hidden ${isUltraCompactLandscape ? 'pr-0 pb-0' : isCompactLandscape ? 'pr-0.5' : ''}`}>
           <div className={`overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.96),rgba(27,29,30,0.96))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isUltraCompactLandscape ? 'px-1.5 py-1' : isCompactLandscape ? 'px-2 py-1.5' : 'px-4 py-4'}`}>
             {isEnsayoMode ? (
@@ -5424,6 +5471,8 @@ export function LiveDirectorView({
               key={`${trackSignature}:${reloadKey}`} hidden={!showGroupsPanel} tracks={activeEngineTracks}
               isReady={isReady} busy={isCongregationFading || isSectionSeekBusy}
               onGroupGain={selectedMultitrackEngine.setTrackGroupGain}
+              isPlaying={isPlaying} compact={isCompactLandscape} ultraCompact={isUltraCompactLandscape}
+              getTelemetry={getSharedTelemetry} trackLevels={trackLevels}
             />}
             <div className={showGroupsPanel ? 'hidden' : 'grid min-h-0 min-w-0'}>
           {showSectionsPanel ? (
@@ -5434,7 +5483,13 @@ export function LiveDirectorView({
                   {activeSection?.name || 'Linea de tiempo'}
                 </span>
               </div>
-              {nextSectionPreview && (
+              {experimentalTools && isPlaying && (selectedJumpSection || sectionJump.armed) && <div
+                className="absolute left-4 right-16 top-[3.8rem] z-50 flex items-center gap-2 rounded-xl border border-amber-200/30 bg-black/90 px-3 py-2 text-xs text-amber-100"
+              >
+                {sectionJump.armed ? <><span role="status" className="min-w-0 flex-1 truncate">→ {sectionJump.armed.section.name} · Al terminar la sección</span><button type="button" aria-label="Cancelar salto de sección" className="shrink-0 rounded-lg border border-amber-200/30 px-3 py-2" onClick={sectionJump.cancel}>Cancelar</button></>
+                : <><span className="min-w-0 flex-1 truncate">{selectedJumpSection?.name} · Al terminar la sección</span><button type="button" className="shrink-0 rounded-lg border border-cyan-200/40 bg-cyan-200/10 px-3 py-2 text-cyan-100" onClick={() => selectedJumpSection && armSectionFromTimeline(selectedJumpSection.id)}>Armar salto</button></>}
+              </div>}
+              {nextSectionPreview && !sectionJump.armed && (
                 <div
                   key={`next-${nextSectionPreview.name}-${nextSectionPreview.seconds}`}
                   className="pointer-events-none anim-fade-in absolute left-1/2 top-4 z-40 flex -translate-x-1/2 items-center gap-2.5 rounded-full border border-cyan-300/34 bg-[linear-gradient(180deg,rgba(16,30,40,0.92),rgba(10,20,28,0.92))] px-3.5 py-2 shadow-[0_14px_32px_rgba(0,0,0,0.32)]"
@@ -5465,7 +5520,7 @@ export function LiveDirectorView({
                   />
                   <span className="text-[0.58rem] font-black uppercase tracking-[0.22em] text-amber-100/86">
                     {keyboardSectionIndex !== null
-                      ? 'Enter para ir · Auto en 5s'
+                      ? (experimentalTools && isPlaying ? 'Enter para armar · Auto en 5s' : 'Enter para ir · Auto en 5s')
                       : sectionsAutoFollowStatus === 'held'
                         ? 'Scroll libre'
                         : 'Auto en 5s'}
@@ -5611,10 +5666,13 @@ export function LiveDirectorView({
                             if (event.detail > 0) {
                               return;
                             }
-                            void handleSectionSeek(section.startTime);
+                            if (experimentalTools && isPlaying) armSectionFromTimeline(section.id);
+                            else void handleSectionSeek(section.startTime);
                           }}
+                          aria-label={`${section.name}${experimentalTools && isPlaying ? '. Doble toque para armar salto al terminar la sección actual' : ''}`}
+                          aria-pressed={sectionJump.armed?.section.id === section.id}
                           className="relative h-full shrink-0 rounded-[1.55rem] border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45"
-                          style={isActive ? activeStyle : inactiveStyle}
+                          style={{ ...(isActive ? activeStyle : inactiveStyle), ...(experimentalTools && (sectionJump.armed?.section.id === section.id || keyboardSectionIndex === index) ? { outline: `2px solid ${sectionJump.armed?.section.id === section.id ? '#f5cf79' : '#8de7ef'}`, outlineOffset: '-3px' } : {}) }}
                         >
                           <div className="absolute inset-0 rounded-[1.5rem] bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.03)_0px,rgba(255,255,255,0.03)_2px,transparent_2px,transparent_20px)]" />
                           <div className="absolute inset-0 rounded-[1.5rem] bg-black/10" />

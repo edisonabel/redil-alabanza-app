@@ -19,8 +19,8 @@ El evento `render-error` ahora detiene el transporte, muestra un aviso y permite
 Pulsa **Herramientas**, en la barra superior, para preparación y saltos. **Grupos** tiene un botón propio debajo de Mezcla/Secciones, en la columna junto al master; ocupa el mismo espacio que los faders.
 
 - **Preparación**: muestra el inicio disponible de la canción actual, el número de stems, motor y salidas. No valida todo el repertorio ni garantiza reproducción sin conexión.
-- **Salto de sección**: durante la reproducción, elige destino y pulsa **Armar salto**. Al terminar la sección actual solicita el cambio con fade y la barrera de preparación. Admite repetir una sección anterior. Pausar, mover la posición o llegar demasiado tarde cancela el salto; el botón junto a Herramientas permite cancelarlo manualmente.
-- **Grupos**: nivel y silencio de Ritmo, Armonía, Voces, Otros y Click/guía. Una ganancia adicional conserva los faders individuales, mute/solo y ruteo. Puedes corregir la asignación sugerida. No son buses de salida independientes. Los grupos conservan sus niveles, silencio y asignaciones al alternar entre mezcla, secciones y grupos. Se reinician al recargar o cambiar de canción y no se guardan.
+- **Salto de sección**: en **Secciones**, durante la reproducción un toque selecciona el destino; doble toque lo arma, o puedes confirmar con **Armar salto** en la propia línea de tiempo. En Mac, flechas para elegir y Enter para armar; Escape cancela. El selector alternativo de Herramientas comparte el mismo estado. Al terminar la sección actual solicita el cambio con fade y la barrera de preparación. Admite repetir una sección anterior. Pausar, mover la posición o llegar demasiado tarde cancela el salto; la línea de tiempo muestra el destino y un botón Cancelar. En mezcla/grupos aparece una fila de estado sin desplazar los controles de transporte.
+- **Grupos**: usa exactamente `ChannelStrip`, el mismo fader vertical de Mezcla, con color por familia, nivel, S (solo de grupo), M (silencio) y medidores basados en telemetría de los stems. Ritmo, Armonía, Voces, Otros y Click/guía. Una ganancia adicional conserva los faders individuales, mute/solo y ruteo. En **Configurar grupos** puedes corregir la asignación sugerida o restaurar niveles/silencios/solos. No son buses de salida independientes. Los grupos conservan sus niveles, silencio y asignaciones al alternar entre mezcla, secciones y grupos. Se reinician al recargar o cambiar de canción y no se guardan.
 
 El salto se solicita desde un temporizador de UI que consulta el reloj de audio cada 25 ms. No está programado a precisión de muestra: una interfaz ocupada o en segundo plano puede retrasarlo o cancelarlo. La preparación de PCM puede producir una pausa; no hay transición continua ni precarga PCM de la siguiente canción conectada a esta pantalla.
 
@@ -38,6 +38,7 @@ Pruebas locales:
 
 ```sh
 npm run test:live-tools
+npm run test:live-timeline-jump
 npm run test:live-audio-fades
 npm run test:live-prewarm-completion
 node scripts/test-live-director-underrun-recovery.mjs
@@ -71,3 +72,5 @@ Chrome 156: 15 stems de Providencia; silencio de grupo confirmado con niveles PC
 En un grafo Web Audio con salida física silenciada, la envolvente de 800 ms llegó a cero durante un bloqueo de UI de 750 ms. También pasaron cancelación manteniendo la ganancia intermedia, sustitución de rampa y suspensión del AudioContext. No demuestra ausencia de cortes durante un seek de red.
 
 Pasaron revisión de tipos de los componentes/hook y sus dependencias, recuperación de underrun, grupos, política de motor, routing, precarga y timeouts de Range. No se ejecutó build completo Astro ni validación en Safari, iOS o equipo de audio del culto. Capturas y resultados locales en `.lab/results/`.
+
+La prueba de navegación directa verificó un toque sin seek, confirmación explícita, doble clic para repetir una sección anterior, flechas/Enter y cancelación con Escape. Usa los límites reales de los marcadores con su desfase guardado. Se inspeccionaron los faders de grupos en escritorio y horizontal compacto.

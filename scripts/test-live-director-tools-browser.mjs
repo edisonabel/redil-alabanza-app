@@ -25,7 +25,7 @@ try {
   await page.screenshot({ path: '.lab/results/tools-ready.png' });
   await showGroups();
   const before = await page.evaluate(() => window.__streamingEngineDumpOwner.getTracks().map(track => ({ id: track.id, volume: track.volume, route: track.outputRoute })));
-  await page.getByRole('button', { name: 'Silenciar grupo Ritmo', exact: true }).click();
+  await page.getByRole('button', { name: 'Mute Ritmo', exact: true }).click();
   await page.click('[data-live-director-control="play-pause"]');
   await page.waitForFunction(() => {
     const engine = window.__streamingEngineDumpOwner, levels = engine?.getSharedTelemetry()?.levels;
@@ -34,26 +34,30 @@ try {
   // Edits to individual faders remain separate even while the group is silent.
   await page.evaluate(() => window.__streamingEngineDumpOwner.setTrackVolume('drums', .4));
   await showGroups();
-  await page.getByRole('button', { name: 'Activar grupo Ritmo', exact: true }).click();
-  const rhythm = page.getByRole('slider', { name: 'Nivel de grupo Ritmo', exact: true });
+  await page.getByRole('button', { name: 'Unmute Ritmo', exact: true }).click();
+  const rhythm = page.getByRole('slider', { name: 'Volume for Ritmo', exact: true });
   await rhythm.focus(); await page.keyboard.press('Home');
-  for (let index = 0; index < 50; index++) await page.keyboard.press('ArrowRight');
-  assert.equal(await rhythm.inputValue(), '50');
+  for (let index = 0; index < 25; index++) await page.keyboard.press('ArrowRight');
+  assert.equal(await rhythm.getAttribute('aria-valuenow'), '50');
   await page.waitForFunction(() => window.__streamingEngineDumpOwner.getSharedTelemetry()?.levels[window.__streamingEngineDumpOwner.getTracks().findIndex(track => track.id === 'drums')] > .001, null, { timeout: 20000 });
   const after = await page.evaluate(() => window.__streamingEngineDumpOwner.getTracks().map(track => ({ id: track.id, volume: track.volume, route: track.outputRoute })));
   assert.deepEqual(after.map(track => ({ ...track, volume: track.id === 'drums' ? before.find(t => t.id === 'drums').volume : track.volume })), before);
   assert.equal(after.find(track => track.id === 'drums').volume, .4);
+  await page.getByRole('button', { name: 'Solo Ritmo', exact: true }).click();
+  await page.waitForFunction(() => { const e = window.__streamingEngineDumpOwner, t = e.getSharedTelemetry(); return t.levels[t.trackIds.indexOf('piano')] === 0 && t.levels[t.trackIds.indexOf('guide')] === 0 && t.levels[t.trackIds.indexOf('drums')] > .001; }, null, { timeout: 15000 });
+  await page.getByRole('button', { name: 'Solo Ritmo', exact: true }).click();
   await page.screenshot({ path: '.lab/results/tools-groups.png' });
   await page.getByRole('button', { name: 'Mostrar faders de mezcla', exact: true }).click();
   await page.getByRole('button', { name: 'Mostrar secciones', exact: true }).click();
   await showGroups();
-  assert.equal(await rhythm.inputValue(), '50', 'Switching between faders, sections and groups must preserve group gain');
+  assert.equal(await rhythm.getAttribute('aria-valuenow'), '50', 'Switching between faders, sections and groups must preserve group gain');
   assert.equal(await page.locator('dialog[open]').count(), 0, 'Group controls must live outside Tools');
+  await page.getByRole('button', { name: 'Configurar grupos', exact: true }).click();
   await page.getByRole('button', { name: 'Restaurar niveles de grupos', exact: true }).click();
-  assert.equal(await rhythm.inputValue(), '100');
-  await page.locator('summary').click();
+  assert.equal(await rhythm.getAttribute('aria-valuenow'), '100');
+
   await page.getByRole('combobox', { name: 'Grupo de Drums', exact: true }).selectOption('other');
-  await page.locator('summary').click();
+  await page.getByRole('button', { name: 'Cerrar configuración de grupos', exact: true }).click();
   await page.click('[data-live-director-control="play-pause"]');
   await page.evaluate(async () => {
     const engine = window.__streamingEngineDumpOwner;

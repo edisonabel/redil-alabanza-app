@@ -1,37 +1,68 @@
 import './LiveDirectorTools.css';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TrackData } from '../../../services/MultitrackEngine';
+import type { SharedStreamingTelemetry } from '../../../services/StreamingMultitrackEngine';
 import { inferMixGroup, MIX_GROUPS, type MixGroupId } from '../../../utils/liveDirectorMixGroups';
+import { ChannelStrip } from './ChannelStrip';
 
 type Props = {
-  tracks: TrackData[];
-  isReady: boolean;
-  busy: boolean;
-  hidden: boolean;
+  tracks: TrackData[]; isReady: boolean; isPlaying: boolean; busy: boolean; hidden: boolean;
+  compact: boolean; ultraCompact: boolean;
   onGroupGain: (trackId: string, gain: number) => void;
+  getTelemetry: () => SharedStreamingTelemetry | null;
+  trackLevels: Record<string, number>;
 };
-
-/** Remains mounted between views so its displayed mix always matches the engine. */
+const colors = { rhythm: '#fbad63', harmony: '#73c7fa', vocals: '#c89dff', other: '#79d5ac', cues: '#f5d76b' };
+const shortLabels = { rhythm: 'RIT', harmony: 'ARM', vocals: 'VOZ', other: 'OTR', cues: 'GUÍA' };
 export function LiveDirectorGroupMixer(props: Props) {
+  const settings = useRef<HTMLDialogElement>(null);
   const [gains, setGains] = useState<Record<string, number>>({});
   const [muted, setMuted] = useState<Record<string, boolean>>({});
+  const [solos, setSolos] = useState<Record<string, boolean>>({});
   const [assignments, setAssignments] = useState<Record<string, MixGroupId>>({});
+  const [levels, setLevels] = useState<Record<string, number>>({});
   const groups = useMemo(() => MIX_GROUPS.map(group => ({ ...group,
     tracks: props.tracks.filter(track => (assignments[track.id] || inferMixGroup(track)) === group.id),
   })), [props.tracks, assignments]);
-
-  const applyGain = (groupId: string, gain: number, isMuted = muted[groupId]) => {
-    for (const track of groups.find(group => group.id === groupId)?.tracks || []) props.onGroupGain(track.id, isMuted ? 0 : gain);
-  };
-  return <section hidden={props.hidden} aria-label="Grupos de mezcla" className="ld-group-mixer">
-
-    <h3>Mezcla por familias</h3><p>Conserva el balance de cada stem y sus salidas. Los grupos sólo afectan esta sesión de prueba.</p>
-    <div className="ld-tools-groups">{groups.filter(group => group.tracks.length > 0).map(group => <div key={group.id} className="ld-tools-group">
-      <div><strong>{group.label}</strong><span>{group.tracks.length} stems</span><button type="button" aria-pressed={Boolean(muted[group.id])} disabled={!props.isReady || props.busy}
-        aria-label={`${muted[group.id] ? 'Activar' : 'Silenciar'} grupo ${group.label}`} onClick={() => { const next = !muted[group.id]; setMuted(previous => ({ ...previous, [group.id]: next })); applyGain(group.id, gains[group.id] ?? 1, next); }}>{muted[group.id] ? 'Activar' : 'Silenciar'}</button></div>
-      <label><span>Nivel {Math.round((gains[group.id] ?? 1) * 100)}%</span><input type="range" min="0" max="100" step="1" aria-label={`Nivel de grupo ${group.label}`} value={(gains[group.id] ?? 1) * 100} disabled={!props.isReady || props.busy || muted[group.id]} onChange={event => { const gain = Number(event.target.value) / 100; setGains(previous => ({ ...previous, [group.id]: gain })); applyGain(group.id, gain); }} /></label>
-    </div>)}</div>
-    <details><summary>Asignar stems a grupos</summary><div className="ld-tools-assignments">{props.tracks.map(track => <label key={track.id}>{track.name}<select aria-label={`Grupo de ${track.name}`} value={assignments[track.id] || inferMixGroup(track)} disabled={!props.isReady || props.busy} onChange={event => { const id = event.target.value as MixGroupId; setAssignments(previous => ({ ...previous, [track.id]: id })); props.onGroupGain(track.id, muted[id] ? 0 : gains[id] ?? 1); }}>{MIX_GROUPS.map(group => <option key={group.id} value={group.id}>{group.label}</option>)}</select></label>)}</div></details>
-    <button type="button" disabled={!props.isReady || props.busy} onClick={() => { for (const track of props.tracks) props.onGroupGain(track.id, 1); setGains({}); setMuted({}); }}>Restaurar niveles de grupos</button>
+  const hasSolo = Object.values(solos).some(Boolean);
+  useEffect(() => { if (!props.isReady) settings.current?.close(); }, [props.isReady]);
+  // Group gain is independent of each stem's persisted fader, mute and solo.
+  useEffect(() => {
+    if (!props.isReady) return;
+    for (const group of groups) {
+      const gain = muted[group.id] || (hasSolo && !solos[group.id]) ? 0 : gains[group.id] ?? 1;
+      for (const track of group.tracks) props.onGroupGain(track.id, gain);
+    }
+  }, [groups, gains, muted, solos, hasSolo, props.onGroupGain, props.isReady]);
+  useEffect(() => {
+    if (props.hidden || !props.isPlaying) { setLevels({}); return; }
+    const update = () => {
+      const telemetry = props.getTelemetry();
+      const source = telemetry ? Object.fromEntries(telemetry.trackIds.map((id, index) => [id, telemetry.levels[index]])) : props.trackLevels;
+      setLevels(Object.fromEntries(groups.map(group => [group.id, Math.max(0, ...group.tracks.map(track => source[track.id] || 0))])));
+    };
+    update(); const timer = setInterval(update, 80); return () => clearInterval(timer);
+  }, [props.hidden, props.isPlaying, props.getTelemetry, props.trackLevels, groups]);
+  return <section hidden={props.hidden} aria-label="Grupos de mezcla" className="ld-group-faders">
+    <div className="ld-group-faders-toolbar"><span>Grupos</span><button type="button" disabled={!props.isReady} onClick={() => settings.current?.showModal()}>Configurar grupos</button></div>
+    <div data-live-director-mixer-scroll="true" className={`hide-scrollbar grid min-h-0 flex-1 overflow-x-auto overflow-y-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] ${props.ultraCompact ? 'gap-1 px-0.5 py-0.5' : props.compact ? 'gap-1.5 px-1 py-0.5' : 'gap-3 px-3 py-4'}`}
+      style={{ gridTemplateColumns: `repeat(${Math.max(1, groups.filter(group => group.tracks.length > 0).length)}, minmax(${props.ultraCompact ? '6.7rem' : props.compact ? '7.45rem' : '8.5rem'}, 1fr))`, touchAction: 'pan-x pinch-zoom' }}>
+      {groups.filter(group => group.tracks.length > 0).map(group => <ChannelStrip key={group.id}
+        id={`group-${group.id}`} label={group.label} shortLabel={shortLabels[group.id]} accent={colors[group.id]}
+        volume={gains[group.id] ?? 1} level={levels[group.id] || 0} isPlaying={props.isPlaying}
+        muted={Boolean(muted[group.id])} soloed={Boolean(solos[group.id])} dimmed={hasSolo && !solos[group.id]}
+        disabled={!props.isReady || props.busy} compact={props.compact} ultraCompact={props.ultraCompact}
+        onVolumeChange={gain => setGains(previous => ({ ...previous, [group.id]: gain }))}
+        onMute={() => setMuted(previous => ({ ...previous, [group.id]: !previous[group.id] }))}
+        onSolo={() => setSolos(previous => ({ ...previous, [group.id]: !previous[group.id] }))}
+      />)}
+    </div>
+    <dialog ref={settings} className="ld-tools" aria-labelledby="ld-group-settings-title">
+      <header className="ld-tools-header"><h2 id="ld-group-settings-title">Configurar grupos</h2><button type="button" aria-label="Cerrar configuración de grupos" onClick={() => settings.current?.close()}>Cerrar</button></header>
+      <div className="ld-tools-body"><p>Las asignaciones, niveles y silencios se conservan durante esta prueba.</p>
+        <div className="ld-tools-assignments">{props.tracks.map(track => <label key={track.id}>{track.name}<select aria-label={`Grupo de ${track.name}`} value={assignments[track.id] || inferMixGroup(track)} disabled={!props.isReady || props.busy} onChange={event => setAssignments(previous => ({ ...previous, [track.id]: event.target.value as MixGroupId }))}>{MIX_GROUPS.map(group => <option key={group.id} value={group.id}>{group.label}</option>)}</select></label>)}</div>
+        <button type="button" className="mt-4" disabled={!props.isReady || props.busy} onClick={() => { setGains({}); setMuted({}); setSolos({}); }}>Restaurar niveles de grupos</button>
+      </div>
+    </dialog>
   </section>;
 }
