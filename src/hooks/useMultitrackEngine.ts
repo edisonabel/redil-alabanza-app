@@ -1,3 +1,4 @@
+import type { GuideAudioGraph } from '../services/DynamicGuidePlayer';
 import { holdAudioGain, startAudioGainFade } from '../services/AudioGainRamp';
 import { isMissingStemError } from '../utils/liveDirectorSessionSafety';
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -67,6 +68,7 @@ type UseMultitrackEngineOptions = {
 
 export type UseMultitrackEngineReturn = {
   runtimeError?: string | null;
+  getGuideAudioGraph?: (trackId: string) => GuideAudioGraph | null;
   fadeMasterVolume?: (volume: number, durationMs: number) => ReturnType<typeof startAudioGainFade> | null;
   setTrackGroupGain?: (trackId: string, gain: number) => void;
   isPlaying: boolean;
@@ -793,6 +795,11 @@ export function useMultitrackEngine(
     engineRef.current?.setTrackGroupGain(trackId, gain);
   }, []);
 
+  const getGuideAudioGraph = useCallback((trackId: string) => {
+    const engine = engineRef.current;
+    return engine instanceof StreamingMultitrackEngine ? engine.getGuideAudioGraph(trackId) : null;
+  }, []);
+
   const setMetersEnabled = useCallback(() => {
     // The web engines keep their meters in-process; native iOS uses this hook
     // to shed AVAudioEngine tap load during touch interaction.
@@ -1027,6 +1034,7 @@ export function useMultitrackEngine(
   return useMemo(
     () => ({
       runtimeError,
+      getGuideAudioGraph,
       fadeMasterVolume,
       setTrackGroupGain,
       isPlaying,
@@ -1061,6 +1069,7 @@ export function useMultitrackEngine(
     }),
     [
       runtimeError,
+      getGuideAudioGraph,
       fadeMasterVolume,
       setTrackGroupGain,
       currentTime,

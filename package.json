@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "astro dev",
     "lab:providencia": "node scripts/start-providencia-lab.mjs",
+    "test:live-repeats": "node scripts/test-live-director-repeats-browser.mjs",
+    "test:live-dynamic-guide": "node scripts/test-live-director-dynamic-guide-browser.mjs",
     "test:live-timeline-jump": "node scripts/test-live-director-timeline-jump-browser.mjs",
     "test:live-tools": "node scripts/test-live-director-tools-browser.mjs",
     "test:live-audio-fades": "node scripts/test-live-director-audio-fade-browser.mjs",

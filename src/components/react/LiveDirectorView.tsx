@@ -1,3 +1,4 @@
+import { useLiveDirectorDynamicGuide } from '../../hooks/useLiveDirectorDynamicGuide';
 import { useLiveDirectorSectionJump } from '../../hooks/useLiveDirectorSectionJump';
 import {
   Activity,
@@ -3302,6 +3303,15 @@ export function LiveDirectorView({
     isReady, isPlaying, busy: isSectionSeekBusy || isCongregationFading,
     getTime: selectedMultitrackEngine.getCurrentTimeSnapshot, onJump: handleSectionSeek,
   });
+  const [dynamicGuideWanted, setDynamicGuideWanted] = useState(false);
+  const [guideRetryKey, setGuideRetryKey] = useState(0);
+  const guideTrack = activeEngineTracks.find(track => /\b(guide|guia)\b/i.test(`${track.id} ${track.name}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
+  const dynamicGuide = useLiveDirectorDynamicGuide({
+    wanted: experimentalTools && dynamicGuideWanted, ready: isReady, playing: isPlaying,
+    busy: isSectionSeekBusy, resetKey: `${trackSignature}:${reloadKey}:${guideRetryKey}`, bpm,
+    getGraph: () => guideTrack ? selectedMultitrackEngine.getGuideAudioGraph?.(guideTrack.id) ?? null : null,
+    getTime: selectedMultitrackEngine.getCurrentTimeSnapshot, getPlan: sectionJump.getCuePlan,
+  });
   const lastSectionTapRef = useRef<{ id: string; time: number } | null>(null);
   useEffect(() => { lastSectionTapRef.current = null; }, [isPlaying, trackSignature]);
   const selectedJumpSection = keyboardSectionIndex !== null ? resolvedSections[keyboardSectionIndex] : null;
@@ -3311,6 +3321,13 @@ export function LiveDirectorView({
       releaseSectionsAutoFollowNow();
     }
   }, [sectionJump.arm, releaseSectionsAutoFollowNow]);
+
+  const startRepeatFromTimeline = useCallback((mode: 'once' | 'hold') => {
+    if (sectionJump.startRepeat(mode)) {
+      setVisualSectionTime(null);
+      releaseSectionsAutoFollowNow();
+    }
+  }, [sectionJump.startRepeat, releaseSectionsAutoFollowNow]);
 
   const handleReturnToStart = useCallback(async () => {
     if (
@@ -4489,7 +4506,7 @@ export function LiveDirectorView({
       }
 
       if (document.querySelector('dialog[open]')) return;
-      if (experimentalTools && sectionJump.armed && event.key === 'Escape') {
+      if (experimentalTools && (sectionJump.armed || sectionJump.repeat) && event.key === 'Escape') {
         event.preventDefault(); sectionJump.cancel(); return;
       }
 
@@ -4652,6 +4669,7 @@ export function LiveDirectorView({
     experimentalTools,
     armSectionFromTimeline,
     sectionJump.armed,
+    sectionJump.repeat,
     sectionJump.cancel,
     handleStemsToolbarAction,
     handleReturnToStart,
@@ -5278,6 +5296,10 @@ export function LiveDirectorView({
           </header>
         </div>
 
+        {sectionJump.repeat && !showSectionsPanel && <div className="flex shrink-0 items-center gap-3 rounded-lg border border-violet-200/25 bg-violet-200/5 px-3 py-1 text-xs text-violet-100">
+          <span role="status" className="min-w-0 flex-1 truncate">↻ {sectionJump.repeat.section.name} · {sectionJump.repeat.exitRequested ? 'Sale al terminar' : sectionJump.repeat.mode === 'once' ? 'Una vez' : `Hasta salir · ${sectionJump.repeat.completed} repeticiones`}</span>
+          <button type="button" disabled={isSectionSeekBusy} className="rounded-md border border-violet-200/30 px-3 py-1" onClick={sectionJump.exitRepeat}>Salir al terminar</button>
+        </div>}
         {sectionJump.armed && !showSectionsPanel && <div className="flex shrink-0 items-center gap-3 rounded-lg border border-amber-200/25 bg-amber-200/5 px-3 py-1 text-xs text-amber-100">
           <span role="status" className="min-w-0 flex-1 truncate">→ {sectionJump.armed.section.name} · Al terminar la sección actual</span>
           <button type="button" aria-label="Cancelar salto armado" className="rounded-md border border-amber-200/30 px-3 py-1" onClick={sectionJump.cancel}>Cancelar</button>
@@ -5482,14 +5504,29 @@ export function LiveDirectorView({
                 <span className="text-[0.8rem] font-semibold text-white/78">
                   {activeSection?.name || 'Linea de tiempo'}
                 </span>
+                {experimentalTools && <button type="button" data-live-director-control="dynamic-guide"
+                  aria-label="Guía dinámica en español" aria-pressed={dynamicGuideWanted} aria-busy={dynamicGuide.status === 'loading'}
+                  disabled={!isReady || !guideTrack || !selectedMultitrackEngine.getGuideAudioGraph}
+                  title={dynamicGuide.error || (dynamicGuideWanted ? 'Usa voces en español y reemplaza temporalmente el stem Guide. Respeta su fader y salida.' : 'Activar avisos de voz para secciones, saltos y repeticiones')}
+                  onClick={() => dynamicGuide.status === 'error' ? setGuideRetryKey(previous => previous + 1) : setDynamicGuideWanted(previous => !previous)}
+                  className={`rounded-lg border px-2 py-1 text-[0.65rem] font-semibold ${dynamicGuideWanted ? 'border-cyan-200/50 bg-cyan-200/10 text-cyan-100' : 'border-white/20 text-white/70'} disabled:opacity-40`}
+                >{dynamicGuide.status === 'loading' ? 'Preparando voces…' : dynamicGuide.status === 'error' ? 'Guía: reintentar' : dynamicGuideWanted ? 'Guía dinámica ✓' : 'Guía dinámica'}</button>}
+
               </div>
-              {experimentalTools && isPlaying && (selectedJumpSection || sectionJump.armed) && <div
-                className="absolute left-4 right-16 top-[3.8rem] z-50 flex items-center gap-2 rounded-xl border border-amber-200/30 bg-black/90 px-3 py-2 text-xs text-amber-100"
-              >
-                {sectionJump.armed ? <><span role="status" className="min-w-0 flex-1 truncate">→ {sectionJump.armed.section.name} · Al terminar la sección</span><button type="button" aria-label="Cancelar salto de sección" className="shrink-0 rounded-lg border border-amber-200/30 px-3 py-2" onClick={sectionJump.cancel}>Cancelar</button></>
-                : <><span className="min-w-0 flex-1 truncate">{selectedJumpSection?.name} · Al terminar la sección</span><button type="button" className="shrink-0 rounded-lg border border-cyan-200/40 bg-cyan-200/10 px-3 py-2 text-cyan-100" onClick={() => selectedJumpSection && armSectionFromTimeline(selectedJumpSection.id)}>Armar salto</button></>}
+              {experimentalTools && <div style={isUltraCompactLandscape ? { top: 'auto', bottom: '1.75rem' } : undefined} className="absolute left-4 right-16 top-[3.8rem] z-50 flex flex-wrap items-center gap-2 rounded-xl border border-white/15 bg-black/90 px-3 py-2 text-xs text-white/80">
+                <button type="button" aria-label="Repetir sección una vez" aria-pressed={sectionJump.repeat?.mode === 'once'} disabled={!isPlaying || !isReady || isSectionSeekBusy || isCongregationFading}
+                  className={`shrink-0 rounded-lg border px-2 py-2 ${sectionJump.repeat?.mode === 'once' ? 'border-violet-200/60 bg-violet-200/15 text-violet-100' : 'border-white/25'} disabled:opacity-35`}
+                  onClick={() => sectionJump.repeat?.mode === 'once' ? sectionJump.cancel() : startRepeatFromTimeline('once')}>↻ 1 vez</button>
+                <button type="button" aria-label="Mantener sección en repetición" aria-pressed={sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested} disabled={!isPlaying || !isReady || isSectionSeekBusy || isCongregationFading}
+                  className={`shrink-0 rounded-lg border px-2 py-2 ${sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested ? 'border-violet-200/60 bg-violet-200/15 text-violet-100' : 'border-white/25'} disabled:opacity-35`}
+                  onClick={() => sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested ? sectionJump.exitRepeat() : startRepeatFromTimeline('hold')}>∞ Mantener</button>
+                {sectionJump.repeat ? <><span role="status" className="min-w-0 flex-1 truncate text-violet-100">{sectionJump.repeat.section.name} · {sectionJump.repeat.exitRequested ? 'Sale al terminar' : sectionJump.repeat.mode === 'once' ? 'Repetirá una vez' : `Repite hasta salir (${sectionJump.repeat.completed})`}</span><button type="button" aria-label="Salir de la repetición al terminar" disabled={isSectionSeekBusy} className="rounded-lg border border-violet-200/30 px-3 py-2 text-violet-100" onClick={sectionJump.exitRepeat}>Salir al terminar</button></>
+                : sectionJump.armed ? <><span role="status" className="min-w-0 flex-1 truncate text-amber-100">→ {sectionJump.armed.section.name} · Al terminar la sección</span><button type="button" aria-label="Cancelar salto de sección" className="shrink-0 rounded-lg border border-amber-200/30 px-3 py-2" onClick={sectionJump.cancel}>Cancelar</button></>
+                : selectedJumpSection && isPlaying ? <><span className="min-w-0 flex-1 truncate">{selectedJumpSection.name} · Al terminar la sección</span><button type="button" className="shrink-0 rounded-lg border border-cyan-200/40 bg-cyan-200/10 px-3 py-2 text-cyan-100" onClick={() => armSectionFromTimeline(selectedJumpSection.id)}>Armar salto</button></>
+                : <span className="text-white/55">Doble toque en una sección para armar un salto</span>}
+                {dynamicGuide.error && <div className="flex w-full items-center gap-3 text-rose-200"><span role="alert">{dynamicGuide.error}</span><button type="button" className="rounded-md border border-rose-200/30 px-2 py-1" onClick={() => setDynamicGuideWanted(false)}>Usar guía grabada</button></div>}
               </div>}
-              {nextSectionPreview && !sectionJump.armed && (
+              {nextSectionPreview && !sectionJump.armed && !sectionJump.repeat && (
                 <div
                   key={`next-${nextSectionPreview.name}-${nextSectionPreview.seconds}`}
                   className="pointer-events-none anim-fade-in absolute left-1/2 top-4 z-40 flex -translate-x-1/2 items-center gap-2.5 rounded-full border border-cyan-300/34 bg-[linear-gradient(180deg,rgba(16,30,40,0.92),rgba(10,20,28,0.92))] px-3.5 py-2 shadow-[0_14px_32px_rgba(0,0,0,0.32)]"

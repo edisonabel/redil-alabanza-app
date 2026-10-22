@@ -22,6 +22,21 @@ Pulsa **Herramientas**, en la barra superior, para preparación y saltos. **Grup
 - **Salto de sección**: en **Secciones**, durante la reproducción un toque selecciona el destino; doble toque lo arma, o puedes confirmar con **Armar salto** en la propia línea de tiempo. En Mac, flechas para elegir y Enter para armar; Escape cancela. El selector alternativo de Herramientas comparte el mismo estado. Al terminar la sección actual solicita el cambio con fade y la barrera de preparación. Admite repetir una sección anterior. Pausar, mover la posición o llegar demasiado tarde cancela el salto; la línea de tiempo muestra el destino y un botón Cancelar. En mezcla/grupos aparece una fila de estado sin desplazar los controles de transporte.
 - **Grupos**: usa exactamente `ChannelStrip`, el mismo fader vertical de Mezcla, con color por familia, nivel, S (solo de grupo), M (silencio) y medidores basados en telemetría de los stems. Ritmo, Armonía, Voces, Otros y Click/guía. Una ganancia adicional conserva los faders individuales, mute/solo y ruteo. En **Configurar grupos** puedes corregir la asignación sugerida o restaurar niveles/silencios/solos. No son buses de salida independientes. Los grupos conservan sus niveles, silencio y asignaciones al alternar entre mezcla, secciones y grupos. Se reinician al recargar o cambiar de canción y no se guardan.
 
+### Repeticiones y guía dinámica
+
+En **Secciones**, con la canción sonando:
+
+- **↻ 1 vez** repite la sección actual una vez y sigue su recorrido normal.
+- **∞ Mantener** repite la sección actual hasta pedir **Salir al terminar**. Se muestra el número de vueltas completadas.
+- **Salir al terminar** deja acabar la pasada actual y continúa hacia la siguiente sección. Pausar o mover manualmente la posición cancela el modo. Armar un salto reemplaza la repetición pendiente.
+- **Guía dinámica** prepara las voces españolas suministradas por el usuario. Anuncia secciones, el destino de un salto y «Repetir» cuando procede. Sustituye temporalmente el stem Guide; al apagarla o si falla la preparación vuelve la grabación original. No altera el click de la canción.
+
+El volumen, mute, solo, grupo y salida de la voz se toman de la pista Guide. La voz mono se enruta únicamente a izquierda o derecha según esa pista. Los samples se programan en Web Audio aproximadamente cuatro pulsos antes de la entrada, ajustando el margen a la duración de la frase. Si se arma demasiado tarde para pronunciarla antes del cambio, se omite ese aviso; el salto sigue pendiente. Pausar o cambiar de destino cancela voces programadas.
+
+Se importaron 44 muestras mono PCM16 a 24 kHz (1.7 MB), derivadas de `Click and Guide Samples/Spanish Guides`. Se recortó silencio y se normalizó el pico a 0.75. El manifiesto de `public/audio/guide-es/` registra los nombres originales. No se importaron proyectos Ableton ni archivos `.asd`.
+
+La repetición de esta iteración usa el seek sincronizado con fade y barrera de preparación; **puede haber una pausa al volver al inicio**. No activa el loop de ring buffer existente ni promete loops continuos. Se eligió esta ruta para conservar el protocolo de sincronización ya verificado con 15 stems. El guiado es de nombres de sección y repetición, no reproduce todos los avisos/count-offs que pudiera contener la guía grabada.
+
 El salto se solicita desde un temporizador de UI que consulta el reloj de audio cada 25 ms. No está programado a precisión de muestra: una interfaz ocupada o en segundo plano puede retrasarlo o cancelarlo. La preparación de PCM puede producir una pausa; no hay transición continua ni precarga PCM de la siguiente canción conectada a esta pantalla.
 
 La precarga de archivos en `ModoEnsayoDirector.jsx` ya no marca éxito con solicitudes fallidas, HTTP omitidos, cargas concurrentes incompletas o cancelación. Libera las URLs que reservó al cancelarse. Ese contenedor no se monta en este laboratorio; el flujo se verificó mediante su función real con caché/red simuladas.
@@ -37,6 +52,8 @@ Experimentos:
 Pruebas locales:
 
 ```sh
+npm run test:live-repeats
+npm run test:live-dynamic-guide
 npm run test:live-tools
 npm run test:live-timeline-jump
 npm run test:live-audio-fades
@@ -74,3 +91,5 @@ En un grafo Web Audio con salida física silenciada, la envolvente de 800 ms lle
 Pasaron revisión de tipos de los componentes/hook y sus dependencias, recuperación de underrun, grupos, política de motor, routing, precarga y timeouts de Range. No se ejecutó build completo Astro ni validación en Safari, iOS o equipo de audio del culto. Capturas y resultados locales en `.lab/results/`.
 
 La prueba de navegación directa verificó un toque sin seek, confirmación explícita, doble clic para repetir una sección anterior, flechas/Enter y cancelación con Escape. Usa los límites reales de los marcadores con su desfase guardado. Se inspeccionaron los faders de grupos en escritorio y horizontal compacto.
+
+Verificación de repeticiones/voz: Chrome con Providencia (15 stems), una repetición seguida de recorrido normal, dos vueltas mantenidas, salida a final de pasada y cancelación al pausar. La voz respeta fader/mute/solo/grupo/ruteo, selecciona PCM de «Repetir» y «Coro 1» según la navegación y restaura Guide sin alterar sus ajustes. Un probe AudioWorklet midió los samples reales en L/R, mute cero, cancelación y omisión de avisos tardíos. Sin escrituras de la UI. Resultados: `.lab/results/repeats-check.json` y `dynamic-guide-check.json`.

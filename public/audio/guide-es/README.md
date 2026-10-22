@@ -1,0 +1,1 @@
+Samples de guía en español aportados por el usuario desde «Click and Guide Samples». Copia local para la rama experimental. Derivados WAV mono PCM16 a 24 kHz, silencio inicial/final recortado y pico normalizado a 0.75. El manifiesto conserva el nombre de origen. No se usan los archivos de análisis .asd ni los clicks.

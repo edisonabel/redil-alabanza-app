@@ -133,6 +133,12 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       return;
     }
 
+    if (type === 'track-guide-override') {
+      const track = this.tracks[message.trackIndex];
+      if (track) track.guideOverride = message.enabled === true;
+      return;
+    }
+
     if (type === 'track-group-gain') {
       const track = this.tracks[message.trackIndex];
       if (track) track.groupGain = Math.max(0, Math.min(1, Number.isFinite(message.gain) ? message.gain : 1));
@@ -1805,7 +1811,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
   getTrackTargetGain(track) {
     if (
-      track.isMuted ||
+      track.isMuted || track.guideOverride ||
       track.volume <= GAIN_FLOOR ||
       (this.soloCount > 0 && !track.isSolo)
     ) {

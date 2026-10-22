@@ -1,3 +1,4 @@
+import type { GuideAudioGraph } from './DynamicGuidePlayer';
 import { AudioRingBuffer } from './AudioRingBuffer';
 import { AacAdtsDemuxer } from './AacAdtsDemuxer';
 import {
@@ -1061,6 +1062,7 @@ export class StreamingMultitrackEngine {
   public workletNode: AudioWorkletNode | null = null;
   public onEnded: (() => void) | null = null;
   private groupGains = new Map<string, number>();
+  private dynamicGuideOverrides = new Set<string>();
   private workletProcessorFailed = false;
   private renderFaulted = false;
   public onRenderError: ((message: string) => void) | null = null;
@@ -1483,6 +1485,7 @@ export class StreamingMultitrackEngine {
     }, {});
 
     this.groupGains.clear();
+    this.dynamicGuideOverrides.clear();
     const onProgress = options?.onProgress;
     if (onProgress) {
       try {
@@ -2962,6 +2965,27 @@ export class StreamingMultitrackEngine {
     );
   }
 
+  setGuideOverride(trackId: string, enabled: boolean): void {
+    const index = this.trackIndexById.get(trackId);
+    if (index === undefined) return;
+    if (enabled) this.dynamicGuideOverrides.add(trackId); else this.dynamicGuideOverrides.delete(trackId);
+    this.workletNode?.port.postMessage({ type: 'track-guide-override', trackIndex: index, enabled });
+  }
+
+  getGuideAudioGraph(trackId: string): GuideAudioGraph | null {
+    if (!this.trackIndexById.has(trackId)) return null;
+    return {
+      context: this.context, destination: this.masterGain,
+      setOverride: enabled => this.setGuideOverride(trackId, enabled),
+      readState: () => {
+        const index = this.trackIndexById.get(trackId), track = index === undefined ? undefined : this.trackStates[index];
+        if (!track) return { gain: 0, route: 'left' };
+        const silent = track.muted || (this.soloTrackIds.size > 0 && !this.soloTrackIds.has(trackId));
+        return { gain: silent ? 0 : track.volume * (this.groupGains.get(trackId) ?? 1), route: track.outputRoute };
+      },
+    };
+  }
+
   setTrackGroupGain(trackId: string, gain: number): void {
     const track = this.getTrackStateOrNull(trackId, 'group gain');
     if (!track) return;
@@ -3430,7 +3454,10 @@ export class StreamingMultitrackEngine {
     });
 
     const trackId = this.tracks[trackState.index]?.id;
-    if (trackId) this.setTrackGroupGain(trackId, this.groupGains.get(trackId) ?? 1);
+    if (trackId) {
+      this.setTrackGroupGain(trackId, this.groupGains.get(trackId) ?? 1);
+      this.setGuideOverride(trackId, this.dynamicGuideOverrides.has(trackId));
+    }
     this.postWorkletMessage({
       type: 'track-volume',
       trackIndex: trackState.index,

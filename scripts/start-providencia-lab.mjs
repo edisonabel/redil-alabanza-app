@@ -64,10 +64,10 @@ const server=createServer(async(req,res)=>{
       return;
     }
     if(url.pathname.startsWith('/api/'))return sendJson(res,404,{error:'Ruta no disponible en el laboratorio.'});
-    if(['/workers/','/vendor/','/fonts/'].some(prefix=>url.pathname.startsWith(prefix))){
+    if(['/workers/','/vendor/','/fonts/','/audio/guide-es/'].some(prefix=>url.pathname.startsWith(prefix))){
       const path=resolve(root,'public','.'+decodeURIComponent(url.pathname));
       if(!path.startsWith(resolve(root,'public')+'/')){res.writeHead(404);res.end();return;}
-      try{const body=await readFile(path);res.setHeader('Content-Type',path.endsWith('.js')?'text/javascript':path.endsWith('.woff2')?'font/woff2':'application/octet-stream');res.end(body);}catch{res.writeHead(404);res.end();}return;
+      try{const body=await readFile(path);res.setHeader('Content-Type',path.endsWith('.js')?'text/javascript':path.endsWith('.woff2')?'font/woff2':path.endsWith('.wav')?'audio/wav':path.endsWith('.json')?'application/json':'application/octet-stream');res.end(body);}catch{res.writeHead(404);res.end();}return;
     }
     res.writeHead(404);res.end();
 });
