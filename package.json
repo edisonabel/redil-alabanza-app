@@ -79,7 +79,9 @@
     "test:live-covers-meter-ui": "node scripts/test-live-director-covers-meter-browser.mjs",
     "test:live-overview-ui": "node scripts/test-live-director-section-overview-browser.mjs",
     "test:live-mix-groups": "node scripts/test-live-director-mix-groups.mjs",
-    "test:live-buses-ui": "node scripts/test-live-director-buses-browser.mjs"
+    "test:live-buses-ui": "node scripts/test-live-director-buses-browser.mjs",
+    "test:live-event-advance": "node scripts/test-live-director-event-advance-state.mjs",
+    "test:live-event-advance-ui": "node scripts/test-live-director-event-advance-browser.mjs"
   },
   "dependencies": {
     "@astrojs/netlify": "8.2.1",

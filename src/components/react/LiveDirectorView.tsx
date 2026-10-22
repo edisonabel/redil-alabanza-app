@@ -1,3 +1,4 @@
+import { useLiveDirectorEventAdvance, type EventPlaybackRequest, type QueueSelectionOptions } from '../../hooks/useLiveDirectorEventAdvance';
 import { useLiveDirectorSongLevel } from '../../hooks/useLiveDirectorSongLevel';
 import { LiveDirectorSongLevel } from './live-director/LiveDirectorSongLevel';
 import { useLiveDirectorEventArrangement } from '../../hooks/useLiveDirectorEventArrangement';
@@ -229,7 +230,10 @@ type LiveDirectorViewProps = {
   maxWebActiveTracks?: number;
   queueSongs?: LiveDirectorQueueSong[];
   activeQueueSongId?: string;
-  onSelectQueueSong?: (songId: string) => void;
+  onSelectQueueSong?: (songId: string, options?: QueueSelectionOptions) => void;
+  autoPlayRequest?: EventPlaybackRequest | null;
+  onCancelAutoPlay?: () => void;
+  onAutoPlayHandled?: (token: number) => void;
   canAddQueueSong?: boolean;
   onAddQueueSong?: (input: LiveDirectorManualSongInput) => void;
   onRemoveQueueSong?: (songId: string) => void;
@@ -595,6 +599,9 @@ export function LiveDirectorView({
   queueSongs = EMPTY_QUEUE_SONGS,
   activeQueueSongId = '',
   onSelectQueueSong,
+  autoPlayRequest = null,
+  onCancelAutoPlay,
+  onAutoPlayHandled,
   canAddQueueSong = false,
   onAddQueueSong,
   onRemoveQueueSong,
@@ -852,6 +859,7 @@ export function LiveDirectorView({
   const unlockAudioForUserGesture = 'unlockAudioForUserGesture' in selectedMultitrackEngine
     ? selectedMultitrackEngine.unlockAudioForUserGesture
     : async () => {};
+  const eventAdvanceRef = useRef<{ cancel: () => boolean; complete: () => void } | null>(null);
   const eventArrangementBlockedRef = useRef(false);
   const prepareArrangementPlayRef = useRef<(() => boolean) | null>(null);
   const isTransportCueBusyRef = useRef(false);
@@ -862,6 +870,7 @@ export function LiveDirectorView({
   ), [isManualTempoMode, manualTempoTransport.getCurrentTimeSnapshot, selectedMultitrackEngine]);
 
   const handleTogglePlaybackFromGesture = useCallback(() => {
+    if (eventAdvanceRef.current?.cancel()) return;
     if (isTransportCueBusyRef.current || eventArrangementBlockedRef.current) {
       return;
     }
@@ -1043,6 +1052,7 @@ export function LiveDirectorView({
   }, []);
 
   const exitLiveDirector = useCallback(async () => {
+    eventAdvanceRef.current?.cancel();
     setShowBackConfirm(false);
     if (usesEventMixPersistence) {
       eventMixFlushRef.current();
@@ -1468,6 +1478,7 @@ export function LiveDirectorView({
     getTime: selectedMultitrackEngine.getCurrentTimeSnapshot, pause: selectedMultitrackEngine.pause,
     prepare: selectedMultitrackEngine.prepareSectionJump, cancel: selectedMultitrackEngine.cancelSectionJump,
     scheduleEnd: selectedMultitrackEngine.scheduleSectionEnd,
+    onCompleted: () => eventAdvanceRef.current?.complete(),
   });
 
   prepareArrangementPlayRef.current = () => {
@@ -2059,7 +2070,6 @@ export function LiveDirectorView({
         leftPct: number;
         widthPct: number;
         accent: string;
-        label: string;
         name: string;
       }>;
     }
@@ -2071,7 +2081,6 @@ export function LiveDirectorView({
         leftPct: startFrac * 100,
         widthPct: Math.max(0, (endFrac - startFrac) * 100),
         accent: section.accent,
-        label: section.shortLabel,
         name: section.name,
       };
     });
@@ -2856,6 +2865,7 @@ export function LiveDirectorView({
     };
   }, []);
 
+  const [preparedSessionKey, setPreparedSessionKey] = useState('');
   const failedSessionLoadRef = useRef<{ key: string; message: string } | null>(null);
   const sessionLoadKey = `${songId}:${reloadKey}:${enabledSessionTracks.map(track => `${track.id}:${track.optimizedUrl || track.url}`).join('|')}`;
   const trackSignature = useMemo(() => (
@@ -2864,6 +2874,7 @@ export function LiveDirectorView({
 
 
   useEffect(() => {
+    setPreparedSessionKey('');
     if (sessionPreparationPending) {
       return undefined;
     }
@@ -2912,6 +2923,7 @@ export function LiveDirectorView({
           return;
         }
 
+        setPreparedSessionKey(`${sessionLoadKey}:${trackSignature}`);
         setIsInitializingSession(false);
         setBusyMessage(null);
         logLiveDiagnostic('live-director:tracks-initialized', {
@@ -3262,6 +3274,7 @@ export function LiveDirectorView({
   }, [stopCongregationTrackFade, stopMasterVolumeFade]);
 
   const handleSectionSeek = useCallback(async (nextTime: number) => {
+    eventAdvanceRef.current?.cancel();
     if (!hasTrackSession || isCongregationFading) {
       return;
     }
@@ -3376,6 +3389,35 @@ export function LiveDirectorView({
   });
   manualArrangementNavigation.current = Boolean(sectionJump.armed || sectionJump.repeat);
 
+  const eventQueueIndex = queueSongs.findIndex(song => song.id === (activeQueueSongId || songId));
+  const nextEventSong = eventQueueIndex >= 0 ? queueSongs[eventQueueIndex + 1] : undefined;
+  const eventAdvance = useLiveDirectorEventAdvance({
+    enabled: experimentalTools && Boolean(eventId && onSelectQueueSong) && !isManualTempoMode,
+    identity: `${transportIdentity}:${reloadKey}`, songId: activeQueueSongId || songId,
+    nextSong: nextEventSong?.kind === 'manual-tempo' ? undefined : nextEventSong,
+    playing: isPlaying, ready: isReady,
+    busy: isSectionSeekBusy || isCongregationFading || showArrangementEditor || eventArrangement.loading || Boolean(eventArrangement.error),
+    hasArrangement: Boolean(arrangementEntries), duration: sourceAudioDuration,
+    manualNavigation: manualArrangementNavigation,
+    scheduleEnd: diagnostics?.engineRoute === 'streaming-worker' ? selectedMultitrackEngine.scheduleSectionEnd : undefined,
+    selectSong: (id, options) => { eventMixFlushRef.current(); onSelectQueueSong?.(id, options); },
+    request: autoPlayRequest,
+    startReady: isReady && !isInitializingSession && !sessionPreparationPending &&
+      preparedSessionKey === `${sessionLoadKey}:${trackSignature}`,
+    startError: (failedSessionLoadRef.current?.key === sessionLoadKey ? loadError ?? '' : '') || eventArrangement.error ||
+      (preparedSessionKey === `${sessionLoadKey}:${trackSignature}` && (isWebTrackLimitExceeded || omittedWarningByTrackId.size > 0)
+        ? 'Faltan stems. Revisa la carga antes de reproducir.' : ''),
+    start: async () => {
+      if (arrangementEntries && resolvedSections[0]) {
+        arrangement.focus(resolvedSections[0].id);
+        await seekTo(resolvedSections[0].startTime, { wasPlayingBeforeUiSeek: false });
+      }
+      await play();
+    },
+    pause, cancelSelection: onCancelAutoPlay, requestHandled: onAutoPlayHandled,
+  });
+  eventAdvanceRef.current = eventAdvance;
+
   const [guideRetryKey, setGuideRetryKey] = useState(0);
   const [showClickMixer, setShowClickMixer] = useState(false);
   const [confirmedClickMeter, setConfirmedClickMeter] = useState<{ numerator: number; denominator: number } | null>(null);
@@ -3424,6 +3466,7 @@ export function LiveDirectorView({
   }, [sectionJump.startRepeat, releaseSectionsAutoFollowNow]);
 
   const handleReturnToStart = useCallback(async () => {
+    eventAdvanceRef.current?.cancel();
     if (
       !hasPlayableSession ||
       isTransportCueBusyRef.current ||
@@ -4742,13 +4785,9 @@ export function LiveDirectorView({
         return;
       }
 
-      if (
-        shouldIgnoreKeyboardShortcutTarget(event.target) ||
-        !isReady ||
-        isTransportCueBusy
-      ) {
-        return;
-      }
+      if (shouldIgnoreKeyboardShortcutTarget(event.target)) return;
+      if (eventAdvanceRef.current?.cancel()) { event.preventDefault(); return; }
+      if (!isReady || isTransportCueBusy) return;
 
       event.preventDefault();
       handleTogglePlaybackFromGesture();
@@ -5122,6 +5161,7 @@ export function LiveDirectorView({
                   {dynamicGuide.status === 'error' ? <button type="button" data-live-director-control="guide-status" data-guide-state="error" aria-label="Reintentar guía automática" title={dynamicGuide.error || 'Reintentar guía automática'} onClick={() => setGuideRetryKey(previous => previous + 1)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-amber-200/75"><Headphones size={14}/></button>
                   : <span data-live-director-control="guide-status" data-guide-state={dynamicGuide.status} role="img" aria-label={dynamicGuide.status === 'loading' ? 'Preparando guía automática' : dynamicGuide.status === 'off' ? 'Guía grabada' : 'Guía automática'} title={dynamicGuide.status === 'loading' ? 'Preparando guía automática' : dynamicGuide.status === 'off' ? 'Guía grabada' : 'Guía automática para saltos y repeticiones'} className={`flex h-8 w-5 shrink-0 items-center justify-center text-white/30 ${dynamicGuide.status === 'loading' ? 'animate-pulse' : ''}`}><Headphones size={13}/></span>}
                 </>}
+                {eventAdvance.notice && <span role="status" title={eventAdvance.notice} className="min-w-0 truncate text-[10px] text-cyan-100/60">{eventAdvance.notice}</span>}
                 {arrangementEntries && <span data-live-director-control="arrangement-status" title={arrangement.notice || 'Arreglo de prueba'} className="min-w-0 truncate text-[10px] text-cyan-100/60">Arreglo {arrangement.index + 1}/{resolvedSections.length}{arrangement.notice.startsWith('Arreglo pausado') ? ' · Pausado' : ''}</span>}
                 <button type="button" aria-label="Abrir ajuste de desfase" title="Ajustar marcadores con precisión" onClick={() => showOffsetModal ? void handleCloseOffsetModal() : handleOpenOffsetModal()} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/35 hover:bg-white/5 hover:text-white/80">±</button>
                 <span className="sr-only" role="status" aria-live="polite">{[sectionJump.notice, arrangementEntries ? arrangement.notice : ''].filter(Boolean).join('. ')}</span>
@@ -5387,7 +5427,7 @@ export function LiveDirectorView({
                 {sectionLaneMinimapSegments.length > 0 && (
                   <div
                     className={`pointer-events-none absolute left-4 right-4 z-40 ${
-                      isUltraCompactLandscape ? 'bottom-1 h-[20px]' : isCompactLandscape ? 'bottom-1.5 h-[26px]' : 'bottom-2 h-[30px]'
+                      isUltraCompactLandscape ? 'bottom-1 h-[20px]' : isCompactLandscape ? 'bottom-1.5 h-[24px]' : 'bottom-2 h-[28px]'
                     }`}
                   >
                     <div
@@ -5399,7 +5439,7 @@ export function LiveDirectorView({
                       onKeyDown={handleMinimapKeyDown}
                       tabIndex={0}
                       data-live-section-minimap="true"
-                      className="pointer-events-auto relative h-full cursor-pointer overflow-hidden rounded-lg border border-white/15 bg-black/40 focus-visible:outline-2 focus-visible:outline-cyan-200"
+                      className="pointer-events-auto relative h-full cursor-pointer overflow-hidden rounded-lg border border-white/10 bg-[#0c0f10] focus-visible:outline-2 focus-visible:outline-cyan-200"
                       style={{ touchAction: 'none' }}
                       aria-label="Mini-mapa de la canción"
                       role="slider"
@@ -5421,14 +5461,13 @@ export function LiveDirectorView({
                             style={{
                               left: `${seg.leftPct}%`,
                               width: `${seg.widthPct}%`,
-                              backgroundColor: seg.accent,
-                              opacity: isActive ? 0.95 : 0.7,
-                              borderLeft:
-                                index === 0 ? 'none' : '1px solid rgba(0,0,0,0.45)',
+                              backgroundColor: `color-mix(in srgb, ${seg.accent} ${isActive ? 15 : 6}%, #0c0f10)`,
+                              border: `1px solid color-mix(in srgb, ${seg.accent} ${isActive ? 70 : 35}%, transparent)`,
+                              borderRadius: '3px',
                               transition:
                                 'background-color 160ms ease',
                             }}
-                          ><span className="truncate px-0.5 text-[9px] font-semibold leading-none text-white" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}>{seg.widthPct >= 7 ? `${index + 1} · ${seg.label}` : index + 1}</span></div>
+                          ><span className={`truncate px-0.5 font-medium leading-none text-white/85 ${isUltraCompactLandscape ? 'text-[10px]' : 'text-[11px]'}`}>{seg.name}</span></div>
                         );
                       })}
                       {/* Viewport marker: qué rango de la canción está visible
@@ -5612,7 +5651,7 @@ export function LiveDirectorView({
 
   return (
     <div ref={liveDirectorRootRef} className={shellClassName}>
-      {eventId && (eventArrangement.loading || eventArrangement.error) && <div role="status" className="absolute inset-x-3 top-3 z-[90] flex items-center gap-3 rounded-lg border border-amber-200/30 bg-[#252325] p-3 text-xs text-amber-100">
+      {eventId && (eventArrangement.error || (eventArrangement.loading && !eventAdvance.pending)) && <div role="status" className="absolute inset-x-3 top-3 z-[90] flex items-center gap-3 rounded-lg border border-amber-200/30 bg-[#252325] p-3 text-xs text-amber-100">
         <span>{eventArrangement.loading ? 'Cargando arreglo del evento…' : eventArrangement.error}</span>
         {eventArrangement.error && <button type="button" className="rounded border border-white/20 px-3 py-2" onClick={eventArrangement.reload}>Reintentar</button>}
       </div>}
@@ -5753,23 +5792,28 @@ export function LiveDirectorView({
               <button
                 type="button"
                 onClick={handleTogglePlaybackFromGesture}
-                disabled={!isReady || isTransportCueBusy || showArrangementEditor || eventArrangement.loading || Boolean(eventArrangement.error)}
+                disabled={!eventAdvance.pending && (!isReady || isTransportCueBusy || showArrangementEditor || eventArrangement.loading || Boolean(eventArrangement.error))}
                 aria-busy={isTransportCueBusy || undefined}
                 data-live-director-control="play-pause"
                 className={`${CONTROL_CARD} group relative ${isUltraCompactLandscape ? 'h-11 px-6' : isToolbarCompactLandscape ? 'h-12 px-7' : 'h-[var(--ld-control-height)] px-8'} justify-center border-cyan-300/24 bg-cyan-300/[0.08] text-cyan-100 shadow-[0_0_18px_rgba(103,232,249,0.09)] hover:border-cyan-200/38 hover:bg-cyan-300/[0.11] disabled:cursor-not-allowed disabled:border-white/8 disabled:bg-black/12 disabled:text-white/24`}
                 style={isToolbarCompactLandscape
                   ? { width: scaleRem(isUltraCompactLandscape ? 7.25 : 8.25, 6.7) }
                   : { flex: '0 0 34%' }}
-                aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
+                aria-label={eventAdvance.pending ? 'Cancelar reproducción automática' : isPlaying ? 'Pausar' : 'Reproducir'}
                 aria-keyshortcuts="Space"
-                title={isPlaying ? 'Pausar · Espacio' : 'Reproducir · Espacio'}
+                title={eventAdvance.pending ? 'Cancelar reproducción automática · Espacio' : isPlaying ? 'Pausar · Espacio' : 'Reproducir · Espacio'}
               >
-                {isPlaying ? (
+                {eventAdvance.pending ? (
+                  <span data-live-event-countdown={eventAdvance.countdown ?? 'preparing'} className="flex min-w-0 max-w-full items-center justify-center gap-2" role="status">
+                    <span className="text-xl font-semibold tabular-nums">{eventAdvance.countdown ?? '…'}</span>
+                    <span className="min-w-0 max-w-36 truncate text-left text-[11px] leading-tight">{eventAdvance.countdown !== null ? nextEventSong?.title : 'Preparando audio'}<span className="block text-[9px] text-cyan-100/60">Play para cancelar</span></span>
+                  </span>
+                ) : isPlaying ? (
                   <Pause className={`${isUltraCompactLandscape ? 'h-[1.45rem] w-[1.45rem]' : isToolbarCompactLandscape ? 'h-7 w-7' : 'h-11 w-11'}`} strokeWidth={2.15} fill="currentColor" />
                 ) : (
                   <Play className={`ml-0.5 ${isUltraCompactLandscape ? 'h-[1.45rem] w-[1.45rem]' : isToolbarCompactLandscape ? 'h-7 w-7' : 'h-11 w-11'}`} strokeWidth={2.15} fill="currentColor" />
                 )}
-                <KeyboardHint>SPACE</KeyboardHint>
+                {!eventAdvance.pending && <KeyboardHint>SPACE</KeyboardHint>}
               </button>
 
               <button
@@ -5911,6 +5955,7 @@ export function LiveDirectorView({
                         compact={isCompactLandscape}
                         ultraCompact={isUltraCompactLandscape}
                         onClick={() => {
+                          eventAdvanceRef.current?.cancel();
                           if (queueSong.id === activeQueueSongId) {
                             void handleReturnToStart();
                             return;

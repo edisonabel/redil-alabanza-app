@@ -3,6 +3,7 @@ import type { LiveDirectorSectionVisual } from '../utils/liveDirectorSongSession
 import type { GuideCuePlan } from '../utils/liveDirectorGuideCues';
 type Prepared = { serial: number; completion: Promise<boolean> };
 type Options = {
+  onCompleted?: () => void;
   enabled: boolean; resetKey: string; sections: LiveDirectorSectionVisual[]; playing: boolean; ready: boolean; busy: boolean;
   cursor: MutableRefObject<number>; manualNavigation: MutableRefObject<boolean>;
   getTime: () => number; pause: () => void;
@@ -71,7 +72,7 @@ export function useLiveDirectorArrangement(options: Options) {
           if (!o.scheduleEnd) throw new Error('Final no disponible');
           const end = o.scheduleEnd(section.endTime);
           job.current.cancelEnd = end.cancel;
-          void end.completion.then(done => { if (generation.current !== token) return; job.current = null; if (done) setNotice('Arreglo terminado.'); else failed(); });
+          void end.completion.then(done => { if (generation.current !== token) return; job.current = null; if (done) { setNotice('Arreglo terminado.'); latest.current.onCompleted?.(); } else failed(); });
         } catch { failed(); }
         return;
       }

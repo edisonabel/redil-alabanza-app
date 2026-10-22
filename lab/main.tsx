@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import LiveDirectorView from '../src/components/react/LiveDirectorView';
+import type { EventPlaybackRequest, QueueSelectionOptions } from '../src/hooks/useLiveDirectorEventAdvance';
 import { buildLiveDirectorSectionsFromMarkers, normalizePersistedLiveDirectorSession } from '../src/utils/liveDirectorSongSession';
 import '../src/styles/global.css';
 import './style.css';
@@ -14,6 +15,14 @@ function Lab() {
   const [songs,setSongs]=useState<Song[]>([]);
   const [selected,setSelected]=useState('');
   const [error,setError]=useState('');
+  const [autoPlayRequest,setAutoPlayRequest]=useState<EventPlaybackRequest|null>(null);
+  const selectionToken=useRef(0);
+  const selectSong=(id:string,options?:QueueSelectionOptions)=>{
+    const token=++selectionToken.current;
+    setAutoPlayRequest(options?.autoPlay && labEventId ? {songId:id,token} : null);
+    setSelected(id);
+  };
+  const cancelAutoPlay=()=>{selectionToken.current++;setAutoPlayRequest(null);};
   const mixes=useRef<Record<string,any>>({});
   useEffect(()=>{fetch('/api/lab/songs').then(r=>{if(!r.ok)throw new Error('No se pudo abrir la copia de canciones.');return r.json();}).then(data=>{setSongs(data.songs);setSelected(data.songs.find((s:Song)=>s.titulo==='Providencia')?.id || data.songs[0]?.id || '');}).catch(e=>setError(e.message));},[]);
   const song=songs.find(s=>s.id===selected);
@@ -27,12 +36,13 @@ function Lab() {
   const sections=useMemo(()=>song?buildLiveDirectorSectionsFromMarkers(song.section_markers):[],[song]);
   const queue=useMemo(()=>songs.map(s=>({id:s.id,title:s.titulo,subtitle:s.cantante,artworkUrl:s.artworkUrl})),[songs]);
   return <>
-    <div className="lab-banner" role="status"><strong>EXPERIMENTAL</strong><span>Copia de prueba · Los ajustes no cambian Alabanza</span><label>Canción <select aria-label="Canción de prueba" value={selected} disabled={!songs.length} onChange={event=>setSelected(event.target.value)}>{songs.map(s=><option key={s.id} value={s.id}>{s.titulo}</option>)}</select></label></div>
+    <div className="lab-banner" role="status"><strong>EXPERIMENTAL</strong><span>Copia de prueba · Los ajustes no cambian Alabanza</span><a className="lab-mode" href={labEventId ? "/" : "/?labEvent=lab-playback-preview"}>{labEventId ? "Canción suelta" : "Probar evento"}</a><label>Canción <select aria-label="Canción de prueba" value={selected} disabled={!songs.length} onChange={event=>selectSong(event.target.value)}>{songs.map(s=><option key={s.id} value={s.id}>{s.titulo}</option>)}</select></label></div>
     {error?<main className="lab-message" role="alert"><h1>No se pudo abrir la prueba</h1><p>{error}</p><button onClick={()=>location.reload()}>Reintentar</button></main>:!song?<main className="lab-message" aria-live="polite">Abriendo copia de prueba…</main>:<LiveDirectorView
-      experimentalTools eventId={labEventId} eventTitle={labEventId ? 'Evento de prueba local' : ''} key={song.id} mode="ensayo" songId={song.id} songTitle={song.titulo} songKey={song.tonalidad} songArtworkUrl={song.artworkUrl}
+      experimentalTools eventId={labEventId} eventTitle={labEventId ? 'Evento de prueba local' : ''} key={new URLSearchParams(location.search).has('labRetainView') ? 'queue' : song.id} mode="ensayo" songId={song.id} songTitle={song.titulo} songKey={song.tonalidad} songArtworkUrl={song.artworkUrl}
       title="LiveDirector · Experimental" subtitle={song.titulo} bpm={clickGrid?.bpm ?? song.bpm} timeSignature={song.timeSignature} generatedClickGrid={clickGrid}
       initialSession={resolvedSession} sections={sections} requiresSongContext
-      queueSongs={queue} activeQueueSongId={song.id} onSelectQueueSong={setSelected}
+      queueSongs={queue} activeQueueSongId={song.id} onSelectQueueSong={selectSong}
+      autoPlayRequest={autoPlayRequest} onCancelAutoPlay={cancelAutoPlay} onAutoPlayHandled={token=>setAutoPlayRequest(previous=>previous?.token===token?null:previous)}
       autoStartPadWithTransport={false} onEventMixChange={mix=>{mixes.current[song.id]=mix;}}
       onBack={()=>{location.reload();}} backLabel="Reiniciar prueba" className="lab-director"
       operationalChips={[{id:'lab',label:'PRUEBA',value:'Local',tone:'info',active:true}]}

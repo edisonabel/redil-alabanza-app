@@ -407,6 +407,7 @@ export default function ModoEnsayoDirector({
     [realEnsayoSongs, visibleManualSongs],
   );
   const [activeSongIndex, setActiveSongIndex] = useState(0);
+  const [autoPlayRequest, setAutoPlayRequest] = useState(null);
   const [downloadStatus, setDownloadStatus] = useState({ active: false, progress: 0, total: 0, done: false });
   const [padVolume, setPadVolume] = useState(0.42);
   const [sessionOverrides, setSessionOverrides] = useState({});
@@ -437,6 +438,7 @@ export default function ModoEnsayoDirector({
   const eventMixStatusTimersRef = useRef(new Map());
   const eventMixRetryTimerRef = useRef(null);
   const queueSelectionTokenRef = useRef(0);
+  useEffect(() => { queueSelectionTokenRef.current += 1; setAutoPlayRequest(null); }, [eventId]);
   const takeoverCancelButtonRef = useRef(null);
   const {
     broadcastState,
@@ -930,7 +932,15 @@ export default function ModoEnsayoDirector({
     playbackSnapshotRef.current = snapshot;
   }, []);
 
-  const handleQueueSongSelect = useCallback((songId) => {
+  const handleCancelAutoPlay = useCallback(() => {
+    queueSelectionTokenRef.current += 1;
+    setAutoPlayRequest(null);
+  }, []);
+  const handleAutoPlayHandled = useCallback((token) => {
+    setAutoPlayRequest(previous => previous?.token === token ? null : previous);
+  }, []);
+  const handleQueueSongSelect = useCallback((songId, options) => {
+    setAutoPlayRequest(null);
     const nextSongId = String(songId || '').trim();
     const nextIndex = ensayoSongs.findIndex((song) => resolveSongId(song) === nextSongId);
     if (nextIndex === -1) {
@@ -956,8 +966,13 @@ export default function ModoEnsayoDirector({
     const selectionToken = queueSelectionTokenRef.current + 1;
     queueSelectionTokenRef.current = selectionToken;
 
-    if (!hasEventMixContext || eventMixLoadedSongIds.has(nextSongId)) {
+    const commitSelection = () => {
+      if (queueSelectionTokenRef.current !== selectionToken) return;
+      setAutoPlayRequest(options?.autoPlay && hasEventMixContext ? { songId: nextSongId, token: selectionToken } : null);
       setActiveSongIndex(nextIndex);
+    };
+    if (!hasEventMixContext || eventMixLoadedSongIds.has(nextSongId)) {
+      commitSelection();
       return;
     }
 
@@ -983,7 +998,7 @@ export default function ModoEnsayoDirector({
         next.add(nextSongId);
         return next;
       });
-      setActiveSongIndex(nextIndex);
+      commitSelection();
     })();
   }, [ensayoSongs, eventId, eventMixLoadedSongIds, hasEventMixContext, sessionOverrides]);
 
@@ -1201,6 +1216,9 @@ export default function ModoEnsayoDirector({
         queueSongs={queueSongs}
         activeQueueSongId={activeSongId}
         onSelectQueueSong={handleQueueSongSelect}
+        autoPlayRequest={autoPlayRequest}
+        onCancelAutoPlay={handleCancelAutoPlay}
+        onAutoPlayHandled={handleAutoPlayHandled}
         canAddQueueSong={remainingManualSongSlots > 0}
         onAddQueueSong={handleAddManualSong}
         onRemoveQueueSong={handleRemoveManualSong}

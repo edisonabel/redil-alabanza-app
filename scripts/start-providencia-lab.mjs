@@ -54,6 +54,11 @@ const server=createServer(async(req,res)=>{
     if(url.pathname==='/lab.css'){res.setHeader('Content-Type','text/css');res.end(css);return;}
     if(url.pathname==='/api/lab/songs')return sendJson(res,200,{songs});
     if(url.pathname==='/api/lab/status')return sendJson(res,200,{branch:'codex/livedirector-providencia-lab',songs:songs.map(s=>({title:s.titulo,tracks:s.multitrack_session.tracks.length})),stats});
+    // Read-only event preview for trying the queue locally, without an Alabanza event.
+    if(url.pathname==='/api/live-director-event-arrangement' && url.searchParams.get('evento_id')==='lab-playback-preview'){
+      const song=songs.find(song=>song.id===url.searchParams.get('cancion_id'));
+      return song ? sendJson(res,200,{arrangement:null,revision:'',sourceSignature:`lab-preview:${song.id}`,canEdit:false}) : sendJson(res,404,{error:'Canción fuera de la copia local.'});
+    }
     if(url.pathname==='/api/live-director-upload-permission')return sendJson(res,200,{allowed:false});
     const source=media.get(url.pathname) || (url.pathname==='/api/mp3-proxy'?safeSource(url.searchParams.get('src')):null);
     if(source){
