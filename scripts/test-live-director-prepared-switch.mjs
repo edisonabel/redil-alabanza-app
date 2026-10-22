@@ -17,6 +17,7 @@ function ring(trackIndex,value,targetFrame=0,available=capacity) {
 }
 function setup(count=15) {
   const p=new Processor();
+  if (process.argv.includes('--metering')) p.handleMessage({ type: 'music-meter-enabled', enabled: true });
   for(let i=0;i<count;i++) {
     p.configureTrack({...ring(i,(i+1)/1000),id:`stem-${i}`,usesSharedMemory:true,volume:1,isMuted:false});
     p.tracks[i].effectiveGain=1;

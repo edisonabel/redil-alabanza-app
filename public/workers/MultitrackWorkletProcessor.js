@@ -51,6 +51,11 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.pendingSectionEnd = null;
     this.pendingSectionSwitch = null;
     this.clickSamples = null;
+    this.musicMeterEnabled = false;
+    this.musicMeterLeft = new Float32Array(BASE_RENDER_FRAME_COUNT);
+    this.musicMeterRight = new Float32Array(BASE_RENDER_FRAME_COUNT);
+    this.musicMeterPeak = 0;
+    this.musicMeterFrames = 0;
 
     this.port.onmessage = (event) => {
       const data = event && event.data ? event.data : null;
@@ -64,6 +69,10 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   }
 
   handleMessage(message) {
+    if (message.type === 'music-meter-enabled') {
+      this.musicMeterEnabled = !!message.enabled;
+      this.musicMeterPeak = 0; this.musicMeterFrames = 0; return;
+    }
     const type = message.type;
 
     if (type === 'click-samples') {
@@ -717,6 +726,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       track.consumedFramesSinceReport = 0;
     }
 
+    track.isCue = config.isCue === true;
     if (usesSharedMemory && config.sampleBuffer && config.indexBuffer) {
       track.samples = new Float32Array(config.sampleBuffer);
       track.indices = new Int32Array(config.indexBuffer);
@@ -1092,6 +1102,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       return true;
     }
 
+    if (this.musicMeterEnabled) { this.musicMeterLeft.fill(0); this.musicMeterRight.fill(0); }
     this.renderedFrames += frameCount;
     const renderStartFrame = this.renderedFrames - frameCount;
     this.renderContextFrameOffset = (typeof currentFrame === 'number' ? currentFrame : renderStartFrame) - renderStartFrame;
@@ -1105,6 +1116,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         this.playing = false;
         this.pendingSectionEnd = null;
         this.clearAllSectionEndGuides();
+        this.publishMusicMeter(frameCount);
         this.writeTelemetrySnapshot(ending.endSeconds);
         this.port.postMessage({ type: 'section-end-complete', serial: ending.serial, endSeconds: ending.endSeconds });
         return true;
@@ -1165,6 +1177,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       return true;
     }
 
+    this.publishMusicMeter(frameCount);
     this.applySeekResumeFade(output, outputChannelCount, frameCount);
     this.writeTelemetrySnapshot(this.getTelemetryPositionSeconds());
 
@@ -1311,6 +1324,19 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.telemetryBaseRenderedFrames = boundaryFrame;
     // Keep the existing gain: a ready section switch is not a seek restart.
     this.fadeInFramesRemaining = 0;
+  }
+
+  publishMusicMeter(frameCount) {
+    if (!this.musicMeterEnabled) return;
+    for (let i = 0; i < Math.min(frameCount, BASE_RENDER_FRAME_COUNT); i++) {
+      this.musicMeterPeak = Math.max(this.musicMeterPeak, Math.abs(this.musicMeterLeft[i]), Math.abs(this.musicMeterRight[i]));
+    }
+    this.musicMeterFrames += frameCount;
+    if (this.musicMeterFrames >= (sampleRate || 48000) / 20) {
+      this.port.postMessage({ type: 'music-meter', peak: this.musicMeterPeak,
+        audioTime: ((typeof currentFrame === 'number' ? currentFrame : this.renderedFrames - frameCount) + frameCount) / (sampleRate || 48000) });
+      this.musicMeterPeak = 0; this.musicMeterFrames = 0;
+    }
   }
 
   mixTracks(output, outputChannelCount, frameCount, renderStartFrame, outputOffset) {
@@ -1541,6 +1567,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
           peakSample = absoluteSample;
         }
         left[outputOffset + frameIndex] += sample;
+        if (this.musicMeterEnabled && !track.isCue) this.musicMeterLeft[outputOffset + frameIndex] += sample;
         nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
         if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
           this.armLoopJumpCrossfade(track);
@@ -1566,11 +1593,15 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         }
         if (outputRoute === 'right') {
           right[outputOffset + frameIndex] += sample;
+          if (this.musicMeterEnabled && !track.isCue) this.musicMeterRight[outputOffset + frameIndex] += sample;
         } else if (outputRoute === 'left') {
           left[outputOffset + frameIndex] += sample;
+          if (this.musicMeterEnabled && !track.isCue) this.musicMeterLeft[outputOffset + frameIndex] += sample;
         } else {
           left[outputOffset + frameIndex] += sample;
+          if (this.musicMeterEnabled && !track.isCue) this.musicMeterLeft[outputOffset + frameIndex] += sample;
           right[outputOffset + frameIndex] += sample;
+          if (this.musicMeterEnabled && !track.isCue) this.musicMeterRight[outputOffset + frameIndex] += sample;
         }
         nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
         if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
@@ -1594,6 +1625,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
         for (let channelIndex = 0; channelIndex < outputChannelCount; channelIndex += 1) {
           output[channelIndex][outputOffset + frameIndex] += sample;
+          if (this.musicMeterEnabled && !track.isCue && channelIndex < 2) (channelIndex ? this.musicMeterRight : this.musicMeterLeft)[outputOffset + frameIndex] += sample;
         }
 
         nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
@@ -1657,6 +1689,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
           peakSample = absoluteSample;
         }
         left[outputOffset + frameIndex] += sample;
+        if (this.musicMeterEnabled && !track.isCue) this.musicMeterLeft[outputOffset + frameIndex] += sample;
         nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
         if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
           this.armLoopJumpCrossfade(track);
@@ -1682,11 +1715,15 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         }
         if (outputRoute === 'right') {
           right[outputOffset + frameIndex] += sample;
+          if (this.musicMeterEnabled && !track.isCue) this.musicMeterRight[outputOffset + frameIndex] += sample;
         } else if (outputRoute === 'left') {
           left[outputOffset + frameIndex] += sample;
+          if (this.musicMeterEnabled && !track.isCue) this.musicMeterLeft[outputOffset + frameIndex] += sample;
         } else {
           left[outputOffset + frameIndex] += sample;
+          if (this.musicMeterEnabled && !track.isCue) this.musicMeterLeft[outputOffset + frameIndex] += sample;
           right[outputOffset + frameIndex] += sample;
+          if (this.musicMeterEnabled && !track.isCue) this.musicMeterRight[outputOffset + frameIndex] += sample;
         }
         nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
         if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
@@ -1710,6 +1747,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
         for (let channelIndex = 0; channelIndex < outputChannelCount; channelIndex += 1) {
           output[channelIndex][outputOffset + frameIndex] += sample;
+          if (this.musicMeterEnabled && !track.isCue && channelIndex < 2) (channelIndex ? this.musicMeterRight : this.musicMeterLeft)[outputOffset + frameIndex] += sample;
         }
 
         nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);

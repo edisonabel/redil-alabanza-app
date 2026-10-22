@@ -82,6 +82,7 @@ type SharedOrRegularBuffer = SharedArrayBuffer | ArrayBuffer;
 
 type WorkletTrackBufferMessage = {
   type: 'configure-track';
+  isCue?: boolean;
   trackIndex: number;
   capacity: number;
   sampleRate: number;
@@ -305,7 +306,10 @@ type WorkletMessage =
   | WorkletConfigureTelemetryMessage
   | WorkletLoopRegionMessage;
 
+export type LiveDirectorLevelMeter = { peak: number; held: number; musicPeak: number; musicAt: number; outputAt: number; audioTime: number; master: number };
+
 type WorkletInboundMessage =
+  | { type: 'music-meter'; peak: number; audioTime: number }
   | { type: 'section-end-skipped'; serial: number }
   | { type: 'section-end-complete'; serial: number; endSeconds: number }
   | { type: 'track-guide-duck-ready'; requestId: number }
@@ -1096,6 +1100,9 @@ const readBrowserMemorySnapshot = () => {
 export class StreamingMultitrackEngine {
   public readonly context: AudioContext;
   public readonly masterGain: GainNode;
+  private outputMeterNode: AudioWorkletNode | null = null;
+  private outputMeterLoading: Promise<void> | null = null;
+  private levelMeter = { peak: 0, held: 0, musicPeak: 0, musicAt: -1, outputAt: -1 };
   public workletNode: AudioWorkletNode | null = null;
   public onEnded: (() => void) | null = null;
   private groupGains = new Map<string, number>();
@@ -1534,6 +1541,7 @@ export class StreamingMultitrackEngine {
     }, {});
 
     this.groupGains.clear();
+    this.resetLevelMeter();
     this.dynamicGuideOverrides.clear();
     const onProgress = options?.onProgress;
     if (onProgress) {
@@ -3347,6 +3355,31 @@ export class StreamingMultitrackEngine {
     };
   }
 
+  getLevelMeterSnapshot(): LiveDirectorLevelMeter | null {
+    if (this.disposed) return null;
+    if (!this.outputMeterLoading) {
+      this.outputMeterLoading = this.context.audioWorklet.addModule('/workers/OutputMeterProcessor.js').then(() => {
+        if (this.disposed) return;
+        const node = new AudioWorkletNode(this.context, 'ld-output-meter', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 2, channelCountMode: 'explicit' });
+        node.port.onmessage = event => {
+          const data = event.data;
+          if (!Number.isFinite(data?.peak) || !Number.isFinite(data?.held) || !Number.isFinite(data?.audioTime)) return;
+          this.levelMeter.peak = data.peak; this.levelMeter.held = data.held; this.levelMeter.outputAt = data.audioTime;
+        };
+        node.onprocessorerror = () => { node.disconnect(); if (this.outputMeterNode === node) this.outputMeterNode = null; };
+        this.masterGain.connect(node); node.connect(this.context.destination);
+        this.outputMeterNode = node;
+        this.workletNode?.port.postMessage({ type: 'music-meter-enabled', enabled: true });
+      }).catch(() => { /* Meter failure never interrupts the transport. */ });
+    }
+    return this.outputMeterNode ? { ...this.levelMeter, audioTime: this.context.currentTime, master: this.masterGain.gain.value } : null;
+  }
+
+  resetLevelMeter(): void {
+    this.levelMeter = { peak: 0, held: 0, musicPeak: 0, musicAt: -1, outputAt: -1 };
+    this.outputMeterNode?.port.postMessage({ type: 'reset' });
+  }
+
   setTrackGroupGain(trackId: string, gain: number): void {
     const track = this.getTrackStateOrNull(trackId, 'group gain');
     if (!track) return;
@@ -3562,6 +3595,9 @@ export class StreamingMultitrackEngine {
       this.workletNode.onprocessorerror = null;
       this.workletNode.disconnect();
       this.workletNode = null;
+    }
+    if (this.outputMeterNode) {
+      this.outputMeterNode.port.onmessage = null; this.outputMeterNode.disconnect(); this.outputMeterNode = null;
     }
     this.terminateProducerWorker('dispose');
     this.tracks = [];
@@ -3815,6 +3851,7 @@ export class StreamingMultitrackEngine {
   private postTrackConfiguration(trackState: TrackRuntime): void {
     this.postWorkletMessage({
       type: 'configure-track',
+      isCue: isGuideRoutingTrack(this.tracks[trackState.index]),
       trackIndex: trackState.index,
       capacity: trackState.ringBuffer.capacity,
       sampleRate: trackState.config.sampleRate,
@@ -5772,6 +5809,7 @@ export class StreamingMultitrackEngine {
         type: 'debug-enabled',
         enabled: isLiveDiagnosticsEnabled(),
       });
+      if (this.outputMeterNode) this.workletNode.port.postMessage({ type: 'music-meter-enabled', enabled: true });
     }
 
     return this.workletNode;
@@ -5779,6 +5817,13 @@ export class StreamingMultitrackEngine {
 
   private handleWorkletMessage(message: WorkletInboundMessage | null): void {
     if (!message || typeof message !== 'object') {
+      return;
+    }
+
+    if (message.type === 'music-meter') {
+      if (Number.isFinite(message.peak) && Number.isFinite(message.audioTime)) {
+        this.levelMeter.musicPeak = message.peak; this.levelMeter.musicAt = message.audioTime;
+      }
       return;
     }
 

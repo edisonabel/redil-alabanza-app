@@ -3245,6 +3245,14 @@ export function LiveDirectorView({
   }, [applyMasterVolume, masterVolume, stopMasterVolumeFade]);
 
   useEffect(() => {
+    if (!experimentalTools || !isReady || isManualTempoMode) return;
+    // The first requested value can precede creation of the audio graph.
+    // Reapply once ready so the audible master matches the visible fader.
+    appliedMasterVolumeRef.current = NaN;
+    applyMasterVolume(masterVolumeRef.current);
+  }, [experimentalTools, isReady, isManualTempoMode, applyMasterVolume]);
+
+  useEffect(() => {
     if (isManualTempoMode) {
       manualTempoTransport.setMasterVolume(masterVolume);
     }
@@ -6217,8 +6225,9 @@ export function LiveDirectorView({
               <div className={`text-center ${isUltraCompactLandscape ? 'mt-0' : isCompactLandscape ? 'mt-1' : 'mt-4'}`}>
                 {!isCompactLandscape && <p className="text-[0.62rem] font-black uppercase tracking-[0.3em] text-white/28">BUS</p>}
                 <p className={`font-semibold text-white/90 ${isUltraCompactLandscape ? 'text-[0.78rem]' : isCompactLandscape ? 'text-[0.9rem]' : 'mt-1 text-[1.15rem]'}`}>Master</p>
-                {experimentalTools && !isManualTempoMode && selectedMultitrackEngine.setTrackGroupGain && <LiveDirectorSongLevel
-                  db={songLevel.db} onChange={songLevel.setDb} title={songTitle || title} compact={isCompactLandscape}
+                {experimentalTools && !isManualTempoMode && selectedMultitrackEngine.setTrackGroupGain && selectedMultitrackEngine.getLevelMeterSnapshot && selectedMultitrackEngine.resetLevelMeter && <LiveDirectorSongLevel
+                  key={`${eventId}:${songId}:${reloadKey}`} db={songLevel.db} onChange={songLevel.setDb} title={songTitle || title} compact={isCompactLandscape}
+                  playing={isPlaying} getMeter={selectedMultitrackEngine.getLevelMeterSnapshot!} resetMeter={selectedMultitrackEngine.resetLevelMeter!}
                   disabled={!isReady || isSectionSeekBusy || isCongregationFading || showArrangementEditor} />}
               </div>
             </div>

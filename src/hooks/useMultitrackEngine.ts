@@ -7,6 +7,7 @@ import { MultitrackEngine, type TrackData, type MultitrackEngineLoadWarning } fr
 import {
   StreamingMultitrackEngine,
   type SharedStreamingTelemetry,
+  type LiveDirectorLevelMeter,
 } from '../services/StreamingMultitrackEngine';
 import type { TrackOutputRoute } from '../utils/liveDirectorTrackRouting';
 import type { TrackActivityEnvelope } from '../utils/audioActivityEnvelope';
@@ -68,6 +69,8 @@ type UseMultitrackEngineOptions = {
 };
 
 export type UseMultitrackEngineReturn = {
+  getLevelMeterSnapshot?: () => LiveDirectorLevelMeter | null;
+  resetLevelMeter?: () => void;
   prepareSectionJump?: (targetSeconds: number, boundarySeconds: number) => Promise<{ serial: number; completion: Promise<boolean> }>;
   cancelSectionJump?: (serial?: number) => void;
   scheduleSectionEnd?: (endSeconds: number) => { completion: Promise<boolean>; cancel: () => void };
@@ -799,6 +802,15 @@ export function useMultitrackEngine(
     return fade;
   }, []);
 
+  const getLevelMeterSnapshot = useCallback(() => {
+    const engine = engineRef.current;
+    return engine instanceof StreamingMultitrackEngine ? engine.getLevelMeterSnapshot() : null;
+  }, []);
+  const resetLevelMeter = useCallback(() => {
+    const engine = engineRef.current;
+    if (engine instanceof StreamingMultitrackEngine) engine.resetLevelMeter();
+  }, []);
+
   const setTrackGroupGain = useCallback((trackId: string, gain: number) => {
     engineRef.current?.setTrackGroupGain(trackId, gain);
   }, []);
@@ -1078,6 +1090,8 @@ export function useMultitrackEngine(
       setGeneratedClick,
       fadeMasterVolume,
       setTrackGroupGain,
+      getLevelMeterSnapshot,
+      resetLevelMeter,
       prepareSectionJump,
       cancelSectionJump,
       scheduleSectionEnd,
@@ -1119,6 +1133,8 @@ export function useMultitrackEngine(
       setGeneratedClick,
       fadeMasterVolume,
       setTrackGroupGain,
+      getLevelMeterSnapshot,
+      resetLevelMeter,
       prepareSectionJump,
       cancelSectionJump,
       scheduleSectionEnd,
