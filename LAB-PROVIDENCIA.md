@@ -14,22 +14,21 @@ La recuperación tras underrun está activa. Los saltos armados y repeticiones e
 
 El evento `render-error` ahora detiene el transporte, muestra un aviso y permite recargar. La recuperación requiere pulsar reproducir explícitamente. Si falla el procesador completo (`processorerror`), se recrea el nodo al recargar.
 
-## Herramientas experimentales
+## Interfaz experimental
 
-Pulsa **Herramientas**, en la barra superior, para preparación y saltos. **Grupos** tiene un botón propio debajo de Mezcla/Secciones, en la columna junto al master; ocupa el mismo espacio que los faders.
+El botón Herramientas se retiró. En escritorio (desde 1100 × 760) se ven secciones arriba y mezcla o grupos debajo, con un solo encabezado de sección. En horizontal compacto se alternan secciones y mezcla. **Grupos** conserva un botón propio junto al master y exactamente los mismos faders verticales.
 
-- **Preparación**: muestra el inicio disponible de la canción actual, el número de stems, motor y salidas. No valida todo el repertorio ni garantiza reproducción sin conexión.
-- **Salto de sección**: en **Secciones**, durante la reproducción un toque selecciona el destino; doble toque lo arma, o puedes confirmar con **Armar salto** en la propia línea de tiempo. En Mac, flechas para elegir y Enter para armar; Escape cancela. El selector alternativo de Herramientas comparte el mismo estado. Prepara el destino antes de terminar la sección actual y muestra «Preparando stems…» / «Stems listos». Al llegar al límite, AudioWorklet cambia todas las pistas juntas sin pausar ni vaciar sus buffers. Si falta una pista o llega tarde, continúa la canción sin saltar. Admite repetir una sección anterior. Pausar, mover la posición o llegar demasiado tarde cancela el salto; la línea de tiempo muestra el destino y un botón Cancelar. En mezcla/grupos aparece una fila de estado sin desplazar los controles de transporte.
+- **Salto de sección**: en **Secciones**, durante la reproducción un toque selecciona el destino; doble toque lo arma, o puedes confirmar con **Armar salto** en la propia línea de tiempo. En Mac, flechas para elegir y Enter para armar; Escape cancela. Prepara el destino antes de terminar la sección actual y muestra un punto ámbar mientras prepara y verde cuando está listo, junto al destino y Cancelar. Al llegar al límite, AudioWorklet cambia todas las pistas juntas sin pausar ni vaciar sus buffers. Si falta una pista o llega tarde, continúa la canción sin saltar. Admite repetir una sección anterior. Pausar, mover la posición o llegar demasiado tarde cancela el salto; la línea de tiempo muestra el destino y un botón Cancelar. El estado está junto a Secciones; ya no hay una segunda barra sobre la navegación.
 - **Grupos**: usa exactamente `ChannelStrip`, el mismo fader vertical de Mezcla, con color por familia, nivel, S (solo de grupo), M (silencio) y medidores basados en telemetría de los stems. Ritmo, Armonía, Voces, Otros y Click/guía. Una ganancia adicional conserva los faders individuales, mute/solo y ruteo. En **Configurar grupos** puedes corregir la asignación sugerida o restaurar niveles/silencios/solos. No son buses de salida independientes. Los grupos conservan sus niveles, silencio y asignaciones al alternar entre mezcla, secciones y grupos. Se reinician al recargar o cambiar de canción y no se guardan.
 
 ### Repeticiones y guía dinámica
 
 En **Secciones**, con la canción sonando:
 
-- **↻ 1 vez** repite la sección actual una vez y sigue su recorrido normal.
-- **∞ Mantener** repite la sección actual hasta pedir **Salir al terminar**. Se muestra el número de vueltas completadas.
-- **Salir al terminar** deja acabar la pasada actual y continúa hacia la siguiente sección. Pausar o mover manualmente la posición cancela el modo. Armar un salto reemplaza la repetición pendiente.
-- **Guía dinámica** prepara las voces españolas suministradas por el usuario. Anuncia secciones, el destino de un salto y «Repetir» cuando procede. Sustituye temporalmente el stem Guide; al apagarla o si falla la preparación vuelve la grabación original. No altera el click de la canción.
+- **Icono de repetir** repite la sección actual una vez y sigue su recorrido normal.
+- **∞** repite la sección actual hasta volver a pulsar **∞**. Se muestra el número de vueltas completadas.
+- Volver a pulsar **∞** deja acabar la pasada actual y continúa hacia la siguiente sección. Pausar o mover manualmente la posición cancela el modo. Armar un salto reemplaza la repetición pendiente.
+- **Guía automática**: sin interruptor, prepara las voces españolas suministradas por el usuario. Conserva la grabación Guide en recorrido normal. Anuncia únicamente el destino de un salto o «Repetir», cuando el destino está preparado; atenúa solo el stem Guide durante esa ventana mediante el reloj de AudioWorklet y lo restaura al límite. Cancelar o pausar limpia la voz y la atenuación. Si falla la biblioteca, la guía grabada sigue y aparece un pequeño icono para reintentar. No altera el click de la canción.
 
 El volumen, mute, solo, grupo y salida de la voz se toman de la pista Guide. La voz mono se enruta únicamente a izquierda o derecha según esa pista. Los samples se programan en Web Audio aproximadamente cuatro pulsos antes de la entrada, ajustando el margen a la duración de la frase. Si se arma demasiado tarde para pronunciarla antes del cambio, se omite ese aviso; el salto sigue pendiente. Pausar o cambiar de destino cancela voces programadas.
 
@@ -116,3 +115,15 @@ La ruta nueva está limitada a Chrome de escritorio con SharedArrayBuffer y stem
 La repetición corta se verificó con dos vueltas de una sección de 8 s: primera preparación 3,13 s y siguientes 1,58/1,50 s reutilizando productores, sin nuevos frames de underrun. La prueba de repeticiones/guía volvió a pasar con la nueva ruta, incluido fallo de biblioteca, restauración de Guide y anuncios según destino. Capturas de estados listos en 1728×1000 y 844×390 inspeccionadas. Estos tiempos son observaciones puntuales, no garantías de red.
 
 La pasada final del salto preparado verificó ambos destinos con 15/15 stems, preparación de 3,16 s y 2,68 s antes del límite, error de cambio inferior a una muestra, dispersión entre pistas de 0 frames y ningún quantum silencioso en ±30 ms. Pasaron bloqueo de UI de 750 ms, Escape/pausa/seek, destino tardío y 14/15 preparados sin detener la canción. Resultados `.lab/results/prepared-jump-check.json`; salida física silenciada durante la captura PCM. TypeScript de los componentes/motor modificados y pruebas de procesador, recuperación de underruns, rutas y política de precarga aprobadas. No se ejecutó un build completo de Astro.
+
+## Interfaz, guía automática y precisión de faders · 22 de octubre de 2026
+
+Se eliminó el control Herramientas y el interruptor de guía. La fila de Secciones contiene los iconos de repetir/∞ y solo muestra destino/cancelación cuando procede. Escritorio combina secciones y faders; 844×390 conserva páginas alternas. Ajuste de desfase experimental con entrada de 1 ms y botones de 10 ms; es local, no guarda en base de datos. No se alinearon marcadores automáticamente a un compás supuesto.
+
+La interacción de stems y grupos antes solo enviaba volumen al soltar y cuantizaba al 1 %. Ahora envía valores continuos durante el arrastre, conserva el punto de agarre de la perilla y permite Shift para movimiento fino. Flechas ±1 %, Shift+flechas ±0,1 %, Home/End. El master comparte el mismo componente de control. La escala de ganancia sigue siendo lineal; no se inventó una curva de Playback no demostrada.
+
+La lectura de la guía grabada se atenúa por muestra en una ventana de tiempo de audio, con rampas de 5 ms, únicamente para avisos de navegación. Por defecto no se aplica override a Guide. Pruebas de procesador verifican default sin atenuación, ventana, cancelación, restauración en cambio preparado, mezcla/grupo/ruta conservados y ausencia de efecto sobre otra pista. Los 44 samples siguen pasando PCM L/R, mute y cancelación.
+
+Pruebas: `npm run test:live-ui`, `test:live-fader-precision`, `test:live-guide-duck`, `test:live-dynamic-guide`. Las capturas 1728×1000, 1280×800 y 844×390 están en `.lab/results/minimal-*.png`. `test:live-tools` es ahora alias de la verificación de interfaz mínima; el antiguo dialog no se monta. La investigación del mapa musical y el metrónomo está en el informe del repositorio de análisis, fuera de este checkout. Editor de arreglo y metrónomo de subdivisiones aún no implementados.
+
+Verificación final de esta interfaz: guía automática y fallo/reintento de voces, repetición única, dos vueltas, salida y salto con 15 stems aprobados; respuesta de fader al arrastrar y master fino aprobados. La regresión de saltos preparados pasó con límite dentro del bloque, UI bloqueada 750 ms, cancelación y 14/15 pistas preparadas sin parar el recorrido original. No hubo errores de página ni escrituras HTTP. La comprobación final de tamaños también incluye 1280×720, que usa vistas alternas por falta de altura.

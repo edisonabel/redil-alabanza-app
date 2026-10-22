@@ -16,15 +16,16 @@ const toggle = async () => {
 };
 const guideOverride = () => page.evaluate(() => window.__streamingEngineDumpOwner.dynamicGuideOverrides.has('guide'));
 try {
+  await page.route('**/audio/guide-es/manifest.json', route => route.fulfill({ status: 503, body: 'Controlled sample-library failure' }));
   await page.goto('http://127.0.0.1:4322/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.querySelector('[data-live-director-control="play-pause"]') && !document.querySelector('[data-live-director-control="play-pause"]').disabled, null, { timeout: 90000 });
-  await page.getByRole('button', { name: 'Mostrar secciones', exact: true }).click();
+  if (await page.getByRole('button', { name: 'Mostrar secciones', exact: true }).count()) await page.getByRole('button', { name: 'Mostrar secciones', exact: true }).click();
   const markers = await page.locator('[data-live-section-index]').evaluateAll(elements => elements.map(element => ({ start: Number(element.dataset.liveSectionStart), end: Number(element.dataset.liveSectionEnd) })));
   // Cold destination preparation needs advance notice. A late arm now keeps
   // the source playing instead of pausing at the boundary; that guard is
   // covered by the prepared-jump test. Here verify a ready repeat and guide.
   const section = markers[0]; assert.equal(section.end - section.start, 16);
-  const guide = page.getByRole('button', { name: 'Guía dinámica en español', exact: true });
+  const guideStatus = page.locator('[data-live-director-control="guide-status"]');
   await page.evaluate(() => {
     window.__guideStarts = [];
     const start = AudioBufferSourceNode.prototype.start, stop = AudioBufferSourceNode.prototype.stop;
@@ -35,13 +36,12 @@ try {
     AudioBufferSourceNode.prototype.stop = function(...args) { if (this.__guideLog) this.__guideLog.stopped = true; return stop.apply(this, args); };
   });
   const oldTrack = await page.evaluate(() => { const t = window.__streamingEngineDumpOwner.getTracks().find(t => t.id === 'guide'); return { volume: t.volume, muted: t.isMuted, route: t.outputRoute }; });
-  await page.route('**/audio/guide-es/manifest.json', route => route.fulfill({ status: 503, body: 'Controlled sample-library failure' }));
-  await guide.click();
-  await page.getByRole('alert').filter({ hasText: 'No se encontró la biblioteca' }).waitFor();
-  assert.equal(await guideOverride(), false, 'Failed voice preparation must preserve the recorded guide');
-  await page.getByRole('button', { name: 'Usar guía grabada', exact: true }).click();
+  await page.getByRole('button', { name: 'Reintentar guía automática', exact: true }).waitFor();
+  assert.equal(await guideOverride(), false, 'Failed automatic voice preparation must preserve the recorded guide');
   await page.unroute('**/audio/guide-es/manifest.json');
-  await guide.click(); await page.waitForFunction(() => window.__streamingEngineDumpOwner.dynamicGuideOverrides.has('guide'), null, { timeout: 15000 });
+  await page.getByRole('button', { name: 'Reintentar guía automática', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-live-director-control="guide-status"]')?.dataset.guideState === 'ready', null, { timeout: 15000 });
+  assert.equal(await guideOverride(), false, 'Automatic guide keeps the recorded guide active outside announcement windows');
   const state = await page.evaluate(() => window.__streamingEngineDumpOwner.getGuideAudioGraph('guide').readState());
   assert.ok(state.gain > 0); assert.equal(state.route, oldTrack.route);
   const boundControls = await page.evaluate(() => {
@@ -67,40 +67,37 @@ try {
   await page.evaluate(time => window.__streamingEngineDumpOwner.seekTo(time, { wasPlayingBeforeUiSeek: false }), section.end - 14);
   await toggle(); await page.getByRole('button', { name: 'Mantener sección en repetición', exact: true }).click();
   await page.waitForFunction(start => { const t = window.__streamingEngineDumpOwner.getCurrentTime(); return t >= start && t < start + 2; }, section.start, { timeout: 20000 });
-  await page.waitForFunction(() => document.body.innerText.includes('Repite hasta salir (1)'), null, { timeout: 20000 });
+  await page.waitForFunction(() => Number(document.querySelector('[data-live-director-section-controls]')?.dataset.liveRepeatCount) >= 1, null, { timeout: 20000 });
   // Stay for another full pass before requesting a boundary exit.
-  await page.waitForFunction(() => document.body.innerText.includes('Repite hasta salir (2)'), null, { timeout: 20000 });
+  await page.waitForFunction(() => Number(document.querySelector('[data-live-director-section-controls]')?.dataset.liveRepeatCount) >= 2, null, { timeout: 20000 });
   await mkdir('.lab/results', { recursive: true }); await page.screenshot({ path: '.lab/results/repeat-hold.png' });
-  await page.getByRole('button', { name: 'Salir de la repetición al terminar', exact: true }).click();
+  await page.getByRole('button', { name: 'Mantener sección en repetición', exact: true }).click();
   assert.ok(await clock() < section.end);
   await page.waitForFunction(end => window.__streamingEngineDumpOwner.getCurrentTime() > end + .25, section.end, { timeout: 20000 });
   assert.equal(await page.getByRole('button', { name: 'Mantener sección en repetición', exact: true }).getAttribute('aria-pressed'), 'false');
-  assert.equal(await guideOverride(), true);
+  assert.equal(await guideOverride(), false);
   // A chosen destination replaces the ordinary next-section announcement.
   await toggle();
   await page.evaluate(time => { window.__guideStarts = []; return window.__streamingEngineDumpOwner.seekTo(time, { wasPlayingBeforeUiSeek: false }); }, markers[0].end - 14);
   await toggle();
-  await page.locator('[data-live-director-control="tools"]').click();
-  await page.getByRole('button', { name: 'Salto de sección', exact: true }).click();
-  const destination = page.getByRole('combobox', { name: 'Destino del salto', exact: true });
-  const chorusId = await destination.locator('option').evaluateAll(options => options.find(option => /Coro 1/.test(option.textContent)).value);
-  await destination.selectOption(chorusId);
-  await page.locator('dialog[open]').getByRole('button', { name: 'Armar salto', exact: true }).click();
+  const chorus = page.locator('[data-live-section-index="2"]');
+  await chorus.scrollIntoViewIfNeeded(); await chorus.click();
+  await page.getByRole('button', { name: 'Armar salto', exact: true }).click();
   await page.waitForFunction(() => window.__guideStarts.some(source => Math.abs(source.duration - .8427) < .00015), null, { timeout: 20000 });
-  await page.getByRole('button', { name: 'Cerrar herramientas', exact: true }).click();
   await page.waitForFunction(start => window.__streamingEngineDumpOwner.getCurrentTime() >= start && window.__streamingEngineDumpOwner.getCurrentTime() < start + 6, markers[2].start, { timeout: 20000 });
-  await guide.click(); assert.equal(await guideOverride(), false);
+  assert.equal(await guideOverride(), false);
   const restored = await page.evaluate(() => { const t = window.__streamingEngineDumpOwner.getTracks().find(t => t.id === 'guide'); return { volume: t.volume, muted: t.isMuted, route: t.outputRoute }; });
   assert.deepEqual(restored, oldTrack);
   await page.getByRole('button', { name: 'Mantener sección en repetición', exact: true }).click();
   await toggle();
   await page.waitForFunction(() => document.querySelector('[aria-label="Mantener sección en repetición"]').getAttribute('aria-pressed') === 'false');
   await page.setViewportSize({ width: 844, height: 390 });
+  await page.getByRole('button', { name: 'Mostrar secciones', exact: true }).click();
   await toggle(); await page.getByRole('button', { name: 'Repetir sección una vez', exact: true }).click();
   assert.equal(await page.getByRole('button', { name: 'Repetir sección una vez', exact: true }).getAttribute('aria-pressed'), 'true');
   await page.screenshot({ path: '.lab/results/repeat-landscape.png' }); await toggle();
   assert.deepEqual(errors, []); assert.deepEqual(writes, []);
-  const result = { pass: true, onceReturnsToNormal: true, heldForTwoRepeats: true, exitAtBoundary: true, pauseCancelsRepeat: true, spanishGuideLoads: true, sampleFailurePreservesRecordedGuide: true, guideFollowsRepeatAndJump: true, guideRespectsMixAndRouting: true, recordedGuideRestored: true, tracks: 15, errors, writes };
+  const result = { pass: true, onceReturnsToNormal: true, heldForTwoRepeats: true, exitAtBoundary: true, pauseCancelsRepeat: true, spanishGuideLoads: true, sampleFailurePreservesRecordedGuide: true, guideFollowsRepeatAndJump: true, guideRespectsMixAndRouting: true, recordedGuidePreservedByDefault: true, automaticGuideWithoutToggle: true, tracks: 15, errors, writes };
   await writeFile('.lab/results/repeats-check.json', JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));
 } catch (error) {
   await mkdir('.lab/results', { recursive: true }); await page.screenshot({ path: '.lab/results/repeat-failure.png' });

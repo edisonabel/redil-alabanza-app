@@ -11,6 +11,10 @@ import {
   Pause,
   Play,
   Radio,
+  Repeat2,
+  Infinity as InfinityIcon,
+  Headphones,
+  ArrowRight,
   SkipBack,
   SlidersVertical,
   Smartphone,
@@ -29,8 +33,7 @@ import { useNativeIOSMultitrackEngine } from '../../hooks/useNativeIOSMultitrack
 import type { MultitrackEngineLoadWarning, SongStructure, TrackData } from '../../services/MultitrackEngine';
 import type { SharedStreamingTelemetry } from '../../services/StreamingMultitrackEngine';
 import { LiveDirectorGroupMixer } from './live-director/LiveDirectorGroupMixer';
-import { LiveDirectorTools } from './live-director/LiveDirectorTools';
-import { ChannelStrip, FaderThumb } from './live-director/ChannelStrip';
+import { ChannelStrip, FaderThumb, PrecisionFaderSurface } from './live-director/ChannelStrip';
 import { EnsayoQueueAddCard, EnsayoQueueCard } from './live-director/EnsayoQueueCard';
 import { ManualTempoSongModal } from './live-director/ManualTempoSongModal';
 import {
@@ -1384,9 +1387,10 @@ export function LiveDirectorView({
   const canUseStemsToolbar = canManageStemSelection || canOpenStemsActionModal;
   const isStemsToolbarActive = canToggleTrackLoad && enabledSessionTracks.length !== sessionTracks.length;
   const useWideTrackLoadModal = !isPortrait;
-  const showSectionsPanel = surfaceView === 'sections' && !isManualTempoMode;
+  const desktopCombined = experimentalTools && !isManualTempoMode && viewportWidth >= 1100 && viewportHeight >= 760;
+  const showSectionsPanel = (desktopCombined || surfaceView === 'sections') && !isManualTempoMode;
   const showGroupsPanel = surfaceView === 'groups' && experimentalTools && !isManualTempoMode;
-  const showMixReturn = showSectionsPanel || showGroupsPanel;
+  const showMixReturn = !desktopCombined && (showSectionsPanel || showGroupsPanel);
   const displayBpm = Number.isFinite(Number(bpm)) ? Math.max(0, Math.round(Number(bpm))) : 0;
   const canTogglePulseSubdivision = isManualTempoMode && displayBpm > 0;
   const displayedPulseBpm = canTogglePulseSubdivision
@@ -3305,14 +3309,14 @@ export function LiveDirectorView({
     prepareJump: !isManualTempoMode && diagnostics?.engineRoute === 'streaming-worker' ? selectedMultitrackEngine.prepareSectionJump : undefined,
     cancelPreparedJump: selectedMultitrackEngine.cancelSectionJump,
   });
-  const [dynamicGuideWanted, setDynamicGuideWanted] = useState(false);
+
   const [guideRetryKey, setGuideRetryKey] = useState(0);
   const guideTrack = activeEngineTracks.find(track => /\b(guide|guia)\b/i.test(`${track.id} ${track.name}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
   const dynamicGuide = useLiveDirectorDynamicGuide({
-    wanted: experimentalTools && dynamicGuideWanted, ready: isReady, playing: isPlaying,
+    wanted: experimentalTools && Boolean(guideTrack) && diagnostics?.engineRoute === 'streaming-worker', ready: isReady, playing: isPlaying,
     busy: isSectionSeekBusy, resetKey: `${trackSignature}:${reloadKey}:${guideRetryKey}`, bpm,
     getGraph: () => guideTrack ? selectedMultitrackEngine.getGuideAudioGraph?.(guideTrack.id) ?? null : null,
-    getTime: selectedMultitrackEngine.getCurrentTimeSnapshot, getPlan: sectionJump.getCuePlan,
+    getTime: selectedMultitrackEngine.getCurrentTimeSnapshot, getPlan: time => { const plan = sectionJump.getCuePlan(time); return plan && /^(jump|repeat):/.test(plan.id) ? plan : null; },
   });
   const lastSectionTapRef = useRef<{ id: string; time: number } | null>(null);
   useEffect(() => { lastSectionTapRef.current = null; }, [isPlaying, trackSignature]);
@@ -3453,7 +3457,8 @@ export function LiveDirectorView({
   }, [applyManualSession, buildSessionSavePayload, canManagePersistedSongSession, enqueueSessionSave, hasPersistedSongContext, onSessionPersisted, sectionOffsetSeconds, songId]);
 
   const updateSectionOffsetLocally = useCallback((nextOffset: number) => {
-    const safeOffset = Math.round(nextOffset * 4) / 4;
+    if (!Number.isFinite(nextOffset)) return;
+    const safeOffset = experimentalTools ? Math.round(nextOffset * 1000) / 1000 : Math.round(nextOffset * 4) / 4;
     setManualSession((previous) => (
       previous
         ? {
@@ -3462,10 +3467,10 @@ export function LiveDirectorView({
         }
         : previous
     ));
-  }, []);
+  }, [experimentalTools]);
 
   const commitSectionOffset = useCallback(async (): Promise<boolean> => {
-    if (!hasPersistedSongContext || !manualSession) {
+    if (experimentalTools || !hasPersistedSongContext || !manualSession) {
       return true;
     }
     if (!canManagePersistedSongSession) {
@@ -3499,7 +3504,7 @@ export function LiveDirectorView({
     } finally {
       setBusyMessage(null);
     }
-  }, [canManagePersistedSongSession, enqueueSessionSave, hasPersistedSongContext, manualSession, onSessionPersisted, songId]);
+  }, [experimentalTools, canManagePersistedSongSession, enqueueSessionSave, hasPersistedSongContext, manualSession, onSessionPersisted, songId]);
 
   const commitMixerStateSilent = useCallback((tracksOverride?: TrackData[]) => {
     if (!hasPersistedSongContext || !manualSession || manualSession.songId !== songId) {
@@ -4535,7 +4540,7 @@ export function LiveDirectorView({
           return;
         }
 
-        if (event.code === 'KeyV' && !isManualTempoMode) {
+        if (event.code === 'KeyV' && !isManualTempoMode && !desktopCombined) {
           event.preventDefault();
           setSurfaceView((previous) => previous === 'mix' ? 'sections' : 'mix');
           return;
@@ -4670,6 +4675,7 @@ export function LiveDirectorView({
     handleSectionSeek,
     experimentalTools,
     armSectionFromTimeline,
+    desktopCombined,
     sectionJump.armed,
     sectionJump.repeat,
     sectionJump.cancel,
@@ -4978,6 +4984,467 @@ export function LiveDirectorView({
     [isCompactLandscape, isNativeIosShell, scaleRem],
   );
 
+  const sectionSurface = (
+<div data-live-director-section-surface="true" className="relative flex min-h-0 flex-col overflow-hidden rounded-[1.2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(29,30,32,0.98),rgba(23,24,26,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+              <div data-live-director-section-controls="true" data-live-repeat-count={sectionJump.repeat?.completed ?? 0} className="relative z-40 flex h-11 shrink-0 items-center gap-2 border-b border-white/5 px-3 text-xs text-white/60">
+                <span className="shrink-0 text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-white/35">Secciones</span>
+                <span className="min-w-0 truncate font-medium text-white/80">{activeSection?.name || '—'}</span>
+                {experimentalTools && <>
+                  <button type="button" aria-label="Repetir sección una vez" aria-pressed={sectionJump.repeat?.mode === 'once'}
+                    disabled={!isPlaying || !isReady || isSectionSeekBusy || isCongregationFading}
+                    title="Repetir la sección una vez al terminar"
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors disabled:opacity-25 ${sectionJump.repeat?.mode === 'once' ? 'bg-cyan-200/10 text-cyan-100' : 'hover:bg-white/5 hover:text-white'}`}
+                    onClick={() => sectionJump.repeat?.mode === 'once' ? sectionJump.cancel() : startRepeatFromTimeline('once')}><Repeat2 size={17}/></button>
+                  <button type="button" aria-label="Mantener sección en repetición" aria-pressed={sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested}
+                    disabled={!isPlaying || !isReady || isSectionSeekBusy || isCongregationFading}
+                    title={sectionJump.repeat?.mode === 'hold' ? 'Salir de la repetición al terminar esta pasada' : 'Repetir hasta salir'}
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors disabled:opacity-25 ${sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested ? 'bg-cyan-200/10 text-cyan-100' : 'hover:bg-white/5 hover:text-white'}`}
+                    onClick={() => sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested ? sectionJump.exitRepeat() : startRepeatFromTimeline('hold')}><InfinityIcon size={18}/></button>
+                  {sectionJump.armed ? <span role="status" title={sectionJump.notice} className="flex min-w-0 items-center gap-1.5 text-amber-100/90">
+                    <ArrowRight size={13} className="shrink-0"/><span className="truncate">{sectionJump.armed.section.name}</span>
+                    <span aria-label={sectionJump.preparation === 'ready' ? 'Stems listos' : 'Preparando stems'} className={`h-1.5 w-1.5 shrink-0 rounded-full ${sectionJump.preparation === 'ready' ? 'bg-emerald-300' : 'animate-pulse bg-amber-200/70'}`}/>
+                    <button type="button" aria-label="Cancelar salto de sección" onClick={sectionJump.cancel} className="flex h-8 w-7 shrink-0 items-center justify-center rounded-lg hover:bg-white/5"><X size={14}/></button>
+                  </span> : sectionJump.repeat ? <span role="status" title={sectionJump.notice} className="min-w-0 truncate text-cyan-100/70">{sectionJump.repeat.exitRequested ? 'Sale al terminar' : sectionJump.preparation === 'preparing' ? 'Preparando…' : `× ${sectionJump.repeat.completed}`}</span>
+                  : selectedJumpSection && isPlaying && selectedJumpSection.id !== activeSection?.id ? <span className="flex min-w-0 items-center gap-1 text-white/65"><span className="truncate">{selectedJumpSection.name}</span><button type="button" aria-label="Armar salto" title="Armar salto al terminar la sección actual" onClick={() => armSectionFromTimeline(selectedJumpSection.id)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-cyan-100 hover:bg-white/5"><ArrowRight size={17}/></button></span>
+                  : null}
+                  <span className="flex-1"/>
+                  {dynamicGuide.status === 'error' ? <button type="button" data-live-director-control="guide-status" data-guide-state="error" aria-label="Reintentar guía automática" title={dynamicGuide.error || 'Reintentar guía automática'} onClick={() => setGuideRetryKey(previous => previous + 1)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-amber-200/75"><Headphones size={14}/></button>
+                  : <span data-live-director-control="guide-status" data-guide-state={dynamicGuide.status} role="img" aria-label={dynamicGuide.status === 'loading' ? 'Preparando guía automática' : dynamicGuide.status === 'off' ? 'Guía grabada' : 'Guía automática'} title={dynamicGuide.status === 'loading' ? 'Preparando guía automática' : dynamicGuide.status === 'off' ? 'Guía grabada' : 'Guía automática para saltos y repeticiones'} className={`flex h-8 w-5 shrink-0 items-center justify-center text-white/30 ${dynamicGuide.status === 'loading' ? 'animate-pulse' : ''}`}><Headphones size={13}/></span>}
+                </>}
+                <button type="button" aria-label="Abrir ajuste de desfase" title="Ajustar marcadores con precisión" onClick={() => showOffsetModal ? void handleCloseOffsetModal() : handleOpenOffsetModal()} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/35 hover:bg-white/5 hover:text-white/80">±</button>
+                <span className="sr-only" role="status" aria-live="polite">{sectionJump.notice}</span>
+              </div>
+              {!experimentalTools && nextSectionPreview && !sectionJump.armed && !sectionJump.repeat && (
+                <div
+                  key={`next-${nextSectionPreview.name}-${nextSectionPreview.seconds}`}
+                  className="pointer-events-none anim-fade-in absolute left-1/2 top-4 z-40 flex -translate-x-1/2 items-center gap-2.5 rounded-full border border-cyan-300/34 bg-[linear-gradient(180deg,rgba(16,30,40,0.92),rgba(10,20,28,0.92))] px-3.5 py-2 shadow-[0_14px_32px_rgba(0,0,0,0.32)]"
+                  aria-live="polite"
+                >
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-300" aria-hidden="true" />
+                  <span className="text-[0.6rem] font-black uppercase tracking-[0.22em] text-cyan-100/66">
+                    Proxima
+                  </span>
+                  <span className="text-[0.88rem] font-semibold text-white">
+                    {nextSectionPreview.name}
+                  </span>
+                  <span className="rounded-full border border-cyan-300/28 bg-cyan-300/10 px-2 py-0.5 text-[0.7rem] font-black tracking-[0.12em] text-cyan-100">
+                    {nextSectionPreview.seconds}s
+                  </span>
+                </div>
+              )}
+              {sectionsAutoFollowStatus !== 'auto' && (
+                <div
+                  className="pointer-events-none absolute left-4 top-[3.4rem] z-40 flex items-center gap-2 rounded-full border border-amber-300/28 bg-black/62 px-2.5 py-1 shadow-[0_6px_18px_rgba(0,0,0,0.28)]"
+                  aria-live={keyboardSectionIndex !== null ? 'polite' : undefined}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full bg-amber-300 ${
+                      sectionsAutoFollowStatus === 'held' ? 'animate-pulse' : ''
+                    }`}
+                    aria-hidden="true"
+                  />
+                  <span className="text-[0.58rem] font-black uppercase tracking-[0.22em] text-amber-100/86">
+                    {keyboardSectionIndex !== null
+                      ? (experimentalTools && isPlaying ? 'Enter para armar · Auto en 5s' : 'Enter para ir · Auto en 5s')
+                      : sectionsAutoFollowStatus === 'held'
+                        ? 'Scroll libre'
+                        : 'Auto en 5s'}
+                  </span>
+                  {sectionsAutoFollowStatus === 'resuming' && (
+                    <span className="relative ml-0.5 h-1 w-10 overflow-hidden rounded-full bg-white/10">
+                      <span
+                        key="resume-ring"
+                        className="live-director-autofollow-ring absolute inset-y-0 left-0 block h-full w-full rounded-full bg-amber-300/82"
+                      />
+                    </span>
+                  )}
+                </div>
+              )}
+              {showOffsetModal && (
+                <div className="absolute right-4 top-16 z-40 w-[16rem] rounded-[1.25rem] border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,22,0.98),rgba(13,15,17,0.98))] p-3 shadow-[0_24px_48px_rgba(0,0,0,0.34)]">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[0.62rem] font-black uppercase tracking-[0.22em] text-white/42">Desfase</p>
+                      <p className="mt-1 text-[1rem] font-semibold text-white/86">
+                        {sectionOffsetSeconds >= 0 ? '+' : ''}
+                        {sectionOffsetSeconds.toFixed(3)}s
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleCloseOffsetModal();
+                      }}
+                      className="ui-pressable-soft flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/26 text-white/58 hover:text-white"
+                      aria-label="Cerrar ajuste de desfase"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateSectionOffsetLocally(sectionOffsetSeconds - (experimentalTools ? 0.01 : 0.25));
+                      }}
+                      className="ui-pressable-soft flex h-10 items-center justify-center rounded-[0.95rem] border border-white/10 bg-black/28 text-[0.88rem] font-black text-white/76"
+                      aria-label="Mover secciones antes" title={experimentalTools ? 'Adelantar 10 ms' : 'Adelantar 250 ms'}
+                    >
+                      -
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateSectionOffsetLocally(0);
+                      }}
+                      className="ui-pressable-soft flex h-10 items-center justify-center rounded-[0.95rem] border border-white/10 bg-black/28 text-[0.66rem] font-black uppercase tracking-[0.14em] text-white/68"
+                    >
+                      Rein.
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateSectionOffsetLocally(sectionOffsetSeconds + (experimentalTools ? 0.01 : 0.25));
+                      }}
+                      className="ui-pressable-soft flex h-10 items-center justify-center rounded-[0.95rem] border border-white/10 bg-black/28 text-[0.88rem] font-black text-white/76"
+                      aria-label="Mover secciones despues" title={experimentalTools ? 'Retrasar 10 ms' : 'Retrasar 250 ms'}
+                    >
+                      +
+                    </button>
+                  </div>
+                  {experimentalTools && <label className="mt-3 block text-[0.65rem] text-white/55">Desfase en segundos
+                    <input type="number" aria-label="Desfase preciso de secciones" step="0.001" value={sectionOffsetSeconds} onChange={event => { if (event.currentTarget.value !== '') updateSectionOffsetLocally(Number(event.currentTarget.value)); }} className="mt-1 w-full rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-sm tabular-nums text-white/90"/>
+                    <span className="mt-2 block leading-relaxed">Ajuste local de 1 ms. No mueve los marcadores a una cuadrícula sin verificar el primer pulso y el compás.</span>
+                  </label>}
+                  {sectionOffsetSaveError && (
+                    <p className="mt-2 text-[0.64rem] leading-snug text-rose-200/86" role="alert">
+                      {sectionOffsetSaveError}
+                    </p>
+                  )}
+                </div>
+              )}
+              <div className="relative min-h-0 flex-1 overflow-hidden bg-black/12">
+                <div className="pointer-events-none absolute inset-y-0 left-0 z-20 w-16 bg-[linear-gradient(90deg,rgba(23,24,26,0.96),rgba(23,24,26,0))]" />
+                <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-16 bg-[linear-gradient(270deg,rgba(23,24,26,0.96),rgba(23,24,26,0))]" />
+                <div
+                  className={`pointer-events-none absolute top-3 z-30 w-[4px] -translate-x-1/2 rounded-full bg-white shadow-[0_0_18px_rgba(255,255,255,0.68)] ${
+                    isUltraCompactLandscape ? 'bottom-3' : isCompactLandscape ? 'bottom-[22px]' : 'bottom-[34px]'
+                  }`}
+                  style={{ left: `${sectionLanePlayheadOffsetPx}px` }}
+                />
+                <div
+                  ref={sectionsLaneScrollRef}
+                  onPointerDown={handleSectionsPointerDown}
+                  onPointerMove={handleSectionsPointerMove}
+                  onPointerUp={handleSectionsPointerUp}
+                  onPointerCancel={handleSectionsPointerUp}
+                  onWheel={triggerUserScrollSections}
+                  className="hide-scrollbar relative h-full overflow-x-auto overflow-y-hidden"
+                  style={{
+                    touchAction: 'pan-x pinch-zoom',
+                    overscrollBehaviorX: 'contain',
+                    WebkitOverflowScrolling: 'touch',
+                  }}
+                >
+                    <div
+                      className="relative flex h-full min-h-0 items-stretch gap-[14px] py-4"
+                      style={{
+                        width: `${sectionLaneContentWidth}px`,
+                        paddingLeft: `${sectionLanePlayheadOffsetPx}px`,
+                        paddingRight: `${sectionLaneTrailingPaddingPx}px`,
+                      }}
+                    >
+                    {sectionLaneSegments.map(({
+                      section,
+                      wavePath,
+                      waveViewBoxWidth,
+                      widthPx,
+                      leftPx,
+                      activeStyle,
+                      inactiveStyle,
+                    }, index) => {
+                      const isActive = index === activeSectionIndex;
+
+                      return (
+                        <button
+                          key={section.id}
+                          type="button"
+                          disabled={isCongregationFading}
+                          aria-busy={isSectionSeekBusy || undefined}
+                          data-live-chord-section="true"
+                          data-live-section-index={index}
+                          data-live-section-start={section.startTime}
+                          data-live-section-end={section.endTime}
+                          title={isCongregationFading ? 'Espera a que termine el fade de congregación' : `${section.name} · ${section.startTime.toFixed(3)}–${section.endTime.toFixed(3)} s`}
+                          onClick={(event) => {
+                            if (event.detail > 0) {
+                              return;
+                            }
+                            if (experimentalTools && isPlaying) armSectionFromTimeline(section.id);
+                            else void handleSectionSeek(section.startTime);
+                          }}
+                          aria-label={`${section.name}${experimentalTools && isPlaying ? '. Doble toque para armar salto al terminar la sección actual' : ''}`}
+                          aria-pressed={sectionJump.armed?.section.id === section.id}
+                          className="relative h-full shrink-0 rounded-[1.55rem] border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45"
+                          style={{ ...(isActive ? activeStyle : inactiveStyle), ...(experimentalTools && (sectionJump.armed?.section.id === section.id || keyboardSectionIndex === index) ? { outline: `2px solid ${sectionJump.armed?.section.id === section.id ? '#f5cf79' : '#8de7ef'}`, outlineOffset: '-3px' } : {}) }}
+                        >
+                          <div className="absolute inset-0 rounded-[1.5rem] bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.03)_0px,rgba(255,255,255,0.03)_2px,transparent_2px,transparent_20px)]" />
+                          <div className="absolute inset-0 rounded-[1.5rem] bg-black/10" />
+                          <div
+                            className="absolute inset-y-0 left-0 w-px bg-white/12"
+                            style={{ opacity: isActive ? 0.52 : 0.2 }}
+                          />
+                          <svg
+                            aria-hidden="true"
+                            className="pointer-events-none absolute left-4 right-4 top-[58%] h-[36%] -translate-y-1/2 overflow-visible"
+                            style={{ width: 'calc(100% - 2rem)' }}
+                            viewBox={`0 0 ${waveViewBoxWidth} 100`}
+                            preserveAspectRatio="none"
+                          >
+                            <path
+                              d={wavePath}
+                              fill="none"
+                              stroke="rgba(255,255,255,0.72)"
+                              strokeWidth={SECTION_WAVE_BAR_WIDTH_PX}
+                              strokeLinecap="round"
+                              strokeOpacity={isActive ? 0.96 : 0.7}
+                              vectorEffect="non-scaling-stroke"
+                            />
+                          </svg>
+                          <div className={`absolute left-4 flex items-center gap-2 rounded-[0.8rem] border border-white/8 bg-black/56 px-2.5 py-1.5 ${desktopCombined ? 'top-2' : 'top-4'}`}>
+                            <span
+                              className={`flex items-center justify-center rounded-full border px-2 font-semibold ${desktopCombined ? 'h-7 min-w-7 text-xs' : 'h-9 min-w-9 text-sm'}`}
+                              style={{
+                                borderColor: `${section.accent}90`,
+                                color: section.accent,
+                                backgroundColor: `${section.accent}1c`,
+                              }}
+                            >
+                              {section.shortLabel}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="truncate text-[1rem] font-semibold text-white/92">{section.name}</p>
+                              <p className="mt-0.5 text-[0.72rem] uppercase tracking-[0.18em] text-white/50">
+                                {formatCompact(section.startTime)} · {Math.max(0, Math.round(section.endTime - section.startTime))}s
+                              </p>
+                            </div>
+                          </div>
+                          <div
+                            ref={(element) => {
+                              const playheadRefs = passiveSectionPlayheadRefs.current;
+                              if (element) {
+                                playheadRefs.set(section.id, element);
+                              } else {
+                                playheadRefs.delete(section.id);
+                              }
+                            }}
+                            className="pointer-events-none absolute inset-y-4 left-0 rounded-[1.2rem] border border-white/0"
+                            style={{
+                              // transform is composited on the GPU; `left`
+                              // was triggering layout on every visual-clock
+                              // tick during playback. `will-change: transform`
+                              // keeps the playhead on its own layer so the
+                              // section card below doesn't repaint.
+                              transform: `translate3d(${clamp(sectionLaneProgressPx - leftPx - 1, 0, Math.max(0, widthPx - 2))}px, 0, 0)`,
+                              width: '2px',
+                              backgroundColor: isActive ? `${section.accent}cc` : 'transparent',
+                              boxShadow: isActive ? `0 0 14px ${section.accent}66` : 'none',
+                              opacity: isActive ? 1 : 0,
+                              willChange: isActive ? 'transform' : 'auto',
+                              transition: 'background-color 150ms ease, box-shadow 150ms ease, opacity 150ms ease',
+                            }}
+                          />
+                        </button>
+                      );
+                    })}
+                    {sectionLaneTailWidthPx > 0 && (
+                      <div
+                        aria-hidden="true"
+                        className="relative h-full shrink-0 rounded-[1.55rem] border border-dashed border-white/8 bg-[linear-gradient(180deg,rgba(29,31,33,0.92),rgba(19,20,22,0.96))]"
+                        style={{ width: `${sectionLaneTailWidthPx}px` }}
+                        title="Audio sin seccion marcada"
+                      >
+                        <div className="absolute inset-0 rounded-[1.5rem] bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.025)_0px,rgba(255,255,255,0.025)_2px,transparent_2px,transparent_20px)]" />
+                        <div className="absolute inset-0 rounded-[1.5rem] bg-black/12" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Mini-mapa: banda angosta con bloques de sección, playhead
+                    global y viewport marker. Tap/drag = seek. Oculto en
+                    ultra-compact landscape para no morder altura. */}
+                {!isUltraCompactLandscape && sectionLaneMinimapSegments.length > 0 && (
+                  <div
+                    className={`pointer-events-none absolute left-4 right-4 z-40 ${
+                      isCompactLandscape ? 'bottom-2 h-[14px]' : 'bottom-3 h-[18px]'
+                    }`}
+                  >
+                    <div
+                      ref={minimapTrackRef}
+                      onPointerDown={handleMinimapPointerDown}
+                      onPointerMove={handleMinimapPointerMove}
+                      onPointerUp={handleMinimapPointerUp}
+                      onPointerCancel={handleMinimapPointerCancel}
+                      className="pointer-events-auto relative h-full cursor-pointer overflow-hidden rounded-[10px] border border-white/10 bg-black/52 shadow-[0_6px_16px_rgba(0,0,0,0.38)]"
+                      style={{ touchAction: 'none' }}
+                      aria-label="Mini-mapa de la canción"
+                      role="slider"
+                      aria-valuemin={0}
+                      aria-valuemax={playbackTimelineDuration}
+                      aria-valuenow={clamp(currentTime, 0, playbackTimelineDuration)}
+                    >
+                      {sectionLaneMinimapSegments.map((seg, index) => {
+                        const isActive = index === activeSectionIndex;
+                        return (
+                          <div
+                            key={seg.id}
+                            aria-hidden="true"
+                            className="absolute inset-y-0"
+                            style={{
+                              left: `${seg.leftPct}%`,
+                              width: `${seg.widthPct}%`,
+                              backgroundColor: isActive
+                                ? `${seg.accent}b3`
+                                : `${seg.accent}4d`,
+                              borderLeft:
+                                index === 0 ? 'none' : '1px solid rgba(0,0,0,0.45)',
+                              transition:
+                                'background-color 160ms ease',
+                            }}
+                          />
+                        );
+                      })}
+                      {/* Viewport marker: qué rango de la canción está visible
+                          en la lane grande. */}
+                      <div
+                        ref={sectionsMinimapViewportRef}
+                        aria-hidden="true"
+                        className="pointer-events-none absolute -top-[2px] -bottom-[2px] rounded-[6px] border border-white/60 shadow-[0_0_0_1px_rgba(0,0,0,0.45)]"
+                        style={{
+                          left: '0px',
+                          width: `${sectionLaneMinimapViewport.widthPct}%`,
+                          transition: 'transform 120ms ease, width 120ms ease',
+                        }}
+                      />
+                      {/* Playhead global */}
+                      <div
+                        ref={passiveMinimapPlayheadRef}
+                        aria-hidden="true"
+                        className="pointer-events-none absolute -top-[4px] -bottom-[4px] left-0 w-[2px] rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.9)]"
+                        style={{
+                          left: `${sectionLaneMinimapPlayheadPct}%`,
+                          transform: 'translate3d(-1px, 0, 0)',
+                          willChange: 'transform',
+                        }}
+                      />
+                    </div>
+                    {/* Tooltip que sigue al dedo mientras el usuario arrastra
+                        en el mini-mapa: muestra nombre de sección + timestamp
+                        para que el seek ciego se convierta en seek informado. */}
+                    {minimapHoverTime !== null && playbackTimelineDuration > 0 && (() => {
+                      const hoverPct = clamp(
+                        (minimapHoverTime / playbackTimelineDuration) * 100,
+                        0,
+                        100,
+                      );
+                      const hoverSection = resolvedSections.find(
+                        (s) =>
+                          minimapHoverTime >= s.startTime &&
+                          minimapHoverTime < s.endTime,
+                      );
+                      const hoverLabel = hoverSection?.name
+                        ? hoverSection.name
+                        : 'Sin sección';
+                      const hoverAccent = hoverSection?.accent ?? '#f59e0b';
+                      return (
+                        <div
+                          aria-hidden="true"
+                          className="pointer-events-none absolute -top-[34px] flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-white/18 bg-black/82 px-2.5 py-1 shadow-[0_10px_24px_rgba(0,0,0,0.55)] backdrop-blur-sm"
+                          style={{
+                            left: `${hoverPct}%`,
+                            maxWidth: '70%',
+                          }}
+                        >
+                          <span
+                            className="h-1.5 w-1.5 shrink-0 rounded-full"
+                            style={{ backgroundColor: hoverAccent }}
+                          />
+                          <span className="truncate text-[0.62rem] font-black uppercase tracking-[0.18em] text-white/92">
+                            {hoverLabel}
+                          </span>
+                          <span className="text-[0.6rem] font-bold tabular-nums text-white/72">
+                            {formatClock(minimapHoverTime)}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+            </div>
+  );
+  const mixerSurface = (
+<div
+              ref={mixerScrollRef}
+              data-live-director-mixer-scroll="true"
+              onPointerDown={handleMixerPointerDown}
+              onPointerMove={handleMixerPointerMove}
+              onPointerUp={handleMixerPointerUp}
+              onPointerCancel={handleMixerPointerUp}
+              className={mixerScrollClassName}
+              style={mixerScrollStyle}
+            >
+              {mixerView.map((track) => {
+                const isInternalPadTrack = track.id === INTERNAL_PAD_TRACK_ID;
+                const lockedByCongregation =
+                  congregationFadeState !== 'normal' && !isCongregationCueTrack(track);
+                const stableCallbacks = getChannelStripCallbacks(track.id);
+                return (
+                  <div
+                    key={track.id}
+                    ref={(element) => {
+                      if (element) {
+                        passiveMixerLevelRefs.current.set(track.id, element);
+                      } else {
+                        passiveMixerLevelRefs.current.delete(track.id);
+                      }
+                    }}
+                    className="h-full min-w-0"
+                  >
+                    <ChannelStrip
+                      id={track.id}
+                      label={track.label}
+                      shortLabel={track.shortLabel}
+                      accent={track.accent}
+                      volume={track.volume}
+                      level={track.level}
+                      isPlaying={isPlaying}
+                      muted={track.muted}
+                      soloed={track.soloed}
+                      dimmed={track.dimmed}
+                      disabled={track.disabled || lockedByCongregation}
+                      disabledReason={track.disabledReason}
+                      disabledTitle={lockedByCongregation
+                        ? 'Modo congregación activo: restaura los instrumentos para ajustar este fader.'
+                        : track.disabledTitle}
+                      outputRoute={track.outputRoute}
+                      showRouteFlip={track.showRouteFlip}
+                      compact={isCompactLandscape}
+                      ultraCompact={isUltraCompactLandscape}
+                      onVolumeChange={stableCallbacks.onVolumeChange}
+                      onInteractionStart={isInternalPadTrack ? undefined : suspendNativeMeters}
+                      onInteractionEnd={isInternalPadTrack ? undefined : resumeNativeMetersSoon}
+                      onMute={stableCallbacks.onMute}
+                      onSolo={stableCallbacks.onSolo}
+                      onToggleOutputRoute={stableCallbacks.onToggleOutputRoute}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+  );
+
   if (isPortrait) {
     return (
       <div className={shellClassName}>
@@ -5041,13 +5508,6 @@ export function LiveDirectorView({
               data-live-director-control="status-group"
               className={`flex min-w-0 items-stretch ${isToolbarCompactLandscape ? (isUltraCompactLandscape ? 'gap-1' : 'gap-1.5') : 'justify-start gap-1.5 pr-2'}`}
             >
-              {experimentalTools && !isManualTempoMode && selectedMultitrackEngine.setTrackGroupGain && <LiveDirectorTools
-                key={`${trackSignature}:${reloadKey}`} tracks={activeEngineTracks} sections={resolvedSections}
-                isReady={isReady} isPlaying={isPlaying} busy={isCongregationFading || isSectionSeekBusy}
-                loadProgress={loadProgress} warnings={[...(loadWarnings || []).map(warning => warning.message || String(warning.reason)), ...(selectedMultitrackEngine.runtimeError ? [selectedMultitrackEngine.runtimeError] : [])]}
-                engineRoute={diagnostics?.engineRoute}
-                jump={sectionJump}
-              />}
               <button
                 type="button"
                 onClick={() => {
@@ -5488,8 +5948,10 @@ export function LiveDirectorView({
         </section>
         <section
           className={`grid min-h-0 flex-1 ${isUltraCompactLandscape ? 'gap-0.5' : isCompactLandscape ? 'gap-1.5' : 'gap-4'}`}
-          style={{ gridTemplateColumns: `minmax(0,1fr) ${mixerLayoutColumns}` }}
+          data-live-director-layout={desktopCombined ? 'desktop-combined' : 'mobile-pages'}
+          style={{ gridTemplateColumns: `minmax(0,1fr) ${mixerLayoutColumns}`, ...(desktopCombined ? { gridTemplateRows: 'minmax(170px, 0.42fr) minmax(250px, 1fr)' } : {}) }}
         >
+          {desktopCombined && <div className="grid min-h-0 min-w-0" style={{ gridColumn: '1 / -1' }}>{sectionSurface}</div>}
           <div className="grid min-h-0 min-w-0">
             {experimentalTools && selectedMultitrackEngine.setTrackGroupGain && !isManualTempoMode && <LiveDirectorGroupMixer
               key={`${trackSignature}:${reloadKey}`} hidden={!showGroupsPanel} tracks={activeEngineTracks}
@@ -5499,476 +5961,7 @@ export function LiveDirectorView({
               getTelemetry={getSharedTelemetry} trackLevels={trackLevels}
             />}
             <div className={showGroupsPanel ? 'hidden' : 'grid min-h-0 min-w-0'}>
-          {showSectionsPanel ? (
-            <div className="relative min-h-0 overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(29,30,32,0.98),rgba(23,24,26,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-              <div className="absolute left-4 top-4 z-40 flex items-center gap-3 rounded-full border border-white/10 bg-black/68 px-3 py-2">
-                <span className="text-[0.68rem] font-black uppercase tracking-[0.28em] text-white/38">Secciones</span>
-                <span className="text-[0.8rem] font-semibold text-white/78">
-                  {activeSection?.name || 'Linea de tiempo'}
-                </span>
-                {experimentalTools && <button type="button" data-live-director-control="dynamic-guide"
-                  aria-label="Guía dinámica en español" aria-pressed={dynamicGuideWanted} aria-busy={dynamicGuide.status === 'loading'}
-                  disabled={!isReady || !guideTrack || !selectedMultitrackEngine.getGuideAudioGraph}
-                  title={dynamicGuide.error || (dynamicGuideWanted ? 'Usa voces en español y reemplaza temporalmente el stem Guide. Respeta su fader y salida.' : 'Activar avisos de voz para secciones, saltos y repeticiones')}
-                  onClick={() => dynamicGuide.status === 'error' ? setGuideRetryKey(previous => previous + 1) : setDynamicGuideWanted(previous => !previous)}
-                  className={`rounded-lg border px-2 py-1 text-[0.65rem] font-semibold ${dynamicGuideWanted ? 'border-cyan-200/50 bg-cyan-200/10 text-cyan-100' : 'border-white/20 text-white/70'} disabled:opacity-40`}
-                >{dynamicGuide.status === 'loading' ? 'Preparando voces…' : dynamicGuide.status === 'error' ? 'Guía: reintentar' : dynamicGuideWanted ? 'Guía dinámica ✓' : 'Guía dinámica'}</button>}
-
-              </div>
-              {experimentalTools && <div style={isUltraCompactLandscape ? { top: 'auto', bottom: '1.75rem' } : undefined} className="absolute left-4 right-16 top-[3.8rem] z-50 flex flex-wrap items-center gap-2 rounded-xl border border-white/15 bg-black/90 px-3 py-2 text-xs text-white/80">
-                <button type="button" aria-label="Repetir sección una vez" aria-pressed={sectionJump.repeat?.mode === 'once'} disabled={!isPlaying || !isReady || isSectionSeekBusy || isCongregationFading}
-                  className={`shrink-0 rounded-lg border px-2 py-2 ${sectionJump.repeat?.mode === 'once' ? 'border-violet-200/60 bg-violet-200/15 text-violet-100' : 'border-white/25'} disabled:opacity-35`}
-                  onClick={() => sectionJump.repeat?.mode === 'once' ? sectionJump.cancel() : startRepeatFromTimeline('once')}>↻ 1 vez</button>
-                <button type="button" aria-label="Mantener sección en repetición" aria-pressed={sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested} disabled={!isPlaying || !isReady || isSectionSeekBusy || isCongregationFading}
-                  className={`shrink-0 rounded-lg border px-2 py-2 ${sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested ? 'border-violet-200/60 bg-violet-200/15 text-violet-100' : 'border-white/25'} disabled:opacity-35`}
-                  onClick={() => sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested ? sectionJump.exitRepeat() : startRepeatFromTimeline('hold')}>∞ Mantener</button>
-                {sectionJump.repeat ? <><span role="status" className="min-w-0 flex-1 truncate text-violet-100">{sectionJump.repeat.section.name} · {sectionJump.repeat.exitRequested ? 'Sale al terminar' : sectionJump.preparation === 'preparing' ? 'Preparando stems…' : sectionJump.repeat.mode === 'once' ? 'Repetirá una vez' : `Repite hasta salir (${sectionJump.repeat.completed})`}</span><button type="button" aria-label="Salir de la repetición al terminar" disabled={isSectionSeekBusy} className="rounded-lg border border-violet-200/30 px-3 py-2 text-violet-100" onClick={sectionJump.exitRepeat}>Salir al terminar</button></>
-                : sectionJump.armed ? <><span role="status" className="min-w-0 flex-1 truncate text-amber-100">→ {sectionJump.armed.section.name} · {sectionJump.preparation === 'preparing' ? 'Preparando stems…' : sectionJump.preparation === 'ready' ? 'Stems listos · Al terminar' : 'Al terminar la sección'}</span><button type="button" aria-label="Cancelar salto de sección" className="shrink-0 rounded-lg border border-amber-200/30 px-3 py-2" onClick={sectionJump.cancel}>Cancelar</button></>
-                : selectedJumpSection && isPlaying ? <><span className="min-w-0 flex-1 truncate">{selectedJumpSection.name} · Al terminar la sección</span><button type="button" className="shrink-0 rounded-lg border border-cyan-200/40 bg-cyan-200/10 px-3 py-2 text-cyan-100" onClick={() => armSectionFromTimeline(selectedJumpSection.id)}>Armar salto</button></>
-                : <span className="text-white/55">Doble toque en una sección para armar un salto</span>}
-                {!sectionJump.armed && !sectionJump.repeat && /no se pudo|no estuvo listo|cancelado/i.test(sectionJump.notice) && <span role="status" className="w-full text-amber-100">{sectionJump.notice}</span>}
-                {dynamicGuide.error && <div className="flex w-full items-center gap-3 text-rose-200"><span role="alert">{dynamicGuide.error}</span><button type="button" className="rounded-md border border-rose-200/30 px-2 py-1" onClick={() => setDynamicGuideWanted(false)}>Usar guía grabada</button></div>}
-              </div>}
-              {nextSectionPreview && !sectionJump.armed && !sectionJump.repeat && (
-                <div
-                  key={`next-${nextSectionPreview.name}-${nextSectionPreview.seconds}`}
-                  className="pointer-events-none anim-fade-in absolute left-1/2 top-4 z-40 flex -translate-x-1/2 items-center gap-2.5 rounded-full border border-cyan-300/34 bg-[linear-gradient(180deg,rgba(16,30,40,0.92),rgba(10,20,28,0.92))] px-3.5 py-2 shadow-[0_14px_32px_rgba(0,0,0,0.32)]"
-                  aria-live="polite"
-                >
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-300" aria-hidden="true" />
-                  <span className="text-[0.6rem] font-black uppercase tracking-[0.22em] text-cyan-100/66">
-                    Proxima
-                  </span>
-                  <span className="text-[0.88rem] font-semibold text-white">
-                    {nextSectionPreview.name}
-                  </span>
-                  <span className="rounded-full border border-cyan-300/28 bg-cyan-300/10 px-2 py-0.5 text-[0.7rem] font-black tracking-[0.12em] text-cyan-100">
-                    {nextSectionPreview.seconds}s
-                  </span>
-                </div>
-              )}
-              {sectionsAutoFollowStatus !== 'auto' && (
-                <div
-                  className="pointer-events-none absolute left-4 top-[3.4rem] z-40 flex items-center gap-2 rounded-full border border-amber-300/28 bg-black/62 px-2.5 py-1 shadow-[0_6px_18px_rgba(0,0,0,0.28)]"
-                  aria-live={keyboardSectionIndex !== null ? 'polite' : undefined}
-                >
-                  <span
-                    className={`h-1.5 w-1.5 rounded-full bg-amber-300 ${
-                      sectionsAutoFollowStatus === 'held' ? 'animate-pulse' : ''
-                    }`}
-                    aria-hidden="true"
-                  />
-                  <span className="text-[0.58rem] font-black uppercase tracking-[0.22em] text-amber-100/86">
-                    {keyboardSectionIndex !== null
-                      ? (experimentalTools && isPlaying ? 'Enter para armar · Auto en 5s' : 'Enter para ir · Auto en 5s')
-                      : sectionsAutoFollowStatus === 'held'
-                        ? 'Scroll libre'
-                        : 'Auto en 5s'}
-                  </span>
-                  {sectionsAutoFollowStatus === 'resuming' && (
-                    <span className="relative ml-0.5 h-1 w-10 overflow-hidden rounded-full bg-white/10">
-                      <span
-                        key="resume-ring"
-                        className="live-director-autofollow-ring absolute inset-y-0 left-0 block h-full w-full rounded-full bg-amber-300/82"
-                      />
-                    </span>
-                  )}
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  if (showOffsetModal) {
-                    void handleCloseOffsetModal();
-                  } else {
-                    handleOpenOffsetModal();
-                  }
-                }}
-                className="ui-pressable-soft absolute right-4 top-4 z-30 flex h-10 w-10 items-center justify-center rounded-[1rem] border border-white/10 bg-black/66 text-white/68 transition-all hover:text-white"
-                aria-label="Abrir ajuste de desfase"
-                title="Ajustar desfase de secciones"
-              >
-                <span className="text-[0.92rem] font-black tracking-[0.1em]">±</span>
-              </button>
-              {showOffsetModal && (
-                <div className="absolute right-4 top-16 z-40 w-[11.5rem] rounded-[1.25rem] border border-white/10 bg-[linear-gradient(180deg,rgba(18,20,22,0.98),rgba(13,15,17,0.98))] p-3 shadow-[0_24px_48px_rgba(0,0,0,0.34)]">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[0.62rem] font-black uppercase tracking-[0.22em] text-white/42">Desfase</p>
-                      <p className="mt-1 text-[1rem] font-semibold text-white/86">
-                        {sectionOffsetSeconds >= 0 ? '+' : ''}
-                        {sectionOffsetSeconds.toFixed(2)}s
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void handleCloseOffsetModal();
-                      }}
-                      className="ui-pressable-soft flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/26 text-white/58 hover:text-white"
-                      aria-label="Cerrar ajuste de desfase"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        updateSectionOffsetLocally(sectionOffsetSeconds - 0.25);
-                      }}
-                      className="ui-pressable-soft flex h-10 items-center justify-center rounded-[0.95rem] border border-white/10 bg-black/28 text-[0.88rem] font-black text-white/76"
-                      aria-label="Mover secciones antes"
-                    >
-                      -
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        updateSectionOffsetLocally(0);
-                      }}
-                      className="ui-pressable-soft flex h-10 items-center justify-center rounded-[0.95rem] border border-white/10 bg-black/28 text-[0.66rem] font-black uppercase tracking-[0.14em] text-white/68"
-                    >
-                      Rein.
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        updateSectionOffsetLocally(sectionOffsetSeconds + 0.25);
-                      }}
-                      className="ui-pressable-soft flex h-10 items-center justify-center rounded-[0.95rem] border border-white/10 bg-black/28 text-[0.88rem] font-black text-white/76"
-                      aria-label="Mover secciones despues"
-                    >
-                      +
-                    </button>
-                  </div>
-                  {sectionOffsetSaveError && (
-                    <p className="mt-2 text-[0.64rem] leading-snug text-rose-200/86" role="alert">
-                      {sectionOffsetSaveError}
-                    </p>
-                  )}
-                </div>
-              )}
-              <div className="relative h-full overflow-hidden bg-black/12">
-                <div className="pointer-events-none absolute inset-y-0 left-0 z-20 w-16 bg-[linear-gradient(90deg,rgba(23,24,26,0.96),rgba(23,24,26,0))]" />
-                <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-16 bg-[linear-gradient(270deg,rgba(23,24,26,0.96),rgba(23,24,26,0))]" />
-                <div
-                  className={`pointer-events-none absolute top-3 z-30 w-[4px] -translate-x-1/2 rounded-full bg-white shadow-[0_0_18px_rgba(255,255,255,0.68)] ${
-                    isUltraCompactLandscape ? 'bottom-3' : isCompactLandscape ? 'bottom-[22px]' : 'bottom-[34px]'
-                  }`}
-                  style={{ left: `${sectionLanePlayheadOffsetPx}px` }}
-                />
-                <div
-                  ref={sectionsLaneScrollRef}
-                  onPointerDown={handleSectionsPointerDown}
-                  onPointerMove={handleSectionsPointerMove}
-                  onPointerUp={handleSectionsPointerUp}
-                  onPointerCancel={handleSectionsPointerUp}
-                  onWheel={triggerUserScrollSections}
-                  className="hide-scrollbar relative h-full overflow-x-auto overflow-y-hidden"
-                  style={{
-                    touchAction: 'pan-x pinch-zoom',
-                    overscrollBehaviorX: 'contain',
-                    WebkitOverflowScrolling: 'touch',
-                  }}
-                >
-                    <div
-                      className="relative flex h-full min-h-0 items-stretch gap-[14px] py-4"
-                      style={{
-                        width: `${sectionLaneContentWidth}px`,
-                        paddingLeft: `${sectionLanePlayheadOffsetPx}px`,
-                        paddingRight: `${sectionLaneTrailingPaddingPx}px`,
-                      }}
-                    >
-                    {sectionLaneSegments.map(({
-                      section,
-                      wavePath,
-                      waveViewBoxWidth,
-                      widthPx,
-                      leftPx,
-                      activeStyle,
-                      inactiveStyle,
-                    }, index) => {
-                      const isActive = index === activeSectionIndex;
-
-                      return (
-                        <button
-                          key={section.id}
-                          type="button"
-                          disabled={isCongregationFading}
-                          aria-busy={isSectionSeekBusy || undefined}
-                          data-live-chord-section="true"
-                          data-live-section-index={index}
-                          data-live-section-start={section.startTime}
-                          data-live-section-end={section.endTime}
-                          title={isCongregationFading ? 'Espera a que termine el fade de congregación' : undefined}
-                          onClick={(event) => {
-                            if (event.detail > 0) {
-                              return;
-                            }
-                            if (experimentalTools && isPlaying) armSectionFromTimeline(section.id);
-                            else void handleSectionSeek(section.startTime);
-                          }}
-                          aria-label={`${section.name}${experimentalTools && isPlaying ? '. Doble toque para armar salto al terminar la sección actual' : ''}`}
-                          aria-pressed={sectionJump.armed?.section.id === section.id}
-                          className="relative h-full shrink-0 rounded-[1.55rem] border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45"
-                          style={{ ...(isActive ? activeStyle : inactiveStyle), ...(experimentalTools && (sectionJump.armed?.section.id === section.id || keyboardSectionIndex === index) ? { outline: `2px solid ${sectionJump.armed?.section.id === section.id ? '#f5cf79' : '#8de7ef'}`, outlineOffset: '-3px' } : {}) }}
-                        >
-                          <div className="absolute inset-0 rounded-[1.5rem] bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.03)_0px,rgba(255,255,255,0.03)_2px,transparent_2px,transparent_20px)]" />
-                          <div className="absolute inset-0 rounded-[1.5rem] bg-black/10" />
-                          <div
-                            className="absolute inset-y-0 left-0 w-px bg-white/12"
-                            style={{ opacity: isActive ? 0.52 : 0.2 }}
-                          />
-                          <svg
-                            aria-hidden="true"
-                            className="pointer-events-none absolute left-4 right-4 top-[58%] h-[36%] -translate-y-1/2 overflow-visible"
-                            style={{ width: 'calc(100% - 2rem)' }}
-                            viewBox={`0 0 ${waveViewBoxWidth} 100`}
-                            preserveAspectRatio="none"
-                          >
-                            <path
-                              d={wavePath}
-                              fill="none"
-                              stroke="rgba(255,255,255,0.72)"
-                              strokeWidth={SECTION_WAVE_BAR_WIDTH_PX}
-                              strokeLinecap="round"
-                              strokeOpacity={isActive ? 0.96 : 0.7}
-                              vectorEffect="non-scaling-stroke"
-                            />
-                          </svg>
-                          <div className="absolute left-4 top-8 flex items-center gap-3 rounded-[1rem] border border-white/8 bg-black/56 px-3 py-2">
-                            <span
-                              className="flex h-10 min-w-10 items-center justify-center rounded-full border px-2 text-[0.88rem] font-black tracking-[0.16em]"
-                              style={{
-                                borderColor: `${section.accent}90`,
-                                color: section.accent,
-                                backgroundColor: `${section.accent}1c`,
-                              }}
-                            >
-                              {section.shortLabel}
-                            </span>
-                            <div className="min-w-0">
-                              <p className="truncate text-[1rem] font-semibold text-white/92">{section.name}</p>
-                              <p className="mt-0.5 text-[0.72rem] uppercase tracking-[0.18em] text-white/50">
-                                {formatCompact(section.startTime)} · {Math.max(0, Math.round(section.endTime - section.startTime))}s
-                              </p>
-                            </div>
-                          </div>
-                          <div
-                            ref={(element) => {
-                              const playheadRefs = passiveSectionPlayheadRefs.current;
-                              if (element) {
-                                playheadRefs.set(section.id, element);
-                              } else {
-                                playheadRefs.delete(section.id);
-                              }
-                            }}
-                            className="pointer-events-none absolute inset-y-4 left-0 rounded-[1.2rem] border border-white/0"
-                            style={{
-                              // transform is composited on the GPU; `left`
-                              // was triggering layout on every visual-clock
-                              // tick during playback. `will-change: transform`
-                              // keeps the playhead on its own layer so the
-                              // section card below doesn't repaint.
-                              transform: `translate3d(${clamp(sectionLaneProgressPx - leftPx - 1, 0, Math.max(0, widthPx - 2))}px, 0, 0)`,
-                              width: '2px',
-                              backgroundColor: isActive ? `${section.accent}cc` : 'transparent',
-                              boxShadow: isActive ? `0 0 14px ${section.accent}66` : 'none',
-                              opacity: isActive ? 1 : 0,
-                              willChange: isActive ? 'transform' : 'auto',
-                              transition: 'background-color 150ms ease, box-shadow 150ms ease, opacity 150ms ease',
-                            }}
-                          />
-                        </button>
-                      );
-                    })}
-                    {sectionLaneTailWidthPx > 0 && (
-                      <div
-                        aria-hidden="true"
-                        className="relative h-full shrink-0 rounded-[1.55rem] border border-dashed border-white/8 bg-[linear-gradient(180deg,rgba(29,31,33,0.92),rgba(19,20,22,0.96))]"
-                        style={{ width: `${sectionLaneTailWidthPx}px` }}
-                        title="Audio sin seccion marcada"
-                      >
-                        <div className="absolute inset-0 rounded-[1.5rem] bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.025)_0px,rgba(255,255,255,0.025)_2px,transparent_2px,transparent_20px)]" />
-                        <div className="absolute inset-0 rounded-[1.5rem] bg-black/12" />
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Mini-mapa: banda angosta con bloques de sección, playhead
-                    global y viewport marker. Tap/drag = seek. Oculto en
-                    ultra-compact landscape para no morder altura. */}
-                {!isUltraCompactLandscape && sectionLaneMinimapSegments.length > 0 && (
-                  <div
-                    className={`pointer-events-none absolute left-4 right-4 z-40 ${
-                      isCompactLandscape ? 'bottom-2 h-[14px]' : 'bottom-3 h-[18px]'
-                    }`}
-                  >
-                    <div
-                      ref={minimapTrackRef}
-                      onPointerDown={handleMinimapPointerDown}
-                      onPointerMove={handleMinimapPointerMove}
-                      onPointerUp={handleMinimapPointerUp}
-                      onPointerCancel={handleMinimapPointerCancel}
-                      className="pointer-events-auto relative h-full cursor-pointer overflow-hidden rounded-[10px] border border-white/10 bg-black/52 shadow-[0_6px_16px_rgba(0,0,0,0.38)]"
-                      style={{ touchAction: 'none' }}
-                      aria-label="Mini-mapa de la canción"
-                      role="slider"
-                      aria-valuemin={0}
-                      aria-valuemax={playbackTimelineDuration}
-                      aria-valuenow={clamp(currentTime, 0, playbackTimelineDuration)}
-                    >
-                      {sectionLaneMinimapSegments.map((seg, index) => {
-                        const isActive = index === activeSectionIndex;
-                        return (
-                          <div
-                            key={seg.id}
-                            aria-hidden="true"
-                            className="absolute inset-y-0"
-                            style={{
-                              left: `${seg.leftPct}%`,
-                              width: `${seg.widthPct}%`,
-                              backgroundColor: isActive
-                                ? `${seg.accent}b3`
-                                : `${seg.accent}4d`,
-                              borderLeft:
-                                index === 0 ? 'none' : '1px solid rgba(0,0,0,0.45)',
-                              transition:
-                                'background-color 160ms ease',
-                            }}
-                          />
-                        );
-                      })}
-                      {/* Viewport marker: qué rango de la canción está visible
-                          en la lane grande. */}
-                      <div
-                        ref={sectionsMinimapViewportRef}
-                        aria-hidden="true"
-                        className="pointer-events-none absolute -top-[2px] -bottom-[2px] rounded-[6px] border border-white/60 shadow-[0_0_0_1px_rgba(0,0,0,0.45)]"
-                        style={{
-                          left: '0px',
-                          width: `${sectionLaneMinimapViewport.widthPct}%`,
-                          transition: 'transform 120ms ease, width 120ms ease',
-                        }}
-                      />
-                      {/* Playhead global */}
-                      <div
-                        ref={passiveMinimapPlayheadRef}
-                        aria-hidden="true"
-                        className="pointer-events-none absolute -top-[4px] -bottom-[4px] left-0 w-[2px] rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.9)]"
-                        style={{
-                          left: `${sectionLaneMinimapPlayheadPct}%`,
-                          transform: 'translate3d(-1px, 0, 0)',
-                          willChange: 'transform',
-                        }}
-                      />
-                    </div>
-                    {/* Tooltip que sigue al dedo mientras el usuario arrastra
-                        en el mini-mapa: muestra nombre de sección + timestamp
-                        para que el seek ciego se convierta en seek informado. */}
-                    {minimapHoverTime !== null && playbackTimelineDuration > 0 && (() => {
-                      const hoverPct = clamp(
-                        (minimapHoverTime / playbackTimelineDuration) * 100,
-                        0,
-                        100,
-                      );
-                      const hoverSection = resolvedSections.find(
-                        (s) =>
-                          minimapHoverTime >= s.startTime &&
-                          minimapHoverTime < s.endTime,
-                      );
-                      const hoverLabel = hoverSection?.name
-                        ? hoverSection.name
-                        : 'Sin sección';
-                      const hoverAccent = hoverSection?.accent ?? '#f59e0b';
-                      return (
-                        <div
-                          aria-hidden="true"
-                          className="pointer-events-none absolute -top-[34px] flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-white/18 bg-black/82 px-2.5 py-1 shadow-[0_10px_24px_rgba(0,0,0,0.55)] backdrop-blur-sm"
-                          style={{
-                            left: `${hoverPct}%`,
-                            maxWidth: '70%',
-                          }}
-                        >
-                          <span
-                            className="h-1.5 w-1.5 shrink-0 rounded-full"
-                            style={{ backgroundColor: hoverAccent }}
-                          />
-                          <span className="truncate text-[0.62rem] font-black uppercase tracking-[0.18em] text-white/92">
-                            {hoverLabel}
-                          </span>
-                          <span className="text-[0.6rem] font-bold tabular-nums text-white/72">
-                            {formatClock(minimapHoverTime)}
-                          </span>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div
-              ref={mixerScrollRef}
-              data-live-director-mixer-scroll="true"
-              onPointerDown={handleMixerPointerDown}
-              onPointerMove={handleMixerPointerMove}
-              onPointerUp={handleMixerPointerUp}
-              onPointerCancel={handleMixerPointerUp}
-              className={mixerScrollClassName}
-              style={mixerScrollStyle}
-            >
-              {mixerView.map((track) => {
-                const isInternalPadTrack = track.id === INTERNAL_PAD_TRACK_ID;
-                const lockedByCongregation =
-                  congregationFadeState !== 'normal' && !isCongregationCueTrack(track);
-                const stableCallbacks = getChannelStripCallbacks(track.id);
-                return (
-                  <div
-                    key={track.id}
-                    ref={(element) => {
-                      if (element) {
-                        passiveMixerLevelRefs.current.set(track.id, element);
-                      } else {
-                        passiveMixerLevelRefs.current.delete(track.id);
-                      }
-                    }}
-                    className="h-full min-w-0"
-                  >
-                    <ChannelStrip
-                      id={track.id}
-                      label={track.label}
-                      shortLabel={track.shortLabel}
-                      accent={track.accent}
-                      volume={track.volume}
-                      level={track.level}
-                      isPlaying={isPlaying}
-                      muted={track.muted}
-                      soloed={track.soloed}
-                      dimmed={track.dimmed}
-                      disabled={track.disabled || lockedByCongregation}
-                      disabledReason={track.disabledReason}
-                      disabledTitle={lockedByCongregation
-                        ? 'Modo congregación activo: restaura los instrumentos para ajustar este fader.'
-                        : track.disabledTitle}
-                      outputRoute={track.outputRoute}
-                      showRouteFlip={track.showRouteFlip}
-                      compact={isCompactLandscape}
-                      ultraCompact={isUltraCompactLandscape}
-                      onVolumeChange={stableCallbacks.onVolumeChange}
-                      onInteractionStart={isInternalPadTrack ? undefined : suspendNativeMeters}
-                      onInteractionEnd={isInternalPadTrack ? undefined : resumeNativeMetersSoon}
-                      onMute={stableCallbacks.onMute}
-                      onSolo={stableCallbacks.onSolo}
-                      onToggleOutputRoute={stableCallbacks.onToggleOutputRoute}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          {showSectionsPanel && !desktopCombined ? sectionSurface : mixerSurface}
             </div>
           </div>
 
@@ -6015,6 +6008,7 @@ export function LiveDirectorView({
                   ]
                 </span>
               </button>
+              {!desktopCombined && <>
               <button
                 type="button"
                 onClick={() => setSurfaceView((previous) => previous === 'mix' ? 'sections' : 'mix')}
@@ -6041,6 +6035,7 @@ export function LiveDirectorView({
                   V
                 </span>
               </button>
+              </>}
               {experimentalTools && !isManualTempoMode && selectedMultitrackEngine.setTrackGroupGain ? <button
                 type="button" data-live-director-control="groups"
                 onClick={() => setSurfaceView(previous => previous === 'groups' ? 'mix' : 'groups')}
@@ -6073,26 +6068,16 @@ export function LiveDirectorView({
                   ))}
                   <FaderThumb
                     accent="#81ddf5"
-                    className={`${isUltraCompactLandscape ? 'h-[1.85rem]' : isCompactLandscape ? 'h-[2.2rem]' : 'h-[4.35rem]'} w-full ${isUltraCompactLandscape ? 'max-w-[5.1rem]' : isCompactLandscape ? 'max-w-[5.85rem]' : 'max-w-[6.1rem]'} transition-[bottom,box-shadow] duration-150`}
+                    className={`live-director-master-thumb ${isUltraCompactLandscape ? 'h-[1.85rem]' : isCompactLandscape ? 'h-[2.2rem]' : 'h-[4.35rem]'} w-full ${isUltraCompactLandscape ? 'max-w-[5.1rem]' : isCompactLandscape ? 'max-w-[5.85rem]' : 'max-w-[6.1rem]'} transition-[box-shadow] duration-150`}
                     style={{
-                      bottom: `calc(${10 + masterVolume * 78}% - ${isUltraCompactLandscape ? '0.92rem' : isCompactLandscape ? '1.1rem' : '1.75rem'})`,
+                      bottom: `calc(${10 + masterVolume * 78}% - ${isUltraCompactLandscape ? '0.925rem' : isCompactLandscape ? '1.1rem' : '2.175rem'})`,
                       boxShadow: '0 14px 24px rgba(0,0,0,0.35), 0 0 20px rgba(115,209,248,0.18)',
                     }}
                   />
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    value={masterVolume}
-                    disabled={!hasPlayableSession}
-                    onPointerDown={suspendNativeMeters}
-                    onPointerUp={resumeNativeMetersSoon}
-                    onPointerCancel={resumeNativeMetersSoon}
-                    onChange={(event) => setMasterVolumeState(Number(event.target.value))}
-                    aria-label="Master volume"
-                    className={`absolute left-1/2 top-1/2 h-10 -translate-x-1/2 -translate-y-1/2 -rotate-90 cursor-pointer opacity-0 ${isUltraCompactLandscape ? 'w-32' : isCompactLandscape ? 'w-40' : 'w-[18rem]'}`}
-                  />
+                  <PrecisionFaderSurface value={masterVolume} onChange={setMasterVolumeState} label="Master volume"
+                    disabled={!hasPlayableSession} onInteractionStart={suspendNativeMeters} onInteractionEnd={resumeNativeMetersSoon}
+                    className="absolute inset-y-0 left-1/2 z-20 w-full -translate-x-1/2 cursor-ns-resize rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/60"/>
+
                 </div>
               </div>
 

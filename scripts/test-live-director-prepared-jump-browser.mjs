@@ -52,7 +52,7 @@ try {
     const control = document.querySelector('[data-live-director-control="play-pause"]');
     return control && !control.disabled && typeof window.__streamingEngineDumpOwner?.prepareSectionJump === 'function';
   }, null, { timeout: 90000 });
-  await page.getByRole('button', { name: 'Mostrar secciones', exact: true }).click();
+  if (await page.getByRole('button', { name: 'Mostrar secciones', exact: true }).count()) await page.getByRole('button', { name: 'Mostrar secciones', exact: true }).click();
   const markers = await page.locator('[data-live-section-index]').evaluateAll(elements => elements.map(el => ({ start: +el.dataset.liveSectionStart, end: +el.dataset.liveSectionEnd, name: el.innerText })));
   await page.evaluate(async () => {
     const e = window.__streamingEngineDumpOwner;
@@ -181,8 +181,8 @@ try {
   const repeat = markers[0];
   await position(repeat.end - 14);
   await page.getByRole('button', { name: 'Mantener sección en repetición', exact: true }).click();
-  await page.waitForFunction(() => document.body.innerText.includes('Repite hasta salir (2)'), null, { timeout: 40000 });
-  await page.getByRole('button', { name: 'Salir de la repetición al terminar', exact: true }).click();
+  await page.waitForFunction(() => Number(document.querySelector('[data-live-director-section-controls]')?.dataset.liveRepeatCount) >= 2, null, { timeout: 40000 });
+  await page.getByRole('button', { name: 'Mantener sección en repetición', exact: true }).click();
   await page.waitForFunction(end => window.__streamingEngineDumpOwner.getCurrentTime() > end + .2, repeat.end, { timeout: 20000 });
   assert.equal(await page.getByRole('button', { name: 'Mantener sección en repetición', exact: true }).getAttribute('aria-pressed'), 'false');
   results.push({ name: 'hold-two-repeats-and-exit', pass: true });

@@ -15,7 +15,7 @@ try {
     const button = document.querySelector('[data-live-director-control="play-pause"]');
     return button && !button.disabled && typeof window.__streamingEngineDumpOwner?.prepareSectionJump === 'function';
   }, null, { timeout: 90000 });
-  await page.getByRole('button', { name: 'Mostrar secciones', exact: true }).click();
+  if (await page.getByRole('button', { name: 'Mostrar secciones', exact: true }).count()) await page.getByRole('button', { name: 'Mostrar secciones', exact: true }).click();
   const sections = await page.locator('[data-live-section-index]').evaluateAll(elements => elements.map(el => ({ id: el.dataset.liveSectionId, start: +el.dataset.liveSectionStart, end: +el.dataset.liveSectionEnd })));
   const source = sections[0], repeat = sections[3];
   assert.equal(repeat.end - repeat.start, 8);
@@ -51,13 +51,9 @@ try {
   await page.evaluate(time => window.__streamingEngineDumpOwner.seekTo(time, { wasPlayingBeforeUiSeek: false }), source.start + 1);
   await page.locator('[data-live-director-control="play-pause"]').click();
   await page.waitForFunction(() => window.__streamingEngineDumpOwner.getIsPlaying() && document.querySelector('[data-live-director-control="play-pause"]').title.startsWith('Pausar'));
-  await page.locator('[data-live-director-control="tools"]').click();
-  await page.getByRole('button', { name: 'Salto de sección', exact: true }).click();
-  const select = page.getByRole('combobox', { name: 'Destino del salto', exact: true });
-  const id = await select.locator('option').evaluateAll(options => options.filter(option => option.value)[3].value);
-  await select.selectOption(id);
-  await page.locator('dialog[open]').getByRole('button', { name: 'Armar salto', exact: true }).click();
-  await page.getByRole('button', { name: 'Cerrar herramientas', exact: true }).click();
+  const target = page.locator('[data-live-section-index="3"]');
+  await target.scrollIntoViewIfNeeded(); await target.click();
+  await page.getByRole('button', { name: 'Armar salto', exact: true }).click();
   await page.waitForFunction(() => window.__streamingEngineDumpOwner.pendingSectionJump?.phase === 'scheduled', null, { timeout: 12000 });
   await page.screenshot({ path: '.lab/results/prepared-ready-desktop.png' });
   await page.waitForFunction(() => window.__warmRepeat.switches.length === 1, null, { timeout: 20000 });
@@ -68,8 +64,8 @@ try {
   await page.setViewportSize({ width: 844, height: 390 });
   await page.screenshot({ path: '.lab/results/prepared-ready-landscape.png' });
   await page.setViewportSize({ width: 1728, height: 1000 });
-  await page.waitForFunction(() => document.body.innerText.includes('Repite hasta salir (2)'), null, { timeout: 22000 });
-  await page.getByRole('button', { name: 'Salir de la repetición al terminar', exact: true }).click();
+  await page.waitForFunction(() => Number(document.querySelector('[data-live-director-section-controls]')?.dataset.liveRepeatCount) >= 2, null, { timeout: 22000 });
+  await page.getByRole('button', { name: 'Mantener sección en repetición', exact: true }).click();
   await page.waitForFunction(end => window.__streamingEngineDumpOwner.getCurrentTime() > end + .2, repeat.end, { timeout: 12000 });
   await page.waitForTimeout(1000);
   const data = await page.evaluate(() => ({ ...window.__warmRepeat, playing: window.__streamingEngineDumpOwner.getIsPlaying(), trackCount: window.__streamingEngineDumpOwner.trackStates.length }));

@@ -13,6 +13,7 @@ const SYNC_DRIFT_ALERT_INTERVAL_FRAMES = 96000;
 const SYNC_FINE_DRIFT_MS = 15;
 const SYNC_HARD_DRIFT_MS = 40;
 const SYNC_HARD_REALIGN_INTERVAL_FRAMES = 4800;
+const GUIDE_DUCK_RAMP_SECONDS = 0.005;
 
 class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -29,6 +30,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.meterPublishInterval = 8;
     this.meterPublishCountdown = 0;
     this.renderedFrames = 0;
+    this.renderContextFrameOffset = 0;
     this.debugPublishIntervalFrames = sampleRate || 48000;
     this.debugPublishCountdownFrames = this.debugPublishIntervalFrames;
     this.publishMeterMessages = true;
@@ -154,6 +156,37 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
       const track = this.tracks[message.trackIndex];
       if (track) track.guideOverride = message.enabled === true;
       return;
+    }
+
+    if (type === 'track-guide-duck') {
+      const track = this.tracks[message.trackIndex];
+      const rate = sampleRate || 48000;
+      if (track && Number.isFinite(message.startAudioTime) && Number.isFinite(message.endAudioTime) &&
+          message.endAudioTime > message.startAudioTime) {
+        track.guideDuckStartFrame = Math.max(0, Math.round(message.startAudioTime * rate));
+        track.guideDuckEndFrame = Math.round(message.endAudioTime * rate);
+        const navigation = this.pendingSectionSwitch;
+        if (navigation && Number.isFinite(message.boundarySeconds) &&
+            Math.abs(message.boundarySeconds * rate - (navigation.boundaryFrame - this.telemetryBaseRenderedFrames + this.telemetryBaseSeconds * rate)) < 1) {
+          // Restore against the exact same render-frame boundary as the
+          // prepared switch, rather than a main-thread clock approximation.
+          track.guideDuckEndFrame = this.renderContextFrameOffset + navigation.boundaryFrame -
+            Math.max(1, Math.round(rate * GUIDE_DUCK_RAMP_SECONDS));
+        }
+        track.guideDuckRecoveryEndFrame = 0;
+      }
+      return;
+    }
+    if (type === 'track-guide-duck-clear') {
+      const track = this.tracks[message.trackIndex];
+      if (track) this.clearGuideDuck(track);
+      return;
+    }
+    if (type === 'PAUSE' || type === 'PAUSE_AND_FLUSH' || type === 'PAUSE_AND_ADVANCE' ||
+        type === 'FLUSH_BUFFERS' || type === 'transport') {
+      for (let index = 0; index < this.trackCount; index += 1) {
+        if (this.tracks[index]) this.clearGuideDuck(this.tracks[index], true);
+      }
     }
 
     if (type === 'track-group-gain') {
@@ -550,6 +583,11 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         underrunFrames: 0,
         recoveringUnderrun: false,
         groupGain: 1,
+        guideDuckStartFrame: -1,
+        guideDuckEndFrame: -1,
+        guideDuckRecoveryStartFrame: 0,
+        guideDuckRecoveryEndFrame: 0,
+        guideDuckRecoveryFrom: 1,
         lastDropDebugFrame: 0,
         lastUnderflowAlertFrame: 0,
         lastSyncDriftAlertFrame: 0,
@@ -995,6 +1033,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
     this.renderedFrames += frameCount;
     const renderStartFrame = this.renderedFrames - frameCount;
+    this.renderContextFrameOffset = (typeof currentFrame === 'number' ? currentFrame : renderStartFrame) - renderStartFrame;
 
     try {
       const plan = this.pendingSectionSwitch;
@@ -1409,7 +1448,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
         rawSample = this.applyLoopSmoothing(track, samples, rawSample);
         track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
-        const sample = rawSample * track.effectiveGain;
+        const sample = rawSample * track.effectiveGain * this.getTrackGuideGain(track, outputOffset + frameIndex);
         const absoluteSample = sample >= 0 ? sample : -sample;
         if (absoluteSample > peakSample) {
           peakSample = absoluteSample;
@@ -1431,7 +1470,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
         rawSample = this.applyLoopSmoothing(track, samples, rawSample);
         track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
-        const sample = rawSample * track.effectiveGain;
+        const sample = rawSample * track.effectiveGain * this.getTrackGuideGain(track, outputOffset + frameIndex);
         const absoluteSample = sample >= 0 ? sample : -sample;
         if (absoluteSample > peakSample) {
           peakSample = absoluteSample;
@@ -1456,7 +1495,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
         rawSample = this.applyLoopSmoothing(track, samples, rawSample);
         track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
-        const sample = rawSample * track.effectiveGain;
+        const sample = rawSample * track.effectiveGain * this.getTrackGuideGain(track, outputOffset + frameIndex);
         const absoluteSample = sample >= 0 ? sample : -sample;
         if (absoluteSample > peakSample) {
           peakSample = absoluteSample;
@@ -1519,7 +1558,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
         rawSample = this.applyLoopSmoothing(track, samples, rawSample);
         track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
-        const sample = rawSample * track.effectiveGain;
+        const sample = rawSample * track.effectiveGain * this.getTrackGuideGain(track, outputOffset + frameIndex);
         const absoluteSample = sample >= 0 ? sample : -sample;
         if (absoluteSample > peakSample) {
           peakSample = absoluteSample;
@@ -1541,7 +1580,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
         rawSample = this.applyLoopSmoothing(track, samples, rawSample);
         track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
-        const sample = rawSample * track.effectiveGain;
+        const sample = rawSample * track.effectiveGain * this.getTrackGuideGain(track, outputOffset + frameIndex);
         const absoluteSample = sample >= 0 ? sample : -sample;
         if (absoluteSample > peakSample) {
           peakSample = absoluteSample;
@@ -1566,7 +1605,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         let rawSample = samples[this.toSampleIndex(nextReadIndex, track.capacity)];
         rawSample = this.applyLoopSmoothing(track, samples, rawSample);
         track.effectiveGain += (targetGain - track.effectiveGain) * SOLO_GAIN_SMOOTHING;
-        const sample = rawSample * track.effectiveGain;
+        const sample = rawSample * track.effectiveGain * this.getTrackGuideGain(track, outputOffset + frameIndex);
         const absoluteSample = sample >= 0 ? sample : -sample;
         if (absoluteSample > peakSample) {
           peakSample = absoluteSample;
@@ -1976,6 +2015,40 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
   frameToIndex(frame, indexCapacity) {
     return this.normalizeIndex(frame, indexCapacity);
+  }
+
+  guideDuckGainAtFrame(track, frame) {
+    const ramp = Math.max(1, Math.round((sampleRate || 48000) * GUIDE_DUCK_RAMP_SECONDS));
+    const start = track.guideDuckStartFrame;
+    const end = track.guideDuckEndFrame;
+    if (start >= 0 && frame >= start && frame < end + ramp) {
+      if (frame < start + ramp) return Math.max(0, 1 - (frame - start) / ramp);
+      if (frame < end) return 0;
+      return Math.min(1, (frame - end) / ramp);
+    }
+    if (track.guideDuckRecoveryEndFrame > frame && frame >= track.guideDuckRecoveryStartFrame) {
+      const progress = (frame - track.guideDuckRecoveryStartFrame) /
+        (track.guideDuckRecoveryEndFrame - track.guideDuckRecoveryStartFrame);
+      return track.guideDuckRecoveryFrom + (1 - track.guideDuckRecoveryFrom) * progress;
+    }
+    return 1;
+  }
+
+  getTrackGuideGain(track, frameOffset) {
+    if (!(track.guideDuckStartFrame >= 0) && !(track.guideDuckRecoveryEndFrame > 0)) return 1;
+    const frame = (typeof currentFrame === 'number' ? currentFrame : this.renderedFrames - BASE_RENDER_FRAME_COUNT) + frameOffset;
+    return this.guideDuckGainAtFrame(track, frame);
+  }
+
+  clearGuideDuck(track, immediate = false) {
+    const frame = typeof currentFrame === 'number' ? currentFrame : this.renderedFrames;
+    const gain = immediate ? 1 : this.guideDuckGainAtFrame(track, frame);
+    track.guideDuckStartFrame = -1;
+    track.guideDuckEndFrame = -1;
+    track.guideDuckRecoveryFrom = gain;
+    track.guideDuckRecoveryStartFrame = frame;
+    track.guideDuckRecoveryEndFrame = gain < 1
+      ? frame + Math.max(1, Math.round((sampleRate || 48000) * GUIDE_DUCK_RAMP_SECONDS)) : 0;
   }
 
   getTrackTargetGain(track) {

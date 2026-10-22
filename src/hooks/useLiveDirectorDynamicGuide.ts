@@ -21,7 +21,7 @@ export function useLiveDirectorDynamicGuide(options: Options) {
     setStatus('loading'); setError('');
     void player.load(controller.signal).then(() => {
       if (cancelled) return;
-      graph.setOverride(true); setStatus('ready');
+      setStatus('ready');
       timer = setInterval(() => {
         const current = latest.current;
         if (!current.playing || current.busy) { player.pause(); return; }

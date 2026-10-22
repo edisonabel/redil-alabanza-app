@@ -4,6 +4,8 @@ export type GuideAudioGraph = {
   context: AudioContext; destination: AudioNode;
   readState: () => { gain: number; route: TrackOutputRoute };
   setOverride: (enabled: boolean) => void;
+  scheduleRecordedGuideDuck?: (startAudioTime: number, endAudioTime: number, boundarySeconds?: number) => void;
+  clearRecordedGuideDuck?: () => void;
 };
 type CueAsset = { key: string; url: string; label: string };
 export class DynamicGuidePlayer {
@@ -13,6 +15,7 @@ export class DynamicGuidePlayer {
   private right: GainNode;
   private merger: ChannelMergerNode;
   private source: AudioBufferSourceNode | null = null;
+  private duckScheduled = false;
   private planKey = '';
   private played = new Set<string>();
   private lastTime: number | null = null;
@@ -76,6 +79,10 @@ export class DynamicGuidePlayer {
       this.source.disconnect(); this.source = null;
       this.record(this.planKey, 'cancelled');
     }
+    if (this.duckScheduled) {
+      this.graph.clearRecordedGuideDuck?.();
+      this.duckScheduled = false;
+    }
   }
   pause() {
     this.stopSource(); this.planKey = ''; this.lastTime = null; this.played.clear();
@@ -103,6 +110,12 @@ export class DynamicGuidePlayer {
     source.connect(this.gain); this.source = source;
     source.onended = () => { source.disconnect(); if (this.source === source) this.source = null; };
     const when = this.graph.context.currentTime + Math.max(.01, delay);
+    // Keep the recorded guide for normal playback. Suppress its original
+    // next-section cue only while the navigation announcement takes over.
+    // The render thread owns this window, including restoration at the jump.
+    const boundaryAudioTime = this.graph.context.currentTime + plan.boundary - songTime;
+    this.graph.scheduleRecordedGuideDuck?.(Math.max(this.graph.context.currentTime, when - .015), boundaryAudioTime - .005, plan.boundary);
+    this.duckScheduled = Boolean(this.graph.scheduleRecordedGuideDuck);
     source.start(when); this.record(cueKey, 'scheduled', plan.boundary);
   }
   dispose() {

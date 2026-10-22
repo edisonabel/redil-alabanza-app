@@ -996,7 +996,7 @@ type SectionJumpPreparation = {
   startedAt: number;
 };
 
-const AUDIO_WORKER_ASSET_VERSION = '20261021-prepared-sections-1';
+const AUDIO_WORKER_ASSET_VERSION = '20261022-auto-guide-2';
 const DEFAULT_WORKLET_MODULE_URL = `/workers/MultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_PRODUCER_WORKER_URL = `/workers/AudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
@@ -3244,6 +3244,15 @@ export class StreamingMultitrackEngine {
     return {
       context: this.context, destination: this.masterGain,
       setOverride: enabled => this.setGuideOverride(trackId, enabled),
+      scheduleRecordedGuideDuck: (startAudioTime, endAudioTime, boundarySeconds) => {
+        const trackIndex = this.trackIndexById.get(trackId);
+        if (trackIndex === undefined) return;
+        this.workletNode?.port.postMessage({ type: 'track-guide-duck', trackIndex, startAudioTime, endAudioTime, boundarySeconds });
+      },
+      clearRecordedGuideDuck: () => {
+        const trackIndex = this.trackIndexById.get(trackId);
+        if (trackIndex !== undefined) this.workletNode?.port.postMessage({ type: 'track-guide-duck-clear', trackIndex });
+      },
       readState: () => {
         const index = this.trackIndexById.get(trackId), track = index === undefined ? undefined : this.trackStates[index];
         if (!track) return { gain: 0, route: 'left' };

@@ -33,8 +33,8 @@ try {
   assert.equal(await groups.locator('.live-director-track-strip').count(), 5, 'Groups must use the actual ChannelStrip');
   assert.equal(await groups.locator('input[type="range"]').count(), 0, 'No horizontal replacement faders');
   await page.screenshot({ path: '.lab/results/group-faders-desktop.png' });
-  await page.getByRole('button', { name: 'Mostrar faders de mezcla', exact: true }).click();
-  await page.getByRole('button', { name: 'Mostrar secciones', exact: true }).click();
+  if (await page.getByRole('button', { name: 'Mostrar faders de mezcla', exact: true }).count()) await page.getByRole('button', { name: 'Mostrar faders de mezcla', exact: true }).click();
+  if (await page.getByRole('button', { name: 'Mostrar secciones', exact: true }).count()) await page.getByRole('button', { name: 'Mostrar secciones', exact: true }).click();
   const markers = await page.locator('[data-live-section-index]').evaluateAll(elements => elements.map(element => ({ start: Number(element.dataset.liveSectionStart), end: Number(element.dataset.liveSectionEnd) })));
   await page.evaluate(time => window.__streamingEngineDumpOwner.seekTo(time, { wasPlayingBeforeUiSeek: false }), markers[0].end - 5);
   await playPause();

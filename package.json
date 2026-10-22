@@ -8,7 +8,7 @@
     "test:live-repeats": "node scripts/test-live-director-repeats-browser.mjs",
     "test:live-dynamic-guide": "node scripts/test-live-director-dynamic-guide-browser.mjs",
     "test:live-timeline-jump": "node scripts/test-live-director-timeline-jump-browser.mjs",
-    "test:live-tools": "node scripts/test-live-director-tools-browser.mjs",
+    "test:live-tools": "node scripts/test-live-director-minimal-ui-browser.mjs",
     "test:live-audio-fades": "node scripts/test-live-director-audio-fade-browser.mjs",
     "test:live-prewarm-completion": "node scripts/test-live-director-prewarm-completion.mjs",
     "test:providencia-lab": "node scripts/test-providencia-lab-browser.mjs",
@@ -57,7 +57,10 @@
     "test:live-prepared-switch": "node scripts/test-live-director-prepared-switch.mjs",
     "test:live-prepared-jump": "node scripts/test-live-director-prepared-jump-browser.mjs",
     "test:live-prepared-content": "node scripts/test-live-director-prepared-content-browser.mjs",
-    "test:live-prepared-repeat": "node scripts/test-live-director-prepared-repeat-browser.mjs"
+    "test:live-prepared-repeat": "node scripts/test-live-director-prepared-repeat-browser.mjs",
+    "test:live-ui": "node scripts/test-live-director-minimal-ui-browser.mjs",
+    "test:live-fader-precision": "node scripts/test-live-director-fader-precision-browser.mjs",
+    "test:live-guide-duck": "node scripts/test-live-director-guide-duck.mjs"
   },
   "dependencies": {
     "@astrojs/netlify": "8.2.1",
