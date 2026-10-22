@@ -12,11 +12,14 @@ const {Scanner}=require('@tailwindcss/oxide');
 const fixturePath=process.env.LD_LAB_FIXTURE || resolve(root,'.lab/songs.json');
 const fixture=JSON.parse(await readFile(fixturePath,'utf8'));
 const media=new Map();
-const songs=fixture.songs.map((song,songIndex)=>({...song,multitrack_session:{...song.multitrack_session,folder:undefined,manifestUrl:undefined,tracks:song.multitrack_session.tracks.map((track,index)=>{
+const songs=fixture.songs.map((song,songIndex)=>{
+  const artworkPath=`/lab-artwork/${songIndex}.webp`;
+  media.set(artworkPath,`https://stems.alabanzaredilestadio.com/songs/${encodeURIComponent(song.id)}/artwork/cover-500.webp`);
+  return {...song,artworkUrl:artworkPath,multitrack_session:{...song.multitrack_session,folder:undefined,manifestUrl:undefined,tracks:song.multitrack_session.tracks.map((track,index)=>{
   const local=`/lab-media/${songIndex}/${index}.m4a`;
   media.set(local,track.optimizedUrl || track.url);
   return {...track,url:local,iosUrl:undefined,nativeUrl:undefined,optimizedUrl:undefined,cafUrl:undefined,pcmUrl:undefined};
-})}}));
+})}};});
 const allowedSources=new Set(media.values());
 const safeSource=(raw)=>{if(allowedSources.has(raw))return raw;try{const url=new URL(raw);if(url.protocol==='https:'&&url.hostname==='stems.alabanzaredilestadio.com'&&url.pathname.startsWith('/pads/')&&!url.pathname.includes('..'))return url.href;}catch{}return null;};
 const stats={mediaRequests:0,mediaFailures:0,blockedWrites:0};

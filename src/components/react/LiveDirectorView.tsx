@@ -149,6 +149,7 @@ type LiveDirectorQueueSong = {
   title: string;
   subtitle?: string;
   mp3?: string;
+  artworkUrl?: string;
   kind?: string;
   manualTempo?: LiveDirectorManualTempo;
 };
@@ -217,6 +218,8 @@ type LiveDirectorViewProps = {
   songId?: string;
   songTitle?: string;
   songMp3?: string;
+  songArtworkUrl?: string;
+  timeSignature?: { numerator: number; denominator: number };
   songKey?: string;
   initialSession?: LiveDirectorPersistedSession | null;
   requiresSongContext?: boolean;
@@ -607,6 +610,8 @@ export function LiveDirectorView({
   songId = '',
   songTitle = '',
   songMp3 = '',
+  songArtworkUrl = '',
+  timeSignature,
   songKey = '',
   initialSession = null,
   requiresSongContext = false,
@@ -1421,11 +1426,6 @@ export function LiveDirectorView({
     : manualTempoTransport.pulseMultiplier === 4
       ? 'SEMICORCHEAS'
       : 'NEGRAS';
-  const compactPulseSubdivisionLabel = manualTempoTransport.pulseMultiplier === 2
-    ? 'COR.'
-    : manualTempoTransport.pulseMultiplier === 4
-      ? 'SEM.'
-      : 'NEG.';
   const bpmControlLabel = canTogglePulseSubdivision
     ? manualTempoTransport.pulseMultiplier === 2
       ? `${displayedPulseBpm} pulsos por minuto en corcheas. Tocar para volver a negras.`
@@ -2562,6 +2562,7 @@ export function LiveDirectorView({
   useEffect(() => {
     let cancelled = false;
 
+    if (songArtworkUrl) { setSongCoverArtUrl(songArtworkUrl); return; }
     if (!songMp3) {
       setSongCoverArtUrl(null);
       return () => {
@@ -2578,7 +2579,7 @@ export function LiveDirectorView({
     return () => {
       cancelled = true;
     };
-  }, [songMp3]);
+  }, [songMp3, songArtworkUrl]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2594,7 +2595,7 @@ export function LiveDirectorView({
 
     void Promise.all(
       ensayoQueueSongs.map(async (song) => {
-        const coverUrl = song.mp3 ? await extractCoverArtFromMp3(song.mp3) : null;
+        const coverUrl = song.artworkUrl || (song.mp3 ? await extractCoverArtFromMp3(song.mp3) : null);
         return [song.id, coverUrl] as const;
       }),
     ).then((entries) => {
@@ -3399,6 +3400,11 @@ export function LiveDirectorView({
 
   const [guideRetryKey, setGuideRetryKey] = useState(0);
   const [showClickMixer, setShowClickMixer] = useState(false);
+  const [confirmedClickMeter, setConfirmedClickMeter] = useState<{ numerator: number; denominator: number } | null>(null);
+  useEffect(() => { setConfirmedClickMeter(null); }, [songId, reloadKey]);
+  const shownMeter = isManualTempoMode ? manualTempoConfig?.manualTempo.meter : confirmedClickMeter || timeSignature;
+  const meterLabel = shownMeter && Number.isInteger(shownMeter.numerator) && shownMeter.numerator > 0 && [1, 2, 4, 8, 16].includes(shownMeter.denominator)
+    ? `${shownMeter.numerator}/${shownMeter.denominator}` : '—/—';
   const openClickMixer = useCallback(() => setShowClickMixer(true), []);
   const closeClickMixer = useCallback(() => setShowClickMixer(false), []);
   useEffect(() => { setShowClickMixer(false); }, [trackSignature, reloadKey]);
@@ -5611,7 +5617,7 @@ export function LiveDirectorView({
       </div>}
       {canUseGeneratedClick && clickTrack && selectedMultitrackEngine.loadGeneratedClickSamples && selectedMultitrackEngine.setGeneratedClick &&
         <LiveDirectorClickMixer key={`click:${trackSignature}:${reloadKey}`} open={showClickMixer} onClose={closeClickMixer}
-          trackId={clickTrack.id} bpm={generatedClickGrid?.bpm ?? bpm} originSeconds={generatedClickGrid?.originSeconds ?? sourceSections[0]?.startTime ?? 0}
+          onConfirmedMeter={setConfirmedClickMeter} trackId={clickTrack.id} bpm={generatedClickGrid?.bpm ?? bpm} originSeconds={generatedClickGrid?.originSeconds ?? sourceSections[0]?.startTime ?? 0}
           ready={isReady} playing={isPlaying} busy={isSectionSeekBusy || isCongregationFading}
           loadSamples={selectedMultitrackEngine.loadGeneratedClickSamples} onConfigure={selectedMultitrackEngine.setGeneratedClick} />}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(93,214,240,0.08),_transparent_24%),linear-gradient(180deg,#232526_0%,#222425_46%,#202224_100%)]" />
@@ -5651,28 +5657,26 @@ export function LiveDirectorView({
                 type="button"
                 data-live-director-control="bpm"
                 data-pulse-multiplier={canTogglePulseSubdivision ? manualTempoTransport.pulseMultiplier : undefined}
-                onClick={manualTempoTransport.togglePulseSubdivision}
-                disabled={!canTogglePulseSubdivision}
-                aria-label={bpmControlLabel}
+                onClick={canTogglePulseSubdivision ? manualTempoTransport.togglePulseSubdivision : openClickMixer}
+                disabled={!canTogglePulseSubdivision && !canUseGeneratedClick}
+                aria-label={`${bpmControlLabel} · Compás ${meterLabel === '—/—' ? 'pendiente de confirmar' : meterLabel}`}
                 aria-pressed={canTogglePulseSubdivision ? manualTempoTransport.pulseMultiplier === 2 : undefined}
-                title={bpmControlLabel}
+                title={`${bpmControlLabel} · ${meterLabel === '—/—' ? 'Compás pendiente: abre el metrónomo para confirmarlo' : `Compás ${meterLabel}`}`}
                 className={`flex ${isUltraCompactLandscape ? 'h-11 rounded-[0.8rem] px-1 py-0.5' : isToolbarCompactLandscape ? 'h-12 rounded-[1rem] px-1.5 py-1' : 'h-[var(--ld-control-height)] rounded-[1.45rem] px-2 py-3'} shrink-0 appearance-none flex-col items-center justify-center gap-0.5 border bg-black/16 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 ${canTogglePulseSubdivision
                   ? manualTempoTransport.pulseMultiplier === 2
                     ? 'cursor-pointer border-cyan-300/42 bg-cyan-300/[0.09] shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_0_20px_rgba(103,232,249,0.08)] active:scale-[0.98]'
                     : 'cursor-pointer border-white/12 hover:border-cyan-200/28 hover:bg-white/[0.04] active:scale-[0.98]'
-                  : 'cursor-default border-white/8'}`}
+                  : canUseGeneratedClick ? 'cursor-pointer border-white/12 hover:border-cyan-200/28' : 'cursor-default border-white/8'}`}
                 style={isToolbarCompactLandscape
                   ? { width: scaleRem(isUltraCompactLandscape ? 3.05 : 3.75, 2.75) }
                   : { flex: '0 0 18%', width: '18%' }}
               >
-                <span className={`font-light leading-none tracking-tight text-white/92 ${isUltraCompactLandscape ? 'text-[1.08rem]' : isToolbarCompactLandscape ? 'text-[1.4rem]' : 'text-[2.05rem]'}`}>
+                <span className={`font-light leading-none tracking-tight text-white/92 ${isUltraCompactLandscape ? 'text-[0.95rem]' : isToolbarCompactLandscape ? 'text-[1.18rem]' : 'text-[1.65rem]'}`}>
                   {displayedPulseBpm || '--'}
                 </span>
                 <div className="h-px w-full bg-white/18" />
-                <span className={`${isUltraCompactLandscape ? 'text-[0.42rem]' : 'text-[0.56rem]'} font-black uppercase tracking-[0.22em] text-white/56`}>
-                  {canTogglePulseSubdivision
-                    ? `${isToolbarCompactLandscape ? compactPulseSubdivisionLabel : pulseSubdivisionLabel} · ${manualTempoTransport.pulseMultiplier}×`
-                    : displayBpm ? 'BPM' : 'SIN BPM'}
+                <span data-live-director-time-signature="true" data-meter-confirmed={meterLabel !== '—/—'} className={`${isUltraCompactLandscape ? 'text-[0.78rem]' : isToolbarCompactLandscape ? 'text-sm' : 'text-lg'} font-semibold leading-none text-white/85`}>
+                  {meterLabel}
                 </span>
               </button>
 
@@ -5901,7 +5905,7 @@ export function LiveDirectorView({
                       <EnsayoQueueCard
                         key={queueSong.id}
                         song={queueSong}
-                        coverUrl={queueSong.id === activeQueueSongId ? songCoverArtUrl : queueSongCoverArtMap[queueSong.id]}
+                        coverUrl={queueSong.artworkUrl || (queueSong.id === activeQueueSongId ? songCoverArtUrl : queueSongCoverArtMap[queueSong.id])}
                         active={queueSong.id === activeQueueSongId}
                         compact={isCompactLandscape}
                         ultraCompact={isUltraCompactLandscape}

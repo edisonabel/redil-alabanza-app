@@ -3,7 +3,8 @@ import { ChannelStrip } from './ChannelStrip';
 import { CLICK_LAYERS, normalizeGeneratedClick, type GeneratedClickSettings } from '../../../utils/liveDirectorGeneratedClick';
 
 type Props = {
-  open: boolean; onClose: () => void; trackId: string; bpm: number; originSeconds: number;
+  open: boolean; onClose: () => void;
+  onConfirmedMeter?: (meter: { numerator: number; denominator: number } | null) => void; trackId: string; bpm: number; originSeconds: number;
   ready: boolean; playing: boolean; busy: boolean;
   loadSamples: () => Promise<void>;
   onConfigure: (trackId: string, settings: GeneratedClickSettings | null) => boolean;
@@ -27,6 +28,8 @@ export function LiveDirectorClickMixer(props: Props) {
     levels: levels.map((value, index) => muted[index] || (hasSolo && !solo[index]) ? 0 : value) as GeneratedClickSettings['levels'],
   }), [bpm, origin, numerator, denominator, accentConfirmed, levels, muted, hasSolo, solo]);
   const gridLocked = props.playing || props.busy || loading || !props.ready;
+  const meterValid = Boolean(settings);
+  useEffect(() => { props.onConfirmedMeter?.(accentConfirmed && meterValid ? { numerator, denominator } : null); }, [accentConfirmed, numerator, denominator, meterValid, props.onConfirmedMeter]);
   useEffect(() => {
     if (props.open && !dialog.current?.open) dialog.current?.showModal();
     if (!props.open && dialog.current?.open) dialog.current?.close();
