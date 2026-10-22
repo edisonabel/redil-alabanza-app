@@ -53,7 +53,7 @@ export function LiveDirectorTools(props: Props) {
           <label className="ld-tools-field">Destino<select aria-label="Destino del salto" value={target} onChange={event => setTarget(event.target.value)}><option value="">Seleccionar sección…</option>{props.sections.map(section => <option key={section.id} value={section.id}>{section.name} · {timeLabel(section.startTime)}</option>)}</select></label>
           <div className="ld-tools-actions"><button type="button" disabled={!props.isReady || !props.isPlaying || props.busy || !target} onClick={() => props.jump.arm(target)}>Armar salto</button>
             {armed && <button type="button" onClick={() => props.jump.cancel()}>Cancelar salto</button>}</div>
-          <p className="ld-tools-note">Usa el cambio de sección con fade y preparación de pistas. Puede haber una pausa de carga; este prototipo todavía no hace transiciones continuas.</p>
+          <p className="ld-tools-note">Prepara el destino mientras sigue sonando la sección actual. Solo cambia si todos los stems están listos; si no, la canción continúa sin saltar.</p>
           {!props.sections.length && <p>Esta canción no tiene marcadores de sección.</p>}
         </section>}
         <p role="status" aria-live="polite" className="ld-tools-notice">{notice}</p>

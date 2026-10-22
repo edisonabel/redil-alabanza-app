@@ -1778,7 +1778,7 @@ class ProducerTrackPipeline {
     this.decoder = null;
   }
 
-  async ensureReady() {
+  async ensureReady(headersOnly = false) {
     this.assertAlive();
     this.assertSupportedFormat(null);
 
@@ -1821,12 +1821,20 @@ class ProducerTrackPipeline {
       const result = this.demuxer.append(chunk.bytes, chunk.byteStart);
       this.nextFileStart = this.resolveNextFileStart(result, chunk);
 
-      await this.feedDemuxedSamples(result);
+      if (headersOnly) {
+        if (result.decoderConfig) this.decoderConfig = result.decoderConfig;
+      } else {
+        await this.feedDemuxedSamples(result);
+      }
 
       if (chunk.endOfFile && !this.demuxer.trackReady) {
         this.assertAlive();
         const flushResult = this.demuxer.flush();
-        await this.feedDemuxedSamples(flushResult);
+        if (headersOnly) {
+          if (flushResult.decoderConfig) this.decoderConfig = flushResult.decoderConfig;
+        } else {
+          await this.feedDemuxedSamples(flushResult);
+        }
         break;
       }
     }
@@ -2460,7 +2468,10 @@ class ProducerTrackPipeline {
     const standbyPromise = this.ensureExactSeekStandbyDemuxer();
     if (!standbyPromise) {
       this.resetDemuxerForHardSeek();
-      await this.ensureReady();
+      // A cold destination needs the MP4 index, not decoded head audio. Feeding
+      // the head before the seek gives Chromium one discontinuous AAC stream
+      // and can shift its PCM content despite apparently correct timestamps.
+      await this.ensureReady(true);
       return;
     }
 
@@ -3774,8 +3785,31 @@ const configureSession = (message) => {
     sampleRate: loopCacheManager.sampleRate,
   });
 
+  let destinationDecoderIndex = 0;
   for (const pipeline of trackPipelines.values()) {
-    pipeline.startLookAhead(activeSessionId);
+    const initialSeek = message.initialSeek;
+    if (initialSeek && Number.isFinite(initialSeek.targetSample) && initialSeek.targetSample >= 0) {
+      if (Number.isFinite(initialSeek.decoderStaggerStepMs)) {
+        // Independent desktop destination pools contain only a subset of the
+        // stems. Stagger by the local decoder order, not the global track ID.
+        pipeline.decoderStartupStaggerMs = destinationDecoderIndex++ *
+          Math.max(0, Math.min(STARTUP_DECODER_STAGGER_MS, initialSeek.decoderStaggerStepMs));
+      }
+      // A destination producer has its own buffers. Prepare PCM at the target
+      // while the active producer keeps playing; never decode the head first.
+      pipeline.seekToSample(
+        initialSeek.targetSample, activeSessionId, initialSeek.seekSerial,
+        initialSeek.decodePrerollFrames || 0, false, true, false,
+      ).catch(error => {
+        if (!isAbortError(error)) postProducerError('prepare-section-destination-failed', error, {
+          sessionId: pipeline.sessionId,
+          trackIndex: pipeline.track.trackIndex,
+          trackId: pipeline.track.id,
+        });
+      });
+    } else {
+      pipeline.startLookAhead(activeSessionId);
+    }
   }
 };
 

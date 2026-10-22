@@ -46,6 +46,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.loopJumpCrossfadeBlocked = false;
     this.activeSeekSerial = 0;
     this.renderErrorReported = false;
+    this.pendingSectionSwitch = null;
 
     this.port.onmessage = (event) => {
       const data = event && event.data ? event.data : null;
@@ -60,6 +61,22 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
 
   handleMessage(message) {
     const type = message.type;
+
+    if (type === 'prepare-section-switch') {
+      this.prepareSectionSwitch(message);
+      return;
+    }
+    if (type === 'cancel-section-switch') {
+      this.cancelSectionSwitch(message.serial);
+      return;
+    }
+    // Any ordinary transport or graph mutation invalidates the prepared plan.
+    if (type === 'configure-track' || type === 'INIT_TRACKS' || type === 'remove-track' ||
+        type === 'reset-tracks' || type === 'FLUSH_BUFFERS' || type === 'PAUSE_AND_FLUSH' ||
+        type === 'PAUSE_AND_ADVANCE' || type === 'RESUME_READING' || type === 'PAUSE' ||
+        type === 'transport' || type === 'loop-region') {
+      this.cancelSectionSwitch();
+    }
 
     if (type === 'configure-track') {
       this.configureTrack({
@@ -364,6 +381,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   }
 
   resetTracks() {
+    this.cancelSectionSwitch();
     this.tracks = [];
     this.trackCount = 0;
     this.renderErrorReported = false;
@@ -385,6 +403,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   }
 
   removeTrack(trackIndex) {
+    this.cancelSectionSwitch();
     const numericTrackIndex = Number(trackIndex);
     if (!Number.isFinite(numericTrackIndex)) {
       return;
@@ -413,6 +432,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   }
 
   flushAllBuffers(message, preserveBufferedAudio = false) {
+    this.cancelSectionSwitch();
     const targetSample =
       message && typeof message.targetSample === 'number' && Number.isFinite(message.targetSample)
         ? Math.max(0, Math.floor(message.targetSample))
@@ -462,6 +482,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
   }
 
   configureTrack(config) {
+    this.cancelSectionSwitch();
     const trackIndex = typeof config.trackIndex === 'number' ? config.trackIndex : -1;
 
     if (trackIndex < 0) {
@@ -976,19 +997,31 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     const renderStartFrame = this.renderedFrames - frameCount;
 
     try {
-      for (let trackIndex = 0; trackIndex < this.trackCount; trackIndex += 1) {
-        const track = this.tracks[trackIndex];
-
-        if (!track) {
-          continue;
+      const plan = this.pendingSectionSwitch;
+      const offset = plan ? plan.boundaryFrame - renderStartFrame : -1;
+      if (plan && offset >= 0 && offset <= frameCount) {
+        // Readiness is checked before touching any active track. A partial
+        // destination must never replace only some of the stems.
+        plan.contextTime = ((typeof currentFrame === 'number' ? currentFrame : renderStartFrame) + offset) / (sampleRate || 48000);
+        if (plan.timing) {
+          plan.timing[0] = plan.contextTime;
+          plan.timing[1] = plan.targetSeconds + (frameCount - offset) / (sampleRate || 48000);
         }
-
-        if (track.usesSharedMemory && track.samples && track.indices) {
-          this.mixSharedTrack(track, output, outputChannelCount, frameCount, renderStartFrame);
-          continue;
+        if (this.sectionSwitchReady(plan) && Atomics.compareExchange(plan.control, 0, 0, 1) === 0) {
+          if (offset > 0) this.mixTracks(output, outputChannelCount, offset, renderStartFrame, 0);
+          this.commitSectionSwitch(plan, renderStartFrame + offset);
+          const remaining = frameCount - offset;
+          if (remaining > 0) this.mixTracks(output, outputChannelCount, remaining, renderStartFrame + offset, offset);
+          plan.completeMessage.contextTime = plan.contextTime;
+          plan.completeMessage.positionSeconds = this.getTelemetryPositionSeconds();
+          this.port.postMessage(plan.completeMessage);
+        } else {
+          this.skipSectionSwitch(plan, 'destination-not-ready');
+          this.mixTracks(output, outputChannelCount, frameCount, renderStartFrame, 0);
         }
-
-        this.mixLocalTrack(track, output, outputChannelCount, frameCount, renderStartFrame);
+      } else {
+        if (plan && offset < 0) this.skipSectionSwitch(plan, 'late');
+        this.mixTracks(output, outputChannelCount, frameCount, renderStartFrame, 0);
       }
     } catch (_error) {
       for (let channelIndex = 0; channelIndex < outputChannelCount; channelIndex += 1) {
@@ -998,6 +1031,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
           channel[frameIndex] = 0;
         }
       }
+      this.cancelSectionSwitch();
       this.readingBlocked = true;
       this.fadeInFramesRemaining = 0;
       this.resetAllLoopJumpFades();
@@ -1030,6 +1064,141 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     }
 
     return true;
+  }
+
+  prepareSectionSwitch(message) {
+    this.cancelSectionSwitch();
+    const rate = sampleRate || 48000;
+    const serial = message.serial;
+    const control = message.controlBuffer instanceof SharedArrayBuffer && message.controlBuffer.byteLength >= 4
+      ? new Int32Array(message.controlBuffer, 0, 1) : null;
+    const reject = (reason) => {
+      if (control) Atomics.compareExchange(control, 0, 0, -1);
+      this.port.postMessage({ type: 'section-switch-skipped', serial, reason });
+    };
+    if (!control || Atomics.load(control, 0) !== 0 || !Number.isFinite(serial) ||
+        !Number.isFinite(message.boundarySeconds) || !Number.isFinite(message.targetSeconds) ||
+        message.targetSeconds < 0 || !this.playing || this.readingBlocked || this.loopEnabled ||
+        !Array.isArray(message.tracks)) {
+      reject('invalid-plan');
+      return;
+    }
+    const boundaryFrame = Math.round(this.telemetryBaseRenderedFrames +
+      (message.boundarySeconds - this.telemetryBaseSeconds) * rate);
+    if (boundaryFrame <= this.renderedFrames) {
+      reject('late');
+      return;
+    }
+    const targetFrame = Math.round(message.targetSeconds * rate);
+    const minimumFrames = Number.isFinite(message.minimumFrames) && message.minimumFrames > 0
+      ? Math.ceil(message.minimumFrames) : Math.ceil(rate * 0.5);
+    const tracks = [];
+    const seen = new Set();
+    for (let index = 0; index < message.tracks.length; index += 1) {
+      const config = message.tracks[index];
+      if (!config || !Number.isInteger(config.trackIndex) || config.trackIndex < 0) {
+        reject('invalid-tracks');
+        return;
+      }
+      const active = this.tracks[config.trackIndex];
+      const capacity = config.capacity;
+      if (!active || seen.has(config.trackIndex) || !Number.isInteger(capacity) || capacity < minimumFrames ||
+          config.sampleRate !== rate || config.channelCount !== 1 ||
+          !(config.sampleBuffer instanceof SharedArrayBuffer) || config.sampleBuffer.byteLength < capacity * 4 ||
+          !(config.indexBuffer instanceof SharedArrayBuffer) || config.indexBuffer.byteLength < 8) {
+        reject('invalid-tracks');
+        return;
+      }
+      seen.add(config.trackIndex);
+      tracks.push({ active, samples: new Float32Array(config.sampleBuffer, 0, capacity), indices: new Int32Array(config.indexBuffer, 0, 2),
+        capacity, indexCapacity: capacity * 2, targetIndex: this.frameToIndex(targetFrame, capacity * 2) });
+    }
+    let activeCount = 0;
+    for (let index = 0; index < this.trackCount; index += 1) {
+      if (this.tracks[index]) activeCount += 1;
+    }
+    if (activeCount === 0 || tracks.length !== activeCount) {
+      reject('incomplete-tracks');
+      return;
+    }
+    this.pendingSectionSwitch = {
+      serial, control, tracks, boundaryFrame, targetFrame, targetSeconds: targetFrame / rate, minimumFrames,
+      timing: message.controlBuffer.byteLength >= 24 ? new Float64Array(message.controlBuffer, 8, 2) : null,
+      contextTime: 0,
+      completeMessage: { type: 'section-switch-complete', serial, targetSeconds: targetFrame / rate, contextTime: 0, positionSeconds: 0 },
+      skippedMessage: { type: 'section-switch-skipped', serial, reason: '' },
+    };
+    this.port.postMessage({ type: 'section-switch-prepared', serial });
+  }
+
+  cancelSectionSwitch(serial) {
+    const plan = this.pendingSectionSwitch;
+    if (!plan || (Number.isFinite(serial) && serial !== plan.serial)) return;
+    Atomics.compareExchange(plan.control, 0, 0, -1);
+    this.pendingSectionSwitch = null;
+  }
+
+  skipSectionSwitch(plan, reason) {
+    Atomics.compareExchange(plan.control, 0, 0, -1);
+    this.pendingSectionSwitch = null;
+    plan.skippedMessage.reason = reason;
+    this.port.postMessage(plan.skippedMessage);
+  }
+
+  sectionSwitchReady(plan) {
+    if (Atomics.load(plan.control, 0) !== 0) return false;
+    for (let index = 0; index < plan.tracks.length; index += 1) {
+      const entry = plan.tracks[index];
+      const read = Atomics.load(entry.indices, READ_INDEX_SLOT);
+      const write = Atomics.load(entry.indices, WRITE_INDEX_SLOT);
+      if (this.tracks[entry.active.trackIndex] !== entry.active || read !== entry.targetIndex ||
+          write < 0 || write >= entry.indexCapacity ||
+          this.computeAvailableRead(read, write, entry.indexCapacity) < plan.minimumFrames ||
+          this.computeAvailableRead(read, write, entry.indexCapacity) > entry.capacity) return false;
+    }
+    return true;
+  }
+
+  commitSectionSwitch(plan, boundaryFrame) {
+    this.activeSeekSerial = plan.serial;
+    for (let index = 0; index < plan.tracks.length; index += 1) {
+      const entry = plan.tracks[index];
+      const track = entry.active;
+      track.samples = entry.samples;
+      track.indices = entry.indices;
+      track.capacity = entry.capacity;
+      track.indexCapacity = entry.indexCapacity;
+      track.usesSharedMemory = true;
+      track.sampleRate = sampleRate || 48000;
+      track.channelCount = 1;
+      track.localSamples = null;
+      track.localReadIndex = entry.targetIndex;
+      track.localWriteIndex = Atomics.load(entry.indices, WRITE_INDEX_SLOT);
+      track.absoluteReadFrame = plan.targetFrame;
+      track.indexBaseFrame = plan.targetFrame;
+      track.indexBaseIndex = entry.targetIndex;
+      track.recoveringUnderrun = false;
+      track.driftHoldFrames = 0;
+      track.consumedFramesSinceReport = 0;
+      this.resetLoopJumpFade(track);
+    }
+    this.pendingSectionSwitch = null;
+    this.telemetryBaseSeconds = plan.targetSeconds;
+    this.telemetryBaseRenderedFrames = boundaryFrame;
+    // Keep the existing gain: a ready section switch is not a seek restart.
+    this.fadeInFramesRemaining = 0;
+  }
+
+  mixTracks(output, outputChannelCount, frameCount, renderStartFrame, outputOffset) {
+    for (let trackIndex = 0; trackIndex < this.trackCount; trackIndex += 1) {
+      const track = this.tracks[trackIndex];
+      if (!track) continue;
+      if (track.usesSharedMemory && track.samples && track.indices) {
+        this.mixSharedTrack(track, output, outputChannelCount, frameCount, renderStartFrame, outputOffset);
+      } else {
+        this.mixLocalTrack(track, output, outputChannelCount, frameCount, renderStartFrame, outputOffset);
+      }
+    }
   }
 
   writeTelemetrySnapshot(positionSeconds) {
@@ -1198,7 +1367,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     return this.advanceIndex(readIndex, 1, track.indexCapacity);
   }
 
-  mixSharedTrack(track, output, outputChannelCount, frameCount, renderStartFrame) {
+  mixSharedTrack(track, output, outputChannelCount, frameCount, renderStartFrame, outputOffset = 0) {
     const indices = track.indices;
     const samples = track.samples;
     const readIndex = Atomics.load(indices, READ_INDEX_SLOT);
@@ -1245,7 +1414,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         if (absoluteSample > peakSample) {
           peakSample = absoluteSample;
         }
-        left[frameIndex] += sample;
+        left[outputOffset + frameIndex] += sample;
         nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
         if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
           this.armLoopJumpCrossfade(track);
@@ -1268,12 +1437,12 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
           peakSample = absoluteSample;
         }
         if (outputRoute === 'right') {
-          right[frameIndex] += sample;
+          right[outputOffset + frameIndex] += sample;
         } else if (outputRoute === 'left') {
-          left[frameIndex] += sample;
+          left[outputOffset + frameIndex] += sample;
         } else {
-          left[frameIndex] += sample;
-          right[frameIndex] += sample;
+          left[outputOffset + frameIndex] += sample;
+          right[outputOffset + frameIndex] += sample;
         }
         nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
         if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
@@ -1294,7 +1463,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         }
 
         for (let channelIndex = 0; channelIndex < outputChannelCount; channelIndex += 1) {
-          output[channelIndex][frameIndex] += sample;
+          output[channelIndex][outputOffset + frameIndex] += sample;
         }
 
         nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
@@ -1311,7 +1480,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
     this.meterLevels[track.trackIndex] = track.lastMeterLevel;
   }
 
-  mixLocalTrack(track, output, outputChannelCount, frameCount, renderStartFrame) {
+  mixLocalTrack(track, output, outputChannelCount, frameCount, renderStartFrame, outputOffset = 0) {
     let availableRead = this.computeAvailableRead(
       track.localReadIndex,
       track.localWriteIndex,
@@ -1355,7 +1524,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         if (absoluteSample > peakSample) {
           peakSample = absoluteSample;
         }
-        left[frameIndex] += sample;
+        left[outputOffset + frameIndex] += sample;
         nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
         if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
           this.armLoopJumpCrossfade(track);
@@ -1378,12 +1547,12 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
           peakSample = absoluteSample;
         }
         if (outputRoute === 'right') {
-          right[frameIndex] += sample;
+          right[outputOffset + frameIndex] += sample;
         } else if (outputRoute === 'left') {
-          left[frameIndex] += sample;
+          left[outputOffset + frameIndex] += sample;
         } else {
-          left[frameIndex] += sample;
-          right[frameIndex] += sample;
+          left[outputOffset + frameIndex] += sample;
+          right[outputOffset + frameIndex] += sample;
         }
         nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);
         if (track.loopEnabled && track.absoluteReadFrame >= track.loopEndFrame) {
@@ -1404,7 +1573,7 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
         }
 
         for (let channelIndex = 0; channelIndex < outputChannelCount; channelIndex += 1) {
-          output[channelIndex][frameIndex] += sample;
+          output[channelIndex][outputOffset + frameIndex] += sample;
         }
 
         nextReadIndex = this.advanceTrackReadFrame(track, nextReadIndex);

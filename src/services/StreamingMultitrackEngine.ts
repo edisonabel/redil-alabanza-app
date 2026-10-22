@@ -280,6 +280,12 @@ type WorkletFallbackConsumedMessage = {
 };
 
 type WorkletMessage =
+  | {
+      type: 'prepare-section-switch'; serial: number; boundarySeconds: number; targetSeconds: number;
+      minimumFrames: number; controlBuffer: SharedArrayBuffer;
+      tracks: Omit<WorkletTrackBufferMessage, 'type'>[];
+    }
+  | { type: 'cancel-section-switch'; serial: number }
   | WorkletTrackBufferMessage
   | WorkletPcmChunkMessage
   | WorkletTransportMessage
@@ -299,6 +305,9 @@ type WorkletMessage =
   | WorkletLoopRegionMessage;
 
 type WorkletInboundMessage =
+  | { type: 'section-switch-complete'; serial: number; targetSeconds: number; contextTime: number; positionSeconds: number }
+  | { type: 'section-switch-skipped'; serial: number; reason?: string }
+  | { type: 'section-switch-prepared'; serial: number }
   | { type: 'render-error'; code: string; seekSerial: number; renderedFrames: number }
   | WorkletTrackLevelsMessage
   | WorkletDebugStatusMessage
@@ -964,7 +973,30 @@ type PreloadedStreamingSession = {
   trackStates: TrackRuntime[];
 };
 
-const AUDIO_WORKER_ASSET_VERSION = '20260726-mobile-stability-1';
+export type PreparedSectionJump = { serial: number; completion: Promise<boolean> };
+type StandbySectionPool = { sessionId: number; workers: Worker[]; tracks: TrackRuntime[] };
+type SectionJumpPreparation = {
+  serial: number;
+  sessionId: number;
+  sourceSessionId: number;
+  targetSeconds: number;
+  boundarySeconds: number;
+  targetSample: number;
+  minimumFrames: number;
+  control: Int32Array;
+  timing: Float64Array;
+  tracks: TrackRuntime[];
+  workers: Worker[];
+  seekReady: Set<number>;
+  phase: 'seeking' | 'scheduled';
+  ready: Deferred<PreparedSectionJump>;
+  completion: Deferred<boolean>;
+  readySettled: boolean;
+  timer: ReturnType<typeof setInterval> | null;
+  startedAt: number;
+};
+
+const AUDIO_WORKER_ASSET_VERSION = '20261021-prepared-sections-1';
 const DEFAULT_WORKLET_MODULE_URL = `/workers/MultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_PRODUCER_WORKER_URL = `/workers/AudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
@@ -1070,6 +1102,10 @@ export class StreamingMultitrackEngine {
   private readonly producerWorkers: Worker[] = [];
   private producerRuntimeWarmRequested = false;
   private producerSessionId = 0;
+  private producerSessionSerial = 0;
+  private sectionJumpSerial = 0;
+  private pendingSectionJump: SectionJumpPreparation | null = null;
+  private standbySectionPool: StandbySectionPool | null = null;
   private streamingPath: 'worker' | 'main-thread' | 'uninitialized' = 'uninitialized';
   private decoderProbeQueue: Promise<void> = Promise.resolve();
 
@@ -1451,6 +1487,8 @@ export class StreamingMultitrackEngine {
     trackList: TrackData[],
     options?: { onProgress?: (loaded: number, total: number) => void },
   ): Promise<TrackData[]> {
+    this.cancelSectionJump();
+    this.releaseStandbySectionPool();
     const normalizedTracks = trackList.map((track) => ({
       ...track,
       volume: this.clampVolume(track.volume, MAX_TRACK_VOLUME),
@@ -1533,7 +1571,7 @@ export class StreamingMultitrackEngine {
     const trackStates = trackDefinitions.map((trackDefinition, index) =>
       this.createProducerOnlyTrackRuntime(index, trackDefinition),
     );
-    const sessionId = Math.max(this.producerSessionId, this.preloadedNextSession?.sessionId || 0) + 1;
+    const sessionId = this.reserveProducerSessionId();
 
     this.preloadedNextSession = {
       sessionId,
@@ -1556,6 +1594,8 @@ export class StreamingMultitrackEngine {
   }
 
   async switchToPreloadedSong(): Promise<TrackData[]> {
+    this.cancelSectionJump();
+    this.releaseStandbySectionPool();
     const preloaded = this.preloadedNextSession;
 
     if (!preloaded) {
@@ -1973,6 +2013,7 @@ export class StreamingMultitrackEngine {
   }
 
   private omitTrackAfterProducerError(trackState: TrackRuntime, message: ProducerErrorMessage): void {
+    this.cancelSectionJump();
     const track = this.tracks[trackState.index];
     const trackId = message.trackId || track?.id || `track-${trackState.index}`;
     const trackLabel = message.trackName || track?.name || trackId;
@@ -2106,6 +2147,8 @@ export class StreamingMultitrackEngine {
     trackDefinitions: StreamingTrackDefinition[],
     onProgress?: (loaded: number, total: number) => void,
   ): Promise<void> {
+    this.cancelSectionJump();
+    this.releaseStandbySectionPool();
     this.ensureWebCodecsSupport();
 
     if (!this.context.audioWorklet) {
@@ -2114,7 +2157,7 @@ export class StreamingMultitrackEngine {
 
     // Reserve the next producer session before the first await. Messages still
     // arriving from the previous song are stale from this point onward.
-    const initializingSessionId = this.producerSessionId + 1;
+    const initializingSessionId = this.reserveProducerSessionId();
     this.producerSessionId = initializingSessionId;
     this.warmAudioProducerRuntime();
     await this.context.audioWorklet.addModule(this.workletModuleUrl);
@@ -2578,6 +2621,8 @@ export class StreamingMultitrackEngine {
   }
 
   pause(): void {
+    this.cancelSectionJump();
+    this.releaseStandbySectionPool();
     if (!this.transportPlaying) {
       return;
     }
@@ -2603,6 +2648,8 @@ export class StreamingMultitrackEngine {
   }
 
   stop(): void {
+    this.cancelSectionJump();
+    this.releaseStandbySectionPool();
     this.startBarrierSerial += 1;
     this.pauseTime = 0;
     this.startTime = 0;
@@ -2630,6 +2677,7 @@ export class StreamingMultitrackEngine {
   }
 
   getCurrentTime(): number {
+    this.adoptCommittedSectionJump();
     if (this.transportPlaying) {
       return Math.max(0, this.context.currentTime - this.startTime);
     }
@@ -2644,10 +2692,229 @@ export class StreamingMultitrackEngine {
     }, 0);
   }
 
+  private reserveProducerSessionId(): number {
+    this.producerSessionSerial = Math.max(
+      this.producerSessionSerial,
+      this.producerSessionId,
+      this.preloadedNextSession?.sessionId || 0,
+      this.pendingSectionJump?.sessionId || 0,
+    ) + 1;
+    return this.producerSessionSerial;
+  }
+
+  /** Decode a separate destination while every current stem keeps rendering. */
+  async prepareSectionJump(targetSeconds: number, boundarySeconds: number): Promise<PreparedSectionJump> {
+    this.cancelSectionJump();
+    if (
+      this.disposed || this.renderFaulted || !this.transportPlaying || !this.producerWorker ||
+      !supportsDesktopExactSeekRoute(readLiveBrowserCapabilities()) ||
+      this.loopEnabled || typeof SharedArrayBuffer !== 'function' ||
+      !Number.isFinite(targetSeconds) || targetSeconds < 0 || !Number.isFinite(boundarySeconds) ||
+      boundarySeconds - this.getCurrentTime() < .25 || this.trackStates.length === 0 ||
+      this.trackStates.some(track => track.omitted || !track.ringBuffer.usesSharedMemory || track.config.container !== 'm4a')
+    ) throw new Error('No se puede preparar este salto sin interrumpir las pistas.');
+
+    const definitions = this.trackStates.map(track => ({ ...track.config }));
+    const standby = this.standbySectionPool;
+    this.standbySectionPool = null;
+    const tracks = standby?.tracks || definitions.map((definition, index) => this.createProducerOnlyTrackRuntime(index, definition));
+    const serial = Math.max(this.sectionJumpSerial, this.producerSeekSerial, this.activeSeekSerial) + 1;
+    this.sectionJumpSerial = serial;
+    this.producerSeekSerial = serial;
+    const controlBuffer = new SharedArrayBuffer(24);
+    const pending: SectionJumpPreparation = {
+      serial, sessionId: standby?.sessionId || this.reserveProducerSessionId(), sourceSessionId: this.producerSessionId,
+      targetSeconds, boundarySeconds,
+      targetSample: Math.round(targetSeconds * this.context.sampleRate),
+      minimumFrames: Math.ceil(this.context.sampleRate * .5),
+      control: new Int32Array(controlBuffer, 0, 1), timing: new Float64Array(controlBuffer, 8, 2),
+      tracks, workers: standby?.workers.slice() || [], seekReady: new Set(), phase: 'seeking',
+      ready: this.createDeferred<PreparedSectionJump>(), completion: this.createDeferred<boolean>(),
+      readySettled: false, timer: null, startedAt: performance.now(),
+    };
+    // A cancellation can precede the caller receiving the prepared handle.
+    void pending.completion.promise.catch(() => {});
+    this.pendingSectionJump = pending;
+    try {
+      const metadata = this.buildProducerTrackMetadata(definitions, this.tracks, tracks);
+      const workerCount = standby?.workers.length || this.resolveProducerWorkerCount(tracks.length);
+      for (let index = 0; index < workerCount; index++) {
+        const worker = standby?.workers[index] || new Worker(this.producerWorkerUrl);
+        if (!standby) pending.workers.push(worker);
+        worker.onmessage = event => {
+          if (this.pendingSectionJump === pending) {
+            this.handleSectionJumpProducerMessage(pending, event.data);
+          } else if (this.producerWorkers.includes(worker)) {
+            this.handleProducerMessage(event.data as ProducerInboundMessage | null);
+          }
+        };
+        worker.onerror = event => {
+          if (this.pendingSectionJump === pending) this.failSectionJump(pending, `No se pudo preparar el audio: ${event.message}`);
+          else if (this.producerWorkers.includes(worker)) this.handleWorkletMessage({ type: 'render-error', code: 'producer-worker-error', seekSerial: this.activeSeekSerial, renderedFrames: 0 });
+        };
+        const decodePrerollFrames = Math.min(pending.targetSample, Math.round(this.context.sampleRate * 3));
+        worker.postMessage(standby ? {
+          type: 'seek', sessionId: pending.sessionId, targetSample: pending.targetSample,
+          seekSerial: pending.serial, decodePrerollFrames,
+          exactSampleSeek: true, hardReset: true, requireCompleteReady: true, bufferedAdvance: false,
+        } : {
+          type: 'init-session', sessionId: pending.sessionId, sampleRate: this.context.sampleRate,
+          diagnosticsEnabled: isLiveDiagnosticsEnabled(),
+          tracks: metadata.filter(track => track.trackIndex % workerCount === index),
+          initialSeek: { targetSample: pending.targetSample, seekSerial: pending.serial, decodePrerollFrames, decoderStaggerStepMs: 120 },
+        });
+      }
+      pending.timer = setInterval(() => {
+        if (this.pendingSectionJump !== pending) return;
+        if (Atomics.load(pending.control, 0) === 1) { this.adoptCommittedSectionJump(); return; }
+        if (Atomics.load(pending.control, 0) < 0) { this.failSectionJump(pending, 'El destino no estaba listo para el límite de sección.'); return; }
+        if (!this.transportPlaying || this.producerSessionId !== pending.sourceSessionId || this.disposed || this.renderFaulted) {
+          this.failSectionJump(pending, 'Salto cancelado al cambiar el transporte.'); return;
+        }
+        const remaining = boundarySeconds - (this.context.currentTime - this.startTime);
+        if (remaining < (pending.phase === 'scheduled' ? -.1 : .02)) {
+          this.failSectionJump(pending, 'El destino no estuvo listo a tiempo; la canción continúa.');
+        } else if (pending.phase !== 'scheduled' && performance.now() - pending.startedAt > 30000) {
+          this.failSectionJump(pending, 'Se agotó el tiempo para preparar todas las pistas.');
+        }
+      }, 20);
+    } catch (error) {
+      this.failSectionJump(pending, error instanceof Error ? error.message : 'No se pudo preparar el salto.');
+    }
+    return pending.ready.promise;
+  }
+
+  cancelSectionJump(): void {
+    const pending = this.pendingSectionJump;
+    if (!pending) return;
+    // The render thread wins once state=1. Adopt before pause/manual seek can
+    // inspect the clock or terminate the producers that are now audible.
+    if (Atomics.compareExchange(pending.control, 0, 0, -1) === 1) {
+      this.adoptCommittedSectionJump();
+      return;
+    }
+    this.failSectionJump(pending, 'Salto cancelado.');
+  }
+
+  private releaseStandbySectionPool(): void {
+    const standby = this.standbySectionPool;
+    if (!standby) return;
+    this.standbySectionPool = null;
+    for (const worker of standby.workers) { worker.onmessage = null; worker.onerror = null; worker.terminate(); }
+    for (const track of standby.tracks) {
+      track.abortController.abort();
+      try { track.decoder?.close(); } catch { /* already closed */ }
+    }
+  }
+
+  private failSectionJump(pending: SectionJumpPreparation, reason: string): void {
+    if (this.pendingSectionJump !== pending) return;
+    if (Atomics.compareExchange(pending.control, 0, 0, -1) === 1) {
+      this.adoptCommittedSectionJump();
+      return;
+    }
+    this.pendingSectionJump = null;
+    if (pending.timer !== null) clearInterval(pending.timer);
+    this.workletNode?.port.postMessage({ type: 'cancel-section-switch', serial: pending.serial });
+    for (const worker of pending.workers) { worker.onmessage = null; worker.onerror = null; worker.terminate(); }
+    for (const track of pending.tracks) track.abortController.abort();
+    if (!pending.readySettled) { pending.readySettled = true; pending.ready.reject(new Error(reason)); }
+    pending.completion.resolve(false);
+    this.logFlatLiveDiagnostic('streaming:section-switch-cancelled', { serial: pending.serial, reason });
+  }
+
+  private handleSectionJumpProducerMessage(pending: SectionJumpPreparation, message: ProducerInboundMessage | null): void {
+    if (!message || typeof message !== 'object' || !('sessionId' in message) || message.sessionId !== pending.sessionId) return;
+    if (message.type === 'producer-error') {
+      this.failSectionJump(pending, 'No se pudieron preparar todas las pistas del destino.'); return;
+    }
+    if (message.type !== 'producer-seek-ready' || message.seekSerial !== pending.serial || message.targetSample !== pending.targetSample) return;
+    const track = pending.tracks[message.trackIndex];
+    if (!track || pending.phase !== 'seeking') return;
+    const aligned = message.firstNormalWriteStartSample === pending.targetSample &&
+      typeof message.lastNormalWriteEndSample === 'number' && message.lastNormalWriteEndSample - pending.targetSample >= pending.minimumFrames;
+    if (message.fallback === true || message.realContentReady !== true || !aligned || track.ringBuffer.availableRead() < pending.minimumFrames) {
+      this.failSectionJump(pending, 'Una pista del destino no tiene audio completo y sincronizado.'); return;
+    }
+    pending.seekReady.add(message.trackIndex);
+    if (pending.seekReady.size !== pending.tracks.length) return;
+    const now = this.context.currentTime - this.startTime;
+    if (pending.boundarySeconds - now < .02 || !this.transportPlaying || this.producerSessionId !== pending.sourceSessionId) {
+      this.failSectionJump(pending, 'El destino no estuvo listo a tiempo; la canción continúa.'); return;
+    }
+    const valid = pending.tracks.every(state => state.ringBuffer.availableRead() >= pending.minimumFrames &&
+      Atomics.load(state.ringBuffer.indices, 0) === pending.targetSample % (2 * state.ringBuffer.capacity));
+    if (!valid) { this.failSectionJump(pending, 'Las pistas del destino no comparten la misma posición.'); return; }
+    pending.phase = 'scheduled';
+    try {
+      this.postWorkletMessage({
+        type: 'prepare-section-switch', serial: pending.serial,
+        boundarySeconds: pending.boundarySeconds, targetSeconds: pending.targetSeconds,
+        minimumFrames: pending.minimumFrames, controlBuffer: pending.control.buffer as SharedArrayBuffer,
+        tracks: pending.tracks.map(state => ({
+          trackIndex: state.index, capacity: state.ringBuffer.capacity,
+          sampleRate: this.context.sampleRate, channelCount: 1, usesSharedMemory: true,
+          sampleBuffer: state.ringBuffer.sampleStorage, indexBuffer: state.ringBuffer.indexStorage,
+        })),
+      });
+      pending.readySettled = true;
+      pending.ready.resolve({ serial: pending.serial, completion: pending.completion.promise });
+      this.logFlatLiveDiagnostic('streaming:section-switch-ready', {
+        serial: pending.serial, tracks: pending.seekReady.size, target: pending.targetSeconds,
+        remainingSeconds: pending.boundarySeconds - now, preparationMs: Math.round(performance.now() - pending.startedAt),
+      });
+    } catch (error) { this.failSectionJump(pending, error instanceof Error ? error.message : 'No se pudo programar el salto.'); }
+  }
+
+  private adoptCommittedSectionJump(message?: { serial: number; contextTime: number; positionSeconds: number }): void {
+    const pending = this.pendingSectionJump;
+    if (!pending || (message && message.serial !== pending.serial) || Atomics.load(pending.control, 0) !== 1) return;
+    const boundaryContextTime = message?.contextTime ?? pending.timing[0];
+    if (!Number.isFinite(boundaryContextTime) || boundaryContextTime <= 0) return;
+    this.pendingSectionJump = null;
+    if (pending.timer !== null) clearInterval(pending.timer);
+    const oldWorkers = this.producerWorkers.slice();
+    const oldTracks = this.trackStates.splice(0);
+    const oldSessionId = this.producerSessionId;
+    this.producerSessionId = pending.sessionId;
+    this.producerWorkers.splice(0, this.producerWorkers.length, ...pending.workers);
+    this.producerWorker = pending.workers[0] || null;
+    for (let index = 0; index < pending.tracks.length; index++) {
+      const next = pending.tracks[index], old = oldTracks[index];
+      if (old) { next.volume = old.volume; next.muted = old.muted; next.outputRoute = old.outputRoute; }
+      next.readyResolved = true; next.ready.resolve();
+      this.trackStates.push(next);
+    }
+    this.startTime = boundaryContextTime - pending.targetSeconds;
+    this.pauseTime = pending.targetSeconds;
+    this.restartFromHead = false;
+    this.streamingPath = 'worker';
+    this.lastProducerMessageAt = performance.now();
+    this.latestProducerTrackState.clear(); this.latestWorkletTrackStatus.clear(); this.latestUnderflowByTrack.clear();
+    this.activeSeekSerial = pending.serial;
+    this.pendingPlaybackContentCheck = null;
+    this.releasePreloadedNextSession();
+    this.postProducerTransportState(this.transportPlaying);
+    this.releaseStandbySectionPool();
+    // The former producer has a parsed MP4 index and a warmed decoder. Keep
+    // one idle pool for the next repeat instead of paying fresh startup again.
+    for (const worker of oldWorkers) {
+      worker.onmessage = null; worker.onerror = null;
+      worker.postMessage({ type: 'transport-state', sessionId: oldSessionId, playing: false });
+    }
+    this.standbySectionPool = { sessionId: oldSessionId, workers: oldWorkers, tracks: oldTracks };
+    pending.completion.resolve(true);
+    this.logFlatLiveDiagnostic('streaming:section-switch-complete', {
+      serial: pending.serial, tracks: pending.tracks.length, target: pending.targetSeconds, contextTime: boundaryContextTime,
+    });
+  }
+
   async seekTo(
     timeInSeconds: number,
     options?: { wasPlayingBeforeUiSeek?: boolean; forceFreshStart?: boolean },
   ): Promise<void> {
+    this.cancelSectionJump();
+    this.releaseStandbySectionPool();
     if (this.renderFaulted) throw new Error('Recarga la sesión para recuperar el audio.');
     if (!Number.isFinite(timeInSeconds)) {
       return;
@@ -3062,6 +3329,8 @@ export class StreamingMultitrackEngine {
   }
 
   toggleLoop(): void {
+    this.cancelSectionJump();
+    this.releaseStandbySectionPool();
     if (this.loopEndInSeconds <= this.loopStartInSeconds) {
       this.loopEnabled = false;
       this.postLoopRegion();
@@ -3073,6 +3342,8 @@ export class StreamingMultitrackEngine {
   }
 
   setLoopPoints(startInSeconds: number, endInSeconds: number): void {
+    this.cancelSectionJump();
+    this.releaseStandbySectionPool();
     const start = Number(startInSeconds);
     const end = Number(endInSeconds);
 
@@ -3167,6 +3438,8 @@ export class StreamingMultitrackEngine {
   }
 
   dispose(): void {
+    this.cancelSectionJump();
+    this.releaseStandbySectionPool();
     this.disposed = true;
     this.removePageLifecycleListeners();
     this.removeEngineStateDumper();
@@ -5405,6 +5678,17 @@ export class StreamingMultitrackEngine {
     if (!message || typeof message !== 'object') {
       return;
     }
+
+    if (message.type === 'section-switch-complete') {
+      this.adoptCommittedSectionJump(message);
+      return;
+    }
+    if (message.type === 'section-switch-skipped') {
+      const pending = this.pendingSectionJump;
+      if (pending && pending.serial === message.serial) this.failSectionJump(pending, message.reason || 'El salto no estaba listo para ejecutarse.');
+      return;
+    }
+    if (message.type === 'section-switch-prepared') return;
 
     if (message.type === 'render-error') {
       if (this.renderFaulted) return;

@@ -20,7 +20,10 @@ try {
   await page.waitForFunction(() => document.querySelector('[data-live-director-control="play-pause"]') && !document.querySelector('[data-live-director-control="play-pause"]').disabled, null, { timeout: 90000 });
   await page.getByRole('button', { name: 'Mostrar secciones', exact: true }).click();
   const markers = await page.locator('[data-live-section-index]').evaluateAll(elements => elements.map(element => ({ start: Number(element.dataset.liveSectionStart), end: Number(element.dataset.liveSectionEnd) })));
-  const section = markers[3]; assert.ok(section.end - section.start <= 10);
+  // Cold destination preparation needs advance notice. A late arm now keeps
+  // the source playing instead of pausing at the boundary; that guard is
+  // covered by the prepared-jump test. Here verify a ready repeat and guide.
+  const section = markers[0]; assert.equal(section.end - section.start, 16);
   const guide = page.getByRole('button', { name: 'Guía dinámica en español', exact: true });
   await page.evaluate(() => {
     window.__guideStarts = [];
@@ -53,29 +56,29 @@ try {
     return { volume, group, mute, solo, route };
   });
   assert.equal(boundControls.volume, .4); assert.equal(boundControls.group, .12); assert.equal(boundControls.mute, 0); assert.equal(boundControls.solo, 0); assert.equal(boundControls.route, 'right');
-  await page.evaluate(time => window.__streamingEngineDumpOwner.seekTo(time, { wasPlayingBeforeUiSeek: false }), section.end - 3.5);
+  await page.evaluate(time => window.__streamingEngineDumpOwner.seekTo(time, { wasPlayingBeforeUiSeek: false }), section.end - 14);
   await toggle(); await page.getByRole('button', { name: 'Repetir sección una vez', exact: true }).click();
-  await page.waitForFunction(() => window.__guideStarts.some(source => Math.abs(source.duration - .7289) < .00015), null, { timeout: 3000 });
-  await page.waitForFunction(start => { const e = window.__streamingEngineDumpOwner; return e.getIsPlaying() && e.getCurrentTime() >= start && e.getCurrentTime() < start + 2; }, section.start, { timeout: 15000 });
+  await page.waitForFunction(() => window.__guideStarts.some(source => Math.abs(source.duration - .7289) < .00015), null, { timeout: 20000 });
+  await page.waitForFunction(start => { const e = window.__streamingEngineDumpOwner; return e.getIsPlaying() && e.getCurrentTime() >= start && e.getCurrentTime() < start + 2; }, section.start, { timeout: 20000 });
   await page.waitForFunction(() => document.querySelector('[aria-label="Repetir sección una vez"]').getAttribute('aria-pressed') === 'false');
-  await page.waitForFunction(end => window.__streamingEngineDumpOwner.getCurrentTime() > end + .25, section.end, { timeout: 15000 });
+  await page.waitForFunction(end => window.__streamingEngineDumpOwner.getCurrentTime() > end + .25, section.end, { timeout: 20000 });
   console.log('one repeat then continue: passed');
   await toggle();
-  await page.evaluate(time => window.__streamingEngineDumpOwner.seekTo(time, { wasPlayingBeforeUiSeek: false }), section.end - 3.5);
+  await page.evaluate(time => window.__streamingEngineDumpOwner.seekTo(time, { wasPlayingBeforeUiSeek: false }), section.end - 14);
   await toggle(); await page.getByRole('button', { name: 'Mantener sección en repetición', exact: true }).click();
-  await page.waitForFunction(start => { const t = window.__streamingEngineDumpOwner.getCurrentTime(); return t >= start && t < start + 2; }, section.start, { timeout: 15000 });
-  await page.waitForFunction(() => document.body.innerText.includes('Repite hasta salir (1)'), null, { timeout: 15000 });
+  await page.waitForFunction(start => { const t = window.__streamingEngineDumpOwner.getCurrentTime(); return t >= start && t < start + 2; }, section.start, { timeout: 20000 });
+  await page.waitForFunction(() => document.body.innerText.includes('Repite hasta salir (1)'), null, { timeout: 20000 });
   // Stay for another full pass before requesting a boundary exit.
-  await page.waitForFunction(() => document.body.innerText.includes('Repite hasta salir (2)'), null, { timeout: 15000 });
+  await page.waitForFunction(() => document.body.innerText.includes('Repite hasta salir (2)'), null, { timeout: 20000 });
   await mkdir('.lab/results', { recursive: true }); await page.screenshot({ path: '.lab/results/repeat-hold.png' });
   await page.getByRole('button', { name: 'Salir de la repetición al terminar', exact: true }).click();
   assert.ok(await clock() < section.end);
-  await page.waitForFunction(end => window.__streamingEngineDumpOwner.getCurrentTime() > end + .25, section.end, { timeout: 15000 });
+  await page.waitForFunction(end => window.__streamingEngineDumpOwner.getCurrentTime() > end + .25, section.end, { timeout: 20000 });
   assert.equal(await page.getByRole('button', { name: 'Mantener sección en repetición', exact: true }).getAttribute('aria-pressed'), 'false');
   assert.equal(await guideOverride(), true);
   // A chosen destination replaces the ordinary next-section announcement.
   await toggle();
-  await page.evaluate(time => { window.__guideStarts = []; return window.__streamingEngineDumpOwner.seekTo(time, { wasPlayingBeforeUiSeek: false }); }, markers[0].end - 4);
+  await page.evaluate(time => { window.__guideStarts = []; return window.__streamingEngineDumpOwner.seekTo(time, { wasPlayingBeforeUiSeek: false }); }, markers[0].end - 14);
   await toggle();
   await page.locator('[data-live-director-control="tools"]').click();
   await page.getByRole('button', { name: 'Salto de sección', exact: true }).click();
@@ -83,9 +86,9 @@ try {
   const chorusId = await destination.locator('option').evaluateAll(options => options.find(option => /Coro 1/.test(option.textContent)).value);
   await destination.selectOption(chorusId);
   await page.locator('dialog[open]').getByRole('button', { name: 'Armar salto', exact: true }).click();
-  await page.waitForFunction(() => window.__guideStarts.some(source => Math.abs(source.duration - .8427) < .00015), null, { timeout: 3000 });
+  await page.waitForFunction(() => window.__guideStarts.some(source => Math.abs(source.duration - .8427) < .00015), null, { timeout: 20000 });
   await page.getByRole('button', { name: 'Cerrar herramientas', exact: true }).click();
-  await page.waitForFunction(start => window.__streamingEngineDumpOwner.getCurrentTime() >= start && window.__streamingEngineDumpOwner.getCurrentTime() < start + 6, markers[2].start, { timeout: 15000 });
+  await page.waitForFunction(start => window.__streamingEngineDumpOwner.getCurrentTime() >= start && window.__streamingEngineDumpOwner.getCurrentTime() < start + 6, markers[2].start, { timeout: 20000 });
   await guide.click(); assert.equal(await guideOverride(), false);
   const restored = await page.evaluate(() => { const t = window.__streamingEngineDumpOwner.getTracks().find(t => t.id === 'guide'); return { volume: t.volume, muted: t.isMuted, route: t.outputRoute }; });
   assert.deepEqual(restored, oldTrack);

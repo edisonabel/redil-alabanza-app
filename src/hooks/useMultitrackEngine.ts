@@ -67,6 +67,8 @@ type UseMultitrackEngineOptions = {
 };
 
 export type UseMultitrackEngineReturn = {
+  prepareSectionJump?: (targetSeconds: number, boundarySeconds: number) => Promise<{ serial: number; completion: Promise<boolean> }>;
+  cancelSectionJump?: () => void;
   runtimeError?: string | null;
   getGuideAudioGraph?: (trackId: string) => GuideAudioGraph | null;
   fadeMasterVolume?: (volume: number, durationMs: number) => ReturnType<typeof startAudioGainFade> | null;
@@ -878,6 +880,18 @@ export function useMultitrackEngine(
     return currentTimeRef.current;
   }, []);
 
+  const prepareSectionJump = useCallback(async (targetSeconds: number, boundarySeconds: number) => {
+    const engine = engineRef.current;
+    if (!(engine instanceof StreamingMultitrackEngine)) {
+      throw new Error('El motor actual no admite saltos preparados.');
+    }
+    return engine.prepareSectionJump(targetSeconds, boundarySeconds);
+  }, []);
+  const cancelSectionJump = useCallback(() => {
+    const engine = engineRef.current;
+    if (engine instanceof StreamingMultitrackEngine) engine.cancelSectionJump();
+  }, []);
+
   useEffect(() => {
     return () => {
       cancelEngineUiLoops();
@@ -1037,6 +1051,8 @@ export function useMultitrackEngine(
       getGuideAudioGraph,
       fadeMasterVolume,
       setTrackGroupGain,
+      prepareSectionJump,
+      cancelSectionJump,
       isPlaying,
       currentTime,
       duration,
@@ -1072,6 +1088,8 @@ export function useMultitrackEngine(
       getGuideAudioGraph,
       fadeMasterVolume,
       setTrackGroupGain,
+      prepareSectionJump,
+      cancelSectionJump,
       currentTime,
       duration,
       diagnostics,

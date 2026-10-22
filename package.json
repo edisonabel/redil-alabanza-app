@@ -53,7 +53,11 @@
     "backfill:artwork": "node --experimental-strip-types scripts/backfill-song-artwork.mjs",
     "ios:sync": "npm run build && npx cap sync ios",
     "ios:open": "npm run ios:sync && npx cap open ios",
-    "astro": "astro"
+    "astro": "astro",
+    "test:live-prepared-switch": "node scripts/test-live-director-prepared-switch.mjs",
+    "test:live-prepared-jump": "node scripts/test-live-director-prepared-jump-browser.mjs",
+    "test:live-prepared-content": "node scripts/test-live-director-prepared-content-browser.mjs",
+    "test:live-prepared-repeat": "node scripts/test-live-director-prepared-repeat-browser.mjs"
   },
   "dependencies": {
     "@astrojs/netlify": "8.2.1",

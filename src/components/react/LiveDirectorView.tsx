@@ -3302,6 +3302,8 @@ export function LiveDirectorView({
     enabled: experimentalTools, resetKey: `${trackSignature}:${reloadKey}:${sectionOffsetSeconds}`, sections: resolvedSections,
     isReady, isPlaying, busy: isSectionSeekBusy || isCongregationFading,
     getTime: selectedMultitrackEngine.getCurrentTimeSnapshot, onJump: handleSectionSeek,
+    prepareJump: !isManualTempoMode && diagnostics?.engineRoute === 'streaming-worker' ? selectedMultitrackEngine.prepareSectionJump : undefined,
+    cancelPreparedJump: selectedMultitrackEngine.cancelSectionJump,
   });
   const [dynamicGuideWanted, setDynamicGuideWanted] = useState(false);
   const [guideRetryKey, setGuideRetryKey] = useState(0);
@@ -5297,11 +5299,11 @@ export function LiveDirectorView({
         </div>
 
         {sectionJump.repeat && !showSectionsPanel && <div className="flex shrink-0 items-center gap-3 rounded-lg border border-violet-200/25 bg-violet-200/5 px-3 py-1 text-xs text-violet-100">
-          <span role="status" className="min-w-0 flex-1 truncate">↻ {sectionJump.repeat.section.name} · {sectionJump.repeat.exitRequested ? 'Sale al terminar' : sectionJump.repeat.mode === 'once' ? 'Una vez' : `Hasta salir · ${sectionJump.repeat.completed} repeticiones`}</span>
+          <span role="status" className="min-w-0 flex-1 truncate">↻ {sectionJump.repeat.section.name} · {sectionJump.repeat.exitRequested ? 'Sale al terminar' : sectionJump.preparation === 'preparing' ? 'Preparando stems…' : sectionJump.repeat.mode === 'once' ? 'Una vez' : `Hasta salir · ${sectionJump.repeat.completed} repeticiones`}</span>
           <button type="button" disabled={isSectionSeekBusy} className="rounded-md border border-violet-200/30 px-3 py-1" onClick={sectionJump.exitRepeat}>Salir al terminar</button>
         </div>}
         {sectionJump.armed && !showSectionsPanel && <div className="flex shrink-0 items-center gap-3 rounded-lg border border-amber-200/25 bg-amber-200/5 px-3 py-1 text-xs text-amber-100">
-          <span role="status" className="min-w-0 flex-1 truncate">→ {sectionJump.armed.section.name} · Al terminar la sección actual</span>
+          <span role="status" className="min-w-0 flex-1 truncate">→ {sectionJump.armed.section.name} · {sectionJump.preparation === 'preparing' ? 'Preparando stems…' : sectionJump.preparation === 'ready' ? 'Stems listos · Al terminar' : 'Al terminar la sección actual'}</span>
           <button type="button" aria-label="Cancelar salto armado" className="rounded-md border border-amber-200/30 px-3 py-1" onClick={sectionJump.cancel}>Cancelar</button>
         </div>}
         <section className={`shrink-0 overflow-hidden ${isUltraCompactLandscape ? 'pr-0 pb-0' : isCompactLandscape ? 'pr-0.5' : ''}`}>
@@ -5520,10 +5522,11 @@ export function LiveDirectorView({
                 <button type="button" aria-label="Mantener sección en repetición" aria-pressed={sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested} disabled={!isPlaying || !isReady || isSectionSeekBusy || isCongregationFading}
                   className={`shrink-0 rounded-lg border px-2 py-2 ${sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested ? 'border-violet-200/60 bg-violet-200/15 text-violet-100' : 'border-white/25'} disabled:opacity-35`}
                   onClick={() => sectionJump.repeat?.mode === 'hold' && !sectionJump.repeat.exitRequested ? sectionJump.exitRepeat() : startRepeatFromTimeline('hold')}>∞ Mantener</button>
-                {sectionJump.repeat ? <><span role="status" className="min-w-0 flex-1 truncate text-violet-100">{sectionJump.repeat.section.name} · {sectionJump.repeat.exitRequested ? 'Sale al terminar' : sectionJump.repeat.mode === 'once' ? 'Repetirá una vez' : `Repite hasta salir (${sectionJump.repeat.completed})`}</span><button type="button" aria-label="Salir de la repetición al terminar" disabled={isSectionSeekBusy} className="rounded-lg border border-violet-200/30 px-3 py-2 text-violet-100" onClick={sectionJump.exitRepeat}>Salir al terminar</button></>
-                : sectionJump.armed ? <><span role="status" className="min-w-0 flex-1 truncate text-amber-100">→ {sectionJump.armed.section.name} · Al terminar la sección</span><button type="button" aria-label="Cancelar salto de sección" className="shrink-0 rounded-lg border border-amber-200/30 px-3 py-2" onClick={sectionJump.cancel}>Cancelar</button></>
+                {sectionJump.repeat ? <><span role="status" className="min-w-0 flex-1 truncate text-violet-100">{sectionJump.repeat.section.name} · {sectionJump.repeat.exitRequested ? 'Sale al terminar' : sectionJump.preparation === 'preparing' ? 'Preparando stems…' : sectionJump.repeat.mode === 'once' ? 'Repetirá una vez' : `Repite hasta salir (${sectionJump.repeat.completed})`}</span><button type="button" aria-label="Salir de la repetición al terminar" disabled={isSectionSeekBusy} className="rounded-lg border border-violet-200/30 px-3 py-2 text-violet-100" onClick={sectionJump.exitRepeat}>Salir al terminar</button></>
+                : sectionJump.armed ? <><span role="status" className="min-w-0 flex-1 truncate text-amber-100">→ {sectionJump.armed.section.name} · {sectionJump.preparation === 'preparing' ? 'Preparando stems…' : sectionJump.preparation === 'ready' ? 'Stems listos · Al terminar' : 'Al terminar la sección'}</span><button type="button" aria-label="Cancelar salto de sección" className="shrink-0 rounded-lg border border-amber-200/30 px-3 py-2" onClick={sectionJump.cancel}>Cancelar</button></>
                 : selectedJumpSection && isPlaying ? <><span className="min-w-0 flex-1 truncate">{selectedJumpSection.name} · Al terminar la sección</span><button type="button" className="shrink-0 rounded-lg border border-cyan-200/40 bg-cyan-200/10 px-3 py-2 text-cyan-100" onClick={() => armSectionFromTimeline(selectedJumpSection.id)}>Armar salto</button></>
                 : <span className="text-white/55">Doble toque en una sección para armar un salto</span>}
+                {!sectionJump.armed && !sectionJump.repeat && /no se pudo|no estuvo listo|cancelado/i.test(sectionJump.notice) && <span role="status" className="w-full text-amber-100">{sectionJump.notice}</span>}
                 {dynamicGuide.error && <div className="flex w-full items-center gap-3 text-rose-200"><span role="alert">{dynamicGuide.error}</span><button type="button" className="rounded-md border border-rose-200/30 px-2 py-1" onClick={() => setDynamicGuideWanted(false)}>Usar guía grabada</button></div>}
               </div>}
               {nextSectionPreview && !sectionJump.armed && !sectionJump.repeat && (
