@@ -13,8 +13,6 @@ type Props = {
   getTelemetry: () => SharedStreamingTelemetry | null;
   trackLevels: Record<string, number>;
 };
-const colors = { rhythm: '#fbad63', harmony: '#73c7fa', vocals: '#c89dff', other: '#79d5ac', cues: '#f5d76b' };
-const shortLabels = { rhythm: 'RIT', harmony: 'ARM', vocals: 'VOZ', other: 'OTR', cues: 'GUÍA' };
 export function LiveDirectorGroupMixer(props: Props) {
   const settings = useRef<HTMLDialogElement>(null);
   const [gains, setGains] = useState<Record<string, number>>({});
@@ -25,7 +23,7 @@ export function LiveDirectorGroupMixer(props: Props) {
   const groups = useMemo(() => MIX_GROUPS.map(group => ({ ...group,
     tracks: props.tracks.filter(track => (assignments[track.id] || inferMixGroup(track)) === group.id),
   })), [props.tracks, assignments]);
-  const hasSolo = Object.values(solos).some(Boolean);
+  const hasSolo = groups.some(group => group.tracks.length > 0 && solos[group.id]);
   useEffect(() => { if (!props.isReady) settings.current?.close(); }, [props.isReady]);
   // Group gain is independent of each stem's persisted fader, mute and solo.
   useEffect(() => {
@@ -45,11 +43,11 @@ export function LiveDirectorGroupMixer(props: Props) {
     update(); const timer = setInterval(update, 80); return () => clearInterval(timer);
   }, [props.hidden, props.isPlaying, props.getTelemetry, props.trackLevels, groups]);
   return <section hidden={props.hidden} aria-label="Grupos de mezcla" className="ld-group-faders">
-    <div className="ld-group-faders-toolbar"><span>Grupos</span><button type="button" disabled={!props.isReady} onClick={() => settings.current?.showModal()}>Configurar grupos</button></div>
+    <div className="ld-group-faders-toolbar"><span>Buses</span><button type="button" disabled={!props.isReady} onClick={() => settings.current?.showModal()}>Configurar grupos</button></div>
     <div data-live-director-mixer-scroll="true" className={`hide-scrollbar grid min-h-0 flex-1 overflow-x-auto overflow-y-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] ${props.ultraCompact ? 'gap-1 px-0.5 py-0.5' : props.compact ? 'gap-1.5 px-1 py-0.5' : 'gap-3 px-3 py-4'}`}
       style={{ gridTemplateColumns: `repeat(${Math.max(1, groups.filter(group => group.tracks.length > 0).length)}, minmax(${props.ultraCompact ? '6.7rem' : props.compact ? '7.45rem' : '8.5rem'}, 1fr))`, touchAction: 'pan-x pinch-zoom' }}>
       {groups.filter(group => group.tracks.length > 0).map(group => <ChannelStrip key={group.id}
-        id={`group-${group.id}`} label={group.label} shortLabel={shortLabels[group.id]} accent={colors[group.id]}
+        id={`group-${group.id}`} label={group.label} shortLabel={group.shortLabel} accent={group.color}
         volume={gains[group.id] ?? 1} level={levels[group.id] || 0} isPlaying={props.isPlaying}
         muted={Boolean(muted[group.id])} soloed={Boolean(solos[group.id])} dimmed={hasSolo && !solos[group.id]}
         disabled={!props.isReady || props.busy} compact={props.compact} ultraCompact={props.ultraCompact}

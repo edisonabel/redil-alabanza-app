@@ -50,7 +50,7 @@ try {
   await page.locator('[data-live-director-control="groups"]').click();
   assert.ok(await page.getByRole('region', { name: 'Grupos de mezcla', exact: true }).isVisible());
   assert.ok(await page.locator('[data-live-director-section-surface]').isVisible());
-  assert.equal(await page.getByRole('region', { name: 'Grupos de mezcla', exact: true }).locator('.live-director-track-strip').count(), 5);
+  assert.equal(await page.getByRole('region', { name: 'Grupos de mezcla', exact: true }).locator('.live-director-track-strip').count(), 8);
   await page.locator('[data-live-director-control="groups"]').click();
   results.push({ name: 'groups-keep-section-timeline', pass: true });
 
