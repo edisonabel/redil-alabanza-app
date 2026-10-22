@@ -3,6 +3,7 @@ import { LiveDirectorSongLevel } from './live-director/LiveDirectorSongLevel';
 import { useLiveDirectorEventArrangement } from '../../hooks/useLiveDirectorEventArrangement';
 import { useLiveDirectorArrangement } from '../../hooks/useLiveDirectorArrangement';
 import { LiveDirectorArrangementEditor } from './live-director/LiveDirectorArrangementEditor';
+import { buildSectionWavePath as buildWavePath, SECTION_WAVE_BAR_WIDTH_PX, SECTION_WAVE_BAR_GAP_PX } from '../../utils/liveDirectorSectionWave';
 import { resolveArrangement, arrangementTimeline, arrangementElapsed, arrangementSourceAt, arrangementDuration, type ArrangementEntry } from '../../utils/liveDirectorArrangement';
 import { useLiveDirectorDynamicGuide } from '../../hooks/useLiveDirectorDynamicGuide';
 import { useLiveDirectorSectionJump } from '../../hooks/useLiveDirectorSectionJump';
@@ -358,8 +359,6 @@ const SECTION_LANE_MIN_WIDTH_PX = 118;
 const SECTION_LANE_GAP_PX = 14;
 const SECTION_LANE_PLAYHEAD_MIN_OFFSET_PX = 92;
 const SECTION_LANE_PLAYHEAD_MAX_OFFSET_PX = 360;
-const SECTION_WAVE_BAR_WIDTH_PX = 6;
-const SECTION_WAVE_BAR_GAP_PX = 4;
 const SECTION_WAVE_BAR_INSET_PX = 16;
 const SECTION_WAVE_BAR_MIN_COUNT = 7;
 const SECTION_TRANSITION_FADE_OUT_MS = 170;
@@ -484,31 +483,6 @@ const shouldIgnoreSectionKeyboardTarget = (target: EventTarget | null) => {
         'input, textarea, select, [contenteditable="true"], [role="textbox"], [role="slider"], [data-live-director-shortcuts="off"]',
       ),
     );
-};
-
-const buildWaveBars = (seed: number, count = 24) =>
-  Array.from({ length: count }, (_, index) => {
-    const value = Math.abs(Math.sin((index + 1) * (seed + 1) * 0.58));
-    return 18 + value * 72;
-  });
-
-const buildWavePath = (seed: number, count: number) => {
-  const barStride = SECTION_WAVE_BAR_WIDTH_PX + SECTION_WAVE_BAR_GAP_PX;
-  const bottom = 96;
-  const bars = buildWaveBars(seed, count);
-
-  return {
-    path: bars
-      .map((height, index) => {
-        const x = index * barStride + SECTION_WAVE_BAR_WIDTH_PX / 2;
-        return `M${x.toFixed(1)} ${bottom}V${Math.max(4, bottom - height).toFixed(1)}`;
-      })
-      .join(' '),
-    viewBoxWidth: Math.max(
-      SECTION_WAVE_BAR_WIDTH_PX,
-      count * barStride - SECTION_WAVE_BAR_GAP_PX,
-    ),
-  };
 };
 
 const getTrackBaseId = (trackId: string) => trackId.replace(/-\d+$/, '');
@@ -2085,6 +2059,8 @@ export function LiveDirectorView({
         leftPct: number;
         widthPct: number;
         accent: string;
+        label: string;
+        name: string;
       }>;
     }
     return navigationSections.map((section) => {
@@ -2095,6 +2071,8 @@ export function LiveDirectorView({
         leftPct: startFrac * 100,
         widthPct: Math.max(0, (endFrac - startFrac) * 100),
         accent: section.accent,
+        label: section.shortLabel,
+        name: section.name,
       };
     });
   }, [navigationDuration, navigationSections]);
@@ -4992,6 +4970,7 @@ export function LiveDirectorView({
 
   const handleMinimapPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (!isReady || isCongregationFading || isTransportCueBusy) return;
     const node = minimapTrackRef.current;
     if (!node) return;
 
@@ -5007,7 +4986,7 @@ export function LiveDirectorView({
     minimapPendingSeekTimeRef.current = t;
     setMinimapHoverTime(t);
     event.preventDefault();
-  }, [holdSectionsAutoFollow, minimapXToTime]);
+  }, [holdSectionsAutoFollow, minimapXToTime, isReady, isCongregationFading, isTransportCueBusy]);
 
   const handleMinimapPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (!minimapDragActiveRef.current) return;
@@ -5033,16 +5012,34 @@ export function LiveDirectorView({
   }, [scheduleSectionsAutoFollowResume]);
 
   const handleMinimapPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!minimapDragActiveRef.current || minimapDragPointerIdRef.current !== event.pointerId) return;
     const seekTime = minimapPendingSeekTimeRef.current ?? minimapXToTime(event.clientX);
     endMinimapDrag(event);
+    if (!isReady || isCongregationFading || isTransportCueBusy) return;
+    if (seekTime <= 0) { void handleReturnToStart(); return; }
     const target = arrangementEntries ? arrangementSourceAt(resolvedSections, seekTime) : null;
     if (target) arrangement.focus(target.id);
     void handleSectionSeek(target?.time ?? seekTime);
-  }, [endMinimapDrag, handleSectionSeek, minimapXToTime, arrangementEntries, resolvedSections, arrangement.focus]);
+  }, [endMinimapDrag, handleSectionSeek, minimapXToTime, arrangementEntries, resolvedSections, arrangement.focus, handleReturnToStart, isReady, isCongregationFading, isTransportCueBusy]);
 
   const handleMinimapPointerCancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     endMinimapDrag(event);
   }, [endMinimapDrag]);
+
+  const handleMinimapKeyDown = useCallback((event: import('react').KeyboardEvent<HTMLDivElement>) => {
+    const step = event.shiftKey ? 0.1 : 1;
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? navigationDuration
+      : ['ArrowRight', 'ArrowUp'].includes(event.key) ? navigationTime + step
+      : ['ArrowLeft', 'ArrowDown'].includes(event.key) ? navigationTime - step : null;
+    if (next === null) return;
+    event.preventDefault(); event.stopPropagation();
+    if (!isReady || isCongregationFading || isTransportCueBusy) return;
+    const time = clamp(next, 0, navigationDuration);
+    if (time <= 0) { void handleReturnToStart(); return; }
+    const target = arrangementEntries ? arrangementSourceAt(resolvedSections, time) : null;
+    if (target) arrangement.focus(target.id);
+    void handleSectionSeek(target?.time ?? time);
+  }, [navigationDuration, navigationTime, isReady, isCongregationFading, isTransportCueBusy, arrangementEntries, resolvedSections, arrangement.focus, handleSectionSeek, handleReturnToStart]);
 
   const pendingEnabledCount = pendingEnabledMap
     ? Object.values(pendingEnabledMap).filter(Boolean).length
@@ -5243,7 +5240,7 @@ export function LiveDirectorView({
                 <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-16 bg-[linear-gradient(270deg,rgba(23,24,26,0.96),rgba(23,24,26,0))]" />
                 <div
                   className={`pointer-events-none absolute top-3 z-30 w-[4px] -translate-x-1/2 rounded-full bg-white shadow-[0_0_18px_rgba(255,255,255,0.68)] ${
-                    isUltraCompactLandscape ? 'bottom-3' : isCompactLandscape ? 'bottom-[22px]' : 'bottom-[34px]'
+                    isUltraCompactLandscape ? 'bottom-[28px]' : isCompactLandscape ? 'bottom-[36px]' : 'bottom-[44px]'
                   }`}
                   style={{ left: `${sectionLanePlayheadOffsetPx}px` }}
                 />
@@ -5262,7 +5259,7 @@ export function LiveDirectorView({
                   }}
                 >
                     <div
-                      className="relative flex h-full min-h-0 items-stretch gap-[14px] py-4"
+                      className={`relative flex h-full min-h-0 items-stretch gap-[14px] pt-4 ${isUltraCompactLandscape ? 'pb-[32px]' : isCompactLandscape ? 'pb-[40px]' : 'pb-[48px]'}`}
                       style={{
                         width: `${sectionLaneContentWidth}px`,
                         paddingLeft: `${sectionLanePlayheadOffsetPx}px`,
@@ -5311,7 +5308,7 @@ export function LiveDirectorView({
                           />
                           <svg
                             aria-hidden="true"
-                            className="pointer-events-none absolute left-4 right-4 top-[58%] h-[36%] -translate-y-1/2 overflow-visible"
+                            className={`pointer-events-none absolute left-4 right-4 -translate-y-1/2 overflow-visible ${desktopCombined ? 'top-[82%] h-[18%]' : 'top-[65%] h-[28%]'}`}
                             style={{ width: 'calc(100% - 2rem)' }}
                             viewBox={`0 0 ${waveViewBoxWidth} 100`}
                             preserveAspectRatio="none"
@@ -5386,13 +5383,11 @@ export function LiveDirectorView({
                   </div>
                 </div>
 
-                {/* Mini-mapa: banda angosta con bloques de sección, playhead
-                    global y viewport marker. Tap/drag = seek. Oculto en
-                    ultra-compact landscape para no morder altura. */}
-                {!isUltraCompactLandscape && sectionLaneMinimapSegments.length > 0 && (
+                {/* Whole-song overview follows the edited order, including duplicates. */}
+                {sectionLaneMinimapSegments.length > 0 && (
                   <div
                     className={`pointer-events-none absolute left-4 right-4 z-40 ${
-                      isCompactLandscape ? 'bottom-2 h-[14px]' : 'bottom-3 h-[18px]'
+                      isUltraCompactLandscape ? 'bottom-1 h-[20px]' : isCompactLandscape ? 'bottom-1.5 h-[26px]' : 'bottom-2 h-[30px]'
                     }`}
                   >
                     <div
@@ -5401,13 +5396,18 @@ export function LiveDirectorView({
                       onPointerMove={handleMinimapPointerMove}
                       onPointerUp={handleMinimapPointerUp}
                       onPointerCancel={handleMinimapPointerCancel}
-                      className="pointer-events-auto relative h-full cursor-pointer overflow-hidden rounded-[10px] border border-white/10 bg-black/52 shadow-[0_6px_16px_rgba(0,0,0,0.38)]"
+                      onKeyDown={handleMinimapKeyDown}
+                      tabIndex={0}
+                      data-live-section-minimap="true"
+                      className="pointer-events-auto relative h-full cursor-pointer overflow-hidden rounded-lg border border-white/15 bg-black/40 focus-visible:outline-2 focus-visible:outline-cyan-200"
                       style={{ touchAction: 'none' }}
                       aria-label="Mini-mapa de la canción"
                       role="slider"
                       aria-valuemin={0}
                       aria-valuemax={navigationDuration}
                       aria-valuenow={clamp(navigationTime, 0, navigationDuration)}
+                      aria-valuetext={`${formatClock(navigationTime)} · ${activeSection?.name || 'Sin sección'}`}
+                      aria-disabled={!isReady || isCongregationFading || isTransportCueBusy}
                     >
                       {sectionLaneMinimapSegments.map((seg, index) => {
                         const isActive = index === activeSectionIndex;
@@ -5415,19 +5415,20 @@ export function LiveDirectorView({
                           <div
                             key={seg.id}
                             aria-hidden="true"
-                            className="absolute inset-y-0"
+                            data-minimap-section={seg.id}
+                            title={`${index + 1}. ${seg.name}`}
+                            className="absolute inset-y-0 flex items-center justify-center overflow-hidden"
                             style={{
                               left: `${seg.leftPct}%`,
                               width: `${seg.widthPct}%`,
-                              backgroundColor: isActive
-                                ? `${seg.accent}b3`
-                                : `${seg.accent}4d`,
+                              backgroundColor: seg.accent,
+                              opacity: isActive ? 0.95 : 0.7,
                               borderLeft:
                                 index === 0 ? 'none' : '1px solid rgba(0,0,0,0.45)',
                               transition:
                                 'background-color 160ms ease',
                             }}
-                          />
+                          ><span className="truncate px-0.5 text-[9px] font-semibold leading-none text-white" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.9)' }}>{seg.widthPct >= 7 ? `${index + 1} · ${seg.label}` : index + 1}</span></div>
                         );
                       })}
                       {/* Viewport marker: qué rango de la canción está visible

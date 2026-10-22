@@ -76,7 +76,8 @@
     "test:live-song-level-ui": "node scripts/test-live-director-song-level-browser.mjs",
     "test:live-level-meter": "node scripts/test-live-director-level-meter.mjs",
     "test:live-level-meter-ui": "node scripts/test-live-director-level-meter-browser.mjs",
-    "test:live-covers-meter-ui": "node scripts/test-live-director-covers-meter-browser.mjs"
+    "test:live-covers-meter-ui": "node scripts/test-live-director-covers-meter-browser.mjs",
+    "test:live-overview-ui": "node scripts/test-live-director-section-overview-browser.mjs"
   },
   "dependencies": {
     "@astrojs/netlify": "8.2.1",

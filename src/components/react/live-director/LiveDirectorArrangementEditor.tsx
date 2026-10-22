@@ -1,5 +1,6 @@
 import { ArrowLeft, ArrowRight, Copy, Minus, MoreHorizontal, Plus, Undo2 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { buildSectionWavePath } from '../../../utils/liveDirectorSectionWave';
 import type { LiveDirectorSectionVisual } from '../../../utils/liveDirectorSongSession';
 import { MAX_ARRANGEMENT_SECTIONS, originalArrangement, resolveArrangement, arrangementDuration, type ArrangementEntry } from '../../../utils/liveDirectorArrangement';
 type Props = { busy: boolean; sections: LiveDirectorSectionVisual[]; entries: ArrangementEntry[] | null; eventTitle?: string; onClose: () => void; onApply: (entries: ArrangementEntry[] | null) => Promise<void> };
@@ -15,6 +16,7 @@ export function LiveDirectorArrangementEditor(props: Props) {
   const [menu, setMenu] = useState<string | null>(null);
   const locked = props.busy || applying;
   const sources = new Map(props.sections.map(section => [section.id, section]));
+  const waves = useMemo(() => new Map(props.sections.map((section, index) => [section.id, buildSectionWavePath(index + 1, 18)])), [props.sections]);
   const change = (next: ArrangementEntry[]) => {
     history.current = [...history.current.slice(-39), draft]; setDraft(next); setMenu(null); setError('');
   };
@@ -47,12 +49,17 @@ export function LiveDirectorArrangementEditor(props: Props) {
     <div className="flex min-h-0 min-w-0 flex-1 items-stretch gap-2 overflow-x-auto px-3 py-3" aria-label="Secciones del arreglo">
       {draft.map((entry, index) => {
         const section = sources.get(entry.sectionId)!;
+        const wave = waves.get(entry.sectionId)!;
         return <div key={entry.id} className="flex shrink-0 items-stretch gap-2">
           <button type="button" className={`${control} self-center rounded-full`} aria-label={`Insertar sección en posición ${index + 1}`} disabled={locked || draft.length >= MAX_ARRANGEMENT_SECTIONS} onClick={() => { setInsertion(index); setMenu(null); }}><Plus size={17}/></button>
-          <article data-arrangement-entry={entry.id} className="relative flex w-[190px] min-h-[110px] shrink-0 flex-col justify-center rounded-2xl border px-3 py-2" style={{ borderColor: section.border, background: section.surface }}>
+          <article data-arrangement-entry={entry.id} className="relative isolate flex w-[190px] min-h-[110px] shrink-0 flex-col justify-center overflow-hidden rounded-2xl border px-3 py-2" style={{ borderColor: section.border, background: section.surface }}>
+            <svg data-arrangement-wave="true" aria-hidden="true" className="pointer-events-none absolute inset-x-3 top-1/2 -z-10 h-[75%] -translate-y-1/2" style={{ width: 'calc(100% - 1.5rem)' }} viewBox={`0 0 ${wave.viewBoxWidth} 100`} preserveAspectRatio="none">
+              <path d={wave.path} fill="none" stroke="white" strokeOpacity="0.24" strokeWidth="4" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>
+            </svg>
+            <div className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(180deg,transparent,rgba(12,15,17,0.5))]"/>
             <div className="mb-2 flex items-center justify-between gap-2">
               <button type="button" className={`${control} rounded-full border-rose-200/45 bg-rose-500/65`} aria-label={`Quitar sección ${index + 1}`} disabled={locked || draft.length <= 1} onClick={() => { change(draft.filter(item => item.id !== entry.id)); setInsertion(null); }}><Minus size={16}/></button>
-              <span className="text-[10px] tabular-nums text-white/40">{index + 1}</span>
+              <span className="rounded bg-black/45 px-1.5 py-0.5 text-[10px] tabular-nums text-white/75">{index + 1}</span>
               <button type="button" className={`${control} rounded-full`} aria-label={`Opciones de sección ${index + 1}`} aria-expanded={menu === entry.id} disabled={locked} onClick={() => { setMenu(menu === entry.id ? null : entry.id); setInsertion(null); }}><MoreHorizontal size={17}/></button>
             </div>
             {menu === entry.id ? <div className="flex flex-wrap gap-1" role="group" aria-label={`Opciones de ${section.name}`}>
