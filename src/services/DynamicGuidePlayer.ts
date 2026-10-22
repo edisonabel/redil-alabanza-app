@@ -4,8 +4,8 @@ export type GuideAudioGraph = {
   context: AudioContext; destination: AudioNode;
   readState: () => { gain: number; route: TrackOutputRoute };
   setOverride: (enabled: boolean) => void;
-  scheduleRecordedGuideDuck?: (startAudioTime: number, endAudioTime: number, boundarySeconds?: number) => void;
-  clearRecordedGuideDuck?: () => void;
+  scheduleRecordedGuideDuck: (startAudioTime: number, endAudioTime: number, boundarySeconds?: number, voiceEndAudioTime?: number) => Promise<void>;
+  clearRecordedGuideDuck: () => void;
 };
 type CueAsset = { key: string; url: string; label: string };
 export class DynamicGuidePlayer {
@@ -16,6 +16,7 @@ export class DynamicGuidePlayer {
   private merger: ChannelMergerNode;
   private source: AudioBufferSourceNode | null = null;
   private duckScheduled = false;
+  private cueGeneration = 0;
   private planKey = '';
   private played = new Set<string>();
   private lastTime: number | null = null;
@@ -74,13 +75,14 @@ export class DynamicGuidePlayer {
     }
   }
   private stopSource() {
+    this.cueGeneration++;
     if (this.source) {
       try { this.source.stop(); } catch { /* already ended */ }
       this.source.disconnect(); this.source = null;
       this.record(this.planKey, 'cancelled');
     }
     if (this.duckScheduled) {
-      this.graph.clearRecordedGuideDuck?.();
+      this.graph.clearRecordedGuideDuck();
       this.duckScheduled = false;
     }
   }
@@ -105,18 +107,35 @@ export class DynamicGuidePlayer {
     const delay = plan.boundary - lead - songTime;
     if (delay > 8) return;
     this.played.add(key);
-    if (plan.boundary - songTime < buffer.duration + .1) { this.record(cueKey, 'late', plan.boundary); return; }
+    if (plan.boundary - songTime < buffer.duration + .3) { this.record(cueKey, 'late', plan.boundary); return; }
     const source = this.graph.context.createBufferSource(); source.buffer = buffer;
     source.connect(this.gain); this.source = source;
     source.onended = () => { source.disconnect(); if (this.source === source) this.source = null; };
-    const when = this.graph.context.currentTime + Math.max(.01, delay);
-    // Keep the recorded guide for normal playback. Suppress its original
-    // next-section cue only while the navigation announcement takes over.
-    // The render thread owns this window, including restoration at the jump.
-    const boundaryAudioTime = this.graph.context.currentTime + plan.boundary - songTime;
-    this.graph.scheduleRecordedGuideDuck?.(Math.max(this.graph.context.currentTime, when - .015), boundaryAudioTime - .005, plan.boundary);
-    this.duckScheduled = Boolean(this.graph.scheduleRecordedGuideDuck);
-    source.start(when); this.record(cueKey, 'scheduled', plan.boundary);
+    const when = this.graph.context.currentTime + Math.max(.12, delay);
+    // Silence the recorded phrase early, not just its overlap with the new
+    // sample. The worklet must confirm the window before the voice can start.
+    const context = this.graph.context;
+    const boundaryAudioTime = context.currentTime + plan.boundary - songTime;
+    const preRoll = Math.max(.25, 2 * 60 / (Number.isFinite(bpm) && bpm > 0 ? bpm : 120));
+    const voiceEndAudioTime = when + buffer.duration + .12;
+    const generation = this.cueGeneration;
+    this.duckScheduled = true;
+    const prepared = this.graph.scheduleRecordedGuideDuck(
+      Math.max(context.currentTime, when - preRoll),
+      Math.max(boundaryAudioTime, voiceEndAudioTime), plan.boundary, voiceEndAudioTime,
+    );
+    void prepared.then(() => {
+      if (this.disposed || generation !== this.cueGeneration) return;
+      // A delayed confirmation must not launch the voice outside its silence
+      // window. Keep the original guide rather than speak over it.
+      if (when < context.currentTime + .02) {
+        this.stopSource(); this.record(cueKey, 'late', plan.boundary); return;
+      }
+      source.start(when); this.record(cueKey, 'scheduled', plan.boundary);
+    }).catch(() => {
+      if (this.disposed || generation !== this.cueGeneration) return;
+      this.stopSource(); this.record(cueKey, 'late', plan.boundary);
+    });
   }
   dispose() {
     if (this.disposed) return;

@@ -207,7 +207,15 @@ class MultitrackWorkletProcessor extends AudioWorkletProcessor {
           track.guideDuckEndFrame = this.renderContextFrameOffset + navigation.boundaryFrame -
             Math.max(1, Math.round(rate * GUIDE_DUCK_RAMP_SECONDS));
         }
+        // Never restore the recorded voice while the replacement sample or
+        // its tail can still be audible, even if the source clock is corrected.
+        if (Number.isFinite(message.voiceEndAudioTime)) {
+          track.guideDuckEndFrame = Math.max(track.guideDuckEndFrame, Math.ceil(message.voiceEndAudioTime * rate));
+        }
         track.guideDuckRecoveryEndFrame = 0;
+        if (Number.isInteger(message.requestId)) {
+          this.port.postMessage({ type: 'track-guide-duck-ready', requestId: message.requestId });
+        }
       }
       return;
     }

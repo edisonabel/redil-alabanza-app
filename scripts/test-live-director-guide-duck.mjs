@@ -66,5 +66,18 @@ for (const type of ['PAUSE', 'PAUSE_AND_FLUSH', 'PAUSE_AND_ADVANCE', 'FLUSH_BUFF
   q.handleMessage({ type, playing: false, targetSample: 0, positionSeconds: 0 });
   assert.equal(q.tracks[0].guideDuckStartFrame, -1, `${type} clears a stale announcement`);
 }
+// A prepared jump can correct the estimated end, but may not restore a
+// recorded phrase over a replacement voice that is still playing.
+const guarded = setup();
+guarded.handleMessage({ type: 'prepare-section-switch', serial: 2, boundarySeconds: 1240 / rate, targetSeconds: 10000 / rate,
+  minimumFrames: 24000, controlBuffer: new SharedArrayBuffer(24), tracks: [0, 1].map(trackIndex => ({ ...buffers(10000), trackIndex })) });
+guarded.handleMessage({ type: 'track-guide-duck', requestId: 7, trackIndex: 0, startAudioTime: 0,
+  endAudioTime: 1240 / rate, boundarySeconds: 1240 / rate, voiceEndAudioTime: 3000 / rate });
+assert.ok(guarded.messages.some(message => message.type === 'track-guide-duck-ready' && message.requestId === 7));
+assert.equal(guarded.guideDuckGainAtFrame(guarded.tracks[0], 2999), 0, 'Clock correction cannot restore under a live voice');
+assert.equal(guarded.guideDuckGainAtFrame(guarded.tracks[0], 3240), 1, 'Recorded guide restores after protected voice tail');
+const invalid = setup();
+invalid.handleMessage({ type: 'track-guide-duck', requestId: 8, trackIndex: 99, startAudioTime: 0, endAudioTime: 1 });
+assert.ok(!invalid.messages.some(message => message.type === 'track-guide-duck-ready'), 'Never confirm a missing guide');
 console.log(JSON.stringify({ pass: true, defaultRecordedGuide: true, sampleTimedDuck: true, otherStemUnchanged: true,
-  restoresAtPreparedBoundary: true, preservesFaderGroupAndRoute: true, cancellationRestores: true, transportCancellation: true }));
+  restoresAtPreparedBoundary: true, preservesFaderGroupAndRoute: true, cancellationRestores: true, transportCancellation: true, confirmedWindow: true, voiceTailProtected: true }));

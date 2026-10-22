@@ -177,3 +177,14 @@ Providencia queda en **Outro 3: 317,5–340 s (22,5 s)**, conservando todas las 
 Pruebas: `npm run test:live-terminal-section` y `npm run test:live-terminal-section-ui`. Casos de endSec ausente/null/vacío, duración desconocida, final explícito conservado, offset independiente, MP4 con padding AAC y evento de duración del worker. El navegador verificó 15 duraciones de 340 s, audio real de la cola después de 5:35, ausencia de repetición al antiguo límite y repetición preparada a 340 s hacia 317,5 s con 15/15 pistas. Sin errores de página ni escrituras HTTP; salida física silenciada. Captura y reporte privados en `.lab/results/terminal-section-check.json` y `providencia-full-ending.png`.
 
 Extracto de escucha privado: `.lab/results/providencia-cola-5m25-5m40.mp3`. Es una mezcla reducida de instrumentos originales, de 5:25 a 5:40; 5:35 corresponde al segundo 10. No tiene click generado ni se subió a Git.
+
+
+## Guías sin voces montadas · 22 de octubre de 2026
+
+El usuario precisa que el último clic de Providencia está en **5:32**. Ese dato musical no equivale al final del archivo: se conserva la cola instrumental hasta 5:40.
+
+La captura previa de un salto de Outro 1 a Outro 3 mostró la voz original desde unos 477 ms antes del aviso nuevo, con pico 0,545, mientras el silencio empezaba solo 15 ms antes. En ese caso no se midieron muestras simultáneas durante la voz nueva, pero sí se dejaba oír el comienzo de la frase original inmediatamente antes. No se generaliza esa captura a todos los saltos observados por el usuario.
+
+Ahora el silencio completo de Guide se anticipa dos pulsos a la voz dinámica (1 s a 120 BPM, mínimo 250 ms), con la rampa de 5 ms para evitar clics. La voz espera confirmación del AudioWorklet: si falta, llega tarde o se cancela el plan, no arranca. Se reservan al menos 120 ms para programarla y se omiten avisos que ya no caben. La restauración se liga al límite preparado y nunca adelanta el final de la voz nueva más su margen de 120 ms, aunque el reloj estimado se corrija. El fader, grupo, mute/solo, ruteo y los demás stems mantienen sus valores; la guía grabada sigue sonando en el recorrido normal.
+
+Pruebas `test:live-guide-duck`, `test:live-dynamic-guide`, `test:live-guide-exclusion`. El worklet valida confirmación, protección de la cola de voz, cancelación y conservación del resto de mezcla. La prueba del reproductor comprueba que no hable antes de la confirmación, con confirmación tardía, rechazada o cancelada. La prueba integrada usa los 15 stems reales, aísla Guide antes del master y resta esa señal a la mezcla para medir la voz secundaria muestra por muestra. Salto a Outro 3 y repetición: pico original cero en la ventana protegida, voz nueva audible y cero muestras solapadas; la repetición incluye 750 ms de bloqueo de UI. Sin errores de página ni escrituras HTTP y salida física silenciada. Evidencia privada en `.lab/results/guide-exclusion-check.json`.

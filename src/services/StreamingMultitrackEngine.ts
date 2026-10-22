@@ -306,6 +306,7 @@ type WorkletMessage =
   | WorkletLoopRegionMessage;
 
 type WorkletInboundMessage =
+  | { type: 'track-guide-duck-ready'; requestId: number }
   | { type: 'section-switch-complete'; serial: number; targetSeconds: number; contextTime: number; positionSeconds: number }
   | { type: 'section-switch-skipped'; serial: number; reason?: string }
   | { type: 'section-switch-prepared'; serial: number }
@@ -998,7 +999,7 @@ type SectionJumpPreparation = {
   startedAt: number;
 };
 
-const AUDIO_WORKER_ASSET_VERSION = '20261022-audio-duration-1';
+const AUDIO_WORKER_ASSET_VERSION = '20261022-guide-exclusive-1';
 const DEFAULT_WORKLET_MODULE_URL = `/workers/MultitrackWorkletProcessor.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_PRODUCER_WORKER_URL = `/workers/AudioProducerWorker.js?v=${AUDIO_WORKER_ASSET_VERSION}`;
 const DEFAULT_WORKLET_PROCESSOR_NAME = 'multitrack-worklet-processor';
@@ -1097,6 +1098,8 @@ export class StreamingMultitrackEngine {
   public onEnded: (() => void) | null = null;
   private groupGains = new Map<string, number>();
   private dynamicGuideOverrides = new Set<string>();
+  private guideDuckRequestSerial = 0;
+  private guideDuckRequests = new Map<number, { resolve: () => void; reject: () => void; timer: ReturnType<typeof setTimeout> }>();
   private clickSamplesPromise: Promise<Float32Array[]> | null = null;
   private clickSamplesNode: AudioWorkletNode | null = null;
   private workletProcessorFailed = false;
@@ -3283,10 +3286,20 @@ export class StreamingMultitrackEngine {
     return {
       context: this.context, destination: this.masterGain,
       setOverride: enabled => this.setGuideOverride(trackId, enabled),
-      scheduleRecordedGuideDuck: (startAudioTime, endAudioTime, boundarySeconds) => {
+      scheduleRecordedGuideDuck: (startAudioTime, endAudioTime, boundarySeconds, voiceEndAudioTime) => {
         const trackIndex = this.trackIndexById.get(trackId);
-        if (trackIndex === undefined) return;
-        this.workletNode?.port.postMessage({ type: 'track-guide-duck', trackIndex, startAudioTime, endAudioTime, boundarySeconds });
+        if (trackIndex === undefined || !this.workletNode || this.disposed || this.renderFaulted) {
+          return Promise.reject(new Error('La guía grabada no está disponible.'));
+        }
+        const requestId = ++this.guideDuckRequestSerial;
+        return new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            this.guideDuckRequests.delete(requestId);
+            reject(new Error('No se confirmó el silencio de la guía grabada.'));
+          }, 500);
+          this.guideDuckRequests.set(requestId, { resolve, reject: () => reject(new Error('Guía cancelada.')), timer });
+          this.workletNode!.port.postMessage({ type: 'track-guide-duck', requestId, trackIndex, startAudioTime, endAudioTime, boundarySeconds, voiceEndAudioTime });
+        });
       },
       clearRecordedGuideDuck: () => {
         const trackIndex = this.trackIndexById.get(trackId);
@@ -3486,6 +3499,10 @@ export class StreamingMultitrackEngine {
   }
 
   dispose(): void {
+    for (const request of this.guideDuckRequests.values()) {
+      clearTimeout(request.timer); request.reject();
+    }
+    this.guideDuckRequests.clear();
     this.cancelSectionJump();
     this.releaseStandbySectionPool();
     this.disposed = true;
@@ -5732,6 +5749,13 @@ export class StreamingMultitrackEngine {
       return;
     }
 
+    if (message.type === 'track-guide-duck-ready') {
+      const request = this.guideDuckRequests.get(message.requestId);
+      if (request) {
+        clearTimeout(request.timer); this.guideDuckRequests.delete(message.requestId); request.resolve();
+      }
+      return;
+    }
     if (message.type === 'section-switch-complete') {
       this.adoptCommittedSectionJump(message);
       return;
