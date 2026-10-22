@@ -1,8 +1,7 @@
 import './LiveDirectorTools.css';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { TrackData } from '../../../services/MultitrackEngine';
 import { resolveTrackOutputRoute } from '../../../utils/liveDirectorTrackRouting';
-import { inferMixGroup, MIX_GROUPS, type MixGroupId } from '../../../utils/liveDirectorMixGroups';
 
 type Section = { id: string; name: string; startTime: number; endTime: number };
 type Props = {
@@ -16,29 +15,22 @@ type Props = {
   engineRoute?: string;
   getTime: () => number;
   onJump: (time: number) => Promise<boolean | void>;
-  onGroupGain: (trackId: string, gain: number) => void;
 };
 type ArmedJump = { section: Section; sourceStart: number; boundary: number };
 const timeLabel = (time: number) => `${Math.floor(time / 60)}:${String(Math.floor(time % 60)).padStart(2, '0')}`;
 
-/** Experimental controls. Group gains are separate from persisted individual faders. */
+/** Preparation and section jump controls for the experimental session. */
 export function LiveDirectorTools(props: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [tab, setTab] = useState<'ready' | 'jump' | 'groups'>('ready');
+  const [tab, setTab] = useState<'ready' | 'jump'>('ready');
   const [target, setTarget] = useState('');
   const [armed, setArmed] = useState<ArmedJump | null>(null);
   const [notice, setNotice] = useState('');
-  const [gains, setGains] = useState<Record<string, number>>({});
-  const [muted, setMuted] = useState<Record<string, boolean>>({});
-  const [assignments, setAssignments] = useState<Record<string, MixGroupId>>({});
   const latest = useRef(props);
   latest.current = props;
   useEffect(() => {
     if (props.warnings.length > 0 && !props.isReady) dialog.current?.close();
   }, [props.warnings.length, props.isReady]);
-  const groups = useMemo(() => MIX_GROUPS.map(group => ({ ...group,
-    tracks: props.tracks.filter(track => (assignments[track.id] || inferMixGroup(track)) === group.id),
-  })), [props.tracks, assignments]);
 
   useEffect(() => {
     if (!armed) return;
@@ -68,9 +60,6 @@ export function LiveDirectorTools(props: Props) {
     return () => clearInterval(timer);
   }, [armed]);
 
-  const applyGain = (groupId: string, gain: number, isMuted = muted[groupId]) => {
-    for (const track of groups.find(group => group.id === groupId)?.tracks || []) props.onGroupGain(track.id, isMuted ? 0 : gain);
-  };
   const arm = () => {
     const now = props.getTime();
     const source = props.sections.find(section => now >= section.startTime && now < section.endTime);
@@ -88,7 +77,7 @@ export function LiveDirectorTools(props: Props) {
       <header className="ld-tools-header"><div><p className="ld-tools-eyebrow">EXPERIMENTAL</p><h2 id="ld-tools-title">Herramientas de directo</h2></div>
         <button type="button" aria-label="Cerrar herramientas" onClick={() => dialog.current?.close()}>Cerrar</button></header>
       <nav aria-label="Herramientas de directo" className="ld-tools-tabs">
-        {([['ready', 'Preparación'], ['jump', 'Salto de sección'], ['groups', 'Grupos']] as const).map(([id, label]) =>
+        {([['ready', 'Preparación'], ['jump', 'Salto de sección']] as const).map(([id, label]) =>
           <button key={id} type="button" aria-pressed={tab === id} onClick={() => setTab(id)}>{label}</button>)}
       </nav>
       <div className="ld-tools-body">
@@ -108,16 +97,6 @@ export function LiveDirectorTools(props: Props) {
             {armed && <button type="button" onClick={() => { setArmed(null); setNotice('Salto cancelado.'); }}>Cancelar salto</button>}</div>
           <p className="ld-tools-note">Usa el cambio de sección con fade y preparación de pistas. Puede haber una pausa de carga; este prototipo todavía no hace transiciones continuas.</p>
           {!props.sections.length && <p>Esta canción no tiene marcadores de sección.</p>}
-        </section>}
-        {tab === 'groups' && <section aria-label="Grupos de mezcla">
-          <h3>Mezcla por familias</h3><p>Conserva el balance de cada stem y sus salidas. Los grupos sólo afectan esta sesión de prueba.</p>
-          <div className="ld-tools-groups">{groups.filter(group => group.tracks.length > 0).map(group => <div key={group.id} className="ld-tools-group">
-            <div><strong>{group.label}</strong><span>{group.tracks.length} stems</span><button type="button" aria-pressed={Boolean(muted[group.id])} disabled={!props.isReady || props.busy}
-              aria-label={`${muted[group.id] ? 'Activar' : 'Silenciar'} grupo ${group.label}`} onClick={() => { const next = !muted[group.id]; setMuted(previous => ({ ...previous, [group.id]: next })); applyGain(group.id, gains[group.id] ?? 1, next); }}>{muted[group.id] ? 'Activar' : 'Silenciar'}</button></div>
-            <label><span>Nivel {Math.round((gains[group.id] ?? 1) * 100)}%</span><input type="range" min="0" max="100" step="1" aria-label={`Nivel de grupo ${group.label}`} value={(gains[group.id] ?? 1) * 100} disabled={!props.isReady || props.busy || muted[group.id]} onChange={event => { const gain = Number(event.target.value) / 100; setGains(previous => ({ ...previous, [group.id]: gain })); applyGain(group.id, gain); }} /></label>
-          </div>)}</div>
-          <details><summary>Asignar stems a grupos</summary><div className="ld-tools-assignments">{props.tracks.map(track => <label key={track.id}>{track.name}<select aria-label={`Grupo de ${track.name}`} value={assignments[track.id] || inferMixGroup(track)} disabled={!props.isReady || props.busy} onChange={event => { const id = event.target.value as MixGroupId; setAssignments(previous => ({ ...previous, [track.id]: id })); props.onGroupGain(track.id, muted[id] ? 0 : gains[id] ?? 1); }}>{MIX_GROUPS.map(group => <option key={group.id} value={group.id}>{group.label}</option>)}</select></label>)}</div></details>
-          <button type="button" disabled={!props.isReady || props.busy} onClick={() => { for (const track of props.tracks) props.onGroupGain(track.id, 1); setGains({}); setMuted({}); }}>Restaurar niveles de grupos</button>
         </section>}
         <p role="status" aria-live="polite" className="ld-tools-notice">{notice}</p>
       </div>

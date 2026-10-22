@@ -26,6 +26,7 @@ import { useLiveDirectorManualTempoTransport } from '../../hooks/useLiveDirector
 import { useNativeIOSMultitrackEngine } from '../../hooks/useNativeIOSMultitrackEngine';
 import type { MultitrackEngineLoadWarning, SongStructure, TrackData } from '../../services/MultitrackEngine';
 import type { SharedStreamingTelemetry } from '../../services/StreamingMultitrackEngine';
+import { LiveDirectorGroupMixer } from './live-director/LiveDirectorGroupMixer';
 import { LiveDirectorTools } from './live-director/LiveDirectorTools';
 import { ChannelStrip, FaderThumb } from './live-director/ChannelStrip';
 import { EnsayoQueueAddCard, EnsayoQueueCard } from './live-director/EnsayoQueueCard';
@@ -125,7 +126,7 @@ type DragScrollState = {
   startScrollLeft: number;
 };
 
-type SurfaceView = 'mix' | 'sections';
+type SurfaceView = 'mix' | 'sections' | 'groups';
 type LiveDirectorMode = 'director' | 'ensayo';
 type LiveDirectorEngineSurface = 'web' | 'ios-native';
 
@@ -1382,6 +1383,8 @@ export function LiveDirectorView({
   const isStemsToolbarActive = canToggleTrackLoad && enabledSessionTracks.length !== sessionTracks.length;
   const useWideTrackLoadModal = !isPortrait;
   const showSectionsPanel = surfaceView === 'sections' && !isManualTempoMode;
+  const showGroupsPanel = surfaceView === 'groups' && experimentalTools && !isManualTempoMode;
+  const showMixReturn = showSectionsPanel || showGroupsPanel;
   const displayBpm = Number.isFinite(Number(bpm)) ? Math.max(0, Math.round(Number(bpm))) : 0;
   const canTogglePulseSubdivision = isManualTempoMode && displayBpm > 0;
   const displayedPulseBpm = canTogglePulseSubdivision
@@ -4980,7 +4983,7 @@ export function LiveDirectorView({
                 isReady={isReady} isPlaying={isPlaying} busy={isCongregationFading || isSectionSeekBusy}
                 loadProgress={loadProgress} warnings={[...(loadWarnings || []).map(warning => warning.message || String(warning.reason)), ...(selectedMultitrackEngine.runtimeError ? [selectedMultitrackEngine.runtimeError] : [])]}
                 engineRoute={diagnostics?.engineRoute} getTime={getLivePlaybackTime}
-                onJump={handleSectionSeek} onGroupGain={selectedMultitrackEngine.setTrackGroupGain}
+                onJump={handleSectionSeek}
               />}
               <button
                 type="button"
@@ -5416,6 +5419,13 @@ export function LiveDirectorView({
           className={`grid min-h-0 flex-1 ${isUltraCompactLandscape ? 'gap-0.5' : isCompactLandscape ? 'gap-1.5' : 'gap-4'}`}
           style={{ gridTemplateColumns: `minmax(0,1fr) ${mixerLayoutColumns}` }}
         >
+          <div className="grid min-h-0 min-w-0">
+            {experimentalTools && selectedMultitrackEngine.setTrackGroupGain && !isManualTempoMode && <LiveDirectorGroupMixer
+              key={`${trackSignature}:${reloadKey}`} hidden={!showGroupsPanel} tracks={activeEngineTracks}
+              isReady={isReady} busy={isCongregationFading || isSectionSeekBusy}
+              onGroupGain={selectedMultitrackEngine.setTrackGroupGain}
+            />}
+            <div className={showGroupsPanel ? 'hidden' : 'grid min-h-0 min-w-0'}>
           {showSectionsPanel ? (
             <div className="relative min-h-0 overflow-hidden rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(29,30,32,0.98),rgba(23,24,26,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
               <div className="absolute left-4 top-4 z-40 flex items-center gap-3 rounded-full border border-white/10 bg-black/68 px-3 py-2">
@@ -5861,6 +5871,8 @@ export function LiveDirectorView({
               })}
             </div>
           )}
+            </div>
+          </div>
 
           <div className={`rounded-[2rem] border border-white/7 bg-[linear-gradient(180deg,rgba(32,34,35,0.98),rgba(27,29,30,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] ${isUltraCompactLandscape ? 'px-0.5 py-0.5' : isCompactLandscape ? 'px-1 py-0.5' : 'px-3 py-4'}`}>
             <div className={`flex h-full flex-col ${isUltraCompactLandscape ? 'gap-0.75' : isCompactLandscape ? 'gap-1' : 'gap-4'}`}>
@@ -5910,32 +5922,38 @@ export function LiveDirectorView({
                 onClick={() => setSurfaceView((previous) => previous === 'mix' ? 'sections' : 'mix')}
                 disabled={isManualTempoMode}
                 aria-pressed={showSectionsPanel}
-                aria-label={showSectionsPanel ? 'Mostrar faders de mezcla' : 'Mostrar secciones'}
+                aria-label={showMixReturn ? 'Mostrar faders de mezcla' : 'Mostrar secciones'}
                 aria-keyshortcuts="V"
-                title={`${showSectionsPanel ? 'Mostrar mezcla' : 'Mostrar secciones'} (V)`}
+                title={`${showMixReturn ? 'Mostrar mezcla' : 'Mostrar secciones'} (V)`}
                 className={`group relative ui-pressable-soft flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-1 rounded-[1.2rem] border transition-all disabled:cursor-not-allowed disabled:opacity-35 ${isUltraCompactLandscape ? 'rounded-[1rem] gap-0.5' : ''
                   } ${showSectionsPanel
                     ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50 shadow-[0_0_20px_rgba(129,221,245,0.14)]'
                     : 'border-white/8 bg-black/24 text-white/62'
                   }`}
               >
-                {showSectionsPanel ? (
+                {showMixReturn ? (
                   <SlidersVertical className={isUltraCompactLandscape ? 'h-3 w-3' : isCompactLandscape ? 'h-3.5 w-3.5' : 'h-6 w-6'} />
                 ) : (
                   <ListMusic className={isUltraCompactLandscape ? 'h-3 w-3' : isCompactLandscape ? 'h-3.5 w-3.5' : 'h-6 w-6'} />
                 )}
                 <span className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : isCompactLandscape ? 'text-[0.52rem]' : 'text-[0.66rem]'} font-black uppercase tracking-[0.16em]`}>
-                  {showSectionsPanel ? 'Mezcla' : 'Secciones'}
+                  {showMixReturn ? 'Mezcla' : 'Secciones'}
                 </span>
                 <span className="pointer-events-none absolute right-1.5 top-1.5 rounded-md border border-white/12 bg-white/8 px-1.5 py-0.5 text-[0.5rem] font-black text-white/72 opacity-0 transition-opacity group-hover:opacity-100">
                   V
                 </span>
               </button>
-              <div
-                aria-hidden="true"
-                className="min-h-0 w-full flex-1"
-                data-live-director-control-slot="reserved"
-              />
+              {experimentalTools && !isManualTempoMode && selectedMultitrackEngine.setTrackGroupGain ? <button
+                type="button" data-live-director-control="groups"
+                onClick={() => setSurfaceView(previous => previous === 'groups' ? 'mix' : 'groups')}
+                aria-label={showGroupsPanel ? 'Volver a mezcla individual' : 'Mostrar grupos de mezcla'}
+                aria-pressed={showGroupsPanel}
+                title={showGroupsPanel ? 'Volver a mezcla individual' : 'Grupos de mezcla'}
+                className={`ui-pressable-soft flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-1 rounded-[1.2rem] border px-1 ${showGroupsPanel ? 'border-cyan-300/34 bg-cyan-300/12 text-cyan-50' : 'border-white/8 bg-black/24 text-white/62'}`}
+              >
+                <SlidersVertical className={isUltraCompactLandscape ? 'h-3 w-3' : isCompactLandscape ? 'h-3.5 w-3.5' : 'h-6 w-6'} />
+                <span className={`${isUltraCompactLandscape ? 'text-[0.46rem]' : isCompactLandscape ? 'text-[0.52rem]' : 'text-[0.66rem]'} font-black uppercase tracking-[0.12em]`}>Grupos</span>
+              </button> : <div aria-hidden="true" className="min-h-0 w-full flex-1" data-live-director-control-slot="reserved" />}
             </div>
           </div>
 

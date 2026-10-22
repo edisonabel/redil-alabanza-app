@@ -11,6 +11,11 @@ page.on('request', request => { if (!['GET', 'HEAD'].includes(request.method()))
 const ready = () => page.waitForFunction(() => document.querySelector('[data-live-director-control="play-pause"]') && !document.querySelector('[data-live-director-control="play-pause"]').disabled, null, { timeout: 90000 });
 const openTools = () => page.click('[data-live-director-control="tools"]');
 const closeTools = () => page.getByRole('button', { name: 'Cerrar herramientas', exact: true }).click();
+const showGroups = async () => {
+  if (await page.locator('dialog[open]').count()) await closeTools();
+  const button = page.locator('[data-live-director-control="groups"]');
+  if (await button.getAttribute('aria-pressed') !== 'true') await button.click();
+};
 try {
   await page.goto('http://127.0.0.1:4322/', { waitUntil: 'domcontentloaded' }); await ready();
   await mkdir('.lab/results', { recursive: true });
@@ -18,10 +23,9 @@ try {
   await page.getByRole('heading', { name: 'Inicio de canción preparado' }).waitFor();
   assert.match(await page.locator('dialog[open]').innerText(), /15 \/ 15 stems/);
   await page.screenshot({ path: '.lab/results/tools-ready.png' });
-  await page.getByRole('button', { name: 'Grupos', exact: true }).click();
+  await showGroups();
   const before = await page.evaluate(() => window.__streamingEngineDumpOwner.getTracks().map(track => ({ id: track.id, volume: track.volume, route: track.outputRoute })));
   await page.getByRole('button', { name: 'Silenciar grupo Ritmo', exact: true }).click();
-  await closeTools();
   await page.click('[data-live-director-control="play-pause"]');
   await page.waitForFunction(() => {
     const engine = window.__streamingEngineDumpOwner, levels = engine?.getSharedTelemetry()?.levels;
@@ -29,7 +33,7 @@ try {
   }, null, { timeout: 20000 });
   // Edits to individual faders remain separate even while the group is silent.
   await page.evaluate(() => window.__streamingEngineDumpOwner.setTrackVolume('drums', .4));
-  await openTools();
+  await showGroups();
   await page.getByRole('button', { name: 'Activar grupo Ritmo', exact: true }).click();
   const rhythm = page.getByRole('slider', { name: 'Nivel de grupo Ritmo', exact: true });
   await rhythm.focus(); await page.keyboard.press('Home');
@@ -40,12 +44,16 @@ try {
   assert.deepEqual(after.map(track => ({ ...track, volume: track.id === 'drums' ? before.find(t => t.id === 'drums').volume : track.volume })), before);
   assert.equal(after.find(track => track.id === 'drums').volume, .4);
   await page.screenshot({ path: '.lab/results/tools-groups.png' });
+  await page.getByRole('button', { name: 'Mostrar faders de mezcla', exact: true }).click();
+  await page.getByRole('button', { name: 'Mostrar secciones', exact: true }).click();
+  await showGroups();
+  assert.equal(await rhythm.inputValue(), '50', 'Switching between faders, sections and groups must preserve group gain');
+  assert.equal(await page.locator('dialog[open]').count(), 0, 'Group controls must live outside Tools');
   await page.getByRole('button', { name: 'Restaurar niveles de grupos', exact: true }).click();
   assert.equal(await rhythm.inputValue(), '100');
   await page.locator('summary').click();
   await page.getByRole('combobox', { name: 'Grupo de Drums', exact: true }).selectOption('other');
   await page.locator('summary').click();
-  await closeTools();
   await page.click('[data-live-director-control="play-pause"]');
   await page.evaluate(async () => {
     const engine = window.__streamingEngineDumpOwner;
@@ -89,11 +97,13 @@ try {
   await page.waitForFunction(() => { const e = window.__streamingEngineDumpOwner; return e.getIsPlaying() && e.getCurrentTime() >= 8 && e.getCurrentTime() < 14; }, null, { timeout: 20000 });
   await page.click('[data-live-director-control="play-pause"]');
   await openTools();
-  // Compact view: scrollable modal, focused input remains visible and close works via Escape.
+  // Groups occupy the fader surface in compact view and Tools excludes them.
+  await showGroups();
   await page.setViewportSize({ width: 844, height: 390 });
-  await page.getByRole('button', { name: 'Grupos', exact: true }).click();
   await page.screenshot({ path: '.lab/results/tools-landscape.png' });
-  assert.equal(await page.locator('dialog[open]').evaluate(dialog => dialog.getBoundingClientRect().height <= innerHeight - 20), true);
+  assert.equal(await page.getByRole('region', { name: 'Grupos de mezcla' }).evaluate(panel => panel.getBoundingClientRect().bottom <= innerHeight), true);
+  await openTools();
+  assert.equal(await page.locator('dialog[open]').getByRole('button', { name: 'Grupos', exact: true }).count(), 0);
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('dialog[open]').count(), 0);
   // Dispatch the Worklet's real inbound fault type through the engine handler.
@@ -109,7 +119,7 @@ try {
   assert.equal(await page.evaluate(() => window.__streamingEngineDumpOwner.workletNode !== window.__failedWorklet), true, 'A failed processor must be replaced');
   assert.equal(await page.evaluate(() => window.__streamingEngineDumpOwner.getIsPlaying()), false);
   assert.deepEqual(errors, []); assert.deepEqual(writes, []);
-  const result = { pass: true, preparedStems: 15, groupMuteAudioVerified: true, individualFadersAndRoutingPreserved: true, audioClockSectionFades: true, armedJumpCompleted: true, backwardSectionRepeat: true, pauseCancelsJump: true, recoveryWithoutAutoplay: true, failedProcessorReplaced: true, errors, writes };
+  const result = { pass: true, preparedStems: 15, groupsOnMixerSurface: true, groupStatePreservedAcrossViews: true, groupMuteAudioVerified: true, individualFadersAndRoutingPreserved: true, audioClockSectionFades: true, armedJumpCompleted: true, backwardSectionRepeat: true, pauseCancelsJump: true, recoveryWithoutAutoplay: true, failedProcessorReplaced: true, errors, writes };
   await writeFile('.lab/results/tools-check.json', JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));
 } catch (error) {
   await page.screenshot({ path: '.lab/results/tools-failure.png' });

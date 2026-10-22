@@ -16,11 +16,11 @@ El evento `render-error` ahora detiene el transporte, muestra un aviso y permite
 
 ## Herramientas experimentales
 
-Pulsa **Herramientas**, en la barra superior:
+Pulsa **Herramientas**, en la barra superior, para preparación y saltos. **Grupos** tiene un botón propio debajo de Mezcla/Secciones, en la columna junto al master; ocupa el mismo espacio que los faders.
 
 - **Preparación**: muestra el inicio disponible de la canción actual, el número de stems, motor y salidas. No valida todo el repertorio ni garantiza reproducción sin conexión.
 - **Salto de sección**: durante la reproducción, elige destino y pulsa **Armar salto**. Al terminar la sección actual solicita el cambio con fade y la barrera de preparación. Admite repetir una sección anterior. Pausar, mover la posición o llegar demasiado tarde cancela el salto; el botón junto a Herramientas permite cancelarlo manualmente.
-- **Grupos**: nivel y silencio de Ritmo, Armonía, Voces, Otros y Click/guía. Una ganancia adicional conserva los faders individuales, mute/solo y ruteo. Puedes corregir la asignación sugerida. No son buses de salida independientes. Los grupos se reinician al recargar o cambiar de canción y no se guardan.
+- **Grupos**: nivel y silencio de Ritmo, Armonía, Voces, Otros y Click/guía. Una ganancia adicional conserva los faders individuales, mute/solo y ruteo. Puedes corregir la asignación sugerida. No son buses de salida independientes. Los grupos conservan sus niveles, silencio y asignaciones al alternar entre mezcla, secciones y grupos. Se reinician al recargar o cambiar de canción y no se guardan.
 
 El salto se solicita desde un temporizador de UI que consulta el reloj de audio cada 25 ms. No está programado a precisión de muestra: una interfaz ocupada o en segundo plano puede retrasarlo o cancelarlo. La preparación de PCM puede producir una pausa; no hay transición continua ni precarga PCM de la siguiente canción conectada a esta pantalla.
 
@@ -66,7 +66,7 @@ Los ensayos de Providencia fueron breves: ambas versiones pudieron reproducir 15
 
 ## Verificación de esta iteración
 
-Chrome 156: 15 stems de Providencia; silencio de grupo confirmado con niveles PCM, faders/rutas conservados, ajuste de grupo al 50%, reasignación y restauración, salto armado hacia delante, repetición hacia atrás, cancelación por pausa/seek, error controlado y recarga sin autoplay. Vistas 1728×1000 y 844×390 inspeccionadas. Sin escrituras de la UI.
+Chrome 156: 15 stems de Providencia; silencio de grupo confirmado con niveles PCM, faders/rutas conservados, ajuste de grupo al 50%, reasignación y restauración, salto armado hacia delante, repetición hacia atrás, cancelación por pausa/seek, error controlado y recarga sin autoplay. Vistas 1728×1000 y 844×390 inspeccionadas, con acceso directo a grupos y conservación de estado entre vistas. Sin escrituras de la UI.
 
 En un grafo Web Audio con salida física silenciada, la envolvente de 800 ms llegó a cero durante un bloqueo de UI de 750 ms. También pasaron cancelación manteniendo la ganancia intermedia, sustitución de rampa y suspensión del AudioContext. No demuestra ausencia de cortes durante un seek de red.
 
