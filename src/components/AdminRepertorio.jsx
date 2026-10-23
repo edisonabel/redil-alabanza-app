@@ -2,6 +2,7 @@
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import AdminVocalWarmups from './AdminVocalWarmups';
+import AdminReaperWorkspace from './AdminReaperWorkspace';
 import { audioSessionService } from '../services/AudioSessionService';
 import { getAudioCrossOrigin, resolveFetchableAudioUrl } from '../lib/audio-playback.js';
 import {
@@ -18,6 +19,7 @@ import {
   MessageSquarePlus,
   Mic2,
   Music2,
+  PackageOpen,
   Pause,
   PencilLine,
   Play,
@@ -1044,7 +1046,7 @@ const MarkerTimeInput = ({
   );
 };
 
-export default function AdminRepertorio({ libraryScope = 'general' }) {
+export default function AdminRepertorio({ libraryScope = 'general', isAdmin = false }) {
   const repertoireScope = libraryScope === 'sin_filtros' ? 'sin_filtros' : 'general';
   const [canciones, setCanciones] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -3096,6 +3098,7 @@ export default function AdminRepertorio({ libraryScope = 'general' }) {
 
   const headerActions = (
     <>
+      {activeAdminArea !== 'reaper' && <>
       <button
         onClick={() => {
           if (activeAdminArea === 'warmups') {
@@ -3132,6 +3135,7 @@ export default function AdminRepertorio({ libraryScope = 'general' }) {
           <code className="mx-1 text-[11px] font-semibold">section_markers</code>
         </span>
       )}
+      </>}
     </>
   );
 
@@ -3165,7 +3169,7 @@ export default function AdminRepertorio({ libraryScope = 'general' }) {
           </div>
         ))}
 
-      {repertoireScope === 'general' && <nav className="mx-3 mb-2 grid shrink-0 grid-cols-2 gap-1 rounded-xl border border-border bg-surface/90 p-1 md:mx-4 md:max-w-md" aria-label="Áreas de administración">
+      {repertoireScope === 'general' && <nav className={`mx-3 mb-2 grid shrink-0 ${isAdmin ? 'grid-cols-3 md:max-w-2xl' : 'grid-cols-2 md:max-w-md'} gap-1 rounded-xl border border-border bg-surface/90 p-1 md:mx-4`} aria-label="Áreas de administración">
         <button
           type="button"
           onClick={() => {
@@ -3190,6 +3194,18 @@ export default function AdminRepertorio({ libraryScope = 'general' }) {
           <Mic2 className="h-4 w-4" />
           Calentamientos
         </button>
+        {isAdmin && <button
+          type="button"
+          onClick={() => {
+            setActiveAdminArea('reaper');
+            setSongWizardOpen(false);
+          }}
+          aria-current={activeAdminArea === 'reaper' ? 'page' : undefined}
+          className={`inline-flex min-h-[42px] items-center justify-center gap-2 rounded-lg px-3 text-sm font-bold transition-colors ${activeAdminArea === 'reaper' ? 'bg-brand text-white shadow-sm' : 'text-content-muted hover:bg-background hover:text-content'}`}
+        >
+          <PackageOpen className="h-4 w-4" />
+          REAPER
+        </button>}
       </nav>}
 
       <div className="hidden mb-6 flex-col sm:flex-row sm:items-center justify-between gap-4 px-4 max-w-7xl mx-auto w-full">
@@ -3279,6 +3295,8 @@ export default function AdminRepertorio({ libraryScope = 'general' }) {
           createSignal={warmupCreateSignal}
           onCountChange={setWarmupCount}
         />
+      ) : activeAdminArea === 'reaper' ? (
+        <AdminReaperWorkspace songs={canciones} isAdmin={isAdmin} />
       ) : loading && canciones.length === 0 ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 py-16">
           <Loader2 className="w-10 h-10 text-brand animate-spin" />

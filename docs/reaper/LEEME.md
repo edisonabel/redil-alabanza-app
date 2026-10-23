@@ -11,4 +11,12 @@ Incluye tres pistas vacías: Click, Guide y Referencia musical. Timebase de proy
 5. Marcar `FIN AUDIO` en la duración original, incluyendo la cola. El último clic y el final del archivo pueden ser distintos.
 6. Guardar el RPP de esa canción para revisar/importar sus marcadores. No hace falta renderizar otra vez los stems; conservar el mismo audio y el mismo cero de tiempo.
 
+## Flujo desde Administración
+
+En **Administración → REAPER**, elige la canción y descarga **stems para REAPER**. Es un ZIP único con Click, Guide e instrumentos como archivos independientes, más un LEEME; no se hace una mezcla estéreo. Abre la plantilla, importa los archivos desde el mismo cero de tiempo, añade marcadores y guarda el `.RPP`.
+
+Puedes subir ese `.RPP` desde la misma pantalla. Administración guarda una copia asociada a la canción y muestra tempo, compás y marcadores para revisarlos. Esta copia no cambia todavía las secciones que usa el reproductor; así podemos revisar el mapa antes de aplicarlo a la beta.
+
+La letra y los acordes siguen en ChordPro, en la ficha de la canción. Playback separa el audio de la letra: ChartBuilder muestra letra/acordes sincronizados, y las cues MIDI pueden mandar comandos a ProPresenter.
+
 La plantilla no sustituye la confirmación del compás ni identifica automáticamente las secciones.
