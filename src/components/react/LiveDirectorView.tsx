@@ -89,6 +89,7 @@ import {
 } from '../../utils/liveDirectorTrackRouting';
 import { getPadUrlForSongKey } from '../../utils/padAudio';
 import { extractCoverArtFromMp3 } from '../../utils/mp3CoverArt';
+import { supportsDesktopExactSeekRoute } from '../../utils/liveDirectorEnginePolicy';
 import {
   isLiveDiagnosticsEnabled,
   logLiveDiagnostic,
@@ -3384,7 +3385,7 @@ export function LiveDirectorView({
     enabled: experimentalTools, resetKey: `${trackSignature}:${reloadKey}:${sectionOffsetSeconds}`, sections: resolvedSections,
     isReady, isPlaying, busy: isSectionSeekBusy || isCongregationFading,
     getTime: selectedMultitrackEngine.getCurrentTimeSnapshot, onJump: handleSectionSeek,
-    prepareJump: !isManualTempoMode && diagnostics?.engineRoute === 'streaming-worker' ? selectedMultitrackEngine.prepareSectionJump : undefined,
+    prepareJump: !isManualTempoMode && diagnostics?.engineRoute === 'streaming-worker' && supportsDesktopExactSeekRoute(readLiveBrowserCapabilities()) ? selectedMultitrackEngine.prepareSectionJump : undefined,
     cancelPreparedJump: selectedMultitrackEngine.cancelSectionJump, onNavigate: arrangementEntries ? arrangement.focus : undefined,
   });
   manualArrangementNavigation.current = Boolean(sectionJump.armed || sectionJump.repeat);
@@ -4930,62 +4931,6 @@ export function LiveDirectorView({
     endSectionsDrag(event.pointerId);
   }, [endSectionsDrag]);
 
-  useEffect(() => {
-    const container = sectionsLaneScrollRef.current;
-    if (!container) {
-      return undefined;
-    }
-
-    const handleNativeSectionPointerUp = (event: PointerEvent) => {
-      if (event.pointerType === 'mouse' && event.button !== 0) {
-        return;
-      }
-      if (!(event.target instanceof Element)) {
-        return;
-      }
-
-      const button = event.target.closest<HTMLButtonElement>('button[data-live-chord-section="true"]');
-      if (!button || !container.contains(button)) {
-        return;
-      }
-
-      const shouldSuppressClick = sectionsGestureExceededDragThresholdRef.current;
-      sectionsGestureExceededDragThresholdRef.current = false;
-      if (shouldSuppressClick) {
-        return;
-      }
-
-      const nextTime = Number(button.dataset.liveSectionStart);
-      if (!Number.isFinite(nextTime)) {
-        return;
-      }
-
-      event.preventDefault();
-      if (experimentalTools && isPlaying) {
-        const index = Number(button.dataset.liveSectionIndex);
-        const section = resolvedSections[index];
-        if (!section || isSectionSeekBusy || isCongregationFading) return;
-        const previous = lastSectionTapRef.current;
-        const now = performance.now();
-        lastSectionTapRef.current = { id: section.id, time: now };
-        if (previous?.id === section.id && now - previous.time < 500) {
-          lastSectionTapRef.current = null;
-          armSectionFromTimeline(section.id);
-        } else {
-          isUserScrollingSectionsRef.current = true;
-          keyboardSectionIndexRef.current = index;
-          setKeyboardSectionIndex(index);
-          scheduleSectionsAutoFollowResume();
-        }
-      } else { const section = resolvedSections[Number(button.dataset.liveSectionIndex)]; if (arrangementEntries && section) arrangement.focus(section.id); void handleSectionSeek(nextTime); }
-    };
-
-    container.addEventListener('pointerup', handleNativeSectionPointerUp);
-    return () => {
-      container.removeEventListener('pointerup', handleNativeSectionPointerUp);
-    };
-  }, [handleSectionSeek, showSectionsPanel, experimentalTools, isPlaying, resolvedSections, isSectionSeekBusy, isCongregationFading, armSectionFromTimeline, scheduleSectionsAutoFollowResume, arrangementEntries, arrangement.focus]);
-
   // ─── Minimap interaction ──────────────────────────────────────────────────
   // The minimap is a tap-and-drag scrub target. We convert clientX to a time
   // via the track's bounding rect and call the same seek used by the section
@@ -5327,13 +5272,36 @@ export function LiveDirectorView({
                           data-live-section-index={index}
                           data-live-section-start={section.startTime}
                           data-live-section-end={section.endTime}
-                          title={isCongregationFading ? 'Espera a que termine el fade de congregación' : `${section.name} · ${section.startTime.toFixed(3)}–${section.endTime.toFixed(3)} s`}
+                          title={isCongregationFading ? 'Espera a que termine el fade de congregación' : experimentalTools && isPlaying ? `${section.name} · Doble toque para armar el salto al final de la sección actual` : `${section.name} · ${section.startTime.toFixed(3)}–${section.endTime.toFixed(3)} s`}
                           onClick={(event) => {
-                            if (event.detail > 0) {
+                            // The section lane is replaced while its editor is open.
+                            // Handle clicks in React so the newly mounted lane always works.
+                            if (sectionsGestureExceededDragThresholdRef.current) {
+                              sectionsGestureExceededDragThresholdRef.current = false;
                               return;
                             }
-                            if (experimentalTools && isPlaying) armSectionFromTimeline(section.id);
-                            else { if (arrangementEntries) arrangement.focus(section.id); void handleSectionSeek(section.startTime); }
+                            if (experimentalTools && isPlaying) {
+                              if (isSectionSeekBusy || isCongregationFading) return;
+                              if (event.detail === 0) {
+                                armSectionFromTimeline(section.id);
+                                return;
+                              }
+                              const previous = lastSectionTapRef.current;
+                              const now = performance.now();
+                              lastSectionTapRef.current = { id: section.id, time: now };
+                              if (previous?.id === section.id && now - previous.time < 500) {
+                                lastSectionTapRef.current = null;
+                                armSectionFromTimeline(section.id);
+                              } else {
+                                isUserScrollingSectionsRef.current = true;
+                                keyboardSectionIndexRef.current = index;
+                                setKeyboardSectionIndex(index);
+                                scheduleSectionsAutoFollowResume();
+                              }
+                              return;
+                            }
+                            if (arrangementEntries) arrangement.focus(section.id);
+                            void handleSectionSeek(section.startTime);
                           }}
                           aria-label={`${section.name}${experimentalTools && isPlaying ? '. Doble toque para armar salto al terminar la sección actual' : ''}`}
                           aria-pressed={sectionJump.armed?.section.id === section.id}
