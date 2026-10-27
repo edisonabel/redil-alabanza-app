@@ -444,3 +444,9 @@ Checks: suite completa 82/83 (la restante requiere astro dev en 4322), build e
 higiene (1397 archivos), acceso beta, puente de sesión y recuperación de fetch.
 Remoto: `/` y `/admin` redirigen a login sin sesión, la API privada responde 401,
 worker y asistente REAPER 200. El despliegue principal no cambió.
+
+Migración `056_chordpro_personal_preferences.sql` aplicada en producción el 27 de
+octubre desde el editor SQL de Supabase (texto idéntico al archivo, verificado por
+hash antes de ejecutar). Comprobado por API: la tabla
+`cancion_chart_preferencias_usuario` existe con sus columnas y la escritura sin
+sesión es rechazada por RLS. Solo crea objetos nuevos; no modifica datos existentes.
